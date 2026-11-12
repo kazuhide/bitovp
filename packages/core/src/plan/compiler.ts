@@ -119,6 +119,7 @@ export type OperationKind =
 	| "CREATE_MUXING_CHUNKED_TEXT"
 	| "CREATE_MUXING_TEXT"
 	| "CREATE_MUXING_TS"
+	| "CREATE_MUXING_PROGRESSIVE_TS"
 	| "CREATE_MUXING_WEBM"
 	| "CREATE_DRM_CENC"
 	| "CREATE_DRM_FAIRPLAY"
@@ -471,6 +472,7 @@ const MUXING_LABEL = {
 	CMAF: "CMAF",
 	MP4: "MP4",
 	TS: "TS",
+	PROGRESSIVE_TS: "Progressive TS",
 	WEBM: "WebM",
 } as const;
 
@@ -1787,6 +1789,20 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							segmentNaming: muxing.segmentNaming,
 							...destinationFields,
 							...(muxing.name ? { name: muxing.name } : {}),
+						},
+						refs: muxingRefs,
+					});
+				} else if (muxing.kind === "PROGRESSIVE_TS") {
+					ops.push({
+						step: `muxing:${muxing.key}`,
+						kind: "CREATE_MUXING_PROGRESSIVE_TS",
+						payload: {
+							filename: muxing.filename,
+							...(muxing.startOffset !== undefined
+								? { startOffset: muxing.startOffset }
+								: {}),
+							...destinationFields,
+							name: muxing.name ?? muxingName("PROGRESSIVE_TS", primary),
 						},
 						refs: muxingRefs,
 					});

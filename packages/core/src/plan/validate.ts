@@ -1219,7 +1219,7 @@ export function validatePlan(
 			const packaged = renditionByKey.get(key);
 			return packaged !== undefined && AUDIO_CODECS.has(packaged.codec);
 		});
-		if (audioInContainer.length > 1) {
+		if (audioInContainer.length > 1 && muxing.kind !== "PROGRESSIVE_TS") {
 			issues.push({
 				code: "PLAN_MUXING_MULTIPLE_AUDIO",
 				level: muxing.kind === "TS" ? "error" : "warning",
@@ -1268,6 +1268,7 @@ export function validatePlan(
 				CMAF: ["H264", "AAC"],
 				MP4: ["H264", "H265", "AAC", "DOLBY_ATMOS", "AC3", "EAC3"],
 				TS: ["H264", "AAC", "AC3"],
+				PROGRESSIVE_TS: ["H264", "AAC", "AC3"],
 				WEBM: ["VP9", "AV1", "OPUS"],
 				TEXT: ["IMSC"],
 				CHUNKED_TEXT: ["WEBVTT"],

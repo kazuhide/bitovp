@@ -90,6 +90,8 @@ function providerMuxingTypes(expected: ExpectedMuxing): string[] {
 			return ["FMP4"];
 		case "TS_SEGMENTED":
 			return ["TS"];
+		case "TS_PROGRESSIVE":
+			return ["PROGRESSIVE_TS"];
 		case "WEBM_SEGMENTED":
 			return ["WEBM"];
 		case "WEBM_PROGRESSIVE":

@@ -71,6 +71,7 @@ export type PathPattern = {
 export type ContainerKind =
 	| "FMP4_SEGMENTED"
 	| "TS_SEGMENTED"
+	| "TS_PROGRESSIVE"
 	| "WEBM_SEGMENTED"
 	| "WEBM_PROGRESSIVE"
 	| "TEXT_SINGLE"
@@ -562,6 +563,8 @@ function containerOf(muxing: PlanMuxing): ContainerKind {
 			return "FMP4_SEGMENTED";
 		case "TS":
 			return "TS_SEGMENTED";
+		case "PROGRESSIVE_TS":
+			return "TS_PROGRESSIVE";
 		case "WEBM":
 			return muxing.progressive ? "WEBM_PROGRESSIVE" : "WEBM_SEGMENTED";
 		case "TEXT":

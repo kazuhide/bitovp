@@ -24,6 +24,7 @@ import {
 	srtCharacterEncodingSchema,
 } from "../plan/schema";
 import type { VmafExecution } from "../vmaf/cloud";
+import { applyVodInputTimeline } from "./input-timeline";
 
 /**
  * Pure mapping from wizard state to an EncodingPlan (input shape — zod
@@ -472,6 +473,7 @@ export type WizardMuxingKind =
 	| "CMAF"
 	| "MP4"
 	| "TS"
+	| "PROGRESSIVE_TS"
 	| "WEBM"
 	| "CHUNKED_TEXT"
 	| "TEXT";
@@ -503,6 +505,8 @@ export type WizardMuxing = {
 	framesPerCmafChunk?: number;
 	// MP4
 	filename?: string;
+	/** Progressive TS timestamp offset; absent preserves the provider default. */
+	startOffset?: number;
 	fragmentDuration?: number;
 	manifestType?: "HLS_BYTE_RANGES" | "SMOOTH" | "DASH_ON_DEMAND";
 	dolbyVisionTrackSampleEntryName?: "DVHE" | "DVH1";
@@ -930,6 +934,8 @@ export type WizardKantar = {
 };
 
 export type WizardState = {
+	/** Manual, CPU-previewed input sequence. Absent preserves the ordinary wizard graph. */
+	inputTimeline?: import("../vod-input-timeline/contracts").VodInputTimelineDocument;
 	/** Internal account-gated profile; never inferred from the selected account. */
 	internal?: EncodingPlanInput["internal"];
 	name: string;
@@ -1135,7 +1141,7 @@ function carriedAudioKeysOf(
 	audioKeySet: ReadonlySet<string>,
 ): string[] {
 	const legKind = leg.kind ?? "FMP4";
-	if (legKind !== "TS" && legKind !== "MP4") {
+	if (legKind !== "TS" && legKind !== "MP4" && legKind !== "PROGRESSIVE_TS") {
 		return [];
 	}
 	return (leg.muxedAudioKeys ?? []).filter((key) => audioKeySet.has(key));
@@ -1494,6 +1500,7 @@ export function wizardUsesCodecEncodingMode(
 	);
 }
 export function buildPlan(state: WizardState): EncodingPlanInput {
+	if (state.inputTimeline) return buildPlan(applyVodInputTimeline(state));
 	if (hasInvalidHevcV2Ladder(state)) throw new WizardCodecError();
 	const hevcV2 = state.videos.some((video) => video.codec === "H265V2");
 	const internal = hevcV2 ? state.internal : undefined;
@@ -2131,6 +2138,19 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				segmentNaming: str(m.segmentNaming),
 				segmentNamingTemplate: str(m.segmentNamingTemplate),
 				destination: dest,
+				name,
+			});
+		}
+		if (kind === "PROGRESSIVE_TS") {
+			return prune({
+				key: muxKey,
+				kind: "PROGRESSIVE_TS" as const,
+				streamKey: key,
+				additionalStreamKeys:
+					muxedIn && muxedIn.length > 0 ? [...muxedIn] : undefined,
+				filename: m.filename ?? "",
+				startOffset: m.startOffset,
+				destination: dest ?? destination(`${base}${derived}`, m.acl),
 				name,
 			});
 		}

@@ -11,6 +11,7 @@ import {
 	planToEncodingTemplateYaml,
 	validatePlan,
 } from "@bitovp/core";
+import { WizardInputTimelineError } from "@bitovp/core/wizard";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { OpPayloadPopover } from "@/components/op-payload-popover";
@@ -45,6 +46,13 @@ export function evaluateWizardState(
 	try {
 		return evaluatePlanDocument(buildPlan(state), translate, options);
 	} catch (error) {
+		if (error instanceof WizardInputTimelineError)
+			return {
+				ok: false,
+				zodMessage: translate
+					? translate("vodTimeline.invalid")
+					: error.message,
+			};
 		if (error instanceof WizardCodecError)
 			return {
 				ok: false,

@@ -135,6 +135,7 @@ const MODELS = [
 	"auditLog",
 	"accessEvent",
 	"storageInspection",
+	"vodInputPreviewTask",
 	"watchedObject",
 	"alertEvent",
 	"liveHeartbeat",
@@ -367,6 +368,7 @@ vi.mock("@/lib/server/queue", () => {
 		getVmafQueue: q,
 		getFeederQueue: q,
 		getStorageInspectQueue: q,
+		getVodInputPreviewQueue: q,
 		getSlateNormalizeQueue: q,
 		getNotifyQueue: q,
 	};
@@ -709,8 +711,8 @@ describe("POST /api/admin/reset (ledger #130)", () => {
 
 	it("drains the queues and writes the audit row AFTER the delete, carrying the counts", async () => {
 		await POST(postRequest({ confirm: "RESET" }));
-		expect(getJobs).toHaveBeenCalledTimes(7);
-		expect(removeJob).toHaveBeenCalledTimes(14);
+		expect(getJobs).toHaveBeenCalledTimes(8);
+		expect(removeJob).toHaveBeenCalledTimes(16);
 		expect(forbiddenQueueOperation).not.toHaveBeenCalled();
 		// review-2 I1: NOT obliterate — it deletes the queue's repeat keys, and
 		// the live-heartbeat scheduler is registered there once, at worker

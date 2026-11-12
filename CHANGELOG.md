@@ -6,6 +6,11 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- Manual VOD input timeline editing for linked video/audio: browse storage files, trim, split, reorder and concatenate clips with seek, zoom and undo/redo. CPU-only FFmpeg previews use version-pinned range reads and do not require a GPU or Local LLM or start a cloud encoding job.
+- Progressive single-file TS output alongside MP4, independently of HLS/DASH. Existing segmented TS output remains available.
+
 ### Fixed
 
 - The worker image build fails when its FFmpeg cannot score with a bundled VMAF v1.0 model. The earlier build check passed although the scoring failed, because its 64×64 test pictures are too small for these models. The FFmpeg build that the image pins passes the corrected check.

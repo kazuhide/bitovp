@@ -107,6 +107,7 @@ it.each([
 	["vmafRunner", { vmafJobId: ID }, "vmafJob"],
 	["feederManager", { feederSessionId: ID, action: "stop" }, "feederSession"],
 	["storageInspect", { storageInspectionId: ID }, "storageInspection"],
+	["vodInputPreview", { taskId: ID }, "vodInputPreviewTask"],
 	["slateNormalize", { slateNormalizationId: ID }, "slateNormalization"],
 	[
 		"usageStatistics",

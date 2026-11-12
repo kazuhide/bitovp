@@ -220,6 +220,11 @@ export const TENANT_MODEL_RELATIONS: Readonly<
 		organization: "organization",
 		credential: "credential",
 	},
+	vodInputPreviewTask: {
+		organization: "organization",
+		probe: "vodInputPreviewTask",
+		previews: "vodInputPreviewTask",
+	},
 	preset: {
 		organization: "organization",
 		watchRules: "watchRule",

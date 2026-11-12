@@ -10,6 +10,7 @@ import {
 	liveDashDetailedOptionsSchema,
 	liveHlsDetailedOptionsSchema,
 } from "@bitovp/core";
+import { vodInputTimelineDocumentSchema } from "@bitovp/core/vod-input-timeline";
 import { z } from "zod";
 import type { SessionDto } from "./auth/dto";
 
@@ -133,7 +134,7 @@ const codec = fields(
 );
 const muxing = fields(
 	"acl kind key name path autoPath segmentNaming segmentNamingTemplate initSegmentName initSegmentNameTemplate filename manifestType dolbyVisionTrackSampleEntryName",
-	"segmentLength framesPerCmafChunk fragmentDuration",
+	"segmentLength framesPerCmafChunk fragmentDuration startOffset",
 	"ownContainer autoOwnContainer progressive",
 	{ muxedAudioKeys: strings },
 );
@@ -328,6 +329,7 @@ const vod = fields(
 	"audioGuard",
 	{
 		...common,
+		inputTimeline: vodInputTimelineDocumentSchema.optional(),
 		prewarmedEncoderPoolIds: strings,
 		internal: group(
 			fields("", "", "", { hevcV2: group(fields("bcfVersion")) }),

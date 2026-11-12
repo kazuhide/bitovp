@@ -29,7 +29,7 @@ describe("reset selection", () => {
 		];
 		expect(new Set(classified).size).toBe(classified.length);
 		expect(classified.sort()).toEqual(models.sort());
-		expect(models).toHaveLength(62);
+		expect(models).toHaveLength(63);
 		expect(RESET_PROTECTED_EDITING_MODELS).toContain("libraryFlowEvidencePin");
 		expect(RESET_GLOBAL_MODELS).toEqual([
 			"user",

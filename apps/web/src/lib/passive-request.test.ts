@@ -11,7 +11,65 @@ const ORG = "00000000-0000-4000-8000-000000000001";
 const OTHER = "00000000-0000-4000-8000-000000000002";
 const PATH = "/api/library/sources/00000000-0000-4000-8000-000000000003/media";
 const URL_PATH = `${PATH}?key=qc-mp4%3Avideo`;
+const VOD_PREVIEW_PATH =
+	"/api/vod/input-previews/00000000-0000-4000-8000-000000000003/content";
 describe("passive request bindings", () => {
+	it.each([
+		"GET",
+		"HEAD",
+	])("binds only the exact VOD input preview %s content read", (method) => {
+		expect(passiveRequestPath(VOD_PREVIEW_PATH, method)).toBe(true);
+		const value = bindPassiveRequestUrl(VOD_PREVIEW_PATH, ORG);
+		expect(value).toBe(`${VOD_PREVIEW_PATH}?expectedOrganizationId=${ORG}`);
+		expect(
+			passiveOrganizationBinding(new URL(value, "http://localhost"), method),
+		).toEqual({ kind: "bound", organizationId: ORG });
+		expect(
+			passiveOrganizationBinding(
+				new URL(VOD_PREVIEW_PATH, "http://localhost"),
+				method,
+			),
+		).toEqual({ kind: "absent" });
+		expect(() =>
+			bindPassiveRequestUrl(
+				`${VOD_PREVIEW_PATH}?expectedOrganizationId=${OTHER}`,
+				ORG,
+			),
+		).toThrow();
+	});
+	it.each([
+		"",
+		"not-an-organization",
+		`${ORG}&expectedOrganizationId=${ORG}`,
+		`${ORG}&expectedOrganizationId=${OTHER}`,
+	])("rejects malformed or duplicate VOD preview URL bindings: %s", (binding) => {
+		for (const method of ["GET", "HEAD"])
+			expect(
+				passiveOrganizationBinding(
+					new URL(
+						`${VOD_PREVIEW_PATH}?expectedOrganizationId=${binding}`,
+						"http://localhost",
+					),
+					method,
+				),
+			).toEqual({ kind: "invalid" });
+	});
+	it.each([
+		["/api/vod/input-previews/not-a-uuid/content", "GET"],
+		[`${VOD_PREVIEW_PATH}/extra`, "GET"],
+		[VOD_PREVIEW_PATH.replace("/content", ""), "GET"],
+		[VOD_PREVIEW_PATH.replace("/content", "/CONTENT"), "GET"],
+		[VOD_PREVIEW_PATH, "POST"],
+		[VOD_PREVIEW_PATH, "DELETE"],
+	])("does not extend passive VOD preview matching to %s %s", (path, method) => {
+		expect(passiveRequestPath(path, method)).toBe(false);
+		expect(
+			passiveOrganizationBinding(
+				new URL(`${path}?expectedOrganizationId=${ORG}`, "http://localhost"),
+				method,
+			),
+		).toEqual({ kind: "absent" });
+	});
 	it("binds native artifact downloads without expanding other download routes", () => {
 		const path = `/api/library/artifacts/${ORG}/download`;
 		expect(bindPassiveRequestUrl(path, ORG)).toBe(

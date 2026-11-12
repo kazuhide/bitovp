@@ -278,10 +278,11 @@ test("the offline image runs every real editing and reference fixture", () => {
 		new URL("./editing-media.sh", import.meta.url),
 		"utf8",
 	);
-	const discovered = ["library-editing", "vmaf"].flatMap((folder) =>
-		readdirSync(join(root, "apps/worker/src", folder))
-			.filter((name) => name.endsWith(".media.ts"))
-			.map((name) => `src/${folder}/${name}`),
+	const discovered = ["library-editing", "vmaf", "vod-input-preview"].flatMap(
+		(folder) =>
+			readdirSync(join(root, "apps/worker/src", folder))
+				.filter((name) => name.endsWith(".media.ts"))
+				.map((name) => `src/${folder}/${name}`),
 	);
 	assert.deepEqual(
 		[...script.matchAll(/src\/[\w/-]+\.media\.ts/g)]
@@ -382,7 +383,7 @@ if(args.at(-1)===process.env.FAIL_FIXTURE)process.exit(7);
 				.trim()
 				.split("\n")
 				.map((line) => JSON.parse(line));
-			assert.equal(calls.length, fails ? 4 : 6);
+			assert.equal(calls.length, fails ? 4 : Object.keys(FIXTURES).length);
 			assert.equal(new Set(calls.map((call) => call.pid)).size, calls.length);
 			assert(
 				calls.every(
@@ -529,7 +530,7 @@ test(import.meta.filename, () => {});
 
 test("every required fixture must run once and pass its required number of tests", () => {
 	// A lowered count would stop requiring a test that exists.
-	assert.deepEqual(Object.values(FIXTURES), [3, 8, 1, 5, 17, 2]);
+	assert.deepEqual(Object.values(FIXTURES), [3, 8, 1, 5, 17, 2, 1]);
 	const complete = fixtureAccount();
 	// Pipe chunks do not end at line boundaries.
 	for (const chunk of completeLog().match(/[\s\S]{1,37}/g))
@@ -1092,7 +1093,7 @@ test("a media run passes only with every fixture's totals, a valid summary, an u
 			[
 				"Step: running the media fixtures, then packaging and scoring offline",
 				"Reason: Media validation command failed",
-				`  - not started: ${names.join(", ")}`,
+				`  - ${`not started: ${names.join(", ")}`.slice(0, 300)}`,
 				"A later step also failed:",
 				"Step: removing the owned image, container and scratch files",
 				"Reason: Media fixture ownership label does not match",
@@ -1119,7 +1120,7 @@ test("a media run passes only with every fixture's totals, a valid summary, an u
 			[
 				"Step: running the media fixtures, then packaging and scoring offline",
 				"Reason: Media validation command failed",
-				`  - not started: ${names.join(", ")}`,
+				`  - ${`not started: ${names.join(", ")}`.slice(0, 300)}`,
 				"A later step also failed:",
 				"Step: removing the owned image, container and scratch files",
 				"Reason: A step failed without an error",

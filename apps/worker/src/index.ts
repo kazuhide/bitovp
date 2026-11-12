@@ -193,6 +193,9 @@ import { createVmafProcessor } from "./vmaf/processor";
 import { createStrandedVmafReconciler } from "./vmaf/reconcile-stranded";
 import { readLocalResources } from "./vmaf/resources";
 import { createVmafTrigger } from "./vmaf/trigger";
+import { createVodInputPreviewSweep } from "./vod-input-preview/cleanup";
+import { createVodInputPreviewProcessor } from "./vod-input-preview/processor";
+import { createVodInputPreviewReservation } from "./vod-input-preview/resources";
 import { createWatchSweep } from "./watch/sweep";
 import { createRegistrarProvider } from "./webhooks/provider";
 import { createWebhookRegistrar } from "./webhooks/registrar";
@@ -314,6 +317,13 @@ const storageInspectQueue = tenantQueue(
 		connection: { url: env.REDIS_URL },
 	}),
 );
+const vodInputPreviewQueue = tenantQueue(
+	new Queue(QUEUE_NAMES.vodInputPreview, {
+		connection: { url: env.REDIS_URL },
+	}),
+);
+// A global queue permit bounds CPU preview concurrency across worker replicas.
+await vodInputPreviewQueue.setGlobalConcurrency(1);
 // : slate normalization — the direct route enqueues, this process
 // consumes, and the promoter below re-queues rows that were waiting for the
 // live input.
@@ -1465,6 +1475,39 @@ const storageInspectProcessor = tenantService(() =>
 	}),
 );
 
+const vodInputPreviewShutdown = new AbortController();
+const vodInputPreviewRoot =
+	process.env.VOD_INPUT_PREVIEW_DIR ??
+	join(tmpdir(), "bitovp-vod-input-previews");
+const vodInputPreviewReservation =
+	createVodInputPreviewReservation(wakePublisher);
+const vodInputPreviewProcessor = tenantService(() =>
+	createVodInputPreviewProcessor({
+		prisma,
+		browserFor: editingBrowserFor,
+		workDir: vodInputPreviewRoot,
+		ffmpegPath: env.FFMPEG_PATH,
+		ffprobePath: env.FFPROBE_PATH,
+		signal: vodInputPreviewShutdown.signal,
+		reserve: vodInputPreviewReservation,
+	}),
+);
+const vodInputPreviewSweep = tenantService(() =>
+	createVodInputPreviewSweep({
+		prisma,
+		queue: vodInputPreviewQueue,
+		workDir: vodInputPreviewRoot,
+		organizationId: requireOrganizationId(),
+	}),
+);
+const vodInputPreviewSweepLoop = tenantService(() =>
+	createSweepLoop(vodInputPreviewSweep, () =>
+		console.error("[vod-input-preview] recovery/cleanup will retry"),
+	),
+);
+runTenantTick(() => vodInputPreviewSweepLoop.run());
+setTenantInterval(() => vodInputPreviewSweepLoop.run(), 30_000).unref();
+
 // : slate normalization + registration. Shares the work dir, runner
 // and credential resolution with the inspection above; every customer byte
 // it downloads or produces is removed in a finally (`slate/prepare.ts`).
@@ -1621,6 +1664,7 @@ const handlers = createHandlers({
 	feeder: (jobData) => feederProcessor.process(jobData),
 	vmaf: dispatchVmaf,
 	storageInspect: (jobData) => storageInspectProcessor(jobData),
+	vodInputPreview: (jobData) => vodInputPreviewProcessor(jobData),
 	notify: (jobData) => notifyProcessor({ data: jobData }),
 	startupProbe: (jobData) => processProbeBatch(jobData),
 	slateNormalize: (job) =>
@@ -2227,6 +2271,7 @@ const shutdown = createShutdown({
 	// resolve to STOPPED and worker.close waits for them.
 	stopFeeders: () => {
 		stopping = true;
+		vodInputPreviewShutdown.abort();
 		editingShutdownController.abort();
 		void editingGpuGate?.stop();
 		return forEachTenantService(feederProcessor, (instance) =>
@@ -2237,6 +2282,10 @@ const shutdown = createShutdown({
 	// `queue.add` finishes BEFORE the queue closes — the ordinary stop must
 	// not manufacture the lost handoff the outbox exists to recover from.
 	drains: [
+		{
+			name: "VOD input preview recovery",
+			run: () => drainTenantLoop(vodInputPreviewSweepLoop),
+		},
 		{
 			name: "local semantic heartbeat",
 			run: async () => {
@@ -2323,6 +2372,7 @@ const shutdown = createShutdown({
 		feederQueue,
 		vmafQueue,
 		orchestratorProducerQueue,
+		vodInputPreviewQueue,
 	],
 	disconnect: () => basePrisma.$disconnect(),
 	exit: (code) => process.exit(code),

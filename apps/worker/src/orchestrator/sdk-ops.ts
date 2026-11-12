@@ -1032,6 +1032,17 @@ export type SdkOps = {
 			name?: string;
 		},
 	): Promise<string>;
+	createProgressiveTsMuxing(
+		encodingId: string,
+		p: {
+			streamId: string;
+			additionalStreamIds?: string[];
+			filename: string;
+			startOffset?: number;
+			destination?: Destination;
+			name?: string;
+		},
+	): Promise<string>;
 	createTsMuxing(
 		encodingId: string,
 		p: {

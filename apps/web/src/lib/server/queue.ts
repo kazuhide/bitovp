@@ -270,6 +270,7 @@ const globalForQueues = globalThis as unknown as {
 	feederQueue?: Queue;
 	vmafQueue?: Queue;
 	storageInspectQueue?: Queue;
+	vodInputPreviewQueue?: Queue;
 	startupProbeQueue?: Queue;
 	slateNormalizeQueue?: Queue;
 };
@@ -362,6 +363,19 @@ export function getStorageInspectQueue(): Queue {
 		globalForQueues.storageInspectQueue,
 	);
 	return globalForQueues.storageInspectQueue;
+}
+
+/** CPU-only source probing and manual sequence previews; independent of Library AI. */
+export function getVodInputPreviewQueue(): Queue {
+	globalForQueues.vodInputPreviewQueue ??= authenticatedQueue(
+		new Queue(QUEUE_NAMES.vodInputPreview, {
+			connection: { url: loadEnv().REDIS_URL },
+		}),
+	);
+	globalForQueues.vodInputPreviewQueue = authenticatedQueue(
+		globalForQueues.vodInputPreviewQueue,
+	);
+	return globalForQueues.vodInputPreviewQueue;
 }
 
 /** Read side of the notify queue ( PR2: the delivery-log panel

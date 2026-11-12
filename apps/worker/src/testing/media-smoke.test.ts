@@ -258,12 +258,15 @@ describe("offline media validation", () => {
 			"x [libx264 @ 0x580814cad8c0] using cpu capabilities: AVX2",
 			"using cpu capabilities: AVX2",
 			"[libx264 @ 0x580814cad8c0] using CPU capabilities: AVX2",
+			// The prefix ends on the line on which it starts.
+			"[libx264 @ 0x580814cad8c0\nx] using cpu capabilities: AVX2",
 		])
 			expect(() => x264Capabilities(log(line))).toThrow(/once/);
 		// A report that does not have the shape of x264's names does not leave
 		// the container.
 		for (const capabilities of [
 			"",
+			" AVX2",
 			"AVX2  AVX512",
 			"AVX2 ",
 			"AVX2, AVX512",
@@ -282,12 +285,20 @@ describe("offline media validation", () => {
 			"SSE4.1.2",
 			"A".repeat(15),
 			`AVX2 ${"A".repeat(15)}`,
+			"SSE4 2",
+			`${"A".repeat(14)}1`,
 			Array.from({ length: 33 }, () => "AVX2").join(" "),
 			// Every other character of ASCII that does not end the line, between
 			// two names.
 			...Array.from({ length: 128 }, (_, code) => String.fromCharCode(code))
 				.filter((character) => !/[A-Za-z0-9. \n\r]/.test(character))
-				.map((character) => `AVX2${character}AVX512`),
+				.flatMap((character) => [
+					`AVX2${character}AVX512`,
+					// Where a name starts, in place of the dot and after it.
+					`${character}AVX2`,
+					`SSE4${character}2`,
+					`SSE4.${character}`,
+				]),
 		])
 			expect(
 				() => x264Capabilities(log(report(capabilities))),

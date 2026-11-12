@@ -893,11 +893,19 @@ test("only complete summaries of numbers and of words in the shape of x264's cap
 		"SSE4.1.2",
 		"A".repeat(15),
 		`AVX2 ${"A".repeat(15)}`,
+		"SSE4 2",
+		`${"A".repeat(14)}1`,
 		Array.from({ length: 33 }, () => "AVX2").join(" "),
 		// Every other character of ASCII, between two names.
 		...Array.from({ length: 128 }, (_, code) => String.fromCharCode(code))
 			.filter((character) => !/[A-Za-z0-9. ]/.test(character))
-			.map((character) => `AVX2${character}AVX512`),
+			.flatMap((character) => [
+				`AVX2${character}AVX512`,
+				// Where a name starts, in place of the dot and after it.
+				`${character}AVX2`,
+				`SSE4${character}2`,
+				`SSE4.${character}`,
+			]),
 		null,
 		7,
 		["AVX2"],

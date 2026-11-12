@@ -40,6 +40,7 @@ import { checkInternalHevcV2Plan } from "./internal-hevc-v2";
 import { validateManifestDetails } from "./manifest-detail-validation";
 import { filterFamily } from "./media-filters";
 import { hasMuxedInAudio, muxingStreamKeys } from "./muxing-streams";
+import { outputFileCollisions } from "./output-file-collisions";
 import { isPerTitleRendition } from "./per-title-results";
 import { AUDIO_CODECS, type EncodingPlan, vmafModelNeedsFile } from "./schema";
 
@@ -256,6 +257,7 @@ export function validatePlan(
 	checkUniqueKeys(plan.keyframes, "keyframes", issues);
 	checkUniqueKeys(plan.manifests, "manifests", issues);
 	issues.push(...validateManifestDetails(plan));
+	issues.push(...outputFileCollisions(plan));
 
 	const inputKeys = new Set(plan.inputs.map((i) => i.key));
 	const outputKeys = new Set(plan.outputs.map((o) => o.key));

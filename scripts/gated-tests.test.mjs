@@ -2498,8 +2498,10 @@ done
 // does to what the installer asks of it: the checksums of files or of its
 // input, and the check of a list with --strict and --quiet. A comment in a
 // list is no line of it, which the sha256sum of macOS does not accept. With
-// FAKE_STORE it fails where the installer lists a build that it keeps. It
-// ends without process.exit, which could cut off what it printed.
+// FAKE_STORE it fails where the installer lists a build that it keeps. With
+// FAKE_KEY it gives that in place of the checksum of its input, which is the
+// key of a build, or nothing where FAKE_KEY is "none". It ends without
+// process.exit, which could cut off what it printed.
 const FAKE_SUM = `#!${process.execPath}
 const { createHash } = require("node:crypto");
 const { appendFileSync, readFileSync } = require("node:fs");
@@ -2522,7 +2524,11 @@ const read = (name) => {
 const store = Number(process.env.FAKE_STORE ?? 0);
 if (store && process.cwd().includes("/partial.")) process.exitCode = store;
 else if (!args.includes("-c")) {
-	if (names.length === 0) console.log(sum(readFileSync(0)) + "  -");
+	if (names.length === 0) {
+		const input = readFileSync(0);
+		const key = process.env.FAKE_KEY;
+		if (key !== "none") console.log((key || sum(input)) + "  -");
+	}
 	for (const name of names) {
 		const bytes = read(name);
 		if (bytes) console.log(sum(bytes) + "  " + name);
@@ -2804,7 +2810,8 @@ const withMediaInstaller = (check) => {
 		// written (`store`), find or sort fails while it is written (`fails`),
 		// the build cannot be moved to its key (`move`), or another run gives
 		// the key the build `rival` first, or makes the directory `made` at the
-		// moment this run does.
+		// moment this run does; or sha256sum gives `answer` for the key of the
+		// build, and nothing where that is "none".
 		const install = ({
 			shell,
 			file = pinned,
@@ -2828,6 +2835,7 @@ const withMediaInstaller = (check) => {
 			move = "",
 			rival = "",
 			made = "",
+			answer = "",
 			score = perfect,
 		}) => {
 			count += 1;
@@ -2887,6 +2895,7 @@ const withMediaInstaller = (check) => {
 						FAKE_MV: String(move),
 						FAKE_RIVAL: rival,
 						FAKE_MADE: made,
+						FAKE_KEY: answer,
 						FAKE_SCORE: score,
 					},
 				},
@@ -3465,7 +3474,8 @@ test("the installer keeps a build that passed the proof under a key of what it i
 					],
 					[(at) => writeFileSync(join(at, "bin/.more"), ""), FILES],
 					// A list that names less than the build holds, a file
-					// twice, nothing, or no file.
+					// twice, a file twice and another not at all, so that it has
+					// as many lines as the build has files, nothing, or no file.
 					[
 						(at) =>
 							relist(at, (lines) =>
@@ -3474,6 +3484,15 @@ test("the installer keeps a build that passed the proof under a key of what it i
 						FILES,
 					],
 					[(at) => relist(at, (lines) => [lines[0], ...lines]), FILES],
+					[
+						(at) =>
+							relist(at, (lines) =>
+								lines.map((line) =>
+									line.endsWith("COPYING") ? lines[0] : line,
+								),
+							),
+						FILES,
+					],
 					[(at) => writeFileSync(join(at, "SHA256SUMS"), ""), FILES],
 					[
 						(at) =>
@@ -3482,8 +3501,9 @@ test("the installer keeps a build that passed the proof under a key of what it i
 					],
 					// Other names at the top than the list and the three
 					// directories: no list, a file more, a directory more whose
-					// file the list names, a directory less, a file in the place
-					// of a directory, and a file in the place of the build.
+					// file the list names, a directory less while the list
+					// agrees, a file in the place of a directory, and a file in
+					// the place of the build.
 					[(at) => rmSync(join(at, "SHA256SUMS")), TOP],
 					[(at) => writeFileSync(join(at, "more"), ""), TOP],
 					[(at) => writeFileSync(join(at, ".more"), ""), TOP],
@@ -3499,13 +3519,13 @@ test("the installer keeps a build that passed the proof under a key of what it i
 						},
 						TOP,
 					],
-					[
+					...["share", "model"].map((name) => [
 						(at) => {
-							rmSync(join(at, "share"), { recursive: true });
-							relist(at, without("share"));
+							rmSync(join(at, name), { recursive: true });
+							relist(at, without(name));
 						},
 						TOP,
-					],
+					]),
 					[
 						(at) => {
 							rmSync(join(at, "share"), { recursive: true });
@@ -3533,8 +3553,13 @@ test("the installer keeps a build that passed the proof under a key of what it i
 						},
 						TOP,
 					],
-					// A link in the place of a file with the same bytes, of a
+					// A link beside a program, which the list does not name; and
+					// a link in the place of a file with the same bytes, of a
 					// directory with the same files, and of the build.
+					[
+						(at) => symlinkSync(join(at, "bin/ffmpeg"), join(at, "bin/more")),
+						OTHER,
+					],
 					[
 						(at) => {
 							rmSync(join(at, "bin/ffprobe"));
@@ -3884,6 +3909,26 @@ test("the installer keeps a build that passed the proof under a key of what it i
 					assert.equal(existsSync(refused.target), false);
 					assert.equal(existsSync(unused), false);
 				}
+
+				// What sha256sum gives for the key becomes the name of a
+				// directory. Where it gives nothing, or something that is not
+				// the 64 digits of a SHA-256, the run ends before it makes
+				// anything.
+				for (const answer of [
+					"none",
+					"a".repeat(63),
+					"a".repeat(65),
+					"A".repeat(64),
+					`../${"a".repeat(61)}`,
+				]) {
+					const keyless = install({ shell, cache: unused, answer });
+					assert.equal(keyless.status, 1, answer);
+					assert.equal(keyless.stdout, "");
+					assert.equal(keyless.stderr, "sha256sum gave no key for the build\n");
+					assert.deepEqual(keyless.calls, [INPUTS(keyless), KEY(keyless)]);
+					assert.equal(existsSync(keyless.target), false);
+					assert.equal(existsSync(unused), false);
+				}
 			}
 		},
 	);
@@ -4041,8 +4086,14 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 	const INSTALL =
 		'sh scripts/native-media-tools.sh --cache "$RUNNER_TEMP/ffmpeg-build" "$RUNNER_TEMP/native-media"';
 	const archive = `        working-directory: ${expression("env.BITOVP_ARCHIVE_DIR")}\n`;
+	// The last step of the media job, which removes what the job made.
+	const CLEANUP =
+		"      - name: Remove only this job's owned media resources\n" +
+		"        if: always()\n" +
+		'        run: node scripts/media-smoke.mjs --cleanup --state-file "$RUNNER_TEMP/bitovp-media-state.json"\n';
 	// In each job the two steps stand together, and the step after them takes
-	// the directory that the installer left.
+	// the directory that the installer left. What that step made, the step
+	// after it removes.
 	const jobs = {
 		"ci.yml": [
 			"native-media",
@@ -4055,20 +4106,48 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 			"media-smoke",
 			`${REUSE}        run: ${INSTALL}\n` +
 				"      - name: Validate the ten-second asset with the worker image\n" +
-				'        run: pnpm test:media --ffmpeg "$RUNNER_TEMP/native-media" --state-file "$RUNNER_TEMP/bitovp-media-state.json"\n',
+				'        run: pnpm test:media --ffmpeg "$RUNNER_TEMP/native-media" --state-file "$RUNNER_TEMP/bitovp-media-state.json"\n' +
+				CLEANUP,
 		],
 		// The installer of the archive that is tested, not of the checkout.
 		"installed-gui.yml": [
 			"installed-gui",
 			`${REUSE}${archive}        run: ${INSTALL}\n` +
 				'      - run: node scripts/installed-gui-smoke.mjs --ffmpeg "$RUNNER_TEMP/native-media" --state-file "$RUNNER_TEMP/bitovp-gui-state.json"\n' +
-				archive,
+				archive +
+				"      - name: Remove only this job's owned test resources\n" +
+				"        if: always() && env.BITOVP_ARCHIVE_DIR != ''\n" +
+				archive +
+				'        run: node scripts/installed-gui-smoke.mjs --cleanup --state-file "$RUNNER_TEMP/bitovp-gui-state.json"\n',
 		],
 	};
+	// The conditions that a job or its steps start on.
+	const conditions = (text) => text.match(/^\s*(?:- )?if:.*$/gm) ?? [];
 	for (const [name, [job, steps]] of Object.entries(jobs)) {
 		const text = workflow(name);
 		const holder = jobOf(text, job);
 		assert(holder.includes(steps), name);
+		// The three jobs are checks that a pull request must pass, and GitHub
+		// counts a job that it skipped as passed. So each workflow starts for
+		// every pull request and for every push to main, with nothing that
+		// narrows either; the job waits for no other job, and it and its
+		// steps start on no condition but that of the step above which
+		// removes what the job made; no failure of the job or of a step is
+		// let through; and nothing gives a step another shell, which could
+		// run nothing and end well.
+		assert(
+			text.includes(
+				"\non:\n  pull_request:\n  push:\n    branches: [main]\n  workflow_dispatch:\n\npermissions:\n",
+			),
+			name,
+		);
+		assert.deepEqual(conditions(holder), conditions(steps), name);
+		assert.doesNotMatch(
+			holder,
+			/continue-on-error|^\s*(?:- )?(?:needs|defaults|shell):/m,
+			name,
+		);
+		assert.doesNotMatch(text, /^defaults:/m, name);
 		// Once in the workflow: no second cache, and no run of the installer
 		// that passes the cache by. No key that only starts like this one is
 		// taken in its place: it names a build of other sources.
@@ -4112,10 +4191,19 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 	// does before its own tests, then the whole image from the Dockerfile and
 	// the ten-second asset, with no directory of built FFmpeg, and the same
 	// removal of what it made.
+	// The workflow's runs are in a concurrency group of their own. In the
+	// group of another workflow, a run of this one and a run of that one for
+	// the main branch would each cancel the other.
 	const weekly = workflow("ffmpeg-source-build.yml");
 	assert.match(
 		weekly,
-		/\non:\n {2}schedule:\n {4}- cron: "[0-9]{1,2} [0-9]{1,2} \* \* [0-6]"\n {2}workflow_dispatch:\n\npermissions:\n {2}contents: read\n\n/,
+		/\non:\n {2}schedule:\n {4}- cron: "[0-9]{1,2} [0-9]{1,2} \* \* [0-6]"\n {2}workflow_dispatch:\n\npermissions:\n {2}contents: read\n\nconcurrency:\n {2}group: ffmpeg-source-build-\$\{\{ github\.ref \}\}\n {2}cancel-in-progress: true\n\njobs:\n/,
+	);
+	assert.deepEqual(
+		readdirSync(directory).filter((name) =>
+			/^\s*group:.*ffmpeg-source-build/m.test(workflow(name)),
+		),
+		["ffmpeg-source-build.yml"],
 	);
 	const media = workflow("offline-media.yml");
 	const prepared = media.slice(
@@ -4127,10 +4215,6 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 		/^ {4}steps:\n {6}- uses: actions\/checkout@[0-9a-f]{40} # v[0-9.]+\n {8}with:\n {10}persist-credentials: false\n {6}- uses: actions\/setup-node@[0-9a-f]{40} # v[0-9.]+\n {8}with:\n {10}node-version: "24"\n {10}check-latest: true\n {6}- name: Install the pinned package manager\n {8}run: \|\n(?: {10}.+\n){5} {6}- run: pnpm install --frozen-lockfile\n$/,
 	);
 	assert(prepared.startsWith(`    steps:\n${CHECKOUT}`));
-	const CLEANUP =
-		"      - name: Remove only this job's owned media resources\n" +
-		"        if: always()\n" +
-		'        run: node scripts/media-smoke.mjs --cleanup --state-file "$RUNNER_TEMP/bitovp-media-state.json"\n';
 	assert(media.endsWith(CLEANUP));
 	assert(
 		weekly.endsWith(

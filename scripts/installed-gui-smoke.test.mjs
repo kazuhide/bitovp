@@ -5,6 +5,7 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	realpathSync,
 	rmSync,
@@ -26,6 +27,7 @@ import {
 	composeOverride,
 	failureSummary,
 	inside,
+	runFixture,
 	validateExecutionMode,
 	validateReport,
 	verifyFfmpeg,
@@ -271,14 +273,17 @@ test("a directory of built FFmpeg is taken only whole and from outside the check
 		mkdirSync(join(holding("folder", ["ffprobe"]), "bin/ffmpeg"));
 		mkdirSync(join(directory, "empty"));
 		symlinkSync(holding("with$dollar"), join(directory, "plain"));
+		symlinkSync(import.meta.dirname, join(directory, "into"));
 		const refused = [
 			["native-media", ABSOLUTE],
 			["", ABSOLUTE],
 			[join(directory, "absent"), "FFmpeg directory does not exist"],
 			[join(built, "bin/ffmpeg"), OUTSIDE],
-			// The checkout, and a directory in it.
+			// The checkout, a directory in it, and a link outside the checkout
+			// that leads to one.
 			[root, OUTSIDE],
 			[import.meta.dirname, OUTSIDE],
+			[join(directory, "into"), OUTSIDE],
 			// Compose would read the dollar sign as the start of a variable,
 			// also where a link with a plain name leads to the directory. A
 			// line break has no place in a path that is written into a file.
@@ -334,8 +339,11 @@ test("a directory of built FFmpeg is taken only whole and from outside the check
 				`${args.join(" ")}: ${result.stderr}`,
 			);
 		}
-		// An accepted one reaches the run, in either order with the state file.
-		// The run ends at once: this is no hosted runner.
+		// With one that is accepted, in either order with the state file, the
+		// command ends as it does without the option: it names no reason, and
+		// the run that it starts ends at once, because this is no hosted
+		// runner. That the run is given the directory is not seen here; the
+		// next test shows it.
 		for (const args of [
 			["--ffmpeg", built],
 			["--ffmpeg", built, "--state-file", statePath],
@@ -352,6 +360,110 @@ test("a directory of built FFmpeg is taken only whole and from outside the check
 			);
 			assert.equal(existsSync(statePath), false);
 		}
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+test("the command hands the FFmpeg directory that it checked to the run, whose installation writes it into the override before its first program starts", () => {
+	const directory = realpathSync(
+		mkdtempSync(join(tmpdir(), "bitovp-gui-handover-test-")),
+	);
+	try {
+		// As scripts/native-media-tools.sh leaves it, and a link to it.
+		const built = join(directory, "native-media");
+		mkdirSync(join(built, "bin"), { recursive: true });
+		for (const program of ["ffmpeg", "ffprobe"])
+			writeFileSync(join(built, "bin", program), "", { mode: 0o755 });
+		symlinkSync(built, join(directory, "linked"));
+		// One run of the command on this machine, with stand-ins for the two
+		// programs that a run starts. The first program of an installation is
+		// pnpm, and its arguments name the installation's private directory:
+		// the stand-in keeps the override that it finds there and fails, which
+		// ends the run. docker then lists nothing for the run to remove. A run
+		// gives its programs an environment of its own, so the stand-in writes
+		// beside itself.
+		const run = (name, ...args) => {
+			const tools = join(directory, name, "tools");
+			const place = join(directory, name, "place");
+			for (const path of [tools, place]) mkdirSync(path, { recursive: true });
+			writeFileSync(
+				join(tools, "pnpm"),
+				'#!/bin/sh\nhere=$(dirname "$0")\nprintf \'%s\\n\' "$1 $2 $3" >> "$here/calls"\nwhile [ "$#" -gt 1 ]; do\n\t[ "$1" != --admin-env ] || cp "$(dirname "$2")/compose.yml" "$here/override.yml"\n\tshift\ndone\nexit 1\n',
+				{ mode: 0o700 },
+			);
+			writeFileSync(join(tools, "docker"), "#!/bin/sh\n", { mode: 0o700 });
+			const result = spawnSync(
+				process.execPath,
+				[
+					join(import.meta.dirname, "installed-gui-smoke.mjs"),
+					"--runtime-only",
+					...args,
+					"--state-file",
+					join(place, "state.json"),
+				],
+				{
+					env: { PATH: `${tools}:${process.env.PATH}` },
+					encoding: "utf8",
+					timeout: 60_000,
+				},
+			);
+			// The run came to the first program of its first installation and
+			// no further, and removed what it had made.
+			assert.equal(result.status, 1, result.stderr);
+			assert.equal(
+				result.stdout,
+				"Installed GUI smoke failed during primary database initialization\nOwned smoke containers, volumes, images and private files removed\n",
+			);
+			assert.equal(
+				result.stderr,
+				"Installed GUI smoke did not complete successfully\n",
+			);
+			assert.equal(
+				readFileSync(join(tools, "calls"), "utf8"),
+				"--filter @bitovp/db db:runtime:init\n",
+			);
+			assert.deepEqual(readdirSync(place), ["state.json.failure.log"]);
+			return readFileSync(join(tools, "override.yml"), "utf8");
+		};
+		// With the option, both builds of the Worker's Dockerfile are given
+		// the directory that the link leads to, which is the one that was
+		// checked. Without it, no build is given a directory.
+		const given = run("given", "--ffmpeg", join(directory, "linked"));
+		assert.equal(
+			given.split(
+				`\n      additional_contexts:\n        ffmpeg: ${JSON.stringify(built)}\n`,
+			).length - 1,
+			2,
+			given,
+		);
+		assert.equal(given.split("additional_contexts").length - 1, 2);
+		const plain = run("plain");
+		assert.match(plain, /^services:\n/);
+		assert(!plain.includes("additional_contexts"));
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+test("a run that refuses the FFmpeg directory it is given ends before it makes or announces anything", async () => {
+	const directory = realpathSync(
+		mkdtempSync(join(tmpdir(), "bitovp-gui-refusal-test-")),
+	);
+	try {
+		// A run makes its private directory beside its state file. Its PATH
+		// names nothing: a run that went on would find no program to start.
+		const notes = [];
+		await assert.rejects(
+			runFixture({
+				statePath: join(directory, "state.json"),
+				ffmpeg: join(directory, "absent"),
+				runtimeOnly: true,
+				env: { PATH: join(directory, "absent") },
+				notify: (note) => notes.push(note),
+			}),
+			{ message: "FFmpeg directory does not exist" },
+		);
+		assert.deepEqual(readdirSync(directory), []);
+		assert.deepEqual(notes, []);
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}

@@ -1108,15 +1108,22 @@ test("the image build takes an FFmpeg that is already built in place of the Dock
 		symlinkSync(join(built, "bin/ffprobe"), join(other, "bin/ffprobe"));
 		mkdirSync(join(holding("folder", ["ffprobe"]), "bin/ffmpeg"));
 		mkdirSync(join(directory, "empty"));
+		symlinkSync(import.meta.dirname, join(directory, "into"));
 		for (const [path, reason] of [
 			["native-media", "FFmpeg directory must be an absolute path"],
 			["", "FFmpeg directory must be an absolute path"],
 			[join(directory, "absent"), "FFmpeg directory does not exist"],
 			[join(built, "bin/ffmpeg"), OUTSIDE],
-			// The checkout, and a directory in it.
+			// The checkout, a directory in it, and a link outside the checkout
+			// that leads to one.
 			[join(import.meta.dirname, ".."), OUTSIDE],
 			[import.meta.dirname, OUTSIDE],
+			[join(directory, "into"), OUTSIDE],
+			// The rule of the source's path, for every path that Docker is
+			// given: no comma and no line break.
 			[holding("a,b"), "Unsupported FFmpeg directory path"],
+			[holding("a\nb"), "Unsupported FFmpeg directory path"],
+			[holding("a\rb"), "Unsupported FFmpeg directory path"],
 			[join(directory, "empty"), program("ffmpeg")],
 			[holding("one", ["ffmpeg"]), program("ffprobe")],
 			[holding("two", ["ffprobe"]), program("ffmpeg")],
@@ -1125,7 +1132,10 @@ test("the image build takes an FFmpeg that is already built in place of the Dock
 			[join(directory, "folder"), program("ffmpeg")],
 		]) {
 			assert.throws(() => verifyFfmpeg(path), { message: reason }, path);
-			// The run ends before it announces, creates or starts anything.
+			// The run ends before it announces anything, looks at the source or
+			// starts a command. That it has made nothing by then is not seen
+			// from here: a run makes its directory in /tmp, where other
+			// processes make theirs.
 			const refused = await mediaRun({ ffmpeg: path });
 			assert.deepEqual(refused.lines, [`Reason: ${reason}`], path);
 			assert.deepEqual(

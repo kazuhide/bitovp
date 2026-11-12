@@ -1,0 +1,27 @@
+name: FFmpeg from source
+
+# The jobs that need the worker image's FFmpeg reuse an earlier build of the
+# same sources, so they no longer prove that the pinned sources still download
+# and compile. This workflow proves it every week, with no build to reuse.
+on:
+  schedule:
+    - cron: "17 19 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ffmpeg-source-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ffmpeg-from-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the worker image's FFmpeg from its pinned sources and prove it with the pinned VMAF models
+        run: sh scripts/native-media-tools.sh "$RUNNER_TEMP/native-media"

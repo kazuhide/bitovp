@@ -3,10 +3,12 @@ import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import {
 	existsSync,
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	realpathSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,6 +28,7 @@ import {
 	inside,
 	validateExecutionMode,
 	validateReport,
+	verifyFfmpeg,
 	workerReady,
 } from "./installed-gui-smoke.mjs";
 
@@ -176,6 +179,159 @@ test("installed application builds refresh their base image", () => {
 		/"build",\s*"--pull"/.test(source),
 		"Installed application builds must refresh the base image",
 	);
+});
+test("only the builds of the Worker's Dockerfile take a directory of built FFmpeg in place of the stage, and only when one is given", () => {
+	const plain = composeOverride({ id, directory: "/private/smoke" });
+	assert(!plain.includes("additional_contexts"));
+	const ffmpeg = "/private/native-media";
+	const text = composeOverride({ id, directory: "/private/smoke", ffmpeg });
+	// The form of the Compose specification: the name of the stage, then the
+	// directory that stands for it.
+	const context = `\n      additional_contexts:\n        ffmpeg: "${ffmpeg}"`;
+	// One service of the override, up to the next one.
+	const service = (name) =>
+		new RegExp(`\\n {2}${name}:\\n(?: {4}.*\\n)+`).exec(text)[0];
+	for (const name of ["migrate", "worker"])
+		assert(
+			service(name).includes(
+				`\n    build:\n      context: ${JSON.stringify(root)}\n      dockerfile: Dockerfile${context}\n      labels:\n`,
+			),
+			name,
+		);
+	// The Web image has no such stage.
+	assert(
+		service("web").includes(
+			"\n      dockerfile: Dockerfile.web\n      labels:\n",
+		),
+	);
+	// Nothing else differs from the override without a directory.
+	assert.equal(text.split(context).length - 1, 2);
+	assert.equal(text.replaceAll(context, ""), plain);
+	// Whatever the path holds, it stays one value.
+	const odd = '/private/a "b": #c';
+	assert(
+		composeOverride({ id, directory: "/private/smoke", ffmpeg: odd }).includes(
+			`\n        ffmpeg: ${JSON.stringify(odd)}\n`,
+		),
+	);
+	// Compose would look for any other path in the checkout.
+	for (const relative of ["native-media", "./native-media", ""])
+		assert.throws(
+			() =>
+				composeOverride({ id, directory: "/private/smoke", ffmpeg: relative }),
+			{ message: "Invalid FFmpeg directory" },
+		);
+	// Both installations of a run are given the directory that was checked.
+	const source = readFileSync(
+		new URL("./installed-gui-smoke.mjs", import.meta.url),
+		"utf8",
+	);
+	assert(source.includes("composeOverride({ ...state, imageId, ffmpeg })"));
+	assert.equal(source.match(/^\t+ffmpeg: prebuilt,$/gm)?.length, 2);
+});
+test("a directory of built FFmpeg is taken only whole and from outside the checkout, and the command says why it refuses one", () => {
+	const directory = realpathSync(
+		mkdtempSync(join(tmpdir(), "bitovp-gui-ffmpeg-test-")),
+	);
+	try {
+		// As scripts/native-media-tools.sh leaves it.
+		const holding = (name, programs = ["ffmpeg", "ffprobe"]) => {
+			const path = join(directory, name);
+			mkdirSync(join(path, "bin"), { recursive: true });
+			for (const program of programs)
+				writeFileSync(join(path, "bin", program), "", { mode: 0o755 });
+			return path;
+		};
+		const built = holding("native-media");
+		assert.equal(verifyFfmpeg(built), built);
+		// A link to the directory names the directory itself.
+		symlinkSync(built, join(directory, "linked"));
+		assert.equal(verifyFfmpeg(join(directory, "linked")), built);
+
+		const ABSOLUTE = "FFmpeg directory must be an absolute path";
+		const OUTSIDE = "FFmpeg directory must be a directory outside the checkout";
+		const program = (name) => `FFmpeg directory must hold the file bin/${name}`;
+		const other = holding("other", ["ffmpeg"]);
+		symlinkSync(join(built, "bin/ffprobe"), join(other, "bin/ffprobe"));
+		mkdirSync(join(holding("folder", ["ffprobe"]), "bin/ffmpeg"));
+		mkdirSync(join(directory, "empty"));
+		const refused = [
+			["native-media", ABSOLUTE],
+			["", ABSOLUTE],
+			[join(directory, "absent"), "FFmpeg directory does not exist"],
+			[join(built, "bin/ffmpeg"), OUTSIDE],
+			// The checkout, and a directory in it.
+			[root, OUTSIDE],
+			[import.meta.dirname, OUTSIDE],
+			[join(directory, "empty"), program("ffmpeg")],
+			[holding("one", ["ffmpeg"]), program("ffprobe")],
+			[holding("two", ["ffprobe"]), program("ffmpeg")],
+			// A program is a file of the directory: no link, no directory.
+			[other, program("ffprobe")],
+			[join(directory, "folder"), program("ffmpeg")],
+		];
+		for (const [path, message] of refused)
+			assert.throws(() => verifyFfmpeg(path), { message }, path);
+		assert.throws(() => verifyFfmpeg(undefined), { message: ABSOLUTE });
+
+		// The command without the settings of a hosted runner: it starts no
+		// installation, whatever it is given.
+		const run = (...args) =>
+			spawnSync(
+				process.execPath,
+				[join(import.meta.dirname, "installed-gui-smoke.mjs"), ...args],
+				{ env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 30_000 },
+			);
+		const statePath = join(directory, "state.json");
+		// A refused option ends the command with its reason.
+		for (const [args, reason] of [
+			...refused.map(([path, message]) => [["--ffmpeg", path], message]),
+			[["--state-file", statePath, "--ffmpeg", "native-media"], ABSOLUTE],
+			[["--ffmpeg"], "Unknown installed GUI smoke option"],
+			[
+				["--ffmpeg", built, "--ffmpeg", built],
+				"Unknown installed GUI smoke option",
+			],
+			[["--ffmpeg", built, "more"], "Unknown installed GUI smoke option"],
+			[["--other", built], "Unknown installed GUI smoke option"],
+			[
+				["--state-file", statePath, "--state-file", statePath],
+				"Unknown installed GUI smoke option",
+			],
+			[
+				["--cleanup", "--ffmpeg", built, "--state-file", statePath],
+				"Cleanup builds no image and takes no FFmpeg directory",
+			],
+		]) {
+			const result = run(...args);
+			assert.equal(result.status, 1, args.join(" "));
+			assert.equal(result.stdout, "");
+			assert(
+				result.stderr.includes(`\nAssertionError [ERR_ASSERTION]: ${reason}\n`),
+				`${args.join(" ")}: ${result.stderr}`,
+			);
+		}
+		// An accepted one reaches the run, in either order with the state file.
+		// The run ends at once: this is no hosted runner.
+		for (const args of [
+			["--ffmpeg", built],
+			["--ffmpeg", built, "--state-file", statePath],
+			["--state-file", statePath, "--ffmpeg", built],
+			["--state-file", statePath],
+			[],
+		]) {
+			const result = run(...args);
+			assert.equal(result.status, 1, args.join(" "));
+			assert.equal(result.stdout, "");
+			assert.equal(
+				result.stderr,
+				"Installed GUI smoke did not complete successfully\n",
+			);
+			assert.equal(existsSync(statePath), false);
+		}
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
 });
 test("requires every named browser case to run and pass once without skipping or retrying", () => {
 	validateReport(report());

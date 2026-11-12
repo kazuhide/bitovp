@@ -99,14 +99,53 @@ export function childEnvironment(env) {
 	};
 }
 
-export function composeOverride({ id, directory, imageId = id }) {
+// A directory that holds an FFmpeg which is already built from the
+// Dockerfile's sources, as scripts/native-media-tools.sh leaves it. The Worker
+// image's build takes it in place of the "ffmpeg" stage and compiles nothing.
+// The programs are not compared with the sources here: what made the directory
+// proved them. A directory in the checkout would also be a part of what the
+// image is built from.
+export function verifyFfmpeg(path) {
+	assert(
+		typeof path === "string" && isAbsolute(path),
+		"FFmpeg directory must be an absolute path",
+	);
+	assert(existsSync(path), "FFmpeg directory does not exist");
+	const canonical = realpathSync(path);
+	assert(
+		lstatSync(canonical).isDirectory() &&
+			!inside(realpathSync(ROOT), canonical),
+		"FFmpeg directory must be a directory outside the checkout",
+	);
+	for (const program of ["ffmpeg", "ffprobe"]) {
+		const file = join(canonical, "bin", program);
+		assert(
+			existsSync(file) && lstatSync(file).isFile(),
+			`FFmpeg directory must hold the file bin/${program}`,
+		);
+	}
+	return canonical;
+}
+
+export function composeOverride({ id, directory, imageId = id, ffmpeg }) {
 	assert(/^[a-f0-9]{32}$/.test(id), "Invalid smoke test identity");
 	assert(/^[a-f0-9]{32}$/.test(imageId), "Invalid smoke image identity");
+	// Compose would look for any other path in the checkout.
+	assert(
+		ffmpeg === undefined || isAbsolute(ffmpeg),
+		"Invalid FFmpeg directory",
+	);
 	const env = (file) =>
 		`env_file: !override\n      - path: ${JSON.stringify(join(directory, file))}\n        required: true\n        format: raw`;
 	const owned = `labels:\n      ${LABEL}: ${id}`;
+	// Each build of the Worker's Dockerfile takes the directory under the name
+	// of the "ffmpeg" stage, which is then not built. Dockerfile.web has no
+	// such stage.
+	const prebuilt = ffmpeg
+		? `\n      additional_contexts:\n        ffmpeg: ${JSON.stringify(ffmpeg)}`
+		: "";
 	const build = (dockerfile) =>
-		`build:\n      context: ${JSON.stringify(ROOT)}\n      dockerfile: ${dockerfile}\n      labels:\n        ${LABEL}: ${id}`;
+		`build:\n      context: ${JSON.stringify(ROOT)}\n      dockerfile: ${dockerfile}${dockerfile === "Dockerfile" ? prebuilt : ""}\n      labels:\n        ${LABEL}: ${id}`;
 	// Only this fixed-target relay and PostgreSQL can use the host-access network.
 	// Web and Worker stay on the internal network without an external route.
 	const relay = `const net = require('node:net'); net.createServer(client => { const upstream = net.connect(3100, 'web'); client.on('error', () => upstream.destroy()); upstream.on('error', () => client.destroy()); client.on('close', () => upstream.destroy()); upstream.on('close', () => client.destroy()); client.pipe(upstream).pipe(client); }).listen(3100, '0.0.0.0');`;
@@ -882,7 +921,18 @@ async function waitUntil(probe, signal) {
 
 async function install(
 	state,
-	{ env, execute, imageId, revision, worker, signal, stage, notify, hostname },
+	{
+		env,
+		execute,
+		imageId,
+		revision,
+		worker,
+		ffmpeg,
+		signal,
+		stage,
+		notify,
+		hostname,
+	},
 ) {
 	const { id, directory } = state;
 	const temporary = join(directory, "tmp");
@@ -907,7 +957,7 @@ async function install(
 		`MASTER_KEY=${randomBytes(32).toString("base64")}\nAUTH_SESSION_SECRET=${randomBytes(48).toString("base64")}\nAUTH_MODE=users\nAUTH_ALLOW_INSECURE_HTTP=true\nPUBLIC_BASE_URL=http://${hostname}\nINGRESS_MODE=none\nCOMPOSE_PROFILES=\n`,
 		{ mode: 0o600, flag: "wx" },
 	);
-	writeFileSync(override, composeOverride({ ...state, imageId }), {
+	writeFileSync(override, composeOverride({ ...state, imageId, ffmpeg }), {
 		mode: 0o600,
 		flag: "wx",
 	});
@@ -959,6 +1009,8 @@ async function install(
 	if (worker) {
 		stage("fresh Web and Worker Docker builds");
 		notify("Building the current source into separate Web and Worker images");
+		if (ffmpeg)
+			notify("The Worker image takes the FFmpeg that is already built");
 		await compose(
 			[
 				"build",
@@ -1077,6 +1129,7 @@ function failureDiagnostics(state) {
 
 export async function runFixture({
 	statePath,
+	ffmpeg,
 	env = process.env,
 	signal,
 	runtimeOnly = false,
@@ -1091,6 +1144,8 @@ export async function runFixture({
 				!existsSync(statePath),
 			"State file must be new and outside the checkout",
 		);
+	// Before anything is created: a refused directory leaves nothing to remove.
+	const prebuilt = ffmpeg === undefined ? undefined : verifyFfmpeg(ffmpeg);
 	const parent = realpathSync(statePath ? dirname(statePath) : tmpdir());
 	assert(
 		!inside(realpathSync(ROOT), parent),
@@ -1123,6 +1178,7 @@ export async function runFixture({
 			imageId: state.id,
 			revision,
 			worker: true,
+			ffmpeg: prebuilt,
 			signal,
 			notify,
 			hostname: "localhost",
@@ -1140,6 +1196,7 @@ export async function runFixture({
 				imageId: state.id,
 				revision,
 				worker: false,
+				ffmpeg: prebuilt,
 				signal,
 				notify,
 				hostname: "127.0.0.1",
@@ -1291,11 +1348,27 @@ if (
 		!(runtimeOnly && cleanup),
 		"Cleanup and runtime-only options cannot be combined",
 	);
+	// Each of the two options at most once, with its value.
+	const options = {};
+	for (let index = 0; index < args.length; index += 2) {
+		assert(
+			["--ffmpeg", "--state-file"].includes(args[index]) &&
+				args[index + 1] !== undefined &&
+				!Object.hasOwn(options, args[index]),
+			"Unknown installed GUI smoke option",
+		);
+		options[args[index]] = args[index + 1];
+	}
+	const statePath = options["--state-file"];
 	assert(
-		args.length === 0 || (args.length === 2 && args[0] === "--state-file"),
-		"Unknown installed GUI smoke option",
+		!(cleanup && Object.hasOwn(options, "--ffmpeg")),
+		"Cleanup builds no image and takes no FFmpeg directory",
 	);
-	const statePath = args[1];
+	// Checked here, where a refusal prints its reason: a run that fails later
+	// reports no more than the step it failed in.
+	const ffmpeg = Object.hasOwn(options, "--ffmpeg")
+		? verifyFfmpeg(options["--ffmpeg"])
+		: undefined;
 	const controller = new AbortController();
 	for (const signal of ["SIGINT", "SIGTERM"])
 		process.on(signal, () => {
@@ -1311,7 +1384,12 @@ if (
 		});
 	(async () => {
 		if (!cleanup)
-			return runFixture({ statePath, runtimeOnly, signal: controller.signal });
+			return runFixture({
+				statePath,
+				ffmpeg,
+				runtimeOnly,
+				signal: controller.signal,
+			});
 		assert(
 			statePath && isAbsolute(statePath) && !inside(ROOT, statePath),
 			"Cleanup requires an external private state file",

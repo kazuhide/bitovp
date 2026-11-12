@@ -30,6 +30,7 @@ import {
 	fixtureAccount,
 	runFixture,
 	validateSummary,
+	verifyFfmpeg,
 	verifySource,
 } from "./media-smoke.mjs";
 
@@ -953,6 +954,7 @@ const summaryText = JSON.stringify({
 
 // A whole media run against fakes: the image builds, the container prints
 // `log` and returns `raw`, and cleanup finds resources labelled `owner(id)`.
+// With `ffmpeg`, the run is given that directory of an FFmpeg already built.
 async function mediaRun({
 	log = completeLog(),
 	raw = summaryText,
@@ -960,15 +962,23 @@ async function mediaRun({
 	verify = async (path) => path,
 	owner = (id) => id,
 	removal = () => {},
+	ffmpeg,
 } = {}) {
 	const directory = mkdtempSync(join(tmpdir(), "media-run-test-"));
 	const statePath = join(directory, "state.json");
 	const notes = [];
 	const removed = [];
 	const verified = [];
+	// Every command that the run starts, and the arguments of each image build.
+	let commands = 0;
+	const builds = [];
 	const execute = async (_binary, args, options = {}) => {
+		commands += 1;
 		const docker = args.slice(2);
-		if (docker[0] === "build") return "";
+		if (docker[0] === "build") {
+			builds.push(docker);
+			return "";
+		}
 		if (docker.includes("{{.Id}}")) return `sha256:${"a".repeat(64)}`;
 		if (docker[0] === "run") {
 			options.diagnostics?.(log);
@@ -995,6 +1005,7 @@ async function mediaRun({
 		await runFixture(
 			{
 				source: join(directory, "source.mp4"),
+				ffmpeg,
 				statePath,
 				env: {},
 				notify: (note) => notes.push(note),
@@ -1016,8 +1027,150 @@ async function mediaRun({
 			});
 		rmSync(directory, { recursive: true, force: true });
 	}
-	return { notes, removed, verified, lines };
+	return { notes, removed, verified, lines, builds, commands };
 }
+
+test("the image build takes an FFmpeg that is already built in place of the Dockerfile's stage, only from a directory outside the checkout that holds one", async () => {
+	const directory = realpathSync(
+		mkdtempSync(join(tmpdir(), "media-ffmpeg-test-")),
+	);
+	try {
+		// As scripts/native-media-tools.sh leaves it.
+		const holding = (name, programs = ["ffmpeg", "ffprobe"]) => {
+			const path = join(directory, name);
+			mkdirSync(join(path, "bin"), { recursive: true });
+			for (const program of programs)
+				writeFileSync(join(path, "bin", program), "", { mode: 0o755 });
+			return path;
+		};
+		const built = holding("native-media");
+		// The image build of a run, with the run's own identity left out.
+		const build = (run) =>
+			run.builds.map((args) =>
+				args.map((argument) => argument.replace(/[a-f0-9]{32}$/, "ID")),
+			);
+		const BUILD = (context) => [
+			"build",
+			"--pull",
+			...context,
+			"--label",
+			"io.bitovp.media-smoke=ID",
+			"--tag",
+			"bitovp-media-ID",
+			"--file",
+			"Dockerfile",
+			".",
+		];
+		const ANNOUNCED = "Media check: building the worker image";
+
+		// Without a directory the image compiles its own FFmpeg, as before.
+		const plain = await mediaRun();
+		assert.equal(plain.lines, undefined);
+		assert.deepEqual(build(plain), [BUILD([])]);
+		assert.equal(plain.notes[1], ANNOUNCED);
+
+		// With one, the build is given the directory under the name of the
+		// stage, and the rest of the run is the same.
+		const given = await mediaRun({ ffmpeg: built });
+		assert.equal(given.lines, undefined);
+		assert.deepEqual(build(given), [
+			BUILD(["--build-context", `ffmpeg=${built}`]),
+		]);
+		assert.equal(
+			given.notes[1],
+			`${ANNOUNCED} with the FFmpeg that is already built`,
+		);
+		assert.deepEqual(
+			given.notes.filter((_, index) => index !== 1),
+			plain.notes.filter((_, index) => index !== 1),
+		);
+		assert.deepEqual(given.removed, plain.removed);
+		assert.equal(given.commands, plain.commands);
+
+		// A link to the directory names the directory itself.
+		symlinkSync(built, join(directory, "linked"));
+		assert.equal(verifyFfmpeg(join(directory, "linked")), built);
+		const linked = await mediaRun({ ffmpeg: join(directory, "linked") });
+		assert.deepEqual(build(linked), [
+			BUILD(["--build-context", `ffmpeg=${built}`]),
+		]);
+
+		const OUTSIDE = "FFmpeg directory must be a directory outside the checkout";
+		const program = (name) => `FFmpeg directory must hold the file bin/${name}`;
+		const other = holding("other", ["ffmpeg"]);
+		symlinkSync(join(built, "bin/ffprobe"), join(other, "bin/ffprobe"));
+		mkdirSync(join(holding("folder", ["ffprobe"]), "bin/ffmpeg"));
+		mkdirSync(join(directory, "empty"));
+		for (const [path, reason] of [
+			["native-media", "FFmpeg directory must be an absolute path"],
+			["", "FFmpeg directory must be an absolute path"],
+			[join(directory, "absent"), "FFmpeg directory does not exist"],
+			[join(built, "bin/ffmpeg"), OUTSIDE],
+			// The checkout, and a directory in it.
+			[join(import.meta.dirname, ".."), OUTSIDE],
+			[import.meta.dirname, OUTSIDE],
+			[holding("a,b"), "Unsupported FFmpeg directory path"],
+			[join(directory, "empty"), program("ffmpeg")],
+			[holding("one", ["ffmpeg"]), program("ffprobe")],
+			[holding("two", ["ffprobe"]), program("ffmpeg")],
+			// A program is a file of the directory: no link, no directory.
+			[other, program("ffprobe")],
+			[join(directory, "folder"), program("ffmpeg")],
+		]) {
+			assert.throws(() => verifyFfmpeg(path), { message: reason }, path);
+			// The run ends before it announces, creates or starts anything.
+			const refused = await mediaRun({ ffmpeg: path });
+			assert.deepEqual(refused.lines, [`Reason: ${reason}`], path);
+			assert.deepEqual(
+				[refused.commands, refused.notes, refused.verified],
+				[0, [], []],
+			);
+		}
+
+		// The option of the command reaches the same check, once, and cleanup
+		// takes no directory.
+		for (const [args, reason] of [
+			[
+				["--ffmpeg", "native-media"],
+				"FFmpeg directory must be an absolute path",
+			],
+			[
+				["--ffmpeg", join(directory, "absent")],
+				"FFmpeg directory does not exist",
+			],
+			[["--ffmpeg", other], program("ffprobe")],
+			[["--ffmpeg"], "Unknown or duplicate media option"],
+			[
+				["--ffmpeg", built, "--ffmpeg", built],
+				"Unknown or duplicate media option",
+			],
+			[
+				[
+					"--cleanup",
+					"--ffmpeg",
+					built,
+					"--state-file",
+					join(directory, "state.json"),
+				],
+				"Cleanup requires an external state file",
+			],
+		]) {
+			const result = spawnSync(
+				process.execPath,
+				[join(import.meta.dirname, "media-smoke.mjs"), ...args],
+				{ env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 10_000 },
+			);
+			assert.equal(result.status, 1, args.join(" "));
+			assert.equal(result.stdout, "");
+			assert.deepEqual(result.stderr.trimEnd().split("\n"), [
+				"Offline media validation failed; source, media checks or owned cleanup did not complete.",
+				`Reason: ${reason}`,
+			]);
+		}
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
 
 test("a media run passes only with every fixture's totals, a valid summary, an unchanged source and a finished cleanup", async () => {
 	const names = Object.keys(FIXTURES);

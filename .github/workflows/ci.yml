@@ -151,9 +151,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:gated-runner
       - run: pnpm --filter @bitovp/db build
+      - name: Reuse an earlier build of the same FFmpeg sources
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ffmpeg-build
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Dockerfile', 'docker/vmaf-models.sha256', 'scripts/native-media-tools.sh') }}
       - name: Build the worker image's FFmpeg and install the VMAF models that it pins
         run: |
-          sh scripts/native-media-tools.sh "$RUNNER_TEMP/native-media"
+          sh scripts/native-media-tools.sh --cache "$RUNNER_TEMP/ffmpeg-build" "$RUNNER_TEMP/native-media"
           printf '%s\n' "$RUNNER_TEMP/native-media/bin" >> "$GITHUB_PATH"
           printf 'VMAF_MODEL_DIR=%s\n' "$RUNNER_TEMP/native-media/model" >> "$GITHUB_ENV"
       - name: Run every test that drives real FFmpeg

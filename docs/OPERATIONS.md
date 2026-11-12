@@ -97,6 +97,26 @@ contains. bitovp needs libvmaf, libx264, libdav1d, libass with Fontconfig, SRT
 with encryption, TLS for RTMPS, zlib for PNG image assets and, for GPU
 decoding, NVDEC.
 
+CI compiles FFmpeg only when what it is made from changes.
+`scripts/native-media-tools.sh --cache <directory>` keeps the build of the
+`ffmpeg` stage, with the VMAF models, under a key made from `Dockerfile`,
+`docker/vmaf-models.sha256`, the script itself and the processor
+architecture. GitHub's cache carries that directory from run to run under a
+key of the same three files. A run that finds its key copies the kept build
+instead of compiling, after it has checked every file against the SHA-256
+recorded when the build was kept. A kept build that fails this check stops the
+job and is not built again in its place: delete the `ffmpeg-…` entry from the
+repository's Actions caches to compile once more. Every run, whether it
+compiled or copied, verifies the models against `docker/vmaf-models.sha256`,
+proves that this FFmpeg scores with a pinned model, and prints the SHA-256 of
+`ffmpeg` and `ffprobe`. The two jobs that build the worker image give the same
+directory to the image build, so the image holds the programs that the run has
+just proven: the offline media job with `--build-context ffmpeg=<directory>`,
+the installed GUI job with `additional_contexts` in its Compose override. A
+run that copies a build no longer shows that the pinned sources can still be
+downloaded and compiled. The `FFmpeg from source` workflow shows that every
+week and on request, without the cache.
+
 Building for another processor architecture, for example `--platform
 linux/amd64` on an Apple silicon Mac for a cloud quality worker, compiles
 FFmpeg under emulation. That took 12 to 17 minutes on a 10-core machine.

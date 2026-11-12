@@ -35,8 +35,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:media-runner
       - run: pnpm --filter @bitovp/worker exec vitest run src/testing/media-smoke.test.ts
+      - name: Reuse an earlier build of the same FFmpeg sources
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ffmpeg-build
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Dockerfile', 'docker/vmaf-models.sha256', 'scripts/native-media-tools.sh') }}
+      - name: Build the worker image's FFmpeg and install the VMAF models that it pins
+        run: sh scripts/native-media-tools.sh --cache "$RUNNER_TEMP/ffmpeg-build" "$RUNNER_TEMP/native-media"
       - name: Validate the ten-second asset with the worker image
-        run: pnpm test:media --state-file "$RUNNER_TEMP/bitovp-media-state.json"
+        run: pnpm test:media --ffmpeg "$RUNNER_TEMP/native-media" --state-file "$RUNNER_TEMP/bitovp-media-state.json"
       - name: Remove only this job's owned media resources
         if: always()
         run: node scripts/media-smoke.mjs --cleanup --state-file "$RUNNER_TEMP/bitovp-media-state.json"

@@ -102,13 +102,17 @@ export function reconcileAutomaticAudioPackaging(
 	const keys = audioKeys(state.audios);
 	return state.audios.map((audio, index) => {
 		const key = keys[index];
+		// What the video containers call this track: its key, or the name it had
+		// before another row took the same key. Asked by the key, a track that
+		// waits is carried by nothing, and would be given a container of its own.
+		const name = audio.carriedAs ?? key;
 		const { ownContainer, autoOwnContainer, ...options } = audio.muxing ?? {};
 		const explicitOutput =
 			Object.values(options).some((value) => value !== undefined) ||
 			Boolean(audio.extraMuxings?.length || audio.extras?.hlsMedia) ||
 			state.drm?.some((row) => row.muxingKey === (audio.muxing?.key ?? key));
 		const covered =
-			key !== undefined &&
+			name !== undefined &&
 			state.videos.length > 0 &&
 			state.videos.every((video) =>
 				[video.muxing, ...(video.extraMuxings ?? [])].every(
@@ -116,7 +120,7 @@ export function reconcileAutomaticAudioPackaging(
 						// Absent kind = the fMP4 default, which carries nothing.
 						leg?.kind !== undefined &&
 						muxingKindCarriesAudio(leg.kind) &&
-						leg.muxedAudioKeys?.includes(key),
+						leg.muxedAudioKeys?.includes(name),
 				),
 			);
 		if (autoOwnContainer && (explicitOutput || !covered)) {

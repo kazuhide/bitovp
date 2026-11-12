@@ -1,3 +1,4 @@
+import { muxingKindCarriesAudio } from "@bitovp/core";
 import {
 	audioKeys,
 	audioMuxingRelPath,
@@ -173,21 +174,37 @@ function prepareLadder(
 		outputPaths(state).flatMap(({ path }) => [path, pathRoot(path)]),
 	);
 	const audioLegs = wizardAudioLegs(state);
+	// The names video containers carry audio by. A row that waits for its key is
+	// in there under the name it had (`carriedAs`), which no row's key is.
+	const carriedNames = new Set(
+		state.videos.flatMap((video) =>
+			[video.muxing, ...(video.extraMuxings ?? [])].flatMap((leg) =>
+				leg && muxingKindCarriesAudio(leg.kind ?? "FMP4")
+					? (leg.muxedAudioKeys ?? [])
+					: [],
+			),
+		),
+	);
 	const freeze = <T extends WizardVideoRendition | WizardAudioRendition>(
 		rendition: T,
 		key: string,
 		path: string,
 		isAudio = false,
+		heldInside = false,
 	): T => {
 		const pinLeg = (leg: WizardMuxing | undefined, primary: boolean) => {
 			const muxingKey = leg?.key ?? key;
 			const drmOwned = state.drm?.some((row) => row.muxingKey === muxingKey);
+			// The plan builder asks by key, so it builds a waiting row the container
+			// that was switched off for it. That one is gone when the key is the
+			// row's own again, and is not an output to pin.
 			const emitted =
 				!isAudio ||
-				audioLegs.some(
-					(item) =>
-						item.key === key && item.primary === primary && item.leg === leg,
-				);
+				(!(heldInside && leg?.ownContainer === false) &&
+					audioLegs.some(
+						(item) =>
+							item.key === key && item.primary === primary && item.leg === leg,
+					));
 			reserved.add(muxingKey);
 			// Keep omitted outputs omitted: a path would opt bundled audio back
 			// into standalone delivery or enable clear output beside its DRM.
@@ -224,7 +241,13 @@ function prepareLadder(
 	});
 	const audios = state.audios.map((audio, index) => {
 		const key = aKeys[index] ?? `a${index + 1}`;
-		return freeze(audio, key, audioMuxingRelPath(audio, key), true);
+		return freeze(
+			audio,
+			key,
+			audioMuxingRelPath(audio, key),
+			true,
+			audio.carriedAs !== undefined && carriedNames.has(audio.carriedAs),
+		);
 	});
 	for (const subtitle of state.subtitles ?? []) {
 		if (subtitle.muxing?.key !== undefined) reserved.add(subtitle.muxing.key);

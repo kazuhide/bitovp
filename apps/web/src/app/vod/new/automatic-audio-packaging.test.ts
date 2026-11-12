@@ -15,7 +15,7 @@ import {
 	DEFAULT_WIZARD_STATE,
 	type WizardState,
 } from "./build-plan";
-import { addVodAudio } from "./rendition-copy";
+import { addVodAudio, addVodVideo } from "./rendition-copy";
 
 const initial = (): WizardState => ({
 	...DEFAULT_WIZARD_STATE,
@@ -475,11 +475,151 @@ describe("audio keys carried by a video container", () => {
 		expect(followRenamedAudioKeys(before, after)).toBe(after);
 	});
 
+	describe("a track that every file carries, while it waits for its key", () => {
+		/** An edit as the wizard applies it: the names follow, then the packaging. */
+		const apply = (
+			state: WizardState,
+			change: Partial<WizardState>,
+		): WizardState => {
+			const next = { ...state, ...change };
+			Object.assign(next, followRenamedAudioKeys(state, next));
+			next.audios = reconcileAutomaticAudioPackaging(next);
+			return next;
+		};
+		const bitrate = (state: WizardState, row: number, value: number) =>
+			apply(state, {
+				audios: state.audios.map((audio, index) =>
+					index === row ? { ...audio, bitrate: value } : audio,
+				),
+			});
+		const without = (state: WizardState, row: number) =>
+			apply(state, {
+				audios: state.audios.filter((_audio, index) => index !== row),
+			});
+		const outputs = (state: WizardState) =>
+			buildPlan(state).muxings.map((muxing) => [
+				muxing.kind,
+				muxing.streamKey,
+				...((muxing as { additionalStreamKeys?: string[] })
+					.additionalStreamKeys ?? []),
+			]);
+		const file = (name: string, audio: string[]): WizardState["videos"][0] => ({
+			height: name === "full" ? 1080 : 720,
+			bitrate: 8_000_000,
+			muxing: { kind: "MP4", filename: `${name}.mp4`, muxedAudioKeys: audio },
+		});
+		const tracks = [
+			{ bitrate: 64000, rate: 48000 },
+			{ bitrate: 128000, rate: 48000 },
+		];
+		// One file with the first track inside; the second track is on its own.
+		const start = apply(
+			{
+				...DEFAULT_WIZARD_STATE,
+				videos: [file("full", ["a64"])],
+				audios: tracks,
+			},
+			{},
+		);
+		const held = bitrate(start, 1, 64000);
+		const inside = { ownContainer: false, autoOwnContainer: true };
+
+		it("has no container of its own before, meanwhile and after", () => {
+			expect(start.audios[0]?.muxing).toEqual(inside);
+			expect(waiting(held)).toEqual(["a64", "a128"]);
+			expect(held.audios[0]?.muxing).toEqual(inside);
+			const parted = bitrate(held, 1, 640000);
+			expect(parted.audios[0]?.muxing).toEqual(inside);
+			expect(outputs(parted)).toEqual([
+				["MP4", "v1080", "a64"],
+				["FMP4", "a640"],
+			]);
+		});
+
+		it("is not given one by a row added meanwhile", () => {
+			const added = apply(held, addVodAudio(held));
+			expect(added.audios.map((audio) => audio.muxing)).toEqual([
+				inside,
+				{ path: "audio/64_48000" },
+				{ key: "a1", path: "audio/a1" },
+			]);
+			expect(outputs(without(added, 1))).toEqual([
+				["MP4", "v1080", "a64_48000"],
+				["FMP4", "a1"],
+			]);
+		});
+
+		it("nor by a copy of its file made meanwhile", () => {
+			const copied = apply(held, addVodVideo(held, 0));
+			expect(copied.audios.map((audio) => audio.muxing)).toEqual([
+				inside,
+				{ path: "audio/64_48000" },
+			]);
+			expect(outputs(without(copied, 1))).toEqual([
+				["MP4", "v1080", "a64_48000"],
+				["MP4", "v1080-2", "a64_48000"],
+			]);
+		});
+
+		it("keeps a container of its own, and the folder it has, when one file leaves it out", () => {
+			const partly = apply(
+				{
+					...DEFAULT_WIZARD_STATE,
+					videos: [file("full", ["a64"]), file("proxy", [])],
+					audios: tracks,
+				},
+				{},
+			);
+			expect(partly.audios[0]?.muxing).toBeUndefined();
+			const meanwhile = bitrate(partly, 1, 64000);
+			expect(waiting(meanwhile)).toEqual(["a64", "a128"]);
+			const added = apply(meanwhile, addVodAudio(meanwhile));
+			expect(added.audios[0]?.muxing).toEqual({ path: "audio/64_48000" });
+			expect(outputs(without(added, 1))).toEqual([
+				["MP4", "v1080", "a64_48000"],
+				["MP4", "v720"],
+				["FMP4", "a64_48000"],
+				["FMP4", "a1"],
+			]);
+		});
+
+		it.each([
+			["no file", []],
+			["only a container that cannot hold audio", ["a64"]],
+		])("pins the container that is built anyway when %s carries the track", (_what, named) => {
+			// Switched off by hand, and built all the same: nothing carries it.
+			const lone = apply(
+				{
+					...DEFAULT_WIZARD_STATE,
+					videos: [
+						{
+							height: 1080,
+							bitrate: 8_000_000,
+							muxing: { kind: "FMP4", muxedAudioKeys: named },
+						},
+					],
+					audios: [
+						{ ...tracks[0], muxing: { ownContainer: false } },
+						tracks[1],
+					],
+				} as WizardState,
+				{},
+			);
+			const meanwhile = bitrate(lone, 1, 64000);
+			expect(waiting(meanwhile)).toEqual(["a64", "a128"]);
+			const added = apply(meanwhile, addVodAudio(meanwhile));
+			expect(added.audios[0]?.muxing).toEqual({
+				ownContainer: false,
+				path: "audio/64_48000",
+			});
+		});
+	});
+
 	it("keep every file with the row it carried, through any run of edits", () => {
 		// What a file carries is checked against the row it started with, each
 		// time no two rows have one key. Values are few, so rows often meet.
-		// mulberry32. A multiplier of that size on a plain number passes 2^53 and
-		// loses the low bits, which is where a small modulus looks.
+		// mulberry32, on `Math.imul`. A 31-bit multiplier on a plain number
+		// passes 2^53 and loses the low bits, which is where a small modulus looks.
 		let seed = 20261112;
 		const pick = <T>(from: readonly T[]): T => {
 			seed = (seed + 0x6d2b79f5) | 0;

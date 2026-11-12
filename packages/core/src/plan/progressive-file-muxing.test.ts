@@ -522,8 +522,7 @@ describe("never a manifest leg", () => {
 				{
 					code: "PLAN_HLS_AUDIO_UNSELECTED",
 					level: "error",
-					message:
-						'manifest "hls" lists no audio although the plan has audio renditions: no variant carries an audio track and no audio media entry exists — it would play silent. Give the audio a container the playlist can list (fMP4 by default), or mux it into the variants',
+					message: `manifest "hls" lists no audio although the plan has audio renditions: no variant carries an audio track and no audio media entry exists — it would play silent. No audio rendition has a container of its own that the manifest could list. A playlist gets its audio from an audio rendition's own container of a kind an HLS playlist lists (fMP4 by default), or from an audio track in every variant it lists`,
 					path: "manifests[0]",
 				},
 			]);
@@ -547,34 +546,112 @@ describe("never a manifest leg", () => {
 		).toEqual([]);
 	});
 
-	it("says what to do about the cause: a container, a pin, or the one encoding a default manifest lists", () => {
-		const advice = (plan: ReturnType<typeof planWith>) =>
+	it("says why, and where a playlist gets its audio: a pin, no container of its own, or the one encoding a default manifest lists", () => {
+		const reason = (plan: ReturnType<typeof planWith>) =>
 			validatePlan(plan)
 				.filter((issue) => issue.code === "PLAN_HLS_AUDIO_UNSELECTED")
 				.map((issue) => issue.message.split("it would play silent. ")[1]);
-		const hls = manifests[0];
-		// The audio has its fMP4 container, and the manifest lists TS audio only:
-		// another container would change nothing.
+		const hls = { ...manifests[0] };
+		const pinned = (kind: string) =>
+			`A playlist gets its audio from an audio rendition's own container in ${kind}, the kind its audioMuxingKind names, or from an audio track in every variant it lists`;
+		// The audio has its fMP4 container, and the manifest lists TS audio only.
 		expect(
-			advice(
+			reason(
 				planWith({
 					muxings: streaming,
 					manifests: [{ ...hls, audioMuxingKind: "TS" }],
 				}),
 			),
 		).toEqual([
-			"Its audioMuxingKind (TS) leaves out every container the audio has: pin the kind the audio is in, add an audio track in TS, or mux the audio into the variants",
+			`Its audioMuxingKind (TS) leaves out every container the audio renditions have (FMP4). ${pinned("TS")}`,
 		]);
-		// The same pin where the audio has no container a playlist lists at all.
+		// Each kind the audio has is named once.
+		const audioTs = {
+			...tsLeg,
+			key: "ats",
+			streamKey: "a",
+			additionalStreamKeys: undefined,
+			destination: { outputKey: "out", path: "x/audio-ts" },
+		};
 		expect(
-			advice(
+			reason(
+				planWith({
+					muxings: [...streaming, fmp4("amux2", "a", "x/audio-2"), audioTs],
+					manifests: [{ ...hls, audioMuxingKind: "MP4" }],
+				}),
+			),
+		).toEqual([
+			`Its audioMuxingKind (MP4) leaves out every container the audio renditions have (FMP4, TS). ${pinned("MP4")}`,
+		]);
+		// A kind no HLS pin can name is named all the same, and no step is told:
+		// which change answers it depends on the codec, and its own rule says so.
+		const audioLeg = fmp4("amux", "a", "x/audio");
+		expect(
+			reason(
+				planWith({
+					muxings: [
+						fmp4("vmux", "v", "x/video"),
+						{ ...audioLeg, kind: "CMAF" },
+					],
+					manifests: [{ ...hls, audioMuxingKind: "FMP4" }],
+				}),
+			),
+		).toEqual([
+			`Its audioMuxingKind (FMP4) leaves out every container the audio renditions have (CMAF). ${pinned("FMP4")}`,
+		]);
+		expect(
+			reason(
+				planWith({
+					renditions: [H264, { ...AAC, codec: "OPUS", bitrate: 96000 }],
+					muxings: [
+						fmp4("vmux", "v", "x/video"),
+						{
+							...audioLeg,
+							kind: "WEBM",
+							segmentNaming: "seg_%number%.chk",
+							initSegmentName: "init.hdr",
+						},
+					],
+					manifests: [{ ...hls, audioMuxingKind: "FMP4" }],
+				}),
+			),
+		).toEqual([
+			`Its audioMuxingKind (FMP4) leaves out every container the audio renditions have (WEBM). ${pinned("FMP4")}`,
+		]);
+		// The same pin where the audio is inside a file and has no container of
+		// its own: the kind to give it is the pinned one, not the default.
+		expect(
+			reason(
 				planWith({
 					muxings: [fmp4("vmux", "v", "x/video"), file("PROGRESSIVE_TS")],
 					manifests: [{ ...hls, audioMuxingKind: "TS" }],
 				}),
 			),
 		).toEqual([
-			"Give the audio a container the playlist can list (fMP4 by default), or mux it into the variants",
+			`No audio rendition has a container of its own that the manifest could list. ${pinned("TS")}`,
+		]);
+		// A file that holds the audio alone is a container of its own, and still
+		// none a manifest could list: no pin would include it.
+		expect(
+			reason(
+				planWith({
+					muxings: [fmp4("vmux", "v", "x/video"), audioFile("PROGRESSIVE_TS")],
+					manifests: [{ ...hls, audioMuxingKind: "TS" }],
+				}),
+			),
+		).toEqual([
+			`No audio rendition has a container of its own that the manifest could list. ${pinned("TS")}`,
+		]);
+		// No pin: the default kind is named.
+		expect(
+			reason(
+				planWith({
+					muxings: [fmp4("vmux", "v", "x/video"), file("PROGRESSIVE_TS")],
+					manifests: [hls],
+				}),
+			),
+		).toEqual([
+			"No audio rendition has a container of its own that the manifest could list. A playlist gets its audio from an audio rendition's own container of a kind an HLS playlist lists (fMP4 by default), or from an audio track in every variant it lists",
 		]);
 		// A default manifest lists the encoding of the first rendition; the audio
 		// is in the other one, with a container of its own.
@@ -592,7 +669,7 @@ describe("never a manifest leg", () => {
 				{ ...AAC, encodingKey: "two" },
 			],
 		});
-		expect(advice(split)).toEqual([
+		expect(reason(split)).toEqual([
 			"A default manifest is generated for one encoding, that of the plan's first rendition, and it has no audio rendition: put the audio in that encoding, or generate the manifest manually",
 		]);
 	});

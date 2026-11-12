@@ -2005,20 +2005,32 @@ export function validatePlan(
 				carrying.length === 0 &&
 				hlsAudioMediaCount === 0
 			) {
-				// What to do depends on why. A pin that leaves the audio out is
-				// not answered by another container, and a default manifest only
-				// ever lists one encoding.
-				const pinnedOut =
-					manifest.audioMuxingKind !== undefined &&
-					hlsLegs.some((m) => {
-						const primary = renditionByKey.get(m.streamKey);
-						return primary !== undefined && AUDIO_CODECS.has(primary.codec);
-					});
-				const advice = pinnedOut
-					? `Its audioMuxingKind (${manifest.audioMuxingKind}) leaves out every container the audio has: pin the kind the audio is in, add an audio track in ${manifest.audioMuxingKind}, or mux the audio into the variants`
-					: hlsRenditions.some((r) => AUDIO_CODECS.has(r.codec))
-						? "Give the audio a container the playlist can list (fMP4 by default), or mux it into the variants"
-						: "A default manifest is generated for one encoding, that of the plan's first rendition, and it has no audio rendition: put the audio in that encoding, or generate the manifest manually";
+				// Say why, and the two places a playlist gets audio from. Which
+				// change answers it depends on the codecs at hand, and their own
+				// rules speak when one is tried: steps named here were ones the
+				// schema or another rule refuses (an Opus track, a CMAF pin).
+				const pin = manifest.audioMuxingKind;
+				const ownKinds = [
+					...new Set(
+						hlsLegs
+							.filter((m) => {
+								const primary = renditionByKey.get(m.streamKey);
+								return primary !== undefined && AUDIO_CODECS.has(primary.codec);
+							})
+							.map((m) => m.kind),
+					),
+				];
+				const listed =
+					pin === undefined
+						? "of a kind an HLS playlist lists (fMP4 by default)"
+						: `in ${pin}, the kind its audioMuxingKind names`;
+				const advice = !hlsRenditions.some((r) => AUDIO_CODECS.has(r.codec))
+					? "A default manifest is generated for one encoding, that of the plan's first rendition, and it has no audio rendition: put the audio in that encoding, or generate the manifest manually"
+					: `${
+							pin !== undefined && ownKinds.length > 0
+								? `Its audioMuxingKind (${pin}) leaves out every container the audio renditions have (${ownKinds.join(", ")})`
+								: "No audio rendition has a container of its own that the manifest could list"
+						}. A playlist gets its audio from an audio rendition's own container ${listed}, or from an audio track in every variant it lists`;
 				issues.push({
 					code: "PLAN_HLS_AUDIO_UNSELECTED",
 					level: options.demoteFileOutputRails ? "warning" : "error",

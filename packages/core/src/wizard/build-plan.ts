@@ -2151,8 +2151,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 			// DRM row names this muxing; the validator then refuses that row
 			// (PLAN_DRM_MUXING_MISMATCH) instead of the plan failing to parse on
 			// a missing destination, which would say nothing about the cause.
-			const fileDestination =
-				dest ?? destination(`${base}${derived}`, m.acl);
+			const fileDestination = dest ?? destination(`${base}${derived}`, m.acl);
 			const additionalStreamKeys =
 				muxedIn && muxedIn.length > 0 ? [...muxedIn] : undefined;
 			if (kind === "PROGRESSIVE_TS") {

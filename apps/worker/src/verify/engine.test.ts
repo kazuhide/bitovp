@@ -1989,3 +1989,128 @@ describe("DASH IMSC representation verification through the real MPD parser", ()
 		);
 	});
 });
+
+/**
+ * PROGRESSIVE_TS / PROGRESSIVE_MOV: one named file holding the video and the audio muxed
+ * into it, on no manifest.
+ *
+ * The world is a bucket of keys, so this proves how the engine FINDS and SIZES the file and
+ * which checks it then owes — not that Bitmovin writes such a file. No live encode of either
+ * kind has been verified by this engine.
+ */
+describe("whole-file progressive TS and MOV delivery", () => {
+	const FILE_KINDS = ["PROGRESSIVE_TS", "PROGRESSIVE_MOV"] as const;
+	type FileKind = (typeof FILE_KINDS)[number];
+	const filenameOf = (kind: FileKind) =>
+		kind === "PROGRESSIVE_TS" ? "movie.ts" : "movie.mov";
+	const FILE_PROBE: MediaProbe = {
+		height: 360,
+		videoCodec: "h264",
+		fps: 24,
+		bitrateBps: 600_000,
+		audioCodec: "aac",
+		audioSampleRate: 48_000,
+	};
+	/** A plan whose ONLY output is the file, and a bucket holding exactly `objects`. */
+	function fileWorld(kind: FileKind, objects: string[], path = "out/files/") {
+		const artefacts = compileExpectedArtefacts(
+			encodingPlanSchema.parse({
+				...BASE_PLAN,
+				manifests: [],
+				muxings: [
+					{
+						key: "file",
+						kind,
+						streamKey: "v360",
+						additionalStreamKeys: ["a128"],
+						filename: filenameOf(kind),
+						destination: { outputKey: "origin", path },
+					},
+				],
+			}),
+		);
+		const world: World = {
+			objects,
+			probes: Object.fromEntries(objects.map((key) => [key, FILE_PROBE])),
+			texts: {},
+		};
+		return { artefacts, world };
+	}
+
+	it.each(
+		FILE_KINDS,
+	)("%s: finds the one file, sizes it, and probes both tracks out of it", async (kind) => {
+		const { artefacts, world } = fileWorld(kind, [
+			`out/files/${filenameOf(kind)}`,
+		]);
+		const report = await verifyArtefacts(artefacts, depsFor(world));
+		expect(failedIds(report)).toEqual([]);
+		for (const id of [
+			"muxing:file:file",
+			"muxing:file:file-bytes",
+			"rendition:v360:height",
+			"rendition:v360:codec",
+			"rendition:v360:audio-present",
+			"rendition:v360:audio-codec",
+		]) {
+			expect(verdictOf(report, id), id).toBe("PASS");
+		}
+	});
+
+	it.each(
+		FILE_KINDS,
+	)("%s: a zero-byte object fails file-bytes by name", async (kind) => {
+		const key = `out/files/${filenameOf(kind)}`;
+		const { artefacts, world } = fileWorld(kind, [key]);
+		world.sizes = { [key]: 0 };
+		const report = await verifyArtefacts(artefacts, depsFor(world));
+		expect(verdictOf(report, "muxing:file:file")).toBe("PASS");
+		expect(verdictOf(report, "muxing:file:file-bytes")).toBe("FAIL");
+	});
+
+	it("an object whose name merely ENDS with the planned name is not the file", async () => {
+		// The progressive MP4 arm matches on `endsWith`, which would take this
+		// for `movie.ts` and probe a different object as though it were the file.
+		const { artefacts, world } = fileWorld("PROGRESSIVE_TS", [
+			"out/files/seg_movie.ts",
+		]);
+		const report = await verifyArtefacts(artefacts, depsFor(world));
+		expect(verdictOf(report, "muxing:file:file")).toBe("FAIL");
+		expect(verdictOf(report, "rendition:v360:height")).toBeUndefined();
+	});
+
+	it("finds the file under a destination that carries a placeholder", async () => {
+		// `dir.prefix` stops at the first token, so the progressive WebM arm's
+		// exact `prefix + name` would report this file absent.
+		const { artefacts, world } = fileWorld(
+			"PROGRESSIVE_MOV",
+			["out/files-0f8fad5b/movie.mov"],
+			"out/files-{uuid}/",
+		);
+		const report = await verifyArtefacts(artefacts, depsFor(world));
+		expect(verdictOf(report, "muxing:file:file")).toBe("PASS");
+		expect(failedIds(report)).toEqual([]);
+	});
+
+	it("reports the wrong video codec inside the file", async () => {
+		const key = "out/files/movie.ts";
+		const { artefacts, world } = fileWorld("PROGRESSIVE_TS", [key]);
+		world.probes[key] = { ...FILE_PROBE, videoCodec: "hevc" };
+		const report = await verifyArtefacts(artefacts, depsFor(world));
+		expect(verdictOf(report, "rendition:v360:codec")).toBe("FAIL");
+	});
+
+	it("reports a file delivered without the audio the plan muxed into it", async () => {
+		const key = "out/files/movie.ts";
+		const { artefacts, world } = fileWorld("PROGRESSIVE_TS", [key]);
+		world.probes[key] = {
+			height: 360,
+			videoCodec: "h264",
+			fps: 24,
+			bitrateBps: 600_000,
+		};
+		const report = await verifyArtefacts(artefacts, depsFor(world));
+		expect(verdictOf(report, "muxing:file:file")).toBe("PASS");
+		expect(verdictOf(report, "rendition:v360:audio-present")).toBe("FAIL");
+	});
+});

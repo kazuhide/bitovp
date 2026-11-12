@@ -4840,10 +4840,10 @@ export const ja = {
 		defaultOutputMov: "既定 output.mov",
 		defaultOutputTs: "既定 output.ts",
 		encoderDefaultWhenEmpty:
-			"任意です。空欄の場合はエンコーダーの既定値を使います。",
+			"任意です。空欄の場合はエンコーダの既定値を使います。",
 		startOffsetS: "開始オフセット (秒)",
 		startOffsetHint:
-			"MPEG-TS のタイムスタンプを、指定した秒数(整数)だけずらします。空欄の場合はエンコーダーの既定値を使います。",
+			"MPEG-TS のタイムスタンプを、指定した秒数(整数)だけずらします。空欄の場合はエンコーダの既定値を使います。",
 		defaultSegNumberChk: "既定 seg_%number%.chk",
 		defaultSegNumberTs: "既定 seg_%number%.ts",
 		addDeliveryMirror: "配信先を追加",

@@ -1205,8 +1205,9 @@ export const webmMuxingSchema = z.strictObject({
  *
  * `destination` is REQUIRED, unlike `TS`/`MP4`: those may omit it because a
  * DRM resource can own the encrypted output, and this app builds no DRM path
- * for a progressive file. No manifest references this kind either — every
- * leg selector reads a closed list of kinds, and this one is in none of them.
+ * for a progressive file. No manifest references this kind either:
+ * `isFileOnlyMuxingKind` (muxing-streams.ts) keeps it out of every leg
+ * selection, including the open ones an unpinned HLS manifest makes.
  *
  * `segmentLength` and `startOffset` are the SDK model's two optional fields
  * (ProgressiveTsMuxing.d.ts). Neither has a default here: an absent field is

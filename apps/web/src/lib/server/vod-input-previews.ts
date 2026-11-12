@@ -90,6 +90,19 @@ async function sourcesForRow(ctx: ServerContext, row: TaskRow) {
 	return sourceRequest.sources;
 }
 
+function requireCurrentProbeGeometry(probe: TaskRow) {
+	const parsed = vodInputPreviewResultSchema.safeParse(probe.result);
+	const facts = parsed.success ? parsed.data.sources : undefined;
+	if (
+		probe.kind !== "PROBE" ||
+		probe.status !== "SUCCEEDED" ||
+		!facts?.length ||
+		facts.some((source) => !source.video.displayAspectRatio)
+	) {
+		throw new VodInputPreviewError(409, "SOURCE_PROBE_NOT_READY");
+	}
+}
+
 async function requireCredentials(
 	ctx: ServerContext,
 	sources: { credentialId: string }[],
@@ -107,6 +120,9 @@ export async function getVodInputPreviewTaskRow(id: string) {
 	const ctx = await previewContext();
 	const row = await ownedRow(ctx, id);
 	await requireCredentials(ctx, await sourcesForRow(ctx, row));
+	const request = vodInputPreviewRequestSchema.parse(row.request);
+	if (request.kind === "PREVIEW")
+		requireCurrentProbeGeometry(await ownedRow(ctx, request.probeId));
 	return row;
 }
 export async function getVodInputPreviewTask(id: string) {
@@ -132,6 +148,9 @@ export async function createVodInputPreviewTask(
 			result.sources ?? [],
 		);
 		if (issues[0]) throw new VodInputPreviewError(422, issues[0].code);
+		// Old cached previews may have lost anamorphic/rotation geometry.
+		// Re-probe before cache lookup as well as before serving their content.
+		requireCurrentProbeGeometry(probe);
 		if (input.range.startMs >= getVodInputTimelineDurationMs(input.document))
 			throw new VodInputPreviewError(422, "PREVIEW_RANGE_INVALID");
 		await requireCredentials(ctx, await sourcesForRow(ctx, probe));

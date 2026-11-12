@@ -1,7 +1,7 @@
 /** Explicit local-media gate; no provider, GPU or model service is contacted. */
 import assert from "node:assert/strict";
 import { createReadStream } from "node:fs";
-import { mkdtemp, readFile, rm, stat, truncate } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, truncate } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -264,6 +264,250 @@ test("real CPU FFmpeg previews A latter → B first → A first over pinned spar
 			}),
 			{ code: "SOURCE_CHANGED" },
 		);
+
+		// 720x576 coded pixels with SAR16:15 display as 4:3, not coded 5:4.
+		const anamorphicPath = join(directory, "anamorphic.mp4");
+		const rotatedPath = join(directory, "rotated.mp4");
+		await runMediaProcess("ffmpeg", [
+			"-v",
+			"error",
+			"-nostdin",
+			"-cpucount",
+			"1",
+			"-filter_threads",
+			"1",
+			"-f",
+			"lavfi",
+			"-i",
+			"color=yellow:s=720x576:r=30:d=1,drawbox=x=iw/2:y=0:w=iw/2:h=ih:color=cyan:t=fill",
+			"-vf",
+			"setsar=16/15",
+			"-c:v",
+			"libx264",
+			"-threads",
+			"1",
+			"-pix_fmt",
+			"yuv420p",
+			"-movflags",
+			"+faststart",
+			anamorphicPath,
+		]);
+		await runMediaProcess("ffmpeg", [
+			"-v",
+			"error",
+			"-nostdin",
+			"-display_rotation",
+			"90",
+			"-i",
+			anamorphicPath,
+			"-c",
+			"copy",
+			"-movflags",
+			"+faststart",
+			rotatedPath,
+		]);
+		const rawAnamorphic = JSON.parse(
+			(
+				await runMediaProcess("ffprobe", [
+					"-v",
+					"error",
+					"-show_streams",
+					"-of",
+					"json",
+					anamorphicPath,
+				])
+			).stdout,
+		).streams[0];
+		assert.equal(rawAnamorphic.sample_aspect_ratio, "16:15");
+		assert.equal(rawAnamorphic.display_aspect_ratio, "4:3");
+		for (const [key, path, width, height] of [
+			["anamorphic", anamorphicPath, 480, 360],
+			["rotated", rotatedPath, 270, 360],
+		] as const) {
+			const reference = join(directory, `${key}-reference.rgb`);
+			await runMediaProcess("ffmpeg", [
+				"-v",
+				"error",
+				"-nostdin",
+				"-i",
+				path,
+				"-frames:v",
+				"1",
+				"-vf",
+				"scale=2:2:flags=neighbor",
+				"-f",
+				"rawvideo",
+				"-pix_fmt",
+				"rgb24",
+				reference,
+			]);
+			await truncate(path, 64 * 1024 ** 2);
+			paths.set(`${key}.mp4`, path);
+			const source: VodInputTimelineSource = {
+				...firstSource,
+				key,
+				objectKey: `${key}.mp4`,
+			};
+			const measured = await probeVodInputSources({
+				sources: [source],
+				browserFor,
+				signal,
+			});
+			const outputDirectory = join(directory, `output-${key}`);
+			await mkdir(outputDirectory);
+			const rendered = await renderVodInputPreview({
+				browserFor,
+				signal,
+				sources: [source],
+				facts: measured,
+				directory: outputDirectory,
+				request: {
+					kind: "PREVIEW",
+					probeId: "00000000-0000-4000-8000-000000000002",
+					document: {
+						schemaVersion: 1,
+						id: "00000000-0000-4000-8000-000000000003",
+						audioEnabled: false,
+						clips: [
+							{
+								id: "00000000-0000-4000-8000-000000000004",
+								sourceKey: key,
+								inMs: 0,
+								outMs: 1000,
+							},
+						],
+					},
+					range: { startMs: 0, durationMs: 1000 },
+				},
+			});
+			const output = JSON.parse(
+				(
+					await runMediaProcess("ffprobe", [
+						"-v",
+						"error",
+						"-show_streams",
+						"-of",
+						"json",
+						rendered.path,
+					])
+				).stdout,
+			).streams[0];
+			console.log(
+				`display-aspect fixture ${key}: ${output.width}x${output.height} SAR=${output.sample_aspect_ratio} DAR=${output.display_aspect_ratio}`,
+			);
+			assert.equal(output.width, width);
+			assert.equal(output.height, height);
+			assert.equal(output.sample_aspect_ratio, "1:1");
+			assert.ok(
+				!output.side_data_list?.some(
+					(side: { rotation?: number }) => side.rotation,
+				),
+				"output must not request a second display rotation",
+			);
+			const actual = join(directory, `${key}-actual.rgb`);
+			await runMediaProcess("ffmpeg", [
+				"-v",
+				"error",
+				"-nostdin",
+				"-i",
+				rendered.path,
+				"-frames:v",
+				"1",
+				"-vf",
+				"scale=2:2:flags=neighbor",
+				"-f",
+				"rawvideo",
+				"-pix_fmt",
+				"rgb24",
+				actual,
+			]);
+			const expectedPixels = await readFile(reference),
+				actualPixels = await readFile(actual);
+			assert.equal(actualPixels.length, expectedPixels.length);
+			assert.ok(
+				Array.from(actualPixels).every(
+					(channel, i) => Math.abs(channel - expectedPixels.readUInt8(i)) < 12,
+				),
+				`${key} preserves displayed orientation`,
+			);
+			const edge = join(directory, `${key}-edge.rgb`);
+			await runMediaProcess("ffmpeg", [
+				"-v",
+				"error",
+				"-nostdin",
+				"-i",
+				rendered.path,
+				"-frames:v",
+				"1",
+				"-vf",
+				"crop=2:2:4:4,scale=1:1",
+				"-f",
+				"rawvideo",
+				"-pix_fmt",
+				"rgb24",
+				edge,
+			]);
+			assert.ok(
+				Array.from(await readFile(edge)).some((channel) => channel > 100),
+				`${key} has no false padding caused by discarded SAR`,
+			);
+			if (key === "anamorphic") {
+				const nextSource = sources[1],
+					mainFacts = measured[0],
+					nextFacts = facts[1];
+				assert.ok(nextSource && mainFacts && nextFacts);
+				const windowDirectory = join(directory, "window-after-anamorphic-main");
+				await mkdir(windowDirectory);
+				const window = await renderVodInputPreview({
+					browserFor,
+					signal,
+					sources: [source, nextSource],
+					facts: [mainFacts, nextFacts],
+					directory: windowDirectory,
+					request: {
+						kind: "PREVIEW",
+						probeId: "00000000-0000-4000-8000-000000000002",
+						document: {
+							schemaVersion: 1,
+							id: "00000000-0000-4000-8000-000000000003",
+							audioEnabled: false,
+							clips: [
+								{
+									id: "00000000-0000-4000-8000-000000000004",
+									sourceKey: key,
+									inMs: 0,
+									outMs: 1000,
+								},
+								{
+									id: "00000000-0000-4000-8000-000000000005",
+									sourceKey: nextSource.key,
+									inMs: 0,
+									outMs: 1000,
+								},
+							],
+						},
+						range: { startMs: 1000, durationMs: 1000 },
+					},
+				});
+				const windowVideo = JSON.parse(
+					(
+						await runMediaProcess("ffprobe", [
+							"-v",
+							"error",
+							"-show_streams",
+							"-of",
+							"json",
+							window.path,
+						])
+					).stdout,
+				).streams[0];
+				assert.equal(windowVideo.width, 480);
+				assert.equal(windowVideo.height, 360);
+				console.log(
+					"display-aspect fixture later preview window retained original anamorphic main: 480x360",
+				);
+			}
+		}
 	} finally {
 		await rm(directory, { recursive: true, force: true });
 	}

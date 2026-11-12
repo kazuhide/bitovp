@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { cipherFromEnv } from "@bitovp/core";
-import type { VodInputPreviewRequest } from "@bitovp/core/vod-input-timeline";
+import {
+	type VodInputPreviewRequest,
+	vodInputPreviewResultSchema,
+} from "@bitovp/core/vod-input-timeline";
 import {
 	type AppPrismaClient,
 	createBitmovinAccountStore,
@@ -129,7 +132,12 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			const facts = {
 				key: "source",
 				durationMs: 5000,
-				video: { streamIndex: 0, width: 1920, height: 1080 },
+				video: {
+					streamIndex: 0,
+					width: 1920,
+					height: 1080,
+					displayAspectRatio: { num: 16, den: 9 },
+				},
 				audio: { streamIndex: 1, sampleRate: 48000, channels: 2 },
 				identity: { size: 1024, etag: '"fixture-v1"' },
 			};
@@ -324,6 +332,30 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			expect(changed.id).not.toBe(first.id);
 			expect(changed.status).toBe("PENDING");
 			expect(queue.add).toHaveBeenCalledTimes(1);
+			const result = vodInputPreviewResultSchema.parse(f.probe.result);
+			await a.vodInputPreviewTask.update({
+				where: { id: f.probe.id },
+				data: {
+					result: {
+						sources: (result.sources ?? []).map(({ video, ...source }) => ({
+							...source,
+							video: {
+								streamIndex: video.streamIndex,
+								width: video.width,
+								height: video.height,
+							},
+						})),
+					},
+				},
+			});
+			await expect(createVodInputPreviewTask(f.preview)).rejects.toMatchObject({
+				status: 409,
+				code: "SOURCE_PROBE_NOT_READY",
+			});
+			await expect(getVodInputPreviewTask(first.id)).rejects.toMatchObject({
+				status: 409,
+				code: "SOURCE_PROBE_NOT_READY",
+			});
 		});
 
 		it("never advertises a preview lifetime beyond its source probe", async () => {

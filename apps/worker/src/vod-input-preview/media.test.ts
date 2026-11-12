@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	inspectVodInputProbe,
+	renderVodInputPreview,
 	vodInputPreviewCanvas,
 	vodInputPreviewReadArgs,
 } from "./media";
@@ -30,6 +31,7 @@ describe("CPU input timeline metadata admission", () => {
 				streamIndex: 2,
 				width: 1920,
 				height: 1080,
+				displayAspectRatio: { num: 16, den: 9 },
 				frameRate: { num: 30000, den: 1001 },
 			},
 			audio: { streamIndex: 3, sampleRate: 48000, channels: 2 },
@@ -75,5 +77,96 @@ describe("CPU input timeline metadata admission", () => {
 			vodInputPreviewReadArgs("https://customer/source.mp4"),
 		).toThrow();
 		expect(() => vodInputPreviewReadArgs("file:///etc/passwd")).toThrow();
+	});
+	it("retains anamorphic display aspect and applies ordinary display rotation", () => {
+		const sample = probe();
+		Object.assign(sample.streams[0] ?? {}, {
+			width: 720,
+			height: 576,
+			sample_aspect_ratio: "16:15",
+		});
+		const anamorphic = inspectVodInputProbe("source", sample, identity);
+		expect(anamorphic.video.displayAspectRatio).toEqual({ num: 4, den: 3 });
+		expect(
+			vodInputPreviewCanvas(720, 576, anamorphic.video.displayAspectRatio),
+		).toEqual({ width: 480, height: 360 });
+		Object.assign(sample.streams[0] ?? {}, {
+			side_data_list: [{ side_data_type: "Display Matrix", rotation: 90 }],
+		});
+		const rotated = inspectVodInputProbe("source", sample, identity);
+		expect(rotated.video.displayAspectRatio).toEqual({ num: 3, den: 4 });
+		expect(
+			vodInputPreviewCanvas(720, 576, rotated.video.displayAspectRatio),
+		).toEqual({ width: 270, height: 360 });
+	});
+	it("refuses invalid SAR and unsupported or conflicting display transforms", () => {
+		for (const patch of [
+			{ sample_aspect_ratio: "1:0" },
+			{ sample_aspect_ratio: "NaN:1" },
+			{ sample_aspect_ratio: "0:1" },
+			{ side_data_list: [{ side_data_type: "Display Matrix", rotation: 45 }] },
+			{ side_data_list: [{ side_data_type: "Display Matrix" }] },
+			{
+				tags: { rotate: "90" },
+				side_data_list: [{ side_data_type: "Display Matrix", rotation: 0 }],
+			},
+			{ tags: { rotate: "90" } },
+			{
+				side_data_list: [
+					{
+						side_data_type: "Display Matrix",
+						rotation: 0,
+						displaymatrix:
+							"00000000: 65536 65536 0\n00000001: 0 65536 0\n00000002: 0 0 1073741824",
+					},
+				],
+			},
+		]) {
+			const sample = probe();
+			Object.assign(sample.streams[0] ?? {}, patch);
+			expect(() => inspectVodInputProbe("source", sample, identity)).toThrow(
+				expect.objectContaining({ code: "SOURCE_UNSUPPORTED" }),
+			);
+		}
+	});
+	it("requires a fresh probe before replaying legacy facts with no display geometry", async () => {
+		const measured = inspectVodInputProbe("source", probe(), identity);
+		delete measured.video.displayAspectRatio;
+		const browserFor = vi.fn();
+		await expect(
+			renderVodInputPreview({
+				directory: "/tmp/bitovp-aspect-legacy-unit",
+				browserFor,
+				signal: new AbortController().signal,
+				sources: [
+					{
+						key: "source",
+						credentialId: "00000000-0000-4000-8000-000000000001",
+						bucket: "media",
+						objectKey: "source.mp4",
+					},
+				],
+				facts: [measured],
+				request: {
+					kind: "PREVIEW",
+					probeId: "00000000-0000-4000-8000-000000000002",
+					document: {
+						schemaVersion: 1,
+						id: "00000000-0000-4000-8000-000000000003",
+						audioEnabled: false,
+						clips: [
+							{
+								id: "00000000-0000-4000-8000-000000000004",
+								sourceKey: "source",
+								inMs: 0,
+								outMs: 1000,
+							},
+						],
+					},
+					range: { startMs: 0, durationMs: 1000 },
+				},
+			}),
+		).rejects.toMatchObject({ code: "PROBE_UNAVAILABLE" });
+		expect(browserFor).not.toHaveBeenCalled();
 	});
 });

@@ -131,29 +131,59 @@ async function editingInteractions(page, editor) {
 	await mediaReady(editor, 9);
 }
 
-async function playbackInteractions(editor) {
-	const video = await mediaReady(editor, 9);
-	const position = editor.getByRole("slider", { name: content.position, exact: true });
-	await position.press("Home");
-	await editor.getByRole("button", { name: content.play, exact: true }).click();
-	await expect.poll(() => video.evaluate((element) => element.currentTime), { timeout: 15_000 }).toBeGreaterThan(0.2);
-	const second = editor.getByRole("button", { name: "クリップ 2, b.mp4", exact: true });
-	await second.click();
-	await expect.poll(() => video.evaluate((element) => element.currentTime), { timeout: 3000 }).toBeGreaterThan(3);
-	assert.equal(await video.evaluate((element) => element.paused), false, "Timeline seeking stopped playback");
-	await editor.getByRole("button", { name: content.play, exact: true }).click();
-	await editor.getByRole("button", { name: "a.mp4をプレビュー", exact: true }).click();
-	const source = await mediaReady(editor, 8);
-	await editor.getByRole("button", { name: content.play, exact: true }).click();
-	const seek = editor.getByRole("slider", { name: "素材の再生位置", exact: true });
-	const bounds = await seek.boundingBox();
-	assert.ok(bounds);
-	await seek.click({ position: { x: bounds.width * 0.65, y: bounds.height / 2 } });
-	await expect.poll(() => source.evaluate((element) => element.currentTime), { timeout: 3000 }).toBeGreaterThan(4.5);
-	assert.equal(await source.evaluate((element) => element.paused), false, "Source seeking stopped playback");
-	await editor.getByRole("button", { name: content.play, exact: true }).click();
-	await editor.getByRole("button", { name: "シーケンス", exact: true }).click();
-	await mediaReady(editor, 9);
+
+async function mediaState(video) {
+ return video.evaluate(element => ({
+  currentTime: element.currentTime, duration: element.duration,
+  readyState: element.readyState, networkState: element.networkState,
+  paused: element.paused, seeking: element.seeking,
+  decodedFrames: element.getVideoPlaybackQuality().totalVideoFrames,
+  buffered: Array.from({length: element.buffered.length}, (_, index) => [element.buffered.start(index), element.buffered.end(index)]),
+ }));
+}
+
+async function playDecodedFrames(editor, video) {
+ const before = await mediaState(video);
+ await editor.getByRole("button", {name: content.play, exact: true}).click();
+ await expect.poll(() => video.evaluate((element, frames) =>
+  !element.paused && element.readyState >= 3 &&
+  element.currentTime > 0.3 && element.getVideoPlaybackQuality().totalVideoFrames >= frames + 3,
+ before.decodedFrames), {timeout: 5000}).toBe(true);
+ return {before, playing: await mediaState(video)};
+}
+
+async function assertActiveSeek(video, position, fraction, expectedSeconds) {
+ const bounds = await position.boundingBox(); assert.ok(bounds);
+ const before = await mediaState(video);
+ const started = Date.now();
+ await position.click({position: {x: bounds.width * fraction, y: bounds.height / 2}});
+ const requestedSeconds = Number(await position.inputValue()) / 1000;
+ assert.ok(Math.abs(requestedSeconds - expectedSeconds) < 0.3, "Ruler requested the wrong target");
+ await expect.poll(() => video.evaluate((element, target) =>
+  Math.abs(element.currentTime - target) < 0.25 && !element.seeking && !element.paused,
+ requestedSeconds), {timeout: 1000, intervals: [25, 50, 100]}).toBe(true);
+ const elapsedMs = Date.now() - started;
+ assert.ok(elapsedMs < 1000, "Active seek exceeded one second");
+ return {requestedSeconds, elapsedMs, before, after: await mediaState(video)};
+}
+
+async function playbackInteractions(editor, report) {
+ const video = await mediaReady(editor, 9);
+ const position = editor.getByRole("slider", {name: content.position, exact: true});
+ await position.press("Home");
+ report.playback.push({mode: "sequence", ...await playDecodedFrames(editor, video)});
+ const before = await mediaState(video);
+ assert.ok(before.currentTime < 2, "Begin the ruler seek near the sequence start");
+ report.activeSeeks.push({mode: "sequence", ...await assertActiveSeek(video, position, 7000 / 8999, 7)});
+ await editor.getByRole("button", {name: content.play, exact: true}).click();
+ await editor.getByRole("button", {name: "a.mp4をプレビュー", exact: true}).click();
+ const source = await mediaReady(editor, 8);
+ report.playback.push({mode: "source", ...await playDecodedFrames(editor, source)});
+ const sourcePosition = editor.getByRole("slider", {name: "素材の再生位置", exact: true});
+ report.activeSeeks.push({mode: "source", ...await assertActiveSeek(source, sourcePosition, 0.65, 5.2)});
+ await editor.getByRole("button", {name: content.play, exact: true}).click();
+ await editor.getByRole("button", {name: "シーケンス", exact: true}).click();
+ await mediaReady(editor, 9);
 }
 
 async function screenshots(page, context, editor, output, report) {
@@ -165,11 +195,21 @@ async function screenshots(page, context, editor, output, report) {
 			await expect(editor).toBeVisible();
 			await mediaReady(editor, 9);
 		}
+
+  // A real first play settles native controls; never hide or replace the media element for QA.
+  const video = await mediaReady(editor, 9);
+  await editor.getByRole("slider", {name: content.position, exact: true}).press("Home");
+  const playback = await playDecodedFrames(editor, video);
+  await editor.getByRole("button", {name: content.play, exact: true}).click();
+  await expect.poll(() => video.evaluate(element => element.paused && !element.seeking && element.readyState >= 3), {timeout: 3000}).toBe(true);
+  report.visualMedia.push({theme, ...playback, paused: await mediaState(video)});
+
 		await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
 		for (const width of [320, 768, 1024, 1440]) {
 			await page.setViewportSize({ width, height: 1000 });
-			await page.evaluate(() => document.fonts.ready);
-			await editor.screenshot({ path: resolve(output, `${theme}-${width}.png`), animations: "disabled" });
+			await page.evaluate(async () => { await document.fonts.ready; await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame); });
+			await video.hover();
+			await editor.screenshot({ path: resolve(output, `${theme}-${width}.png`), animations: "allow" });
 			const layout = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, page: document.documentElement.scrollWidth }));
 			const editorWidth = (await editor.boundingBox())?.width;
 			report.layouts.push({ theme, width, ...layout, editorWidth });
@@ -180,7 +220,7 @@ async function screenshots(page, context, editor, output, report) {
 
 export async function runBrowserQa(options) {
 	await mkdir(options.output, { recursive: true });
-	const report = { baseURL: options.baseURL, startedAt: new Date().toISOString(), blocked: [], consoleErrors: [], httpErrors: [], requests: [], tasks: [], layouts: [], status: "RUNNING" };
+	const report = { baseURL: options.baseURL, startedAt: new Date().toISOString(), blocked: [], consoleErrors: [], httpErrors: [], requests: [], tasks: [], layouts: [], playback: [], activeSeeks: [], visualMedia: [], status: "RUNNING" };
 	const browser = await chromium.launch({ headless: true });
 	const context = await browser.newContext({ baseURL: options.baseURL, viewport: { width: 1440, height: 1000 }, locale: "ja-JP", serviceWorkers: "block" });
 	const page = await context.newPage();
@@ -217,7 +257,7 @@ export async function runBrowserQa(options) {
 		console.log("QA: exercising edit, history, pointer and keyboard controls");
 		await editingInteractions(page, editor);
 		console.log("QA: verifying actual MP4 playback and active seeks");
-		await playbackInteractions(editor);
+		await playbackInteractions(editor, report);
 		await writeFile(resolve(options.output, "accessibility.yaml"), await editor.ariaSnapshot());
 		console.log("QA: checking draft restore, Japanese themes and responsive layouts");
 		await screenshots(page, context, editor, options.output, report);

@@ -73,6 +73,12 @@ export const vodInputTimelineSourceFactsSchema = z.strictObject({
 		streamIndex: z.number().int().min(0).max(1024),
 		width: z.number().int().positive().max(32768),
 		height: z.number().int().positive().max(32768),
+		displayAspectRatio: z
+			.strictObject({
+				num: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+				den: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+			})
+			.optional(),
 		frameRate: z
 			.strictObject({
 				num: z.number().int().positive().max(1_000_000),

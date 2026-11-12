@@ -45,7 +45,12 @@ const facts = [
 	{
 		key: "a",
 		durationMs: 5000,
-		video: { streamIndex: 0, width: 1920, height: 1080 },
+		video: {
+			streamIndex: 0,
+			width: 1920,
+			height: 1080,
+			displayAspectRatio: { num: 16, den: 9 },
+		},
 		audio: null,
 		identity: { size: 100, etag: '"one"' },
 	},
@@ -134,6 +139,56 @@ describe("manual VOD preview service", () => {
 		credentials.get.mockResolvedValue(null);
 		await expect(getVodInputPreviewTask(id)).rejects.toMatchObject({
 			status: 404,
+		});
+	});
+	it("requires fresh display geometry before serving or reusing a legacy preview", async () => {
+		const legacyProbe = {
+			...row,
+			result: {
+				sources: facts.map((source) => ({
+					...source,
+					video: { streamIndex: 0, width: 720, height: 576 },
+				})),
+			},
+		};
+		const request = {
+			kind: "PREVIEW",
+			probeId: id,
+			document: {
+				schemaVersion: 1,
+				id,
+				audioEnabled: false,
+				clips: [{ id, sourceKey: "a", inMs: 0, outMs: 1000 }],
+			},
+			range: { startMs: 0, durationMs: 1000 },
+		};
+		const artifactId = "00000000-0000-4000-8000-000000000003";
+		const artifact = {
+			...row,
+			id: artifactId,
+			kind: "PREVIEW",
+			request,
+			result: {
+				preview: {
+					startMs: 0,
+					durationMs: 1000,
+					size: 100,
+					sha256: "a".repeat(64),
+				},
+			},
+		};
+		db.vodInputPreviewTask.findUnique.mockImplementation(async ({ where }) =>
+			where.id === id ? legacyProbe : artifact,
+		);
+		db.vodInputPreviewTask.findFirst.mockResolvedValue(artifact);
+		await expect(createVodInputPreviewTask(request)).rejects.toMatchObject({
+			status: 409,
+			code: "SOURCE_PROBE_NOT_READY",
+		});
+		expect(db.vodInputPreviewTask.findFirst).not.toHaveBeenCalled();
+		await expect(getVodInputPreviewTask(artifactId)).rejects.toMatchObject({
+			status: 409,
+			code: "SOURCE_PROBE_NOT_READY",
 		});
 	});
 	it("keeps enqueue failure terminal and removes private columns from public DTOs", async () => {

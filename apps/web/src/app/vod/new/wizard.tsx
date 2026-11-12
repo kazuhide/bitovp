@@ -477,14 +477,15 @@ export function VodWizard({
 		value: state,
 		step,
 		onRestore: (saved) => {
-			setState(
-				mergeWizardDraft(
-					presetKey === undefined ? DEFAULT_WIZARD_STATE : draftBase.current,
-					saved.value,
-					"vod",
-				),
+			const restored = mergeWizardDraft(
+				presetKey === undefined ? DEFAULT_WIZARD_STATE : draftBase.current,
+				saved.value,
+				"vod",
 			);
-			setStep(saved.step);
+			setState(restored);
+			// Source facts and preview tasks are deliberately absent from the draft.
+			// Mount their preparation before resuming a later wizard step.
+			setStep(restored.inputTimeline ? 1 : saved.step);
 		},
 	});
 

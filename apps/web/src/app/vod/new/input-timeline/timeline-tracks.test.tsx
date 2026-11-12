@@ -36,6 +36,22 @@ function viewportOf() {
 	return viewport;
 }
 
+function nativeScrollCanvas() {
+	const canvas = screen.getByTestId("input-timeline-track");
+	const viewport = viewportOf();
+	let scrollLeft = 0;
+	// A real browser clamps scrolling during layout when the scroll extent shrinks.
+	Object.defineProperty(viewport, "scrollLeft", {
+		configurable: true,
+		get: () =>
+			Math.min(scrollLeft, Math.max(0, widthOf(canvas) - viewportWidth)),
+		set: (value: number) => {
+			scrollLeft = Math.max(0, value);
+		},
+	});
+	return { canvas, viewport };
+}
+
 function tracks(document: VodInputTimelineDocument) {
 	return (
 		<TimelineTracks
@@ -269,18 +285,7 @@ it("does not count native scroll clamping as more pointer motion when trimming t
 	fireEvent.change(screen.getByRole("combobox", { name: "Timeline zoom" }), {
 		target: { value: "4" },
 	});
-	const canvas = screen.getByTestId("input-timeline-track");
-	const viewport = viewportOf();
-	let scrollLeft = 0;
-	// A real browser clamps scrolling during layout when the scroll extent shrinks.
-	Object.defineProperty(viewport, "scrollLeft", {
-		configurable: true,
-		get: () =>
-			Math.min(scrollLeft, Math.max(0, widthOf(canvas) - viewportWidth)),
-		set: (value: number) => {
-			scrollLeft = Math.max(0, value);
-		},
-	});
+	const { canvas, viewport } = nativeScrollCanvas();
 	const before = widthOf(canvas);
 	viewport.scrollLeft = before - viewportWidth;
 	const handle = screen.getByRole("slider", {
@@ -296,6 +301,77 @@ it("does not count native scroll clamping as more pointer motion when trimming t
 	view.rerender(tracks(committed));
 	expect(widthOf(canvas)).toBe(before - 64);
 	expect(viewport.scrollLeft).toBe(before - 64 - viewportWidth);
+});
+
+it("holds the grown scroll extent when a trim grows, scrolls and reverses before release", () => {
+	const original = timeline();
+	const document = {
+		...original,
+		clips: [{ id: clipA, sourceKey: "a", inMs: 0, outMs: 6000 }],
+	};
+	const view = renderLocalized(tracks(document));
+	fireEvent.change(screen.getByRole("combobox", { name: "Timeline zoom" }), {
+		target: { value: "4" },
+	});
+	const { canvas, viewport } = nativeScrollCanvas();
+	viewport.scrollLeft = widthOf(canvas) - viewportWidth;
+	const handle = screen.getByRole("slider", {
+		name: "Trim end, A.mp4, clip 1",
+	});
+	fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 320 });
+	fireEvent.pointerMove(handle, { pointerId: 1, clientX: 480 });
+	expect(handle).toHaveAttribute("aria-valuenow", "7000");
+	const peakWidth = widthOf(canvas);
+	viewport.scrollLeft = peakWidth - viewportWidth;
+	fireEvent.pointerMove(handle, { pointerId: 1, clientX: 256 });
+	expect(handle).toHaveAttribute("aria-valuenow", "6600");
+	const reverseWidth = widthOf(canvas);
+	fireEvent.pointerUp(handle, { pointerId: 1, clientX: 256 });
+	expect(changed).toHaveBeenCalledTimes(1);
+	const committed = changed.mock.lastCall?.[0];
+	expect(committed.clips[0].outMs).toBe(6600);
+	expect(reverseWidth).toBe(peakWidth);
+	view.rerender(tracks(committed));
+	expect(widthOf(canvas)).toBe(1536);
+});
+
+it("resets the retained extent after Escape, commit, and pointer cancellation before the next drag", () => {
+	const original = timeline();
+	const document = {
+		...original,
+		clips: [{ id: clipA, sourceKey: "a", inMs: 0, outMs: 6000 }],
+	};
+	const view = renderLocalized(tracks(document));
+	fireEvent.change(screen.getByRole("combobox", { name: "Timeline zoom" }), {
+		target: { value: "4" },
+	});
+	const { canvas } = nativeScrollCanvas();
+	const handle = screen.getByRole("slider", {
+		name: "Trim end, A.mp4, clip 1",
+	});
+	fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 100 });
+	fireEvent.pointerMove(handle, { pointerId: 1, clientX: 260 });
+	expect(widthOf(canvas)).toBe(1600);
+	fireEvent.keyDown(handle, { key: "Escape" });
+	expect(widthOf(canvas)).toBe(1440);
+	expect(changed).not.toHaveBeenCalled();
+	fireEvent.pointerDown(handle, { pointerId: 2, button: 0, clientX: 100 });
+	fireEvent.pointerMove(handle, { pointerId: 2, clientX: 36 });
+	expect(widthOf(canvas)).toBe(1440);
+	fireEvent.pointerUp(handle, { pointerId: 2, clientX: 36 });
+	expect(changed).toHaveBeenCalledTimes(1);
+	view.rerender(tracks(changed.mock.lastCall?.[0]));
+	expect(widthOf(canvas)).toBe(1376);
+	fireEvent.pointerDown(handle, { pointerId: 3, button: 0, clientX: 100 });
+	fireEvent.pointerMove(handle, { pointerId: 3, clientX: 260 });
+	expect(widthOf(canvas)).toBe(1536);
+	fireEvent.pointerCancel(handle, { pointerId: 3 });
+	expect(widthOf(canvas)).toBe(1376);
+	fireEvent.pointerDown(handle, { pointerId: 4, button: 0, clientX: 100 });
+	fireEvent.pointerMove(handle, { pointerId: 4, clientX: 36 });
+	expect(widthOf(canvas)).toBe(1376);
+	fireEvent.pointerCancel(handle, { pointerId: 4 });
+	expect(changed).toHaveBeenCalledTimes(1);
 });
 
 it("exposes named editing controls without an operation-help disclosure", () => {

@@ -26,6 +26,7 @@ type Gesture = {
 	pointer: number;
 	x: number;
 	pixelsPerMs: number;
+	extentMs: number;
 	target: Target;
 	base: VodInputTimelineDocument;
 	next: VodInputTimelineDocument;
@@ -53,7 +54,9 @@ export function useTimelineGesture({
 	const suppressClick = useRef<string | null>(null);
 	const latest = useRef({ document, disabled, onChange });
 	latest.current = { document, disabled, onChange };
-	const [shown, setShown] = useState<VodInputTimelineDocument | null>(null);
+	const [shown, setShown] = useState<Pick<Gesture, "next" | "extentMs"> | null>(
+		null,
+	);
 	const finish = useCallback((commit: boolean) => {
 		const active = gesture.current;
 		if (!active) return;
@@ -143,7 +146,8 @@ export function useTimelineGesture({
 				index < 0 ? others.length : index,
 			);
 		} else active.next = trim(active.base, active.id, active.mode, delta);
-		setShown(active.next);
+		active.extentMs = Math.max(active.extentMs, timelineDuration(active.next));
+		setShown({ next: active.next, extentMs: active.extentMs });
 	}
 	function handlers(id: string, mode: Mode) {
 		return {
@@ -168,12 +172,13 @@ export function useTimelineGesture({
 					pointer: event.pointerId,
 					x: event.clientX - bounds.left,
 					pixelsPerMs,
+					extentMs: total,
 					target: event.currentTarget,
 					base: document,
 					next: document,
 				};
 				suppressClick.current = null;
-				setShown(document);
+				setShown({ next: document, extentMs: total });
 			},
 			onPointerMove(event: React.PointerEvent<Target>) {
 				move(event.pointerId, event.clientX);
@@ -227,7 +232,8 @@ export function useTimelineGesture({
 		};
 	}
 	return {
-		shown: shown ?? document,
+		shown: shown?.next ?? document,
+		extentMs: shown?.extentMs ?? timelineDuration(document),
 		dragging: shown !== null,
 		handlers,
 		consumeClick(id: string) {

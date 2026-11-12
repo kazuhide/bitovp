@@ -4,7 +4,7 @@ import { masterKeyFromEnv } from "@bitovp/core";
 import {
 	getVodInputTimelineDurationMs,
 	type VodInputPreviewTask,
-	validateVodInputTimeline,
+	validateVodInputPreview,
 	vodInputPreviewRequestSchema,
 	vodInputPreviewResultSchema,
 	vodInputPreviewTaskSchema,
@@ -145,10 +145,7 @@ export async function createVodInputPreviewTask(
 		if (probe.kind !== "PROBE" || probe.status !== "SUCCEEDED")
 			throw new VodInputPreviewError(409, "SOURCE_PROBE_NOT_READY");
 		const result = vodInputPreviewResultSchema.parse(probe.result);
-		const issues = validateVodInputTimeline(
-			input.document,
-			result.sources ?? [],
-		);
+		const issues = validateVodInputPreview(input, result.sources ?? []);
 		if (issues[0]) throw new VodInputPreviewError(422, issues[0].code);
 		// Old cached previews may have lost anamorphic/rotation geometry.
 		// Re-probe before cache lookup as well as before serving their content.

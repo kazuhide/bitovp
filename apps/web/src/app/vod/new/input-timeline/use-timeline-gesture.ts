@@ -11,8 +11,10 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { availableSourceDuration } from "./source-availability";
 import {
 	changeRange,
+	linkedPartner,
 	moveClip,
 	timelineDuration,
 	timelineItems,
@@ -118,7 +120,11 @@ export function useTimelineGesture({
 			mode === "in"
 				? Math.max(0, Math.min(clip.outMs - 1, clip.inMs + amount))
 				: clip.inMs;
-		const sourceDuration = source[medium]?.durationMs ?? source.durationMs;
+		const sourceDuration = availableSourceDuration(
+			source,
+			pair ? "both" : medium,
+			base.audioEnabled,
+		);
 		const outMs =
 			mode === "out"
 				? Math.min(sourceDuration, Math.max(clip.inMs + 1, clip.outMs + amount))
@@ -199,7 +205,7 @@ export function useTimelineGesture({
 					id,
 					track: medium,
 					mode,
-					linked,
+					linked: linked && !!linkedPartner(document, { track: medium, id }),
 					pointer: event.pointerId,
 					x: event.clientX - bounds.left,
 					pixelsPerMs,
@@ -237,6 +243,8 @@ export function useTimelineGesture({
 					index = items.findIndex((item) => item.clip.id === id),
 					clip = items[index]?.clip;
 				if (mode === "move" && !event.altKey) return;
+				const targetLinked =
+					linked && !!linkedPartner(document, { track: medium, id });
 				event.preventDefault();
 				onSelect(id, medium);
 				if (mode === "move") {
@@ -250,7 +258,7 @@ export function useTimelineGesture({
 									: event.key === "End"
 										? items.length - 1
 										: index + (event.key === "ArrowLeft" ? -1 : 1),
-								{ track: medium, linked },
+								{ track: medium, linked: targetLinked },
 							),
 						);
 					} catch {
@@ -262,15 +270,20 @@ export function useTimelineGesture({
 				if (!fact) return;
 				const rate = medium === "video" ? fact.video?.frameRate : null;
 				const tick = rate ? (1000 * rate.den) / rate.num : 1;
+				const sourceDuration = availableSourceDuration(
+					fact,
+					targetLinked ? "both" : medium,
+					document.audioEnabled,
+				);
 				const delta =
 					event.key === "Home"
-						? -fact.durationMs
+						? -sourceDuration
 						: event.key === "End"
-							? fact.durationMs
+							? sourceDuration
 							: (event.key === "ArrowLeft" ? -1 : 1) *
 								tick *
 								(event.shiftKey ? 10 : 1);
-				onChange(trim(document, id, medium, linked, mode, delta));
+				onChange(trim(document, id, medium, targetLinked, mode, delta));
 			},
 		};
 	}

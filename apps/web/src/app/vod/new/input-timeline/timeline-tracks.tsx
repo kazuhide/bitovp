@@ -194,6 +194,8 @@ export function TimelineTracks({
 											)}
 											disabled={disabled}
 											muted={medium === "audio" && !document.audioEnabled}
+											linked={linked && partner?.id === clip.id}
+											audioEnabled={document.audioEnabled}
 											handlers={gesture.handlers}
 											consumeClick={gesture.consumeClick}
 											onSelect={onSelect}

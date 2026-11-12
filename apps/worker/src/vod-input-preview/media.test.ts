@@ -1,3 +1,7 @@
+import {
+	validateVodInputTimeline,
+	vodInputTimelineSourceFactsSchema,
+} from "@bitovp/core/vod-input-timeline";
 import { describe, expect, it, vi } from "vitest";
 import {
 	inspectVodInputProbe,
@@ -23,6 +27,61 @@ const probe = () => ({
 });
 
 describe("CPU input timeline metadata admission", () => {
+	it.each([
+		undefined,
+		"N/A",
+	])("uses container duration for video with unknown stream duration %s, even when audio is shorter", (duration) => {
+		const measured = inspectVodInputProbe(
+			"source",
+			{
+				streams: [
+					{
+						index: 0,
+						codec_type: "video",
+						width: 1920,
+						height: 1080,
+						...(duration === undefined ? {} : { duration }),
+					},
+					{
+						index: 1,
+						codec_type: "audio",
+						duration: "2",
+						sample_rate: "48000",
+						channels: 2,
+					},
+				],
+				format: { duration: "8", format_name: "mov,mp4" },
+			},
+			identity,
+		);
+		expect(measured.durationMs).toBe(8000);
+		expect(measured.video?.durationMs).toBeUndefined();
+		expect(measured.audio?.durationMs).toBe(2000);
+		expect(vodInputTimelineSourceFactsSchema.safeParse(measured).success).toBe(
+			true,
+		);
+		expect(
+			validateVodInputTimeline(
+				{
+					schemaVersion: 2,
+					id: "00000000-0000-4000-8000-000000000001",
+					audioEnabled: false,
+					durationMs: 8000,
+					videoClips: [
+						{
+							id: "00000000-0000-4000-8000-000000000002",
+							sourceKey: "source",
+							startMs: 0,
+							inMs: 0,
+							outMs: 8000,
+						},
+					],
+					audioClips: [],
+				},
+				[measured],
+			),
+		).toEqual([]);
+	});
 	it("preserves absolute selected indices and the measured video duration", () => {
 		expect(inspectVodInputProbe("source", probe(), identity)).toEqual({
 			key: "source",

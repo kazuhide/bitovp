@@ -8,6 +8,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { baseName } from "@/lib/format";
 import { taskErrorText, useTimelineLabels } from "./labels";
 import {
+	availableSourceDuration,
+	canAppendTarget,
+} from "./source-availability";
+import {
 	appendSource,
 	changeRange,
 	deleteClip,
@@ -223,6 +227,22 @@ export function useInputTimelineWorkbench({
 		: editor.selectedTrack === "video"
 			? "V1"
 			: "A1";
+	function quickTarget(source: (typeof state.facts)[number]) {
+		return !source.video
+			? "audio"
+			: !source.audio
+				? "video"
+				: linkedSelection
+					? "both"
+					: editor.selectedTrack;
+	}
+	function canQuickAdd(source: (typeof state.facts)[number]) {
+		const target = quickTarget(source);
+		return (
+			canAppendTarget(document, target) &&
+			availableSourceDuration(source, target, document.audioEnabled) > 0
+		);
+	}
 	return {
 		document,
 		l,
@@ -243,16 +263,18 @@ export function useInputTimelineWorkbench({
 		dragging,
 		setDragging,
 		linked: linked && !!partner,
+		linkPreference: linked,
 		linkAvailable: !!partner,
 		targetLabel,
 		selectTrack,
+		canQuickAdd,
 		setLinked,
 		remove,
 		seek,
 		sourceSeek,
 		previewDurationMs:
 			mode === "source"
-				? (selectedSource?.durationMs ?? 0)
+				? state.sourcePreviewDurationMs
 				: timelineDuration(document),
 		canSplit:
 			!!point &&
@@ -274,20 +296,22 @@ export function useInputTimelineWorkbench({
 			setMode("sequence");
 		},
 		add(source: (typeof state.facts)[number]) {
-			const target = !source.video
-				? "audio"
-				: !source.audio
-					? "video"
-					: linkedSelection
-						? "both"
-						: editor.selectedTrack;
+			if (!canQuickAdd(source)) return;
+			const target = quickTarget(source);
 			const id = crypto.randomUUID();
 			const next = apply(() =>
 				appendSource(
 					document,
 					source,
 					id,
-					{ inMs: 0, outMs: source.durationMs },
+					{
+						inMs: 0,
+						outMs: availableSourceDuration(
+							source,
+							target,
+							document.audioEnabled,
+						),
+					},
 					target,
 					state.facts,
 				),

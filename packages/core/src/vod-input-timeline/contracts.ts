@@ -231,6 +231,7 @@ export const vodInputPreviewRequestSchema = z.discriminatedUnion("kind", [
 			"Add a clip",
 		),
 		range: vodInputPreviewRangeSchema,
+		sourcePreviewKey: key.optional(),
 	}),
 ]);
 export type VodInputPreviewRequest = z.infer<

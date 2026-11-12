@@ -70,6 +70,40 @@ const row = {
 	expiresAt: new Date(Date.now() + 60000),
 };
 
+function longSourceAudition() {
+	const base = facts[0];
+	if (!base) throw new Error("Expected a source fixture");
+	const source = {
+		...base,
+		durationMs: 4000,
+		video: { ...base.video, durationMs: 4000 },
+		audio: {
+			streamIndex: 1,
+			sampleRate: 48000,
+			channels: 2,
+			durationMs: 18000,
+		},
+	};
+	const clip = { id, sourceKey: "a", startMs: 0, inMs: 0 };
+	return {
+		probe: { ...row, result: { sources: [source] } },
+		request: {
+			kind: "PREVIEW" as const,
+			probeId: id,
+			document: {
+				schemaVersion: 2 as const,
+				id,
+				audioEnabled: true,
+				durationMs: 18000,
+				videoClips: [{ ...clip, outMs: 4000 }],
+				audioClips: [{ ...clip, outMs: 18000 }],
+			},
+			range: { startMs: 0, durationMs: 18000 },
+			sourcePreviewKey: "a",
+		},
+	};
+}
+
 beforeEach(() => {
 	vi.clearAllMocks();
 	tenant.role = "OPERATOR";
@@ -87,6 +121,41 @@ beforeEach(() => {
 });
 
 describe("manual VOD preview service", () => {
+	it("allows a natural source audition beyond ten seconds of trailing video while edited programs retain the native gap limit", async () => {
+		const fixture = longSourceAudition();
+		db.vodInputPreviewTask.findUnique.mockResolvedValue(fixture.probe);
+		const { sourcePreviewKey: _sourcePreviewKey, ...edited } = fixture.request;
+		await expect(createVodInputPreviewTask(edited)).rejects.toMatchObject({
+			code: "TIMELINE_GAP_TOO_LONG",
+		});
+		expect(add).not.toHaveBeenCalled();
+		const task = await createVodInputPreviewTask(fixture.request);
+		expect(task).toMatchObject({ kind: "PREVIEW", status: "PENDING" });
+		expect(
+			db.vodInputPreviewTask.create.mock.calls[0]?.[0].data.request,
+		).toEqual(fixture.request);
+		expect(add).toHaveBeenCalledTimes(1);
+	});
+	it.each([
+		"trim",
+		"other source",
+		"false duration",
+	] as const)("rejects a source-audition exception for %s before queueing", async (change) => {
+		const fixture = longSourceAudition();
+		db.vodInputPreviewTask.findUnique.mockResolvedValue(fixture.probe);
+		const request = fixture.request;
+		if (change === "trim") {
+			const audio = request.document.audioClips[0];
+			if (!audio) throw new Error("Expected an audio fixture");
+			audio.inMs = 1000;
+		} else if (change === "other source") request.sourcePreviewKey = "foreign";
+		else request.document.durationMs = 19000;
+		await expect(createVodInputPreviewTask(request)).rejects.toMatchObject({
+			code: "SOURCE_PREVIEW_INVALID",
+		});
+		expect(add).not.toHaveBeenCalled();
+		expect(db.vodInputPreviewTask.create).not.toHaveBeenCalled();
+	});
 	it("creates a CPU-only task using registered storage refs without requiring local LLM", async () => {
 		const task = await createVodInputPreviewTask(probeRequest);
 		expect(task.kind).toBe("PROBE");

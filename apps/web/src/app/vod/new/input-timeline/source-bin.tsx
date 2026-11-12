@@ -16,7 +16,7 @@ export function SourceBin({
 	facts,
 	selectedKey,
 	disabled,
-	full,
+	canAdd,
 	onSelect,
 	onAdd,
 	onAddSource,
@@ -25,7 +25,7 @@ export function SourceBin({
 	facts: VodInputTimelineSourceFacts[];
 	selectedKey: string | null;
 	disabled: boolean;
-	full: boolean;
+	canAdd: (source: VodInputTimelineSourceFacts) => boolean;
 	onSelect: (key: string) => void;
 	onAdd: (source: VodInputTimelineSourceFacts) => void;
 	onAddSource: () => void;
@@ -87,7 +87,7 @@ export function SourceBin({
 									variant="ghost"
 									aria-label={l.addNamed.replace("{name}", name)}
 									title={l.appendWhole}
-									disabled={disabled || !fact || full}
+									disabled={disabled || !fact || !canAdd(fact)}
 									onClick={() => fact && onAdd(fact)}
 								>
 									<Plus aria-hidden className="h-4 w-4" />

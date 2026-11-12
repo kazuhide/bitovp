@@ -166,8 +166,7 @@ export function inspectVodInputProbe(
 	const videoDurationMs = measuredDuration(video),
 		audioDurationMs = measuredDuration(audio);
 	const durationMs =
-		videoDurationMs ??
-		audioDurationMs ??
+		(video ? videoDurationMs : audioDurationMs) ??
 		Math.floor(Number(record(probe.format).duration) * 1000);
 	if (!Number.isFinite(durationMs) || durationMs <= 0) return invalid();
 	const ratio = /^(\d+)\/(\d+)$/.exec(String(video?.avg_frame_rate));

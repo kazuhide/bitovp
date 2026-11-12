@@ -6,6 +6,10 @@ import type {
 } from "@bitovp/core/vod-input-timeline";
 import { useState } from "react";
 import {
+	availableSourceDuration,
+	canAppendTarget,
+} from "./source-availability";
+import {
 	appendSource,
 	clipEnd,
 	replaceSource,
@@ -48,19 +52,16 @@ export function useSourceInsertion({
 		inMs: number;
 		outMs: number;
 	} | null>(null);
+	const target = linked ? "both" : selection.track;
+	const availableDurationMs = source
+		? availableSourceDuration(source, target, document.audioEnabled)
+		: 0;
 	const range =
 		chosen && chosen.key === source?.key
 			? chosen
-			: { inMs: 0, outMs: source?.durationMs ?? 0 };
-	const target = linked ? "both" : selection.track;
+			: { inMs: 0, outMs: availableDurationMs };
 	function sourceError(forReplacement: boolean): string | null {
 		if (!source) return "sourceUnavailable";
-		if (
-			range.inMs < 0 ||
-			range.outMs <= range.inMs ||
-			range.outMs > source.durationMs
-		)
-			return "invalidRange";
 		if ((target === "both" || target === "video") && !source.video)
 			return "missingVideo";
 		if (
@@ -68,29 +69,26 @@ export function useSourceInsertion({
 			!source.audio
 		)
 			return "missingAudio";
-		const mediaDuration = Math.min(
-			target === "both" || target === "video"
-				? (source.video?.durationMs ?? source.durationMs)
-				: source.durationMs,
-			target === "audio" || (target === "both" && document.audioEnabled)
-				? (source.audio?.durationMs ?? source.durationMs)
-				: source.durationMs,
-		);
+		if (range.inMs < 0 || range.outMs <= range.inMs) return "invalidRange";
 		const requiredEnd = forReplacement
 			? range.inMs + selectedDurationMs
 			: range.outMs;
 		if (
-			requiredEnd > mediaDuration ||
+			range.outMs > availableDurationMs ||
+			requiredEnd > availableDurationMs ||
 			(forReplacement && range.outMs - range.inMs < selectedDurationMs)
 		)
 			return "sourceTooShort";
 		return null;
 	}
 	const hasSelection = !!selection.id && selectedDurationMs > 0;
-	const appendError = sourceError(false);
+	const appendError =
+		sourceError(false) ??
+		(canAppendTarget(document, target) ? null : "trackFull");
 	const replaceError = hasSelection ? sourceError(true) : null;
 	return {
 		range,
+		availableDurationMs,
 		target,
 		appendError,
 		replaceError,
@@ -104,7 +102,14 @@ export function useSourceInsertion({
 		append(selectedSource = source, useFullRange = false) {
 			if (disabled || !selectedSource) return;
 			const nextRange = useFullRange
-				? { inMs: 0, outMs: selectedSource.durationMs }
+				? {
+						inMs: 0,
+						outMs: availableSourceDuration(
+							selectedSource,
+							target,
+							document.audioEnabled,
+						),
+					}
 				: range;
 			const id = crypto.randomUUID();
 			const next = apply(() =>

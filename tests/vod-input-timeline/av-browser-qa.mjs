@@ -29,6 +29,7 @@ export function assertTrackOverwrite(before,after,{track,startMs,endMs,sourceKey
  assert.equal(replacement.inMs,inMs);assert.equal(replacement.outMs,inMs+endMs-startMs);
 }
 async function addSource(page,editor,filename,version="v1") {
+ if(await editor.getByRole("button",{name:filename+"をプレビュー",exact:true}).count())return;
  await editor.getByRole("button",{name:"素材を追加",exact:true}).click();
  const picker=page.getByRole("dialog",{name:"入力オブジェクトを選択"});
  await picker.locator("#picker-credential").selectOption({label:"VOD timeline local S3 (synthetic only)"});
@@ -51,6 +52,43 @@ function sourceKeyFor(report,filename) {
 }
 function latestProject(report,id) {
  return report.requests.findLast(request=>request.kind==="PREVIEW"&&request.document.id===id)?.document;
+}
+async function nativeTargetLinking(page,editor,report,projectId,original) {
+ await editor.getByRole("button",{name:"b.mp4をタイムラインへ追加"}).click();
+ await addSource(page,editor,"c.wav","v2");
+ const cKey=sourceKeyFor(report,"c.wav"),bKey=sourceKeyFor(report,"b.mp4");
+ await editor.getByRole("button",{name:"c.wavをタイムラインへ追加"}).click();
+ await expect.poll(()=>latestProject(report,projectId)?.audioClips.at(-1)?.sourceKey).toBe(cKey);
+ const before=structuredClone(latestProject(report,projectId));
+ await mediaReady(editor,before.durationMs/1000);
+ assert.equal(before.videoClips.length,2);assert.equal(before.audioClips.length,3);
+ const first=editor.getByRole("button",{name:"クリップ 1, a.mp4",exact:true});
+ const second=editor.getByRole("button",{name:"クリップ 2, b.mp4",exact:true});
+ const a=await first.boundingBox(),b=await second.boundingBox();assert.ok(a&&b);
+ const deltaPx=(a.width+b.width)/2+40,x=a.x+a.width/2,y=a.y+a.height/2;
+ await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+deltaPx,y,{steps:6});await page.mouse.up();
+ await expect.poll(()=>latestProject(report,projectId)?.videoClips[0]?.sourceKey).toBe(bKey);
+ const pointer=structuredClone(latestProject(report,projectId));
+ assert.deepEqual(pointer.videoClips,pointer.audioClips.slice(0,2),"Pointer edit used a stale unpaired selection to unlink an exact target pair");
+ assert.deepEqual(pointer.audioClips.at(-1),before.audioClips.at(-1),"Pointer reorder changed the unpaired WAV tail");
+ await editor.getByRole("button",{name:"元に戻す",exact:true}).click();
+ await expect.poll(()=>latestProject(report,projectId)?.videoClips[0]?.sourceKey).toBe(before.videoClips[0].sourceKey);
+ await mediaReady(editor,before.durationMs/1000);
+ assert.deepEqual(latestProject(report,projectId),before,"Undo did not restore the paired program before the focused-keyboard check");
+ await editor.getByRole("button",{name:"音声クリップ 3, c.wav",exact:true}).click();
+ const keyboardTarget=editor.getByRole("button",{name:"クリップ 2, b.mp4",exact:true});
+ await keyboardTarget.focus();await keyboardTarget.press("Alt+ArrowLeft");
+ await expect.poll(()=>latestProject(report,projectId)?.videoClips[0]?.sourceKey).toBe(bKey);
+ const keyboard=structuredClone(latestProject(report,projectId));
+ assert.deepEqual(keyboard.videoClips,keyboard.audioClips.slice(0,2),"Keyboard edit used the previous unpaired selection instead of the focused exact pair");
+ assert.deepEqual(keyboard.audioClips.at(-1),before.audioClips.at(-1));
+ report.nativeTargetLinking={before,pointer,keyboard,draggedPixels:deltaPx};
+ for(let undo=0;undo<3;undo++)await editor.getByRole("button",{name:"元に戻す",exact:true}).click();
+ await expect(editor.getByRole("button",{name:/^クリップ \d, /})).toHaveCount(1);
+ await expect(editor.getByRole("button",{name:/^音声クリップ \d, /})).toHaveCount(1);
+ await expect.poll(()=>latestProject(report,projectId)?.durationMs).toBe(original.durationMs);
+ await mediaReady(editor,original.durationMs/1000);
+ assert.deepEqual(latestProject(report,projectId),original,"Native target-link checks did not restore the original program");
 }
 async function splitAt(editor,seconds) {
  const ruler=editor.getByRole("slider",{name:"時間目盛り",exact:true});
@@ -139,6 +177,8 @@ export async function runAvBrowserQa(options) {
   const original=structuredClone(latestProject(report,projectId));
   const bKey=sourceKeyFor(report,"b.mp4");
   assert.equal(original.videoClips.length,1);assert.equal(original.audioClips.length,1);
+  console.log("AV QA: native pointer and Alt-key linking after a standalone WAV selection");
+  await nativeTargetLinking(page,editor,report,projectId,original);
   await editor.getByRole("button",{name:"V1 / A1のリンクを解除",exact:true}).click();
   console.log("AV QA: splitting only A1 and replacing its middle");
   await editor.getByRole("button",{name:"音声クリップ 1, a.mp4",exact:true}).click();

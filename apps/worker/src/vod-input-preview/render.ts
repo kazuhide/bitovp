@@ -8,7 +8,7 @@ import {
 	type VodInputTimelineSegment,
 	type VodInputTimelineSource,
 	type VodInputTimelineSourceFacts,
-	validateVodInputTimeline,
+	validateVodInputPreview,
 } from "@bitovp/core/vod-input-timeline";
 import {
 	MediaOperationError,
@@ -44,7 +44,7 @@ export async function renderVodInputPreview(
 }> {
 	if (!isAbsolute(input.directory) || input.directory.includes("\0"))
 		throw new MediaOperationError("INVALID_LOCAL_PATH");
-	const issues = validateVodInputTimeline(input.request.document, input.facts);
+	const issues = validateVodInputPreview(input.request, input.facts);
 	if (issues[0]) throw new MediaOperationError(issues[0].code);
 	const program = resolveVodInputTimeline(
 		input.request.document,

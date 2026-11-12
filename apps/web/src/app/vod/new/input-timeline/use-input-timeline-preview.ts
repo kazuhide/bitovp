@@ -1,6 +1,7 @@
 "use client";
 
 import {
+	buildVodInputSourcePreviewDocument,
 	DEFAULT_VOD_INPUT_PREVIEW_DURATION_MS,
 	MAX_VOD_INPUT_PREVIEW_DURATION_MS,
 	type VodInputPreviewRequest,
@@ -69,25 +70,10 @@ export function useInputTimelinePreview({
 		: null;
 	const sourceDocument = useMemo<VodInputTimelineV2Document | null>(() => {
 		if (!source) return null;
-		const id = crypto.randomUUID();
-		const clip = {
-			id: crypto.randomUUID(),
-			sourceKey: source.key,
-			startMs: 0,
-			inMs: 0,
-		};
-		return {
-			schemaVersion: 2,
-			id,
-			audioEnabled: source.audio !== null,
-			durationMs: source.durationMs,
-			videoClips: source.video
-				? [{ ...clip, outMs: source.video.durationMs ?? source.durationMs }]
-				: [],
-			audioClips: source.audio
-				? [{ ...clip, outMs: source.audio.durationMs ?? source.durationMs }]
-				: [],
-		};
+		return buildVodInputSourcePreviewDocument(source, {
+			documentId: crypto.randomUUID(),
+			clipId: crypto.randomUUID(),
+		});
 	}, [source]);
 	const previewDocument = sourceKey
 		? sourceDocument
@@ -112,6 +98,7 @@ export function useInputTimelinePreview({
 					probeId: probe.ready.id,
 					document: previewDocument,
 					range: { startMs, durationMs: length },
+					...(sourceKey ? { sourcePreviewKey: sourceKey } : {}),
 				}
 			: null;
 	const preview = usePreviewTask(request);
@@ -122,6 +109,7 @@ export function useInputTimelinePreview({
 		probeError,
 		problem,
 		fullAllowed,
+		sourcePreviewDurationMs: sourceDocument?.durationMs ?? 0,
 		ready: matching && !problem && !probeError,
 		probeId: matching ? (probe.ready?.id ?? null) : null,
 	};

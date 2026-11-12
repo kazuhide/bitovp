@@ -14,9 +14,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type {
-	VodInputTimelineSource,
-	VodInputTimelineV2Document,
+import {
+	buildVodInputSourcePreviewDocument,
+	type VodInputTimelineSource,
+	type VodInputTimelineV2Document,
 } from "@bitovp/core/vod-input-timeline";
 import type { ObjectStorageBrowser } from "@bitovp/storage";
 import { runMediaProcess } from "../library-editing/process";
@@ -58,6 +59,11 @@ export async function runIndependentOverwriteFixture() {
 				"b",
 				"color=blue:s=320x180:r=30:d=4",
 				"sine=frequency=660:sample_rate=48000:duration=4",
+			],
+			[
+				"e",
+				"color=yellow:s=320x180:r=30:d=4",
+				"sine=frequency=770:sample_rate=48000:duration=18",
 			],
 		] as const) {
 			const path = join(directory, `${name}.mp4`);
@@ -187,6 +193,7 @@ export async function runIndependentOverwriteFixture() {
 			doc: VodInputTimelineV2Document,
 			startMs = 0,
 			durationMs = doc.durationMs,
+			sourcePreviewKey?: string,
 		) => {
 			const outputDirectory = join(directory, name);
 			await mkdir(outputDirectory);
@@ -201,6 +208,7 @@ export async function runIndependentOverwriteFixture() {
 					probeId: randomUUID(),
 					document: doc,
 					range: { startMs, durationMs },
+					...(sourcePreviewKey ? { sourcePreviewKey } : {}),
 				},
 			});
 			assert.deepEqual(
@@ -413,6 +421,35 @@ export async function runIndependentOverwriteFixture() {
 			reads > 20,
 			"probe and both render passes must use pinned range reads",
 		);
+		const longSource = facts.find((fact) => fact.key === "e");
+		assert.ok(longSource);
+		assert.equal(longSource.durationMs, 4000);
+		assert.equal(longSource.audio?.durationMs, 18000);
+		const natural = buildVodInputSourcePreviewDocument(longSource, {
+			documentId: randomUUID(),
+			clipId: randomUUID(),
+		});
+		const longPreview = await render(
+			"natural-long-source",
+			natural,
+			0,
+			18000,
+			"e",
+		);
+		const tail = await sample(longPreview, 15);
+		assert.ok([...tail.rgb].every((channel) => channel < 10));
+		assert.ok(
+			Math.abs(tail.hz - 770) < 30,
+			"audio continues after source video ends",
+		);
+		await assert.rejects(render("unmarked-long-project", natural), {
+			code: "TIMELINE_GAP_TOO_LONG",
+		});
+		const edited = structuredClone(natural);
+		if (edited.audioClips[0]) edited.audioClips[0].outMs = 17000;
+		await assert.rejects(render("forged-long-source", edited, 0, 18000, "e"), {
+			code: "SOURCE_PREVIEW_INVALID",
+		});
 		console.log(
 			`independent A/V media: unchanged V1 sha256=${baseVideo}; unchanged A1 sha256=${baseAudio}; WAV/MP3, gaps, source window and cleanup passed`,
 		);

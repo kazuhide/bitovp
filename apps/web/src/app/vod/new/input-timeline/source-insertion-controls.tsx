@@ -1,8 +1,5 @@
 "use client";
-import type {
-	VodInputTimelinePlacedClip,
-	VodInputTimelineSourceFacts,
-} from "@bitovp/core/vod-input-timeline";
+import type { VodInputTimelinePlacedClip } from "@bitovp/core/vod-input-timeline";
 import { useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -11,7 +8,7 @@ import { taskErrorText, useTimelineLabels } from "./labels";
 import { formatTime } from "./timeline-state";
 
 export function SourceInsertionControls({
-	source,
+	availableDurationMs,
 	range,
 	targetLabel,
 	selected,
@@ -25,7 +22,7 @@ export function SourceInsertionControls({
 	onReplace,
 	onInvalid,
 }: {
-	source: VodInputTimelineSourceFacts;
+	availableDurationMs: number;
 	range: { inMs: number; outMs: number };
 	targetLabel: string;
 	selected: VodInputTimelinePlacedClip | undefined;
@@ -55,7 +52,7 @@ export function SourceInsertionControls({
 		Number.isFinite(outMs) &&
 		inMs >= 0 &&
 		outMs > inMs &&
-		outMs <= source.durationMs;
+		outMs <= availableDurationMs;
 	useEffect(() => {
 		setValues({
 			inMs: String(range.inMs / 1000),
@@ -89,7 +86,7 @@ export function SourceInsertionControls({
 							type="number"
 							inputMode="decimal"
 							min={0}
-							max={source.durationMs / 1000}
+							max={availableDurationMs / 1000}
 							step="0.001"
 							className="h-8 tabular-nums"
 							disabled={disabled}

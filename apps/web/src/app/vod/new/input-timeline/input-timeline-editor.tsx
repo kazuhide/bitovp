@@ -1,11 +1,11 @@
 "use client";
 
-import { MAX_VOD_TIMELINE_CLIPS } from "@bitovp/core/vod-input-timeline";
 import { Button } from "@/components/ui/button";
 import { ClipInspector } from "./clip-inspector";
 import { EditorToolbar } from "./editor-toolbar";
 import { taskErrorText } from "./labels";
 import { PreviewMonitor } from "./preview-monitor";
+import { availableSourceDuration } from "./source-availability";
 import { SourceBin } from "./source-bin";
 import { SourceInsertionControls } from "./source-insertion-controls";
 import { TimelineTracks } from "./timeline-tracks";
@@ -21,6 +21,9 @@ export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
 	const { sources, onAddSource, disabled = false } = props;
 	const w = useInputTimelineWorkbench(props);
 	const document = w.document;
+	const selectedFact = w.state.facts.find(
+		(source) => source.key === w.selected?.sourceKey,
+	);
 	return (
 		<section
 			ref={w.container}
@@ -35,10 +38,7 @@ export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
 					facts={w.state.facts}
 					selectedKey={w.mode === "source" ? w.sourceKey : null}
 					disabled={disabled || w.dragging}
-					full={
-						Math.max(document.videoClips.length, document.audioClips.length) >=
-						MAX_VOD_TIMELINE_CLIPS
-					}
+					canAdd={w.canQuickAdd}
 					onAddSource={onAddSource}
 					onAdd={w.add}
 					onSelect={w.selectSource}
@@ -64,7 +64,7 @@ export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
 					{w.mode === "source" && w.selectedSource && (
 						<SourceInsertionControls
 							key={w.selectedSource.key}
-							source={w.selectedSource}
+							availableDurationMs={w.insertion.availableDurationMs}
 							range={w.insertion.range}
 							targetLabel={w.targetLabel}
 							selected={w.selected}
@@ -84,9 +84,16 @@ export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
 					<ClipInspector
 						key={`${w.editor.selectedTrack}:${w.selected.id}:${w.selected.inMs}:${w.selected.outMs}`}
 						clip={w.selected}
-						source={w.state.facts.find(
-							(source) => source.key === w.selected?.sourceKey,
-						)}
+						source={selectedFact}
+						availableDurationMs={
+							selectedFact
+								? availableSourceDuration(
+										selectedFact,
+										w.linked ? "both" : w.editor.selectedTrack,
+										document.audioEnabled,
+									)
+								: 0
+						}
 						name={w.names[w.selected.sourceKey] ?? w.selected.sourceKey}
 						disabled={disabled || w.dragging}
 						onChange={w.changeRange}
@@ -123,7 +130,7 @@ export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
 				names={w.names}
 				selectedId={w.editor.selectedId}
 				selectedTrack={w.editor.selectedTrack}
-				linked={w.linked}
+				linked={w.linkPreference}
 				positionMs={w.editor.positionMs}
 				disabled={disabled}
 				onSelect={w.selectClip}

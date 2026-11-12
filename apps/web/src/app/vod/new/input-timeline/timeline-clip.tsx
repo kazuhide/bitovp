@@ -4,6 +4,7 @@ import type {
 	VodInputTimelineTrack,
 } from "@bitovp/core/vod-input-timeline";
 import { useTimelineLabels } from "./labels";
+import { availableSourceDuration } from "./source-availability";
 import { formatTime } from "./timeline-state";
 import type { useTimelineGesture } from "./use-timeline-gesture";
 
@@ -17,6 +18,8 @@ export function TimelineClip({
 	fact,
 	disabled,
 	muted,
+	linked,
+	audioEnabled,
 	handlers,
 	consumeClick,
 	onSeek,
@@ -32,6 +35,8 @@ export function TimelineClip({
 	fact: VodInputTimelineSourceFacts | undefined;
 	disabled: boolean;
 	muted?: boolean;
+	linked: boolean;
+	audioEnabled: boolean;
 	handlers: ReturnType<typeof useTimelineGesture>["handlers"];
 	consumeClick: ReturnType<typeof useTimelineGesture>["consumeClick"];
 	onSeek: (localMs: number) => void;
@@ -110,7 +115,13 @@ export function TimelineClip({
 						aria-valuemax={
 							edge === "in"
 								? clip.outMs - 1
-								: (fact?.[track]?.durationMs ?? fact?.durationMs ?? clip.outMs)
+								: fact
+									? availableSourceDuration(
+											fact,
+											linked ? "both" : track,
+											audioEnabled,
+										)
+									: clip.outMs
 						}
 						aria-valuenow={edge === "in" ? clip.inMs : clip.outMs}
 						aria-valuetext={formatTime(edge === "in" ? clip.inMs : clip.outMs)}

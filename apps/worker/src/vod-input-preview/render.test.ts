@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { VodInputPreviewRequest } from "@bitovp/core/vod-input-timeline";
+import {
+	buildVodInputSourcePreviewDocument,
+	type VodInputPreviewRequest,
+} from "@bitovp/core/vod-input-timeline";
 import {
 	type ObjectStorageBrowser,
 	ObjectVersionMismatchError,
@@ -64,6 +67,49 @@ afterEach(async () => {
 });
 
 describe("independent preview resource and identity guards", () => {
+	it.each([
+		false,
+		true,
+	])("accepts only the natural 4s video/18s audio source audition (edited=%s)", async (edited) => {
+		const longFacts = {
+			...facts,
+			durationMs: 4000,
+			video: { ...facts.video, durationMs: 4000 },
+			audio: { ...facts.audio, durationMs: 18000 },
+		};
+		const document = buildVodInputSourcePreviewDocument(longFacts, {
+			documentId: randomUUID(),
+			clipId: randomUUID(),
+		});
+		if (edited) {
+			const first = document.audioClips[0];
+			if (!first) throw new Error("Expected audio");
+			first.outMs = 17000;
+		}
+		const execute = vi.fn(async () => {
+			throw new MediaOperationError("FIXTURE_REACHED_RENDER");
+		});
+		await expect(
+			renderVodInputPreview({
+				request: {
+					kind: "PREVIEW",
+					probeId: randomUUID(),
+					sourcePreviewKey: "a",
+					document,
+					range: { startMs: 0, durationMs: 18000 },
+				},
+				sources: [source],
+				facts: [longFacts],
+				directory,
+				browserFor: vi.fn(),
+				signal: new AbortController().signal,
+				execute,
+			}),
+		).rejects.toMatchObject({
+			code: edited ? "SOURCE_PREVIEW_INVALID" : "FIXTURE_REACHED_RENDER",
+		});
+		expect(execute).toHaveBeenCalledTimes(edited ? 0 : 1);
+	});
 	it.each([
 		"PROCESS_FAILED",
 		"CANCELED",

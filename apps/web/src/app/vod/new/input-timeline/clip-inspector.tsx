@@ -13,6 +13,7 @@ import { formatTime } from "./timeline-state";
 export function ClipInspector({
 	clip,
 	source,
+	availableDurationMs,
 	name,
 	disabled,
 	onChange,
@@ -20,6 +21,7 @@ export function ClipInspector({
 }: {
 	clip: VodInputTimelinePlacedClip;
 	source: VodInputTimelineSourceFacts | undefined;
+	availableDurationMs: number;
 	name: string;
 	disabled: boolean;
 	onChange: (inMs: number, outMs: number) => void;
@@ -50,7 +52,7 @@ export function ClipInspector({
 			!Number.isFinite(outMs) ||
 			inMs < 0 ||
 			outMs <= inMs ||
-			outMs > source.durationMs
+			outMs > availableDurationMs
 		) {
 			setInvalid(true);
 			onError();
@@ -80,7 +82,7 @@ export function ClipInspector({
 							inputMode="decimal"
 							min={0}
 							step="0.001"
-							max={source ? source.durationMs / 1000 : undefined}
+							max={source ? availableDurationMs / 1000 : undefined}
 							className="h-8 tabular-nums"
 							disabled={disabled || !source}
 							value={values[field]}

@@ -52,6 +52,7 @@ const errorMessages: Record<string, string> = {
 	TIMELINE_VIDEO_MISSING: "Choose a video source before creating video output.",
 	TIMELINE_GAP_TOO_LONG:
 		"A blank interval exceeds the 10-second input-stream padding limit.",
+	SOURCE_PREVIEW_INVALID: "Recreate the source preview before trying again.",
 	SOURCE_RANGE_INVALID:
 		"A clip or preview range is outside the measured source duration.",
 	PROBE_UNAVAILABLE:

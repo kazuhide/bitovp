@@ -32,7 +32,7 @@ export function TimelineRuler({
 			aria-valuenow={Math.min(positionMs, maximum)}
 			aria-valuetext={formatTime(positionMs)}
 			aria-disabled={disabled}
-			className="relative h-7 cursor-crosshair border-zinc-800 border-b text-[10px] text-zinc-400 hover:bg-zinc-800/25 focus-visible:outline-2 focus-visible:outline-emerald-300"
+			className="relative h-7 cursor-crosshair overflow-hidden border-zinc-800 border-b text-[10px] text-zinc-400 hover:bg-zinc-800/25 focus-visible:outline-2 focus-visible:outline-emerald-300"
 			onClick={(event) => {
 				if (disabled) return;
 				event.currentTarget.focus();

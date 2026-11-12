@@ -102,6 +102,8 @@ async function stableTimelineScale(editor, report) {
 	await editor.getByRole("button", { name: "元に戻す", exact: true }).click();
 	await expect.poll(async () => (await geometry()).firstWidth).toBeCloseTo(before.firstWidth, 0);
 	await editor.getByRole("button", { name: "全体", exact: true }).click();
+	const fittedViewport = await editor.getByTestId("input-timeline-track").evaluate((element) => ({ width: element.parentElement.clientWidth, scrollWidth: element.parentElement.scrollWidth }));
+	assert.ok(fittedViewport.scrollWidth <= fittedViewport.width + 1, "Fit must contain both the sequence and ruler labels without a redundant scrollbar");
 	const fitted = await geometry();
 	await trim(4);
 	await expect.poll(async () => (await geometry()).firstWidth).toBeCloseTo(fitted.firstWidth * 2 / 3, 0);
@@ -112,7 +114,34 @@ async function stableTimelineScale(editor, report) {
 	await expect.poll(async () => (await geometry()).firstWidth).toBeCloseTo(before.firstWidth, 0);
 	await editor.getByRole("button", { name: "クリップ 3, a.mp4", exact: true }).click();
 	await mediaReady(editor, 9);
-	report.timelineScale = { before, afterTrim, fitted, afterFitTrim };
+	report.timelineScale = { before, afterTrim, fitted, fittedViewport, afterFitTrim };
+}
+
+async function rightEdgeTrim(page, editor, report) {
+	await editor.getByRole("combobox", { name: "タイムラインのズーム" }).selectOption("4");
+	await editor.getByRole("button", { name: "クリップ 3, a.mp4", exact: true }).click();
+	const track = editor.getByTestId("input-timeline-track");
+	await track.evaluate((element) => { element.parentElement.scrollLeft = element.parentElement.scrollWidth; });
+	const geometry = () => track.evaluate((element) => ({ width: element.getBoundingClientRect().width, left: element.getBoundingClientRect().left, scrollLeft: element.parentElement.scrollLeft, viewport: element.parentElement.clientWidth, scrollWidth: element.parentElement.scrollWidth }));
+	await expect.poll(async () => (await geometry()).scrollLeft).toBeGreaterThan(0);
+	const before = await geometry();
+	const handle = editor.getByRole("slider", { name: "終了を調整, a.mp4, クリップ 3", exact: true });
+	const bounds = await handle.boundingBox(); assert.ok(bounds);
+	const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
+	await page.mouse.move(x, y);
+	await page.mouse.down();
+	await page.mouse.move(x - 64, y);
+	await expect(handle).toHaveAttribute("aria-valuenow", "6600");
+	const during = await geometry();
+	await page.mouse.up();
+	const committedOutMs = Number(await editor.getByRole("spinbutton", { name: "終了（秒）" }).inputValue()) * 1000;
+	report.rightEdgeTrim = { before, during, after: await geometry(), draggedPixels: 64, expectedOutMs: 6600, committedOutMs };
+	assert.equal(committedOutMs, 6600, "Native scroll clamping must not count as extra trim on pointer release");
+	assert.ok(during.width >= before.width - 1, "Shrinking gestures must retain the initial scrollable extent");
+	await editor.getByRole("button", { name: "元に戻す", exact: true }).click();
+	await editor.getByRole("combobox", { name: "タイムラインのズーム" }).selectOption("1");
+	await editor.getByRole("button", { name: "クリップ 3, a.mp4", exact: true }).click();
+	await mediaReady(editor, 9);
 }
 
 async function editingInteractions(page, editor) {
@@ -295,6 +324,8 @@ export async function runBrowserQa(options) {
 		await buildSequence(page, editor);
 		console.log("QA: checking stable default scale and explicit Fit while trimming");
 		await stableTimelineScale(editor, report);
+		console.log("QA: checking native scroll clamping during a rightmost out trim");
+		await rightEdgeTrim(page, editor, report);
 		console.log("QA: exercising edit, history, pointer and keyboard controls");
 		await editingInteractions(page, editor);
 		console.log("QA: verifying actual MP4 playback and active seeks");

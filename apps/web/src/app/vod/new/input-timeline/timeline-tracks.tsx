@@ -56,7 +56,7 @@ export function TimelineTracks({
 	});
 	const total = timelineDuration(gesture.shown);
 	const items = timelineItems(gesture.shown);
-	const canvas = scale.canvas(total);
+	const canvas = scale.canvas(Math.max(total, timelineDuration(document)));
 	const followed = useRef({ positionMs, pixelsPerMs: scale.pixelsPerMs });
 	useEffect(() => onDragging(gesture.dragging), [gesture.dragging, onDragging]);
 	useEffect(() => {

@@ -259,6 +259,45 @@ it("trims by the fixed scale while scrolling and changing the preview canvas", (
 	expect(viewport.scrollLeft).toBe(340);
 });
 
+it("does not count native scroll clamping as more pointer motion when trimming the last out edge", () => {
+	const original = timeline();
+	const document = {
+		...original,
+		clips: [{ id: clipA, sourceKey: "a", inMs: 0, outMs: 8000 }],
+	};
+	const view = renderLocalized(tracks(document));
+	fireEvent.change(screen.getByRole("combobox", { name: "Timeline zoom" }), {
+		target: { value: "4" },
+	});
+	const canvas = screen.getByTestId("input-timeline-track");
+	const viewport = viewportOf();
+	let scrollLeft = 0;
+	// A real browser clamps scrolling during layout when the scroll extent shrinks.
+	Object.defineProperty(viewport, "scrollLeft", {
+		configurable: true,
+		get: () =>
+			Math.min(scrollLeft, Math.max(0, widthOf(canvas) - viewportWidth)),
+		set: (value: number) => {
+			scrollLeft = Math.max(0, value);
+		},
+	});
+	const before = widthOf(canvas);
+	viewport.scrollLeft = before - viewportWidth;
+	const handle = screen.getByRole("slider", {
+		name: "Trim end, A.mp4, clip 1",
+	});
+	fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 320 });
+	fireEvent.pointerMove(handle, { pointerId: 1, clientX: 256 });
+	expect(handle).toHaveAttribute("aria-valuenow", "7600");
+	fireEvent.pointerUp(handle, { pointerId: 1, clientX: 256 });
+	expect(changed).toHaveBeenCalledTimes(1);
+	const committed = changed.mock.lastCall?.[0];
+	expect(committed.clips[0].outMs).toBe(7600);
+	view.rerender(tracks(committed));
+	expect(widthOf(canvas)).toBe(before - 64);
+	expect(viewport.scrollLeft).toBe(before - 64 - viewportWidth);
+});
+
 it("exposes named editing controls without an operation-help disclosure", () => {
 	renderLocalized(tracks(timeline()));
 	const region = screen.getByRole("region", { name: "Input timeline tracks" });

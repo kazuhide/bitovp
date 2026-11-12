@@ -755,7 +755,7 @@ export const en = {
 		sameFileName:
 			"Another file has this name, and one would replace the other.",
 		sameSettings:
-			"Another file has the same height and codec, and the same bitrate once both are rounded to kbps. A job needs its files to differ in one of the three. Change one on either file.",
+			"Another file has the same height and codec, and the same bitrate once both are rounded to kbps. Two files made in this view have to differ in one of the three. Change one on either file.",
 		sourceHeight: "Same as source",
 		bitrateOrCrf: "Enter a bitrate, or set CRF in the advanced options.",
 		videoSource: "Video source",

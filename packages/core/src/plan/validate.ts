@@ -2,6 +2,7 @@ import { vmafSourceFor } from "../vmaf/streamable-io";
 import {
 	enumerateBandingQcTargets,
 	enumerateFrameIndexQcTargets,
+	enumerateQcMirrorsWithoutReference,
 	enumerateQcTargets,
 } from "../vmaf/targets";
 import { checkAkamaiMslConstraints } from "./akamai-msl-constraint";
@@ -39,11 +40,187 @@ import {
 import { checkInternalHevcV2Plan } from "./internal-hevc-v2";
 import { validateManifestDetails } from "./manifest-detail-validation";
 import { filterFamily } from "./media-filters";
-import { hasMuxedInAudio, muxingStreamKeys } from "./muxing-streams";
+import {
+	hasMuxedInAudio,
+	isFileOnlyMuxingKind,
+	muxingStreamKeys,
+} from "./muxing-streams";
+import { outputFileCollisions } from "./output-file-collisions";
 import { isPerTitleRendition } from "./per-title-results";
-import { AUDIO_CODECS, type EncodingPlan, vmafModelNeedsFile } from "./schema";
+import {
+	AUDIO_CODECS,
+	type EncodingPlan,
+	type PlanMuxing,
+	vmafModelNeedsFile,
+} from "./schema";
 
 const VIDEO_CODECS_FOR_MODE = new Set(["H264", "H265", "VP9", "AV1"]);
+
+/**
+ * Container/codec matrix: the CLOSED set of codecs each muxing kind may
+ * package. Everything else is `PLAN_MUXING_CODEC_MISMATCH`.
+ *
+ * Exported because a form that offers a container has to offer only the codecs
+ * this rail will accept — a second, hand-kept list in the UI would agree on the
+ * day it was written and drift on the next edit here. `Record` over the muxing
+ * union rather than `Record<string, …>`: a kind added to the schema does not
+ * compile until its row exists, where the old string-keyed lookup fell back to
+ * `[]` and refused every codec with no hint as to why.
+ *
+ * WHERE EACH ROW COMES FROM is not uniform, and the difference matters to
+ * anyone widening it:
+ *
+ *  - FMP4, CMAF, TS, WEBM, TEXT and CHUNKED_TEXT are sample-derived — the
+ *    combinations Bitmovin's vendor samples build, each exercised by a golden.
+ *  - MP4 and the three PROGRESSIVE_* rows are the whole-file containers. They
+ *    hold what Bitmovin documents for them, looked up on 2026-11-13 in its
+ *    support matrix ("Product Support Matrix - ENCODING - VOD Muxings", last
+ *    reviewed for encoder 2.193.1 on 25-Mar-2024 and marked as guidance), its
+ *    guides "Creating Progressive MOV, MP4 and TS Outputs" and "Creating Dolby
+ *    Digital (Plus) Encodings", and the encoder release notes:
+ *      MP4: H.264, H.265, AAC, Dolby Digital, Dolby Digital Plus and Dolby
+ *        Atmos (the matrix); AV1, with audio in the same file (encoder
+ *        2.105.0); the older AC3 and E-AC3 configurations (encoder 2.19.0).
+ *      PROGRESSIVE_TS: H.264, H.265, AAC, Dolby Digital and Dolby Digital Plus
+ *        (the matrix; the Dolby guide names ProgressiveTS); AC3 (encoder
+ *        2.6.0).
+ *      PROGRESSIVE_WEBM: VP9 and AV1 (the matrix); Opus beside VP9 (two
+ *        examples in Bitmovin's older API clients).
+ *      PROGRESSIVE_MOV: Dolby Digital ("MOV (DD only)"). H.264, H.265 and AAC
+ *        are blank in the matrix — "support unknown, combination not tested by
+ *        Bitmovin" — and are in the row on that footing: the kind as a whole
+ *        raises `PLAN_MUXING_UNMEASURED_KIND`.
+ *    A pair the matrix marks "not feasible" or "not supported" stays out, also
+ *    where the container's own format defines it: VP9 in MP4; VP9 and AV1 in
+ *    TS and MOV; Dolby Digital Plus and Dolby Atmos in MOV; H.264, H.265 and
+ *    the Dolby codecs in WebM. So do pairs neither Bitmovin nor a format
+ *    definition read for this table names: Opus in TS and in MOV, Dolby Atmos
+ *    in TS, AAC in WebM.
+ *  - A pair no Bitmovin source names either way is in the row where the
+ *    container side is known to take that kind of stream, and is listed in
+ *    `UNVERIFIED_MUXING_CODECS`, which raises a warning on every plan that
+ *    uses it (owner directive 2026-11-13: a file job is offered every
+ *    combination that can be built, not only the ones on record).
+ */
+export const MUXING_CODEC_MATRIX: Record<
+	PlanMuxing["kind"],
+	readonly string[]
+> = {
+	// AV1 packages into fMP4 and WebM; dedicated CMAF is H264/AAC only.
+	FMP4: [
+		"H264",
+		"H265",
+		"AV1",
+		"AAC",
+		"DOLBY_ATMOS",
+		"DDPLUS",
+		"DD",
+		"AC3",
+		"EAC3",
+	],
+	CMAF: ["H264", "AAC"],
+	MP4: [
+		"H264",
+		"H265",
+		"AV1",
+		"AAC",
+		"OPUS",
+		"DOLBY_ATMOS",
+		"DDPLUS",
+		"DD",
+		"AC3",
+		"EAC3",
+	],
+	TS: ["H264", "AAC", "AC3"],
+	WEBM: ["VP9", "AV1", "OPUS"],
+	TEXT: ["IMSC"],
+	CHUNKED_TEXT: ["WEBVTT"],
+	PROGRESSIVE_TS: ["H264", "H265", "AAC", "DDPLUS", "DD", "AC3", "EAC3"],
+	PROGRESSIVE_MOV: ["H264", "H265", "AAC", "DD", "AC3"],
+	PROGRESSIVE_WEBM: ["VP9", "AV1", "OPUS"],
+};
+
+/**
+ * Whole-file kinds whose row holds H.265 and for which no Bitmovin source read
+ * for the table says anything of Dolby Vision. Bitmovin's sources name Dolby
+ * Vision for fMP4 and MP4 only; its formats page lists it as an output without
+ * crossing it with the containers. A Dolby Vision rendition in one of these
+ * raises `PLAN_MUXING_UNVERIFIED_CODEC`, as a codec in
+ * `UNVERIFIED_MUXING_CODECS` does.
+ */
+export const UNVERIFIED_DOLBY_VISION_MUXING_KINDS: readonly PlanMuxing["kind"][] =
+	["PROGRESSIVE_TS", "PROGRESSIVE_MOV"];
+
+/**
+ * The audio codecs Bitmovin's VOD rulebook takes beside Dolby Vision video in
+ * one muxing: "Muxings carrying Dolby Vision video may only contain AAC or
+ * DOLBY_ATMOS audio streams." Another audio codec there raises
+ * `PLAN_MUXING_DOLBY_VISION_AUDIO`, a warning and not a refusal: `AC3` and
+ * `EAC3` were accepted beside Dolby Vision before the rule was read, no encode
+ * of the pair has been run by this app, and a plan that was accepted is not
+ * refused on a reading.
+ */
+export const DOLBY_VISION_AUDIO_CODECS: readonly string[] = [
+	"AAC",
+	"DOLBY_ATMOS",
+];
+
+/**
+ * Kinds for which this app has no live run on record. Each one raises
+ * `PLAN_MUXING_UNMEASURED_KIND` — a warning, never a block: the request shape
+ * is the SDK's own, so it may well be accepted, and an error would forbid a
+ * plan on a guess (`PLAN_MUXING_CONDITIONAL_STREAM` and
+ * `PLAN_PER_TITLE_MUXED_AUDIO` are the precedents for "unmeasured → say so").
+ *
+ * What else is known differs by kind, so the warning is worded per kind
+ * (`unmeasuredKindDetail`).
+ */
+export const UNMEASURED_MUXING_KINDS: ReadonlySet<PlanMuxing["kind"]> = new Set(
+	["PROGRESSIVE_MOV", "PROGRESSIVE_WEBM"],
+);
+
+/**
+ * What is and is not known about an unmeasured kind — the middle of its
+ * `PLAN_MUXING_UNMEASURED_KIND` message.
+ *
+ *  - PROGRESSIVE_MOV: Bitmovin's guide shows no request for it, and its
+ *    support matrix leaves H.264, H.265 and AAC in it blank.
+ *  - PROGRESSIVE_WEBM: the support matrix lists VP9 and AV1 for it. What this
+ *    app has is the same request for a single stream, and this kind is the
+ *    first here to put audio beside the picture.
+ */
+function unmeasuredKindDetail(kind: PlanMuxing["kind"]): string {
+	if (kind === "PROGRESSIVE_WEBM") {
+		return "which Bitmovin's support matrix lists for VP9 and AV1, and for which this app has no live encode on record: it builds the same request for one stream elsewhere (the QC mirror of a VP9 rendition, a WEBM muxing marked progressive), and a file that holds video and audio together is new with this kind";
+	}
+	return "which this app has not measured on a live encode, for which Bitmovin publishes no sample request, and in which its support matrix leaves H.264, H.265 and AAC untested";
+}
+
+/**
+ * Pairs of `MUXING_CODEC_MATRIX` that no Bitmovin source names, as supported
+ * or as not. Each raises `PLAN_MUXING_UNVERIFIED_CODEC` — a warning, never a
+ * block, for the reason `UNMEASURED_MUXING_KINDS` gives: the encoding may well
+ * be accepted, and an error would forbid a plan on silence.
+ *
+ * Why each is in the matrix at all:
+ *  - Opus in MP4: the format defines it ("Encapsulation of Opus in ISO Base
+ *    Media File Format", 1.0.0). Bitmovin names no container for Opus anywhere
+ *    but in its two WebM examples.
+ *  - E-AC3 in progressive TS, AC3 in MOV: Bitmovin documents the container
+ *    with its Dolby Digital Plus and Dolby Digital configurations, which write
+ *    the same two bitstream formats, and names the older E-AC3 and AC3
+ *    configurations for other containers only.
+ *
+ * Exported for the same reason as the matrix: a form that offers one of these
+ * says so where it is chosen.
+ */
+export const UNVERIFIED_MUXING_CODECS: Partial<
+	Record<PlanMuxing["kind"], readonly string[]>
+> = {
+	MP4: ["OPUS"],
+	PROGRESSIVE_TS: ["EAC3"],
+	PROGRESSIVE_MOV: ["AC3"],
+};
 
 /**
  * Plan-level (cross-field) validation per ARCHITECTURE §3 — runs after zod
@@ -164,6 +341,18 @@ export type PlanValidationOptions = {
 	 */
 	demoteUnmuxedAudio?: boolean;
 	/**
+	 * Demote `PLAN_OUTPUT_FILE_COLLISION` and `PLAN_HLS_AUDIO_UNSELECTED` to
+	 * warnings — RE-RUN ONLY.
+	 *
+	 * Both arrived with the whole-file muxings, and both refuse a plan that was
+	 * accepted before. The principle is the one `demoteUnmuxedAudio` states: a
+	 * rail added later must not make a FINISHED job un-re-runnable, because
+	 * there is no in-app way to edit a persisted plan. A re-run reproduces what
+	 * the job already wrote; the warning still says what is wrong with it.
+	 * Fresh submissions, the watch-folder sweep included, leave this off.
+	 */
+	demoteFileOutputRails?: boolean;
+	/**
 	 * VMAF model names the SCORING worker can actually load — the built-ins it
 	 * always has, plus whatever `VMAF_MODEL_DIR` holds. Omitted ⇒ the check is
 	 * skipped (an unknown capability must not manufacture a refusal).
@@ -256,6 +445,12 @@ export function validatePlan(
 	checkUniqueKeys(plan.keyframes, "keyframes", issues);
 	checkUniqueKeys(plan.manifests, "manifests", issues);
 	issues.push(...validateManifestDetails(plan));
+	issues.push(
+		...outputFileCollisions(
+			plan,
+			options.demoteFileOutputRails ? "warning" : "error",
+		),
+	);
 
 	const inputKeys = new Set(plan.inputs.map((i) => i.key));
 	const outputKeys = new Set(plan.outputs.map((o) => o.key));
@@ -1219,11 +1414,16 @@ export function validatePlan(
 			const packaged = renditionByKey.get(key);
 			return packaged !== undefined && AUDIO_CODECS.has(packaged.codec);
 		});
-		if (audioInContainer.length > 1 && muxing.kind !== "PROGRESSIVE_TS") {
+		if (audioInContainer.length > 1) {
 			issues.push({
 				code: "PLAN_MUXING_MULTIPLE_AUDIO",
 				level: muxing.kind === "TS" ? "error" : "warning",
-				message: `muxing "${muxing.key}" (${muxing.kind}) packages ${audioInContainer.length} audio renditions (${audioInContainer.join(", ")}) — a manifest references the CONTAINER, so only the first is reachable and the rest are encoded and delivered to nobody`,
+				// A whole-file kind is on no manifest, so "a manifest references
+				// the container" would be a sentence about something that does not
+				// exist. What is true of it is narrower, and unmeasured.
+				message: isFileOnlyMuxingKind(muxing.kind)
+					? `muxing "${muxing.key}" (${muxing.kind}) packages ${audioInContainer.length} audio renditions (${audioInContainer.join(", ")}) — a file can hold several audio tracks, but nothing this app generates chooses between them: which one plays is up to whatever opens the file, and a multi-track ${muxing.kind} output has not been measured here`
+					: `muxing "${muxing.key}" (${muxing.kind}) packages ${audioInContainer.length} audio renditions (${audioInContainer.join(", ")}) — a manifest references the CONTAINER, so only the first is reachable and the rest are encoded and delivered to nobody`,
 				path: `muxings[${index}].additionalStreamKeys`,
 			});
 		}
@@ -1248,31 +1448,23 @@ export function validatePlan(
 				path: `muxings[${index}]`,
 			});
 		}
-		// Container/codec matrix (sample-derived): each muxing kind has a
-		// closed set of codecs it can package.
+		// A container this app has never seen the API accept. Said once per
+		// muxing, at plan time, so the operator learns it before the encode is
+		// billed rather than from a 400 thirty ops in.
+		if (UNMEASURED_MUXING_KINDS.has(muxing.kind)) {
+			issues.push({
+				code: "PLAN_MUXING_UNMEASURED_KIND",
+				level: "warning",
+				message: `muxing "${muxing.key}" writes a ${muxing.kind} container, ${unmeasuredKindDetail(muxing.kind)} — the request is built from the SDK model alone, so check the first output before relying on it`,
+				path: `muxings[${index}].kind`,
+			});
+		}
+		// Container/codec matrix: each muxing kind has a closed set of codecs
+		// it can package (`MUXING_CODEC_MATRIX`, module scope — the packaging
+		// form reads the same table).
 		const target = renditionByKey.get(muxing.streamKey);
 		if (target) {
-			const allowed: Record<string, string[]> = {
-				// AV1 packages into fMP4 and WebM; dedicated CMAF is H264/AAC only.
-				FMP4: [
-					"H264",
-					"H265",
-					"AV1",
-					"AAC",
-					"DOLBY_ATMOS",
-					"DDPLUS",
-					"DD",
-					"AC3",
-					"EAC3",
-				],
-				CMAF: ["H264", "AAC"],
-				MP4: ["H264", "H265", "AAC", "DOLBY_ATMOS", "AC3", "EAC3"],
-				TS: ["H264", "AAC", "AC3"],
-				PROGRESSIVE_TS: ["H264", "AAC", "AC3"],
-				WEBM: ["VP9", "AV1", "OPUS"],
-				TEXT: ["IMSC"],
-				CHUNKED_TEXT: ["WEBVTT"],
-			};
+			const allowed = MUXING_CODEC_MATRIX;
 			// The matrix judges EVERY stream in the container. It used to see
 			// only the primary, which was complete while a container held one
 			// stream and silently stopped being complete when it could hold
@@ -1299,17 +1491,124 @@ export function validatePlan(
 					});
 					continue;
 				}
-				if (!(allowed[muxing.kind] ?? []).includes(packaged.codec)) {
+				if (!allowed[muxing.kind].includes(packaged.codec)) {
 					issues.push({
 						code: "PLAN_MUXING_CODEC_MISMATCH",
 						level: "error",
-						message: `muxing "${muxing.key}" (${muxing.kind}) cannot package the ${packaged.codec} rendition "${packaged.key}" — allowed: ${(allowed[muxing.kind] ?? []).join("/")}`,
+						message: `muxing "${muxing.key}" (${muxing.kind}) cannot package the ${packaged.codec} rendition "${packaged.key}" — allowed: ${allowed[muxing.kind].join("/")}`,
+						path:
+							at === 0
+								? `muxings[${index}].streamKey`
+								: `muxings[${index}].additionalStreamKeys[${at - 1}]`,
+					});
+				} else if (
+					UNVERIFIED_MUXING_CODECS[muxing.kind]?.includes(packaged.codec)
+				) {
+					issues.push({
+						code: "PLAN_MUXING_UNVERIFIED_CODEC",
+						level: "warning",
+						message: `muxing "${muxing.key}" (${muxing.kind}) packages the ${packaged.codec} rendition "${packaged.key}": no Bitmovin document was found that names that combination, as supported or as not, and this app has no live encode of it — the encoding may be refused, so check the first output before relying on it`,
+						path:
+							at === 0
+								? `muxings[${index}].streamKey`
+								: `muxings[${index}].additionalStreamKeys[${at - 1}]`,
+					});
+				} else if (
+					packaged.codec === "H265" &&
+					packaged.dynamicRangeFormat?.startsWith("DOLBY_VISION") &&
+					UNVERIFIED_DOLBY_VISION_MUXING_KINDS.includes(muxing.kind)
+				) {
+					issues.push({
+						code: "PLAN_MUXING_UNVERIFIED_CODEC",
+						level: "warning",
+						message: `muxing "${muxing.key}" (${muxing.kind}) packages the Dolby Vision rendition "${packaged.key}": the Bitmovin documents read for this check name Dolby Vision for fMP4 and MP4 only, and this app has no live encode of it in this container — the encoding may be refused or the file may carry no Dolby Vision signalling, so check the first output before relying on it`,
 						path:
 							at === 0
 								? `muxings[${index}].streamKey`
 								: `muxings[${index}].additionalStreamKeys[${at - 1}]`,
 					});
 				}
+			}
+			// Audio beside Dolby Vision video in one container. A codec the row
+			// does not hold, or one already warned of as unlisted, has its issue.
+			const dolbyVisionVideo = containerKeys.find((streamKey) => {
+				const packaged = renditionByKey.get(streamKey);
+				return (
+					(packaged?.codec === "H265" || packaged?.codec === "AV1") &&
+					packaged.dynamicRangeFormat?.startsWith("DOLBY_VISION")
+				);
+			});
+			if (dolbyVisionVideo !== undefined) {
+				for (const [at, streamKey] of containerKeys.entries()) {
+					const packaged = renditionByKey.get(streamKey);
+					if (
+						!packaged ||
+						!AUDIO_CODECS.has(packaged.codec) ||
+						DOLBY_VISION_AUDIO_CODECS.includes(packaged.codec) ||
+						!allowed[muxing.kind].includes(packaged.codec) ||
+						UNVERIFIED_MUXING_CODECS[muxing.kind]?.includes(packaged.codec)
+					) {
+						continue;
+					}
+					issues.push({
+						code: "PLAN_MUXING_DOLBY_VISION_AUDIO",
+						level: "warning",
+						message: `muxing "${muxing.key}" (${muxing.kind}) packages the ${packaged.codec} rendition "${packaged.key}" beside the Dolby Vision rendition "${dolbyVisionVideo}": Bitmovin's rules for a muxing that carries Dolby Vision video name AAC and Dolby Atmos audio only, and this app has no live encode of the pair — the encoding may be refused, so check the first output before relying on it, or carry the audio as AAC`,
+						path:
+							at === 0
+								? `muxings[${index}].streamKey`
+								: `muxings[${index}].additionalStreamKeys[${at - 1}]`,
+					});
+				}
+			}
+			// AV1 in a fragmented MP4 is taken for DASH on-demand only. Bitmovin's
+			// VOD rulebook: "AV1 streams in a fragmented MP4 muxing are only
+			// allowed when fragmentedMP4MuxingManifestType is DASH_ON_DEMAND or
+			// NONE." A plan cannot say NONE, and the API reads a fragmented MP4
+			// with no type as Smooth ("If this is not set, Smooth Streaming is
+			// assumed", Mp4Muxing reference), so DASH_ON_DEMAND is the one type
+			// left. The row held no AV1 before, which refused these with every
+			// other AV1 MP4; an unfragmented AV1 MP4 is the file the row gained.
+			if (
+				muxing.kind === "MP4" &&
+				muxing.fragmentDuration !== undefined &&
+				muxing.manifestType !== "DASH_ON_DEMAND"
+			) {
+				for (const [at, streamKey] of containerKeys.entries()) {
+					if (renditionByKey.get(streamKey)?.codec !== "AV1") {
+						continue;
+					}
+					issues.push({
+						code: "PLAN_MP4_AV1_FRAGMENTED_MANIFEST_TYPE",
+						level: "error",
+						message: `muxing "${muxing.key}" is a fragmented MP4 ${muxing.manifestType === undefined ? "with no manifestType, which Bitmovin reads as SMOOTH," : `for ${muxing.manifestType}`} and packages the AV1 rendition "${streamKey}": Bitmovin takes AV1 in a fragmented MP4 for DASH_ON_DEMAND only — set manifestType to DASH_ON_DEMAND, drop fragmentDuration to write a plain MP4 file, or package the rendition as fMP4`,
+						path:
+							at === 0
+								? `muxings[${index}].streamKey`
+								: `muxings[${index}].additionalStreamKeys[${at - 1}]`,
+					});
+				}
+			}
+			// AV1 with another stream in one progressive WebM is in the table and
+			// in a Bitmovin release note as refused ("Added validation that if
+			// AV1 is used in progressive WebM muxing, no other streams are
+			// allowed in that muxing", REST API Services 1.4.0). The note is old
+			// and no later one was found that says either way, so the plan is
+			// warned and not refused: the provider answers at muxing creation,
+			// before anything is encoded.
+			if (
+				muxing.kind === "PROGRESSIVE_WEBM" &&
+				containerKeys.length > 1 &&
+				containerKeys.some(
+					(streamKey) => renditionByKey.get(streamKey)?.codec === "AV1",
+				)
+			) {
+				issues.push({
+					code: "PLAN_MUXING_AV1_NOT_ALONE",
+					level: "warning",
+					message: `muxing "${muxing.key}" puts AV1 video and ${containerKeys.length - 1 === 1 ? "another stream" : "other streams"} in one progressive WebM file: Bitmovin's API release notes say such a muxing takes no other stream beside AV1, and no later note was found that says otherwise — the encoding may be refused, so check the first output, or write the AV1 video to a file of its own, or to an MP4 with AAC audio`,
+					path: `muxings[${index}].additionalStreamKeys`,
+				});
 			}
 			// DolbyVision MP4 track signaling only makes sense on a DV H265
 			// muxing (the OnDemand sample sets DVH1 on the DV ladder only).
@@ -1740,6 +2039,14 @@ export function validatePlan(
 				manifest.generationMode === "DEFAULT"
 					? plan.muxings.filter((row) => hlsKeys.has(row.streamKey))
 					: plan.muxings;
+			// The muxings this manifest can LIST. A whole-file kind sits beside
+			// the ladder and is never one of its legs (the compiler skips it), so
+			// the rails below that reason about "the variants" and "the audio
+			// media entries" of an UNPINNED manifest must not count it either —
+			// they read every kind when no pin narrows them.
+			const hlsLegs = hlsMuxings.filter(
+				(row) => !isFileOnlyMuxingKind(row.kind),
+			);
 			const hasVideo = hlsRenditions.some((r) =>
 				VIDEO_CODECS_FOR_MODE.has(r.codec),
 			);
@@ -1805,7 +2112,7 @@ export function validatePlan(
 				// is a DESIGNED shape, which is what `videoMuxingKind` is for.
 				// An error-level rail refusing a legal plan is worse than the
 				// hole it closes.
-				const muxedVariant = hlsMuxings.find(
+				const muxedVariant = hlsLegs.find(
 					(m) =>
 						(manifest.videoMuxingKind === undefined ||
 							m.kind === manifest.videoMuxingKind) &&
@@ -1843,7 +2150,7 @@ export function validatePlan(
 			// Does THIS manifest emit any EXT-X-MEDIA audio entry? Mirrors the
 			// compiler's own selection: an audio rendition's muxing, filtered by
 			// `audioMuxingKind` when the manifest pins one.
-			for (const [mxIndex, muxing] of hlsMuxings.entries()) {
+			for (const muxing of hlsMuxings) {
 				const r = renditionByKey.get(muxing.streamKey);
 				if (
 					r?.codec === "OPUS" &&
@@ -1854,10 +2161,28 @@ export function validatePlan(
 						level: "error",
 						message:
 							"Opus/WebM is available through DASH; exclude its audio leg from HLS and provide a supported HLS audio track",
-						path: `muxings[${mxIndex}]`,
+						path: `muxings[${plan.muxings.indexOf(muxing)}]`,
+					});
+				// The same track inside a variant's container is the same audio
+				// on the same playlist: an MP4 holds Opus beside its video since
+				// the row was widened, and the leg above is judged by its first
+				// stream only.
+				const isVideo = r !== undefined && VIDEO_CODECS_FOR_MODE.has(r.codec);
+				if (
+					isVideo &&
+					hlsLegSelected(muxing.kind, manifest.videoMuxingKind) &&
+					muxingStreamKeys(muxing)
+						.slice(1)
+						.some((key) => renditionByKey.get(key)?.codec === "OPUS")
+				)
+					issues.push({
+						code: "PLAN_HLS_OPUS_WEBM_UNSUPPORTED",
+						level: "error",
+						message: `muxing "${muxing.key}" is a variant of this HLS manifest and carries Opus audio; Opus is available through DASH — carry a supported HLS audio codec in this container, or leave the muxing out of the manifest`,
+						path: `muxings[${plan.muxings.indexOf(muxing)}].additionalStreamKeys`,
 					});
 			}
-			const hlsAudioMediaCount = hlsMuxings.filter((m) => {
+			const hlsAudioMediaCount = hlsLegs.filter((m) => {
 				if (
 					manifest.audioMuxingKind !== undefined &&
 					m.kind !== manifest.audioMuxingKind
@@ -1867,7 +2192,7 @@ export function validatePlan(
 				const primary = renditionByKey.get(m.streamKey);
 				return primary !== undefined && AUDIO_CODECS.has(primary.codec);
 			}).length;
-			const selectedVideo = hlsMuxings.filter((m) => {
+			const selectedVideo = hlsLegs.filter((m) => {
 				if (
 					manifest.videoMuxingKind !== undefined &&
 					m.kind !== manifest.videoMuxingKind
@@ -1897,6 +2222,49 @@ export function validatePlan(
 					code: "PLAN_HLS_PARTIAL_MUXED_LADDER",
 					level: "error",
 					message: `manifest "${manifest.key}" mixes variants that carry their own audio with ones that do not (e.g. "${stranded?.key}"), and no audio media entry exists for the latter to reference — those renditions would play silent`,
+					path: `manifests[${mIndex}]`,
+				});
+			}
+			// The HLS side of PLAN_DASH_AUDIO_UNSELECTED. A whole-file muxing can
+			// carry a track without being a leg of any playlist: the track counts
+			// as packaged, so nothing above speaks, while every variant names an
+			// audio group that no media entry creates.
+			if (
+				plan.renditions.some((r) => AUDIO_CODECS.has(r.codec)) &&
+				selectedVideo.length > 0 &&
+				carrying.length === 0 &&
+				hlsAudioMediaCount === 0
+			) {
+				// Say why, and the two places a playlist gets audio from. Which
+				// change answers it depends on the codecs at hand, and their own
+				// rules speak when one is tried: steps named here were ones the
+				// schema or another rule refuses (an Opus track, a CMAF pin).
+				const pin = manifest.audioMuxingKind;
+				const ownKinds = [
+					...new Set(
+						hlsLegs
+							.filter((m) => {
+								const primary = renditionByKey.get(m.streamKey);
+								return primary !== undefined && AUDIO_CODECS.has(primary.codec);
+							})
+							.map((m) => m.kind),
+					),
+				];
+				const listed =
+					pin === undefined
+						? "of a kind an HLS playlist lists (fMP4 by default)"
+						: `in ${pin}, the kind its audioMuxingKind names`;
+				const advice = !hlsRenditions.some((r) => AUDIO_CODECS.has(r.codec))
+					? "A default manifest is generated for one encoding, that of the plan's first rendition, and it has no audio rendition: put the audio in that encoding, or generate the manifest manually"
+					: `${
+							pin !== undefined && ownKinds.length > 0
+								? `Its audioMuxingKind (${pin}) leaves out every container the audio renditions have (${ownKinds.join(", ")})`
+								: "No audio rendition has a container of its own that the manifest could list"
+						}. A playlist gets its audio from an audio rendition's own container ${listed}, or from an audio track in every variant it lists`;
+				issues.push({
+					code: "PLAN_HLS_AUDIO_UNSELECTED",
+					level: options.demoteFileOutputRails ? "warning" : "error",
+					message: `manifest "${manifest.key}" lists no audio although the plan has audio renditions: no variant carries an audio track and no audio media entry exists — it would play silent. ${advice}`,
 					path: `manifests[${mIndex}]`,
 				});
 			}
@@ -2049,7 +2417,15 @@ export function validatePlan(
 		}
 		for (const muxing of plan.muxings) {
 			const target = renditionByKey.get(muxing.streamKey);
-			if (!target || muxing.kind === "CHUNKED_TEXT" || muxing.kind === "TEXT") {
+			if (
+				!target ||
+				muxing.kind === "CHUNKED_TEXT" ||
+				muxing.kind === "TEXT" ||
+				// Never an entry of any manifest, so no entry can lose protection.
+				// Without this an unpinned HLS manifest "selects" the file below
+				// and demands a DRM that `PLAN_DRM_MUXING_MISMATCH` then refuses.
+				isFileOnlyMuxingKind(muxing.kind)
+			) {
 				continue;
 			}
 			const perTitle =
@@ -2528,7 +2904,11 @@ export function validatePlan(
 			...plan.muxings
 				.filter(
 					(muxing) =>
-						muxing.destination && !muxing.destination.path.startsWith(base),
+						// A whole-file kind is referenced by no manifest, so it has
+						// no segment reference to resolve wherever it is written.
+						!isFileOnlyMuxingKind(muxing.kind) &&
+						muxing.destination &&
+						!muxing.destination.path.startsWith(base),
 				)
 				.map((muxing) => muxing.key),
 			...plan.drm
@@ -2895,6 +3275,31 @@ export function validatePlan(
 				path,
 			});
 		}
+	}
+
+	// VMAF and PSNR compare an encode with the file it was encoded from. A rendition
+	// that reads a stream derived from the source (a trimmed part, a concatenation,
+	// a Dolby Vision input) has no such file, so it gets a mirror and no score. A
+	// warning, as the encode itself is what was asked for: what is lost is the
+	// measurement, and a gate rule that covers the rendition fails for the lack of
+	// it, which the rule can avoid by naming the renditions it is for.
+	for (const { rendition } of enumerateQcMirrorsWithoutReference(plan)) {
+		const gated = (plan.qc?.gate?.rules ?? []).some(
+			(rule) =>
+				rule.metric !== "CAMBI_MAX" &&
+				(rule.renditions === undefined ||
+					rule.renditions.includes(rendition.key)),
+		);
+		issues.push({
+			code: "PLAN_QC_NO_REFERENCE",
+			level: "warning",
+			path: `renditions[${plan.renditions.indexOf(rendition)}].ingestKey`,
+			message: `quality control compares an encode with the source file it reads, and video rendition "${rendition.key}" reads "${rendition.ingestKey}", which is a stream derived from a source and not a source file: VMAF and PSNR will not be measured for it${
+				gated
+					? ", and the QC gate rule that covers it will fail for the missing score — name the renditions that rule is for, or leave this rendition out of the measurement"
+					: ""
+			}`,
+		});
 	}
 
 	// Native HEVCv2 compiles to SMART_PASS. The provider refuses a video stream

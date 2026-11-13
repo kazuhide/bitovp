@@ -506,7 +506,7 @@ describe("validatePlan", () => {
 		).toHaveLength(1);
 	});
 
-	it("allows AV1 in fMP4 and WebM but rejects it in MP4 and TS", () => {
+	it("allows AV1 in fMP4, WebM and MP4 but rejects it in TS", () => {
 		const plan = basePlan();
 		plan.renditions = [
 			encodingPlanSchema.shape.renditions.element.parse({
@@ -518,7 +518,7 @@ describe("validatePlan", () => {
 			}),
 		];
 		const muxing = encodingPlanSchema.shape.muxings.element;
-		// Valid containers: fMP4 (CMAF) + WebM.
+		// Valid containers: fMP4 (CMAF) + WebM, and MP4 since encoder 2.105.0.
 		plan.muxings = [
 			muxing.parse({
 				key: "av1-fmp4",
@@ -537,7 +537,6 @@ describe("validatePlan", () => {
 			validatePlan(plan).filter((i) => i.code === "PLAN_MUXING_CODEC_MISMATCH"),
 		).toHaveLength(0);
 
-		// Invalid containers: MP4 + TS each fire a mismatch.
 		plan.muxings.push(
 			muxing.parse({
 				key: "av1-mp4",
@@ -546,6 +545,13 @@ describe("validatePlan", () => {
 				filename: "av1.mp4",
 				destination: { outputKey: "out", path: "x/video/mp4" },
 			}),
+		);
+		expect(
+			validatePlan(plan).filter((i) => i.code === "PLAN_MUXING_CODEC_MISMATCH"),
+		).toHaveLength(0);
+
+		// An invalid container: TS fires a mismatch.
+		plan.muxings.push(
 			muxing.parse({
 				key: "av1-ts",
 				kind: "TS",
@@ -554,8 +560,10 @@ describe("validatePlan", () => {
 			}),
 		);
 		expect(
-			validatePlan(plan).filter((i) => i.code === "PLAN_MUXING_CODEC_MISMATCH"),
-		).toHaveLength(2);
+			validatePlan(plan)
+				.filter((i) => i.code === "PLAN_MUXING_CODEC_MISMATCH")
+				.map((i) => i.path),
+		).toEqual(["muxings[3].streamKey"]);
 	});
 
 	it("DASH zero-rep check honors pinned legs and per-title expansion", () => {

@@ -553,9 +553,20 @@ function StreamRow({
 type SourcesSectionProps = {
 	state: WizardState;
 	onPatch: (partial: Partial<WizardState>) => void;
+	/**
+	 * The file flow's simple view. It leaves out the encodings a job is split into:
+	 * a stream is put on one of them in the Ladder step, and with more than one the
+	 * Manifests step has to say when the manifests are generated. The view has
+	 * neither step, so a row added here could only be refused.
+	 */
+	fileView?: boolean;
 };
 
-export function SourcesSection({ state, onPatch }: SourcesSectionProps) {
+export function SourcesSection({
+	state,
+	onPatch,
+	fileView = false,
+}: SourcesSectionProps) {
 	const { t } = useT();
 	const sources = state.sources ?? {};
 	const encodings = sources.encodings ?? [];
@@ -771,125 +782,127 @@ export function SourcesSection({ state, onPatch }: SourcesSectionProps) {
 				</div>
 			</Collapsible>
 
-			<Collapsible
-				summary={t("wizardX.multiEncodingPartitionCount", {
-					count: encodings.length,
-				})}
-				help={t("wizard.dolbyDvHdr10SdrLaddersRunAs")}
-			>
-				{encodings.map((encoding, index) => (
-					<div key={index} className="flex flex-wrap items-start gap-2">
-						<Field label={t("wizard.key")} htmlFor={`wz-enc-${index}-key`}>
-							<Input
-								id={`wz-enc-${index}-key`}
-								className="w-28"
-								value={encoding.key}
-								onChange={(e) => renameEncoding(index, e.target.value)}
-							/>
-						</Field>
-						<Field
-							label={t("wizard.cloudRegion")}
-							htmlFor={`wz-enc-${index}-region`}
-						>
-							<RegionSelect
-								id={`wz-enc-${index}-region`}
-								className="w-44"
-								emptyLabel={t("wizard.planDefault")}
-								value={encoding.cloudRegion ?? ""}
-								onChange={(region) => {
-									const next = [...encodings];
-									next[index] = {
-										...encoding,
-										cloudRegion: region || undefined,
-									};
-									patchSources({ ...sources, encodings: next });
-								}}
-							/>
-						</Field>
-						<Field
-							label={t("wizard.encoderVersion")}
-							htmlFor={`wz-enc-${index}-version`}
-						>
-							<Input
-								id={`wz-enc-${index}-version`}
-								className="w-44"
-								placeholder={t("wizard.planDefault")}
-								value={encoding.encoderVersion ?? ""}
-								onChange={(event) => {
-									const next = [...encodings];
-									next[index] = {
-										...encoding,
-										encoderVersion: event.target.value || undefined,
-									};
-									patchSources({ ...sources, encodings: next });
-								}}
-							/>
-						</Field>
-						<FieldRowAction>
-							<RowRemoveButton
-								label={t("wizardX.removeEncodingN", { n: index + 1 })}
-								onClick={() => removeEncoding(index)}
-							/>
-						</FieldRowAction>
-					</div>
-				))}
-				<Button
-					variant="secondary"
-					size="sm"
-					onClick={() =>
-						patchSources({
-							...sources,
-							encodings: [
-								...encodings,
-								{
-									key: `enc${encodingNumber}`,
-									name: state.name
-										? `${state.name}-enc${encodingNumber}`
-										: `encoding-${encodingNumber}`,
-								},
-							],
-						})
-					}
+			{fileView ? null : (
+				<Collapsible
+					summary={t("wizardX.multiEncodingPartitionCount", {
+						count: encodings.length,
+					})}
+					help={t("wizard.dolbyDvHdr10SdrLaddersRunAs")}
 				>
-					{t("wizard.addEncoding")}
-				</Button>
-				{encodingKeys.length > 0 ? (
-					<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-						<EncodingKeySelect
-							id="wz-imp-video-enc"
-							label={t("wizard.implicitVideoTrackEncoding")}
-							help={t("wizard.appliesWhileARenditionUsesTheImplicit")}
-							value={sources.implicitEncodingKeys?.video}
-							encodingKeys={encodingKeys}
-							onChange={(video) =>
-								patchSources({
-									...sources,
-									implicitEncodingKeys: {
-										...sources.implicitEncodingKeys,
-										video,
+					{encodings.map((encoding, index) => (
+						<div key={index} className="flex flex-wrap items-start gap-2">
+							<Field label={t("wizard.key")} htmlFor={`wz-enc-${index}-key`}>
+								<Input
+									id={`wz-enc-${index}-key`}
+									className="w-28"
+									value={encoding.key}
+									onChange={(e) => renameEncoding(index, e.target.value)}
+								/>
+							</Field>
+							<Field
+								label={t("wizard.cloudRegion")}
+								htmlFor={`wz-enc-${index}-region`}
+							>
+								<RegionSelect
+									id={`wz-enc-${index}-region`}
+									className="w-44"
+									emptyLabel={t("wizard.planDefault")}
+									value={encoding.cloudRegion ?? ""}
+									onChange={(region) => {
+										const next = [...encodings];
+										next[index] = {
+											...encoding,
+											cloudRegion: region || undefined,
+										};
+										patchSources({ ...sources, encodings: next });
+									}}
+								/>
+							</Field>
+							<Field
+								label={t("wizard.encoderVersion")}
+								htmlFor={`wz-enc-${index}-version`}
+							>
+								<Input
+									id={`wz-enc-${index}-version`}
+									className="w-44"
+									placeholder={t("wizard.planDefault")}
+									value={encoding.encoderVersion ?? ""}
+									onChange={(event) => {
+										const next = [...encodings];
+										next[index] = {
+											...encoding,
+											encoderVersion: event.target.value || undefined,
+										};
+										patchSources({ ...sources, encodings: next });
+									}}
+								/>
+							</Field>
+							<FieldRowAction>
+								<RowRemoveButton
+									label={t("wizardX.removeEncodingN", { n: index + 1 })}
+									onClick={() => removeEncoding(index)}
+								/>
+							</FieldRowAction>
+						</div>
+					))}
+					<Button
+						variant="secondary"
+						size="sm"
+						onClick={() =>
+							patchSources({
+								...sources,
+								encodings: [
+									...encodings,
+									{
+										key: `enc${encodingNumber}`,
+										name: state.name
+											? `${state.name}-enc${encodingNumber}`
+											: `encoding-${encodingNumber}`,
 									},
-								})
-							}
-						/>
-						<EncodingKeySelect
-							id="wz-imp-audio-enc"
-							label={t("wizard.implicitAudioTrackEncoding")}
-							help={t("wizard.appliesWhileARenditionUsesTheImplicit2")}
-							value={sources.implicitEncodingKeys?.audio}
-							encodingKeys={encodingKeys}
-							onChange={(audio) =>
-								patchSources({
-									...sources,
-									implicitEncodingKeys: {
-										...sources.implicitEncodingKeys,
-										audio,
-									},
-								})
-							}
-						/>
-					</div>
-				) : null}
-			</Collapsible>
+								],
+							})
+						}
+					>
+						{t("wizard.addEncoding")}
+					</Button>
+					{encodingKeys.length > 0 ? (
+						<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+							<EncodingKeySelect
+								id="wz-imp-video-enc"
+								label={t("wizard.implicitVideoTrackEncoding")}
+								help={t("wizard.appliesWhileARenditionUsesTheImplicit")}
+								value={sources.implicitEncodingKeys?.video}
+								encodingKeys={encodingKeys}
+								onChange={(video) =>
+									patchSources({
+										...sources,
+										implicitEncodingKeys: {
+											...sources.implicitEncodingKeys,
+											video,
+										},
+									})
+								}
+							/>
+							<EncodingKeySelect
+								id="wz-imp-audio-enc"
+								label={t("wizard.implicitAudioTrackEncoding")}
+								help={t("wizard.appliesWhileARenditionUsesTheImplicit2")}
+								value={sources.implicitEncodingKeys?.audio}
+								encodingKeys={encodingKeys}
+								onChange={(audio) =>
+									patchSources({
+										...sources,
+										implicitEncodingKeys: {
+											...sources.implicitEncodingKeys,
+											audio,
+										},
+									})
+								}
+							/>
+						</div>
+					) : null}
+				</Collapsible>
+			)}
 
 			<Collapsible
 				summary={t("wizardX.keyframesAdCuesCount", { count: keyframes.length })}

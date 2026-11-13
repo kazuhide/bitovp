@@ -119,11 +119,11 @@ describe("catalogue parity", () => {
 			expect(actual).toBe(expected);
 		};
 		/* Assert the measured number of unique long Japanese strings. Update the count only after inspecting the catalog change that crosses the length threshold. */
-		// Runtime measurement includes the manual VOD input timeline copy.
-		pinWithDriftAid(long.length, 1591, "long");
+		// Runtime measurement after the VOD file-output flow copy.
+		pinWithDriftAid(long.length, 1640, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		// Runtime measurement after removing the timeline-only file-output label.
-		pinWithDriftAid(short.size, 3159, "short");
+		// Runtime measurement includes the VOD file-output flow labels.
+		pinWithDriftAid(short.size, 3200, "short");
 	});
 
 	/**

@@ -25,6 +25,36 @@ region. Review the selected account and any saved or copied region settings.
 8. **Review:** inspect the plan preview, warnings, generated resources, and paths,
    then start encoding.
 
+These steps package the job for streaming. To write finished files instead — MP4,
+MPEG-TS, QuickTime, or WebM files with the audio inside, and no manifests — choose **Export files**
+under "What to create" at the top of the page. That flow has six steps: Basics,
+Sources, Format, Destination, Encoding, and Review. In Format, each container offers
+every codec it can hold (AV1 in MP4 and WebM, VP9 and Opus in WebM, for example), and
+each file has its own video codec and its own audio. Files in more than one video
+codec need the same encoding mode on every file, other than "(default)". Files are written directly into
+the output folder and are named after the job until you type a name. Two files in one
+job cannot have the same name, and two made in the six steps cannot have the same
+height and codec with the same bitrate in kbps. A file already in the folder under
+the same name may be replaced. Public read access is not requested for the files
+unless you select it in Destination. Encoding is the step the eight steps have,
+with AI Scene Analysis, quality control, and Kantar audio watermarking. It leaves
+three settings to the eight steps: the Per-Title configuration, what a QC gate does
+when it fails, and the renditions a gate rule is for. A gate set here holds nothing
+back: a failed rule is recorded on the job and sends the "QC gate failed"
+notification, and each rule is for every file. The AI Scene Analysis result, the
+copies measured for quality, and the Kantar report start in a folder named after the
+job inside the output folder; the copies are named after the video settings and not
+after the job, so keep a folder for each job. Review lists what those settings
+write with the files. **Show all settings** opens the eight steps with what you
+entered, and **Back to simple view** returns while nothing outside the six steps is
+in use. The input timeline in Sources is part of the six steps: the files are then
+made from the edited sequence, which also decides whether they have audio, and the
+sources selected for a file are not used. Applying a saved image as an output logo
+adds a filter, so the form opens the eight steps. The flow you choose is remembered in this browser, and
+Settings holds the same choice under "New VOD job flow". Switching "What to create"
+opens a new form: what you entered is not carried over. It is saved as the other
+flow's draft, unless that form was still offering to restore an earlier draft.
+
 Saved templates, samples, and imported plan JSON populate the same workflow.
 Importing or copying settings does not create a job. Settings that the form
 cannot represent remain available through the JSON editor instead of being
@@ -83,7 +113,11 @@ remove them and pass validation.
 
 HLS/DASH manifests describe available renditions and their segments. Packaging
 defines how those streams are stored, for example MPEG-TS, fragmented MP4
-(fMP4), or progressive MP4.
+(fMP4), or progressive MP4. Progressive TS, MOV, and WebM write one whole file for
+each video rendition, with the audio inside: H.264 or H.265 video in TS and MOV, and
+VP9 or AV1 video with Opus audio in WebM. No manifest lists them and DRM is not
+offered. MOV and WebM have not been verified on a real encode, so check the first
+output.
 
 For HLS, decide whether video and audio share a container or use separate audio
 groups. A variant that already contains audio must not also reference an external

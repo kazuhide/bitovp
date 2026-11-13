@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { compilePlan } from "../plan/compiler";
+import { storageSummaries } from "../plan/detail-view";
 import { encodingPlanSchema } from "../plan/schema";
 import {
 	enumerateExistingMp4Targets,
@@ -104,6 +105,42 @@ describe("enumerateQcTargets", () => {
 				expect(t.distorted.path).toBe(mirrorByRendition.get(t.renditionKey));
 			}
 		}
+	});
+
+	it("puts every mirror in the folder the plan names, and all three readers agree", () => {
+		// Two jobs that write their files into one folder would otherwise share
+		// `<folder>/qc/<rendition key>.mp4`, and each be measured on the copy the
+		// later encode left there.
+		const raw = loadRawPlan("fixed-bitrate-hls-on-aws");
+		const plan = encodingPlanSchema.parse({
+			...raw,
+			qc: { vmaf: true, mirrorPath: "exports/clip-a/" },
+		});
+		expect(enumerateQcTargets(plan).map((t) => t.distorted.path)).toEqual([
+			"exports/clip-a/qc/v360.mp4",
+			"exports/clip-a/qc/v540.mp4",
+		]);
+		expect(
+			compilePlan(plan)
+				.filter((op) => op.step.startsWith("qc-muxing:"))
+				.map((op) => `${op.payload.outputPath}${op.payload.filename}`),
+		).toEqual(["exports/clip-a/qc/v360.mp4", "exports/clip-a/qc/v540.mp4"]);
+		expect(
+			storageSummaries(plan).outputs.flatMap((output) =>
+				output.paths
+					.filter((item) => item.role === "qc")
+					.map((item) => item.path),
+			),
+		).toEqual(["exports/clip-a/qc/", "exports/clip-a/qc/"]);
+		// A folder written without its slash is the same folder.
+		expect(
+			enumerateQcTargets(
+				encodingPlanSchema.parse({
+					...raw,
+					qc: { vmaf: true, mirrorPath: "exports/clip-a" },
+				}),
+			).map((t) => t.distorted.path),
+		).toEqual(["exports/clip-a/qc/v360.mp4", "exports/clip-a/qc/v540.mp4"]);
 	});
 
 	it("emits nothing for an audio-only plan", () => {

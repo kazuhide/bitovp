@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-12T23:10:21.644Z",
-		"sourceCommit": "98e9fd1bb5ec1c3fdbd3fa4d5a664c3c618a7166",
-		"sourceFingerprint": "ae9ddb860601c4db562ac26042590bdfa0bb886ade65405cf720d65180af0e10",
+		"generatedAt": "2026-11-13T12:37:51.705Z",
+		"sourceCommit": "742d7facb3c222e91aab8b2a08009ee3dbfa5cf0",
+		"sourceFingerprint": "d7ad2b505ca0073f8a4e24d38a19b0217207ccb63f0b55b4df1a93c487330702",
 		"sdkVersion": "1.287.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "4e616dafb9c392b4c287993ae433f23201282723cb9d847a7a88ceffdde525a9",
@@ -12,10 +12,10 @@
 	},
 	"summary": {
 		"totalOperations": 1089,
-		"sourceConfirmed": 280,
-		"unconfirmed": 809,
+		"sourceConfirmed": 283,
+		"unconfirmed": 806,
 		"createTotal": 217,
-		"createSourceConfirmed": 128
+		"createSourceConfirmed": 129
 	},
 	"families": [
 		{
@@ -27,8 +27,8 @@
 		{
 			"family": "encodings",
 			"total": 421,
-			"sourceConfirmed": 93,
-			"unconfirmed": 328
+			"sourceConfirmed": 96,
+			"unconfirmed": 325
 		},
 		{
 			"family": "errorDefinitions",
@@ -1755,7 +1755,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 325
+					"line": 328
 				}
 			]
 		},
@@ -1868,7 +1868,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 360
+					"line": 363
 				}
 			]
 		},
@@ -1909,7 +1909,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 185
+					"line": 188
 				}
 			]
 		},
@@ -1950,7 +1950,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 209
+					"line": 212
 				}
 			]
 		},
@@ -1991,7 +1991,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 164
+					"line": 167
 				}
 			]
 		},
@@ -2032,7 +2032,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 142
+					"line": 145
 				}
 			]
 		},
@@ -2064,7 +2064,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 1068
+					"line": 1114
 				}
 			]
 		},
@@ -2078,7 +2078,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 226
+					"line": 229
 				}
 			]
 		},
@@ -2155,7 +2155,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 276
+					"line": 279
 				}
 			]
 		},
@@ -2196,7 +2196,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 242
+					"line": 245
 				}
 			]
 		},
@@ -2237,7 +2237,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 259
+					"line": 262
 				}
 			]
 		},
@@ -2319,7 +2319,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 538
+					"line": 541
 				}
 			]
 		},
@@ -2722,7 +2722,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 949
+					"line": 995
 				}
 			]
 		},
@@ -2754,7 +2754,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 936
+					"line": 982
 				}
 			]
 		},
@@ -2768,7 +2768,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 938
+					"line": 984
 				}
 			]
 		},
@@ -2782,7 +2782,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 639
+					"line": 642
 				}
 			]
 		},
@@ -2814,11 +2814,11 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 627
+					"line": 630
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 971
+					"line": 1017
 				}
 			]
 		},
@@ -2832,7 +2832,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 628
+					"line": 631
 				}
 			]
 		},
@@ -2846,7 +2846,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 677
+					"line": 680
 				}
 			]
 		},
@@ -2878,11 +2878,11 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 665
+					"line": 668
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 973
+					"line": 1019
 				}
 			]
 		},
@@ -2896,7 +2896,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 666
+					"line": 669
 				}
 			]
 		},
@@ -3443,7 +3443,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 719
+					"line": 722
 				}
 			]
 		},
@@ -3480,11 +3480,11 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 703
+					"line": 706
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 977
+					"line": 1023
 				}
 			]
 		},
@@ -3498,7 +3498,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 704
+					"line": 707
 				}
 			]
 		},
@@ -3963,8 +3963,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.encodings.muxings.progressiveMov.create",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/media.ts",
+					"line": 775
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-mov/{muxing_id}",
@@ -3990,8 +3995,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.encodings.muxings.progressiveMov.list",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/media.ts",
+					"line": 758
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-mov/{muxing_id}/customData",
@@ -3999,8 +4009,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.muxings.progressiveMov.customdata.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/media.ts",
+					"line": 760
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-mov/{muxing_id}/information",
@@ -4021,7 +4036,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 811
+					"line": 815
 				}
 			]
 		},
@@ -4053,7 +4068,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 793
+					"line": 796
 				}
 			]
 		},
@@ -4067,7 +4082,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 795
+					"line": 798
 				}
 			]
 		},
@@ -4441,7 +4456,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 772
+					"line": 858
 				}
 			]
 		},
@@ -4473,7 +4488,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 755
+					"line": 841
 				}
 			]
 		},
@@ -4487,7 +4502,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 757
+					"line": 843
 				}
 			]
 		},
@@ -4663,7 +4678,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 916
+					"line": 962
 				}
 			]
 		},
@@ -4695,7 +4710,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 904
+					"line": 950
 				}
 			]
 		},
@@ -4709,7 +4724,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 905
+					"line": 951
 				}
 			]
 		},
@@ -4723,7 +4738,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 845
+					"line": 891
 				}
 			]
 		},
@@ -4755,11 +4770,11 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 833
+					"line": 879
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 975
+					"line": 1021
 				}
 			]
 		},
@@ -4773,7 +4788,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 834
+					"line": 880
 				}
 			]
 		},
@@ -4963,7 +4978,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 880
+					"line": 926
 				}
 			]
 		},
@@ -4995,11 +5010,11 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 868
+					"line": 914
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 979
+					"line": 1025
 				}
 			]
 		},
@@ -5013,7 +5028,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 869
+					"line": 915
 				}
 			]
 		},
@@ -5275,7 +5290,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 401
+					"line": 404
 				}
 			]
 		},
@@ -5298,7 +5313,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 1037
+					"line": 1083
 				}
 			]
 		},
@@ -5312,7 +5327,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 388
+					"line": 391
 				}
 			]
 		},
@@ -5443,7 +5458,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 497
+					"line": 500
 				}
 			]
 		},
@@ -5574,7 +5589,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 390
+					"line": 393
 				}
 			]
 		},
@@ -5588,7 +5603,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 522
+					"line": 525
 				}
 			]
 		},
@@ -5629,7 +5644,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 441
+					"line": 444
 				}
 			]
 		},
@@ -5706,7 +5721,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 593
+					"line": 596
 				}
 			]
 		},
@@ -5756,7 +5771,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 557
+					"line": 560
 				}
 			]
 		},
@@ -6127,7 +6142,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
-					"line": 468
+					"line": 471
 				}
 			]
 		},
@@ -11514,8 +11529,8 @@
 			"expandedOperations": 226,
 			"unexpandedOperations": 3,
 			"totalFields": 2562,
-			"sourceAssigned": 270,
-			"unconfirmed": 2292
+			"sourceAssigned": 275,
+			"unconfirmed": 2287
 		},
 		"operations": [
 			{
@@ -18173,8 +18188,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 363,
-								"callLine": 360
+								"line": 366,
+								"callLine": 363
 							}
 						]
 					},
@@ -18299,8 +18314,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 190,
-								"callLine": 185
+								"line": 193,
+								"callLine": 188
 							}
 						]
 					},
@@ -18315,8 +18330,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 188,
-								"callLine": 185
+								"line": 191,
+								"callLine": 188
 							}
 						]
 					},
@@ -18331,8 +18346,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 189,
-								"callLine": 185
+								"line": 192,
+								"callLine": 188
 							}
 						]
 					},
@@ -18417,8 +18432,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 212,
-								"callLine": 209
+								"line": 215,
+								"callLine": 212
 							}
 						]
 					},
@@ -18433,8 +18448,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 214,
-								"callLine": 209
+								"line": 217,
+								"callLine": 212
 							}
 						]
 					},
@@ -18469,8 +18484,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 213,
-								"callLine": 209
+								"line": 216,
+								"callLine": 212
 							}
 						]
 					}
@@ -18525,8 +18540,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 169,
-								"callLine": 164
+								"line": 172,
+								"callLine": 167
 							}
 						]
 					},
@@ -18551,8 +18566,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 167,
-								"callLine": 164
+								"line": 170,
+								"callLine": 167
 							}
 						]
 					},
@@ -18567,8 +18582,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 168,
-								"callLine": 164
+								"line": 171,
+								"callLine": 167
 							}
 						]
 					},
@@ -18653,8 +18668,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 145,
-								"callLine": 142
+								"line": 148,
+								"callLine": 145
 							}
 						]
 					},
@@ -18669,8 +18684,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 146,
-								"callLine": 142
+								"line": 149,
+								"callLine": 145
 							}
 						]
 					},
@@ -18705,8 +18720,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 152,
-								"callLine": 142
+								"line": 155,
+								"callLine": 145
 							}
 						]
 					},
@@ -18721,8 +18736,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 147,
-								"callLine": 142
+								"line": 150,
+								"callLine": 145
 							}
 						]
 					}
@@ -18787,8 +18802,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 229,
-								"callLine": 226
+								"line": 232,
+								"callLine": 229
 							}
 						]
 					},
@@ -18803,8 +18818,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 230,
-								"callLine": 226
+								"line": 233,
+								"callLine": 229
 							}
 						]
 					},
@@ -18989,8 +19004,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 281,
-								"callLine": 276
+								"line": 284,
+								"callLine": 279
 							}
 						]
 					},
@@ -19015,8 +19030,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 279,
-								"callLine": 276
+								"line": 282,
+								"callLine": 279
 							}
 						]
 					},
@@ -19051,8 +19066,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 280,
-								"callLine": 276
+								"line": 283,
+								"callLine": 279
 							}
 						]
 					}
@@ -19107,8 +19122,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 247,
-								"callLine": 242
+								"line": 250,
+								"callLine": 245
 							}
 						]
 					},
@@ -19133,8 +19148,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 245,
-								"callLine": 242
+								"line": 248,
+								"callLine": 245
 							}
 						]
 					},
@@ -19169,8 +19184,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 246,
-								"callLine": 242
+								"line": 249,
+								"callLine": 245
 							}
 						]
 					}
@@ -19225,8 +19240,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 264,
-								"callLine": 259
+								"line": 267,
+								"callLine": 262
 							}
 						]
 					},
@@ -19251,8 +19266,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 262,
-								"callLine": 259
+								"line": 265,
+								"callLine": 262
 							}
 						]
 					},
@@ -19287,8 +19302,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 263,
-								"callLine": 259
+								"line": 266,
+								"callLine": 262
 							}
 						]
 					}
@@ -19505,8 +19520,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 540,
-								"callLine": 538
+								"line": 543,
+								"callLine": 541
 							}
 						]
 					}
@@ -20443,8 +20458,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 957,
-								"callLine": 949
+								"line": 1003,
+								"callLine": 995
 							}
 						]
 					},
@@ -20459,8 +20474,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 956,
-								"callLine": 949
+								"line": 1002,
+								"callLine": 995
 							}
 						]
 					},
@@ -20475,8 +20490,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 952,
-								"callLine": 949
+								"line": 998,
+								"callLine": 995
 							}
 						]
 					},
@@ -20491,8 +20506,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 953,
-								"callLine": 949
+								"line": 999,
+								"callLine": 995
 							}
 						]
 					},
@@ -20507,8 +20522,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 954,
-								"callLine": 949
+								"line": 1000,
+								"callLine": 995
 							}
 						]
 					},
@@ -20553,8 +20568,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 955,
-								"callLine": 949
+								"line": 1001,
+								"callLine": 995
 							}
 						]
 					}
@@ -20619,8 +20634,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 647,
-								"callLine": 639
+								"line": 650,
+								"callLine": 642
 							}
 						]
 					},
@@ -20655,8 +20670,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 645,
-								"callLine": 639
+								"line": 648,
+								"callLine": 642
 							}
 						]
 					},
@@ -20671,8 +20686,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 646,
-								"callLine": 639
+								"line": 649,
+								"callLine": 642
 							}
 						]
 					},
@@ -20717,8 +20732,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 650,
-								"callLine": 639
+								"line": 653,
+								"callLine": 642
 							}
 						]
 					},
@@ -20733,8 +20748,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 649,
-								"callLine": 639
+								"line": 652,
+								"callLine": 642
 							}
 						]
 					},
@@ -20749,8 +20764,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 642,
-								"callLine": 639
+								"line": 645,
+								"callLine": 642
 							}
 						]
 					},
@@ -20765,8 +20780,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 643,
-								"callLine": 639
+								"line": 646,
+								"callLine": 642
 							}
 						]
 					},
@@ -20781,8 +20796,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 644,
-								"callLine": 639
+								"line": 647,
+								"callLine": 642
 							}
 						]
 					},
@@ -20817,8 +20832,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 648,
-								"callLine": 639
+								"line": 651,
+								"callLine": 642
 							}
 						]
 					}
@@ -20903,8 +20918,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 683,
-								"callLine": 677
+								"line": 686,
+								"callLine": 680
 							}
 						]
 					},
@@ -20969,8 +20984,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 686,
-								"callLine": 677
+								"line": 689,
+								"callLine": 680
 							}
 						]
 					},
@@ -20985,8 +21000,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 685,
-								"callLine": 677
+								"line": 688,
+								"callLine": 680
 							}
 						]
 					},
@@ -21011,8 +21026,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 680,
-								"callLine": 677
+								"line": 683,
+								"callLine": 680
 							}
 						]
 					},
@@ -21027,8 +21042,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 681,
-								"callLine": 677
+								"line": 684,
+								"callLine": 680
 							}
 						]
 					},
@@ -21043,8 +21058,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 682,
-								"callLine": 677
+								"line": 685,
+								"callLine": 680
 							}
 						]
 					},
@@ -21069,8 +21084,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 688,
-								"callLine": 677
+								"line": 691,
+								"callLine": 680
 							}
 						]
 					},
@@ -21095,8 +21110,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 684,
-								"callLine": 677
+								"line": 687,
+								"callLine": 680
 							}
 						]
 					},
@@ -22463,8 +22478,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 729,
-								"callLine": 719
+								"line": 732,
+								"callLine": 722
 							}
 						]
 					},
@@ -22479,8 +22494,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 722,
-								"callLine": 719
+								"line": 725,
+								"callLine": 722
 							}
 						]
 					},
@@ -22495,8 +22510,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 723,
-								"callLine": 719
+								"line": 726,
+								"callLine": 722
 							}
 						]
 					},
@@ -22511,8 +22526,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 724,
-								"callLine": 719
+								"line": 727,
+								"callLine": 722
 							}
 						]
 					},
@@ -22587,8 +22602,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 740,
-								"callLine": 719
+								"line": 743,
+								"callLine": 722
 							}
 						]
 					},
@@ -22603,8 +22618,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 739,
-								"callLine": 719
+								"line": 742,
+								"callLine": 722
 							}
 						]
 					},
@@ -22629,8 +22644,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 738,
-								"callLine": 719
+								"line": 741,
+								"callLine": 722
 							}
 						]
 					}
@@ -23911,8 +23926,14 @@
 							"file": "models/ProgressiveMovMuxing.d.ts",
 							"line": 19
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/media.ts",
+								"line": 778,
+								"callLine": 775
+							}
+						]
 					},
 					{
 						"name": "id",
@@ -23971,8 +23992,14 @@
 							"file": "models/BitmovinResource.d.ts",
 							"line": 12
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/media.ts",
+								"line": 781,
+								"callLine": 775
+							}
+						]
 					},
 					{
 						"name": "outputs",
@@ -23981,8 +24008,14 @@
 							"file": "models/Muxing.d.ts",
 							"line": 41
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/media.ts",
+								"line": 780,
+								"callLine": 775
+							}
+						]
 					},
 					{
 						"name": "streamConditionsMode",
@@ -24001,8 +24034,14 @@
 							"file": "models/Muxing.d.ts",
 							"line": 36
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/media.ts",
+								"line": 779,
+								"callLine": 775
+							}
+						]
 					}
 				]
 			},
@@ -24065,8 +24104,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 814,
-								"callLine": 811
+								"line": 818,
+								"callLine": 815
 							}
 						]
 					},
@@ -24131,8 +24170,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 818,
-								"callLine": 811
+								"line": 826,
+								"callLine": 815
 							}
 						]
 					},
@@ -24147,8 +24186,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 817,
-								"callLine": 811
+								"line": 825,
+								"callLine": 815
 							}
 						]
 					},
@@ -24159,8 +24198,14 @@
 							"file": "models/ProgressiveTsMuxing.d.ts",
 							"line": 19
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/media.ts",
+								"line": 822,
+								"callLine": 815
+							}
+						]
 					},
 					{
 						"name": "startOffset",
@@ -24173,8 +24218,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 815,
-								"callLine": 811
+								"line": 823,
+								"callLine": 815
 							}
 						]
 					},
@@ -24199,8 +24244,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 816,
-								"callLine": 811
+								"line": 824,
+								"callLine": 815
 							}
 						]
 					}
@@ -25125,8 +25170,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 775,
-								"callLine": 772
+								"line": 861,
+								"callLine": 858
 							}
 						]
 					},
@@ -25201,8 +25246,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 778,
-								"callLine": 772
+								"line": 864,
+								"callLine": 858
 							}
 						]
 					},
@@ -25217,8 +25262,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 777,
-								"callLine": 772
+								"line": 863,
+								"callLine": 858
 							}
 						]
 					},
@@ -25253,8 +25298,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 776,
-								"callLine": 772
+								"line": 862,
+								"callLine": 858
 							}
 						]
 					}
@@ -25789,8 +25834,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 919,
-								"callLine": 916
+								"line": 965,
+								"callLine": 962
 							}
 						]
 					},
@@ -25855,8 +25900,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 922,
-								"callLine": 916
+								"line": 968,
+								"callLine": 962
 							}
 						]
 					},
@@ -25871,8 +25916,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 921,
-								"callLine": 916
+								"line": 967,
+								"callLine": 962
 							}
 						]
 					},
@@ -25907,8 +25952,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 920,
-								"callLine": 916
+								"line": 966,
+								"callLine": 962
 							}
 						]
 					}
@@ -26043,8 +26088,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 853,
-								"callLine": 845
+								"line": 899,
+								"callLine": 891
 							}
 						]
 					},
@@ -26059,8 +26104,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 852,
-								"callLine": 845
+								"line": 898,
+								"callLine": 891
 							}
 						]
 					},
@@ -26075,8 +26120,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 848,
-								"callLine": 845
+								"line": 894,
+								"callLine": 891
 							}
 						]
 					},
@@ -26091,8 +26136,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 849,
-								"callLine": 845
+								"line": 895,
+								"callLine": 891
 							}
 						]
 					},
@@ -26107,8 +26152,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 850,
-								"callLine": 845
+								"line": 896,
+								"callLine": 891
 							}
 						]
 					},
@@ -26153,8 +26198,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 851,
-								"callLine": 845
+								"line": 897,
+								"callLine": 891
 							}
 						]
 					}
@@ -26599,8 +26644,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 886,
-								"callLine": 880
+								"line": 932,
+								"callLine": 926
 							}
 						]
 					},
@@ -26655,8 +26700,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 889,
-								"callLine": 880
+								"line": 935,
+								"callLine": 926
 							}
 						]
 					},
@@ -26671,8 +26716,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 888,
-								"callLine": 880
+								"line": 934,
+								"callLine": 926
 							}
 						]
 					},
@@ -26687,8 +26732,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 883,
-								"callLine": 880
+								"line": 929,
+								"callLine": 926
 							}
 						]
 					},
@@ -26703,8 +26748,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 884,
-								"callLine": 880
+								"line": 930,
+								"callLine": 926
 							}
 						]
 					},
@@ -26719,8 +26764,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 885,
-								"callLine": 880
+								"line": 931,
+								"callLine": 926
 							}
 						]
 					},
@@ -26755,8 +26800,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 887,
-								"callLine": 880
+								"line": 933,
+								"callLine": 926
 							}
 						]
 					}
@@ -27841,8 +27886,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 503,
-								"callLine": 497
+								"line": 506,
+								"callLine": 500
 							}
 						]
 					},
@@ -27897,8 +27942,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 508,
-								"callLine": 497
+								"line": 511,
+								"callLine": 500
 							}
 						]
 					},
@@ -27923,8 +27968,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 502,
-								"callLine": 497
+								"line": 505,
+								"callLine": 500
 							}
 						]
 					}
@@ -28189,8 +28234,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 455,
-								"callLine": 441
+								"line": 458,
+								"callLine": 444
 							}
 						]
 					},
@@ -28205,8 +28250,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 450,
-								"callLine": 441
+								"line": 453,
+								"callLine": 444
 							}
 						]
 					},
@@ -28241,8 +28286,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 445,
-								"callLine": 441
+								"line": 448,
+								"callLine": 444
 							}
 						]
 					}
@@ -28287,8 +28332,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 607,
-								"callLine": 593
+								"line": 610,
+								"callLine": 596
 							}
 						]
 					},
@@ -28323,8 +28368,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 599,
-								"callLine": 593
+								"line": 602,
+								"callLine": 596
 							}
 						]
 					},
@@ -28339,8 +28384,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 605,
-								"callLine": 593
+								"line": 608,
+								"callLine": 596
 							}
 						]
 					},
@@ -28355,8 +28400,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 598,
-								"callLine": 593
+								"line": 601,
+								"callLine": 596
 							}
 						]
 					},
@@ -28371,8 +28416,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 601,
-								"callLine": 593
+								"line": 604,
+								"callLine": 596
 							}
 						]
 					},
@@ -28397,8 +28442,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 603,
-								"callLine": 593
+								"line": 606,
+								"callLine": 596
 							}
 						]
 					},
@@ -28433,8 +28478,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 612,
-								"callLine": 593
+								"line": 615,
+								"callLine": 596
 							}
 						]
 					},
@@ -28449,8 +28494,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 613,
-								"callLine": 593
+								"line": 616,
+								"callLine": 596
 							}
 						]
 					},
@@ -28465,8 +28510,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 604,
-								"callLine": 593
+								"line": 607,
+								"callLine": 596
 							}
 						]
 					},
@@ -28481,8 +28526,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 600,
-								"callLine": 593
+								"line": 603,
+								"callLine": 596
 							}
 						]
 					},
@@ -28497,8 +28542,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 602,
-								"callLine": 593
+								"line": 605,
+								"callLine": 596
 							}
 						]
 					},
@@ -28513,8 +28558,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 606,
-								"callLine": 593
+								"line": 609,
+								"callLine": 596
 							}
 						]
 					},
@@ -28529,8 +28574,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 597,
-								"callLine": 593
+								"line": 600,
+								"callLine": 596
 							}
 						]
 					}
@@ -28595,8 +28640,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 561,
-								"callLine": 557
+								"line": 564,
+								"callLine": 560
 							}
 						]
 					},
@@ -28651,8 +28696,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 565,
-								"callLine": 557
+								"line": 568,
+								"callLine": 560
 							}
 						]
 					},
@@ -28667,8 +28712,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 562,
-								"callLine": 557
+								"line": 565,
+								"callLine": 560
 							}
 						]
 					},
@@ -28683,8 +28728,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 564,
-								"callLine": 557
+								"line": 567,
+								"callLine": 560
 							}
 						]
 					},
@@ -28699,8 +28744,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 563,
-								"callLine": 557
+								"line": 566,
+								"callLine": 560
 							}
 						]
 					},
@@ -29355,8 +29400,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 481,
-								"callLine": 468
+								"line": 484,
+								"callLine": 471
 							}
 						]
 					},
@@ -29401,8 +29446,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 476,
-								"callLine": 468
+								"line": 479,
+								"callLine": 471
 							}
 						]
 					},
@@ -29427,8 +29472,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 475,
-								"callLine": 468
+								"line": 478,
+								"callLine": 471
 							}
 						]
 					},
@@ -29463,8 +29508,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/media.ts",
-								"line": 470,
-								"callLine": 468
+								"line": 473,
+								"callLine": 471
 							}
 						]
 					}

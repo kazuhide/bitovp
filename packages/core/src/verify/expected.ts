@@ -30,7 +30,11 @@ import {
 	hlsChildEntries,
 	hlsChildFiles,
 } from "../plan/hls-media-defaults";
-import { hasMuxedInAudio, muxingStreamKeys } from "../plan/muxing-streams";
+import {
+	hasMuxedInAudio,
+	isFileOnlyMuxingKind,
+	muxingStreamKeys,
+} from "../plan/muxing-streams";
 import { outputFilePath } from "../plan/output-files";
 import {
 	isPerTitleRendition,
@@ -67,17 +71,33 @@ export type PathPattern = {
 	templated: boolean;
 };
 
-/** Container families, distinguished because they are different artefacts. */
+/**
+ * Container families, distinguished because they are different artefacts.
+ *
+ * The whole-file kinds keep the PLAN's spelling (`PROGRESSIVE_TS`, not
+ * `TS_PROGRESSIVE`) on purpose. Several readers below ask "is this the leg the
+ * manifest pinned" with `container.startsWith(kind)`, and a name beginning
+ * with `TS` would answer yes for a file that is on no manifest at all. It is
+ * also the provider's own `MuxingType`, which is what per-title delivery binds
+ * a result muxing by.
+ *
+ * So `PROGRESSIVE_WEBM` and `WEBM_PROGRESSIVE` are two different things, one
+ * word apart: the first is the whole-file plan kind (video and audio in one
+ * `.webm`, on no manifest), the second a `WEBM` muxing marked `progressive`
+ * (one stream, a DASH leg). The provider calls both `PROGRESSIVE_WEBM`.
+ */
 export type ContainerKind =
 	| "FMP4_SEGMENTED"
 	| "TS_SEGMENTED"
-	| "TS_PROGRESSIVE"
 	| "WEBM_SEGMENTED"
 	| "WEBM_PROGRESSIVE"
 	| "TEXT_SINGLE"
 	| "TEXT_SEGMENTED"
 	| "MP4_PROGRESSIVE"
-	| "MP4_FRAGMENTED";
+	| "MP4_FRAGMENTED"
+	| "PROGRESSIVE_TS"
+	| "PROGRESSIVE_MOV"
+	| "PROGRESSIVE_WEBM";
 
 /** What one muxing must have written. */
 export type ExpectedMuxing = {
@@ -563,8 +583,6 @@ function containerOf(muxing: PlanMuxing): ContainerKind {
 			return "FMP4_SEGMENTED";
 		case "TS":
 			return "TS_SEGMENTED";
-		case "PROGRESSIVE_TS":
-			return "TS_PROGRESSIVE";
 		case "WEBM":
 			return muxing.progressive ? "WEBM_PROGRESSIVE" : "WEBM_SEGMENTED";
 		case "TEXT":
@@ -579,6 +597,10 @@ function containerOf(muxing: PlanMuxing): ContainerKind {
 				muxing.manifestType === undefined
 				? "MP4_PROGRESSIVE"
 				: "MP4_FRAGMENTED";
+		case "PROGRESSIVE_TS":
+		case "PROGRESSIVE_MOV":
+		case "PROGRESSIVE_WEBM":
+			return muxing.kind;
 		default: {
 			// The union is closed today; this makes a NEW muxing kind a compile error
 			// here rather than a silently-unverified artefact.
@@ -829,8 +851,19 @@ export function compileExpectedArtefacts(
 			 * Counting muxings answers both, because "which containers does this
 			 * manifest list" is the question the entry count actually asks.
 			 */
+			/**
+			 * The muxings a manifest can list at all. A whole-file kind is a
+			 * deliverable beside the ladder — the compiler never emits a manifest
+			 * entry for one — so every "which legs does this manifest enumerate"
+			 * question below starts from this list, not from `muxings`. Without
+			 * it an unpinned manifest would expect one more variant than the
+			 * master carries, for a `.ts`/`.mov`/`.webm` nothing references.
+			 */
+			const manifestLegs = muxings.filter(
+				(m) => !isFileOnlyMuxingKind(m.container),
+			);
 			const listedMuxings = (kind: string | undefined, keys: Set<string>) =>
-				muxings.filter(
+				manifestLegs.filter(
 					(m) =>
 						m.container !== "WEBM_PROGRESSIVE" &&
 						keys.has(m.renditionKey) &&
@@ -1030,7 +1063,7 @@ export function compileExpectedArtefacts(
 				"videoMuxingKind" in manifest
 					? (manifest.videoMuxingKind as string | undefined)
 					: undefined;
-			const perTitleLadderHere = muxings.some(
+			const perTitleLadderHere = manifestLegs.some(
 				(m) =>
 					m.perTitle &&
 					videoKeys.has(m.renditionKey) &&
@@ -1135,7 +1168,7 @@ export function compileExpectedArtefacts(
 					// have. Mixed or absent → undefined, and the walk skips the check.
 					...(() => {
 						const legs = new Set(
-							muxings
+							manifestLegs
 								.filter(
 									(m) =>
 										videoKeys.has(m.renditionKey) &&

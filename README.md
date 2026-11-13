@@ -51,7 +51,8 @@ See the [Japanese preview guide](./docs/EDITING-PREVIEW.ja.md).
 ## What you can configure
 
 - VOD: fixed and Per-Title ladders, video/audio/subtitles, filters, trimming,
-  packaging, HLS/DASH manifests, encryption, and quality checks.
+  packaging, HLS/DASH manifests, file export (MP4, MPEG-TS, QuickTime),
+  encryption, and quality checks.
 - Live: RTMP, redundant RTMP, SRT, Zixi, and HLS pull inputs; output storage and
   delivery; heartbeat monitoring; schedules; slate insertion; Live-to-VOD;
   and optional MP4 archives.

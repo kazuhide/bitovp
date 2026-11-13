@@ -87,7 +87,7 @@ describe("progressive TS files", () => {
 	it("expects a single TS file with video and audio", () => {
 		const expected = compileExpectedArtefacts(progressiveTsPlan());
 		expect(expected.muxings[0]).toMatchObject({
-			container: "TS_PROGRESSIVE",
+			container: "PROGRESSIVE_TS",
 			filename: "timeline.ts",
 			video: { codec: "H264" },
 			audio: { codec: "AAC" },
@@ -95,7 +95,7 @@ describe("progressive TS files", () => {
 		expect(expected.muxings[0]).not.toHaveProperty("segmentNaming");
 	});
 
-	it("validates every packaged codec and refuses segmented fields on a file", () => {
+	it("validates every packaged codec and refuses segment naming on a file", () => {
 		const plan = progressiveTsPlan();
 		plan.renditions[1] = {
 			key: "a192",
@@ -114,19 +114,24 @@ describe("progressive TS files", () => {
 		expect(
 			encodingPlanSchema.safeParse({
 				...progressiveTsPlan(),
-				muxings: [{ ...progressiveTsPlan().muxings[0], segmentLength: 6 }],
+				muxings: [
+					{
+						...progressiveTsPlan().muxings[0],
+						segmentNaming: "seg_%number%.ts",
+					},
+				],
 			}).success,
 		).toBe(false);
 	});
 
-	it("reports an incompatible HEVC file codec without rewriting the rendition", () => {
+	it("reports an incompatible VP9 file codec without rewriting the rendition", () => {
 		const original = progressiveTsPlan();
 		const plan = encodingPlanSchema.parse({
 			...original,
 			renditions: [
 				{
 					key: "v1080",
-					codec: "H265",
+					codec: "VP9",
 					ingestKey: "video",
 					height: 1080,
 					bitrate: 5000000,
@@ -137,9 +142,9 @@ describe("progressive TS files", () => {
 		expect(validatePlan(plan)).toContainEqual(
 			expect.objectContaining({
 				code: "PLAN_MUXING_CODEC_MISMATCH",
-				message: expect.stringContaining("cannot package the H265 rendition"),
+				message: expect.stringContaining("cannot package the VP9 rendition"),
 			}),
 		);
-		expect(plan.renditions[0]?.codec).toBe("H265");
+		expect(plan.renditions[0]?.codec).toBe("VP9");
 	});
 });

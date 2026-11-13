@@ -29,6 +29,8 @@ const PROVISIONS_AT_CREATE =
 export const en = {
 	vodTimeline: {
 		singleTs: "TS (single file)",
+		singleMov: "MOV (single file)",
+		singleWebm: "WebM (single file)",
 		edit: "Edit on timeline",
 		ordinary: "Use ordinary inputs",
 		title: "Input sequence",
@@ -738,6 +740,122 @@ export const en = {
 		"high-contrast": "High contrast · Dark",
 		system: "Follow system",
 		hint: "Saved in this browser.",
+	},
+	vodFlow: {
+		label: "What to create",
+		streaming: "Package for streaming",
+		file: "Export files",
+		streamingHint:
+			"A rendition ladder with HLS or DASH manifests, for playback in a player.",
+		fileHint:
+			"MP4 or similar files with the audio inside, for editing or hand-off. No manifests.",
+		preferenceLabel: "New VOD job flow",
+		preferenceHint:
+			"The flow a new VOD job opens in. Saved in this browser; switching on the New VOD job page changes it too.",
+		stepFormat: "Format",
+		stepDestination: "Destination",
+		showAll: "Show all settings",
+		backToSimple: "Back to simple view",
+		simpleBlocked:
+			"Settings the simple view does not show are in use in: {steps}.",
+		files: "Output files",
+		addFile: "Add file",
+		fileN: "File {n}",
+		removeFileN: "Remove file {n}",
+		container: "Container",
+		unmeasuredContainer:
+			"Not yet verified on a real encode. Check the first file this job writes.",
+		fileName: "File name",
+		fileNameRequired: "Enter a file name.",
+		sameFileName:
+			"Another file has this name, and one would replace the other.",
+		sameSettings:
+			"Another file has the same height and codec, and the same bitrate once both are rounded to kbps. Two files made in this view have to differ in one of the three. Change one on either file.",
+		sourceHeight: "Same as source",
+		bitrateOrCrf: "Enter a bitrate, or set CRF in the advanced options.",
+		bitrateRequired: "Enter a bitrate.",
+		hevcV2WholeJob:
+			"HEVCv2 takes the whole job. Choose it for every file, and leave “BCF override” on in the Basics step.",
+		oneModeForCodecs:
+			"The files use more than one video codec, and a job runs in one encoding mode. Choose a mode other than “(default)”, the same one for every file, or the job will be rejected.",
+		hevcV2NeedsHeight: "HEVCv2 needs a height. Enter one.",
+		hevcV2NeedsBitrate: "HEVCv2 needs a bitrate. Enter one.",
+		bcfOverrideAlone:
+			"“BCF override” is for HEVCv2, and no file uses it. Choose HEVCv2 for every file in the Format step, or switch this off: the job cannot start as it is.",
+		unverifiedCodec:
+			"The container's format defines this codec, but no Bitmovin document was found that lists the combination. The job may be refused: check the first file it writes.",
+		unverifiedDolbyVision:
+			"Bitmovin's documents name Dolby Vision for MP4 and not for this container. The job may be refused, or the file may not be marked as Dolby Vision: check the first file it writes.",
+		videoSource: "Video source",
+		includeAudio: "Include audio",
+		audioCodec: "Audio codec",
+		audioBitrate: "Audio bitrate (bps)",
+		codecNotHeld: "{container} cannot hold this codec.",
+		sampleRateRequired: "Enter a sample rate.",
+		atmosNeedsSource:
+			"Dolby Atmos is encoded from a Dolby Atmos stream. Add one in the Sources step, then choose it as this file's audio source.",
+		atmosStreamForAtmos:
+			"This is a Dolby Atmos stream, which only a Dolby Atmos track can read. Choose another source, or the job will be rejected.",
+		visionStreamForVideo:
+			"This is a Dolby Vision stream, which only H.264, H.265 or AV1 video can read. Choose another source, or the job will be rejected.",
+		sourceNotForVideo:
+			"A file's video cannot be made from this stream. Choose another source, or the job will be rejected.",
+		sourceNotForAudio:
+			"A file's audio cannot be made from this stream. Choose another source, or the job will be rejected.",
+		sourceUnusedWithSequence:
+			"Not used while the input sequence is on: every file is made from the sequence in the Sources step.",
+		sequenceWithoutAudio:
+			"The input sequence in the Sources step has no audio, so this file is written without audio. Switch audio on in the sequence and place audio clips, or return to ordinary inputs.",
+		av1DolbyVision:
+			"AV1 with Dolby Vision is written as fMP4 only, which is not a file of this screen. Choose another dynamic range in the options below, or the job will be rejected.",
+		dolbyVisionAudio:
+			"Bitmovin's rules name AAC and Dolby Atmos audio only beside Dolby Vision video in one file. The job may be refused: check the first file it writes, or use AAC.",
+		av1WebmAudio:
+			"Bitmovin's release notes say that a WebM file with AV1 video takes no other stream, and no later note was found that says otherwise. The job may be refused: to be sure, write this file without audio, or use MP4.",
+		noAudio: "This file is written without an audio track.",
+		audioSource: "Audio source",
+		folderHelp:
+			"Files are written directly into this folder. No subfolder is added for the job.",
+		reviewWrites: "What this job writes",
+		reviewAlsoMirrored:
+			"The files and the measured copies are also written to the additional destinations ({count}).",
+		reviewNotMirrored:
+			"The AI Scene Analysis result and the Kantar report are written to this destination only.",
+		reviewAnalysis: "AI Scene Analysis result",
+		reviewQcMirrors: "Copies measured for quality (folder)",
+		reviewKantarReport: "Kantar report (folder)",
+		reviewMeasureOnly:
+			"“{option}” is on: this job measures the video of each file and does not write the files.",
+		blockerEncodings: "Sources (multi-encoding partition)",
+		blockerPerTitle: "Encoding (Per-Title configuration)",
+		blockerQualityGate: "Encoding (a QC gate that blocks manifest generation)",
+		blockerGateTargets: "Encoding (a QC gate rule for selected renditions)",
+		qcGateHint:
+			"Threshold rules over what is measured (VMAF, PSNR, banding). PER_RENDITION holds every file to the bar; OVERALL judges the mean over the files. A failed rule is recorded on the job and sends the “QC gate failed” notification; it does not stop the files from being written.",
+		bandingGateHint:
+			"A CAMBI limit is an upper bound every file is held to. Start with a warning and review examples under your viewing conditions; 5 is a suggested starting point, not a universal visibility threshold.",
+		qcMirrorFolderHelp:
+			"Relative to the destination folder. The copies are written to qc/ inside it; empty puts qc/ straight into the destination folder. A copy is named after its file's video settings (v1080.mp4, for example) and not after the job, so jobs that write to one destination folder should each keep a folder of their own.",
+		relativeToDestination: "Relative to the destination folder",
+		kantarHelp:
+			"Embeds an inaudible Kantar watermark in the audio of the files. A job whose files have no audio has nothing to mark and is rejected. One configuration applies to the whole job. The Kantar service login and password are vault-only (managed in Settings → Credentials under “Kantar audio watermarking”) — the plan carries the credential reference, never the login itself.",
+		kantarReportPathHelp:
+			"Relative to the destination folder — where Kantar's processing report is written",
+		kantarReportPrivateHelp:
+			"The processing report is operational data, so it is normally written PRIVATE even when the files are public. Unchecked, the report is public or private as the files are.",
+		encodingModeFromFiles: "Use each file's encoding mode / preset",
+		encodingModeFromFilesHint:
+			"Set the encoding mode or preset of each file in the Format step. The job-level mode is omitted to avoid conflicting settings.",
+		kantarNeedsAudio:
+			"No file has an audio track. Turn on “Include audio” for a file in the Format step, or the job will be rejected (Kantar watermarks audio).",
+		qcHelp:
+			"Adds a copy of each file's video to measure (MP4, or WebM for a VP9 file), written to qc/ in the folder for the measured copies. After encoding finishes, libvmaf compares it with the source automatically. View the report in VMAF Lab (/qc).",
+		vmafOnly: "VMAF only (do not write the files)",
+		qcOnly: "QC only (do not write the files)",
+		measureOnlyHelp:
+			"Writes only the copies that are measured: one per file (MP4, or WebM for a VP9 file), in qc/ in the folder for the measured copies. The files set in the Format step are not written, and audio is left out. Use it to measure quality without keeping the files.",
+		measureOnlyFormatNote:
+			"“{option}” is on (Encoding → Quality control). This job writes only the copies it measures, which the Review step lists: the files below are not written, and audio is left out.",
 	},
 	shell: {
 		skipToContent: "Skip to content",
@@ -4654,8 +4772,16 @@ export const en = {
 			"Could not load credentials. Retry to select your storage credentials.",
 		accountsLoadFailed:
 			"Could not load Bitmovin accounts. Retry to select an account.",
-		aisaDisabledQcOnly:
-			"VMAF-only encoding skips AI Scene Analysis. Turn off VMAF-only to use these saved settings.",
+		skippedWhileMeasureOnly:
+			"“{option}” is on, so {feature} is skipped. Turn that option off to use the settings saved here.",
+		qcMirrorOwnFolder: "Write the measured copies to one folder",
+		qcMirrorOwnFolderHelp:
+			"Unchecked, each copy is written beside its rendition, in qc/ under that rendition's output folder. Checked, every copy goes to qc/ under the folder named below. A copy is named by its rendition key and nothing else, so jobs whose renditions share an output folder should each name a folder of their own: otherwise a later job replaces the copies an earlier job is measured on.",
+		qcMirrorFolder: "Folder for the measured copies",
+		qcMirrorFolderHelp:
+			"Relative to the base output path. The copies are written to qc/ inside it; empty is the base output path itself.",
+		qcMeasurementMethodHelp:
+			"Set by the plan that was loaded; the wizard cannot choose it. Frame-index comparison requires cloud execution, and its scores are compared apart from the standard method's. Choosing Standard removes it.",
 		previewPlacementNeedsJit:
 			"Preview placement requires Just in time. Change the timing or reset Start placement to VOD (default).",
 		encodingModeFromLadder: "Use ladder encoding modes / presets",
@@ -4672,6 +4798,8 @@ export const en = {
 		muxedAudio: "Muxed-in audio",
 		muxedAudioHint:
 			"Audio tracks that travel INSIDE these segments. Each variant that carries its own audio needs no EXT-X-MEDIA group; the ones that carry none point at a standalone audio container instead.",
+		muxedAudioFileHint:
+			"The audio track written into this file together with the video.",
 		ownContainer: "Standalone container",
 		ownContainerLabel: "Build one for this track",
 		ownContainerOnHint:
@@ -4875,6 +5003,14 @@ export const en = {
 		defaultEnWebvttSegNumberVtt: "Default en_webvtt_seg_%number%.vtt",
 		defaultInitHdr: "Default init.hdr",
 		defaultInitMp4: "Default init.mp4",
+		defaultOutputMov: "Default output.mov",
+		defaultOutputTs: "Default output.ts",
+		defaultOutputWebm: "Default output.webm",
+		encoderDefaultWhenEmpty:
+			"Optional. Leave empty to use the encoder's default.",
+		startOffsetS: "Start offset (s)",
+		startOffsetHint:
+			"Offsets the MPEG-TS timestamps by this many whole seconds. Leave empty to use the encoder's default.",
 		defaultSegNumberChk: "Default seg_%number%.chk",
 		defaultSegNumberTs: "Default seg_%number%.ts",
 		addDeliveryMirror: "Add delivery mirror",
@@ -5349,6 +5485,7 @@ export const en = {
 			"The wizard cannot preserve every setting in this plan. The original JSON remains active; use Edit JSON to change it.",
 		importEditJson: "Edit JSON",
 		muxedAudioCarrying: "Carrying {key} inside these segments.",
+		muxedAudioCarryingFile: "Carrying {key} inside this file.",
 		qcDisabledCarriedBlock:
 			"This plan carries a QC/VMAF block, but QC/VMAF is turned off for this deployment — starting it will be refused. Remove the block to continue, or enable QC/VMAF in Settings.",
 		qcDisabledRemoveBlock: "Remove the QC block",
@@ -5405,6 +5542,8 @@ export const en = {
 			"Every rendition and manifest is ALSO written to each mirror, at the same paths and ACL — one encode, several storages.",
 		derivedPathHint:
 			'Relative to the base output path — empty = derived "{path}". Per-title outputs need {uuidToken}/{bitrateToken} placeholders.',
+		destinationBasePathHint:
+			"Relative to the base output path — empty = that path itself, with no subfolder.",
 		enableCodecPerTitle: "Enable {codec} per-title configuration",
 		encryptionDrmCount: "Encryption / DRM ({count})",
 		extraContainerOf: "extra container of {key}",

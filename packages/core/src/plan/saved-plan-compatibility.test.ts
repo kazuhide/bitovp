@@ -8,7 +8,8 @@ function legacyMezzanine(index = 0) {
 	const plan = structuredClone(spec.plan);
 	const audio = plan.renditions[1];
 	const video = plan.muxings[0];
-	if (!audio || !video) throw new Error("Missing mezzanine tracks");
+	if (!audio || !video || video.kind !== "MP4")
+		throw new Error("Missing mezzanine MP4 tracks");
 	audio.key = "a320";
 	plan.muxings = [
 		{
@@ -79,7 +80,8 @@ describe("saved plan upgrade compatibility", () => {
 		const plan = legacyMezzanine();
 		delete plan.delivery;
 		const [video, audio] = plan.muxings;
-		if (!video || !audio) throw new Error("Missing mezzanine muxings");
+		if (!video || !audio || video.kind !== "MP4" || audio.kind !== "MP4")
+			throw new Error("Missing mezzanine MP4 muxings");
 		audio.filename = video.filename;
 		expect(inspectSavedPlanCompatibility(plan).blocking).toBe(true);
 	});

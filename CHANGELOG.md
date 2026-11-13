@@ -28,6 +28,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- VMAF comparison rendition selectors fit narrow viewports, and Japanese frame-count units stay together. Mandatory installed-browser qualification now decodes a small synthetic QC asset and checks cross-report seeking, playback, violin data, cleanup and 320-pixel layouts.
 - CPU VOD input previews accept valid QuickTime display matrices with positive axis scaling and quarter-turn rotation, including the original Big Buck Bunny MOV. Invalid shear, reflection, perspective and contradictory rotation metadata remain rejected; preview geometry follows the worker's pinned FFmpeg autorotation and sample aspect ratio.
 - Progressive WebM outputs are registered as playable Library media. An older empty capture can be projected read-only from the identical retained job plan and same-organization credentials, without rewriting source history or borrowing a changed or deleted job's authority.
 - Independent VOD clips can be dragged into empty timeline space without changing their source range or duration. Trim handles can be grabbed on hover and explain source limits; canceled or returned drags do not accidentally seek.

@@ -30,6 +30,7 @@ import {
 	nonpaidVodPlan,
 	writeNonpaidSubmission,
 } from "./nonpaid-submit";
+import { verifyQcComparisonBrowser } from "./qc-comparison-fixture";
 
 const fixture = JSON.parse(
 	readFileSync(process.env.BITOVP_GUI_SMOKE_FIXTURE as string, "utf8"),
@@ -1244,4 +1245,15 @@ test("remove and restore Library registration through the authenticated API", as
 	} finally {
 		await context.close();
 	}
+});
+
+test("decode and seek QC comparison previews and inspect violin distributions", async ({
+	browser,
+}, info) => {
+	await verifyQcComparisonBrowser(
+		browser,
+		fixture.baseURL,
+		authenticated,
+		info,
+	);
 });

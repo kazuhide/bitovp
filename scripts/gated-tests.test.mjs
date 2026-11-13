@@ -183,8 +183,9 @@ test("a plain run may skip the tests that another job runs", () => {
 		["@bitovp/core", 17],
 		["@bitovp/db", 70],
 		["@bitovp/worker", 67],
-		// Includes six favorite-registry and two still-image cases in the PostgreSQL job.
-		["@bitovp/web", 107],
+		// Includes six favorite-registry, two still-image, two archive/restore and
+		// one WebM recovery case in the PostgreSQL job.
+		["@bitovp/web", 110],
 	])
 		assert.deepEqual(skipProblems(plainRun(workspace), workspace, root), {
 			problems: [],
@@ -4652,6 +4653,7 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 		"native-vmaf.yml",
 		"pages.yml",
 		"security-audit.yml",
+		"upgrade-rehearsal.yml",
 	]);
 	for (const name of others)
 		assert.doesNotMatch(

@@ -148,10 +148,13 @@ export function FrameComparison({
 				</button>
 				{available ? (
 					([0, 1] as const).map((slot) => (
-						<label key={slot} className="grid gap-1 text-xs text-zinc-400">
+						<label
+							key={slot}
+							className="grid w-full min-w-0 max-w-full gap-1 text-xs text-zinc-400 sm:w-auto"
+						>
 							{t(slot === 0 ? "qc.previewA" : "qc.previewB")}
 							<select
-								className={control}
+								className={`${control} w-full min-w-0 max-w-full`}
 								value={ids[slot]}
 								onChange={(event) => {
 									pause();

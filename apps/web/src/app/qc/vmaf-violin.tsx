@@ -158,7 +158,7 @@ export function VmafViolinChart({
 								</p>
 								{row.distribution ? (
 									<>
-										<p className="text-zinc-400">
+										<p className="break-keep text-zinc-400">
 											{countLabel(row, row.distribution.frameCount)}
 										</p>
 										<p className="text-zinc-200 tabular-nums">

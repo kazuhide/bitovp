@@ -55,6 +55,7 @@ export const CASES = [
 	"VOD account defaults, ladder defaults and manual overrides",
 	"Live account defaults and manual overrides survive step navigation",
 	"remove and restore Library registration through the authenticated API",
+	"decode and seek QC comparison previews and inspect violin distributions",
 ];
 const QUEUES = [
 	"usageStatistics",

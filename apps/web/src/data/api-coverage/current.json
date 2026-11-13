@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-13T03:46:40.608Z",
-		"sourceCommit": "0a4d88693cc7f850cc3aace139653e85f0828b30",
-		"sourceFingerprint": "6879377dde7a82f449f275c675a4537a17d582c96245bb293b2a248f1290838f",
+		"generatedAt": "2026-11-13T11:40:31.798Z",
+		"sourceCommit": "be06812068622b5909044c3ee03fe799b54b9764",
+		"sourceFingerprint": "0433bdbedc83cf2eea8c941202dfc1e80e88d77939039ad73d6bb51e57dff055",
 		"sdkVersion": "1.287.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "4e616dafb9c392b4c287993ae433f23201282723cb9d847a7a88ceffdde525a9",
@@ -8700,7 +8700,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/admin/reset/route.ts",
-					"line": 570
+					"line": 576
 				},
 				{
 					"file": "apps/web/src/app/api/live/stream-keys/[id]/route.ts",
@@ -8736,7 +8736,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/admin/reset/route.ts",
-					"line": 569
+					"line": 575
 				},
 				{
 					"file": "apps/web/src/app/api/live/stream-keys/route.ts",

@@ -60,7 +60,9 @@ not imply a control for every field.
   Bitmovin document read for this lists for its container carries
   `PLAN_MUXING_UNVERIFIED_CODEC`, as does Dolby Vision in a Progressive TS or
   Progressive MOV file, and audio beside AV1 in a Progressive WebM file
-  carries `PLAN_MUXING_AV1_NOT_ALONE`.
+  carries `PLAN_MUXING_AV1_NOT_ALONE`. Audio other than AAC or Dolby Atmos in
+  one container with Dolby Vision video carries
+  `PLAN_MUXING_DOLBY_VISION_AUDIO`: Bitmovin's rules name those two only.
 - An MP4 holds AV1 as a whole file, and as a fragmented MP4 for DASH on-demand
   only: another manifest type is refused with
   `PLAN_MP4_AV1_FRAGMENTED_MANIFEST_TYPE`.

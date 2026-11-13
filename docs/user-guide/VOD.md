@@ -47,7 +47,10 @@ job inside the output folder; the copies are named after the video settings and 
 after the job, so keep a folder for each job. Review lists what those settings
 write with the files. **Show all settings** opens the eight steps with what you
 entered, and **Back to simple view** returns while nothing outside the six steps is
-in use. The flow you choose is remembered in this browser, and
+in use. The input timeline in Sources is part of the six steps: the files are then
+made from the edited sequence, which also decides whether they have audio, and the
+sources selected for a file are not used. Applying a saved image as an output logo
+adds a filter, so the form opens the eight steps. The flow you choose is remembered in this browser, and
 Settings holds the same choice under "New VOD job flow". Switching "What to create"
 opens a new form: what you entered is not carried over. It is saved as the other
 flow's draft, unless that form was still offering to restore an earlier draft.

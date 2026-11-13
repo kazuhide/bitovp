@@ -15,16 +15,24 @@ import {
 import { MuxingsSection } from "./muxings-section";
 
 /**
- * PROGRESSIVE_TS and PROGRESSIVE_MOV in the packaging step.
+ * PROGRESSIVE_TS, PROGRESSIVE_MOV and PROGRESSIVE_WEBM in the packaging step.
  *
  * A whole file is not a streaming container with a different name, and the
  * form has to say so in three places a value-level test cannot see: which rows
  * are offered the kind at all, which fields the kind has, and which controls
  * it must NOT have (encryption — the validator refuses it, so offering it
  * would be offering an error).
+ *
+ * The WebM file has a neighbour to be told apart from on this page: the `WEBM`
+ * container with its "Single WebM file" switch, which holds one stream.
  */
 
-const FILE_KINDS = ["PROGRESSIVE_TS", "PROGRESSIVE_MOV"] as const;
+const FILE_KINDS = [
+	"PROGRESSIVE_TS",
+	"PROGRESSIVE_MOV",
+	"PROGRESSIVE_WEBM",
+] as const;
+type FileKind = (typeof FILE_KINDS)[number];
 
 /** One video row; `audios: []` keeps the row's own fields the only ones on the page. */
 function stateWith(
@@ -45,6 +53,26 @@ function stateWith(
 const oneAudio: Partial<WizardState> = {
 	audios: [{ codec: "AAC", bitrate: 128000, rate: 48000 }],
 };
+const oneOpus: Partial<WizardState> = {
+	audios: [{ codec: "OPUS", bitrate: 128000, rate: 48000 }],
+};
+
+/**
+ * A row of this kind in codecs the kind holds: H.264 with AAC for a `.ts` or
+ * `.mov`, VP9 with Opus for a `.webm`. `withAudio` adds the one audio track.
+ */
+function fileRow(
+	kind: FileKind,
+	muxing: WizardMuxing = {},
+	withAudio = false,
+): WizardState {
+	const webm = kind === "PROGRESSIVE_WEBM";
+	return stateWith(
+		{ kind, ...muxing },
+		withAudio ? (webm ? oneOpus : oneAudio) : {},
+		webm ? "VP9" : "H264",
+	);
+}
 
 function render(state: WizardState, onPatch = vi.fn()) {
 	const view = renderLocalized(
@@ -126,11 +154,27 @@ describe("which rows are offered a whole-file container", () => {
 		expect(offeredKinds()).toContain("TS");
 	});
 
-	it("today that means H264 only", () => {
+	it("today that means H264 and H265 for the .ts and .mov files, and neither for the .webm file", () => {
 		// The arm above would pass on an empty matrix row and on a full one.
 		render(stateWith(undefined, {}, "H265"));
-		expect(offeredKinds()).not.toContain("PROGRESSIVE_TS");
-		expect(offeredKinds()).not.toContain("PROGRESSIVE_MOV");
+		expect(FILE_KINDS.filter((kind) => offeredKinds().includes(kind))).toEqual([
+			"PROGRESSIVE_TS",
+			"PROGRESSIVE_MOV",
+		]);
+	});
+
+	it.each([
+		"VP9",
+		"AV1",
+	] as const)("a %s row is offered the .webm file after the streaming kinds, and neither of the other two", (codec) => {
+		render(stateWith(undefined, {}, codec));
+		expect(offeredKinds()).toEqual([
+			"FMP4",
+			"MP4",
+			"TS",
+			"WEBM",
+			"PROGRESSIVE_WEBM",
+		]);
 	});
 
 	it("an audio row is never offered one — audio rides inside the video's file", () => {
@@ -140,6 +184,15 @@ describe("which rows are offered a whole-file container", () => {
 				.options,
 		].map((o) => o.value);
 		expect(audioKinds).toEqual(["FMP4", "CMAF", "MP4", "TS"]);
+	});
+
+	it("an Opus row is not either: its own container stays the segmented WebM one", () => {
+		render(stateWith(undefined, oneOpus, "VP9"));
+		const audioKinds = [
+			...(screen.getAllByLabelText("Container")[1] as HTMLSelectElement)
+				.options,
+		].map((o) => o.value);
+		expect(audioKinds).toEqual(["WEBM"]);
 	});
 });
 
@@ -160,6 +213,30 @@ describe("the fields a whole file has", () => {
 		expect(screen.getByLabelText("Destination path")).toBeTruthy();
 		expect(screen.queryByLabelText("Segment length (s)")).toBeNull();
 		expect(screen.queryByLabelText("Start offset (s)")).toBeNull();
+	});
+
+	it("a WebM file: a filename with its own default, neither number, and no single-file switch", async () => {
+		render(fileRow("PROGRESSIVE_WEBM"));
+		expect(screen.getByLabelText("Filename")).toBeTruthy();
+		expect(screen.getByLabelText("Destination path")).toBeTruthy();
+		expect(screen.queryByLabelText("Segment length (s)")).toBeNull();
+		expect(screen.queryByLabelText("Start offset (s)")).toBeNull();
+		expect(screen.queryByLabelText("Segment naming")).toBeNull();
+		expect(screen.queryByLabelText("Init segment")).toBeNull();
+		// The switch belongs to the WEBM container; a file has nothing to switch.
+		expect(screen.queryByLabelText("Single WebM file")).toBeNull();
+		await userEvent.click(
+			screen.getByRole("button", { name: "Filename — more information" }),
+		);
+		expect(screen.getByText("Default output.webm")).toBeTruthy();
+	});
+
+	it("the counterfactual — the WEBM container has the switch, and one stream", () => {
+		render(stateWith({ kind: "WEBM" }, oneOpus, "VP9"));
+		expect(screen.getAllByLabelText("Single WebM file").length).toBeGreaterThan(
+			0,
+		);
+		expect(screen.queryByLabelText(/Muxed-in audio/)).toBeNull();
 	});
 
 	it("the counterfactual — segmented TS has the naming a file does not", () => {
@@ -224,7 +301,7 @@ describe("the audio that goes into the file", () => {
 	it.each(
 		FILE_KINDS,
 	)("%s offers the picker, with a hint about a file rather than segments", (kind) => {
-		render(stateWith({ kind }, oneAudio));
+		render(fileRow(kind, {}, true));
 		const picker = screen.getByLabelText(/Muxed-in audio/) as HTMLSelectElement;
 		expect([...picker.options].map((o) => o.value)).toEqual(["", "a128"]);
 		expect(
@@ -280,10 +357,42 @@ describe("the audio that goes into the file", () => {
 		]);
 	});
 
+	it("picking the Opus track for a WebM file does the same, and the track's row says where it went", async () => {
+		const latest = renderHarness(stateWith(undefined, oneOpus, "VP9"));
+		await userEvent.selectOptions(kindSelect(), "PROGRESSIVE_WEBM");
+		await userEvent.type(screen.getByLabelText("Filename"), "movie.webm");
+		await userEvent.selectOptions(
+			screen.getByLabelText(/Muxed-in audio/),
+			"a128",
+		);
+		expect(
+			(screen.getByLabelText(/Build one for this track/) as HTMLInputElement)
+				.checked,
+		).toBe(false);
+		// What an AAC track inside a .mov is told. The WebM row used to say
+		// nothing here, because nothing could carry an Opus track.
+		expect(
+			screen.getByText(
+				"No container of its own — this track ships only inside the video containers that carry it.",
+			),
+		).toBeTruthy();
+		expect(buildPlan(latest.state).muxings).toEqual([
+			expect.objectContaining({
+				kind: "PROGRESSIVE_WEBM",
+				streamKey: "v360",
+				additionalStreamKeys: ["a128"],
+				filename: "movie.webm",
+			}),
+		]);
+		expect(buildPlan(latest.state).muxings[0]).not.toHaveProperty(
+			"progressive",
+		);
+	});
+
 	it.each(
 		FILE_KINDS,
 	)("the reconciler counts a %s file as a carrier", (kind) => {
-		const state = stateWith({ kind, muxedAudioKeys: ["a128"] }, oneAudio);
+		const state = fileRow(kind, { muxedAudioKeys: ["a128"] }, true);
 		expect(reconcileAutomaticAudioPackaging(state)[0]?.muxing).toMatchObject({
 			ownContainer: false,
 			autoOwnContainer: true,
@@ -305,7 +414,7 @@ describe("the audio that goes into the file", () => {
 
 describe("encryption is not offered on a file", () => {
 	it.each(FILE_KINDS)("%s shows no encryption section", (kind) => {
-		render(stateWith({ kind }));
+		render(fileRow(kind));
 		expect(screen.queryByText(/Encryption \/ DRM/)).toBeNull();
 		expect(screen.queryByText("Add CENC")).toBeNull();
 	});

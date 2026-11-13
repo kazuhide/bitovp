@@ -479,12 +479,15 @@ function MuxingEditor({
 						label={t("wizard.ownContainer")}
 						htmlFor={`${idBase}-own`}
 						hint={
-							kind === "WEBM"
-								? undefined
-								: muxing.ownContainer === false
-									? carriedBySomething
-										? t("wizard.ownContainerOffHint")
-										: t("wizard.ownContainerOffUncarriedHint")
+							// An Opus track can be inside a video's WebM file now, so the
+							// two "off" hints apply to a WebM row as to any other. The
+							// "on" hint stays out of it: it describes an HLS audio group.
+							muxing.ownContainer === false
+								? carriedBySomething
+									? t("wizard.ownContainerOffHint")
+									: t("wizard.ownContainerOffUncarriedHint")
+								: kind === "WEBM"
+									? undefined
 									: t("wizard.ownContainerOnHint")
 						}
 					>

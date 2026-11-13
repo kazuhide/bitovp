@@ -689,6 +689,7 @@ export { CODEC_ENUM_VALUES, CODEC_OPTIONS } from "./plan/codec-enums";
 export type { CompiledOperation, OperationKind } from "./plan/compiler";
 export {
 	compilePlan,
+	qcMirrorDirectory,
 	qcOutputPath,
 	relativeSegmentPath,
 } from "./plan/compiler";
@@ -784,6 +785,12 @@ export {
 export * from "./plan/manifest-options";
 export * from "./plan/media-filters";
 export { MslEncoderVersionError } from "./plan/msl-encoder-version";
+export type { FileOnlyMuxingKind } from "./plan/muxing-streams";
+export {
+	FILE_ONLY_MUXING_KINDS,
+	isFileOnlyMuxingKind,
+	muxingKindCarriesAudio,
+} from "./plan/muxing-streams";
 export { outputStorageKeys } from "./plan/output-files";
 export { PER_TITLE_SIMULATOR_MAX_BITRATE } from "./plan/per-title-candidate-api";
 export { findCapReachingMaximumStep } from "./plan/per-title-cap-reach";
@@ -916,6 +923,7 @@ export type {
 	H265V2QualityControls,
 	PaddingSequence,
 	PlanInput,
+	PlanMuxing,
 	PlanOutput,
 	PlanQc,
 	PlanRendition,
@@ -952,6 +960,9 @@ export {
 	planMuxingSchema,
 	planOutputSchema,
 	planQcSchema,
+	progressiveMovMuxingSchema,
+	progressiveTsMuxingSchema,
+	progressiveWebmMuxingSchema,
 	renditionSchema,
 	secretEgressUrlSchema,
 	spriteSchema,
@@ -1010,7 +1021,15 @@ export type {
 	PlanIssueLevel,
 	PlanValidationOptions,
 } from "./plan/validate";
-export { planHasErrors, validatePlan } from "./plan/validate";
+export {
+	DOLBY_VISION_AUDIO_CODECS,
+	MUXING_CODEC_MATRIX,
+	planHasErrors,
+	UNMEASURED_MUXING_KINDS,
+	UNVERIFIED_DOLBY_VISION_MUXING_KINDS,
+	UNVERIFIED_MUXING_CODECS,
+	validatePlan,
+} from "./plan/validate";
 export type {
 	InstantiateWatchPlanInput,
 	InstantiateWatchPlanResult,
@@ -1468,6 +1487,7 @@ export {
 	enumerateExistingMp4Targets,
 	enumerateExistingQcMirrorTargets,
 	enumerateFrameIndexQcTargets,
+	enumerateQcMirrorsWithoutReference,
 	enumerateQcTargets,
 	gateExpectedRenditionKeys,
 	sameQcTargetPopulation,

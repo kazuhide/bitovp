@@ -656,6 +656,9 @@ const codecEncodingModeSchema = z.enum([
 	"SMART_PASS",
 ]);
 
+/** The name an H.264 codec configuration gets when the plan gives none. */
+export const H264_DEFAULT_CONFIG_NAME = "Sample video codec configuration";
+
 export const h264RenditionSchema = z.strictObject({
 	...h264DetailControlsSchema.shape,
 	...renditionBase,
@@ -663,7 +666,7 @@ export const h264RenditionSchema = z.strictObject({
 	codec: z.literal("H264"),
 	encodingMode: codecEncodingModeSchema.optional(),
 	/** Codec-config display name (sample default kept for golden fidelity). */
-	name: z.string().default("Sample video codec configuration"),
+	name: z.string().default(H264_DEFAULT_CONFIG_NAME),
 	/** Explicit output width; omitted legacy plans still inherit input aspect. */
 	width: z.number().int().positive().optional(),
 	crf: z.number().min(0).max(51).optional(),
@@ -1116,16 +1119,23 @@ export const mp4MuxingSchema = z.strictObject({
 	name: z.string().optional(),
 });
 
+/**
+ * A single output file's name: no directories and no URL suffix. The folder is
+ * `destination.path`, so a "/" here would write somewhere the destination does
+ * not say.
+ */
+const outputFilenameSchema = z
+	.string()
+	.min(1)
+	.max(255)
+	.regex(/^[^/\\?#]+$/, "Use a filename without directories or URL suffixes")
+	.refine((n) => n !== "." && n !== "..", "Use a file name");
+
 export const textMuxingSchema = z.strictObject({
 	key: refKey,
 	kind: z.literal("TEXT"),
 	streamKey: refKey,
-	filename: z
-		.string()
-		.min(1)
-		.max(255)
-		.regex(/^[^/\\?#]+$/, "Use a filename without directories or URL suffixes")
-		.refine((n) => n !== "." && n !== "..", "Use a file name"),
+	filename: outputFilenameSchema,
 	destination: destinationSchema,
 	name: z.string().optional(),
 });
@@ -1174,23 +1184,6 @@ export const tsMuxingSchema = z.strictObject({
 	name: z.string().optional(),
 });
 
-/** Single MPEG-TS file; distinct from the segmented TS delivery family. */
-export const progressiveTsMuxingSchema = z.strictObject({
-	key: refKey,
-	kind: z.literal("PROGRESSIVE_TS"),
-	streamKey: refKey,
-	additionalStreamKeys: additionalStreamKeysSchema,
-	filename: z
-		.string()
-		.min(1)
-		.max(255)
-		.regex(/^[^/\\?#]+$/),
-	/** Absent preserves the provider's timestamp-offset default. */
-	startOffset: z.number().min(0).optional(),
-	destination: destinationSchema,
-	name: z.string().optional(),
-});
-
 /** WebM segments (VP9 DASH leg). */
 export const webmMuxingSchema = z.strictObject({
 	key: refKey,
@@ -1205,6 +1198,94 @@ export const webmMuxingSchema = z.strictObject({
 	name: z.string().optional(),
 });
 
+/**
+ * One whole MPEG-TS FILE per container — not the HLS segments `TS` writes.
+ *
+ * A file deliverable (mezzanine, editing, hand-off), so audio rides INSIDE it
+ * through `additionalStreamKeys`. That is how Bitmovin's guide "Creating
+ * Progressive MOV, MP4 and TS Outputs" builds it: its sample hands one H.264
+ * video stream and one AAC audio stream to a single ProgressiveTsMuxing.
+ *
+ * `destination` is REQUIRED, unlike `TS`/`MP4`: those may omit it because a
+ * DRM resource can own the encrypted output, and this app builds no DRM path
+ * for a progressive file. No manifest references this kind either:
+ * `isFileOnlyMuxingKind` (muxing-streams.ts) keeps it out of every leg
+ * selection, including the open ones an unpinned HLS manifest makes.
+ *
+ * `segmentLength` and `startOffset` are the SDK model's two optional fields
+ * (ProgressiveTsMuxing.d.ts). Neither has a default here: an absent field is
+ * not sent, so the encoder's own default applies rather than one we invented.
+ */
+export const progressiveTsMuxingSchema = z.strictObject({
+	key: refKey,
+	kind: z.literal("PROGRESSIVE_TS"),
+	streamKey: refKey,
+	additionalStreamKeys: additionalStreamKeysSchema,
+	filename: outputFilenameSchema,
+	/**
+	 * "Length of the segments in seconds" — the SDK's whole description. What
+	 * it changes inside a single file has not been measured by this app.
+	 */
+	segmentLength: z.number().positive().optional(),
+	/**
+	 * Offset of the MPEG-TS timestamps in seconds. The SDK's example: an offset
+	 * of 10 makes the first packet start at PTS 900,000 (90 kHz timescale).
+	 *
+	 * An INTEGER: the SDK types it `number`, but Bitmovin's published
+	 * encoding-template schema (`bitmovin-encoding-template.schema.json`)
+	 * types this field `integer`, and the template export is validated
+	 * against that schema.
+	 */
+	startOffset: z.number().int().min(0).optional(),
+	destination: destinationSchema,
+	name: z.string().optional(),
+});
+
+/**
+ * One QuickTime `.mov` FILE per container. Same shape and the same rules as
+ * `PROGRESSIVE_TS` above; the SDK model carries a filename and nothing else.
+ */
+export const progressiveMovMuxingSchema = z.strictObject({
+	key: refKey,
+	kind: z.literal("PROGRESSIVE_MOV"),
+	streamKey: refKey,
+	additionalStreamKeys: additionalStreamKeysSchema,
+	filename: outputFilenameSchema,
+	destination: destinationSchema,
+	name: z.string().optional(),
+});
+
+/**
+ * One WebM `.webm` FILE per container: VP9 or AV1 video with Opus audio muxed
+ * in. Same shape and the same rules as `PROGRESSIVE_MOV` above.
+ *
+ * NOT `WEBM` with `progressive: true`, although both reach the provider as a
+ * ProgressiveWebmMuxing. That one holds a single stream and is a DASH leg (a
+ * progressive-WebM representation points at it); this one is a deliverable no
+ * manifest lists, and the only one of the two with `additionalStreamKeys`.
+ *
+ * What is known: the request shape, which is the SDK model's, and that this
+ * app already builds it for one stream (the `WEBM` case above, and the QC
+ * mirror of a VP9 rendition). What is not: no live encode of a progressive
+ * WebM is recorded here, and none that holds video and audio together has been
+ * sent — `PLAN_MUXING_UNMEASURED_KIND` says so on every plan that uses it.
+ *
+ * `manifestType` and `segmentLength`, the SDK model's two other fields
+ * (ProgressiveWebmMuxing.d.ts), are not carried: both concern the DASH
+ * on-demand use, and this kind is never a manifest leg. Neither is sent, so
+ * the provider's own defaults apply — as they do for the two single-stream
+ * requests named above.
+ */
+export const progressiveWebmMuxingSchema = z.strictObject({
+	key: refKey,
+	kind: z.literal("PROGRESSIVE_WEBM"),
+	streamKey: refKey,
+	additionalStreamKeys: additionalStreamKeysSchema,
+	filename: outputFilenameSchema,
+	destination: destinationSchema,
+	name: z.string().optional(),
+});
+
 export const planMuxingSchema = z.discriminatedUnion("kind", [
 	fmp4MuxingSchema,
 	cmafMuxingSchema,
@@ -1212,8 +1293,10 @@ export const planMuxingSchema = z.discriminatedUnion("kind", [
 	chunkedTextMuxingSchema,
 	textMuxingSchema,
 	tsMuxingSchema,
-	progressiveTsMuxingSchema,
 	webmMuxingSchema,
+	progressiveTsMuxingSchema,
+	progressiveMovMuxingSchema,
+	progressiveWebmMuxingSchema,
 ]);
 
 /**
@@ -1726,6 +1809,17 @@ export const planQcSchema = z.strictObject({
 	 * 56 goldens stay byte-identical.
 	 */
 	only: z.boolean().optional(),
+	/**
+	 * The folder the QC mirrors are written to, in place of each rendition's own
+	 * output folder: they go to its `qc/` child, on the output the rendition
+	 * writes to. A mirror is named by its rendition key and nothing else, so two
+	 * jobs whose renditions share an output folder write one path, and the later
+	 * encode replaces the copy the earlier job is measured on. A job that puts its
+	 * files straight into a folder other jobs use names a folder of its own here.
+	 * Absent ⇒ beside each rendition's output, as every plan without the field
+	 * compiles (`qcMirrorDirectory`).
+	 */
+	mirrorPath: z.string().optional(),
 	/**
 	 * QC gate : threshold rules that turn the measurement into
 	 * enforcement (C29 rails in validate.ts; verdict in qc-gate.ts). Absent

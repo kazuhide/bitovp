@@ -1,4 +1,4 @@
-import { qcOutputPath, renditionOutputBase } from "./compiler";
+import { qcMirrorDirectory, renditionOutputBase } from "./compiler";
 import { inputStreamDependencies } from "./input-stream-graph";
 import { muxingStreamKeys } from "./muxing-streams";
 import type { EncodingPlan, PlanMuxing, PlanRendition } from "./schema";
@@ -775,7 +775,7 @@ export function storageSummaries(plan: EncodingPlan): StorageSummaries {
 				continue;
 			}
 			push(base.outputKey, {
-				path: qcOutputPath(base.path),
+				path: qcMirrorDirectory(plan, base),
 				role: "qc",
 				// The WRITER is the rendition, not a muxing: the compiler names the
 				// step `qc-muxing:<renditionKey>`. Those coincided only by accident in

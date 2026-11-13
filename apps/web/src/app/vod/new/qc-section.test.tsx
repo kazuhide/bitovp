@@ -341,6 +341,253 @@ describe("EncodingOptionsSection — Quality control (VMAF)", () => {
 	});
 });
 
+describe("EncodingOptionsSection — where the measured copies go", () => {
+	const measured: WizardState = {
+		...baseState,
+		qc: { vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false },
+	};
+	const own = () =>
+		screen.getByRole("checkbox", {
+			name: "Write the measured copies to one folder",
+		});
+
+	it("leaves them beside each rendition until one folder is asked for", () => {
+		const onPatch = vi.fn();
+		render(<EncodingOptionsSection state={measured} onPatch={onPatch} />);
+		expect(own()).not.toBeChecked();
+		expect(
+			screen.queryByLabelText("Folder for the measured copies"),
+		).not.toBeInTheDocument();
+		fireEvent.click(own());
+		// "" is the base output path itself.
+		expect(onPatch).toHaveBeenCalledWith({
+			qc: { ...measured.qc, mirrorPath: "" },
+		});
+	});
+
+	it("takes the folder, and goes back to beside each rendition", () => {
+		const onPatch = vi.fn();
+		render(
+			<EncodingOptionsSection
+				state={{
+					...measured,
+					qc: { ...measured.qc, mirrorPath: "checks/" } as WizardState["qc"],
+				}}
+				onPatch={onPatch}
+			/>,
+		);
+		expect(own()).toBeChecked();
+		const folder = screen.getByLabelText("Folder for the measured copies");
+		expect(folder).toHaveValue("checks/");
+		fireEvent.change(folder, { target: { value: "qc-run-2/" } });
+		expect(onPatch).toHaveBeenLastCalledWith({
+			qc: { ...measured.qc, mirrorPath: "qc-run-2/" },
+		});
+		fireEvent.click(own());
+		expect(onPatch).toHaveBeenLastCalledWith({
+			qc: { ...measured.qc, mirrorPath: undefined },
+		});
+	});
+
+	it("is not offered while nothing is measured", () => {
+		render(<EncodingOptionsSection state={baseState} onPatch={vi.fn()} />);
+		expect(
+			screen.queryByRole("checkbox", {
+				name: "Write the measured copies to one folder",
+			}),
+		).not.toBeInTheDocument();
+	});
+
+	it.each([
+		["Run VMAF QC after encoding", { vmaf: true }],
+		["Run banding detection after encoding", { banding: true }],
+	])("starts in the job's folder when %j is the first measure switched on in the file flow", (label, measure) => {
+		const onPatch = vi.fn();
+		render(
+			<EncodingOptionsSection
+				state={baseState}
+				onPatch={onPatch}
+				jobFolder="clip/"
+			/>,
+		);
+		fireEvent.click(screen.getByLabelText(label));
+		expect(onPatch).toHaveBeenCalledWith({
+			qc: expect.objectContaining({ ...measure, mirrorPath: "clip/" }),
+		});
+	});
+
+	it("is left as it is when a second measure is switched on", () => {
+		const onPatch = vi.fn();
+		render(
+			<EncodingOptionsSection
+				state={measured}
+				onPatch={onPatch}
+				jobFolder="clip/"
+			/>,
+		);
+		fireEvent.click(
+			screen.getByLabelText("Run banding detection after encoding"),
+		);
+		expect(onPatch.mock.lastCall?.[0].qc).not.toHaveProperty("mirrorPath");
+	});
+
+	// Switched off again with a folder typed: the folder is the one typed.
+	it("is left as it is when a folder was already chosen", () => {
+		const onPatch = vi.fn();
+		render(
+			<EncodingOptionsSection
+				state={{
+					...baseState,
+					qc: {
+						vmaf: false,
+						model: DEFAULT_VMAF_MODEL,
+						psnr: false,
+						mirrorPath: "",
+					},
+				}}
+				onPatch={onPatch}
+				jobFolder="clip/"
+			/>,
+		);
+		fireEvent.click(screen.getByLabelText("Run VMAF QC after encoding"));
+		expect(onPatch.mock.lastCall?.[0].qc.mirrorPath).toBe("");
+	});
+
+	it("is one field in the file flow's simple view, where empty is the destination folder", () => {
+		const onPatch = vi.fn();
+		render(
+			<EncodingOptionsSection
+				state={{
+					...measured,
+					qc: { ...measured.qc, mirrorPath: "clip/" } as WizardState["qc"],
+				}}
+				onPatch={onPatch}
+				fileView
+				jobFolder="clip/"
+			/>,
+		);
+		expect(
+			screen.queryByRole("checkbox", {
+				name: "Write the measured copies to one folder",
+			}),
+		).not.toBeInTheDocument();
+		const folder = screen.getByLabelText("Folder for the measured copies");
+		expect(folder).toHaveValue("clip/");
+		fireEvent.change(folder, { target: { value: "" } });
+		expect(onPatch).toHaveBeenLastCalledWith({
+			qc: { ...measured.qc, mirrorPath: undefined },
+		});
+	});
+});
+
+describe("EncodingOptionsSection — a measurement method only a loaded plan brings", () => {
+	const loaded: WizardState = {
+		...baseState,
+		qc: {
+			vmaf: true,
+			model: DEFAULT_VMAF_MODEL,
+			psnr: false,
+			measurementMethod: "FRAME_INDEX_BT709_10BIT",
+		},
+	};
+
+	it("is not offered by the wizard", () => {
+		render(
+			<EncodingOptionsSection
+				state={{
+					...baseState,
+					qc: { vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false },
+				}}
+				onPatch={vi.fn()}
+			/>,
+		);
+		expect(
+			screen.queryByLabelText("Measurement method"),
+		).not.toBeInTheDocument();
+	});
+
+	it.each([
+		false,
+		true,
+	])("is shown when the plan has one, and can be taken out (file view: %s)", (fileView) => {
+		const onPatch = vi.fn();
+		render(
+			<EncodingOptionsSection
+				state={loaded}
+				onPatch={onPatch}
+				fileView={fileView}
+			/>,
+		);
+		const method = screen.getByLabelText("Measurement method");
+		expect(method).toHaveValue("FRAME_INDEX_BT709_10BIT");
+		fireEvent.change(method, { target: { value: "" } });
+		expect(onPatch).toHaveBeenCalledWith({
+			qc: { ...loaded.qc, measurementMethod: undefined },
+		});
+	});
+});
+
+describe("EncodingOptionsSection — what a job that only measures sets aside", () => {
+	const analysed = (qc: WizardState["qc"]): WizardState => ({
+		...baseState,
+		startOptions: { aiSceneAnalysis: { filename: "analysis.json", path: "" } },
+		qc,
+	});
+
+	it.each([
+		[
+			"VMAF only (skip delivery outputs)",
+			{ vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false, only: true },
+			false,
+		],
+		[
+			"QC only (skip delivery outputs)",
+			{
+				vmaf: true,
+				model: DEFAULT_VMAF_MODEL,
+				psnr: false,
+				banding: true,
+				only: true,
+			},
+			false,
+		],
+		[
+			"VMAF only (do not write the files)",
+			{ vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false, only: true },
+			true,
+		],
+		[
+			"QC only (do not write the files)",
+			{
+				vmaf: false,
+				model: DEFAULT_VMAF_MODEL,
+				psnr: false,
+				banding: true,
+				only: true,
+			},
+			true,
+		],
+	] as const)("names the option %j that skips AI Scene Analysis", (option, qc, fileView) => {
+		render(
+			<EncodingOptionsSection
+				state={analysed(qc)}
+				onPatch={vi.fn()}
+				fileView={fileView}
+			/>,
+		);
+		// The option is called what its own checkbox is called in this view.
+		expect(screen.getByRole("checkbox", { name: option })).toBeChecked();
+		expect(
+			screen.getByText(
+				`“${option}” is on, so AI Scene Analysis is skipped. Turn that option off to use the settings saved here.`,
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("checkbox", { name: /Enable AI Scene Analysis/ }),
+		).toBeDisabled();
+	});
+});
+
 describe("ManifestSection — disabled under VMAF-only (qc.only)", () => {
 	it("leaves the HLS/DASH manifest toggles enabled when qc.only is off", () => {
 		render(<ManifestSection state={baseState} onPatch={vi.fn()} />);

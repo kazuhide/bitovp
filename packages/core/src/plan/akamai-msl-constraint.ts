@@ -66,8 +66,21 @@ export const AKAMAI_MSL_REQUIREMENTS = {
 		 * legitimate WebVTT companion to any ladder, so a subset check would
 		 * reject valid plans. What breaks is mixing the segment container the
 		 * format does not use.
+		 *
+		 * The three whole-file kinds are on every list for the reason MP4 is: a
+		 * single `.ts`/`.mov`/`.webm` file is not something a live-ingest stream
+		 * delivers. Inferred, not measured — which is the strength this list
+		 * already reports at (a warning that says "unverified").
 		 */
-		forbidden: ["TS", "PROGRESSIVE_TS", "MP4", "WEBM", "TEXT"],
+		forbidden: [
+			"TS",
+			"MP4",
+			"WEBM",
+			"TEXT",
+			"PROGRESSIVE_TS",
+			"PROGRESSIVE_MOV",
+			"PROGRESSIVE_WEBM",
+		],
 		/**
 		 * The manifest half of the same idea, and it was declared 3× and read
 		 * 0× for one commit (review-5 I3). The case it exists for is real and
@@ -81,13 +94,30 @@ export const AKAMAI_MSL_REQUIREMENTS = {
 	HLS: {
 		muxings: ["TS"],
 		manifests: ["HLS"],
-		forbidden: ["FMP4", "CMAF", "PROGRESSIVE_TS", "MP4", "WEBM", "TEXT"],
+		forbidden: [
+			"FMP4",
+			"CMAF",
+			"MP4",
+			"WEBM",
+			"TEXT",
+			"PROGRESSIVE_TS",
+			"PROGRESSIVE_MOV",
+			"PROGRESSIVE_WEBM",
+		],
 		forbiddenManifests: ["DASH", "SMOOTH"],
 	},
 	CMAF: {
 		muxings: ["FMP4", "CMAF"],
 		manifests: ["DASH", "HLS"],
-		forbidden: ["TS", "PROGRESSIVE_TS", "MP4", "WEBM", "TEXT"],
+		forbidden: [
+			"TS",
+			"MP4",
+			"WEBM",
+			"TEXT",
+			"PROGRESSIVE_TS",
+			"PROGRESSIVE_MOV",
+			"PROGRESSIVE_WEBM",
+		],
 		forbiddenManifests: ["SMOOTH"],
 	},
 } as const satisfies Record<

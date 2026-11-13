@@ -13,6 +13,7 @@ import {
 	DEFAULT_WIZARD_STATE,
 	remapEncodingKeyRefs,
 	remapInputKeyRefs,
+	tryImportPresetIntoWizard,
 	type WizardH265Options,
 	type WizardKantar,
 	type WizardState,
@@ -1744,6 +1745,40 @@ describe("buildPlan qc (VMAF quality control)", () => {
 		expect(qcMirrorSteps(onPlan)).toEqual(["qc-muxing:v360", "qc-muxing:v540"]);
 		expect(qcMirrorSteps(offPlan)).toEqual([]);
 	});
+
+	it("writes the measured copies to the folder named for them, under the output path", () => {
+		const measured: WizardState = {
+			...baseState,
+			qc: { vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false },
+		};
+		const mirrors = (state: WizardState) =>
+			compilePlan(encodingPlanSchema.parse(buildPlan(state)))
+				.filter((op) => op.step.startsWith("qc-muxing:"))
+				.map((op) => `${op.payload.outputPath}${op.payload.filename}`);
+		// Unset: beside the rendition, as before the setting existed.
+		expect("mirrorPath" in (buildPlan(measured).qc ?? {})).toBe(false);
+		expect(mirrors(measured)).toEqual([
+			"output/qc-test/video/360p/qc/v360.mp4",
+		]);
+		const named: WizardState = {
+			...measured,
+			qc: { ...measured.qc, mirrorPath: "checks/" } as WizardState["qc"],
+		};
+		expect(buildPlan(named).qc?.mirrorPath).toBe("output/qc-test/checks/");
+		expect(mirrors(named)).toEqual(["output/qc-test/checks/qc/v360.mp4"]);
+		// "" is the output path itself, which is not the same as unset.
+		expect(
+			mirrors({
+				...measured,
+				qc: { ...measured.qc, mirrorPath: "" } as WizardState["qc"],
+			}),
+		).toEqual(["output/qc-test/qc/v360.mp4"]);
+		// And the plan loads back into the form with the folder as it was typed.
+		const loaded = tryImportPresetIntoWizard(
+			buildPlan(named) as Record<string, unknown>,
+		);
+		expect(loaded.ok && loaded.state.qc?.mirrorPath).toBe("checks/");
+	});
 });
 
 describe("buildPlan qc.only (VMAF-only encode)", () => {
@@ -1846,6 +1881,94 @@ describe("buildPlan qc.only (VMAF-only encode)", () => {
 		// Every emitted muxing is a qc mirror MP4 — no delivery fMP4.
 		expect(muxingKinds.every((k) => k === "CREATE_MUXING_MP4")).toBe(true);
 		expect(muxingKinds).toHaveLength(2);
+	});
+
+	it("drops the audio a video container carries, with the audio renditions", () => {
+		// A TS container that holds the audio track. The track's key on it would
+		// name a rendition this plan leaves out.
+		const carrying: WizardState = {
+			...richState,
+			videos: richState.videos.map((video) => ({
+				...video,
+				muxing: { kind: "TS", muxedAudioKeys: ["a64"] },
+			})),
+			audios: richState.audios.map((audio) => ({
+				...audio,
+				muxing: { kind: "TS", ownContainer: false },
+			})),
+		};
+		const carried = (state: WizardState) =>
+			encodingPlanSchema
+				.parse(buildPlan(state))
+				.muxings.map((muxing) =>
+					"additionalStreamKeys" in muxing
+						? (muxing.additionalStreamKeys ?? [])
+						: [],
+				);
+		expect(carried(carrying)).toEqual([["a64"], ["a64"]]);
+
+		const measuring: WizardState = {
+			...carrying,
+			qc: { vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false, only: true },
+		};
+		expect(carried(measuring)).toEqual([[], []]);
+		expect(
+			validatePlan(encodingPlanSchema.parse(buildPlan(measuring))).filter(
+				(issue) => issue.level === "error",
+			),
+		).toEqual([]);
+	});
+
+	it("asks for no audio track of the source, which nothing encodes", () => {
+		const measuring: WizardState = {
+			...richState,
+			qc: { vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false, only: true },
+		};
+		const streams = (state: WizardState) =>
+			encodingPlanSchema.parse(buildPlan(state)).ingest.map((item) => item.key);
+		expect(streams(richState)).toEqual(["video", "audio"]);
+		expect(streams(measuring)).toEqual(["video"]);
+		// A stream of the Sources step that wraps the track still needs it.
+		expect(
+			streams({
+				...measuring,
+				sources: {
+					...measuring.sources,
+					trimmingStreams: [
+						{ key: "cut", kind: "TIME_BASED", sourceKey: "audio", offset: 1 },
+					],
+				},
+			}),
+		).toEqual(["video", "audio"]);
+		// So the plan is one the form builds, and a copy of the job opens in the form.
+		expect(
+			tryImportPresetIntoWizard(buildPlan(measuring) as Record<string, unknown>)
+				.ok,
+		).toBe(true);
+	});
+
+	it("leaves the Kantar watermark out with the audio it would mark", () => {
+		const kantar: WizardKantar = {
+			credentialId: "00000000-0000-4000-8000-000000000003",
+			licenseId: 4711,
+			channelName: "Demo Channel",
+			contentReference: "clip-ep01",
+			serverUrl: "https://kantar.example.com/watermark",
+			reportPath: "reports/",
+		};
+		const marked: WizardState = { ...richState, kantar };
+		expect(buildPlan(marked).kantar?.reportDestination.path).toBe(
+			"output/vmaf-only-ui/reports/",
+		);
+		const measuring: WizardState = {
+			...marked,
+			qc: { vmaf: true, model: DEFAULT_VMAF_MODEL, psnr: false, only: true },
+		};
+		const plan = encodingPlanSchema.parse(buildPlan(measuring));
+		expect("kantar" in plan).toBe(false);
+		expect(
+			validatePlan(plan).filter((issue) => issue.level === "error"),
+		).toEqual([]);
 	});
 
 	it("does NOT clear delivery outputs when only is off (qc still emits mirrors)", () => {

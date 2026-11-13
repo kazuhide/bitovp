@@ -274,4 +274,101 @@ describe("EncodingOptionsSection — Kantar audio watermarking", () => {
 			screen.queryByText(/This plan has no audio rendition/),
 		).not.toBeInTheDocument();
 	});
+
+	// A job that only measures encodes no audio, so the plan leaves the block out
+	// (build-plan.test.ts). The section says so instead of offering fields that
+	// would do nothing, and does not ask for audio the job would not encode.
+	it("is set aside, and says why, while the job only measures", () => {
+		const measuring: WizardState = {
+			...baseState,
+			audios: [],
+			kantar: filledKantar,
+			qc: { vmaf: true, psnr: false, model: "vmaf_v0.6.1", only: true },
+		};
+		const { rerender } = render(
+			<EncodingOptionsSection state={measuring} onPatch={vi.fn()} />,
+		);
+		expect(
+			screen.getByText(
+				"“VMAF only (skip delivery outputs)” is on, so Kantar audio watermarking is skipped. Turn that option off to use the settings saved here.",
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.getByLabelText("Enable Kantar audio watermarking"),
+		).toBeDisabled();
+		expect(screen.getByLabelText("Report path")).toBeDisabled();
+		expect(screen.queryByText(/This plan has no audio rendition/)).toBeNull();
+		// The summary does not call a block "on" that is in no plan.
+		expect(screen.getByText("Kantar audio watermarking")).toBeInTheDocument();
+		expect(screen.queryByText("Kantar audio watermarking (on)")).toBeNull();
+
+		rerender(
+			<EncodingOptionsSection
+				state={{
+					...measuring,
+					qc: { vmaf: true, psnr: false, model: "vmaf_v0.6.1" },
+				}}
+				onPatch={vi.fn()}
+			/>,
+		);
+		expect(screen.queryByText(/is skipped/)).toBeNull();
+		expect(
+			screen.getByLabelText("Enable Kantar audio watermarking"),
+		).toBeEnabled();
+		expect(
+			screen.getByText("Kantar audio watermarking (on)"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(/This plan has no audio rendition/),
+		).toBeInTheDocument();
+	});
+
+	it("starts the report in the job's folder in the file flow, which writes its files into a shared one", () => {
+		const onPatch = vi.fn();
+		render(
+			<EncodingOptionsSection
+				state={baseState}
+				onPatch={onPatch}
+				jobFolder="clip/"
+			/>,
+		);
+		fireEvent.click(screen.getByLabelText("Enable Kantar audio watermarking"));
+		expect(onPatch).toHaveBeenCalledWith({
+			kantar: {
+				credentialId: "",
+				channelName: "",
+				contentReference: "",
+				serverUrl: "",
+				reportPath: "clip/",
+			},
+		});
+	});
+
+	it("speaks of the files in the file flow's simple view", () => {
+		render(
+			<EncodingOptionsSection
+				state={{ ...baseState, kantar: filledKantar }}
+				onPatch={vi.fn()}
+				fileView
+			/>,
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Kantar audio watermarking (on) — more information",
+			}),
+		);
+		const copy = screen.getByRole("note").textContent ?? "";
+		expect(copy).toMatch(
+			/^Embeds an inaudible Kantar watermark in the audio of the files\./,
+		);
+		expect(copy).toMatch(/vault-only/);
+		expect(copy).not.toMatch(/rendition|ladder|sibling encoding/i);
+		expect(
+			screen.getByRole("button", {
+				name: "Write the report privately (ACL PRIVATE) — more information",
+			}),
+		).toHaveAccessibleDescription(
+			"The processing report is operational data, so it is normally written PRIVATE even when the files are public. Unchecked, the report is public or private as the files are.",
+		);
+	});
 });

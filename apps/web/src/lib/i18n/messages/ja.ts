@@ -7,6 +7,8 @@ const PROVISIONS_AT_CREATE =
 export const ja = {
 	vodTimeline: {
 		singleTs: "TS（単一ファイル）",
+		singleMov: "MOV（単一ファイル）",
+		singleWebm: "WebM（単一ファイル）",
 		edit: "タイムラインで編集",
 		ordinary: "通常の入力に戻す",
 		title: "入力シーケンス",
@@ -711,6 +713,125 @@ export const ja = {
 		"high-contrast": "高コントラスト · ダーク",
 		system: "システムに合わせる",
 		hint: "このブラウザに保存されます。",
+	},
+	vodFlow: {
+		label: "作成するもの",
+		streaming: "配信用にパッケージする",
+		file: "ファイルを書き出す",
+		streamingHint:
+			"プレイヤーで再生するための、ラダーと HLS / DASH マニフェストを作成します。",
+		fileHint:
+			"編集や納品に使う、音声入りの MP4 などのファイルを書き出します。マニフェストは作成しません。",
+		preferenceLabel: "新規 VOD の作成フロー",
+		preferenceHint:
+			"VOD ジョブの作成画面を開いたときのフローです。このブラウザに保存され、作成画面で切り替えたときにも変わります。",
+		stepFormat: "出力形式",
+		stepDestination: "保存先",
+		showAll: "すべての設定を表示",
+		backToSimple: "シンプル表示に戻す",
+		simpleBlocked: "シンプル表示にない設定が使われています：{steps}",
+		files: "出力ファイル",
+		addFile: "ファイルを追加",
+		fileN: "ファイル {n}",
+		removeFileN: "ファイル {n} を削除",
+		container: "コンテナ",
+		unmeasuredContainer:
+			"実際のエンコードでは未確認です。最初に書き出されたファイルを確認してください。",
+		fileName: "ファイル名",
+		fileNameRequired: "ファイル名を入力してください。",
+		sameFileName:
+			"同じ名前のファイルがほかにあり、一方がもう一方を上書きします。",
+		sameSettings:
+			"高さとコーデックが同じで、ビットレートも kbps 単位に丸めると同じになるファイルがほかにあります。この画面で作る 2 つのファイルは、この 3 つのいずれかが違っている必要があります。どちらかのファイルで変更してください。",
+		sourceHeight: "ソースと同じ",
+		bitrateOrCrf:
+			"ビットレートを入力するか、詳細設定で CRF を指定してください。",
+		bitrateRequired: "ビットレートを入力してください。",
+		hevcV2WholeJob:
+			"HEVCv2 はジョブ全体で使います。すべてのファイルで HEVCv2 を選び、「基本」の「BCF オーバーライド」を有効のままにしてください。",
+		oneModeForCodecs:
+			"ファイルごとに映像コーデックが異なります。ジョブは 1 つのエンコーディングモードで実行されるため、すべてのファイルで「(既定)」以外の同じモードを選んでください。そろえないとジョブは拒否されます。",
+		hevcV2NeedsHeight: "HEVCv2 では高さの指定が必要です。入力してください。",
+		hevcV2NeedsBitrate:
+			"HEVCv2 ではビットレートの指定が必要です。入力してください。",
+		bcfOverrideAlone:
+			"「BCF オーバーライド」は HEVCv2 のための設定ですが、HEVCv2 のファイルがありません。「出力形式」ですべてのファイルに HEVCv2 を選ぶか、この設定を無効にしてください。このままではジョブを開始できません。",
+		unverifiedCodec:
+			"コンテナの規格上は入れられるコーデックですが、Bitmovin の資料にこの組み合わせの記載は見つかっていません。ジョブが拒否されることがあります。最初に書き出されたファイルを確認してください。",
+		unverifiedDolbyVision:
+			"Bitmovin の資料が Dolby Vision の出力先として挙げているのは MP4 で、このコンテナは挙がっていません。ジョブが拒否されるか、ファイルに Dolby Vision の情報が入らないことがあります。最初に書き出されたファイルを確認してください。",
+		videoSource: "映像ソース",
+		includeAudio: "音声を入れる",
+		audioCodec: "音声コーデック",
+		audioBitrate: "音声ビットレート (bps)",
+		codecNotHeld: "{container} にはこのコーデックを入れられません。",
+		sampleRateRequired: "サンプリング周波数を入力してください。",
+		atmosStreamForAtmos:
+			"これは Dolby Atmos のストリームで、読めるのは Dolby Atmos のトラックだけです。別のソースを選んでください。このままではジョブは拒否されます。",
+		atmosNeedsSource:
+			"Dolby Atmos は Dolby Atmos のストリームからエンコードします。「ソース」で Dolby Atmos のストリームを追加し、このファイルの音声ソースに選んでください。",
+		visionStreamForVideo:
+			"これは Dolby Vision のストリームで、読めるのは H.264、H.265、AV1 の映像だけです。別のソースを選んでください。このままではジョブは拒否されます。",
+		sourceNotForVideo:
+			"このストリームからファイルの映像は作れません。別のソースを選んでください。このままではジョブは拒否されます。",
+		sourceNotForAudio:
+			"このストリームからファイルの音声は作れません。別のソースを選んでください。このままではジョブは拒否されます。",
+		sourceUnusedWithSequence:
+			"入力シーケンスを使っている間は使われません。すべてのファイルは「ソース」のシーケンスから書き出されます。",
+		sequenceWithoutAudio:
+			"「ソース」の入力シーケンスに音声がないため、このファイルは音声なしで書き出されます。シーケンスで音声を有効にして音声クリップを置くか、通常の入力に戻してください。",
+		av1DolbyVision:
+			"Dolby Vision の AV1 は fMP4 にだけ書き出せます。この画面のファイルには入れられません。下の詳細設定で別のダイナミックレンジを選んでください。このままではジョブは拒否されます。",
+		dolbyVisionAudio:
+			"Bitmovin の規則では、Dolby Vision の映像と同じファイルに入れられる音声は AAC と Dolby Atmos だけです。ジョブが拒否されることがあります。最初に書き出されるファイルを確認するか、AAC を使ってください。",
+		av1WebmAudio:
+			"Bitmovin のリリースノートには、AV1 の映像を入れた WebM ファイルにはほかのストリームを入れられないとあり、これを改める記載は見つかっていません。ジョブが拒否されることがあります。確実に書き出すには、このファイルの音声を外すか、MP4 を使ってください。",
+		noAudio: "このファイルは音声トラックなしで書き出します。",
+		audioSource: "音声ソース",
+		folderHelp:
+			"ファイルはこのフォルダの直下に書き出されます。ジョブ名のサブフォルダは作成しません。",
+		reviewWrites: "このジョブが書き出すもの",
+		reviewAlsoMirrored:
+			"ファイルと測定用のコピーは、追加の保存先（{count} 件）にも書き出されます。",
+		reviewNotMirrored:
+			"AI シーン解析の結果と Kantar のレポートは、この保存先にだけ書き出されます。",
+		reviewAnalysis: "AI シーン解析の結果",
+		reviewQcMirrors: "品質測定用のコピー（フォルダ）",
+		reviewKantarReport: "Kantar のレポート（フォルダ）",
+		reviewMeasureOnly:
+			"「{option}」が有効なため、このジョブは各ファイルの映像を測定するだけで、ファイルは書き出しません。",
+		blockerEncodings: "ソース（複数エンコーディングの分割）",
+		blockerPerTitle: "エンコーディング（Per-Title の設定）",
+		blockerQualityGate:
+			"エンコーディング（マニフェスト生成を保留する QC ゲート）",
+		blockerGateTargets:
+			"エンコーディング（対象レンディションを選んだ QC ゲートのルール）",
+		qcGateHint:
+			"測定値（VMAF、PSNR、バンディング）に対するしきい値ルールです。PER_RENDITION はすべてのファイルが個別に基準を満たす必要があり、OVERALL はファイル全体の平均で判定します。不合格はジョブに記録され、「QC ゲート不合格」の通知が送られます。ファイルの書き出しは止まりません。",
+		bandingGateHint:
+			"CAMBI は各ファイルの上限値で判定します。まず警告として設定し、実際の視聴条件で映像を確認してください。5 は検討の開始値であり、どの映像にも共通する可視性の境界ではありません。",
+		qcMirrorFolderHelp:
+			"保存先フォルダからの相対パスです。コピーはその中の qc/ に書き込まれます。空欄にすると、保存先フォルダの直下の qc/ に書き込まれます。コピーの名前はジョブ名ではなく、ファイルの映像設定から決まります（例：v1080.mp4）。同じ保存先フォルダに書き出すジョブが複数ある場合は、ジョブごとにフォルダを分けてください。",
+		relativeToDestination: "保存先フォルダからの相対パス",
+		kantarHelp:
+			"聞こえない Kantar ウォーターマークを、ファイルの音声に埋め込みます。ファイルに音声が入っていないジョブには埋め込む対象がないため、拒否されます。設定はジョブ全体に 1 つです。Kantar サービスのログイン情報とパスワードは「設定 → 認証情報」の「Kantar 音声ウォーターマーク」で暗号化して保存します。プランには認証情報の参照先だけが保存され、ログイン情報自体は含まれません。",
+		kantarReportPathHelp:
+			"保存先フォルダからの相対パス：Kantar の処理レポートが書き込まれる場所です",
+		kantarReportPrivateHelp:
+			"処理レポートは運用データなので、ファイルが公開設定でも通常は PRIVATE で書き込まれます。チェックを外すと、ファイルと同じ公開 / 非公開設定になります。",
+		encodingModeFromFiles: "各ファイルのモード・プリセットを使用",
+		encodingModeFromFilesHint:
+			"モードまたはプリセットは「出力形式」でファイルごとに設定します。重複を避けるため、ジョブ全体のモードは送信しません。",
+		kantarNeedsAudio:
+			"音声の入ったファイルがありません。「出力形式」で、いずれかのファイルの「音声を入れる」を有効にしてください。音声がないジョブは拒否されます（Kantar は音声にウォーターマークを入れます）。",
+		qcHelp:
+			"ファイルごとに、その映像を測定するためのコピー（MP4。VP9 のファイルは WebM）を、測定用コピーのフォルダの qc/ に作成します。エンコードが FINISHED になった後、libvmaf で元映像と自動的に比較します。レポートは VMAF ラボ (/qc) に表示されます。",
+		vmafOnly: "VMAF のみ（ファイルを書き出さない）",
+		qcOnly: "QC のみ（ファイルを書き出さない）",
+		measureOnlyHelp:
+			"測定に使うコピーだけを書き出します。コピーはファイルごとに 1 つ（MP4。VP9 のファイルは WebM）で、測定用コピーのフォルダの qc/ に置かれます。「出力形式」で設定したファイルは書き出されず、音声も入りません。ファイルを残さずに品質を測定するための設定です。",
+		measureOnlyFormatNote:
+			"「{option}」が有効です（エンコーディング → 品質管理）。このジョブが書き出すのは測定用のコピーだけで、書き出し先は「確認」に表示されます。下のファイルは書き出されず、音声も入りません。",
 	},
 	shell: {
 		skipToContent: "本文へ移動",
@@ -4591,8 +4712,16 @@ export const ja = {
 			"認証情報を読み込めませんでした。再試行してストレージの認証情報を選択してください。",
 		accountsLoadFailed:
 			"Bitmovinアカウントを読み込めませんでした。再試行してアカウントを選択してください。",
-		aisaDisabledQcOnly:
-			"VMAF専用エンコードではAIシーン解析を行いません。保存した設定を使うにはVMAF専用をオフにしてください。",
+		skippedWhileMeasureOnly:
+			"「{option}」が有効なため、{feature}は実行されません。ここに保存された設定を使うには、このオプションを無効にしてください。",
+		qcMirrorOwnFolder: "測定用コピーを 1 つのフォルダにまとめる",
+		qcMirrorOwnFolderHelp:
+			"チェックを外すと、コピーは各レンディションの出力フォルダにある qc/ に書き込まれます。チェックを入れると、すべてのコピーが下で指定したフォルダの qc/ に書き込まれます。コピーの名前はレンディションのキーだけで決まるため、レンディションの出力フォルダが同じジョブが複数ある場合は、ジョブごとにフォルダを指定してください。指定しないと、先のジョブの測定に使うコピーを、後のジョブが上書きします。",
+		qcMirrorFolder: "測定用コピーのフォルダ",
+		qcMirrorFolderHelp:
+			"ベース出力パスからの相対パスです。コピーはその中の qc/ に書き込まれます。空欄はベース出力パスそのものを指します。",
+		qcMeasurementMethodHelp:
+			"読み込んだプランで指定されている設定で、ウィザードから選ぶことはできません。フレーム番号による比較にはクラウド実行が必要で、スコアは標準方式と分けて比較します。「標準」を選ぶと、この指定を外します。",
 		previewPlacementNeedsJit:
 			"プレビュー配置にはジャストインタイムが必要です。生成タイミングを変更するか、開始時の配置をVOD（既定）に戻してください。",
 		encodingModeFromLadder: "ラダーのモード・プリセットを使用",
@@ -4609,6 +4738,7 @@ export const ja = {
 		muxedAudio: "同梱する音声",
 		muxedAudioHint:
 			"映像と同じセグメントに含める音声です。音声を含むバリアントには EXT-X-MEDIA グループは不要です。音声を含まないバリアントは、独立した音声コンテナを参照します。",
+		muxedAudioFileHint: "映像と一緒にこのファイルへ書き込む音声です。",
 		ownContainer: "独立コンテナ",
 		ownContainerLabel: "この音声用に作る",
 		ownContainerOnHint:
@@ -4812,6 +4942,14 @@ export const ja = {
 		defaultEnWebvttSegNumberVtt: "既定 en_webvtt_seg_%number%.vtt",
 		defaultInitHdr: "既定 init.hdr",
 		defaultInitMp4: "既定 init.mp4",
+		defaultOutputMov: "既定 output.mov",
+		defaultOutputTs: "既定 output.ts",
+		defaultOutputWebm: "既定 output.webm",
+		encoderDefaultWhenEmpty:
+			"任意です。空欄の場合はエンコーダの既定値を使います。",
+		startOffsetS: "開始オフセット (秒)",
+		startOffsetHint:
+			"MPEG-TS のタイムスタンプを、指定した秒数(整数)だけずらします。空欄の場合はエンコーダの既定値を使います。",
 		defaultSegNumberChk: "既定 seg_%number%.chk",
 		defaultSegNumberTs: "既定 seg_%number%.ts",
 		addDeliveryMirror: "配信先を追加",
@@ -5292,6 +5430,7 @@ export const ja = {
 			"このプランにはウィザードで保持できない設定があります。元のJSONを保持しています。「JSONを編集」から変更してください。",
 		importEditJson: "JSONを編集",
 		muxedAudioCarrying: "このセグメントに {key} の音声を含めます。",
+		muxedAudioCarryingFile: "このファイルに {key} の音声を含めます。",
 		qcDisabledCarriedBlock:
 			"このプランは QC/VMAF の設定を含んでいますが、この環境では QC/VMAF がオフのため開始できません。設定を削除して続けるか、設定画面で QC/VMAF を有効にしてください。",
 		qcDisabledRemoveBlock: "QC 設定を削除",
@@ -5347,6 +5486,8 @@ export const ja = {
 			"1 回のエンコードで、全レンディションとマニフェストを複数のストレージへ配信します。各ミラーにも同じパス・同じ ACL で書き込みます。",
 		derivedPathHint:
 			"ベース出力パスからの相対パス:空欄 = 自動で決まるパス「{path}」。per-title の出力には {uuidToken}/{bitrateToken} のプレースホルダーが必要です。",
+		destinationBasePathHint:
+			"ベース出力パスからの相対パス:空欄 = ベース出力パスの直下(サブフォルダなし)。",
 		enableCodecPerTitle: "{codec} の per-title 設定を有効にする",
 		encryptionDrmCount: "暗号化 / DRM({count})",
 		extraContainerOf: "{key} の追加コンテナ",

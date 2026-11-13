@@ -13,6 +13,7 @@ import {
 	DEFAULT_WIZARD_STATE,
 	type WizardState,
 } from "./build-plan";
+import { FILE_OUTPUT_DEFAULT_STATE } from "./file-output";
 import {
 	clipA,
 	credentialId,
@@ -235,6 +236,49 @@ it.each<Action>([
 	// and hide a stale readiness signature held by the parent wizard.
 	expect(await review(action)).toBeEnabled();
 	expect(probes()).toHaveLength(probeCount);
+});
+
+it("opens all settings when an output logo is applied in the simple view of the file flow, where the Ladder step shows it", async () => {
+	seed = {
+		...FILE_OUTPUT_DEFAULT_STATE,
+		name: seed.name,
+		accountId,
+		inputFiles: seed.inputFiles,
+		inputTimeline: seed.inputTimeline,
+		output: {
+			...FILE_OUTPUT_DEFAULT_STATE.output,
+			credentialId,
+			bucket: "output",
+			basePath: "test-only",
+		},
+	};
+	renderWithQuery(
+		<DocumentOrganizationContext.Provider value={organizationId}>
+			<VodWizard flow="file" />
+		</DocumentOrganizationContext.Provider>,
+	);
+	await userEvent.click(await screen.findByRole("button", { name: "Restore" }));
+	await screen.findByText("Preview ready");
+	const steps = () =>
+		within(
+			screen.getByRole("navigation", { name: "Wizard steps" }),
+		).getAllByRole("button");
+	expect(steps()).toHaveLength(6);
+	// A source is no setting of a step this view leaves out, and keeps it.
+	await userEvent.click(
+		screen.getByRole("button", { name: "Add Test audio to sources" }),
+	);
+	expect(steps()).toHaveLength(6);
+	await userEvent.click(
+		screen.getByRole("button", { name: "Use Test logo as an output logo" }),
+	);
+	await screen.findByText(/Input previews do not display them/);
+	expect(steps()).toHaveLength(8);
+	const back = screen.getByRole("button", { name: "Back to simple view" });
+	expect(back).toBeDisabled();
+	expect(back).toHaveAccessibleDescription(
+		"Settings the simple view does not show are in use in: Ladder.",
+	);
 });
 
 it("invalidates actual AV source changes until the real editor completes a fresh probe", async () => {

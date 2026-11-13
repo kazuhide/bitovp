@@ -44,6 +44,7 @@ import {
 	PaddingDurationUnit,
 	PaddingSequence,
 	PictureFieldParity,
+	ProgressiveMovMuxing,
 	ProgressiveTsMuxing,
 	ProgressiveWebmMuxing,
 	Sprite,
@@ -100,8 +101,9 @@ export function createMediaOps(
 	| "createCmafMuxing"
 	| "createFmp4Muxing"
 	| "createMp4Muxing"
-	| "createProgressiveWebmMuxing"
+	| "createProgressiveMovMuxing"
 	| "createProgressiveTsMuxing"
+	| "createProgressiveWebmMuxing"
 	| "createTsMuxing"
 	| "createWebmMuxing"
 	| "createChunkedTextMuxing"
@@ -120,10 +122,11 @@ export function createMediaOps(
 	 * `Muxing.streams` is a `MuxingStream[]` and always was; this layer wrote
 	 * `[new MuxingStream({ streamId })]` — a one-element array literal — for
 	 * every muxing kind, so a multiplexed container was unrepresentable no
-	 * matter what the plan compiled to. Used by the two kinds whose schema can
-	 * carry extra streams (TS, MP4); the other three creators keep their single
-	 * literal, because nothing can currently hand them a second stream and a
-	 * slot no input can reach is a coverage claim that is not true.
+	 * matter what the plan compiled to. Used by the kinds whose schema can
+	 * carry extra streams (TS, MP4, and the whole-file progressive TS / MOV /
+	 * WebM); the other creators keep their single literal, because nothing can
+	 * currently hand them a second stream and a slot no input can reach is a
+	 * coverage claim that is not true.
 	 */
 	const muxingStreams = (p: {
 		streamId: string;
@@ -744,36 +747,36 @@ export function createMediaOps(
 					).then(id),
 			}),
 
-		createProgressiveWebmMuxing: (encodingId, p) =>
+		createProgressiveMovMuxing: (encodingId, p) =>
 			adoptOrCreateStamped({
-				label: "progressive webm muxing",
+				label: "progressive mov muxing",
 				stamp: options.stamp,
 				lookup: (expect) =>
 					findStampedResource({
-						label: "progressive webm muxing",
+						label: "progressive mov muxing",
 						expect,
-						list: (q) => muxings().progressiveWebm.list(encodingId, q),
+						list: (q) => muxings().progressiveMov.list(encodingId, q),
 						customData: (rid) =>
-							muxings().progressiveWebm.customdata.get(encodingId, rid),
+							muxings().progressiveMov.customdata.get(encodingId, rid),
 					}),
 				auditAdopt: stampAuditAdopt(
-					`/encoding/encodings/${encodingId}/muxings/progressive-webm`,
+					`/encoding/encodings/${encodingId}/muxings/progressive-mov`,
 				),
 				create: () =>
 					audited(
 						"POST",
-						`/encoding/encodings/${encodingId}/muxings/progressive-webm`,
+						`/encoding/encodings/${encodingId}/muxings/progressive-mov`,
 						{
 							name: p.name,
 							filename: p.filename,
 							outputPath: p.destination?.outputPath,
 						},
 						() =>
-							muxings().progressiveWebm.create(
+							muxings().progressiveMov.create(
 								encodingId,
-								new ProgressiveWebmMuxing({
+								new ProgressiveMovMuxing({
 									filename: p.filename,
-									streams: [new MuxingStream({ streamId: p.streamId })],
+									streams: muxingStreams(p),
 									outputs: outputs(p.destination),
 									name: p.name,
 								}),
@@ -804,6 +807,7 @@ export function createMediaOps(
 						{
 							name: p.name,
 							filename: p.filename,
+							segmentLength: p.segmentLength,
 							startOffset: p.startOffset,
 							outputPath: p.destination?.outputPath,
 						},
@@ -812,7 +816,49 @@ export function createMediaOps(
 								encodingId,
 								new ProgressiveTsMuxing({
 									filename: p.filename,
+									// Both optional and sent only when the plan set them:
+									// undefined is dropped by the SDK's serialiser, so an
+									// unset field leaves the choice to the encoder.
+									segmentLength: p.segmentLength,
 									startOffset: p.startOffset,
+									streams: muxingStreams(p),
+									outputs: outputs(p.destination),
+									name: p.name,
+								}),
+							),
+						(r) => ({ id: r.id }),
+					).then(id),
+			}),
+
+		createProgressiveWebmMuxing: (encodingId, p) =>
+			adoptOrCreateStamped({
+				label: "progressive webm muxing",
+				stamp: options.stamp,
+				lookup: (expect) =>
+					findStampedResource({
+						label: "progressive webm muxing",
+						expect,
+						list: (q) => muxings().progressiveWebm.list(encodingId, q),
+						customData: (rid) =>
+							muxings().progressiveWebm.customdata.get(encodingId, rid),
+					}),
+				auditAdopt: stampAuditAdopt(
+					`/encoding/encodings/${encodingId}/muxings/progressive-webm`,
+				),
+				create: () =>
+					audited(
+						"POST",
+						`/encoding/encodings/${encodingId}/muxings/progressive-webm`,
+						{
+							name: p.name,
+							filename: p.filename,
+							outputPath: p.destination?.outputPath,
+						},
+						() =>
+							muxings().progressiveWebm.create(
+								encodingId,
+								new ProgressiveWebmMuxing({
+									filename: p.filename,
 									streams: muxingStreams(p),
 									outputs: outputs(p.destination),
 									name: p.name,

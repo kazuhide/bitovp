@@ -14,6 +14,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { FeatureFlagsProvider } from "@/lib/feature-flags/context";
 import { LocaleProvider, persistLocale, useT } from "@/lib/i18n/context";
 import { resolveTheme, THEME_COOKIE } from "@/lib/theme";
+import { resolveVodFlow, VOD_FLOW_COOKIE } from "@/lib/vod-flow";
 import { useDemoRoute } from "../shims/navigation";
 import {
 	localePath,
@@ -125,11 +126,22 @@ function Screen({ route }: { route: string }) {
 	if (path === "/vod/jobs") return <Jobs />;
 	if (path === "/vod/new") {
 		const from = url.searchParams.get("from");
+		const presetName = url.searchParams.get("preset") ?? undefined;
+		// As in the app: the URL decides, then the flow last chosen in this browser.
+		const flow =
+			presetName === undefined
+				? resolveVodFlow(
+						url.searchParams.get("flow"),
+						preference(VOD_FLOW_COOKIE),
+					)
+				: undefined;
 		return from ? (
 			<CopyVodJob source={from} submitLabel={text.createJob} />
 		) : (
 			<VodWizard
-				presetName={url.searchParams.get("preset") ?? undefined}
+				key={flow === "file" ? "file" : "wizard"}
+				flow={flow}
+				presetName={presetName}
 				submitLabel={text.createJob}
 			/>
 		);

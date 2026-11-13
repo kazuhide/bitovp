@@ -42,6 +42,69 @@ export function isMuxedContainer(muxing: PlanMuxing): boolean {
 }
 
 /**
+ * The kinds that are ONE WHOLE FILE and nothing else: a deliverable to hand
+ * over, never a leg of a manifest.
+ *
+ * The distinction needs a name because most manifest selections in this
+ * package are OPEN — an unpinned HLS manifest lists "every video muxing", a
+ * `drmKind` pin checks "every muxing the manifest selects" — and each of those
+ * was complete while every kind was a streaming container. A file kind that
+ * walks through an open selection becomes an HLS variant pointing at a `.mov`,
+ * or a "this entry would silently lose protection" error about a file no
+ * manifest ever lists. So the selections ask this instead of each remembering
+ * a list of their own.
+ *
+ * `MP4` and progressive `WEBM` are deliberately NOT here: both are files, and
+ * both are also manifest legs (byte-range HLS, Smooth, DASH on-demand; DASH
+ * progressive-WebM representations). `PROGRESSIVE_WEBM` IS here: it is the
+ * muxing kind, a file no manifest lists — not the `WEBM` muxing marked
+ * `progressive`, and not the DASH representation type of the same name.
+ */
+export const FILE_ONLY_MUXING_KINDS = [
+	"PROGRESSIVE_TS",
+	"PROGRESSIVE_MOV",
+	"PROGRESSIVE_WEBM",
+] as const satisfies readonly PlanMuxing["kind"][];
+
+export type FileOnlyMuxingKind = (typeof FILE_ONLY_MUXING_KINDS)[number];
+
+/** True for a kind no HLS, DASH or Smooth manifest can list. */
+export function isFileOnlyMuxingKind(kind: string): kind is FileOnlyMuxingKind {
+	return (FILE_ONLY_MUXING_KINDS as readonly string[]).includes(kind);
+}
+
+/**
+ * Can a container of this kind hold audio BESIDE its primary stream — that is,
+ * does its schema carry `additionalStreamKeys`?
+ *
+ * One answer for the plan builder (which legs may carry a muxed-in track), the
+ * packaging form (which rows offer the control) and the automatic-packaging
+ * reconciler (whether every leg already covers an audio rendition). Those were
+ * three hand-written `TS || MP4` tests, and a kind added to the schema without
+ * being added to all three would build a plan that drops the track the form
+ * showed as muxed in.
+ *
+ * The `Record` is the guard: a new member of the muxing union does not compile
+ * until someone decides its answer here.
+ */
+const CARRIES_AUDIO: Record<PlanMuxing["kind"], boolean> = {
+	FMP4: false,
+	CMAF: false,
+	MP4: true,
+	TS: true,
+	WEBM: false,
+	TEXT: false,
+	CHUNKED_TEXT: false,
+	PROGRESSIVE_TS: true,
+	PROGRESSIVE_MOV: true,
+	PROGRESSIVE_WEBM: true,
+};
+
+export function muxingKindCarriesAudio(kind: string): boolean {
+	return (CARRIES_AUDIO as Record<string, boolean>)[kind] === true;
+}
+
+/**
  * Does this container carry audio ALONGSIDE its primary (video) stream?
  *
  * This is the HLS master-playlist question, and both compilers must answer it

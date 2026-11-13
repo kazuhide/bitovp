@@ -64,12 +64,15 @@ export function draftFingerprint(value: unknown): string {
 
 // Explicit form shapes only. URLs, raw DRM keys, arbitrary filter/options JSON and imported plans
 // are deliberately absent; even a nested unknown property cannot enter storage.
-const text = z
-	.string()
-	.max(2048)
-	.refine((value) => !/\w+:\/\/|[?#]|^[^/\s]*:[^/\s]*@/u.test(value))
-	.optional()
-	.catch("");
+/**
+ * Whether a draft keeps this text. An address, a query or fragment, and a login
+ * before a host are refused, and the field comes back empty.
+ */
+export function draftKeepsText(value: string): boolean {
+	return !/\w+:\/\/|[?#]|^[^/\s]*:[^/\s]*@/u.test(value);
+}
+
+const text = z.string().max(2048).refine(draftKeepsText).optional().catch("");
 const number = z.number().finite().nullable().optional().catch(undefined);
 const flag = z.boolean().optional().catch(undefined);
 const strings = z
@@ -156,7 +159,7 @@ const extras = fields(
 	},
 );
 const rendition = fields(
-	"codec encodingMode channelLayout name presetConfiguration container autoKey",
+	"codec encodingMode channelLayout name presetConfiguration container autoKey carriedAs",
 	"width height bitrate rate cutoffFrequency",
 	"ownContainer",
 	{
@@ -363,7 +366,7 @@ const vod = fields(
 		),
 		delivery: group(fields("specId onDeviation")),
 		qc: group(
-			fields("model", "", "vmaf psnr only", {
+			fields("model mirrorPath", "", "vmaf psnr only", {
 				execution: group(fields("backend profileId localMode", "budgetUsd")),
 				gate: group(
 					fields("onFail", "", "", {

@@ -11,7 +11,7 @@ import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
 import { hlsChildEntries, hlsSubtitleGroups } from "./hls-media-defaults";
 import { checkHlsVideoUris } from "./hls-video-uri-validation";
 import { FILTER_ENDPOINTS, filterParameters } from "./media-filters";
-import { muxingStreamKeys } from "./muxing-streams";
+import { isFileOnlyMuxingKind, muxingStreamKeys } from "./muxing-streams";
 import { streamPerTitleSettings } from "./per-title-settings";
 import type { EncodingPlan } from "./schema";
 import { AUDIO_CODECS } from "./schema";
@@ -153,9 +153,11 @@ const MUXING_SECTION = {
 	CHUNKED_TEXT: "chunkedText",
 	TEXT: "text",
 	TS: "ts",
-	PROGRESSIVE_TS: "progressiveTs",
 	WEBM: "webm",
-} as const;
+	PROGRESSIVE_TS: "progressiveTs",
+	PROGRESSIVE_MOV: "progressiveMov",
+	PROGRESSIVE_WEBM: "progressiveWebm",
+} as const satisfies Record<EncodingPlan["muxings"][number]["kind"], string>;
 
 type AnyRendition = EncodingPlan["renditions"][number];
 
@@ -1212,8 +1214,10 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			text: Tree;
 			chunkedText: Tree;
 			ts: Tree;
-			progressiveTs: Tree;
 			webm: Tree;
+			progressiveTs: Tree;
+			progressiveMov: Tree;
+			progressiveWebm: Tree;
 		}
 	>();
 	for (const muxing of plan.muxings) {
@@ -1227,13 +1231,25 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				text: {},
 				chunkedText: {},
 				ts: {},
-				progressiveTs: {},
 				webm: {},
+				progressiveTs: {},
+				progressiveMov: {},
+				progressiveWebm: {},
 			};
 			muxingsByEnc.set(ownerEnc, legs);
 		}
-		const { fmp4, cmaf, mp4, text, chunkedText, ts, progressiveTs, webm } =
-			legs;
+		const {
+			fmp4,
+			cmaf,
+			mp4,
+			text,
+			chunkedText,
+			ts,
+			webm,
+			progressiveTs,
+			progressiveMov,
+			progressiveWebm,
+		} = legs;
 		const shared = {
 			// EVERY stream the container packages . This emitted a
 			// one-element list, which was a complete description of a
@@ -1364,14 +1380,6 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					...shared,
 				},
 			};
-		} else if (muxing.kind === "PROGRESSIVE_TS") {
-			progressiveTs[muxing.key] = {
-				properties: {
-					filename: muxing.filename,
-					...dense({ startOffset: muxing.startOffset }),
-					...shared,
-				},
-			};
 		} else if (muxing.kind === "TS") {
 			ts[muxing.key] = {
 				...drmNode,
@@ -1390,6 +1398,29 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					initSegmentName: muxing.initSegmentName,
 					...shared,
 				},
+			};
+		} else if (muxing.kind === "PROGRESSIVE_TS") {
+			// No `drm` node: validation refuses a DRM row on a whole-file kind.
+			progressiveTs[muxing.key] = {
+				properties: {
+					filename: muxing.filename,
+					// Absent fields stay absent — the encoder's defaults apply.
+					...dense({
+						segmentLength: muxing.segmentLength,
+						startOffset: muxing.startOffset,
+					}),
+					...shared,
+				},
+			};
+		} else if (muxing.kind === "PROGRESSIVE_MOV") {
+			progressiveMov[muxing.key] = {
+				properties: { filename: muxing.filename, ...shared },
+			};
+		} else if (muxing.kind === "PROGRESSIVE_WEBM") {
+			// The schema's `progressiveWebm` section. `manifestType` and
+			// `segmentLength` stay out: the plan kind does not carry them.
+			progressiveWebm[muxing.key] = {
+				properties: { filename: muxing.filename, ...shared },
 			};
 		} else {
 			unreachable(muxing);
@@ -1427,8 +1458,13 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			for (const muxing of plan.muxings) {
 				const rendition = renditionByKey.get(muxing.streamKey);
 				// Per-title entries expand at run time — not representable
-				// in a template (header note).
-				if (!rendition || isPerTitle(rendition)) {
+				// in a template (header note). A whole-file muxing is no HLS
+				// entry at all (the compiler skips it for the same reason).
+				if (
+					!rendition ||
+					isPerTitle(rendition) ||
+					isFileOnlyMuxingKind(muxing.kind)
+				) {
 					continue;
 				}
 				const entryEnc = encName(rendition.key);
@@ -2026,8 +2062,10 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					chunkedText: {},
 					text: {},
 					ts: {},
-					progressiveTs: {},
 					webm: {},
+					progressiveTs: {},
+					progressiveMov: {},
+					progressiveWebm: {},
 				};
 				const fileEntries = fileInputStreamsByEnc.get(name) ?? {};
 				const atmosEntries = dolbyAtmosByEnc.get(name) ?? {};
@@ -2116,10 +2154,16 @@ function buildTemplate(plan: EncodingPlan): Tree {
 								? { chunkedText: legs.chunkedText }
 								: {}),
 							...(Object.keys(legs.ts).length > 0 ? { ts: legs.ts } : {}),
+							...(Object.keys(legs.webm).length > 0 ? { webm: legs.webm } : {}),
 							...(Object.keys(legs.progressiveTs).length > 0
 								? { progressiveTs: legs.progressiveTs }
 								: {}),
-							...(Object.keys(legs.webm).length > 0 ? { webm: legs.webm } : {}),
+							...(Object.keys(legs.progressiveMov).length > 0
+								? { progressiveMov: legs.progressiveMov }
+								: {}),
+							...(Object.keys(legs.progressiveWebm).length > 0
+								? { progressiveWebm: legs.progressiveWebm }
+								: {}),
 						},
 						start: {
 							properties: {

@@ -98,6 +98,10 @@ export async function reRunJob(
 		// skip shape as `demoteQcIoReadable` above, so the operator still sees
 		// the warning that their delivery is silent.
 		demoteUnmuxedAudio: true,
+		// The same rule for the two rails that came with the whole-file outputs:
+		// two outputs writing one file, and an HLS ladder with no audio a playlist
+		// can list. A job that finished before them can be run again, and is told.
+		demoteFileOutputRails: true,
 	};
 	const preIssues = validatePlan(parsedPlan.data, rerunValidationOptions);
 	if (planHasErrors(preIssues)) {

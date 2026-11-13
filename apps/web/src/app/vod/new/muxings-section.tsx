@@ -1,10 +1,16 @@
 "use client";
 
-import type { CredentialSummaryWire } from "@bitovp/core";
+import {
+	type CredentialSummaryWire,
+	isFileOnlyMuxingKind,
+	MUXING_CODEC_MATRIX,
+	muxingKindCarriesAudio,
+} from "@bitovp/core";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { HelpOverlay } from "@/components/ui/help-overlay";
 import { Input, SelectNative } from "@/components/ui/input";
+import type { MessageKey } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 import { reconcileAutomaticAudioPackaging } from "./automatic-audio-packaging";
 import {
@@ -17,6 +23,7 @@ import {
 	type WizardMuxing,
 	type WizardMuxingKind,
 	type WizardState,
+	type WizardVideoCodec,
 } from "./build-plan";
 import { CMAF_CHUNK_FIELDS } from "./cmaf-fields";
 import {
@@ -26,6 +33,7 @@ import {
 	drmEntriesFor,
 	orphanDrmEntries,
 } from "./drm-row-editor";
+import { fileContainer } from "./file-output";
 import {
 	Collapsible,
 	type OptionFieldSpec,
@@ -44,18 +52,56 @@ const VIDEO_KINDS: WizardMuxingKind[] = [
 	"FMP4",
 	"CMAF",
 	"MP4",
-	"PROGRESSIVE_TS",
 	"TS",
 	"WEBM",
+	// Whole-file containers: one .ts / .mov / .webm per rendition, never a
+	// manifest leg.
+	"PROGRESSIVE_TS",
+	"PROGRESSIVE_MOV",
+	"PROGRESSIVE_WEBM",
 ];
+// An audio rendition can be a `.ts` file of its own; the `.mov` and `.webm`
+// files are offered to video rows, which carry their audio.
 const AUDIO_KINDS: WizardMuxingKind[] = [
 	"FMP4",
 	"CMAF",
 	"MP4",
-	"PROGRESSIVE_TS",
 	"TS",
+	"PROGRESSIVE_TS",
 ];
+
+/** The whole-file kinds are named for what they write; the others by their kind. */
+const FILE_KIND_LABEL: Partial<Record<WizardMuxingKind, MessageKey>> = {
+	PROGRESSIVE_TS: "vodTimeline.singleTs",
+	PROGRESSIVE_MOV: "vodTimeline.singleMov",
+	PROGRESSIVE_WEBM: "vodTimeline.singleWebm",
+};
 const SUBTITLE_KINDS: WizardMuxingKind[] = ["CHUNKED_TEXT"];
+
+/**
+ * The containers offered for a video rendition of this codec.
+ *
+ * CMAF keeps its H.264-only rule. The whole-file kinds are read off
+ * `MUXING_CODEC_MATRIX` — the table the validator refuses mismatches with — so
+ * the picker does not offer a pairing the preview is certain to reject: the
+ * `.ts` and `.mov` files on H.264 and H.265 rows, the `.webm` file on VP9 and AV1. The
+ * streaming kinds are deliberately NOT filtered through the matrix: that would
+ * change what existing rows are offered, which is not this change's to decide.
+ */
+function videoKindsFor(
+	codec: WizardVideoCodec | undefined,
+): WizardMuxingKind[] {
+	// The plan spells both HEVC encoders "H265".
+	const planCodec =
+		codec === undefined ? "H264" : codec === "H265V2" ? "H265" : codec;
+	return VIDEO_KINDS.filter((kind) =>
+		kind === "CMAF"
+			? planCodec === "H264"
+			: isFileOnlyMuxingKind(kind)
+				? MUXING_CODEC_MATRIX[kind].includes(planCodec)
+				: true,
+	);
+}
 
 const FMP4_FIELDS: OptionFieldSpec[] = [
 	{
@@ -152,6 +198,55 @@ const WEBM_FIELDS: OptionFieldSpec[] = [
 	},
 ];
 
+/**
+ * One whole `.ts` file. Neither number has a default in this app — an empty
+ * field leaves the choice to the encoder, and the hints say exactly that
+ * rather than name a value nobody here has measured.
+ */
+const PROGRESSIVE_TS_FIELDS: OptionFieldSpec[] = [
+	{
+		key: "filename",
+		labelKey: "wizard.filename",
+		control: "text",
+		hintKey: "wizard.defaultOutputTs",
+	},
+	{
+		key: "segmentLength",
+		labelKey: "wizard.segmentLengthS",
+		control: "num",
+		hintKey: "wizard.encoderDefaultWhenEmpty",
+	},
+	{
+		key: "startOffset",
+		labelKey: "wizard.startOffsetS",
+		control: "num",
+		hintKey: "wizard.startOffsetHint",
+	},
+];
+
+const PROGRESSIVE_MOV_FIELDS: OptionFieldSpec[] = [
+	{
+		key: "filename",
+		labelKey: "wizard.filename",
+		control: "text",
+		hintKey: "wizard.defaultOutputMov",
+	},
+];
+
+/**
+ * One whole `.webm` file. Not the "Single WebM file" switch of the `WEBM`
+ * container below: that one is a DASH leg holding one stream, and this is a
+ * file no manifest lists, with the audio in it.
+ */
+const PROGRESSIVE_WEBM_FIELDS: OptionFieldSpec[] = [
+	{
+		key: "filename",
+		labelKey: "wizard.filename",
+		control: "text",
+		hintKey: "wizard.defaultOutputWebm",
+	},
+];
+
 const CHUNKED_TEXT_FIELDS: OptionFieldSpec[] = [
 	{
 		key: "segmentLength",
@@ -180,12 +275,14 @@ function fieldsFor(
 			];
 		case "MP4":
 			return MP4_FIELDS;
-		case "PROGRESSIVE_TS":
-			return [
-				{ key: "filename", labelKey: "wizard.filename", control: "text" },
-			];
 		case "TS":
 			return TS_FIELDS;
+		case "PROGRESSIVE_TS":
+			return PROGRESSIVE_TS_FIELDS;
+		case "PROGRESSIVE_MOV":
+			return PROGRESSIVE_MOV_FIELDS;
+		case "PROGRESSIVE_WEBM":
+			return PROGRESSIVE_WEBM_FIELDS;
 		case "WEBM":
 			return [
 				{
@@ -226,6 +323,7 @@ function MuxingEditor({
 	defaultKind,
 	value,
 	derivedPath,
+	emptyPath,
 	drm,
 	audio,
 	audioChoices,
@@ -239,6 +337,13 @@ function MuxingEditor({
 	defaultKind: WizardMuxingKind;
 	value: WizardMuxing | undefined;
 	derivedPath: string;
+	/**
+	 * What an emptied path field stores for a leg that writes one whole file. Unset
+	 * means the derived folder. "" is the output folder itself, where the file-export
+	 * flow writes: without it, a path typed there and deleted again would move the
+	 * file into a derived subfolder. A segmented leg always gets the derived folder.
+	 */
+	emptyPath?: "";
 	/** Inline encryption for this output; absent = not DRM-capable (subtitles). */
 	drm?: DrmApi;
 	/** Audio rows offer the placement choice; video and subtitle rows do not. */
@@ -252,12 +357,20 @@ function MuxingEditor({
 	const { t } = useT();
 	const muxing = value ?? {};
 	const kind = muxing.kind ?? defaultKind;
+	// The output folder itself is a place for one whole file. Segmented legs emptied
+	// to it would share the folder, and their segment names, with one another.
+	const emptied = (of: WizardMuxingKind) =>
+		fileContainer(of) ? emptyPath : undefined;
 	const drmEntries = drm?.entriesFor(muxingKey) ?? [];
 	const drmOwned = drmEntries.length > 0;
-	// Only TS and MP4 can carry a second stream — `additionalStreamKeys` lives
-	// on those two schemas.
-	const kindCanMux =
-		kind === "TS" || kind === "MP4" || kind === "PROGRESSIVE_TS";
+	// Only the kinds whose schema has `additionalStreamKeys` can carry a second
+	// stream — one predicate, shared with `buildPlan` and the audio reconciler,
+	// so the picker cannot offer a relation the builder would drop.
+	const kindCanMux = muxingKindCarriesAudio(kind);
+	// A whole-file container is never a manifest leg and has no DRM route: the
+	// validator refuses an encryption row on it, so the form does not offer one.
+	const fileOnly = isFileOnlyMuxingKind(kind);
+	const drmOffered = kind !== "CMAF" && !fileOnly;
 	/**
 	 * The selection, resolved against the renditions that CURRENTLY exist.
 	 *
@@ -293,16 +406,26 @@ function MuxingEditor({
 					<SelectNative
 						id={`${idBase}-kind`}
 						value={kind}
-						onChange={(e) =>
+						onChange={(e) => {
+							const next = e.target.value as WizardMuxingKind;
 							onChange({
 								...muxing,
-								kind: e.target.value as WizardMuxingKind,
-							})
-						}
+								kind: next,
+								// A file that sat in the output folder becomes segments in a
+								// folder of their own, as any other segmented leg has, and
+								// goes back there when it becomes one whole file again. A
+								// path that was typed stays.
+								...(emptyPath === "" &&
+								(muxing.path === "" ||
+									(muxing.path === undefined && !fileContainer(kind)))
+									? { path: emptied(next) }
+									: {}),
+							});
+						}}
 					>
 						{kinds.map((k) => (
 							<option key={k} value={k}>
-								{k === "PROGRESSIVE_TS" ? t("vodTimeline.singleTs") : k}
+								{FILE_KIND_LABEL[k] ? t(FILE_KIND_LABEL[k]) : k}
 							</option>
 						))}
 					</SelectNative>
@@ -329,9 +452,20 @@ function MuxingEditor({
 						label={t("wizard.muxedAudio")}
 						htmlFor={`${idBase}-muxaudio`}
 						hint={
+							// The streaming copy talks about segments and EXT-X-MEDIA
+							// groups; neither exists for a file nothing references.
 							selectedAudio
-								? t("wizardX.muxedAudioCarrying", { key: selectedAudio })
-								: t("wizard.muxedAudioHint")
+								? t(
+										fileOnly
+											? "wizardX.muxedAudioCarryingFile"
+											: "wizardX.muxedAudioCarrying",
+										{ key: selectedAudio },
+									)
+								: t(
+										fileOnly
+											? "wizard.muxedAudioFileHint"
+											: "wizard.muxedAudioHint",
+									)
 						}
 					>
 						<SelectNative
@@ -361,12 +495,15 @@ function MuxingEditor({
 						label={t("wizard.ownContainer")}
 						htmlFor={`${idBase}-own`}
 						hint={
-							kind === "WEBM"
-								? undefined
-								: muxing.ownContainer === false
-									? carriedBySomething
-										? t("wizard.ownContainerOffHint")
-										: t("wizard.ownContainerOffUncarriedHint")
+							// An Opus track can be inside a video's WebM file now, so the
+							// two "off" hints apply to a WebM row as to any other. The
+							// "on" hint stays out of it: it describes an HLS audio group.
+							muxing.ownContainer === false
+								? carriedBySomething
+									? t("wizard.ownContainerOffHint")
+									: t("wizard.ownContainerOffUncarriedHint")
+								: kind === "WEBM"
+									? undefined
 									: t("wizard.ownContainerOnHint")
 						}
 					>
@@ -411,31 +548,35 @@ function MuxingEditor({
 					hint={
 						drmOwned
 							? t("wizard.anEncryptionRowTargetsThisOutputIts")
-							: t("wizardX.derivedPathHint", {
-									path: derivedPath,
-									uuidToken: "{uuid}",
-									bitrateToken: "{bitrate}",
-								})
+							: // The field is empty for both an unset path and "", and they
+								// are different folders. The hint says which this one is.
+								muxing.path === ""
+								? t("wizardX.destinationBasePathHint")
+								: t("wizardX.derivedPathHint", {
+										path: derivedPath,
+										uuidToken: "{uuid}",
+										bitrateToken: "{bitrate}",
+									})
 					}
 				>
 					<Input
 						id={`${idBase}-path`}
-						placeholder={derivedPath}
+						placeholder={muxing.path === "" ? undefined : derivedPath}
 						value={muxing.path ?? ""}
 						onChange={(e) =>
 							onChange({
 								...muxing,
-								path: e.target.value === "" ? undefined : e.target.value,
+								path: e.target.value === "" ? emptied(kind) : e.target.value,
 								autoPath: undefined,
 							})
 						}
 					/>
 				</Field>
 			)}
-			{drm &&
-			!muxedIn &&
-			((kind !== "CMAF" && kind !== "PROGRESSIVE_TS") ||
-				drmEntries.length > 0) ? (
+			{/* Existing rows stay reachable on a kind that offers none, so a row
+			    left behind by a kind change can be removed instead of failing the
+			    preview with nothing on screen to act on. */}
+			{drm && !muxedIn && (drmOffered || drmEntries.length > 0) ? (
 				<Collapsible
 					summary={t("wizardX.encryptionDrmCount", {
 						count: drmEntries.length,
@@ -452,7 +593,7 @@ function MuxingEditor({
 							onRemove={() => drm.remove(index)}
 						/>
 					))}
-					{kind !== "CMAF" && kind !== "PROGRESSIVE_TS" ? (
+					{drmOffered ? (
 						<div className="flex gap-1">
 							<Button
 								variant="secondary"
@@ -497,6 +638,7 @@ function RenditionMuxings({
 	muxingKey,
 	kinds,
 	derivedPath,
+	emptyPath,
 	drm,
 	audio,
 	audioChoices,
@@ -510,6 +652,8 @@ function RenditionMuxings({
 	muxingKey: string;
 	kinds: WizardMuxingKind[];
 	derivedPath: string;
+	/** Forwarded to every leg — see MuxingEditor. */
+	emptyPath?: "";
 	drm: DrmApi;
 	/** Audio rendition rows — see MuxingEditor's `audio`. */
 	audio?: boolean;
@@ -548,6 +692,7 @@ function RenditionMuxings({
 				defaultKind={kinds[0] ?? "FMP4"}
 				value={muxing}
 				derivedPath={derivedPath}
+				emptyPath={emptyPath}
 				drm={drm}
 				audio={audio}
 				audioChoices={audioChoices}
@@ -570,6 +715,7 @@ function RenditionMuxings({
 						defaultKind="TS"
 						value={leg}
 						derivedPath={derivedPath}
+						emptyPath={emptyPath}
 						drm={drm}
 						audio={audio}
 						audioChoices={audioChoices}
@@ -604,12 +750,18 @@ function RenditionMuxings({
 type MuxingsSectionProps = {
 	state: WizardState;
 	credentials: CredentialSummaryWire[];
+	/**
+	 * The job writes its files into the output folder itself (the file-export flow):
+	 * an emptied path of a video output means that folder, not a derived subfolder.
+	 */
+	flatFiles?: boolean;
 	onPatch: (partial: Partial<WizardState>) => void;
 };
 
 export function MuxingsSection({
 	state,
 	credentials,
+	flatFiles,
 	onPatch,
 }: MuxingsSectionProps) {
 	const { t } = useT();
@@ -659,9 +811,19 @@ export function MuxingsSection({
 	 * Both are derived from the SAME state the builder reads, so the picker
 	 * cannot offer a key the plan will not have and the standalone toggle
 	 * cannot claim a track is covered when it is not.
+	 *
+	 * One exception to "a key the plan has": while a track's key is another
+	 * row's too, its containers go on naming it as they did (`carriedAs`), and
+	 * that name is what is offered. The shared key showed every such file as
+	 * carrying nothing, and a track picked then was stored under a key that no
+	 * later edit could tell apart.
 	 */
+	const carriedNames = state.audios.map(
+		(audio, index) =>
+			audio.carriedAs ?? aKeys[index] ?? `a${Math.round(audio.bitrate / 1000)}`,
+	);
 	const audioChoices = state.audios.map((audio, index) => ({
-		key: aKeys[index] ?? `a${Math.round(audio.bitrate / 1000)}`,
+		key: carriedNames[index] ?? "",
 		label: `${audio.codec ?? "AAC"} ${Math.round(audio.bitrate / 1000)}k`,
 	}));
 	const carriedAudioKeys = new Set(
@@ -694,12 +856,9 @@ export function MuxingsSection({
 						idBase={`wz-mx-v-${index}`}
 						label={`video · ${video.codec ?? "H264"}`}
 						muxingKey={key}
-						kinds={
-							video.codec === undefined || video.codec === "H264"
-								? VIDEO_KINDS
-								: VIDEO_KINDS.filter((kind) => kind !== "CMAF")
-						}
+						kinds={videoKindsFor(video.codec)}
 						derivedPath={videoMuxingRelPath(video, key)}
+						emptyPath={flatFiles ? "" : undefined}
 						drm={drm}
 						audioChoices={audioChoices}
 						muxing={video.muxing}
@@ -735,12 +894,23 @@ export function MuxingsSection({
 									? ["FMP4", "MP4"]
 									: audio.codec === undefined || audio.codec === "AAC"
 										? AUDIO_KINDS
-										: AUDIO_KINDS.filter((kind) => kind !== "CMAF")
+										: AUDIO_KINDS.filter(
+												(kind) =>
+													kind !== "CMAF" &&
+													// A whole file is offered where its row of the
+													// table holds the codec, as to a video row.
+													(!isFileOnlyMuxingKind(kind) ||
+														MUXING_CODEC_MATRIX[kind].includes(
+															audio.codec ?? "AAC",
+														)),
+											)
 						}
 						derivedPath={audioMuxingRelPath(audio, key)}
 						drm={drm}
 						audio
-						carriedBySomething={carriedAudioKeys.has(key)}
+						carriedBySomething={carriedAudioKeys.has(
+							carriedNames[index] ?? key,
+						)}
 						muxing={audio.muxing}
 						extraMuxings={audio.extraMuxings}
 						onChange={(next) => {

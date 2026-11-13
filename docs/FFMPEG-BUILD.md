@@ -2874,9 +2874,10 @@ the worker's command for libvmaf:
 
 With these two, the rules of "libvmaf and small pictures" for 4:2:0 pictures
 and for a declared encode said for each of the 71 comparisons whether the
-scorer scored it. The comparisons were pairs of one size from 16x16 to 320x180,
-a reference of 640x360 with an encode of 320x180 and with the seven encodes
-above, and a reference of 1920x1080 with encodes of 640x360 to 1920x1080.
+scorer scored it. The comparisons were pairs of one size, from 16x16 to 320x180
+and 266x266, a reference of 640x360 with an encode of 320x180 and with the
+seven encodes above, and a reference of 1920x1080 with encodes of 640x360 to
+1920x1080.
 
 The scorer ends a refusal with status 1 and one line, which names no limit:
 
@@ -2887,16 +2888,28 @@ The scorer ends a refusal with status 1 and one line, which names no limit:
 | `override official extractor cambi failed (libvmaf -22)` | 18 | the encode: a side below 144 |
 
 The second line names Vulkan and comes from the CUDA backend as well: the two
-backends share the code that writes it.
+backends share the code that writes it. The scorer's source holds a fourth
+line, `SPEED chroma is too small for its 5 by 5 block after prescale and
+decimation` (`vulkan/speed_parameters.hpp`). No run printed it: the check
+behind the first line holds the same arithmetic and comes earlier.
 
 Since PR #119 the worker names the limit when a run of the scorer ends with
 one of these lines and the sizes are below a limit of
 `packages/core/src/vmaf/size-limits.ts`: the same sentences as for libvmaf, for
 4:2:0 pictures and the declared encode. Every other failure of the scorer keeps
-the scorer's line. The worker refuses nothing before the run. A test of
-`packages/core` holds the lines against the scorer's source, and the 71 stored
-results were held against the worker's function: it named every one of the 49
-refusals, and its rules refuse none of the 22 comparisons that were scored.
+the scorer's line, and the fourth line above is taken as the other three. The
+worker refuses nothing before the run. A test of `packages/core` holds the
+lines against the scorer's source, and the 71 stored results were held against
+the worker's function: it named every one of the 49 refusals, and its rules
+refuse none of the 22 comparisons that were scored.
+
+libvmaf scored 17 of the 49 refused comparisons in the method of test A: the
+five small encodes of the 640x360 reference with three models, and the
+`yuv444p` reference of 256x144 with two. For such a pair the worker's sentence
+ends by naming **Local CPU**, which scores it with the same model. It does so
+where the reference is in one of the twelve formats and the rules for the
+reference's layout, with no declared encode, refuse nothing; in the stored
+results that is these 17 and no other.
 
 Not measured: the Vulkan backend, a size above 1920x1080, an encode above 7680
 pixels, and a 10-bit encode.

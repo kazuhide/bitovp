@@ -459,8 +459,69 @@ describe("libvmaf's picture size limits for the VMAF v1 models", () => {
 			).toBeUndefined();
 	});
 
+	it("ends the sentence with Local CPU where libvmaf through FFmpeg scores the pair that the GPU scorer refused", () => {
+		const wayOut =
+			" That holds for GPU scoring, which compares every pair in 4:2:0 and counts the encode's own size: with Local CPU the same model scores this pair.";
+		const speed =
+			"bitovp-vmaf: input is too small or too large for official SpEED chroma blocks\n";
+		const cambi =
+			"bitovp-vmaf: override official extractor cambi failed (libvmaf -22)\n";
+		const sentence = (
+			stderr: string,
+			model: string,
+			[width, height]: readonly [number, number],
+			[encodeWidth, encodeHeight]: readonly [number, number],
+			cpuChroma?: VmafChromaLayout,
+		) =>
+			vmafNativeSizeLimitFailureMessage(stderr, {
+				model,
+				width,
+				height,
+				declaredEncode: { width: encodeWidth, height: encodeHeight },
+				cpuChroma,
+			}) ?? "not named";
+		// What runs on an NVIDIA GPU refused and libvmaf through FFmpeg scored.
+		// First an encode below CAMBI's range of a 640x360 reference: the
+		// ordinary method declares no encode.
+		for (const model of [
+			"vmaf_v1.0.16_3d0h",
+			"vmaf_v1.0.16_5d0h",
+			"vmaf_v1.0.16_3d0h_2160",
+		]) {
+			expect(sentence(cambi, model, [640, 360], [240, 134], "4:2:0")).toBe(
+				`VMAF model "${model}" cannot score an encode of 240x134: it takes no encode below 144 pixels in width or in height. Use a model of the vmaf_v0.6.1 family, which scores smaller pictures.${wayOut}`,
+			);
+			// No way out where the reference's layout is not known,
+			const unknown = sentence(cambi, model, [640, 360], [240, 134]);
+			expect(unknown).toContain("cannot score an encode of 240x134");
+			expect(unknown).not.toContain("Local CPU");
+			// nor for pictures that libvmaf refuses in the reference's layout too:
+			// 4:2:0 ones of 256x144, and 200x200 in any layout.
+			for (const [size, layout] of [
+				[[256, 144], "4:2:0"],
+				[[200, 200], "4:4:4"],
+			] as const) {
+				const both = sentence(speed, model, size, size, layout);
+				expect(both).toMatch(/^VMAF model "[^"]+" cannot score /);
+				expect(both).not.toContain("Local CPU");
+			}
+		}
+		// Then a 4:4:4 reference of 256x144, which the scorer compares in 4:2:0:
+		// libvmaf scored it with the two models whose 4:4:4 limit it passes.
+		for (const [model, offered] of [
+			["vmaf_v1.0.16_3d0h", true],
+			["vmaf_v1.0.16_5d0h", true],
+			["vmaf_v1.0.16_3d0h_2160", false],
+		] as const) {
+			const text = sentence(speed, model, [256, 144], [256, 144], "4:4:4");
+			expect(text, model).toContain("cannot score 4:2:0 pictures of 256x144");
+			expect(text.endsWith(wayOut), model).toBe(offered);
+		}
+	});
+
 	it("takes for a refusal of the GPU scorer only words that its source holds", () => {
 		const source = [
+			"main.cpp",
 			"model_oracle.cpp",
 			"vulkan/cambi_parameters.hpp",
 			"vulkan/speed_parameters.hpp",
@@ -472,10 +533,13 @@ describe("libvmaf's picture size limits for the VMAF v1 models", () => {
 				),
 			)
 			.join("\n");
-		// The scorer puts this one together: what it asked of libvmaf, then
-		// libvmaf's error number. -22 is the one for an option out of its range.
+		// The scorer puts this one together: the extractor whose options it
+		// sets, the encode's size among them, then the error number. -22 is what
+		// its adapter gives for a value outside the range of libvmaf's option.
 		const composed = "override official extractor cambi failed (libvmaf -22)";
 		expect(VMAF_NATIVE_SIZE_REFUSALS).toContain(composed);
+		for (const option of ["enc_width", "enc_height"])
+			expect(source).toContain(`feature_overrides["cambi"]["${option}"]`);
 		expect(source).toContain('"override official extractor " + extractor');
 		expect(source).toContain('operation + " failed (libvmaf " +');
 		for (const refusal of VMAF_NATIVE_SIZE_REFUSALS)

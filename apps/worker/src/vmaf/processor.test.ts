@@ -5247,10 +5247,12 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 			{ status: "FINISHED", results: 2 },
 		);
 		expect(scoringRuns(t)).toHaveLength(2);
-		// The check takes the reference's chroma layout as the comparison's.
-		// That holds while the encode's leg has a scale filter and the
-		// reference's has none: FFmpeg then lets that filter give the encode the
-		// reference's format.
+		// The check takes the reference's chroma layout as the comparison's
+		// where libvmaf takes the reference's format, and the encode's where
+		// FFmpeg converts the reference. Both hold while the encode's leg has a
+		// scale filter and the reference's has none: FFmpeg then lets that
+		// filter give the encode the reference's format, or converts the
+		// reference to the format that the filter gives the encode.
 		for (const [, argv] of scoringRuns(t))
 			expect(argv[argv.indexOf("-filter_complex") + 1]).toMatch(
 				new RegExp(
@@ -5577,6 +5579,32 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 			expect(cloudScore).toHaveBeenCalledTimes(2);
 		}
 		expect(encodeProbes(t).length).toBeGreaterThan(0);
+	});
+
+	it.each([
+		["yuv420p", true],
+		["yuv444p", false],
+	] as const)("reads the layout from the probe that a job with local resources has made of its %s encode", async (encode, refused) => {
+		// Such a job probes each encode before it scores. The check for a
+		// converted reference reads that probe and starts no other.
+		const t = setup({
+			job: { model: v1 },
+			localResources: sharedTestResources(),
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+		});
+		probeByFile(t, probeOf(256, 144, "yuvj420p"), probeOf(640, 360, encode));
+		const processed = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		if (refused) {
+			await expect(processed).rejects.toThrow(
+				"cannot score 4:2:0 pictures of 256x144",
+			);
+			expect(scoringRuns(t)).toHaveLength(0);
+			expect(encodeProbes(t)).toHaveLength(1);
+		} else {
+			expect(await processed).toMatchObject({ status: "FINISHED", results: 2 });
+			expect(scoringRuns(t)).toHaveLength(2);
+			expect(encodeProbes(t)).toHaveLength(2);
+		}
 	});
 
 	it("leaves the layout unknown when the encode cannot be probed, and libvmaf decides", async () => {

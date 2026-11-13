@@ -317,13 +317,24 @@ describe("owned native local scoring", () => {
 		};
 		const refusal =
 			"bitovp-vmaf: override official extractor cambi failed (libvmaf -22)\n";
+		const limit =
+			'VMAF model "vmaf_v1.0.16_3d0h" cannot score an encode of 240x134: it takes no encode below 144 pixels in width or in height. Use a model of the vmaf_v0.6.1 family, which scores smaller pictures.';
 		failsWith(refusal);
+		// libvmaf through FFmpeg scores this pair: it compares in the 4:2:0 of
+		// the reference, which 640x360 is enough for, and declares no encode.
 		await expect(
 			runLocalVmafScore(h.deps, options, context),
 		).rejects.toMatchObject({
-			message:
-				'VMAF model "vmaf_v1.0.16_3d0h" cannot score an encode of 240x134: it takes no encode below 144 pixels in width or in height. Use a model of the vmaf_v0.6.1 family, which scores smaller pictures.',
+			message: `${limit} That holds for GPU scoring, which compares every pair in 4:2:0 and counts the encode's own size: with Local CPU the same model scores this pair.`,
 		});
+		// Nothing says so of a full-range reference: FFmpeg converts it, and the
+		// layout of that comparison is not the reference's to tell.
+		await expect(
+			runLocalVmafScore(h.deps, options, {
+				...context,
+				referenceProbe: probe({ pix_fmt: "yuvj420p" }),
+			}),
+		).rejects.toMatchObject({ message: limit });
 		// The same words for sizes that no known limit refuses.
 		await expect(
 			runLocalVmafScore(h.deps, h.options, h.context),
@@ -340,7 +351,7 @@ describe("owned native local scoring", () => {
 		});
 		// A failed run starts no CPU scoring in its place.
 		expect(h.run.mock.calls.map(([binary]) => binary)).toEqual(
-			Array.from({ length: 6 }, () => "bitovp-vmaf"),
+			Array.from({ length: 8 }, () => "bitovp-vmaf"),
 		);
 	});
 	it("fails a corrupt receipt without starting a CPU fallback", async () => {

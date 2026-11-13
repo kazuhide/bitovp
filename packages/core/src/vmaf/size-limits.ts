@@ -215,11 +215,13 @@ export function vmafSizeLimitFailureMessage(
 /**
  * The words with which the owned GPU scorer refuses pictures or an encode that
  * a model cannot score (`native/vmaf-gpu/src`): its check before libvmaf's
- * SpEED, its own SpEED and CAMBI parameters, and libvmaf's CAMBI, which
- * refuses the declared size of the encode with its error -22. The first also
- * says "too large", and the last two say nothing of a size, so none of them
- * alone tells that the pictures were too small. `size-limits.test.ts` holds
- * the words against the scorer's source.
+ * SpEED, its own SpEED and CAMBI parameters, and its adapter of libvmaf's
+ * extractors, which holds the declared size of the encode against the range
+ * of CAMBI's options and refuses it with the error -22. The first also says
+ * "too large", and the last two say nothing of a size, so none of them alone
+ * tells that the pictures were too small. No run has printed the second: the
+ * first holds the same arithmetic earlier. `size-limits.test.ts` holds the
+ * words against the scorer's source.
  */
 export const VMAF_NATIVE_SIZE_REFUSALS: readonly string[] = [
 	"input is too small or too large for official SpEED chroma blocks",
@@ -227,6 +229,9 @@ export const VMAF_NATIVE_SIZE_REFUSALS: readonly string[] = [
 	"invalid Vulkan CAMBI encoding geometry",
 	"override official extractor cambi failed (libvmaf -22)",
 ];
+
+const LOCAL_CPU =
+	"That holds for GPU scoring, which compares every pair in 4:2:0 and counts the encode's own size: with Local CPU the same model scores this pair.";
 
 /**
  * The same for a run of the owned GPU scorer that has failed: the sentence of
@@ -239,6 +244,13 @@ export const VMAF_NATIVE_SIZE_REFUSALS: readonly string[] = [
  * does. With these two the rules of this file said, for each of 71 comparisons
  * on an NVIDIA GPU, whether the scorer scored it. Nothing is refused before
  * the run: the scorer decides, and this only puts its refusal into words.
+ *
+ * The ordinary method does neither, so libvmaf through FFmpeg scores some of
+ * the pairs that the scorer refuses. `cpuChroma` is the layout in which it
+ * would compare this pair, the reference's, where that is known: the sentence
+ * then ends with that way out when the rules of this file leave it open. In
+ * the 49 refusals among the 71 comparisons it did so for exactly the 17 pairs
+ * that libvmaf scored.
  */
 export function vmafNativeSizeLimitFailureMessage(
 	stderr: string,
@@ -247,9 +259,22 @@ export function vmafNativeSizeLimitFailureMessage(
 		width: number;
 		height: number;
 		declaredEncode: { width: number; height: number };
+		cpuChroma?: VmafChromaLayout;
 	},
 ): string | undefined {
 	if (!VMAF_NATIVE_SIZE_REFUSALS.some((refusal) => stderr.includes(refusal)))
 		return undefined;
-	return vmafSizeLimitMessage({ ...pictures, chroma: "4:2:0" });
+	const { model, width, height, declaredEncode, cpuChroma } = pictures;
+	const limit = vmafSizeLimitMessage({
+		model,
+		width,
+		height,
+		declaredEncode,
+		chroma: "4:2:0",
+	});
+	return limit &&
+		cpuChroma &&
+		!vmafSizeLimitMessage({ model, width, height, chroma: cpuChroma })
+		? `${limit} ${LOCAL_CPU}`
+		: limit;
 }

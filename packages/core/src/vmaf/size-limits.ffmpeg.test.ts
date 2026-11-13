@@ -7,6 +7,7 @@ import { buildVmafCommand } from "./command";
 import {
 	VMAF_SPEED_CHROMA_PRESCALE,
 	vmafChromaLayout,
+	vmafConvertedChromaLayout,
 	vmafSizeLimitFailureMessage,
 	vmafSizeLimitMessage,
 } from "./size-limits";
@@ -139,10 +140,14 @@ function ordinary(
 	const compared = { model, ...sides(size) };
 	return {
 		outcome,
-		// What the worker says before the run, and after a run that failed.
+		// What the worker says before the run, and after a run that failed. It
+		// takes the reference's layout when libvmaf takes the reference's
+		// format, and the one that follows from the encode when it does not.
 		before: vmafSizeLimitMessage({
 			...compared,
-			chroma: vmafChromaLayout(referenceFormat),
+			chroma:
+				vmafChromaLayout(referenceFormat) ??
+				vmafConvertedChromaLayout(encodeFormat),
 		}),
 		after: vmafSizeLimitFailureMessage(stderr, compared),
 	};
@@ -311,6 +316,9 @@ describe.skipIf(!ready)("libvmaf's picture size limits (real ffmpeg)", () => {
 			["yuv422p", "yuv420p", "scores"],
 			["yuv420p", "yuv444p", "SpEED refuses the pictures"],
 			["yuv420p10le", "yuv444p", "SpEED refuses the pictures"],
+			// A full-range encode takes the reference's format as any other.
+			["yuv444p", "yuvj420p", "scores"],
+			["yuv420p", "yuvj444p", "SpEED refuses the pictures"],
 		] as const)
 			found.push(
 				...differences(
@@ -319,17 +327,40 @@ describe.skipIf(!ready)("libvmaf's picture size limits (real ffmpeg)", () => {
 					ordinary(V1, "216x100", reference, encode),
 				),
 			);
-		// A reference in a format that libvmaf does not take is converted to the
-		// encode's format, so its own layout says nothing: the check is silent
-		// and a failed run names the limit.
+		// A reference in a format that libvmaf does not take, a full-range one
+		// for example, is converted to the format that the scale filter gives
+		// the encode, so its own layout says nothing. That format is the
+		// encode's own when libvmaf takes it, and the limited-range one of the
+		// same layout for a full-range encode.
 		for (const [reference, encode, expected] of [
 			["yuvj420p", "yuv444p", "scores"],
 			["yuvj420p", "yuv420p", "SpEED refuses the pictures"],
 			["nv12", "yuv444p", "scores"],
 			["nv12", "yuv420p", "SpEED refuses the pictures"],
 			["gray", "yuv422p", "scores"],
+			["yuvj444p", "yuv420p10le", "SpEED refuses the pictures"],
+			["yuvj420p", "yuvj420p", "SpEED refuses the pictures"],
+			["yuvj444p", "yuvj420p", "SpEED refuses the pictures"],
+			["yuvj420p", "yuvj422p", "scores"],
+			["yuvj420p", "yuvj444p", "scores"],
+			["gbrp", "yuvj444p", "scores"],
 		] as const) {
 			expect(vmafChromaLayout(reference)).toBeUndefined();
+			found.push(
+				...differences(
+					`reference ${reference}, encode ${encode}`,
+					expected,
+					ordinary(V1, "216x100", reference, encode),
+				),
+			);
+		}
+		// An encode of which the product does not know what the scale filter
+		// gives it: the check is silent, and a failed run names the limit.
+		for (const [reference, encode, expected] of [
+			["yuvj420p", "nv12", "SpEED refuses the pictures"],
+			["yuvj420p", "gbrp", "scores"],
+		] as const) {
+			expect(vmafConvertedChromaLayout(encode)).toBeUndefined();
 			found.push(
 				...differences(
 					`reference ${reference}, encode ${encode}`,
@@ -339,6 +370,19 @@ describe.skipIf(!ready)("libvmaf's picture size limits (real ffmpeg)", () => {
 				),
 			);
 		}
+		// 150x216 tells 4:2:2 from 4:4:4: its chroma is 75 wide in 4:2:2.
+		for (const [reference, encode, expected] of [
+			["yuvj444p", "yuv422p", "SpEED refuses the pictures"],
+			["yuvj420p", "yuvj422p", "SpEED refuses the pictures"],
+			["yuvj420p", "yuvj444p", "scores"],
+		] as const)
+			found.push(
+				...differences(
+					`150x216: reference ${reference}, encode ${encode}`,
+					expected,
+					ordinary(V1, "150x216", reference, encode),
+				),
+			);
 		expect(found).toEqual([]);
 	}, 120_000);
 

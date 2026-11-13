@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { buildVmafCommand } from "./command";
+import { BANDING_JOB_SCORING_VERSION } from "../banding/types";
+import {
+	buildVmafCommand,
+	VMAF_EXPERIMENTAL_GPU_DECODE_SCORING_VERSION,
+	VMAF_EXPERIMENTAL_GPU_SCORING_VERSION,
+	VMAF_FRAME_INDEX_SCORING_VERSION,
+	VMAF_OWNED_CUDA_SCORING_VERSION,
+	VMAF_OWNED_VULKAN_SCORING_VERSION,
+	VMAF_RETIRED_OWNED_CUDA_SCORING_VERSION,
+	VMAF_RETIRED_OWNED_VULKAN_SCORING_VERSION,
+	VMAF_SCORING_VERSION,
+	vmafComparableScoringVersion,
+} from "./command";
 
 /**
  * The libvmaf argv builder is pure — these assert its exact shape (no
@@ -470,5 +482,38 @@ describe("explicit frame-index BT709 10-bit method", () => {
 				}),
 			).toThrow();
 		}
+	});
+});
+
+describe("scoring generations", () => {
+	it("gives each method, and the family of banding jobs, a number of its own", () => {
+		// A row keeps one number for all of them, so two methods with one number
+		// would be one method to every reader of the row.
+		const generations = [
+			VMAF_SCORING_VERSION,
+			VMAF_FRAME_INDEX_SCORING_VERSION,
+			VMAF_EXPERIMENTAL_GPU_SCORING_VERSION,
+			VMAF_EXPERIMENTAL_GPU_DECODE_SCORING_VERSION,
+			VMAF_RETIRED_OWNED_CUDA_SCORING_VERSION,
+			VMAF_RETIRED_OWNED_VULKAN_SCORING_VERSION,
+			BANDING_JOB_SCORING_VERSION,
+			VMAF_OWNED_CUDA_SCORING_VERSION,
+			VMAF_OWNED_VULKAN_SCORING_VERSION,
+		];
+		expect(generations).toEqual([3, 6, 7, 8, 9, 10, 11, 12, 13]);
+		expect(new Set(generations).size).toBe(generations.length);
+	});
+
+	it("compares owned GPU scoring with the ordinary method, and nothing else with another generation", () => {
+		expect(vmafComparableScoringVersion(VMAF_OWNED_CUDA_SCORING_VERSION)).toBe(
+			VMAF_SCORING_VERSION,
+		);
+		expect(
+			vmafComparableScoringVersion(VMAF_OWNED_VULKAN_SCORING_VERSION),
+		).toBe(VMAF_SCORING_VERSION);
+		// The retired GPU generations scored a scaled encode higher, and the
+		// frame-index method compares other pictures.
+		for (const version of [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 14])
+			expect(vmafComparableScoringVersion(version), `${version}`).toBe(version);
 	});
 });

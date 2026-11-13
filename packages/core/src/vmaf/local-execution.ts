@@ -70,7 +70,9 @@ export const localVmafExecutionSchema = z
 						.array(z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,511}$/))
 						.min(7)
 						.max(64),
-					bitDepth: z.literal(10),
+					// The depth at which the pair was compared: the reference's since
+					// generations 12 and 13, always 10 in generations 9 and 10.
+					bitDepth: z.union([z.literal(8), z.literal(10)]),
 					distortedOriginal: z
 						.object({
 							width: z.number().int().positive().safe(),

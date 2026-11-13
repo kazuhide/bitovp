@@ -29,6 +29,7 @@ export const nativeExpected: NativeExpected = {
 	sourceSha256: "a".repeat(64),
 	width: 640,
 	height: 360,
+	bitDepth: 10,
 	distortedOriginal: { width: 640, height: 360, bitdepth: 8 },
 	referenceSha256: "b".repeat(64),
 	distortedSha256: "c".repeat(64),
@@ -83,7 +84,7 @@ export function nativeReceipt() {
 		extractors: ["cambi", "speed_chroma", "adm", "motion", "psnr"].map(
 			(name, i) => ({
 				name,
-				options: {},
+				options: {} as Record<string, string>,
 				features: i === 4 ? names.slice(4) : [names[i]],
 			}),
 		),

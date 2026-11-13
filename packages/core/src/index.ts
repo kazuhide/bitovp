@@ -1403,7 +1403,10 @@ export {
 	VMAF_FRAME_INDEX_SCORING_VERSION,
 	VMAF_OWNED_CUDA_SCORING_VERSION,
 	VMAF_OWNED_VULKAN_SCORING_VERSION,
+	VMAF_RETIRED_OWNED_CUDA_SCORING_VERSION,
+	VMAF_RETIRED_OWNED_VULKAN_SCORING_VERSION,
 	VMAF_SCORING_VERSION,
+	vmafComparableScoringVersion,
 } from "./vmaf/command";
 export type {
 	LiveCaptureTarget,
@@ -1432,6 +1435,11 @@ export {
 	timelineFromContainerProbe,
 	timelineFromProfile,
 } from "./vmaf/loop-timeline";
+export {
+	type VmafNativeComparison,
+	type VmafProbedVideo,
+	vmafNativeComparison,
+} from "./vmaf/native-comparison";
 export {
 	type NativeDeviceInfo,
 	nativeDeviceInfoSchema,
@@ -1473,7 +1481,6 @@ export {
 	type VmafComparedPictures,
 	vmafChromaLayout,
 	vmafConvertedChromaLayout,
-	vmafNativeSizeLimitFailureMessage,
 	vmafSizeLimitFailureMessage,
 	vmafSizeLimitMessage,
 } from "./vmaf/size-limits";

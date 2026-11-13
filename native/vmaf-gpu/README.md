@@ -46,9 +46,25 @@ VMAF_PREFIX="$HOME/.local/bitovp-vmaf"
   --reference reference.mp4 \
   --distorted encoded.mp4 \
   --model "vmaf_v1.0.16_3d0h=$VMAF_PREFIX/share/bitovp-vmaf/model/vmaf_v1.0.16_3d0h.json" \
-  --backend cuda --bit-depth 10 --threads 4 \
+  --backend cuda --bit-depth 8 --threads 4 \
   --verify-cpu --output result.json
 ```
+
+`--bit-depth` is the bit depth of the 4:2:0 pictures that are compared, 8 (the
+default) or 10. `--width` and `--height` are their size, the reference's by
+default. A run tells CAMBI nothing about the encode before it was scaled, so
+the score is the one that libvmaf gives through FFmpeg for the same pictures.
+With the reference's size, and with the bit depth of a `yuv420p` or
+`yuv420p10le` reference, that is the score of FFmpeg's libvmaf filter for the
+pair when the encode is first scaled with `scale=W:H:flags=bicubic` and the
+frames, evenly spaced in both files, are paired by their index, as long as
+FFmpeg has to convert neither file's range or colour matrix nor the reference's
+pixel format. The bitovp worker passes these values and refuses the pairs that
+FFmpeg converts; the
+[GPU quality guide](../../docs/user-guide/GPU-QUALITY.md#gpu-scores-and-local-cpu-scores)
+names them. The pictures are decoded and scaled with the FFmpeg libraries that
+the scorer is built against; the comparison with FFmpeg n8.1.3 used those of
+FFmpeg 6.1.1.
 
 Use `--backend cpu` without `--verify-cpu` for the official CPU reference.
 Use `--backend vulkan --vendor amd` for an AMD GPU. `--device` selects a device

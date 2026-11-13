@@ -39,6 +39,7 @@ import {
 	vmafConvertedChromaLayout,
 	vmafExecutionSchema,
 	vmafJobSchema,
+	vmafNativeComparison,
 	vmafReferencePreparationEvidenceSchema,
 	vmafSizeLimitFailureMessage,
 	vmafSizeLimitMessage,
@@ -80,6 +81,7 @@ import {
 	type Geometry,
 	geometryFromProbe,
 	pixelFormatFromProbe,
+	videoStreamFromProbe,
 } from "./geometry";
 import type { DecodePolicy } from "./hardware-decode";
 import type {
@@ -972,14 +974,13 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		// only reachable this way; the v0.6.1 family resolves either way). Falls
 		// back to the built-in `model=version=` when no file is bundled.
 		const modelPath = deps.resolveModelPath?.(model);
+		const nativeScoring =
+			execution.backend === "LOCAL" &&
+			(deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan");
 		let distortedOriginal:
 			| { width: number; height: number; bitdepth: number }
 			| undefined;
-		if (
-			measurementMethod ||
-			(execution.backend === "LOCAL" &&
-				(deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan"))
-		) {
+		if (measurementMethod || nativeScoring) {
 			const probe =
 				resourceProbe ??
 				(await runner.run(
@@ -1001,10 +1002,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				height: video?.height,
 				bitdepth: depth,
 			};
-			if (
-				execution.backend === "LOCAL" &&
-				(deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan")
-			) {
+			if (nativeScoring) {
 				const original = resourceVideoFromProbe(probe.stdout);
 				if (!original.bitDepth || ![8, 10, 12, 16].includes(original.bitDepth))
 					throw new Error(
@@ -1015,59 +1013,72 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					height: original.height,
 					bitdepth: original.bitDepth,
 				};
+				// GPU scoring gives the score of libvmaf through FFmpeg or none.
+				// Refuse a pair that it cannot compare so before resources are
+				// planned for it; `runNativeVmafScore` asks again for the two
+				// files that it scores.
+				const referenceVideo = videoStreamFromProbe(referenceProbe);
+				const comparison =
+					referenceVideo && video
+						? vmafNativeComparison(referenceVideo, video)
+						: undefined;
+				if (comparison && "refusal" in comparison)
+					throw new Error(comparison.refusal);
 			}
 		}
 		// libvmaf does not score pictures that are too small for a VMAF v1
 		// model, and what FFmpeg reports then is "Invalid argument", no score at
 		// all, or a crash; a cloud run reports nothing of it. Say the limit
 		// before the run, and before a cloud resource exists for this pair. The
-		// GPU scorer is not libvmaf: it is asked all the same, and where it
-		// refuses, `runNativeVmafScore` names the limit.
-		const libvmafPictures =
-			execution.backend === "LOCAL" &&
-			(deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan")
-				? undefined
-				: { model, width: geometry.width, height: geometry.height };
-		if (libvmafPictures) {
-			// The ordinary method compares in the reference's pixel format when
-			// libvmaf takes that format, because `scaleToReference` below always
-			// puts a scale filter on the encode. FFmpeg converts a reference in
-			// any other format, a full-range one for example, to the format that
-			// this filter gives the encode, so the encode decides the layout then.
-			// Its probe is worth a run only for pictures that some layout
-			// refuses, and 4:2:0 has the highest limits.
-			const ordinaryLayout = async () => {
-				const referenceFormat = pixelFormatFromProbe(referenceProbe);
-				const layout = vmafChromaLayout(referenceFormat);
-				if (
-					layout ||
-					referenceFormat === undefined ||
-					!vmafSizeLimitMessage({ ...libvmafPictures, chroma: "4:2:0" })
-				)
-					return layout;
-				const probe =
-					resourceProbe ??
-					(await runner.run(
-						deps.ffprobePath,
-						["-v", "error", "-show_streams", "-of", "json", distortedPath],
-						{ signal },
-					));
-				// Without the encode's format the layout stays unknown, and
-				// libvmaf decides.
-				return probe.code === 0
-					? vmafConvertedChromaLayout(pixelFormatFromProbe(probe.stdout))
-					: undefined;
-			};
-			const sizeLimit = vmafSizeLimitMessage({
-				...libvmafPictures,
-				// The frame-index method converts both pictures to 10-bit 4:2:0 and
-				// declares the encode's size.
-				...(measurementMethod
-					? { chroma: "4:2:0", declaredEncode: distortedOriginal }
+		// GPU scorer holds the same limits in its own code and refuses in words
+		// that name none, so the same sentence comes before its run.
+		const comparedPictures = {
+			model,
+			width: geometry.width,
+			height: geometry.height,
+		};
+		// The ordinary method compares in the reference's pixel format when
+		// libvmaf takes that format, because `scaleToReference` below always
+		// puts a scale filter on the encode. FFmpeg converts a reference in
+		// any other format, a full-range one for example, to the format that
+		// this filter gives the encode, so the encode decides the layout then.
+		// Its probe is worth a run only for pictures that some layout
+		// refuses, and 4:2:0 has the highest limits.
+		const ordinaryLayout = async () => {
+			const referenceFormat = pixelFormatFromProbe(referenceProbe);
+			const layout = vmafChromaLayout(referenceFormat);
+			if (
+				layout ||
+				referenceFormat === undefined ||
+				!vmafSizeLimitMessage({ ...comparedPictures, chroma: "4:2:0" })
+			)
+				return layout;
+			const probe =
+				resourceProbe ??
+				(await runner.run(
+					deps.ffprobePath,
+					["-v", "error", "-show_streams", "-of", "json", distortedPath],
+					{ signal },
+				));
+			// Without the encode's format the layout stays unknown, and
+			// libvmaf decides.
+			return probe.code === 0
+				? vmafConvertedChromaLayout(pixelFormatFromProbe(probe.stdout))
+				: undefined;
+		};
+		const sizeLimit = vmafSizeLimitMessage({
+			...comparedPictures,
+			...(measurementMethod
+				? // The frame-index method converts both pictures to 10-bit 4:2:0
+					// and declares the encode's size.
+					{ chroma: "4:2:0", declaredEncode: distortedOriginal }
+				: nativeScoring
+					? // The GPU scorer compares 4:2:0 pictures, whatever the two
+						// files hold, and declares no encode.
+						{ chroma: "4:2:0" }
 					: { chroma: await ordinaryLayout() }),
-			});
-			if (sizeLimit) throw new Error(sizeLimit);
-		}
+		});
+		if (sizeLimit) throw new Error(sizeLimit);
 		const optionsFor = (
 			allocation?: LocalResourcePlan,
 		): VmafCommandOptions => ({
@@ -1261,10 +1272,13 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						throw new Error(unresolvableModelMessage(model, modelPath));
 					}
 					// A size that the check before the run could not judge, because
-					// the chroma layout of the comparison was not known.
-					const sizeLimit =
-						libvmafPictures &&
-						vmafSizeLimitFailureMessage(run.stderr, libvmafPictures);
+					// the chroma layout of the comparison was not known. Only an
+					// FFmpeg run ends here: the GPU scorer's layout is always
+					// known, and its failure is thrown where it runs.
+					const sizeLimit = vmafSizeLimitFailureMessage(
+						run.stderr,
+						comparedPictures,
+					);
 					if (sizeLimit) throw new Error(sizeLimit);
 					throw new Error(
 						`libvmaf failed for rendition ${target.renditionKey} (code ${run.code}): ${stderrTail(run.stderr)}`,

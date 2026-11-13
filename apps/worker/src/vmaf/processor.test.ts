@@ -5299,33 +5299,8 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 		);
 	});
 
-	it.each(
-		(["cuda", "vulkan"] as const).flatMap(
-			(backend) =>
-				[
-					// Pictures that libvmaf would refuse: the GPU scorer is asked all the same.
-					[backend, { code: 0, stderr: "" }, undefined],
-					// Its own refusal stays its own: the sentence about libvmaf is not put
-					// in its place.
-					[
-						backend,
-						{
-							code: 1,
-							stderr:
-								"SpEED: image too small, operating width or height is 0\n",
-						},
-						/^libvmaf failed for rendition v\d+ \(code 1\): SpEED: image too small, operating width or height is 0$/,
-					],
-				] as const,
-		),
-	)("does not hold the %s scorer, which is not libvmaf, to libvmaf's limits (%o)", async (backend, run, failure) => {
-		const localRunner: ProcessRunner = {
-			spawn: vi.fn(() => {
-				throw new Error("Unexpected spawn");
-			}),
-			run: vi.fn(),
-		};
-		const native = vi
+	const nativeRun = (run: { code: number | null; stderr: string }) =>
+		vi
 			.spyOn(localScoring, "runLocalVmafScore")
 			.mockImplementation(async (_deps, options) => ({
 				run,
@@ -5345,37 +5320,159 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 				},
 				log: JSON.parse(vmafJson([95])),
 			}));
+	const nativeSetup = (
+		backend: "cuda" | "vulkan",
+		reference: string,
+		encode: string = reference,
+	) => {
+		const localRunner: ProcessRunner = {
+			spawn: vi.fn(() => {
+				throw new Error("Unexpected spawn");
+			}),
+			run: vi.fn(),
+		};
+		const planned = vi.fn<
+			NonNullable<VmafProcessorDeps["resolveLocalResources"]>
+		>(async () => ({
+			threads: 1,
+			concurrency: 2,
+			estimatedBytes: 1024,
+			exclusive: false,
+			manualFallback: false,
+			nativeDevice: 2,
+			nativeInflightFrames: 2,
+		}));
+		const t = setup({
+			localResources: sharedTestResources(),
+			localRunner,
+			scoringBackend: backend,
+			job: { model: v1, scoringVersion: VMAF_SCORING_VERSION },
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+			resolveLocalResources: planned,
+		});
+		const raw = vi.mocked(t.runner.run).getMockImplementation();
+		if (!raw) throw new Error("Missing raw runner fixture");
+		const probed = async (bin: string, argv: string[], options?: unknown) =>
+			argv.includes("-show_streams")
+				? {
+						code: 0,
+						stderr: "",
+						stdout: /\/ref-\d+\./.test(argv.at(-1) ?? "") ? reference : encode,
+					}
+				: raw(bin, argv, options as never);
+		vi.mocked(t.runner.run).mockImplementation(probed);
+		vi.mocked(localRunner.run).mockImplementation(probed);
+		return Object.assign(t, { planned });
+	};
+
+	it.each([
+		"cuda",
+		"vulkan",
+	] as const)("holds the %s scorer to libvmaf's limits for 4:2:0 pictures before it runs", async (backend) => {
+		const native = nativeRun({ code: 0, stderr: "" });
 		try {
-			const t = setup({
-				localResources: sharedTestResources(),
-				localRunner,
-				probeJson: probeOf(256, 144, "yuv420p"),
-				scoringBackend: backend,
-				job: { model: v1, scoringVersion: VMAF_SCORING_VERSION },
-				resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
-				resolveLocalResources: async () => ({
-					threads: 1,
-					concurrency: 2,
-					estimatedBytes: 1024,
-					exclusive: false,
-					manualFallback: false,
-					nativeDevice: 2,
-					nativeInflightFrames: 2,
-				}),
-			});
-			const raw = vi.mocked(t.runner.run).getMockImplementation();
-			if (!raw) throw new Error("Missing raw runner fixture");
-			vi.mocked(localRunner.run).mockImplementation(raw);
-			const processed = t.processor.process({ vmafJobId: VMAF_JOB_ID });
-			if (failure) await expect(processed).rejects.toThrow(failure);
-			else
-				expect(await processed).toMatchObject({
-					status: "FINISHED",
-					results: 2,
-				});
-			expect(native).toHaveBeenCalled();
+			// The scorer compares 4:2:0 pictures and declares no encode, so its
+			// limits are those of libvmaf for that layout. It refuses in words
+			// that name none.
+			const small = nativeSetup(backend, probeOf(256, 144, "yuv420p"));
+			await expect(
+				small.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(
+				`VMAF model "${v1}" cannot score 4:2:0 pictures of 256x144: it needs at least 160 pixels in width and in height, and at least 216 in one of the two. The two pictures are compared at the size of the reference. Use a model of the vmaf_v0.6.1 family, which scores smaller pictures, or a larger reference.`,
+			);
+			expect(small.job.status).toBe("ERROR");
+			expect(native).not.toHaveBeenCalled();
+			expect(small.planned).not.toHaveBeenCalled();
+
+			// The smallest pictures that the model scores, and an encode below
+			// CAMBI's range for a declared encode: nothing of it is declared.
+			const edge = nativeSetup(
+				backend,
+				probeOf(216, 160, "yuv420p"),
+				probeOf(128, 72, "yuv420p"),
+			);
+			expect(
+				await edge.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).toMatchObject({ status: "FINISHED", results: 2 });
+			expect(native).toHaveBeenCalledTimes(2);
+			// A pair that is scored has resources planned for it, by the planner
+			// that the refusals of this file leave uncalled.
+			expect(edge.planned).toHaveBeenCalled();
 			for (const [, options] of native.mock.calls)
-				expect(options.scoring).toMatchObject({ backend });
+				expect(options).toMatchObject({
+					scoring: { backend },
+					distortedOriginal: { width: 128, height: 72, bitdepth: 8 },
+				});
+		} finally {
+			native.mockRestore();
+		}
+	});
+
+	it.each([
+		"cuda",
+		"vulkan",
+	] as const)("leaves a failure of the %s scorer in its own words", async (backend) => {
+		// A run of the scorer that fails throws what the scorer printed
+		// (`runNativeVmafScore`). The sentences about libvmaf's limits are for
+		// the check before the run and for a run of FFmpeg.
+		const failure =
+			"NATIVE_SCORING_FAILED (1): bitovp-vmaf: input is too small or too large for official SpEED chroma blocks";
+		const native = vi
+			.spyOn(localScoring, "runLocalVmafScore")
+			.mockRejectedValue(new Error(failure));
+		try {
+			const t = nativeSetup(backend, probeOf(640, 360, "yuv420p"));
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toMatchObject({ message: failure });
+			expect(t.job.status).toBe("ERROR");
+			expect(native).toHaveBeenCalled();
+		} finally {
+			native.mockRestore();
+		}
+	});
+
+	it.each([
+		[
+			"cuda",
+			probeOf(1920, 1080, "yuv422p10le"),
+			probeOf(960, 540, "yuv420p"),
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the reference's pixel format is yuv422p10le, and GPU scoring compares 8-bit and 10-bit 4:2:0 pictures only, for references in yuv420p and yuv420p10le. Use Local CPU for this pair.",
+		],
+		[
+			"vulkan",
+			probeOf(1920, 1080, "yuvj420p"),
+			probeOf(960, 540, "yuv420p"),
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the reference is full range and the encode is limited range, and FFmpeg converts one of the two before libvmaf compares them. Use Local CPU for this pair.",
+		],
+		[
+			"cuda",
+			probeOf(1920, 1080, "yuv420p"),
+			probeOf(960, 540, "gbrp"),
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: GPU scoring takes no encode in the pixel format gbrp. Use Local CPU for this pair.",
+		],
+		// A pair that is refused so is not held to a size limit first: Local CPU
+		// compares it in another layout, with other limits.
+		[
+			"vulkan",
+			probeOf(256, 144, "yuv444p"),
+			probeOf(256, 144, "yuv420p"),
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the reference's pixel format is yuv444p, and GPU scoring compares 8-bit and 10-bit 4:2:0 pictures only, for references in yuv420p and yuv420p10le. Use Local CPU for this pair.",
+		],
+	] as const)("refuses for the %s scorer a pair that it cannot compare as libvmaf through FFmpeg does, before any scorer runs (%#)", async (backend, reference, encode, message) => {
+		const native = nativeRun({ code: 0, stderr: "" });
+		try {
+			const t = nativeSetup(backend, reference, encode);
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(message);
+			expect(t.job.status).toBe("ERROR");
+			expect(t.job.error).toContain(message);
+			// Neither the GPU scorer nor libvmaf in its place, and no resources
+			// planned for either.
+			expect(native).not.toHaveBeenCalled();
+			expect(scoringRuns(t)).toHaveLength(0);
+			expect(t.planned).not.toHaveBeenCalled();
 		} finally {
 			native.mockRestore();
 		}

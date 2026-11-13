@@ -4,14 +4,21 @@ import {
 	VMAF_EXPERIMENTAL_GPU_SCORING_VERSION,
 	VMAF_OWNED_CUDA_SCORING_VERSION,
 	VMAF_OWNED_VULKAN_SCORING_VERSION,
+	VMAF_RETIRED_OWNED_CUDA_SCORING_VERSION,
+	VMAF_RETIRED_OWNED_VULKAN_SCORING_VERSION,
 	VMAF_SCORING_VERSION,
 } from "@bitovp/core";
 
+/** What a row keeps of the scoring method with which it started, so that a
+ * later attempt by a worker with another method is refused. `comparison` names
+ * what the scorer compares: the pictures of libvmaf through FFmpeg, at the
+ * reference's bit depth. Rows of the retired generations hold `bitDepth: 10`
+ * in its place. */
 export function ownedScoringSnapshot(backend: "cuda" | "vulkan") {
 	return {
 		backend,
 		implementation: "bitovp-owned",
-		bitDepth: 10,
+		comparison: "ffmpeg-libvmaf",
 		officialRevision: NATIVE_OFFICIAL_REVISION,
 	};
 }
@@ -30,6 +37,10 @@ export function localScoringGeneration(options: {
 	const experimental = [
 		VMAF_EXPERIMENTAL_GPU_SCORING_VERSION,
 		VMAF_EXPERIMENTAL_GPU_DECODE_SCORING_VERSION,
+		// Rows of the retired generations are never continued: their numbers
+		// are not those of the generations below.
+		VMAF_RETIRED_OWNED_CUDA_SCORING_VERSION,
+		VMAF_RETIRED_OWNED_VULKAN_SCORING_VERSION,
 		VMAF_OWNED_CUDA_SCORING_VERSION,
 		VMAF_OWNED_VULKAN_SCORING_VERSION,
 	];

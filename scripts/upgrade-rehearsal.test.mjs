@@ -103,7 +103,7 @@ switch (a[2]) {
  default: throw new Error("Unexpected synthetic Docker operation");
 }
 `, { mode: 0o700 });
-		const descendant = `const fs = require("node:fs"); fs.writeFileSync(${JSON.stringify(marker("descendant-started"))}, String(process.pid)); process.on("SIGTERM", () => { fs.writeFileSync(${JSON.stringify(marker("descendant-cancelled"))}, "cancelled"); process.exit(0); }); setInterval(() => {}, 1000);`;
+		const descendant = `const fs = require("node:fs"); process.on("SIGTERM", () => { fs.writeFileSync(${JSON.stringify(marker("descendant-cancelled"))}, "cancelled"); process.exit(0); }); setInterval(() => {}, 1000); fs.writeFileSync(${JSON.stringify(marker("descendant-started"))}, String(process.pid));`;
 		writeFileSync(join(bin, "pnpm"), `${prelude}
 import { spawn } from "node:child_process";
 const a = process.argv.slice(2);

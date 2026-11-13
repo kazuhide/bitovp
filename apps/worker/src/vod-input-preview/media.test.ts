@@ -26,6 +26,9 @@ const probe = () => ({
 	format: { duration: "8.2", format_name: "mov,mp4" },
 });
 
+const matrix = (a: number, b: number, c: number, d: number) =>
+	`00000000: ${a} ${b} 0\n00000001: ${c} ${d} 0\n00000002: 0 0 1073741824`;
+
 describe("CPU input timeline metadata admission", () => {
 	it.each([
 		undefined,
@@ -221,6 +224,63 @@ describe("CPU input timeline metadata admission", () => {
 		expect(
 			vodInputPreviewCanvas(720, 576, rotated.video.displayAspectRatio),
 		).toEqual({ width: 270, height: 360 });
+	});
+	it("admits the real BBB QuickTime axis scaling using encoded SAR preview geometry", () => {
+		const sample = probe();
+		Object.assign(sample.streams[0] ?? {}, {
+			side_data_list: [
+				{
+					side_data_type: "Display Matrix",
+					rotation: 0,
+					displaymatrix:
+						"\n00000000:        34475           0           0\n00000001:            0       34467           0\n00000002:            0           0  1073741824\n",
+				},
+			],
+		});
+		const measured = inspectVodInputProbe("source", sample, identity);
+		expect(measured.video?.displayAspectRatio).toEqual({ num: 16, den: 9 });
+	});
+	it.each([
+		[0, matrix(34475, 0, 0, 17237), { num: 4, den: 3 }],
+		[90, matrix(0, -34475, 17237, 0), { num: 3, den: 4 }],
+		[180, matrix(-34475, 0, 0, -17237), { num: 4, den: 3 }],
+		[270, matrix(0, 34475, -17237, 0), { num: 3, den: 4 }],
+	])("admits scaled quarter-turn %s while matching FFmpeg's encoded-SAR geometry", (rotation, displaymatrix, expected) => {
+		const sample = probe();
+		Object.assign(sample.streams[0] ?? {}, {
+			width: 720,
+			height: 576,
+			sample_aspect_ratio: "16:15",
+			side_data_list: [
+				{ side_data_type: "Display Matrix", rotation, displaymatrix },
+			],
+		});
+		expect(
+			inspectVodInputProbe("source", sample, identity).video
+				?.displayAspectRatio,
+		).toEqual(expected);
+	});
+	it.each([
+		[0, matrix(-65536, 0, 0, 65536)], // reflection
+		[0, matrix(65536, 0, 0, 0)], // singular
+		[0, matrix(65536, 1, 0, 65536)], // shear
+		[0, matrix(-65536, 0, 0, -65536)], // conflicting orientation
+		[90, matrix(0, 65536, -65536, 0)], // opposite quarter-turn
+		[0, matrix(2 ** 31, 0, 0, 65536)], // not an int32
+		[0, matrix(65536, 0, 0, 65536).replace("65536 0 0", "65536 0 1")], // perspective
+		[0, matrix(65536, 0, 0, 65536).replace("0 0 1073741824", "1 0 1073741824")], // translation
+		[0, matrix(65536, 0, 0, 65536).replace("1073741824", "0")],
+		[0, matrix(65536, 0, 0, 65536).replace("00000001", "00000000")],
+	])("rejects malformed or non-positive-axis display matrix %s / %s", (rotation, displaymatrix) => {
+		const sample = probe();
+		Object.assign(sample.streams[0] ?? {}, {
+			side_data_list: [
+				{ side_data_type: "Display Matrix", rotation, displaymatrix },
+			],
+		});
+		expect(() => inspectVodInputProbe("source", sample, identity)).toThrow(
+			expect.objectContaining({ code: "SOURCE_UNSUPPORTED" }),
+		);
 	});
 	it("refuses invalid SAR and unsupported or conflicting display transforms", () => {
 		for (const patch of [

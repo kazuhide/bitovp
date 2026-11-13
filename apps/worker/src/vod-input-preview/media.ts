@@ -79,25 +79,44 @@ function displayAspectRatio(
 				.trim()
 				.split(/\r?\n/)
 				.map((line) =>
-					/^\s*[\da-f]{8}:\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s*$/i.exec(line),
+					/^\s*([\da-f]{8}):\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s*$/i.exec(line),
 				);
-			if (rows.length !== 3 || rows.some((row) => !row)) return invalid();
+			if (
+				rows.length !== 3 ||
+				rows.some(
+					(row, index) =>
+						row?.[1]?.toLowerCase() !== index.toString(16).padStart(8, "0"),
+				)
+			)
+				return invalid();
 			const values = rows.flatMap((row) =>
-				row ? row.slice(1).map(Number) : [],
+				row ? row.slice(2).map(Number) : [],
 			);
 			const [a = NaN, b = NaN, u, c = NaN, d = NaN, v, x, y, w] = values;
-			// Only ordinary quarter-turn rotation matrices; no shear, mirroring, scaling or translation.
+			// Positive axis scales may accompany a quarter-turn (for example BBB's
+			// QuickTime presentation matrix). Signs must match the declared rotation;
+			// these patterns also exclude shear, reflection and singular transforms.
+			const positiveAxes =
+				rotation === 0
+					? a > 0 && d > 0 && b === 0 && c === 0
+					: rotation === 90
+						? b < 0 && c > 0 && a === 0 && d === 0
+						: rotation === 180
+							? a < 0 && d < 0 && b === 0 && c === 0
+							: b > 0 && c < 0 && a === 0 && d === 0;
 			if (
-				![a, b, c, d].every((value) => [0, -65536, 65536].includes(value)) ||
+				!values.every(
+					(value) =>
+						Number.isInteger(value) &&
+						value >= -2_147_483_648 &&
+						value <= 2_147_483_647,
+				) ||
+				!positiveAxes ||
 				u !== 0 ||
 				v !== 0 ||
 				x !== 0 ||
 				y !== 0 ||
-				w !== 1073741824 ||
-				a * d - b * c !== 4294967296 ||
-				a * a + b * b !== 4294967296 ||
-				c * c + d * d !== 4294967296 ||
-				(a === 0) !== (rotation % 180 !== 0)
+				w !== 1073741824
 			)
 				return invalid();
 		}
@@ -111,6 +130,9 @@ function displayAspectRatio(
 		(angle(tag) !== rotation || (!matrices.length && angle(tag) !== 0))
 	)
 		return invalid();
+	// FFmpeg autorotate applies the rotation, not display-matrix scale magnitudes.
+	// Preview geometry therefore uses coded pixels and SAR after that rotation,
+	// matching the scale/reset_sar normalization instead of claiming an affine render.
 	let num = width * sarNum,
 		den = height * sarDen;
 	if (rotation === 90 || rotation === 270) [num, den] = [den, num];

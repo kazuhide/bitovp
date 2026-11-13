@@ -149,5 +149,6 @@ const adoption = await intent.resolve();
 if (!adoption.adopted || adoption.localId !== wrongId) {
 	throw new Error("fixture did not persist the wrong exact-key adoption");
 }
-process.stdout.write("CAPTURE_AND_WRONG_ADOPTION_DURABLE\n");
+// The process id tells the test that the process it kills is this one.
+process.stdout.write(`CAPTURE_AND_WRONG_ADOPTION_DURABLE ${process.pid}\n`);
 setInterval(() => {}, 1_000);

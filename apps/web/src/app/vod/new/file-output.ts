@@ -4,6 +4,7 @@ import {
 	MUXING_CODEC_MATRIX,
 	storageSummaries,
 	UNMEASURED_MUXING_KINDS,
+	UNVERIFIED_DOLBY_VISION_MUXING_KINDS,
 	UNVERIFIED_MUXING_CODECS,
 } from "@bitovp/core";
 import { draftKeepsText } from "@/lib/wizard-draft";
@@ -394,17 +395,27 @@ function withAudio(
 /**
  * A track in another codec, as the ladder step changes one: the cutoff belongs to
  * the codec it was set for, and Opus is 48 kHz. The layout stays where the new codec
- * has one of that name, and loudness control is Dolby Atmos's alone.
+ * has one of that name, and loudness control is Dolby Atmos's alone. So is a Dolby
+ * Atmos stream: a track that leaves the codec goes back to the input's own audio
+ * track, because the plan is refused for any other codec that reads one.
  */
 function recoded(
 	track: WizardAudioRendition,
 	codec: WizardAudioCodec,
+	atmosStreams: readonly string[] = [],
 ): WizardAudioRendition {
 	if ((track.codec ?? "AAC") === codec) return track;
 	const layouts: readonly string[] =
 		codec === "DOLBY_ATMOS" ? [] : AUDIO_CHANNEL_LAYOUTS[codec];
+	const extras =
+		codec !== "DOLBY_ATMOS" &&
+		track.extras?.source !== undefined &&
+		atmosStreams.includes(track.extras.source)
+			? without(track.extras, ["source"])
+			: track.extras;
 	return defined({
 		...track,
+		extras: isBlank(extras) ? undefined : extras,
 		codec,
 		channelLayout:
 			track.channelLayout !== undefined && layouts.includes(track.channelLayout)
@@ -445,6 +456,13 @@ function carriedOver(container: FileContainer, codec: string): boolean {
 	return held.includes(codec) && !unverifiedIn(container).includes(codec);
 }
 
+/** The keys of the Dolby Atmos streams of the Sources step. */
+function atmosStreamKeys(state: Pick<WizardState, "sources">): string[] {
+	return (state.sources?.dolbyStreams ?? [])
+		.filter((stream) => stream.kind === "ATMOS")
+		.map((stream) => stream.key);
+}
+
 /**
  * A Dolby Atmos track is encoded from an Atmos source and from nothing else: the
  * plan is refused for one that reads the input's own audio track, or any other
@@ -456,9 +474,38 @@ export function lacksAtmosSource(
 ): boolean {
 	if (audio?.codec !== "DOLBY_ATMOS") return false;
 	const source = audio.extras?.source;
-	return !(state.sources?.dolbyStreams ?? []).some(
-		(stream) => stream.kind === "ATMOS" && stream.key === source,
+	return source === undefined || !atmosStreamKeys(state).includes(source);
+}
+
+/**
+ * The other half of that rule: a Dolby Atmos stream is read by a Dolby Atmos track
+ * and by nothing else. The source list offers every stream of the Sources step, so
+ * a track in another codec can be pointed at one, and the plan is refused for it.
+ */
+export function readsAtmosStream(
+	state: Pick<WizardState, "sources">,
+	audio: WizardAudioRendition | undefined,
+): boolean {
+	const source = audio?.extras?.source;
+	return (
+		audio !== undefined &&
+		audio.codec !== "DOLBY_ATMOS" &&
+		source !== undefined &&
+		atmosStreamKeys(state).includes(source)
 	);
+}
+
+/**
+ * HEVCv2 encodes to a height and a bitrate that are set: the plan is refused for a
+ * file in it that leaves either to the source or to a CRF, as the other codecs
+ * allow. What a file in HEVCv2 lacks, for the screen to say on that field.
+ */
+export function hevcV2Lacks(video: WizardVideoRendition): {
+	height: boolean;
+	bitrate: boolean;
+} {
+	const v2 = video.codec === "H265V2";
+	return { height: v2 && !video.height, bitrate: v2 && !video.bitrate };
 }
 
 /**
@@ -495,22 +542,41 @@ export function hevcV2NotAlone(state: WizardState): boolean {
 	);
 }
 
+/**
+ * "BCF override" is HEVCv2's switch, and a job that has it on with no file in HEVCv2
+ * cannot be built into a plan. The format screen switches it with the codec; the
+ * Basics step lets it be ticked alone, and says so there while it is.
+ */
+export function bcfOverrideAlone(
+	state: Pick<WizardState, "internal" | "videos">,
+): boolean {
+	return (
+		state.internal?.hevcV2 !== undefined &&
+		!state.videos.some((video) => video.codec === "H265V2")
+	);
+}
+
 export type FileCaveat =
 	| "unmeasured"
+	| "videoNotHeld"
 	| "unverifiedVideo"
+	| "unverifiedDolbyVision"
 	| "audioNotHeld"
 	| "unverifiedAudio"
 	| "av1WebmAudio";
 
 /**
  * What the format screen says about a file where it is set, before the plan is
- * validated. All but `audioNotHeld` are warnings the validation raises too, and the
- * job starts with them: the container this app has no live encode of
- * (`PLAN_MUXING_UNMEASURED_KIND`), a codec the container's format defines but
- * Bitmovin's support matrix does not list (`PLAN_MUXING_UNVERIFIED_CODEC`), and audio
- * beside AV1 in a WebM file, which Bitmovin documents as refused
- * (`PLAN_MUXING_AV1_NOT_ALONE`). `audioNotHeld` is a codec the container does not
- * hold at all, which the plan is refused for.
+ * validated. All but `videoNotHeld` and `audioNotHeld` are warnings the validation
+ * raises too, and the job starts with them: the container this app has no live
+ * encode of (`PLAN_MUXING_UNMEASURED_KIND`), a codec the container's format defines
+ * but Bitmovin's support matrix does not list, or Dolby Vision in a container
+ * Bitmovin does not name for it (`PLAN_MUXING_UNVERIFIED_CODEC`), and audio beside
+ * AV1 in a WebM file, which Bitmovin documents as refused
+ * (`PLAN_MUXING_AV1_NOT_ALONE`). The other two are a codec the container does not
+ * hold at all, which the plan is refused for (`PLAN_MUXING_CODEC_MISMATCH`). No edit
+ * of the format screen leaves a file in one; a draft, a loaded plan or the Ladder
+ * step can.
  */
 export function fileCaveats(
 	video: WizardVideoRendition,
@@ -523,7 +589,16 @@ export function fileCaveats(
 	const track = audio?.codec ?? "AAC";
 	const caveats: FileCaveat[] = [];
 	if (container.unmeasured) caveats.push("unmeasured");
+	if (!container.video.includes(codec)) caveats.push("videoNotHeld");
 	if (unverified.includes(codec)) caveats.push("unverifiedVideo");
+	if (
+		codec === "H265" &&
+		video.h265?.dynamicRangeFormat?.startsWith("DOLBY_VISION") &&
+		(UNVERIFIED_DOLBY_VISION_MUXING_KINDS as readonly string[]).includes(
+			container.kind,
+		)
+	)
+		caveats.push("unverifiedDolbyVision");
 	if (audio && !container.audio.includes(track)) caveats.push("audioNotHeld");
 	if (audio && unverified.includes(track)) caveats.push("unverifiedAudio");
 	if (audio && container.kind === "PROGRESSIVE_WEBM" && codec === "AV1")
@@ -675,6 +750,41 @@ function withoutHevcV2Settings(
 	return isBlank(rest) ? undefined : rest;
 }
 
+/**
+ * The H.265 settings HEVCv2 takes, which are the ones its editor shows. The plan is
+ * refused for a file in HEVCv2 with any other (a CRF, a profile, B-frames), and the
+ * editor has no field to take it out with. The preset is not one of them, and stays:
+ * the plan is built with HEVCv2's own whatever a file says.
+ */
+const HEVC_V2_H265_FIELDS = [
+	"sampleAspectRatioNumerator",
+	"sampleAspectRatioDenominator",
+	"displayAspectRatio",
+	"rate",
+	"pixelFormat",
+	"levelHighTier",
+	"dynamicRangeFormat",
+	"colorConfig",
+	"presetConfiguration",
+	...HEVC_V2_SETTINGS,
+];
+
+/** A file's H.265 settings as it changes to HEVCv2: the ones that codec takes. */
+function forHevcV2(
+	h265: WizardVideoRendition["h265"],
+): WizardVideoRendition["h265"] {
+	if (!h265) return h265;
+	const kept = Object.fromEntries(
+		Object.entries(h265).filter(
+			([key, value]) =>
+				HEVC_V2_H265_FIELDS.includes(key) &&
+				// HEVCv2 is SDR: another dynamic range is refused like a setting it has not.
+				(key !== "dynamicRangeFormat" || value === "SDR"),
+		),
+	) as NonNullable<WizardVideoRendition["h265"]>;
+	return isBlank(kept) ? undefined : kept;
+}
+
 export function editFile(
 	state: WizardState,
 	index: number,
@@ -720,7 +830,9 @@ export function editFile(
 			...(codec === asked ? {} : { codec }),
 			...(codec !== was && codec !== "H265" && codec !== "H265V2"
 				? { h265: withoutHevcV2Settings(current.h265) }
-				: {}),
+				: codec === "H265V2" && was !== "H265V2"
+					? { h265: forHevcV2(current.h265) }
+					: {}),
 			// HEVCv2 has the one encoding mode, and leaves it behind with the codec.
 			...(codec === "H265V2" && was !== "H265V2"
 				? { encodingMode: "SMART_PASS" as const }
@@ -756,7 +868,10 @@ export function editFile(
 		return { videos, ...internal };
 	// As with the video codec: the track goes on in a codec the new container holds.
 	const held = container.audio[0];
-	tracks[index] = held === undefined ? undefined : recoded(track, held);
+	tracks[index] =
+		held === undefined
+			? undefined
+			: recoded(track, held, atmosStreamKeys(state));
 	return { ...withAudio(videos, tracks), ...internal };
 }
 
@@ -829,8 +944,9 @@ export type FileAudioEdit = Partial<
 
 /**
  * Give a file an audio track, or take it away. A file that gets one gets the track
- * of the nearest file whose track its container holds — the files of one job mostly
- * hold the same audio — and otherwise the one a file starts with.
+ * of the nearest file whose track its container holds and Bitmovin lists for it —
+ * the files of one job mostly hold the same audio — and otherwise the one a file
+ * starts with. Opus beside an MP4 is chosen, and not arrived at by a tick.
  */
 export function setFileAudio(
 	state: WizardState,
@@ -849,7 +965,7 @@ export function setFileAudio(
 		].find(
 			(track) =>
 				track !== undefined &&
-				(!container || container.audio.includes(track.codec ?? "AAC")),
+				(!container || carriedOver(container, track.codec ?? "AAC")),
 		);
 		tracks[index] = near ?? defaultAudio(container);
 	} else tracks[index] = undefined;
@@ -868,7 +984,9 @@ export function editFileAudio(
 	const { source, codec, ...rendition } = edit;
 	tracks[index] = sourced(
 		defined({
-			...(codec === undefined ? current : recoded(current, codec)),
+			...(codec === undefined
+				? current
+				: recoded(current, codec, atmosStreamKeys(state))),
 			...rendition,
 		}),
 		source,
@@ -1204,7 +1322,9 @@ export function fileOutputBlockers(state: WizardState): FileOutputBlocker[] {
 		if (
 			!videoCodecs.includes(video.codec ?? "H264") ||
 			!setsOnly(video, VIDEO_FIELDS) ||
-			!setsOnly(video.extras, EXTRAS_FIELDS)
+			!setsOnly(video.extras, EXTRAS_FIELDS) ||
+			// The HEVCv2 editor shows fewer H.265 settings than the H.265 one.
+			(video.codec === "H265V2" && !setsOnly(video.h265, HEVC_V2_H265_FIELDS))
 		)
 			found.add("ladder");
 		// A file holds one track or none, and a track it names has to be there.

@@ -589,7 +589,7 @@ describe("VodWizard — the file-output flow", () => {
 	});
 
 	const UNVERIFIED =
-		"The container's format defines this codec, but no Bitmovin document lists the combination. The job may be refused: check the first file it writes.";
+		"The container's format defines this codec, but no Bitmovin document was found that lists the combination. The job may be refused: check the first file it writes.";
 	const options = (select: HTMLElement) =>
 		within(select)
 			.getAllByRole("option")
@@ -704,7 +704,7 @@ describe("VodWizard — the file-output flow", () => {
 		await user.selectOptions(codec, "AV1");
 		expect(screen.getByText("Advanced (AV1)")).toBeInTheDocument();
 		expect(audioCodec()).toHaveAccessibleDescription(
-			"Bitmovin's release notes say that a WebM file with AV1 video takes no other stream, and nothing newer says otherwise. The job may be refused: to be sure, write this file without audio, or use MP4.",
+			"Bitmovin's release notes say that a WebM file with AV1 video takes no other stream, and no later note was found that says otherwise. The job may be refused: to be sure, write this file without audio, or use MP4.",
 		);
 		expect(planned()).toEqual([
 			["PROGRESSIVE_WEBM", "clip.webm", "v1080:AV1", "a192:OPUS"],
@@ -755,6 +755,56 @@ describe("VodWizard — the file-output flow", () => {
 		expect(options(audioCodec)).toEqual(["OPUS"]);
 	});
 
+	it("says of a video codec the Ladder step left that the container cannot hold it, and of Dolby Vision where Bitmovin names no such file", async () => {
+		const user = userEvent.setup();
+		const [video] = ready.videos as [WizardState["videos"][number]];
+		await restore({ ...ready, videos: [{ ...video, codec: "VP9" }] }, 2);
+		expect(steps()).toHaveLength(6);
+		const codec = screen.getByRole("combobox", { name: "Codec" });
+		expect(codec).toHaveValue("VP9");
+		expect(codec).toHaveAccessibleDescription(
+			"MP4 (.mp4) cannot hold this codec.",
+		);
+		expect(options(codec)).toEqual(["H264", "H265", "AV1", "VP9"]);
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(
+			screen.getByText(/\[PLAN_MUXING_CODEC_MISMATCH\]/),
+		).toBeInTheDocument();
+		await user.selectOptions(codec, "H265");
+		expect(codec).not.toHaveAccessibleDescription();
+		expect(options(codec)).toEqual(["H264", "H265", "AV1"]);
+		expect(screen.queryByText(/\[PLAN_MUXING_CODEC_MISMATCH\]/)).toBeNull();
+		cleanup();
+
+		await restore(
+			{
+				...ready,
+				videos: [
+					{
+						...video,
+						codec: "H265",
+						h265: { dynamicRangeFormat: "DOLBY_VISION_PROFILE_8_1" },
+					},
+				],
+			},
+			2,
+		);
+		const DOLBY_VISION =
+			"Bitmovin's documents name Dolby Vision for MP4 and not for this container. The job may be refused, or the file may not be marked as Dolby Vision: check the first file it writes.";
+		const hevc = screen.getByRole("combobox", { name: "Codec" });
+		expect(hevc).not.toHaveAccessibleDescription();
+		await user.selectOptions(
+			screen.getByRole("combobox", { name: "Container" }),
+			"MPEG-TS (.ts)",
+		);
+		expect(hevc).toHaveValue("H265");
+		expect(hevc).toHaveAccessibleDescription(DOLBY_VISION);
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(
+			screen.getByText(/\[PLAN_MUXING_UNVERIFIED_CODEC\]/),
+		).toBeInTheDocument();
+	});
+
 	it("says where a Dolby Atmos track gets its source, until it reads one", async () => {
 		const user = userEvent.setup();
 		await restore(
@@ -790,6 +840,104 @@ describe("VodWizard — the file-output flow", () => {
 			["MP4", "clip.mp4", "v1080:H264", "a192:DOLBY_ATMOS"],
 		]);
 		expect(screen.queryByText(/\[PLAN_STREAM_SOURCE_MISMATCH\]/)).toBeNull();
+
+		// MPEG-TS holds no Dolby Atmos. The track goes on in AAC, and from the input's
+		// own audio: an Atmos stream is not something AAC is encoded from.
+		await user.selectOptions(
+			screen.getByRole("combobox", { name: "Container" }),
+			"MPEG-TS (.ts)",
+		);
+		const source = () => screen.getByRole("combobox", { name: "Audio source" });
+		expect(screen.getByRole("combobox", { name: "Audio codec" })).toHaveValue(
+			"AAC",
+		);
+		expect(source()).toHaveValue("");
+		expect(source()).not.toHaveAccessibleDescription();
+		expect(planned()).toEqual([
+			["PROGRESSIVE_TS", "clip.ts", "v1080:H264", "a192:AAC"],
+		]);
+		expect(screen.queryByText(/\[PLAN_STREAM_SOURCE_MISMATCH\]/)).toBeNull();
+		// Chosen for it all the same, the field says why the job is refused.
+		await user.selectOptions(source(), "atmos");
+		expect(source()).toHaveAccessibleDescription(
+			"This is a Dolby Atmos stream, which only a Dolby Atmos track can read. Choose another source, or the job will be rejected.",
+		);
+		expect(
+			screen.getByText(/\[PLAN_STREAM_SOURCE_MISMATCH\]/),
+		).toBeInTheDocument();
+		await user.selectOptions(source(), "");
+		expect(source()).not.toHaveAccessibleDescription();
+		expect(screen.queryByText(/\[PLAN_STREAM_SOURCE_MISMATCH\]/)).toBeNull();
+	});
+
+	it("takes a CRF for the bitrate of a VP9 file, as of an H.264 or H.265 one, and not of an AV1 one", async () => {
+		const user = userEvent.setup();
+		const [video] = ready.videos as [WizardState["videos"][number]];
+		await restore(
+			{
+				...ready,
+				videos: [
+					{
+						...video,
+						codec: "VP9",
+						bitrate: null,
+						vp9: { crf: 30 },
+						muxing: { ...video.muxing, kind: "PROGRESSIVE_WEBM" },
+					},
+				],
+			},
+			2,
+		);
+		const bitrate = screen.getByRole("spinbutton", { name: "Bitrate (bps)" });
+		expect(bitrate).not.toHaveAccessibleDescription();
+		// AV1 has no CRF here: the bitrate is what it is encoded to.
+		await user.selectOptions(
+			screen.getByRole("combobox", { name: "Codec" }),
+			"AV1",
+		);
+		expect(bitrate).toHaveAccessibleDescription("Enter a bitrate.");
+		cleanup();
+
+		await restore(
+			{
+				...ready,
+				videos: [
+					{
+						...video,
+						codec: "VP9",
+						bitrate: null,
+						muxing: { ...video.muxing, kind: "PROGRESSIVE_WEBM" },
+					},
+				],
+			},
+			2,
+		);
+		expect(
+			screen.getByRole("spinbutton", { name: "Bitrate (bps)" }),
+		).toHaveAccessibleDescription(
+			"Enter a bitrate, or set CRF in the advanced options.",
+		);
+	});
+
+	it("asks for the audio bitrate and the sample rate while either is empty", async () => {
+		const user = userEvent.setup();
+		await restore(ready, 2);
+		const bitrate = screen.getByRole("spinbutton", {
+			name: "Audio bitrate (bps)",
+		});
+		const rate = screen.getByRole("spinbutton", { name: "Sample rate (Hz)" });
+		expect(bitrate).not.toHaveAccessibleDescription();
+		expect(rate).not.toHaveAccessibleDescription();
+		await user.clear(bitrate);
+		expect(bitrate).toHaveAccessibleDescription("Enter a bitrate.");
+		await user.type(bitrate, "128000");
+		expect(bitrate).not.toHaveAccessibleDescription();
+		await user.clear(rate);
+		expect(rate).toHaveAccessibleDescription("Enter a sample rate.");
+		await user.type(rate, "44100");
+		expect(rate).not.toHaveAccessibleDescription();
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(planned()).toEqual([["MP4", "clip.mp4", "v1080:H264", "a128:AAC"]]);
 	});
 
 	it("gives each file its own audio, typed a digit at a time beside another file's", async () => {
@@ -867,7 +1015,7 @@ describe("VodWizard — the file-output flow", () => {
 		);
 		// H.264 beside VP9: the job runs in one mode, which each file is to be given.
 		const ONE_MODE =
-			"The files use more than one video codec, and a job runs in one encoding mode. Choose the same mode for every file, or the job will be rejected.";
+			"The files use more than one video codec, and a job runs in one encoding mode. Choose a mode other than “(default)”, the same one for every file, or the job will be rejected.";
 		const mode = (n: number) =>
 			within(screen.getByRole("group", { name: `File ${n}` })).getByRole(
 				"combobox",
@@ -985,6 +1133,81 @@ describe("VodWizard — the file-output flow", () => {
 			screen.getByRole("checkbox", { name: "BCF override" }),
 		).not.toBeChecked();
 		expect(steps()).toHaveLength(6);
+	});
+
+	it("says what HEVCv2 needs of a file, takes no H.265 setting it has not, and says in Basics when its switch is on alone", async () => {
+		const user = userEvent.setup();
+		const plain = apiFetch.getMockImplementation();
+		apiFetch.mockImplementation(async (url: string, init?: RequestInit) =>
+			url === "/api/bitmovin-accounts" && init?.method !== "POST"
+				? [{ id: accountId, label: "Account", internalHevcV2: true }]
+				: plain?.(url, init),
+		);
+		const [video] = ready.videos as [WizardState["videos"][number]];
+		// A CRF and no bitrate, as the H.265 bitrate field suggests.
+		await restore(
+			{
+				...ready,
+				videos: [{ ...video, codec: "H265", bitrate: null, h265: { crf: 24 } }],
+			},
+			2,
+		);
+		const codec = screen.getByRole("combobox", { name: "Codec" });
+		await waitFor(() => expect(options(codec)).toContain("HEVCv2"));
+		const height = screen.getByRole("spinbutton", { name: "Height (p)" });
+		const bitrate = screen.getByRole("spinbutton", { name: "Bitrate (bps)" });
+		expect(bitrate).not.toHaveAccessibleDescription();
+		await user.selectOptions(codec, "HEVCv2");
+		expect(bitrate).toHaveAccessibleDescription(
+			"HEVCv2 needs a bitrate. Enter one.",
+		);
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		const refusals = () =>
+			screen.queryAllByText(/\[PLAN_INTERNAL_HEVC_V2_UNSUPPORTED\]/);
+		// One refusal, for the bitrate. The CRF did not come along.
+		expect(refusals()).toHaveLength(1);
+		expect(planJson()).not.toContain('"crf"');
+		await user.type(bitrate, "6000000");
+		expect(bitrate).not.toHaveAccessibleDescription();
+		expect(refusals()).toHaveLength(0);
+		await user.clear(height);
+		expect(height).toHaveAccessibleDescription(
+			"HEVCv2 needs a height. Enter one.",
+		);
+		expect(refusals()).toHaveLength(1);
+		await user.type(height, "1080");
+		expect(height).not.toHaveAccessibleDescription();
+		expect(refusals()).toHaveLength(0);
+		// Another codec takes the source's height, and is not asked for one.
+		await user.selectOptions(codec, "H265");
+		await user.clear(height);
+		expect(height).not.toHaveAccessibleDescription();
+
+		const ALONE =
+			"“BCF override” is for HEVCv2, and no file uses it. Choose HEVCv2 for every file in the Format step, or switch this off: the job cannot start as it is.";
+		await user.click(screen.getByRole("button", { name: "1. Basics" }));
+		const override = () =>
+			screen.getByRole("checkbox", { name: "BCF override" });
+		expect(override()).not.toBeChecked();
+		expect(screen.queryByText(ALONE)).toBeNull();
+		await user.click(override());
+		expect(screen.getByText(ALONE)).toHaveAttribute("role", "alert");
+		expect(override()).toHaveAccessibleDescription(ALONE);
+		await user.click(override());
+		expect(screen.queryByText(ALONE)).toBeNull();
+		await user.click(override());
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		await user.type(
+			screen.getByRole("spinbutton", { name: "Height (p)" }),
+			"1080",
+		);
+		await user.selectOptions(
+			screen.getByRole("combobox", { name: "Codec" }),
+			"HEVCv2",
+		);
+		await user.click(screen.getByRole("button", { name: "1. Basics" }));
+		expect(override()).toBeChecked();
+		expect(screen.queryByText(ALONE)).toBeNull();
 	});
 
 	it("keeps its draft apart from the streaming flow's", async () => {

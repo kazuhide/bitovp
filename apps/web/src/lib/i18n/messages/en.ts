@@ -762,18 +762,27 @@ export const en = {
 		hevcV2WholeJob:
 			"HEVCv2 takes the whole job. Choose it for every file, and leave “BCF override” on in the Basics step.",
 		oneModeForCodecs:
-			"The files use more than one video codec, and a job runs in one encoding mode. Choose the same mode for every file, or the job will be rejected.",
+			"The files use more than one video codec, and a job runs in one encoding mode. Choose a mode other than “(default)”, the same one for every file, or the job will be rejected.",
+		hevcV2NeedsHeight: "HEVCv2 needs a height. Enter one.",
+		hevcV2NeedsBitrate: "HEVCv2 needs a bitrate. Enter one.",
+		bcfOverrideAlone:
+			"“BCF override” is for HEVCv2, and no file uses it. Choose HEVCv2 for every file in the Format step, or switch this off: the job cannot start as it is.",
 		unverifiedCodec:
-			"The container's format defines this codec, but no Bitmovin document lists the combination. The job may be refused: check the first file it writes.",
+			"The container's format defines this codec, but no Bitmovin document was found that lists the combination. The job may be refused: check the first file it writes.",
+		unverifiedDolbyVision:
+			"Bitmovin's documents name Dolby Vision for MP4 and not for this container. The job may be refused, or the file may not be marked as Dolby Vision: check the first file it writes.",
 		videoSource: "Video source",
 		includeAudio: "Include audio",
 		audioCodec: "Audio codec",
 		audioBitrate: "Audio bitrate (bps)",
-		audioCodecNotHeld: "{container} cannot hold this codec.",
+		codecNotHeld: "{container} cannot hold this codec.",
+		sampleRateRequired: "Enter a sample rate.",
 		atmosNeedsSource:
 			"Dolby Atmos is encoded from a Dolby Atmos stream. Add one in the Sources step, then choose it as this file's audio source.",
+		atmosStreamForAtmos:
+			"This is a Dolby Atmos stream, which only a Dolby Atmos track can read. Choose another source, or the job will be rejected.",
 		av1WebmAudio:
-			"Bitmovin's release notes say that a WebM file with AV1 video takes no other stream, and nothing newer says otherwise. The job may be refused: to be sure, write this file without audio, or use MP4.",
+			"Bitmovin's release notes say that a WebM file with AV1 video takes no other stream, and no later note was found that says otherwise. The job may be refused: to be sure, write this file without audio, or use MP4.",
 		noAudio: "This file is written without an audio track.",
 		audioSource: "Audio source",
 		folderHelp:

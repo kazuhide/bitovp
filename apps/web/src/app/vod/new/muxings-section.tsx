@@ -68,7 +68,7 @@ const SUBTITLE_KINDS: WizardMuxingKind[] = ["CHUNKED_TEXT"];
  * CMAF keeps its H.264-only rule. The whole-file kinds are read off
  * `MUXING_CODEC_MATRIX` — the table the validator refuses mismatches with — so
  * the picker does not offer a pairing the preview is certain to reject: the
- * `.ts` and `.mov` files on an H.264 row, the `.webm` file on VP9 and AV1. The
+ * `.ts` and `.mov` files on H.264 and H.265 rows, the `.webm` file on VP9 and AV1. The
  * streaming kinds are deliberately NOT filtered through the matrix: that would
  * change what existing rows are offered, which is not this change's to decide.
  */

@@ -43,6 +43,7 @@ import {
 	wizardUsesCodecEncodingMode,
 } from "./build-plan";
 import {
+	bcfOverrideAlone,
 	collapseToFileOutput,
 	FILE_OUTPUT_DEFAULT_STATE,
 	type FileJobWrite,
@@ -1312,6 +1313,11 @@ export function VodWizard({
 														type="checkbox"
 														className="h-4 w-4 accent-emerald-600"
 														checked={!!state.internal?.hevcV2}
+														aria-describedby={
+															simple && bcfOverrideAlone(state)
+																? "wz-bcf-alone"
+																: undefined
+														}
 														onChange={(event) =>
 															patch({
 																internal: event.target.checked
@@ -1343,6 +1349,17 @@ export function VodWizard({
 													/>
 												) : null}
 											</div>
+										) : null}
+										{/* The full view says this of the ladder, in the validation
+										    panel. Here the codec is a field of the format step. */}
+										{internalAllowed && simple && bcfOverrideAlone(state) ? (
+											<p
+												id="wz-bcf-alone"
+												role="alert"
+												className="text-red-400 text-xs"
+											>
+												{t("vodFlow.bcfOverrideAlone")}
+											</p>
 										) : null}
 									</div>
 								</Field>

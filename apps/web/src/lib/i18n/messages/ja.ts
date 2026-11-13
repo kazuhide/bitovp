@@ -735,14 +735,24 @@ export const ja = {
 		hevcV2WholeJob:
 			"HEVCv2 はジョブ全体で使います。すべてのファイルで HEVCv2 を選び、「基本」の「BCF オーバーライド」を有効のままにしてください。",
 		oneModeForCodecs:
-			"ファイルごとに映像コーデックが異なります。ジョブは 1 つのエンコーディングモードで実行されるため、すべてのファイルで同じモードを選んでください。そろえないとジョブは拒否されます。",
+			"ファイルごとに映像コーデックが異なります。ジョブは 1 つのエンコーディングモードで実行されるため、すべてのファイルで「(既定)」以外の同じモードを選んでください。そろえないとジョブは拒否されます。",
+		hevcV2NeedsHeight: "HEVCv2 では高さの指定が必要です。入力してください。",
+		hevcV2NeedsBitrate:
+			"HEVCv2 ではビットレートの指定が必要です。入力してください。",
+		bcfOverrideAlone:
+			"「BCF オーバーライド」は HEVCv2 のための設定ですが、HEVCv2 のファイルがありません。「出力形式」ですべてのファイルに HEVCv2 を選ぶか、この設定を無効にしてください。このままではジョブを開始できません。",
 		unverifiedCodec:
-			"コンテナの規格上は入れられるコーデックですが、Bitmovin の資料にはこの組み合わせの記載がありません。ジョブが拒否されることがあります。最初に書き出されたファイルを確認してください。",
+			"コンテナの規格上は入れられるコーデックですが、Bitmovin の資料にこの組み合わせの記載は見つかっていません。ジョブが拒否されることがあります。最初に書き出されたファイルを確認してください。",
+		unverifiedDolbyVision:
+			"Bitmovin の資料が Dolby Vision の出力先として挙げているのは MP4 で、このコンテナは挙がっていません。ジョブが拒否されるか、ファイルに Dolby Vision の情報が入らないことがあります。最初に書き出されたファイルを確認してください。",
 		videoSource: "映像ソース",
 		includeAudio: "音声を入れる",
 		audioCodec: "音声コーデック",
 		audioBitrate: "音声ビットレート (bps)",
-		audioCodecNotHeld: "{container} にはこのコーデックを入れられません。",
+		codecNotHeld: "{container} にはこのコーデックを入れられません。",
+		sampleRateRequired: "サンプリング周波数を入力してください。",
+		atmosStreamForAtmos:
+			"これは Dolby Atmos のストリームで、読めるのは Dolby Atmos のトラックだけです。別のソースを選んでください。このままではジョブは拒否されます。",
 		atmosNeedsSource:
 			"Dolby Atmos は Dolby Atmos のストリームからエンコードします。「ソース」で Dolby Atmos のストリームを追加し、このファイルの音声ソースに選んでください。",
 		av1WebmAudio:

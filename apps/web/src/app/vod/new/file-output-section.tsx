@@ -25,8 +25,10 @@ import {
 	fileCaveats,
 	fileContainer,
 	filesNeedOneMode,
+	hevcV2Lacks,
 	hevcV2NotAlone,
 	lacksAtmosSource,
+	readsAtmosStream,
 	removeFile,
 	sameStreamFiles,
 	setFileAudio,
@@ -124,6 +126,7 @@ export function FileOutputSection({
 						}
 						visionMetadataKeys={visionMetadataKeys}
 						atmosSourceMissing={lacksAtmosSource(state, tracks[index])}
+						atmosStreamMisread={readsAtmosStream(state, tracks[index])}
 						needsOneMode={needsOneMode}
 						hevcV2Mixed={hevcV2Mixed}
 						onEdit={(edit) => onPatch(editFile(state, index, edit))}
@@ -147,6 +150,7 @@ function SourceSelect({
 	label,
 	value,
 	options,
+	error,
 	onChange,
 }: {
 	id: string;
@@ -154,6 +158,7 @@ function SourceSelect({
 	/** A stream key; "" is the input's own track. */
 	value: string;
 	options: SourceOption[];
+	error?: string;
 	onChange: (source: string) => void;
 }) {
 	const { t } = useT();
@@ -161,7 +166,7 @@ function SourceSelect({
 		value !== "" && !options.some((option) => option.value === value);
 	if (options.length <= 1 && !missing) return null;
 	return (
-		<Field label={label} htmlFor={id}>
+		<Field label={label} htmlFor={id} error={error}>
 			<SelectNative
 				id={id}
 				value={value}
@@ -194,6 +199,7 @@ function FileEditor({
 	audioSources,
 	visionMetadataKeys,
 	atmosSourceMissing,
+	atmosStreamMisread,
 	needsOneMode,
 	hevcV2Mixed,
 	onEdit,
@@ -215,6 +221,8 @@ function FileEditor({
 	audioSources: SourceOption[];
 	visionMetadataKeys: string[];
 	atmosSourceMissing: boolean;
+	/** The track is not Dolby Atmos and reads a Dolby Atmos stream. */
+	atmosStreamMisread: boolean;
 	/** The files are in more than one video codec and not all in one mode. */
 	needsOneMode: boolean;
 	/** A file is in HEVCv2 and the job is not one HEVCv2 can be in. */
@@ -247,7 +255,10 @@ function FileEditor({
 			? video.h264?.crf
 			: codec === "H265"
 				? video.h265?.crf
-				: undefined;
+				: codec === "VP9"
+					? video.vp9?.crf
+					: undefined;
+	const lacks = hevcV2Lacks(video);
 	return (
 		<fieldset className="space-y-3 rounded-md border border-zinc-800 p-3">
 			<legend className="px-1 text-xs text-zinc-400">
@@ -319,11 +330,21 @@ function FileEditor({
 				<Field
 					label={t("wizard.codec")}
 					htmlFor={`${id}-codec`}
-					error={hevcV2Mixed ? t("vodFlow.hevcV2WholeJob") : undefined}
+					error={
+						hevcV2Mixed
+							? t("vodFlow.hevcV2WholeJob")
+							: caveats.includes("videoNotHeld")
+								? t("vodFlow.codecNotHeld", {
+										container: container?.label ?? "",
+									})
+								: undefined
+					}
 					hint={
 						caveats.includes("unverifiedVideo")
 							? t("vodFlow.unverifiedCodec")
-							: undefined
+							: caveats.includes("unverifiedDolbyVision")
+								? t("vodFlow.unverifiedDolbyVision")
+								: undefined
 					}
 				>
 					<SelectNative
@@ -376,7 +397,11 @@ function FileEditor({
 						)}
 					</SelectNative>
 				</Field>
-				<Field label={t("wizard.heightP")} htmlFor={`${id}-height`}>
+				<Field
+					label={t("wizard.heightP")}
+					htmlFor={`${id}-height`}
+					error={lacks.height ? t("vodFlow.hevcV2NeedsHeight") : undefined}
+				>
 					<Input
 						id={`${id}-height`}
 						type="number"
@@ -388,15 +413,19 @@ function FileEditor({
 				<Field
 					label={t("wizard.bitrateBps")}
 					htmlFor={`${id}-bitrate`}
-					error={sameStream ? t("vodFlow.sameSettings") : undefined}
+					error={
+						sameStream
+							? t("vodFlow.sameSettings")
+							: lacks.bitrate
+								? t("vodFlow.hevcV2NeedsBitrate")
+								: undefined
+					}
 					hint={
 						video.bitrate !== null || crf !== undefined
 							? undefined
-							: codec === "H264" || codec === "H265"
+							: codec === "H264" || codec === "H265" || codec === "VP9"
 								? t("vodFlow.bitrateOrCrf")
-								: codec === "H265V2"
-									? undefined
-									: t("vodFlow.bitrateRequired")
+								: t("vodFlow.bitrateRequired")
 					}
 				>
 					<Input
@@ -456,6 +485,7 @@ function FileEditor({
 				unverified={caveats.includes("unverifiedAudio")}
 				besideAv1={caveats.includes("av1WebmAudio")}
 				atmosSourceMissing={atmosSourceMissing}
+				atmosStreamMisread={atmosStreamMisread}
 				sources={audioSources}
 				onAudio={onAudio}
 				onEdit={onEditAudio}
@@ -474,6 +504,7 @@ function FileAudioEditor({
 	unverified,
 	besideAv1,
 	atmosSourceMissing,
+	atmosStreamMisread,
 	sources,
 	onAudio,
 	onEdit,
@@ -489,6 +520,8 @@ function FileAudioEditor({
 	besideAv1: boolean;
 	/** The track is Dolby Atmos and reads something other than an Atmos source. */
 	atmosSourceMissing: boolean;
+	/** The track is in another codec and reads a Dolby Atmos stream. */
+	atmosStreamMisread: boolean;
 	sources: SourceOption[];
 	onAudio: (enabled: boolean) => void;
 	onEdit: (edit: FileAudioEdit) => void;
@@ -522,7 +555,7 @@ function FileAudioEditor({
 							htmlFor={`${id}-codec`}
 							error={
 								notHeld
-									? t("vodFlow.audioCodecNotHeld", {
+									? t("vodFlow.codecNotHeld", {
 											container: container ?? "",
 										})
 									: atmosSourceMissing
@@ -575,7 +608,11 @@ function FileAudioEditor({
 								</SelectNative>
 							</Field>
 						)}
-						<Field label={t("vodFlow.audioBitrate")} htmlFor={`${id}-bitrate`}>
+						<Field
+							label={t("vodFlow.audioBitrate")}
+							htmlFor={`${id}-bitrate`}
+							error={audio.bitrate ? undefined : t("vodFlow.bitrateRequired")}
+						>
 							<Input
 								id={`${id}-bitrate`}
 								type="number"
@@ -585,7 +622,11 @@ function FileAudioEditor({
 								}
 							/>
 						</Field>
-						<Field label={t("wizard.sampleRateHz")} htmlFor={`${id}-rate`}>
+						<Field
+							label={t("wizard.sampleRateHz")}
+							htmlFor={`${id}-rate`}
+							error={audio.rate ? undefined : t("vodFlow.sampleRateRequired")}
+						>
 							<Input
 								id={`${id}-rate`}
 								type="number"
@@ -601,6 +642,9 @@ function FileAudioEditor({
 						label={t("vodFlow.audioSource")}
 						value={audio.extras?.source ?? ""}
 						options={sources}
+						error={
+							atmosStreamMisread ? t("vodFlow.atmosStreamForAtmos") : undefined
+						}
 						onChange={(source) => onEdit({ source })}
 					/>
 					{codec === "DOLBY_ATMOS" ? (

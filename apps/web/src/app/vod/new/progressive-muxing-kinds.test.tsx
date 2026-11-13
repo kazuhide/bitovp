@@ -193,6 +193,25 @@ describe("which rows are offered a whole-file container", () => {
 		expect(audioKinds).toEqual(["FMP4", "CMAF", "MP4", "TS", "PROGRESSIVE_TS"]);
 	});
 
+	it.each([
+		["DDPLUS", ["FMP4", "MP4", "TS", "PROGRESSIVE_TS"]],
+		["AC3", ["FMP4", "MP4", "TS", "PROGRESSIVE_TS"]],
+		// A .ts file holds no Dolby Atmos: the plan is refused for the pair.
+		["DOLBY_ATMOS", ["FMP4", "MP4", "TS"]],
+	] as const)("a %s audio row is offered a .ts file of its own only where the file holds the codec", (codec, kinds) => {
+		render(
+			stateWith(undefined, {
+				audios: [{ codec, bitrate: 384000, rate: 48000 }],
+			}),
+		);
+		expect(
+			[
+				...(screen.getAllByLabelText("Container")[1] as HTMLSelectElement)
+					.options,
+			].map((o) => o.value),
+		).toEqual(kinds);
+	});
+
 	it("an Opus row is not either: its own container stays the segmented WebM one", () => {
 		render(stateWith(undefined, oneOpus, "VP9"));
 		const audioKinds = [

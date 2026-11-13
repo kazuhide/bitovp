@@ -28,9 +28,10 @@ import {
 	hevcV2Lacks,
 	hevcV2NotAlone,
 	lacksAtmosSource,
-	readsAtmosStream,
+	misreadDolbyStream,
 	removeFile,
 	sameStreamFiles,
+	sequenceLeavesOutAudio,
 	setFileAudio,
 	sharedFileNames,
 	writtenFileName,
@@ -91,6 +92,11 @@ export function FileOutputSection({
 	);
 	const needsOneMode = filesNeedOneMode(state);
 	const hevcV2Mixed = hevcV2NotAlone(state);
+	// With an input sequence, every file is made from it: the plan reads the
+	// sequence whatever a file names as its source, so what a source would be
+	// refused for is not said, and the selects say they are not in use.
+	const sequence = state.inputTimeline !== undefined;
+	const sequenceWithoutAudio = sequenceLeavesOutAudio(state);
 
 	return (
 		<section aria-labelledby="wz-files-heading">
@@ -125,8 +131,19 @@ export function FileOutputSection({
 								: sources.audio
 						}
 						visionMetadataKeys={visionMetadataKeys}
-						atmosSourceMissing={lacksAtmosSource(state, tracks[index])}
-						atmosStreamMisread={readsAtmosStream(state, tracks[index])}
+						atmosSourceMissing={
+							!sequence && lacksAtmosSource(state, tracks[index])
+						}
+						videoSourceMisread={
+							sequence ? undefined : misreadDolbyStream(state, video, "video")
+						}
+						audioSourceMisread={
+							sequence
+								? undefined
+								: misreadDolbyStream(state, tracks[index], "audio")
+						}
+						sourcesUnused={sequence}
+						sequenceWithoutAudio={sequenceWithoutAudio}
 						needsOneMode={needsOneMode}
 						hevcV2Mixed={hevcV2Mixed}
 						onEdit={(edit) => onPatch(editFile(state, index, edit))}
@@ -151,6 +168,7 @@ function SourceSelect({
 	value,
 	options,
 	error,
+	hint,
 	onChange,
 }: {
 	id: string;
@@ -159,6 +177,7 @@ function SourceSelect({
 	value: string;
 	options: SourceOption[];
 	error?: string;
+	hint?: string;
 	onChange: (source: string) => void;
 }) {
 	const { t } = useT();
@@ -166,7 +185,7 @@ function SourceSelect({
 		value !== "" && !options.some((option) => option.value === value);
 	if (options.length <= 1 && !missing) return null;
 	return (
-		<Field label={label} htmlFor={id} error={error}>
+		<Field label={label} htmlFor={id} error={error} hint={hint}>
 			<SelectNative
 				id={id}
 				value={value}
@@ -199,7 +218,10 @@ function FileEditor({
 	audioSources,
 	visionMetadataKeys,
 	atmosSourceMissing,
-	atmosStreamMisread,
+	videoSourceMisread,
+	audioSourceMisread,
+	sourcesUnused,
+	sequenceWithoutAudio,
 	needsOneMode,
 	hevcV2Mixed,
 	onEdit,
@@ -221,8 +243,13 @@ function FileEditor({
 	audioSources: SourceOption[];
 	visionMetadataKeys: string[];
 	atmosSourceMissing: boolean;
-	/** The track is not Dolby Atmos and reads a Dolby Atmos stream. */
-	atmosStreamMisread: boolean;
+	/** The Dolby stream the video, or the track, reads and cannot be made from. */
+	videoSourceMisread: "ATMOS" | "VISION" | undefined;
+	audioSourceMisread: "ATMOS" | "VISION" | undefined;
+	/** An input sequence is on, and the files are made from it. */
+	sourcesUnused: boolean;
+	/** That sequence has no audio, so no file has. */
+	sequenceWithoutAudio: boolean;
 	/** The files are in more than one video codec and not all in one mode. */
 	needsOneMode: boolean;
 	/** A file is in HEVCv2 and the job is not one HEVCv2 can be in. */
@@ -337,7 +364,9 @@ function FileEditor({
 								? t("vodFlow.codecNotHeld", {
 										container: container?.label ?? "",
 									})
-								: undefined
+								: caveats.includes("av1DolbyVision")
+									? t("vodFlow.av1DolbyVision")
+									: undefined
 					}
 					hint={
 						caveats.includes("unverifiedVideo")
@@ -441,6 +470,14 @@ function FileEditor({
 				label={t("vodFlow.videoSource")}
 				value={video.extras?.source ?? ""}
 				options={videoSources}
+				error={
+					videoSourceMisread === "ATMOS"
+						? t("vodFlow.atmosStreamForAtmos")
+						: videoSourceMisread === "VISION"
+							? t("vodFlow.visionStreamForVideo")
+							: undefined
+				}
+				hint={sourcesUnused ? t("vodFlow.sourceUnusedWithSequence") : undefined}
 				onChange={(source) => onEdit({ source })}
 			/>
 			{codec === "H264" ? (
@@ -484,8 +521,11 @@ function FileEditor({
 				notHeld={caveats.includes("audioNotHeld")}
 				unverified={caveats.includes("unverifiedAudio")}
 				besideAv1={caveats.includes("av1WebmAudio")}
+				besideDolbyVision={caveats.includes("dolbyVisionAudio")}
 				atmosSourceMissing={atmosSourceMissing}
-				atmosStreamMisread={atmosStreamMisread}
+				sourceMisread={audioSourceMisread}
+				sourcesUnused={sourcesUnused}
+				sequenceWithoutAudio={sequenceWithoutAudio}
 				sources={audioSources}
 				onAudio={onAudio}
 				onEdit={onEditAudio}
@@ -503,8 +543,11 @@ function FileAudioEditor({
 	notHeld,
 	unverified,
 	besideAv1,
+	besideDolbyVision,
 	atmosSourceMissing,
-	atmosStreamMisread,
+	sourceMisread,
+	sourcesUnused,
+	sequenceWithoutAudio,
 	sources,
 	onAudio,
 	onEdit,
@@ -520,8 +563,14 @@ function FileAudioEditor({
 	besideAv1: boolean;
 	/** The track is Dolby Atmos and reads something other than an Atmos source. */
 	atmosSourceMissing: boolean;
-	/** The track is in another codec and reads a Dolby Atmos stream. */
-	atmosStreamMisread: boolean;
+	/** The codec is one Bitmovin's rules do not name beside Dolby Vision video. */
+	besideDolbyVision: boolean;
+	/** The Dolby stream the track reads and cannot be made from. */
+	sourceMisread: "ATMOS" | "VISION" | undefined;
+	/** An input sequence is on, and the files are made from it. */
+	sourcesUnused: boolean;
+	/** That sequence has no audio, so the file is written without this track. */
+	sequenceWithoutAudio: boolean;
 	sources: SourceOption[];
 	onAudio: (enabled: boolean) => void;
 	onEdit: (edit: FileAudioEdit) => void;
@@ -543,10 +592,22 @@ function FileAudioEditor({
 					type="checkbox"
 					className="h-4 w-4 accent-emerald-600"
 					checked={audio !== undefined}
+					aria-describedby={
+						audio && sequenceWithoutAudio ? `${id}-sequence` : undefined
+					}
 					onChange={(event) => onAudio(event.target.checked)}
 				/>
 				{t("vodFlow.includeAudio")}
 			</label>
+			{audio && sequenceWithoutAudio ? (
+				<p
+					id={`${id}-sequence`}
+					role="alert"
+					className="text-amber-400 text-xs"
+				>
+					{t("vodFlow.sequenceWithoutAudio")}
+				</p>
+			) : null}
 			{audio ? (
 				<>
 					<div className="grid grid-cols-2 gap-2">
@@ -567,7 +628,9 @@ function FileAudioEditor({
 									? t("vodFlow.av1WebmAudio")
 									: unverified
 										? t("vodFlow.unverifiedCodec")
-										: undefined
+										: besideDolbyVision
+											? t("vodFlow.dolbyVisionAudio")
+											: undefined
 							}
 						>
 							<SelectNative
@@ -643,7 +706,14 @@ function FileAudioEditor({
 						value={audio.extras?.source ?? ""}
 						options={sources}
 						error={
-							atmosStreamMisread ? t("vodFlow.atmosStreamForAtmos") : undefined
+							sourceMisread === "ATMOS"
+								? t("vodFlow.atmosStreamForAtmos")
+								: sourceMisread === "VISION"
+									? t("vodFlow.visionStreamForVideo")
+									: undefined
+						}
+						hint={
+							sourcesUnused ? t("vodFlow.sourceUnusedWithSequence") : undefined
 						}
 						onChange={(source) => onEdit({ source })}
 					/>

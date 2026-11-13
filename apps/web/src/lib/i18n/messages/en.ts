@@ -796,6 +796,16 @@ export const en = {
 			"Dolby Atmos is encoded from a Dolby Atmos stream. Add one in the Sources step, then choose it as this file's audio source.",
 		atmosStreamForAtmos:
 			"This is a Dolby Atmos stream, which only a Dolby Atmos track can read. Choose another source, or the job will be rejected.",
+		visionStreamForVideo:
+			"This is a Dolby Vision stream, which only H.264, H.265 or AV1 video can read. Choose another source, or the job will be rejected.",
+		sourceUnusedWithSequence:
+			"Not used while the input sequence is on: every file is made from the sequence in the Sources step.",
+		sequenceWithoutAudio:
+			"The input sequence in the Sources step has no audio, so this file is written without audio. Switch audio on in the sequence and place audio clips, or return to ordinary inputs.",
+		av1DolbyVision:
+			"AV1 with Dolby Vision is written as fMP4 only, which is not a file of this screen. Choose another dynamic range in the options below, or the job will be rejected.",
+		dolbyVisionAudio:
+			"Bitmovin's rules name AAC and Dolby Atmos audio only beside Dolby Vision video in one file. The job may be refused: check the first file it writes, or use AAC.",
 		av1WebmAudio:
 			"Bitmovin's release notes say that a WebM file with AV1 video takes no other stream, and no later note was found that says otherwise. The job may be refused: to be sure, write this file without audio, or use MP4.",
 		noAudio: "This file is written without an audio track.",

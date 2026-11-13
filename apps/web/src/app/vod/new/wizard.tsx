@@ -58,6 +58,7 @@ import {
 	fileJobWrites,
 	fileOutputBlockers,
 	renameFileJob,
+	withoutHevcV2Settings,
 } from "./file-output";
 import { FileOutputSection } from "./file-output-section";
 import { VodFlowSwitch } from "./flow-switch";
@@ -671,6 +672,11 @@ export function VodWizard({
 											...video,
 											codec: "H265" as const,
 											encodingMode: undefined,
+											// The simple view has no panel to read the refusal in
+											// that the settings only HEVCv2 has would bring.
+											...(simple
+												? { h265: withoutHevcV2Settings(video.h265) }
+												: {}),
 										}
 									: video,
 							),
@@ -1481,6 +1487,14 @@ export function VodWizard({
 												() => crypto.randomUUID().replaceAll("-", ""),
 											);
 											setState(imported.state);
+											// An output logo is a filter of the Ladder step. The
+											// simple view cannot show it, so the job goes on in
+											// the view that can.
+											if (
+												simple &&
+												fileOutputBlockers(imported.state).length > 0
+											)
+												setExpanded(true);
 										}}
 										canUseLogo={
 											state.videos.length > 0 &&

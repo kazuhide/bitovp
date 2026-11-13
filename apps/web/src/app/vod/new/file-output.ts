@@ -1,4 +1,5 @@
 import {
+	DOLBY_VISION_AUDIO_CODECS,
 	type EncodingPlan,
 	INTERNAL_HEVC_V2_BCF_VERSION,
 	MUXING_CODEC_MATRIX,
@@ -7,6 +8,7 @@ import {
 	UNVERIFIED_DOLBY_VISION_MUXING_KINDS,
 	UNVERIFIED_MUXING_CODECS,
 } from "@bitovp/core";
+import { normalizeVodInputTimelineDocument } from "@bitovp/core/vod-input-timeline";
 import { draftKeepsText } from "@/lib/wizard-draft";
 import { AUDIO_CHANNEL_LAYOUTS } from "./audio-channel-layouts";
 import {
@@ -496,6 +498,52 @@ export function readsAtmosStream(
 }
 
 /**
+ * The Dolby stream a file's video or audio reads and cannot be encoded from. The
+ * source lists offer every stream of the Sources step. An Atmos stream is read by a
+ * Dolby Atmos track alone, and a Dolby Vision stream by H.264, H.265 or AV1 video
+ * alone; the plan is refused for any other pair. A Dolby Atmos track that reads
+ * something else is spoken of on its codec (`lacksAtmosSource`), not here.
+ */
+export function misreadDolbyStream(
+	state: Pick<WizardState, "sources">,
+	rendition: WizardVideoRendition | WizardAudioRendition | undefined,
+	track: "video" | "audio",
+): "ATMOS" | "VISION" | undefined {
+	const source = rendition?.extras?.source;
+	if (rendition === undefined || source === undefined) return undefined;
+	const kind = (state.sources?.dolbyStreams ?? []).find(
+		(stream) => stream.key === source,
+	)?.kind;
+	if (kind === "ATMOS")
+		return rendition.codec === "DOLBY_ATMOS" ? undefined : "ATMOS";
+	if (kind !== "VISION") return undefined;
+	if (track === "audio")
+		return rendition.codec === "DOLBY_ATMOS" ? undefined : "VISION";
+	return rendition.codec === "VP9" ? "VISION" : undefined;
+}
+
+/**
+ * An input sequence decides whether the job has audio: with its own audio switched
+ * off, or no clip on its audio track, the plan is built without an audio stream,
+ * whatever a file says. True for a sequence with video placed and no audio.
+ */
+export function sequenceLeavesOutAudio(
+	state: Pick<WizardState, "inputTimeline">,
+): boolean {
+	if (!state.inputTimeline) return false;
+	try {
+		const sequence = normalizeVodInputTimelineDocument(state.inputTimeline);
+		return (
+			sequence.videoClips.length > 0 &&
+			!(sequence.audioEnabled && sequence.audioClips.length > 0)
+		);
+	} catch {
+		// Not a sequence a plan is built from; the Sources step says so.
+		return false;
+	}
+}
+
+/**
  * HEVCv2 encodes to a height and a bitrate that are set: the plan is refused for a
  * file in it that leaves either to the source or to a CRF, as the other codecs
  * allow. What a file in HEVCv2 lacks, for the screen to say on that field.
@@ -561,6 +609,8 @@ export type FileCaveat =
 	| "videoNotHeld"
 	| "unverifiedVideo"
 	| "unverifiedDolbyVision"
+	| "av1DolbyVision"
+	| "dolbyVisionAudio"
 	| "audioNotHeld"
 	| "unverifiedAudio"
 	| "av1WebmAudio";
@@ -599,8 +649,22 @@ export function fileCaveats(
 		)
 	)
 		caveats.push("unverifiedDolbyVision");
+	// The plan takes AV1 Dolby Vision in fMP4 alone, which is no file of this flow.
+	if (
+		codec === "AV1" &&
+		video.av1?.dynamicRangeFormat?.startsWith("DOLBY_VISION")
+	)
+		caveats.push("av1DolbyVision");
 	if (audio && !container.audio.includes(track)) caveats.push("audioNotHeld");
 	if (audio && unverified.includes(track)) caveats.push("unverifiedAudio");
+	else if (
+		audio &&
+		container.audio.includes(track) &&
+		!(DOLBY_VISION_AUDIO_CODECS as readonly string[]).includes(track) &&
+		codec === "H265" &&
+		video.h265?.dynamicRangeFormat?.startsWith("DOLBY_VISION")
+	)
+		caveats.push("dolbyVisionAudio");
 	if (audio && container.kind === "PROGRESSIVE_WEBM" && codec === "AV1")
 		caveats.push("av1WebmAudio");
 	return caveats;
@@ -742,7 +806,7 @@ const HEVC_V2_SETTINGS = [
 	"rateControlModeConfig",
 ];
 
-function withoutHevcV2Settings(
+export function withoutHevcV2Settings(
 	h265: WizardVideoRendition["h265"],
 ): WizardVideoRendition["h265"] {
 	if (!h265) return h265;
@@ -828,7 +892,7 @@ export function editFile(
 			...current,
 			...rendition,
 			...(codec === asked ? {} : { codec }),
-			...(codec !== was && codec !== "H265" && codec !== "H265V2"
+			...(codec !== was && codec !== "H265V2"
 				? { h265: withoutHevcV2Settings(current.h265) }
 				: codec === "H265V2" && was !== "H265V2"
 					? { h265: forHevcV2(current.h265) }
@@ -1394,6 +1458,11 @@ export function collapseToFileOutput(state: WizardState): WizardState {
 		const muxing = without(video.muxing ?? {}, MUXING_BOOKKEEPING);
 		return {
 			...without(unkeyed(video, video.autoKey), VIDEO_BOOKKEEPING),
+			// What the Ladder step leaves on a row that was in HEVCv2: the plan is
+			// refused for it, and the editor of the row's codec has no field for it.
+			...(video.codec !== "H265V2" && video.h265
+				? { h265: withoutHevcV2Settings(video.h265) }
+				: {}),
 			// A container keyed as its stream is, is the editors' doing as well.
 			muxing: chosenKey(video.muxing?.key, video.extras?.key)
 				? { ...muxing, key: video.muxing.key }

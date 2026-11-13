@@ -16,7 +16,11 @@ import {
 	DEFAULT_WIZARD_STATE,
 	type WizardState,
 } from "./build-plan";
-import { FILE_OUTPUT_DEFAULT_STATE, renameFileJob } from "./file-output";
+import {
+	editFile,
+	FILE_OUTPUT_DEFAULT_STATE,
+	renameFileJob,
+} from "./file-output";
 import { VodWizard } from "./wizard";
 
 /**
@@ -1792,6 +1796,214 @@ describe("VodWizard — the file-output flow", () => {
 		expect(
 			screen.getByRole("button", { name: "Edit on timeline" }),
 		).toBeInTheDocument();
+	});
+
+	it("says on a source that a Dolby stream is read by something it cannot be made into", async () => {
+		const user = userEvent.setup();
+		await restore(
+			{
+				...ready,
+				sources: {
+					dolbyStreams: [
+						{
+							kind: "ATMOS",
+							key: "atmos",
+							inputFile: "main",
+							inputFormat: "ADM",
+						},
+						{ kind: "VISION", key: "vision", videoInputFile: "main" },
+					],
+				},
+			},
+			2,
+		);
+		const ATMOS =
+			"This is a Dolby Atmos stream, which only a Dolby Atmos track can read. Choose another source, or the job will be rejected.";
+		const VISION =
+			"This is a Dolby Vision stream, which only H.264, H.265 or AV1 video can read. Choose another source, or the job will be rejected.";
+		const video = screen.getByRole("combobox", { name: "Video source" });
+		const audio = screen.getByRole("combobox", { name: "Audio source" });
+		const refused = () =>
+			screen.queryAllByText(/\[PLAN_STREAM_SOURCE_MISMATCH\]/).length;
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(video).not.toHaveAccessibleDescription();
+		expect(audio).not.toHaveAccessibleDescription();
+		expect(refused()).toBe(0);
+		await user.selectOptions(video, "atmos");
+		expect(video).toHaveAccessibleDescription(ATMOS);
+		expect(refused()).toBe(1);
+		// A Dolby Vision stream is what H.264 is made from.
+		await user.selectOptions(video, "vision");
+		expect(video).not.toHaveAccessibleDescription();
+		expect(refused()).toBe(0);
+		await user.selectOptions(audio, "vision");
+		expect(audio).toHaveAccessibleDescription(VISION);
+		expect(refused()).toBe(1);
+		await user.selectOptions(audio, "");
+		expect(audio).not.toHaveAccessibleDescription();
+		expect(refused()).toBe(0);
+	});
+
+	it("says that AV1 with Dolby Vision is no file of this screen, and of audio beside Dolby Vision that Bitmovin names AAC and Dolby Atmos", async () => {
+		const user = userEvent.setup();
+		const [video] = ready.videos as [WizardState["videos"][number]];
+		await restore(
+			{
+				...ready,
+				videos: [
+					{
+						...video,
+						codec: "AV1",
+						av1: { dynamicRangeFormat: "DOLBY_VISION_PROFILE_10_0" },
+					},
+				],
+			},
+			2,
+		);
+		const codec = screen.getByRole("combobox", { name: "Codec" });
+		expect(codec).toHaveAccessibleDescription(
+			"AV1 with Dolby Vision is written as fMP4 only, which is not a file of this screen. Choose another dynamic range in the options below, or the job will be rejected.",
+		);
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(
+			screen.getByText(/\[PLAN_MUXING_CODEC_MISMATCH\]/),
+		).toBeInTheDocument();
+		cleanup();
+
+		await restore(
+			{
+				...ready,
+				videos: [
+					{
+						...video,
+						codec: "H265",
+						h265: { dynamicRangeFormat: "DOLBY_VISION_PROFILE_8_1" },
+					},
+				],
+			},
+			2,
+		);
+		const audioCodec = screen.getByRole("combobox", { name: "Audio codec" });
+		const warned = () =>
+			screen.queryAllByText(/\[PLAN_MUXING_DOLBY_VISION_AUDIO\]/).length;
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(audioCodec).not.toHaveAccessibleDescription();
+		expect(warned()).toBe(0);
+		await user.selectOptions(audioCodec, "DDPLUS");
+		expect(audioCodec).toHaveAccessibleDescription(
+			"Bitmovin's rules name AAC and Dolby Atmos audio only beside Dolby Vision video in one file. The job may be refused: check the first file it writes, or use AAC.",
+		);
+		expect(warned()).toBe(1);
+		await user.selectOptions(audioCodec, "AAC");
+		expect(audioCodec).not.toHaveAccessibleDescription();
+		expect(warned()).toBe(0);
+	});
+
+	it("says in Format that an input sequence without audio writes the file without it, and that the sources are the sequence's", async () => {
+		const user = userEvent.setup();
+		await restore(
+			{
+				...ready,
+				sources: {
+					dolbyStreams: [
+						{
+							kind: "ATMOS",
+							key: "atmos",
+							inputFile: "main",
+							inputFormat: "ADM",
+						},
+					],
+				},
+				audios: (ready.audios ?? []).map((audio) => ({
+					...audio,
+					extras: { ...audio.extras, source: "atmos" },
+				})),
+				inputTimeline: {
+					schemaVersion: 2,
+					id: "00000000-0000-4000-8000-000000000001",
+					audioEnabled: false,
+					durationMs: 8000,
+					videoClips: [
+						{
+							id: "00000000-0000-4000-8000-000000000002",
+							sourceKey: "main",
+							startMs: 0,
+							inMs: 0,
+							outMs: 8000,
+						},
+					],
+					audioClips: [],
+				},
+			},
+			2,
+		);
+		current("2. Sources");
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		const include = screen.getByRole("checkbox", { name: "Include audio" });
+		expect(include).toBeChecked();
+		const WITHOUT =
+			"The input sequence in the Sources step has no audio, so this file is written without audio. Switch audio on in the sequence and place audio clips, or return to ordinary inputs.";
+		expect(include).toHaveAccessibleDescription(WITHOUT);
+		expect(screen.getByText(WITHOUT)).toHaveAttribute("role", "alert");
+		// The plan reads the sequence, so an AAC track that names an Atmos stream
+		// is not refused, and is not said to be.
+		const UNUSED =
+			"Not used while the input sequence is on: every file is made from the sequence in the Sources step.";
+		const source = screen.getByRole("combobox", { name: "Audio source" });
+		expect(source).toHaveValue("atmos");
+		expect(source).toHaveAccessibleDescription(UNUSED);
+		expect(
+			screen.getByRole("combobox", { name: "Video source" }),
+		).toHaveAccessibleDescription(UNUSED);
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(screen.queryByText(/\[PLAN_STREAM_SOURCE_MISMATCH\]/)).toBeNull();
+		expect(planned()).toEqual([["MP4", "clip.mp4", "v1080:H264"]]);
+		await user.click(include);
+		expect(screen.queryByText(WITHOUT)).toBeNull();
+	});
+
+	it("takes HEVCv2's own settings off a file when another account turns it into H.265", async () => {
+		const user = userEvent.setup();
+		const other = "33333333-3333-4333-8333-333333333334";
+		apiFetch.mockImplementation(async (url: string, init?: RequestInit) =>
+			init?.method === "POST"
+				? { id: jobId }
+				: url === "/api/credentials"
+					? [{ id: credentialId, label: "Storage", provider: "AWS_S3" }]
+					: url === "/api/bitmovin-accounts"
+						? [
+								{ id: accountId, label: "Account", internalHevcV2: true },
+								{ id: other, label: "Other", internalHevcV2: false },
+							]
+						: url.startsWith("/api/infrastructure/") ||
+								url === "/api/vmaf-compute-profiles"
+							? { items: [] }
+							: [],
+		);
+		// The file as the Format step makes it: HEVCv2, with a setting only it has.
+		const v2 = { ...ready, ...editFile(ready, 0, { codec: "H265V2" }) };
+		await restore(
+			{
+				...v2,
+				...editFile(v2, 0, {
+					h265: { motionCompensatedTemporalFiltering: "ON" } as never,
+				}),
+			},
+			0,
+		);
+		const account = screen.getByRole("combobox", { name: "Bitmovin account" });
+		await waitFor(() =>
+			expect(within(account).getAllByRole("option").length).toBeGreaterThan(1),
+		);
+		expect(steps()).toHaveLength(6);
+		await user.selectOptions(account, other);
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		expect(screen.getByRole("combobox", { name: "Codec" })).toHaveValue("H265");
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(planJson()).not.toContain("motionCompensatedTemporalFiltering");
+		expect(
+			screen.queryByText(/\[PLAN_INTERNAL_HEVC_V2_UNSUPPORTED\]/),
+		).toBeNull();
 	});
 
 	it("opens a draft with an input sequence on Sources, in the short view", async () => {

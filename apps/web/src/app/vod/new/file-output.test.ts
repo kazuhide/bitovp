@@ -2,8 +2,10 @@ import {
 	encodingPlanSchema,
 	INTERNAL_HEVC_V2_BCF_VERSION,
 	MUXING_CODEC_MATRIX,
+	UNVERIFIED_MUXING_CODECS,
 	validatePlan,
 } from "@bitovp/core";
+import { normalizeVodInputTimelineDocument } from "@bitovp/core/vod-input-timeline";
 import { describe, expect, it } from "vitest";
 import {
 	draftKey,
@@ -37,10 +39,12 @@ import {
 	hevcV2NotAlone,
 	isFileOutputState,
 	lacksAtmosSource,
+	misreadDolbyStream,
 	readsAtmosStream,
 	removeFile,
 	renameFileJob,
 	sameStreamFiles,
+	sequenceLeavesOutAudio,
 	setFileAudio,
 	sharedFileNames,
 } from "./file-output";
@@ -454,6 +458,180 @@ describe("the containers the flow offers", () => {
 		expect(readsAtmosStream(withSource, undefined)).toBe(false);
 	});
 
+	const dolbySources: WizardState["sources"] = {
+		dolbyStreams: [
+			{ kind: "ATMOS", key: "atmos", inputFile: "main", inputFormat: "ADM" },
+			{ kind: "VISION", key: "vision", videoInputFile: "main" },
+		],
+	};
+	const sourceRefusals = (state: WizardState) =>
+		errorsOf(state)
+			.filter((issue) => issue.code === "PLAN_STREAM_SOURCE_MISMATCH")
+			.map((issue) => issue.path);
+
+	it.each(
+		FILE_CONTAINERS.flatMap((container) =>
+			container.video.flatMap((codec) =>
+				(["atmos", "vision", ""] as const).map(
+					(source) => [container.kind, codec, source] as const,
+				),
+			),
+		),
+	)('say of the video of %s in %s reading the source "%s" what the plan is refused for', (kind, codec, source) => {
+		const base = { ...started, sources: dolbySources };
+		const moved = apply(base, editFile(base, 0, { kind, codec }));
+		const silent = apply(moved, setFileAudio(moved, 0, false));
+		const state = apply(silent, editFile(silent, 0, { source }));
+		const said = misreadDolbyStream(state, state.videos[0], "video");
+		expect([said !== undefined, sourceRefusals(state)]).toEqual([
+			said !== undefined,
+			said === undefined ? [] : ["renditions[0].ingestKey"],
+		]);
+		expect(said).toBe(
+			source === "atmos"
+				? "ATMOS"
+				: source === "vision" && codec === "VP9"
+					? "VISION"
+					: undefined,
+		);
+	});
+
+	it.each(
+		FILE_CONTAINERS.flatMap((container) =>
+			container.audio.flatMap((codec) =>
+				(["atmos", "vision", ""] as const).map(
+					(source) => [container.kind, codec, source] as const,
+				),
+			),
+		),
+	)('say of the audio of %s in %s reading the source "%s" what the plan is refused for', (kind, codec, source) => {
+		const base = { ...started, sources: dolbySources };
+		const moved = apply(base, editFile(base, 0, { kind }));
+		const recoded = apply(moved, editFileAudio(moved, 0, { codec }));
+		const state = apply(recoded, editFileAudio(recoded, 0, { source }));
+		const track = fileAudios(state)[0];
+		const onSource = misreadDolbyStream(state, track, "audio");
+		// A Dolby Atmos track that reads anything but an Atmos stream is spoken of
+		// on its codec.
+		const said = onSource !== undefined || lacksAtmosSource(state, track);
+		expect([said, sourceRefusals(state).length > 0]).toEqual([said, said]);
+		expect(onSource).toBe(
+			codec === "DOLBY_ATMOS" || source === ""
+				? undefined
+				: source === "atmos"
+					? "ATMOS"
+					: "VISION",
+		);
+	});
+
+	it.each(
+		FILE_CONTAINERS.flatMap((container) =>
+			container.audio.map((codec) => [container.kind, codec] as const),
+		),
+	)("say of %s with %s audio beside Dolby Vision video what the plan's warning says", (kind, codec) => {
+		const container = FILE_CONTAINERS.find((item) => item.kind === kind);
+		const video = container?.video.includes("H265") ? "H265" : undefined;
+		const moved = apply(started, editFile(started, 0, { kind, codec: video }));
+		const recoded = apply(moved, editFileAudio(moved, 0, { codec }));
+		const warned = (state: WizardState) =>
+			validatePlan(planOf(state)).some(
+				(issue) => issue.code === "PLAN_MUXING_DOLBY_VISION_AUDIO",
+			);
+		const said = (state: WizardState) =>
+			fileCaveats(
+				state.videos[0] as WizardState["videos"][number],
+				fileAudios(state)[0],
+			).includes("dolbyVisionAudio");
+		expect([said(recoded), warned(recoded)]).toEqual([false, false]);
+		if (video === undefined) return;
+		const vision = apply(
+			recoded,
+			editFile(recoded, 0, {
+				h265: { dynamicRangeFormat: "DOLBY_VISION_PROFILE_8_1" },
+			}),
+		);
+		expect([said(vision), warned(vision)]).toEqual([
+			said(vision),
+			said(vision),
+		]);
+		expect(said(vision)).toBe(
+			!["AAC", "DOLBY_ATMOS"].includes(codec) &&
+				!(UNVERIFIED_MUXING_CODECS[kind] ?? []).includes(codec),
+		);
+		// Without audio there is nothing beside the video.
+		const silent = apply(vision, setFileAudio(vision, 0, false));
+		expect([said(silent), warned(silent)]).toEqual([false, false]);
+	});
+
+	it("say of audio the container does not hold, beside Dolby Vision video, that it is not held and no more, as the plan does", () => {
+		const moved = apply(
+			started,
+			editFile(started, 0, { kind: "PROGRESSIVE_MOV", codec: "H265" }),
+		);
+		const vision = apply(
+			moved,
+			editFile(moved, 0, {
+				h265: { dynamicRangeFormat: "DOLBY_VISION_PROFILE_8_1" },
+			}),
+		);
+		// No edit of the format screen leaves the pair: a draft or the Ladder step does.
+		const state: WizardState = {
+			...vision,
+			audios: (vision.audios ?? []).map((audio) => ({
+				...audio,
+				codec: "DDPLUS" as const,
+			})),
+		};
+		expect(
+			fileCaveats(
+				state.videos[0] as WizardState["videos"][number],
+				fileAudios(state)[0],
+			).filter((caveat) => caveat !== "unmeasured"),
+		).toEqual(["unverifiedDolbyVision", "audioNotHeld"]);
+		expect(
+			validatePlan(planOf(state))
+				.filter((issue) => issue.path?.includes("additionalStreamKeys"))
+				.map((issue) => issue.code),
+		).toEqual(["PLAN_MUXING_CODEC_MISMATCH"]);
+	});
+
+	it.each(
+		FILE_CONTAINERS.filter((container) => container.video.includes("AV1")).map(
+			(container) => container.kind,
+		),
+	)("say of AV1 with Dolby Vision in %s that no file of this flow holds it, where the plan is refused", (kind) => {
+		const moved = apply(started, editFile(started, 0, { kind, codec: "AV1" }));
+		const silent = apply(moved, setFileAudio(moved, 0, false));
+		const check = (state: WizardState) => [
+			fileCaveats(
+				state.videos[0] as WizardState["videos"][number],
+				undefined,
+			).includes("av1DolbyVision"),
+			errorsOf(state).map((issue) => [issue.code, issue.path]),
+		];
+		expect(check(silent)).toEqual([false, []]);
+		for (const dynamicRangeFormat of ["HDR10", "SDR"] as const) {
+			const ranged = apply(
+				silent,
+				editFile(silent, 0, { av1: { dynamicRangeFormat } }),
+			);
+			expect(check(ranged), dynamicRangeFormat).toEqual([false, []]);
+		}
+		for (const dynamicRangeFormat of [
+			"DOLBY_VISION_PROFILE_10_0",
+			"DOLBY_VISION_PROFILE_10_1",
+		] as const) {
+			const vision = apply(
+				silent,
+				editFile(silent, 0, { av1: { dynamicRangeFormat } }),
+			);
+			expect(check(vision), dynamicRangeFormat).toEqual([
+				true,
+				[["PLAN_MUXING_CODEC_MISMATCH", "muxings[0].streamKey"]],
+			]);
+		}
+	});
+
 	it.each(
 		FILE_CONTAINERS.flatMap((container) =>
 			VIDEO_CODECS.map((codec) => [container.kind, codec] as const),
@@ -631,12 +809,39 @@ describe("files in more than one video codec", () => {
 		expect(webm.internal).toBeUndefined();
 		// Left in, the plan could not be built at all.
 		expect(() => buildPlan(webm)).not.toThrow();
-		// To H.265 it goes as a ladder rendition does, with all of them.
+		// To H.265 as well. The plan is refused for them in any codec but HEVCv2,
+		// and the H.265 options have no field to take them out with.
 		const hevc = apply(tuned, editFile(tuned, 0, { codec: "H265" }));
-		expect(hevc.videos[0]?.h265).toEqual({
-			crf: 24,
-			motionCompensatedTemporalFiltering: "ON",
-		});
+		expect(hevc.videos[0]?.h265).toEqual({ crf: 24 });
+		const refusals = (state: WizardState) =>
+			errorsOf(state)
+				.map((issue) => issue.code)
+				.filter((code) => code === "PLAN_INTERNAL_HEVC_V2_UNSUPPORTED");
+		expect(refusals(hevc)).toEqual([]);
+		// The Ladder step keeps them on such a row. They go on the way back: left
+		// in, the job is refused and this view has nothing that says why.
+		const [first, ...rest] = hevc.videos as [
+			WizardState["videos"][number],
+			...WizardState["videos"],
+		];
+		const arrived: WizardState = {
+			...hevc,
+			videos: [
+				{
+					...first,
+					h265: { crf: 24, motionCompensatedTemporalFiltering: "ON" } as never,
+				},
+				...rest,
+			],
+		};
+		expect(refusals(arrived)).toEqual(["PLAN_INTERNAL_HEVC_V2_UNSUPPORTED"]);
+		expect(fileOutputBlockers(arrived)).toEqual([]);
+		const collapsed = collapseToFileOutput(arrived);
+		expect(collapsed.videos[0]?.h265).toEqual({ crf: 24 });
+		expect(refusals(collapsed)).toEqual([]);
+		// A file in HEVCv2 keeps its own.
+		const kept = collapseToFileOutput(tuned);
+		expect(kept.videos[0]?.h265).toEqual(tuned.videos[0]?.h265);
 	});
 
 	it("are said to lack the height or the bitrate HEVCv2 needs, where the plan is refused for it", () => {
@@ -1580,6 +1785,50 @@ describe("an edited input sequence, which the Sources step has in both views", (
 			})),
 		},
 	};
+
+	it("says that its files have no audio exactly when the plan is built without any", () => {
+		const audioOf = (state: WizardState) =>
+			planOf(state)
+				.renditions.filter((rendition) => rendition.codec === "AAC")
+				.map((rendition) => rendition.key);
+		const carried = (state: WizardState) =>
+			planOf(state).muxings.map((muxing) =>
+				"additionalStreamKeys" in muxing ? muxing.additionalStreamKeys : null,
+			);
+		expect([
+			sequenceLeavesOutAudio(edited),
+			audioOf(edited),
+			carried(edited),
+		]).toEqual([false, ["a192"], [["a192"]]]);
+		const sequence = normalizeVodInputTimelineDocument(
+			edited.inputTimeline as NonNullable<WizardState["inputTimeline"]>,
+		);
+		const without: [string, WizardState["inputTimeline"]][] = [
+			["switched off", { ...sequence, audioEnabled: false }],
+			["no clip on the audio track", { ...sequence, audioClips: [] }],
+		];
+		for (const [label, inputTimeline] of without) {
+			const muted: WizardState = { ...edited, inputTimeline };
+			expect(
+				[sequenceLeavesOutAudio(muted), audioOf(muted), carried(muted)],
+				label,
+			).toEqual([true, [], [null]]);
+			// The file still says it has audio: that is what the message is for.
+			expect(fileAudios(muted)[0]?.codec ?? "AAC").toBe("AAC");
+		}
+		// No sequence, and one with nothing placed, which the Sources step speaks of.
+		expect(sequenceLeavesOutAudio(started)).toBe(false);
+		expect(
+			sequenceLeavesOutAudio({
+				inputTimeline: {
+					...sequence,
+					audioEnabled: false,
+					videoClips: [],
+					audioClips: [],
+				},
+			}),
+		).toBe(false);
+	});
 
 	it("is placed as shown, so it holds no view", () => {
 		expect(FILE_OUTPUT_FIELD_HOME.inputTimeline).toBe("shown");

@@ -894,7 +894,16 @@ export function MuxingsSection({
 									? ["FMP4", "MP4"]
 									: audio.codec === undefined || audio.codec === "AAC"
 										? AUDIO_KINDS
-										: AUDIO_KINDS.filter((kind) => kind !== "CMAF")
+										: AUDIO_KINDS.filter(
+												(kind) =>
+													kind !== "CMAF" &&
+													// A whole file is offered where its row of the
+													// table holds the codec, as to a video row.
+													(!isFileOnlyMuxingKind(kind) ||
+														MUXING_CODEC_MATRIX[kind].includes(
+															audio.codec ?? "AAC",
+														)),
+											)
 						}
 						derivedPath={audioMuxingRelPath(audio, key)}
 						drm={drm}

@@ -5436,7 +5436,7 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 			"vulkan",
 			probeOf(1920, 1080, "yuvj420p"),
 			probeOf(960, 540, "yuv420p"),
-			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the reference's pixel format is yuvj420p and the encode's is yuv420p, and FFmpeg converts such a reference to the encode's format, which GPU scoring compares for a yuvj420p encode only. Use Local CPU for this pair.",
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the reference is full range and the encode is limited range, and FFmpeg converts one of the two before libvmaf compares them. Use Local CPU for this pair.",
 		],
 		[
 			"cuda",

@@ -61,6 +61,16 @@ const MEASURED = [
 	[["yuv420p10le", "pc"], ["yuv420p10le", "pc"], 10, 1, 0.0],
 	[["yuv420p10le", "pc"], ["yuvj420p", "pc"], 10, 1, 0.0],
 	[["yuv420p10le", "pc"], ["yuvj422p", "pc"], 10, 1, 0.0],
+	// 8-bit full range under the name `yuv420p`, as ffprobe gives it for a
+	// full-range AV1 or FFV1 file (H.264 becomes `yuvj420p`).
+	[["yuv420p", "pc"], ["yuv420p", "pc"], 8, 2, 0.0],
+	[["yuv420p", "pc"], ["yuvj420p", "pc"], 8, 1, 0.0],
+	[["yuvj420p", "pc"], ["yuv420p", "pc"], 8, 1, 0.0],
+	[["yuv420p", "pc"], ["yuvj422p", "pc"], 8, 1, 0.0],
+	[["yuv420p", "pc"], ["yuv420p10le", "pc"], 8, 1, 0.0],
+	[["yuv420p10le", "pc"], ["yuv420p", "pc"], 10, 2, 0.0],
+	[["yuv420p", "pc"], ["yuv420p"], 8, 1, 11.673198],
+	[["yuv420p"], ["yuv420p", "pc"], 8, 1, 2.149615],
 	// The same pixel data with other colour matrix tags.
 	[["yuv420p", "tv", "bt709"], ["yuv420p", "tv", "bt709"], 8, 1, 0.0],
 	[["yuv420p", "tv", "smpte170m"], ["yuv420p", "tv", "smpte170m"], 8, 1, 0.0],
@@ -88,7 +98,7 @@ describe("what the GPU scorer compares to give the score of libvmaf through FFmp
 			}
 		}
 		// The numbers that the module's comment names.
-		expect([equal, different]).toEqual([81, 20]);
+		expect([equal, different]).toEqual([89, 22]);
 	});
 
 	it("compares at the reference's bit depth", () => {
@@ -147,12 +157,24 @@ describe("what the GPU scorer compares to give the score of libvmaf through FFmp
 		expect(
 			vmafNativeComparison(video("yuvj420p", "pc"), video("yuvj422p", "pc")),
 		).toEqual({
-			refusal: `${start}the reference's pixel format is yuvj420p and the encode's is yuvj422p, and FFmpeg converts such a reference to the encode's format, which GPU scoring compares for a yuvj420p encode only${end}`,
+			refusal: `${start}the reference's pixel format is yuvj420p and the encode's is yuvj422p, and FFmpeg converts such a reference to the encode's format, which GPU scoring compares for an 8-bit 4:2:0 encode only${end}`,
 		});
 		expect(
 			vmafNativeComparison(video("yuvj420p", "pc"), video(undefined)),
 		).toEqual({
-			refusal: `${start}the reference's pixel format is yuvj420p and the encode's is not known, and FFmpeg converts such a reference to the encode's format, which GPU scoring compares for a yuvj420p encode only${end}`,
+			refusal: `${start}the reference's pixel format is yuvj420p and the encode's is not known, and FFmpeg converts such a reference to the encode's format, which GPU scoring compares for an 8-bit 4:2:0 encode only${end}`,
+		});
+		// The encode's format is then the scorer's 8-bit 4:2:0 picture under
+		// either of ffprobe's names, and the range decides.
+		for (const encode of ["yuvj420p", "yuv420p"])
+			expect(
+				vmafNativeComparison(video("yuvj420p", "pc"), video(encode, "pc")),
+				encode,
+			).toEqual({ bitDepth: 8 });
+		expect(
+			vmafNativeComparison(video("yuvj420p", "pc"), video("yuv420p")),
+		).toEqual({
+			refusal: `${start}the reference is full range and the encode is limited range, and FFmpeg converts one of the two before libvmaf compares them${end}`,
 		});
 	});
 

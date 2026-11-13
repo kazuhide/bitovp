@@ -2926,12 +2926,12 @@ the changed scorer on a GPU.
 
 ### GPU scoring and libvmaf through FFmpeg
 
-Until 2026-11-13 the GPU scorer and the worker's command for libvmaf, the
-ordinary method, gave different scores for one pair. With 8-bit 4:2:0 files the
-whole difference was two settings, and both act through CAMBI: the scorer
-compared 10-bit pictures whatever the reference was, and it declared the size
-and the bit depth of the encode before scaling to CAMBI (`enc_width`,
-`enc_height`, `enc_bitdepth`). An encode that was scaled up scored 0.96 to 1.50
+The GPU scorer and the worker's command for libvmaf, the ordinary method, used
+to give different scores for one pair. With 8-bit 4:2:0 files the whole
+difference was two settings, and both act through CAMBI: the scorer compared
+10-bit pictures whatever the reference was, and it declared the size and the
+bit depth of the encode before scaling to CAMBI (`enc_width`, `enc_height`,
+`enc_bitdepth`). An encode that was scaled up scored 0.96 to 1.50
 higher with the scorer in 15 comparisons of 2026-11-12, and with both settings
 applied by hand to the ordinary method, libvmaf gave the scorer's mean to
 within 0.000001 in ten. The pictures were not the cause: the scorer's own
@@ -2961,38 +2961,44 @@ bitovp-vmaf --reference <reference> --distorted <encode> --model <id>=<model> --
 ```
 
 The files were 24 or 48 frames of a moving test pattern over slow gradients, at
-24 frames a second with square pixels. 111 comparisons, with
-`vmaf_v1.0.16_3d0h` (92), `vmaf_v1.0.16_5d0h` (12) and
+24 frames a second with square pixels. 121 comparisons, with
+`vmaf_v1.0.16_3d0h` (102), `vmaf_v1.0.16_5d0h` (12) and
 `vmaf_v1.0.16_3d0h_2160` (7):
 
 | Comparisons | Pairs | Result |
 |---|---|---|
-| 81 | the worker's rule lets them through | the two means are equal to the sixth decimal |
-| 20 | the rule refuses them | the means differ by 0.00003 to 13.2 |
+| 89 | the worker's rule lets them through | the two means are equal to the sixth decimal |
+| 22 | the rule refuses them | the means differ by 0.00003 to 13.2 |
 | 5 | the rule lets them through; the pictures are 216 or 360 wide | the means differ by up to 0.19 with four threads and are equal with one: see "libvmaf and its thread count" |
 | 5 | pictures too small for the model | neither gives a score |
 
 In every receipt of a scored comparison, CAMBI's options `enc_width`,
 `enc_height` and `enc_bitdepth` are `0`.
 
-The 81 by what ffprobe says of the two files. The references were H.264 files;
-61 were 640x360 with encodes of 128x72 to 640x360, and 20 were pairs of one
-size from 240x160 to 1920x1080, five of them higher than wide. 77 encodes were
-H.264, two AV1 and two FFV1. "Limited" is a file that names the range `tv` or
-none.
+The 89 by what ffprobe says of the two files. The references were H.264 files,
+and FFV1 files in five; 69 were 640x360 with encodes of 128x72 to 640x360, and
+20 were pairs of one size from 240x160 to 1920x1080, five of them higher than
+wide. 80 encodes were H.264, five AV1 and four FFV1. "Limited" is a file that
+names the range `tv` or none. ffprobe names an 8-bit full-range file `yuvj420p`
+when it is H.264, and `yuv420p` with the range `pc` when it is AV1 or FFV1.
 
 | Reference | Encode | Bit depth | Comparisons |
 |---|---|---|---|
 | `yuv420p`, limited | `yuv420p`, limited | 8 | 47 |
 | `yuv420p`, limited | `yuv420p10le`, `yuv422p`, `yuv444p`, `yuv422p10le` or `yuv420p12le`, limited | 8 | 12 |
 | `yuv420p10le`, limited | `yuv420p`, `yuv420p10le`, `yuv422p`, `yuv444p`, `yuv422p10le` or `yuv420p12le`, limited | 10 | 15 |
-| `yuvj420p`, full | `yuvj420p`, full | 8 | 4 |
-| `yuv420p10le`, full | `yuv420p10le`, `yuvj420p` or `yuvj422p`, full | 10 | 3 |
+| `yuvj420p`, full | `yuvj420p` or `yuv420p`, full | 8 | 5 |
+| `yuv420p`, full | `yuv420p`, `yuvj420p`, `yuvj422p` or `yuv420p10le`, full | 8 | 5 |
+| `yuv420p10le`, full | `yuv420p10le`, `yuv420p`, `yuvj420p` or `yuvj422p`, full | 10 | 5 |
 
 Two of the 47 name the same colour matrix on both sides, `bt709` in one and
-`smpte170m` in the other; no other file of the 81 names a matrix.
+`smpte170m` in the other; no other file of the 89 names a matrix. Nine of the
+89 are pairs whose two files name different chroma sample locations, `left` on
+one side and `center`, `topleft` or `top` on the other. The location that a
+file names did not change FFmpeg's score, and the worker's rule does not read
+it.
 
-The 20, each with `vmaf_v1.0.16_3d0h` against a reference of 640x360. The
+The 22, each with `vmaf_v1.0.16_3d0h` against a reference of 640x360. The
 difference is the scorer's mean minus FFmpeg's:
 
 | Reference | Encode | Bit depth | Comparisons | Difference |
@@ -3001,14 +3007,14 @@ difference is the scorer's mean minus FFmpeg's:
 | `yuv422p` (H.264) | `yuv420p` | 8 | 2 | -2.705356, +3.901499 |
 | `yuv444p` (H.264) | `yuv420p` | 8 | 2 | -5.659261, +5.263560 |
 | `yuv420p12le` (FFV1) | `yuv420p` | 10 | 2 | -0.000031, -0.048940 |
-| `yuvj420p`, full | `yuv420p` or `yuv420p10le`, limited | 8 and 10 | 4 | -11.76 to -13.24 |
+| `yuvj420p` or `yuv420p`, full | `yuv420p` or `yuv420p10le`, limited | 8 and 10 | 5 | -11.67 to -13.24 |
 | `yuv420p10le`, full | `yuv420p10le`, limited | 10 | 1 | -3.684738 |
-| `yuv420p` or `yuv420p10le`, limited | `yuvj420p` or `yuv420p10le`, full | 8 and 10 | 2 | +10.453317, +11.641452 |
+| `yuv420p` or `yuv420p10le`, limited | `yuvj420p`, `yuv420p` or `yuv420p10le`, full | 8 and 10 | 3 | +2.149615, +10.453317, +11.641452 |
 | `yuvj420p`, full | `yuv420p10le` or `yuvj422p`, full | 8 | 2 | +0.015387, +1.019388 |
 | `yuv420p`, `bt709` | `yuv420p`, no matrix or `smpte170m` | 8 | 2 | +1.472369 |
 | `yuv420p`, no matrix | `yuv420p`, `bt709` | 8 | 1 | +10.108280 |
 
-What libvmaf through FFmpeg does in these 20 and the scorer does not:
+What libvmaf through FFmpeg does in these 22 and the scorer does not:
 
 - It compares in the reference's pixel format when that is one of the twelve
   that the filter takes. The scorer holds 4:2:0 pictures of 8 or 10 bits and no
@@ -3016,7 +3022,8 @@ What libvmaf through FFmpeg does in these 20 and the scorer does not:
   scorer's mean for the two ProRes comparisons (57.621154 and 55.596579).
 - It converts a reference in another format, `yuvj420p` for one, to the format
   that the scale filter gives the encode. The scorer's 8-bit 4:2:0 picture is
-  that format for a `yuvj420p` encode and for no other.
+  that format for an 8-bit 4:2:0 encode, `yuvj420p` or `yuv420p`, and for no
+  other.
 - When one file is full range and the other is not, it converts one of the two
   to the other's range before the comparison. The scorer keeps each file's
   samples as they are.
@@ -3031,7 +3038,7 @@ The rule lets through exactly the combinations that were measured equal and
 their like, and nothing that was measured different:
 `packages/core/src/vmaf/native-comparison.ts`, with the combinations above in
 its test. It refuses more than was measured different: every reference that is
-not `yuv420p`, `yuv420p10le` or, with a `yuvj420p` encode, `yuvj420p`; every
+not `yuv420p`, `yuv420p10le` or, with an 8-bit 4:2:0 encode, `yuvj420p`; every
 pair with one full-range file; and every pair whose files do not name the same
 colour matrix, by ffprobe's name for it.
 
@@ -3041,10 +3048,14 @@ was built from the source before this change declares the encode in every run,
 so its results are refused (`NATIVE_RECEIPT_COMPARISON_MISMATCH`) and are not
 stored as results of generations 12 and 13.
 
-Not measured: the changed scorer on a GPU, where every run must agree with the
-CPU reference that this test ran; a 10-bit or full-range reference in a codec
-other than H.264; x86-64; HDR files, which the worker does not give to the
-scorer.
+Not run: the changed scorer on a GPU, where every run must agree with the CPU
+reference that this test ran. The change touches no code of the CUDA and Vulkan
+backends. The scorer's own tests of a CUDA build compare 8-bit and 10-bit
+pictures against the CPU reference, with and without a declared encode
+(`cuda_features`, `cuda_parallel_cambi`), and `build.py --cuda --test` passed
+its 35 tests on the host of the GPU check on 2026-11-12, with the source before
+this change. Not measured either: a 10-bit reference in a codec other than
+H.264; x86-64; HDR files, which the worker does not give to the scorer.
 
 ### libvmaf and its thread count
 
@@ -3577,8 +3588,9 @@ scorer and small pictures".
 | 2026-11-12 20:33 to 20:38 | | The first 50 comparisons of "The GPU scorer and small pictures", on the host of the GPU check |
 | 2026-11-12 22:45 | | The other 21 comparisons of that section, with encodes smaller than their reference |
 | 2026-11-12 22:49 to 23:05 | | The results of test H, on the encode's pixel format in the method of test A, were written |
-| 2026-11-13 13:40 to 13:58 | | The results of the 111 comparisons of test I, on the scores of the changed GPU scorer's CPU reference and of libvmaf through FFmpeg, and of its two runs over 77 widths, were written |
+| 2026-11-13 13:40 to 13:58 | | The results of the first 111 comparisons of test I, on the scores of the changed GPU scorer's CPU reference and of libvmaf through FFmpeg, and of its two runs over 77 widths, were written |
 | 2026-11-13 14:23 to 14:28 | | The five comparisons of test I at widths of 16n+8 with one thread, and the features of a 216x160 pair frame by frame |
+| 2026-11-13 14:55 and 15:07 | | The other ten comparisons of test I, with 8-bit full-range files that ffprobe names `yuv420p` |
 
 PR #108 added `docker/vmaf-build-proof.sh`. `Dockerfile` and the directory
 `docker/` are the same at `87e70e9b` and at `42e5d926`. PR #112 changed

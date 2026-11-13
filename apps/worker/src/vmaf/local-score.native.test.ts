@@ -311,6 +311,7 @@ describe("owned native local scoring", () => {
 				{ pix_fmt: "yuvj420p", color_range: "pc" },
 				"8",
 			],
+			[{ pix_fmt: "yuvj420p", color_range: "pc" }, { color_range: "pc" }, "8"],
 			[
 				{ ...ten, color_range: "pc" },
 				{ pix_fmt: "yuvj420p", color_range: "pc" },
@@ -367,8 +368,13 @@ describe("owned native local scoring", () => {
 			],
 			[
 				{ pix_fmt: "yuvj420p", color_range: "pc" },
+				{ pix_fmt: "yuvj422p", color_range: "pc" },
+				`${start}the reference's pixel format is yuvj420p and the encode's is yuvj422p, and FFmpeg converts such a reference to the encode's format, which GPU scoring compares for an 8-bit 4:2:0 encode only. Use Local CPU for this pair.`,
+			],
+			[
+				{ pix_fmt: "yuvj420p", color_range: "pc" },
 				{},
-				`${start}the reference's pixel format is yuvj420p and the encode's is yuv420p, and FFmpeg converts such a reference to the encode's format, which GPU scoring compares for a yuvj420p encode only. Use Local CPU for this pair.`,
+				`${start}the reference is full range and the encode is limited range, and FFmpeg converts one of the two before libvmaf compares them. Use Local CPU for this pair.`,
 			],
 			[
 				{ ...ten, color_range: "pc" },

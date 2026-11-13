@@ -343,7 +343,7 @@ Every GPU run computes a CPU reference, which is libvmaf itself on the
 pictures and with the settings of that run, and a GPU result is taken only when
 it agrees with it. On 2026-11-13 this CPU reference was compared with the
 worker's FFmpeg command of **Local CPU** on the same files: the two mean scores
-were equal to the sixth decimal in 81 comparisons. The references were 8-bit
+were equal to the sixth decimal in 89 comparisons. The references were 8-bit
 and 10-bit 4:2:0 files from 240 × 160 to 1920 × 1080; the encodes were H.264,
 AV1 and FFV1 files of 8, 10 and 12 bits in 4:2:0, 4:2:2 and 4:4:4, of the
 reference's size or scaled up from as little as 128 × 72; and three VMAF v1.0
@@ -372,8 +372,11 @@ What follows:
   difference between the two methods:
   [libvmaf and its thread count](../FFMPEG-BUILD.md#libvmaf-and-its-thread-count).
 
-Not measured: the changed scorer on a GPU, the Vulkan scorer in particular, and
-HDR files, which GPU scoring does not take.
+The comparison above ran the scorer's CPU reference. The scorer with these
+settings has not been run on a GPU for this note. Its CUDA and Vulkan code did
+not change with them, and its own tests hold the CUDA code to the CPU reference
+for 8-bit and 10-bit pictures, with and without a declared encode. The Vulkan
+scorer and HDR files, which GPU scoring does not take, were not measured.
 
 #### GPU results of scoring generations 9 and 10
 
@@ -416,18 +419,18 @@ method, libvmaf gave the GPU score to within 0.000001 in ten comparisons.
 FFmpeg converts some pairs before libvmaf compares them, and the GPU scorer
 makes no such conversion: it turns both files into 4:2:0 pictures of 8 or of 10
 bits and changes nothing else. For these pairs its score would not be that of
-**Local CPU**. In 20 measured comparisons the two differed by 0.00003 to 13.2.
+**Local CPU**. In 22 measured comparisons the two differed by 0.00003 to 13.2.
 A measurement on the GPU is therefore not started for them:
 
 | Pair | What FFmpeg does for **Local CPU** |
 | --- | --- |
 | The reference is 4:2:2 or 4:4:4, or has 12 bits or more | libvmaf compares in the reference's pixel format |
-| The reference is 8-bit full range (`yuvj420p`) and the encode is in another format | FFmpeg converts the reference to the encode's format |
+| The reference is `yuvj420p`, 8-bit full range as ffprobe names it for H.264, and the encode is not 8-bit 4:2:0 | FFmpeg converts the reference to the encode's format |
 | One of the two files is full range and the other is not | FFmpeg converts one of them to the other's range |
 | The two files name different colour matrices, or one of them names none | FFmpeg converts the encode to the reference's matrix, and it takes a file that names none for BT.601 |
 
 So GPU scoring takes a reference in `yuv420p` or `yuv420p10le`, and a
-`yuvj420p` reference with a `yuvj420p` encode. Of the encode's pixel format it
+`yuvj420p` reference with an 8-bit 4:2:0 encode. Of the encode's pixel format it
 asks only that FFmpeg's libvmaf filter knows it: an encode in 4:2:2 or 4:4:4,
 or with 10 or 12 bits, is scored against such a reference.
 

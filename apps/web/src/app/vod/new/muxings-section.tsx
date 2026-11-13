@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { HelpOverlay } from "@/components/ui/help-overlay";
 import { Input, SelectNative } from "@/components/ui/input";
+import type { MessageKey } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 import { reconcileAutomaticAudioPackaging } from "./automatic-audio-packaging";
 import {
@@ -59,7 +60,22 @@ const VIDEO_KINDS: WizardMuxingKind[] = [
 	"PROGRESSIVE_MOV",
 	"PROGRESSIVE_WEBM",
 ];
-const AUDIO_KINDS: WizardMuxingKind[] = ["FMP4", "CMAF", "MP4", "TS"];
+// An audio rendition can be a `.ts` file of its own; the `.mov` and `.webm`
+// files are offered to video rows, which carry their audio.
+const AUDIO_KINDS: WizardMuxingKind[] = [
+	"FMP4",
+	"CMAF",
+	"MP4",
+	"TS",
+	"PROGRESSIVE_TS",
+];
+
+/** The whole-file kinds are named for what they write; the others by their kind. */
+const FILE_KIND_LABEL: Partial<Record<WizardMuxingKind, MessageKey>> = {
+	PROGRESSIVE_TS: "vodTimeline.singleTs",
+	PROGRESSIVE_MOV: "vodTimeline.singleMov",
+	PROGRESSIVE_WEBM: "vodTimeline.singleWebm",
+};
 const SUBTITLE_KINDS: WizardMuxingKind[] = ["CHUNKED_TEXT"];
 
 /**
@@ -409,7 +425,7 @@ function MuxingEditor({
 					>
 						{kinds.map((k) => (
 							<option key={k} value={k}>
-								{k}
+								{FILE_KIND_LABEL[k] ? t(FILE_KIND_LABEL[k]) : k}
 							</option>
 						))}
 					</SelectNative>

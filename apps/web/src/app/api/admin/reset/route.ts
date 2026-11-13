@@ -35,6 +35,7 @@ import {
 	getSlateNormalizeQueue,
 	getStorageInspectQueue,
 	getVmafQueue,
+	getVodInputPreviewQueue,
 } from "@/lib/server/queue";
 import { releaseTemporaryStreamKeys } from "@/lib/server/release-stream-keys";
 import {
@@ -70,6 +71,7 @@ const RESET_DELETE_CATEGORY_BY_MODEL = {
 	auditLog: "auditHistory",
 	accessEvent: "auditHistory",
 	storageInspection: "storageChecks",
+	vodInputPreviewTask: "storageChecks",
 	watchedObject: "watchFolderHistory",
 	alertEvent: "alertHistory",
 	liveHeartbeat: "liveChannels",
@@ -428,6 +430,10 @@ export async function POST(req: Request) {
 			feederManager: { get: getFeederQueue, categories: ["pseudoLiveFeeds"] },
 			storageInspect: {
 				get: getStorageInspectQueue,
+				categories: ["storageChecks"],
+			},
+			vodInputPreview: {
+				get: getVodInputPreviewQueue,
 				categories: ["storageChecks"],
 			},
 			notify: {

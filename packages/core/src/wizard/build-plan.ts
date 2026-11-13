@@ -25,6 +25,7 @@ import {
 	srtCharacterEncodingSchema,
 } from "../plan/schema";
 import type { VmafExecution } from "../vmaf/cloud";
+import { applyVodInputTimeline } from "./input-timeline";
 
 /**
  * Pure mapping from wizard state to an EncodingPlan (input shape — zod
@@ -95,6 +96,10 @@ export type WizardInputFile = {
 	region?: string;
 	/** Bitmovin Input resource name (on the deduped input). */
 	name?: string;
+	/** An output-filter image is not an audio/video timeline source. */
+	purpose?: "FILTER_IMAGE";
+	/** Optional bin/timeline label; never a provider input resource name. */
+	displayName?: string;
 };
 
 /** Extra ingest track beyond the implicit video/audio pair. */
@@ -513,7 +518,10 @@ export type WizardMuxing = {
 	fragmentDuration?: number;
 	manifestType?: "HLS_BYTE_RANGES" | "SMOOTH" | "DASH_ON_DEMAND";
 	dolbyVisionTrackSampleEntryName?: "DVHE" | "DVH1";
-	/** PROGRESSIVE_TS only: MPEG-TS timestamp offset in whole seconds. */
+	/**
+	 * PROGRESSIVE_TS only: MPEG-TS timestamp offset in whole seconds. Absent
+	 * preserves the provider default.
+	 */
 	startOffset?: number;
 	/**
 	 * VIDEO CONTAINERS — the audio renditions that ride INSIDE this one.
@@ -953,6 +961,8 @@ export type WizardKantar = {
 };
 
 export type WizardState = {
+	/** Manual, CPU-previewed input sequence. Absent preserves the ordinary wizard graph. */
+	inputTimeline?: import("../vod-input-timeline/contracts").VodInputTimelineDocument;
 	/** Internal account-gated profile; never inferred from the selected account. */
 	internal?: EncodingPlanInput["internal"];
 	name: string;
@@ -1520,6 +1530,7 @@ export function wizardUsesCodecEncodingMode(
 	);
 }
 export function buildPlan(state: WizardState): EncodingPlanInput {
+	if (state.inputTimeline) return buildPlan(applyVodInputTimeline(state));
 	if (hasInvalidHevcV2Ladder(state)) throw new WizardCodecError();
 	const hevcV2 = state.videos.some((video) => video.codec === "H265V2");
 	const internal = hevcV2 ? state.internal : undefined;

@@ -1554,6 +1554,49 @@ describe("every field of a step the simple view hides", () => {
 	});
 });
 
+describe("an edited input sequence, which the Sources step has in both views", () => {
+	const credentialId = "00000000-0000-4000-8000-000000000003";
+	const first = FILE_OUTPUT_DEFAULT_STATE.inputFiles[0];
+	if (!first) throw new Error("the flow starts with a source file");
+	const source = { ...first, credentialId, bucket: "input", path: "a.mov" };
+	const edited: WizardState = {
+		...FILE_OUTPUT_DEFAULT_STATE,
+		name: "Edited",
+		inputFiles: [source, { ...source, key: "b", path: "b.mov" }],
+		output: {
+			...FILE_OUTPUT_DEFAULT_STATE.output,
+			credentialId,
+			bucket: "out",
+		},
+		inputTimeline: {
+			schemaVersion: 1,
+			id: "00000000-0000-4000-8000-000000000001",
+			audioEnabled: true,
+			clips: [source.key, "b", source.key].map((sourceKey, index) => ({
+				id: `00000000-0000-4000-8000-00000000000${index + 2}`,
+				sourceKey,
+				inMs: index * 1000,
+				outMs: index * 1000 + 2000,
+			})),
+		},
+	};
+
+	it("is placed as shown, so it holds no view", () => {
+		expect(FILE_OUTPUT_FIELD_HOME.inputTimeline).toBe("shown");
+		expect(fileOutputBlockers(edited)).toEqual([]);
+	});
+
+	it("stays on the way back to the simple view, and the files are cut from it", () => {
+		const collapsed = collapseToFileOutput(edited);
+		expect(collapsed.inputTimeline).toEqual(edited.inputTimeline);
+		const plan = encodingPlanSchema.parse(buildPlan(collapsed));
+		expect(plan).toEqual(encodingPlanSchema.parse(buildPlan(edited)));
+		expect(plan.concatenationStreams).toHaveLength(2);
+		expect(plan.muxings.map((muxing) => muxing.kind)).toEqual(["MP4"]);
+		expect(validatePlan(plan)).toEqual([]);
+	});
+});
+
 describe("the Encoding step, which the simple view shows", () => {
 	const credentialId = "00000000-0000-4000-8000-000000000003";
 	// For each field the step edits, a job that uses it.

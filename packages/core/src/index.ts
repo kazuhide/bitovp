@@ -1112,6 +1112,7 @@ export {
 	slateNormalizeJobSchema,
 	storageInspectJobSchema,
 	vmafJobSchema,
+	vodInputPreviewJobSchema,
 } from "./queues";
 export {
 	ipAllowedByPolicy,

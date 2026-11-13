@@ -29,6 +29,7 @@ const commands = new Set([
 	"demo",
 	"asr",
 	"dialogue",
+	"timeline",
 	"status",
 	"logs",
 	"stop",
@@ -62,7 +63,7 @@ export function parseArguments(args) {
 	const [command, ...options] = args;
 	if (!commands.has(command))
 		throw new Error(
-			`Usage: node scripts/editing-preview.mjs up|build|seed|demo|dialogue|asr|status|logs|stop|down|url [--port 3180] [--local-llm] [asr --model ${Object.keys(ASR_MODELS).join("|")}]`,
+			`Usage: node scripts/editing-preview.mjs up|build|seed|demo|dialogue|timeline|asr|status|logs|stop|down|url [--port 3180] [--local-llm] [asr --model ${Object.keys(ASR_MODELS).join("|")}]`,
 		);
 	let port, localLlm, model;
 	for (let index = 0; index < options.length; index++) {
@@ -605,6 +606,20 @@ export async function main(args = process.argv.slice(2), options = {}) {
 		log(
 			`Project: ${config.project}. Stop/down preserve database and generated media.`,
 		);
+	} else if (command === "timeline") {
+		await run([
+			"run",
+			"--rm",
+			"--no-deps",
+			"seed",
+			"pnpm",
+			"--filter",
+			"@bitovp/worker",
+			"exec",
+			"tsx",
+			"scripts/seed-vod-timeline-preview.ts",
+		]);
+		log(`VOD timeline fixtures ready: http://127.0.0.1:${config.port}/vod/new`);
 	} else if (command === "dialogue") {
 		await (options.verify ?? verifyHostHealth)(config.port);
 		const path = await (options.prepareDialogue ?? prepareDialogue)(config);

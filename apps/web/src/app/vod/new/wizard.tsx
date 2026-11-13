@@ -7,10 +7,16 @@ import {
 	type DeliveryConstraint,
 	INTERNAL_HEVC_V2_BCF_VERSION,
 } from "@bitovp/core";
+import {
+	MAX_VOD_TIMELINE_SOURCES,
+	type VodInputTimelineSourceFacts,
+	validateVodInputTimeline,
+} from "@bitovp/core/vod-input-timeline";
+import { applyVodInputFavorite } from "@bitovp/core/wizard";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BitmovinAccountDto } from "@/app/settings/bitmovin/types";
 import { StoragePicker } from "@/components/storage-picker";
 import { Button } from "@/components/ui/button";
@@ -55,6 +61,8 @@ import {
 } from "./file-output";
 import { FileOutputSection } from "./file-output-section";
 import { VodFlowSwitch } from "./flow-switch";
+import { VodInputTimelineEditor } from "./input-timeline/input-timeline-editor";
+import { importPreparedImageFile } from "./input-timeline/prepared-image-placement";
 import { MuxingsSection } from "./muxings-section";
 import { PlaceholderRefsList } from "./placeholder-refs-list";
 import {
@@ -152,7 +160,12 @@ const ENCODER_VERSION_OPTIONS = ["STABLE", "BETA"] as const;
  * delivery mirror (by index — 's rows had no picker at all until
  * the owner asked for one).
  */
-type PickerTarget = "output" | { file: number } | { mirror: number } | null;
+type PickerTarget =
+	| "output"
+	| { file: number }
+	| { mirror: number }
+	| { timelineAdd: true }
+	| null;
 
 export function VodWizard({
 	copiedJob,
@@ -189,6 +202,38 @@ export function VodWizard({
 	const fresh = fileFlow ? FILE_OUTPUT_DEFAULT_STATE : DEFAULT_WIZARD_STATE;
 	const [step, setStep] = useState(0);
 	const [state, setState] = useState<WizardState>(fresh);
+	const timelineSourcesSignature = JSON.stringify(
+		state.inputFiles
+			.filter((file) => file.purpose !== "FILTER_IMAGE")
+			.map(({ key, credentialId, bucket, path, kind }) => ({
+				key,
+				credentialId,
+				bucket,
+				path,
+				kind,
+			})),
+	);
+	const [timelineReadiness, setTimelineReadiness] = useState<{
+		ready: boolean;
+		facts: VodInputTimelineSourceFacts[];
+		sourceSignature: string;
+	}>({ ready: false, facts: [], sourceSignature: "" });
+	const onTimelineReadiness = useCallback(
+		(status: { ready: boolean; facts: VodInputTimelineSourceFacts[] }) =>
+			setTimelineReadiness({
+				...status,
+				sourceSignature: timelineSourcesSignature,
+			}),
+		[timelineSourcesSignature],
+	);
+	const timelineBlocked = Boolean(
+		state.inputTimeline &&
+			(!timelineReadiness.ready ||
+				timelineReadiness.sourceSignature !== timelineSourcesSignature ||
+				validateVodInputTimeline(state.inputTimeline, timelineReadiness.facts, {
+					requireVideo: true,
+				}).length > 0),
+	);
 	const draftBase = useRef(fresh);
 	// The file flow opens on its short view; every step stays one click away.
 	const [expanded, setExpanded] = useState(false);
@@ -273,13 +318,16 @@ export function VodWizard({
 	// spec may carry up to 200 constraint rows.
 	const driftDeviations = useMemo(
 		() =>
-			driftSpec && (imported || !hasInvalidHevcV2Ladder(state))
+			driftSpec &&
+			(imported ||
+				(!hasInvalidHevcV2Ladder(state) &&
+					(!state.inputTimeline || evaluation.ok)))
 				? checkDeliverySpec(
 						imported ? imported.raw : buildPlan(state),
 						driftSpec,
 					)
 				: [],
-		[driftSpec, imported, state],
+		[driftSpec, imported, state, evaluation.ok],
 	);
 	// Preset map-and-gate: a preset's sample-path tokens (<INSERT…>/{YOUR…})
 	// prefill the form's path fields verbatim. They're valid strings, so they
@@ -527,15 +575,16 @@ export function VodWizard({
 						: null,
 		value: state,
 		step,
-		onRestore: (saved) =>
-			openState(
-				mergeWizardDraft(
-					presetKey === undefined ? fresh : draftBase.current,
-					saved.value,
-					"vod",
-				),
-				saved.step,
-			),
+		onRestore: (saved) => {
+			const restored = mergeWizardDraft(
+				presetKey === undefined ? fresh : draftBase.current,
+				saved.value,
+				"vod",
+			);
+			// Source facts and preview tasks are deliberately absent from the draft.
+			// Mount their preparation before resuming a later wizard step.
+			openState(restored, restored.inputTimeline ? 1 : saved.step);
+		},
 	});
 
 	const qcExecution = imported
@@ -570,6 +619,7 @@ export function VodWizard({
 	const submit = useMutation({
 		mutationFn: () => {
 			if (internalBlocked) throw new Error(t("hevcV2.unavailable"));
+			if (timelineBlocked) throw new Error(t("vodTimeline.notReady"));
 			if (qcExecutionValidation.invalid) throw new Error(qcExecutionMessage);
 			return creation.submit<{ id: string }>({
 				plan: imported
@@ -683,7 +733,9 @@ export function VodWizard({
 				? undefined
 				: "mirror" in picker
 					? state.additionalOutputs[picker.mirror]
-					: state.inputFiles[picker.file];
+					: "file" in picker
+						? state.inputFiles[picker.file]
+						: state.inputFiles.at(-1);
 
 	const allCredentials = credentials.data ?? [];
 	const outputSelectable = (provider: string) =>
@@ -755,8 +807,10 @@ export function VodWizard({
 	}
 
 	return (
-		<section className="grid min-h-[70vh] grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-			<div>
+		<section
+			className={`grid min-h-[70vh] grid-cols-1 gap-6 ${state.inputTimeline && step === 1 ? "" : "xl:grid-cols-[minmax(0,1fr)_420px]"}`}
+		>
+			<div className="min-w-0">
 				{copiedJob ? (
 					<p role="status" className="mb-3 text-sm text-zinc-400">
 						{t("wizard.copiedJobHint")}
@@ -1094,6 +1148,7 @@ export function VodWizard({
 							<Button
 								disabled={
 									internalBlocked ||
+									timelineBlocked ||
 									!evaluation.ok ||
 									evaluation.issues.some((i) => i.level === "error") ||
 									pendingPlaceholders > 0 ||
@@ -1110,6 +1165,7 @@ export function VodWizard({
 								disabled={
 									internalBlocked ||
 									qcExecutionValidation.invalid ||
+									timelineBlocked ||
 									!evaluation.ok ||
 									(!state.accountId && !planAccount) ||
 									evaluation.issues.some((i) => i.level === "error") ||
@@ -1369,13 +1425,119 @@ export function VodWizard({
 
 					{step === 1 ? (
 						<>
-							<InputFilesEditor
-								state={state}
-								credentials={allCredentials}
-								onPatch={patch}
-								onBrowse={(index) => setPicker({ file: index })}
-							/>
-							<SourcesSection state={state} onPatch={patch} fileView={simple} />
+							<div className="flex flex-wrap items-center justify-between gap-3">
+								<div className="flex items-center gap-2">
+									<h2 className="font-medium text-zinc-100">
+										{t("vodTimeline.title")}
+									</h2>
+									<HelpOverlay label={t("vodTimeline.title")}>
+										<span className="whitespace-pre-line">
+											{t("vodTimeline.help")}
+										</span>
+									</HelpOverlay>
+								</div>
+								<Button
+									variant="secondary"
+									size="sm"
+									disabled={
+										!state.inputTimeline &&
+										(state.sources?.encodings?.length ?? 0) > 0
+									}
+									onClick={() =>
+										patch(
+											state.inputTimeline
+												? { inputTimeline: undefined }
+												: {
+														inputTimeline: {
+															schemaVersion: 2,
+															id: crypto.randomUUID(),
+															audioEnabled: state.audios.length > 0,
+															durationMs: 0,
+															videoClips: [],
+															audioClips: [],
+														},
+													},
+										)
+									}
+								>
+									{t(
+										state.inputTimeline
+											? "vodTimeline.ordinary"
+											: "vodTimeline.edit",
+									)}
+								</Button>
+							</div>
+							{state.inputTimeline ? (
+								<>
+									<VodInputTimelineEditor
+										document={state.inputTimeline}
+										onChange={(document) => patch({ inputTimeline: document })}
+										sources={state.inputFiles}
+										onAddSource={() => setPicker({ timelineAdd: true })}
+										onUseFavorite={(favorite) => {
+											const imported = applyVodInputFavorite(
+												state,
+												favorite,
+												() => crypto.randomUUID().replaceAll("-", ""),
+											);
+											setState(imported.state);
+										}}
+										canUseLogo={
+											state.videos.length > 0 &&
+											state.inputFiles.some(
+												(file) => file.path && file.purpose !== "FILTER_IMAGE",
+											)
+										}
+										canUseMedia={
+											state.inputFiles.filter(
+												(file) => file.path && file.purpose !== "FILTER_IMAGE",
+											).length < MAX_VOD_TIMELINE_SOURCES
+										}
+										imageOutput={{
+											credentialId: state.output.credentialId,
+											bucket: state.output.bucket,
+											prefix: state.output.basePath,
+										}}
+										imageCredentials={allCredentials}
+										onImportPreparedSource={(file) =>
+											patch({
+												inputFiles: importPreparedImageFile(
+													state.inputFiles,
+													file,
+												),
+											})
+										}
+										onReadinessChange={onTimelineReadiness}
+									/>
+									<details className="rounded-md border border-zinc-800 p-3">
+										<summary className="cursor-pointer text-sm text-zinc-400">
+											{t("vodTimeline.sourceSettings")}
+										</summary>
+										<div className="mt-4">
+											<InputFilesEditor
+												state={state}
+												credentials={allCredentials}
+												onPatch={patch}
+												onBrowse={(index) => setPicker({ file: index })}
+											/>
+										</div>
+									</details>
+								</>
+							) : (
+								<>
+									<InputFilesEditor
+										state={state}
+										credentials={allCredentials}
+										onPatch={patch}
+										onBrowse={(index) => setPicker({ file: index })}
+									/>
+									<SourcesSection
+										state={state}
+										onPatch={patch}
+										fileView={simple}
+									/>
+								</>
+							)}
 						</>
 					) : null}
 
@@ -1775,6 +1937,7 @@ export function VodWizard({
 								<Button
 									disabled={
 										internalBlocked ||
+										timelineBlocked ||
 										!evaluation.ok ||
 										evaluation.issues.some((i) => i.level === "error") ||
 										formPlaceholders > 0 ||
@@ -1791,6 +1954,7 @@ export function VodWizard({
 									disabled={
 										internalBlocked ||
 										qcExecutionValidation.invalid ||
+										timelineBlocked ||
 										!evaluation.ok ||
 										!state.accountId ||
 										evaluation.issues.some((i) => i.level === "error") ||
@@ -1829,7 +1993,9 @@ export function VodWizard({
 				</div>
 			</div>
 
-			<PlanPreview evaluation={evaluation} />
+			{state.inputTimeline && step === 1 ? null : (
+				<PlanPreview evaluation={evaluation} />
+			)}
 
 			<StoragePicker
 				open={picker !== null}
@@ -1898,6 +2064,54 @@ export function VodWizard({
 								bucket,
 							};
 							return { ...prev, additionalOutputs: mirrors };
+						});
+					} else if (picker !== null && "timelineAdd" in picker) {
+						const kind = inputKindForProvider(provider);
+						if (kind === null) return;
+						setState((prev) => {
+							if (
+								prev.inputFiles.some(
+									(file) =>
+										file.credentialId === credentialId &&
+										file.bucket === bucket &&
+										file.path === path,
+								)
+							)
+								return prev;
+							if (
+								prev.inputFiles.filter(
+									(file) => file.path && file.purpose !== "FILTER_IMAGE",
+								).length >= MAX_VOD_TIMELINE_SOURCES
+							)
+								return prev;
+							const empty = prev.inputFiles.findIndex(
+								(file) => !file.path && !file.credentialId,
+							);
+							const shared = prev.inputFiles.find(
+								(file) =>
+									file.kind === kind &&
+									file.credentialId === credentialId &&
+									file.bucket === bucket,
+							);
+							const key = `file_${crypto.randomUUID().replaceAll("-", "")}`;
+							const file = {
+								key,
+								inputKey: shared?.inputKey ?? key,
+								kind,
+								credentialId,
+								bucket,
+								path,
+							};
+							const files = [...prev.inputFiles];
+							const emptyFile = files[empty];
+							if (empty >= 0 && emptyFile)
+								files[empty] = {
+									...file,
+									key: emptyFile.key,
+									inputKey: shared?.inputKey ?? emptyFile.inputKey,
+								};
+							else files.push(file);
+							return { ...prev, inputFiles: files };
 						});
 					} else if (picker !== null) {
 						const index = picker.file;

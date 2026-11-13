@@ -10,7 +10,8 @@ for media_fixture in \
   src/library-editing/normalization-untagged-color.media.ts \
   src/library-editing/render.media.ts \
   src/library-editing/render-movie-clock.media.ts \
-  src/vmaf/reference-preparation.media.ts
+  src/vmaf/reference-preparation.media.ts \
+  src/vod-input-preview/preview.media.ts
 do
   # The media runner matches this line with the totals the reporter prints, and
   # fails unless every fixture ran once and passed its required number of tests.

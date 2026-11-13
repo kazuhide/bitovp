@@ -107,11 +107,13 @@ services:
       FFMPEG_PATH: /usr/local/bin/ffmpeg
       FFPROBE_PATH: /usr/local/bin/ffprobe
       VERIFY_RUN_ROOT: /verify-runs
+      VOD_INPUT_PREVIEW_DIR: /vod-input-previews
       WHISPER_MODEL_PATH: /editing-models/${EDITING_PREVIEW_ASR_MODEL_FILE:-ggml-base.bin}
       WHISPER_VAD_MODEL_PATH: /editing-models/ggml-silero-v6.2.0.bin
       WHISPER_MODEL_SHA256: ${EDITING_PREVIEW_ASR_MODEL_SHA256:-60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe}
     volumes:
       - reports:/verify-runs
+      - input-previews:/vod-input-previews
       - ${EDITING_PREVIEW_DIRECTORY:?required}/models:/editing-models:ro
     depends_on:
       postgres: { condition: service_healthy }
@@ -139,6 +141,8 @@ services:
         format: raw
     environment:
       WHISPER_MODEL_SHA256: ${EDITING_PREVIEW_ASR_MODEL_SHA256:-60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe}
+      VOD_INPUT_PREVIEW_DIR: /vod-input-previews
+    volumes: [input-previews:/vod-input-previews:ro]
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -210,3 +214,4 @@ volumes:
   redisdata:
   objects:
   reports:
+  input-previews:

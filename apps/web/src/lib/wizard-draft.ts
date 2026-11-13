@@ -9,7 +9,9 @@ import {
 	hlsStreamOptionsSchema,
 	liveDashDetailedOptionsSchema,
 	liveHlsDetailedOptionsSchema,
+	watermarkFilterSchema,
 } from "@bitovp/core";
+import { vodInputTimelineDocumentSchema } from "@bitovp/core/vod-input-timeline";
 import { z } from "zod";
 import type { SessionDto } from "./auth/dto";
 
@@ -60,7 +62,7 @@ export function draftFingerprint(value: unknown): string {
 	return (hash >>> 0).toString(16);
 }
 
-// Explicit form shapes only. URLs, raw DRM keys, filter/options JSON and imported plans
+// Explicit form shapes only. URLs, raw DRM keys, arbitrary filter/options JSON and imported plans
 // are deliberately absent; even a nested unknown property cannot enter storage.
 /**
  * Whether a draft keeps this text. An address, a query or fragment, and a login
@@ -175,6 +177,30 @@ const rendition = fields(
 		),
 	},
 );
+const watermarkDraft = fields(
+	"kind key inputKey imagePath unit",
+	"left right top bottom",
+).pipe(watermarkFilterSchema);
+const watermarkDrafts = z
+	.array(z.unknown())
+	.max(100)
+	.transform((items) =>
+		items.flatMap((item) => {
+			const parsed = watermarkDraft.safeParse(item);
+			return parsed.success ? [parsed.data] : [];
+		}),
+	)
+	.optional()
+	.catch(undefined);
+const vodRendition = rendition.extend({
+	extras: group(
+		extras.extend({
+			filters: rows(
+				z.object({ filterKey: text, position: z.number().int().min(0) }),
+			),
+		}),
+	),
+});
 const liveRendition = rendition.extend({
 	input: group(fields("key inputPath", "position")),
 });
@@ -331,6 +357,9 @@ const vod = fields(
 	"audioGuard",
 	{
 		...common,
+		videos: rows(vodRendition),
+		filters: watermarkDrafts,
+		inputTimeline: vodInputTimelineDocumentSchema.optional(),
 		prewarmedEncoderPoolIds: strings,
 		internal: group(
 			fields("", "", "", { hevcV2: group(fields("bcfVersion")) }),
@@ -349,7 +378,14 @@ const vod = fields(
 			}),
 		),
 		inputFiles: rows(
-			fields("key inputKey kind credentialId bucket path region name"),
+			fields(
+				"key inputKey kind credentialId bucket path region name displayName",
+				"",
+				"",
+				{
+					purpose: z.literal("FILTER_IMAGE").optional().catch(undefined),
+				},
+			),
 		),
 		additionalOutputs: rows(location),
 		sources: group(
@@ -711,7 +747,28 @@ export function projectWizardDraft(
 	kind: WizardDraftKind,
 	value: unknown,
 ): DraftValue {
-	return (kind === "vod" ? vod : live).parse(value);
+	const projected = (kind === "vod" ? vod : live).parse(value);
+	if (kind === "vod") {
+		const filters = watermarkDrafts.parse(projected.filters) ?? [];
+		const keys = new Set(filters.map((filter) => filter.key));
+		if (Array.isArray(projected.videos)) {
+			for (const video of projected.videos) {
+				if (!draftRecord(video) || !draftRecord(video.extras)) continue;
+				const attachments = video.extras.filters;
+				if (!Array.isArray(attachments)) continue;
+				video.extras.filters = attachments.filter(
+					(item) =>
+						draftRecord(item) &&
+						typeof item.filterKey === "string" &&
+						keys.has(item.filterKey),
+				);
+			}
+		}
+	}
+	return projected;
+}
+function draftRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Missing unsafe leaves retain the fresh base; saved form values never supply secrets. */

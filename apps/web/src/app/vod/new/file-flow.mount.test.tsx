@@ -1767,6 +1767,55 @@ describe("VodWizard — the file-output flow", () => {
 		).toBeNull();
 	});
 
+	it("has the input sequence editor in Sources, and keeps a job that uses it on the short view", async () => {
+		const user = userEvent.setup();
+		await restore(ready, 1);
+		current("2. Sources");
+		await user.click(screen.getByRole("button", { name: "Edit on timeline" }));
+		expect(
+			screen.getByRole("button", { name: "Use ordinary inputs" }),
+		).toBeInTheDocument();
+		expect(steps()).toHaveLength(6);
+		// The sequence is part of the job in both views, and holds neither.
+		await user.click(screen.getByRole("button", { name: "Show all settings" }));
+		expect(steps()).toHaveLength(8);
+		const back = screen.getByRole("button", { name: "Back to simple view" });
+		expect(back).toBeEnabled();
+		await user.click(back);
+		expect(steps()).toHaveLength(6);
+		expect(
+			screen.getByRole("button", { name: "Use ordinary inputs" }),
+		).toBeInTheDocument();
+		await user.click(
+			screen.getByRole("button", { name: "Use ordinary inputs" }),
+		);
+		expect(
+			screen.getByRole("button", { name: "Edit on timeline" }),
+		).toBeInTheDocument();
+	});
+
+	it("opens a draft with an input sequence on Sources, in the short view", async () => {
+		await restore(
+			{
+				...ready,
+				inputTimeline: {
+					schemaVersion: 2,
+					id: "00000000-0000-4000-8000-000000000001",
+					audioEnabled: true,
+					durationMs: 0,
+					videoClips: [],
+					audioClips: [],
+				},
+			},
+			2,
+		);
+		expect(steps()).toHaveLength(6);
+		current("2. Sources");
+		expect(
+			screen.getByRole("button", { name: "Use ordinary inputs" }),
+		).toBeInTheDocument();
+	});
+
 	it("leaves the encodings a job is split into to the full view, and stays there while one is set", async () => {
 		const user = userEvent.setup();
 		await restore(ready, 1);

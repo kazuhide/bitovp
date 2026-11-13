@@ -1025,6 +1025,9 @@ export const FILE_OUTPUT_FIELD_HOME: Record<
 	cloudRegion: "shown",
 	encoderVersion: "shown",
 	inputFiles: "shown",
+	// The edited input sequence. The Sources step has its editor in this view as in
+	// the full one.
+	inputTimeline: "shown",
 	audioInputFile: "shown",
 	// Shown but for the setting judged apart (`HELD_BACK`).
 	sources: "shown",

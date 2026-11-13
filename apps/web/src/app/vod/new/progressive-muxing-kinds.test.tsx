@@ -116,7 +116,7 @@ function renderHarness(initial: WizardState) {
 }
 
 describe("which rows are offered a whole-file container", () => {
-	it("an H264 row is, after the streaming kinds, spelled as the plan spells them", () => {
+	it("an H264 row is, after the streaming kinds, named for the file each writes", () => {
 		render(stateWith(undefined));
 		expect(offeredKinds()).toEqual([
 			"FMP4",
@@ -127,9 +127,15 @@ describe("which rows are offered a whole-file container", () => {
 			"PROGRESSIVE_TS",
 			"PROGRESSIVE_MOV",
 		]);
-		expect([...kindSelect().options].map((o) => o.textContent)).toEqual(
-			offeredKinds(),
-		);
+		expect([...kindSelect().options].map((o) => o.textContent)).toEqual([
+			"FMP4",
+			"CMAF",
+			"MP4",
+			"TS",
+			"WEBM",
+			"TS (single file)",
+			"MOV (single file)",
+		]);
 	});
 
 	it.each([
@@ -175,15 +181,16 @@ describe("which rows are offered a whole-file container", () => {
 			"WEBM",
 			"PROGRESSIVE_WEBM",
 		]);
+		expect(kindSelect().options[4]?.textContent).toBe("WebM (single file)");
 	});
 
-	it("an audio row is never offered one — audio rides inside the video's file", () => {
+	it("an audio row is offered a .ts file of its own, and neither of the other two", () => {
 		render(stateWith(undefined, oneAudio));
 		const audioKinds = [
 			...(screen.getAllByLabelText("Container")[1] as HTMLSelectElement)
 				.options,
 		].map((o) => o.value);
-		expect(audioKinds).toEqual(["FMP4", "CMAF", "MP4", "TS"]);
+		expect(audioKinds).toEqual(["FMP4", "CMAF", "MP4", "TS", "PROGRESSIVE_TS"]);
 	});
 
 	it("an Opus row is not either: its own container stays the segmented WebM one", () => {

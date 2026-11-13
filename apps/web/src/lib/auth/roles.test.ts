@@ -494,7 +494,9 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 				.allowed,
 		).toBe(true);
 		// Measured from the combined clip and AISA Live route exporters.
-		expect(guarded.length).toBe(188);
-		expect(methods.length).toBe(263);
+		// Manual VOD preparation adds 3 route files / 5 handlers, all OPERATOR.
+		// Fixed sources add two route files / three OPERATOR handlers.
+		expect(guarded.length).toBe(193);
+		expect(methods.length).toBe(271);
 	});
 });

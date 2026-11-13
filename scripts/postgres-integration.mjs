@@ -50,6 +50,8 @@ export const GROUPS = [
 		directory: "apps/web",
 		files: {
 			"src/lib/server/create-request.integration.test.ts": 3,
+			"src/lib/server/vod-input-previews.integration.test.ts": 11,
+			"src/lib/server/vod-input-favorites.integration.test.ts": 6,
 			"src/lib/server/latest-runs.integration.test.ts": 3,
 			"src/lib/server/reset-live-probe.integration.test.ts": 3,
 			"src/lib/server/reset-live-transition-locking.integration.test.ts": 3,

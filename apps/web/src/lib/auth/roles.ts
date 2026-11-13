@@ -264,6 +264,16 @@ export const ROUTE_RULES: readonly RouteRule[] = [
 			"self-service account surface (password rotate) — every signed-in role acts on ITSELF here; the OPERATOR write catch-all below would lock a VIEWER out of their own forced rotate",
 	},
 	{
+		prefix: "/api/vod/input-previews",
+		minRole: "OPERATOR",
+		reason: "manual VOD input preparation and derived source previews",
+	},
+	{
+		prefix: "/api/vod/input-favorites",
+		minRole: "OPERATOR",
+		reason: "organization fixed input references for VOD editing",
+	},
+	{
 		prefix: "/api",
 		methods: ["GET", "HEAD"],
 		minRole: "VIEWER",

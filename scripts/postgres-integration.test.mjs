@@ -121,14 +121,14 @@ test("accepts exactly the required files and all passed assertions", () => {
 	for (const group of GROUPS) {
 		assert.doesNotThrow(() => validateReport(report(group), group, root));
 	}
-	// Editing adds DB/API/derivative/reset suites to the required census.
-	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 32);
+	// VOD fixed sources add six PostgreSQL persistence/concurrency assertions.
+	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 34);
 	assert.equal(
 		GROUPS.flatMap((group) => Object.values(group.files)).reduce(
 			(a, b) => a + b,
 			0,
 		),
-		208,
+		225,
 	);
 });
 

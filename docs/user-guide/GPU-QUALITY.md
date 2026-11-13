@@ -406,12 +406,13 @@ Where a GPU score and a **Local CPU** score of one pair can still differ:
   than a multiple of 16 gave means up to 2.12 apart, and such widths up to 472
   gave smaller differences. On the x86-64 worker of the comparison no width
   did, and its scores for such widths are not those of arm64: a 360 × 640 pair
-  scored 56.27 there, and on arm64 47.99 with one thread and 48.58 with four:
+  scored 56.27 there, and on arm64 47.99 with one thread and 48.58 with four,
+  where it can also differ from run to run:
   [libvmaf and its thread count](../FFMPEG-BUILD.md#libvmaf-and-its-thread-count).
 
-Not measured: a reference or an encode in HEVC or VP9; frame rates other than
-24 and 30; sizes above 1920 × 1080; HDR files, which GPU scoring does not take;
-and other GPUs and drivers than the two above.
+Not measured: a reference or an encode in HEVC or VP9, and a reference in AV1;
+frame rates other than 24 and 30; sizes above 1920 × 1080; HDR files, which GPU
+scoring does not take; and other GPUs and drivers than the two above.
 
 #### GPU results of scoring generations 9 and 10
 

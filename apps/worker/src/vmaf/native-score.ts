@@ -3,11 +3,10 @@ import {
 	localVmafExecutionSchema,
 	sampleAspectRatioFromProbe,
 	type VmafCommandOptions,
-	vmafChromaLayout,
-	vmafNativeSizeLimitFailureMessage,
+	vmafNativeComparison,
 } from "@bitovp/core";
 import type { ProcessRunner } from "../feeder/supervisor";
-import { parseFrameRate, pixelFormatFromProbe } from "./geometry";
+import { parseFrameRate } from "./geometry";
 import {
 	type DecodePolicy,
 	presentationTransformReason,
@@ -82,12 +81,17 @@ function probeInput(text: string) {
 			typeof video.r_frame_rate === "string" ? video.r_frame_rate : undefined,
 		);
 	if (!rate) throw new Error("NATIVE_UNSUPPORTED_FRAME_RATE");
-	return { ...metadata, rate };
+	return { ...metadata, rate, video };
 }
 
 /** Initial owned path deliberately has no implicit CPU fallback or geometry,
  * cadence, crop, rotation, or method substitution. The native runner checks
- * decoded frame counts, timestamp drift, and GPU/CPU numerical parity again. */
+ * decoded frame counts, timestamp drift, and GPU/CPU numerical parity again.
+ *
+ * A score is the one that the ordinary method gives for the same pair, or
+ * there is none: the pair is compared at the reference's bit depth with
+ * nothing declared to CAMBI, and a pair that the scorer cannot compare as
+ * libvmaf through FFmpeg does is refused before the run. */
 export async function runNativeVmafScore(
 	deps: {
 		runner: ProcessRunner;
@@ -174,6 +178,8 @@ export async function runNativeVmafScore(
 		throw new Error("NATIVE_UNSUPPORTED_FRAME_RATE_CONVERSION");
 	if (reference.width !== size.width || reference.height !== size.height)
 		throw new Error("NATIVE_UNSUPPORTED_REFERENCE_GEOMETRY");
+	const comparison = vmafNativeComparison(reference.video, distorted.video);
+	if ("refusal" in comparison) throw new Error(comparison.refusal);
 	if (
 		frameLimit === undefined &&
 		reference.frames !== undefined &&
@@ -231,7 +237,7 @@ export async function runNativeVmafScore(
 			"--device",
 			String(scoring.device),
 			"--bit-depth",
-			"10",
+			String(comparison.bitDepth),
 			"--width",
 			String(size.width),
 			"--height",
@@ -253,19 +259,7 @@ export async function runNativeVmafScore(
 		});
 		signal?.throwIfAborted();
 		if (run.code !== 0)
-			// The scorer refuses pictures and encodes that are too small for the
-			// model in words that name no limit. Where the limit is known, say it
-			// and what to do, and that it does not hold with Local CPU where
-			// libvmaf's limits for the reference's layout refuse nothing; every
-			// other failure keeps the scorer's words.
-			throw new Error(
-				vmafNativeSizeLimitFailureMessage(run.stderr, {
-					model: options.model,
-					...size,
-					declaredEncode: { width: original.width, height: original.height },
-					cpuChroma: vmafChromaLayout(pixelFormatFromProbe(referenceProbe)),
-				}) ?? `NATIVE_SCORING_FAILED (${run.code}): ${run.stderr}`,
-			);
+			throw new Error(`NATIVE_SCORING_FAILED (${run.code}): ${run.stderr}`);
 		const raw: unknown = JSON.parse(await readFile(receiptPath, "utf8"));
 		const verified = verifyNativeReceipt(raw, {
 			model: options.model,
@@ -274,6 +268,7 @@ export async function runNativeVmafScore(
 			device: scoring.device,
 			sourceSha256,
 			...size,
+			bitDepth: comparison.bitDepth,
 			distortedOriginal: original,
 			referenceSha256,
 			distortedSha256,

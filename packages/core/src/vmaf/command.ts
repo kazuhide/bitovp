@@ -68,10 +68,40 @@ export const VMAF_FRAME_INDEX_SCORING_VERSION = 6;
 export const VMAF_EXPERIMENTAL_GPU_SCORING_VERSION = 7;
 /** NVDEC with legacy CPU scoring, retained independently of native GPU scoring. */
 export const VMAF_EXPERIMENTAL_GPU_DECODE_SCORING_VERSION = 8;
-/** Owned CUDA extraction with native 10-bit preprocessing and official prediction. */
-export const VMAF_OWNED_CUDA_SCORING_VERSION = 9;
-/** Owned Vulkan extraction has its own qualification and measurement generation. */
-export const VMAF_OWNED_VULKAN_SCORING_VERSION = 10;
+/**
+ * Retired generations of owned GPU scoring, CUDA and Vulkan: readable
+ * historical results only. They compared 10-bit pictures whatever the
+ * reference was and declared the encode's size and bit depth to CAMBI, which
+ * the ordinary method does not: an encode that was scaled up scored 0.96 to
+ * 1.50 higher than in generation 3 with a VMAF v1 model (15 comparisons on an
+ * NVIDIA GPU, 2026-11-12).
+ */
+export const VMAF_RETIRED_OWNED_CUDA_SCORING_VERSION = 9;
+export const VMAF_RETIRED_OWNED_VULKAN_SCORING_VERSION = 10;
+/**
+ * Owned GPU scoring that gives the numbers of generation 3 (2026-11-13): CUDA
+ * or Vulkan extraction of the features, and libvmaf's own prediction. It
+ * compares at the reference's bit depth and declares nothing to CAMBI, as the
+ * ordinary method does, it refuses every pair that it cannot compare so
+ * (`vmafNativeComparison`), and each run is checked against libvmaf's CPU
+ * features. The two backends keep a generation each, because each has its own
+ * qualification. Number 11 is not free: it is the family of banding jobs
+ * (`BANDING_JOB_SCORING_VERSION`).
+ */
+export const VMAF_OWNED_CUDA_SCORING_VERSION = 12;
+export const VMAF_OWNED_VULKAN_SCORING_VERSION = 13;
+
+/**
+ * The generation with whose numbers those of a stored generation can be
+ * compared: generation 3 for owned GPU scoring of generations 12 and 13, and
+ * the generation itself for every other.
+ */
+export function vmafComparableScoringVersion(version: number): number {
+	return version === VMAF_OWNED_CUDA_SCORING_VERSION ||
+		version === VMAF_OWNED_VULKAN_SCORING_VERSION
+		? VMAF_SCORING_VERSION
+		: version;
+}
 export const VMAF_FRAME_INDEX_CROP_POLICY =
 	"codec-only-ignore-container-aperture-v1";
 

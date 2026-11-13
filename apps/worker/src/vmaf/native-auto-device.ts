@@ -189,7 +189,7 @@ export function nativeAutoProfileKey(
 				info.device.driverVersionKnown,
 				"software-decode",
 				"mandatory-cpu-parity",
-				"comparison-10-bit",
+				"comparison-reference-depth",
 				work.model,
 				work.modelSha256,
 				...dimensions,

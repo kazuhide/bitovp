@@ -31,11 +31,13 @@
  * large or very wide pictures" in the same document holds both.
  *
  * The owned GPU scorer (`native/vmaf-gpu`) is not libvmaf, and it refuses the
- * same small pictures in words of its own, which name no limit. It compares
- * every pair in 4:2:0, always declares the encode's size to CAMBI, and holds
- * SpEED's and CAMBI's rules in its own code. `vmafNativeSizeLimitFailureMessage`
- * names the limit after such a refusal; "The GPU scorer and small pictures" in
- * the same document holds what was measured.
+ * same small pictures in words of its own, which name no limit. It holds
+ * SpEED's and CAMBI's rules in its own code, compares 4:2:0 pictures and
+ * declares no encode, as libvmaf does for every pair that the scorer takes
+ * (`vmafNativeComparison`), so its limits are those of libvmaf for 4:2:0
+ * pictures, and a caller asks `vmafSizeLimitMessage` for that layout before it
+ * starts the scorer. "The GPU scorer and small pictures" in the same document
+ * holds what was measured.
  */
 
 /** CAMBI: one side of the pictures, and of a declared encode, must reach this. */
@@ -210,73 +212,4 @@ export function vmafSizeLimitFailureMessage(
 ): string | undefined {
 	if (!stderr.includes("SpEED: image too small")) return undefined;
 	return `VMAF model "${pictures.model}" cannot score pictures of ${pictures.width}x${pictures.height}: libvmaf reports that they are too small for its SpEED feature. ${COMPARED} ${OTHER_MODEL}, which scores smaller pictures, or a larger reference.`;
-}
-
-/**
- * The words with which the owned GPU scorer refuses pictures or an encode that
- * a model cannot score (`native/vmaf-gpu/src`): its check before libvmaf's
- * SpEED, its own SpEED and CAMBI parameters, and its adapter of libvmaf's
- * extractors, which holds the declared size of the encode against the range
- * of CAMBI's options and refuses it with the error -22. The first also says
- * "too large", and the last two say nothing of a size, so none of them alone
- * tells that the pictures were too small. No run has printed the second: the
- * first holds the same arithmetic earlier. `size-limits.test.ts` holds the
- * words against the scorer's source.
- */
-export const VMAF_NATIVE_SIZE_REFUSALS: readonly string[] = [
-	"input is too small or too large for official SpEED chroma blocks",
-	"SPEED chroma is too small for its 5 by 5 block after prescale and decimation",
-	"invalid Vulkan CAMBI encoding geometry",
-	"override official extractor cambi failed (libvmaf -22)",
-];
-
-const LOCAL_CPU =
-	"This limit is that of GPU scoring, which compares every pair in 4:2:0 and tells CAMBI the encode's own size. Local CPU does neither, and the limit does not hold there.";
-
-/**
- * The same for a run of the owned GPU scorer that has failed: the sentence of
- * `vmafSizeLimitMessage` when the scorer's output holds one of its refusals
- * and the sizes are below a limit that this file knows, `undefined` for every
- * other failure, which keeps the scorer's own words.
- *
- * The scorer compares in 4:2:0 whatever the reference's layout is, and it
- * declares the encode's size to CAMBI in every run, as the frame-index method
- * does. With these two the rules of this file said, for each of 71 comparisons
- * on an NVIDIA GPU, whether the scorer scored it. Nothing is refused before
- * the run: the scorer decides, and this only puts its refusal into words.
- *
- * The ordinary method does neither, so libvmaf through FFmpeg scores some of
- * the pairs that the scorer refuses. `cpuChroma` is the layout in which it
- * would compare this pair, the reference's, where that is known: when the
- * rules of this file refuse nothing in that layout, the sentence ends by
- * saying that the limit is the scorer's alone. In the 49 refusals among the 71
- * comparisons it did so for exactly the 17 pairs that libvmaf scored. It
- * promises no score: this file knows the limits of small pictures only, and
- * libvmaf has others for large and for very wide ones.
- */
-export function vmafNativeSizeLimitFailureMessage(
-	stderr: string,
-	pictures: {
-		model: string;
-		width: number;
-		height: number;
-		declaredEncode: { width: number; height: number };
-		cpuChroma?: VmafChromaLayout;
-	},
-): string | undefined {
-	if (!VMAF_NATIVE_SIZE_REFUSALS.some((refusal) => stderr.includes(refusal)))
-		return undefined;
-	const { model, width, height, declaredEncode, cpuChroma } = pictures;
-	const limit = vmafSizeLimitMessage({
-		model,
-		width,
-		height,
-		declaredEncode,
-		chroma: "4:2:0",
-	});
-	return limit &&
-		cpuChroma &&
-		!vmafSizeLimitMessage({ model, width, height, chroma: cpuChroma })
-		? `${limit} ${LOCAL_CPU}`
-		: limit;
 }

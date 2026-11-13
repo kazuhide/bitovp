@@ -320,11 +320,9 @@ int main(int argc, char **argv) {
         if (!(first.frames_per_second > 0) || !(second.frames_per_second > 0) ||
             std::abs(first.frames_per_second - second.frames_per_second) > 1e-6)
             throw std::runtime_error("Inputs must have the same known frame rate; conform them before comparison");
-        for (auto &model : models) {
-            model.feature_overrides["cambi"]["enc_width"] = std::to_string(second.width);
-            model.feature_overrides["cambi"]["enc_height"] = std::to_string(second.height);
-            model.feature_overrides["cambi"]["enc_bitdepth"] = std::to_string(second.bit_depth);
-        }
+        // The models score the pictures as libvmaf through FFmpeg does: nothing
+        // about the encode before scaling is declared to CAMBI, so a score is
+        // the one that `ffmpeg -lavfi libvmaf` gives for the same pictures.
         ModelOracleConfig config{width, height, options.bits, options.threads, true};
         ModelOracle oracle(models, config, options.backend == "cpu" ? OracleMode::Cpu : OracleMode::ImportedFeatures);
         std::unique_ptr<ModelOracle> baseline;

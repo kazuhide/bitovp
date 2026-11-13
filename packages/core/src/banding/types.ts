@@ -2,7 +2,8 @@ import { z } from "zod";
 
 export const BANDING_DETECTOR_ID = "CAMBI";
 export const BANDING_SCORING_VERSION = 1;
-/** Reserved job family; VMAF generations 1–10 retain their existing meanings. */
+/** Reserved job family; VMAF generations 1–10 retain their existing meanings,
+ * and owned GPU scoring continues at 12 (`packages/core/src/vmaf/command.ts`). */
 export const BANDING_JOB_SCORING_VERSION = 11;
 
 const score = z.number().finite().nonnegative();

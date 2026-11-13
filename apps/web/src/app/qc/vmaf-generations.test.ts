@@ -40,6 +40,41 @@ describe("scoring generations", () => {
 		expect(mixesScoringGenerations([])).toBe(false);
 		expect(mixesScoringGenerations([{ scoringVersion: 2 }])).toBe(false);
 	});
+
+	it("does not flag GPU scoring that gives the numbers of the ordinary method, and flags the GPU scoring before it", () => {
+		// Generations 12 (CUDA) and 13 (Vulkan) score as generation 3 does.
+		const of = (...versions: number[]) =>
+			versions.map((scoringVersion) => ({ scoringVersion }));
+		for (const versions of [
+			[3, 12],
+			[3, 13],
+			[12, 13],
+			[3, 12, 13],
+		]) {
+			expect(mixesScoringGenerations(of(...versions)), `${versions}`).toBe(
+				false,
+			);
+			// The numbers stay the stored ones.
+			expect(scoringGenerations(of(...versions))).toEqual(versions);
+		}
+		// Generations 9 and 10 scored a scaled encode about a point higher, and
+		// every other generation is another pipeline.
+		for (const versions of [
+			[3, 9],
+			[3, 10],
+			[9, 12],
+			[10, 13],
+			[9, 10],
+			[2, 12],
+			[6, 12],
+			[8, 13],
+			// The family of banding jobs, which holds no VMAF score.
+			[11, 12],
+		])
+			expect(mixesScoringGenerations(of(...versions)), `${versions}`).toBe(
+				true,
+			);
+	});
 });
 
 describe("reference comparison canvas", () => {

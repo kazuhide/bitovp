@@ -2858,15 +2858,15 @@ The repository's own GPU scorer, `native/vmaf-gpu`, is not this FFmpeg and not
 its libvmaf, and it has the same smallest pictures in rules of its own. 71
 comparisons of 2026-11-12 on the host of the GPU check record them: the scorer
 of `main` at `e6ff8d14`, built on that host, with its CUDA backend, started as
-the worker starts it, with `vmaf_v1.0.16_3d0h`, `vmaf_v1.0.16_5d0h` and
-`vmaf_v1.0.16_3d0h_2160`. It scored 22 and refused 49. Two things differ from
-the worker's command for libvmaf:
+the worker started it on that day, with `vmaf_v1.0.16_3d0h`,
+`vmaf_v1.0.16_5d0h` and `vmaf_v1.0.16_3d0h_2160`. It scored 22 and refused 49.
+Two things differed from the worker's command for libvmaf:
 
-- The scorer compares every pair in 4:2:0, whatever the two formats are. It
+- The scorer compared every pair in 4:2:0, whatever the two formats were. It
   refused a `yuv444p` reference of 256x144 with all three models. libvmaf
   scored that reference with `vmaf_v1.0.16_3d0h` and `vmaf_v1.0.16_5d0h` in the
   method of test A.
-- The scorer declares the encode's own size to CAMBI in every run, as the
+- The scorer declared the encode's own size to CAMBI in every run, as the
   method of test B does and that of test A does not. With a reference of
   640x360 it scored encodes of 256x144 and 216x144 and refused encodes of
   214x144, 200x200, 144x144, 240x134 and 142x256, each with all three models.
@@ -2879,7 +2879,7 @@ and 266x266, a reference of 640x360 with an encode of 320x180 and with the
 seven encodes above, and a reference of 1920x1080 with encodes of 640x360 to
 1920x1080.
 
-The scorer ends a refusal with status 1 and one line, which names no limit:
+The scorer ended a refusal with status 1 and one line, which names no limit:
 
 | Line after `bitovp-vmaf: ` | Refusals | What was too small |
 |---|---|---|
@@ -2893,28 +2893,200 @@ line, `SPEED chroma is too small for its 5 by 5 block after prescale and
 decimation` (`vulkan/speed_parameters.hpp`). No run printed it: the check
 behind the first line holds the same arithmetic and comes earlier.
 
-Since PR #119 the worker names the limit when a run of the scorer ends with
-one of these lines and the sizes are below a limit of
-`packages/core/src/vmaf/size-limits.ts`: the same sentences as for libvmaf, for
-4:2:0 pictures and the declared encode. Every other failure of the scorer keeps
-the scorer's line, and the fourth line above is taken as the other three. The
-worker refuses nothing before the run. A test of `packages/core` holds the
-lines against the scorer's source, and the 71 stored results were held against
-the worker's function: it named every one of the 49 refusals, and its rules
-refuse none of the 22 comparisons that were scored.
+Since the change that "GPU scoring and libvmaf through FFmpeg" records, the
+scorer declares no encode, and the worker starts it only for pairs that libvmaf
+compares in 4:2:0 as well. What is left of the scorer's limits is that of the
+pictures, and it is libvmaf's for 4:2:0 pictures. The worker therefore asks its
+rule for those pictures before it starts the scorer, as it does before it
+starts FFmpeg, and the measurement ends with the same sentence in both. It no
+longer waits for the scorer's line, as it did after PR #119, and no sentence
+says any more that a limit is that of GPU scoring alone.
 
-libvmaf scored 17 of the 49 refused comparisons in the method of test A: the
-five small encodes of the 640x360 reference with three models, and the
-`yuv444p` reference of 256x144 with two. For such a pair the worker's sentence
-ends by saying that the limit is that of GPU scoring and does not hold with
-**Local CPU**. It says so where the reference is in one of the twelve formats
-and the rules of "libvmaf and small pictures" for the reference's layout, with
-no declared encode, refuse nothing; in the stored results that is these 17 and
-no other. It promises no score: the sizes of "libvmaf and large or very wide
-pictures" pass these rules as well.
+The worker's two checks before a GPU run were held against the 71 stored
+comparisons. The first is the rule for the pairs that the scorer can compare as
+libvmaf does, the second the size of the pictures:
 
-Not measured: the Vulkan backend, a size above 1920x1080, an encode above 7680
-pixels, and a 10-bit encode.
+| Comparisons | On 2026-11-12 | The worker's checks now | Local CPU on 2026-11-12 |
+|---|---|---|---|
+| 22 | scored | both pass | scored all 22 |
+| 28 | refused | the size check refuses | scored none |
+| 15 | refused | both pass | scored all 15 |
+| 6 | refused | the first check refuses | scored 2 |
+
+The 15 are the five small encodes of the 640x360 reference with three models:
+the scorer refused them for the declared encode alone. The six are the
+`yuv444p` reference and a full-range `yuvj420p` reference of 256x144 with a
+`yuv420p` encode, with three models each. Test I below ran the changed scorer's
+CPU reference on two small encodes of a 640x360 reference, 128x72 and 144x144:
+they scored 8.877257 and 33.212069 with `vmaf_v1.0.16_3d0h`, the means that
+FFmpeg's libvmaf gave.
+
+Not measured: the Vulkan backend, a size above 1920x1080, a 10-bit encode, and
+the changed scorer on a GPU.
+
+### GPU scoring and libvmaf through FFmpeg
+
+Until 2026-11-13 the GPU scorer and the worker's command for libvmaf, the
+ordinary method, gave different scores for one pair. With 8-bit 4:2:0 files the
+whole difference was two settings, and both act through CAMBI: the scorer
+compared 10-bit pictures whatever the reference was, and it declared the size
+and the bit depth of the encode before scaling to CAMBI (`enc_width`,
+`enc_height`, `enc_bitdepth`). An encode that was scaled up scored 0.96 to 1.50
+higher with the scorer in 15 comparisons of 2026-11-12, and with both settings
+applied by hand to the ordinary method, libvmaf gave the scorer's mean to
+within 0.000001 in ten. The pictures were not the cause: the scorer's own
+decoder, compiled alone, wrote pictures with the SHA-256 of FFmpeg's
+`scale=W:H:flags=bicubic,format=yuv420p10le` for five pairs.
+
+The worker now tells the scorer the reference's bit depth, the scorer declares
+nothing to CAMBI when it scores, and the worker refuses the pairs for which the
+scorer's pictures are still not libvmaf's. Scoring generations 12 (CUDA) and 13
+(Vulkan) mark the results; generations 9 and 10 are those of the scorer before,
+and their rows are not continued.
+
+**Test I, 2026-11-13.** The changed scorer was built without a GPU backend, in
+a container of `ubuntu:24.04` on arm64, with its 18 tests passing. Its CPU
+reference is libvmaf at the revision that the scorer pins, `74f930d1`, fed with
+the pictures of the scorer's own decoder; every GPU run is checked against it.
+It was run next to the `linux/arm64` programs of this build with the worker's
+command of the ordinary method, on the same two files, both with four libvmaf
+threads:
+
+```text
+ffmpeg -threads 2 -i <encode> -threads 2 -i <reference> -filter_complex \
+  "[0:v]scale=<W>:<H>:flags=bicubic,settb=AVTB,setpts=N/FRAME_RATE/TB[dist];[1:v]settb=AVTB,setpts=N/FRAME_RATE/TB[ref];[dist][ref]libvmaf=model=path=<model>:log_path=<log>:log_fmt=json:n_threads=4[out]" \
+  -map "[out]" -f null -
+bitovp-vmaf --reference <reference> --distorted <encode> --model <id>=<model> --output <receipt> \
+  --backend cpu --bit-depth <8 or 10> --width <W> --height <H> --threads 4 --decode-threads 2
+```
+
+The files were 24 or 48 frames of a moving test pattern over slow gradients, at
+24 frames a second with square pixels. 111 comparisons, with
+`vmaf_v1.0.16_3d0h` (92), `vmaf_v1.0.16_5d0h` (12) and
+`vmaf_v1.0.16_3d0h_2160` (7):
+
+| Comparisons | Pairs | Result |
+|---|---|---|
+| 81 | the worker's rule lets them through | the two means are equal to the sixth decimal |
+| 20 | the rule refuses them | the means differ by 0.00003 to 13.2 |
+| 5 | the rule lets them through; the pictures are 216 or 360 wide | the means differ by up to 0.19 with four threads and are equal with one: see "libvmaf and its thread count" |
+| 5 | pictures too small for the model | neither gives a score |
+
+In every receipt of a scored comparison, CAMBI's options `enc_width`,
+`enc_height` and `enc_bitdepth` are `0`.
+
+The 81 by what ffprobe says of the two files. The references were H.264 files;
+61 were 640x360 with encodes of 128x72 to 640x360, and 20 were pairs of one
+size from 240x160 to 1920x1080, five of them higher than wide. 77 encodes were
+H.264, two AV1 and two FFV1. "Limited" is a file that names the range `tv` or
+none.
+
+| Reference | Encode | Bit depth | Comparisons |
+|---|---|---|---|
+| `yuv420p`, limited | `yuv420p`, limited | 8 | 47 |
+| `yuv420p`, limited | `yuv420p10le`, `yuv422p`, `yuv444p`, `yuv422p10le` or `yuv420p12le`, limited | 8 | 12 |
+| `yuv420p10le`, limited | `yuv420p`, `yuv420p10le`, `yuv422p`, `yuv444p`, `yuv422p10le` or `yuv420p12le`, limited | 10 | 15 |
+| `yuvj420p`, full | `yuvj420p`, full | 8 | 4 |
+| `yuv420p10le`, full | `yuv420p10le`, `yuvj420p` or `yuvj422p`, full | 10 | 3 |
+
+Two of the 47 name the same colour matrix on both sides, `bt709` in one and
+`smpte170m` in the other; no other file of the 81 names a matrix.
+
+The 20, each with `vmaf_v1.0.16_3d0h` against a reference of 640x360. The
+difference is the scorer's mean minus FFmpeg's:
+
+| Reference | Encode | Bit depth | Comparisons | Difference |
+|---|---|---|---|---|
+| `yuv422p10le` (ProRes) | `yuv420p` | 10 | 2 | -4.412912, +3.923670 |
+| `yuv422p` (H.264) | `yuv420p` | 8 | 2 | -2.705356, +3.901499 |
+| `yuv444p` (H.264) | `yuv420p` | 8 | 2 | -5.659261, +5.263560 |
+| `yuv420p12le` (FFV1) | `yuv420p` | 10 | 2 | -0.000031, -0.048940 |
+| `yuvj420p`, full | `yuv420p` or `yuv420p10le`, limited | 8 and 10 | 4 | -11.76 to -13.24 |
+| `yuv420p10le`, full | `yuv420p10le`, limited | 10 | 1 | -3.684738 |
+| `yuv420p` or `yuv420p10le`, limited | `yuvj420p` or `yuv420p10le`, full | 8 and 10 | 2 | +10.453317, +11.641452 |
+| `yuvj420p`, full | `yuv420p10le` or `yuvj422p`, full | 8 | 2 | +0.015387, +1.019388 |
+| `yuv420p`, `bt709` | `yuv420p`, no matrix or `smpte170m` | 8 | 2 | +1.472369 |
+| `yuv420p`, no matrix | `yuv420p`, `bt709` | 8 | 1 | +10.108280 |
+
+What libvmaf through FFmpeg does in these 20 and the scorer does not:
+
+- It compares in the reference's pixel format when that is one of the twelve
+  that the filter takes. The scorer holds 4:2:0 pictures of 8 or 10 bits and no
+  other. With both inputs forced to `yuv420p10le`, FFmpeg's libvmaf gave the
+  scorer's mean for the two ProRes comparisons (57.621154 and 55.596579).
+- It converts a reference in another format, `yuvj420p` for one, to the format
+  that the scale filter gives the encode. The scorer's 8-bit 4:2:0 picture is
+  that format for a `yuvj420p` encode and for no other.
+- When one file is full range and the other is not, it converts one of the two
+  to the other's range before the comparison. The scorer keeps each file's
+  samples as they are.
+- When the two files name different colour matrices, or one names none, it
+  converts the encode to the reference's matrix, and it takes a file that names
+  none for BT.601 (`smpte170m`). The files of the last two rows hold the pixel
+  data of an untagged pair whose two means were equal, 55.535454; only the tags
+  differ. FFmpeg's scale filter printed
+  `csp:unknown range:unknown -> csp:bt709 range:tv` for the first of the three.
+
+The rule lets through exactly the combinations that were measured equal and
+their like, and nothing that was measured different:
+`packages/core/src/vmaf/native-comparison.ts`, with the combinations above in
+its test. It refuses more than was measured different: every reference that is
+not `yuv420p`, `yuv420p10le` or, with a `yuvj420p` encode, `yuvj420p`; every
+pair with one full-range file; and every pair whose files do not name the same
+colour matrix, by ffprobe's name for it.
+
+The worker also takes a result only when its receipt holds the bit depth that
+the worker asked for and no declared encode in CAMBI's options. A scorer that
+was built from the source before this change declares the encode in every run,
+so its results are refused (`NATIVE_RECEIPT_COMPARISON_MISMATCH`) and are not
+stored as results of generations 12 and 13.
+
+Not measured: the changed scorer on a GPU, where every run must agree with the
+CPU reference that this test ran; a 10-bit or full-range reference in a codec
+other than H.264; x86-64; HDR files, which the worker does not give to the
+scorer.
+
+### libvmaf and its thread count
+
+Test I found a property of libvmaf that is not the scorer's: for pictures of
+some widths, the score depends on libvmaf's thread count, and with more than
+one thread it can differ from run to run. Both libvmaf revisions show it, that
+of this build (`f712fa7`) through FFmpeg and that of the scorer (`74f930d1`),
+on arm64.
+
+Pairs of one size, 240 pixels high, 16 frames, `vmaf_v1.0.16_3d0h`, each run
+once with one thread and twice with four, with both programs: 77 widths from
+160 to 2168, 51 of them 16n+8.
+
+- With one thread, the two programs gave the same mean at every width.
+- At 60 widths all six runs gave the same mean.
+- At 17 widths they did not, and each is 16n+8: 168, 184, 200, 216, 232, 248
+  and 264, where the six means were up to 2.12 apart (216x240: 13.962841 with
+  one thread, and 15.752229, 16.026821, 15.868839 and 15.851534 with four);
+  the eight widths from 280 to 392, where they were up to 0.0017 apart; and 456
+  and 472, where one of the four runs with four threads differed, by 0.005 and
+  0.006.
+- No width that is not 16n+8 differed, and of the widths that are, neither 408,
+  424 and 440 nor any from 488 to 2168, 1080 among them.
+
+The five comparisons of test I with such widths were run again with one thread
+on both sides, twice: the two programs gave the same mean in all five, and the
+same in both runs. One of them, 360x640, gave 48.575988 with four threads in
+both programs and 47.988198 with one.
+
+For a pair of 216x160 the two programs' features were compared frame by frame,
+twice, with four threads: `integer_adm3` differed by up to 0.034 on a frame and
+the frame's score by up to 8.2, and CAMBI, motion and SpEED chroma were equal
+to the sixth decimal.
+
+What follows for the product: a measurement compares at the reference's size,
+so this concerns a reference of such a width, 360x640 for one, and not the
+sizes of the encodes. Two measurements of one such pair can differ, with
+**Local CPU** as well, because the worker's command sets `n_threads` to the
+threads that it allots to the measurement. On the x86-64 host of the GPU check,
+GPU scoring and **Local CPU** agreed to within 0.000001 at 216x160 and 264x264
+on 2026-11-12. Nothing else was measured on x86-64, so it is not known whether
+the property is that of libvmaf's arm64 code alone.
 
 ### libvmaf and large or very wide pictures
 
@@ -3346,9 +3518,14 @@ What to measure again:
   `packages/core/src/vmaf/size-limits.ts` and of "libvmaf and small pictures"
   are then taken again. No test of the repository holds what tests E to G
   measured ("libvmaf and large or very wide pictures");
-- the comparisons of "The GPU scorer and small pictures", when the scorer in
-  `native/vmaf-gpu` changes what it compares or what it declares to CAMBI. A
-  test of `packages/core` fails when the scorer words a refusal differently;
+- the comparisons of "The GPU scorer and small pictures" and of test I ("GPU
+  scoring and libvmaf through FFmpeg"), when the scorer in `native/vmaf-gpu`
+  changes what it compares or what it declares to CAMBI, and test I also when
+  FFmpeg, libvmaf or the worker's command of the ordinary method changes. The
+  test of `packages/core/src/vmaf/native-comparison.ts` holds the worker's rule
+  against the combinations that test I measured, and the scorer's own test
+  `tests/runner_test.py` fails when a run declares an encode to CAMBI. No test
+  of the repository runs the scorer next to FFmpeg's libvmaf;
 - the test of x264 with and without AVX-512, when x264 changes; "The VMAF means
   of the media job" names its commands. The names in `x264_cpu_names`
   (`common/cpu.c`) of the new revision are to be held against the rule for a
@@ -3364,7 +3541,7 @@ be repeated with this file and the repository, and the repository's test runs
 the edges of tests C and D and the rules of test H. The comparison of "What
 was confirmed to be the same" and the check on a real GPU cannot: their sample
 files and scripts are kept with the research records, outside the repository,
-and so are the scripts and the result tables of tests C to H and of "The GPU
+and so are the scripts and the result tables of tests C to I and of "The GPU
 scorer and small pictures".
 
 ### History
@@ -3400,6 +3577,8 @@ scorer and small pictures".
 | 2026-11-12 20:33 to 20:38 | | The first 50 comparisons of "The GPU scorer and small pictures", on the host of the GPU check |
 | 2026-11-12 22:45 | | The other 21 comparisons of that section, with encodes smaller than their reference |
 | 2026-11-12 22:49 to 23:05 | | The results of test H, on the encode's pixel format in the method of test A, were written |
+| 2026-11-13 13:40 to 13:58 | | The results of the 111 comparisons of test I, on the scores of the changed GPU scorer's CPU reference and of libvmaf through FFmpeg, and of its two runs over 77 widths, were written |
+| 2026-11-13 14:23 to 14:28 | | The five comparisons of test I at widths of 16n+8 with one thread, and the features of a 216x160 pair frame by frame |
 
 PR #108 added `docker/vmaf-build-proof.sh`. `Dockerfile` and the directory
 `docker/` are the same at `87e70e9b` and at `42e5d926`. PR #112 changed

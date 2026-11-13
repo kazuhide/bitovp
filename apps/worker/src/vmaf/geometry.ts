@@ -74,6 +74,23 @@ export function geometryFromProbe(stdout: string): Geometry {
 }
 
 /**
+ * First video stream of ffprobe JSON with the fields as ffprobe names them;
+ * `undefined` when there is no output, or none that holds a video stream.
+ */
+export function videoStreamFromProbe(
+	stdout: string | undefined,
+): Record<string, unknown> | undefined {
+	if (stdout === undefined) return undefined;
+	try {
+		return ((JSON.parse(stdout) as ProbeJson).streams ?? []).find(
+			(s) => s.codec_type === "video",
+		);
+	} catch {
+		return undefined;
+	}
+}
+
+/**
  * First video stream's pixel format from ffprobe JSON, by ffprobe's name for
  * it; `undefined` when the output names none.
  */

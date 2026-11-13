@@ -1,10 +1,11 @@
-import type {
-	BandingPooled,
-	LocalVmafExecution,
-	PooledMetrics,
-	VmafCloudProfile,
-	VmafExecution,
-	VmafReferencePreparationEvidence,
+import {
+	type BandingPooled,
+	type LocalVmafExecution,
+	type PooledMetrics,
+	type VmafCloudProfile,
+	type VmafExecution,
+	type VmafReferencePreparationEvidence,
+	vmafComparableScoringVersion,
 } from "@bitovp/core";
 import type {
 	PublicBandingAssessment,
@@ -506,10 +507,17 @@ export function scoringGenerations(
 	);
 }
 
+/**
+ * Two numbers are not always two pipelines: owned GPU scoring keeps a
+ * generation for each backend and gives the numbers of the ordinary method, so
+ * such reports are compared as that method's (`vmafComparableScoringVersion`).
+ */
 export function mixesScoringGenerations(
 	jobs: readonly { scoringVersion?: number }[],
 ): boolean {
-	return scoringGenerations(jobs).length > 1;
+	return (
+		new Set(scoringGenerations(jobs).map(vmafComparableScoringVersion)).size > 1
+	);
 }
 
 /** Equal canvases keep legacy and SAR-aware 1:1 measurements comparable. */

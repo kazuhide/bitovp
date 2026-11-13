@@ -78,6 +78,27 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(len(psnr), 18)
             self.assertEqual(set(psnr), {6 * bits + 12})
 
+    def test_a_scaled_pair_declares_nothing_of_the_encode_to_cambi(self):
+        # A score has to be the one of `ffmpeg -lavfi libvmaf` for the same
+        # pictures, and that filter tells CAMBI nothing of the encode before
+        # scaling. The worker reads these options from the receipt and takes no
+        # result from a scorer that declares the encode.
+        small = self.root / "small.mkv"
+        subprocess.run([args.ffmpeg, "-v", "error", "-nostdin", "-i", str(self.reference), "-vf",
+                        "scale=320:180,eq=brightness=0.03", "-c:v", "ffv1", str(small)], check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+        for bits in (8, 10):
+            run, output = self.score(f"scaled-{bits}.json", distorted=small,
+                                     extra=("--width", "640", "--height", "360", "--bit-depth", str(bits)))
+            self.assertEqual(run.returncode, 0, run.stderr)
+            receipt = json.loads(output.read_text())
+            self.assertEqual((receipt["width"], receipt["height"], receipt["bitDepth"]), (640, 360, bits))
+            self.assertEqual(receipt["distortedOriginal"], {"width": 320, "height": 180, "bitdepth": 8})
+            cambi = [spec["options"] for spec in receipt["extractors"] if spec["name"] == "cambi"]
+            self.assertEqual(len(cambi), 1)
+            for option in ("enc_width", "enc_height", "enc_bitdepth"):
+                self.assertEqual(cambi[0].get(option, "0"), "0", option)
+
     def test_partial_comparison_is_explicit_and_flushes_temporal_features(self):
         run, output = self.score("limited.json", extra=("--max-frames", "2"))
         self.assertEqual(run.returncode, 0, run.stderr)

@@ -6,6 +6,7 @@ import {
 	CartesianGrid,
 	Line,
 	LineChart,
+	ReferenceLine,
 	ResponsiveContainer,
 	Tooltip,
 	XAxis,
@@ -32,7 +33,15 @@ type MergedPoint = { frameNum: number } & Record<string, number | undefined>;
  * Brush gives pan/zoom. VMAF-only (no PSNR overlay) — the comparison is about
  * relative VMAF across encodes.
  */
-export function CompareFrameChart({ series }: { series: CompareSeries[] }) {
+export function CompareFrameChart({
+	series,
+	selectedFrame,
+	onFrameSelect,
+}: {
+	series: CompareSeries[];
+	selectedFrame?: number;
+	onFrameSelect?: (frame: number) => void;
+}) {
 	const { t } = useT();
 	const withFrames = useMemo(
 		() => series.filter((s) => s.result.frames.length > 0),
@@ -75,9 +84,22 @@ export function CompareFrameChart({ series }: { series: CompareSeries[] }) {
 			>
 				<LineChart
 					data={data}
+					onClick={(state) => {
+						if (state?.activeLabel === undefined || state.activeLabel === null)
+							return;
+						const frame = Number(state.activeLabel);
+						if (Number.isInteger(frame) && frame >= 0) onFrameSelect?.(frame);
+					}}
 					margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
 				>
 					<CartesianGrid stroke="var(--color-zinc-800)" strokeDasharray="3 3" />
+					{selectedFrame !== undefined ? (
+						<ReferenceLine
+							x={selectedFrame}
+							stroke="var(--color-emerald-400)"
+							strokeDasharray="3 3"
+						/>
+					) : null}
 					<XAxis
 						dataKey="frameNum"
 						type="number"

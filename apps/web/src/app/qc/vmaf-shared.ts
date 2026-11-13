@@ -10,7 +10,13 @@ import type {
 	PublicBandingAssessment,
 	PublicBandingExecution,
 } from "@/lib/server/banding-public";
-import type { BandingChartFrame, ChartFrame } from "@/lib/server/vmaf-frames";
+import type {
+	BandingChartFrame,
+	ChartFrame,
+	VmafScoreDistribution,
+} from "@/lib/server/vmaf-frames";
+
+export type { VmafScoreDistribution } from "@/lib/server/vmaf-frames";
 
 export type VmafComputeProfileSummary = Pick<
 	VmafCloudProfile,
@@ -211,6 +217,8 @@ export type VmafResultDetail = BandingResultData & {
 	frames: ChartFrame[];
 	/** Original frame count before downsampling (so the UI can disclose it). */
 	frameCount: number;
+	/** Full measured-frame histogram; absent on older payloads, null without stored scores. */
+	distribution?: VmafScoreDistribution | null;
 	/** Present only for LIVE results — the PR6a alignment summary. */
 	live?: LiveReportMetadata;
 };

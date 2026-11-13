@@ -229,19 +229,93 @@ export async function downsampleBandingFrameBlob(
 	};
 }
 
-/** Two passes preserve the original bucket boundaries without storing the full series. */
-export async function downsampleFrameBlob(
+/** Counts and extrema are exact; histogram positions represent fixed-width bins. */
+export type VmafScoreDistribution = {
+	frameCount: number;
+	min: number;
+	max: number;
+	mean: number;
+	binWidth: number;
+	bins: { score: number; count: number }[];
+};
+
+const DISTRIBUTION_BIN_COUNT = 64;
+
+/** Two streaming passes produce the line's bucket minima and the distribution
+ * of ALL measured frames. Retain at most `cap` line points plus 64 counters;
+ * never use the deliberately pessimistic line samples as a distribution. */
+export async function readVmafChartData(
 	blob: Uint8Array,
 	cap: number = DOWNSAMPLE_CAP,
 	signal?: AbortSignal,
-): Promise<{ frames: ChartFrame[]; frameCount: number }> {
+): Promise<{
+	frames: ChartFrame[];
+	frameCount: number;
+	distribution: VmafScoreDistribution | null;
+}> {
 	if (cap < 1) throw new Error("downsampleFrames cap must be >= 1");
 	let frameCount = 0;
-	for await (const _frame of iterateFrames(blob, signal)) frameCount++;
+	let min = Number.POSITIVE_INFINITY;
+	let max = Number.NEGATIVE_INFINITY;
+	let mean = 0;
+	for await (const frame of iterateFrames(blob, signal)) {
+		if (typeof frame.vmaf !== "number" || !Number.isFinite(frame.vmaf))
+			throw new Error("Invalid persisted VMAF score");
+		frameCount++;
+		min = Math.min(min, frame.vmaf);
+		max = Math.max(max, frame.vmaf);
+		const delta = frame.vmaf - mean;
+		mean = Number.isFinite(delta)
+			? mean + delta / frameCount
+			: mean * (1 - 1 / frameCount) + frame.vmaf / frameCount;
+	}
+	if (!frameCount) return { frames: [], frameCount: 0, distribution: null };
+	const constant = min === max;
+	const binWidth = constant
+		? 0
+		: max / DISTRIBUTION_BIN_COUNT - min / DISTRIBUTION_BIN_COUNT;
+	const distribution: VmafScoreDistribution = {
+		frameCount,
+		min,
+		max,
+		mean,
+		binWidth,
+		bins: Array.from(
+			{ length: constant ? 1 : DISTRIBUTION_BIN_COUNT },
+			(_, index) => {
+				const fraction = (index + 0.5) / DISTRIBUTION_BIN_COUNT;
+				return {
+					score: constant ? min : min * (1 - fraction) + max * fraction,
+					count: 0,
+				};
+			},
+		),
+	};
+	const countScore = (score: number) => {
+		const range = max - min;
+		const fraction = constant
+			? 0
+			: Number.isFinite(range)
+				? (score - min) / range
+				: (score / 2 - min / 2) / (max / 2 - min / 2);
+		const index = Math.max(
+			0,
+			Math.min(
+				distribution.bins.length - 1,
+				Math.floor(fraction * DISTRIBUTION_BIN_COUNT),
+			),
+		);
+		const bin = distribution.bins[index];
+		if (!bin) throw new Error("Invalid persisted VMAF histogram position");
+		bin.count++;
+	};
 	if (frameCount <= cap) {
 		const frames: VmafFrame[] = [];
-		for await (const frame of iterateFrames(blob, signal)) frames.push(frame);
-		return { frames: downsampleFrames(frames, cap), frameCount };
+		for await (const frame of iterateFrames(blob, signal)) {
+			frames.push(frame);
+			countScore(frame.vmaf);
+		}
+		return { frames: downsampleFrames(frames, cap), frameCount, distribution };
 	}
 	const buckets = Math.max(1, cap - 1);
 	const size = frameCount / buckets;
@@ -251,6 +325,7 @@ export async function downsampleFrameBlob(
 	let minimum: { frame: VmafFrame; index: number } | undefined;
 	let worst: { frame: VmafFrame; index: number } | undefined;
 	for await (const frame of iterateFrames(blob, signal)) {
+		countScore(frame.vmaf);
 		if (index >= Math.floor((bucket + 1) * size)) {
 			if (minimum) selected.push(minimum);
 			minimum = undefined;
@@ -273,6 +348,16 @@ export async function downsampleFrameBlob(
 		frames.push({ ...worst.frame, worst: true });
 		frames.sort((a, b) => a.frameNum - b.frameNum);
 	}
+	return { frames, frameCount, distribution };
+}
+
+/** Preserve the established helper shape for callers needing only line data. */
+export async function downsampleFrameBlob(
+	blob: Uint8Array,
+	cap: number = DOWNSAMPLE_CAP,
+	signal?: AbortSignal,
+): Promise<{ frames: ChartFrame[]; frameCount: number }> {
+	const { frames, frameCount } = await readVmafChartData(blob, cap, signal);
 	return { frames, frameCount };
 }
 

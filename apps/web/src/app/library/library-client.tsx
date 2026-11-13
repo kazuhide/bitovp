@@ -327,6 +327,9 @@ export function LibraryClient({
 										items={result.data.items}
 										view={view}
 										clipEditingAvailable={clipEditingAvailable}
+										onContentChanged={() =>
+											setState((previous) => ({ ...previous, offset: 0 }))
+										}
 									/>
 								) : (
 									<LibrarySceneResults items={result.data.items} />

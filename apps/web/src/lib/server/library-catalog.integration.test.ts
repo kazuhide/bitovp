@@ -10,6 +10,10 @@ import {
 } from "@bitovp/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { listContents, listQuery } from "./library-catalog";
+import {
+	enrichLibraryPlayback,
+	libraryFileOutputsForSource,
+} from "./library-playback";
 
 const adminUrl = process.env.BITOVP_TENANT_TEST_ADMIN_URL;
 const appUrl = process.env.BITOVP_TENANT_TEST_APP_URL;
@@ -262,6 +266,95 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					.digest("hex"),
 			};
 		}
+		it("recovers an empty Progressive WebM capture with exact plan identity and tenant scope without rewriting snapshots", async () => {
+			const { db, organizationId } = await tenant();
+			const original = await publicMp4Job(db);
+			const plan = encodingPlanSchema.parse(original.plan);
+			plan.renditions = [
+				{
+					key: "v360",
+					codec: "VP9",
+					mode: "STANDARD",
+					ingestKey: "video",
+					height: 360,
+					bitrate: 600000,
+				},
+				{
+					key: "a96",
+					codec: "OPUS",
+					ingestKey: "audio",
+					rate: 48000,
+					bitrate: 96000,
+					channelLayout: "CL_STEREO",
+				},
+			];
+			plan.muxings = [
+				{
+					key: "webm",
+					kind: "PROGRESSIVE_WEBM",
+					streamKey: "v360",
+					additionalStreamKeys: ["a96"],
+					filename: "sequence.webm",
+					destination: { outputKey: "origin", path: "output/", acl: "PRIVATE" },
+				},
+			];
+			const job = await db.encodingJob.update({
+				where: { id: original.id },
+				data: { plan },
+				select: { id: true, plan: true },
+			});
+			const hash = createHash("sha256")
+				.update(JSON.stringify(job.plan))
+				.digest("hex");
+			const { ids } = await seed(db, 3, {
+				jobId: (index) => (index === 2 ? null : job.id),
+				snapshot: (index) => ({
+					planHash: index === 1 ? "changed" : hash,
+					playbackLinks: [],
+					fileOutputs: [],
+				}),
+			});
+			const before = await db.librarySource.findMany({
+				orderBy: { id: "asc" },
+				select: { id: true, jobId: true, snapshot: true },
+			});
+			const result = await listContents(
+				db,
+				listQuery.parse({ playback: "playback" }),
+				organizationId,
+			);
+			expect(result.counts).toEqual({ all: 3, playback: 1, metadata: 2 });
+			expect(result.items.map((row) => row.id)).toEqual([ids[0]]);
+			expect(result.items[0]?.catalogMetadata.formats).toEqual(["WEBM"]);
+			expect(result.items[0]?.catalogPreview?.url).toContain("key=webm%3Awebm");
+			const valid = before.find(
+				(row) =>
+					row.jobId === job.id &&
+					(row.snapshot as { planHash: string }).planHash === hash,
+			);
+			if (!valid) throw new Error("Missing captured source");
+			const binding = {
+				sourceId: valid.id,
+				jobId: job.id,
+				planHash: hash,
+				fileOutputs: [],
+				playbackLinks: [],
+			};
+			expect(await libraryFileOutputsForSource(db, binding)).toEqual([
+				expect.objectContaining({ kind: "WEBM", path: "output/sequence.webm" }),
+			]);
+			const { db: foreign, organizationId: foreignId } = await tenant();
+			expect(await libraryFileOutputsForSource(foreign, binding)).toEqual([]);
+			expect(
+				await enrichLibraryPlayback(foreign, [binding], foreignId),
+			).toEqual([[]]);
+			expect(
+				await db.librarySource.findMany({
+					orderBy: { id: "asc" },
+					select: { id: true, jobId: true, snapshot: true },
+				}),
+			).toEqual(before);
+		});
 
 		it.each([
 			false,

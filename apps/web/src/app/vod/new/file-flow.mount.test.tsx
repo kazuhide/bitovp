@@ -620,7 +620,7 @@ describe("VodWizard — the file-output flow", () => {
 		]);
 	};
 
-	it("says that QuickTime is not verified yet, and of a codec Bitmovin does not list for it", async () => {
+	it("reports partially qualified QuickTime support and warns for an unlisted codec", async () => {
 		const user = userEvent.setup();
 		await restore(ready);
 		await user.click(screen.getByRole("button", { name: "3. Format" }));
@@ -631,7 +631,7 @@ describe("VodWizard — the file-output flow", () => {
 		expect(audioCodec).not.toHaveAccessibleDescription();
 		await user.selectOptions(container, "QuickTime (.mov)");
 		expect(container).toHaveAccessibleDescription(
-			"Not yet verified on a real encode. Check the first file this job writes.",
+			"Some codec combinations for this container remain unverified. Inspect an initial output.",
 		);
 		expect(screen.getByLabelText("File name")).toHaveValue("clip.mov");
 		// AC-3 is a codec the format has and Bitmovin does not list for it: the

@@ -736,7 +736,7 @@ export const ja = {
 		removeFileN: "ファイル {n} を削除",
 		container: "コンテナ",
 		unmeasuredContainer:
-			"実際のエンコードでは未確認です。最初に書き出されたファイルを確認してください。",
+			"このコンテナには未検証のコーデックの組み合わせがあります。初回の出力で確認できます。",
 		fileName: "ファイル名",
 		fileNameRequired: "ファイル名を入力してください。",
 		sameFileName:
@@ -1270,6 +1270,16 @@ export const ja = {
 			"コンテンツはまだありません。完了した VOD ジョブは自動で登録されます。",
 		search: "タイトル・タグを検索",
 		archived: "アーカイブ済み",
+		remove: "ライブラリから削除",
+		removeAria: "ライブラリから削除: {title}",
+		removeTitle: "「{title}」をライブラリから削除しますか？",
+		removeDescription:
+			"登録は「アーカイブ済み」に移動し、そこから復元できます。クラウド上の映像・エンコード履歴・クリップの履歴は保持します。",
+		restoreAria: "ライブラリに復元: {title}",
+		restoreTitle: "「{title}」をライブラリに復元しますか？",
+		restoreDescription:
+			"既存のクリップと履歴を保持したまま、通常のライブラリへ戻します。",
+		permissionDenied: "このコンテンツを変更する権限がありません。",
 		active: "有効なコンテンツ",
 		previous: "前へ",
 		next: "次へ",
@@ -2393,6 +2403,8 @@ export const ja = {
 			"{count}件のレポートには比較できるレンディションがありません: {ids}",
 
 		previewOpen: "比較プレビューを開く",
+		previewReportsClock:
+			"同期プレビューには、計測時のFPSが同じVODのQC動画が必要です。スコアの比較は引き続き利用できます。",
 		previewClose: "比較プレビューを閉じる",
 		previewA: "レンディション A",
 		previewB: "レンディション B",
@@ -2600,6 +2612,12 @@ export const ja = {
 		psnrMin: "PSNR 最小",
 		psnrMax: "PSNR 最大",
 		noFrameData: "このレポートにはフレームごとのデータがありません。",
+		violinTitle: "VMAF 分布",
+		violinHelp:
+			"保存された全計測値の分布です。間引き計測では、計測済みサンプルだけを表します。\n\n輪郭は64区間の度数をガウス関数でなめらかに描いた近似です。平滑化の幅は2区間分で、各系列の最大幅を揃えています。\n\n件数・平均・最小・最大は計測値です。白線は平均を示します。",
+		violinUnavailable: "分布データなし",
+		violinFrameCount: "計測済み {count} フレーム",
+		violinSampleCount: "計測済み {count} サンプル（{stride} フレーム間隔）",
 		hidePsnr: "PSNR (dB) を隠す",
 		showPsnr: "PSNR (dB) を表示",
 		noSeriesFrame:

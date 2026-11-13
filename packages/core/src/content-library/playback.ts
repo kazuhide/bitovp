@@ -107,12 +107,13 @@ function* progressiveOutputs(plan: EncodingPlan) {
 	for (const muxing of plan.muxings) {
 		if (
 			(muxing.kind !== "MP4" &&
+				muxing.kind !== "PROGRESSIVE_WEBM" &&
 				!(muxing.kind === "WEBM" && muxing.progressive === true)) ||
 			!muxing.destination ||
 			plan.drm.some((drm) => drm.muxingKey === muxing.key)
 		)
 			continue;
-		const kind: LibraryFileKind = muxing.kind === "WEBM" ? "WEBM" : "MP4";
+		const kind: LibraryFileKind = muxing.kind === "MP4" ? "MP4" : "WEBM";
 		const filename = muxing.filename ?? "output.webm";
 		if (!(kind === "WEBM" ? /\.webm$/i : /\.mp4$/i).test(filename)) continue;
 		const streams = [

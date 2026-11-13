@@ -131,6 +131,54 @@ afterEach(() => {
 });
 
 describe("CompareClient", () => {
+	it("connects selected reports to their on-demand comparison videos", async () => {
+		const pause = vi
+			.spyOn(HTMLMediaElement.prototype, "pause")
+			.mockImplementation(() => {});
+		const load = vi
+			.spyOn(HTMLMediaElement.prototype, "load")
+			.mockImplementation(() => {});
+		const a = {
+			...JOB_A,
+			results: JOB_A.results.map((r) => ({
+				...r,
+				preview: { url: "/api/media/low" },
+			})),
+		};
+		const b = {
+			...JOB_B,
+			results: JOB_B.results.map((r) => ({
+				...r,
+				preview: { url: "/api/media/high" },
+			})),
+		};
+		searchParams = new URLSearchParams({ jobs: `${a.id},${b.id}` });
+		serve([a, b]);
+		const { container } = wrap(<CompareClient />);
+		const open = await screen.findByRole("button", {
+			name: "Open comparison preview",
+		});
+		expect(container.querySelectorAll("video")).toHaveLength(0);
+		await userEvent.setup().click(open);
+		expect(
+			[...container.querySelectorAll("video")].map((v) =>
+				v.getAttribute("src"),
+			),
+		).toEqual(["/api/media/low", "/api/media/high"]);
+		expect(screen.getByRole("combobox", { name: "Rendition A" })).toHaveValue(
+			`${a.id}:${a.results[0]?.id}`,
+		);
+		expect(screen.getByRole("combobox", { name: "Rendition B" })).toHaveValue(
+			`${b.id}:${b.results[0]?.id}`,
+		);
+		await userEvent
+			.setup()
+			.click(screen.getByRole("button", { name: "Close comparison preview" }));
+		expect(container.querySelectorAll("video")).toHaveLength(0);
+		pause.mockRestore();
+		load.mockRestore();
+	});
+
 	it("overlays one line per (job × rendition) series for the fetched jobs", async () => {
 		searchParams = new URLSearchParams({ jobs: `${JOB_A.id},${JOB_B.id}` });
 		serve([JOB_A, JOB_B]);
@@ -313,7 +361,9 @@ describe("CompareClient — reference display sizes", () => {
 			{ ...JOB_B, scoringVersion: 6 },
 		]);
 		wrap(<CompareClient />);
-		await screen.findByText("clip-low · 360p");
+		await screen.findByRole("checkbox", {
+			name: "Toggle series clip-low · 360p",
+		});
 		expect(screen.queryByText(/reference display sizes differ/i)).toBeNull();
 	});
 });
@@ -361,7 +411,9 @@ describe("CompareClient — mixed scoring generations", () => {
 		wrap(<CompareClient />);
 		// Wait for the charts, then assert the absence — otherwise this passes
 		// merely because nothing has rendered yet.
-		await screen.findByText("clip-low · 360p");
+		await screen.findByRole("checkbox", {
+			name: "Toggle series clip-low · 360p",
+		});
 		expect(screen.queryByText(/not comparable/)).toBeNull();
 	});
 });
@@ -411,7 +463,9 @@ describe("compare — mixed VMAF models", () => {
 		]);
 		wrap(<CompareClient />);
 		// Charts first, so the absence is an absence rather than an unrendered page.
-		await screen.findByText("clip-low · 360p");
+		await screen.findByRole("checkbox", {
+			name: "Toggle series clip-low · 360p",
+		});
 		expect(screen.queryByText(/viewing conditions/)).toBeNull();
 	});
 });
@@ -444,7 +498,9 @@ describe("compare — mixed frame subsampling", () => {
 		const { subsample: _absent, ...jobBWithout } = JOB_B;
 		serve([{ ...JOB_A, subsample: null }, jobBWithout as typeof JOB_B]);
 		wrap(<CompareClient />);
-		await screen.findByText("clip-low · 360p");
+		await screen.findByRole("checkbox", {
+			name: "Toggle series clip-low · 360p",
+		});
 		expect(screen.queryByText(/minima are not comparable/)).toBeNull();
 	});
 
@@ -487,10 +543,14 @@ describe("compare — attributing a model to each report", () => {
 		// Both models reachable from the series list, not only from the warning.
 		// JOB_A is the "clip-low" fixture and JOB_B the "clip-high" one.
 		expect(
-			await screen.findByText(/clip-low · vmaf_v0\.6\.1 ·/),
+			await screen.findByRole("checkbox", {
+				name: /Toggle series clip-low · vmaf_v0\.6\.1 ·/,
+			}),
 		).toBeInTheDocument();
 		expect(
-			screen.getByText(/clip-high · vmaf_v1\.0\.16_3d0h ·/),
+			screen.getByRole("checkbox", {
+				name: /Toggle series clip-high · vmaf_v1\.0\.16_3d0h ·/,
+			}),
 		).toBeInTheDocument();
 	});
 
@@ -499,7 +559,9 @@ describe("compare — attributing a model to each report", () => {
 		searchParams = new URLSearchParams({ jobs: `${JOB_A.id},${JOB_B.id}` });
 		serve([JOB_A, JOB_B]);
 		wrap(<CompareClient />);
-		await screen.findByText("clip-low · 360p");
+		await screen.findByRole("checkbox", {
+			name: "Toggle series clip-low · 360p",
+		});
 		expect(screen.queryByText(/vmaf_v0\.6\.1 ·/)).toBeNull();
 	});
 });

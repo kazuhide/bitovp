@@ -82,6 +82,47 @@ it("builds the same plan after a reload", () => {
 	expect(buildPlan(reload(state)).muxings).toEqual(before);
 });
 
+it("restores a WebM file with the Opus track still inside it, and builds the same plan", () => {
+	// The kind added no field of its own: `kind`, `filename` and the carried
+	// track were on the list already. This is the evidence that they are enough.
+	const state = {
+		...DEFAULT_WIZARD_STATE,
+		videos: [
+			{
+				height: 360,
+				bitrate: 800000,
+				codec: "VP9",
+				muxing: {
+					kind: "PROGRESSIVE_WEBM",
+					filename: "movie.webm",
+					muxedAudioKeys: ["a128"],
+				},
+			},
+		],
+		audios: [
+			{
+				codec: "OPUS",
+				bitrate: 128000,
+				rate: 48000,
+				muxing: { ownContainer: false },
+			},
+		],
+		manifests: { hls: false, dash: false },
+	} as WizardState;
+	const restored = reload(state);
+	expect(restored.videos[0]?.muxing).toEqual(state.videos[0]?.muxing);
+	const before = buildPlan(state).muxings;
+	expect(before).toEqual([
+		expect.objectContaining({
+			kind: "PROGRESSIVE_WEBM",
+			filename: "movie.webm",
+			additionalStreamKeys: ["a128"],
+		}),
+	]);
+	expect(buildPlan(restored).muxings).toEqual(before);
+	expect(buildPlan(restored).renditions).toEqual(buildPlan(state).renditions);
+});
+
 it("the counterfactual — a muxing field the projection does not name is dropped", () => {
 	// Proves the arms above pass because `startOffset` is on the list, not
 	// because the draft keeps whatever it is handed.

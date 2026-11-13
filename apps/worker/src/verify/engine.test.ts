@@ -1991,18 +1991,29 @@ describe("DASH IMSC representation verification through the real MPD parser", ()
 });
 
 /**
- * PROGRESSIVE_TS / PROGRESSIVE_MOV: one named file holding the video and the audio muxed
- * into it, on no manifest.
+ * PROGRESSIVE_TS / PROGRESSIVE_MOV / PROGRESSIVE_WEBM: one named file holding the video and
+ * the audio muxed into it, on no manifest.
  *
  * The world is a bucket of keys, so this proves how the engine FINDS and SIZES the file and
- * which checks it then owes — not that Bitmovin writes such a file. No live encode of either
- * kind has been verified by this engine.
+ * which checks it then owes — not that Bitmovin writes such a file. No live encode of any of
+ * the three kinds has been verified by this engine.
+ *
+ * `PROGRESSIVE_WEBM` is the plan kind of that name. A `WEBM` muxing marked progressive is
+ * the `WEBM_PROGRESSIVE` container, found by another arm of the engine and not this one.
  */
-describe("whole-file progressive TS and MOV delivery", () => {
-	const FILE_KINDS = ["PROGRESSIVE_TS", "PROGRESSIVE_MOV"] as const;
+describe("whole-file progressive TS, MOV and WebM delivery", () => {
+	const FILE_KINDS = [
+		"PROGRESSIVE_TS",
+		"PROGRESSIVE_MOV",
+		"PROGRESSIVE_WEBM",
+	] as const;
 	type FileKind = (typeof FILE_KINDS)[number];
-	const filenameOf = (kind: FileKind) =>
-		kind === "PROGRESSIVE_TS" ? "movie.ts" : "movie.mov";
+	const FILENAME: Record<FileKind, string> = {
+		PROGRESSIVE_TS: "movie.ts",
+		PROGRESSIVE_MOV: "movie.mov",
+		PROGRESSIVE_WEBM: "movie.webm",
+	};
+	const filenameOf = (kind: FileKind) => FILENAME[kind];
 	const FILE_PROBE: MediaProbe = {
 		height: 360,
 		videoCodec: "h264",
@@ -2011,11 +2022,25 @@ describe("whole-file progressive TS and MOV delivery", () => {
 		audioCodec: "aac",
 		audioSampleRate: 48_000,
 	};
+	/** What ffprobe reports for a sound file of this kind: VP9 with Opus in a `.webm`. */
+	const probeOf = (kind: FileKind): MediaProbe =>
+		kind === "PROGRESSIVE_WEBM"
+			? { ...FILE_PROBE, videoCodec: "vp9", audioCodec: "opus" }
+			: FILE_PROBE;
 	/** A plan whose ONLY output is the file, and a bucket holding exactly `objects`. */
 	function fileWorld(kind: FileKind, objects: string[], path = "out/files/") {
 		const artefacts = compileExpectedArtefacts(
 			encodingPlanSchema.parse({
 				...BASE_PLAN,
+				// The base ladder is H.264 with AAC, which a WebM file does not hold.
+				...(kind === "PROGRESSIVE_WEBM"
+					? {
+							renditions: BASE_PLAN.renditions.map((rendition) => ({
+								...rendition,
+								codec: rendition.codec === "H264" ? "VP9" : "OPUS",
+							})),
+						}
+					: {}),
 				manifests: [],
 				muxings: [
 					{
@@ -2031,7 +2056,7 @@ describe("whole-file progressive TS and MOV delivery", () => {
 		);
 		const world: World = {
 			objects,
-			probes: Object.fromEntries(objects.map((key) => [key, FILE_PROBE])),
+			probes: Object.fromEntries(objects.map((key) => [key, probeOf(kind)])),
 			texts: {},
 		};
 		return { artefacts, world };
@@ -2104,12 +2129,16 @@ describe("whole-file progressive TS and MOV delivery", () => {
 		expect(verdictOf(report, "rendition:v360:codec")).toBe("PASS");
 	});
 
-	it("finds the file under a destination that carries a placeholder", async () => {
-		// `dir.prefix` stops at the first token, so the progressive WebM arm's
-		// exact `prefix + name` would report this file absent.
+	it.each([
+		"PROGRESSIVE_MOV",
+		"PROGRESSIVE_WEBM",
+	] as const)("%s: finds the file under a destination that carries a placeholder", async (kind) => {
+		// `dir.prefix` stops at the first token, so the exact `prefix + name` of
+		// the arm for a WEBM muxing marked progressive would report this file
+		// absent. A PROGRESSIVE_WEBM file is not matched by that arm.
 		const { artefacts, world } = fileWorld(
-			"PROGRESSIVE_MOV",
-			["out/files-0f8fad5b/movie.mov"],
+			kind,
+			[`out/files-0f8fad5b/${filenameOf(kind)}`],
 			"out/files-{uuid}/",
 		);
 		const report = await verifyArtefacts(artefacts, depsFor(world));
@@ -2123,6 +2152,19 @@ describe("whole-file progressive TS and MOV delivery", () => {
 		world.probes[key] = { ...FILE_PROBE, videoCodec: "hevc" };
 		const report = await verifyArtefacts(artefacts, depsFor(world));
 		expect(verdictOf(report, "rendition:v360:codec")).toBe("FAIL");
+	});
+
+	it("holds a WebM file to the VP9 and Opus the plan put in it", async () => {
+		// The file is there, and holds what a `.ts` or `.mov` would: H.264 with
+		// AAC. Without this the passing arm above says nothing about the codecs.
+		const key = "out/files/movie.webm";
+		const { artefacts, world } = fileWorld("PROGRESSIVE_WEBM", [key]);
+		world.probes[key] = FILE_PROBE;
+		const report = await verifyArtefacts(artefacts, depsFor(world));
+		expect(verdictOf(report, "muxing:file:file")).toBe("PASS");
+		expect(verdictOf(report, "rendition:v360:codec")).toBe("FAIL");
+		expect(verdictOf(report, "rendition:v360:audio-present")).toBe("PASS");
+		expect(verdictOf(report, "rendition:v360:audio-codec")).toBe("FAIL");
 	});
 
 	it("reports a file delivered without the audio the plan muxed into it", async () => {

@@ -6,13 +6,17 @@ import type { SdkOps } from "./sdk-ops";
 import { createStampingFetch } from "./stamping-fetch";
 
 /**
- * The executor arms for the two whole-file muxings.
+ * The executor arms for the three whole-file muxings.
  *
  * What these have to keep true is narrow and easy to lose: the audio stream
  * reaches the gateway as an ADDITIONAL id (the container is one file holding
  * both), and a number the plan did not set stays unset — every segmented arm
  * beside these coerces a missing segment length to 6, and a whole file has no
  * such default in this app.
+ *
+ * The WebM arm is older than the kind: the QC mirror of a VP9 rendition and a
+ * `WEBM` muxing marked progressive already ran through it with one stream.
+ * What it has to keep true as well is that they still do.
  */
 
 function ctx(sdk: SdkOps, ids: Record<string, string> = {}): ExecutorContext {
@@ -171,14 +175,72 @@ describe("CREATE_MUXING_PROGRESSIVE_MOV", () => {
 	});
 });
 
-describe("the create stamp reaches both file endpoints", () => {
+describe("CREATE_MUXING_PROGRESSIVE_WEBM", () => {
+	const op = {
+		step: "muxing:file",
+		kind: "CREATE_MUXING_PROGRESSIVE_WEBM" as const,
+		payload: {
+			filename: "video.webm",
+			outputPath: "files",
+			name: "Video Progressive WebM Muxing 360p",
+		},
+		refs,
+	};
+
+	it("hands the gateway the file and both streams", async () => {
+		const sdk = fakeSdk();
+		const result = await executeStep(op, ctx(sdk, ids));
+		expect(sdk.createProgressiveWebmMuxing).toHaveBeenCalledTimes(1);
+		expect(sdk.createProgressiveWebmMuxing).toHaveBeenCalledWith("bm-enc", {
+			streamId: "bm-video",
+			additionalStreamIds: ["bm-audio"],
+			filename: "video.webm",
+			destination: { outputId: "bm-output", outputPath: "files" },
+			name: "Video Progressive WebM Muxing 360p",
+		});
+		expect(result.resourceId).toEqual(expect.any(String));
+		// The segmented WebM creator is a different endpoint.
+		expect(sdk.createWebmMuxing).not.toHaveBeenCalled();
+		expect(sdk.createProgressiveMovMuxing).not.toHaveBeenCalled();
+	});
+
+	it("is the single-stream call it always was when the op names no additional stream", async () => {
+		// What the QC mirror and a WEBM muxing marked progressive compile to.
+		const sdk = fakeSdk();
+		const { additionalStreamIds: _audio, ...oneStream } = refs;
+		await executeStep({ ...op, refs: oneStream }, ctx(sdk, ids));
+		expect(sdk.createProgressiveWebmMuxing).toHaveBeenCalledTimes(1);
+		const sent = vi.mocked(sdk.createProgressiveWebmMuxing).mock
+			.calls[0]?.[1] as Record<string, unknown>;
+		expect(sent.additionalStreamIds).toBeUndefined();
+		expect(sent).toEqual({
+			streamId: "bm-video",
+			filename: "video.webm",
+			destination: { outputId: "bm-output", outputPath: "files" },
+			name: "Video Progressive WebM Muxing 360p",
+		});
+	});
+
+	it("refuses to call the API while the audio stream it names does not exist", async () => {
+		const sdk = fakeSdk();
+		const { "stream:a": _missing, ...withoutAudio } = ids;
+		await expect(executeStep(op, ctx(sdk, withoutAudio))).rejects.toThrow(
+			'step "muxing:file" needs ref "additionalStreamIds" but it has not resolved yet',
+		);
+		expect(sdk.createProgressiveWebmMuxing).not.toHaveBeenCalled();
+	});
+});
+
+describe("the create stamp reaches the file endpoints", () => {
 	// The stamp is what lets a retried create ADOPT the muxing a lost response
 	// already made, instead of writing the file twice. It is applied by a path
 	// rule, not per kind, so nothing in this change adds it — this arm is the
-	// evidence that the rule does cover the two new paths.
+	// evidence that the rule does cover the paths. (`progressive-webm` was a
+	// path before the kind was; it is here so the three are seen together.)
 	it.each([
 		["progressive-ts", { filename: "video.ts", segmentLength: 4 }],
 		["progressive-mov", { filename: "video.mov" }],
+		["progressive-webm", { filename: "video.webm" }],
 	] as const)("stamps POST …/muxings/%s with the job and step", async (segment, body) => {
 		const inner = vi.fn(
 			async (_url: string, _init?: unknown) =>
@@ -201,7 +263,17 @@ describe("the create stamp reaches both file endpoints", () => {
 });
 
 describe("a compiled plan, run through the executor", () => {
-	const plan = (kind: "PROGRESSIVE_TS" | "PROGRESSIVE_MOV") =>
+	type FileKind = "PROGRESSIVE_TS" | "PROGRESSIVE_MOV" | "PROGRESSIVE_WEBM";
+	/** The file each kind writes, and the two codecs it holds. */
+	const FILES: Record<
+		FileKind,
+		{ filename: string; video: string; audio: string }
+	> = {
+		PROGRESSIVE_TS: { filename: "video.ts", video: "H264", audio: "AAC" },
+		PROGRESSIVE_MOV: { filename: "video.mov", video: "H264", audio: "AAC" },
+		PROGRESSIVE_WEBM: { filename: "video.webm", video: "VP9", audio: "OPUS" },
+	};
+	const plan = (kind: FileKind) =>
 		encodingPlanSchema.parse({
 			planVersion: 1,
 			name: "file",
@@ -239,14 +311,14 @@ describe("a compiled plan, run through the executor", () => {
 			renditions: [
 				{
 					key: "v",
-					codec: "H264",
+					codec: FILES[kind].video,
 					ingestKey: "video",
 					height: 360,
 					bitrate: 800000,
 				},
 				{
 					key: "a",
-					codec: "AAC",
+					codec: FILES[kind].audio,
 					ingestKey: "audio",
 					bitrate: 128000,
 					rate: 48000,
@@ -258,7 +330,7 @@ describe("a compiled plan, run through the executor", () => {
 					kind,
 					streamKey: "v",
 					additionalStreamKeys: ["a"],
-					filename: kind === "PROGRESSIVE_TS" ? "video.ts" : "video.mov",
+					filename: FILES[kind].filename,
 					destination: { outputKey: "out", path: "files" },
 				},
 			],
@@ -267,7 +339,7 @@ describe("a compiled plan, run through the executor", () => {
 		});
 
 	/** Every create up to the encoding start, with ids chained as the processor does. */
-	async function runCreates(kind: "PROGRESSIVE_TS" | "PROGRESSIVE_MOV") {
+	async function runCreates(kind: FileKind) {
 		const sdk = fakeSdk();
 		const context = ctx(sdk);
 		for (const op of compilePlan(plan(kind))) {
@@ -312,5 +384,28 @@ describe("a compiled plan, run through the executor", () => {
 			additionalStreamIds: [created.get("stream:a")],
 			filename: "video.mov",
 		});
+	});
+
+	it("creates the WebM file the same way, from a VP9 and an Opus stream", async () => {
+		const { sdk, ids: created } = await runCreates("PROGRESSIVE_WEBM");
+		expect(created.get("stream:v")).toEqual(expect.any(String));
+		expect(created.get("stream:a")).toEqual(expect.any(String));
+		expect(created.get("stream:a")).not.toBe(created.get("stream:v"));
+		expect(sdk.createProgressiveWebmMuxing).toHaveBeenCalledTimes(1);
+		const [encodingId, sent] = vi.mocked(sdk.createProgressiveWebmMuxing).mock
+			.calls[0] as [string, Record<string, unknown>];
+		expect(encodingId).toBe(created.get("encoding"));
+		expect(sent).toMatchObject({
+			streamId: created.get("stream:v"),
+			additionalStreamIds: [created.get("stream:a")],
+			filename: "video.webm",
+			destination: {
+				outputId: created.get("output:out"),
+				outputPath: "files",
+			},
+		});
+		expect(created.get("muxing:file")).toEqual(expect.any(String));
+		// One file and no segments: the segmented creator did not run.
+		expect(sdk.createWebmMuxing).not.toHaveBeenCalled();
 	});
 });

@@ -1,12 +1,17 @@
-import { ProgressiveMovMuxing, ProgressiveTsMuxing } from "@bitmovin/api-sdk";
+import {
+	ProgressiveMovMuxing,
+	ProgressiveTsMuxing,
+	ProgressiveWebmMuxing,
+} from "@bitmovin/api-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * The gateway for the two whole-file muxings, against the SDK's own models.
+ * The gateway for the three whole-file muxings, against the SDK's own models.
  *
  * Offline evidence only: these arms prove which SDK endpoint is called and
  * what the request model holds. They do not prove Bitmovin accepts it — the
- * progressive MOV request in particular has never been sent by this app.
+ * progressive MOV request in particular has never been sent by this app, and
+ * no run of a progressive WebM holding two streams is on record.
  */
 const api = vi.hoisted(() => ({
 	tsCreate: vi.fn(),
@@ -15,7 +20,11 @@ const api = vi.hoisted(() => ({
 	movCreate: vi.fn(),
 	movList: vi.fn(),
 	movCustomData: vi.fn(),
+	webmCreate: vi.fn(),
+	webmList: vi.fn(),
+	webmCustomData: vi.fn(),
 	segmentedTsCreate: vi.fn(),
+	segmentedWebmCreate: vi.fn(),
 	mp4Create: vi.fn(),
 }));
 
@@ -35,7 +44,13 @@ vi.mock("@bitmovin/api-sdk", async (importOriginal) => {
 						list: api.movList,
 						customdata: { get: api.movCustomData },
 					},
+					progressiveWebm: {
+						create: api.webmCreate,
+						list: api.webmList,
+						customdata: { get: api.webmCustomData },
+					},
 					ts: { create: api.segmentedTsCreate },
+					webm: { create: api.segmentedWebmCreate },
 					mp4: { create: api.mp4Create },
 				},
 			},
@@ -62,6 +77,13 @@ const movParams = {
 	destination: { outputId: "output-1", outputPath: "files/" },
 	name: "Video Progressive MOV Muxing 360p",
 };
+const webmParams = {
+	streamId: "video-stream",
+	additionalStreamIds: ["audio-stream"],
+	filename: "video.webm",
+	destination: { outputId: "output-1", outputPath: "files/" },
+	name: "Video Progressive WebM Muxing 360p",
+};
 
 function setup(window = false) {
 	const audit = vi.fn(async () => {});
@@ -85,6 +107,8 @@ beforeEach(() => {
 	api.tsList.mockResolvedValue({ items: [] });
 	api.movCreate.mockResolvedValue({ id: "mov-new" });
 	api.movList.mockResolvedValue({ items: [] });
+	api.webmCreate.mockResolvedValue({ id: "webm-new" });
+	api.webmList.mockResolvedValue({ items: [] });
 });
 
 describe("progressive TS gateway", () => {
@@ -200,5 +224,71 @@ describe("progressive MOV gateway", () => {
 			ops.createProgressiveMovMuxing("enc-1", movParams),
 		).resolves.toBe("owned");
 		expect(api.movCreate).not.toHaveBeenCalled();
+	});
+});
+
+describe("progressive WebM gateway", () => {
+	/** The request body as it goes out: what the SDK's serialiser keeps. */
+	const body = (call: number) =>
+		JSON.parse(JSON.stringify(api.webmCreate.mock.calls[call]?.[1])) as Record<
+			string,
+			unknown
+		>;
+
+	it("creates a ProgressiveWebmMuxing holding both streams, video first", async () => {
+		const { ops, audit } = setup();
+		await expect(
+			ops.createProgressiveWebmMuxing("enc-1", webmParams),
+		).resolves.toBe("webm-new");
+		expect(api.webmCreate).toHaveBeenCalledTimes(1);
+		expect(api.webmCreate.mock.calls[0]?.[0]).toBe("enc-1");
+		const sent = api.webmCreate.mock.calls[0]?.[1];
+		expect(sent).toBeInstanceOf(ProgressiveWebmMuxing);
+		expect(sent.streams).toHaveLength(2);
+		expect(sent).toMatchObject({
+			filename: "video.webm",
+			streams: [{ streamId: "video-stream" }, { streamId: "audio-stream" }],
+			outputs: [{ outputId: "output-1", outputPath: "files/" }],
+			name: "Video Progressive WebM Muxing 360p",
+		});
+		// Segmented WebM is a different resource with a different endpoint.
+		expect(api.segmentedWebmCreate).not.toHaveBeenCalled();
+		expect(api.movCreate).not.toHaveBeenCalled();
+		expect(audit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				path: "/encoding/encodings/enc-1/muxings/progressive-webm",
+			}),
+		);
+	});
+
+	it("sends exactly one stream when no additional id is given — the request it always made", async () => {
+		// The QC mirror of a VP9 rendition and a WEBM muxing marked progressive
+		// call this with one stream. Absent and `undefined` (what the executor
+		// passes for a ref the op does not carry) are the same request.
+		const { ops } = setup();
+		const { additionalStreamIds: _audio, ...oneStream } = webmParams;
+		await ops.createProgressiveWebmMuxing("enc-1", oneStream);
+		await ops.createProgressiveWebmMuxing("enc-1", {
+			...oneStream,
+			additionalStreamIds: undefined,
+		});
+		expect(api.webmCreate).toHaveBeenCalledTimes(2);
+		// The whole body, so a field that crept in beside the stream would show.
+		const single = {
+			type: "PROGRESSIVE_WEBM",
+			name: "Video Progressive WebM Muxing 360p",
+			filename: "video.webm",
+			streams: [{ streamId: "video-stream" }],
+			outputs: [{ outputId: "output-1", outputPath: "files/", acl: [] }],
+			ignoredBy: [],
+		};
+		expect(body(0)).toEqual(single);
+		expect(body(1)).toEqual(single);
+		// The two-stream request differs from it by the second stream alone.
+		await ops.createProgressiveWebmMuxing("enc-1", webmParams);
+		expect(body(2)).toEqual({
+			...single,
+			streams: [{ streamId: "video-stream" }, { streamId: "audio-stream" }],
+		});
 	});
 });

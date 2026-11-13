@@ -99,6 +99,51 @@ class RunnerTests(unittest.TestCase):
             for option in ("enc_width", "enc_height", "enc_bitdepth"):
                 self.assertEqual(cambi[0].get(option, "0"), "0", option)
 
+    def test_a_full_range_picture_is_widened_as_the_scale_filter_widens_it(self):
+        # A decoder names a full-range 8-bit picture `yuvj420p` (MJPEG, H.264)
+        # or `yuv420p` with a full range (FFV1, AV1). FFmpeg's scale filter
+        # widens a picture that it does not scale to 10 bits by copying each
+        # plane, and it repeats the top bits of full-range luma. The scorer
+        # has to as well: it once kept swscale's general scaler for the first
+        # name, and a pair of one size then scored 0.4 away from
+        # `ffmpeg -lavfi libvmaf`.
+        named = self.root / "full-range-j.mkv"
+        plain = self.root / "full-range-plain.mkv"
+        wide = self.root / "full-range-10.mkv"
+        # Both ranges are named for the filter, so that FFmpeg 6.1 copies the
+        # planes as well; the FFmpeg whose score the worker gives, n8.1.3,
+        # does so unasked.
+        same_range = "scale=in_range=full:out_range=full"
+        commands = [
+            ["-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24", "-frames:v", "3",
+             "-vf", "scale=out_range=full,format=yuvj420p", "-c:v", "mjpeg", "-q:v", "2", str(named)],
+            # The same pictures under the other name.
+            ["-i", str(named), "-vf", f"{same_range},format=yuv420p",
+             "-c:v", "ffv1", "-color_range", "pc", str(plain)],
+            # The filter's 10-bit pictures.
+            ["-i", str(named), "-vf", f"{same_range},format=yuv420p10le",
+             "-c:v", "ffv1", "-color_range", "pc", str(wide)],
+        ]
+        for command in commands:
+            subprocess.run([args.ffmpeg, "-v", "error", "-nostdin", *command], check=True,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+        cases = [
+            # The scorer's pictures of either name are the filter's.
+            ("filter-j", wide, named, 10),
+            ("filter-plain", wide, plain, 10),
+            # And the two names give one picture at either bit depth.
+            ("names-8", plain, named, 8),
+            ("names-10", plain, named, 10),
+        ]
+        for label, reference, distorted, bits in cases:
+            run, output = self.score(f"full-range-{label}.json", reference=reference,
+                                     distorted=distorted, extra=("--bit-depth", str(bits)))
+            self.assertEqual(run.returncode, 0, run.stderr)
+            psnr = [f["value"] for f in json.loads(output.read_text())["features"]
+                    if f["name"] in ("psnr_y", "psnr_cb", "psnr_cr")]
+            self.assertEqual(len(psnr), 9, label)
+            self.assertEqual(set(psnr), {6 * bits + 12}, label)
+
     def test_partial_comparison_is_explicit_and_flushes_temporal_features(self):
         run, output = self.score("limited.json", extra=("--max-frames", "2"))
         self.assertEqual(run.returncode, 0, run.stderr)

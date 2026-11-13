@@ -25,10 +25,15 @@
  *   FFmpeg converts the encode to the reference's matrix first, and it takes a
  *   file that names none for BT.601.
  *
- * Measured on 2026-11-13 with the worker image's FFmpeg and the scorer's CPU
- * reference, against which every GPU run is checked: the two scores were equal
- * to the sixth decimal in the 89 comparisons that these rules let through, and
- * differed by 0.00003 to 13.2 in the 22 that they refuse.
+ * Measured on 2026-11-13 with the worker image's FFmpeg, the command of a
+ * Local CPU measurement and the scorer's CPU reference, against which every
+ * GPU run is checked, in 129 comparisons. These rules let 107 through: the two
+ * scores were equal to the sixth decimal in 97, five were too small for the
+ * model in both programs, and five, at widths where libvmaf's score depends on
+ * its thread count on arm64, were equal with one thread. In the 22 that the
+ * rules refuse, the two scores differed by 0.00003 to 13.3. On a machine with
+ * an NVIDIA and an AMD GPU, the CUDA and the Vulkan backend then gave FFmpeg's
+ * score to within 0.000002 in every comparison that was scored there.
  * `native-comparison.test.ts` holds the rules against these measurements, and
  * "GPU scoring and libvmaf through FFmpeg" in docs/FFMPEG-BUILD.md records
  * them.

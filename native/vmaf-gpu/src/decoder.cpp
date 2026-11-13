@@ -35,6 +35,26 @@ void check(int result, const char *operation) {
     av_strerror(result, text, sizeof(text));
     throw std::runtime_error(std::string(operation) + ": " + text);
 }
+// A decoder names a full-range picture by a "J" format (H.264, MJPEG) or by
+// the plain format and the frame's range (AV1, FFV1). swscale chooses its
+// conversion when a context is created, and it takes a "J" source for full
+// range against a limited-range target: it then keeps its general scaler for a
+// picture that is not scaled. FFmpeg's scale filter names the range of both
+// sides first, and swscale copies such a picture plane by plane, widening
+// full-range luma from 8 bits by repeating its top bits. The context is
+// therefore created for the plain format, and the range is set apart, so that
+// a picture is converted as that filter converts it, by either of its names.
+AVPixelFormat without_range(AVPixelFormat format) {
+    switch (format) {
+    case AV_PIX_FMT_YUVJ420P: return AV_PIX_FMT_YUV420P;
+    case AV_PIX_FMT_YUVJ422P: return AV_PIX_FMT_YUV422P;
+    case AV_PIX_FMT_YUVJ444P: return AV_PIX_FMT_YUV444P;
+    case AV_PIX_FMT_YUVJ440P: return AV_PIX_FMT_YUV440P;
+    case AV_PIX_FMT_YUVJ411P: return AV_PIX_FMT_YUV411P;
+    default: return format;
+    }
+}
+
 bool unsupported_banding_color(AVColorTransferCharacteristic transfer,
                               AVColorPrimaries primaries, AVColorSpace space) {
     return transfer == AVCOL_TRC_SMPTE2084 || transfer == AVCOL_TRC_ARIB_STD_B67 ||
@@ -292,8 +312,10 @@ struct Decoder::Impl {
 #endif
         }
         check(av_frame_make_writable(conformed), "reuse comparison frame");
+        const auto decoded_format = static_cast<AVPixelFormat>(frame->format);
+        const auto plain_format = without_range(decoded_format);
         scale = sws_getCachedContext(scale, frame->width, frame->height,
-            static_cast<AVPixelFormat>(frame->format), int(width), int(height),
+            plain_format, int(width), int(height),
             static_cast<AVPixelFormat>(conformed->format), SWS_BICUBIC,
             nullptr, nullptr, nullptr);
         if (!scale) throw std::runtime_error("Cannot create comparison scaler");
@@ -301,7 +323,7 @@ struct Decoder::Impl {
         // pixel conversion, and chroma is always preserved in the comparison.
         const int *matrix = sws_getCoefficients(frame->colorspace == AVCOL_SPC_BT709
             ? SWS_CS_ITU709 : SWS_CS_DEFAULT);
-        const int full_range = frame->color_range == AVCOL_RANGE_JPEG;
+        const int full_range = frame->color_range == AVCOL_RANGE_JPEG || plain_format != decoded_format;
         check(sws_setColorspaceDetails(scale, matrix, full_range, matrix, full_range,
                                       0, 1 << 16, 1 << 16), "set comparison colorspace");
         const int rows = sws_scale(scale, frame->data, frame->linesize, 0, frame->height,

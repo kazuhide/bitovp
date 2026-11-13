@@ -16,16 +16,21 @@ const video = (
 
 /**
  * Comparisons of 2026-11-13: the worker image's FFmpeg (n8.1.3, libvmaf
- * `f712fa7`) with the worker's command of the ordinary method, against the CPU
- * reference of the GPU scorer at the named bit depth, on the same two files.
- * Each line is one combination of what ffprobe says of the reference and of
- * the encode (pixel format, range, colour matrix), the bit depth given to the
- * scorer, the number of pairs measured, and the largest difference of the two
- * mean scores. The pairs were encodes of 128x72 to 640x360 in H.264, AV1 and
- * FFV1 against references of 640x360 in H.264, ProRes and FFV1, and pairs of
- * one size from 240x160 to 1920x1080, of 24 or 48 frames, with three VMAF v1
- * models. "GPU scoring and libvmaf through FFmpeg" in docs/FFMPEG-BUILD.md
- * records them, and ten further comparisons that are not in this list.
+ * `f712fa7`) with the command of a Local CPU measurement by the ordinary
+ * method, its `fps` filter included, against the CPU reference of the GPU
+ * scorer at the named bit depth, on the same two files. Each line is one
+ * combination of what ffprobe says of the reference and of the encode (pixel
+ * format, range, colour matrix), the bit depth given to the scorer, the number
+ * of comparisons measured, and the largest difference of the two mean scores.
+ * A pair of files that was scored with several models counts once for each.
+ * The files were encodes of 128x72 to 640x360 in H.264, AV1 and FFV1 against
+ * references of 640x360 in H.264, ProRes and FFV1, and pairs of one size from
+ * 160x216 to 1920x1080, of 24 or 48 frames, with three VMAF v1 models. A
+ * full-range encode was measured scaled and at the reference's size: FFmpeg
+ * converts the two in different ways. "GPU scoring and libvmaf through FFmpeg"
+ * in docs/FFMPEG-BUILD.md records them, and ten further comparisons that are
+ * not in this list: five that were too small for the model, and five at widths
+ * where libvmaf's score depends on its thread count.
  */
 const MEASURED = [
 	[["yuv420p"], ["yuv420p"], 8, 42, 0.0],
@@ -51,24 +56,24 @@ const MEASURED = [
 	// Full range on one side, and on both.
 	[["yuvj420p", "pc"], ["yuv420p"], 8, 2, 12.542433],
 	[["yuvj420p", "pc"], ["yuv420p10le"], 8, 1, 13.244326],
-	[["yuvj420p", "pc"], ["yuv420p10le"], 10, 1, 13.130959],
+	[["yuvj420p", "pc"], ["yuv420p10le"], 10, 1, 13.254648],
 	[["yuv420p10le", "pc"], ["yuv420p10le"], 10, 1, 3.684738],
 	[["yuv420p10le"], ["yuv420p10le", "pc"], 10, 1, 11.641452],
 	[["yuv420p"], ["yuvj420p", "pc"], 8, 1, 10.453317],
-	[["yuvj420p", "pc"], ["yuvj420p", "pc"], 8, 4, 0.0],
+	[["yuvj420p", "pc"], ["yuvj420p", "pc"], 8, 3, 0.0],
 	[["yuvj420p", "pc"], ["yuv420p10le", "pc"], 8, 1, 0.015387],
 	[["yuvj420p", "pc"], ["yuvj422p", "pc"], 8, 1, 1.019388],
-	[["yuv420p10le", "pc"], ["yuv420p10le", "pc"], 10, 1, 0.0],
-	[["yuv420p10le", "pc"], ["yuvj420p", "pc"], 10, 1, 0.0],
-	[["yuv420p10le", "pc"], ["yuvj422p", "pc"], 10, 1, 0.0],
+	[["yuv420p10le", "pc"], ["yuv420p10le", "pc"], 10, 2, 0.0],
+	[["yuv420p10le", "pc"], ["yuvj420p", "pc"], 10, 2, 0.0],
+	[["yuv420p10le", "pc"], ["yuvj422p", "pc"], 10, 2, 0.0],
 	// 8-bit full range under the name `yuv420p`, as ffprobe gives it for a
 	// full-range AV1 or FFV1 file (H.264 becomes `yuvj420p`).
-	[["yuv420p", "pc"], ["yuv420p", "pc"], 8, 2, 0.0],
-	[["yuv420p", "pc"], ["yuvj420p", "pc"], 8, 1, 0.0],
-	[["yuvj420p", "pc"], ["yuv420p", "pc"], 8, 1, 0.0],
-	[["yuv420p", "pc"], ["yuvj422p", "pc"], 8, 1, 0.0],
-	[["yuv420p", "pc"], ["yuv420p10le", "pc"], 8, 1, 0.0],
-	[["yuv420p10le", "pc"], ["yuv420p", "pc"], 10, 2, 0.0],
+	[["yuv420p", "pc"], ["yuv420p", "pc"], 8, 3, 0.0],
+	[["yuv420p", "pc"], ["yuvj420p", "pc"], 8, 2, 0.0],
+	[["yuvj420p", "pc"], ["yuv420p", "pc"], 8, 2, 0.0],
+	[["yuv420p", "pc"], ["yuvj422p", "pc"], 8, 2, 0.0],
+	[["yuv420p", "pc"], ["yuv420p10le", "pc"], 8, 2, 0.0],
+	[["yuv420p10le", "pc"], ["yuv420p", "pc"], 10, 3, 0.0],
 	[["yuv420p", "pc"], ["yuv420p"], 8, 1, 11.673198],
 	[["yuv420p"], ["yuv420p", "pc"], 8, 1, 2.149615],
 	// The same pixel data with other colour matrix tags.
@@ -83,7 +88,7 @@ describe("what the GPU scorer compares to give the score of libvmaf through FFmp
 	it("lets through exactly the measured combinations in which the two scores were equal, at the measured bit depth", () => {
 		let equal = 0;
 		let different = 0;
-		for (const [reference, encode, bits, pairs, difference] of MEASURED) {
+		for (const [reference, encode, bits, comparisons, difference] of MEASURED) {
 			const comparison = vmafNativeComparison(
 				video(...reference),
 				video(...encode),
@@ -91,14 +96,14 @@ describe("what the GPU scorer compares to give the score of libvmaf through FFmp
 			const label = `${reference.join(" ")} / ${encode.join(" ")}`;
 			if (difference === 0) {
 				expect(comparison, label).toEqual({ bitDepth: bits });
-				equal += pairs;
+				equal += comparisons;
 			} else {
 				expect(comparison, label).toHaveProperty("refusal");
-				different += pairs;
+				different += comparisons;
 			}
 		}
 		// The numbers that the module's comment names.
-		expect([equal, different]).toEqual([89, 22]);
+		expect([equal, different]).toEqual([97, 22]);
 	});
 
 	it("compares at the reference's bit depth", () => {

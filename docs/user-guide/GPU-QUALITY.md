@@ -341,13 +341,20 @@ filter. A measurement on the GPU also
 
 Every GPU run computes a CPU reference, which is libvmaf itself on the
 pictures and with the settings of that run, and a GPU result is taken only when
-it agrees with it. On 2026-11-13 this CPU reference was compared with the
-worker's FFmpeg command of **Local CPU** on the same files: the two mean scores
-were equal to the sixth decimal in 89 comparisons. The references were 8-bit
-and 10-bit 4:2:0 files from 240 × 160 to 1920 × 1080; the encodes were H.264,
-AV1 and FFV1 files of 8, 10 and 12 bits in 4:2:0, 4:2:2 and 4:4:4, of the
+every frame's score is within 0.0001 of that reference and every feature within
+about 0.000001.
+
+On 2026-11-13 this was measured on one worker with an NVIDIA RTX 5060 Ti, for
+the CUDA scorer, and an AMD Radeon 890M, for the Vulkan scorer. Each pair went
+through the worker's scoring code on both GPUs and through the FFmpeg command
+of **Local CPU**. In 148 comparisons the mean score of the CUDA scorer was
+within 0.0000015 of the **Local CPU** score, and that of the Vulkan scorer
+within 0.0000006. The references were 8-bit and 10-bit 4:2:0 files from 160 ×
+216 to 1920 × 1080, in limited and in full range; the encodes were H.264, AV1
+and FFV1 files of 8, 10 and 12 bits in 4:2:0, 4:2:2 and 4:4:4, of the
 reference's size or scaled up from as little as 128 × 72; and three VMAF v1.0
-models were used. The
+models were used. 17 of the comparisons used a 10-second 1920 × 1080 clip of
+Big Buck Bunny, as an 8-bit and as a 10-bit reference. The
 [build record](../FFMPEG-BUILD.md#gpu-scoring-and-libvmaf-through-ffmpeg)
 holds the comparisons.
 
@@ -359,24 +366,49 @@ What follows:
   scores it on a GPU or on the CPU.
 - A measurement that decides a delivery gate uses CPU scoring, and a model
   outside the eight VMAF v1.0 models is scored on the CPU with either choice.
-- The worker takes results only from a scorer that was built from the current
-  source. An earlier scorer tells CAMBI about the encode in every run, and the
-  measurement then fails with `NATIVE_RECEIPT_COMPARISON_MISMATCH` and stores
-  no score. Build and install the scorer again after an update:
+- The worker takes a result only when the scorer's receipt shows the bit depth
+  that the worker asked for and nothing told to CAMBI about the encode. A
+  scorer that was built before this change tells CAMBI about the encode in
+  every run, and the measurement then fails with
+  `NATIVE_RECEIPT_COMPARISON_MISMATCH` and stores no score. Build and install
+  the scorer again after an update:
   [native scorer guide](../../native/vmaf-gpu/README.md). Banding measurements
   work with either scorer.
-- For references of some widths, libvmaf's own score depends on the number of
-  threads that it runs with: on arm64, widths of 168 to 264 that are 8 more
+- The scorer decodes and scales with the FFmpeg libraries of the machine on
+  which it is built, not with the worker's FFmpeg. The comparison used those of
+  Ubuntu 24.04 (FFmpeg 6.1.1) next to the worker's FFmpeg n8.1.3. A scorer
+  that is built against other FFmpeg libraries was not measured.
+
+Where a GPU score and a **Local CPU** score of one pair can still differ:
+
+- **Frames that are not evenly spaced.** **Local CPU** makes the encode's
+  frames evenly spaced at the reference's frame rate before it compares
+  (FFmpeg's `fps` filter); GPU scoring pairs the frames of the two files in
+  their order. For files with a constant frame rate that is the same, and it
+  was the same in every comparison above. For a reference and an encode that
+  leave out the same frames, GPU scoring compares the frames that belong
+  together and **Local CPU** does not: one such pair scored 52.96 with GPU
+  scoring, and with FFmpeg without that filter, and 21.26 with **Local CPU**.
+  GPU scoring refuses a pair whose two files differ in frame rate or in frame
+  count.
+- **Workers of different processor architectures.** FFmpeg's scale filter
+  makes other 8-bit pictures on x86-64 than on arm64. **Local CPU** therefore
+  scores an encode that is scaled and compared in 8 bits differently on the
+  two: 65.69 and 65.66 for the 640 × 360 encode of the table below, and up to
+  0.26 apart with test patterns. An encode of the reference's size, and a
+  comparison in 10 bits, scored the same on both. A GPU score is the **Local
+  CPU** score of a worker of the GPU worker's architecture:
+  [the score of one pair on arm64 and on x86-64](../FFMPEG-BUILD.md#the-score-of-one-pair-on-arm64-and-on-x86-64).
+- **References of some widths on arm64.** libvmaf's own score depends there on
+  the number of threads that it runs with: widths of 168 to 264 that are 8 more
   than a multiple of 16 gave means up to 2.12 apart, and such widths up to 472
-  gave smaller differences. **Local CPU** shows this as well, and it is not a
-  difference between the two methods:
+  gave smaller differences. On the x86-64 worker of the comparison no width
+  did, and its scores for such widths are not those of arm64: a 360 × 640 pair
+  scored 56.27 there, and 47.99 or 48.58 on arm64:
   [libvmaf and its thread count](../FFMPEG-BUILD.md#libvmaf-and-its-thread-count).
 
-The comparison above ran the scorer's CPU reference. The scorer with these
-settings has not been run on a GPU for this note. Its CUDA and Vulkan code did
-not change with them, and its own tests hold the CUDA code to the CPU reference
-for 8-bit and 10-bit pictures, with and without a declared encode. The Vulkan
-scorer and HDR files, which GPU scoring does not take, were not measured.
+Not measured: HDR files, which GPU scoring does not take; sizes above 1920 ×
+1080; and other GPUs and drivers than the two above.
 
 #### GPU results of scoring generations 9 and 10
 
@@ -404,7 +436,9 @@ scored on one worker with an NVIDIA RTX 5060 Ti on 2026-11-12:
 In all, seven comparisons at equal sizes from 216 × 160 to 1920 × 1080 agreed
 to within 0.000001, and in fifteen comparisons of a scaled encode the GPU score
 was 0.96 to 1.50 higher. With the two settings applied by hand to the CPU
-method, libvmaf gave the GPU score to within 0.000001 in ten comparisons.
+method, libvmaf gave the GPU score to within 0.000001 in ten comparisons. On
+2026-11-13, GPU scoring of generations 12 and 13 gave the **Local CPU** column
+of the table for all eight, to within 0.000001.
 
 - A stored result of generation 9 or 10 stays readable. For a scaled encode it
   is not the score that GPU scoring or **Local CPU** gives now, and the
@@ -419,7 +453,7 @@ method, libvmaf gave the GPU score to within 0.000001 in ten comparisons.
 FFmpeg converts some pairs before libvmaf compares them, and the GPU scorer
 makes no such conversion: it turns both files into 4:2:0 pictures of 8 or of 10
 bits and changes nothing else. For these pairs its score would not be that of
-**Local CPU**. In 22 measured comparisons the two differed by 0.00003 to 13.2.
+**Local CPU**. In 22 measured comparisons the two differed by 0.00003 to 13.3.
 A measurement on the GPU is therefore not started for them:
 
 | Pair | What FFmpeg does for **Local CPU** |
@@ -431,8 +465,10 @@ A measurement on the GPU is therefore not started for them:
 
 So GPU scoring takes a reference in `yuv420p` or `yuv420p10le`, and a
 `yuvj420p` reference with an 8-bit 4:2:0 encode. Of the encode's pixel format it
-asks only that FFmpeg's libvmaf filter knows it: an encode in 4:2:2 or 4:4:4,
-or with 10 or 12 bits, is scored against such a reference.
+asks only that it is 4:2:0, 4:2:2 or 4:4:4 with 8, 10, 12 or 16 bits: an encode
+in 4:2:2 or 4:4:4, or with 10 or 12 bits, is scored against such a reference.
+16-bit encodes, and 4:4:4 encodes of more than 8 bits, were not among the
+measured ones.
 
 The measurement ends before any scoring, with an error that names the reason:
 

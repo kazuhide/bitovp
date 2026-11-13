@@ -5331,21 +5331,24 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 			}),
 			run: vi.fn(),
 		};
+		const planned = vi.fn<
+			NonNullable<VmafProcessorDeps["resolveLocalResources"]>
+		>(async () => ({
+			threads: 1,
+			concurrency: 2,
+			estimatedBytes: 1024,
+			exclusive: false,
+			manualFallback: false,
+			nativeDevice: 2,
+			nativeInflightFrames: 2,
+		}));
 		const t = setup({
 			localResources: sharedTestResources(),
 			localRunner,
 			scoringBackend: backend,
 			job: { model: v1, scoringVersion: VMAF_SCORING_VERSION },
 			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
-			resolveLocalResources: async () => ({
-				threads: 1,
-				concurrency: 2,
-				estimatedBytes: 1024,
-				exclusive: false,
-				manualFallback: false,
-				nativeDevice: 2,
-				nativeInflightFrames: 2,
-			}),
+			resolveLocalResources: planned,
 		});
 		const raw = vi.mocked(t.runner.run).getMockImplementation();
 		if (!raw) throw new Error("Missing raw runner fixture");
@@ -5359,7 +5362,7 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 				: raw(bin, argv, options as never);
 		vi.mocked(t.runner.run).mockImplementation(probed);
 		vi.mocked(localRunner.run).mockImplementation(probed);
-		return t;
+		return Object.assign(t, { planned });
 	};
 
 	it.each([
@@ -5379,6 +5382,7 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 			);
 			expect(small.job.status).toBe("ERROR");
 			expect(native).not.toHaveBeenCalled();
+			expect(small.planned).not.toHaveBeenCalled();
 
 			// The smallest pictures that the model scores, and an encode below
 			// CAMBI's range for a declared encode: nothing of it is declared.
@@ -5391,6 +5395,9 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 				await edge.processor.process({ vmafJobId: VMAF_JOB_ID }),
 			).toMatchObject({ status: "FINISHED", results: 2 });
 			expect(native).toHaveBeenCalledTimes(2);
+			// A pair that is scored has resources planned for it, by the planner
+			// that the refusals of this file leave uncalled.
+			expect(edge.planned).toHaveBeenCalled();
 			for (const [, options] of native.mock.calls)
 				expect(options).toMatchObject({
 					scoring: { backend },
@@ -5461,9 +5468,11 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 			).rejects.toThrow(message);
 			expect(t.job.status).toBe("ERROR");
 			expect(t.job.error).toContain(message);
-			// Neither the GPU scorer nor libvmaf in its place.
+			// Neither the GPU scorer nor libvmaf in its place, and no resources
+			// planned for either.
 			expect(native).not.toHaveBeenCalled();
 			expect(scoringRuns(t)).toHaveLength(0);
+			expect(t.planned).not.toHaveBeenCalled();
 		} finally {
 			native.mockRestore();
 		}

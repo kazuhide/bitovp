@@ -39,6 +39,9 @@ const api = {
 	tsList: vi.fn(),
 	tsCreate: vi.fn(),
 	tsCd: vi.fn(),
+	progressiveTsList: vi.fn(),
+	progressiveTsCreate: vi.fn(),
+	progressiveTsCd: vi.fn(),
 	webmList: vi.fn(),
 	webmCreate: vi.fn(),
 	webmCd: vi.fn(),
@@ -99,6 +102,11 @@ vi.mock("@bitmovin/api-sdk", async (importOriginal) => {
 								customdata: { get: api.fairplayTsCd },
 							},
 						},
+					},
+					progressiveTs: {
+						list: api.progressiveTsList,
+						create: api.progressiveTsCreate,
+						customdata: { get: api.progressiveTsCd },
 					},
 					webm: {
 						list: api.webmList,
@@ -225,6 +233,7 @@ beforeEach(() => {
 	api.fmp4Create.mockResolvedValue({ id: "fmp4-new" });
 	api.mp4Create.mockResolvedValue({ id: "mp4-new" });
 	api.tsCreate.mockResolvedValue({ id: "ts-new" });
+	api.progressiveTsCreate.mockResolvedValue({ id: "progressive-ts-new" });
 	api.webmCreate.mockResolvedValue({ id: "webm-new" });
 	api.chunkedTextCreate.mockResolvedValue({ id: "ctext-new" });
 	api.cencFmp4Create.mockResolvedValue({ id: "cenc-new" });
@@ -1204,6 +1213,13 @@ describe("per-family wiring — each create reaches the shared discipline", () =
 		["fmp4", "fmp4List", "fmp4Cd", "fmp4Create", "createFmp4Muxing"],
 		["mp4", "mp4List", "mp4Cd", "mp4Create", "createMp4Muxing"],
 		["ts", "tsList", "tsCd", "tsCreate", "createTsMuxing"],
+		[
+			"progressiveTs",
+			"progressiveTsList",
+			"progressiveTsCd",
+			"progressiveTsCreate",
+			"createProgressiveTsMuxing",
+		],
 		["webm", "webmList", "webmCd", "webmCreate", "createWebmMuxing"],
 		[
 			"chunkedText",
@@ -1222,6 +1238,7 @@ describe("per-family wiring — each create reaches the shared discipline", () =
 			const created = await ops[method]("enc-1", {
 				streamId: "stream-1",
 				...(label === "mp4" ? { filename: "out.mp4" } : {}),
+				...(label === "progressiveTs" ? { filename: "out.ts" } : {}),
 			} as never);
 			expect(created).toBe(`${label}-lost`);
 			expect(api[createKey]).not.toHaveBeenCalled();

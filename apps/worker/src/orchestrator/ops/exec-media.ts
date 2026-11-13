@@ -464,6 +464,21 @@ export async function executeMediaStep(
 			return { resourceId, request, response: { id: resourceId } };
 		}
 
+		case "CREATE_MUXING_PROGRESSIVE_TS": {
+			const resourceId = await ctx.sdk.createProgressiveTsMuxing(
+				refId(op, ctx, "encodingId"),
+				{
+					streamId: refId(op, ctx, "streamId"),
+					additionalStreamIds: refIdList(op, ctx, "additionalStreamIds"),
+					filename: str(p.filename),
+					startOffset: optNum(p.startOffset),
+					destination: destinationOf(op, ctx),
+					name: optStr(p.name),
+				},
+			);
+			return { resourceId, request, response: { id: resourceId } };
+		}
+
 		case "CREATE_MUXING_TS": {
 			const resourceId = await ctx.sdk.createTsMuxing(
 				refId(op, ctx, "encodingId"),

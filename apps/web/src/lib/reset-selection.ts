@@ -43,7 +43,10 @@ export const RESET_CATALOG = [
 	},
 	{ category: "webhookHistory", models: ["webhookEvent"] },
 	{ category: "auditHistory", models: ["auditLog", "accessEvent"] },
-	{ category: "storageChecks", models: ["storageInspection"] },
+	{
+		category: "storageChecks",
+		models: ["vodInputPreviewTask", "storageInspection"],
+	},
 	{ category: "watchFolderHistory", models: ["watchedObject"] },
 	{ category: "alertHistory", models: ["alertEvent"] },
 	{

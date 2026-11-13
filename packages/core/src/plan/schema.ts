@@ -1174,6 +1174,23 @@ export const tsMuxingSchema = z.strictObject({
 	name: z.string().optional(),
 });
 
+/** Single MPEG-TS file; distinct from the segmented TS delivery family. */
+export const progressiveTsMuxingSchema = z.strictObject({
+	key: refKey,
+	kind: z.literal("PROGRESSIVE_TS"),
+	streamKey: refKey,
+	additionalStreamKeys: additionalStreamKeysSchema,
+	filename: z
+		.string()
+		.min(1)
+		.max(255)
+		.regex(/^[^/\\?#]+$/),
+	/** Absent preserves the provider's timestamp-offset default. */
+	startOffset: z.number().min(0).optional(),
+	destination: destinationSchema,
+	name: z.string().optional(),
+});
+
 /** WebM segments (VP9 DASH leg). */
 export const webmMuxingSchema = z.strictObject({
 	key: refKey,
@@ -1195,6 +1212,7 @@ export const planMuxingSchema = z.discriminatedUnion("kind", [
 	chunkedTextMuxingSchema,
 	textMuxingSchema,
 	tsMuxingSchema,
+	progressiveTsMuxingSchema,
 	webmMuxingSchema,
 ]);
 

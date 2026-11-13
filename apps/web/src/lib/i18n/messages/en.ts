@@ -27,6 +27,19 @@ const PROVISIONS_AT_CREATE =
 	"The channel begins starting up as soon as it is created, and charges may accrue before the planned feed time, depending on your Live Encoding pricing plan";
 
 export const en = {
+	vodTimeline: {
+		singleTs: "TS (single file)",
+		edit: "Edit on timeline",
+		ordinary: "Use ordinary inputs",
+		title: "Input sequence",
+		sourceSettings: "Source settings",
+		invalid: "Add valid clips to the input timeline.",
+		notReady:
+			"Input media is being prepared. Open Inputs to resolve unavailable sources.",
+		help: "Edit video and audio together or independently, and replace selected intervals with another source. Preview runs on the CPU and does not create an encoding job.",
+		graphUnsupported:
+			"Timeline editing is available for a single encoding. Keep advanced multi-encoding plans in the source editor.",
+	},
 	clipDiagnostics: {
 		unavailable:
 			"Clip creation is unavailable because a usable GPU-backed local model has not been verified.",

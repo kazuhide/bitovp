@@ -18,7 +18,9 @@ export function reconcileAutomaticAudioPackaging(
 			state.videos.every((video) =>
 				[video.muxing, ...(video.extraMuxings ?? [])].every(
 					(leg) =>
-						(leg?.kind === "TS" || leg?.kind === "MP4") &&
+						(leg?.kind === "TS" ||
+							leg?.kind === "MP4" ||
+							leg?.kind === "PROGRESSIVE_TS") &&
 						leg.muxedAudioKeys?.includes(key),
 				),
 			);

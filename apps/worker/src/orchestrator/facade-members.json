@@ -76,6 +76,7 @@
 	"createMp4Muxing",
 	"createNexGuardFileMarker",
 	"createOpusConfig",
+	"createProgressiveTsMuxing",
 	"createProgressiveWebmMuxing",
 	"createRedundantRtmpInput",
 	"createS3Input",

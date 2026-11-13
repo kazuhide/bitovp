@@ -24,6 +24,8 @@ export const QUEUE_NAMES = {
 	 * WORKER image, and the read is bounded (capped head + optional tail).
 	 */
 	storageInspect: "storage-inspect",
+	/** CPU-only input metadata and timeline previews; no encoder provider work. */
+	vodInputPreview: "vod-input-preview",
 	/**
 	 * Outbound notification delivery : one job per emitted
 	 * product event; the consumer fans out to matching channels. Best-effort
@@ -50,6 +52,8 @@ export const QUEUE_NAMES = {
 
 export type QueueKey = keyof typeof QUEUE_NAMES;
 export type QueueName = (typeof QUEUE_NAMES)[QueueKey];
+
+export const vodInputPreviewJobSchema = z.strictObject({ taskId: z.uuid() });
 
 export const orchestratorJobSchema = z.object({
 	encodingJobId: z.uuid(),

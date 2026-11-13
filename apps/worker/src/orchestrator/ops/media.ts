@@ -44,6 +44,7 @@ import {
 	PaddingDurationUnit,
 	PaddingSequence,
 	PictureFieldParity,
+	ProgressiveTsMuxing,
 	ProgressiveWebmMuxing,
 	Sprite,
 	SpriteCreationMode,
@@ -100,6 +101,7 @@ export function createMediaOps(
 	| "createFmp4Muxing"
 	| "createMp4Muxing"
 	| "createProgressiveWebmMuxing"
+	| "createProgressiveTsMuxing"
 	| "createTsMuxing"
 	| "createWebmMuxing"
 	| "createChunkedTextMuxing"
@@ -772,6 +774,46 @@ export function createMediaOps(
 								new ProgressiveWebmMuxing({
 									filename: p.filename,
 									streams: [new MuxingStream({ streamId: p.streamId })],
+									outputs: outputs(p.destination),
+									name: p.name,
+								}),
+							),
+						(r) => ({ id: r.id }),
+					).then(id),
+			}),
+
+		createProgressiveTsMuxing: (encodingId, p) =>
+			adoptOrCreateStamped({
+				label: "progressive ts muxing",
+				stamp: options.stamp,
+				lookup: (expect) =>
+					findStampedResource({
+						label: "progressive ts muxing",
+						expect,
+						list: (q) => muxings().progressiveTs.list(encodingId, q),
+						customData: (rid) =>
+							muxings().progressiveTs.customdata.get(encodingId, rid),
+					}),
+				auditAdopt: stampAuditAdopt(
+					`/encoding/encodings/${encodingId}/muxings/progressive-ts`,
+				),
+				create: () =>
+					audited(
+						"POST",
+						`/encoding/encodings/${encodingId}/muxings/progressive-ts`,
+						{
+							name: p.name,
+							filename: p.filename,
+							startOffset: p.startOffset,
+							outputPath: p.destination?.outputPath,
+						},
+						() =>
+							muxings().progressiveTs.create(
+								encodingId,
+								new ProgressiveTsMuxing({
+									filename: p.filename,
+									startOffset: p.startOffset,
+									streams: muxingStreams(p),
 									outputs: outputs(p.destination),
 									name: p.name,
 								}),

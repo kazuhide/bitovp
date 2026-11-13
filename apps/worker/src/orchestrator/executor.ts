@@ -168,6 +168,7 @@ export async function executeStep(
 		case "CREATE_MUXING_FMP4":
 		case "CREATE_MUXING_MP4":
 		case "CREATE_MUXING_PROGRESSIVE_WEBM":
+		case "CREATE_MUXING_PROGRESSIVE_TS":
 		case "CREATE_MUXING_TS":
 		case "CREATE_MUXING_WEBM":
 		case "CREATE_MUXING_TEXT":

@@ -527,6 +527,10 @@ function readMuxing(
 			muxing.dolbyVisionTrackSampleEntryName =
 				dolby as WizardMuxing["dolbyVisionTrackSampleEntryName"];
 		}
+	} else if (kind === "PROGRESSIVE_TS") {
+		muxing.filename = asString(mux.filename) ?? "";
+		const startOffset = asNumber(mux.startOffset);
+		if (startOffset !== undefined) muxing.startOffset = startOffset;
 	} else if (kind === "WEBM" && mux.progressive === true) {
 		muxing.progressive = true;
 		muxing.filename = asString(mux.filename) ?? "output.webm";

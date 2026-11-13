@@ -716,6 +716,83 @@ function nativeRequest(
 	});
 }
 
+describe("organization-bound VOD input preview native reads", () => {
+	const path = `/api/vod/input-previews/${MEDIA_RESOURCE}/content`;
+	it.each([
+		"GET",
+		"HEAD",
+	])("accepts native %s with only the current document organization query", async (method) => {
+		const req = nativeRequest(
+			`${path}?expectedOrganizationId=${MEDIA_ORG}`,
+			method,
+		);
+		expect(req.headers.get("x-bitovp-expected-org")).toBeNull();
+		const res = await proxy(req);
+		expect(res.status).toBe(200);
+		expect(res.headers.get("x-middleware-request-x-bitovp-expected-org")).toBe(
+			MEDIA_ORG,
+		);
+		expect(res.headers.get("x-middleware-request-x-bitovp-organization")).toBe(
+			MEDIA_ORG,
+		);
+		expect(res.headers.get("x-middleware-request-x-bitovp-role")).toBe(
+			"OPERATOR",
+		);
+		expect(res.headers.get("x-middleware-request-range")).toBe("bytes=0-15");
+	});
+	it.each([
+		"",
+		`?expectedOrganizationId=${OTHER_MEDIA_ORG}`,
+		"?expectedOrganizationId=",
+		"?expectedOrganizationId=invalid",
+		`?expectedOrganizationId=${MEDIA_ORG}&expectedOrganizationId=${MEDIA_ORG}`,
+		`?expectedOrganizationId=${MEDIA_ORG}&expectedOrganizationId=${OTHER_MEDIA_ORG}`,
+	])("refuses missing, stale or duplicate native preview bindings: %s", async (query) => {
+		for (const method of ["GET", "HEAD"]) {
+			const res = await proxy(nativeRequest(`${path}${query}`, method));
+			expect(res.status).toBe(409);
+		}
+	});
+	it.each([
+		["/api/vod/input-previews/not-a-uuid/content", "GET"],
+		[`${path}/extra`, "GET"],
+		[path.replace("/content", ""), "GET"],
+		[path.replace("/content", "/CONTENT"), "GET"],
+		[path, "POST"],
+	])("does not use the query fence for %s %s", async (otherPath, method) => {
+		const res = await proxy(
+			nativeRequest(`${otherPath}?expectedOrganizationId=${MEDIA_ORG}`, method),
+		);
+		expect(res.status).toBe(409);
+	});
+	it("retains authenticated operator, same-origin and conflicting-header guards", async () => {
+		const bound = `${path}?expectedOrganizationId=${MEDIA_ORG}`;
+		expect(
+			(await proxy(nativeRequest(bound, "GET", { cookie: "" }))).status,
+		).toBe(401);
+		expect(
+			(
+				await proxy(
+					nativeRequest(bound, "GET", { "sec-fetch-site": "cross-site" }),
+				)
+			).status,
+		).toBe(403);
+		expect(
+			(
+				await proxy(
+					nativeRequest(bound, "GET", {
+						"x-bitovp-expected-org": OTHER_MEDIA_ORG,
+					}),
+				)
+			).status,
+		).toBe(409);
+		resolveUserById.mockResolvedValue(user({ role: "VIEWER" }));
+		const viewer = await proxy(nativeRequest(bound));
+		expect(viewer.status).toBe(403);
+		expect(await viewer.json()).toMatchObject({ minRole: "OPERATOR" });
+	});
+});
+
 describe("organization-bound native media and report requests", () => {
 	it("reproduces the native video refusal when its URL has no organization binding", async () => {
 		const res = await proxy(nativeRequest(PASSIVE_ROUTES[0]));

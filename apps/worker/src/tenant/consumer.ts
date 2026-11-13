@@ -12,6 +12,7 @@ import {
 	tenantSystemSweepSchema,
 	usageBackfillJobSchema,
 	vmafJobSchema,
+	vodInputPreviewJobSchema,
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { DelayedError, type Job } from "bullmq";
@@ -151,6 +152,13 @@ export async function assertTenantJobOwned(
 				prisma,
 				"slateNormalization",
 				slateNormalizeJobSchema.parse(payload).slateNormalizationId,
+			);
+			return;
+		case "vodInputPreview":
+			await assertOwned(
+				prisma,
+				"vodInputPreviewTask",
+				vodInputPreviewJobSchema.parse(payload).taskId,
 			);
 			return;
 		case "usageStatistics":

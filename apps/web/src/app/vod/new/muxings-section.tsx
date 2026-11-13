@@ -40,8 +40,21 @@ import {
  * they protect, so they live right under that output.
  */
 
-const VIDEO_KINDS: WizardMuxingKind[] = ["FMP4", "CMAF", "MP4", "TS", "WEBM"];
-const AUDIO_KINDS: WizardMuxingKind[] = ["FMP4", "CMAF", "MP4", "TS"];
+const VIDEO_KINDS: WizardMuxingKind[] = [
+	"FMP4",
+	"CMAF",
+	"MP4",
+	"PROGRESSIVE_TS",
+	"TS",
+	"WEBM",
+];
+const AUDIO_KINDS: WizardMuxingKind[] = [
+	"FMP4",
+	"CMAF",
+	"MP4",
+	"PROGRESSIVE_TS",
+	"TS",
+];
 const SUBTITLE_KINDS: WizardMuxingKind[] = ["CHUNKED_TEXT"];
 
 const FMP4_FIELDS: OptionFieldSpec[] = [
@@ -167,6 +180,10 @@ function fieldsFor(
 			];
 		case "MP4":
 			return MP4_FIELDS;
+		case "PROGRESSIVE_TS":
+			return [
+				{ key: "filename", labelKey: "wizard.filename", control: "text" },
+			];
 		case "TS":
 			return TS_FIELDS;
 		case "WEBM":
@@ -239,7 +256,8 @@ function MuxingEditor({
 	const drmOwned = drmEntries.length > 0;
 	// Only TS and MP4 can carry a second stream — `additionalStreamKeys` lives
 	// on those two schemas.
-	const kindCanMux = kind === "TS" || kind === "MP4";
+	const kindCanMux =
+		kind === "TS" || kind === "MP4" || kind === "PROGRESSIVE_TS";
 	/**
 	 * The selection, resolved against the renditions that CURRENTLY exist.
 	 *
@@ -284,7 +302,7 @@ function MuxingEditor({
 					>
 						{kinds.map((k) => (
 							<option key={k} value={k}>
-								{k}
+								{k === "PROGRESSIVE_TS" ? t("vodTimeline.singleTs") : k}
 							</option>
 						))}
 					</SelectNative>
@@ -414,7 +432,10 @@ function MuxingEditor({
 					/>
 				</Field>
 			)}
-			{drm && !muxedIn && (kind !== "CMAF" || drmEntries.length > 0) ? (
+			{drm &&
+			!muxedIn &&
+			((kind !== "CMAF" && kind !== "PROGRESSIVE_TS") ||
+				drmEntries.length > 0) ? (
 				<Collapsible
 					summary={t("wizardX.encryptionDrmCount", {
 						count: drmEntries.length,
@@ -431,7 +452,7 @@ function MuxingEditor({
 							onRemove={() => drm.remove(index)}
 						/>
 					))}
-					{kind !== "CMAF" ? (
+					{kind !== "CMAF" && kind !== "PROGRESSIVE_TS" ? (
 						<div className="flex gap-1">
 							<Button
 								variant="secondary"

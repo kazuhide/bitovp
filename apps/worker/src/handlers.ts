@@ -2,6 +2,7 @@ import type { QueueKey } from "@bitovp/core";
 import { DelayedError, type Job } from "bullmq";
 import type { LiveChannelResult } from "./orchestrator/live-processor";
 import { ATTEMPT_LEASE_MS } from "./orchestrator/processor";
+import { VOD_INPUT_PREVIEW_LEASE_MS } from "./vod-input-preview/processor";
 
 export type HandlerResult =
 	| {
@@ -33,6 +34,7 @@ export type HandlerDeps = {
 	vmaf(jobData: unknown): Promise<unknown>;
 	/** Storage inspection (P5): bounded ffprobe over one customer object. */
 	storageInspect(jobData: unknown): Promise<unknown>;
+	vodInputPreview(jobData: unknown): Promise<{ status: string }>;
 	/** Outbound notification delivery : one event, fan-out. */
 	notify(jobData: unknown): Promise<unknown>;
 	startupProbe: (data: unknown) => Promise<unknown>;
@@ -78,6 +80,17 @@ export function createHandlers(deps: HandlerDeps): Record<QueueKey, Handler> {
 		storageInspect: async (job: Job) => {
 			await deps.storageInspect(job.data);
 			return { acknowledged: true, queue: "storageInspect" };
+		},
+		vodInputPreview: async (job: Job) => {
+			const result = await deps.vodInputPreview(job.data);
+			if (result.status === "LEASE_HELD") {
+				await job.moveToDelayed(
+					Date.now() + VOD_INPUT_PREVIEW_LEASE_MS + 1000,
+					job.token,
+				);
+				throw new DelayedError();
+			}
+			return { acknowledged: true, queue: "vodInputPreview" };
 		},
 		slateNormalize: async (job: Job) => {
 			await deps.slateNormalize(job);

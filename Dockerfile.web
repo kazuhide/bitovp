@@ -39,6 +39,8 @@ RUN pnpm --filter @bitovp/db run build
 
 RUN pnpm --filter @bitovp/web run build
 
+RUN mkdir -p /vod-input-previews && chown node:node /vod-input-previews && chmod 0700 /vod-input-previews
+
 USER node
 
 ENV BITOVP_BIND_HOST=0.0.0.0

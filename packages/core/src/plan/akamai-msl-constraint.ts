@@ -67,7 +67,7 @@ export const AKAMAI_MSL_REQUIREMENTS = {
 		 * reject valid plans. What breaks is mixing the segment container the
 		 * format does not use.
 		 */
-		forbidden: ["TS", "MP4", "WEBM", "TEXT"],
+		forbidden: ["TS", "PROGRESSIVE_TS", "MP4", "WEBM", "TEXT"],
 		/**
 		 * The manifest half of the same idea, and it was declared 3× and read
 		 * 0× for one commit (review-5 I3). The case it exists for is real and
@@ -81,13 +81,13 @@ export const AKAMAI_MSL_REQUIREMENTS = {
 	HLS: {
 		muxings: ["TS"],
 		manifests: ["HLS"],
-		forbidden: ["FMP4", "CMAF", "MP4", "WEBM", "TEXT"],
+		forbidden: ["FMP4", "CMAF", "PROGRESSIVE_TS", "MP4", "WEBM", "TEXT"],
 		forbiddenManifests: ["DASH", "SMOOTH"],
 	},
 	CMAF: {
 		muxings: ["FMP4", "CMAF"],
 		manifests: ["DASH", "HLS"],
-		forbidden: ["TS", "MP4", "WEBM", "TEXT"],
+		forbidden: ["TS", "PROGRESSIVE_TS", "MP4", "WEBM", "TEXT"],
 		forbiddenManifests: ["SMOOTH"],
 	},
 } as const satisfies Record<

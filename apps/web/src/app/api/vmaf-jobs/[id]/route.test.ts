@@ -571,6 +571,18 @@ describe("GET /api/vmaf-jobs/[id]", () => {
 		expect(result.preview).toEqual({ unavailableReason: "MISSING_FPS" });
 		expect(result.frames.length).toBeLessThanOrEqual(1500);
 		expect(result.frames.length).toBeGreaterThan(0);
+		expect(result.distribution).toMatchObject({
+			frameCount: 20_000,
+			min: pooled.min,
+			max: pooled.max,
+		});
+		expect(result.distribution.mean).toBeCloseTo(pooled.mean, 6);
+		expect(
+			result.distribution.bins.reduce(
+				(total: number, bin: { count: number }) => total + bin.count,
+				0,
+			),
+		).toBe(20_000);
 
 		// pooled is byte-for-byte the stored value.
 		expect(result.pooled.mean).toBeCloseTo(pooled.mean, 6);
@@ -640,6 +652,7 @@ describe("GET /api/vmaf-jobs/[id]", () => {
 		expect(body.encodingName).toBeNull();
 		expect(body.results[0].frames).toEqual([]);
 		expect(body.results[0].frameCount).toBe(0);
+		expect(body.results[0].distribution).toBeNull();
 	});
 });
 

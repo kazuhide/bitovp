@@ -74,6 +74,11 @@ export const MUTATION_CONTROLS = {
 		source: "app/library/content-registration.tsx",
 		bindings: 1,
 	},
+	"library.content.remove": {
+		minRole: "OPERATOR",
+		source: "app/library/content-removal-action.tsx",
+		bindings: 1,
+	},
 	"library.source.retry": {
 		minRole: "OPERATOR",
 		source: "app/library/source-panel.tsx",
@@ -443,6 +448,10 @@ export type MutationSourceContract = {
  * is hidden (for example CaptureVmafPanel -> live.channel.vmaf).
  */
 export const MUTATION_SOURCE_CENSUS = {
+	"app/library/content-removal-action.tsx": {
+		writeCalls: 1,
+		controls: ["library.content.remove"],
+	},
 	"app/library/[id]/edits/prepare-generation-controls.tsx": {
 		writeCalls: 2,
 		controls: ["library.edits.prepare", "library.edits.edit"],
@@ -773,6 +782,9 @@ export type MutationWriteFamily = {
  * never used as surrogate evidence for a write.
  */
 export const MUTATION_WRITE_FAMILIES = {
+	"app/library/content-removal-action.tsx": [
+		{ write: "PATCH /api/library/x", controls: ["library.content.remove"] },
+	],
 	"app/library/[id]/edits/prepare-generation-controls.tsx": [
 		{
 			write: "POST /api/library/media-tasks",

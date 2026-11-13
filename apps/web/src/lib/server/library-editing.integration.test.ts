@@ -12,6 +12,7 @@ import {
 } from "@bitovp/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ServerContext } from "./context";
+import { updateContent } from "./library";
 import { confirmAnalysisAssociation } from "./library-analysis-associations";
 import { createAutomaticPortrait } from "./library-automatic-portrait";
 import { listContents, listQuery } from "./library-catalog";
@@ -188,6 +189,107 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			);
 			return { content, media, project };
 		}
+		it("archives and restores a Library registration without losing a queued render or retained media", async () => {
+			const { content, media, project } = await fixture();
+			expect(
+				(await listContents(prisma, listQuery.parse({}), org)).items.some(
+					(row) => row.id === content.id,
+				),
+			).toBe(true);
+			const confirmed = await confirmEditingRevision(
+				project.id,
+				{ expectedRevision: 1, confirmSuggestions: false },
+				"fixture",
+			);
+			const render = await requestEditingRender(project.id, {
+				revisionId: confirmed.currentRevisionId,
+				kind: "EXPORT",
+				requestKey: randomUUID(),
+			});
+			await updateContent(
+				prisma,
+				content.id,
+				{ expectedRevision: 1, archived: true },
+				"fixture",
+			);
+			expect(
+				(await listContents(prisma, listQuery.parse({}), org)).items.some(
+					(row) => row.id === content.id,
+				),
+			).toBe(false);
+			const archived = await listContents(
+				prisma,
+				listQuery.parse({ archived: "true" }),
+				org,
+			);
+			expect(
+				archived.items.find((row) => row.id === content.id)?.archived,
+			).toBe(true);
+			expect(
+				await prisma.renderRun.findUnique({ where: { id: render.id } }),
+			).toMatchObject({ state: "QUEUED", projectId: project.id });
+			expect(
+				await prisma.libraryMediaVersion.findUnique({
+					where: { id: media.id },
+				}),
+			).toMatchObject({ state: "READY" });
+			expect((await readEditingProject(project.id)).draft).toEqual(
+				confirmed.draft,
+			);
+			await updateContent(
+				prisma,
+				content.id,
+				{ expectedRevision: 2, archived: false },
+				"fixture",
+			);
+			expect(
+				(await listContents(prisma, listQuery.parse({}), org)).items.find(
+					(row) => row.id === content.id,
+				),
+			).toMatchObject({ archived: false, revision: 3 });
+			expect(
+				await prisma.contentRevision.count({
+					where: { contentId: content.id },
+				}),
+			).toBe(3);
+			expect(
+				await prisma.renderRun.findUnique({ where: { id: render.id } }),
+			).toMatchObject({ state: "QUEUED" });
+		});
+		it("rejects foreign and stale registration removal or restoration without appending history", async () => {
+			const { content } = await fixture();
+			const foreign = createTenantPrismaClient(app, otherOrg);
+			await expect(
+				updateContent(
+					foreign,
+					content.id,
+					{ expectedRevision: 1, archived: true },
+					"foreign",
+				),
+			).rejects.toMatchObject({ status: 404 });
+			await updateContent(
+				prisma,
+				content.id,
+				{ expectedRevision: 1, archived: true },
+				"fixture",
+			);
+			await expect(
+				updateContent(
+					prisma,
+					content.id,
+					{ expectedRevision: 1, archived: false },
+					"fixture",
+				),
+			).rejects.toMatchObject({ status: 409 });
+			expect(
+				await prisma.content.findUnique({ where: { id: content.id } }),
+			).toMatchObject({ archived: true, revision: 2 });
+			expect(
+				await prisma.contentRevision.count({
+					where: { contentId: content.id },
+				}),
+			).toBe(2);
+		});
 		it("saves and renders a V2 composition while retaining removed historical source references", async () => {
 			const { media, project } = await fixture(),
 				id = randomUUID();

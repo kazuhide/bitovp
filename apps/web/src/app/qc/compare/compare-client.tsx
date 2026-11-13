@@ -25,8 +25,9 @@ import {
 	type VmafJobDetail,
 	type VmafResultDetail,
 } from "../vmaf-shared";
-import { CompareFrameChart } from "./compare-frame-chart";
+import { VmafViolinChart } from "../vmaf-violin";
 import { CompareLadderChart } from "./compare-ladder-chart";
+import { ReportFrameComparison } from "./report-frame-comparison";
 
 /** Bounds for the comparison overlay — keep it readable, keep the URL sane. */
 const MIN_JOBS = 2;
@@ -380,7 +381,23 @@ export function CompareClient() {
 							})}
 						</span>
 					</h2>
-					<CompareFrameChart series={shownSeries} />
+					<ReportFrameComparison
+						jobs={loadedJobs}
+						series={series}
+						shownSeries={shownSeries}
+					/>
+					<div className="mt-6">
+						<VmafViolinChart
+							series={shownSeries.map((item) => ({
+								key: item.key,
+								label: item.label,
+								color: item.color,
+								distribution: item.result.distribution,
+								subsample: loadedJobs.find((job) => job.id === item.jobId)
+									?.subsample,
+							}))}
+						/>
+					</div>
 
 					<h2 className="mt-8 font-medium text-sm text-zinc-200">
 						{t("qc.qualityLadder")}

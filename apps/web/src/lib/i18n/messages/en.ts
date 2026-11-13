@@ -764,7 +764,7 @@ export const en = {
 		removeFileN: "Remove file {n}",
 		container: "Container",
 		unmeasuredContainer:
-			"Not yet verified on a real encode. Check the first file this job writes.",
+			"Some codec combinations for this container remain unverified. Inspect an initial output.",
 		fileName: "File name",
 		fileNameRequired: "Enter a file name.",
 		sameFileName:
@@ -1296,6 +1296,17 @@ export const en = {
 		empty: "No content yet. Completed VOD jobs are registered automatically.",
 		search: "Search titles and tags",
 		archived: "Archived content",
+		remove: "Remove from Library",
+		removeAria: "Remove from Library: {title}",
+		removeTitle: "Remove “{title}” from Library?",
+		removeDescription:
+			"The entry moves to Archived content and can be restored there. Cloud media, encoding jobs and clip history are kept.",
+		restoreAria: "Restore to Library: {title}",
+		restoreTitle: "Restore “{title}” to Library?",
+		restoreDescription:
+			"The entry returns to the active Library with its existing clips and history.",
+		permissionDenied:
+			"You do not have permission to change this Library entry.",
 		active: "Active content",
 		previous: "Previous",
 		next: "Next",
@@ -2436,6 +2447,8 @@ export const en = {
 		resultlessReports: "{count} reports contributed no renditions: {ids}",
 
 		previewOpen: "Open comparison preview",
+		previewReportsClock:
+			"Synchronized report previews require retained VOD videos with the same measured FPS. Score comparison remains available.",
 		previewClose: "Close comparison preview",
 		previewA: "Rendition A",
 		previewB: "Rendition B",
@@ -2641,6 +2654,12 @@ export const en = {
 		psnrMin: "PSNR min",
 		psnrMax: "PSNR max",
 		noFrameData: "No per-frame data for this report.",
+		violinTitle: "VMAF distribution",
+		violinHelp:
+			"Uses every stored measured score. A subsampled run represents only its measured samples.\n\nThe outline is an approximate Gaussian density from 64 bins, with a bandwidth of two bins and the same peak width per series.\n\nCounts, mean, minimum and maximum use measured data. The white line marks the mean.",
+		violinUnavailable: "Distribution unavailable",
+		violinFrameCount: "{count} measured frames",
+		violinSampleCount: "{count} measured samples (every {stride} frames)",
 		hidePsnr: "Hide PSNR (dB)",
 		showPsnr: "Show PSNR (dB)",
 		noSeriesFrame:

@@ -121,14 +121,15 @@ test("accepts exactly the required files and all passed assertions", () => {
 	for (const group of GROUPS) {
 		assert.doesNotThrow(() => validateReport(report(group), group, root));
 	}
-	// VOD fixed sources add six PostgreSQL persistence/concurrency assertions.
+	// VOD fixed sources add six persistence/concurrency assertions; Library
+	// archive/restore and WebM recovery add three more PostgreSQL cases.
 	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 34);
 	assert.equal(
 		GROUPS.flatMap((group) => Object.values(group.files)).reduce(
 			(a, b) => a + b,
 			0,
 		),
-		225,
+		228,
 	);
 });
 

@@ -1,7 +1,15 @@
 /** Explicit local-media gate; no provider, GPU or model service is contacted. */
 import assert from "node:assert/strict";
 import { createReadStream } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, stat, truncate } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readFile,
+	rm,
+	stat,
+	truncate,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -13,6 +21,194 @@ import {
 import { runMediaProcess } from "../library-editing/process";
 import { probeVodInputSources, renderVodInputPreview } from "./media";
 import { runIndependentOverwriteFixture } from "./overwrite-fixture";
+
+test("real CPU FFmpeg previews scaled QuickTime display matrices with encoded SAR and quarter-turn orientation", {
+	timeout: 45_000,
+}, async () => {
+	const directory = await mkdtemp(join(tmpdir(), "bitovp-vod-scaled-matrix-"));
+	try {
+		const original = join(directory, "original.mp4");
+		await runMediaProcess("ffmpeg", [
+			"-v",
+			"error",
+			"-nostdin",
+			"-filter_threads",
+			"1",
+			"-f",
+			"lavfi",
+			"-i",
+			"color=yellow:s=320x240:r=30:d=0.5,drawbox=x=iw/2:y=0:w=iw/2:h=ih:color=cyan:t=fill",
+			"-c:v",
+			"libx264",
+			"-threads",
+			"1",
+			"-pix_fmt",
+			"yuv420p",
+			"-movflags",
+			"+faststart",
+			original,
+		]);
+		const bytes = await readFile(original);
+		const matrixOffset = (start: number, end: number): number | undefined => {
+			for (let offset = start; offset + 8 <= end; ) {
+				const size = bytes.readUInt32BE(offset);
+				assert.ok(size >= 8 && offset + size <= end);
+				const kind = bytes.toString("ascii", offset + 4, offset + 8);
+				if (kind === "tkhd")
+					return offset + (bytes.readUInt8(offset + 8) === 1 ? 60 : 48);
+				if (kind === "moov" || kind === "trak") {
+					const nested = matrixOffset(offset + 8, offset + size);
+					if (nested !== undefined) return nested;
+				}
+				offset += size;
+			}
+			return undefined;
+		};
+		const offset = matrixOffset(0, bytes.length);
+		assert.ok(offset !== undefined);
+		for (const [name, matrix, expectedRotation, width] of [
+			["bbb-scale", [34475, 0, 0, 0, 34467, 0, 0, 0, 1073741824], 0, 480],
+			["scaled-90", [0, -34475, 0, 17237, 0, 0, 0, 0, 1073741824], 90, 270],
+			["scaled-180", [-34475, 0, 0, 0, -17237, 0, 0, 0, 1073741824], -180, 480],
+			["scaled-270", [0, 34475, 0, -17237, 0, 0, 0, 0, 1073741824], -90, 270],
+		] as const) {
+			const path = join(directory, `${name}.mp4`);
+			const patched = Buffer.from(bytes);
+			matrix.forEach((value, index) => {
+				patched.writeInt32BE(value, offset + index * 4);
+			});
+			await writeFile(path, patched);
+			const raw = JSON.parse(
+				(
+					await runMediaProcess("ffprobe", [
+						"-v",
+						"error",
+						"-show_streams",
+						"-of",
+						"json",
+						path,
+					])
+				).stdout,
+			).streams[0];
+			assert.equal(raw.side_data_list[0].rotation, expectedRotation);
+			const source: VodInputTimelineSource = {
+				key: name,
+				credentialId: "00000000-0000-4000-8000-000000000001",
+				bucket: "synthetic",
+				objectKey: `${name}.mp4`,
+			};
+			const browserFor = async (): Promise<ObjectStorageBrowser> => ({
+				listBuckets: async () => [],
+				listObjects: async () => ({ objects: [], prefixes: [] }),
+				headObject: async () => ({
+					size: patched.length,
+					etag: '"matrix-fixture"',
+				}),
+				getObject: async ({ range }) => {
+					assert.ok(range && range.end !== undefined);
+					return createReadStream(path, { start: range.start, end: range.end });
+				},
+			});
+			const signal = AbortSignal.timeout(35_000);
+			const facts = await probeVodInputSources({
+				sources: [source],
+				browserFor,
+				signal,
+			});
+			assert.deepEqual(
+				facts[0]?.video?.displayAspectRatio,
+				width === 480 ? { num: 4, den: 3 } : { num: 3, den: 4 },
+			);
+			const outputDirectory = join(directory, `output-${name}`);
+			await mkdir(outputDirectory);
+			const rendered = await renderVodInputPreview({
+				sources: [source],
+				facts,
+				browserFor,
+				signal,
+				directory: outputDirectory,
+				request: {
+					kind: "PREVIEW",
+					probeId: "00000000-0000-4000-8000-000000000002",
+					document: {
+						schemaVersion: 1,
+						id: "00000000-0000-4000-8000-000000000003",
+						audioEnabled: false,
+						clips: [
+							{
+								id: "00000000-0000-4000-8000-000000000004",
+								sourceKey: name,
+								inMs: 0,
+								outMs: 300,
+							},
+						],
+					},
+					range: { startMs: 0, durationMs: 300 },
+				},
+			});
+			const output = JSON.parse(
+				(
+					await runMediaProcess("ffprobe", [
+						"-v",
+						"error",
+						"-show_streams",
+						"-of",
+						"json",
+						rendered.path,
+					])
+				).stdout,
+			).streams[0];
+			assert.equal(output.width, width);
+			assert.equal(output.height, 360);
+			assert.equal(output.sample_aspect_ratio, "1:1");
+			assert.ok(
+				!output.side_data_list?.some(
+					(side: { rotation?: number }) => side.rotation,
+				),
+			);
+			const pixels = [];
+			for (const [label, input] of [
+				["reference", path],
+				["rendered", rendered.path],
+			]) {
+				assert.ok(label && input);
+				const rgb = join(directory, `${name}-${label}.rgb`);
+				await runMediaProcess("ffmpeg", [
+					"-v",
+					"error",
+					"-nostdin",
+					"-i",
+					input,
+					"-frames:v",
+					"1",
+					"-vf",
+					"format=rgb24,scale=2:2:flags=neighbor",
+					"-pix_fmt",
+					"rgb24",
+					"-f",
+					"rawvideo",
+					rgb,
+				]);
+				pixels.push(await readFile(rgb));
+			}
+			const [reference, actual] = pixels;
+			assert.ok(reference && actual);
+			assert.equal(actual.length, reference.length);
+			assert.ok(
+				Array.from(actual).every(
+					(channel, index) =>
+						Math.abs(channel - reference.readUInt8(index)) < 12,
+				),
+				`${name} reference=${Array.from(reference)} actual=${Array.from(actual)}`,
+			);
+			console.log(
+				`${name}: ${width}x360 square pixels; encoded SAR and orientation preserved`,
+			);
+		}
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
+});
 
 test(
 	"real CPU FFmpeg preserves the untouched channel in V1/A1 overwrite, WAV/MP3 and gaps",

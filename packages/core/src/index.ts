@@ -913,6 +913,10 @@ export {
 	RESOURCE_GROUP_LABEL,
 	RESOURCE_GROUP_ORDER,
 } from "./plan/resource-tree";
+export {
+	inspectSavedPlanCompatibility,
+	type SavedPlanCompatibility,
+} from "./plan/saved-plan-compatibility";
 export type {
 	Acl,
 	ConcatenationSource,

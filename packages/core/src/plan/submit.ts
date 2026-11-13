@@ -155,7 +155,7 @@ export type SubmitEncodingJobDeps = {
  * an unknown spec id, which the first cut refused unconditionally because
  * the level was computed after that branch returned (review-210 C1).
  */
-function deliveryVerdict(plan: EncodingPlan): {
+export function checkDeliveryCommitment(plan: EncodingPlan): {
 	refusal?: SubmitRefusal;
 	warnings?: PlanIssue[];
 } {
@@ -337,7 +337,7 @@ export async function submitEncodingJob(
 	 */
 	let deliveryWarnings: PlanIssue[] = [];
 	if (!deps.skipDeliveryCommitment) {
-		const verdict = deliveryVerdict(plan);
+		const verdict = checkDeliveryCommitment(plan);
 		if (verdict.refusal) {
 			return verdict.refusal;
 		}

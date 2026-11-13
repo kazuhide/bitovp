@@ -54,6 +54,8 @@ export const CASES = [
 	"persist Live through the authenticated submission API",
 	"VOD account defaults, ladder defaults and manual overrides",
 	"Live account defaults and manual overrides survive step navigation",
+	"remove and restore Library registration through the authenticated API",
+	"decode and seek QC comparison previews and inspect violin distributions",
 ];
 const QUEUES = [
 	"usageStatistics",
@@ -1225,6 +1227,11 @@ export async function runFixture({
 					directory: state.directory,
 					...primary.login,
 					secondary: secondary.login,
+					postgresContainer: await primary.compose([
+						"ps",
+						"--quiet",
+						"postgres",
+					]),
 				}),
 				{ mode: 0o600, flag: "wx" },
 			);

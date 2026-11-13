@@ -57,9 +57,13 @@ not imply a control for every field.
   Smooth manifest lists them, and DRM is not offered. Progressive MOV and
   Progressive WebM have not been verified on a live encode; a plan that uses
   either carries the warning `PLAN_MUXING_UNMEASURED_KIND`. A codec that no
-  Bitmovin document lists for its container carries
-  `PLAN_MUXING_UNVERIFIED_CODEC`, and audio beside AV1 in a Progressive WebM file
+  Bitmovin document read for this lists for its container carries
+  `PLAN_MUXING_UNVERIFIED_CODEC`, as does Dolby Vision in a Progressive TS or
+  Progressive MOV file, and audio beside AV1 in a Progressive WebM file
   carries `PLAN_MUXING_AV1_NOT_ALONE`.
+- An MP4 holds AV1 as a whole file, and as a fragmented MP4 for DASH on-demand
+  only: another manifest type is refused with
+  `PLAN_MP4_AV1_FRAGMENTED_MANIFEST_TYPE`.
   A playlist does not take its audio from such a file: an HLS manifest in a plan
   whose only audio is inside one is refused with `PLAN_HLS_AUDIO_UNSELECTED`.
 - Account-specific features, including HEVCv2, appear only where enabled for the

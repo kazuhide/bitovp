@@ -31,7 +31,7 @@ under "What to create" at the top of the page. That flow has six steps: Basics,
 Sources, Format, Destination, Encoding, and Review. In Format, each container offers
 every codec it can hold (AV1 in MP4 and WebM, VP9 and Opus in WebM, for example), and
 each file has its own video codec and its own audio. Files in more than one video
-codec need the same encoding mode on every file. Files are written directly into
+codec need the same encoding mode on every file, other than "(default)". Files are written directly into
 the output folder and are named after the job until you type a name. Two files in one
 job cannot have the same name, and two made in the six steps cannot have the same
 height and codec with the same bitrate in kbps. A file already in the folder under

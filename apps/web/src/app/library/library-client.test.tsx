@@ -39,6 +39,9 @@ beforeEach(() => {
 vi.mock("@/lib/api", () => ({
 	apiFetch: (url: string) => apiFetch(url),
 }));
+vi.mock("@/lib/auth/use-role-access", () => ({
+	useMutationAccess: () => false,
+}));
 vi.mock("./catalog-thumbnail", () => ({
 	CatalogThumbnail: ({
 		source,

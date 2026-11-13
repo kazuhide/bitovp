@@ -19,6 +19,7 @@ import {
 	classifyBrowserError,
 	PHASED_GUI_STATES,
 } from "../tests/browser/diagnostics.ts";
+import { seedLibraryRemovalFixture } from "../tests/browser/library-fixture.ts";
 import {
 	browserExecutionAllowed,
 	CASES,
@@ -506,8 +507,51 @@ test("failure summaries expose only known case names and safe statuses", () => {
 		`Browser case: ${CASES[7]}; status=passed`,
 		`Browser case: ${CASES[8]}; status=passed`,
 		`Browser case: ${CASES[9]}; status=passed`,
+		`Browser case: ${CASES[10]}; status=passed`,
 	]);
 	assert(!summary.join("\n").includes("private"));
+});
+
+test("Library browser seeding rejects foreign or malformed container identity before writing", () => {
+	const postgresContainer = "a".repeat(64);
+	for (const labels of [
+		{},
+		{
+			"io.bitovp.gui-smoke": id,
+			"com.docker.compose.project": "foreign",
+			"com.docker.compose.service": "postgres",
+		},
+		{
+			"io.bitovp.gui-smoke": "foreign",
+			"com.docker.compose.project": `bitovp-gui-${id}`,
+			"com.docker.compose.service": "postgres",
+		},
+		{
+			"io.bitovp.gui-smoke": id,
+			"com.docker.compose.project": `bitovp-gui-${id}`,
+			"com.docker.compose.service": "web",
+		},
+	]) {
+		const calls = [];
+		assert.throws(() =>
+			seedLibraryRemovalFixture({ id, postgresContainer }, (args) => {
+				calls.push(args);
+				return JSON.stringify(labels);
+			}),
+		);
+		assert.equal(calls.length, 1);
+		assert.equal(calls[0][0], "inspect");
+	}
+	for (const identity of [
+		{ id: "foreign", postgresContainer },
+		{ id, postgresContainer: "--privileged" },
+	]) {
+		assert.throws(() =>
+			seedLibraryRemovalFixture(identity, () => {
+				throw new Error("Docker must not run");
+			}),
+		);
+	}
 });
 test("failed browser cases expose only the last fixed submission stage", () => {
 	const changed = report();

@@ -6,15 +6,18 @@ import { Badge } from "@/components/ui/badge";
 import { useT } from "@/lib/i18n/context";
 import type { LibraryCatalogItem } from "@/lib/library-catalog";
 import { CatalogThumbnail } from "./catalog-thumbnail";
+import { ContentRemovalAction } from "./content-removal-action";
 import { type LibraryView, libraryTimeLabel } from "./library-view-preference";
 
 export function LibraryCatalogResults({
 	items,
 	view,
+	onContentChanged,
 }: {
 	items: LibraryCatalogItem[];
 	view: LibraryView;
 	clipEditingAvailable?: boolean;
+	onContentChanged?: () => void;
 }) {
 	const { t } = useT();
 	const playback = items.filter(
@@ -41,13 +44,13 @@ export function LibraryCatalogResults({
 					key={item.id}
 					className={
 						grid
-							? "min-w-0 overflow-hidden rounded-lg border border-zinc-800"
-							: undefined
+							? "flex min-w-0 flex-col overflow-hidden rounded-lg border border-zinc-800"
+							: "flex min-w-0 items-start"
 					}
 				>
 					<Link
 						href={`/library/${encodeURIComponent(item.id)}`}
-						className={`group ${grid ? "block h-full" : "flex items-start gap-4 p-3"} bg-zinc-950 transition-colors hover:bg-zinc-900/60 focus-visible:outline-2 focus-visible:outline-emerald-500 focus-visible:outline-offset-2`}
+						className={`group min-w-0 flex-1 ${grid ? "block" : "flex items-start gap-4 p-3"} bg-zinc-950 transition-colors hover:bg-zinc-900/60 focus-visible:outline-2 focus-visible:outline-emerald-500 focus-visible:outline-offset-2`}
 					>
 						{item.catalogMetadata.formats.length > 0 ? (
 							<div
@@ -124,6 +127,11 @@ export function LibraryCatalogResults({
 							</div>
 						</div>
 					</Link>
+					<ContentRemovalAction
+						content={item}
+						onChanged={onContentChanged}
+						className={grid ? "flex justify-end px-2 pb-2" : "shrink-0 p-2"}
+					/>
 				</li>
 			))}
 		</ul>

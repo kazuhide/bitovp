@@ -7,6 +7,7 @@ import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
 import type { LibrarySceneSelection } from "@/lib/library-scenes";
 import { ContentClipPanel } from "../content-clip-panel";
+import { ContentRemovalAction } from "../content-removal-action";
 import { SourcePanel } from "../source-panel";
 import { sourcePollingInterval } from "../source-polling";
 
@@ -139,19 +140,22 @@ function ContentDetailView({
 								</p>
 							)}
 						</div>
-						{!query.data.parent || !clipEditingAvailable ? (
-							<ContentClipPanel
-								contentId={id}
-								clipEditingAvailable={clipEditingAvailable}
-							/>
-						) : (
-							<Link
-								href={`/library/${id}/edits`}
-								className="inline-flex h-9 items-center rounded-md border border-zinc-700 bg-zinc-900 px-4 font-medium text-sm text-zinc-200 hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-emerald-500"
-							>
-								{t("editing.open")}
-							</Link>
-						)}
+						<div className="flex flex-wrap items-start gap-2">
+							<ContentRemovalAction content={query.data} />
+							{!query.data.parent || !clipEditingAvailable ? (
+								<ContentClipPanel
+									contentId={id}
+									clipEditingAvailable={clipEditingAvailable}
+								/>
+							) : (
+								<Link
+									href={`/library/${id}/edits`}
+									className="inline-flex h-9 items-center rounded-md border border-zinc-700 bg-zinc-900 px-4 font-medium text-sm text-zinc-200 hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-emerald-500"
+								>
+									{t("editing.open")}
+								</Link>
+							)}
+						</div>
 					</header>
 					{freshSelectionRead &&
 						initialScene &&

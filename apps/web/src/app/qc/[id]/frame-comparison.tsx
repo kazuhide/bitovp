@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { useT } from "@/lib/i18n/context";
 import {
 	fmtScore,
@@ -18,10 +18,21 @@ export function FrameComparison({
 	results,
 	fps,
 	mode,
+	initialIds,
+	labels,
+	unavailableReason,
+	renderChart,
 }: {
 	results: VmafResultDetail[];
 	fps?: number;
 	mode: "VOD" | "LIVE";
+	initialIds?: [string, string];
+	labels?: Readonly<Record<string, string>>;
+	unavailableReason?: string;
+	renderChart?: (selection: {
+		selectedFrame?: number;
+		onFrameSelect: (frame: number) => void;
+	}) => ReactNode;
 }) {
 	const { t } = useT();
 	const candidates = sortedRenditions(results).filter(
@@ -31,10 +42,11 @@ export function FrameComparison({
 	const available = mode === "VOD" && validClock && candidates.length > 0;
 	const [open, setOpen] = useState(false);
 	const [chosenIds, setIds] = useState<[string, string] | null>(null);
-	const ids: [string, string] = chosenIds ?? [
-		candidates[0]?.result.id ?? "",
-		candidates[1]?.result.id ?? "",
-	];
+	const ids: [string, string] = chosenIds ??
+		initialIds ?? [
+			candidates[0]?.result.id ?? "",
+			candidates[1]?.result.id ?? "",
+		];
 	const [frame, setFrame] = useState(0);
 	const [frameDraft, setFrameDraft] = useState<string | null>(null);
 	const [playing, setPlaying] = useState(false);
@@ -77,6 +89,8 @@ export function FrameComparison({
 	);
 	const pendingFrame = useRef(0);
 	const operation = useRef(0);
+	const label = (result: VmafResultDetail, index: number) =>
+		labels?.[result.id] ?? renditionLabel(result.renditionRef, index);
 	function pause() {
 		operation.current += 1;
 		for (const video of videos.current.values()) video.pause();
@@ -156,7 +170,7 @@ export function FrameComparison({
 										value={result.id}
 										disabled={ids[1 - slot] === result.id}
 									>
-										{renditionLabel(result.renditionRef, index)}
+										{label(result, index)}
 									</option>
 								))}
 							</select>
@@ -164,11 +178,12 @@ export function FrameComparison({
 					))
 				) : (
 					<p className="text-xs text-zinc-400">
-						{t(
-							mode === "LIVE"
-								? "qc.previewLiveUnavailable"
-								: "qc.previewUnavailable",
-						)}
+						{unavailableReason ??
+							t(
+								mode === "LIVE"
+									? "qc.previewLiveUnavailable"
+									: "qc.previewUnavailable",
+							)}
 					</p>
 				)}
 			</div>
@@ -184,7 +199,7 @@ export function FrameComparison({
 									muted
 									playsInline
 									preload="metadata"
-									aria-label={renditionLabel(result.renditionRef, index)}
+									aria-label={label(result, index)}
 									className="aspect-video w-full bg-black object-contain"
 									src={
 										result.preview && "url" in result.preview
@@ -225,7 +240,7 @@ export function FrameComparison({
 									}}
 								/>
 								<figcaption className="mt-1 text-xs text-zinc-400">
-									{renditionLabel(result.renditionRef, index)} · VMAF{" "}
+									{label(result, index)} · VMAF{" "}
 									{result.frames.find((point) => point.frameNum === frame)
 										?.vmaf !== undefined
 										? fmtScore(
@@ -307,11 +322,18 @@ export function FrameComparison({
 					<p className="text-xs text-zinc-500">{t("qc.previewCaveat")}</p>
 				</section>
 			) : null}
-			<FrameChart
-				results={results}
-				selectedFrame={open ? frame : undefined}
-				onFrameSelect={seek}
-			/>
+			{renderChart ? (
+				renderChart({
+					selectedFrame: open ? frame : undefined,
+					onFrameSelect: seek,
+				})
+			) : (
+				<FrameChart
+					results={results}
+					selectedFrame={open ? frame : undefined}
+					onFrameSelect={seek}
+				/>
+			)}
 		</div>
 	);
 }

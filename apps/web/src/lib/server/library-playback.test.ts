@@ -61,6 +61,37 @@ const fileOutputs = [
 	},
 ];
 const mediaUrl = `/api/library/sources/${sourceId}/media?key=mp4%3Amp4&expectedOrganizationId=00000000-0000-4000-8000-000000000001`;
+function progressiveWebmPlan() {
+	return encodingPlanSchema.parse({
+		...plan,
+		renditions: [
+			{
+				key: "v360",
+				codec: "VP9",
+				ingestKey: "video",
+				height: 360,
+				bitrate: 600000,
+			},
+			{
+				key: "a96",
+				codec: "OPUS",
+				ingestKey: "video",
+				rate: 48000,
+				bitrate: 96000,
+			},
+		],
+		muxings: [
+			{
+				key: "webm",
+				kind: "PROGRESSIVE_WEBM",
+				streamKey: "v360",
+				additionalStreamKeys: ["a96"],
+				filename: "sequence.webm",
+				destination: { outputKey: "origin", path: "output/", acl: "PRIVATE" },
+			},
+		],
+	});
+}
 function database(jobs = [{ id: "job-1", plan }]) {
 	const db = {
 		$transaction: vi.fn(async function <T>(
@@ -143,6 +174,121 @@ it("adds legacy MP4 links in batches while preserving stored manifests and narro
 	});
 	expect(JSON.stringify(result)).not.toContain("never-expose");
 	expect(source.playbackLinks).toEqual([stored]);
+});
+it("recovers an empty Progressive WebM capture only from its identical retained plan without modifying history", async () => {
+	const webm = progressiveWebmPlan();
+	const { prisma } = database([{ id: "job-1", plan: webm }]);
+	const input = {
+		...source,
+		planHash: createHash("sha256").update(JSON.stringify(webm)).digest("hex"),
+		fileOutputs: [],
+		playbackLinks: [],
+	};
+	const before = structuredClone(input);
+	expect(await libraryFileOutputsForSource(prisma, input)).toEqual([
+		expect.objectContaining({
+			kind: "WEBM",
+			key: "webm:webm",
+			path: "output/sequence.webm",
+		}),
+	]);
+	const [links] = await enrichLibraryPlayback(
+		prisma,
+		[input],
+		"00000000-0000-4000-8000-000000000001",
+	);
+	expect(links).toEqual([
+		expect.objectContaining({
+			kind: "WEBM",
+			url: `/api/library/sources/${sourceId}/media?key=webm%3Awebm&expectedOrganizationId=00000000-0000-4000-8000-000000000001`,
+		}),
+	]);
+	expect(input).toEqual(before);
+	for (const changed of [
+		{ ...input, planHash: "changed" },
+		{ ...input, jobId: null },
+	]) {
+		expect(await libraryFileOutputsForSource(prisma, changed)).toEqual([]);
+		expect(
+			await enrichLibraryPlayback(
+				prisma,
+				[changed],
+				"00000000-0000-4000-8000-000000000001",
+			),
+		).toEqual([[]]);
+	}
+	expect(
+		await enrichLibraryPlayback(
+			database([]).prisma,
+			[input],
+			"00000000-0000-4000-8000-000000000001",
+		),
+	).toEqual([[]]);
+});
+it("does not use an empty file capture as general authority for MP4 or unreadable WebM credentials", async () => {
+	const empty = { ...source, fileOutputs: [], playbackLinks: [] };
+	expect(await libraryFileOutputsForSource(database().prisma, empty)).toEqual(
+		[],
+	);
+	expect(
+		await enrichLibraryPlayback(
+			database().prisma,
+			[empty],
+			"00000000-0000-4000-8000-000000000001",
+		),
+	).toEqual([[]]);
+	const webm = progressiveWebmPlan();
+	const { db, prisma } = database([{ id: "job-1", plan: webm }]);
+	db.credential.findMany.mockResolvedValue([]);
+	const input = {
+		...empty,
+		planHash: createHash("sha256").update(JSON.stringify(webm)).digest("hex"),
+	};
+	expect(await libraryFileOutputsForSource(prisma, input)).toEqual([]);
+	const [links] = await enrichLibraryPlayback(
+		prisma,
+		[input],
+		"00000000-0000-4000-8000-000000000001",
+	);
+	expect(links?.[0]).toMatchObject({
+		kind: "WEBM",
+		url: null,
+		reason: { code: "NO_CREDENTIAL" },
+	});
+});
+it("classifies an already-captured empty Progressive WebM as private playback before catalog filtering", async () => {
+	const webm = progressiveWebmPlan();
+	const { db } = database([{ id: "job-1", plan: webm }]);
+	const item = {
+		id: "content-webm",
+		title: "WebM",
+		description: "",
+		tags: [],
+		locale: "und",
+		revision: 1,
+		archived: false,
+		updatedAt: "2026-11-13",
+		playbackLinks: [],
+		fileOutputs: [],
+		analysisSummary: null,
+		sourceJobId: "job-1",
+		sourceId,
+		planHash: createHash("sha256").update(JSON.stringify(webm)).digest("hex"),
+	};
+	const prisma = {
+		...db,
+		$queryRaw: catalogQueries([item]),
+	} as unknown as AppPrismaClient;
+	const result = await listContents(
+		prisma,
+		{ q: "", archived: "false", offset: 0, playback: "playback" },
+		"00000000-0000-4000-8000-000000000001",
+	);
+	expect(result.counts).toEqual({ all: 1, playback: 1, metadata: 0 });
+	expect(result.items[0]?.catalogMetadata.formats).toEqual(["WEBM"]);
+	expect(result.items[0]?.catalogPreview?.url).toContain(
+		"/api/library/sources/",
+	);
 });
 it("does not invent outputs for a deleted job or changed plan", async () => {
 	const { db, prisma } = database();

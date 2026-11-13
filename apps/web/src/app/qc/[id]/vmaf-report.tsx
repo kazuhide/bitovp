@@ -16,10 +16,14 @@ import { useT } from "@/lib/i18n/context";
 import { CloudProgress } from "../cloud-progress";
 import {
 	type QcJobDetail,
+	renditionColor,
+	renditionLabel,
 	shortJobId,
+	sortedRenditions,
 	VMAF_STATUS_TONE,
 	type VmafJobDetail,
 } from "../vmaf-shared";
+import { VmafViolinChart } from "../vmaf-violin";
 import { BandingPanels, BandingReport } from "./banding-panel";
 import { ExportButtons } from "./export-buttons";
 import { FrameComparison } from "./frame-comparison";
@@ -398,6 +402,23 @@ export function VmafReport({ id }: { id: string }) {
 						fps={job.reference?.fps}
 						mode={job.mode}
 					/>
+					<div className="mt-6">
+						<VmafViolinChart
+							series={sortedRenditions(job.results).map(
+								({ result, index }) => ({
+									key: result.id,
+									label: renditionLabel(
+										result.renditionRef,
+										index,
+										t("common.renditionNumbered", { n: index + 1 }),
+									),
+									color: renditionColor(index),
+									distribution: result.distribution,
+									subsample: job.subsample,
+								}),
+							)}
+						/>
+					</div>
 
 					<h2 className="mt-8 font-medium text-sm text-zinc-200">
 						{t("qc.qualityLadder")}

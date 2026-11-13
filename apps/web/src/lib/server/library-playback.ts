@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import {
+	type EncodingPlan,
 	encodingPlanSchema,
 	isLibraryFileKind,
 	type LibrarySourceView,
@@ -26,6 +27,15 @@ export const needsLibraryPlaybackProjection = (source: PlaybackSource) =>
 	!source.playbackLinks.some(
 		(link) => isLibraryFileKind(link.kind) && link.url,
 	);
+
+/** Older captures omitted this newly supported file kind, sometimes retaining an empty list. */
+function uncapturedWebmPlan(plan: EncodingPlan, source: FileSource) {
+	if (source.fileOutputs?.length !== 0 || plan.qc?.only) return undefined;
+	const muxings = plan.muxings.filter(
+		(muxing) => muxing.kind === "PROGRESSIVE_WEBM",
+	);
+	return muxings.length ? { ...plan, muxings, manifests: [] } : undefined;
+}
 
 async function matchingPlans(
 	prisma: Pick<AppPrismaClient, "encodingJob" | "credential">,
@@ -66,10 +76,21 @@ export async function libraryFileOutputsForSource(
 	prisma: Pick<AppPrismaClient, "encodingJob" | "credential">,
 	source: FileSource,
 ): Promise<ReturnType<typeof libraryFileOutputs>> {
-	if (source.fileOutputs !== undefined) return source.fileOutputs;
+	if (source.fileOutputs?.length) return source.fileOutputs;
 	const plans = await matchingPlans(prisma, [source]);
 	const match = source.jobId ? plans.get(source.jobId) : undefined;
-	return match ? libraryFileOutputs(match.plan) : [];
+	if (!match) return [];
+	if (source.fileOutputs === undefined) return libraryFileOutputs(match.plan);
+	const recovered = uncapturedWebmPlan(match.plan, source);
+	if (!recovered) return [];
+	const files = libraryFileOutputs(recovered);
+	const credentials = await prisma.credential.findMany({
+		where: { id: { in: [...new Set(files.map((file) => file.credentialId))] } },
+		select: { id: true },
+	});
+	return files.filter((file) =>
+		credentials.some((credential) => credential.id === file.credentialId),
+	);
 }
 
 /** Read-only compatibility for manifest-only snapshots; never reconstruct a deleted job. */
@@ -80,7 +101,13 @@ export async function enrichLibraryPlayback(
 	/** A batched catalog supplies eligibility from its complete matched snapshot. */
 	projectionEligible = needsLibraryPlaybackProjection,
 ): Promise<PlaybackLinks[]> {
-	const plans = await matchingPlans(prisma, sources.filter(projectionEligible));
+	const plans = await matchingPlans(
+		prisma,
+		sources.filter(
+			(source) =>
+				projectionEligible(source) || source.fileOutputs?.length === 0,
+		),
+	);
 	const credentialIds = [
 		...new Set(
 			[...plans.values()].flatMap(({ plan }) => [
@@ -110,12 +137,16 @@ export async function enrichLibraryPlayback(
 		const match = source.jobId ? plans.get(source.jobId) : undefined;
 		const samePlan =
 			match && source.planHash === match.hash ? match.plan : undefined;
+		const recovered = samePlan
+			? uncapturedWebmPlan(samePlan, source)
+			: undefined;
+		const projected = projectionEligible(source) ? samePlan : recovered;
 		const keys = new Set(source.playbackLinks.map((link) => link.key));
 		const links = [
 			...source.playbackLinks,
-			...(samePlan
+			...(projected
 				? libraryPlaybackLinks(
-						samePlan,
+						projected,
 						credentials.map((credential) => ({
 							...credential,
 							config: (credential.config ?? {}) as Record<string, unknown>,
@@ -125,8 +156,11 @@ export async function enrichLibraryPlayback(
 					)
 				: []),
 		];
-		const files =
-			source.fileOutputs ?? (samePlan ? libraryFileOutputs(samePlan) : []);
+		const files = recovered
+			? libraryFileOutputs(recovered).filter((file) =>
+					credentials.some((credential) => credential.id === file.credentialId),
+				)
+			: (source.fileOutputs ?? (samePlan ? libraryFileOutputs(samePlan) : []));
 		return links.map((link) => {
 			if (
 				!isLibraryFileKind(link.kind) ||

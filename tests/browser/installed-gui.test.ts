@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -19,6 +20,11 @@ import {
 	recordConsoleError,
 	selectGuiStates,
 } from "./diagnostics";
+import {
+	LIBRARY_CONTENT,
+	LIBRARY_TITLE,
+	seedLibraryRemovalFixture,
+} from "./library-fixture";
 import {
 	nonpaidLivePlan,
 	nonpaidVodPlan,
@@ -1085,6 +1091,155 @@ test("Live account defaults and manual overrides survive step navigation", async
 		await goTo(page, /^1\. Basics$/);
 		await expect(page.locator("#lw-region")).toHaveValue("AWS_US_WEST_2");
 		await expect(page.locator("#lw-version")).toHaveValue("STABLE");
+		expect(unexpected).toEqual([]);
+	} finally {
+		await context.close();
+	}
+});
+
+test("remove and restore Library registration through the authenticated API", async ({
+	browser,
+	request,
+}, info) => {
+	const context = await browser.newContext({
+		baseURL: fixture.baseURL,
+		storageState: authenticated,
+		viewport: { width: 1440, height: 1000 },
+		locale: "en-US",
+		serviceWorkers: "block",
+	});
+	const unexpected: string[] = [];
+	await context.route("**/*", async (route) => {
+		const req = route.request();
+		const url = new URL(req.url());
+		if (
+			url.origin !== fixture.baseURL ||
+			(!["GET", "HEAD"].includes(req.method()) &&
+				!(
+					req.method() === "PATCH" &&
+					url.pathname === `/api/library/${LIBRARY_CONTENT}`
+				))
+		) {
+			unexpected.push(`${req.method()} unexpected request`);
+			return route.abort();
+		}
+		return route.continue();
+	});
+	const page = await context.newPage();
+	page.on("pageerror", () => unexpected.push("Browser page error"));
+	page.on("console", (message) => {
+		if (message.type() === "error") unexpected.push("Browser console error");
+	});
+	const apiPath = `/api/library/${LIBRARY_CONTENT}`;
+	try {
+		expect(
+			(await (await context.request.get("/api/auth/session")).json()).role,
+		).toBe("ADMIN");
+		seedLibraryRemovalFixture(fixture, (args) =>
+			execFileSync(
+				"docker",
+				["--host", "unix:///var/run/docker.sock", ...args],
+				{ encoding: "utf8", timeout: 20_000 },
+			).trim(),
+		);
+		expect(
+			(
+				await request.patch(apiPath, {
+					headers: { origin: fixture.baseURL },
+					data: { expectedRevision: 1, archived: true },
+				})
+			).status(),
+		).toBe(401);
+		await page.goto("/library");
+		await expect(
+			page.getByRole("link", { name: new RegExp(LIBRARY_TITLE) }),
+		).toBeVisible();
+		await page.getByRole("button", { name: "List view", exact: true }).click();
+		await page
+			.getByRole("button", {
+				name: `Remove from Library: ${LIBRARY_TITLE}`,
+				exact: true,
+			})
+			.click();
+		await expect(page.getByRole("dialog")).toContainText(
+			"Cloud media, encoding jobs and clip history are kept",
+		);
+		await page.setViewportSize({ width: 320, height: 900 });
+		await page.screenshot({
+			path: info.outputPath("library-removal-320.png"),
+			fullPage: true,
+		});
+		const removal = page.waitForResponse(
+			(response) =>
+				new URL(response.url()).pathname === apiPath &&
+				response.request().method() === "PATCH",
+		);
+		await page
+			.getByRole("dialog")
+			.getByRole("button", { name: "Remove from Library", exact: true })
+			.click();
+		expect((await removal).status()).toBe(200);
+		await expect(
+			page.getByRole("link", { name: new RegExp(LIBRARY_TITLE) }),
+		).toHaveCount(0);
+		const removed = await (await context.request.get(apiPath)).json();
+		expect(removed).toMatchObject({ archived: true, revision: 2 });
+		expect(
+			(
+				await context.request.patch(apiPath, {
+					headers: { origin: fixture.baseURL },
+					data: { expectedRevision: 1, archived: false },
+				})
+			).status(),
+		).toBe(409);
+		await page
+			.getByRole("checkbox", { name: "Archived content", exact: true })
+			.check();
+		await expect(
+			page.getByRole("link", { name: new RegExp(LIBRARY_TITLE) }),
+		).toBeVisible();
+		await page
+			.getByRole("button", {
+				name: `Restore to Library: ${LIBRARY_TITLE}`,
+				exact: true,
+			})
+			.click();
+		const restoration = page.waitForResponse(
+			(response) =>
+				new URL(response.url()).pathname === apiPath &&
+				response.request().method() === "PATCH",
+		);
+		await page
+			.getByRole("dialog")
+			.getByRole("button", { name: "Restore", exact: true })
+			.click();
+		expect((await restoration).status()).toBe(200);
+		await expect(
+			page.getByRole("link", { name: new RegExp(LIBRARY_TITLE) }),
+		).toHaveCount(0);
+		await page
+			.getByRole("checkbox", { name: "Archived content", exact: true })
+			.uncheck();
+		await expect(
+			page.getByRole("link", { name: new RegExp(LIBRARY_TITLE) }),
+		).toBeVisible();
+		await page.setViewportSize({ width: 1440, height: 1000 });
+		await page.getByRole("button", { name: "Grid view", exact: true }).click();
+		await page.screenshot({
+			path: info.outputPath("library-restored-1440.png"),
+			fullPage: true,
+		});
+		await page.getByRole("link", { name: new RegExp(LIBRARY_TITLE) }).click();
+		await expect(
+			page.getByRole("button", {
+				name: `Remove from Library: ${LIBRARY_TITLE}`,
+				exact: true,
+			}),
+		).toBeVisible();
+		expect(await (await context.request.get(apiPath)).json()).toMatchObject({
+			archived: false,
+			revision: 3,
+		});
 		expect(unexpected).toEqual([]);
 	} finally {
 		await context.close();

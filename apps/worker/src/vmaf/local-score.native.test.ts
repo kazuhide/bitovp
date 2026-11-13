@@ -320,12 +320,13 @@ describe("owned native local scoring", () => {
 		const limit =
 			'VMAF model "vmaf_v1.0.16_3d0h" cannot score an encode of 240x134: it takes no encode below 144 pixels in width or in height. Use a model of the vmaf_v0.6.1 family, which scores smaller pictures.';
 		failsWith(refusal);
-		// libvmaf through FFmpeg scores this pair: it compares in the 4:2:0 of
-		// the reference, which 640x360 is enough for, and declares no encode.
+		// The limit is the scorer's alone: libvmaf through FFmpeg compares in the
+		// 4:2:0 of the reference, which 640x360 is enough for, and declares no
+		// encode.
 		await expect(
 			runLocalVmafScore(h.deps, options, context),
 		).rejects.toMatchObject({
-			message: `${limit} That holds for GPU scoring, which compares every pair in 4:2:0 and counts the encode's own size: with Local CPU the same model scores this pair.`,
+			message: `${limit} This limit is that of GPU scoring, which compares every pair in 4:2:0 and tells CAMBI the encode's own size. Local CPU does neither, and the limit does not hold there.`,
 		});
 		// Nothing says so of a full-range reference: FFmpeg converts it, and the
 		// layout of that comparison is not the reference's to tell.

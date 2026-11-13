@@ -255,9 +255,9 @@ export async function runNativeVmafScore(
 		if (run.code !== 0)
 			// The scorer refuses pictures and encodes that are too small for the
 			// model in words that name no limit. Where the limit is known, say it
-			// and what to do, Local CPU among it where libvmaf through FFmpeg
-			// scores the pair in the reference's layout; every other failure keeps
-			// the scorer's words.
+			// and what to do, and that it does not hold with Local CPU where
+			// libvmaf's limits for the reference's layout refuse nothing; every
+			// other failure keeps the scorer's words.
 			throw new Error(
 				vmafNativeSizeLimitFailureMessage(run.stderr, {
 					model: options.model,

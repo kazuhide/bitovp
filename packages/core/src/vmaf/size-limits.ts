@@ -231,7 +231,7 @@ export const VMAF_NATIVE_SIZE_REFUSALS: readonly string[] = [
 ];
 
 const LOCAL_CPU =
-	"That holds for GPU scoring, which compares every pair in 4:2:0 and counts the encode's own size: with Local CPU the same model scores this pair.";
+	"This limit is that of GPU scoring, which compares every pair in 4:2:0 and tells CAMBI the encode's own size. Local CPU does neither, and the limit does not hold there.";
 
 /**
  * The same for a run of the owned GPU scorer that has failed: the sentence of
@@ -247,10 +247,12 @@ const LOCAL_CPU =
  *
  * The ordinary method does neither, so libvmaf through FFmpeg scores some of
  * the pairs that the scorer refuses. `cpuChroma` is the layout in which it
- * would compare this pair, the reference's, where that is known: the sentence
- * then ends with that way out when the rules of this file leave it open. In
- * the 49 refusals among the 71 comparisons it did so for exactly the 17 pairs
- * that libvmaf scored.
+ * would compare this pair, the reference's, where that is known: when the
+ * rules of this file refuse nothing in that layout, the sentence ends by
+ * saying that the limit is the scorer's alone. In the 49 refusals among the 71
+ * comparisons it did so for exactly the 17 pairs that libvmaf scored. It
+ * promises no score: this file knows the limits of small pictures only, and
+ * libvmaf has others for large and for very wide ones.
  */
 export function vmafNativeSizeLimitFailureMessage(
 	stderr: string,

@@ -459,9 +459,9 @@ describe("libvmaf's picture size limits for the VMAF v1 models", () => {
 			).toBeUndefined();
 	});
 
-	it("ends the sentence with Local CPU where libvmaf through FFmpeg scores the pair that the GPU scorer refused", () => {
+	it("says that the limit is the GPU scorer's alone where libvmaf's limits refuse nothing for the reference's layout", () => {
 		const wayOut =
-			" That holds for GPU scoring, which compares every pair in 4:2:0 and counts the encode's own size: with Local CPU the same model scores this pair.";
+			" This limit is that of GPU scoring, which compares every pair in 4:2:0 and tells CAMBI the encode's own size. Local CPU does neither, and the limit does not hold there.";
 		const speed =
 			"bitovp-vmaf: input is too small or too large for official SpEED chroma blocks\n";
 		const cambi =

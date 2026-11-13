@@ -2906,10 +2906,12 @@ refuse none of the 22 comparisons that were scored.
 libvmaf scored 17 of the 49 refused comparisons in the method of test A: the
 five small encodes of the 640x360 reference with three models, and the
 `yuv444p` reference of 256x144 with two. For such a pair the worker's sentence
-ends by naming **Local CPU**, which scores it with the same model. It does so
-where the reference is in one of the twelve formats and the rules for the
-reference's layout, with no declared encode, refuse nothing; in the stored
-results that is these 17 and no other.
+ends by saying that the limit is that of GPU scoring and does not hold with
+**Local CPU**. It says so where the reference is in one of the twelve formats
+and the rules of "libvmaf and small pictures" for the reference's layout, with
+no declared encode, refuse nothing; in the stored results that is these 17 and
+no other. It promises no score: the sizes of "libvmaf and large or very wide
+pictures" pass these rules as well.
 
 Not measured: the Vulkan backend, a size above 1920x1080, an encode above 7680
 pixels, and a 10-bit encode.

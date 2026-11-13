@@ -364,13 +364,16 @@ within 0.000001 in ten comparisons: the scaled encodes of the table, the
 the first raised the scores of the scaled encodes by 0.28 to 1.12 and the
 second by a further 0.23 to 0.67.
 
-A reference that is not 8-bit 4:2:0 was not measured, and the two methods can
+Files that are not 8-bit 4:2:0 were not measured, and the two methods can
 differ there at equal sizes as well:
 
 - With a 10-bit reference and an 8-bit encode, both methods compare 10-bit
   pictures, and only GPU scoring tells CAMBI that the encode had 8 bits. For
   the first row of the table, with both files converted to 10 bits by hand,
   libvmaf gave 88.1395 without the encode's bit depth and 89.3967 with it.
+- With an 8-bit reference and a 10-bit encode, **Local CPU** compares in the
+  reference's 8 bits, and GPU scoring compares 10-bit pictures and tells CAMBI
+  that the encode had 10.
 - With a 4:2:2 or 4:4:4 reference, GPU scoring compares in 4:2:0 and **Local
   CPU** in the reference's layout.
 
@@ -406,9 +409,9 @@ small comparisons that **Local CPU** scores, because it compares every pair in
   and 216 in one of the two.
 
 The measurement ends with an error that names the limit and what to do. Where
-**Local CPU** scores the same pair with the same model, and the reference is
-in a pixel format that libvmaf takes as it is, the error says so. A model of
-the `vmaf_v0.6.1` family scores smaller pictures.
+the limit is that of GPU scoring alone, and the reference is in a pixel format
+that libvmaf takes as it is, the error says that it does not hold with **Local
+CPU**. A model of the `vmaf_v0.6.1` family scores smaller pictures.
 
 ## Measured examples
 

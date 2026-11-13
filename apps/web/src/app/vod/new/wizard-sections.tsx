@@ -64,6 +64,7 @@ import {
 	RenditionAddControls,
 	videoCopyLabel,
 } from "./rendition-add-controls";
+import { AUDIO_CODECS, VIDEO_CODECS } from "./rendition-codecs";
 import {
 	addVodAudio,
 	addVodVideo,
@@ -103,17 +104,6 @@ type LadderSectionProps = {
 	credentials: CredentialSummaryWire[];
 	onPatch: (partial: Partial<WizardState>) => void;
 };
-
-const VIDEO_CODECS: WizardVideoCodec[] = ["H264", "H265", "VP9", "AV1"];
-const AUDIO_CODECS: WizardAudioCodec[] = [
-	"AAC",
-	"AC3",
-	"EAC3",
-	"OPUS",
-	"DOLBY_ATMOS",
-	"DDPLUS",
-	"DD",
-];
 
 /**
  * VMAF models the worker can score with. Two families:

@@ -133,7 +133,6 @@ const WRITE_LABEL: Record<Exclude<FileJobWrite["kind"], "file">, MessageKey> = {
 	kantarReport: "vodFlow.reviewKantarReport",
 };
 const BLOCKER_STEP: Record<FileOutputBlocker, MessageKey> = {
-	basics: "wizard.basics",
 	// The simple view has the Sources step too, so what it holds back is named.
 	encodings: "vodFlow.blockerEncodings",
 	ladder: "wizard.ladder",
@@ -1304,8 +1303,9 @@ export function VodWizard({
 												/>
 											) : null}
 										</div>
-										{/* The codec this override needs is chosen in the ladder step. */}
-										{internalAllowed && !simple ? (
+										{/* The codec this override needs is chosen in the ladder step,
+										    and in the format step of the file-output flow. */}
+										{internalAllowed ? (
 											<div className="flex flex-wrap items-center gap-2">
 												<label className="flex items-center gap-2 text-sm text-zinc-300">
 													<input
@@ -1373,7 +1373,11 @@ export function VodWizard({
 									})}
 								</p>
 							) : null}
-							<FileOutputSection state={state} onPatch={patch} />
+							<FileOutputSection
+								state={state}
+								hevcV2Available={internalAllowed}
+								onPatch={patch}
+							/>
 						</>
 					) : null}
 

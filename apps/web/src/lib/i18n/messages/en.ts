@@ -758,11 +758,23 @@ export const en = {
 			"Another file has the same height and codec, and the same bitrate once both are rounded to kbps. Two files made in this view have to differ in one of the three. Change one on either file.",
 		sourceHeight: "Same as source",
 		bitrateOrCrf: "Enter a bitrate, or set CRF in the advanced options.",
+		bitrateRequired: "Enter a bitrate.",
+		hevcV2WholeJob:
+			"HEVCv2 takes the whole job. Choose it for every file, and leave “BCF override” on in the Basics step.",
+		oneModeForCodecs:
+			"The files use more than one video codec, and a job runs in one encoding mode. Choose the same mode for every file, or the job will be rejected.",
+		unverifiedCodec:
+			"The container's format defines this codec, but no Bitmovin document lists the combination. The job may be refused: check the first file it writes.",
 		videoSource: "Video source",
-		audio: "Audio",
-		includeAudio: "Include audio in every file",
-		audioCodecNotHeld: "{containers} cannot hold this codec.",
-		noAudio: "The files are written without an audio track.",
+		includeAudio: "Include audio",
+		audioCodec: "Audio codec",
+		audioBitrate: "Audio bitrate (bps)",
+		audioCodecNotHeld: "{container} cannot hold this codec.",
+		atmosNeedsSource:
+			"Dolby Atmos is encoded from a Dolby Atmos stream. Add one in the Sources step, then choose it as this file's audio source.",
+		av1WebmAudio:
+			"Bitmovin's release notes say that a WebM file with AV1 video takes no other stream, and nothing newer says otherwise. The job may be refused: to be sure, write this file without audio, or use MP4.",
+		noAudio: "This file is written without an audio track.",
 		audioSource: "Audio source",
 		folderHelp:
 			"Files are written directly into this folder. No subfolder is added for the job.",
@@ -797,7 +809,7 @@ export const en = {
 		encodingModeFromFilesHint:
 			"Set the encoding mode or preset of each file in the Format step. The job-level mode is omitted to avoid conflicting settings.",
 		kantarNeedsAudio:
-			"The files have no audio track. Turn on “Include audio in every file” in the Format step, or the job will be rejected (Kantar watermarks audio).",
+			"No file has an audio track. Turn on “Include audio” for a file in the Format step, or the job will be rejected (Kantar watermarks audio).",
 		qcHelp:
 			"Adds a copy of each file's video to measure (MP4, or WebM for a VP9 file), written to qc/ in the folder for the measured copies. After encoding finishes, libvmaf compares it with the source automatically. View the report in VMAF Lab (/qc).",
 		vmafOnly: "VMAF only (do not write the files)",

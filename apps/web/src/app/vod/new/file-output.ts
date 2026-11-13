@@ -1,14 +1,18 @@
 import {
 	type EncodingPlan,
+	INTERNAL_HEVC_V2_BCF_VERSION,
 	MUXING_CODEC_MATRIX,
 	storageSummaries,
 	UNMEASURED_MUXING_KINDS,
+	UNVERIFIED_MUXING_CODECS,
 } from "@bitovp/core";
 import { draftKeepsText } from "@/lib/wizard-draft";
+import { AUDIO_CHANNEL_LAYOUTS } from "./audio-channel-layouts";
 import {
 	audioKeys,
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
+	hasInvalidHevcV2Ladder,
 	videoKeys,
 	type WizardAudioCodec,
 	type WizardAudioRendition,
@@ -17,10 +21,12 @@ import {
 	type WizardState,
 	type WizardVideoCodec,
 	type WizardVideoRendition,
+	wizardUsesCodecEncodingMode,
 } from "./build-plan";
+import { AUDIO_CODECS, VIDEO_CODECS } from "./rendition-codecs";
 
 /**
- * The file-output flow: one file per video stream, the audio muxed into it, no manifest.
+ * The file-output flow: one file per video stream, its audio muxed into it, no manifest.
  *
  * This is not a second model. The flow edits the `WizardState` the full wizard edits and
  * `buildPlan` reads. What lives here is the state the flow starts from, the edits its one
@@ -41,13 +47,12 @@ export type FileContainer = {
 	unmeasured: boolean;
 };
 
-// What the format screen can configure. A container holds the ones the plan's
-// validation accepts for it, read from the table that validation uses.
-const VIDEO_CODECS: readonly WizardVideoCodec[] = ["H264", "H265"];
-const AUDIO_CODECS: readonly WizardAudioCodec[] = ["AAC", "AC3", "EAC3"];
-
+// A container holds the codecs the plan's validation accepts for it, read from the
+// table that validation uses, out of every codec the ladder step offers
+// (`rendition-codecs.ts`). So the format screen offers a container with each codec a
+// plan may put in it, and no codec the plan would be refused for.
 function container(
-	kind: "MP4" | "PROGRESSIVE_TS" | "PROGRESSIVE_MOV",
+	kind: "MP4" | "PROGRESSIVE_TS" | "PROGRESSIVE_MOV" | "PROGRESSIVE_WEBM",
 	label: string,
 	extension: string,
 	fallbackName?: string,
@@ -69,6 +74,7 @@ export const FILE_CONTAINERS: readonly FileContainer[] = [
 	container("MP4", "MP4 (.mp4)", "mp4"),
 	container("PROGRESSIVE_TS", "MPEG-TS (.ts)", "ts", "output.ts"),
 	container("PROGRESSIVE_MOV", "QuickTime (.mov)", "mov", "output.mov"),
+	container("PROGRESSIVE_WEBM", "WebM (.webm)", "webm", "output.webm"),
 ];
 
 export function fileContainer(
@@ -77,26 +83,17 @@ export function fileContainer(
 	return FILE_CONTAINERS.find((container) => container.kind === kind);
 }
 
-/** Audio codecs every file's container can hold; one track rides in all of them. */
-export function fileAudioCodecs(
-	videos: readonly WizardVideoRendition[],
-): WizardAudioCodec[] {
-	const containers = videos.flatMap(
-		(video) => fileContainer(video.muxing?.kind) ?? [],
-	);
-	return [...new Set(FILE_CONTAINERS.flatMap((item) => item.audio))].filter(
-		(codec) => containers.every((item) => item.audio.includes(codec)),
-	);
+/** A rendition's codec as a container sees it: HEVCv2 is H.265. */
+function carriedCodec(codec: WizardVideoCodec): WizardVideoCodec {
+	return codec === "H265V2" ? "H265" : codec;
 }
 
+/** The track a file starts with. What carries it is settled by `withAudio`. */
 const DEFAULT_AUDIO: WizardAudioRendition = {
 	codec: "AAC",
 	bitrate: 192_000,
 	rate: 48_000,
 	channelLayout: "CL_STEREO",
-	// What the wizard's own reconciliation settles on for a track that every file
-	// carries. Stated here so the starting state is already the settled one.
-	muxing: { ownContainer: false, autoOwnContainer: true },
 };
 
 function defined<T extends object>(value: T): T {
@@ -257,19 +254,281 @@ function named(
 	);
 }
 
-/** Point every file at the one audio track, or at none. The key follows the bitrate. */
-function carrying(
+// Resource keys and the tokens that track them are bookkeeping of the full wizard's
+// editors. They name nothing a file-output job writes, so they neither block the
+// simple view nor survive a return to it (`collapseToFileOutput`). A key somebody
+// chose is not bookkeeping: see `chosenKey`.
+const VIDEO_BOOKKEEPING = ["autoKey"];
+const MUXING_BOOKKEEPING = ["key", "autoPath"];
+const EXTRAS_BOOKKEEPING = ["key"];
+/** How a track that files carry is kept out of a container of its own. */
+const CARRIED_MUXING_FIELDS = ["ownContainer", "autoOwnContainer"];
+
+// Every shape the editors give a key on their own: what `videoKeys` and `audioKeys`
+// derive (`v1080`, `v1080_8000k`, `v1080_8000k_h265`, `video2`, `a192`,
+// `a192_48000`), and any of them numbered to stay apart (`v1080-2`). The ladder
+// writes such a key into every row as soon as one is added, and `withAudio` numbers
+// the key of a track that would share one.
+const EDITOR_KEY =
+	/^(?:v\d+(?:_\d+k(?:_[a-z0-9]+)?)?|video\d+|a\d+(?:_\d+)?)(?:-\d+)?$/;
+
+/**
+ * A key that reads as a name somebody chose, which only a loaded plan can bring: no
+ * step has a field for one. The simple view leaves it where it is, as the full view
+ * does. `own` is a key the editors are known to have written here.
+ */
+function chosenKey(key: string | undefined, own?: string): key is string {
+	return key !== undefined && key !== own && !EDITOR_KEY.test(key);
+}
+
+/**
+ * The audio track each file holds, in the order of the files; `undefined` for a file
+ * written without one. A file names its track by key, so this reads the state as
+ * the plan will: a name no track has is no track.
+ */
+export function fileAudios(
+	state: Pick<WizardState, "videos" | "audios">,
+): (WizardAudioRendition | undefined)[] {
+	const keys = audioKeys(state.audios);
+	return state.videos.map((video) => {
+		const name = video.muxing?.muxedAudioKeys?.[0];
+		return name === undefined ? undefined : state.audios[keys.indexOf(name)];
+	});
+}
+
+/** A track's settings alone: no key the editors gave it, and nothing on how it is carried. */
+function bare(track: WizardAudioRendition): WizardAudioRendition {
+	const extras = chosenKey(track.extras?.key)
+		? track.extras
+		: without(track.extras ?? {}, EXTRAS_BOOKKEEPING);
+	const muxing = without(track.muxing ?? {}, CARRIED_MUXING_FIELDS);
+	return defined({
+		...without(track, ["carriedAs"]),
+		extras: isBlank(extras) ? undefined : extras,
+		muxing: isBlank(muxing) ? undefined : muxing,
+	});
+}
+
+/**
+ * Give each file the track named for it (`undefined`: none), and keep no track that
+ * no file holds. This is the one place the two lists are written together, so every
+ * edit of the format screen ends here.
+ *
+ * Files whose tracks have the same settings hold one track: it is encoded once,
+ * however many files it goes into, and a job whose files all hold the same audio is
+ * the job it was when the screen had one track for all of them.
+ *
+ * A track's key follows its bitrate and, where two share that, its sample rate.
+ * Two tracks apart only in what the key does not follow — the codec (AAC and Opus,
+ * both at 128 kbps), the layout, the source — would get one key, and the plan is
+ * refused for a key it has twice. The later of the two gets its key numbered
+ * (`a128-2`). The keys are derived again on every edit, so the number goes when the
+ * tracks differ in their bitrate again.
+ */
+function withAudio(
 	videos: WizardVideoRendition[],
-	audios: WizardAudioRendition[],
-): WizardVideoRendition[] {
-	const key = audioKeys(audios)[0];
-	return videos.map((video) => ({
-		...video,
-		muxing: defined({
-			...video.muxing,
-			muxedAudioKeys: key === undefined ? undefined : [key],
+	tracks: readonly (WizardAudioRendition | undefined)[],
+): Pick<WizardState, "videos" | "audios"> {
+	const rows: WizardAudioRendition[] = [];
+	const held = tracks.map((track) => {
+		if (!track) return undefined;
+		const row = bare(track);
+		const found = rows.findIndex((other) => same(other, row));
+		return found < 0 ? rows.push(row) - 1 : found;
+	});
+	const seen = new Set<string>();
+	const twice = audioKeys(rows).map((key) => {
+		if (seen.has(key)) return true;
+		seen.add(key);
+		return false;
+	});
+	// A track with a key of its own is not counted when the others derive theirs, so
+	// the keys the others end up with are read with the numbered ones set apart.
+	const apartFromTwice = rows.map((row, index) =>
+		twice[index]
+			? { ...row, extras: { ...row.extras, key: `\u0000${index}` } }
+			: row,
+	);
+	const taken = new Set(
+		audioKeys(apartFromTwice).filter((_, index) => !twice[index]),
+	);
+	const keyed = rows.map((row, index) => {
+		if (!twice[index]) return row;
+		const [base] = audioKeys([
+			{ ...row, extras: without(row.extras ?? {}, EXTRAS_BOOKKEEPING) },
+		]);
+		let numbered = "";
+		for (let n = 2; numbered === "" || taken.has(numbered); n++)
+			numbered = `${base}-${n}`;
+		taken.add(numbered);
+		return { ...row, extras: { ...row.extras, key: numbered } };
+	});
+	const keys = audioKeys(keyed);
+	// A track that every file holds is in the state the wizard's own reconciliation
+	// settles on (`reconcileAutomaticAudioPackaging`): out of a container of its own
+	// for as long as every file holds it. One that only some files hold is kept out
+	// of one outright, or it would be written as a file of its own as well.
+	const everywhere = (index: number) => held.every((at) => at === index);
+	return {
+		audios: keyed.map((row, index) => ({
+			...row,
+			muxing: {
+				...row.muxing,
+				ownContainer: false,
+				...(everywhere(index) ? { autoOwnContainer: true } : {}),
+			},
+		})),
+		videos: videos.map((video, index) => {
+			const at = held[index];
+			return {
+				...video,
+				muxing: defined({
+					...video.muxing,
+					muxedAudioKeys: at === undefined ? undefined : [keys[at] ?? ""],
+				}),
+			};
 		}),
-	}));
+	};
+}
+
+/**
+ * A track in another codec, as the ladder step changes one: the cutoff belongs to
+ * the codec it was set for, and Opus is 48 kHz. The layout stays where the new codec
+ * has one of that name, and loudness control is Dolby Atmos's alone.
+ */
+function recoded(
+	track: WizardAudioRendition,
+	codec: WizardAudioCodec,
+): WizardAudioRendition {
+	if ((track.codec ?? "AAC") === codec) return track;
+	const layouts: readonly string[] =
+		codec === "DOLBY_ATMOS" ? [] : AUDIO_CHANNEL_LAYOUTS[codec];
+	return defined({
+		...track,
+		codec,
+		channelLayout:
+			track.channelLayout !== undefined && layouts.includes(track.channelLayout)
+				? track.channelLayout
+				: undefined,
+		cutoffFrequency: undefined,
+		loudness: undefined,
+		...(codec === "OPUS" ? { rate: 48_000 } : {}),
+	});
+}
+
+/** The track a file starts with in a container: the first audio codec it holds. */
+function defaultAudio(
+	container: FileContainer | undefined,
+): WizardAudioRendition | undefined {
+	const codec = container ? container.audio[0] : DEFAULT_AUDIO.codec;
+	return codec === undefined ? undefined : recoded(DEFAULT_AUDIO, codec);
+}
+
+/** The codecs of a container that no Bitmovin document lists for it. */
+function unverifiedIn(container: FileContainer): readonly string[] {
+	return (
+		(UNVERIFIED_MUXING_CODECS as Record<string, readonly string[] | undefined>)[
+			container.kind
+		] ?? []
+	);
+}
+
+/**
+ * Whether a file goes on in its codec when its container changes. It does where the
+ * new container holds the codec and Bitmovin lists the pair. A pair it does not list
+ * is one to choose, with the note the field then shows, and not one to arrive at by
+ * changing something else: from MP4 to WebM and back, a file returns to AAC and does
+ * not stay in the Opus that WebM gave it.
+ */
+function carriedOver(container: FileContainer, codec: string): boolean {
+	const held: readonly string[] = [...container.video, ...container.audio];
+	return held.includes(codec) && !unverifiedIn(container).includes(codec);
+}
+
+/**
+ * A Dolby Atmos track is encoded from an Atmos source and from nothing else: the
+ * plan is refused for one that reads the input's own audio track, or any other
+ * stream. True for a track the screen should say that of, where it is set.
+ */
+export function lacksAtmosSource(
+	state: Pick<WizardState, "sources">,
+	audio: WizardAudioRendition | undefined,
+): boolean {
+	if (audio?.codec !== "DOLBY_ATMOS") return false;
+	const source = audio.extras?.source;
+	return !(state.sources?.dolbyStreams ?? []).some(
+		(stream) => stream.kind === "ATMOS" && stream.key === source,
+	);
+}
+
+/**
+ * The files of a job are one encoding, and an encoding runs in one mode. Files in
+ * one video codec take it from their presets. Files in more than one — an MP4 in
+ * H.264 beside a WebM in VP9 — have no mode in common unless each is given the same
+ * one, and the plan is refused (`PLAN_ENCODING_MODE_UNPINNED_FOR_MIXED_CODECS`): the
+ * provider would refuse the start, after everything else had been created. True
+ * while that is so, for the screen to say on the field that settles it.
+ */
+export function filesNeedOneMode(
+	state: Pick<WizardState, "videos" | "internal" | "startOptions">,
+): boolean {
+	// A mode set for the whole job is the one mode, where the plan carries it.
+	if (!wizardUsesCodecEncodingMode(state) && state.startOptions?.encodingMode)
+		return false;
+	// HEVCv2 beside another codec is not a job at all: see `hevcV2NotAlone`.
+	if (state.videos.some((video) => video.codec === "H265V2")) return false;
+	const codecs = new Set(state.videos.map((video) => video.codec ?? "H264"));
+	if (codecs.size < 2) return false;
+	const modes = state.videos.map((video) => video.encodingMode);
+	return modes.some((mode) => !mode) || new Set(modes).size > 1;
+}
+
+/**
+ * HEVCv2 takes the whole job: every file in it, and the switch in Basics on. A job
+ * that has it otherwise cannot be built into a plan. True for one that has HEVCv2
+ * in a file and is such a job, for the screen to say on the codec.
+ */
+export function hevcV2NotAlone(state: WizardState): boolean {
+	return (
+		state.videos.some((video) => video.codec === "H265V2") &&
+		hasInvalidHevcV2Ladder(state)
+	);
+}
+
+export type FileCaveat =
+	| "unmeasured"
+	| "unverifiedVideo"
+	| "audioNotHeld"
+	| "unverifiedAudio"
+	| "av1WebmAudio";
+
+/**
+ * What the format screen says about a file where it is set, before the plan is
+ * validated. All but `audioNotHeld` are warnings the validation raises too, and the
+ * job starts with them: the container this app has no live encode of
+ * (`PLAN_MUXING_UNMEASURED_KIND`), a codec the container's format defines but
+ * Bitmovin's support matrix does not list (`PLAN_MUXING_UNVERIFIED_CODEC`), and audio
+ * beside AV1 in a WebM file, which Bitmovin documents as refused
+ * (`PLAN_MUXING_AV1_NOT_ALONE`). `audioNotHeld` is a codec the container does not
+ * hold at all, which the plan is refused for.
+ */
+export function fileCaveats(
+	video: WizardVideoRendition,
+	audio: WizardAudioRendition | undefined,
+): FileCaveat[] {
+	const container = fileContainer(video.muxing?.kind);
+	if (!container) return [];
+	const unverified = unverifiedIn(container);
+	const codec = carriedCodec(video.codec ?? "H264");
+	const track = audio?.codec ?? "AAC";
+	const caveats: FileCaveat[] = [];
+	if (container.unmeasured) caveats.push("unmeasured");
+	if (unverified.includes(codec)) caveats.push("unverifiedVideo");
+	if (audio && !container.audio.includes(track)) caveats.push("audioNotHeld");
+	if (audio && unverified.includes(track)) caveats.push("unverifiedAudio");
+	if (audio && container.kind === "PROGRESSIVE_WEBM" && codec === "AV1")
+		caveats.push("av1WebmAudio");
+	return caveats;
 }
 
 function sourced<T extends { extras?: WizardRenditionExtras }>(
@@ -299,7 +558,7 @@ function file(
 	});
 }
 
-const DEFAULT_VIDEOS = carrying(
+const DEFAULT_FILES = withAudio(
 	[file(1080, 8_000_000, "MP4")],
 	[DEFAULT_AUDIO],
 );
@@ -308,8 +567,8 @@ const DEFAULT_VIDEOS = carrying(
 export const FILE_OUTPUT_DEFAULT_STATE: WizardState = {
 	...DEFAULT_WIZARD_STATE,
 	output: { ...DEFAULT_WIZARD_STATE.output, publicRead: false },
-	videos: named("", DEFAULT_VIDEOS, [true]),
-	audios: [DEFAULT_AUDIO],
+	videos: named("", DEFAULT_FILES.videos, [true]),
+	audios: DEFAULT_FILES.audios,
 	manifests: { hls: false, dash: false },
 };
 
@@ -362,7 +621,14 @@ export function renameFileJob(
 export type FileEdit = Partial<
 	Pick<
 		WizardVideoRendition,
-		"height" | "bitrate" | "codec" | "encodingMode" | "h264" | "h265"
+		| "height"
+		| "bitrate"
+		| "codec"
+		| "encodingMode"
+		| "h264"
+		| "h265"
+		| "vp9"
+		| "av1"
 	>
 > & {
 	kind?: WizardMuxingKind;
@@ -371,11 +637,50 @@ export type FileEdit = Partial<
 	source?: string;
 };
 
+/**
+ * The switch HEVCv2 needs beside the codec, kept as the ladder step keeps it: on
+ * with the file that first asks for the codec (`activate`), off with the last one
+ * that used it.
+ */
+function internalFor(
+	state: WizardState,
+	videos: readonly WizardVideoRendition[],
+	activate: boolean,
+): Partial<Pick<WizardState, "internal">> {
+	const uses = (list: readonly WizardVideoRendition[]) =>
+		list.some((video) => video.codec === "H265V2");
+	if (uses(videos))
+		return state.internal || !activate
+			? {}
+			: { internal: { hevcV2: { bcfVersion: INTERNAL_HEVC_V2_BCF_VERSION } } };
+	return uses(state.videos) ? { internal: undefined } : {};
+}
+
+/**
+ * What the HEVCv2 editor sets that H.265 has no place for. A file keeps the rest of
+ * its H.265 settings when it changes to another codec, as a ladder rendition does,
+ * so that they are there when it changes back. These two it cannot keep: a plan is
+ * not built for a file of another codec that has them.
+ */
+const HEVC_V2_SETTINGS = [
+	"motionCompensatedTemporalFiltering",
+	"rateControlModeConfig",
+];
+
+function withoutHevcV2Settings(
+	h265: WizardVideoRendition["h265"],
+): WizardVideoRendition["h265"] {
+	if (!h265) return h265;
+	const rest = without(h265, HEVC_V2_SETTINGS);
+	return isBlank(rest) ? undefined : rest;
+}
+
 export function editFile(
 	state: WizardState,
 	index: number,
 	edit: FileEdit,
-): Pick<WizardState, "videos"> {
+): Pick<WizardState, "videos"> &
+	Partial<Pick<WizardState, "audios" | "internal">> {
 	const current = state.videos[index];
 	if (!current) return { videos: state.videos };
 	const { kind, filename, source, ...rendition } = edit;
@@ -395,16 +700,33 @@ export function editFile(
 		// A typed name keeps its stem; only the extension belongs to the container.
 		name = `${name.slice(0, -previous.extension.length)}${container.extension}`;
 	}
-	const codec = rendition.codec ?? current.codec ?? "H264";
+	const was = current.codec ?? "H264";
+	const asked = rendition.codec ?? was;
+	const moved = container !== undefined && container !== previous;
+	// A codec the new container cannot hold would only surface later as a
+	// validation error about a choice the user did not make. A codec named in the
+	// same edit is a choice, and is kept wherever the container holds it.
+	const codec =
+		container &&
+		(moved && rendition.codec === undefined
+			? !carriedOver(container, carriedCodec(asked))
+			: !container.video.includes(carriedCodec(asked)))
+			? (container.video[0] ?? asked)
+			: asked;
 	const next = sourced(
 		defined({
 			...current,
 			...rendition,
-			// A codec the new container cannot hold would only surface later as a
-			// validation error about a choice the user did not make.
-			...(container && !container.video.includes(codec)
-				? { codec: container.video[0] }
+			...(codec === asked ? {} : { codec }),
+			...(codec !== was && codec !== "H265" && codec !== "H265V2"
+				? { h265: withoutHevcV2Settings(current.h265) }
 				: {}),
+			// HEVCv2 has the one encoding mode, and leaves it behind with the codec.
+			...(codec === "H265V2" && was !== "H265V2"
+				? { encodingMode: "SMART_PASS" as const }
+				: codec !== "H265V2" && was === "H265V2"
+					? { encodingMode: undefined }
+					: {}),
 			muxing: {
 				...current.muxing,
 				...(container ? { kind: container.kind } : {}),
@@ -413,12 +735,38 @@ export function editFile(
 		}),
 		source,
 	);
-	const videos = state.videos.map((video, at) => (at === index ? next : video));
-	return { videos: named(state.name, videos, derived) };
+	const videos = named(
+		state.name,
+		state.videos.map((video, at) => (at === index ? next : video)),
+		derived,
+	);
+	const internal = internalFor(
+		state,
+		videos,
+		codec === "H265V2" && was !== "H265V2",
+	);
+	const tracks = fileAudios(state);
+	const track = tracks[index];
+	if (
+		!track ||
+		!container ||
+		!moved ||
+		carriedOver(container, track.codec ?? "AAC")
+	)
+		return { videos, ...internal };
+	// As with the video codec: the track goes on in a codec the new container holds.
+	const held = container.audio[0];
+	tracks[index] = held === undefined ? undefined : recoded(track, held);
+	return { ...withAudio(videos, tracks), ...internal };
 }
 
-/** A second file is usually a smaller copy of the last: half the height, a quarter of the bitrate. */
-export function addFile(state: WizardState): Pick<WizardState, "videos"> {
+/**
+ * A second file is usually a smaller copy of the last: half the height, a quarter of
+ * the bitrate, in the same container and codec, holding the same audio.
+ */
+export function addFile(
+	state: WizardState,
+): Pick<WizardState, "videos" | "audios"> {
 	const last = state.videos.at(-1);
 	const container =
 		fileContainer(last?.muxing?.kind) ?? (FILE_CONTAINERS[0] as FileContainer);
@@ -429,85 +777,112 @@ export function addFile(state: WizardState): Pick<WizardState, "videos"> {
 		? Math.max(100_000, Math.round(last.bitrate / 4))
 		: 2_000_000;
 	const codec =
-		last?.codec && container.video.includes(last.codec)
+		last?.codec && container.video.includes(carriedCodec(last.codec))
 			? last.codec
 			: undefined;
-	const videos = carrying(
-		[...state.videos, file(height, bitrate, container.kind, codec)],
-		state.audios,
+	const added = defined({
+		...file(height, bitrate, container.kind, codec),
+		encodingMode: codec === "H265V2" ? ("SMART_PASS" as const) : undefined,
+	});
+	const tracks = fileAudios(state);
+	return withAudio(
+		named(state.name, [...state.videos, added], [...derivedNames(state), true]),
+		[...tracks, last ? tracks.at(-1) : defaultAudio(container)],
 	);
-	return { videos: named(state.name, videos, [...derivedNames(state), true]) };
 }
 
 /** The flow always writes at least one file; removing the last one is refused. */
 export function removeFile(
 	state: WizardState,
 	index: number,
-): Pick<WizardState, "videos"> {
+): Pick<WizardState, "videos" | "audios"> &
+	Partial<Pick<WizardState, "internal">> {
 	if (state.videos.length <= 1 || !state.videos[index])
-		return { videos: state.videos };
+		return { videos: state.videos, audios: state.audios };
 	const keep = <T>(items: readonly T[]) =>
 		items.filter((_, at) => at !== index);
+	const videos = named(
+		state.name,
+		keep(state.videos),
+		keep(derivedNames(state)),
+	);
 	return {
-		videos: named(state.name, keep(state.videos), keep(derivedNames(state))),
+		...withAudio(videos, keep(fileAudios(state))),
+		...internalFor(state, videos, false),
 	};
 }
 
 export type FileAudioEdit = Partial<
-	Pick<WizardAudioRendition, "codec" | "bitrate" | "rate" | "channelLayout">
+	Pick<
+		WizardAudioRendition,
+		| "codec"
+		| "bitrate"
+		| "rate"
+		| "channelLayout"
+		| "cutoffFrequency"
+		| "loudness"
+	>
 > & {
 	/** Source stream key; "" returns to the input's own audio track. */
 	source?: string;
 };
 
-/** Turn the one audio track on or off for every file. */
+/**
+ * Give a file an audio track, or take it away. A file that gets one gets the track
+ * of the nearest file whose track its container holds — the files of one job mostly
+ * hold the same audio — and otherwise the one a file starts with.
+ */
 export function setFileAudio(
 	state: WizardState,
+	index: number,
 	enabled: boolean,
 ): Pick<WizardState, "videos" | "audios"> {
-	const audios = enabled
-		? state.audios.length > 0
-			? state.audios
-			: [DEFAULT_AUDIO]
-		: [];
-	return { audios, videos: carrying(state.videos, audios) };
+	const tracks = fileAudios(state);
+	const video = state.videos[index];
+	if (!video || (tracks[index] !== undefined) === enabled)
+		return { videos: state.videos, audios: state.audios };
+	if (enabled) {
+		const container = fileContainer(video.muxing?.kind);
+		const near = [
+			...tracks.slice(0, index).reverse(),
+			...tracks.slice(index + 1),
+		].find(
+			(track) =>
+				track !== undefined &&
+				(!container || container.audio.includes(track.codec ?? "AAC")),
+		);
+		tracks[index] = near ?? defaultAudio(container);
+	} else tracks[index] = undefined;
+	return withAudio(state.videos, tracks);
 }
 
+/** Edit the audio track of one file. The other files keep the track they hold. */
 export function editFileAudio(
 	state: WizardState,
+	index: number,
 	edit: FileAudioEdit,
 ): Pick<WizardState, "videos" | "audios"> {
-	const current = state.audios[0];
+	const tracks = fileAudios(state);
+	const current = tracks[index];
 	if (!current) return { videos: state.videos, audios: state.audios };
-	const { source, ...rendition } = edit;
-	const audios = [
-		sourced(
-			defined({
-				...current,
-				...rendition,
-				// Layout names belong to the codec; the encoder default is safe for any.
-				...(rendition.codec !== undefined &&
-				rendition.codec !== current.codec &&
-				rendition.channelLayout === undefined
-					? { channelLayout: undefined }
-					: {}),
-			}),
-			source,
-		),
-		...state.audios.slice(1),
-	];
-	return { audios, videos: carrying(state.videos, audios) };
+	const { source, codec, ...rendition } = edit;
+	tracks[index] = sourced(
+		defined({
+			...(codec === undefined ? current : recoded(current, codec)),
+			...rendition,
+		}),
+		source,
+	);
+	return withAudio(state.videos, tracks);
 }
 
 /**
  * Where a setting lives that the simple view does not show, in wizard order.
- * `basics` is a shown step with one control held back. `encodings` is the one
- * setting held back from the Sources step, and `perTitle`, `qualityGate` and
- * `gateTargets` are the three held back from the Encoding step; both steps are
- * shown too (`HELD_BACK`). The rest are the steps the view leaves out.
+ * `encodings` is the one setting held back from the Sources step, and `perTitle`,
+ * `qualityGate` and `gateTargets` are the three held back from the Encoding step;
+ * both steps are shown (`HELD_BACK`). The rest are the steps the view leaves out.
  */
 export const FILE_OUTPUT_BLOCKERS = [
-	"basics",
 	"encodings",
 	"ladder",
 	"packaging",
@@ -542,7 +917,9 @@ export const FILE_OUTPUT_FIELD_HOME: Record<
 	// Judged per rendition below.
 	videos: "shown",
 	audios: "shown",
-	internal: "basics",
+	// The switch HEVCv2 needs. Basics shows it to an account that may use the codec,
+	// in this view as in the full one, and the format screen offers the codec then.
+	internal: "shown",
 	audioGuard: "ladder",
 	subtitles: "ladder",
 	filters: "ladder",
@@ -764,30 +1141,6 @@ function stripHeldBack(state: WizardState): WizardState {
 	);
 }
 
-// Resource keys and the tokens that track them are bookkeeping of the full wizard's
-// editors. They name nothing a file-output job writes, so they neither block the
-// simple view nor survive a return to it (`collapseToFileOutput`). A key somebody
-// chose is not bookkeeping: see `chosenKey`.
-const VIDEO_BOOKKEEPING = ["autoKey"];
-const MUXING_BOOKKEEPING = ["key", "autoPath"];
-const EXTRAS_BOOKKEEPING = ["key"];
-
-// Every shape the editors give a key on their own: what `videoKeys` and `audioKeys`
-// derive (`v1080`, `v1080_8000k`, `v1080_8000k_h265`, `video2`, `a192`,
-// `a192_48000`), and any of them numbered to stay apart (`v1080-2`). The ladder
-// writes such a key into every row as soon as one is added.
-const EDITOR_KEY =
-	/^(?:v\d+(?:_\d+k(?:_[a-z0-9]+)?)?|video\d+|a\d+(?:_\d+)?)(?:-\d+)?$/;
-
-/**
- * A key that reads as a name somebody chose, which only a loaded plan can bring: no
- * step has a field for one. The simple view leaves it where it is, as the full view
- * does. `own` is a key the editors are known to have written here.
- */
-function chosenKey(key: string | undefined, own?: string): key is string {
-	return key !== undefined && key !== own && !EDITOR_KEY.test(key);
-}
-
 const VIDEO_FIELDS = [
 	"height",
 	"bitrate",
@@ -795,6 +1148,8 @@ const VIDEO_FIELDS = [
 	"encodingMode",
 	"h264",
 	"h265",
+	"vp9",
+	"av1",
 	"extras",
 	"muxing",
 	"extraMuxings",
@@ -805,6 +1160,8 @@ const AUDIO_FIELDS = [
 	"bitrate",
 	"rate",
 	"channelLayout",
+	"cutoffFrequency",
+	"loudness",
 	"extras",
 	"muxing",
 	"extraMuxings",
@@ -816,7 +1173,6 @@ const FILE_MUXING_FIELDS = [
 	"muxedAudioKeys",
 	...MUXING_BOOKKEEPING,
 ];
-const CARRIED_MUXING_FIELDS = ["ownContainer", "autoOwnContainer"];
 const EXTRAS_FIELDS = ["source", ...EXTRAS_BOOKKEEPING];
 
 function setsOnly(value: object | undefined, fields: readonly string[]) {
@@ -837,11 +1193,13 @@ export function fileOutputBlockers(state: WizardState): FileOutputBlocker[] {
 		if (home !== "shown") found.add(home);
 	}
 	for (const name of heldBackInUse(lifted)) found.add(name);
-	if (state.videos.length === 0 || state.audios.length > 1) found.add("ladder");
-	const audio = state.audios[0];
-	const audioKey = audio ? audioKeys(state.audios)[0] : undefined;
-	const videoCodecs = FILE_CONTAINERS.flatMap((item) => item.video);
-	const audioCodecs = FILE_CONTAINERS.flatMap((item) => item.audio);
+	if (state.videos.length === 0) found.add("ladder");
+	const videoCodecs: readonly WizardVideoCodec[] = [...VIDEO_CODECS, "H265V2"];
+	const keys = audioKeys(state.audios);
+	// A file names its track by key. With one key on two tracks nothing says which
+	// track a file holds, and the format screen would show the first for both.
+	if (new Set(keys).size !== keys.length) found.add("ladder");
+	const held = new Set<string>();
 	for (const video of state.videos) {
 		if (
 			!videoCodecs.includes(video.codec ?? "H264") ||
@@ -849,29 +1207,33 @@ export function fileOutputBlockers(state: WizardState): FileOutputBlocker[] {
 			!setsOnly(video.extras, EXTRAS_FIELDS)
 		)
 			found.add("ladder");
-		const carried = (video.muxing?.muxedAudioKeys ?? []).filter(
-			(key) => key === audioKey,
-		);
+		// A file holds one track or none, and a track it names has to be there.
+		const names = video.muxing?.muxedAudioKeys ?? [];
+		for (const name of names) held.add(name);
 		if (
 			!fileContainer(video.muxing?.kind) ||
 			video.muxing?.path !== "" ||
 			!setsOnly(video.muxing, FILE_MUXING_FIELDS) ||
 			!isBlank(video.extraMuxings) ||
-			carried.length !== (audio ? 1 : 0)
+			names.length > 1 ||
+			names.some((name) => !keys.includes(name))
 		)
 			found.add("packaging");
 	}
-	if (audio) {
+	for (const [index, audio] of state.audios.entries()) {
 		if (
-			!audioCodecs.includes(audio.codec ?? "AAC") ||
+			!AUDIO_CODECS.includes(audio.codec ?? "AAC") ||
 			!setsOnly(audio, AUDIO_FIELDS) ||
 			!setsOnly(audio.extras, EXTRAS_FIELDS)
 		)
 			found.add("ladder");
+		// A track is written inside the files that hold it and nowhere else: one that
+		// no file holds, or that has a container of its own, is not a file's audio.
 		if (
 			audio.muxing?.ownContainer !== false ||
 			!setsOnly(audio.muxing, CARRIED_MUXING_FIELDS) ||
-			!isBlank(audio.extraMuxings)
+			!isBlank(audio.extraMuxings) ||
+			!held.has(keys[index] ?? "")
 		)
 			found.add("packaging");
 	}
@@ -884,8 +1246,9 @@ export function isFileOutputState(state: WizardState): boolean {
 
 /**
  * Return a state the full wizard edited to the form this flow's edits expect: the
- * editors' keys derived again, each file pointing at the audio track's current key,
- * and nothing left in a field or a setting the simple view does not show
+ * editors' keys derived again, each file pointing at its audio track's current key,
+ * tracks with the same settings held as one (`withAudio`), and nothing left in a
+ * field or a setting the simple view does not show
  * (`HIDDEN_FIELDS`, `HELD_BACK`). Call it only on a state `isFileOutputState`
  * accepts. The files written do not change, because here every file name and folder
  * is explicit, and what is cleared was doing nothing, one click of the Encoding step
@@ -904,7 +1267,6 @@ export function collapseToFileOutput(state: WizardState): WizardState {
 			: without(item.extras ?? {}, EXTRAS_BOOKKEEPING);
 		return defined({ ...item, extras: isBlank(extras) ? undefined : extras });
 	};
-	const audios = state.audios.map((audio) => unkeyed(audio));
 	const videos = state.videos.map((video) => {
 		const muxing = without(video.muxing ?? {}, MUXING_BOOKKEEPING);
 		return {
@@ -917,8 +1279,8 @@ export function collapseToFileOutput(state: WizardState): WizardState {
 	});
 	return {
 		...stripHeldBack(reset(state, HIDDEN_FIELDS)),
-		audios,
-		videos: carrying(apart(videos, videoKeys(state.videos)), audios),
+		// The tracks are read by the keys the state has, before any is derived again.
+		...withAudio(apart(videos, videoKeys(state.videos)), fileAudios(state)),
 	};
 }
 

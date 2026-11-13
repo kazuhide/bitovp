@@ -1,4 +1,10 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FeatureFlagsProvider } from "@/lib/feature-flags/context";
@@ -206,7 +212,7 @@ describe("VodWizard — the file-output flow", () => {
 			"Export files",
 			"File 1",
 			"File name",
-			"Include audio in every file",
+			"Include audio",
 		],
 		[
 			"ja",
@@ -221,7 +227,7 @@ describe("VodWizard — the file-output flow", () => {
 			"ファイルを書き出す",
 			"ファイル 1",
 			"ファイル名",
-			"すべてのファイルに音声を入れる",
+			"音声を入れる",
 		],
 	] as const)("opens on six steps with one MP4 that carries the audio (%s)", async (locale, labels, current, file, fileName, audio) => {
 		renderWithQuery(<VodWizard flow="file" />, locale);
@@ -237,7 +243,7 @@ describe("VodWizard — the file-output flow", () => {
 			first.getByRole("combobox", { name: /Container|コンテナ/ }),
 		).toHaveValue("MP4");
 		expect(first.getByLabelText(fileName)).toHaveValue("output.mp4");
-		expect(screen.getByRole("checkbox", { name: audio })).toBeChecked();
+		expect(first.getByRole("checkbox", { name: audio })).toBeChecked();
 	});
 
 	it("leaves the streaming wizard as it was, with the switch beside it", () => {
@@ -343,12 +349,17 @@ describe("VodWizard — the file-output flow", () => {
 		await user.clear(second().getByLabelText("Height (p)"));
 		expect(second().getByLabelText("Height (p)")).toHaveValue(null);
 		expect(second().getByLabelText("File name")).toHaveValue("clip-2.mp4");
-		await user.click(
-			screen.getByRole("checkbox", { name: "Include audio in every file" }),
-		);
+		// Each file has its own audio: the second is written without, the first with.
+		await user.click(second().getByRole("checkbox", { name: "Include audio" }));
 		expect(
-			screen.getByText("The files are written without an audio track."),
+			second().getByText("This file is written without an audio track."),
 		).toBeInTheDocument();
+		expect(
+			within(screen.getByRole("group", { name: "File 1" })).getByRole(
+				"checkbox",
+				{ name: "Include audio" },
+			),
+		).toBeChecked();
 
 		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
 		const files = () =>
@@ -364,6 +375,8 @@ describe("VodWizard — the file-output flow", () => {
 		).toEqual([
 			["H264", 1080],
 			["H264", "source"],
+			// The one audio track, which has no height.
+			["AAC", "source"],
 		]);
 		expect(
 			files().muxings.map((muxing) => [
@@ -371,7 +384,7 @@ describe("VodWizard — the file-output flow", () => {
 				muxing.additionalStreamKeys ?? [],
 			]),
 		).toEqual([
-			["clip.mp4", []],
+			["clip.mp4", ["a192"]],
 			["clip-2.mp4", []],
 		]);
 
@@ -384,8 +397,15 @@ describe("VodWizard — the file-output flow", () => {
 		expect(
 			files().renditions.map((rendition) => rendition.height ?? "source"),
 		).toEqual(["source"]);
-		expect(files().muxings.map((muxing) => muxing.filename)).toEqual([
-			"clip.mp4",
+		// It is the file that had no audio, and the track nothing holds is gone.
+		expect(
+			files().muxings.map((muxing) => [
+				muxing.filename,
+				muxing.additionalStreamKeys ?? [],
+			]),
+		).toEqual([["clip.mp4", []]]);
+		expect(files().renditions.map((rendition) => rendition.codec)).toEqual([
+			"H264",
 		]);
 	});
 
@@ -533,7 +553,12 @@ describe("VodWizard — the file-output flow", () => {
 			within(container)
 				.getAllByRole("option")
 				.map((option) => option.textContent),
-		).toEqual(["MP4 (.mp4)", "MPEG-TS (.ts)", "QuickTime (.mov)"]);
+		).toEqual([
+			"MP4 (.mp4)",
+			"MPEG-TS (.ts)",
+			"QuickTime (.mov)",
+			"WebM (.webm)",
+		]);
 
 		await user.selectOptions(container, "MPEG-TS (.ts)");
 		expect(screen.getByLabelText("File name")).toHaveValue("clip.ts");
@@ -563,14 +588,40 @@ describe("VodWizard — the file-output flow", () => {
 		]);
 	});
 
-	it("says that QuickTime is not verified yet, and which container cannot hold the audio codec", async () => {
+	const UNVERIFIED =
+		"The container's format defines this codec, but no Bitmovin document lists the combination. The job may be refused: check the first file it writes.";
+	const options = (select: HTMLElement) =>
+		within(select)
+			.getAllByRole("option")
+			.map((option) => option.textContent);
+	/** The codecs and the files of the plan on show, once "Plan JSON" is open. */
+	const planned = () => {
+		const plan = JSON.parse(planJson()) as {
+			renditions: { key: string; codec: string }[];
+			muxings: {
+				kind: string;
+				filename: string;
+				streamKey: string;
+				additionalStreamKeys?: string[];
+			}[];
+		};
+		const codec = (key: string) =>
+			plan.renditions.find((rendition) => rendition.key === key)?.codec;
+		return plan.muxings.map((muxing) => [
+			muxing.kind,
+			muxing.filename,
+			...[muxing.streamKey, ...(muxing.additionalStreamKeys ?? [])].map(
+				(key) => `${key}:${codec(key)}`,
+			),
+		]);
+	};
+
+	it("says that QuickTime is not verified yet, and of a codec Bitmovin does not list for it", async () => {
 		const user = userEvent.setup();
 		await restore(ready);
 		await user.click(screen.getByRole("button", { name: "3. Format" }));
 		const container = screen.getByRole("combobox", { name: "Container" });
-		const audioCodec = within(
-			screen.getByRole("region", { name: "Audio" }),
-		).getByRole("combobox", { name: "Codec" });
+		const audioCodec = screen.getByRole("combobox", { name: "Audio codec" });
 
 		await user.selectOptions(audioCodec, "AC3");
 		expect(audioCodec).not.toHaveAccessibleDescription();
@@ -579,19 +630,361 @@ describe("VodWizard — the file-output flow", () => {
 			"Not yet verified on a real encode. Check the first file this job writes.",
 		);
 		expect(screen.getByLabelText("File name")).toHaveValue("clip.mov");
-		// The codec that was chosen stays on show; only what fits is offered beside it.
-		expect(audioCodec).toHaveValue("AC3");
-		expect(audioCodec).toHaveAccessibleDescription(
-			"QuickTime (.mov) cannot hold this codec.",
-		);
-		expect(
-			within(audioCodec)
-				.getAllByRole("option")
-				.map((option) => option.textContent),
-		).toEqual(["AAC", "AC3"]);
-
-		await user.selectOptions(audioCodec, "AAC");
+		// AC-3 is a codec the format has and Bitmovin does not list for it: the
+		// change of container does not take the file into that pair by itself.
+		expect(audioCodec).toHaveValue("AAC");
 		expect(audioCodec).not.toHaveAccessibleDescription();
+		expect(options(audioCodec)).toEqual(["AAC", "AC3", "DD"]);
+
+		// Chosen here, it is kept and said to be unlisted, and the job starts.
+		await user.selectOptions(audioCodec, "AC3");
+		expect(audioCodec).toHaveAccessibleDescription(UNVERIFIED);
+		await user.click(screen.getByRole("button", { name: "6. Review" }));
+		expect(
+			screen.getAllByText(/\[PLAN_MUXING_UNVERIFIED_CODEC\]/).length,
+		).toBeGreaterThan(0);
+		await waitFor(() =>
+			expect(
+				screen.getByRole("button", { name: "Start encoding" }),
+			).toBeEnabled(),
+		);
+	});
+
+	it("offers each container every codec it can hold, the video beside the audio", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		const container = screen.getByRole("combobox", { name: "Container" });
+		const codec = screen.getByRole("combobox", { name: "Codec" });
+		const audioCodec = screen.getByRole("combobox", { name: "Audio codec" });
+		const offered = async (name: string) => {
+			await user.selectOptions(container, name);
+			return [options(codec), options(audioCodec)];
+		};
+
+		expect([options(codec), options(audioCodec)]).toEqual([
+			["H264", "H265", "AV1"],
+			["AAC", "AC3", "EAC3", "OPUS", "DOLBY_ATMOS", "DDPLUS", "DD"],
+		]);
+		expect(await offered("MPEG-TS (.ts)")).toEqual([
+			["H264", "H265"],
+			["AAC", "AC3", "EAC3", "DDPLUS", "DD"],
+		]);
+		expect(await offered("QuickTime (.mov)")).toEqual([
+			["H264", "H265"],
+			["AAC", "AC3", "DD"],
+		]);
+		expect(await offered("WebM (.webm)")).toEqual([["VP9", "AV1"], ["OPUS"]]);
+	});
+
+	it("writes a WebM file of VP9 and Opus, and says what Bitmovin documents of audio beside AV1", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		const container = screen.getByRole("combobox", { name: "Container" });
+		const codec = screen.getByRole("combobox", { name: "Codec" });
+		// Read anew each time: the audio's fields go with the audio and come back.
+		const audioCodec = () =>
+			screen.getByRole("combobox", { name: "Audio codec" });
+
+		await user.selectOptions(container, "WebM (.webm)");
+		expect(screen.getByLabelText("File name")).toHaveValue("clip.webm");
+		expect(codec).toHaveValue("VP9");
+		expect(audioCodec()).toHaveValue("OPUS");
+		expect(audioCodec()).not.toHaveAccessibleDescription();
+		expect(screen.getByLabelText("Sample rate (Hz)")).toHaveValue(48_000);
+		// VP9 has its own advanced options, as in the ladder step.
+		expect(screen.getByText("Advanced (VP9)")).toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(planned()).toEqual([
+			["PROGRESSIVE_WEBM", "clip.webm", "v1080:VP9", "a192:OPUS"],
+		]);
+		expect(steps()).toHaveLength(6);
+
+		await user.selectOptions(codec, "AV1");
+		expect(screen.getByText("Advanced (AV1)")).toBeInTheDocument();
+		expect(audioCodec()).toHaveAccessibleDescription(
+			"Bitmovin's release notes say that a WebM file with AV1 video takes no other stream, and nothing newer says otherwise. The job may be refused: to be sure, write this file without audio, or use MP4.",
+		);
+		expect(planned()).toEqual([
+			["PROGRESSIVE_WEBM", "clip.webm", "v1080:AV1", "a192:OPUS"],
+		]);
+		// Without the audio there is nothing left to say it of.
+		await user.click(screen.getByRole("checkbox", { name: "Include audio" }));
+		expect(planned()).toEqual([["PROGRESSIVE_WEBM", "clip.webm", "v1080:AV1"]]);
+
+		// Back in MP4 the file is AV1 still, which MP4 holds, and has AAC again.
+		await user.click(screen.getByRole("checkbox", { name: "Include audio" }));
+		await user.selectOptions(container, "MP4 (.mp4)");
+		expect(codec).toHaveValue("AV1");
+		expect(audioCodec()).toHaveValue("AAC");
+		expect(planned()).toEqual([["MP4", "clip.mp4", "v1080:AV1", "a192:AAC"]]);
+		// Opus in MP4 is there to choose, and is said to be unlisted.
+		await user.selectOptions(audioCodec(), "OPUS");
+		expect(audioCodec()).toHaveAccessibleDescription(UNVERIFIED);
+		expect(planned()).toEqual([["MP4", "clip.mp4", "v1080:AV1", "a192:OPUS"]]);
+		expect(steps()).toHaveLength(6);
+	});
+
+	it("says of a codec a draft brought that the container cannot hold it, and offers what it can", async () => {
+		const user = userEvent.setup();
+		const [video] = ready.videos as [WizardState["videos"][number]];
+		await restore(
+			{
+				...ready,
+				videos: [
+					{
+						...video,
+						codec: "VP9",
+						muxing: { ...video.muxing, kind: "PROGRESSIVE_WEBM" },
+					},
+				],
+			},
+			2,
+		);
+		expect(steps()).toHaveLength(6);
+		const audioCodec = screen.getByRole("combobox", { name: "Audio codec" });
+		// The codec that is set stays on show; only what fits is offered beside it.
+		expect(audioCodec).toHaveValue("AAC");
+		expect(audioCodec).toHaveAccessibleDescription(
+			"WebM (.webm) cannot hold this codec.",
+		);
+		expect(options(audioCodec)).toEqual(["OPUS", "AAC"]);
+		await user.selectOptions(audioCodec, "OPUS");
+		expect(audioCodec).not.toHaveAccessibleDescription();
+		expect(options(audioCodec)).toEqual(["OPUS"]);
+	});
+
+	it("says where a Dolby Atmos track gets its source, until it reads one", async () => {
+		const user = userEvent.setup();
+		await restore(
+			{
+				...ready,
+				sources: {
+					dolbyStreams: [
+						{
+							kind: "ATMOS",
+							key: "atmos",
+							inputFile: "main",
+							inputFormat: "ADM",
+						},
+					],
+				},
+			},
+			2,
+		);
+		const audioCodec = screen.getByRole("combobox", { name: "Audio codec" });
+		await user.selectOptions(audioCodec, "DOLBY_ATMOS");
+		expect(audioCodec).toHaveAccessibleDescription(
+			"Dolby Atmos is encoded from a Dolby Atmos stream. Add one in the Sources step, then choose it as this file's audio source.",
+		);
+		// Atmos has no channel layout to choose, and has loudness control.
+		expect(screen.queryByLabelText("Channel layout")).toBeNull();
+		await user.selectOptions(
+			screen.getByRole("combobox", { name: "Audio source" }),
+			"atmos",
+		);
+		expect(audioCodec).not.toHaveAccessibleDescription();
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(planned()).toEqual([
+			["MP4", "clip.mp4", "v1080:H264", "a192:DOLBY_ATMOS"],
+		]);
+		expect(screen.queryByText(/\[PLAN_STREAM_SOURCE_MISMATCH\]/)).toBeNull();
+	});
+
+	it("gives each file its own audio, typed a digit at a time beside another file's", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		await user.click(screen.getByRole("button", { name: "Add file" }));
+		const file = (n: number) =>
+			within(screen.getByRole("group", { name: `File ${n}` }));
+		const bitrate = (n: number) =>
+			file(n).getByRole("spinbutton", { name: "Audio bitrate (bps)" });
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		// The added file holds the track the first one has: one track, encoded once.
+		expect(planned()).toEqual([
+			["MP4", "clip.mp4", "v1080:H264", "a192:AAC"],
+			["MP4", "clip-540p.mp4", "v540:H264", "a192:AAC"],
+		]);
+
+		// Every keystroke is a state of its own, and none of them moves the other
+		// file's audio, drops this file's, or leaves the short view.
+		await user.clear(bitrate(2));
+		await user.type(bitrate(2), "96000");
+		expect(bitrate(2)).toHaveValue(96_000);
+		expect(bitrate(1)).toHaveValue(192_000);
+		expect(planned()).toEqual([
+			["MP4", "clip.mp4", "v1080:H264", "a192:AAC"],
+			["MP4", "clip-540p.mp4", "v540:H264", "a96:AAC"],
+		]);
+		expect(steps()).toHaveLength(6);
+
+		// Two tracks at one bitrate in two codecs would have one key: the later one's
+		// is numbered, and each file goes on holding its own.
+		await user.clear(bitrate(2));
+		await user.type(bitrate(2), "192000");
+		expect(planned()[1]).toEqual([
+			"MP4",
+			"clip-540p.mp4",
+			"v540:H264",
+			"a192:AAC",
+		]);
+		await user.selectOptions(
+			file(2).getByRole("combobox", { name: "Audio codec" }),
+			"AC3",
+		);
+		expect(planned()).toEqual([
+			["MP4", "clip.mp4", "v1080:H264", "a192:AAC"],
+			["MP4", "clip-540p.mp4", "v540:H264", "a192-2:AC3"],
+		]);
+		expect(screen.queryByText(/\[PLAN_DUPLICATE_KEY\]/)).toBeNull();
+		expect(steps()).toHaveLength(6);
+
+		// The first file in the same codec holds the same track again.
+		await user.selectOptions(
+			file(1).getByRole("combobox", { name: "Audio codec" }),
+			"AC3",
+		);
+		expect(planned()).toEqual([
+			["MP4", "clip.mp4", "v1080:H264", "a192:AC3"],
+			["MP4", "clip-540p.mp4", "v540:H264", "a192:AC3"],
+		]);
+		expect(steps()).toHaveLength(6);
+	});
+
+	it("lists in Review files of different containers and codecs, each by its own name", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		await user.click(screen.getByRole("button", { name: "Add file" }));
+		await user.selectOptions(
+			within(screen.getByRole("group", { name: "File 2" })).getByRole(
+				"combobox",
+				{ name: "Container" },
+			),
+			"WebM (.webm)",
+		);
+		// H.264 beside VP9: the job runs in one mode, which each file is to be given.
+		const ONE_MODE =
+			"The files use more than one video codec, and a job runs in one encoding mode. Choose the same mode for every file, or the job will be rejected.";
+		const mode = (n: number) =>
+			within(screen.getByRole("group", { name: `File ${n}` })).getByRole(
+				"combobox",
+				{ name: "Encoding mode" },
+			);
+		expect(mode(1)).toHaveAccessibleDescription(ONE_MODE);
+		expect(mode(2)).toHaveAccessibleDescription(ONE_MODE);
+		expect(
+			screen.getAllByText(/\[PLAN_ENCODING_MODE_UNPINNED_FOR_MIXED_CODECS\]/)
+				.length,
+		).toBeGreaterThan(0);
+		await user.selectOptions(mode(1), "TWO_PASS");
+		expect(mode(2)).toHaveAccessibleDescription(ONE_MODE);
+		await user.selectOptions(mode(2), "TWO_PASS");
+		expect(mode(1)).not.toHaveAccessibleDescription();
+		expect(mode(2)).not.toHaveAccessibleDescription();
+		expect(
+			screen.queryByText(/\[PLAN_ENCODING_MODE_UNPINNED_FOR_MIXED_CODECS\]/),
+		).toBeNull();
+
+		await user.click(screen.getByRole("button", { name: "6. Review" }));
+		expect(screen.getByText("synthetic/exports/clip.mp4")).toBeInTheDocument();
+		expect(
+			screen.getByText("synthetic/exports/clip-540p.webm"),
+		).toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "Plan JSON" }));
+		expect(planned()).toEqual([
+			["MP4", "clip.mp4", "v1080:H264", "a192:AAC"],
+			["PROGRESSIVE_WEBM", "clip-540p.webm", "v540:VP9", "a192-2:OPUS"],
+		]);
+		const start = screen.getByRole("button", { name: "Start encoding" });
+		await waitFor(() => expect(start).toBeEnabled());
+	});
+
+	it("offers HEVCv2 to an account that may use it, with its switch in Basics, and to no other", async () => {
+		const user = userEvent.setup();
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		expect(options(screen.getByRole("combobox", { name: "Codec" }))).toEqual([
+			"H264",
+			"H265",
+			"AV1",
+		]);
+		await user.click(screen.getByRole("button", { name: "1. Basics" }));
+		expect(screen.queryByRole("checkbox", { name: "BCF override" })).toBeNull();
+		cleanup();
+
+		const plain = apiFetch.getMockImplementation();
+		apiFetch.mockImplementation(async (url: string, init?: RequestInit) =>
+			url === "/api/bitmovin-accounts" && init?.method !== "POST"
+				? [{ id: accountId, label: "Account", internalHevcV2: true }]
+				: plain?.(url, init),
+		);
+		await restore(ready);
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		await waitFor(() =>
+			expect(options(screen.getByRole("combobox", { name: "Codec" }))).toEqual([
+				"H264",
+				"H265",
+				"AV1",
+				"HEVCv2",
+			]),
+		);
+		const codec = screen.getByRole("combobox", { name: "Codec" });
+		// It takes the whole job, and says so while another file is in another codec.
+		await user.click(screen.getByRole("button", { name: "Add file" }));
+		const WHOLE_JOB =
+			"HEVCv2 takes the whole job. Choose it for every file, and leave “BCF override” on in the Basics step.";
+		const codecOf = (n: number) =>
+			within(screen.getByRole("group", { name: `File ${n}` })).getByRole(
+				"combobox",
+				{ name: "Codec" },
+			);
+		await user.selectOptions(codecOf(1), "HEVCv2");
+		expect(codecOf(1)).toHaveAccessibleDescription(WHOLE_JOB);
+		expect(codecOf(2)).toHaveAccessibleDescription(WHOLE_JOB);
+		await user.selectOptions(codecOf(2), "HEVCv2");
+		expect(codecOf(1)).not.toHaveAccessibleDescription();
+		// A file added now is in it too.
+		await user.click(screen.getByRole("button", { name: "Add file" }));
+		expect(codecOf(3)).toHaveValue("H265V2");
+		expect(codecOf(3)).not.toHaveAccessibleDescription();
+		await user.click(screen.getByRole("button", { name: "Remove file 3" }));
+		await user.click(screen.getByRole("button", { name: "Remove file 2" }));
+		// The one mode it has, as in the ladder step.
+		const mode = screen.getByRole("combobox", { name: "Encoding mode" });
+		expect(mode).toBeDisabled();
+		expect(mode).toHaveValue("SMART_PASS");
+		expect(screen.getByText("Advanced HEVCv2")).toBeInTheDocument();
+		expect(steps()).toHaveLength(6);
+		// MPEG-TS holds H.265, and so this; WebM does not, and the switch goes with it.
+		const container = screen.getByRole("combobox", { name: "Container" });
+		await user.selectOptions(container, "MPEG-TS (.ts)");
+		expect(codec).toHaveValue("H265V2");
+
+		await user.click(screen.getByRole("button", { name: "1. Basics" }));
+		const override = screen.getByRole("checkbox", { name: "BCF override" });
+		expect(override).toBeChecked();
+		await user.click(screen.getByRole("button", { name: "3. Format" }));
+		await user.selectOptions(
+			screen.getByRole("combobox", { name: "Container" }),
+			"WebM (.webm)",
+		);
+		expect(screen.getByRole("combobox", { name: "Codec" })).toHaveValue("VP9");
+		// It is H.265 to a container, so one that holds no H.265 does not offer it.
+		expect(options(screen.getByRole("combobox", { name: "Codec" }))).toEqual([
+			"VP9",
+			"AV1",
+		]);
+		expect(
+			screen.getByRole("combobox", { name: "Encoding mode" }),
+		).toBeEnabled();
+		await user.click(screen.getByRole("button", { name: "1. Basics" }));
+		expect(
+			screen.getByRole("checkbox", { name: "BCF override" }),
+		).not.toBeChecked();
+		expect(steps()).toHaveLength(6);
 	});
 
 	it("keeps its draft apart from the streaming flow's", async () => {
@@ -1474,9 +1867,7 @@ describe("VodWizard — the file-output flow", () => {
 		const user = userEvent.setup();
 		await restore(ready);
 		await user.click(screen.getByRole("button", { name: "3. Format" }));
-		await user.click(
-			screen.getByRole("checkbox", { name: "Include audio in every file" }),
-		);
+		await user.click(screen.getByRole("checkbox", { name: "Include audio" }));
 		await user.click(screen.getByRole("button", { name: "5. Encoding" }));
 		await user.click(
 			screen.getByRole("checkbox", {
@@ -1485,7 +1876,7 @@ describe("VodWizard — the file-output flow", () => {
 		);
 		expect(
 			screen.getByText(
-				"The files have no audio track. Turn on “Include audio in every file” in the Format step, or the job will be rejected (Kantar watermarks audio).",
+				"No file has an audio track. Turn on “Include audio” for a file in the Format step, or the job will be rejected (Kantar watermarks audio).",
 			),
 		).toBeInTheDocument();
 		expect(screen.queryByText(/add one on the Ladder step/)).toBeNull();

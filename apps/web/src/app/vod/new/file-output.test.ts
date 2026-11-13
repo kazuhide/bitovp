@@ -1,6 +1,7 @@
 import {
 	encodingPlanSchema,
 	INTERNAL_HEVC_V2_BCF_VERSION,
+	MUXING_CODEC_MATRIX,
 	validatePlan,
 } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
@@ -9,6 +10,7 @@ import {
 	readWizardDraft,
 	writeWizardDraft,
 } from "@/lib/wizard-draft";
+import { AUDIO_CHANNEL_LAYOUTS } from "./audio-channel-layouts";
 import { reconcileAutomaticAudioPackaging } from "./automatic-audio-packaging";
 import { buildPlan, type WizardState } from "./build-plan";
 import {
@@ -21,11 +23,15 @@ import {
 	FILE_OUTPUT_DEFAULT_STATE,
 	FILE_OUTPUT_FIELD_HOME,
 	type FileOutputBlocker,
-	fileAudioCodecs,
+	fileAudios,
+	fileCaveats,
 	fileJobFolder,
 	fileJobWrites,
 	fileOutputBlockers,
+	filesNeedOneMode,
+	hevcV2NotAlone,
 	isFileOutputState,
+	lacksAtmosSource,
 	removeFile,
 	renameFileJob,
 	sameStreamFiles,
@@ -33,6 +39,7 @@ import {
 	sharedFileNames,
 } from "./file-output";
 import { tryImportPresetIntoWizard } from "./plan-to-wizard";
+import { AUDIO_CODECS, VIDEO_CODECS } from "./rendition-codecs";
 import { addVodVideo } from "./rendition-copy";
 
 /** What the wizard's `patch` does with an edit: merge it, then reconcile the audio rows. */
@@ -197,13 +204,19 @@ describe("file names", () => {
 	});
 });
 
+const atmosSource: WizardState["sources"] = {
+	dolbyStreams: [
+		{ kind: "ATMOS", key: "atmos", inputFile: "main", inputFormat: "ADM" },
+	],
+};
+
 describe("the containers the flow offers", () => {
 	const inContainer = (kind: string) =>
 		apply(started, editFile(started, 0, { kind: kind as never }));
 	const issuesOf = (state: WizardState) =>
 		validatePlan(planOf(state)).map((issue) => issue.code);
 
-	it("are MP4, MPEG-TS and QuickTime, each with the codecs it can hold", () => {
+	it("are MP4, MPEG-TS, QuickTime and WebM, each with every codec it can hold", () => {
 		expect(
 			FILE_CONTAINERS.map(({ kind, extension, video, audio }) => ({
 				kind,
@@ -215,22 +228,44 @@ describe("the containers the flow offers", () => {
 			{
 				kind: "MP4",
 				extension: "mp4",
-				video: ["H264", "H265"],
-				audio: ["AAC", "AC3", "EAC3"],
+				video: ["H264", "H265", "AV1"],
+				audio: ["AAC", "AC3", "EAC3", "OPUS", "DOLBY_ATMOS", "DDPLUS", "DD"],
 			},
 			{
 				kind: "PROGRESSIVE_TS",
 				extension: "ts",
-				video: ["H264"],
-				audio: ["AAC"],
+				video: ["H264", "H265"],
+				audio: ["AAC", "AC3", "EAC3", "DDPLUS", "DD"],
 			},
 			{
 				kind: "PROGRESSIVE_MOV",
 				extension: "mov",
-				video: ["H264"],
-				audio: ["AAC"],
+				video: ["H264", "H265"],
+				audio: ["AAC", "AC3", "DD"],
+			},
+			{
+				kind: "PROGRESSIVE_WEBM",
+				extension: "webm",
+				video: ["VP9", "AV1"],
+				audio: ["OPUS"],
 			},
 		]);
+	});
+
+	it("hold every codec of the ladder step that the plan accepts in them, and between them every codec it has", () => {
+		for (const container of FILE_CONTAINERS) {
+			const row: readonly string[] = MUXING_CODEC_MATRIX[container.kind];
+			expect(container.video, container.kind).toEqual(
+				VIDEO_CODECS.filter((codec) => row.includes(codec)),
+			);
+			expect(container.audio, container.kind).toEqual(
+				AUDIO_CODECS.filter((codec) => row.includes(codec)),
+			);
+		}
+		const offered = (pick: "video" | "audio") =>
+			new Set<string>(FILE_CONTAINERS.flatMap((container) => container[pick]));
+		expect(offered("video")).toEqual(new Set(VIDEO_CODECS));
+		expect(offered("audio")).toEqual(new Set(AUDIO_CODECS));
 	});
 
 	it.each(
@@ -241,11 +276,113 @@ describe("the containers the flow offers", () => {
 		),
 	)("%s with %s and %s passes the plan's validation", (kind, video, audio) => {
 		const file = apply(started, editFile(started, 0, { kind, codec: video }));
-		const state = apply(file, editFileAudio(file, { codec: audio }));
+		// Dolby Atmos is encoded from an Atmos source, which the Sources step adds.
+		const state =
+			audio === "DOLBY_ATMOS"
+				? apply(
+						{ ...file, sources: atmosSource },
+						editFileAudio(file, 0, { codec: audio, source: "atmos" }),
+					)
+				: apply(file, editFileAudio(file, 0, { codec: audio }));
 		expect(filesOf(state)).toEqual([
 			expect.objectContaining({ kind, streams: ["v1080", "a192"] }),
 		]);
 		expect(errorsOf(state)).toEqual([]);
+	});
+
+	it("say of a Dolby Atmos track that it has no Atmos source, where the plan would be refused for it", () => {
+		const atmos = apply(
+			started,
+			editFileAudio(started, 0, { codec: "DOLBY_ATMOS" }),
+		);
+		const lacking = (state: WizardState) =>
+			lacksAtmosSource(state, fileAudios(state)[0]);
+		const refused = (state: WizardState) =>
+			errorsOf(state).map((issue) => issue.code);
+
+		expect(lacking(started)).toBe(false);
+		expect([lacking(atmos), refused(atmos)]).toEqual([
+			true,
+			["PLAN_STREAM_SOURCE_MISMATCH"],
+		]);
+		// A source is not enough: the track has to read it.
+		const added = { ...atmos, sources: atmosSource };
+		expect([lacking(added), refused(added)]).toEqual([
+			true,
+			["PLAN_STREAM_SOURCE_MISMATCH"],
+		]);
+		const read = apply(added, editFileAudio(added, 0, { source: "atmos" }));
+		expect([lacking(read), refused(read)]).toEqual([false, []]);
+	});
+
+	it.each(
+		FILE_CONTAINERS.flatMap((container) =>
+			container.video.flatMap((video) =>
+				[undefined, ...container.audio].map(
+					(audio) => [container.kind, video, audio] as const,
+				),
+			),
+		),
+	)("say of %s with %s and %s what the plan's warnings say, and nothing more", (kind, video, audio) => {
+		const file = apply(started, editFile(started, 0, { kind, codec: video }));
+		const state =
+			audio === undefined
+				? apply(file, setFileAudio(file, 0, false))
+				: apply(
+						{ ...file, sources: atmosSource },
+						editFileAudio(file, 0, {
+							codec: audio,
+							...(audio === "DOLBY_ATMOS" ? { source: "atmos" } : {}),
+						}),
+					);
+		const caveats = fileCaveats(
+			state.videos[0] as WizardState["videos"][number],
+			fileAudios(state)[0],
+		);
+		const warned = (code: string) =>
+			validatePlan(planOf(state)).some((issue) => issue.code === code);
+		expect({
+			unmeasured: caveats.includes("unmeasured"),
+			unverified:
+				caveats.includes("unverifiedVideo") ||
+				caveats.includes("unverifiedAudio"),
+			besideAv1: caveats.includes("av1WebmAudio"),
+			notHeld: caveats.includes("audioNotHeld"),
+		}).toEqual({
+			unmeasured: warned("PLAN_MUXING_UNMEASURED_KIND"),
+			unverified: warned("PLAN_MUXING_UNVERIFIED_CODEC"),
+			besideAv1: warned("PLAN_MUXING_AV1_NOT_ALONE"),
+			notHeld: false,
+		});
+		expect(errorsOf(state)).toEqual([]);
+	});
+
+	it("say something of the pairs this was written for, so the comparison above is not of nothing", () => {
+		const said = (
+			kind: (typeof FILE_CONTAINERS)[number]["kind"],
+			video: WizardState["videos"][number]["codec"],
+			audio: WizardState["audios"][number]["codec"],
+		) => {
+			const file = apply(started, editFile(started, 0, { kind, codec: video }));
+			const state = apply(file, editFileAudio(file, 0, { codec: audio }));
+			return fileCaveats(
+				state.videos[0] as WizardState["videos"][number],
+				fileAudios(state)[0],
+			);
+		};
+		expect(said("MP4", "AV1", "AAC")).toEqual([]);
+		expect(said("MP4", "H264", "OPUS")).toEqual(["unverifiedAudio"]);
+		expect(said("PROGRESSIVE_TS", "H265", "EAC3")).toEqual(["unverifiedAudio"]);
+		expect(said("PROGRESSIVE_TS", "H265", "DDPLUS")).toEqual([]);
+		expect(said("PROGRESSIVE_MOV", "H264", "AC3")).toEqual([
+			"unmeasured",
+			"unverifiedAudio",
+		]);
+		expect(said("PROGRESSIVE_WEBM", "VP9", "OPUS")).toEqual(["unmeasured"]);
+		expect(said("PROGRESSIVE_WEBM", "AV1", "OPUS")).toEqual([
+			"unmeasured",
+			"av1WebmAudio",
+		]);
 	});
 
 	it("say which one no encode has written yet, as the plan's warning does", () => {
@@ -261,6 +398,7 @@ describe("the containers the flow offers", () => {
 			["MP4", false, false],
 			["PROGRESSIVE_TS", false, false],
 			["PROGRESSIVE_MOV", true, true],
+			["PROGRESSIVE_WEBM", true, true],
 		]);
 	});
 
@@ -276,6 +414,103 @@ describe("the containers the flow offers", () => {
 			if (built.success)
 				expect(filesOf(unnamed)[0]?.filename).toBe(container.fallbackName);
 		}
+	});
+});
+
+describe("files in more than one video codec", () => {
+	const MIXED = "PLAN_ENCODING_MODE_UNPINNED_FOR_MIXED_CODECS";
+	const two = apply(started, addFile(started));
+	const webm = apply(two, editFile(two, 1, { kind: "PROGRESSIVE_WEBM" }));
+	const moded = (
+		state: WizardState,
+		modes: (WizardState["videos"][number]["encodingMode"] | undefined)[],
+	) =>
+		modes.reduce(
+			(next, encodingMode, index) =>
+				apply(next, editFile(next, index, { encodingMode })),
+			state,
+		);
+	const refused = (state: WizardState) =>
+		errorsOf(state).some((issue) => issue.code === MIXED);
+
+	it.each([
+		["one codec, no mode", two, false],
+		["two codecs, no mode", webm, true],
+		["two codecs, a mode on one file", moded(webm, ["TWO_PASS"]), true],
+		["two codecs, two modes", moded(webm, ["TWO_PASS", "SINGLE_PASS"]), true],
+		["two codecs, one mode", moded(webm, ["TWO_PASS", "TWO_PASS"]), false],
+	] as const)("are said to need one mode where the plan is refused for it: %s", (_, state, needs) => {
+		expect([filesNeedOneMode(state), refused(state)]).toEqual([needs, needs]);
+	});
+
+	it("are said to be no job for HEVCv2, which takes every file and its switch, where no plan is built", () => {
+		const v2 = (state: WizardState, index: number) =>
+			apply(state, editFile(state, index, { codec: "H265V2" }));
+		const built = (state: WizardState) => {
+			try {
+				buildPlan(state);
+				return true;
+			} catch {
+				return false;
+			}
+		};
+		const one = v2(two, 0);
+		const both = v2(one, 1);
+		const switchedOff = { ...both, internal: undefined };
+		// The switch alone, with no file in HEVCv2: no plan either, and nothing for
+		// a file's codec to say — the switch is in Basics.
+		const switchOnly = { ...two, internal: both.internal };
+		expect(both.internal).toEqual({
+			hevcV2: { bcfVersion: INTERNAL_HEVC_V2_BCF_VERSION },
+		});
+		expect(
+			[two, one, both, switchedOff, switchOnly].map((state) => [
+				hevcV2NotAlone(state),
+				built(state),
+				// The other message is not for these: the mode is not what is wrong.
+				filesNeedOneMode(state),
+			]),
+		).toEqual([
+			[false, true, false],
+			[true, false, false],
+			[false, true, false],
+			[true, false, false],
+			[false, false, false],
+		]);
+		expect(errorsOf(both)).toEqual([]);
+	});
+
+	it("leave behind, with HEVCv2, the settings only it has, and keep the rest of H.265's", () => {
+		const v2 = apply(two, {
+			...editFile(two, 0, { codec: "H265V2" }),
+		});
+		const tuned = apply(
+			v2,
+			editFile(v2, 0, {
+				h265: {
+					crf: 24,
+					motionCompensatedTemporalFiltering: "ON",
+				} as never,
+			}),
+		);
+		const webm = apply(tuned, editFile(tuned, 0, { kind: "PROGRESSIVE_WEBM" }));
+		expect(webm.videos[0]).toMatchObject({ codec: "VP9", h265: { crf: 24 } });
+		expect(webm.videos[0]?.encodingMode).toBeUndefined();
+		expect(webm.internal).toBeUndefined();
+		// Left in, the plan could not be built at all.
+		expect(() => buildPlan(webm)).not.toThrow();
+		// To H.265 it goes as a ladder rendition does, with all of them.
+		const hevc = apply(tuned, editFile(tuned, 0, { codec: "H265" }));
+		expect(hevc.videos[0]?.h265).toEqual({
+			crf: 24,
+			motionCompensatedTemporalFiltering: "ON",
+		});
+	});
+
+	it("start once every file has the same mode", () => {
+		const settled = moded(webm, ["TWO_PASS", "TWO_PASS"]);
+		expect(errorsOf(settled)).toEqual([]);
+		expect(fileOutputBlockers(settled)).toEqual([]);
 	});
 });
 
@@ -307,24 +542,124 @@ describe("changing a file's container", () => {
 		expect(named("final")).toBe("final");
 	});
 
-	it("moves to a codec the new container can hold", () => {
-		const hevc = apply(started, editFile(started, 0, { codec: "H265" }));
-		const ts = apply(hevc, editFile(hevc, 0, { kind: "PROGRESSIVE_TS" }));
+	it("moves to a codec the new container can hold, and keeps one it holds", () => {
+		const av1 = apply(started, editFile(started, 0, { codec: "AV1" }));
+		const ts = apply(av1, editFile(av1, 0, { kind: "PROGRESSIVE_TS" }));
 		expect(ts.videos[0]?.codec).toBe("H264");
 		expect(errorsOf(ts)).toEqual([]);
+
+		const hevc = apply(started, editFile(started, 0, { codec: "H265" }));
+		const kept = apply(hevc, editFile(hevc, 0, { kind: "PROGRESSIVE_TS" }));
+		expect(kept.videos[0]?.codec).toBe("H265");
+		expect(errorsOf(kept)).toEqual([]);
 	});
 
-	it("leaves the audio codec to its own field, which offers what every file can hold", () => {
-		const ac3 = apply(started, editFileAudio(started, { codec: "AC3" }));
-		const ts = apply(ac3, editFile(ac3, 0, { kind: "PROGRESSIVE_TS" }));
-		expect(ts.audios[0]?.codec).toBe("AC3");
-		expect(fileAudioCodecs(ts.videos)).toEqual(["AAC"]);
-		expect(errorsOf(ts).map((issue) => issue.code)).toEqual([
-			"PLAN_MUXING_CODEC_MISMATCH",
+	it("moves the file's audio to a codec the new container can hold, and keeps one it holds", () => {
+		const opus = apply(started, editFileAudio(started, 0, { codec: "OPUS" }));
+		const ts = apply(opus, editFile(opus, 0, { kind: "PROGRESSIVE_TS" }));
+		expect(ts.audios.map((audio) => audio.codec)).toEqual(["AAC"]);
+		expect(errorsOf(ts)).toEqual([]);
+
+		const ac3 = apply(started, editFileAudio(started, 0, { codec: "AC3" }));
+		const kept = apply(ac3, editFile(ac3, 0, { kind: "PROGRESSIVE_TS" }));
+		expect(kept.audios.map((audio) => audio.codec)).toEqual(["AC3"]);
+		expect(errorsOf(kept)).toEqual([]);
+	});
+
+	it("turns the default MP4 into a WebM file of VP9 with Opus at 48 kHz, and back into H.264 with AAC", () => {
+		const webm = apply(
+			started,
+			editFile(started, 0, { kind: "PROGRESSIVE_WEBM" }),
+		);
+		expect(webm.videos[0]).toMatchObject({
+			codec: "VP9",
+			muxing: { kind: "PROGRESSIVE_WEBM", filename: "clip.webm" },
+		});
+		expect(webm.audios).toEqual([
+			{
+				codec: "OPUS",
+				bitrate: 192_000,
+				rate: 48_000,
+				channelLayout: "CL_STEREO",
+				muxing: { ownContainer: false, autoOwnContainer: true },
+			},
+		]);
+		expect(errorsOf(webm)).toEqual([]);
+		expect(fileOutputBlockers(webm)).toEqual([]);
+
+		const back = apply(webm, editFile(webm, 0, { kind: "MP4" }));
+		expect(back.videos[0]).toMatchObject({ codec: "H264" });
+		expect(back.audios.map((audio) => audio.codec)).toEqual(["AAC"]);
+		expect(errorsOf(back)).toEqual([]);
+	});
+
+	it("does not carry a codec into a container no Bitmovin document lists it for, and keeps one that is chosen there", () => {
+		const codecsOf = (state: WizardState) => [
+			state.videos[0]?.codec,
+			...state.audios.map((audio) => audio.codec),
+		];
+		const moved = (
+			from: WizardState,
+			to: (typeof FILE_CONTAINERS)[number]["kind"],
+		) => apply(from, editFile(from, 0, { kind: to }));
+		const withAudio = (codec: WizardState["audios"][number]["codec"]) =>
+			apply(started, editFileAudio(started, 0, { codec }));
+
+		// MP4 holds all three; in the container moved to, Bitmovin lists the first and
+		// not the other two.
+		expect(codecsOf(moved(withAudio("DDPLUS"), "PROGRESSIVE_TS"))).toEqual([
+			undefined,
+			"DDPLUS",
+		]);
+		expect(codecsOf(moved(withAudio("EAC3"), "PROGRESSIVE_TS"))).toEqual([
+			undefined,
+			"AAC",
+		]);
+		expect(codecsOf(moved(withAudio("AC3"), "PROGRESSIVE_MOV"))).toEqual([
+			undefined,
+			"AAC",
 		]);
 
-		const aac = apply(ts, editFileAudio(ts, { codec: "AAC" }));
-		expect(errorsOf(aac)).toEqual([]);
+		// Chosen in the container, the same pair stays, with its note and the plan's
+		// warning, and the job is not refused for it.
+		const mov = moved(started, "PROGRESSIVE_MOV");
+		const chosen = apply(mov, editFileAudio(mov, 0, { codec: "AC3" }));
+		expect(codecsOf(chosen)).toEqual([undefined, "AC3"]);
+		expect(
+			fileCaveats(
+				chosen.videos[0] as WizardState["videos"][number],
+				fileAudios(chosen)[0],
+			),
+		).toContain("unverifiedAudio");
+		expect(errorsOf(chosen)).toEqual([]);
+		// An edit of something else in the same container leaves it alone.
+		const taller = apply(chosen, editFile(chosen, 0, { height: 720 }));
+		expect(codecsOf(taller)).toEqual([undefined, "AC3"]);
+	});
+
+	it("says so on the file when a state from elsewhere has audio its container cannot hold", () => {
+		const [video] = started.videos as [WizardState["videos"][number]];
+		const mismatched: WizardState = {
+			...started,
+			videos: [
+				{
+					...video,
+					codec: "VP9",
+					muxing: { ...video.muxing, kind: "PROGRESSIVE_WEBM" },
+				},
+			],
+		};
+		const [track] = fileAudios(mismatched);
+		expect(track?.codec).toBe("AAC");
+		expect(fileCaveats(mismatched.videos[0] as typeof video, track)).toContain(
+			"audioNotHeld",
+		);
+		expect(errorsOf(mismatched).map((issue) => issue.code)).toEqual([
+			"PLAN_MUXING_CODEC_MISMATCH",
+		]);
+		// An edit of something else leaves the codec to its own field.
+		const taller = apply(mismatched, editFile(mismatched, 0, { height: 720 }));
+		expect(taller.audios.map((audio) => audio.codec)).toEqual(["AAC"]);
 	});
 
 	it("is kept by the next file that is added", () => {
@@ -474,32 +809,140 @@ describe("files", () => {
 });
 
 describe("the audio track", () => {
-	it("stays inside every file when its bitrate, and so its key, changes", () => {
+	it("is the file's own: an edit changes that file alone, and files with the same settings share one track again", () => {
 		const two = apply(started, addFile(started));
-		const louder = apply(two, editFileAudio(two, { bitrate: 256_000 }));
+		expect(two.audios).toHaveLength(1);
+
+		const louder = apply(two, editFileAudio(two, 0, { bitrate: 256_000 }));
 		expect(filesOf(louder).map((item) => item.streams)).toEqual([
 			["v1080", "a256"],
-			["v540", "a256"],
+			["v540", "a192"],
+		]);
+		// Neither is in every file, so neither may be left to the reconciliation,
+		// which would write it to a file of its own as well.
+		expect(louder.audios.map((audio) => audio.muxing)).toEqual([
+			{ ownContainer: false },
+			{ ownContainer: false },
 		]);
 		expect(errorsOf(louder)).toEqual([]);
 		expect(fileOutputBlockers(louder)).toEqual([]);
+
+		const both = apply(louder, editFileAudio(louder, 1, { bitrate: 256_000 }));
+		expect(filesOf(both).map((item) => item.streams)).toEqual([
+			["v1080", "a256"],
+			["v540", "a256"],
+		]);
+		expect(both.audios).toEqual([{ ...started.audios[0], bitrate: 256_000 }]);
+		expect(errorsOf(both)).toEqual([]);
+		expect(fileOutputBlockers(both)).toEqual([]);
+	});
+
+	it("gets a key of its own beside a track at the same bitrate in another codec, and loses the number when they differ again", () => {
+		const two = apply(started, addFile(started));
+		const ac3 = apply(two, editFileAudio(two, 1, { codec: "AC3" }));
+		expect(filesOf(ac3).map((item) => item.streams)).toEqual([
+			["v1080", "a192"],
+			["v540", "a192-2"],
+		]);
+		expect(ac3.audios.map((audio) => [audio.codec, audio.extras?.key])).toEqual(
+			[
+				["AAC", undefined],
+				["AC3", "a192-2"],
+			],
+		);
+		expect(errorsOf(ac3)).toEqual([]);
+		expect(fileOutputBlockers(ac3)).toEqual([]);
+		// A third in a third codec is numbered on.
+		const three = apply(ac3, addFile(ac3));
+		const third = apply(three, editFileAudio(three, 2, { codec: "EAC3" }));
+		expect(filesOf(third).map((item) => item.streams[1])).toEqual([
+			"a192",
+			"a192-2",
+			"a192-3",
+		]);
+		expect(errorsOf(third)).toEqual([]);
+
+		const apartAgain = apply(ac3, editFileAudio(ac3, 1, { bitrate: 128_000 }));
+		expect(filesOf(apartAgain).map((item) => item.streams)).toEqual([
+			["v1080", "a192"],
+			["v540", "a128"],
+		]);
+		expect(apartAgain.audios.map((audio) => audio.extras)).toEqual([
+			undefined,
+			undefined,
+		]);
+		// And the way back from the full view derives the same keys.
+		expect(collapseToFileOutput(ac3)).toMatchObject({
+			videos: ac3.videos,
+			audios: ac3.audios,
+		});
+	});
+
+	it("is Opus at 48 kHz whatever rate it had, as the ladder step makes it", () => {
+		const cd = apply(started, editFileAudio(started, 0, { rate: 44_100 }));
+		const opus = apply(cd, editFileAudio(cd, 0, { codec: "OPUS" }));
+		expect(opus.audios[0]).toMatchObject({ codec: "OPUS", rate: 48_000 });
+		const ac3 = apply(cd, editFileAudio(cd, 0, { codec: "AC3" }));
+		expect(ac3.audios[0]).toMatchObject({ codec: "AC3", rate: 44_100 });
+	});
+
+	it("is put back as the nearest file's where the container holds that, and as the container's first codec where not", () => {
+		const two = apply(started, addFile(started));
+		const ac3 = apply(two, editFileAudio(two, 0, { codec: "AC3" }));
+		const silent = apply(ac3, setFileAudio(ac3, 1, false));
+		expect(silent.audios).toHaveLength(1);
+		const copied = apply(silent, setFileAudio(silent, 1, true));
+		expect(copied.audios.map((audio) => audio.codec)).toEqual(["AC3"]);
+		expect(filesOf(copied).map((item) => item.streams[1])).toEqual([
+			"a192",
+			"a192",
+		]);
+
+		// WebM holds no AC-3: the file starts with Opus, a track of its own.
+		const webm = apply(
+			silent,
+			editFile(silent, 1, { kind: "PROGRESSIVE_WEBM" }),
+		);
+		const own = apply(webm, setFileAudio(webm, 1, true));
+		expect(own.audios.map((audio) => audio.codec)).toEqual(["AC3", "OPUS"]);
+		expect(
+			errorsOf(own).filter(
+				(issue) =>
+					issue.code !== "PLAN_ENCODING_MODE_UNPINNED_FOR_MIXED_CODECS",
+			),
+		).toEqual([]);
 	});
 
 	it("can be left out, and put back", () => {
-		const silent = apply(started, setFileAudio(started, false));
+		const silent = apply(started, setFileAudio(started, 0, false));
 		expect(filesOf(silent).map((item) => item.streams)).toEqual([["v1080"]]);
 		expect(errorsOf(silent)).toEqual([]);
 		expect(fileOutputBlockers(silent)).toEqual([]);
 
-		const back = apply(silent, setFileAudio(silent, true));
+		const back = apply(silent, setFileAudio(silent, 0, true));
 		expect(filesOf(back)).toEqual(filesOf(started));
 	});
 
-	it("drops a channel layout that belongs to the codec it leaves", () => {
-		const ac3 = apply(started, editFileAudio(started, { codec: "AC3" }));
-		expect(ac3.audios[0]).toMatchObject({ codec: "AC3" });
-		expect(ac3.audios[0]?.channelLayout).toBeUndefined();
-		expect(errorsOf(ac3)).toEqual([]);
+	it("keeps a channel layout the new codec has too, and drops one that belongs to the codec it leaves", () => {
+		const both = AUDIO_CHANNEL_LAYOUTS.AAC.find(
+			(layout) =>
+				layout !== "NONE" && AUDIO_CHANNEL_LAYOUTS.AC3.includes(layout),
+		);
+		const aacOnly = AUDIO_CHANNEL_LAYOUTS.AAC.find(
+			(layout) => !AUDIO_CHANNEL_LAYOUTS.AC3.includes(layout),
+		);
+		expect([both, aacOnly]).not.toContain(undefined);
+		const recoded = (channelLayout: string | undefined) => {
+			const laidOut = apply(
+				started,
+				editFileAudio(started, 0, { channelLayout }),
+			);
+			return apply(laidOut, editFileAudio(laidOut, 0, { codec: "AC3" }))
+				.audios[0];
+		};
+		expect(recoded(both)).toMatchObject({ codec: "AC3", channelLayout: both });
+		expect(recoded(aacOnly)).toMatchObject({ codec: "AC3" });
+		expect(recoded(aacOnly)?.channelLayout).toBeUndefined();
 	});
 });
 
@@ -583,14 +1026,14 @@ describe("what the simple view cannot show", () => {
 		],
 		["the audio guard", { audioGuard: true }, ["ladder"]],
 		[
-			"a second audio track",
+			"an audio track that no file holds, which gets a file of its own",
 			{
 				audios: [
 					...started.audios,
 					{ codec: "AAC", bitrate: 96_000, rate: 48_000 },
 				],
 			},
-			["ladder"],
+			["packaging"],
 		],
 		[
 			"a stream display name",
@@ -652,13 +1095,13 @@ describe("what the simple view cannot show", () => {
 	});
 
 	it("the audio guard while no file has audio, which the Format step adds in one click", () => {
-		const silent = apply(started, setFileAudio(started, false));
+		const silent = apply(started, setFileAudio(started, 0, false));
 		const guarded: WizardState = { ...silent, audioGuard: true };
 		// In no plan as the job stands...
 		expect(planOf(guarded)).toEqual(planOf(silent));
 		expect(fileOutputBlockers(guarded)).toEqual(["ladder"]);
 		// ...and on the audio stream as soon as there is one.
-		const audible = apply(guarded, setFileAudio(guarded, true));
+		const audible = apply(guarded, setFileAudio(guarded, 0, true));
 		expect(planOf(audible)).not.toEqual(
 			planOf({ ...audible, audioGuard: false }),
 		);
@@ -690,7 +1133,49 @@ describe("what the simple view cannot show", () => {
 		expect(fileOutputBlockers(apart)).toEqual(["packaging"]);
 	});
 
-	it("a file that does not carry the audio track", () => {
+	it("an audio track that no file holds, which the plan then writes to a file of its own", () => {
+		const unheld: WizardState = {
+			...started,
+			videos: started.videos.map((video) => ({
+				...video,
+				muxing: { ...video.muxing, muxedAudioKeys: [] },
+			})),
+			audios: [{ ...track, muxing: { ownContainer: false } }],
+		};
+		expect(planOf(unheld).muxings.map((muxing) => muxing.streamKey)).toEqual([
+			"v1080",
+			"a192",
+		]);
+		expect(fileOutputBlockers(unheld)).toEqual(["packaging"]);
+	});
+
+	it("two audio tracks in one file", () => {
+		const second = { codec: "AAC" as const, bitrate: 96_000, rate: 48_000 };
+		const [video] = started.videos as [WizardState["videos"][number]];
+		const both: WizardState = {
+			...started,
+			videos: [
+				{
+					...video,
+					muxing: { ...video.muxing, muxedAudioKeys: ["a192", "a96"] },
+				},
+			],
+			audios: [track, { ...second, muxing: { ownContainer: false } }],
+		};
+		expect(filesOf(both)[0]?.streams).toEqual(["v1080", "a192", "a96"]);
+		expect(fileOutputBlockers(both)).toEqual(["packaging"]);
+	});
+
+	it("two audio tracks under one key, which leaves nothing to tell which a file holds", () => {
+		const twin: WizardState = {
+			...started,
+			audios: [track, { ...track, codec: "AC3" }],
+		};
+		expect(fileOutputBlockers(twin)).toContain("ladder");
+	});
+
+	// Not held back: a file is shown with or without a track of its own.
+	it("holds nothing back for a file without the audio the other files hold", () => {
 		const two = apply(started, addFile(started));
 		const bare: WizardState = {
 			...two,
@@ -704,7 +1189,11 @@ describe("what the simple view cannot show", () => {
 			["v1080", "a192"],
 			["v540"],
 		]);
-		expect(fileOutputBlockers(bare)).toEqual(["packaging"]);
+		expect(fileOutputBlockers(bare)).toEqual([]);
+		expect(fileAudios(bare).map((audio) => audio?.codec)).toEqual([
+			"AAC",
+			undefined,
+		]);
 	});
 });
 
@@ -712,10 +1201,6 @@ describe("every field of a step the simple view hides", () => {
 	const credentialId = "00000000-0000-4000-8000-000000000003";
 	// For each field, a job that uses it and the step that edits it.
 	const inUse = {
-		internal: [
-			{ internal: { hevcV2: { bcfVersion: INTERNAL_HEVC_V2_BCF_VERSION } } },
-			"basics",
-		],
 		audioGuard: [{ audioGuard: true }, "ladder"],
 		subtitles: [{ subtitles: [{ source: "captions" }] }, "ladder"],
 		filters: [{ filters: [{ key: "deinterlace" }] }, "ladder"],
@@ -1681,7 +2166,10 @@ describe("returning from the full wizard", () => {
 		expect(filesOf(chosen)[0]?.streams).toEqual(["mezz", "aac"]);
 
 		// The track's key is the one each file goes on naming after an edit here.
-		const louder = apply(chosen, editFileAudio(chosen, { bitrate: 320_000 }));
+		const louder = apply(
+			chosen,
+			editFileAudio(chosen, 0, { bitrate: 320_000 }),
+		);
 		expect(filesOf(louder)[0]?.streams).toEqual(["mezz", "aac"]);
 		// A container keyed as its stream is was keyed by the editors, not chosen.
 		const [video] = chosen.videos as [WizardState["videos"][number]];
@@ -1722,7 +2210,7 @@ describe("a plan this flow built, loaded again", () => {
 			"an MPEG-TS file",
 			apply(started, editFile(started, 0, { kind: "PROGRESSIVE_TS" })),
 		],
-		["no audio", apply(started, setFileAudio(started, false))],
+		["no audio", apply(started, setFileAudio(started, 0, false))],
 	])("%s opens in the simple view, with its folder as the destination", (_case, job) => {
 		const { built, state } = loaded(job);
 		expect(state.output.basePath).toBe("exports/");

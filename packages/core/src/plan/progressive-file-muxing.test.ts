@@ -24,7 +24,11 @@ import {
 	encodingTemplateExportUnavailableReason,
 	planToEncodingTemplateYaml,
 } from "./template";
-import { MUXING_CODEC_MATRIX, validatePlan } from "./validate";
+import {
+	MUXING_CODEC_MATRIX,
+	UNVERIFIED_MUXING_CODECS,
+	validatePlan,
+} from "./validate";
 
 /**
  * PROGRESSIVE_TS, PROGRESSIVE_MOV and PROGRESSIVE_WEBM — one whole file per
@@ -961,7 +965,8 @@ describe("never a manifest leg", () => {
 	it("a WebM file beside an AV1 ladder: the playlist and the MPD list the fMP4 legs, and nothing of the file", () => {
 		// AV1 is the one picture an fMP4 leg and a WebM file can both hold, so
 		// this is the plan in which an HLS manifest and a WebM file meet. The Opus
-		// track is there for the file alone.
+		// track is there for the file alone, and the file is warned of twice: for
+		// its kind, and for holding a second stream beside AV1.
 		const without = planWith({
 			renditions: [AV1, AAC],
 			muxings: streaming,
@@ -978,6 +983,7 @@ describe("never a manifest leg", () => {
 		expect(validatePlan(without)).toEqual([]);
 		expect(validatePlan(withFile).map((issue) => issue.code)).toEqual([
 			"PLAN_MUXING_UNMEASURED_KIND",
+			"PLAN_MUXING_AV1_NOT_ALONE",
 		]);
 		// What the file adds is itself and the track made for it.
 		const added = ["codec:o", "stream:o", "muxing:file"];
@@ -1042,12 +1048,38 @@ describe("never a manifest leg", () => {
 });
 
 describe("validation rails", () => {
-	it("the codec matrix has a row for every schema kind: H264 with AAC in a .ts or .mov, the WEBM row in a .webm", () => {
+	it("the codec matrix has a row for every schema kind, and a whole-file row holds what Bitmovin documents for the container", () => {
 		expect(Object.keys(MUXING_CODEC_MATRIX).sort()).toEqual(
 			[...schemaKinds].sort(),
 		);
-		expect(MUXING_CODEC_MATRIX.PROGRESSIVE_TS).toEqual(["H264", "AAC"]);
-		expect(MUXING_CODEC_MATRIX.PROGRESSIVE_MOV).toEqual(["H264", "AAC"]);
+		expect(MUXING_CODEC_MATRIX.MP4).toEqual([
+			"H264",
+			"H265",
+			"AV1",
+			"AAC",
+			"OPUS",
+			"DOLBY_ATMOS",
+			"DDPLUS",
+			"DD",
+			"AC3",
+			"EAC3",
+		]);
+		expect(MUXING_CODEC_MATRIX.PROGRESSIVE_TS).toEqual([
+			"H264",
+			"H265",
+			"AAC",
+			"DDPLUS",
+			"DD",
+			"AC3",
+			"EAC3",
+		]);
+		expect(MUXING_CODEC_MATRIX.PROGRESSIVE_MOV).toEqual([
+			"H264",
+			"H265",
+			"AAC",
+			"DD",
+			"AC3",
+		]);
 		expect(MUXING_CODEC_MATRIX.PROGRESSIVE_WEBM).toEqual([
 			"VP9",
 			"AV1",
@@ -1057,19 +1089,96 @@ describe("validation rails", () => {
 		expect(MUXING_CODEC_MATRIX.PROGRESSIVE_WEBM).toEqual(
 			MUXING_CODEC_MATRIX.WEBM,
 		);
+		// What the support matrix marks as not feasible or not supported is in no
+		// row, also where the container's own format defines it.
+		expect(MUXING_CODEC_MATRIX.MP4).not.toContain("VP9");
+		for (const kind of H264_FILE_KINDS) {
+			for (const codec of ["VP9", "AV1", "OPUS", "DOLBY_ATMOS"]) {
+				expect(MUXING_CODEC_MATRIX[kind], kind).not.toContain(codec);
+			}
+		}
+		for (const codec of ["DDPLUS", "EAC3"]) {
+			expect(MUXING_CODEC_MATRIX.PROGRESSIVE_MOV).not.toContain(codec);
+		}
+	});
+
+	it("lists as unverified only pairs the matrix admits", () => {
+		expect(UNVERIFIED_MUXING_CODECS).toEqual({
+			MP4: ["OPUS"],
+			PROGRESSIVE_TS: ["EAC3"],
+			PROGRESSIVE_MOV: ["AC3"],
+		});
+		for (const [kind, codecs] of Object.entries(UNVERIFIED_MUXING_CODECS)) {
+			for (const codec of codecs) {
+				expect(
+					MUXING_CODEC_MATRIX[kind as keyof typeof MUXING_CODEC_MATRIX],
+					kind,
+				).toContain(codec);
+			}
+		}
+	});
+
+	it("warns of a codec no Bitmovin document names for the container, at the stream it is", () => {
+		const issuesOf = (kind: string, renditions: Rendition[]) =>
+			validatePlan(
+				planWith({
+					renditions,
+					muxings: [file("PROGRESSIVE_TS", { kind, filename: "movie.bin" })],
+				}),
+			)
+				.filter((issue) => issue.code !== "PLAN_MUXING_UNMEASURED_KIND")
+				.map((issue) => [issue.code, issue.level, issue.path]);
+		const audio = (codec: string) => ({ ...AAC, codec, bitrate: 192000 });
+		const warned = [
+			[
+				"PLAN_MUXING_UNVERIFIED_CODEC",
+				"warning",
+				"muxings[0].additionalStreamKeys[0]",
+			],
+		];
+		expect(issuesOf("MP4", [H264, OPUS])).toEqual(warned);
+		expect(issuesOf("PROGRESSIVE_TS", [H264, audio("EAC3")])).toEqual(warned);
+		expect(issuesOf("PROGRESSIVE_MOV", [H264, audio("AC3")])).toEqual(warned);
+		// A pair Bitmovin documents is not warned of.
+		expect(issuesOf("MP4", [AV1, AAC])).toEqual([]);
+		expect(
+			issuesOf("PROGRESSIVE_TS", [{ ...H264, codec: "H265" }, audio("AC3")]),
+		).toEqual([]);
+		expect(
+			issuesOf("PROGRESSIVE_MOV", [{ ...H264, codec: "H265" }, AAC]),
+		).toEqual([]);
+		// A codec the container does not hold is refused, and the unverified one
+		// beside it is still warned of.
+		expect(issuesOf("MP4", [VP9, OPUS])).toEqual([
+			["PLAN_MUXING_CODEC_MISMATCH", "error", "muxings[0].streamKey"],
+			...warned,
+		]);
+		const [issue] = validatePlan(
+			planWith({
+				renditions: [H264, OPUS],
+				muxings: [
+					file("PROGRESSIVE_TS", { kind: "MP4", filename: "movie.mp4" }),
+				],
+			}),
+		);
+		expect(issue?.message).toBe(
+			'muxing "file" (MP4) packages the OPUS rendition "a": no Bitmovin document names that combination, as supported or as not, and this app has no live encode of it — the encoding may be refused, so check the first output before relying on it',
+		);
 	});
 
 	it.each(
 		FILE_ONLY_MUXING_KINDS,
 	)("%s refuses a codec outside its row — every stream in the file, not just the first", (kind) => {
+		// What a WebM file holds, a .ts or .mov does not, and the other way round.
+		const outside =
+			kind === "PROGRESSIVE_WEBM"
+				? [
+						{ ...H264, codec: "H265" },
+						{ ...AAC, codec: "AC3", bitrate: 192000 },
+					]
+				: [VP9, OPUS];
 		const mismatches = validatePlan(
-			planWith({
-				renditions: [
-					{ ...H264, codec: "H265" },
-					{ ...AAC, codec: "AC3", bitrate: 192000 },
-				],
-				muxings: [file(kind)],
-			}),
+			planWith({ renditions: outside, muxings: [file(kind)] }),
 		).filter((issue) => issue.code === "PLAN_MUXING_CODEC_MISMATCH");
 		expect(mismatches.map((issue) => [issue.level, issue.path])).toEqual([
 			["error", "muxings[0].streamKey"],
@@ -1080,18 +1189,45 @@ describe("validation rails", () => {
 		);
 	});
 
-	it.each([
-		["VP9", VP9],
-		["AV1", AV1],
-	])("takes %s with Opus in a WebM file, with no error", (_codec, video) => {
+	it("takes VP9 with Opus in a WebM file, with no error", () => {
 		expect(
 			validatePlan(
 				planWith({
-					renditions: [video, OPUS],
+					renditions: [VP9, OPUS],
 					muxings: [file("PROGRESSIVE_WEBM")],
 				}),
 			).map((issue) => [issue.code, issue.level]),
 		).toEqual([["PLAN_MUXING_UNMEASURED_KIND", "warning"]]);
+	});
+
+	it("takes AV1 with Opus in a WebM file too, and warns that Bitmovin documents AV1 as alone in one", () => {
+		const issues = validatePlan(
+			planWith({
+				renditions: [AV1, OPUS],
+				muxings: [file("PROGRESSIVE_WEBM")],
+			}),
+		);
+		expect(
+			issues.map((issue) => [issue.code, issue.level, issue.path]),
+		).toEqual([
+			["PLAN_MUXING_UNMEASURED_KIND", "warning", "muxings[0].kind"],
+			[
+				"PLAN_MUXING_AV1_NOT_ALONE",
+				"warning",
+				"muxings[0].additionalStreamKeys",
+			],
+		]);
+		expect(issues[1]?.message).toBe(
+			'muxing "file" puts AV1 video and another stream in one progressive WebM file: Bitmovin\'s API release notes say such a muxing takes no other stream beside AV1, and nothing newer says otherwise — the encoding may be refused, so check the first output, or write the AV1 video to a file of its own or to an MP4',
+		);
+		// AV1 alone in the file is what the note allows, and VP9 is not its subject.
+		const { additionalStreamKeys: _audio, ...videoOnly } =
+			file("PROGRESSIVE_WEBM");
+		expect(
+			validatePlan(planWith({ renditions: [AV1], muxings: [videoOnly] })).map(
+				(issue) => issue.code,
+			),
+		).toEqual(["PLAN_MUXING_UNMEASURED_KIND"]);
 	});
 
 	it("refuses H264 or AAC in a WebM file, each at the stream it is", () => {
@@ -1135,13 +1271,12 @@ describe("validation rails", () => {
 		expect(
 			issues.map((issue) => [issue.code, issue.level, issue.path]),
 		).toEqual([["PLAN_MUXING_UNMEASURED_KIND", "warning", "muxings[0].kind"]]);
-		// Word for word what it said before a third kind joined the list.
 		expect(issues[0]?.message).toBe(
-			'muxing "file" writes a PROGRESSIVE_MOV container, which this app has not measured on a live encode and for which Bitmovin publishes no sample request — the request is built from the SDK model alone, so check the first output before relying on it',
+			'muxing "file" writes a PROGRESSIVE_MOV container, which this app has not measured on a live encode, for which Bitmovin publishes no sample request, and in which its support matrix leaves H.264, H.265 and AAC untested — the request is built from the SDK model alone, so check the first output before relying on it',
 		);
 	});
 
-	it("says a WebM file is unmeasured in its own words: what this app has sent, and nothing about what Bitmovin publishes", () => {
+	it("says a WebM file is unmeasured in its own words: what Bitmovin lists for it, and what this app has sent", () => {
 		const issues = validatePlan(
 			planFor("PROGRESSIVE_WEBM", { muxings: [file("PROGRESSIVE_WEBM")] }),
 		);
@@ -1149,10 +1284,8 @@ describe("validation rails", () => {
 			issues.map((issue) => [issue.code, issue.level, issue.path]),
 		).toEqual([["PLAN_MUXING_UNMEASURED_KIND", "warning", "muxings[0].kind"]]);
 		expect(issues[0]?.message).toBe(
-			'muxing "file" writes a PROGRESSIVE_WEBM container, for which this app has no live encode on record: it builds the same request for one stream elsewhere (the QC mirror of a VP9 rendition, a WEBM muxing marked progressive), and a file that holds video and audio together is new with this kind — the request is built from the SDK model alone, so check the first output before relying on it',
+			'muxing "file" writes a PROGRESSIVE_WEBM container, which Bitmovin\'s support matrix lists for VP9 and AV1, and for which this app has no live encode on record: it builds the same request for one stream elsewhere (the QC mirror of a VP9 rendition, a WEBM muxing marked progressive), and a file that holds video and audio together is new with this kind — the request is built from the SDK model alone, so check the first output before relying on it',
 		);
-		// Whether a vendor sample exists was not looked up, so it is not claimed.
-		expect(issues[0]?.message).not.toContain("publishes");
 	});
 
 	it("warns for every WebM file, one stream or two, and never for a WEBM muxing marked progressive", () => {
@@ -1580,7 +1713,7 @@ describe("wizard — build, and reopen in the form", () => {
 	it.each([
 		"VP9",
 		"AV1",
-	] as const)("emits a WebM file of %s with the Opus inside, and says only that it is unmeasured", (codec) => {
+	] as const)("emits a WebM file of %s with the Opus inside, and says what is not on record about it", (codec) => {
 		const { plan } = reopen(webmOnly(codec));
 		expect(buildPlan(webmOnly(codec)).muxings).toEqual([
 			{
@@ -1602,7 +1735,11 @@ describe("wizard — build, and reopen in the form", () => {
 		]);
 		expect(
 			validatePlan(plan).map((issue) => [issue.code, issue.level]),
-		).toEqual([["PLAN_MUXING_UNMEASURED_KIND", "warning"]]);
+		).toEqual([
+			["PLAN_MUXING_UNMEASURED_KIND", "warning"],
+			// Bitmovin documents AV1 as alone in a progressive WebM.
+			...(codec === "AV1" ? [["PLAN_MUXING_AV1_NOT_ALONE", "warning"]] : []),
+		]);
 		expect(plan.manifests).toEqual([]);
 	});
 

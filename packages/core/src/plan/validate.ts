@@ -70,23 +70,37 @@ const VIDEO_CODECS_FOR_MODE = new Set(["H264", "H265", "VP9", "AV1"]);
  * WHERE EACH ROW COMES FROM is not uniform, and the difference matters to
  * anyone widening it:
  *
- *  - FMP4 … CHUNKED_TEXT are sample-derived — the combinations Bitmovin's
- *    vendor samples build, each exercised by a golden.
- *  - PROGRESSIVE_TS is the one combination Bitmovin's guide "Creating
- *    Progressive MOV, MP4 and TS Outputs" shows: an H.264 video stream and an
- *    AAC audio stream in one ProgressiveTsMuxing. Nothing wider is documented
- *    there, so nothing wider is admitted.
- *  - PROGRESSIVE_MOV has NO sample at all: the same guide names MOV in its
- *    title and shows no MOV request, and this app has not run one against the
- *    live API. The row repeats the TS one as the conservative guess, and
- *    `PLAN_MUXING_UNMEASURED_KIND` says so on every plan that uses it.
- *  - PROGRESSIVE_WEBM repeats the WEBM row: the same container, written as one
- *    file. The row is copied, not measured. The single-file WebM requests this
- *    app already builds (the QC mirror of a VP9 rendition, a `WEBM` muxing
- *    marked `progressive`) hold one stream each, and no live run of a file
- *    holding video and Opus together is on record, so the same warning is
- *    raised. Whether Bitmovin publishes a sample request for it was not looked
- *    up, and nothing here claims either way.
+ *  - FMP4, CMAF, TS, WEBM, TEXT and CHUNKED_TEXT are sample-derived — the
+ *    combinations Bitmovin's vendor samples build, each exercised by a golden.
+ *  - MP4 and the three PROGRESSIVE_* rows are the whole-file containers. They
+ *    hold what Bitmovin documents for them, looked up on 2026-11-13 in its
+ *    support matrix ("Product Support Matrix - ENCODING - VOD Muxings", last
+ *    reviewed for encoder 2.193.1 on 25-Mar-2024 and marked as guidance), its
+ *    guides "Creating Progressive MOV, MP4 and TS Outputs" and "Creating Dolby
+ *    Digital (Plus) Encodings", and the encoder release notes:
+ *      MP4: H.264, H.265, AAC, Dolby Digital, Dolby Digital Plus and Dolby
+ *        Atmos (the matrix); AV1, with audio in the same file (encoder
+ *        2.105.0); the older AC3 and E-AC3 configurations (encoder 2.19.0).
+ *      PROGRESSIVE_TS: H.264, H.265, AAC, Dolby Digital and Dolby Digital Plus
+ *        (the matrix; the Dolby guide names ProgressiveTS); AC3 (encoder
+ *        2.6.0).
+ *      PROGRESSIVE_WEBM: VP9 and AV1 (the matrix); Opus beside VP9 (two
+ *        examples in Bitmovin's older API clients).
+ *      PROGRESSIVE_MOV: Dolby Digital ("MOV (DD only)"). H.264, H.265 and AAC
+ *        are blank in the matrix — "support unknown, combination not tested by
+ *        Bitmovin" — and are in the row on that footing: the kind as a whole
+ *        raises `PLAN_MUXING_UNMEASURED_KIND`.
+ *    A pair the matrix marks "not feasible" or "not supported" stays out, also
+ *    where the container's own format defines it: VP9 in MP4; VP9 and AV1 in
+ *    TS and MOV; Dolby Digital Plus and Dolby Atmos in MOV; H.264, H.265 and
+ *    the Dolby codecs in WebM. So do pairs neither Bitmovin nor a format
+ *    definition read for this table names: Opus in TS and in MOV, Dolby Atmos
+ *    in TS, AAC in WebM.
+ *  - A pair no Bitmovin source names either way is in the row where the
+ *    container side is known to take that kind of stream, and is listed in
+ *    `UNVERIFIED_MUXING_CODECS`, which raises a warning on every plan that
+ *    uses it (owner directive 2026-11-13: a file job is offered every
+ *    combination that can be built, not only the ones on record).
  */
 export const MUXING_CODEC_MATRIX: Record<
 	PlanMuxing["kind"],
@@ -105,13 +119,24 @@ export const MUXING_CODEC_MATRIX: Record<
 		"EAC3",
 	],
 	CMAF: ["H264", "AAC"],
-	MP4: ["H264", "H265", "AAC", "DOLBY_ATMOS", "AC3", "EAC3"],
+	MP4: [
+		"H264",
+		"H265",
+		"AV1",
+		"AAC",
+		"OPUS",
+		"DOLBY_ATMOS",
+		"DDPLUS",
+		"DD",
+		"AC3",
+		"EAC3",
+	],
 	TS: ["H264", "AAC", "AC3"],
 	WEBM: ["VP9", "AV1", "OPUS"],
 	TEXT: ["IMSC"],
 	CHUNKED_TEXT: ["WEBVTT"],
-	PROGRESSIVE_TS: ["H264", "AAC"],
-	PROGRESSIVE_MOV: ["H264", "AAC"],
+	PROGRESSIVE_TS: ["H264", "H265", "AAC", "DDPLUS", "DD", "AC3", "EAC3"],
+	PROGRESSIVE_MOV: ["H264", "H265", "AAC", "DD", "AC3"],
 	PROGRESSIVE_WEBM: ["VP9", "AV1", "OPUS"],
 };
 
@@ -133,18 +158,44 @@ export const UNMEASURED_MUXING_KINDS: ReadonlySet<PlanMuxing["kind"]> = new Set(
  * What is and is not known about an unmeasured kind — the middle of its
  * `PLAN_MUXING_UNMEASURED_KIND` message.
  *
- *  - PROGRESSIVE_MOV: no vendor sample to transcribe either (the matrix
- *    comment above says where that was looked up).
- *  - PROGRESSIVE_WEBM: that was not looked up, so it is not claimed. What is
- *    known is that this app builds the same request elsewhere for a single
- *    stream, and that this kind is the first to put audio beside the picture.
+ *  - PROGRESSIVE_MOV: Bitmovin's guide shows no request for it, and its
+ *    support matrix leaves H.264, H.265 and AAC in it blank.
+ *  - PROGRESSIVE_WEBM: the support matrix lists VP9 and AV1 for it. What this
+ *    app has is the same request for a single stream, and this kind is the
+ *    first here to put audio beside the picture.
  */
 function unmeasuredKindDetail(kind: PlanMuxing["kind"]): string {
 	if (kind === "PROGRESSIVE_WEBM") {
-		return "for which this app has no live encode on record: it builds the same request for one stream elsewhere (the QC mirror of a VP9 rendition, a WEBM muxing marked progressive), and a file that holds video and audio together is new with this kind";
+		return "which Bitmovin's support matrix lists for VP9 and AV1, and for which this app has no live encode on record: it builds the same request for one stream elsewhere (the QC mirror of a VP9 rendition, a WEBM muxing marked progressive), and a file that holds video and audio together is new with this kind";
 	}
-	return "which this app has not measured on a live encode and for which Bitmovin publishes no sample request";
+	return "which this app has not measured on a live encode, for which Bitmovin publishes no sample request, and in which its support matrix leaves H.264, H.265 and AAC untested";
 }
+
+/**
+ * Pairs of `MUXING_CODEC_MATRIX` that no Bitmovin source names, as supported
+ * or as not. Each raises `PLAN_MUXING_UNVERIFIED_CODEC` — a warning, never a
+ * block, for the reason `UNMEASURED_MUXING_KINDS` gives: the encoding may well
+ * be accepted, and an error would forbid a plan on silence.
+ *
+ * Why each is in the matrix at all:
+ *  - Opus in MP4: the format defines it ("Encapsulation of Opus in ISO Base
+ *    Media File Format", 1.0.0). Bitmovin names no container for Opus anywhere
+ *    but in its two WebM examples.
+ *  - E-AC3 in progressive TS, AC3 in MOV: Bitmovin documents the container
+ *    with its Dolby Digital Plus and Dolby Digital configurations, which write
+ *    the same two bitstream formats, and names the older E-AC3 and AC3
+ *    configurations for other containers only.
+ *
+ * Exported for the same reason as the matrix: a form that offers one of these
+ * says so where it is chosen.
+ */
+export const UNVERIFIED_MUXING_CODECS: Partial<
+	Record<PlanMuxing["kind"], readonly string[]>
+> = {
+	MP4: ["OPUS"],
+	PROGRESSIVE_TS: ["EAC3"],
+	PROGRESSIVE_MOV: ["AC3"],
+};
 
 /**
  * Plan-level (cross-field) validation per ARCHITECTURE §3 — runs after zod
@@ -1425,7 +1476,40 @@ export function validatePlan(
 								? `muxings[${index}].streamKey`
 								: `muxings[${index}].additionalStreamKeys[${at - 1}]`,
 					});
+				} else if (
+					UNVERIFIED_MUXING_CODECS[muxing.kind]?.includes(packaged.codec)
+				) {
+					issues.push({
+						code: "PLAN_MUXING_UNVERIFIED_CODEC",
+						level: "warning",
+						message: `muxing "${muxing.key}" (${muxing.kind}) packages the ${packaged.codec} rendition "${packaged.key}": no Bitmovin document names that combination, as supported or as not, and this app has no live encode of it — the encoding may be refused, so check the first output before relying on it`,
+						path:
+							at === 0
+								? `muxings[${index}].streamKey`
+								: `muxings[${index}].additionalStreamKeys[${at - 1}]`,
+					});
 				}
+			}
+			// The one combination Bitmovin documents as refused and this table
+			// still admits: AV1 with another stream in one progressive WebM
+			// ("Added validation that if AV1 is used in progressive WebM muxing,
+			// no other streams are allowed in that muxing", REST API Services
+			// 1.4.0). The note is old and nothing newer says either way, so the
+			// plan is warned and not refused: the provider answers at muxing
+			// creation, before anything is encoded.
+			if (
+				muxing.kind === "PROGRESSIVE_WEBM" &&
+				containerKeys.length > 1 &&
+				containerKeys.some(
+					(streamKey) => renditionByKey.get(streamKey)?.codec === "AV1",
+				)
+			) {
+				issues.push({
+					code: "PLAN_MUXING_AV1_NOT_ALONE",
+					level: "warning",
+					message: `muxing "${muxing.key}" puts AV1 video and ${containerKeys.length - 1 === 1 ? "another stream" : "other streams"} in one progressive WebM file: Bitmovin's API release notes say such a muxing takes no other stream beside AV1, and nothing newer says otherwise — the encoding may be refused, so check the first output, or write the AV1 video to a file of its own or to an MP4`,
+					path: `muxings[${index}].additionalStreamKeys`,
+				});
 			}
 			// DolbyVision MP4 track signaling only makes sense on a DV H265
 			// muxing (the OnDemand sample sets DVH1 on the DV ladder only).

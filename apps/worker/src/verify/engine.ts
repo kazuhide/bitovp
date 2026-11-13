@@ -619,12 +619,14 @@ async function verifyMuxing(
 		muxing.container === "TEXT_SINGLE" ||
 		muxing.container === "WEBM_PROGRESSIVE" ||
 		muxing.container === "MP4_PROGRESSIVE" ||
+		muxing.container === "TS_PROGRESSIVE" ||
 		muxing.container === "MP4_FRAGMENTED";
 	if (single) {
 		const name = muxing.filename;
 		const hit = name
 			? keys.find((k) =>
-					muxing.container === "WEBM_PROGRESSIVE"
+					muxing.container === "WEBM_PROGRESSIVE" ||
+					muxing.container === "TS_PROGRESSIVE"
 						? dirs.some((dir) => k === `${dir.prefix}${name}`)
 						: k.endsWith(name),
 				)

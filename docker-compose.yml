@@ -87,9 +87,11 @@ services:
       FFPROBE_PATH: "ffprobe"
       VMAF_CONCURRENCY: "${VMAF_CONCURRENCY:-}"
       VMAF_THREADS: "${VMAF_THREADS:-}"
+      VOD_INPUT_PREVIEW_DIR: /vod-input-previews
       DEPLOYMENT_PROFILE: "${DEPLOYMENT_PROFILE:-UNRESTRICTED}"
     volumes:
       - ./verify-runs:/verify-runs
+      - input-previews:/vod-input-previews
     restart: unless-stopped
 
   web:
@@ -121,9 +123,11 @@ services:
       REDIS_URL: "redis://redis:6379"
       NODE_ENV: "production"
       ALLOWED_ORIGIN_HOSTS: "web,localhost,127.0.0.1"
+      VOD_INPUT_PREVIEW_DIR: /vod-input-previews
       DEPLOYMENT_PROFILE: "${DEPLOYMENT_PROFILE:-UNRESTRICTED}"
     ports:
       - "127.0.0.1:${WEB_PORT:-3100}:3100"
+    volumes: [input-previews:/vod-input-previews:ro]
     restart: unless-stopped
 
   ingress:
@@ -170,3 +174,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  input-previews:

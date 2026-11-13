@@ -315,6 +315,10 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 		method: "POST",
 		template: "/encoding/encodings/:encodingId/muxings/ts",
 	},
+	CREATE_MUXING_PROGRESSIVE_TS: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/muxings/progressive-ts",
+	},
 	CREATE_MUXING_WEBM: {
 		method: "POST",
 		template: "/encoding/encodings/:encodingId/muxings/webm",

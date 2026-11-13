@@ -318,6 +318,8 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 
 RUN pnpm --filter @bitovp/db run build
 
+RUN mkdir -p /vod-input-previews && chown node:node /vod-input-previews && chmod 0700 /vod-input-previews
+
 USER node
 
 CMD ["pnpm", "--filter", "@bitovp/worker", "start"]

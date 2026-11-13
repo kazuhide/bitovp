@@ -90,6 +90,7 @@ export function fakeSdk(overrides: Partial<SdkOps> = {}): SdkOps {
 		createMp4Muxing: vi.fn(nextId),
 		createProgressiveWebmMuxing: vi.fn(nextId),
 		createTsMuxing: vi.fn(nextId),
+		createProgressiveTsMuxing: vi.fn(nextId),
 		createWebmMuxing: vi.fn(nextId),
 		createChunkedTextMuxing: vi.fn(nextId),
 		createTextMuxing: vi.fn(nextId),

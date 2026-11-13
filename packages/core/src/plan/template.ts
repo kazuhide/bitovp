@@ -153,6 +153,7 @@ const MUXING_SECTION = {
 	CHUNKED_TEXT: "chunkedText",
 	TEXT: "text",
 	TS: "ts",
+	PROGRESSIVE_TS: "progressiveTs",
 	WEBM: "webm",
 } as const;
 
@@ -1211,6 +1212,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			text: Tree;
 			chunkedText: Tree;
 			ts: Tree;
+			progressiveTs: Tree;
 			webm: Tree;
 		}
 	>();
@@ -1225,11 +1227,13 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				text: {},
 				chunkedText: {},
 				ts: {},
+				progressiveTs: {},
 				webm: {},
 			};
 			muxingsByEnc.set(ownerEnc, legs);
 		}
-		const { fmp4, cmaf, mp4, text, chunkedText, ts, webm } = legs;
+		const { fmp4, cmaf, mp4, text, chunkedText, ts, progressiveTs, webm } =
+			legs;
 		const shared = {
 			// EVERY stream the container packages . This emitted a
 			// one-element list, which was a complete description of a
@@ -1357,6 +1361,14 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				properties: {
 					segmentLength: muxing.segmentLength,
 					segmentNaming: muxing.segmentNaming,
+					...shared,
+				},
+			};
+		} else if (muxing.kind === "PROGRESSIVE_TS") {
+			progressiveTs[muxing.key] = {
+				properties: {
+					filename: muxing.filename,
+					...dense({ startOffset: muxing.startOffset }),
 					...shared,
 				},
 			};
@@ -2014,6 +2026,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					chunkedText: {},
 					text: {},
 					ts: {},
+					progressiveTs: {},
 					webm: {},
 				};
 				const fileEntries = fileInputStreamsByEnc.get(name) ?? {};
@@ -2103,6 +2116,9 @@ function buildTemplate(plan: EncodingPlan): Tree {
 								? { chunkedText: legs.chunkedText }
 								: {}),
 							...(Object.keys(legs.ts).length > 0 ? { ts: legs.ts } : {}),
+							...(Object.keys(legs.progressiveTs).length > 0
+								? { progressiveTs: legs.progressiveTs }
+								: {}),
 							...(Object.keys(legs.webm).length > 0 ? { webm: legs.webm } : {}),
 						},
 						start: {

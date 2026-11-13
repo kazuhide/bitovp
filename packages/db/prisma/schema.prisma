@@ -1597,6 +1597,44 @@ enum StorageInspectionStatus {
   ERROR
 }
 
+/// CPU-only input inspection/preview/image preparation intent, independent of Library editing.
+/// IMAGE_PREPARE publishes an input object; task expiry does not delete that remote object.
+model VodInputPreviewTask {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  kind String
+  status String @default("PENDING")
+  stage String @default("QUEUED")
+  requestHash String @db.Char(64)
+  request Json
+  result Json?
+  error Json?
+  probeId String? @db.Uuid
+  probe VodInputPreviewTask? @relation("VodInputPreviewProbe", fields: [organizationId, probeId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "VodInputPreviewTask_probeId_tenant_fkey")
+  previews VodInputPreviewTask[] @relation("VodInputPreviewProbe")
+  /// Private shared-volume path; never part of the public task DTO.
+  artifactPath String?
+  artifactToken String? @db.Uuid
+  artifactSize BigInt?
+  artifactSha256 String? @db.Char(64)
+  leaseToken String? @db.Uuid
+  leaseUntil DateTime?
+  cancelRequestedAt DateTime?
+  attempts Int @default(0)
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  startedAt DateTime?
+  finishedAt DateTime?
+  expiresAt DateTime
+  @@unique([organizationId, id])
+  @@index([organizationId, kind, requestHash])
+  @@index([status, createdAt])
+  @@index([expiresAt])
+  @@index([organizationId, probeId])
+}
+
 model StorageInspection {
   organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
@@ -2905,6 +2943,7 @@ model Organization {
   vmafJobRows VmafJob[]
   vmafResultRows VmafResult[]
   storageInspectionRows StorageInspection[]
+  vodInputPreviewTaskRows VodInputPreviewTask[]
   presetRows Preset[]
   webhookEventRows WebhookEvent[]
   webhookRegistrationRows WebhookRegistration[]

@@ -27,6 +27,7 @@ export const RESET_DELETES = [
 	"auditLog",
 	"accessEvent",
 	"storageInspection",
+	"vodInputPreviewTask",
 	"watchedObject",
 	"alertEvent",
 	"liveHeartbeat",

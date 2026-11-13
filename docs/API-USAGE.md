@@ -97,6 +97,7 @@ tests):
   `apps/web/src/lib/auth/roles.ts`). Revocation is checked on the next request.
 
 - `/api/settings/clip-editing` — GET/POST (ADMIN): GET reports local clip configuration without connectivity checks. POST `{}` requests a bounded metadata-only diagnosis through the editing service and returns independent configuration/service/model states. It does not load models or run inference. Responses are `no-store` and omit connection secrets.
+- `/api/vod/input-favorites` — GET/POST (OPERATOR, no view-as): organization-scoped fixed input references, capped at 64. POST `{credentialId,bucket,objectKey,label,kind}` (`VIDEO`, `AUDIO`, or PNG/JPEG `IMAGE`) saves a reference without fetching media. Duplicate storage references reuse the existing item. GET reports current credential availability, not verified object existence. `DELETE /api/vod/input-favorites/<id>` removes only that reference; it never deletes storage objects or project snapshots. Corrupt saved data returns `409` instead of an empty list. Responses are private and `no-store`; signed URLs and credentials are not stored.
 - `/api/settings/api-coverage` — GET (VIEWER): bundled current source census,
   installed/surveyed SDK and mismatch flag, current top-level SDK body-model
   properties with conservative direct property-key evidence, plus a separately

@@ -284,7 +284,22 @@ At the top of the new-job screen, "What to create" selects what the job is for. 
 | Package for streaming | A rendition ladder with an HLS or DASH manifest, for playback in a player | The 8 steps in the table above |
 | Export files | MP4 or similar files with the audio inside, for editing or hand-off. No manifests are created | 6 steps: Basics, Sources, Format, Destination, Encoding, and Review |
 
-"Export files" starts with one MP4 that holds H.264 1080p video at 8 Mbps and AAC audio at 192 kbps. Public read access is not requested for the files unless you select "ACL PUBLIC_READ (request public read access)" in "Destination"; "Package for streaming" starts with it selected. In "Format", set the container, file name, codec, height, and bitrate of each file. The container is MP4, MPEG-TS (`.ts`), or QuickTime (`.mov`). MPEG-TS and QuickTime hold H.264 video and AAC audio. QuickTime has not been verified on a real encode, which the screen notes: check the first file. Leave the height blank to keep the source height. Use "Add file" when you also need files at other resolutions. The audio settings apply to every file.
+"Export files" starts with one MP4 that holds H.264 1080p video at 8 Mbps and AAC audio at 192 kbps. Public read access is not requested for the files unless you select "ACL PUBLIC_READ (request public read access)" in "Destination"; "Package for streaming" starts with it selected. In "Format", set the container, file name, codec, encoding mode, height, and bitrate of each file, and its audio. Leave the height blank to keep the source height. Use "Add file" when you also need files at other resolutions or in other formats; the new file starts as a smaller copy of the last one.
+
+The container is MP4, MPEG-TS (`.ts`), QuickTime (`.mov`), or WebM (`.webm`). Each offers every codec it can hold:
+
+| Container | Video codec | Audio codec |
+|---|---|---|
+| MP4 | H264, H265, AV1 | AAC, AC3, EAC3, OPUS, DOLBY_ATMOS, DDPLUS, DD |
+| MPEG-TS | H264, H265 | AAC, AC3, EAC3, DDPLUS, DD |
+| QuickTime | H264, H265 | AAC, AC3, DD |
+| WebM | VP9, AV1 | OPUS |
+
+HEVCv2 is offered beside H265 to an account that may use it. It has to be the codec of every file, with "BCF override" left on in "Basics". When you change the container, the file keeps a codec that the new container holds and that Bitmovin lists for it. Otherwise it moves to the first codec of the new container: a file changed from MP4 to WebM becomes VP9 with Opus, and changed back it becomes H.264 with AAC. Files in more than one video codec, such as an MP4 in H.264 beside a WebM in VP9, need the same "Encoding mode" on every file, because a job runs in one mode. The fields report it, and the job cannot start until the modes match.
+
+Each file has its own audio. With "Include audio" selected, set the audio codec, channel layout, bitrate, sample rate, and, when the job has more than one source, the audio source. Without it, the file is written with no audio track. Files with the same audio settings share one audio track, which is encoded once. Dolby Atmos is encoded from a Dolby Atmos stream: add one in "Sources" and select it as the file's audio source.
+
+The screen notes three cases in which the job starts but may be refused by Bitmovin, so check the first file. QuickTime and WebM have not been verified on a real encode. No Bitmovin document lists OPUS in MP4, EAC3 in MPEG-TS, or AC3 in QuickTime, although each container's format defines the codec. Bitmovin's release notes say that a WebM file with AV1 video takes no other stream, so write such a file without audio, or use MP4, to be sure.
 
 A file name follows the job name until you type one. In a name you type, `?` and `#` are replaced with `-`: a file named with either cannot be fetched by its plain URL. Files are written directly into the folder chosen in "Destination"; no subfolder is added for the job. Two files in one job cannot have the same name: the "File name" fields report it, and the job cannot start until the names differ. In this view you also cannot make two files with the same height and codec and with bitrates that are equal once rounded to kbps: the "Bitrate (bps)" fields report it, and one of the three has to differ on either file. A copy of a file made in "Ladder" under "Show all settings" is kept as a file of its own. A file that already exists in the folder under the same name may be replaced. Check the paths listed in "Review" before you start.
 
@@ -421,7 +436,7 @@ Packaging combines encoded streams into files or segments. To create more than o
 | fMP4, TS, and WebM | Segment length is in seconds. Also check initialization filenames, segment names, and paths. |
 | MP4 | Filename, fragment duration in milliseconds, and compatible manifest types |
 | CMAF | Check the H.264/AAC and DASH TEMPLATE/TIMELINE compatibility requirements for dedicated CMAF muxings. |
-| Progressive TS and MOV | One whole `.ts` or `.mov` file for each video rendition, with H.264 video and AAC audio in the same file. Set the file name. No manifest lists these files and DRM is not offered. MOV has not been verified on a real encode: check the first output. |
+| Progressive TS, MOV, and WebM | One whole `.ts`, `.mov`, or `.webm` file for each video rendition, with the audio in the same file. TS and MOV hold H.264 or H.265 video; WebM holds VP9 or AV1 video with Opus audio. Set the file name. No manifest lists these files and DRM is not offered. MOV and WebM have not been verified on a real encode: check the first output. |
 | Muxed-in audio | Select the audio included in a video container. |
 | Standalone container | Create an audio-only container and reference it from an audio group. |
 | Thumbnails and sprites | Generation positions and intervals, units, image dimensions, layout, image names, and the VTT output destination |

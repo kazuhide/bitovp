@@ -50,7 +50,7 @@ Conformance checks plan INTENT, not output bytes — pairing with the verify eng
 
 ## Worked examples the schema cannot express yet
 
-These two were in the design's v1 list and are documented here INSTEAD of shipping as presets, because the plan schema has no H.262/MP2/PCM codec configs and no WAV/MXF/Broadcast-TS muxings today (its Progressive TS and MOV muxings hold H.264 and AAC only) (REQUIREMENTS §4.2 is the API-parity target, not the implemented surface). Row 82 records the schema gap as the reopening condition.
+These two were in the design's v1 list and are documented here INSTEAD of shipping as presets, because the plan schema has no H.262/MP2/PCM codec configs and no WAV/MXF/Broadcast-TS muxings today (its Progressive TS and MOV muxings hold H.264 or H.265 video with AAC or Dolby audio only) (REQUIREMENTS §4.2 is the API-parity target, not the implemented surface). Row 82 records the schema gap as the reopening condition.
 
 ### broadcast-ts-mpeg2 (example only)
 

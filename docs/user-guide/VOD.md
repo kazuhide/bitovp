@@ -26,9 +26,12 @@ region. Review the selected account and any saved or copied region settings.
    then start encoding.
 
 These steps package the job for streaming. To write finished files instead — MP4,
-MPEG-TS, or QuickTime files with the audio inside, and no manifests — choose **Export files**
+MPEG-TS, QuickTime, or WebM files with the audio inside, and no manifests — choose **Export files**
 under "What to create" at the top of the page. That flow has six steps: Basics,
-Sources, Format, Destination, Encoding, and Review. Files are written directly into
+Sources, Format, Destination, Encoding, and Review. In Format, each container offers
+every codec it can hold (AV1 in MP4 and WebM, VP9 and Opus in WebM, for example), and
+each file has its own video codec and its own audio. Files in more than one video
+codec need the same encoding mode on every file. Files are written directly into
 the output folder and are named after the job until you type a name. Two files in one
 job cannot have the same name, and two made in the six steps cannot have the same
 height and codec with the same bitrate in kbps. A file already in the folder under
@@ -107,9 +110,10 @@ remove them and pass validation.
 
 HLS/DASH manifests describe available renditions and their segments. Packaging
 defines how those streams are stored, for example MPEG-TS, fragmented MP4
-(fMP4), or progressive MP4. Progressive TS and MOV write one whole file for each
-video rendition, with H.264 video and AAC audio inside; no manifest lists them and
-DRM is not offered. MOV has not been verified on a real encode, so check the first
+(fMP4), or progressive MP4. Progressive TS, MOV, and WebM write one whole file for
+each video rendition, with the audio inside: H.264 or H.265 video in TS and MOV, and
+VP9 or AV1 video with Opus audio in WebM. No manifest lists them and DRM is not
+offered. MOV and WebM have not been verified on a real encode, so check the first
 output.
 
 For HLS, decide whether video and audio share a container or use separate audio

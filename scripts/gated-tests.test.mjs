@@ -51,6 +51,17 @@ const paths = (groups) =>
 		Object.keys(group.files).map((file) => join(group.directory, file)),
 	);
 
+test("the required Redis run registers the cross-worker/Web clip availability matrix", () => {
+	assert.deepEqual(REDIS.availability, {
+		workspace: "@bitovp/web",
+		directory: "apps/web",
+		files: {
+			"src/lib/server/local-semantic-readiness.redis.integration.test.ts": 8,
+		},
+	});
+	assert.equal(REDIS.servers.CLIP_AVAILABILITY_TEST_REDIS_URL, 16382);
+});
+
 // One file of a Vitest JSON report: `statuses` gives each test's status.
 const fileResult = (name, statuses) => ({
 	name: resolve(root, name),
@@ -82,7 +93,7 @@ const plainRun = (workspace, change = (files) => files) =>
 	reportOf(
 		change([
 			fileResult("src/always.test.ts", ["passed", "passed"]),
-			...[...GROUPS, ...NATIVE_MEDIA, REDIS.queues]
+			...[...GROUPS, ...NATIVE_MEDIA, REDIS.queues, REDIS.availability]
 				.filter((group) => group.workspace === workspace)
 				.flatMap((group) =>
 					Object.entries(group.files).map(([file, tests]) =>
@@ -101,6 +112,7 @@ test("every listed file exists once, and every FFmpeg, Redis or script test file
 		...NATIVE_MEDIA,
 		REDIS.queues,
 		REDIS.leases,
+		REDIS.availability,
 	]);
 	assert.equal(new Set(listed).size, listed.length);
 	for (const file of [
@@ -126,7 +138,10 @@ test("every listed file exists once, and every FFmpeg, Redis or script test file
 			if (existsSync(resolve(root, source, entry, "src")))
 				visit(resolve(root, source, entry, "src"));
 	assert.deepEqual(found.sort(), paths(NATIVE_MEDIA).sort());
-	assert.deepEqual(redis.sort(), paths([REDIS.queues, REDIS.leases]).sort());
+	assert.deepEqual(
+		redis.sort(),
+		paths([REDIS.queues, REDIS.leases, REDIS.availability]).sort(),
+	);
 	// The lease tests have a configuration of their own, which names only them.
 	assert.match(
 		readFileSync(
@@ -136,15 +151,16 @@ test("every listed file exists once, and every FFmpeg, Redis or script test file
 		/\tinclude: \["src\/vmaf\/resource-leases\.redis\.integration\.ts"\],\n/,
 	);
 	// Each queue test accepts one address; the run must start a server there.
-	const addresses = Object.keys(REDIS.queues.files).map((file) => {
-		const text = readFileSync(
-			resolve(root, REDIS.queues.directory, file),
-			"utf8",
-		);
-		const [, variable] = /process\.env\.([A-Z_]+_TEST_REDIS_URL)\b/.exec(text);
-		const [, port] = /"redis:\/\/127\.0\.0\.1:(\d+)"/.exec(text);
-		return [variable, Number(port)];
-	});
+	const addresses = [REDIS.queues, REDIS.availability].flatMap((group) =>
+		Object.keys(group.files).map((file) => {
+			const text = readFileSync(resolve(root, group.directory, file), "utf8");
+			const [, variable] = /process\.env\.([A-Z_]+_TEST_REDIS_URL)\b/.exec(
+				text,
+			);
+			const [, port] = /"redis:\/\/127\.0\.0\.1:(\d+)"/.exec(text);
+			return [variable, Number(port)];
+		}),
+	);
 	assert.deepEqual(
 		Object.fromEntries(addresses.sort(([, a], [, b]) => a - b)),
 		REDIS.servers,
@@ -168,7 +184,7 @@ test("a plain run may skip the tests that another job runs", () => {
 		["@bitovp/db", 70],
 		["@bitovp/worker", 67],
 		// Includes six favorite-registry and two still-image cases in the PostgreSQL job.
-		["@bitovp/web", 99],
+		["@bitovp/web", 107],
 	])
 		assert.deepEqual(skipProblems(plainRun(workspace), workspace, root), {
 			problems: [],
@@ -862,7 +878,11 @@ async function redisRun({
 		calls.push({ binary, args, options });
 		if (binary !== "pnpm") return version();
 		const output = args.at(-1).slice("--outputFile=".length);
-		const group = args.includes("--config") ? REDIS.leases : REDIS.queues;
+		const group = args.includes("--config")
+			? REDIS.leases
+			: args.includes("@bitovp/web")
+				? REDIS.availability
+				: REDIS.queues;
 		scratch[group === REDIS.leases ? "leases" : "queues"] = dirname(output);
 		if (group === REDIS.queues) during(dirname(output), options);
 		const report = await vitest(group);
@@ -945,6 +965,7 @@ test("a Redis run passes only when every lease and queue test ran and passed", a
 		"Redis server 8.10.3",
 		"@bitovp/worker: 29 resource lease tests passed, 0 skipped",
 		"@bitovp/worker: 3 queue tests passed against Redis and PostgreSQL, 0 skipped",
+		"@bitovp/web: 8 clip availability tests passed against Redis, 0 skipped",
 	]);
 	const child = {
 		PATH: "/tools/bin",
@@ -981,6 +1002,17 @@ test("a Redis run passes only when every lease and queue test ran and passed", a
 				"--maxWorkers=2",
 				"--reporter=json",
 			],
+			[
+				"pnpm",
+				"--filter",
+				"@bitovp/web",
+				"exec",
+				"vitest",
+				"run",
+				"src/lib/server/local-semantic-readiness.redis.integration.test.ts",
+				"--maxWorkers=2",
+				"--reporter=json",
+			],
 		],
 	);
 	assert.deepEqual(passed.calls[0].args, ["--version"]);
@@ -1005,6 +1037,7 @@ test("a Redis run passes only when every lease and queue test ran and passed", a
 			TENANT_TEST_REDIS_URL: "redis://127.0.0.1:16379",
 			VOD_REDELIVERY_TEST_REDIS_URL: "redis://127.0.0.1:16380",
 			LIVE_CAPACITY_TEST_REDIS_URL: "redis://127.0.0.1:16381",
+			CLIP_AVAILABILITY_TEST_REDIS_URL: "redis://127.0.0.1:16382",
 		},
 	});
 	assert.deepEqual(JSON.parse(seen.database), {
@@ -1024,7 +1057,7 @@ test("a Redis run passes only when every lease and queue test ran and passed", a
 			mode,
 			stopped,
 		})),
-		[16379, 16380, 16381].map((port) => ({
+		[16379, 16380, 16381, 16382].map((port) => ({
 			program: "redis-server",
 			port,
 			directory: join(seen.directory, `redis-${port}`),
@@ -1050,8 +1083,41 @@ test("a Redis run passes only when every lease and queue test ran and passed", a
 	);
 	assert.deepEqual(
 		named.servers.map(({ program }) => program),
-		Array.from({ length: 3 }, () => "/redis/bin/redis-server"),
+		Array.from({ length: 4 }, () => "/redis/bin/redis-server"),
 	);
+});
+
+test("the required Redis run rejects a skipped or missing clip availability matrix", async () => {
+	for (const mode of ["skipped", "missing"]) {
+		const result = await redisRun({
+			vitest: (group) => {
+				if (group !== REDIS.availability) return allPassed(group);
+				if (mode === "missing") return undefined;
+				const report = allPassed(group);
+				report.testResults[0].assertionResults[0].status = "skipped";
+				report.numPassedTests -= 1;
+				report.numPendingTests += 1;
+				return report;
+			},
+		});
+		assert.equal(
+			result.lines[0],
+			"Step: running the clip availability matrix against Redis",
+		);
+		assert.equal(
+			result.lines[1],
+			mode === "missing"
+				? "Reason: Vitest did not write a readable report"
+				: "Reason: Redis tests must all run and pass",
+		);
+		assert(
+			!result.notes.some((note) =>
+				note.includes("clip availability tests passed"),
+			),
+		);
+		assert.equal(result.servers.length, 4);
+		assert(result.servers.every((server) => server.stopped));
+	}
 });
 
 test("a Redis run names the part that did not run, and stops the servers it started", async () => {
@@ -1166,7 +1232,7 @@ test("a Redis run names the part that did not run, and stops the servers it star
 	]);
 	assert.deepEqual(
 		skippedQueue.servers.map(({ stopped }) => stopped),
-		[true, true, true],
+		[true, true, true, true],
 	);
 	// No report at all, with and without a failed command.
 	const silent = await redisRun({
@@ -1178,7 +1244,7 @@ test("a Redis run names the part that did not run, and stops the servers it star
 	]);
 	assert.deepEqual(
 		silent.servers.map(({ stopped }) => stopped),
-		[true, true, true],
+		[true, true, true, true],
 	);
 	const failed = await redisRun({
 		vitest: (group) => {
@@ -1195,7 +1261,7 @@ test("a Redis run names the part that did not run, and stops the servers it star
 	]);
 	assert.deepEqual(
 		failed.servers.map(({ stopped }) => stopped),
-		[true, true, true],
+		[true, true, true, true],
 	);
 
 	// A server that does not start: the ones before it are stopped, no test runs.

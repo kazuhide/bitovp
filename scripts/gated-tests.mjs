@@ -111,10 +111,18 @@ export const REDIS = {
 			"src/tenant/redis.integration.test.ts": 1,
 		},
 	},
+	availability: {
+		workspace: "@bitovp/web",
+		directory: "apps/web",
+		files: {
+			"src/lib/server/local-semantic-readiness.redis.integration.test.ts": 8,
+		},
+	},
 	servers: {
 		TENANT_TEST_REDIS_URL: 16379,
 		VOD_REDELIVERY_TEST_REDIS_URL: 16380,
 		LIVE_CAPACITY_TEST_REDIS_URL: 16381,
+		CLIP_AVAILABILITY_TEST_REDIS_URL: 16382,
 	},
 };
 
@@ -127,7 +135,7 @@ function allowances(workspace, root) {
 	for (const [groups, where] of [
 		[GROUPS, "the PostgreSQL integration job runs them"],
 		[NATIVE_MEDIA, "the native media job runs them"],
-		[[REDIS.queues], "the Redis integration job runs them"],
+		[[REDIS.queues, REDIS.availability], "the Redis integration job runs them"],
 	])
 		for (const group of groups)
 			if (group.workspace === workspace)
@@ -522,6 +530,17 @@ async function runQueues(
 		);
 		notify(
 			`${REDIS.queues.workspace}: ${sum(REDIS.queues.files)} queue tests passed against Redis and PostgreSQL, 0 skipped`,
+		);
+		step = "running the clip availability matrix against Redis";
+		await runListed(
+			REDIS.availability,
+			"Redis",
+			join(directory, "redis-clip-availability.json"),
+			execute,
+			{ cwd: root, env: clean },
+		);
+		notify(
+			`${REDIS.availability.workspace}: ${sum(REDIS.availability.files)} clip availability tests passed against Redis, 0 skipped`,
 		);
 	} catch (error) {
 		throw atStep(asFailure(error), step);

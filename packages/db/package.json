@@ -13,6 +13,7 @@
 		"typecheck": "tsc --noEmit",
 		"db:migrate": "tsx scripts/migrate.ts dev",
 		"db:migrate:deploy": "tsx scripts/migrate.ts deploy",
+		"db:upgrade:preflight": "tsx scripts/upgrade-preflight.ts",
 		"db:runtime:init": "tsx scripts/prepare-runtime-role.ts --init-admin-env",
 		"db:runtime:import-admin": "tsx scripts/prepare-runtime-role.ts --import-existing-admin",
 		"db:runtime:prepare": "tsx scripts/prepare-runtime-role.ts",

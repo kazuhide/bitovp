@@ -8,6 +8,75 @@ legacy table/column that has not been created yet, there are no existing rows
 for that check. If a later migration already removed a column, that check is no
 longer applicable.
 
+## Inspect saved templates before replacing writers
+
+Using the candidate checkout and its installed dependencies, run this read-only
+check against the existing database before applying migrations or starting new
+Web/Worker processes:
+
+```sh
+pnpm --filter @bitovp/db db:upgrade:preflight --admin-env /absolute/private/path/.env.migrate
+```
+
+The administrative role must be able to inspect every organization (superuser
+or `BYPASSRLS`); a restricted runtime role is refused rather than reporting an
+empty inventory as healthy. The check runs in a read-only, repeatable-read
+transaction. Its JSON identifies affected template IDs, revisions, organization
+IDs and associated watch-rule IDs, including whether each rule is enabled. It
+does not print plans, object locations, names, ciphertext or secret values.
+Keep the output private. Exit code `2` means one or more templates would be
+refused by current structural validation or delivery commitments; `1` means
+the check itself failed. Both require investigation. Warnings remain advisory
+and are included in the report. This is not a provider-access, credential,
+model-readiness or deployment-capability test; job submission still applies
+those checks.
+
+In particular, the v1.2.1 `mezz-h264-1080p-50m` and `mezz-h265-2160p` presets
+used separate video/audio MP4 files. The current delivery specifications require
+one MP4 containing both streams. Saved templates with the old shape and a
+`REFUSE` delivery commitment are reported as
+`RELOAD_DELIVERY_PRESET_AND_RESAVE`. Open the current delivery preset, rebind
+its input/output credentials and locations, review the combined-stream file,
+and save the reviewed plan into the existing template. If choosing a new
+template ID, explicitly update the affected watch rules. Preserve those rules'
+existing `WatchedObject` rows: deleting/recreating a rule or clearing its history
+can rediscover old files and create additional billable jobs. The preflight
+never rewrites templates, weakens `REFUSE` into `WARN`, enables watch rules or
+creates jobs. Re-run it while writers remain paused after making the intended
+corrections. Existing finished-job plans remain historical snapshots.
+
+## Rehearse a version upgrade and database rollback
+
+The local rehearsal uses one dedicated PostgreSQL fixture and synthetic data.
+It does not connect to production, storage providers or an encoder:
+
+```sh
+node scripts/upgrade-rehearsal.mjs --base-ref v1.2.1 --output-directory /absolute/private/new-rehearsal-directory
+```
+
+The output directory must be new and outside the source checkout. The exact
+baseline commit must exist locally. The runner applies that commit's migrations,
+generates its matching Prisma client and uses its original encryption code to
+seed a password-authenticated user and membership, settings, encrypted credentials, account configuration, the two delivery
+templates, enabled watch rules, VOD history, Library registration and saved edit
+history. It then takes a real `pg_dump`, runs the candidate preflight and
+migrations, compares all pre-existing table contents, and checks decryption with
+the same key, verification of the old password hash, tenant isolation and a write to the new preview task table.
+
+Rollback restores the dump into a separate database and compares every table,
+RLS policy, grant, index, constraint, trigger, function and enum fingerprint.
+The exact baseline client and encryption code must read the restored settings,
+credentials and edit history. The retained report contains hashes/counts and
+identities; the key, database URLs and dump stay in the private temporary fixture
+and are removed with its owned container. `cleanup: passed` is written only
+after that cleanup succeeds.
+
+This proves the synthetic database/schema/reader transition. It does not prove
+a full Web/Worker image cutover, production host configuration or provider
+behavior. Record the candidate commit and source digest from the report; a run
+with `sourceClean: false` is development evidence and must be repeated on the
+final clean candidate. The rehearsal creates no release or tag.
+
 ## Before upgrading an existing database
 
 1. Record the current image revisions and active external resources. Close job,

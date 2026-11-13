@@ -395,20 +395,23 @@ Where a GPU score and a **Local CPU** score of one pair can still differ:
   makes other 8-bit pictures on x86-64 than on arm64. **Local CPU** therefore
   scores an encode that is scaled and compared in 8 bits differently on the
   two: 65.69 and 65.66 for the 640 × 360 encode of the table below, and up to
-  0.26 apart with test patterns. An encode of the reference's size, and a
-  comparison in 10 bits, scored the same on both. A GPU score is the **Local
-  CPU** score of a worker of the GPU worker's architecture:
+  0.26 apart with test patterns. An encode of the reference's size in 4:2:0,
+  and a comparison in 10 bits, scored the same on both, except at the widths of
+  the next point. A 4:2:2 encode of the reference's size that is compared in 8
+  bits has its chroma scaled, and scored up to 0.09 apart. A GPU score is the
+  **Local CPU** score of a worker of the GPU worker's architecture:
   [the score of one pair on arm64 and on x86-64](../FFMPEG-BUILD.md#the-score-of-one-pair-on-arm64-and-on-x86-64).
 - **References of some widths on arm64.** libvmaf's own score depends there on
   the number of threads that it runs with: widths of 168 to 264 that are 8 more
   than a multiple of 16 gave means up to 2.12 apart, and such widths up to 472
   gave smaller differences. On the x86-64 worker of the comparison no width
   did, and its scores for such widths are not those of arm64: a 360 × 640 pair
-  scored 56.27 there, and 47.99 or 48.58 on arm64:
+  scored 56.27 there, and on arm64 47.99 with one thread and 48.58 with four:
   [libvmaf and its thread count](../FFMPEG-BUILD.md#libvmaf-and-its-thread-count).
 
-Not measured: HDR files, which GPU scoring does not take; sizes above 1920 ×
-1080; and other GPUs and drivers than the two above.
+Not measured: a reference or an encode in HEVC or VP9; frame rates other than
+24 and 30; sizes above 1920 × 1080; HDR files, which GPU scoring does not take;
+and other GPUs and drivers than the two above.
 
 #### GPU results of scoring generations 9 and 10
 
@@ -467,8 +470,8 @@ So GPU scoring takes a reference in `yuv420p` or `yuv420p10le`, and a
 `yuvj420p` reference with an 8-bit 4:2:0 encode. Of the encode's pixel format it
 asks only that it is 4:2:0, 4:2:2 or 4:4:4 with 8, 10, 12 or 16 bits: an encode
 in 4:2:2 or 4:4:4, or with 10 or 12 bits, is scored against such a reference.
-16-bit encodes, and 4:4:4 encodes of more than 8 bits, were not among the
-measured ones.
+16-bit encodes, `yuv422p12le` and `yuvj444p` encodes, and 4:4:4 encodes of
+more than 8 bits, were not among the measured ones.
 
 The measurement ends before any scoring, with an error that names the reason:
 

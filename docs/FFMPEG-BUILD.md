@@ -3070,8 +3070,8 @@ context for the plain format and sets the range apart (`without_range` in
 `native/vmaf-gpu/src/decoder.cpp`), and its test `tests/runner_test.py` holds
 its 10-bit pictures of both names against the scale filter's. Ten comparisons
 of full-range pairs of one size, in the formats of the last three rows of the
-table of the 97, were added to test I, and every number of tests I and J is
-that of the scorer after this change. The scale filter of FFmpeg 6.1.1 gives
+table of the 97, were run for it, nine of them new to test I, and every number
+of tests I and J is that of the scorer after this change. The scale filter of FFmpeg 6.1.1 gives
 other 10-bit pictures for such an encode than that of the pinned n8.1.3, unless
 both ranges are named for it; the test names them.
 
@@ -3081,8 +3081,16 @@ with the combinations above in its test. It lets through more than was
 measured: an encode in any of the twelve pixel formats that the libvmaf filter
 takes or in `yuvj420p`, `yuvj422p` or `yuvj444p`, of which 16-bit encodes,
 `yuv422p12le`, `yuvj444p` and 4:4:4 encodes of more than 8 bits were not
-measured; and a colour matrix that both files name, which was measured for
-8-bit limited-range pairs only. It refuses more than was measured different:
+measured; a full-range encode in another format than `yuv420p`, `yuv420p10le`,
+`yuvj420p` or `yuvj422p`; and a colour matrix that both files name, which was
+measured for 8-bit limited-range pairs only. The review of PR #121 held 23
+more pairs against the pinned FFmpeg in the container of this test, with
+encodes in `yuvj444p`, `yuv444p`, `yuv444p10le`, `yuv420p12le`, `yuv422p12le`
+and `yuv420p16le`, at one size and scaled, in full and in limited range: the
+pictures that the scorer's decoder makes of the two files were FFmpeg's byte
+for byte, and libvmaf gave FFmpeg's mean on them. The scorer itself was not run
+on them, and nothing of them on a GPU. It refuses more than was measured
+different:
 every reference that is not `yuv420p`, `yuv420p10le` or, with an 8-bit 4:2:0
 encode, `yuvj420p`; every pair with one full-range file; and every pair whose
 files do not name the same colour matrix, by ffprobe's name for it.
@@ -3111,14 +3119,17 @@ build with the command that the worker's builder gives for a **Local CPU**
 measurement, the `fps` filter with the reference's frame rate included, and
 once more without that filter.
 
-209 comparisons: the 129 of test I; 17 with a 10-second 1920x1080 clip of Big
-Buck Bunny (240 frames); and 63 with small pictures and small encodes, which
-with eight of the 17 are the 71 of "The GPU scorer and small pictures".
+208 comparisons: the 128 pairs of test I; 17 with a 10-second 1920x1080 clip of
+Big Buck Bunny (240 frames); and 63 with small pictures and small encodes,
+which with eight of the 17 are the 71 of "The GPU scorer and small pictures".
+Test I counts one pair that the rule refuses twice, with the scorer at 8 and at
+10 bits; here the worker's rule decides the bit depth, and the pair is one
+comparison.
 
 | Comparisons | The worker's checks | FFmpeg | The scorer, on each GPU |
 |---|---|---|---|
 | 148 | both pass | scored all | scored all, over FFmpeg's number of frames |
-| 28 | the rule refuses | scored 24 | not started |
+| 27 | the rule refuses | scored 23 | not started |
 | 33 | the size check refuses | scored none | started all the same, it refused each |
 
 In the 148, the mean of the CUDA backend was within 0.0000015 of FFmpeg's and
@@ -3156,16 +3167,19 @@ the same clip in `yuv420p10le` (x264, CRF 10), with x264 encodes at CRF 26 in
 The scorer gave a score in 364 runs: 300 for the comparisons above, two of
 which test I lists twice, ten with one libvmaf thread, and 54 as the worker's
 calibration starts them, with 64 frames and with one, two and four frames in
-flight. Each compared at the rule's bit depth and declared nothing to CAMBI.
-Inside these runs, a frame's score from the GPU was within 0.000024 (CUDA) and
-0.000013 (Vulkan) of the CPU reference's, where the scorer's bound is 0.0001,
-and a feature within 0.00000007, where its bound is 0.000001 or more.
+flight; and in four more for the two pairs of "Frames that are not evenly
+spaced" below. Each of the 368 compared at the rule's bit depth and declared
+nothing to CAMBI. Inside these runs, a frame's score from the GPU was within
+0.000024 (CUDA) and 0.000014 (Vulkan) of the CPU reference's, where the
+scorer's bound is 0.0001, and a feature within 0.00000007, where its bound is
+0.000001 or more.
 
 FFmpeg without the `fps` filter gave the same mean over the same number of
-frames in each of the 172 comparisons that it scored. The files of the 63 small
+frames in each of the 171 comparisons that it scored. The files of the 63 small
 comparisons are 30 frames a second, the others 24.
 
-The 28 that the rule refuses are the 22 of test I and six of the small ones;
+The 27 that the rule refuses are the 21 pairs of test I's 22 and six of the
+small ones;
 `runNativeVmafScore` gave the rule's sentence for each and started no scorer.
 The 33 that the size check refuses are the five of test I and 28 of the small
 ones. FFmpeg gave no score for any of them, and the scorer, which a measurement
@@ -3207,9 +3221,13 @@ first two pairs went the same way: FFmpeg gave 19.313067 and 21.264858 with the
 filter, and 44.144341 and 52.956566 without it, which the scorer's CPU
 reference gave as well.
 
-Not measured: a reference or an encode in HEVC or VP9, and a 10-bit reference
-in a codec other than H.264; a size above 1920x1080; a frame rate other than 24
-and 30; a GPU of another model or with another driver; a scorer that is linked
+Not measured: a reference or an encode in HEVC or VP9, a reference in AV1, and
+a 10-bit reference in a codec other than H.264; a size above 1920x1080; a frame
+rate other than 24 and 30; a file whose frames are evenly spaced at another
+rate than ffprobe's `r_frame_rate` of it, which is the rate that the `fps`
+filter gets, where the worker's check before a GPU run reads `avg_frame_rate`
+(interlaced H.264 and MPEG-2 files that FFmpeg made gave one rate in both
+fields); a GPU of another model or with another driver; a scorer that is linked
 with other FFmpeg libraries than those of FFmpeg 6.1.1; and HDR files and
 decoding on the GPU, neither of which the worker gives to the scorer.
 
@@ -3239,8 +3257,9 @@ once with one thread and twice with four, with both programs: 77 widths from
 
 The five comparisons of test I with such widths were run again with one thread
 on both sides, twice: the two programs gave the same mean in all five, and the
-same in both runs. One of them, 360x640, gave 48.575988 with four threads in
-both programs and 47.988198 with one.
+same in both runs. One of them, 360x640, gave 47.988198 with one thread in
+both programs. With four threads FFmpeg gave 48.575988 in each of five runs,
+and the scorer's CPU reference in four of them, with 48.624643 in the fifth.
 
 For a pair of 216x160 the two programs' features were compared frame by frame,
 twice, with four threads: `integer_adm3` differed by up to 0.034 on a frame and
@@ -3302,7 +3321,8 @@ arm64 and eight on x86-64:
 | 10-bit | 960x540, 8-bit | 77.170642 | 77.170642 |
 | 10-bit | 640x360, 8-bit | 66.870929 | 66.870929 |
 
-The cause is the scale filter and not libvmaf. The pictures that the two
+For the second and the fourth row of the first table, and for the clip, the
+cause is the scale filter and not libvmaf. The pictures that the two
 `ffmpeg` programs make of one file have the same MD5 when they are decoded
 only, when a 320x180 encode is scaled to 640x360 into 10-bit pictures, when a
 4:2:2 encode is converted to 4:2:0 into 10-bit pictures, and when a 10-bit
@@ -3311,6 +3331,12 @@ or its chroma, into 8-bit pictures. With `flags=bicubic+accurate_rnd+bitexact`
 the scaled 8-bit pictures are the same on both, and they are those that arm64
 gives without these flags: the pictures of x86-64 are the ones that the flags
 change. The worker's command does not set them.
+
+For the last row the scale filter cannot be the cause: four of the five are
+pairs of one size in one format, which FFmpeg does not scale, and their means
+differ between the architectures with one libvmaf thread as well ("libvmaf and
+its thread count"). What makes libvmaf give another score for these widths on
+arm64 than on x86-64 was not looked for.
 
 The scorer shows the same: on each architecture its CPU reference, with that
 architecture's libswscale, gave the mean of that architecture's FFmpeg. For the
@@ -3816,8 +3842,9 @@ scorer and small pictures".
 | 2026-11-13 15:12 to 15:27 | | The first run of test J on the host of the GPU check, with the scorer of the first commit of PR #121, and the run over 77 widths on x86-64 |
 | 2026-11-13 15:42 | | Ten more comparisons of test I, with full-range pairs of one size: the scorer of the first commit of PR #121 scored one of them 0.42 below FFmpeg |
 | 2026-11-13 15:47 to 15:51 | | Every comparison of test I again, with the changed conversion of a full-range picture and with the `fps` filter in FFmpeg's command: the numbers of "Test I" |
-| 2026-11-13 15:53 to 16:01 | | Test J again with the changed conversion: the results of the run after it |
+| 2026-11-13 15:53 to 16:01 | | Test J again with the changed conversion; it gave the numbers of the run after it |
 | 2026-11-13 16:12 to 16:21 | | The scorer as PR #121 merged it, built on the host of the GPU check, and test J with it: the numbers of "Test J", of the 77 widths on x86-64 and of the pairs whose frames are not evenly spaced |
+| 2026-11-13 16:59 to 17:14 | | The review of PR #121, in test I's container: the scorer's test with the scorer before the changed conversion and after it, the pictures of the scorer's decoder beside FFmpeg's for 63 pairs, 23 of them with encodes in formats that test I does not hold, and the frame rates that ffprobe gives for interlaced files |
 
 PR #108 added `docker/vmaf-build-proof.sh`. `Dockerfile` and the directory
 `docker/` are the same at `87e70e9b` and at `42e5d926`. PR #112 changed

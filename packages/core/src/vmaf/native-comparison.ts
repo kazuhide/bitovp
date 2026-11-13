@@ -33,7 +33,8 @@
  * its thread count on arm64, were equal with one thread. In the 22 that the
  * rules refuse, the two scores differed by 0.00003 to 13.3. On a machine with
  * an NVIDIA and an AMD GPU, the CUDA and the Vulkan backend then gave FFmpeg's
- * score to within 0.000002 in every comparison that was scored there.
+ * score to within 0.000002 in the 148 comparisons of evenly spaced files that
+ * were scored there.
  * `native-comparison.test.ts` holds the rules against these measurements, and
  * "GPU scoring and libvmaf through FFmpeg" in docs/FFMPEG-BUILD.md records
  * them.

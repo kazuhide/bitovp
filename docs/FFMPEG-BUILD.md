@@ -2769,6 +2769,34 @@ The first rule rests on the `scale` filter. In four runs of the graph without
 it, which the worker does not build, the outcome was that of the encode's layout
 although both formats were among the twelve.
 
+Test H of 2026-11-12 took test D to the encodes that it had left out: each of
+the twelve formats, and full-range encodes. Its 216 runs used the `linux/amd64`
+programs of this build on the host of the GPU check, with the same graph, the
+same model and the same two sizes. 108 ended with status 0 and 108 with status
+139:
+
+- With a reference in `yuv420p` or `yuv444p` and the encode in each of the
+  twelve formats, the status was that of the reference's layout (48 runs).
+- With a reference that libvmaf does not take and the encode in each of the
+  twelve formats, the status was that of the encode's layout (120 runs). The
+  references were raw `nv12` and `gbrp`, and `yuvj420p`, `yuvj422p` and
+  `yuvj444p` from x264 and from FFmpeg's MJPEG encoder.
+- A full-range encode from the same two encoders took the reference's format
+  when that was `yuv420p`, `yuv422p` or `yuv444p` (18 runs). Against the five
+  references that libvmaf does not take, the `scale` filter gave it the
+  limited-range format of its own layout, `yuv420p` for `yuvj420p` and so on.
+  FFmpeg converted the reference to that format, and the status was that of the
+  encode's layout (30 runs).
+
+The 48 runs of the first item had been meant for full-range references. Raw
+video does not keep the name of a full-range format, and the files that were
+written as `yuvj420p` and `yuvj444p` came back as `yuv420p` and `yuv444p`.
+
+An encode in any other format was not measured in this way. In eight runs of
+the worker's command at 216x100 with a `yuvj420p` or `nv12` reference, the
+encodes in `nv12` and `p010le` ended with SpEED's message, and those in `gbrp`,
+`gray`, `yuv440p`, `yuvj440p` and `yuva444p` were scored.
+
 The statuses of this section are those of libvmaf without worker threads. The
 worker's command sets `n_threads` for a local run that has threads to give, and
 test G of 2026-11-12, 11 runs, ran the refusals with and without it. Where
@@ -2796,27 +2824,97 @@ What follows for bitovp:
   cloud. It gives the size of the reference. In the method of test B it gives
   4:2:0 and the size of the encode. In the method of test A it gives the
   reference's chroma layout when the reference's pixel format is one of the
-  twelve, by the first rule of test D, and no layout otherwise. A live
-  measurement asks once, after it has probed its source and before it captures
-  anything, and gives no layout. Where the layout is not known, the check takes
-  SpEED's limit for 4:4:4, the lowest, so that it refuses nothing that libvmaf
-  scores. When a run of the worker's own FFmpeg then ends with SpEED's message,
-  the error names the limit instead of FFmpeg's status. A cloud comparison of
-  that kind still reports only that it did not finish: its failure does not
-  come back with FFmpeg's output. The check changes no command and no score. It
-  does not apply to the GPU scorer, which is not libvmaf. It knows the limits of
-  this section and not those of the next.
+  twelve, by the first rule of test D. When it is not, a full-range reference
+  for example, and the pictures are too small for 4:2:0, it probes the encode
+  and gives the encode's layout, by the second rule of test D and by test H,
+  where the encode's format is one of the twelve or `yuvj420p`, `yuvj422p` or
+  `yuvj444p`. It gives no layout otherwise. A live measurement asks once, after
+  it has probed its source and before it captures anything, and gives no
+  layout. Where the layout is not known, the check takes SpEED's limit for
+  4:4:4, the lowest, so that it refuses nothing that libvmaf scores. When a run
+  of the worker's own FFmpeg then ends with SpEED's message, the error names
+  the limit instead of FFmpeg's status. A cloud comparison of that kind still
+  reports only that it did not finish: its failure does not come back with
+  FFmpeg's output. The check changes no command and no score. It is not made
+  for a comparison that the GPU scorer runs, which is not libvmaf: "The GPU
+  scorer and small pictures" below says what happens there. It knows the limits
+  of this section and not those of "libvmaf and large or very wide pictures".
 - `packages/core/src/vmaf/size-limits.ffmpeg.test.ts` holds those numbers
   against these programs in the job `native-media`. It builds its commands with
-  the worker's command builder and runs FFmpeg 177 times: every v1.0.16 model in
+  the worker's command builder and runs FFmpeg 190 times: every v1.0.16 model in
   the three layouts at SpEED's edge and one pixel below it, the twelve pixel
-  formats, CAMBI's 216, references and encodes in different formats, the
-  declared sizes of test C, and three models of the `vmaf_v0.6.1` family at
-  sizes that the v1.0.16 models refuse. It fails when a number no longer holds,
-  and when the image holds another set of v1.0.16 models than the eight.
+  formats, CAMBI's 216, references and encodes in different formats, full-range
+  ones among them, the declared sizes of test C, and three models of the
+  `vmaf_v0.6.1` family at sizes that the v1.0.16 models refuse. It fails when a
+  number no longer holds, and when the image holds another set of v1.0.16
+  models than the eight.
 - The copies of `cambi.c` and `speed.c` that were taken from the `master` branch
   of `Netflix/vmaf` on 2026-11-11 are byte for byte the pinned files. Both
   limits were therefore still in upstream's code on that day.
+
+### The GPU scorer and small pictures
+
+The repository's own GPU scorer, `native/vmaf-gpu`, is not this FFmpeg and not
+its libvmaf, and it has the same smallest pictures in rules of its own. 71
+comparisons of 2026-11-12 on the host of the GPU check record them: the scorer
+of `main` at `e6ff8d14`, built on that host, with its CUDA backend, started as
+the worker starts it, with `vmaf_v1.0.16_3d0h`, `vmaf_v1.0.16_5d0h` and
+`vmaf_v1.0.16_3d0h_2160`. It scored 22 and refused 49. Two things differ from
+the worker's command for libvmaf:
+
+- The scorer compares every pair in 4:2:0, whatever the two formats are. It
+  refused a `yuv444p` reference of 256x144 with all three models. libvmaf
+  scored that reference with `vmaf_v1.0.16_3d0h` and `vmaf_v1.0.16_5d0h` in the
+  method of test A.
+- The scorer declares the encode's own size to CAMBI in every run, as the
+  method of test B does and that of test A does not. With a reference of
+  640x360 it scored encodes of 256x144 and 216x144 and refused encodes of
+  214x144, 200x200, 144x144, 240x134 and 142x256, each with all three models.
+  libvmaf scored all seven with all three models in the method of test A.
+
+With these two, the rules of "libvmaf and small pictures" for 4:2:0 pictures
+and for a declared encode said for each of the 71 comparisons whether the
+scorer scored it. The comparisons were pairs of one size, from 16x16 to 320x180
+and 266x266, a reference of 640x360 with an encode of 320x180 and with the
+seven encodes above, and a reference of 1920x1080 with encodes of 640x360 to
+1920x1080.
+
+The scorer ends a refusal with status 1 and one line, which names no limit:
+
+| Line after `bitovp-vmaf: ` | Refusals | What was too small |
+|---|---|---|
+| `input is too small or too large for official SpEED chroma blocks` | 20 | the pictures, for SpEED |
+| `invalid Vulkan CAMBI encoding geometry` | 11 | the pictures or the encode: both sides below 216 |
+| `override official extractor cambi failed (libvmaf -22)` | 18 | the encode: a side below 144 |
+
+The second line names Vulkan and comes from the CUDA backend as well: the two
+backends share the code that writes it. The scorer's source holds a fourth
+line, `SPEED chroma is too small for its 5 by 5 block after prescale and
+decimation` (`vulkan/speed_parameters.hpp`). No run printed it: the check
+behind the first line holds the same arithmetic and comes earlier.
+
+Since PR #119 the worker names the limit when a run of the scorer ends with
+one of these lines and the sizes are below a limit of
+`packages/core/src/vmaf/size-limits.ts`: the same sentences as for libvmaf, for
+4:2:0 pictures and the declared encode. Every other failure of the scorer keeps
+the scorer's line, and the fourth line above is taken as the other three. The
+worker refuses nothing before the run. A test of `packages/core` holds the
+lines against the scorer's source, and the 71 stored results were held against
+the worker's function: it named every one of the 49 refusals, and its rules
+refuse none of the 22 comparisons that were scored.
+
+libvmaf scored 17 of the 49 refused comparisons in the method of test A: the
+five small encodes of the 640x360 reference with three models, and the
+`yuv444p` reference of 256x144 with two. For such a pair the worker's sentence
+ends by saying that the limit is that of GPU scoring and does not hold with
+**Local CPU**. It says so where the reference is in one of the twelve formats
+and the rules of "libvmaf and small pictures" for the reference's layout, with
+no declared encode, refuse nothing; in the stored results that is these 17 and
+no other. It promises no score: the sizes of "libvmaf and large or very wide
+pictures" pass these rules as well.
+
+Not measured: the Vulkan backend, a size above 1920x1080, an encode above 7680
+pixels, and a 10-bit encode.
 
 ### libvmaf and large or very wide pictures
 
@@ -3241,12 +3339,16 @@ What to measure again:
   was confirmed to be the same";
 - the check on a real NVIDIA GPU, when FFmpeg or the NVIDIA headers change;
 - the small-picture tests, when libvmaf or the models change. The appendix
-  holds the scripts of tests A and B. The edges that tests C and D measured are
-  in `packages/core/src/vmaf/size-limits.ffmpeg.test.ts`, which the job
+  holds the scripts of tests A and B. The edges that tests C and D measured,
+  and the rules of test H, are in
+  `packages/core/src/vmaf/size-limits.ffmpeg.test.ts`, which the job
   `native-media` runs: it fails when a limit has moved, and the numbers of
   `packages/core/src/vmaf/size-limits.ts` and of "libvmaf and small pictures"
   are then taken again. No test of the repository holds what tests E to G
   measured ("libvmaf and large or very wide pictures");
+- the comparisons of "The GPU scorer and small pictures", when the scorer in
+  `native/vmaf-gpu` changes what it compares or what it declares to CAMBI. A
+  test of `packages/core` fails when the scorer words a refusal differently;
 - the test of x264 with and without AVX-512, when x264 changes; "The VMAF means
   of the media job" names its commands. The names in `x264_cpu_names`
   (`common/cpu.c`) of the new revision are to be held against the rule for a
@@ -3259,10 +3361,11 @@ What to measure again:
 
 The capability lists, the small-picture tests A and B and the test of x264 can
 be repeated with this file and the repository, and the repository's test runs
-the edges of tests C and D. The comparison of "What was confirmed to be the
-same" and the check on a real GPU cannot: their sample files and scripts are
-kept with the research records, outside the repository, and so are the scripts
-and the result tables of tests C to G.
+the edges of tests C and D and the rules of test H. The comparison of "What
+was confirmed to be the same" and the check on a real GPU cannot: their sample
+files and scripts are kept with the research records, outside the repository,
+and so are the scripts and the result tables of tests C to H and of "The GPU
+scorer and small pictures".
 
 ### History
 
@@ -3294,6 +3397,9 @@ and the result tables of tests C to G.
 | 2026-11-12 14:06 | | The results of test E, on CAMBI's upper limit and on very wide pictures, were written |
 | 2026-11-12 14:09 | | The results of test F, on the smallest pictures of the `vmaf_v0.6.1` models and on the feature that the crash on very wide pictures comes with, were written |
 | 2026-11-12 14:16 | | The results of test G, on CAMBI's refusals with libvmaf's worker threads, were written |
+| 2026-11-12 20:33 to 20:38 | | The first 50 comparisons of "The GPU scorer and small pictures", on the host of the GPU check |
+| 2026-11-12 22:45 | | The other 21 comparisons of that section, with encodes smaller than their reference |
+| 2026-11-12 22:49 to 23:05 | | The results of test H, on the encode's pixel format in the method of test A, were written |
 
 PR #108 added `docker/vmaf-build-proof.sh`. `Dockerfile` and the directory
 `docker/` are the same at `87e70e9b` and at `42e5d926`. PR #112 changed

@@ -3,9 +3,11 @@ import {
 	localVmafExecutionSchema,
 	sampleAspectRatioFromProbe,
 	type VmafCommandOptions,
+	vmafChromaLayout,
+	vmafNativeSizeLimitFailureMessage,
 } from "@bitovp/core";
 import type { ProcessRunner } from "../feeder/supervisor";
-import { parseFrameRate } from "./geometry";
+import { parseFrameRate, pixelFormatFromProbe } from "./geometry";
 import {
 	type DecodePolicy,
 	presentationTransformReason,
@@ -160,9 +162,11 @@ export async function runNativeVmafScore(
 		if (result.code !== 0) throw new Error("NATIVE_UNSUPPORTED_INPUT_PROBE");
 		return result.stdout;
 	};
-	const reference = probeInput(
-		await probe(options.referencePath, context.referenceProbe),
+	const referenceProbe = await probe(
+		options.referencePath,
+		context.referenceProbe,
 	);
+	const reference = probeInput(referenceProbe);
 	const distorted = probeInput(
 		await probe(options.distortedPath, context.distortedProbe),
 	);
@@ -249,7 +253,19 @@ export async function runNativeVmafScore(
 		});
 		signal?.throwIfAborted();
 		if (run.code !== 0)
-			throw new Error(`NATIVE_SCORING_FAILED (${run.code}): ${run.stderr}`);
+			// The scorer refuses pictures and encodes that are too small for the
+			// model in words that name no limit. Where the limit is known, say it
+			// and what to do, and that it does not hold with Local CPU where
+			// libvmaf's limits for the reference's layout refuse nothing; every
+			// other failure keeps the scorer's words.
+			throw new Error(
+				vmafNativeSizeLimitFailureMessage(run.stderr, {
+					model: options.model,
+					...size,
+					declaredEncode: { width: original.width, height: original.height },
+					cpuChroma: vmafChromaLayout(pixelFormatFromProbe(referenceProbe)),
+				}) ?? `NATIVE_SCORING_FAILED (${run.code}): ${run.stderr}`,
+			);
 		const raw: unknown = JSON.parse(await readFile(receiptPath, "utf8"));
 		const verified = verifyNativeReceipt(raw, {
 			model: options.model,

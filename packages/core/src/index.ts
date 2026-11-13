@@ -1467,6 +1467,8 @@ export {
 	type VmafChromaLayout,
 	type VmafComparedPictures,
 	vmafChromaLayout,
+	vmafConvertedChromaLayout,
+	vmafNativeSizeLimitFailureMessage,
 	vmafSizeLimitFailureMessage,
 	vmafSizeLimitMessage,
 } from "./vmaf/size-limits";

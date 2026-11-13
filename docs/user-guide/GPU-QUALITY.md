@@ -318,6 +318,101 @@ workspace, and explicit host/device copy counters. Shared-memory buffer copies
 do not necessarily represent PCI Express traffic. GPU utilization alone does
 not establish a speed improvement.
 
+### GPU and CPU scores of an encode that is scaled up
+
+GPU scoring and **Local CPU** gave the same score when the encode had the size
+of the reference and both files were 8-bit 4:2:0. When the encode was smaller
+and was scaled up for the comparison, GPU scoring gave a higher score with a
+VMAF v1.0 model in every measured comparison. The table shows a 10-second
+1920 × 1080 reference of Big Buck Bunny (240 frames, 8-bit 4:2:0) and four
+H.264 encodes of it (x264, `veryfast`, CRF 26), scored on one worker with an
+NVIDIA RTX 5060 Ti:
+
+| Encode | Model | Local CPU | GPU scoring (CUDA) | Difference |
+| --- | --- | --- | --- | --- |
+| 1920 × 1080 | `vmaf_v1.0.16_3d0h` | 89.3967 | 89.3967 | 0 |
+| 1280 × 720 | `vmaf_v1.0.16_3d0h` | 83.0392 | 83.9955 | +0.96 |
+| 960 × 540 | `vmaf_v1.0.16_3d0h` | 76.5315 | 77.8302 | +1.30 |
+| 640 × 360 | `vmaf_v1.0.16_3d0h` | 65.6920 | 66.8866 | +1.19 |
+| 1920 × 1080 | `vmaf_v1.0.16_5d0h` | 91.7224 | 91.7224 | 0 |
+| 1280 × 720 | `vmaf_v1.0.16_5d0h` | 86.9876 | 87.9444 | +0.96 |
+| 960 × 540 | `vmaf_v1.0.16_5d0h` | 82.2540 | 83.5575 | +1.30 |
+| 640 × 360 | `vmaf_v1.0.16_5d0h` | 73.1233 | 74.3396 | +1.22 |
+
+In all, seven comparisons at equal sizes from 216 × 160 to 1920 × 1080 agreed
+to within 0.000001, and in fifteen comparisons of a scaled encode the GPU score
+was 0.96 to 1.50 higher. The other nine had a 640 × 360 reference, encodes of
+320 × 180, 256 × 144 and 216 × 144, and three models. Every file of these 22
+comparisons was 8-bit 4:2:0.
+
+Both methods scale the encode with the same bicubic filter. The difference
+comes from CAMBI, the banding feature inside the VMAF v1.0 models, which the
+two methods feed differently:
+
+- GPU scoring always compares 10-bit pictures, so it writes the scaled picture
+  with 10 bits. **Local CPU** compares in the reference's pixel format: with an
+  8-bit reference the scaled picture has 8 bits.
+- GPU scoring tells CAMBI the size and the bit depth that the encode had
+  before it was scaled, with libvmaf's options `enc_width`, `enc_height` and
+  `enc_bitdepth`. **Local CPU** does not. libvmaf's CAMBI documentation
+  describes these options for an encode that was scaled before the
+  measurement.
+
+With both applied by hand to the CPU method, libvmaf gave the GPU score to
+within 0.000001 in ten comparisons: the scaled encodes of the table, the
+320 × 180 encode with three models, and the first row. Applied in this order,
+the first raised the scores of the scaled encodes by 0.28 to 1.12 and the
+second by a further 0.23 to 0.67.
+
+Files that are not 8-bit 4:2:0 were not measured, and the two methods can
+differ there at equal sizes as well:
+
+- With a 10-bit reference and an 8-bit encode, both methods compare 10-bit
+  pictures, and only GPU scoring tells CAMBI that the encode had 8 bits. For
+  the first row of the table, with both files converted to 10 bits by hand,
+  libvmaf gave 88.1395 without the encode's bit depth and 89.3967 with it.
+- With an 8-bit reference and a 10-bit encode, **Local CPU** compares in the
+  reference's 8 bits, and GPU scoring compares 10-bit pictures and tells CAMBI
+  that the encode had 10.
+- With a 4:2:2 or 4:4:4 reference, GPU scoring compares in 4:2:0 and **Local
+  CPU** in the reference's layout.
+
+What follows:
+
+- Compare a score only with scores from the same scoring method. The quality
+  report shows the method that each measurement used.
+- **Local (GPU if available)** scores on the GPU where the worker has one and
+  on the CPU where it has not, so one choice can give either score.
+- The CPU reference that every GPU run computes uses the GPU method's pictures
+  and CAMBI settings. It checks the GPU arithmetic. It is not the **Local
+  CPU** score.
+- A measurement that decides a delivery gate uses CPU scoring, and a model
+  outside the eight VMAF v1.0 models is scored on the CPU with either choice.
+  The `vmaf_v0.6.1` family has no CAMBI feature.
+- bitovp does not convert one score into the other. The Vulkan scorer, other
+  content, 10-bit files and 4:2:2 or 4:4:4 references were not measured for
+  this note.
+
+### Small encodes and small references
+
+The VMAF v1.0 models do not score small pictures. GPU scoring refuses some
+small comparisons that **Local CPU** scores, because it compares every pair in
+4:2:0 and always tells CAMBI the encode's size:
+
+- An encode with a side below 144 pixels, or with both sides below 216, is
+  refused even when the reference is large. With a 640 × 360 reference, GPU
+  scoring scored encodes of 256 × 144 and 216 × 144 and refused 214 × 144,
+  200 × 200, 144 × 144, 240 × 134 and 142 × 256. **Local CPU** scored all
+  seven.
+- A small 4:4:4 or 4:2:2 reference is held to the limits of 4:2:0 pictures: at
+  least 160, 266 or 318 pixels in width and in height, depending on the model,
+  and 216 in one of the two.
+
+The measurement ends with an error that names the limit and what to do. Where
+the limit is that of GPU scoring alone, and the reference is in a pixel format
+that libvmaf takes as it is, the error says that it does not hold with **Local
+CPU**. A model of the `vmaf_v0.6.1` family scores smaller pictures.
+
 ## Measured examples
 
 The following standalone results compare the implementation before GPU kernel

@@ -19,6 +19,7 @@
 				"../../apps/**/*.tsx",
 				"../../packages/**/*.ts",
 				"../../scripts/**",
+				"../../native/vmaf-gpu/src/**",
 				"../../README.md",
 				"../../.github/workflows/hierarchical-flow.yml",
 				"../../package.json",

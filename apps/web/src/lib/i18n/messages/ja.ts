@@ -772,6 +772,10 @@ export const ja = {
 			"Dolby Atmos は Dolby Atmos のストリームからエンコードします。「ソース」で Dolby Atmos のストリームを追加し、このファイルの音声ソースに選んでください。",
 		visionStreamForVideo:
 			"これは Dolby Vision のストリームで、読めるのは H.264、H.265、AV1 の映像だけです。別のソースを選んでください。このままではジョブは拒否されます。",
+		sourceNotForVideo:
+			"このストリームからファイルの映像は作れません。別のソースを選んでください。このままではジョブは拒否されます。",
+		sourceNotForAudio:
+			"このストリームからファイルの音声は作れません。別のソースを選んでください。このままではジョブは拒否されます。",
 		sourceUnusedWithSequence:
 			"入力シーケンスを使っている間は使われません。すべてのファイルは「ソース」のシーケンスから書き出されます。",
 		sequenceWithoutAudio:

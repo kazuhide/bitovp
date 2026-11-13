@@ -798,6 +798,10 @@ export const en = {
 			"This is a Dolby Atmos stream, which only a Dolby Atmos track can read. Choose another source, or the job will be rejected.",
 		visionStreamForVideo:
 			"This is a Dolby Vision stream, which only H.264, H.265 or AV1 video can read. Choose another source, or the job will be rejected.",
+		sourceNotForVideo:
+			"A file's video cannot be made from this stream. Choose another source, or the job will be rejected.",
+		sourceNotForAudio:
+			"A file's audio cannot be made from this stream. Choose another source, or the job will be rejected.",
 		sourceUnusedWithSequence:
 			"Not used while the input sequence is on: every file is made from the sequence in the Sources step.",
 		sequenceWithoutAudio:

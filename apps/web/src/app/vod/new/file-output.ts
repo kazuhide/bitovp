@@ -498,17 +498,19 @@ export function readsAtmosStream(
 }
 
 /**
- * The Dolby stream a file's video or audio reads and cannot be encoded from. The
- * source lists offer every stream of the Sources step. An Atmos stream is read by a
- * Dolby Atmos track alone, and a Dolby Vision stream by H.264, H.265 or AV1 video
- * alone; the plan is refused for any other pair. A Dolby Atmos track that reads
- * something else is spoken of on its codec (`lacksAtmosSource`), not here.
+ * The stream a file's video or audio reads and cannot be encoded from. The source
+ * lists offer every stream of the Sources step. An Atmos stream is read by a Dolby
+ * Atmos track alone, and a Dolby Vision stream by H.264, H.265 or AV1 video alone;
+ * a Dolby Vision metadata stream and a subtitle file are read by neither, and a
+ * mixed audio stream not by video. The plan is refused for any such pair
+ * (`PLAN_STREAM_SOURCE_MISMATCH`). A Dolby Atmos track that reads something else
+ * than an Atmos stream is spoken of on its codec (`lacksAtmosSource`), not here.
  */
 export function misreadDolbyStream(
 	state: Pick<WizardState, "sources">,
 	rendition: WizardVideoRendition | WizardAudioRendition | undefined,
 	track: "video" | "audio",
-): "ATMOS" | "VISION" | undefined {
+): "ATMOS" | "VISION" | "OTHER" | undefined {
 	const source = rendition?.extras?.source;
 	if (rendition === undefined || source === undefined) return undefined;
 	const kind = (state.sources?.dolbyStreams ?? []).find(
@@ -516,6 +518,13 @@ export function misreadDolbyStream(
 	)?.kind;
 	if (kind === "ATMOS")
 		return rendition.codec === "DOLBY_ATMOS" ? undefined : "ATMOS";
+	if (
+		kind === "VISION_METADATA" ||
+		(state.sources?.fileStreams ?? []).some((file) => file.key === source) ||
+		(track === "video" &&
+			(state.sources?.audioMixStreams ?? []).some((mix) => mix.key === source))
+	)
+		return rendition.codec === "DOLBY_ATMOS" ? undefined : "OTHER";
 	if (kind !== "VISION") return undefined;
 	if (track === "audio")
 		return rendition.codec === "DOLBY_ATMOS" ? undefined : "VISION";

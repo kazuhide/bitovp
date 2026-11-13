@@ -244,8 +244,8 @@ function FileEditor({
 	visionMetadataKeys: string[];
 	atmosSourceMissing: boolean;
 	/** The Dolby stream the video, or the track, reads and cannot be made from. */
-	videoSourceMisread: "ATMOS" | "VISION" | undefined;
-	audioSourceMisread: "ATMOS" | "VISION" | undefined;
+	videoSourceMisread: "ATMOS" | "VISION" | "OTHER" | undefined;
+	audioSourceMisread: "ATMOS" | "VISION" | "OTHER" | undefined;
 	/** An input sequence is on, and the files are made from it. */
 	sourcesUnused: boolean;
 	/** That sequence has no audio, so no file has. */
@@ -475,7 +475,9 @@ function FileEditor({
 						? t("vodFlow.atmosStreamForAtmos")
 						: videoSourceMisread === "VISION"
 							? t("vodFlow.visionStreamForVideo")
-							: undefined
+							: videoSourceMisread === "OTHER"
+								? t("vodFlow.sourceNotForVideo")
+								: undefined
 				}
 				hint={sourcesUnused ? t("vodFlow.sourceUnusedWithSequence") : undefined}
 				onChange={(source) => onEdit({ source })}
@@ -566,7 +568,7 @@ function FileAudioEditor({
 	/** The codec is one Bitmovin's rules do not name beside Dolby Vision video. */
 	besideDolbyVision: boolean;
 	/** The Dolby stream the track reads and cannot be made from. */
-	sourceMisread: "ATMOS" | "VISION" | undefined;
+	sourceMisread: "ATMOS" | "VISION" | "OTHER" | undefined;
 	/** An input sequence is on, and the files are made from it. */
 	sourcesUnused: boolean;
 	/** That sequence has no audio, so the file is written without this track. */
@@ -710,7 +712,9 @@ function FileAudioEditor({
 								? t("vodFlow.atmosStreamForAtmos")
 								: sourceMisread === "VISION"
 									? t("vodFlow.visionStreamForVideo")
-									: undefined
+									: sourceMisread === "OTHER"
+										? t("vodFlow.sourceNotForAudio")
+										: undefined
 						}
 						hint={
 							sourcesUnused ? t("vodFlow.sourceUnusedWithSequence") : undefined

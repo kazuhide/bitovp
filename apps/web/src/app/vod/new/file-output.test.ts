@@ -462,8 +462,24 @@ describe("the containers the flow offers", () => {
 		dolbyStreams: [
 			{ kind: "ATMOS", key: "atmos", inputFile: "main", inputFormat: "ADM" },
 			{ kind: "VISION", key: "vision", videoInputFile: "main" },
+			{ kind: "VISION_METADATA", key: "meta", inputFile: "main" },
+		],
+		// A subtitle file and a mixed audio stream are in the source lists as well.
+		fileStreams: [{ fileType: "TTML", key: "ttml", inputFile: "main" }],
+		audioMixStreams: [
+			{
+				key: "mix",
+				audioMixChannels: [
+					{
+						sourceKey: "audio",
+						outputChannelType: "FRONT_LEFT",
+						sourceChannels: [{ type: "FRONT_LEFT" }],
+					},
+				],
+			},
 		],
 	};
+	const SOURCES = ["atmos", "vision", "meta", "ttml", "mix", ""] as const;
 	const sourceRefusals = (state: WizardState) =>
 		errorsOf(state)
 			.filter((issue) => issue.code === "PLAN_STREAM_SOURCE_MISMATCH")
@@ -472,9 +488,7 @@ describe("the containers the flow offers", () => {
 	it.each(
 		FILE_CONTAINERS.flatMap((container) =>
 			container.video.flatMap((codec) =>
-				(["atmos", "vision", ""] as const).map(
-					(source) => [container.kind, codec, source] as const,
-				),
+				SOURCES.map((source) => [container.kind, codec, source] as const),
 			),
 		),
 	)('say of the video of %s in %s reading the source "%s" what the plan is refused for', (kind, codec, source) => {
@@ -490,18 +504,20 @@ describe("the containers the flow offers", () => {
 		expect(said).toBe(
 			source === "atmos"
 				? "ATMOS"
-				: source === "vision" && codec === "VP9"
-					? "VISION"
-					: undefined,
+				: source === "vision"
+					? codec === "VP9"
+						? "VISION"
+						: undefined
+					: source === ""
+						? undefined
+						: "OTHER",
 		);
 	});
 
 	it.each(
 		FILE_CONTAINERS.flatMap((container) =>
 			container.audio.flatMap((codec) =>
-				(["atmos", "vision", ""] as const).map(
-					(source) => [container.kind, codec, source] as const,
-				),
+				SOURCES.map((source) => [container.kind, codec, source] as const),
 			),
 		),
 	)('say of the audio of %s in %s reading the source "%s" what the plan is refused for', (kind, codec, source) => {
@@ -516,11 +532,14 @@ describe("the containers the flow offers", () => {
 		const said = onSource !== undefined || lacksAtmosSource(state, track);
 		expect([said, sourceRefusals(state).length > 0]).toEqual([said, said]);
 		expect(onSource).toBe(
-			codec === "DOLBY_ATMOS" || source === ""
+			// A mixed stream is what the other audio codecs are made from.
+			codec === "DOLBY_ATMOS" || source === "" || source === "mix"
 				? undefined
 				: source === "atmos"
 					? "ATMOS"
-					: "VISION",
+					: source === "vision"
+						? "VISION"
+						: "OTHER",
 		);
 	});
 

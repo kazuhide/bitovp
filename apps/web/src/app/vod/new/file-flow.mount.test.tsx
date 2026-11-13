@@ -1812,6 +1812,7 @@ describe("VodWizard — the file-output flow", () => {
 							inputFormat: "ADM",
 						},
 						{ kind: "VISION", key: "vision", videoInputFile: "main" },
+						{ kind: "VISION_METADATA", key: "meta", inputFile: "main" },
 					],
 				},
 			},
@@ -1842,6 +1843,18 @@ describe("VodWizard — the file-output flow", () => {
 		await user.selectOptions(audio, "");
 		expect(audio).not.toHaveAccessibleDescription();
 		expect(refused()).toBe(0);
+		// The lists offer the metadata stream too, which neither is made from.
+		await user.selectOptions(video, "meta");
+		expect(video).toHaveAccessibleDescription(
+			"A file's video cannot be made from this stream. Choose another source, or the job will be rejected.",
+		);
+		expect(refused()).toBe(1);
+		await user.selectOptions(video, "");
+		await user.selectOptions(audio, "meta");
+		expect(audio).toHaveAccessibleDescription(
+			"A file's audio cannot be made from this stream. Choose another source, or the job will be rejected.",
+		);
+		expect(refused()).toBe(1);
 	});
 
 	it("says that AV1 with Dolby Vision is no file of this screen, and of audio beside Dolby Vision that Bitmovin names AAC and Dolby Atmos", async () => {

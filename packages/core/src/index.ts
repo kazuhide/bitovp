@@ -1022,6 +1022,7 @@ export type {
 	PlanValidationOptions,
 } from "./plan/validate";
 export {
+	DOLBY_VISION_AUDIO_CODECS,
 	MUXING_CODEC_MATRIX,
 	planHasErrors,
 	UNMEASURED_MUXING_KINDS,

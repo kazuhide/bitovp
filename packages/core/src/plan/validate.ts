@@ -152,6 +152,20 @@ export const UNVERIFIED_DOLBY_VISION_MUXING_KINDS: readonly PlanMuxing["kind"][]
 	["PROGRESSIVE_TS", "PROGRESSIVE_MOV"];
 
 /**
+ * The audio codecs Bitmovin's VOD rulebook takes beside Dolby Vision video in
+ * one muxing: "Muxings carrying Dolby Vision video may only contain AAC or
+ * DOLBY_ATMOS audio streams." Another audio codec there raises
+ * `PLAN_MUXING_DOLBY_VISION_AUDIO`, a warning and not a refusal: `AC3` and
+ * `EAC3` were accepted beside Dolby Vision before the rule was read, no encode
+ * of the pair has been run by this app, and a plan that was accepted is not
+ * refused on a reading.
+ */
+export const DOLBY_VISION_AUDIO_CODECS: readonly string[] = [
+	"AAC",
+	"DOLBY_ATMOS",
+];
+
+/**
  * Kinds for which this app has no live run on record. Each one raises
  * `PLAN_MUXING_UNMEASURED_KIND` — a warning, never a block: the request shape
  * is the SDK's own, so it may well be accepted, and an error would forbid a
@@ -1515,6 +1529,38 @@ export function validatePlan(
 					});
 				}
 			}
+			// Audio beside Dolby Vision video in one container. A codec the row
+			// does not hold, or one already warned of as unlisted, has its issue.
+			const dolbyVisionVideo = containerKeys.find((streamKey) => {
+				const packaged = renditionByKey.get(streamKey);
+				return (
+					(packaged?.codec === "H265" || packaged?.codec === "AV1") &&
+					packaged.dynamicRangeFormat?.startsWith("DOLBY_VISION")
+				);
+			});
+			if (dolbyVisionVideo !== undefined) {
+				for (const [at, streamKey] of containerKeys.entries()) {
+					const packaged = renditionByKey.get(streamKey);
+					if (
+						!packaged ||
+						!AUDIO_CODECS.has(packaged.codec) ||
+						DOLBY_VISION_AUDIO_CODECS.includes(packaged.codec) ||
+						!allowed[muxing.kind].includes(packaged.codec) ||
+						UNVERIFIED_MUXING_CODECS[muxing.kind]?.includes(packaged.codec)
+					) {
+						continue;
+					}
+					issues.push({
+						code: "PLAN_MUXING_DOLBY_VISION_AUDIO",
+						level: "warning",
+						message: `muxing "${muxing.key}" (${muxing.kind}) packages the ${packaged.codec} rendition "${packaged.key}" beside the Dolby Vision rendition "${dolbyVisionVideo}": Bitmovin's rules for a muxing that carries Dolby Vision video name AAC and Dolby Atmos audio only, and this app has no live encode of the pair — the encoding may be refused, so check the first output before relying on it, or carry the audio as AAC`,
+						path:
+							at === 0
+								? `muxings[${index}].streamKey`
+								: `muxings[${index}].additionalStreamKeys[${at - 1}]`,
+					});
+				}
+			}
 			// AV1 in a fragmented MP4 is taken for DASH on-demand only. Bitmovin's
 			// VOD rulebook: "AV1 streams in a fragmented MP4 muxing are only
 			// allowed when fragmentedMP4MuxingManifestType is DASH_ON_DEMAND or
@@ -1535,7 +1581,7 @@ export function validatePlan(
 					issues.push({
 						code: "PLAN_MP4_AV1_FRAGMENTED_MANIFEST_TYPE",
 						level: "error",
-						message: `muxing "${muxing.key}" is a fragmented MP4 ${muxing.manifestType === undefined ? "with no manifestType, which Bitmovin reads as SMOOTH" : `for ${muxing.manifestType}`} and packages the AV1 rendition "${streamKey}": Bitmovin takes AV1 in a fragmented MP4 for DASH_ON_DEMAND only — set manifestType to DASH_ON_DEMAND, drop fragmentDuration to write a plain MP4 file, or package the rendition as fMP4`,
+						message: `muxing "${muxing.key}" is a fragmented MP4 ${muxing.manifestType === undefined ? "with no manifestType, which Bitmovin reads as SMOOTH," : `for ${muxing.manifestType}`} and packages the AV1 rendition "${streamKey}": Bitmovin takes AV1 in a fragmented MP4 for DASH_ON_DEMAND only — set manifestType to DASH_ON_DEMAND, drop fragmentDuration to write a plain MP4 file, or package the rendition as fMP4`,
 						path:
 							at === 0
 								? `muxings[${index}].streamKey`
@@ -2104,7 +2150,7 @@ export function validatePlan(
 			// Does THIS manifest emit any EXT-X-MEDIA audio entry? Mirrors the
 			// compiler's own selection: an audio rendition's muxing, filtered by
 			// `audioMuxingKind` when the manifest pins one.
-			for (const [mxIndex, muxing] of hlsMuxings.entries()) {
+			for (const muxing of hlsMuxings) {
 				const r = renditionByKey.get(muxing.streamKey);
 				if (
 					r?.codec === "OPUS" &&
@@ -2115,7 +2161,7 @@ export function validatePlan(
 						level: "error",
 						message:
 							"Opus/WebM is available through DASH; exclude its audio leg from HLS and provide a supported HLS audio track",
-						path: `muxings[${mxIndex}]`,
+						path: `muxings[${plan.muxings.indexOf(muxing)}]`,
 					});
 				// The same track inside a variant's container is the same audio
 				// on the same playlist: an MP4 holds Opus beside its video since

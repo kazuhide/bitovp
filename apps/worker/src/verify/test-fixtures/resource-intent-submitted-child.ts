@@ -117,5 +117,6 @@ const intent = await ledger.prepare({
 	resourceName: "kill-window [verify restart]",
 });
 await intent.submitted();
-process.stdout.write("SUBMITTED_DURABLE\n");
+// The process id tells the test that the process it kills is this one.
+process.stdout.write(`SUBMITTED_DURABLE ${process.pid}\n`);
 setInterval(() => {}, 1_000);

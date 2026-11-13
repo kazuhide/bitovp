@@ -1274,6 +1274,10 @@ describe("validation rails", () => {
 				"muxings[0].additionalStreamKeys[0]",
 			],
 		]);
+		for (const codec of ["DDPLUS", "DD", "AC3"]) {
+			expect(issuesOf(vision, codec, "PROGRESSIVE_TS"), codec).toEqual(warned);
+		}
+		expect(issuesOf(vision, "AAC", "PROGRESSIVE_TS")).toEqual([]);
 		expect(issuesOf(vision, "DD", "PROGRESSIVE_MOV")).toEqual(warned);
 		expect(issuesOf(vision, "DDPLUS", "PROGRESSIVE_MOV")).toEqual([
 			[

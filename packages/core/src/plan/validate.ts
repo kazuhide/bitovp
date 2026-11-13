@@ -141,6 +141,17 @@ export const MUXING_CODEC_MATRIX: Record<
 };
 
 /**
+ * Whole-file kinds whose row holds H.265 and for which no Bitmovin source read
+ * for the table says anything of Dolby Vision. Bitmovin's sources name Dolby
+ * Vision for fMP4 and MP4 only; its formats page lists it as an output without
+ * crossing it with the containers. A Dolby Vision rendition in one of these
+ * raises `PLAN_MUXING_UNVERIFIED_CODEC`, as a codec in
+ * `UNVERIFIED_MUXING_CODECS` does.
+ */
+export const UNVERIFIED_DOLBY_VISION_MUXING_KINDS: readonly PlanMuxing["kind"][] =
+	["PROGRESSIVE_TS", "PROGRESSIVE_MOV"];
+
+/**
  * Kinds for which this app has no live run on record. Each one raises
  * `PLAN_MUXING_UNMEASURED_KIND` — a warning, never a block: the request shape
  * is the SDK's own, so it may well be accepted, and an error would forbid a
@@ -1482,7 +1493,21 @@ export function validatePlan(
 					issues.push({
 						code: "PLAN_MUXING_UNVERIFIED_CODEC",
 						level: "warning",
-						message: `muxing "${muxing.key}" (${muxing.kind}) packages the ${packaged.codec} rendition "${packaged.key}": no Bitmovin document names that combination, as supported or as not, and this app has no live encode of it — the encoding may be refused, so check the first output before relying on it`,
+						message: `muxing "${muxing.key}" (${muxing.kind}) packages the ${packaged.codec} rendition "${packaged.key}": no Bitmovin document was found that names that combination, as supported or as not, and this app has no live encode of it — the encoding may be refused, so check the first output before relying on it`,
+						path:
+							at === 0
+								? `muxings[${index}].streamKey`
+								: `muxings[${index}].additionalStreamKeys[${at - 1}]`,
+					});
+				} else if (
+					packaged.codec === "H265" &&
+					packaged.dynamicRangeFormat?.startsWith("DOLBY_VISION") &&
+					UNVERIFIED_DOLBY_VISION_MUXING_KINDS.includes(muxing.kind)
+				) {
+					issues.push({
+						code: "PLAN_MUXING_UNVERIFIED_CODEC",
+						level: "warning",
+						message: `muxing "${muxing.key}" (${muxing.kind}) packages the Dolby Vision rendition "${packaged.key}": the Bitmovin documents read for this check name Dolby Vision for fMP4 and MP4 only, and this app has no live encode of it in this container — the encoding may be refused or the file may carry no Dolby Vision signalling, so check the first output before relying on it`,
 						path:
 							at === 0
 								? `muxings[${index}].streamKey`
@@ -1490,13 +1515,41 @@ export function validatePlan(
 					});
 				}
 			}
-			// The one combination Bitmovin documents as refused and this table
-			// still admits: AV1 with another stream in one progressive WebM
-			// ("Added validation that if AV1 is used in progressive WebM muxing,
-			// no other streams are allowed in that muxing", REST API Services
-			// 1.4.0). The note is old and nothing newer says either way, so the
-			// plan is warned and not refused: the provider answers at muxing
-			// creation, before anything is encoded.
+			// AV1 in a fragmented MP4 is taken for DASH on-demand only. Bitmovin's
+			// VOD rulebook: "AV1 streams in a fragmented MP4 muxing are only
+			// allowed when fragmentedMP4MuxingManifestType is DASH_ON_DEMAND or
+			// NONE." A plan cannot say NONE, and the API reads a fragmented MP4
+			// with no type as Smooth ("If this is not set, Smooth Streaming is
+			// assumed", Mp4Muxing reference), so DASH_ON_DEMAND is the one type
+			// left. The row held no AV1 before, which refused these with every
+			// other AV1 MP4; an unfragmented AV1 MP4 is the file the row gained.
+			if (
+				muxing.kind === "MP4" &&
+				muxing.fragmentDuration !== undefined &&
+				muxing.manifestType !== "DASH_ON_DEMAND"
+			) {
+				for (const [at, streamKey] of containerKeys.entries()) {
+					if (renditionByKey.get(streamKey)?.codec !== "AV1") {
+						continue;
+					}
+					issues.push({
+						code: "PLAN_MP4_AV1_FRAGMENTED_MANIFEST_TYPE",
+						level: "error",
+						message: `muxing "${muxing.key}" is a fragmented MP4 ${muxing.manifestType === undefined ? "with no manifestType, which Bitmovin reads as SMOOTH" : `for ${muxing.manifestType}`} and packages the AV1 rendition "${streamKey}": Bitmovin takes AV1 in a fragmented MP4 for DASH_ON_DEMAND only — set manifestType to DASH_ON_DEMAND, drop fragmentDuration to write a plain MP4 file, or package the rendition as fMP4`,
+						path:
+							at === 0
+								? `muxings[${index}].streamKey`
+								: `muxings[${index}].additionalStreamKeys[${at - 1}]`,
+					});
+				}
+			}
+			// AV1 with another stream in one progressive WebM is in the table and
+			// in a Bitmovin release note as refused ("Added validation that if
+			// AV1 is used in progressive WebM muxing, no other streams are
+			// allowed in that muxing", REST API Services 1.4.0). The note is old
+			// and no later one was found that says either way, so the plan is
+			// warned and not refused: the provider answers at muxing creation,
+			// before anything is encoded.
 			if (
 				muxing.kind === "PROGRESSIVE_WEBM" &&
 				containerKeys.length > 1 &&
@@ -1507,7 +1560,7 @@ export function validatePlan(
 				issues.push({
 					code: "PLAN_MUXING_AV1_NOT_ALONE",
 					level: "warning",
-					message: `muxing "${muxing.key}" puts AV1 video and ${containerKeys.length - 1 === 1 ? "another stream" : "other streams"} in one progressive WebM file: Bitmovin's API release notes say such a muxing takes no other stream beside AV1, and nothing newer says otherwise — the encoding may be refused, so check the first output, or write the AV1 video to a file of its own or to an MP4`,
+					message: `muxing "${muxing.key}" puts AV1 video and ${containerKeys.length - 1 === 1 ? "another stream" : "other streams"} in one progressive WebM file: Bitmovin's API release notes say such a muxing takes no other stream beside AV1, and no later note was found that says otherwise — the encoding may be refused, so check the first output, or write the AV1 video to a file of its own, or to an MP4 with AAC audio`,
 					path: `muxings[${index}].additionalStreamKeys`,
 				});
 			}
@@ -2063,6 +2116,24 @@ export function validatePlan(
 						message:
 							"Opus/WebM is available through DASH; exclude its audio leg from HLS and provide a supported HLS audio track",
 						path: `muxings[${mxIndex}]`,
+					});
+				// The same track inside a variant's container is the same audio
+				// on the same playlist: an MP4 holds Opus beside its video since
+				// the row was widened, and the leg above is judged by its first
+				// stream only.
+				const isVideo = r !== undefined && VIDEO_CODECS_FOR_MODE.has(r.codec);
+				if (
+					isVideo &&
+					hlsLegSelected(muxing.kind, manifest.videoMuxingKind) &&
+					muxingStreamKeys(muxing)
+						.slice(1)
+						.some((key) => renditionByKey.get(key)?.codec === "OPUS")
+				)
+					issues.push({
+						code: "PLAN_HLS_OPUS_WEBM_UNSUPPORTED",
+						level: "error",
+						message: `muxing "${muxing.key}" is a variant of this HLS manifest and carries Opus audio; Opus is available through DASH — carry a supported HLS audio codec in this container, or leave the muxing out of the manifest`,
+						path: `muxings[${plan.muxings.indexOf(muxing)}].additionalStreamKeys`,
 					});
 			}
 			const hlsAudioMediaCount = hlsLegs.filter((m) => {

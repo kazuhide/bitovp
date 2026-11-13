@@ -26,6 +26,7 @@ import {
 } from "./template";
 import {
 	MUXING_CODEC_MATRIX,
+	UNVERIFIED_DOLBY_VISION_MUXING_KINDS,
 	UNVERIFIED_MUXING_CODECS,
 	validatePlan,
 } from "./validate";
@@ -1162,7 +1163,183 @@ describe("validation rails", () => {
 			}),
 		);
 		expect(issue?.message).toBe(
-			'muxing "file" (MP4) packages the OPUS rendition "a": no Bitmovin document names that combination, as supported or as not, and this app has no live encode of it — the encoding may be refused, so check the first output before relying on it',
+			'muxing "file" (MP4) packages the OPUS rendition "a": no Bitmovin document was found that names that combination, as supported or as not, and this app has no live encode of it — the encoding may be refused, so check the first output before relying on it',
+		);
+		// The first stream of a container is judged as the others are.
+		expect(
+			validatePlan(
+				planWith({
+					renditions: [OPUS],
+					muxings: [
+						audioFile("PROGRESSIVE_TS", { kind: "MP4", filename: "a.mp4" }),
+					],
+				}),
+			).map((issue) => [issue.code, issue.level, issue.path]),
+		).toEqual([
+			["PLAN_MUXING_UNVERIFIED_CODEC", "warning", "muxings[0].streamKey"],
+		]);
+	});
+
+	it("warns of Dolby Vision in a .ts or .mov file, which Bitmovin names for fMP4 and MP4 only", () => {
+		const issuesOf = (kind: string, dynamicRangeFormat: string) =>
+			validatePlan(
+				planWith({
+					renditions: [{ ...H264, codec: "H265", dynamicRangeFormat }, AAC],
+					muxings: [file("PROGRESSIVE_TS", { kind, filename: "movie.bin" })],
+				}),
+			)
+				.filter((issue) => issue.code !== "PLAN_MUXING_UNMEASURED_KIND")
+				.map((issue) => [issue.code, issue.level, issue.path]);
+		const warned = [
+			["PLAN_MUXING_UNVERIFIED_CODEC", "warning", "muxings[0].streamKey"],
+		];
+		expect(UNVERIFIED_DOLBY_VISION_MUXING_KINDS).toEqual([
+			"PROGRESSIVE_TS",
+			"PROGRESSIVE_MOV",
+		]);
+		for (const format of [
+			"DOLBY_VISION",
+			"DOLBY_VISION_PROFILE_5",
+			"DOLBY_VISION_PROFILE_8_1",
+		]) {
+			expect(issuesOf("PROGRESSIVE_TS", format)).toEqual(warned);
+			expect(issuesOf("PROGRESSIVE_MOV", format)).toEqual(warned);
+			// MP4 is the container Bitmovin's release notes name for it.
+			expect(issuesOf("MP4", format)).toEqual([]);
+		}
+		// Another dynamic range is not its subject.
+		expect(issuesOf("PROGRESSIVE_TS", "HDR10")).toEqual([]);
+		expect(issuesOf("PROGRESSIVE_MOV", "HLG")).toEqual([]);
+		const [issue] = validatePlan(
+			planWith({
+				renditions: [
+					{
+						...H264,
+						codec: "H265",
+						dynamicRangeFormat: "DOLBY_VISION_PROFILE_8_1",
+					},
+					AAC,
+				],
+				muxings: [file("PROGRESSIVE_TS")],
+			}),
+		);
+		expect(issue?.message).toBe(
+			'muxing "file" (PROGRESSIVE_TS) packages the Dolby Vision rendition "v": the Bitmovin documents read for this check name Dolby Vision for fMP4 and MP4 only, and this app has no live encode of it in this container — the encoding may be refused or the file may carry no Dolby Vision signalling, so check the first output before relying on it',
+		);
+	});
+
+	it("takes AV1 in an MP4 file, and in a fragmented MP4 for DASH on-demand only", () => {
+		const mp4 = (over: Muxing = {}): Muxing => {
+			const { additionalStreamKeys: _audio, ...alone } = file(
+				"PROGRESSIVE_TS",
+				{ kind: "MP4", filename: "video.mp4" },
+			);
+			return { ...alone, ...over };
+		};
+		const issuesOf = (video: Rendition, over: Muxing) =>
+			validatePlan(planWith({ renditions: [video], muxings: [mp4(over)] })).map(
+				(issue) => [issue.code, issue.level, issue.path],
+			);
+		const refused = [
+			[
+				"PLAN_MP4_AV1_FRAGMENTED_MANIFEST_TYPE",
+				"error",
+				"muxings[0].streamKey",
+			],
+		];
+		const fragmented = { fragmentDuration: 4000 };
+		// The whole file the row gained, and the one fragmented type Bitmovin takes.
+		expect(issuesOf(AV1, {})).toEqual([]);
+		expect(
+			issuesOf(AV1, { ...fragmented, manifestType: "DASH_ON_DEMAND" }),
+		).toEqual([]);
+		// A type with no fragmentDuration is a whole file: the API reads the type
+		// only beside a fragment duration.
+		expect(issuesOf(AV1, { manifestType: "HLS_BYTE_RANGES" })).toEqual([]);
+		expect(
+			issuesOf(AV1, { ...fragmented, manifestType: "HLS_BYTE_RANGES" }),
+		).toEqual(refused);
+		expect(issuesOf(AV1, { ...fragmented, manifestType: "SMOOTH" })).toEqual(
+			refused,
+		);
+		// No type is Smooth to the API.
+		expect(issuesOf(AV1, fragmented)).toEqual(refused);
+		// The rule is AV1's: the same containers hold H.264 and H.265.
+		for (const over of [
+			fragmented,
+			{ ...fragmented, manifestType: "HLS_BYTE_RANGES" },
+			{ ...fragmented, manifestType: "SMOOTH" },
+		]) {
+			expect(issuesOf(H264, over)).toEqual([]);
+			expect(issuesOf({ ...H264, codec: "H265" }, over)).toEqual([]);
+		}
+		const messageOf = (over: Muxing) =>
+			validatePlan(planWith({ renditions: [AV1], muxings: [mp4(over)] }))[0]
+				?.message;
+		expect(messageOf({ ...fragmented, manifestType: "HLS_BYTE_RANGES" })).toBe(
+			'muxing "file" is a fragmented MP4 for HLS_BYTE_RANGES and packages the AV1 rendition "v": Bitmovin takes AV1 in a fragmented MP4 for DASH_ON_DEMAND only — set manifestType to DASH_ON_DEMAND, drop fragmentDuration to write a plain MP4 file, or package the rendition as fMP4',
+		);
+		expect(messageOf(fragmented)).toBe(
+			'muxing "file" is a fragmented MP4 with no manifestType, which Bitmovin reads as SMOOTH and packages the AV1 rendition "v": Bitmovin takes AV1 in a fragmented MP4 for DASH_ON_DEMAND only — set manifestType to DASH_ON_DEMAND, drop fragmentDuration to write a plain MP4 file, or package the rendition as fMP4',
+		);
+	});
+
+	it("refuses Opus inside an MP4 that an HLS manifest lists, as it refuses the same track in a leg of its own", () => {
+		const variant: Muxing = {
+			...file("PROGRESSIVE_TS", { kind: "MP4", filename: "video.mp4" }),
+			fragmentDuration: 4000,
+			manifestType: "HLS_BYTE_RANGES",
+			destination: { outputKey: "out", path: "x/video" },
+		};
+		const hls = { ...manifests[0], audioGroupId: undefined };
+		const issuesOf = (
+			renditions: Rendition[],
+			muxings: Muxing[],
+			listed: Record<string, unknown>[],
+		) =>
+			validatePlan(planWith({ renditions, muxings, manifests: listed })).map(
+				(issue) => [issue.code, issue.level, issue.path],
+			);
+		const unverified = [
+			"PLAN_MUXING_UNVERIFIED_CODEC",
+			"warning",
+			"muxings[0].additionalStreamKeys[0]",
+		];
+		expect(issuesOf([H264, OPUS], [variant], [hls])).toEqual([
+			unverified,
+			[
+				"PLAN_HLS_OPUS_WEBM_UNSUPPORTED",
+				"error",
+				"muxings[0].additionalStreamKeys",
+			],
+		]);
+		// The same container with AAC is a variant like any other.
+		expect(issuesOf([H264, AAC], [variant], [hls])).toEqual([]);
+		// No manifest lists it: a file, and what is said of it is the warning.
+		expect(issuesOf([H264, OPUS], [variant], [])).toEqual([unverified]);
+		// A manifest pinned to its fMP4 legs does not list the MP4 either.
+		expect(
+			issuesOf(
+				[H264, OPUS, { ...AAC, key: "a2" }],
+				[variant, fmp4("vmux", "v", "x/v"), fmp4("amux", "a2", "x/a")],
+				[
+					{
+						...manifests[0],
+						videoMuxingKind: "FMP4",
+						audioMuxingKind: "FMP4",
+					},
+				],
+			),
+		).toEqual([unverified]);
+		const message = validatePlan(
+			planWith({
+				renditions: [H264, OPUS],
+				muxings: [variant],
+				manifests: [hls],
+			}),
+		).find((issue) => issue.code === "PLAN_HLS_OPUS_WEBM_UNSUPPORTED")?.message;
+		expect(message).toBe(
+			'muxing "file" is a variant of this HLS manifest and carries Opus audio; Opus is available through DASH — carry a supported HLS audio codec in this container, or leave the muxing out of the manifest',
 		);
 	});
 
@@ -1218,7 +1395,22 @@ describe("validation rails", () => {
 			],
 		]);
 		expect(issues[1]?.message).toBe(
-			'muxing "file" puts AV1 video and another stream in one progressive WebM file: Bitmovin\'s API release notes say such a muxing takes no other stream beside AV1, and nothing newer says otherwise — the encoding may be refused, so check the first output, or write the AV1 video to a file of its own or to an MP4',
+			'muxing "file" puts AV1 video and another stream in one progressive WebM file: Bitmovin\'s API release notes say such a muxing takes no other stream beside AV1, and no later note was found that says otherwise — the encoding may be refused, so check the first output, or write the AV1 video to a file of its own, or to an MP4 with AAC audio',
+		);
+		// Two tracks beside it are one warning, in the plural.
+		const two = validatePlan(
+			planWith({
+				renditions: [AV1, OPUS, { ...OPUS, key: "a2", bitrate: 96000 }],
+				muxings: [
+					file("PROGRESSIVE_WEBM", { additionalStreamKeys: ["a", "a2"] }),
+				],
+			}),
+		).filter((issue) => issue.code === "PLAN_MUXING_AV1_NOT_ALONE");
+		expect(two.map((issue) => [issue.level, issue.path])).toEqual([
+			["warning", "muxings[0].additionalStreamKeys"],
+		]);
+		expect(two[0]?.message).toContain(
+			"puts AV1 video and other streams in one progressive WebM file",
 		);
 		// AV1 alone in the file is what the note allows, and VP9 is not its subject.
 		const { additionalStreamKeys: _audio, ...videoOnly } =

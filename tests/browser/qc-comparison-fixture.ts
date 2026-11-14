@@ -1,12 +1,17 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import {
 	type Browser,
 	type BrowserContext,
 	expect,
+	type Locator,
 	type Page,
 	type TestInfo,
 } from "@playwright/test";
+import {
+	syntheticCombinedReports,
+	verifyCombinedQcBrowser,
+} from "./qc-combined-fixture";
 
 const JOBS = [
 	"11111111-1111-4111-8111-111111111101",
@@ -14,8 +19,31 @@ const JOBS = [
 ] as const;
 const FPS = 30;
 const FRAME_COUNT = 90;
+const BANDING_JOBS = [
+	"77777777-7777-4777-8777-777777777701",
+	"88888888-8888-4888-8888-888888888802",
+] as const;
+const EXTRA_BANDING_JOBS = [
+	"99999999-9999-4999-8999-999999999901",
+	"99999999-9999-4999-8999-999999999902",
+	"99999999-9999-4999-8999-999999999903",
+	"99999999-9999-4999-8999-999999999904",
+	"99999999-9999-4999-8999-999999999905",
+] as const;
 const MEDIA_SHA256 =
 	"8f6d6e262b56e40348b9a5ea6f9266bacdb95ed97fe2b5212422921d24dda13e";
+const CAMBI_MEDIA = [
+	{
+		file: "qc-comparison-origin-0.5.mp4",
+		sha256: "8950501ccf16de44afe92373523c1d5bc246eee18f5e770e374d13b465345ce5",
+		origin: 0.5,
+	},
+	{
+		file: "qc-comparison-origin-1.mp4",
+		sha256: "8400c570d35ca03e5da64ebbf410386bf4bec1846000231dcff35f202f309eea",
+		origin: 1,
+	},
+] as const;
 
 /** These scores exercise the UI; they are not VMAF measurement evidence. */
 function result(
@@ -87,7 +115,7 @@ function result(
 	};
 }
 
-function syntheticReports() {
+export function syntheticReports() {
 	const scores = Array.from({ length: FRAME_COUNT }, (_, index) =>
 		index === 45 ? -5 : index < 30 ? 92 : index < 60 ? 98 : 108,
 	);
@@ -143,14 +171,126 @@ function syntheticReports() {
 	}));
 }
 
+/** Deliberately model-free and variable-rate: CAMBI follows measured seconds. */
+export function syntheticBandingReports() {
+	const timestamps = [0, 0.125, 0.5, 1.125, 1.8];
+	const durations = [0.125, 0.375, 0.625, 0.675, 0.2];
+	return [...BANDING_JOBS, ...EXTRA_BANDING_JOBS].map((id, index) => ({
+		id,
+		kind: "BANDING",
+		detector: "CAMBI",
+		encodingJobId: null,
+		encodingName: `SYNTHETIC CAMBI ${String.fromCharCode(65 + index)}`,
+		execution: { backend: "LOCAL" },
+		computeTasks: [],
+		mode: "VOD",
+		model: null,
+		reference: null,
+		subsample: null,
+		scoringVersion: 3,
+		status: "FINISHED",
+		error: null,
+		totalUnits: 3,
+		doneUnits: 3,
+		cores: 1,
+		threads: 1,
+		concurrency: 1,
+		createdAt: "2026-11-14T00:00:00Z",
+		updatedAt: "2026-11-14T00:00:00Z",
+		results: ["primary", "secondary", "alternate"].map((name, slot) => {
+			const scores = slot === 1 ? [2, 5, 8, 11, 6, 1] : [1, 4, 12, 23, 7, 3];
+			return {
+				id: name,
+				renditionRef: {
+					label: `CAMBI ${String.fromCharCode(65 + index)} ${name}`,
+					height: 90,
+					bitrate: 60_000 + slot * 10_000,
+				},
+				pooled: {
+					banding: {
+						mean: scores.reduce((sum, score) => sum + score, 0) / scores.length,
+						min: Math.min(...scores),
+						max: Math.max(...scores),
+						frameCount: scores.length,
+						durationSeconds: 3,
+					},
+				},
+				bandingExecution: {
+					version: 1,
+					metric: "CAMBI_NR",
+					backend: "cpu",
+					implementation: "libvmaf",
+					decisionSource: "CPU_REFERENCE",
+					coverage: {
+						complete: true,
+						frameCount: scores.length,
+						durationSeconds: 3,
+						startTimeSeconds: 0,
+						endTimeSeconds: 3,
+						timingSource: "PRESENTATION_TIMESTAMPS_AND_FRAME_DURATION",
+					},
+				},
+				bandingFrameCount: scores.length,
+				// The retained full coverage extends beyond the last chart sample.
+				bandingFrames: scores.slice(0, -1).map((cambi, point) => ({
+					frameNum: point,
+					timestampSeconds: timestamps[point],
+					durationSeconds: durations[point],
+					cambi,
+				})),
+				bandingPreview: {
+					url: `/api/qc-browser-fixture/${id}/${name}.mp4?metric=banding`,
+				},
+			};
+		}),
+	}));
+}
+
+function syntheticQcIndex() {
+	return [
+		...syntheticReports(),
+		...syntheticBandingReports(),
+		...syntheticCombinedReports(syntheticReports(), syntheticBandingReports()),
+	].map((report) => ({
+		id: report.id,
+		encodingJobId: null,
+		encodingName: report.encodingName,
+		mode: report.mode,
+		model: report.model,
+		scoringVersion: report.scoringVersion,
+		status: report.status,
+		error: report.error,
+		createdAt: report.createdAt,
+		...("detector" in report
+			? {
+					kind: report.kind,
+					detector: report.detector,
+					renditionMeans: [],
+					renditionBanding: report.results.map((row) => ({
+						label: row.renditionRef.label,
+						mean: row.pooled.banding.mean,
+						max: row.pooled.banding.max,
+					})),
+				}
+			: {
+					renditionMeans: report.results.map((row) => ({
+						label: row.renditionRef.label,
+						mean: row.pooled.mean,
+					})),
+				}),
+	}));
+}
+
 const videoState = (page: Page) =>
 	page.locator("video").evaluateAll((videos) =>
 		videos.map((video) => {
 			if (!(video instanceof HTMLVideoElement))
 				throw new Error("Expected a video element");
 			return {
+				source: video.currentSrc,
 				time: video.currentTime,
 				paused: video.paused,
+				seeking: video.seeking,
 				ready: video.readyState,
 				width: video.videoWidth,
 				height: video.videoHeight,
@@ -159,6 +299,432 @@ const videoState = (page: Page) =>
 			};
 		}),
 	);
+
+async function selectRendition(selector: Locator, label: string) {
+	const options = await selector.locator("option").evaluateAll((options) =>
+		options.map((option) => ({
+			value: option.getAttribute("value"),
+			label: option.textContent ?? "",
+		})),
+	);
+	const selected = options.filter((option) => option.label.includes(label));
+	expect(selected).toHaveLength(1);
+	const value = selected[0]?.value;
+	if (!value) throw new Error("Expected one CAMBI preview rendition");
+	await selector.selectOption(value);
+}
+
+type NativeTimingObservation = {
+	kind: string;
+	source: string;
+	time: number;
+	duration: number;
+	mediaTime?: number;
+	presentedFrames?: number;
+};
+
+const nativeTimings = (page: Page) =>
+	page.evaluate(
+		() =>
+			(
+				window as Window & {
+					qcCambiNativeTiming?: NativeTimingObservation[];
+				}
+			).qcCambiNativeTiming ?? [],
+	);
+
+/** Shared with focused runtime QA; all report/media responses remain synthetic. */
+export async function verifyCambiComparisonBrowser(
+	page: Page,
+	context: BrowserContext,
+	info: TestInfo,
+) {
+	// Observe real native events without replacing the decoder, clocks or callbacks.
+	await context.addInitScript(() => {
+		const observations: NativeTimingObservation[] = [];
+		Object.assign(window, { qcCambiNativeTiming: observations });
+		const seen = new WeakSet<HTMLVideoElement>();
+		const track = (video: HTMLVideoElement) => {
+			if (seen.has(video)) return;
+			seen.add(video);
+			const record = (
+				kind: string,
+				extra: Partial<NativeTimingObservation> = {},
+			) =>
+				observations.push({
+					kind,
+					source: video.currentSrc || video.src,
+					time: video.currentTime,
+					duration: video.duration,
+					...extra,
+				});
+			for (const kind of ["loadedmetadata", "durationchange", "seeked"])
+				video.addEventListener(kind, () => record(kind));
+			video.requestVideoFrameCallback((_now, metadata) =>
+				record("first-presented", {
+					mediaTime: metadata.mediaTime,
+					presentedFrames: metadata.presentedFrames,
+				}),
+			);
+		};
+		new MutationObserver((records) => {
+			for (const record of records)
+				for (const node of Array.from(record.addedNodes)) {
+					if (node instanceof HTMLVideoElement) track(node);
+					else if (node instanceof Element)
+						for (const video of Array.from(node.querySelectorAll("video")))
+							track(video);
+				}
+		}).observe(document, { childList: true, subtree: true });
+	});
+	await context.addCookies([
+		{ name: "ovp-locale", value: "en", url: new URL(page.url()).origin },
+	]);
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	for (const mode of ["detail", "comparison"] as const) {
+		await page.goto(
+			mode === "detail"
+				? `/qc/${BANDING_JOBS[0]}`
+				: `/qc/compare?jobs=${BANDING_JOBS.join(",")}`,
+		);
+		await page
+			.getByRole("button", { name: "Open comparison preview", exact: true })
+			.click();
+		const preview = page.getByRole("region", {
+			name: "Open comparison preview",
+			exact: true,
+		});
+		await selectRendition(
+			page.getByRole("combobox", { name: "Rendition A", exact: true }),
+			"CAMBI A primary",
+		);
+		await selectRendition(
+			page.getByRole("combobox", { name: "Rendition B", exact: true }),
+			`CAMBI ${mode === "detail" ? "A" : "B"} secondary`,
+		);
+		await expect(page.locator("video")).toHaveCount(2);
+		await expect
+			.poll(async () =>
+				(await videoState(page)).every(
+					(video) =>
+						video.ready >= 2 &&
+						video.width === 160 &&
+						video.height === 90 &&
+						video.decoded > 0 &&
+						new URL(video.source).searchParams.get("metric") === "banding",
+				),
+			)
+			.toBe(true);
+		await expect(preview).toContainText("CAMBI");
+		await expect(preview).not.toContainText(/VMAF|\bfps\b/);
+		await expect(
+			page.getByRole("spinbutton", { name: "Selected frame", exact: true }),
+		).toHaveCount(0);
+		const time = page.getByRole("spinbutton", {
+			name: "Presentation time (s)",
+			exact: true,
+		});
+		const captions = preview.locator("figcaption");
+		await expect(captions).toHaveCount(2);
+		const origins = CAMBI_MEDIA.map((media) => media.origin);
+		const initial = await videoState(page);
+		await expect
+			.poll(async () => {
+				const observations = await nativeTimings(page);
+				return initial.every((video, index) =>
+					observations.some(
+						(observation) =>
+							observation.source === video.source &&
+							observation.kind === "first-presented" &&
+							observation.presentedFrames === 1 &&
+							observation.mediaTime === origins[index],
+					),
+				);
+			})
+			.toBe(true);
+		const seek = async (seconds: number) => {
+			await time.fill(String(seconds));
+			await time.press("Tab");
+			await expect
+				.poll(async () => Number(await time.inputValue()))
+				.toBeCloseTo(seconds, 3);
+			await expect
+				.poll(async () =>
+					(await videoState(page)).every(
+						(video, index) =>
+							video.ready >= 2 &&
+							!video.seeking &&
+							Math.abs(video.time - (origins[index] ?? 0) - seconds) < 0.04,
+					),
+				)
+				.toBe(true);
+		};
+		// Neither the last displayed sample (2s) nor the MP4's initially advertised
+		// duration may truncate the complete 3s presentation-time coverage.
+		expect(Number(await time.getAttribute("max"))).toBeGreaterThanOrEqual(3);
+		await seek(2.85);
+		for (let index = 0; index < initial.length; index++) {
+			const video = initial[index];
+			const target = (origins[index] ?? 0) + 2.85;
+			if (video && video.duration < target - 0.04)
+				await expect
+					.poll(async () =>
+						(await nativeTimings(page)).some(
+							(observation) =>
+								observation.source === video.source &&
+								observation.kind === "durationchange" &&
+								observation.duration >= target,
+						),
+					)
+					.toBe(true);
+		}
+		for (const caption of await captions.all())
+			await expect(caption).toContainText("Not in the displayed score sample");
+		await expect(
+			page.getByRole("button", { name: "Next measured point", exact: true }),
+		).toBeDisabled();
+		await seek(1.26);
+		await expect(captions.nth(0)).toContainText("CAMBI 23.0");
+		await expect(captions.nth(1)).toContainText("CAMBI 11.0");
+		await page
+			.getByRole("button", { name: "Next measured point", exact: true })
+			.click();
+		await expect
+			.poll(async () => Number(await time.inputValue()))
+			.toBeCloseTo(1.8, 3);
+		await expect(captions.nth(0)).toContainText("CAMBI 7.0");
+		await expect(captions.nth(1)).toContainText("CAMBI 6.0");
+		await page
+			.getByRole("button", { name: "Previous measured point", exact: true })
+			.click();
+		await expect
+			.poll(async () => Number(await time.inputValue()))
+			.toBeCloseTo(1.125, 3);
+		await seek(1.26);
+		await page.getByRole("button", { name: "Play both", exact: true }).click();
+		await expect(
+			page.getByRole("button", { name: "Pause both", exact: true }),
+		).toBeVisible();
+		await expect
+			.poll(async () => {
+				const videos = await videoState(page);
+				const relative = videos.map(
+					(video, index) => video.time - (origins[index] ?? 0),
+				);
+				return (
+					videos.every(
+						(video, index) => !video.paused && (relative[index] ?? 0) > 1.46,
+					) && Math.abs((relative[0] ?? 0) - (relative[1] ?? 0)) < 0.15
+				);
+			})
+			.toBe(true);
+		await page.getByRole("button", { name: "Pause both", exact: true }).click();
+		await expect
+			.poll(async () => (await videoState(page)).every((video) => video.paused))
+			.toBe(true);
+		const playbackPosition = Number(await time.inputValue());
+		const afterPlay = await videoState(page);
+		expect(
+			Math.abs(
+				playbackPosition - ((afterPlay[0]?.time ?? 0) - (origins[0] ?? 0)),
+			),
+		).toBeLessThan(0.15);
+		const expectedResults = syntheticBandingReports()[0]?.results.slice(0, 2);
+		expect(expectedResults).toHaveLength(2);
+		for (const [index, result] of (expectedResults ?? []).entries()) {
+			const score = result.bandingFrames.find(
+				(frame) =>
+					playbackPosition >= (frame.timestampSeconds ?? Number.NaN) &&
+					playbackPosition <
+						(frame.timestampSeconds ?? Number.NaN) +
+							(frame.durationSeconds ?? Number.NaN),
+			)?.cambi;
+			await expect(captions.nth(index)).toContainText(
+				score === undefined
+					? "Not in the displayed score sample"
+					: `CAMBI ${score.toFixed(1)}`,
+			);
+		}
+		const chart = page
+			.getByRole("img", { name: /CAMBI by presentation time/ })
+			.first();
+		await chart.locator(".recharts-scatter-symbol").nth(3).click();
+		await expect
+			.poll(async () => Number(await time.inputValue()))
+			.toBeCloseTo(1.125, 3);
+		await expect
+			.poll(async () =>
+				(await videoState(page)).every(
+					(video, index) =>
+						Math.abs(video.time - (origins[index] ?? 0) - 1.125) < 0.04,
+				),
+			)
+			.toBe(true);
+		const oldVideo = await page.locator("video").first().elementHandle();
+		expect(oldVideo).not.toBeNull();
+		await selectRendition(
+			page.getByRole("combobox", { name: "Rendition A", exact: true }),
+			"CAMBI A alternate",
+		);
+		await expect
+			.poll(async () =>
+				(await videoState(page)).every(
+					(video) => video.ready >= 2 && video.decoded > 0,
+				),
+			)
+			.toBe(true);
+		expect(
+			await oldVideo?.evaluate((video) => {
+				if (!(video instanceof HTMLVideoElement))
+					throw new Error("Expected a video element");
+				return {
+					connected: video.isConnected,
+					paused: video.paused,
+					src: video.getAttribute("src"),
+				};
+			}),
+		).toEqual({ connected: false, paused: true, src: null });
+		await oldVideo?.dispose();
+		await page.screenshot({
+			path: info.outputPath(`cambi-${mode}-1440.png`),
+			fullPage: true,
+		});
+		writeFileSync(
+			info.outputPath(`cambi-${mode}-native-timing.json`),
+			JSON.stringify(
+				{
+					evidenceScope: "Generated MP4 bytes and synthetic CAMBI scores",
+					origins,
+					initial,
+					observations: await nativeTimings(page),
+				},
+				null,
+				2,
+			),
+		);
+		const closing = await page.locator("video").elementHandles();
+		await page
+			.getByRole("button", { name: "Close comparison preview", exact: true })
+			.click();
+		await expect(page.locator("video")).toHaveCount(0);
+		for (const video of closing) {
+			expect(
+				await video.evaluate((element) => {
+					if (!(element instanceof HTMLVideoElement))
+						throw new Error("Expected a video element");
+					return {
+						connected: element.isConnected,
+						paused: element.paused,
+						src: element.getAttribute("src"),
+					};
+				}),
+			).toEqual({ connected: false, paused: true, src: null });
+			await video.dispose();
+		}
+	}
+	await page.goto("/qc");
+	await page
+		.getByRole("checkbox", {
+			name: "Select report SYNTHETIC CAMBI A",
+			exact: true,
+		})
+		.check();
+	await page
+		.getByRole("checkbox", {
+			name: "Select report SYNTHETIC CAMBI B",
+			exact: true,
+		})
+		.check();
+	const compare = page.getByRole("button", {
+		name: "Compare selected",
+		exact: true,
+	});
+	await expect(compare).toBeEnabled();
+	for (const letter of ["C", "D", "E", "F"]) {
+		await page
+			.getByRole("checkbox", {
+				name: `Select report SYNTHETIC CAMBI ${letter}`,
+				exact: true,
+			})
+			.check();
+	}
+	await expect(compare).toBeEnabled();
+	await page
+		.getByRole("checkbox", {
+			name: "Select report SYNTHETIC CAMBI G",
+			exact: true,
+		})
+		.check();
+	await expect(compare).toBeDisabled();
+	for (const letter of ["C", "D", "E", "F", "G"]) {
+		await page
+			.getByRole("checkbox", {
+				name: `Select report SYNTHETIC CAMBI ${letter}`,
+				exact: true,
+			})
+			.uncheck();
+	}
+	await expect(compare).toBeEnabled();
+	const vmaf = page.getByRole("checkbox", {
+		name: "Select report SYNTHETIC H264 UI fixture",
+		exact: true,
+	});
+	await vmaf.check();
+	await expect(compare).toBeDisabled();
+	await vmaf.uncheck();
+	await expect(compare).toBeEnabled();
+	await compare.click();
+	await expect(page).toHaveURL(
+		new RegExp(`/qc/compare\\?jobs=${BANDING_JOBS.join(",")}$`),
+	);
+	await page.goto(`/qc/compare?jobs=${JOBS[0]},${BANDING_JOBS[0]}`);
+	await expect(
+		page.getByRole("alert").filter({
+			hasText: "Compare VMAF reports together, or CAMBI-only reports together.",
+		}),
+	).toContainText(
+		"Compare VMAF reports together, or CAMBI-only reports together.",
+	);
+	await expect(
+		page.getByRole("button", { name: "Open comparison preview", exact: true }),
+	).toHaveCount(0);
+	await expect(page.locator(".recharts-wrapper")).toHaveCount(0);
+	await context.addCookies([
+		{ name: "ovp-locale", value: "ja", url: new URL(page.url()).origin },
+	]);
+	await page.setViewportSize({ width: 320, height: 1000 });
+	for (const mode of ["detail", "comparison"] as const) {
+		await page.goto(
+			mode === "detail"
+				? `/qc/${BANDING_JOBS[0]}`
+				: `/qc/compare?jobs=${BANDING_JOBS.join(",")}`,
+		);
+		await page
+			.getByRole("button", { name: "比較プレビューを開く", exact: true })
+			.click();
+		await expect(
+			page.getByRole("spinbutton", { name: "再生位置（秒）", exact: true }),
+		).toBeVisible();
+		await expect(page.locator("video")).toHaveCount(2);
+		await expect
+			.poll(async () =>
+				(await videoState(page)).every(
+					(video) => video.ready >= 2 && video.decoded > 0,
+				),
+			)
+			.toBe(true);
+		await page.evaluate(() => document.fonts.ready);
+		await expect
+			.poll(() =>
+				page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+			)
+			.toBe(true);
+		await page.screenshot({
+			path: info.outputPath(`cambi-${mode}-ja-320.png`),
+			fullPage: true,
+		});
+	}
+}
 
 /** Measure rendered plots, rather than accepting layout class names as proof. */
 export async function verifyQcChartLayout(
@@ -285,9 +851,36 @@ export async function verifyQcComparisonBrowser(
 	);
 	expect(bytes.length).toBeLessThanOrEqual(50_000);
 	expect(createHash("sha256").update(bytes).digest("hex")).toBe(MEDIA_SHA256);
-	const reports = syntheticReports();
-	const mediaPaths = new Set(
-		reports.flatMap((report) => report.results.map((row) => row.preview.url)),
+	const cambiBytes = CAMBI_MEDIA.map((media) => {
+		const bytes = readFileSync(
+			new URL(`./fixtures/${media.file}`, import.meta.url),
+		);
+		expect(bytes.length).toBeLessThanOrEqual(50_000);
+		expect(createHash("sha256").update(bytes).digest("hex")).toBe(media.sha256);
+		return bytes;
+	});
+	const combinedReports = syntheticCombinedReports(
+		syntheticReports(),
+		syntheticBandingReports(),
+	);
+	const reports = [
+		...syntheticReports(),
+		...syntheticBandingReports(),
+		...combinedReports,
+	];
+	const mediaPaths = new Map(
+		reports.flatMap((report) =>
+			report.results.flatMap((row) => {
+				const paths: (readonly [string, Buffer])[] = [];
+				if ("preview" in row) paths.push([row.preview.url, bytes]);
+				if ("bandingPreview" in row) {
+					const data = cambiBytes[row.id === "secondary" ? 1 : 0];
+					if (!data) throw new Error("Synthetic CAMBI media is missing");
+					paths.push([row.bandingPreview.url, data]);
+				}
+				return paths;
+			}),
+		),
 	);
 	const context = await browser.newContext({
 		baseURL,
@@ -310,7 +903,10 @@ export async function verifyQcComparisonBrowser(
 			(row) => url.pathname === `/api/vmaf-jobs/${row.id}`,
 		);
 		if (report && !url.search) return route.fulfill({ json: report });
-		if (mediaPaths.has(url.pathname) && !url.search) {
+		if (url.pathname === "/api/vmaf-jobs" && !url.search)
+			return route.fulfill({ json: { items: syntheticQcIndex() } });
+		const bytes = mediaPaths.get(`${url.pathname}${url.search}`);
+		if (bytes) {
 			const range = request.headers().range;
 			const match =
 				range === undefined ? null : /^bytes=(\d+)-(\d*)$/.exec(range);
@@ -563,6 +1159,8 @@ export async function verifyQcComparisonBrowser(
 				}
 			}
 		}
+		await verifyCambiComparisonBrowser(page, context, info);
+		await verifyCombinedQcBrowser(page, context, info, combinedReports);
 		expect(unexpected).toEqual([]);
 	} finally {
 		try {

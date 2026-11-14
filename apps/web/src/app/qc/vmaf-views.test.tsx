@@ -93,6 +93,67 @@ afterEach(() => {
 });
 
 describe("VmafReport", () => {
+	it("starts combined reports on VMAF with one preview and a collapsed summary, then switches metrics", async () => {
+		const base = detail();
+		const result = base.results[0];
+		if (!result) throw new Error("Combined fixture requires a rendition");
+		const job = detail({
+			banding: true,
+			results: [
+				{
+					...result,
+					preview: { url: "/vmaf.mp4" },
+					pooled: {
+						...result.pooled,
+						banding: {
+							mean: 3,
+							min: 3,
+							max: 3,
+							frameCount: 1,
+							durationSeconds: 0.04,
+						},
+					},
+					bandingFrames: [
+						{
+							frameNum: 0,
+							timestampSeconds: 0,
+							durationSeconds: 0.04,
+							cambi: 3,
+						},
+					],
+					bandingPreview: { url: "/cambi.mp4" },
+				},
+			],
+		});
+		apiFetch.mockResolvedValue(job);
+		wrap(<VmafReport id={job.id} />);
+		const vmafTab = await screen.findByRole("tab", {
+			name: "VMAF",
+		});
+		expect(vmafTab).toHaveAttribute("aria-selected", "true");
+		expect(
+			screen.getAllByRole("button", { name: "Open comparison preview" }),
+		).toHaveLength(1);
+		const summary = screen.getByText("Pooled summary").closest("details");
+		expect(summary).not.toHaveAttribute("open");
+		expect(summary?.querySelector("table")).toBeInTheDocument();
+		expect(
+			screen.getByRole("figure", { name: "VMAF distribution" }),
+		).toBeInTheDocument();
+		await userEvent.click(screen.getByRole("tab", { name: "CAMBI" }));
+		expect(screen.getByRole("tabpanel", { name: "CAMBI" })).toBeInTheDocument();
+		expect(
+			screen.getAllByRole("button", { name: "Open comparison preview" }),
+		).toHaveLength(1);
+		expect(
+			screen.queryByRole("figure", { name: "VMAF distribution" }),
+		).not.toBeInTheDocument();
+		await userEvent.click(vmafTab);
+		expect(
+			screen.getByRole("figure", { name: "VMAF distribution" }),
+		).toBeInTheDocument();
+	});
+
 	it("confirms stopping only the selected cloud measurement", async () => {
 		const job = detail({
 			status: "RUNNING",
@@ -666,6 +727,119 @@ describe("VmafLabClient (index)", () => {
 		// Two selected → enabled; clicking routes to /qc/compare with both ids.
 		expect(compareBtn).not.toBeDisabled();
 		await user.click(compareBtn);
+		expect(routerPush).toHaveBeenCalledWith(`/qc/compare?jobs=${a},${b}`);
+	});
+
+	it.each([
+		2, 6,
+	])("compares %i FINISHED CAMBI-only reports from the Lab", async (count) => {
+		const rows = Array.from({ length: count }, (_, i) =>
+			listItem({
+				id: `${i + 1}1111111-1111-4111-8111-111111111111`,
+				kind: "BANDING",
+				detector: "CAMBI",
+				model: null,
+				renditionMeans: [],
+				renditionBanding: [{ label: "360p", mean: 3, max: 5 }],
+			}),
+		);
+		apiFetch.mockResolvedValue(page(rows));
+		wrap(<VmafLabClient />);
+		await userEvent.setup().click(
+			await screen.findByRole("checkbox", {
+				name: "Select all loaded reports",
+			}),
+		);
+		const compare = screen.getByRole("button", { name: "Compare selected" });
+		expect(compare).toBeEnabled();
+		await userEvent.setup().click(compare);
+		expect(routerPush).toHaveBeenCalledWith(
+			`/qc/compare?jobs=${rows.map((row) => row.id).join(",")}`,
+		);
+	});
+
+	it("disables mixed metric selection even when two VMAF reports alone could compare", async () => {
+		apiFetch.mockResolvedValue(
+			page([
+				listItem({ id: "11111111-1111-4111-8111-111111111111" }),
+				listItem({ id: "22222222-2222-4222-8222-222222222222" }),
+				listItem({
+					id: "33333333-3333-4333-8333-333333333333",
+					kind: "BANDING",
+					detector: "CAMBI",
+					model: null,
+					renditionMeans: [],
+				}),
+			]),
+		);
+		wrap(<VmafLabClient />);
+		await userEvent.setup().click(
+			await screen.findByRole("checkbox", {
+				name: "Select all loaded reports",
+			}),
+		);
+		const compare = screen.getByRole("button", { name: "Compare selected" });
+		expect(compare).toBeDisabled();
+		expect(compare).toHaveAttribute(
+			"title",
+			"Compare VMAF reports together, or CAMBI-only reports together.",
+		);
+	});
+
+	it("keeps the six-report limit for CAMBI-only selection", async () => {
+		apiFetch.mockResolvedValue(
+			page(
+				Array.from({ length: 7 }, (_, i) =>
+					listItem({
+						id: `${i + 1}1111111-1111-4111-8111-111111111111`,
+						kind: "BANDING",
+						detector: "CAMBI",
+						model: null,
+						renditionMeans: [],
+					}),
+				),
+			),
+		);
+		wrap(<VmafLabClient />);
+		await userEvent.setup().click(
+			await screen.findByRole("checkbox", {
+				name: "Select all loaded reports",
+			}),
+		);
+		const compare = screen.getByRole("button", { name: "Compare selected" });
+		expect(compare).toBeDisabled();
+		expect(compare).toHaveAttribute(
+			"title",
+			expect.stringMatching(/Up to 6 reports/),
+		);
+	});
+
+	it("ignores an errored CAMBI report when comparing two finished VMAF reports", async () => {
+		const a = "11111111-1111-4111-8111-111111111111";
+		const b = "22222222-2222-4222-8222-222222222222";
+		apiFetch.mockResolvedValue(
+			page([
+				listItem({ id: a }),
+				listItem({ id: b }),
+				listItem({
+					id: "33333333-3333-4333-8333-333333333333",
+					status: "ERROR",
+					kind: "BANDING",
+					detector: "CAMBI",
+					model: null,
+					renditionMeans: [],
+				}),
+			]),
+		);
+		wrap(<VmafLabClient />);
+		await userEvent.setup().click(
+			await screen.findByRole("checkbox", {
+				name: "Select all loaded reports",
+			}),
+		);
+		const compare = screen.getByRole("button", { name: "Compare selected" });
+		expect(compare).toBeEnabled();
+		await userEvent.setup().click(compare);
 		expect(routerPush).toHaveBeenCalledWith(`/qc/compare?jobs=${a},${b}`);
 	});
 

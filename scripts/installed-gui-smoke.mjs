@@ -278,6 +278,8 @@ export function failureSummary(raw) {
 	}
 	const statuses = new Map();
 	const locations = new Map();
+	const qcLocations = new Map();
+	const combinedLocations = new Map();
 	const stages = new Map();
 	const observations = new Map();
 	const pending = [...report.suites];
@@ -321,14 +323,16 @@ export function failureSummary(raw) {
 							stages.set(spec.title, annotation.description);
 					}
 					const lines = new Set();
-					const add = (line) => {
+					const qcLines = new Set();
+					const combinedLines = new Set();
+					const add = (line, target = lines) => {
 						if (
 							Number.isInteger(line) &&
 							line > 0 &&
 							line <= 10_000 &&
-							lines.size < 3
+							target.size < 3
 						)
-							lines.add(line);
+							target.add(line);
 					};
 					const errors = [
 						results[0].error,
@@ -338,21 +342,33 @@ export function failureSummary(raw) {
 					];
 					for (const error of errors) {
 						const file = error?.location?.file;
-						if (
+						const filename =
 							typeof file === "string" &&
-							file.replaceAll("\\", "/").split("/").at(-1) ===
-								"installed-gui.test.ts"
-						)
-							add(error.location.line);
+							file.replaceAll("\\", "/").split("/").at(-1);
+						if (filename === "installed-gui.test.ts") add(error.location.line);
+						else if (filename === "qc-comparison-fixture.ts")
+							add(error.location.line, qcLines);
+						else if (filename === "qc-combined-fixture.ts")
+							add(error.location.line, combinedLines);
 						if (typeof error?.stack === "string")
 							for (const match of error.stack
 								.slice(0, 10_000)
 								.matchAll(
-									/(?:^|[/\\])installed-gui\.test\.ts:([1-9]\d{0,3}):[1-9]\d{0,3}\b/g,
+									/(?:^|[/\\])(installed-gui\.test|qc-comparison-fixture|qc-combined-fixture)\.ts:([1-9]\d{0,3}):[1-9]\d{0,3}\b/g,
 								))
-								add(Number(match[1]));
+								add(
+									Number(match[2]),
+									match[1] === "installed-gui.test"
+										? lines
+										: match[1] === "qc-comparison-fixture"
+											? qcLines
+											: combinedLines,
+								);
 					}
 					if (lines.size) locations.set(spec.title, [...lines].join(","));
+					if (qcLines.size) qcLocations.set(spec.title, [...qcLines].join(","));
+					if (combinedLines.size)
+						combinedLocations.set(spec.title, [...combinedLines].join(","));
 				}
 				statuses.set(
 					spec.title,
@@ -409,7 +425,7 @@ export function failureSummary(raw) {
 		...categories,
 		...CASES.map(
 			(title) =>
-				`Browser case: ${title}; status=${statuses.get(title) ?? "not-run"}${locations.has(title) ? `; lines=${locations.get(title)}` : ""}${stages.has(title) ? `; stage=${stages.get(title)}` : ""}${observations.has(title) ? `; state=${observations.get(title).join(",")}` : ""}`,
+				`Browser case: ${title}; status=${statuses.get(title) ?? "not-run"}${locations.has(title) ? `; lines=${locations.get(title)}` : ""}${qcLocations.has(title) ? `; qc-lines=${qcLocations.get(title)}` : ""}${combinedLocations.has(title) ? `; combined-lines=${combinedLocations.get(title)}` : ""}${stages.has(title) ? `; stage=${stages.get(title)}` : ""}${observations.has(title) ? `; state=${observations.get(title).join(",")}` : ""}`,
 		),
 	];
 }

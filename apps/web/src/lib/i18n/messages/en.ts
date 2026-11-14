@@ -586,6 +586,12 @@ export const en = {
 			"The video does not cover the complete selected interval.",
 		previewCaveat:
 			"Time-based visual inspection. Seeking can show an adjacent frame; playback does not change the measured scores.",
+		previewTime: "Presentation time (s)",
+		previewPrevious: "Previous measured point",
+		previewNext: "Next measured point",
+		previewTiming: "{seconds}s · presentation time",
+		compareMixedKinds:
+			"Compare VMAF reports together, or CAMBI-only reports together.",
 		affected: "Affected duration: {value} s",
 		bounds: "Configured limits",
 		cpu: "Actual execution: CPU · official libvmaf CAMBI",
@@ -597,8 +603,6 @@ export const en = {
 		autoNoRuntime: "AUTO used CPU because the GPU runtime was unavailable.",
 		running: "Measuring banding… {done} / {total} renditions",
 		unavailable: "Banding evidence is unavailable for this result.",
-		compareUnsupported:
-			"VMAF comparison requires reports containing VMAF scores.",
 	},
 	liveProtection: {
 		add: "Add",
@@ -2417,6 +2421,7 @@ export const en = {
 		language: "Language",
 	},
 	qc: {
+		metricView: "Quality metric",
 		referencePreparationSummary:
 			"Coded-raster comparison · display scaling ignored",
 		referencePreparationDescription:
@@ -6517,7 +6522,7 @@ export const en = {
 		newJobQueued: "New job queued.",
 		openJobId: "Open {id} →",
 		pickTwoReportsHead:
-			"Pick at least two finished VMAF reports to compare — open the",
+			"Pick at least two finished VMAF or CAMBI reports to compare — open the",
 		pidValue: "Process ID {pid}",
 		priorityRangeHint:
 			"{min}–{max} (default {dflt}). Higher priority runs first among your organisation's queued encodings, so it only has an effect while the run is still waiting for capacity.",

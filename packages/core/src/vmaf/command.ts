@@ -73,12 +73,24 @@
  * Matroska, WebM and MPEG-TS; first frames a part of a slot after zero; with
  * and without audio) the score and the frame count were those of v1.2.1,
  * except in four whose score moves from run to run with four libvmaf threads
- * (pictures 216 pixels wide), and which gave one score with one thread. Two
+ * (pictures 216 pixels wide), and which gave one score with one thread. These
  * kinds of file score otherwise:
  *
  * - A reference that leaves frames out. With an encode that leaves out the
  *   same frames: 19.31 before, 44.01 after. With an encode that has every
- *   frame: 18.26 before, 28.53 after.
+ *   frame: 18.26 before, 28.53 after. A reference whose last frame lasts
+ *   several slots leaves out the slots after it: that frame is now repeated
+ *   for each of them, as an encode's has been since the first commit
+ *   (86.963109 over 72 frames before, 86.846459 over 74 after, for 72 frames
+ *   at 24 a second whose last lasts three slots).
+ * - A reference whose frames lie more than half a slot from where its frame
+ *   rate puts them, which the filter now drops and repeats: 66.43 before,
+ *   85.32 after, for frames moved by up to 0.6 of a slot.
+ * - A reference whose frame rate, as ffprobe gives it, is not that of its
+ *   frames: a Matroska file of 25 frames a second whose default duration
+ *   says 50. Its frames were numbered at that rate while the encode was
+ *   conformed to it, so frames of other moments were compared (1.63); now
+ *   both have each frame twice (85.89; 87.57 frame by frame).
  * - A file whose video starts later than the file does, as in a Matroska file
  *   whose audio starts first. The filter sent each frame to the slot nearest
  *   its time from the start of the file, and where the delay is about half a

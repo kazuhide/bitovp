@@ -70,9 +70,9 @@
  * - ffprobe gives a Matroska, WebM or MPEG-TS file that leaves frames out
  *   two equal rates and no frame count, 30000/1001 twice for a file with 47
  *   frames in 148 slots. The scorer stops at the first frame whose time is
- *   more than a quarter of a frame apart in the two files, at the end of a
+ *   more than a quarter of a slot apart in the two files, at the end of a
  *   file that has fewer frames, and, since 2026-11-14, at the first frame N
- *   of either file that is more than a quarter of a frame from N frames after
+ *   of either file that is more than a quarter of a slot from N slots after
  *   that file's first. The worker takes each for a refusal of the pair
  *   (`NativePairRefusal`). The last stop is for two files that leave out the
  *   same frames: the scorer scored them, each frame once, where the ordinary
@@ -86,6 +86,14 @@
  *   each file's times from its first frame, and so does the ordinary method
  *   since 2026-11-14 (`VMAF_SCORING_VERSION`): both give 90.51 for such a
  *   reference of 24 frames a second whose video starts 21 milliseconds late.
+ * - A Matroska file whose last frame lasts longer than one slot (the
+ *   duration of its last block) passes here and in the scorer, which reads
+ *   where each frame starts.
+ *   The ordinary method repeats that frame for each further slot, and the
+ *   scorer scores it once: 86.963109 over 72 frames beside 86.846459 over 74
+ *   for a Matroska reference of 72 frames at 24 a second whose last frame
+ *   lasts three slots. In MP4 the long last frame lowers `avg_frame_rate`,
+ *   and the pair does not pass here.
  */
 
 import { vmafConvertedChromaLayout } from "./size-limits";

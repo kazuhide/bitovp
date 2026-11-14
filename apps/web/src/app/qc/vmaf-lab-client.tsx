@@ -87,16 +87,20 @@ export function VmafLabClient() {
 		() => [...selected].filter((id) => selectableIds.has(id)),
 		[selected, selectableIds],
 	);
-	// Only FINISHED reports carry frame results to overlay.
+	// Only FINISHED reports carry measurement results to compare.
 	const comparableIds = useMemo(() => {
 		const finished = new Set(
-			items
-				.filter((j) => j.status === "FINISHED" && j.kind !== "BANDING")
-				.map((j) => j.id),
+			items.filter((j) => j.status === "FINISHED").map((j) => j.id),
 		);
 		return selectedIds.filter((id) => finished.has(id));
 	}, [items, selectedIds]);
 	const overCompareCap = comparableIds.length > MAX_COMPARE;
+	const mixedComparisonKinds =
+		new Set(
+			items
+				.filter((job) => comparableIds.includes(job.id))
+				.map((job) => job.kind ?? "VMAF"),
+		).size > 1;
 
 	function toggleSelect(id: string) {
 		setSelected((prev) => {
@@ -115,7 +119,7 @@ export function VmafLabClient() {
 	}
 
 	function compareSelected() {
-		if (comparableIds.length >= 2 && !overCompareCap) {
+		if (comparableIds.length >= 2 && !overCompareCap && !mixedComparisonKinds) {
 			router.push(`/qc/compare?jobs=${comparableIds.join(",")}`);
 		}
 	}
@@ -167,13 +171,17 @@ export function VmafLabClient() {
 					) : null}
 					<Button
 						size="sm"
-						disabled={comparableIds.length < 2 || overCompareCap}
+						disabled={
+							comparableIds.length < 2 || overCompareCap || mixedComparisonKinds
+						}
 						title={
-							overCompareCap
-								? t("uiX.upToNReportsCompared", { max: MAX_COMPARE })
-								: comparableIds.length < 2
-									? t("qc.needTwoFinished")
-									: undefined
+							mixedComparisonKinds
+								? t("banding.compareMixedKinds")
+								: overCompareCap
+									? t("uiX.upToNReportsCompared", { max: MAX_COMPARE })
+									: comparableIds.length < 2
+										? t("qc.needTwoFinished")
+										: undefined
 						}
 						onClick={compareSelected}
 					>

@@ -7,8 +7,10 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
+import { BandingPanels } from "../[id]/banding-panel";
 import { VmafScoreLegend } from "../vmaf-score-legend";
 import {
+	type BandingJobDetail,
 	comparedModels,
 	comparedSubsamples,
 	fmtScore,
@@ -25,6 +27,10 @@ import {
 	type VmafJobDetail,
 	type VmafResultDetail,
 } from "../vmaf-shared";
+import {
+	BandingReportComparison,
+	bandingComparisonInitialIds,
+} from "./banding-report-comparison";
 import { ReportFrameComparison } from "./report-frame-comparison";
 
 /** Bounds for the comparison overlay — keep it readable, keep the URL sane. */
@@ -88,37 +94,47 @@ export function CompareClient() {
 	// Only fan out once there are enough ids to actually compare — below the
 	// minimum we render the guard, so fetching would be wasted work.
 	const enabled = jobIds.length >= MIN_JOBS;
-	const { loadedJobs, failedIds, incompatibleIds, loading, fetching } =
-		useQueries({
-			queries: jobIds.map((id) => ({
-				queryKey: ["vmaf-job", id],
-				queryFn: () => apiFetch<QcJobDetail>(`/api/vmaf-jobs/${id}`),
-				staleTime: 30_000,
-				enabled,
-			})),
-			combine: (results) => {
-				const jobs: VmafJobDetail[] = [];
-				const failed: string[] = [];
-				const incompatible: string[] = [];
-				results.forEach((q, i) => {
-					const id = jobIds[i] as string;
-					if (q.data?.kind === "BANDING") incompatible.push(id);
-					else if (q.data) {
-						jobs.push(q.data);
-					}
-					if (q.isError) {
-						failed.push(id);
-					}
-				});
-				return {
-					loadedJobs: jobs,
-					failedIds: failed,
-					incompatibleIds: incompatible,
-					loading: results.some((q) => q.isLoading),
-					fetching: results.some((q) => q.isFetching),
-				};
-			},
-		});
+	const { loadedReports, failedIds, loading, fetching } = useQueries({
+		queries: jobIds.map((id) => ({
+			queryKey: ["vmaf-job", id],
+			queryFn: () => apiFetch<QcJobDetail>(`/api/vmaf-jobs/${id}`),
+			staleTime: 30_000,
+			enabled,
+		})),
+		combine: (results) => {
+			const jobs: QcJobDetail[] = [];
+			const failed: string[] = [];
+			results.forEach((q, i) => {
+				const id = jobIds[i] as string;
+				if (q.data) {
+					jobs.push(q.data);
+				}
+				if (q.isError) {
+					failed.push(id);
+				}
+			});
+			return {
+				loadedReports: jobs,
+				failedIds: failed,
+				loading: results.some((q) => q.isLoading),
+				fetching: results.some((q) => q.isFetching),
+			};
+		},
+	});
+	const loadedJobs = useMemo(
+		() =>
+			loadedReports.filter(
+				(job): job is VmafJobDetail => job.kind !== "BANDING",
+			),
+		[loadedReports],
+	);
+	const bandingJobs = useMemo(
+		() =>
+			loadedReports.filter(
+				(job): job is BandingJobDetail => job.kind === "BANDING",
+			),
+		[loadedReports],
+	);
 
 	// Flatten (job × rendition) → series with a stable key + distinct colour.
 	// Colour index runs across the whole flattened list so no two series share a
@@ -222,7 +238,7 @@ export function CompareClient() {
 		);
 	}
 
-	if (loading && loadedJobs.length === 0) {
+	if (loading && loadedReports.length === 0) {
 		return (
 			<section>
 				<CompareHeader jobCount={jobIds.length} seriesCount={0} />
@@ -243,13 +259,10 @@ export function CompareClient() {
 	}
 
 	// Every requested id failed to load (all 404 / errored).
-	if (loadedJobs.length === 0) {
+	if (loadedReports.length === 0) {
 		return (
 			<GuardMessage>
 				{t("prose.noReportsLoaded")}
-				{incompatibleIds.length ? (
-					<p role="alert">{t("banding.compareUnsupported")}</p>
-				) : null}
 				<Button
 					size="sm"
 					variant="secondary"
@@ -282,47 +295,65 @@ export function CompareClient() {
 			</GuardMessage>
 		);
 	}
+	if (loadedJobs.length > 0 && bandingJobs.length > 0) {
+		return (
+			<section>
+				<CompareHeader jobCount={loadedReports.length} seriesCount={0} />
+				<p role="alert" className="mt-3 text-sm text-amber-400">
+					{t("banding.compareMixedKinds")}
+				</p>
+			</section>
+		);
+	}
 
 	const skippedIds = failedIds.filter(
-		(id) => !loadedJobs.some((job) => job.id === id),
+		(id) => !loadedReports.some((job) => job.id === id),
 	);
-	const resultlessJobs = loadedJobs.filter((j) => j.results.length === 0);
+	const resultlessJobs = loadedReports.filter((j) => j.results.length === 0);
+	const comparisonSeriesCount = bandingJobs.length
+		? bandingJobs.reduce((count, job) => count + job.results.length, 0)
+		: series.length;
+	const visibleBandingSeries = shownSeries.filter(
+		(item) => item.result.pooled.banding,
+	);
 
 	return (
 		<section>
-			<CompareHeader jobCount={loadedJobs.length} seriesCount={series.length} />
-			{incompatibleIds.length ? (
-				<p role="alert" className="mt-3 text-xs text-amber-400">
-					{t("banding.compareUnsupported")}
-				</p>
-			) : null}
-			<VmafScoreLegend className="mt-3" />
-			{mixesReferenceCanvases(loadedJobs) ? (
-				<p role="alert" className="mt-3 text-amber-400 text-xs">
-					{t("qc.mixedReferenceCanvases")}
-				</p>
-			) : null}
+			<CompareHeader
+				jobCount={loadedReports.length}
+				seriesCount={comparisonSeriesCount}
+			/>
+			{bandingJobs.length === 0 ? (
+				<>
+					<VmafScoreLegend className="mt-3" />
+					{mixesReferenceCanvases(loadedJobs) ? (
+						<p role="alert" className="mt-3 text-amber-400 text-xs">
+							{t("qc.mixedReferenceCanvases")}
+						</p>
+					) : null}
 
-			{mixesScoringGenerations(loadedJobs) ? (
-				<p role="alert" className="mt-3 text-amber-400 text-xs">
-					{t("qc.mixedScoringGenerations", {
-						generations: scoringGenerations(loadedJobs).join(", "),
-					})}
-				</p>
-			) : null}
-			{mixesModels(loadedJobs) ? (
-				<p role="alert" className="mt-3 text-amber-400 text-xs">
-					{t("qc.mixedModels", {
-						models: comparedModels(loadedJobs).join(", "),
-					})}
-				</p>
-			) : null}
-			{mixesSubsampling(loadedJobs) ? (
-				<p role="alert" className="mt-3 text-amber-400 text-xs">
-					{t("qc.mixedSubsampling", {
-						strides: comparedSubsamples(loadedJobs).join(", "),
-					})}
-				</p>
+					{mixesScoringGenerations(loadedJobs) ? (
+						<p role="alert" className="mt-3 text-amber-400 text-xs">
+							{t("qc.mixedScoringGenerations", {
+								generations: scoringGenerations(loadedJobs).join(", "),
+							})}
+						</p>
+					) : null}
+					{mixesModels(loadedJobs) ? (
+						<p role="alert" className="mt-3 text-amber-400 text-xs">
+							{t("qc.mixedModels", {
+								models: comparedModels(loadedJobs).join(", "),
+							})}
+						</p>
+					) : null}
+					{mixesSubsampling(loadedJobs) ? (
+						<p role="alert" className="mt-3 text-amber-400 text-xs">
+							{t("qc.mixedSubsampling", {
+								strides: comparedSubsamples(loadedJobs).join(", "),
+							})}
+						</p>
+					) : null}
+				</>
 			) : null}
 			{failedIds.length > 0 ? (
 				<p role="alert" className="mt-3 text-amber-400 text-xs">
@@ -352,15 +383,23 @@ export function CompareClient() {
 				<p className="mt-1 text-xs text-zinc-500">
 					{t("qc.resultlessReports", {
 						count: resultlessJobs.length,
-						ids: resultlessJobs.map((job) => jobShortLabel(job)).join(", "),
+						ids: resultlessJobs
+							.map((job) =>
+								job.kind === "BANDING"
+									? (job.encodingName ?? shortJobId(job.id))
+									: jobShortLabel(job),
+							)
+							.join(", "),
 					})}
 				</p>
 			) : null}
 
-			{series.length === 0 ? (
+			{comparisonSeriesCount === 0 ? (
 				<p className="mt-6 text-sm text-zinc-500">
 					{t("qc.noRenditionsToCompare")}
 				</p>
+			) : bandingJobs.length ? (
+				<BandingReportComparison jobs={bandingJobs} />
 			) : (
 				<>
 					<SeriesLegend
@@ -375,6 +414,24 @@ export function CompareClient() {
 						series={series}
 						shownSeries={shownSeries}
 					/>
+					{visibleBandingSeries.length ? (
+						<BandingPanels
+							results={visibleBandingSeries.map((item) => ({
+								...item.result,
+								id: item.key,
+							}))}
+							labels={Object.fromEntries(
+								visibleBandingSeries.map((item) => [item.key, item.label]),
+							)}
+							initialIds={bandingComparisonInitialIds(
+								visibleBandingSeries.map((item) => ({
+									id: item.key,
+									reportId: item.jobId,
+									preview: item.result.bandingPreview,
+								})),
+							)}
+						/>
+					) : null}
 				</>
 			)}
 		</section>

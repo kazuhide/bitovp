@@ -557,6 +557,12 @@ export const ja = {
 		previewRangeUnavailable: "選択した区間の全体を動画で確認できません。",
 		previewCaveat:
 			"時刻を使った目視確認です。シークでは隣接フレームが表示される場合があります。再生によって測定スコアは変わりません。",
+		previewTime: "再生位置（秒）",
+		previewPrevious: "前の計測点",
+		previewNext: "次の計測点",
+		previewTiming: "{seconds}秒 · 表示時刻",
+		compareMixedKinds:
+			"VMAF レポート同士、または CAMBI 専用レポート同士を選択してください。",
 		affected: "該当時間: {value} 秒",
 		bounds: "設定した上限",
 		cpu: "実際の実行方式: CPU · 公式 libvmaf CAMBI",
@@ -569,7 +575,6 @@ export const ja = {
 			"GPU の実行環境を利用できないため、AUTO は CPU を使用しました。",
 		running: "バンディングを測定中… {done} / {total} レンディション",
 		unavailable: "この結果にはバンディングの測定情報がありません。",
-		compareUnsupported: "VMAF 比較には VMAF スコアを含むレポートが必要です。",
 	},
 	liveProtection: {
 		add: "追加",
@@ -6478,7 +6483,7 @@ export const ja = {
 		newJobQueued: "新しいジョブをキューに追加しました。",
 		openJobId: "{id} を開く →",
 		pickTwoReportsHead:
-			"比較するには、完了済みの VMAF レポートを 2 つ以上選んでください —",
+			"比較するには、完了済みの VMAF または CAMBI レポートを 2 つ以上選んでください —",
 		pidValue: "プロセス ID {pid}",
 		priorityRangeHint:
 			"{min}〜{max}(既定 {dflt})。数値が大きいほど、組織のキュー内で先に実行されます。そのため、実行が空きを待っている間にしか効果はありません。",

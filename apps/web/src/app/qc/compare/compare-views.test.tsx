@@ -9,7 +9,11 @@ import {
 } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery as wrap } from "@/test/render";
-import type { VmafJobDetail } from "../vmaf-shared";
+import type {
+	BandingJobDetail,
+	QcJobDetail,
+	VmafJobDetail,
+} from "../vmaf-shared";
 
 // Data layer — the compare client fans out one apiFetch per job id.
 const apiFetch = vi.fn();
@@ -114,7 +118,7 @@ const JOB_B = job("bbbbbbbb-0000-4000-8000-000000000002", {
 });
 
 /** Resolve apiFetch from a map of id → job (reject on a missing id = 404). */
-function serve(jobs: VmafJobDetail[]) {
+function serve(jobs: QcJobDetail[]) {
 	const byUrl = new Map(jobs.map((j) => [`/api/vmaf-jobs/${j.id}`, j]));
 	apiFetch.mockImplementation(async (url: string) => {
 		const hit = byUrl.get(url);
@@ -125,12 +129,133 @@ function serve(jobs: VmafJobDetail[]) {
 	});
 }
 
+function bandingJob(base: VmafJobDetail): BandingJobDetail {
+	return {
+		...base,
+		kind: "BANDING",
+		detector: "CAMBI",
+		model: null,
+		reference: null,
+		subsample: null,
+		results: [
+			{
+				id: "shared-result",
+				renditionRef: { label: "360p" },
+				pooled: {
+					banding: {
+						mean: 3,
+						min: 1,
+						max: 5,
+						frameCount: 2,
+						durationSeconds: 2,
+					},
+				},
+				bandingFrames: [
+					{ frameNum: 0, timestampSeconds: 0, durationSeconds: 1, cambi: 1 },
+					{ frameNum: 1, timestampSeconds: 1, durationSeconds: 1, cambi: 5 },
+				],
+				bandingFrameCount: 2,
+				bandingPreview: {
+					url: `/api/vmaf-jobs/${base.id}/preview?resultId=shared-result&metric=banding`,
+				},
+			},
+		],
+	};
+}
+
 afterEach(() => {
 	vi.clearAllMocks();
 	searchParams = new URLSearchParams();
 });
 
 describe("CompareClient", () => {
+	it("compares CAMBI-only reports without a VMAF clock and disambiguates shared result IDs", async () => {
+		const a = { ...bandingJob(JOB_A), encodingName: "same-encode" };
+		const b = { ...bandingJob(JOB_B), encodingName: "same-encode" };
+		searchParams = new URLSearchParams({ jobs: `${a.id},${b.id}` });
+		serve([a, b]);
+		wrap(<CompareClient />);
+		expect(
+			await screen.findByRole("region", {
+				name: `Banding detection — same-encode · ${a.id.slice(0, 8)} · 360p`,
+			}),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("region", {
+				name: `Banding detection — same-encode · ${b.id.slice(0, 8)} · 360p`,
+			}),
+		).toBeInTheDocument();
+		expect(screen.getByTestId("compare-counts")).toHaveTextContent(
+			"2 reports · 2 series",
+		);
+		expect(
+			screen.queryByRole("figure", { name: "VMAF distribution" }),
+		).not.toBeInTheDocument();
+		expect(screen.queryByText(/subjective anchors/i)).not.toBeInTheDocument();
+	});
+
+	it("rejects mixed metric selections instead of silently dropping the CAMBI-only report", async () => {
+		searchParams = new URLSearchParams({ jobs: `${JOB_A.id},${JOB_B.id}` });
+		serve([JOB_A, bandingJob(JOB_B)]);
+		wrap(<CompareClient />);
+		expect(
+			await screen.findByText(
+				"Compare VMAF reports together, or CAMBI-only reports together.",
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole("checkbox", { name: /Toggle series/ }),
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole("figure", { name: "VMAF distribution" }),
+		).not.toBeInTheDocument();
+	});
+
+	it("shows CAMBI for only the visible combined-report VMAF series", async () => {
+		const combined = [JOB_A, JOB_B].map((job) => {
+			const evidence = bandingJob(job).results[0];
+			if (!evidence) throw new Error("Banding fixture requires a result");
+			return {
+				...job,
+				banding: true,
+				results: job.results.map((result) => ({
+					...result,
+					pooled: { ...result.pooled, banding: evidence.pooled.banding },
+					bandingFrames: evidence.bandingFrames,
+					bandingPreview: evidence.bandingPreview,
+				})),
+			};
+		});
+		searchParams = new URLSearchParams({ jobs: `${JOB_A.id},${JOB_B.id}` });
+		serve(combined);
+		wrap(<CompareClient />);
+		expect(
+			await screen.findByRole("region", {
+				name: "Banding detection — clip-low · 360p",
+			}),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("region", {
+				name: "Banding detection — clip-high · 1080p",
+			}),
+		).toBeInTheDocument();
+		await userEvent
+			.setup()
+			.click(
+				screen.getByRole("checkbox", { name: "Toggle series clip-low · 360p" }),
+			);
+		expect(
+			screen.queryByRole("region", {
+				name: "Banding detection — clip-low · 360p",
+			}),
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByRole("region", {
+				name: "Banding detection — clip-high · 1080p",
+			}),
+		).toBeInTheDocument();
+	});
+
 	it("connects selected reports to their on-demand comparison videos", async () => {
 		const pause = vi
 			.spyOn(HTMLMediaElement.prototype, "pause")
@@ -244,7 +369,9 @@ describe("CompareClient", () => {
 		wrap(<CompareClient />);
 
 		expect(
-			await screen.findByText(/Pick at least two finished VMAF reports/i),
+			await screen.findByText(
+				/Pick at least two finished VMAF or CAMBI reports/i,
+			),
 		).toBeInTheDocument();
 		// Guard links back to the lab; no fetch is attempted for a single id.
 		expect(screen.getByRole("link", { name: "VMAF Lab" })).toHaveAttribute(
@@ -260,7 +387,9 @@ describe("CompareClient", () => {
 		serve([JOB_A]);
 		wrap(<CompareClient />);
 		expect(
-			await screen.findByText(/Pick at least two finished VMAF reports/i),
+			await screen.findByText(
+				/Pick at least two finished VMAF or CAMBI reports/i,
+			),
 		).toBeInTheDocument();
 	});
 

@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
 import type { BandingResultDetail } from "../vmaf-shared";
 import { BandingPanels } from "./banding-panel";
+import { MeasuredMediaComparison } from "./measured-media-comparison";
 
 const results: BandingResultDetail[] = [
 	{
@@ -119,6 +120,178 @@ afterEach(() => {
 });
 
 describe("CAMBI comparison preview", () => {
+	it("flushes the normalized leader clock and score when pausing before the next timeupdate", async () => {
+		renderWithQuery(<BandingPanels results={results} />, "en");
+		const videos = await open([0.5, 1]);
+		seek("1");
+		await userEvent.click(screen.getByRole("button", { name: "Play both" }));
+		await screen.findByRole("button", { name: "Pause both" });
+		const leader = videos[0] as HTMLVideoElement;
+		leader.currentTime = 1.79;
+		(videos[1] as HTMLVideoElement).currentTime = 2.29;
+		// Native playback advances between the last timeupdate and a user pause.
+		await userEvent.click(screen.getByRole("button", { name: "Pause both" }));
+		expect(
+			screen.getByRole("spinbutton", { name: "Presentation time (s)" }),
+		).toHaveValue(1.29);
+		const captions = screen
+			.getByRole("region", { name: "Open comparison preview" })
+			.querySelectorAll("figcaption");
+		expect(captions[0]).toHaveTextContent("CAMBI A · CAMBI 10.0");
+		expect(captions[1]).toHaveTextContent("Not in the displayed score sample");
+		fireEvent.timeUpdate(leader);
+		expect(
+			screen.getByRole("spinbutton", { name: "Presentation time (s)" }),
+		).toHaveValue(1.29);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Close comparison preview" }),
+		);
+		const reopened = await open([0.5, 1]);
+		expect(reopened[0]?.currentTime).toBeCloseTo(1.79);
+		expect(reopened[1]?.currentTime).toBeCloseTo(2.29);
+	});
+
+	it("keeps an explicit seek while playing after capturing the paused clock", async () => {
+		renderWithQuery(<BandingPanels results={results} />, "en");
+		const videos = await open([0.5, 1]);
+		await userEvent.click(screen.getByRole("button", { name: "Play both" }));
+		await screen.findByRole("button", { name: "Pause both" });
+		(videos[0] as HTMLVideoElement).currentTime = 1.79;
+		seek("2.5");
+		expect(
+			screen.getByRole("spinbutton", { name: "Presentation time (s)" }),
+		).toHaveValue(2.5);
+		expect(videos[0]?.currentTime).toBe(3);
+		expect(videos[1]?.currentTime).toBe(3.5);
+		expect(screen.getByRole("button", { name: "Play both" })).toBeEnabled();
+	});
+
+	it("preserves integral VMAF frames and half-frame seek positions when pausing", async () => {
+		renderWithQuery(
+			<MeasuredMediaComparison
+				candidates={[
+					{ id: "frame-a", label: "Frame A", url: "/frame-a.mp4" },
+					{ id: "frame-b", label: "Frame B", url: "/frame-b.mp4" },
+				]}
+				clock={{ kind: "frame", fps: 24, max: 240 }}
+				metric="VMAF"
+				unavailableReason="Unavailable"
+				scoreAt={() => 90}
+				renderChart={() => null}
+			/>,
+			"en",
+		);
+		const videos = await open([], 10);
+		await userEvent.click(screen.getByRole("button", { name: "Play both" }));
+		await screen.findByRole("button", { name: "Pause both" });
+		(videos[0] as HTMLVideoElement).currentTime = 1.234;
+		await userEvent.click(screen.getByRole("button", { name: "Pause both" }));
+		const frame = screen.getByRole("spinbutton", { name: "Selected frame" });
+		expect(frame).toHaveValue(29);
+		fireEvent.change(frame, { target: { value: "48" } });
+		fireEvent.blur(frame);
+		expect(frame).toHaveValue(48);
+		for (const video of videos)
+			expect(video.currentTime).toBeCloseTo(48.5 / 24);
+	});
+
+	it.each([
+		"floor",
+		"ceil",
+	] as const)("accepts a completed seek with native 2ms %s readback without retrying or timing out", async (rounding) => {
+		renderWithQuery(<BandingPanels results={results} />, "en");
+		const videos = await open([0.5, 1]);
+		const setters = [...videos].map((video) => {
+			let current = video.currentTime;
+			const set = vi.fn((value: number) => {
+				current = Math[rounding](value / 0.002) * 0.002;
+			});
+			Object.defineProperty(video, "currentTime", {
+				configurable: true,
+				get: () => current,
+				set,
+			});
+			return set;
+		});
+		vi.useFakeTimers();
+		try {
+			seek("1.125");
+			for (const video of videos) fireEvent.seeked(video);
+			expect(screen.getByRole("button", { name: "Play both" })).toBeEnabled();
+			for (const set of setters) expect(set).toHaveBeenCalledTimes(1);
+			act(() => vi.advanceTimersByTime(10_001));
+			expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("accepts a covered endpoint when native duration and seek position round down by 1ms", async () => {
+		renderWithQuery(
+			<MeasuredMediaComparison
+				candidates={[
+					{ id: "a", label: "Endpoint A", url: "/a.mp4", endSeconds: 1.125 },
+					{ id: "b", label: "Endpoint B", url: "/b.mp4", endSeconds: 1.125 },
+				]}
+				clock={{ kind: "time", timestamps: [0, 1.125] }}
+				metric="CAMBI"
+				unavailableReason="Unavailable"
+				scoreAt={() => undefined}
+				renderChart={() => null}
+			/>,
+			"en",
+		);
+		const videos = await open([0.5, 1], 1.125);
+		for (const video of videos) {
+			const end = Math.floor(video.duration / 0.002) * 0.002;
+			let current = video.currentTime;
+			Object.defineProperty(video, "duration", {
+				configurable: true,
+				value: end,
+			});
+			Object.defineProperty(video, "currentTime", {
+				configurable: true,
+				get: () => current,
+				set: (value: number) => {
+					current = Math.min(value, end);
+				},
+			});
+		}
+		seek("1.125");
+		for (const video of videos) fireEvent.seeked(video);
+		expect(screen.getByRole("button", { name: "Play both" })).toBeEnabled();
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+	});
+
+	it("keeps a genuinely clamped seek unavailable and fails it at the existing deadline", async () => {
+		renderWithQuery(<BandingPanels results={results} />, "en");
+		const videos = await open([0.5, 1]);
+		for (const video of videos) {
+			let current = video.currentTime;
+			Object.defineProperty(video, "currentTime", {
+				configurable: true,
+				get: () => current,
+				set: (value: number) => {
+					current = value - 0.02;
+				},
+			});
+		}
+		vi.useFakeTimers();
+		try {
+			seek("1.125");
+			for (const video of videos) fireEvent.seeked(video);
+			expect(screen.getByRole("button", { name: "Play both" })).toBeDisabled();
+			act(() => vi.advanceTimersByTime(9_999));
+			expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+			act(() => vi.advanceTimersByTime(1));
+			expect(screen.getByRole("alert")).toHaveTextContent(
+				"does not cover the complete selected interval",
+			);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("resets both videos to a valid shared time when swapping to a shorter rendition", async () => {
 		const shorter: BandingResultDetail = {
 			...(results[0] as BandingResultDetail),

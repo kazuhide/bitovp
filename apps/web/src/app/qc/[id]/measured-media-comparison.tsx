@@ -17,6 +17,9 @@ export type ComparisonClock =
 
 const control =
 	"rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-emerald-500";
+// Native clocks may round positions and durations to 2 ms. This allowance only
+// completes seeks; requested positions and measured score intervals stay exact.
+const NATIVE_SEEK_TOLERANCE_SECONDS = 0.005;
 
 /** Shared decoder lifecycle; each metric supplies its own clock and measured scores. */
 export function MeasuredMediaComparison({
@@ -76,10 +79,15 @@ export function MeasuredMediaComparison({
 			if (
 				video.seeking ||
 				video.readyState < 2 ||
-				video.duration < request.target
+				!Number.isFinite(video.duration) ||
+				!Number.isFinite(video.currentTime) ||
+				video.duration + NATIVE_SEEK_TOLERANCE_SECONDS < request.target
 			)
 				return;
-			if (Math.abs(video.currentTime - request.target) > 0.000001) {
+			if (
+				Math.abs(video.currentTime - request.target) >
+				NATIVE_SEEK_TOLERANCE_SECONDS
+			) {
 				// MP4 duration can grow after the browser reads its tail. Retry a
 				// clamped seek only when the requested presentation is available.
 				video.currentTime = request.target;
@@ -200,9 +208,32 @@ export function MeasuredMediaComparison({
 			: position < max
 				? position + 1
 				: undefined;
+	function relativeTime(id: string, video: HTMLVideoElement) {
+		const origin = clock?.kind === "time" ? origins.current.get(id) : 0;
+		if (origin === undefined || !Number.isFinite(video.currentTime)) return;
+		return video.currentTime - origin;
+	}
+	function updatePosition(seconds: number) {
+		if (!clock || !Number.isFinite(seconds)) return;
+		const value = Math.min(
+			max,
+			Math.max(
+				0,
+				clock.kind === "frame" ? Math.floor(seconds * clock.fps) : seconds,
+			),
+		);
+		pending.current = value;
+		setPosition(value);
+	}
 	function pause() {
 		operation.current += 1;
 		for (const video of videos.current.values()) video.pause();
+		if (playing) {
+			const leader = videos.current.get(ids[0]);
+			const time = leader && relativeTime(ids[0], leader);
+			// The final native timeupdate can arrive after playing becomes false.
+			if (time !== undefined) updatePosition(time);
+		}
 		setPlaying(false);
 	}
 	function seek(value: number) {
@@ -351,24 +382,12 @@ export function MeasuredMediaComparison({
 										onEnded={pause}
 										onTimeUpdate={(event) => {
 											if (!playing || candidate.id !== ids[0]) return;
-											const mediaTime = event.currentTarget.currentTime;
-											const origin =
-												clock.kind === "time"
-													? origins.current.get(candidate.id)
-													: 0;
-											if (origin === undefined) return fail("timing");
-											const time = mediaTime - origin;
-											const value = Math.min(
-												max,
-												Math.max(
-													0,
-													clock.kind === "frame"
-														? Math.floor(time * clock.fps)
-														: time,
-												),
+											const time = relativeTime(
+												candidate.id,
+												event.currentTarget,
 											);
-											pending.current = value;
-											setPosition(value);
+											if (time === undefined) return fail("timing");
+											updatePosition(time);
 											for (const [id, video] of videos.current) {
 												const otherOrigin =
 													clock.kind === "time" ? origins.current.get(id) : 0;

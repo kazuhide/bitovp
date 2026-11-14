@@ -88,12 +88,11 @@
  *   reference of 24 frames a second whose video starts 21 milliseconds late.
  * - A Matroska file whose last frame lasts longer than one slot (the
  *   duration of its last block) passes here and in the scorer, which reads
- *   where each frame starts.
- *   The ordinary method repeats that frame for each further slot, and the
- *   scorer scores it once: 86.963109 over 72 frames beside 86.846459 over 74
- *   for a Matroska reference of 72 frames at 24 a second whose last frame
- *   lasts three slots. In MP4 the long last frame lowers `avg_frame_rate`,
- *   and the pair does not pass here.
+ *   where each frame starts. The ordinary method repeats that frame for each
+ *   further slot, and the scorer scores it once: 86.963109 over 72 frames
+ *   beside 86.846459 over 74 for a Matroska reference of 72 frames at 24 a
+ *   second whose last frame lasts three slots. In MP4 the long last frame
+ *   lowers `avg_frame_rate`, and the pair does not pass here.
  */
 
 import { vmafConvertedChromaLayout } from "./size-limits";

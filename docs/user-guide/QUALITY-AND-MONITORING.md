@@ -160,11 +160,12 @@ Two more kinds of reference score otherwise than in v1.2.1:
   72 frames in v1.2.1 and scores 86.85 over 74 now, and a cloud measurement of
   it ends with an error.
 - A reference whose frame rate, as ffprobe reads it, is not that of its
-  frames: a Matroska file of 25 frames a second whose default duration says
-  50, for which ffprobe gives 50 as both rates. The worker gives FFmpeg that
-  rate, and FFmpeg now repeats each frame of both files, as it always did for
-  the encode: 85.89 with its encode, where v1.2.1 compared frames of other
-  moments and gave 1.63. Compared frame by frame, the two files give 87.57.
+  frames: a Matroska file of 25 frames a second whose stored frame duration is
+  20 ms, that of 50 frames a second, for which ffprobe gives 50 as both rates.
+  The worker gives FFmpeg that rate, and FFmpeg now repeats each frame of both
+  files, as it always did for the encode: 85.89 with its encode, where v1.2.1
+  compared frames of other moments and gave 1.63. Compared frame by frame, the
+  two files give 87.57.
 
 The filters at the end of this section show both kinds: they repeat frames of
 such a file. The

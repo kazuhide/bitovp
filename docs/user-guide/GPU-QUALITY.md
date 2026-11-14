@@ -393,21 +393,23 @@ worker with both changes, with 43 comparisons of new files: references in
 HEVC, VP9, AV1 and MPEG-2, at 120 frames a second, of 75 and 90 seconds, of
 3840 × 2160, and WebM, FLV, Matroska and MP4 files whose video starts after
 their audio. 17 more followed the review of the change: 240 frames a second,
-ten minutes at 60000/1001, Matroska files whose default duration says another
-frame rate than that of their frames, and files whose last frame lasts three
-intervals. In the 346 comparisons that GPU scoring scored over the frames of
-**Local CPU**, the mean score of the CUDA scorer was within 0.0000016 of the
-**Local CPU** score, and that of the Vulkan scorer within 0.0000006. The
-scorer refused 25 pairs whose frames differ in number or in time, and the
-worker scored them on the CPU. Three pairs with a long last frame were scored
-over other frames than those of **Local CPU** (the list below).
+ten minutes at 60000/1001, Matroska files whose stored frame duration is that
+of another frame rate than that of their frames, and files whose last frame
+lasts three intervals. In the 346 comparisons that GPU scoring scored over the
+frames of **Local CPU**, the mean score of the CUDA scorer was within
+0.0000016 of the **Local CPU** score, and that of the Vulkan scorer within
+0.0000006. The scorer refused 25 pairs whose frames differ in number or in
+time, and the worker scored them on the CPU. Three pairs with a long last
+frame were scored over other frames than those of **Local CPU** (the list
+below).
 
 What follows:
 
 - Scores of GPU scoring and of **Local CPU** can be compared with each other,
   and the comparison screen does not warn when it shows both.
 - **Local (GPU if available)** gives one score for a pair, whether the worker
-  scores it on a GPU or on the CPU.
+  scores it on a GPU or on the CPU, but for a Matroska file whose last frame
+  lasts longer than one frame interval (below).
 - A measurement that decides a delivery gate uses CPU scoring, and a model
   outside the eight VMAF v1.0 models is scored on the CPU with either choice.
 - The worker takes a result only when the scorer's receipt shows the bit depth
@@ -420,7 +422,8 @@ What follows:
   that FFmpeg names for them, and its score is not that of **Local CPU**. Build
   and install the scorer again after an update:
   [native scorer guide](../../native/vmaf-gpu/README.md). Then measure again
-  the GPU reports whose reference has a variable frame rate
+  the GPU reports whose reference has a variable frame rate or a frame rate
+  that is not that of its frames
   ([Frame rates and frames that are left out](./QUALITY-AND-MONITORING.md#frame-rates-and-frames-that-are-left-out)
   shows how to see such files). Banding measurements work with either scorer.
 - The scorer decodes and scales with the FFmpeg libraries of the machine on

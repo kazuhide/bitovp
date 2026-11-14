@@ -3813,10 +3813,15 @@ audio: read alone, its video got the time 0 for its first frame, with
 "Correcting start time of Input #0 by 38333 us", and the `fps` filter, with
 and without `setpts=PTS-STARTPTS` before it, took 300 frames and gave 300,
 dropping and repeating none; read with the audio, its first frame got
-0.0383 s. The review of the change ran both passes on MPEG-TS clips with
-audio whose video starts 5, 6, 7, 8, 17, 28.7 and 29.5 ms after it, with
-FFmpeg 9.0.2: each pass took 300 frames, each once, and the two held the same
-frame at each position. So `setpts=PTS-STARTPTS` changes nothing for Live.
+0.0383 s. The review of the change ran both passes, with FFmpeg 9.0.2, on 11
+MPEG-TS clips whose audio starts with the file: five at 30000/1001 frames a
+second, where half an interval is 16.68 ms, whose video starts 15.0, 16.0,
+17.0, 18.0 and 27.0 ms after the audio, and six at 30, with exact times and
+with times in milliseconds, whose video starts 38.3 ms (two), 50.0, 50.3 (two)
+and 50.8 ms after it. In each, each pass took 300 frames and the two held the
+same frame at each position; in the seven that were compared with their
+decoded frames, each pass held each frame once. So `setpts=PTS-STARTPTS`
+changes nothing for Live.
 
 The acceptance scripts, at 12:13 to 12:15 in the worker image of the second
 change. `apps/worker/scripts/vmaf-acceptance.sh` now runs the argv that the
@@ -3924,10 +3929,22 @@ reference's 72. In v1.2.1 the command scored 72 frames for the reference of
 the first and the last row, and the cloud worker's two checks are those of
 v1.2.1.
 
+Over the GPU runs of test P but those of the whole measurements, 496 rows,
+each GPU scored 349 different comparisons: 346 over the frames of
+**Local CPU**, whose means were within 0.0000016 of the command's with CUDA
+(1.575e-06) and within 0.0000006 with Vulkan (5.353e-07), and the three pairs
+above with a long last frame in Matroska, over 72 frames beside 74. The
+scorer refused 25 different pairs, 16 with the new sentence, six with "do not
+align" and three with "different frame counts", and the command scored each.
+The 16 pairs of the whole measurements repeat 14 of these and add two, which
+the scorer refused with the new sentence.
+
 The scorer's own tests. A copy of the scorer's source of the second change
 without its new check, built with CUDA, Vulkan and the tests on the host of
 test J at 13:27, failed one of its 54 CTest tests: `native_runner`, whose run
 of a Matroska pair that leaves out the same frame expects the new sentence.
+Installed without the tests, that copy scored the first two pairs of group RR
+frame by frame, at 14:02.
 Its `decoder_retention_test`, run by hand with the file that it reads, failed
 with "A frame outside its slot was accepted", where that of the change passed.
 That test needs a file that is not in the repository, so CTest ran it only
@@ -3946,7 +3963,14 @@ original boundary was accepted"; `native_runner` passed with either. The
 scorer after the review gave groups RR and EF the results of the scorer of
 the second change, on both GPUs, at 14:26: its source differs from that of
 `1e4656dd` in a comment of `decoder_pair.hpp` and in the test and its
-registration alone.
+registration alone. The review of these fixes found that the CI test of the
+frame-count sentence, in `tests/runner_test.py`, held its last words alone,
+"different frame counts"; it now holds the whole sentence, as the test of the
+new sentence does. Built as the CI job builds the scorer, at 14:49 to 14:50,
+the source after the review passed 19 tests of 19 with that test; with the
+sentence's first words changed in the scorer, to "Compared inputs have
+different frame counts", `native_runner` failed alone, and with the earlier
+test all 19 passed.
 
 Not measured: GPUs of other models or with other drivers; frame rates above
 240 and pictures larger than 3840x2160; and a cloud measurement at a
@@ -4596,8 +4620,9 @@ scorer and small pictures".
 | 2026-11-14 13:27 to 13:29 | | Test P on the host of test J: the scorer of the second change without its new check, built with its tests, and the decoder test of each by hand |
 | 2026-11-14 14:00 to 14:10 | | Test P after the review, in test I's container: the three commands on groups RR, HF2 and EF |
 | 2026-11-14 14:01 to 14:10 | | Test P after the review on the host of test J: the worker's code, both scorers and the command on groups RR, HF2 and EF, and both scorers without the new check on group RR |
-| 2026-11-14 14:11 to 14:12 | | Test P after the review: the cloud worker on four pairs of group EF, and an MPEG-TS clip with audio, in the worker image of the second change |
+| 2026-11-14 14:11 to 14:12 | | Test P after the review: the cloud worker on four pairs of group EF, and an MPEG-TS clip with audio, in the worker image of the second change; the clip again at 14:25, for its log |
 | 2026-11-14 14:22 to 14:26 | | The scorer after the review built with its tests on the host of test J, two copies with a wider frame-time limit built as CI builds the scorer, and groups RR and EF with that scorer and with test J's |
+| 2026-11-14 14:49 to 14:50 | | Three builds of the scorer after the review as CI builds it, on the host of test J: with a runner test that holds the whole frame-count sentence, and with the first words of that sentence changed in the scorer, with that test and with the earlier one |
 
 PR #108 added `docker/vmaf-build-proof.sh`. `Dockerfile` and the directory
 `docker/` are the same at `87e70e9b` and at `42e5d926`. PR #112 changed

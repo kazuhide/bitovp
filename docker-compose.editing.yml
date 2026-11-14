@@ -27,7 +27,7 @@ services:
 
   redis:
     networks: [default]
-    image: redis:8.8.3-alpine@sha256:dc95ea2fcf5d5c4253be0f967c28143d0f625846197eed2fd32c748eb99abfca
+    image: redis:8.10.2-alpine@sha256:9f8d2d789b9a1d1e3f283f979aa9cbf393373806472e1ccd460e2f9c869b833b
     command: [redis-server, --appendonly, "yes"]
     volumes: [redisdata:/data]
     mem_limit: 128m
@@ -43,7 +43,7 @@ services:
   storage:
     networks: [default]
     # Official multiarch release; digest was checked against Docker Hub.
-    image: chrislusf/seaweedfs:4.51@sha256:f7a49e3f3972ebed5be2ed4befa4a0c68eb7bdddba6e692d42729ceb545134b8
+    image: chrislusf/seaweedfs:4.53@sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0
     command: [mini, -dir=/data, -ip=storage, -ip.bind=0.0.0.0, -webdav=false, -admin.ui=false, -s3.port.iceberg=0, -s3.port.lance=0, -volume.max=64, -master.volumeSizeLimitMB=128]
     env_file:
       - path: ${EDITING_PREVIEW_DIRECTORY:?required}/storage.env

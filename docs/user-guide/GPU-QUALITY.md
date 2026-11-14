@@ -530,14 +530,14 @@ With **Local (GPU if available)**, the worker scores such a pair on the CPU,
 with the command of **Local CPU** and so with its score, and the other pairs of
 the measurement on the GPU. The report names the processor of each result and
 the reason for the CPU. The worker finds most of these pairs before any
-scoring, from the frame rates and frame counts that ffprobe gives for the two
-files. Those do not show a frame that a Matroska, WebM or MPEG-TS file leaves
-out. GPU scoring finds such a pair when it reads the frames: it stops at the
-first frame whose time is more than a quarter of a frame interval apart in the
-two files, or where one file ends before the other. The worker then fetches
-the encode again and scores the pair on the CPU. GPU scoring does not stop
-where both files leave out the same frames, and its score for such a pair is
-not that of **Local CPU**:
+scoring, from what ffprobe says of the two files. The frame rates and frame
+count that it reads there do not show a frame that a Matroska, WebM or MPEG-TS
+file leaves out. GPU scoring finds such a pair when it reads the frames: it
+stops at the first frame whose time is more than a quarter of a frame interval
+apart in the two files, or where one file ends before the other. The worker
+then fetches the encode again and scores the pair on the CPU. GPU scoring does
+not stop where both files leave out the same frames, and its score for such a
+pair is not that of **Local CPU**:
 [GPU scores and Local CPU scores](#gpu-scores-and-local-cpu-scores).
 
 Two kinds of measurement ask for the GPU scorer itself: one with a reference

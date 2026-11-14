@@ -3286,10 +3286,11 @@ build and four libvmaf threads, each pair was scored with the builder's
 command as it was before the change and as it is after it. The files of every
 group but I and O are FFmpeg's `testsrc2`: a small set of 160x90, scored with
 `vmaf_v0.6.1`, and a set of 384x216, scored with `vmaf_v1.0.16_3d0h`. Their
-ProRes files are `yuv422p10le`, the others `yuv420p`. FFmpeg 9.0.2 wrote them
-(`Lavf63.1.102` in the files), and this build's FFmpeg the files of I and O
-(`Lavf62.12.103`). 692 comparisons, in which a pair of files that was scored
-with several models counts once for each model:
+ProRes files are `yuv422p10le`, the others `yuv420p`. FFmpeg 9.0.2 wrote them,
+and this build's FFmpeg the files of I and O: each file but the MPEG-TS files,
+which name no version, says `Lavf63.1.102` or `Lavf62.12.103` respectively.
+692 comparisons, in which a pair of files that was scored with several models
+counts once for each model:
 
 | Group | Comparisons | Pairs |
 |---|---|---|

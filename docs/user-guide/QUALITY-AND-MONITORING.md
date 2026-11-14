@@ -136,10 +136,10 @@ it gave before: 530 comparisons of such files, of 12 to 60 frames a second in
 MP4, fragmented MP4, QuickTime, Matroska, WebM and MPEG-TS, scored the same
 before and after. The measurement generation is therefore still 3, and a
 report from before the change is not marked as outdated. Measure again where
-the reference of an earlier report has a variable frame rate. The measured
-references leave frames out of an even grid; a reference whose frames come at
-irregular times, as a screen recording has them, was not measured. The end of
-this section shows how to see such a file.
+the reference of an earlier report has a variable frame rate; the end of this
+section shows how to see such a file. The measured references leave frames
+out of an even grid; a reference whose frames come at irregular times, as a
+screen recording has them, was not measured.
 
 One kind of file with a constant frame rate is not compared frame for frame.
 Matroska and WebM keep times in milliseconds. When the video of such a file
@@ -192,11 +192,11 @@ all four pairs. The
 measurements.
 
 To see what the standard method does with the frames of a reference, run its
-`fps` filter alone. Read the file's frame rate (`r_frame_rate`; an MPEG-TS
-file prints it twice) and put it into the filter:
+`fps` filter alone. Read the file's frame rate (`r_frame_rate`) and put it into
+the filter:
 
 ```sh
-ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of csv=p=0 reference.mkv
+ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=nw=1:nk=1 reference.mkv | head -n 1
 ffmpeg -v verbose -i reference.mkv -vf fps=24/1 -an -f null - 2>&1 | grep "frames duplicated" | tail -n 1
 ```
 

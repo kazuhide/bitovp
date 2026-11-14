@@ -1198,10 +1198,11 @@ describe("live libvmaf conforms the distorted side to the reference geometry (HI
 		const score = scoreCall(t.calls, "v540");
 		expect(score).toBeDefined();
 		// The source ffprobe reported 1920×1080; the distorted 540p clip is scaled
-		// UP to it, and re-timed to the signature fps the aligned reference was
-		// written at. Both nodes sit on [0:v] — the distorted pad — before [dist].
+		// UP to it, timed from its own first frame, and re-timed to the signature
+		// fps the aligned reference was written at. The three nodes sit on [0:v]
+		// — the distorted pad — before [dist].
 		expect(score).toMatch(
-			/\[0:v\]scale=1920:1080:flags=bicubic,fps=30[^[]*\[dist\]/,
+			/\[0:v\]scale=1920:1080:flags=bicubic,setpts=PTS-STARTPTS,fps=30[^[]*\[dist\]/,
 		);
 	});
 

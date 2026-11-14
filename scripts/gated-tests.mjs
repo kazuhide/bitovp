@@ -60,7 +60,7 @@ export const NATIVE_MEDIA = [
 		workspace: "@bitovp/core",
 		directory: "packages/core",
 		files: {
-			"src/vmaf/command.ffmpeg.test.ts": 15,
+			"src/vmaf/command.ffmpeg.test.ts": 19,
 			"src/vmaf/size-limits.ffmpeg.test.ts": 6,
 		},
 	},

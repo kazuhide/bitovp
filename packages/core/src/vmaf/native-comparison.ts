@@ -42,8 +42,9 @@
  * The ordinary method also gives both files one frame per slot of the
  * reference's frame rate, counted from each file's first frame (FFmpeg's `fps`
  * filter, on both inputs since 2026-11-14), repeating and dropping frames, and
- * the scorer pairs the frames of the two files in their order. The two compare the same frames where that
- * filter changes neither file (`vmafNativeFrameTimes`):
+ * the scorer pairs the frames of the two files in their order. The two
+ * compare the same frames where that filter changes neither file
+ * (`vmafNativeFrameTimes`):
  *
  * - Each file has a frame in every slot of its frame rate. ffprobe's
  *   `r_frame_rate` is the rate of the slots, and for an MP4 or QuickTime file

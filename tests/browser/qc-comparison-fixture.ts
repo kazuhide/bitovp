@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import {
 	type Browser,
 	type BrowserContext,
@@ -28,6 +28,18 @@ const EXTRA_BANDING_JOBS = [
 ] as const;
 const MEDIA_SHA256 =
 	"8f6d6e262b56e40348b9a5ea6f9266bacdb95ed97fe2b5212422921d24dda13e";
+const CAMBI_MEDIA = [
+	{
+		file: "qc-comparison-origin-0.5.mp4",
+		sha256: "8950501ccf16de44afe92373523c1d5bc246eee18f5e770e374d13b465345ce5",
+		origin: 0.5,
+	},
+	{
+		file: "qc-comparison-origin-1.mp4",
+		sha256: "8400c570d35ca03e5da64ebbf410386bf4bec1846000231dcff35f202f309eea",
+		origin: 1,
+	},
+] as const;
 
 /** These scores exercise the UI; they are not VMAF measurement evidence. */
 function result(
@@ -157,8 +169,8 @@ function syntheticReports() {
 
 /** Deliberately model-free and variable-rate: CAMBI follows measured seconds. */
 export function syntheticBandingReports() {
-	const timestamps = [0, 0.125, 0.5, 1.125, 1.8, 2.5];
-	const durations = [0.125, 0.375, 0.625, 0.675, 0.7, 0.5];
+	const timestamps = [0, 0.125, 0.5, 1.125, 1.8];
+	const durations = [0.125, 0.375, 0.625, 0.675, 0.2];
 	return [...BANDING_JOBS, ...EXTRA_BANDING_JOBS].map((id, index) => ({
 		id,
 		kind: "BANDING",
@@ -196,14 +208,30 @@ export function syntheticBandingReports() {
 						min: Math.min(...scores),
 						max: Math.max(...scores),
 						frameCount: scores.length,
-						durationSeconds: slot === 1 ? 2.75 : 3,
+						durationSeconds: 3,
+					},
+				},
+				bandingExecution: {
+					version: 1,
+					metric: "CAMBI_NR",
+					backend: "cpu",
+					implementation: "libvmaf",
+					decisionSource: "CPU_REFERENCE",
+					coverage: {
+						complete: true,
+						frameCount: scores.length,
+						durationSeconds: 3,
+						startTimeSeconds: 0,
+						endTimeSeconds: 3,
+						timingSource: "PRESENTATION_TIMESTAMPS_AND_FRAME_DURATION",
 					},
 				},
 				bandingFrameCount: scores.length,
-				bandingFrames: scores.map((cambi, point) => ({
+				// The retained full coverage extends beyond the last chart sample.
+				bandingFrames: scores.slice(0, -1).map((cambi, point) => ({
 					frameNum: point,
 					timestampSeconds: timestamps[point],
-					durationSeconds: slot === 1 && point === 5 ? 0.25 : durations[point],
+					durationSeconds: durations[point],
 					cambi,
 				})),
 				bandingPreview: {
@@ -256,6 +284,7 @@ const videoState = (page: Page) =>
 				source: video.currentSrc,
 				time: video.currentTime,
 				paused: video.paused,
+				seeking: video.seeking,
 				ready: video.readyState,
 				width: video.videoWidth,
 				height: video.videoHeight,
@@ -279,12 +308,69 @@ async function selectRendition(selector: Locator, label: string) {
 	await selector.selectOption(value);
 }
 
+type NativeTimingObservation = {
+	kind: string;
+	source: string;
+	time: number;
+	duration: number;
+	mediaTime?: number;
+	presentedFrames?: number;
+};
+
+const nativeTimings = (page: Page) =>
+	page.evaluate(
+		() =>
+			(
+				window as Window & {
+					qcCambiNativeTiming?: NativeTimingObservation[];
+				}
+			).qcCambiNativeTiming ?? [],
+	);
+
 /** Shared with focused runtime QA; all report/media responses remain synthetic. */
 export async function verifyCambiComparisonBrowser(
 	page: Page,
 	context: BrowserContext,
 	info: TestInfo,
 ) {
+	// Observe real native events without replacing the decoder, clocks or callbacks.
+	await context.addInitScript(() => {
+		const observations: NativeTimingObservation[] = [];
+		Object.assign(window, { qcCambiNativeTiming: observations });
+		const seen = new WeakSet<HTMLVideoElement>();
+		const track = (video: HTMLVideoElement) => {
+			if (seen.has(video)) return;
+			seen.add(video);
+			const record = (
+				kind: string,
+				extra: Partial<NativeTimingObservation> = {},
+			) =>
+				observations.push({
+					kind,
+					source: video.currentSrc || video.src,
+					time: video.currentTime,
+					duration: video.duration,
+					...extra,
+				});
+			for (const kind of ["loadedmetadata", "durationchange", "seeked"])
+				video.addEventListener(kind, () => record(kind));
+			video.requestVideoFrameCallback((_now, metadata) =>
+				record("first-presented", {
+					mediaTime: metadata.mediaTime,
+					presentedFrames: metadata.presentedFrames,
+				}),
+			);
+		};
+		new MutationObserver((records) => {
+			for (const record of records)
+				for (const node of Array.from(record.addedNodes)) {
+					if (node instanceof HTMLVideoElement) track(node);
+					else if (node instanceof Element)
+						for (const video of Array.from(node.querySelectorAll("video")))
+							track(video);
+				}
+		}).observe(document, { childList: true, subtree: true });
+	});
 	await context.addCookies([
 		{ name: "ovp-locale", value: "en", url: page.url() },
 	]);
@@ -334,17 +420,63 @@ export async function verifyCambiComparisonBrowser(
 		});
 		const captions = preview.locator("figcaption");
 		await expect(captions).toHaveCount(2);
+		const origins = CAMBI_MEDIA.map((media) => media.origin);
+		const initial = await videoState(page);
+		await expect
+			.poll(async () => {
+				const observations = await nativeTimings(page);
+				return initial.every((video, index) =>
+					observations.some(
+						(observation) =>
+							observation.source === video.source &&
+							observation.kind === "first-presented" &&
+							observation.presentedFrames === 1 &&
+							observation.mediaTime === origins[index],
+					),
+				);
+			})
+			.toBe(true);
 		const seek = async (seconds: number) => {
 			await time.fill(String(seconds));
 			await time.press("Tab");
 			await expect
+				.poll(async () => Number(await time.inputValue()))
+				.toBeCloseTo(seconds, 3);
+			await expect
 				.poll(async () =>
 					(await videoState(page)).every(
-						(video) => Math.abs(video.time - seconds) < 0.04,
+						(video, index) =>
+							video.ready >= 2 &&
+							!video.seeking &&
+							Math.abs(video.time - (origins[index] ?? 0) - seconds) < 0.04,
 					),
 				)
 				.toBe(true);
 		};
+		// Neither the last displayed sample (2s) nor the MP4's initially advertised
+		// duration may truncate the complete 3s presentation-time coverage.
+		expect(Number(await time.getAttribute("max"))).toBeGreaterThanOrEqual(3);
+		await seek(2.85);
+		for (let index = 0; index < initial.length; index++) {
+			const video = initial[index];
+			const target = (origins[index] ?? 0) + 2.85;
+			if (video && video.duration < target - 0.04)
+				await expect
+					.poll(async () =>
+						(await nativeTimings(page)).some(
+							(observation) =>
+								observation.source === video.source &&
+								observation.kind === "durationchange" &&
+								observation.duration >= target,
+						),
+					)
+					.toBe(true);
+		}
+		for (const caption of await captions.all())
+			await expect(caption).toContainText("Not in the displayed score sample");
+		await expect(
+			page.getByRole("button", { name: "Next measured point", exact: true }),
+		).toBeDisabled();
 		await seek(1.26);
 		await expect(captions.nth(0)).toContainText("CAMBI 23.0");
 		await expect(captions.nth(1)).toContainText("CAMBI 11.0");
@@ -354,17 +486,14 @@ export async function verifyCambiComparisonBrowser(
 		await expect
 			.poll(async () => Number(await time.inputValue()))
 			.toBeCloseTo(1.8, 3);
+		await expect(captions.nth(0)).toContainText("CAMBI 7.0");
+		await expect(captions.nth(1)).toContainText("CAMBI 6.0");
 		await page
 			.getByRole("button", { name: "Previous measured point", exact: true })
 			.click();
 		await expect
 			.poll(async () => Number(await time.inputValue()))
 			.toBeCloseTo(1.125, 3);
-		await seek(2.85);
-		await expect(captions.nth(0)).toContainText("CAMBI 3.0");
-		await expect(captions.nth(1)).toContainText(
-			"Not in the displayed score sample",
-		);
 		await seek(1.26);
 		await page.getByRole("button", { name: "Play both", exact: true }).click();
 		await expect(
@@ -373,9 +502,13 @@ export async function verifyCambiComparisonBrowser(
 		await expect
 			.poll(async () => {
 				const videos = await videoState(page);
+				const relative = videos.map(
+					(video, index) => video.time - (origins[index] ?? 0),
+				);
 				return (
-					videos.every((video) => !video.paused && video.time > 1.46) &&
-					Math.abs((videos[0]?.time ?? 0) - (videos[1]?.time ?? 0)) < 0.15
+					videos.every(
+						(video, index) => !video.paused && (relative[index] ?? 0) > 1.46,
+					) && Math.abs((relative[0] ?? 0) - (relative[1] ?? 0)) < 0.15
 				);
 			})
 			.toBe(true);
@@ -383,6 +516,29 @@ export async function verifyCambiComparisonBrowser(
 		await expect
 			.poll(async () => (await videoState(page)).every((video) => video.paused))
 			.toBe(true);
+		const playbackPosition = Number(await time.inputValue());
+		const afterPlay = await videoState(page);
+		expect(
+			Math.abs(
+				playbackPosition - ((afterPlay[0]?.time ?? 0) - (origins[0] ?? 0)),
+			),
+		).toBeLessThan(0.15);
+		const expectedResults = syntheticBandingReports()[0]?.results.slice(0, 2);
+		expect(expectedResults).toHaveLength(2);
+		for (const [index, result] of (expectedResults ?? []).entries()) {
+			const score = result.bandingFrames.find(
+				(frame) =>
+					playbackPosition >= (frame.timestampSeconds ?? Number.NaN) &&
+					playbackPosition <
+						(frame.timestampSeconds ?? Number.NaN) +
+							(frame.durationSeconds ?? Number.NaN),
+			)?.cambi;
+			await expect(captions.nth(index)).toContainText(
+				score === undefined
+					? "Not in the displayed score sample"
+					: `CAMBI ${score.toFixed(1)}`,
+			);
+		}
 		const chart = page
 			.getByRole("img", { name: /CAMBI by presentation time/ })
 			.first();
@@ -393,7 +549,8 @@ export async function verifyCambiComparisonBrowser(
 		await expect
 			.poll(async () =>
 				(await videoState(page)).every(
-					(video) => Math.abs(video.time - 1.125) < 0.04,
+					(video, index) =>
+						Math.abs(video.time - (origins[index] ?? 0) - 1.125) < 0.04,
 				),
 			)
 			.toBe(true);
@@ -426,6 +583,19 @@ export async function verifyCambiComparisonBrowser(
 			path: info.outputPath(`cambi-${mode}-1440.png`),
 			fullPage: true,
 		});
+		writeFileSync(
+			info.outputPath(`cambi-${mode}-native-timing.json`),
+			JSON.stringify(
+				{
+					evidenceScope: "Generated MP4 bytes and synthetic CAMBI scores",
+					origins,
+					initial,
+					observations: await nativeTimings(page),
+				},
+				null,
+				2,
+			),
+		);
 		const closing = await page.locator("video").elementHandles();
 		await page
 			.getByRole("button", { name: "Close comparison preview", exact: true })
@@ -671,12 +841,26 @@ export async function verifyQcComparisonBrowser(
 	);
 	expect(bytes.length).toBeLessThanOrEqual(50_000);
 	expect(createHash("sha256").update(bytes).digest("hex")).toBe(MEDIA_SHA256);
+	const cambiBytes = CAMBI_MEDIA.map((media) => {
+		const bytes = readFileSync(
+			new URL(`./fixtures/${media.file}`, import.meta.url),
+		);
+		expect(bytes.length).toBeLessThanOrEqual(50_000);
+		expect(createHash("sha256").update(bytes).digest("hex")).toBe(media.sha256);
+		return bytes;
+	});
 	const reports = [...syntheticReports(), ...syntheticBandingReports()];
-	const mediaPaths = new Set(
+	const mediaPaths = new Map(
 		reports.flatMap((report) =>
-			report.results.map((row) =>
-				"preview" in row ? row.preview.url : row.bandingPreview.url,
-			),
+			report.results.map((row) => {
+				const data =
+					"preview" in row ? bytes : cambiBytes[row.id === "secondary" ? 1 : 0];
+				if (!data) throw new Error("Synthetic CAMBI media is missing");
+				return [
+					"preview" in row ? row.preview.url : row.bandingPreview.url,
+					data,
+				] as const;
+			}),
 		),
 	);
 	const context = await browser.newContext({
@@ -702,7 +886,8 @@ export async function verifyQcComparisonBrowser(
 		if (report && !url.search) return route.fulfill({ json: report });
 		if (url.pathname === "/api/vmaf-jobs" && !url.search)
 			return route.fulfill({ json: { items: syntheticQcIndex() } });
-		if (mediaPaths.has(`${url.pathname}${url.search}`)) {
+		const bytes = mediaPaths.get(`${url.pathname}${url.search}`);
+		if (bytes) {
 			const range = request.headers().range;
 			const match =
 				range === undefined ? null : /^bytes=(\d+)-(\d*)$/.exec(range);

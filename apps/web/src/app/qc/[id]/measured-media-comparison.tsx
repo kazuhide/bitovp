@@ -3,11 +3,17 @@
 import { type ReactNode, useRef, useState } from "react";
 import { useT } from "@/lib/i18n/context";
 import { fmtScore } from "../vmaf-shared";
+import { observePresentationOrigin } from "./presentation-origin";
 
-export type ComparisonMedia = { id: string; label: string; url: string };
+export type ComparisonMedia = {
+	id: string;
+	label: string;
+	url: string;
+	endSeconds?: number;
+};
 export type ComparisonClock =
 	| { kind: "frame"; fps: number; max: number }
-	| { kind: "time"; timestamps: number[]; max: number };
+	| { kind: "time"; timestamps: number[] };
 
 const control =
 	"rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-emerald-500";
@@ -43,19 +49,105 @@ export function MeasuredMediaComparison({
 	const [draft, setDraft] = useState<string | null>(null);
 	const [playing, setPlaying] = useState(false);
 	const [error, setError] = useState(false);
+	const [failure, setFailure] = useState<"media" | "timing" | "range">("media");
 	const [ready, setReady] = useState<Record<string, boolean>>({});
+	const [limits, setLimits] = useState<Record<string, number>>({});
+	const origins = useRef(new Map<string, number>());
+	const releaseOrigins = useRef(new Map<string, () => void>());
+	const seeks = useRef(new Map<string, { target: number; timeout: number }>());
 	const videos = useRef(new Map<string, HTMLVideoElement>());
 	const refs = useRef(
 		new Map<string, (video: HTMLVideoElement | null) => void>(),
 	);
 	const pending = useRef(0);
 	const operation = useRef(0);
+	function updateLimit(id: string, video: HTMLVideoElement) {
+		const origin = origins.current.get(id);
+		if (origin === undefined) return;
+		const span = video.duration - origin;
+		if (Number.isFinite(span) && span > 0)
+			setLimits((old) => (old[id] === span ? old : { ...old, [id]: span }));
+	}
+	function finishSeek(id: string, video: HTMLVideoElement) {
+		if (!origins.current.has(id)) return;
+		updateLimit(id, video);
+		const request = seeks.current.get(id);
+		if (request) {
+			if (
+				video.seeking ||
+				video.readyState < 2 ||
+				video.duration < request.target
+			)
+				return;
+			if (Math.abs(video.currentTime - request.target) > 0.000001) {
+				// MP4 duration can grow after the browser reads its tail. Retry a
+				// clamped seek only when the requested presentation is available.
+				video.currentTime = request.target;
+				return;
+			}
+			window.clearTimeout(request.timeout);
+			seeks.current.delete(id);
+		}
+		if (video.readyState >= 3)
+			setReady((old) => (old[id] ? old : { ...old, [id]: true }));
+	}
+	function seekTime(id: string, video: HTMLVideoElement, seconds: number) {
+		const origin = origins.current.get(id);
+		if (origin === undefined) return;
+		const previous = seeks.current.get(id);
+		if (previous) window.clearTimeout(previous.timeout);
+		const request: { target: number; timeout: number } = {
+			target: origin + seconds,
+			timeout: window.setTimeout(() => {
+				if (seeks.current.get(id) === request) {
+					seeks.current.delete(id);
+					fail("range");
+				}
+			}, 10_000),
+		};
+		seeks.current.set(id, request);
+		setReady((old) => ({ ...old, [id]: false }));
+		video.currentTime = request.target;
+		finishSeek(id, video);
+	}
 	function videoRef(candidate: ComparisonMedia) {
 		let ref = refs.current.get(candidate.id);
 		if (!ref) {
 			ref = (video) => {
 				if (video) {
 					videos.current.set(candidate.id, video);
+					if (clock?.kind === "time") {
+						let failed = false;
+						const timeout = window.setTimeout(() => {
+							failed = true;
+							fail("timing");
+						}, 10_000);
+						const cancel = observePresentationOrigin(
+							video,
+							(origin) => {
+								if (failed) return;
+								window.clearTimeout(timeout);
+								if (
+									!Number.isFinite(video.duration) ||
+									video.duration <= origin
+								)
+									return fail("range");
+								origins.current.set(candidate.id, origin);
+								updateLimit(candidate.id, video);
+								seekTime(candidate.id, video, pending.current);
+							},
+							() => {
+								failed = true;
+								window.clearTimeout(timeout);
+								fail("timing");
+							},
+						);
+						releaseOrigins.current.set(candidate.id, () => {
+							window.clearTimeout(timeout);
+							cancel();
+						});
+						if (failed) return;
+					}
 					// React Strict Mode reattaches the element after ref cleanup.
 					if (video.getAttribute("src") !== candidate.url) {
 						video.setAttribute("src", candidate.url);
@@ -63,6 +155,12 @@ export function MeasuredMediaComparison({
 					}
 				} else {
 					operation.current += 1;
+					releaseOrigins.current.get(candidate.id)?.();
+					releaseOrigins.current.delete(candidate.id);
+					origins.current.delete(candidate.id);
+					const request = seeks.current.get(candidate.id);
+					if (request) window.clearTimeout(request.timeout);
+					seeks.current.delete(candidate.id);
 					const old = videos.current.get(candidate.id);
 					old?.pause();
 					old?.removeAttribute("src");
@@ -77,7 +175,17 @@ export function MeasuredMediaComparison({
 	const selection = ids
 		.map((id) => candidates.find((candidate) => candidate.id === id))
 		.filter((item) => item !== undefined);
-	const max = clock?.max ?? 0;
+	const max =
+		clock?.kind === "frame"
+			? clock.max
+			: selection.length
+				? Math.min(
+						...selection.map((item) => item.endSeconds ?? limits[item.id] ?? 0),
+					)
+				: 0;
+	const timingReady =
+		clock?.kind !== "time" ||
+		selection.every((item) => origins.current.has(item.id));
 	const secondsAt = (value: number) =>
 		clock?.kind === "frame" ? (value + 0.5) / clock.fps : value;
 	const previous =
@@ -88,7 +196,7 @@ export function MeasuredMediaComparison({
 				: undefined;
 	const next =
 		clock?.kind === "time"
-			? clock.timestamps.find((time) => time > position + 1e-9)
+			? clock.timestamps.find((time) => time > position + 1e-9 && time <= max)
 			: position < max
 				? position + 1
 				: undefined;
@@ -103,6 +211,7 @@ export function MeasuredMediaComparison({
 			!Number.isFinite(value) ||
 			value < 0 ||
 			value > max ||
+			!timingReady ||
 			(clock?.kind === "frame" && !Number.isInteger(value))
 		)
 			return;
@@ -110,17 +219,25 @@ export function MeasuredMediaComparison({
 		pending.current = value;
 		setPosition(value);
 		if (clock)
-			for (const video of videos.current.values()) {
-				if (video.readyState >= 1) video.currentTime = secondsAt(value);
+			for (const [id, video] of videos.current) {
+				if (clock.kind === "time") seekTime(id, video, value);
+				else if (video.readyState >= 1) video.currentTime = secondsAt(value);
 			}
 	}
-	function fail() {
+	function fail(reason: "media" | "timing" | "range" = "media") {
 		pause();
+		setFailure(reason);
 		setError(true);
 	}
 	async function play() {
 		if (!clock || error || !selection.every((item) => ready[item.id])) return;
-		seek(position);
+		if (clock.kind === "frame") seek(position);
+		else
+			for (const [id, video] of videos.current) {
+				const origin = origins.current.get(id);
+				if (origin === undefined) return fail("timing");
+				video.currentTime = origin + position;
+			}
 		const token = operation.current;
 		const elements = [...videos.current.values()];
 		try {
@@ -198,24 +315,42 @@ export function MeasuredMediaComparison({
 									<video
 										muted
 										playsInline
-										preload="metadata"
+										preload={clock.kind === "time" ? "auto" : "metadata"}
 										aria-label={candidate.label}
 										className="aspect-video w-full bg-black object-contain"
-										src={candidate.url}
+										src={clock.kind === "frame" ? candidate.url : undefined}
 										ref={videoRef(candidate)}
 										onLoadedMetadata={(event) => {
-											event.currentTarget.currentTime = secondsAt(
-												pending.current,
-											);
+											if (clock.kind === "frame")
+												event.currentTarget.currentTime = secondsAt(
+													pending.current,
+												);
+											else finishSeek(candidate.id, event.currentTarget);
 										}}
-										onCanPlay={() =>
-											setReady((old) => ({ ...old, [candidate.id]: true }))
-										}
-										onError={fail}
+										onCanPlay={(event) => {
+											if (clock.kind === "frame")
+												setReady((old) => ({ ...old, [candidate.id]: true }));
+											else finishSeek(candidate.id, event.currentTarget);
+										}}
+										onDurationChange={(event) => {
+											if (clock.kind === "time")
+												finishSeek(candidate.id, event.currentTarget);
+										}}
+										onSeeked={(event) => {
+											if (clock.kind === "time")
+												finishSeek(candidate.id, event.currentTarget);
+										}}
+										onError={() => fail()}
 										onEnded={pause}
 										onTimeUpdate={(event) => {
 											if (!playing || candidate.id !== ids[0]) return;
-											const time = event.currentTarget.currentTime;
+											const mediaTime = event.currentTarget.currentTime;
+											const origin =
+												clock.kind === "time"
+													? origins.current.get(candidate.id)
+													: 0;
+											if (origin === undefined) return fail("timing");
+											const time = mediaTime - origin;
 											const value = Math.min(
 												max,
 												Math.max(
@@ -227,15 +362,21 @@ export function MeasuredMediaComparison({
 											);
 											pending.current = value;
 											setPosition(value);
-											for (const [id, video] of videos.current)
+											for (const [id, video] of videos.current) {
+												const otherOrigin =
+													clock.kind === "time" ? origins.current.get(id) : 0;
+												if (otherOrigin === undefined) return fail("timing");
+												const target = time + otherOrigin;
 												if (
 													id !== candidate.id &&
 													video.readyState >= 2 &&
-													Math.abs(video.currentTime - time) > 0.08
+													Math.abs(video.currentTime - target) > 0.08
 												)
-													video.currentTime = time;
+													video.currentTime = target;
+											}
 										}}
 									/>
+
 									<figcaption className="mt-1 text-xs text-zinc-400">
 										{candidate.label} · {metric}{" "}
 										{score !== undefined && Number.isFinite(score)
@@ -258,7 +399,7 @@ export function MeasuredMediaComparison({
 						<button
 							type="button"
 							className={control}
-							disabled={previous === undefined}
+							disabled={!timingReady || previous === undefined}
 							onClick={() => previous !== undefined && seek(previous)}
 						>
 							{t(
@@ -275,6 +416,7 @@ export function MeasuredMediaComparison({
 							)}
 							<input
 								type="number"
+								disabled={!timingReady}
 								min={0}
 								max={max}
 								step={clock.kind === "frame" ? 1 : "any"}
@@ -302,7 +444,7 @@ export function MeasuredMediaComparison({
 						<button
 							type="button"
 							className={control}
-							disabled={next === undefined}
+							disabled={!timingReady || next === undefined}
 							onClick={() => next !== undefined && seek(next)}
 						>
 							{t(
@@ -323,7 +465,13 @@ export function MeasuredMediaComparison({
 					</div>
 					{error ? (
 						<p role="alert" className="text-red-400 text-sm">
-							{t("qc.previewFailed")}
+							{t(
+								failure === "timing"
+									? "banding.previewTimingUnavailable"
+									: failure === "range"
+										? "banding.previewRangeUnavailable"
+										: "qc.previewFailed",
+							)}
 						</p>
 					) : !selection.every((item) => ready[item.id]) ? (
 						<p role="status" className="text-xs text-zinc-400">

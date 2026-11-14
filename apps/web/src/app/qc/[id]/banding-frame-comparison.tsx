@@ -32,6 +32,7 @@ export function BandingFrameComparison({
 						url: result.bandingPreview.url,
 						label:
 							labels?.[result.id] ?? renditionLabel(result.renditionRef, index),
+						endSeconds: result.bandingExecution?.coverage.endTimeSeconds,
 					},
 				]
 			: [],
@@ -40,15 +41,9 @@ export function BandingFrameComparison({
 	const timestamps = [...new Set(frames.map((frame) => frame.timestampSeconds))]
 		.filter((seconds) => Number.isFinite(seconds) && seconds >= 0)
 		.sort((a, b) => a - b);
-	const max = frames.reduce(
-		(end, frame) =>
-			Math.max(end, frame.timestampSeconds + frame.durationSeconds),
-		0,
-	);
-	const clock =
-		Number.isFinite(max) && max > 0
-			? { kind: "time" as const, timestamps, max }
-			: null;
+	// Bucket peaks need not contain the final frame. Bounds come from full
+	// coverage, or the decoder's relative duration for historical reports.
+	const clock = { kind: "time" as const, timestamps };
 	// A different retained object or measurement clock must release the old decoders.
 	const scope = JSON.stringify([candidates, clock, initialIds]);
 	return (

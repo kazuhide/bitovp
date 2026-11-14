@@ -46,22 +46,38 @@ const results: BandingResultDetail[] = [
 	},
 ];
 
-function ready(videos: NodeListOf<HTMLVideoElement>) {
-	for (const video of videos) {
+let firstFrames: Map<HTMLVideoElement, VideoFrameRequestCallback>;
+function ready(
+	videos: NodeListOf<HTMLVideoElement>,
+	origins: number[] = [],
+	duration = 3,
+) {
+	for (const [index, video] of [...videos].entries()) {
+		const origin = origins[index] ?? 0;
 		Object.defineProperty(video, "readyState", {
 			configurable: true,
 			value: 4,
 		});
+		Object.defineProperty(video, "duration", {
+			configurable: true,
+			value: duration + origin,
+		});
 		fireEvent.loadedMetadata(video);
+		act(() =>
+			firstFrames.get(video)?.(0, {
+				mediaTime: origin,
+				presentedFrames: 1,
+			} as VideoFrameCallbackMetadata),
+		);
 		fireEvent.canPlay(video);
 	}
 }
-async function open() {
+async function open(origins: number[] = [], duration = 3) {
 	await userEvent.click(
 		screen.getByRole("button", { name: "Open comparison preview" }),
 	);
 	const videos = document.querySelectorAll("video");
-	ready(videos);
+	ready(videos, origins, duration);
 	return videos;
 }
 function seek(seconds: string) {
@@ -73,6 +89,26 @@ function seek(seconds: string) {
 }
 
 beforeEach(() => {
+	firstFrames = new Map();
+	Object.defineProperty(
+		HTMLVideoElement.prototype,
+		"requestVideoFrameCallback",
+		{
+			configurable: true,
+			value: vi.fn(function (
+				this: HTMLVideoElement,
+				callback: VideoFrameRequestCallback,
+			) {
+				firstFrames.set(this, callback);
+				return firstFrames.size;
+			}),
+		},
+	);
+	Object.defineProperty(
+		HTMLVideoElement.prototype,
+		"cancelVideoFrameCallback",
+		{ configurable: true, value: vi.fn() },
+	);
 	vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
 	vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
 	vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
@@ -83,6 +119,107 @@ afterEach(() => {
 });
 
 describe("CAMBI comparison preview", () => {
+	it("retries a clamped tail seek when native duration grows to the full recorded endpoint", async () => {
+		const full = results.map((result) => ({
+			...result,
+			bandingExecution: {
+				version: 1 as const,
+				metric: "CAMBI_NR" as const,
+				backend: "cpu" as const,
+				implementation: "libvmaf" as const,
+				decisionSource: "CPU_REFERENCE" as const,
+				coverage: {
+					complete: true as const,
+					frameCount: 3,
+					durationSeconds: 4,
+					endTimeSeconds: 4,
+				},
+			},
+		}));
+		renderWithQuery(<BandingPanels results={full} />, "en");
+		const videos = await open([0.5, 1], 2);
+		const grow: (() => void)[] = [];
+		for (const [index, video] of [...videos].entries()) {
+			let end = 2 + (index === 0 ? 0.5 : 1);
+			let current = video.currentTime;
+			Object.defineProperty(video, "duration", {
+				configurable: true,
+				get: () => end,
+			});
+			Object.defineProperty(video, "currentTime", {
+				configurable: true,
+				get: () => current,
+				set: (value: number) => {
+					current = Math.min(value, end);
+				},
+			});
+			grow.push(() => {
+				end += 2;
+				fireEvent.durationChange(video);
+				fireEvent.canPlay(video);
+			});
+		}
+		seek("3.75");
+		expect(videos[0]?.currentTime).toBe(2.5);
+		expect(screen.getByRole("button", { name: "Play both" })).toBeDisabled();
+		for (const update of grow) update();
+		expect(videos[0]?.currentTime).toBeCloseTo(4.25);
+		expect(videos[1]?.currentTime).toBeCloseTo(4.75);
+		expect(screen.getByRole("button", { name: "Play both" })).toBeEnabled();
+	});
+
+	it("does not guess an origin in a browser without first-presentation callbacks", async () => {
+		Object.defineProperty(
+			HTMLVideoElement.prototype,
+			"requestVideoFrameCallback",
+			{ configurable: true, value: undefined },
+		);
+		renderWithQuery(<BandingPanels results={results} />, "en");
+		await userEvent.click(
+			screen.getByRole("button", { name: "Open comparison preview" }),
+		);
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			"could not establish the video presentation time",
+		);
+		expect(screen.getByRole("button", { name: "Play both" })).toBeDisabled();
+		for (const video of document.querySelectorAll("video"))
+			expect(video).not.toHaveAttribute("src");
+	});
+
+	it("maps each first presentation origin for seeks, score captions and synchronized playback", async () => {
+		renderWithQuery(<BandingPanels results={results} />, "en");
+		const videos = await open([0.5, 1]);
+		seek("1.29");
+		expect(videos[0]?.currentTime).toBeCloseTo(1.79);
+		expect(videos[1]?.currentTime).toBeCloseTo(2.29);
+		await userEvent.click(screen.getByRole("button", { name: "Play both" }));
+		await screen.findByRole("button", { name: "Pause both" });
+		const leader = videos[0] as HTMLVideoElement;
+		leader.currentTime = 1.76;
+		(videos[1] as HTMLVideoElement).currentTime = 1;
+		fireEvent.timeUpdate(leader);
+		expect(videos[1]?.currentTime).toBeCloseTo(2.26);
+		expect(
+			screen.getByRole("spinbutton", { name: "Presentation time (s)" }),
+		).toHaveValue(1.26);
+	});
+
+	it("allows the full historical media tail beyond the last displayed score point", async () => {
+		renderWithQuery(<BandingPanels results={results} />, "en");
+		const videos = await open([0.5, 1], 4);
+		seek("3.75");
+		expect(videos[0]?.currentTime).toBeCloseTo(4.25);
+		expect(videos[1]?.currentTime).toBeCloseTo(4.75);
+		expect(
+			screen.getByRole("spinbutton", { name: "Presentation time (s)" }),
+		).toHaveValue(3.75);
+		const captions = screen
+			.getByRole("region", { name: "Open comparison preview" })
+			.querySelectorAll("figcaption");
+		for (const caption of captions)
+			expect(caption).toHaveTextContent("Not in the displayed score sample");
+	});
+
 	it("loads two pinned videos on demand without reference FPS and releases them on close", async () => {
 		renderWithQuery(<BandingPanels results={results} />, "en");
 		expect(document.querySelectorAll("video")).toHaveLength(0);

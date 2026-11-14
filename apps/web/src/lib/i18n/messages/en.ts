@@ -2421,6 +2421,7 @@ export const en = {
 		language: "Language",
 	},
 	qc: {
+		metricView: "Quality metric",
 		referencePreparationSummary:
 			"Coded-raster comparison · display scaling ignored",
 		referencePreparationDescription:

@@ -15,6 +15,7 @@ import { formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
 import { AnalysisChartLayout } from "../analysis-chart-layout";
 import { CloudProgress } from "../cloud-progress";
+import { QualityMetricTabs } from "../quality-metric-tabs";
 import {
 	type QcJobDetail,
 	renditionColor,
@@ -388,9 +389,6 @@ export function VmafReport({ id }: { id: string }) {
 				</div>
 			) : null}
 
-			{job.banding && hasResults ? (
-				<BandingPanels results={job.results} />
-			) : null}
 			{hasResults ? (
 				<>
 					<ReferencePreparationSummary results={job.results} />
@@ -402,45 +400,67 @@ export function VmafReport({ id }: { id: string }) {
 						referenceHeight={job.reference?.height ?? null}
 					/>
 
-					<div className="mt-8 flex items-center justify-between gap-3">
-						<h2 className="font-medium text-sm text-zinc-200">
-							{job.mode === "LIVE"
-								? t("qc.windowedVmaf")
-								: t("qc.pooledSummary")}
-						</h2>
+					<div className="mt-4 flex items-start justify-between gap-3">
+						{job.banding ? (
+							<details className="min-w-0 flex-1 rounded-lg border border-zinc-800 px-3 py-2">
+								<summary className="cursor-pointer text-sm text-zinc-200 focus-visible:outline-2 focus-visible:outline-emerald-500">
+									<h2 className="inline font-medium">
+										{job.mode === "LIVE"
+											? t("qc.windowedVmaf")
+											: t("qc.pooledSummary")}
+									</h2>
+								</summary>
+								<PooledTable results={job.results} />
+							</details>
+						) : (
+							<h2 className="font-medium text-sm text-zinc-200">
+								{job.mode === "LIVE"
+									? t("qc.windowedVmaf")
+									: t("qc.pooledSummary")}
+							</h2>
+						)}
 						<ExportButtons jobId={job.id} />
 					</div>
 					{job.mode === "LIVE" ? (
 						<LiveQualityWarnings results={job.results} />
 					) : null}
-					<PooledTable results={job.results} />
+					{!job.banding ? <PooledTable results={job.results} /> : null}
 
-					<FrameComparison
+					<QualityMetricTabs
 						key={job.id}
-						results={job.results}
-						fps={job.reference?.fps}
-						mode={job.mode}
-						renderChart={(selection) => (
-							<AnalysisChartLayout
-								frames={
-									<>
-										<h2 className="font-medium text-sm text-zinc-200">
-											{t("uiX.perFrameVmaf")}
-											{maxFrameCount > 0 ? (
-												<span className="ml-2 font-normal text-xs text-zinc-500">
-													{t("uiX.downsampledExportFull", {
-														frames: maxFrameCount.toLocaleString(),
-													})}
-												</span>
-											) : null}
-										</h2>
-										<FrameChart results={job.results} {...selection} />
-									</>
-								}
-								distribution={distribution}
-								ladder={ladder}
+						cambi={
+							job.banding ? (
+								<BandingPanels results={job.results} compact />
+							) : undefined
+						}
+						vmaf={
+							<FrameComparison
+								results={job.results}
+								fps={job.reference?.fps}
+								mode={job.mode}
+								renderChart={(selection) => (
+									<AnalysisChartLayout
+										frames={
+											<>
+												<h2 className="font-medium text-sm text-zinc-200">
+													{t("uiX.perFrameVmaf")}
+													{maxFrameCount > 0 ? (
+														<span className="ml-2 font-normal text-xs text-zinc-500">
+															{t("uiX.downsampledExportFull", {
+																frames: maxFrameCount.toLocaleString(),
+															})}
+														</span>
+													) : null}
+												</h2>
+												<FrameChart results={job.results} {...selection} />
+											</>
+										}
+										distribution={distribution}
+										ladder={ladder}
+									/>
+								)}
 							/>
-						)}
+						}
 					/>
 					{job.mode === "LIVE" && job.results.some((result) => result.live) ? (
 						<details className="mt-8 rounded-lg border border-zinc-800 p-4">

@@ -1,7 +1,8 @@
 "use client";
 
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useContext, useRef, useState } from "react";
 import { useT } from "@/lib/i18n/context";
+import { QualityMetricPreviewContext } from "../quality-metric-tabs";
 import { fmtScore } from "../vmaf-shared";
 import { observePresentationOrigin } from "./presentation-origin";
 
@@ -44,7 +45,13 @@ export function MeasuredMediaComparison({
 }) {
 	const { t } = useT();
 	const available = clock !== null && candidates.length > 0;
-	const [open, setOpen] = useState(false);
+	const [localOpen, setLocalOpen] = useState(false);
+	const preview = useContext(QualityMetricPreviewContext);
+	const { open: openIntent, setOpen } = preview ?? {
+		open: localOpen,
+		setOpen: setLocalOpen,
+	};
+	const open = available && openIntent;
 	const [chosenIds, setIds] = useState<[string, string] | null>(null);
 	const ids: [string, string] = chosenIds ??
 		initialIds ?? [candidates[0]?.id ?? "", candidates[1]?.id ?? ""];

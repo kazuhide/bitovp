@@ -122,8 +122,8 @@ describe("catalogue parity", () => {
 		// Runtime measurement after the five reasons for scoring a pair on the CPU.
 		pinWithDriftAid(long.length, 1650, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		// Runtime measurement includes the CAMBI presentation-time preview labels.
-		pinWithDriftAid(short.size, 3213, "short");
+		// Runtime measurement includes the quality-metric tab label.
+		pinWithDriftAid(short.size, 3214, "short");
 	});
 
 	/**

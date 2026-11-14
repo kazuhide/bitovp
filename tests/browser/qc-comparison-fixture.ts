@@ -8,6 +8,10 @@ import {
 	type Page,
 	type TestInfo,
 } from "@playwright/test";
+import {
+	syntheticCombinedReports,
+	verifyCombinedQcBrowser,
+} from "./qc-combined-fixture";
 
 const JOBS = [
 	"11111111-1111-4111-8111-111111111101",
@@ -111,7 +115,7 @@ function result(
 	};
 }
 
-function syntheticReports() {
+export function syntheticReports() {
 	const scores = Array.from({ length: FRAME_COUNT }, (_, index) =>
 		index === 45 ? -5 : index < 30 ? 92 : index < 60 ? 98 : 108,
 	);
@@ -243,36 +247,38 @@ export function syntheticBandingReports() {
 }
 
 function syntheticQcIndex() {
-	return [...syntheticReports(), ...syntheticBandingReports()].map(
-		(report) => ({
-			id: report.id,
-			encodingJobId: null,
-			encodingName: report.encodingName,
-			mode: report.mode,
-			model: report.model,
-			scoringVersion: report.scoringVersion,
-			status: report.status,
-			error: report.error,
-			createdAt: report.createdAt,
-			...("detector" in report
-				? {
-						kind: report.kind,
-						detector: report.detector,
-						renditionMeans: [],
-						renditionBanding: report.results.map((row) => ({
-							label: row.renditionRef.label,
-							mean: row.pooled.banding.mean,
-							max: row.pooled.banding.max,
-						})),
-					}
-				: {
-						renditionMeans: report.results.map((row) => ({
-							label: row.renditionRef.label,
-							mean: row.pooled.mean,
-						})),
-					}),
-		}),
-	);
+	return [
+		...syntheticReports(),
+		...syntheticBandingReports(),
+		...syntheticCombinedReports(syntheticReports(), syntheticBandingReports()),
+	].map((report) => ({
+		id: report.id,
+		encodingJobId: null,
+		encodingName: report.encodingName,
+		mode: report.mode,
+		model: report.model,
+		scoringVersion: report.scoringVersion,
+		status: report.status,
+		error: report.error,
+		createdAt: report.createdAt,
+		...("detector" in report
+			? {
+					kind: report.kind,
+					detector: report.detector,
+					renditionMeans: [],
+					renditionBanding: report.results.map((row) => ({
+						label: row.renditionRef.label,
+						mean: row.pooled.banding.mean,
+						max: row.pooled.banding.max,
+					})),
+				}
+			: {
+					renditionMeans: report.results.map((row) => ({
+						label: row.renditionRef.label,
+						mean: row.pooled.mean,
+					})),
+				}),
+	}));
 }
 
 const videoState = (page: Page) =>
@@ -853,17 +859,26 @@ export async function verifyQcComparisonBrowser(
 		expect(createHash("sha256").update(bytes).digest("hex")).toBe(media.sha256);
 		return bytes;
 	});
-	const reports = [...syntheticReports(), ...syntheticBandingReports()];
+	const combinedReports = syntheticCombinedReports(
+		syntheticReports(),
+		syntheticBandingReports(),
+	);
+	const reports = [
+		...syntheticReports(),
+		...syntheticBandingReports(),
+		...combinedReports,
+	];
 	const mediaPaths = new Map(
 		reports.flatMap((report) =>
-			report.results.map((row) => {
-				const data =
-					"preview" in row ? bytes : cambiBytes[row.id === "secondary" ? 1 : 0];
-				if (!data) throw new Error("Synthetic CAMBI media is missing");
-				return [
-					"preview" in row ? row.preview.url : row.bandingPreview.url,
-					data,
-				] as const;
+			report.results.flatMap((row) => {
+				const paths: (readonly [string, Buffer])[] = [];
+				if ("preview" in row) paths.push([row.preview.url, bytes]);
+				if ("bandingPreview" in row) {
+					const data = cambiBytes[row.id === "secondary" ? 1 : 0];
+					if (!data) throw new Error("Synthetic CAMBI media is missing");
+					paths.push([row.bandingPreview.url, data]);
+				}
+				return paths;
 			}),
 		),
 	);
@@ -1145,6 +1160,7 @@ export async function verifyQcComparisonBrowser(
 			}
 		}
 		await verifyCambiComparisonBrowser(page, context, info);
+		await verifyCombinedQcBrowser(page, context, info, combinedReports);
 		expect(unexpected).toEqual([]);
 	} finally {
 		try {

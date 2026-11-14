@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Worker image with FFmpeg, streaming protocols, and VMAF models.
-FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS whisper-build
+FROM node:24.22.2-bookworm-slim@sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9 AS whisper-build
 RUN apt-get update && apt-get install -y --no-install-recommends cmake g++ make patch python3 ca-certificates && rm -rf /var/lib/apt/lists/*
 ADD --checksum=sha256:645445da884df6dbd52b30f82d7be7c01d1767c938714e477e786b88d529e9f4 https://codeload.github.com/ggml-org/whisper.cpp/tar.gz/d1be6fde11ac6e0407606b4e42fe72d34add8037 /tmp/whisper.tar.gz
 COPY apps/worker/native/whisper-cli-quality.patch /tmp/whisper-cli-quality.patch
@@ -13,7 +13,7 @@ RUN mkdir /source && tar xzf /tmp/whisper.tar.gz -C /source --strip-components=1
     && test "$(/source/build/bin/whisper-cli --version)" = "whisper.cpp version: 1.9.5"
 
 # Isolated CPU-only caption alignment dependencies; no model execution at build time.
-FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS caption-alignment-runtime
+FROM node:24.22.2-bookworm-slim@sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9 AS caption-alignment-runtime
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv python3-dev build-essential cmake pkg-config libsndfile1 sox ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN python3 -m venv /opt/bitovp-caption-alignment \
@@ -31,7 +31,7 @@ RUN python3 -m venv /opt/bitovp-caption-alignment \
 # only NVIDIA decoding and encoding are built; FFmpeg's built-in software codecs,
 # formats and filters are all kept. The commits and the build options follow the
 # recipe of github.com/BtbN/FFmpeg-Builds at c63bb308a1de.
-FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS ffmpeg-toolchain
+FROM node:24.22.2-bookworm-slim@sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9 AS ffmpeg-toolchain
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends autoconf automake cmake g++ gperf libtool make nasm ninja-build pkg-config python3 xxd \
 	&& rm -rf /var/lib/apt/lists/*
@@ -224,7 +224,7 @@ RUN --network=none cd ffmpeg && make -j"$(nproc)" && make install \
 FROM scratch AS ffmpeg
 COPY --from=ffmpeg-build /out/ /
 
-FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
+FROM node:24.22.2-bookworm-slim@sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9
 COPY --from=whisper-build /source/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=whisper-build /source/LICENSE /usr/local/share/licenses/whisper.cpp/LICENSE
 ADD --chmod=0644 --checksum=sha256:68a3fc98800b2a27b371f2fb79991daf3633bd89309d4ffaa6946fd587f375b5 https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf /usr/local/share/fonts/bitovp/NotoSansCJKjp-Regular.otf

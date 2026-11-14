@@ -102,7 +102,8 @@ unavailable segments remain unverified.
 
 Before libvmaf compares them, FFmpeg gives the reference and the encode one
 frame for every frame interval of the reference's frame rate (its `fps`
-filter). It repeats a frame where a file leaves one out, and it repeats or
+filter), and it counts the intervals of each file from the file's first
+frame. It repeats a frame where a file leaves one out, and it repeats or
 drops frames of an encode that has another frame rate. The frames of the two
 files are then compared in their order, so frame N of the reference and frame
 N of the encode are the same moment. This is the standard method of **Local
@@ -110,10 +111,11 @@ CPU** and of a pair that **Local (GPU if available)** scores on the CPU. A
 cloud measurement uses the command once its worker image is rebuilt from this
 version, and it still ends with an error for a reference that leaves frames
 out, as before: the cloud worker expects as many scored frames as the
-reference holds. A Live measurement scores as before, because its reference
-is written with a frame in every interval before it is scored: references
-that were written that way passed the filter without a changed frame at
-eight frame rates. No whole Live measurement was run with the change. The
+reference holds. A Live measurement scores as before. Its reference is
+written with a frame in every interval before it is scored, and the files
+that it compares hold the video alone: whole Live measurements gave the same
+score for every frame with this version and with the one before it, also for
+segments whose frames lie half an interval after a whole second. The
 “Frame index · BT.709 · 10-bit” method pairs frames by their index instead
 and is unchanged.
 
@@ -131,84 +133,81 @@ These are the scores of an arm64 worker. An x86-64 worker gave 19.32 and 44.02
 for the first pair and 18.35 and 28.62 for the third
 ([the score of one pair on arm64 and on x86-64](../FFMPEG-BUILD.md#the-score-of-one-pair-on-arm64-and-on-x86-64)).
 
-A measurement of a reference with a constant frame rate gives the score that
-it gave before: 530 comparisons of such files, of 12 to 60 frames a second in
-MP4, fragmented MP4, QuickTime, Matroska, WebM and MPEG-TS, scored the same
-before and after. The measurement generation is therefore still 3, and a
-report from before the change is not marked as outdated. Measure again where
-the reference of an earlier report has a variable frame rate; the end of this
-section shows how to see such a file. The measured references leave frames
-out of an even grid; a reference whose frames come at irregular times, as a
-screen recording has them, was not measured.
+Two files with a constant frame rate whose video starts with the file score as
+they did before: 579 comparisons of such files, of 12 to 120 frames a second
+in MP4, fragmented MP4, QuickTime, Matroska, WebM and MPEG-TS, scored as in
+v1.2.1 (four of them, with pictures 216 pixels wide, with one libvmaf thread;
+with four their score varies from run to run, before as now). The
+measurement generation is therefore still 3, and a report from
+before the change is not marked as outdated. Measure again where the
+reference of an earlier report has a variable frame rate, or where a file's
+video starts later than the file in the way described below; the end of this
+section shows how to see such files. A reference whose frames come at
+irregular times, as a screen recording has them, is compared at the same
+moments as well: a screen recording of 132 frames in 240 intervals of 60
+frames a second scored 89.77 with its encode, where it scored 5.85 in v1.2.1.
 
-One kind of file with a constant frame rate is not compared frame for frame.
-Matroska and WebM keep times in milliseconds. When the video of such a file
-starts later than the file does, for example because its audio starts first,
-and the delay is about half a frame interval, or that plus a whole number of
-intervals (one and a half, two and a half), FFmpeg sends some frames to the
-interval before and some to the one after, so it drops some frames and
-repeats others. A copy of the file in another container keeps those times.
-With a reference of 24 frames a second:
+Until 2026-11-14 one kind of file with a constant frame rate was not compared
+frame for frame either. Matroska, WebM and FLV keep times in milliseconds.
+When the video of such a file starts later than the file does, for example
+because its audio starts first, and the delay is about half a frame interval,
+or that plus a whole number of intervals (one and a half, two and a half),
+FFmpeg counted the intervals from the start of the file and sent some frames
+to the interval before and some to the one after, so it dropped some frames
+and repeated others. A copy of the file in another container keeps those
+times. With a reference of 24 frames a second:
 
-| Pair | Score |
-| --- | --- |
-| Neither file's video starts late | 90.51 |
-| The reference's video starts 21 milliseconds late | 67.84 |
-| The encode's video starts 21 milliseconds late | 69.01 |
-| Both start 21 milliseconds late | 89.30 |
+| Pair | v1.2.1 | Now |
+| --- | --- | --- |
+| Neither file's video starts late | 90.51 | 90.51 |
+| The reference's video starts 21 milliseconds late | 90.51 | 90.51 |
+| The encode's video starts 21 milliseconds late | 69.01 | 90.51 |
+| Both start 21 milliseconds late | 69.01 | 90.51 |
 
-An encode of this kind has always scored so; a reference does since the
-change, and scored 90.51 before it. The delay has to be within about half a
-millisecond of half an interval, one and a half, two and a half and so on. At
-24000/1001 frames a second, where an interval is 41.71 milliseconds and those
-points are 20.85, 62.56 and 104.27 milliseconds, delays of 21, 63 and 104
-milliseconds lowered the score, and delays of 10, 20, 22 and 62 did not. At
-30000/1001 frames a second, a delay of 50 milliseconds, one and a half
-intervals, lowered a reference's score from 89.10 to 62.55. At 25 frames a
-second, where an interval is a whole number of milliseconds, a delay of half
-an interval did not lower it.
+FFmpeg now counts each file's intervals from its first frame. Between the two
+changes of 2026-11-14 a late reference scored lower as well: 67.84 in the
+second row and 89.30 in the last. In 95 comparisons with a file whose video
+starts 4 to 146 milliseconds after the file, in Matroska, WebM, FLV, MP4,
+MPEG-TS and MPEG program streams, each score is that of the same files without
+the delay. Before, the delay had to be within about half a millisecond of
+half an interval, one and a half, two and a half and so on to change the
+score: at 24000/1001 frames a second, where an interval is 41.71 milliseconds
+and those points are 20.85, 62.56 and 104.27 milliseconds, delays of 21, 63
+and 104 milliseconds did, and delays of 10, 20, 22 and 62 did not. At 25
+frames a second, where an interval is a whole number of milliseconds, a delay
+of half an interval did not.
 
 To see whether a file is of this kind, compare the start of its video stream
 with the start of the file:
 
 ```sh
-ffprobe -v error -show_entries stream=codec_type,start_time:format=start_time reference.mkv
+ffprobe -v error -show_entries stream=codec_type,start_time:format=start_time encode.mkv
 ```
 
 The delay is the video's `start_time` minus the file's. A file that FFmpeg
 9.0.2 wrote with AAC audio in Matroska or MP4, or with Opus audio in WebM, was
-not of this kind: its video and the file both started at zero.
-
-A copy that holds the video stream alone scored 90.51 in each of the three
-cases of the table:
-
-```sh
-ffmpeg -i reference.mkv -map 0:v -c copy reference-video.mkv
-```
-
-GPU scoring reads each file's times from its first frame and gave 90.51 for
-all four pairs. The
+not of this kind: its video and the file both started at zero. The
 [build record](../FFMPEG-BUILD.md#the-references-frame-times) holds the
 measurements.
 
 To see what the standard method does with the frames of a reference, run its
-`fps` filter alone. Read the file's frame rate (`r_frame_rate`) and put it into
-the filter:
+filters alone. Read the file's frame rate (`r_frame_rate`) and put it into the
+`fps` filter:
 
 ```sh
 ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=nw=1:nk=1 reference.mkv | head -n 1
-ffmpeg -v verbose -i reference.mkv -vf fps=24/1 -an -f null - 2>&1 | grep "frames duplicated" | tail -n 1
+ffmpeg -v verbose -i reference.mkv -vf setpts=PTS-STARTPTS,fps=24/1 -an -f null - 2>&1 | grep "frames duplicated" | tail -n 1
 ```
 
 The line names the frames that went into the filter and out of it, and those
 that it dropped and repeated (duplicated). With the worker's FFmpeg, on 588
 test files, it dropped and repeated nothing in each file with a frame in every
-interval whose video starts with the file. It repeated one frame for each
-frame left out, and dropped none, in each of the 41 files that leave frames
-out, and it dropped or repeated frames in 30 of the 63 files whose video
-starts later than the file. Where it repeats or drops frames of a reference,
-a GPU score and a **Local CPU** score of a pair can differ:
-[GPU scores and Local CPU scores](./GPU-QUALITY.md#gpu-scores-and-local-cpu-scores).
+interval, whether its video starts with the file or later, and it repeated one
+frame for each frame left out, and dropped none, in each of the 41 files that
+leave frames out. A screen recording's 132 frames became 240, of which 108
+were repeated. Where it repeats or drops frames of a file, GPU scoring does
+not take the pair, and **Local (GPU if available)** scores it on the CPU:
+[Pairs that GPU scoring does not score](./GPU-QUALITY.md#pairs-that-gpu-scoring-does-not-score).
 
 ### Provider-encoded samples: October 27, 2026
 

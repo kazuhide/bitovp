@@ -40,6 +40,10 @@ TOL="0.5"
 # static libvmaf build) with -threads 1 encodes, which are byte-exact run to
 # run; a drift past ±0.5 means the ffmpeg/libvmaf pin moved and must be
 # re-baselined. Override with VMAF_PINNED_SCORE when re-pinning the image.
+# Observed again on 2026-11-14 on the image that compiles FFmpeg n8.1.3 from
+# source, with the argv that the builder emits since that date: 65.146268,
+# and 74.027285 for the default model below, as with the copied command
+# before it.
 PINNED="${VMAF_PINNED_SCORE:-65.146268}"
 
 # The PRODUCT DEFAULT (core's DEFAULT_VMAF_MODEL, ledger #104). This script's
@@ -85,38 +89,51 @@ echo "[vmaf-accept] generating distorted (fixed 300k re-encode, threads=1)…"
 	-pix_fmt yuv420p "$DIST" 2>/dev/null
 
 # --- the EXACT argv buildVmafCommand(opts) emits --------------------------
-# Mirrors packages/core/src/vmaf/command.ts for:
-#   referencePath=REF, distortedPath=DIST, model=<sel>,
-#   scaleToReference={1280,720}, fpsConform=30, logPath=<log>.
-# Input order: -i #0 = distorted, -i #1 = reference. filter_complex:
-#   [0:v]scale=1280:720:flags=bicubic,fps=30[dist];[dist][1:v]libvmaf=…[out]
-# <sel> is either "version=<model>" or "path=<file>" — the only difference
-# between the two runs below, exactly like the command builder's branch.
-run_vmaf() {
-	# $1 = libvmaf model selector spec, $2 = log path
-	sel="$1"
-	log="$2"
-	"$FFMPEG" -hide_banner -nostdin \
-		-i "$DIST" \
-		-i "$REF" \
-		-filter_complex \
-		"[0:v]scale=1280:720:flags=bicubic,fps=30[dist];[dist][1:v]libvmaf=model=${sel}:log_path=${log}:log_fmt=json[out]" \
-		-map "[out]" -f null - 2>/dev/null
+# The argv is built by this image's own packages/core/src/vmaf/command.ts
+# (with the image's bundled tsx), for:
+#   referencePath=REF, distortedPath=DIST, model=<model>, [modelPath=<file>],
+#   scaleToReference={1280,720}, fpsConform=30, logPath=<log>, [psnr=true].
+# A copy of the command written into this script went out of date as the
+# builder changed (the scoring generations of command.ts and the frame times
+# of each input), so it is no longer copied. The builder chooses
+# model=version=<model> without a model file and model=path=<file> with one:
+# the only difference between the version= and path= runs below.
+vmaf_argv_run() {
+	# $1 = model, $2 = model file or "", $3 = log path, $4 = psnr (true|false)
+	(
+		cd /app/apps/worker &&
+			node --import tsx --input-type=module -e '
+import { spawnSync } from "node:child_process";
+import { buildVmafCommand } from "/app/packages/core/src/vmaf/command.ts";
+const [ffmpeg, distortedPath, referencePath, model, modelPath, logPath, psnr] =
+	process.argv.slice(1);
+const argv = buildVmafCommand({
+	distortedPath,
+	referencePath,
+	model,
+	...(modelPath ? { modelPath } : {}),
+	logPath,
+	scaleToReference: { width: 1280, height: 720 },
+	fpsConform: 30,
+	...(psnr === "true" ? { psnr: true } : {}),
+});
+const run = spawnSync(ffmpeg, argv, { stdio: ["ignore", "ignore", "ignore"] });
+process.exit(run.status ?? 1);
+' "$FFMPEG" "$DIST" "$REF" "$1" "$2" "$3" "$4"
+	)
 }
 
-# Same as run_vmaf but ALSO enables libvmaf's psnr feature — the exact token
-# buildVmafCommand emits when psnr:true is set: `:feature=name=psnr:` between
-# the model selector and log_path (packages/core/src/vmaf/command.ts §PSNR).
+run_vmaf() {
+	# $1 = model, $2 = model file or "" (the built-in model), $3 = log path
+	vmaf_argv_run "$1" "$2" "$3" false
+}
+
+# Same as run_vmaf but ALSO enables libvmaf's psnr feature — buildVmafCommand
+# then emits `:feature=name=psnr:` between the model selector and log_path
+# (packages/core/src/vmaf/command.ts §PSNR).
 run_vmaf_psnr() {
-	# $1 = libvmaf model selector spec, $2 = log path
-	sel="$1"
-	log="$2"
-	"$FFMPEG" -hide_banner -nostdin \
-		-i "$DIST" \
-		-i "$REF" \
-		-filter_complex \
-		"[0:v]scale=1280:720:flags=bicubic,fps=30[dist];[dist][1:v]libvmaf=model=${sel}:feature=name=psnr:log_path=${log}:log_fmt=json[out]" \
-		-map "[out]" -f null - 2>/dev/null
+	# $1 = model, $2 = model file or "", $3 = log path
+	vmaf_argv_run "$1" "$2" "$3" true
 }
 
 # Extract pooled_metrics.vmaf.mean from the libvmaf JSON log (node is always
@@ -146,17 +163,17 @@ LOG2="$WORK/run2.json"
 LOGP="$WORK/runpath.json"
 
 echo "[vmaf-accept] run 1 (model=version=$MODEL)…"
-run_vmaf "version=$MODEL" "$LOG1"
+run_vmaf "$MODEL" "" "$LOG1"
 S1="$(mean_of "$LOG1")"
 echo "[vmaf-accept]   mean VMAF = $S1"
 
 echo "[vmaf-accept] run 2 (model=version=$MODEL, reproducibility)…"
-run_vmaf "version=$MODEL" "$LOG2"
+run_vmaf "$MODEL" "" "$LOG2"
 S2="$(mean_of "$LOG2")"
 echo "[vmaf-accept]   mean VMAF = $S2"
 
 echo "[vmaf-accept] run path (model=path=$MODEL_DIR/$MODEL.json)…"
-run_vmaf "path=$MODEL_DIR/$MODEL.json" "$LOGP"
+run_vmaf "$MODEL" "$MODEL_DIR/$MODEL.json" "$LOGP"
 SP="$(mean_of "$LOGP")"
 echo "[vmaf-accept]   mean VMAF = $SP"
 
@@ -185,7 +202,7 @@ echo "[vmaf-accept]   OK ($S1 vs pinned $PINNED)"
 LOGDEF="$WORK/run_default.json"
 echo ""
 echo "[vmaf-accept] run default (model=path=$MODEL_DIR/$DEFAULT_MODEL.json)…"
-run_vmaf "path=$MODEL_DIR/$DEFAULT_MODEL.json" "$LOGDEF"
+run_vmaf "$DEFAULT_MODEL" "$MODEL_DIR/$DEFAULT_MODEL.json" "$LOGDEF"
 SDEF="$(mean_of "$LOGDEF")"
 echo "[vmaf-accept]   mean VMAF ($DEFAULT_MODEL) = $SDEF"
 echo "[vmaf-accept] default-model score within ±$TOL of the pinned $DEFAULT_PINNED …"
@@ -209,7 +226,7 @@ echo "[vmaf-accept]   OK — $DEFAULT_MODEL ($SDEF) is distinguishable from $MOD
 LOGPSNR="$WORK/run_psnr.json"
 echo ""
 echo "[vmaf-accept] run psnr (model=version=$MODEL, feature=name=psnr)…"
-run_vmaf_psnr "version=$MODEL" "$LOGPSNR"
+run_vmaf_psnr "$MODEL" "" "$LOGPSNR"
 SPSNR_VMAF="$(mean_of "$LOGPSNR")"
 PSNR_MEAN="$(psnr_mean_of "$LOGPSNR")"
 echo "[vmaf-accept]   mean VMAF (psnr run) = $SPSNR_VMAF"

@@ -66,28 +66,31 @@
  * by slot with its encode; its frames were numbered as they came before. Then
  * both inputs got `setpts=PTS-STARTPTS` before the filter, which counts each
  * input's slots from its own first frame instead of from the start of its
- * file. The generation stays 3, because the two pass a file with a frame in
- * every slot of its frame rate unchanged, and a new generation would mark every
- * stored report as outdated: in 530 comparisons of such files (12 to 60
- * frames a second; MP4, fragmented MP4, QuickTime, Matroska, WebM and
- * MPEG-TS; first frames a part of a slot after zero; with and without audio)
- * the score and the frame count were the same before and after, in four of
- * them, of pictures 216 pixels wide, with one libvmaf thread. Two kinds of
- * file score otherwise than before:
+ * file. The generation stays 3, because a new generation would mark every
+ * stored report as outdated, and the two leave the score of two files with a
+ * frame in every slot whose video starts with the file as it was: in 579 such
+ * comparisons (12 to 120 frames a second; MP4, fragmented MP4, QuickTime,
+ * Matroska, WebM and MPEG-TS; first frames a part of a slot after zero; with
+ * and without audio) the score and the frame count were those of v1.2.1,
+ * except in four whose score moves from run to run with four libvmaf threads
+ * (pictures 216 pixels wide), and which gave one score with one thread. Two
+ * kinds of file score otherwise:
  *
  * - A reference that leaves frames out. With an encode that leaves out the
  *   same frames: 19.31 before, 44.01 after. With an encode that has every
  *   frame: 18.26 before, 28.53 after.
- * - An encode with a frame in every slot whose container keeps times in
- *   milliseconds and whose video starts later than the file does by about
- *   half a slot, or by that plus a whole number of slots, as in a Matroska
- *   file whose audio starts first. The filter sent each frame to the slot
- *   nearest its time, counted from the start of the file, and the
- *   millisecond's rounding sent neighbouring frames to one slot: such an
- *   encode of 24 frames a second whose video starts 21 milliseconds late
- *   scored 69.01, and scores 90.51, the score of the same encode without the
- *   delay. A reference of that kind passed unchanged before the first change,
- *   and does again.
+ * - A file whose video starts later than the file does, as in a Matroska file
+ *   whose audio starts first. The filter sent each frame to the slot nearest
+ *   its time from the start of the file, and where the delay is about half a
+ *   slot, or that plus whole slots, the rounding of the times to milliseconds
+ *   sent neighbouring frames to one slot. An encode was compared so since the
+ *   first commit: one of 24 frames a second whose video starts 21
+ *   milliseconds late scored 69.01, and scores 90.51, the score of the same
+ *   encode without the delay. A reference was compared so between the two
+ *   changes only. In 95 comparisons with such a file (delays of 4 to 146
+ *   milliseconds; FLV, MP4, Matroska, WebM, MPEG-PS and MPEG-TS) each score
+ *   is that of the same files without the delay; v1.2.1 gave that score in 67
+ *   of them, the command between the two changes in 39.
  *
  * "The reference's frame times" in docs/FFMPEG-BUILD.md records the
  * measurements.

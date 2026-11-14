@@ -7,7 +7,6 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
-import { BandingPanels } from "../[id]/banding-panel";
 import { VmafScoreLegend } from "../vmaf-score-legend";
 import {
 	type BandingJobDetail,
@@ -27,10 +26,7 @@ import {
 	type VmafJobDetail,
 	type VmafResultDetail,
 } from "../vmaf-shared";
-import {
-	BandingReportComparison,
-	bandingComparisonInitialIds,
-} from "./banding-report-comparison";
+import { BandingReportComparison } from "./banding-report-comparison";
 import { ReportFrameComparison } from "./report-frame-comparison";
 
 /** Bounds for the comparison overlay — keep it readable, keep the URL sane. */
@@ -313,9 +309,6 @@ export function CompareClient() {
 	const comparisonSeriesCount = bandingJobs.length
 		? bandingJobs.reduce((count, job) => count + job.results.length, 0)
 		: series.length;
-	const visibleBandingSeries = shownSeries.filter(
-		(item) => item.result.pooled.banding,
-	);
 
 	return (
 		<section>
@@ -414,24 +407,6 @@ export function CompareClient() {
 						series={series}
 						shownSeries={shownSeries}
 					/>
-					{visibleBandingSeries.length ? (
-						<BandingPanels
-							results={visibleBandingSeries.map((item) => ({
-								...item.result,
-								id: item.key,
-							}))}
-							labels={Object.fromEntries(
-								visibleBandingSeries.map((item) => [item.key, item.label]),
-							)}
-							initialIds={bandingComparisonInitialIds(
-								visibleBandingSeries.map((item) => ({
-									id: item.key,
-									reportId: item.jobId,
-									preview: item.result.bandingPreview,
-								})),
-							)}
-						/>
-					) : null}
 				</>
 			)}
 		</section>

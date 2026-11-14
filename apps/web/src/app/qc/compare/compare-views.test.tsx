@@ -229,6 +229,14 @@ describe("CompareClient", () => {
 		searchParams = new URLSearchParams({ jobs: `${JOB_A.id},${JOB_B.id}` });
 		serve(combined);
 		wrap(<CompareClient />);
+		expect(await screen.findByRole("tab", { name: "VMAF" })).toHaveAttribute(
+			"aria-selected",
+			"true",
+		);
+		expect(
+			screen.getAllByRole("button", { name: "Open comparison preview" }),
+		).toHaveLength(1);
+		await userEvent.click(screen.getByRole("tab", { name: "CAMBI" }));
 		expect(
 			await screen.findByRole("region", {
 				name: "Banding detection — clip-low · 360p",

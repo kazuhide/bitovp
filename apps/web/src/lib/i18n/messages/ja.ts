@@ -2378,6 +2378,7 @@ export const ja = {
 		language: "言語",
 	},
 	qc: {
+		metricView: "画質指標",
 		referencePreparationSummary: "符号化ラスタで比較・表示用の拡縮を無視",
 		referencePreparationDescription:
 			"以下は手動指定により表示用の拡縮を無視し、元の符号化ラスタで比較した結果です。表示後の見え方は検証していません。",

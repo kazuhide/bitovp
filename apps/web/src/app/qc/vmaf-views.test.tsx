@@ -93,6 +93,67 @@ afterEach(() => {
 });
 
 describe("VmafReport", () => {
+	it("starts combined reports on VMAF with one preview and a collapsed summary, then switches metrics", async () => {
+		const base = detail();
+		const result = base.results[0];
+		if (!result) throw new Error("Combined fixture requires a rendition");
+		const job = detail({
+			banding: true,
+			results: [
+				{
+					...result,
+					preview: { url: "/vmaf.mp4" },
+					pooled: {
+						...result.pooled,
+						banding: {
+							mean: 3,
+							min: 3,
+							max: 3,
+							frameCount: 1,
+							durationSeconds: 0.04,
+						},
+					},
+					bandingFrames: [
+						{
+							frameNum: 0,
+							timestampSeconds: 0,
+							durationSeconds: 0.04,
+							cambi: 3,
+						},
+					],
+					bandingPreview: { url: "/cambi.mp4" },
+				},
+			],
+		});
+		apiFetch.mockResolvedValue(job);
+		wrap(<VmafReport id={job.id} />);
+		const vmafTab = await screen.findByRole("tab", {
+			name: "VMAF",
+		});
+		expect(vmafTab).toHaveAttribute("aria-selected", "true");
+		expect(
+			screen.getAllByRole("button", { name: "Open comparison preview" }),
+		).toHaveLength(1);
+		const summary = screen.getByText("Pooled summary").closest("details");
+		expect(summary).not.toHaveAttribute("open");
+		expect(summary?.querySelector("table")).toBeInTheDocument();
+		expect(
+			screen.getByRole("figure", { name: "VMAF distribution" }),
+		).toBeInTheDocument();
+		await userEvent.click(screen.getByRole("tab", { name: "CAMBI" }));
+		expect(screen.getByRole("tabpanel", { name: "CAMBI" })).toBeInTheDocument();
+		expect(
+			screen.getAllByRole("button", { name: "Open comparison preview" }),
+		).toHaveLength(1);
+		expect(
+			screen.queryByRole("figure", { name: "VMAF distribution" }),
+		).not.toBeInTheDocument();
+		await userEvent.click(vmafTab);
+		expect(
+			screen.getByRole("figure", { name: "VMAF distribution" }),
+		).toBeInTheDocument();
+	});
+
 	it("confirms stopping only the selected cloud measurement", async () => {
 		const job = detail({
 			status: "RUNNING",

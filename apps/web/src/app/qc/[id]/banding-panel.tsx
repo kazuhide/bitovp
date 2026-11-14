@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { InfoHint } from "@/components/ui/info-hint";
 import { formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
 import type { PublicBandingAssessment } from "@/lib/server/banding-public";
@@ -42,18 +43,32 @@ export function BandingPanels({
 	results,
 	labels,
 	initialIds,
+	compact = false,
 }: {
 	results: Result[];
 	labels?: Readonly<Record<string, string>>;
 	initialIds?: [string, string];
+	compact?: boolean;
 }) {
 	const { t } = useT();
+	const heading = (
+		<h2 className="font-medium text-sm text-zinc-200">
+			{t("banding.title")} · CAMBI
+		</h2>
+	);
 	return (
-		<div className="mt-6 space-y-6">
-			<h2 className="font-medium text-sm text-zinc-200">
-				{t("banding.title")} · CAMBI
-			</h2>
-			<p className="text-sm text-zinc-400">{t("banding.hint")}</p>
+		<div className={compact ? "space-y-3" : "mt-6 space-y-6"}>
+			{compact ? (
+				<div className="flex items-center gap-2">
+					{heading}
+					<InfoHint labelFor={t("banding.title")} text={t("banding.hint")} />
+				</div>
+			) : (
+				heading
+			)}
+			{!compact ? (
+				<p className="text-sm text-zinc-400">{t("banding.hint")}</p>
+			) : null}
 			<BandingFrameComparison
 				results={results}
 				labels={labels}
@@ -62,6 +77,7 @@ export function BandingPanels({
 					<BandingResultPanels
 						results={results}
 						labels={labels}
+						compact={compact}
 						{...selection}
 					/>
 				)}
@@ -75,11 +91,13 @@ function BandingResultPanels({
 	labels,
 	selectedTime,
 	onTimeSelect,
+	compact,
 }: {
 	results: Result[];
 	labels?: Readonly<Record<string, string>>;
 	selectedTime?: number;
 	onTimeSelect: (seconds: number) => void;
+	compact: boolean;
 }) {
 	const { t } = useT();
 	const [selection, setSelection] = useState<{
@@ -89,7 +107,13 @@ function BandingResultPanels({
 		opener: HTMLButtonElement;
 	} | null>(null);
 	return (
-		<div className="space-y-6">
+		<div
+			className={
+				compact
+					? "grid min-w-0 grid-cols-1 items-start gap-3 xl:grid-cols-2"
+					: "space-y-6"
+			}
+		>
 			{results.map((result, index) => {
 				const pooled = result.pooled.banding;
 				if (!pooled)
@@ -114,9 +138,11 @@ function BandingResultPanels({
 					<section
 						key={result.id}
 						aria-label={`${t("banding.title")} — ${label}`}
-						className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-4"
+						className={`rounded-lg border border-zinc-800 bg-zinc-900/30 ${compact ? "min-w-0 p-3" : "p-4"}`}
 					>
-						<header className="flex flex-wrap items-center gap-3">
+						<header
+							className={`flex flex-wrap items-center ${compact ? "gap-2" : "gap-3"}`}
+						>
 							<h3 className="font-medium text-sm text-zinc-200">{label}</h3>
 							<Badge
 								tone={
@@ -132,7 +158,13 @@ function BandingResultPanels({
 										: t("banding.noThreshold")}
 							</Badge>
 						</header>
-						<dl className="mt-4 grid grid-cols-2 gap-4 text-sm sm:grid-cols-3 lg:grid-cols-5">
+						<dl
+							className={
+								compact
+									? "mt-2 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3"
+									: "mt-4 grid grid-cols-2 gap-4 text-sm sm:grid-cols-3 lg:grid-cols-5"
+							}
+						>
 							{[
 								[t("banding.mean"), fixed(pooled.mean)],
 								[t("banding.max"), fixed(pooled.max)],
@@ -151,7 +183,7 @@ function BandingResultPanels({
 								</div>
 							))}
 						</dl>
-						<p className="mt-4 text-xs text-zinc-400">
+						<p className={`${compact ? "mt-2" : "mt-4"} text-xs text-zinc-400`}>
 							{execution
 								? t(`banding.${execution.backend}`)
 								: t("banding.unknownExecution")}
@@ -171,7 +203,9 @@ function BandingResultPanels({
 							</p>
 						) : null}
 						{configured && assessment ? (
-							<p className="mt-3 text-xs text-zinc-400">
+							<p
+								className={`${compact ? "mt-2" : "mt-3"} text-xs text-zinc-400`}
+							>
 								{t("banding.bounds")}:{" "}
 								{assessment.warningThreshold !== undefined
 									? `${t("banding.warn")} ≤ ${assessment.warningThreshold}`
@@ -187,18 +221,33 @@ function BandingResultPanels({
 						) : null}
 						{frames.length ? (
 							<>
-								<h4 className="mt-5 text-sm text-zinc-300">
-									{t("banding.plot")}
-								</h4>
+								{compact ? (
+									<div className="mt-3 flex items-center gap-2">
+										<h4 className="text-sm text-zinc-300">
+											{t("banding.plot")}
+										</h4>
+										<InfoHint
+											labelFor={`${t("banding.plot")} — ${label}`}
+											text={t("banding.plotHint")}
+										/>
+									</div>
+								) : (
+									<h4 className="mt-5 text-sm text-zinc-300">
+										{t("banding.plot")}
+									</h4>
+								)}
 								<div
 									role="img"
 									aria-label={`${t("banding.plot")} — ${label}`}
-									className="mt-2 h-60 w-full min-w-0"
+									className={`mt-2 ${compact ? "h-48" : "h-60"} w-full min-w-0`}
 								>
 									<ResponsiveContainer
 										width="100%"
 										height="100%"
-										initialDimension={{ width: 640, height: 240 }}
+										initialDimension={{
+											width: 640,
+											height: compact ? 192 : 240,
+										}}
 									>
 										<ScatterChart
 											margin={{ top: 10, right: 24, left: 8, bottom: 25 }}
@@ -269,13 +318,15 @@ function BandingResultPanels({
 										</ScatterChart>
 									</ResponsiveContainer>
 								</div>
-								<p className="mt-1 text-xs text-zinc-500">
-									{t("banding.plotHint")}
-								</p>
+								{!compact ? (
+									<p className="mt-1 text-xs text-zinc-500">
+										{t("banding.plotHint")}
+									</p>
+								) : null}
 							</>
 						) : null}
 						{configured && assessment ? (
-							<div className="mt-5">
+							<div className={compact ? "mt-3" : "mt-5"}>
 								<h4 className="text-sm text-zinc-300">{t("banding.ranges")}</h4>
 								{selection?.resultId === result.id && previewUrl ? (
 									<BandingIntervalPlayer

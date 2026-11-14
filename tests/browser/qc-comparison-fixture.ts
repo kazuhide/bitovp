@@ -372,7 +372,7 @@ export async function verifyCambiComparisonBrowser(
 		}).observe(document, { childList: true, subtree: true });
 	});
 	await context.addCookies([
-		{ name: "ovp-locale", value: "en", url: page.url() },
+		{ name: "ovp-locale", value: "en", url: new URL(page.url()).origin },
 	]);
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	for (const mode of ["detail", "comparison"] as const) {
@@ -672,7 +672,11 @@ export async function verifyCambiComparisonBrowser(
 		new RegExp(`/qc/compare\\?jobs=${BANDING_JOBS.join(",")}$`),
 	);
 	await page.goto(`/qc/compare?jobs=${JOBS[0]},${BANDING_JOBS[0]}`);
-	await expect(page.getByRole("alert")).toContainText(
+	await expect(
+		page.getByRole("alert").filter({
+			hasText: "Compare VMAF reports together, or CAMBI-only reports together.",
+		}),
+	).toContainText(
 		"Compare VMAF reports together, or CAMBI-only reports together.",
 	);
 	await expect(
@@ -680,7 +684,7 @@ export async function verifyCambiComparisonBrowser(
 	).toHaveCount(0);
 	await expect(page.locator(".recharts-wrapper")).toHaveCount(0);
 	await context.addCookies([
-		{ name: "ovp-locale", value: "ja", url: page.url() },
+		{ name: "ovp-locale", value: "ja", url: new URL(page.url()).origin },
 	]);
 	await page.setViewportSize({ width: 320, height: 1000 });
 	for (const mode of ["detail", "comparison"] as const) {

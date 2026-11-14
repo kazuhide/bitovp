@@ -278,6 +278,13 @@ export function MeasuredMediaComparison({
 								onChange={(event) => {
 									pause();
 									setError(false);
+									if (clock?.kind === "time") {
+										pending.current = 0;
+										setPosition(0);
+										setDraft(null);
+										for (const [id, video] of videos.current)
+											seekTime(id, video, 0);
+									}
 									const id = event.target.value;
 									setReady((old) => ({ ...old, [id]: false }));
 									setIds(slot === 0 ? [id, ids[1]] : [ids[0], id]);

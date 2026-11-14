@@ -48,7 +48,7 @@ const results: BandingResultDetail[] = [
 
 let firstFrames: Map<HTMLVideoElement, VideoFrameRequestCallback>;
 function ready(
-	videos: NodeListOf<HTMLVideoElement>,
+	videos: Iterable<HTMLVideoElement>,
 	origins: number[] = [],
 	duration = 3,
 ) {
@@ -119,6 +119,34 @@ afterEach(() => {
 });
 
 describe("CAMBI comparison preview", () => {
+	it("resets both videos to a valid shared time when swapping to a shorter rendition", async () => {
+		const shorter: BandingResultDetail = {
+			...(results[0] as BandingResultDetail),
+			id: "short",
+			renditionRef: { label: "Short" },
+			bandingPreview: { url: "/short.mp4?metric=banding" },
+		};
+		renderWithQuery(<BandingPanels results={[...results, shorter]} />, "en");
+		const initial = await open([0.5, 1], 10);
+		seek("8");
+		expect(initial[0]?.currentTime).toBe(8.5);
+		await userEvent.selectOptions(
+			screen.getByRole("combobox", { name: "Rendition B" }),
+			"short",
+		);
+		const current = document.querySelectorAll("video");
+		const replacement = current[1] as HTMLVideoElement;
+		ready([replacement], [1.5], 2);
+		expect(
+			screen.getByRole("spinbutton", { name: "Presentation time (s)" }),
+		).toHaveValue(0);
+		expect(current[0]?.currentTime).toBe(0.5);
+		expect(replacement.currentTime).toBe(1.5);
+		expect(initial[1]).not.toHaveAttribute("src");
+		expect(screen.getByRole("button", { name: "Play both" })).toBeEnabled();
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+	});
+
 	it("retries a clamped tail seek when native duration grows to the full recorded endpoint", async () => {
 		const full = results.map((result) => ({
 			...result,

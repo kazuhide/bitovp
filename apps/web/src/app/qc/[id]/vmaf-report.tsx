@@ -13,6 +13,7 @@ import { ApiError, apiFetch } from "@/lib/api";
 import { RoleAccess } from "@/lib/auth/use-role-access";
 import { formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
+import { AnalysisChartLayout } from "../analysis-chart-layout";
 import { CloudProgress } from "../cloud-progress";
 import {
 	type QcJobDetail,
@@ -26,6 +27,7 @@ import {
 import { VmafViolinChart } from "../vmaf-violin";
 import { BandingPanels, BandingReport } from "./banding-panel";
 import { ExportButtons } from "./export-buttons";
+import { FrameChart } from "./frame-chart";
 import { FrameComparison } from "./frame-comparison";
 import { LadderScatter } from "./ladder-scatter";
 import { LivePanels, LiveQualityWarnings } from "./live-panels";
@@ -151,6 +153,33 @@ export function VmafReport({ id }: { id: string }) {
 	// without one fall back to the short job id. The "VMAF report" context moves
 	// to a small eyebrow so the recognisable name is the headline.
 	const title = job.encodingName ?? shortJobId(job.id);
+	// Keep the static plots unchanged while the player clock advances.
+	const distribution = (
+		<VmafViolinChart
+			series={sortedRenditions(job.results).map(({ result, index }) => ({
+				key: result.id,
+				label: renditionLabel(
+					result.renditionRef,
+					index,
+					t("common.renditionNumbered", { n: index + 1 }),
+				),
+				color: renditionColor(index),
+				distribution: result.distribution,
+				subsample: job.subsample,
+			}))}
+		/>
+	);
+	const ladder = (
+		<>
+			<h2 className="font-medium text-sm text-zinc-200">
+				{t("qc.qualityLadder")}
+				<span className="ml-2 font-normal text-xs text-zinc-500">
+					{t("ui.meanVmafVsBitrate")}
+				</span>
+			</h2>
+			<LadderScatter results={job.results} />
+		</>
+	);
 
 	return (
 		<section>
@@ -386,47 +415,33 @@ export function VmafReport({ id }: { id: string }) {
 					) : null}
 					<PooledTable results={job.results} />
 
-					<h2 className="mt-8 font-medium text-sm text-zinc-200">
-						{t("uiX.perFrameVmaf")}
-						{maxFrameCount > 0 ? (
-							<span className="ml-2 font-normal text-xs text-zinc-500">
-								{t("uiX.downsampledExportFull", {
-									frames: maxFrameCount.toLocaleString(),
-								})}
-							</span>
-						) : null}
-					</h2>
 					<FrameComparison
 						key={job.id}
 						results={job.results}
 						fps={job.reference?.fps}
 						mode={job.mode}
+						renderChart={(selection) => (
+							<AnalysisChartLayout
+								frames={
+									<>
+										<h2 className="font-medium text-sm text-zinc-200">
+											{t("uiX.perFrameVmaf")}
+											{maxFrameCount > 0 ? (
+												<span className="ml-2 font-normal text-xs text-zinc-500">
+													{t("uiX.downsampledExportFull", {
+														frames: maxFrameCount.toLocaleString(),
+													})}
+												</span>
+											) : null}
+										</h2>
+										<FrameChart results={job.results} {...selection} />
+									</>
+								}
+								distribution={distribution}
+								ladder={ladder}
+							/>
+						)}
 					/>
-					<div className="mt-6">
-						<VmafViolinChart
-							series={sortedRenditions(job.results).map(
-								({ result, index }) => ({
-									key: result.id,
-									label: renditionLabel(
-										result.renditionRef,
-										index,
-										t("common.renditionNumbered", { n: index + 1 }),
-									),
-									color: renditionColor(index),
-									distribution: result.distribution,
-									subsample: job.subsample,
-								}),
-							)}
-						/>
-					</div>
-
-					<h2 className="mt-8 font-medium text-sm text-zinc-200">
-						{t("qc.qualityLadder")}
-						<span className="ml-2 font-normal text-xs text-zinc-500">
-							{t("ui.meanVmafVsBitrate")}
-						</span>
-					</h2>
-					<LadderScatter results={job.results} />
 					{job.mode === "LIVE" && job.results.some((result) => result.live) ? (
 						<details className="mt-8 rounded-lg border border-zinc-800 p-4">
 							<summary className="cursor-pointer text-sm text-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-500">

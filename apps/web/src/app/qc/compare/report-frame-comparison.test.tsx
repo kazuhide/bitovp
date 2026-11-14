@@ -25,12 +25,13 @@ const frames = [
 ];
 const jobs: Pick<
 	VmafJobDetail,
-	"id" | "mode" | "reference" | "encodingName"
+	"id" | "mode" | "reference" | "encodingName" | "subsample"
 >[] = ["H.264", "AV1"].map((name, index) => ({
 	id: `job-${index}`,
 	mode: "VOD",
 	reference: { fps: 24 },
 	encodingName: name,
+	subsample: null,
 }));
 const series: CompareSeries[] = jobs.flatMap((job, jobIndex) =>
 	[1, 2].map((rung) => ({

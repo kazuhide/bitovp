@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { runLocalVmafScore } from "./local-score";
 import { NATIVE_OFFICIAL_REVISION } from "./native-contract";
 import { fixtureValue, nativeReceipt, SHA } from "./native-fixture.test-helper";
-import { NativePairRefusal } from "./native-score";
+import { NativePairRefusal, SCORER_PAIR_REFUSALS } from "./native-score";
 
 const cleanup = vi.hoisted(() => ({
 	afterRemove: undefined as undefined | ((path: unknown) => void),
@@ -660,6 +660,28 @@ describe("owned native local scoring", () => {
 			"bitovp-vmaf",
 		]);
 	});
+	it("names the scorer's refusals of a pair in the words of the scorer's source", async () => {
+		// The worker scores a pair on the CPU when the scorer ends with one of
+		// these sentences. The scorer's own tests hold two of the three, so
+		// each is held here against its source: with another wording there,
+		// such a measurement would end with an error again.
+		const source = (
+			await Promise.all(
+				["main.cpp", "decoder_pair.hpp"].map((name) =>
+					readFile(
+						new URL(`../../../../native/vmaf-gpu/src/${name}`, import.meta.url),
+						"utf8",
+					),
+				),
+			)
+		).join("\n");
+		expect(SCORER_PAIR_REFUSALS).toHaveLength(3);
+		for (const said of SCORER_PAIR_REFUSALS)
+			expect(source).toContain(`std::runtime_error("${said}")`);
+		// The scorer writes what it throws after its name.
+		expect(source).toContain('std::cerr << "bitovp-vmaf: " << error.what()');
+	});
+
 	it("fails a corrupt receipt without starting a CPU fallback", async () => {
 		const h = await setup();
 		h.receipt.cpuParity.checked = false;

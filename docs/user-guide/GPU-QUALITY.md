@@ -373,20 +373,21 @@ On 2026-11-14 the command of **Local CPU** changed: it gives the reference one
 frame for every frame interval of its frame rate, as it has always given the
 encode
 ([Frame rates and frames that are left out](./QUALITY-AND-MONITORING.md#frame-rates-and-frames-that-are-left-out)).
-That changed none of the scores above. The 148 pairs were scored again on the
-same worker, and 132 pairs of 384 × 216 files with a constant frame rate of 12
-to 60 frames a second were added: references in Matroska, MP4 and MPEG-TS, and
+That changed none of the scores above. The 148 comparisons were run again on
+the same worker, and 132 were added, of 384 × 216 files with a constant frame
+rate of 12 to 60 frames a second: references in Matroska, MP4 and MPEG-TS, and
 encodes in H.264, HEVC, AV1, VP9 and MPEG-2, in MP4, fragmented MP4,
-QuickTime, Matroska, WebM and MPEG-TS. For the 280 pairs the mean score of the
-CUDA scorer was within 0.0000016 of the **Local CPU** score, and that of the
-Vulkan scorer within 0.0000006.
+QuickTime, Matroska, WebM and MPEG-TS. In the 280 comparisons the mean score
+of the CUDA scorer was within 0.0000016 of the **Local CPU** score, and that
+of the Vulkan scorer within 0.0000006.
 
 What follows:
 
 - Scores of GPU scoring and of **Local CPU** can be compared with each other,
   and the comparison screen does not warn when it shows both.
 - **Local (GPU if available)** gives one score for a pair, whether the worker
-  scores it on a GPU or on the CPU.
+  scores it on a GPU or on the CPU, but for the files of the first two points
+  of the list below.
 - A measurement that decides a delivery gate uses CPU scoring, and a model
   outside the eight VMAF v1.0 models is scored on the CPU with either choice.
 - The worker takes a result only when the scorer's receipt shows the bit depth
@@ -407,19 +408,26 @@ Where a GPU score and a **Local CPU** score of one pair can still differ:
 - **Matroska, WebM and MPEG-TS files that leave out the same frames.**
   **Local CPU** gives both files one frame for every frame interval of the
   reference's frame rate and scores the repeated frames as well; GPU scoring
-  pairs the frames of the two files in their order. For files with a constant
-  frame rate that is the same, and it was the same in every comparison above.
-  The worker sends a pair with a file that leaves frames out to the CPU when
-  what ffprobe says of the file shows it, which it does for MP4 and QuickTime
-  files. It does not for Matroska, WebM and MPEG-TS files. GPU scoring then
-  stops when the two files' frames come at different times, and it scores a
-  reference and an encode that leave out the same frames, without repeated
-  frames: 0.009 to 0.023 above **Local CPU** in five pairs.
-- **A Matroska or WebM file whose video starts about half a frame interval
-  after the file does.** **Local CPU** drops and repeats frames of such a
-  file, and GPU scoring, which reads each file's times from its first frame,
-  does not: one pair scored 67.84 with **Local CPU** and 90.51 with GPU
-  scoring.
+  pairs the frames of the two files in their order and scores each frame
+  once. For files with a constant frame rate that is the same, and it was the
+  same in every comparison above. The worker sends a pair with a file that
+  leaves frames out to the CPU when what ffprobe says of the file shows it,
+  which it does for MP4 and QuickTime files. It does not for Matroska, WebM
+  and MPEG-TS files. GPU scoring then stops when the two files' frames come at
+  different times, and it scores a reference and an encode that leave out the
+  same frames. How far that score is from the **Local CPU** score depends on
+  what the left-out frames show. It was 0.009 to 0.023 higher in five pairs of
+  a test picture that moves evenly, and from 7.78 lower to 4.51 higher in six
+  further pairs: two files that keep one frame in 24 of a part that stands
+  still scored 79.21 with GPU scoring and 87.00 with **Local CPU**, and two
+  that keep every third frame of a moving picture 96.32 and 91.81. Choose
+  **Local CPU** for such files where the score has to be that of **Local
+  CPU**.
+- **A Matroska or WebM file whose video starts later than the file does by
+  about half a frame interval, or by that plus a whole number of intervals.**
+  **Local CPU** drops and repeats frames of such a file, and GPU scoring,
+  which reads each file's times from its first frame, does not: one pair
+  scored 67.84 with **Local CPU** and 90.51 with GPU scoring.
   [Frame rates and frames that are left out](./QUALITY-AND-MONITORING.md#frame-rates-and-frames-that-are-left-out)
   describes the files.
 - **Workers of different processor architectures.** FFmpeg's scale filter
@@ -441,9 +449,10 @@ Where a GPU score and a **Local CPU** score of one pair can still differ:
   where it can also differ from run to run:
   [libvmaf and its thread count](../FFMPEG-BUILD.md#libvmaf-and-its-thread-count).
 
-Not measured: a reference in HEVC, VP9 or AV1; frame rates above 60; sizes
-above 1920 × 1080; HDR files, which GPU scoring does not take; and other GPUs
-and drivers than the two above.
+Not measured: a reference in HEVC, VP9, AV1 or MPEG-2; a reference whose
+frames come at irregular times, as a screen recording has them; frame rates
+above 60; sizes above 1920 × 1080; HDR files, which GPU scoring does not take;
+and other GPUs and drivers than the two above.
 
 #### GPU results of scoring generations 9 and 10
 
@@ -501,7 +510,8 @@ is therefore not started for them:
 | One of the two files is full range and the other is not | FFmpeg converts one of them to the other's range |
 | The two files name different colour matrices, or one of them names none | FFmpeg converts the encode to the reference's matrix, and it takes a file that names none for BT.601 |
 | One of the two files leaves frames out, by what ffprobe says of it | FFmpeg repeats a frame for each that is left out |
-| The two files have different frame rates, or different numbers of frames | FFmpeg repeats or drops frames of the encode |
+| The two files have different frame rates | FFmpeg repeats or drops frames of the encode |
+| The two files have different numbers of frames | FFmpeg compares the rest of the longer file with the last frame of the shorter one |
 | FFmpeg names two frame rates for the two files although they have one: 19001/317 for a Matroska or WebM file of 60000/1001 frames a second | FFmpeg changes neither file, and the GPU scorer itself refuses the pair |
 | A file with non-square pixels, a rotation, HDR colour or more than one video stream | GPU scoring takes no such file |
 
@@ -521,7 +531,9 @@ frame that a Matroska, WebM or MPEG-TS file leaves out. GPU scoring finds such
 a pair when it reads the frames: it stops at the first frame whose time is
 more than a quarter of a frame interval apart in the two files, or where one
 file ends before the other. The worker then fetches the encode again and scores
-the pair on the CPU.
+the pair on the CPU. GPU scoring does not stop where both files leave out the
+same frames, and its score for such a pair is not that of **Local CPU**:
+[GPU scores and Local CPU scores](#gpu-scores-and-local-cpu-scores).
 
 Two kinds of measurement ask for the GPU scorer itself: one with a reference
 that is prepared for it
@@ -538,7 +550,7 @@ GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the referen
 A failure of a GPU run that is no property of the pair, such as a numerical
 check that does not pass, ends the measurement with either choice.
 
-The last row of the table changes scores with **Local CPU** too, and it is how
+The row on colour matrices changes scores with **Local CPU** too, and it is how
 FFmpeg's libvmaf filter works. Three pairs with the same pixel data, a 320 ×
 180 encode against a 640 × 360 reference, scored 55.54 with no colour matrix
 named in either file, 54.06 with `bt709` named in the reference alone, and

@@ -60,14 +60,20 @@ const input = (code: string) => new NativePairRefusal(code, "GPU_PAIR_INPUT");
 
 /**
  * What the scorer says of two files whose frames it does not pair
- * (`native/vmaf-gpu/src/main.cpp` and `decoder_pair.hpp`, each sentence held
- * by a test of the scorer): FFmpeg's libraries name another frame rate for
- * each of them, a frame's time is more than a quarter of a frame apart in the
- * two, or one of them ends before the other. The check before the run reads
- * what ffprobe says of each file, which shows no frame that a Matroska, WebM
- * or MPEG-TS file leaves out, and the scorer reads the frames' times.
+ * (`native/vmaf-gpu/src/main.cpp` and `decoder_pair.hpp`): FFmpeg's libraries
+ * name another frame rate for each of them, a frame's time is more than a
+ * quarter of a frame apart in the two, or one of them ends before the other.
+ * The check before the run reads what ffprobe says of each file, which shows
+ * no frame that a Matroska, WebM or MPEG-TS file leaves out, and the scorer
+ * reads the frames' times.
+ *
+ * A test of the scorer holds the last two sentences
+ * (`tests/decoder_retention_test.cpp`) and none the first, so
+ * `local-score.native.test.ts` holds all three against the scorer's source:
+ * with another wording there, the worker would end such a measurement with
+ * an error again.
  */
-const SCORER_PAIR_REFUSALS = [
+export const SCORER_PAIR_REFUSALS = [
 	"Inputs must have the same known frame rate; conform them before comparison",
 	"Comparison presentation timestamps do not align",
 	"Comparison inputs have different frame counts",

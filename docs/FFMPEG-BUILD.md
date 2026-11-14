@@ -3273,11 +3273,12 @@ it is scored. The frame-index method has its own command, which this change
 leaves as it was.
 
 The scoring generation is still 3. A file with a frame in every interval
-passes the filter unchanged, which test K found for 530 pairs, and a new
+passes the filter unchanged, which test K found in 530 comparisons, and a new
 generation would mark every stored report as outdated. Two kinds of reference
 score otherwise than before the change, under the same generation: one that
-leaves frames out, and one whose video stream starts about half an interval
-after its file does ("A video stream that starts after its file" below).
+leaves frames out, and one whose video stream starts later than its file does
+by about half an interval, or by that plus a whole number of intervals ("A
+video stream that starts after its file" below).
 
 **Test K, 2026-11-13 and 2026-11-14: the command before the change and after
 it.** In the container of test I, with the `linux/arm64` programs of this
@@ -3285,7 +3286,9 @@ build and four libvmaf threads, each pair was scored with the builder's
 command as it was before the change and as it is after it. The files of every
 group but I and O are FFmpeg's `testsrc2`: a small set of 160x90, scored with
 `vmaf_v0.6.1`, and a set of 384x216, scored with `vmaf_v1.0.16_3d0h`. Their
-ProRes files are `yuv422p10le`, the others `yuv420p`. 679 comparisons:
+ProRes files are `yuv422p10le`, the others `yuv420p`. 692 comparisons, in
+which a pair of files that was scored with several models counts once for
+each model:
 
 | Group | Comparisons | Pairs |
 |---|---|---|
@@ -3298,6 +3301,7 @@ ProRes files are `yuv422p10le`, the others `yuv420p`. 679 comparisons:
 | G | 24 at 160x90, 23 at 384x216 | Files that leave frames out |
 | H | 24 at 160x90, 28 at 384x216 | Matroska files whose video stream starts after their audio |
 | L, 384x216 | 42 | Copies of the files of H |
+| M, 384x216 | 13 | The references of H with their video stream later by other delays: a whole number of intervals, and that plus half an interval |
 
 The pairs of files with a frame in every interval, whose video starts with the
 file:
@@ -3310,10 +3314,11 @@ file:
 | S | 120 | 120 |
 | A | 15 | 15 |
 
-Those are 530 pairs. The other five of group I are too small for their model,
-and neither command gave a score. On the host of the GPU check, with the
-`linux/amd64` programs of this build, the 123 of group I and the 144 of group
-R at 384x216 gave the same mean before and after as well.
+Those are 530 comparisons of 513 pairs of files. The other five of group I are
+too small for their model, and neither command gave a score. On the host of
+the GPU check, with the `linux/amd64` programs of this build, the 123 of group
+I and the 144 of group R at 384x216 gave the same mean before and after as
+well.
 
 **Frames that are left out.** The three pairs of group O, whose reference has
 40 frames in 47 intervals of 24 frames a second:
@@ -3399,6 +3404,34 @@ nothing. A delay of 9 ms at 60000/1001 moved less: the filter dropped the last
 of 600 frames and no other, and the reference's score went from 98.889640 to
 98.836310.
 
+The delay need not be half an interval itself. Group M, the references of the
+table with other delays, each with the encode that has no audio: a whole
+number of intervals more than half an interval does the same, and a whole
+number of intervals alone does nothing.
+
+| Frames a second | The video starts | In intervals | The filter alone: frames dropped, repeated | The reference late, before | The reference late, after |
+|---|---|---|---|---|---|
+| 24 | 62 ms late | 1.49 | none | 90.505946 | 90.505946 |
+| 24 | 63 ms late | 1.51 | 1, 0 of 120 | 90.505946 | 89.925110 |
+| 24 | 104 ms late | 2.50 | 40, 40 of 120 | 90.505946 | 68.356296 |
+| 24 | 146 ms late | 3.50 | 40, 39 of 120 | 90.505946 | 67.840270 |
+| 24000/1001 | 62 ms late | 1.49 | none | 90.820227 | 90.820227 |
+| 24000/1001 | 63 ms late | 1.51 | 6, 5 of 120 | 90.820227 | 87.311774 |
+| 24000/1001 | 104 ms late | 2.49 | 30, 30 of 120 | 90.820227 | 73.956932 |
+| 30000/1001 | 33 ms late | 0.99 | none | 89.103486 | 89.103486 |
+| 30000/1001 | 50 ms late | 1.50 | 55, 55 of 150 | 89.103486 | 62.545175 |
+| 30000/1001 | 83 ms late | 2.49 | 15, 15 of 150 | 89.103486 | 83.531984 |
+| 60000/1001 | 17 ms late | 1.02 | none | 86.095282 | 86.095282 |
+| 60000/1001 | 25 ms late | 1.50 | 95, 95 of 300 | 86.095282 | 72.114746 |
+| 60000/1001 | 42 ms late | 2.52 | 60, 59 of 300 | 86.095282 | 79.927340 |
+
+At 24 frames a second three intervals are 125 ms, so a frame's time in whole
+milliseconds is at most a third of a millisecond off, and 62 and 63 ms are
+each half a millisecond from one and a half intervals: the filter dropped no
+frame at 62 ms and one at 63. On the host of the GPU check, the `linux/amd64`
+programs gave the same 13 means with the changed command, and both scorers
+gave the mean of "before" for each of the 13, to within 0.000002.
+
 The copies of group L, made with `-c copy` from the seven late references and
 the seven late encodes of the table:
 
@@ -3417,8 +3450,9 @@ container.
 A third command was run beside the two for every comparison of test K: the
 changed command with `setpts=PTS-STARTPTS` before each `fps` filter, which
 counts a stream's times from its own first frame. It gave the mean of "Neither
-late" for every comparison of groups H and L, and the mean of the changed
-command for every other comparison. It is not the worker's command.
+late" for every comparison of groups H, L and M, and the mean of the changed
+command for every other comparison that was scored, the four of 216 pixels in
+width with one thread. It is not the worker's command.
 
 **Pairs that the worker scores on the CPU in the scorer's place.** The scorer
 compares the frames of the two files in their order and repeats and drops
@@ -3454,11 +3488,11 @@ host of test J, with the scorer that test J built (`15c680e0`) and the worker's
 code of this change, bundled as for test J. Each comparison ran through the
 worker's check, through the scorer on the NVIDIA GPU (CUDA) and on the AMD GPU
 (Vulkan), and through the `linux/amd64` programs of this build with the
-changed command. 414 comparisons of 404 pairs: the 208 of test J, eight of
-them twice, five of those with one libvmaf thread the second time; the three
-of group O; and the 193 of the 384x216 set, two of them twice. The whole was
-run twice, and both runs gave the same counts and the same largest
-differences:
+changed command. 414 comparisons of 404 pairs, a pair counted as in test K,
+once for each model: the 208 of test J, eight of them twice, five of those
+with one libvmaf thread the second time; the three of group O; and the 193 of
+the 384x216 set, two of them twice. The whole was run twice, and both runs
+gave the same counts and the same largest differences:
 
 | Comparisons | The worker's check | The scorer, on each GPU |
 |---|---|---|
@@ -3473,9 +3507,9 @@ references in FFV1 and H.264 in Matroska, MP4 and MPEG-TS and encodes of every
 codec and container of group R. The mean of the CUDA backend was within
 0.0000016 of FFmpeg's, and that of the Vulkan backend within 0.0000006.
 
-The 69 that the check refuses: 30 for the pixel format, 15 of them the ProRes
-references of the 384x216 set; ten for the colour range; three for the colour
-matrix; and 26 for the frame times. Of those 26, 14 have an MP4,
+The 69 that the check refuses: 30 for the pixel format, 15 of them pairs of
+the 384x216 set with a ProRes reference; ten for the colour range; three for
+the colour matrix; and 26 for the frame times. Of those 26, 14 have an MP4,
 fragmented MP4 or QuickTime file that leaves frames out, the three of group O
 among them, and 12 pair a Matroska file of 19001/317 with a file of
 60000/1001. FFmpeg scored all 26: the three of group O at 44.015701, 52.963515
@@ -3485,12 +3519,11 @@ The six that the scorer ended have a Matroska or MPEG-TS file that leaves
 frames out on one side, which ffprobe does not show. In the second run, whose
 code holds that part, the worker's code named each a refusal of the pair.
 FFmpeg scored them at the means of the table of group G: 88.772465, 88.776644
-and 32.065287, twice each. Three more pairs,
-Matroska and MPEG-TS files of 90 frames beside a Matroska file of 150 at
-30000/1001 frames a second, passed the check and ended in the scorer with
-"Comparison inputs have different frame counts", which the worker's code named
-a refusal as well; FFmpeg scored them over 150 frames, at 53.457753 and
-53.390817.
+and 32.065287, twice each. Three more pairs, Matroska and MPEG-TS files of 90
+frames beside a Matroska file of 150 at 30000/1001 frames a second, passed the
+check and ended in the scorer with "Comparison inputs have different frame
+counts", which the worker's code named a refusal as well; FFmpeg scored them
+over 150 frames, at 53.457753 and 53.390817.
 
 The 17 that the scorer scored otherwise than FFmpeg are what remains between a
 GPU score and a **Local CPU** score of one pair:
@@ -3506,12 +3539,59 @@ GPU score and a **Local CPU** score of one pair:
   0.000002, where FFmpeg gave the means of the table from 67.639228 to
   89.887715.
 
-Not measured: a reference in HEVC, VP9 or AV1 on a GPU; a frame rate above 60;
-a file longer than ten seconds; an FLV file, whose times are whole
-milliseconds as well; a file whose frames are evenly spaced at another rate
-than its `r_frame_rate`, as before; a cloud measurement and a Live measurement
-with the changed command, beyond their tests; and the frame-index method,
-which this change leaves as it was.
+The first of the two is small in those five pairs because their frames all
+score about alike. Group N, run on the same host after the review of this
+change, has pairs for which that does not hold: H.264 in Matroska, 384x216, 24
+frames a second, with the same frames left out of the reference and of the
+encode. ffprobe gives each file 24/1 for both rates and no frame count, the
+frames of the two files come at the same times, and the check and the scorer
+took each pair:
+
+| Reference and encode | Frames in intervals | CUDA | Vulkan | FFmpeg, the changed command | FFmpeg without the filter |
+|---|---|---|---|---|---|
+| 3 seconds of `smptebars` with one frame in 24 kept, then 3 seconds of `testsrc2` with every frame; CRF 12 and CRF 40 | 75 in 144 | 79.214309 | 79.214308 | 86.995750 | 79.214308 |
+| The same reference, with an encode at CRF 30 | 75 in 144 | 94.473997 | 94.473996 | 96.906092 | 94.473996 |
+| As the first, with one frame in six of the still part kept | 84 in 144 | 80.390557 | 80.390556 | 85.598761 | 80.390556 |
+| As the first, with `rgbtestsrc` for the still part | 75 in 144 | 78.546108 | 78.546108 | 81.001040 | 78.546108 |
+| `testsrc2` with every third frame kept; CRF 12 and CRF 34 | 50 in 148 | 96.320113 | 96.320113 | 91.811458 | 96.320113 |
+| `testsrc2` with frames 30 to 89 left out; CRF 12 and CRF 34 | 90 in 150 | 90.645375 | 90.645376 | 90.230321 | 90.645376 |
+
+The scorer gives the mean of FFmpeg without the filter, over the frames that
+the files hold. The changed command counts a frame once for every interval
+that it fills, and a repeated frame has no motion against the frame before it,
+which is one of the models' features. The GPU score of such a pair was from
+7.78 below the **Local CPU** score to 4.51 above it, and how far depends on
+what the left-out frames show. This change leaves that open: the worker
+starts GPU scoring for such a pair, as it did before the change, when **Local
+CPU** gave 18.710689 beside the scorer's 92.530753 for one of the five. To
+refuse such a pair, the scorer would have to compare each frame's time with
+the time of the frame before it, which is a change of its source.
+
+**The reference of a Live measurement.** The Live processor writes its
+reference through the filter, in pieces that it joins by stream copy where
+there are several, and the scoring command now puts the filter into the
+reference's chain once more. In the container of test I, pieces and joined
+files were written with the Live processor's arguments at 23.976, 24, 25,
+29.97, 30, 50, 59.94 and 60 frames a second, and at 30 from sources of
+30000/1001 and of 25: for each of the 20 files the filter took and gave the
+same number of frames, dropped and repeated none, and the frames after it were
+those before it. No Live measurement was run.
+
+Not measured: a reference in HEVC, VP9, AV1 or MPEG-2 on a GPU; a reference
+whose frames come at irregular times, as a screen recording has them, where
+the files of groups O, G and N leave frames out of an even grid; a frame
+rate above 60; a file longer than ten seconds; a WebM file whose video starts
+late, which keeps the clock of the Matroska files of groups H and M; an FLV
+file, whose times are whole milliseconds as well; a file whose frames are
+evenly spaced at another rate than its `r_frame_rate`, as before; a cloud
+measurement and a Live measurement with the changed command, beyond their
+tests and the Live reference above; and the frame-index method, which this
+change leaves as it was.
+
+Read in the cloud worker's code and not run: it expects as many scored frames
+as the reference holds, so a cloud measurement of a reference that leaves
+frames out ends as it did before the change, with `INPUT_FRAME_COUNT_MISMATCH`
+before the run or `INCOMPLETE_FRAME_COVERAGE` after it.
 
 ### libvmaf and its thread count
 
@@ -4132,10 +4212,13 @@ scorer and small pictures".
 | 2026-11-13 16:12 to 16:21 | | The scorer as PR #121 merged it, built on the host of the GPU check, and test J with it: the numbers of "Test J", of the 77 widths on x86-64 and of the pairs whose frames are not evenly spaced |
 | 2026-11-13 16:59 to 17:14 | | The review of PR #121, in test I's container: the scorer's test with the scorer before the changed conversion and after it, the pictures of the scorer's decoder beside FFmpeg's for 62 pairs, 23 of them with encodes that test I does not hold, and the frame rates that ffprobe gives for interlaced files |
 | 2026-11-13 23:57 to 2026-11-14 00:03 | | Test K in test I's container: the command of a **Local CPU** measurement before and after the `fps` filter in the reference's chain, but for its group L |
-| 2026-11-14 00:02 to 00:12 | | The first run of test L on the host of the GPU check, and the scorer by itself on 12 pairs of the 384x216 set |
+| 2026-11-14 00:02 to 00:16 | | The first run of test L on the host of the GPU check, and the scorer by itself on 12 pairs of the 384x216 set |
 | 2026-11-14 00:26 to 00:36 | | The second run of test L, with the worker's code that names the scorer's refusals of a pair |
 | 2026-11-14 00:28 | | Group L of test K: copies of the files whose video starts after their audio |
 | 2026-11-14 00:39 to 00:43 | | The `fps` filter alone on the files of group H, in test I's container, and three pairs of files of different lengths on the host of the GPU check |
+| 2026-11-14 01:40 | | Group M of test K: the `fps` filter alone, and the command before and after the change, on references whose video starts one, one and a half and two and a half intervals after their audio |
+| 2026-11-14 01:52 | | Groups M and N on the host of the GPU check, after the review of PR #122: the worker's check, both scorers and the changed command on pairs whose two files leave out the same frames |
+| 2026-11-14 02:00 | | References written with the Live processor's arguments through the `fps` filter, in test I's container |
 
 PR #108 added `docker/vmaf-build-proof.sh`. `Dockerfile` and the directory
 `docker/` are the same at `87e70e9b` and at `42e5d926`. PR #112 changed

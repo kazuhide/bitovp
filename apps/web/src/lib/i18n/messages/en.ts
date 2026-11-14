@@ -2516,7 +2516,7 @@ export const en = {
 		gpuModelUnsupported: "This VMAF model uses CPU processing.",
 		gpuGateCpuOnly: "The current GPU validation gate requires CPU processing.",
 		gpuPairPixelFormat:
-			"GPU scoring does not compare this pair's pixel formats, so CPU scored it.",
+			"GPU scoring does not compare the pixel formats of these two files, so CPU scored this pair.",
 		gpuPairColorRange:
 			"One of the two files is full range and the other is not, so CPU scored this pair.",
 		gpuPairColorMatrix:

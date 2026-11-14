@@ -55,13 +55,13 @@
  *   same number of frames.
  *
  * Measured on 2026-11-14, on the machine of 2026-11-13 and with the worker
- * image's FFmpeg: for 280 pairs of evenly spaced files that pass here, 132 of
- * them of 12 to 60 frames a second in MP4, fragmented MP4, QuickTime,
- * Matroska, WebM and MPEG-TS, both backends gave the ordinary method's score
- * to within 0.000002. A reference and two encodes that leave out the same
- * slots, which do not pass: the scorer's pairing gave 44.144341 and
- * 52.956566, and the ordinary method 44.005604 and 52.963515, because it
- * scores the repeated frames as well.
+ * image's FFmpeg: in 280 comparisons of evenly spaced files that pass here,
+ * 132 of them of files of 12 to 60 frames a second in MP4, fragmented MP4,
+ * QuickTime, Matroska, WebM and MPEG-TS, both backends gave the ordinary
+ * method's score to within 0.000002. A reference and two encodes that leave
+ * out the same slots, which do not pass: the scorer's pairing gave 44.153269
+ * and 52.956566 there, and the ordinary method 44.015701 and 52.963515,
+ * because it scores the repeated frames as well.
  *
  * What ffprobe says does not show everything, and the scorer reads the
  * frames' times itself:
@@ -72,13 +72,17 @@
  *   more than a quarter of a frame apart in the two files, and at the end of
  *   a file that has fewer frames, and the worker takes that for a refusal of
  *   the pair (`NativePairRefusal`). Where both files leave out the same
- *   frames, it scores them, 0.009 to 0.023 above the ordinary method in
- *   five pairs.
+ *   frames, it scores them, each frame once, where the ordinary method
+ *   scores the repeated frames as well. How far the two are apart depends
+ *   on what the left-out frames show: the scorer was 0.009 to 0.023 above
+ *   the ordinary method in five pairs of an evenly moving picture, and from
+ *   7.78 below it (a still part that keeps one frame in 24) to 4.51 above
+ *   it (every third frame kept) in six further pairs.
  * - A file of the second kind that `VMAF_SCORING_VERSION` names, whose video
- *   starts about half a slot after the file does, passes here, and the
- *   scorer, which reads each file's times from its first frame, scores what
- *   the ordinary method scored before the filter: 90.51 where the ordinary
- *   method gives 67.84.
+ *   starts later than the file does by about half a slot, or by that plus a
+ *   whole number of slots, passes here, and the scorer, which reads each
+ *   file's times from its first frame, scores what the ordinary method
+ *   scored before the filter: 90.51 where the ordinary method gives 67.84.
  */
 
 import { vmafConvertedChromaLayout } from "./size-limits";

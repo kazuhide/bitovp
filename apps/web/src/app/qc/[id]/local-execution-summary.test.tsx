@@ -178,8 +178,8 @@ it.each([
 it.each([
 	[
 		"GPU_PAIR_PIXEL_FORMAT",
-		"GPU scoring does not compare this pair's pixel formats, so CPU scored it.",
-		"この組のピクセル形式はGPUでは比較できないため、CPUで計算しました。",
+		"GPU scoring does not compare the pixel formats of these two files, so CPU scored this pair.",
+		"このペアのピクセル形式はGPUでは比較できないため、CPUで計算しました。",
 	],
 	[
 		"GPU_PAIR_COLOR_RANGE",
@@ -189,12 +189,12 @@ it.each([
 	[
 		"GPU_PAIR_COLOR_MATRIX",
 		"The two files do not name the same colour matrix, so CPU scored this pair.",
-		"2つの映像の色変換行列が同じでないため、CPUで計算しました。",
+		"2つの映像でカラーマトリクス（色変換行列）の指定が一致しないため、CPUで計算しました。",
 	],
 	[
 		"GPU_PAIR_FRAME_TIMES",
 		"GPU scoring does not take the frame rates or frame times of these two files, so CPU scored this pair.",
-		"2つの映像のフレームレートまたはフレーム時刻がGPUで扱えない組み合わせのため、CPUで計算しました。",
+		"2つの映像のフレームレートまたはタイムスタンプの組み合わせをGPUでは扱えないため、CPUで計算しました。",
 	],
 	[
 		"GPU_PAIR_INPUT",

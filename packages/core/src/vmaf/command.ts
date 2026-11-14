@@ -66,22 +66,24 @@
  * encode; its frames were numbered as they came before. The generation stays
  * 3, because the filter passes a file with a frame in every slot of its frame
  * rate unchanged, and a new generation would mark every stored report as
- * outdated: for 530 pairs of such files (12 to 60 frames a second; MP4,
+ * outdated: in 530 comparisons of such files (12 to 60 frames a second; MP4,
  * fragmented MP4, QuickTime, Matroska, WebM and MPEG-TS; first frames a part
  * of a slot after zero; with and without audio) the score and the frame count
- * were the same before and after. Two kinds of reference score otherwise
- * than before:
+ * were the same before and after, in four of them, of pictures 216 pixels
+ * wide, with one libvmaf thread. Two kinds of reference score otherwise than
+ * before:
  *
  * - One that leaves frames out. With an encode that leaves out the same
  *   frames: 19.31 before, 44.01 after. With an encode that has every frame:
  *   18.26 before, 28.53 after.
  * - One with a frame in every slot whose container keeps times in
- *   milliseconds and whose video starts about half a slot after the file
- *   does, as in a Matroska file whose audio starts first. The filter rounds
- *   each time to a slot, and the millisecond's rounding then sends
- *   neighbouring frames to one slot: 90.51 before and 67.84 after for such a
- *   reference of 24 frames a second whose video starts 21 milliseconds late.
- *   An encode of that kind has scored so since the first commit (69.01).
+ *   milliseconds and whose video starts later than the file does by about
+ *   half a slot, or by that plus a whole number of slots, as in a Matroska
+ *   file whose audio starts first. The filter rounds each time to a slot,
+ *   and the millisecond's rounding then sends neighbouring frames to one
+ *   slot: 90.51 before and 67.84 after for such a reference of 24 frames a
+ *   second whose video starts 21 milliseconds late. An encode of that kind
+ *   has scored so since the first commit (69.01).
  *
  * "The reference's frame times" in docs/FFMPEG-BUILD.md records the
  * measurements.

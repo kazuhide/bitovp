@@ -5183,14 +5183,18 @@ describe("explicit lossless reference preparation", () => {
 	};
 
 	function preparedHarness() {
-		return autoNativeFailureHarness(true, {
-			download: async (args) => ({
-				bucket: args.bucket,
-				key: args.key,
-				pinned: true,
-				sha256: evidence.inputSha256,
-				bytes: 1234,
-			}),
+		const fetched: string[] = [];
+		const t = autoNativeFailureHarness(true, {
+			download: async (args) => {
+				fetched.push(args.destPath);
+				return {
+					bucket: args.bucket,
+					key: args.key,
+					pinned: true,
+					sha256: evidence.inputSha256,
+					bytes: 1234,
+				};
+			},
 			job: {
 				triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}prepared`,
 				params: {
@@ -5199,6 +5203,7 @@ describe("explicit lossless reference preparation", () => {
 				},
 			},
 		});
+		return Object.assign(t, { fetched });
 	}
 
 	function mockScore() {
@@ -5535,6 +5540,11 @@ describe("explicit lossless reference preparation", () => {
 			).toBe(true);
 			expect(t.results).toHaveLength(0);
 			expect(t.filterComplexArgs).toHaveLength(0);
+			// No second pass: each encode that reached the scorer was fetched
+			// once.
+			expect(
+				t.fetched.filter((destPath) => destPath.includes("dist-")),
+			).toHaveLength(score.mock.calls.length);
 		} finally {
 			prepare.mockRestore();
 			score.mockRestore();

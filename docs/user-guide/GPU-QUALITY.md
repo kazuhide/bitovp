@@ -347,7 +347,7 @@ filter. A measurement on the GPU also
   it nothing;
 - is not started for a pair that FFmpeg converts before libvmaf compares it,
   or whose frames FFmpeg repeats or drops, because the GPU scorer does
-  neither:
+  neither, but for the last frame of a Matroska file (below):
   [Pairs that GPU scoring does not score](#pairs-that-gpu-scoring-does-not-score).
 
 Every GPU run computes a CPU reference, which is libvmaf itself on the
@@ -385,16 +385,22 @@ Later on 2026-11-14 the command of **Local CPU** came to count each file's
 frame intervals from the file's first frame, and the GPU scorer to refuse a
 pair whose frames do not come at the times that the frame rate gives them
 ([Pairs that GPU scoring does not score](#pairs-that-gpu-scoring-does-not-score)).
-Since then a pair whose two files leave out the same frames, and a file whose
-video starts after its audio, no longer score differently with the two. The
-comparisons were run again on the same worker with both changes, and 43
-comparisons of new files with them: references in HEVC, VP9, AV1 and MPEG-2,
-at 120 frames a second, of 75 and 90 seconds, of 3840 × 2160, and WebM, FLV,
-Matroska and MP4 files whose video starts after their audio. In the 338
-comparisons that GPU scoring scored, the mean score of the CUDA scorer was
-within 0.0000016 of the **Local CPU** score, and that of the Vulkan scorer
-within 0.0000006. The scorer refused 23 pairs whose frames differ in number or
-in time, and the worker scored them on the CPU.
+Since then a pair whose two files leave out the same frames, a pair whose
+frames lie at another rate than the one that FFmpeg names for them, and a file
+whose video starts about half a frame interval after its audio no longer
+score differently with the two. The comparisons were run again on the same
+worker with both changes, with 43 comparisons of new files: references in
+HEVC, VP9, AV1 and MPEG-2, at 120 frames a second, of 75 and 90 seconds, of
+3840 × 2160, and WebM, FLV, Matroska and MP4 files whose video starts after
+their audio. 17 more followed the review of the change: 240 frames a second,
+ten minutes at 60000/1001, Matroska files whose default duration says another
+frame rate than that of their frames, and files whose last frame lasts three
+intervals. In the 346 comparisons that GPU scoring scored over the frames of
+**Local CPU**, the mean score of the CUDA scorer was within 0.0000016 of the
+**Local CPU** score, and that of the Vulkan scorer within 0.0000006. The
+scorer refused 25 pairs whose frames differ in number or in time, and the
+worker scored them on the CPU. Three pairs with a long last frame were scored
+over other frames than those of **Local CPU** (the list below).
 
 What follows:
 
@@ -410,10 +416,13 @@ What follows:
   every run, and the measurement then fails with
   `NATIVE_RECEIPT_COMPARISON_MISMATCH` and stores no score. A scorer that was
   built before the later change of 2026-11-14 scores a pair whose two files
-  leave out the same frames, and its score is not that of **Local CPU**. Build
+  leave out the same frames, or whose frames lie at another rate than the one
+  that FFmpeg names for them, and its score is not that of **Local CPU**. Build
   and install the scorer again after an update:
-  [native scorer guide](../../native/vmaf-gpu/README.md). Banding measurements
-  work with either scorer.
+  [native scorer guide](../../native/vmaf-gpu/README.md). Then measure again
+  the GPU reports whose reference has a variable frame rate
+  ([Frame rates and frames that are left out](./QUALITY-AND-MONITORING.md#frame-rates-and-frames-that-are-left-out)
+  shows how to see such files). Banding measurements work with either scorer.
 - The scorer decodes and scales with the FFmpeg libraries of the machine on
   which it is built, not with the worker's FFmpeg. The comparison used those of
   Ubuntu 24.04 (FFmpeg 6.1.1) next to the worker's FFmpeg n8.1.3. A scorer
@@ -439,8 +448,16 @@ Where a GPU score and a **Local CPU** score of one pair can still differ:
   scored 56.27 there, and on arm64 47.99 with one thread and 48.58 with four,
   where it can also differ from run to run:
   [libvmaf and its thread count](../FFMPEG-BUILD.md#libvmaf-and-its-thread-count).
+- **A Matroska file whose last frame lasts longer than one frame interval.**
+  **Local CPU** repeats that frame for each interval that it lasts, and the
+  GPU scorer, which reads where each frame starts, scores it once: 86.85 over
+  74 frames beside 86.96 over 72, for 72 frames at 24 frames a second whose
+  last frame lasts three intervals, whether the reference, the encode or both
+  end so. In MP4 such a file has a lower average frame rate, and GPU scoring
+  does not take the pair.
 
-Not measured: other GPUs and drivers than the two above.
+Not measured: other GPUs and drivers than the two above, frame rates above
+240, and pictures larger than 3840 × 2160.
 
 #### GPU results of scoring generations 9 and 10
 
@@ -498,7 +515,7 @@ is therefore not started for them:
 | One of the two files is full range and the other is not | FFmpeg converts one of them to the other's range |
 | The two files name different colour matrices, or one of them names none | FFmpeg converts the encode to the reference's matrix, and it takes a file that names none for BT.601 |
 | One of the two files leaves frames out, by what ffprobe says of it | FFmpeg repeats a frame for each that is left out |
-| Both files leave out the same frames, or a file's frames come more than a quarter of a frame interval from where its frame rate puts them, as a screen recording's do, where ffprobe shows neither (Matroska, WebM, MPEG-TS) | FFmpeg repeats a frame for each that is left out, and repeats or drops frames that come off the frame rate; the GPU scorer itself refuses the pair |
+| Both files leave out the same frames, or a file's frames come more than a quarter of a frame interval from where its frame rate puts them, as a screen recording's do or as those of a file whose frame rate is named wrongly, where ffprobe shows none of these (Matroska, WebM, MPEG-TS) | FFmpeg repeats a frame for each that is left out, and repeats or drops frames that come more than half an interval off the frame rate; the GPU scorer itself refuses the pair |
 | The two files have different frame rates | FFmpeg repeats or drops frames of the encode |
 | The two files have different numbers of frames | FFmpeg compares the rest of the longer file with the last frame of the shorter one |
 | FFmpeg names two frame rates for the two files although they have one: 19001/317 for a Matroska or WebM file of 60000/1001 frames a second | FFmpeg changes neither file, and the GPU scorer itself refuses the pair |
@@ -523,9 +540,13 @@ apart in the two files, or from the time that the file's frame rate gives that
 frame, counted from the file's first frame, or where one file ends before the
 other. The worker then fetches the encode again and scores the pair on the
 CPU. A scorer that was built before the later change of 2026-11-14 does not
-stop where both files leave out the same frames, and its score for such a
-pair is not that of **Local CPU**: build it again
-([GPU scores and Local CPU scores](#gpu-scores-and-local-cpu-scores)).
+stop where both files leave out the same frames or their frames lie at
+another rate than the named one, and its score for such a pair is not that
+of **Local CPU**: build it again
+([GPU scores and Local CPU scores](#gpu-scores-and-local-cpu-scores)). The
+scorer reads where each frame starts and not how long the last one lasts: a
+Matroska file whose last frame lasts several intervals is scored on the GPU
+(the same section).
 
 A file whose frames come up to a quarter of a frame interval from where its
 frame rate puts them passes this check: FFmpeg sends each such frame to its

@@ -111,13 +111,17 @@ CPU** and of a pair that **Local (GPU if available)** scores on the CPU. A
 cloud measurement uses the command once its worker image is rebuilt from this
 version, and it still ends with an error for a reference that leaves frames
 out, as before: the cloud worker expects as many scored frames as the
-reference holds. A Live measurement scores as before. Its reference is
-written with a frame in every interval before it is scored, and the files
-that it compares hold the video alone: whole Live measurements gave the same
-score for every frame with this version and with the one before it, also for
-segments whose frames lie half an interval after a whole second. The
-“Frame index · BT.709 · 10-bit” method pairs frames by their index instead
-and is unchanged.
+reference holds. It now ends so as well for a reference whose last frame
+lasts longer than one interval (below). A Live measurement scores as before.
+Its reference is written with a frame in every interval before it is scored,
+and references written so passed the `fps` filter unchanged at eight frame
+rates. FFmpeg counts the times of each file that it compares from the file's
+first video frame, also those of an MPEG-TS clip that holds audio, because
+FFmpeg starts such a clip at the streams that it reads. Whole Live
+measurements gave the same score for every frame with and without counting
+each file's intervals from its first frame, also for segments whose frames
+lie half an interval after a whole second. The “Frame index · BT.709 · 10-bit”
+method pairs frames by their index instead and is unchanged.
 
 Until 2026-11-14 only the encode's frames were treated so, and the frames of a
 reference that leaves frames out, one with a variable frame rate, were
@@ -133,19 +137,39 @@ These are the scores of an arm64 worker. An x86-64 worker gave 19.32 and 44.02
 for the first pair and 18.35 and 28.62 for the third
 ([the score of one pair on arm64 and on x86-64](../FFMPEG-BUILD.md#the-score-of-one-pair-on-arm64-and-on-x86-64)).
 
-Two files with a constant frame rate whose video starts with the file score as
-they did before: 579 comparisons of such files, of 12 to 120 frames a second
-in MP4, fragmented MP4, QuickTime, Matroska, WebM and MPEG-TS, scored as in
-v1.2.1 (four of them, with pictures 216 pixels wide, with one libvmaf thread;
-with four their score varies from run to run, before as now). The
-measurement generation is therefore still 3, and a report from
-before the change is not marked as outdated. Measure again where the
-reference of an earlier report has a variable frame rate, or where a file's
-video starts later than the file in the way described below; the end of this
-section shows how to see such files. A reference whose frames come at
-irregular times, as a screen recording has them, is compared at the same
-moments as well: a screen recording of 132 frames in 240 intervals of 60
+Two files with a frame in every frame interval whose video starts with the
+file score as they did before: 579 comparisons of such files, of 12 to 120
+frames a second in MP4, fragmented MP4, QuickTime, Matroska, WebM and MPEG-TS,
+scored as in v1.2.1 (four of them, with pictures 216 pixels wide, with one
+libvmaf thread; with four their score varies from run to run, before as now).
+The measurement generation is therefore still 3, and a report from before the
+change is not marked as outdated. Measure again where the reference of an
+earlier report has a variable frame rate, or is of a kind described below, or
+where a file's video starts later than the file in the way described below;
+the end of this section shows how to see such files. A reference whose frames
+come at irregular times, as a screen recording has them, is compared at the
+same moments as well: a screen recording of 132 frames in 240 intervals of 60
 frames a second scored 89.77 with its encode, where it scored 5.85 in v1.2.1.
+
+Two more kinds of reference score otherwise than in v1.2.1:
+
+- A reference whose last frame lasts longer than one interval leaves the
+  intervals after that frame out. FFmpeg now repeats the frame for each of
+  them, as it always did for an encode. A Matroska reference of 72 frames at
+  24 frames a second whose last frame lasts three intervals scored 86.96 over
+  72 frames in v1.2.1 and scores 86.85 over 74 now, and a cloud measurement of
+  it ends with an error.
+- A reference whose frame rate, as ffprobe reads it, is not that of its
+  frames: a Matroska file of 25 frames a second whose default duration says
+  50, for which ffprobe gives 50 as both rates. The worker gives FFmpeg that
+  rate, and FFmpeg now repeats each frame of both files, as it always did for
+  the encode: 85.89 with its encode, where v1.2.1 compared frames of other
+  moments and gave 1.63. Compared frame by frame, the two files give 87.57.
+
+The filters at the end of this section show both kinds: they repeat frames of
+such a file. The
+[build record](../FFMPEG-BUILD.md#the-references-frame-times) holds these
+measurements.
 
 Until 2026-11-14 one kind of file with a constant frame rate was not compared
 frame for frame either. Matroska, WebM and FLV keep times in milliseconds.
@@ -208,6 +232,9 @@ leave frames out. A screen recording's 132 frames became 240, of which 108
 were repeated. Where it repeats or drops frames of a file, GPU scoring does
 not take the pair, and **Local (GPU if available)** scores it on the CPU:
 [Pairs that GPU scoring does not score](./GPU-QUALITY.md#pairs-that-gpu-scoring-does-not-score).
+GPU scoring takes one kind of such pair: where the filter repeats only the
+last frame of a Matroska file, the GPU scores that frame once
+([GPU scores and Local CPU scores](./GPU-QUALITY.md#gpu-scores-and-local-cpu-scores)).
 
 ### Provider-encoded samples: October 27, 2026
 

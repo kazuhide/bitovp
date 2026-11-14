@@ -1794,6 +1794,99 @@ test("failed cases expose only bounded line numbers from the known browser test 
 		);
 	}
 });
+test("QC helper failures expose known bounded lines alongside the browser entry without private data", () => {
+	const changed = report();
+	const result = changed.suites[0].specs.at(-1).tests[0].results[0];
+	result.status = "failed";
+	result.error = {
+		message: "private password, cookie and <html>body</html>",
+		location: { file: "/private/qc-comparison-fixture.ts", line: 525 },
+		stack:
+			"private URL and token\n at /private/qc-comparison-fixture.ts:525:17\n at /private/installed-gui.test.ts:1253:8",
+	};
+	result.errors = [
+		{
+			location: {
+				file: "C:\\private\\qc-comparison-fixture.ts",
+				line: 526,
+			},
+			stack: "at C:\\private\\qc-comparison-fixture.ts:527:2",
+		},
+	];
+	assert.equal(
+		failureSummary(JSON.stringify(changed)).at(-1),
+		`Browser case: ${CASES.at(-1)}; status=failed; lines=1253; qc-lines=525,526,527`,
+	);
+	const summary = failureSummary(JSON.stringify(changed)).join("\n");
+	for (const privateText of [
+		"private",
+		"password",
+		"cookie",
+		"<html>",
+		"URL",
+		"token",
+		"C:\\",
+		"qc-comparison-fixture.ts",
+	])
+		assert(!summary.includes(privateText));
+});
+test("QC helper diagnostics reject other files and invalid lines and cap each known file independently", () => {
+	const changed = report();
+	const result = changed.suites[0].specs.at(-1).tests[0].results[0];
+	result.status = "failed";
+	for (const file of [
+		"unknown-helper.ts",
+		"other-qc-comparison-fixture.ts",
+		"xqc-comparison-fixture.ts",
+		"other qc-comparison-fixture.ts",
+		"qc-comparison-fixture.tsx",
+		"qc-comparison-fixture.ts.backup",
+	]) {
+		result.error = {
+			location: { file: `/private/${file}`, line: 525 },
+			stack: `private cookie\n at /private/${file}:526:2\n at /private/installed-gui.test.ts:1253:8`,
+		};
+		assert.equal(
+			failureSummary(JSON.stringify(changed)).at(-1),
+			`Browser case: ${CASES.at(-1)}; status=failed; lines=1253`,
+		);
+	}
+	for (const line of [0, -1, 10_001, "525", 2.5, null]) {
+		result.error = {
+			location: { file: "/private/qc-comparison-fixture.ts", line },
+			stack: "private cookie\n at /private/installed-gui.test.ts:1253:8",
+		};
+		assert.equal(
+			failureSummary(JSON.stringify(changed)).at(-1),
+			`Browser case: ${CASES.at(-1)}; status=failed; lines=1253`,
+		);
+	}
+	result.error = {
+		location: { file: "/private/installed-gui.test.ts", line: 1253 },
+		stack: [
+			"private cookie",
+			...Array.from(
+				{ length: 5 },
+				(_, i) => `at /private/qc-comparison-fixture.ts:${525 + i}:2`,
+			),
+			...Array.from(
+				{ length: 5 },
+				(_, i) => `at /private/installed-gui.test.ts:${1253 + i}:2`,
+			),
+		].join("\n"),
+	};
+	assert.equal(
+		failureSummary(JSON.stringify(changed)).at(-1),
+		`Browser case: ${CASES.at(-1)}; status=failed; lines=1253,1254,1255; qc-lines=525,526,527`,
+	);
+	result.error = {
+		location: { file: "/private/qc-comparison-fixture.ts", line: 10_000 },
+	};
+	assert.equal(
+		failureSummary(JSON.stringify(changed)).at(-1),
+		`Browser case: ${CASES.at(-1)}; status=failed; qc-lines=10000`,
+	);
+});
 test("a process being up is insufficient without all worker queue registrations", () => {
 	const queues = [
 		"usageStatistics",

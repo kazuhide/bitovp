@@ -8,6 +8,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- Compare the measured videos in CAMBI-only and combined VMAF/CAMBI reports, including across reports. The on-demand two-video player synchronizes presentation time without requiring reference FPS, supports recorded-point stepping and chart seeking, and shows unavailable score samples without inventing values. Finished CAMBI-only reports can be selected together in the Lab; VMAF and CAMBI-only report types are kept separate.
 - Remove Library entries from the grid, list or detail page and restore them from Archived content. Removal keeps cloud media, encoding jobs, clip drafts and render history, and uses revision checks and operator permissions.
 - Compare retained VOD QC videos from different VMAF reports in an on-demand two-video preview, with report/rendition labels, synchronized playback and chart seeking when the reports share their measured FPS. Reports without eligible media remain available for score comparison.
 - Violin plots on individual VMAF reports and report comparisons show the distribution of every stored measured score rather than the line chart's bucket-minimum sample. The bounded histogram retains exact counts, mean and extrema, identifies subsampled runs and missing data, and uses a disclosed smoothed outline without clipping scores at 100.

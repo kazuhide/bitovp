@@ -26,6 +26,7 @@ import {
 	shortJobId,
 	VMAF_STATUS_TONE,
 } from "../vmaf-shared";
+import { BandingFrameComparison } from "./banding-frame-comparison";
 import { BandingIntervalPlayer } from "./banding-interval-player";
 import { ExportButtons } from "./export-buttons";
 
@@ -37,7 +38,49 @@ type Result = BandingResultData & {
 const fixed = (value: number) => value.toFixed(3).replace(/\.?0+$/, "");
 
 /** Independent CAMBI panel: VMAF frame indices and source FPS never enter its timeline. */
-export function BandingPanels({ results }: { results: Result[] }) {
+export function BandingPanels({
+	results,
+	labels,
+	initialIds,
+}: {
+	results: Result[];
+	labels?: Readonly<Record<string, string>>;
+	initialIds?: [string, string];
+}) {
+	const { t } = useT();
+	return (
+		<div className="mt-6 space-y-6">
+			<h2 className="font-medium text-sm text-zinc-200">
+				{t("banding.title")} · CAMBI
+			</h2>
+			<p className="text-sm text-zinc-400">{t("banding.hint")}</p>
+			<BandingFrameComparison
+				results={results}
+				labels={labels}
+				initialIds={initialIds}
+				renderChart={(selection) => (
+					<BandingResultPanels
+						results={results}
+						labels={labels}
+						{...selection}
+					/>
+				)}
+			/>
+		</div>
+	);
+}
+
+function BandingResultPanels({
+	results,
+	labels,
+	selectedTime,
+	onTimeSelect,
+}: {
+	results: Result[];
+	labels?: Readonly<Record<string, string>>;
+	selectedTime?: number;
+	onTimeSelect: (seconds: number) => void;
+}) {
 	const { t } = useT();
 	const [selection, setSelection] = useState<{
 		resultId: string;
@@ -46,11 +89,7 @@ export function BandingPanels({ results }: { results: Result[] }) {
 		opener: HTMLButtonElement;
 	} | null>(null);
 	return (
-		<div className="mt-6 space-y-6">
-			<h2 className="font-medium text-sm text-zinc-200">
-				{t("banding.title")} · CAMBI
-			</h2>
-			<p className="text-sm text-zinc-400">{t("banding.hint")}</p>
+		<div className="space-y-6">
 			{results.map((result, index) => {
 				const pooled = result.pooled.banding;
 				if (!pooled)
@@ -59,7 +98,8 @@ export function BandingPanels({ results }: { results: Result[] }) {
 							{t("banding.unavailable")}
 						</p>
 					);
-				const label = renditionLabel(result.renditionRef, index);
+				const label =
+					labels?.[result.id] ?? renditionLabel(result.renditionRef, index);
 				const assessment = result.bandingAssessment;
 				const configured =
 					assessment?.warningThreshold !== undefined ||
@@ -208,9 +248,21 @@ export function BandingPanels({ results }: { results: Result[] }) {
 													strokeDasharray="4 4"
 												/>
 											) : null}
+											{selectedTime !== undefined ? (
+												<ReferenceLine
+													x={selectedTime}
+													stroke="var(--color-emerald-400)"
+													strokeDasharray="3 3"
+												/>
+											) : null}
 											<Scatter
 												name="CAMBI"
 												data={frames}
+												onClick={(point) => {
+													const seconds = point.payload?.timestampSeconds;
+													if (typeof seconds === "number")
+														onTimeSelect(seconds);
+												}}
 												fill="#3b82f6"
 												isAnimationActive={false}
 											/>
@@ -309,7 +361,11 @@ export function BandingPanels({ results }: { results: Result[] }) {
 										{t("banding.noRanges")}
 									</p>
 								)}
-								{assessment.ranges.length > 0 && !previewUrl ? (
+								{assessment.ranges.length > 0 &&
+								!previewUrl &&
+								results.some(
+									(item) => item.bandingPreview && "url" in item.bandingPreview,
+								) ? (
 									<p className="mt-2 text-xs text-zinc-400">
 										{t("banding.previewUnavailable")}
 									</p>

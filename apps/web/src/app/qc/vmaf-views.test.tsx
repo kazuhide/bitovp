@@ -669,6 +669,119 @@ describe("VmafLabClient (index)", () => {
 		expect(routerPush).toHaveBeenCalledWith(`/qc/compare?jobs=${a},${b}`);
 	});
 
+	it.each([
+		2, 6,
+	])("compares %i FINISHED CAMBI-only reports from the Lab", async (count) => {
+		const rows = Array.from({ length: count }, (_, i) =>
+			listItem({
+				id: `${i + 1}1111111-1111-4111-8111-111111111111`,
+				kind: "BANDING",
+				detector: "CAMBI",
+				model: null,
+				renditionMeans: [],
+				renditionBanding: [{ label: "360p", mean: 3, max: 5 }],
+			}),
+		);
+		apiFetch.mockResolvedValue(page(rows));
+		wrap(<VmafLabClient />);
+		await userEvent.setup().click(
+			await screen.findByRole("checkbox", {
+				name: "Select all loaded reports",
+			}),
+		);
+		const compare = screen.getByRole("button", { name: "Compare selected" });
+		expect(compare).toBeEnabled();
+		await userEvent.setup().click(compare);
+		expect(routerPush).toHaveBeenCalledWith(
+			`/qc/compare?jobs=${rows.map((row) => row.id).join(",")}`,
+		);
+	});
+
+	it("disables mixed metric selection even when two VMAF reports alone could compare", async () => {
+		apiFetch.mockResolvedValue(
+			page([
+				listItem({ id: "11111111-1111-4111-8111-111111111111" }),
+				listItem({ id: "22222222-2222-4222-8222-222222222222" }),
+				listItem({
+					id: "33333333-3333-4333-8333-333333333333",
+					kind: "BANDING",
+					detector: "CAMBI",
+					model: null,
+					renditionMeans: [],
+				}),
+			]),
+		);
+		wrap(<VmafLabClient />);
+		await userEvent.setup().click(
+			await screen.findByRole("checkbox", {
+				name: "Select all loaded reports",
+			}),
+		);
+		const compare = screen.getByRole("button", { name: "Compare selected" });
+		expect(compare).toBeDisabled();
+		expect(compare).toHaveAttribute(
+			"title",
+			"Compare VMAF reports together, or CAMBI-only reports together.",
+		);
+	});
+
+	it("keeps the six-report limit for CAMBI-only selection", async () => {
+		apiFetch.mockResolvedValue(
+			page(
+				Array.from({ length: 7 }, (_, i) =>
+					listItem({
+						id: `${i + 1}1111111-1111-4111-8111-111111111111`,
+						kind: "BANDING",
+						detector: "CAMBI",
+						model: null,
+						renditionMeans: [],
+					}),
+				),
+			),
+		);
+		wrap(<VmafLabClient />);
+		await userEvent.setup().click(
+			await screen.findByRole("checkbox", {
+				name: "Select all loaded reports",
+			}),
+		);
+		const compare = screen.getByRole("button", { name: "Compare selected" });
+		expect(compare).toBeDisabled();
+		expect(compare).toHaveAttribute(
+			"title",
+			expect.stringMatching(/Up to 6 reports/),
+		);
+	});
+
+	it("ignores an errored CAMBI report when comparing two finished VMAF reports", async () => {
+		const a = "11111111-1111-4111-8111-111111111111";
+		const b = "22222222-2222-4222-8222-222222222222";
+		apiFetch.mockResolvedValue(
+			page([
+				listItem({ id: a }),
+				listItem({ id: b }),
+				listItem({
+					id: "33333333-3333-4333-8333-333333333333",
+					status: "ERROR",
+					kind: "BANDING",
+					detector: "CAMBI",
+					model: null,
+					renditionMeans: [],
+				}),
+			]),
+		);
+		wrap(<VmafLabClient />);
+		await userEvent.setup().click(
+			await screen.findByRole("checkbox", {
+				name: "Select all loaded reports",
+			}),
+		);
+		const compare = screen.getByRole("button", { name: "Compare selected" });
+		expect(compare).toBeEnabled();
+		await userEvent.setup().click(compare);
+		expect(routerPush).toHaveBeenCalledWith(`/qc/compare?jobs=${a},${b}`);
+	});
+
 	it("select-all picks every TERMINAL report and bulk-deletes the selection", async () => {
 		const finished = "11111111-1111-4111-8111-111111111111";
 		const errored = "22222222-2222-4222-8222-222222222222";

@@ -200,7 +200,7 @@ export async function verifyCombinedQcBrowser(
 				await expect(tabs.getByRole("tab")).toHaveText(["VMAF", "CAMBI"]);
 				await expect(vmaf).toHaveAttribute("aria-selected", "true");
 				await expect(cambi).toHaveAttribute("aria-selected", "false");
-				await expect(page.locator('[role="tabpanel"]')).toHaveCount(1);
+				await expect(page.getByRole("tabpanel")).toHaveCount(1);
 				await expect(
 					page.getByRole("tabpanel", { name: "VMAF", exact: true }),
 				).toBeVisible();
@@ -209,11 +209,35 @@ export async function verifyCombinedQcBrowser(
 					exact: true,
 				});
 				await expect(figure).toBeVisible();
-				await expect(figure.locator("path[data-violin]")).toHaveCount(
-					mode.reports
-						.flatMap((report) => report.results)
-						.filter((row) => row.distribution !== null).length,
+				const distributions = mode.reports.flatMap((report) =>
+					report.results.flatMap((row) =>
+						row.distribution ? [row.distribution] : [],
+					),
 				);
+				await expect(figure.locator("path[data-violin]")).toHaveCount(
+					distributions.filter(
+						(distribution) => distribution.min !== distribution.max,
+					).length,
+				);
+				const constantLines = figure.locator('line[stroke-width="5"]');
+				await expect(constantLines).toHaveCount(
+					distributions.filter(
+						(distribution) => distribution.min === distribution.max,
+					).length,
+				);
+				expect(
+					await constantLines.evaluateAll((lines) =>
+						lines.every((line) => {
+							const x1 = Number(line.getAttribute("x1"));
+							const x2 = Number(line.getAttribute("x2"));
+							const y1 = Number(line.getAttribute("y1"));
+							const y2 = Number(line.getAttribute("y2"));
+							return (
+								[x1, x2, y1, y2].every(Number.isFinite) && x2 > x1 && y1 === y2
+							);
+						}),
+					),
+				).toBe(true);
 				for (const path of await figure
 					.locator("path[data-violin]")
 					.evaluateAll((paths) => paths.map((path) => path.getAttribute("d"))))
@@ -280,7 +304,7 @@ export async function verifyCombinedQcBrowser(
 				await vmaf.press("ArrowRight");
 				await expect(cambi).toBeFocused();
 				await expect(cambi).toHaveAttribute("aria-selected", "true");
-				await expect(page.locator('[role="tabpanel"]')).toHaveCount(1);
+				await expect(page.getByRole("tabpanel")).toHaveCount(1);
 				await expect(
 					page.getByRole("tabpanel", { name: "CAMBI", exact: true }),
 				).toBeVisible();

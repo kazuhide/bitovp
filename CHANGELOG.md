@@ -38,6 +38,7 @@ from this release; an older scorer can retain the earlier frame-timing behavior.
 
 ### Fixed
 
+- Reduce CPU preparation time for long Library editing sources, preserving full resolution, the indexed 30 fps timeline and audio timing without extending processing deadlines.
 - VMAF report and comparison charts use a compact desktop layout: frame history and the quality ladder sit beside the violin distribution, while the video preview keeps the full width. Violin plots fill the available space without stretching score labels or stroke widths; smaller screens retain a single column and many-series plots scroll inside their panel.
 - VMAF comparison rendition selectors fit narrow viewports, and Japanese frame-count units stay together. Mandatory installed-browser qualification now decodes a small synthetic QC asset and checks cross-report seeking, playback, violin data, cleanup and 320-pixel layouts.
 - CPU VOD input previews accept valid QuickTime display matrices with positive axis scaling and quarter-turn rotation, including the original Big Buck Bunny MOV. Invalid shear, reflection, perspective and contradictory rotation metadata remain rejected; preview geometry follows the worker's pinned FFmpeg autorotation and sample aspect ratio.

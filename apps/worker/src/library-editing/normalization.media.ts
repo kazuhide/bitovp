@@ -5,7 +5,10 @@ import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { cfrTimeMapSchema } from "@bitovp/core";
+import {
+	cfrTimeMapSchema,
+	editingNormalizationEvidenceSchema,
+} from "@bitovp/core";
 import { normalizeEditingMedia } from "./normalization";
 import { runMediaProcess } from "./process";
 
@@ -170,8 +173,16 @@ for (const [fps, frames] of [
 				expectedSourceSha256: digest(bytes),
 			});
 			assert.equal(result.originalSha256, digest(bytes));
+			assert.equal(result.preparedSha256, digest(await readFile(result.path)));
+			assert.equal(result.facts.width, 160);
+			assert.equal(result.facts.height, 90);
+			assert.deepEqual(result.facts.fps, { num: 30, den: 1 });
 			assert.equal(result.facts.frameCount, 60);
+			assert.equal(result.facts.durationUs, 2_000_000);
 			assert.equal(result.facts.hasAudio, true);
+			assert.equal(result.normalization.schemaVersion, 1);
+			assert.equal(result.normalization.profile, "SDR_CFR30_INDEXED_V1");
+			editingNormalizationEvidenceSchema.parse(result.normalization);
 			const before = await grayFrames(original, join(dir, "original.gray"));
 			const after = await grayFrames(result.path, join(dir, "prepared.gray"));
 			assert.equal(before.length, frames);

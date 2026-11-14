@@ -154,7 +154,7 @@ class RunnerTests(unittest.TestCase):
     def test_different_input_lengths_fail_without_publishing_a_result(self):
         run, output = self.score("mismatched.json", distorted=self.short)
         self.assertNotEqual(run.returncode, 0)
-        self.assertIn("different frame counts", run.stderr)
+        self.assertIn("bitovp-vmaf: Comparison inputs have different frame counts", run.stderr)
         self.assertFalse(output.exists())
 
     def test_inputs_that_leave_out_the_same_frames_fail_without_publishing_a_result(self):

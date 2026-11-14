@@ -2471,6 +2471,14 @@ export const ja = {
 		gpuRuntimeUnavailable: "GPUの実行環境を利用できません。",
 		gpuModelUnsupported: "このVMAFモデルはCPUで計算します。",
 		gpuGateCpuOnly: "現在のGPU検証条件ではCPUで計算します。",
+		gpuPairPixelFormat:
+			"このペアのピクセル形式はGPUでは比較できないため、CPUで計算しました。",
+		gpuPairColorRange: "片方の映像だけがフルレンジのため、CPUで計算しました。",
+		gpuPairColorMatrix:
+			"2つの映像でカラーマトリクス（色変換行列）の指定が一致しないため、CPUで計算しました。",
+		gpuPairFrameTimes:
+			"2つの映像のフレームレートまたはタイムスタンプの組み合わせをGPUでは扱えないため、CPUで計算しました。",
+		gpuPairInput: "GPUでは計算できない映像が含まれるため、CPUで計算しました。",
 		scoreProcessor: "VMAFの計算",
 		experimentalGpuScoring: "GPU（VMAFx、試験機能）",
 		ownedGpuScoring: "GPU（自前{backend}、試験機能）",

@@ -149,16 +149,35 @@ describe("buildVmafCommand", () => {
 		expect(argv[i1 + 1]).toBe("/spool/reference.mp4"); // [1:v] reference
 	});
 
-	it("scale+fps-conforms the distorted input then runs libvmaf", () => {
+	it("scales the distorted input, gives both inputs one frame per slot of the reference's frame rate, then runs libvmaf", () => {
 		const fc = filterComplexOf(buildVmafCommand(BASE));
 		expect(fc).toBe(
 			// Both pads carry `setpts`: libvmaf pairs by PTS, and a mezzanine with a
 			// non-zero first timestamp otherwise has its frame N scored against the
 			// encode's frame N±1 — worth 61 VMAF points on a real encode.
+			//
+			// Both pads carry `fps` as well (2026-11-14). `setpts` numbers the
+			// frames as they come, so frame N of the two is one moment only when
+			// both have a frame in every slot. With the filter on the encode alone,
+			// a reference and an encode that leave out the same slots scored 21.26
+			// where they score 52.96 with it on both.
 			"[0:v]scale=1920:1080:flags=bicubic,fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[dist];" +
-				"[1:v]settb=AVTB,setpts=N/FRAME_RATE/TB[ref];" +
+				"[1:v]fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[ref];" +
 				"[dist][ref]libvmaf=model=version=vmaf_v0.6.1:log_path=/spool/qc/v360.vmaf.json:log_fmt=json[out]",
 		);
+	});
+
+	it("gives the reference the frame rate that it gives the encode, and no other filter of the encode's", () => {
+		for (const fpsConform of [24, 30000 / 1001, 59.94]) {
+			const fc = filterComplexOf(buildVmafCommand({ ...BASE, fpsConform }));
+			const [dist, ref] = fc.split(";");
+			expect(dist).toBe(
+				`[0:v]scale=1920:1080:flags=bicubic,fps=${fpsConform},settb=AVTB,setpts=N/FRAME_RATE/TB[dist]`,
+			);
+			expect(ref).toBe(
+				`[1:v]fps=${fpsConform},settb=AVTB,setpts=N/FRAME_RATE/TB[ref]`,
+			);
+		}
 	});
 
 	it("selects a built-in model with model=version= and JSON log", () => {
@@ -275,8 +294,11 @@ describe("buildVmafCommand", () => {
 					scaleToReference: { width: 1280, height: 720 },
 				}),
 			),
-		).toContain(
-			"[0:v]scale=1280:720:flags=bicubic,settb=AVTB,setpts=N/FRAME_RATE/TB[dist]",
+		).toBe(
+			// Without a frame rate neither input gets the `fps` filter.
+			"[0:v]scale=1280:720:flags=bicubic,settb=AVTB,setpts=N/FRAME_RATE/TB[dist];" +
+				"[1:v]settb=AVTB,setpts=N/FRAME_RATE/TB[ref];" +
+				"[dist][ref]libvmaf=model=version=m:log_path=l:log_fmt=json[out]",
 		);
 		expect(
 			filterComplexOf(
@@ -288,7 +310,11 @@ describe("buildVmafCommand", () => {
 					fpsConform: 30,
 				}),
 			),
-		).toContain("[0:v]fps=30,settb=AVTB,setpts=N/FRAME_RATE/TB[dist]");
+		).toBe(
+			"[0:v]fps=30,settb=AVTB,setpts=N/FRAME_RATE/TB[dist];" +
+				"[1:v]fps=30,settb=AVTB,setpts=N/FRAME_RATE/TB[ref];" +
+				"[dist][ref]libvmaf=model=version=m:log_path=l:log_fmt=json[out]",
+		);
 	});
 
 	it("maps the libvmaf output and discards muxing (-f null -)", () => {
@@ -413,6 +439,25 @@ describe("buildVmafCommand — alignFrames", () => {
 		// would count frames at the wrong rate.
 		expect(g).toContain(
 			"[0:v]scale=1920:1080:flags=bicubic,fps=24,select='gte(n\\,1)',settb=AVTB,setpts=N/FRAME_RATE/TB[dist]",
+		);
+		expect(g).toContain("[1:v]fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[ref]");
+	});
+
+	it("drops the reference's leading frames after its frame-rate filter, as on the distorted side", () => {
+		const g = graph(
+			buildVmafCommand({
+				...base,
+				alignFrames: 2,
+				scaleToReference: { width: 1920, height: 1080 },
+				fpsConform: 24,
+			}),
+		);
+		// The offset counts slots of the reference's frame rate on both sides.
+		expect(g).toContain(
+			"[1:v]fps=24,select='gte(n\\,2)',settb=AVTB,setpts=N/FRAME_RATE/TB[ref]",
+		);
+		expect(g).toContain(
+			"[0:v]scale=1920:1080:flags=bicubic,fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[dist]",
 		);
 	});
 });

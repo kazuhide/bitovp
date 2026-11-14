@@ -2515,6 +2515,16 @@ export const en = {
 		gpuRuntimeUnavailable: "The GPU runtime is unavailable.",
 		gpuModelUnsupported: "This VMAF model uses CPU processing.",
 		gpuGateCpuOnly: "The current GPU validation gate requires CPU processing.",
+		gpuPairPixelFormat:
+			"GPU scoring does not compare the pixel formats of these two files, so CPU scored this pair.",
+		gpuPairColorRange:
+			"One of the two files is full range and the other is not, so CPU scored this pair.",
+		gpuPairColorMatrix:
+			"The two files do not name the same colour matrix, so CPU scored this pair.",
+		gpuPairFrameTimes:
+			"GPU scoring does not take the frame rates or frame times of these two files, so CPU scored this pair.",
+		gpuPairInput:
+			"GPU scoring does not take one of the two files, so CPU scored this pair.",
 		scoreProcessor: "VMAF processing",
 		experimentalGpuScoring: "GPU (VMAFx, experimental)",
 		ownedGpuScoring: "GPU (owned {backend}, experimental)",

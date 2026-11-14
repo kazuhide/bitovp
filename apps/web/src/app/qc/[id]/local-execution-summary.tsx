@@ -25,6 +25,19 @@ export function LocalExecutionSummary({
 				return t("qc.gpuModelUnsupported");
 			case "GPU_GATE_CPU_ONLY":
 				return t("qc.gpuGateCpuOnly");
+			// A pair that GPU scoring does not take, scored on the CPU in its
+			// place (`VMAF_GPU_PAIR_REASONS`); the other pairs of the measurement
+			// keep the GPU.
+			case "GPU_PAIR_PIXEL_FORMAT":
+				return t("qc.gpuPairPixelFormat");
+			case "GPU_PAIR_COLOR_RANGE":
+				return t("qc.gpuPairColorRange");
+			case "GPU_PAIR_COLOR_MATRIX":
+				return t("qc.gpuPairColorMatrix");
+			case "GPU_PAIR_FRAME_TIMES":
+				return t("qc.gpuPairFrameTimes");
+			case "GPU_PAIR_INPUT":
+				return t("qc.gpuPairInput");
 			default:
 				return execution.selection?.reason;
 		}

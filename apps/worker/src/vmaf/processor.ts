@@ -39,7 +39,6 @@ import {
 	vmafConvertedChromaLayout,
 	vmafExecutionSchema,
 	vmafJobSchema,
-	vmafNativeComparison,
 	vmafReferencePreparationEvidenceSchema,
 	vmafSizeLimitFailureMessage,
 	vmafSizeLimitMessage,
@@ -81,7 +80,6 @@ import {
 	type Geometry,
 	geometryFromProbe,
 	pixelFormatFromProbe,
-	videoStreamFromProbe,
 } from "./geometry";
 import type { DecodePolicy } from "./hardware-decode";
 import type {
@@ -97,6 +95,7 @@ import {
 	type SelectLocalNative,
 } from "./local-selection";
 import { isUnresolvableModel, unresolvableModelMessage } from "./model-error";
+import { NativePairRefusal, nativePair } from "./native-score";
 import { prepareDisplayScaleReference } from "./reference-preparation";
 import {
 	defaultKeyLister,
@@ -914,6 +913,9 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		selection?: LocalSelection,
 		banding?: BandingRun,
 		referencePreparation?: VmafReferencePreparationEvidence,
+		// What the scorer said of this pair when it had the two files open, on
+		// the pass before this one.
+		scorerRefusal?: NativePairRefusal,
 	): Promise<void> {
 		const runner =
 			execution.backend === "LOCAL"
@@ -974,9 +976,41 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		// only reachable this way; the v0.6.1 family resolves either way). Falls
 		// back to the built-in `model=version=` when no file is bundled.
 		const modelPath = deps.resolveModelPath?.(model);
+		// GPU scoring gives the score of libvmaf through FFmpeg or none. Ask
+		// whether the scorer takes this pair before resources are planned for
+		// it; `runNativeVmafScore` asks again for the two files that it scores.
+		let refused = scorerRefusal;
+		if (
+			!refused &&
+			execution.backend === "LOCAL" &&
+			(deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan") &&
+			referenceProbe !== undefined &&
+			resourceProbe
+		) {
+			try {
+				nativePair(referenceProbe, resourceProbe.stdout);
+			} catch (error) {
+				if (!(error instanceof NativePairRefusal)) throw error;
+				refused = error;
+			}
+		}
+		// "Local (GPU if available)" asks for the score of a pair, whichever
+		// processor gives it, so a pair that the scorer does not take is scored
+		// by the ordinary method in its place: the same command, and the same
+		// score, as on a worker without a GPU. The job keeps its selection, and
+		// the result names the processor and the kind of the reason. A prepared
+		// reference is a request for the scorer itself, and a worker whose
+		// environment names the scorer has no choice recorded, so both end
+		// with the refusal.
+		const scoresInPlace =
+			selection?.requested === "AUTO" &&
+			selection.backend !== "cpu" &&
+			!referencePreparation;
+		const cpuInPlace = refused && scoresInPlace ? refused.reason : undefined;
+		const scoringBackend = cpuInPlace ? "cpu" : deps.scoringBackend;
 		const nativeScoring =
 			execution.backend === "LOCAL" &&
-			(deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan");
+			(scoringBackend === "cuda" || scoringBackend === "vulkan");
 		let distortedOriginal:
 			| { width: number; height: number; bitdepth: number }
 			| undefined;
@@ -1013,17 +1047,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					height: original.height,
 					bitdepth: original.bitDepth,
 				};
-				// GPU scoring gives the score of libvmaf through FFmpeg or none.
-				// Refuse a pair that it cannot compare so before resources are
-				// planned for it; `runNativeVmafScore` asks again for the two
-				// files that it scores.
-				const referenceVideo = videoStreamFromProbe(referenceProbe);
-				const comparison =
-					referenceVideo && video
-						? vmafNativeComparison(referenceVideo, video)
-						: undefined;
-				if (comparison && "refusal" in comparison)
-					throw new Error(comparison.refusal);
+				if (refused) throw refused;
 			}
 		}
 		// libvmaf does not score pictures that are too small for a VMAF v1
@@ -1083,10 +1107,10 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			allocation?: LocalResourcePlan,
 		): VmafCommandOptions => ({
 			...(execution.backend === "LOCAL" &&
-			(deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan")
+			(scoringBackend === "cuda" || scoringBackend === "vulkan")
 				? {
 						scoring: {
-							backend: deps.scoringBackend as "cuda" | "vulkan",
+							backend: scoringBackend,
 							device:
 								allocation?.nativeDevice ?? deps.decodePolicy?.device ?? 0,
 						},
@@ -1115,8 +1139,8 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			...(!measurementMethod &&
 			!(
 				execution.backend === "LOCAL" &&
-				deps.scoringBackend &&
-				deps.scoringBackend !== "cpu"
+				scoringBackend &&
+				scoringBackend !== "cpu"
 			) &&
 			geometry.fps !== undefined
 				? { fpsConform: geometry.fps }
@@ -1127,8 +1151,8 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						...(!measurementMethod
 							? {
 									decoderThreads: allocation.decoderThreads,
-									...(deps.scoringBackend &&
-									deps.scoringBackend !== "cpu" &&
+									...(scoringBackend &&
+									scoringBackend !== "cpu" &&
 									execution.backend === "LOCAL"
 										? {}
 										: {
@@ -1159,6 +1183,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				if (
 					selection &&
 					selection.backend !== "cpu" &&
+					!cpuInPlace &&
 					(!allocation?.gpu ||
 						allocation.nativeDevice !== selection.device ||
 						!assertOwned)
@@ -1234,11 +1259,12 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					run = result.run;
 					if (
 						selection &&
-						(result.execution.scoring.backend !== selection.backend ||
+						(result.execution.scoring.backend !==
+							(cpuInPlace ? "cpu" : selection.backend) ||
 							result.execution.scoring.model !== selection.model)
 					)
 						throw new Error("VMAF_LOCAL_SELECTION_RESULT_MISMATCH");
-					if (selection && selection.backend !== "cpu") {
+					if (selection && selection.backend !== "cpu" && !cpuInPlace) {
 						const actual = result.execution.scoring;
 						if (
 							actual.implementation !== "bitovp-owned" ||
@@ -1254,9 +1280,11 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 							? {
 									selection: {
 										requested: selection.requested,
-										...("reason" in selection
-											? { reason: selection.reason }
-											: {}),
+										...(cpuInPlace
+											? { reason: cpuInPlace }
+											: "reason" in selection
+												? { reason: selection.reason }
+												: {}),
 									},
 								}
 							: {}),
@@ -1383,72 +1411,112 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				await rm(logPath, { force: true }).catch(() => {});
 			}
 		};
-		if (resourceSession && referenceResource && resourceProbe) {
-			const pair: ResourcePair = {
-				reference: referenceResource,
-				distorted: resourceVideoFromProbe(resourceProbe.stdout),
-				model,
-				psnr: wantPsnr,
-				...(deps.scoringBackend === "cuda" || deps.scoringBackend === "vulkan"
-					? { scoringBackend: deps.scoringBackend }
-					: {}),
-				measurementMethod,
-				outputFps: geometry.fps,
-			};
-			const resolver = deps.resolveLocalResources;
-			await resourceSession.run(
-				`${target.renditionKey}/${slot}`,
-				pair,
-				pairCount,
-				score,
-				resolver || banding
-					? async () => {
-							const base = resolver
-								? await resolver({
-										pair,
+		try {
+			if (resourceSession && referenceResource && resourceProbe) {
+				const pair: ResourcePair = {
+					reference: referenceResource,
+					distorted: resourceVideoFromProbe(resourceProbe.stdout),
+					model,
+					psnr: wantPsnr,
+					...(scoringBackend === "cuda" || scoringBackend === "vulkan"
+						? { scoringBackend }
+						: {}),
+					measurementMethod,
+					outputFps: geometry.fps,
+				};
+				const resolver = deps.resolveLocalResources;
+				await resourceSession.run(
+					`${target.renditionKey}/${slot}`,
+					pair,
+					pairCount,
+					score,
+					resolver || banding
+						? async () => {
+								const base = resolver
+									? await resolver({
+											pair,
+											pairCount,
+											options: optionsFor(),
+											signal,
+											referenceProbe,
+											distortedProbe: resourceProbe.stdout,
+											...(selection &&
+											selection.backend !== "cpu" &&
+											!cpuInPlace
+												? {
+														selectedNativeDevice: selection.device,
+														selectedNativeIdentity: selection.identity,
+													}
+												: {}),
+										})
+									: resourceSession.plan(pair, pairCount);
+								if (!banding) return base;
+								const video = bandingInputFromProbe(resourceProbe.stdout);
+								const selected =
+									banding.selection.backend === "cpu"
+										? undefined
+										: banding.selection;
+								if (deps.resolveBandingResources)
+									return deps.resolveBandingResources({
+										video,
 										pairCount,
-										options: optionsFor(),
 										signal,
-										referenceProbe,
-										distortedProbe: resourceProbe.stdout,
-										...(selection && selection.backend !== "cpu"
-											? {
-													selectedNativeDevice: selection.device,
-													selectedNativeIdentity: selection.identity,
-												}
-											: {}),
-									})
-								: resourceSession.plan(pair, pairCount);
-							if (!banding) return base;
-							const video = bandingInputFromProbe(resourceProbe.stdout);
-							const selected =
-								banding.selection.backend === "cpu"
-									? undefined
-									: banding.selection;
-							if (deps.resolveBandingResources)
-								return deps.resolveBandingResources({
-									video,
+										selected,
+										basePlan: base,
+									});
+								if (selected) throw new Error("BANDING_GPU_ADMISSION_REQUIRED");
+								const detector = resourceSession.plan(
+									bandingResourcePair(video),
 									pairCount,
-									signal,
-									selected,
-									basePlan: base,
-								});
-							if (selected) throw new Error("BANDING_GPU_ADMISSION_REQUIRED");
-							const detector = resourceSession.plan(
-								bandingResourcePair(video),
-								pairCount,
-							);
-							return {
-								...base,
-								...detector,
-								estimatedBytes: base.estimatedBytes + detector.estimatedBytes,
-								threads: Math.min(base.threads, detector.threads),
-								...(base.gpu ? { nativeInflightFrames: 1 as const } : {}),
-							};
-						}
-					: undefined,
+								);
+								return {
+									...base,
+									...detector,
+									estimatedBytes: base.estimatedBytes + detector.estimatedBytes,
+									threads: Math.min(base.threads, detector.threads),
+									...(base.gpu ? { nativeInflightFrames: 1 as const } : {}),
+								};
+							}
+						: undefined,
+				);
+			} else await score();
+		} catch (error) {
+			// The scorer reads the frames' times, which ffprobe's description of
+			// a Matroska, WebM or MPEG-TS file does not show, so it finds some
+			// pairs only when it has the two files open, and stops. Such a pair
+			// is scored once more from its start, as one that was refused before
+			// the run. That pass fetches the encode again: this one removed it.
+			if (!(error instanceof NativePairRefusal) || refused || !scoresInPlace)
+				throw error;
+			await scoreTarget(
+				deps,
+				vmafJobId,
+				model,
+				wantPsnr,
+				target,
+				referencePath,
+				geometry,
+				referenceProvenance,
+				jobDir,
+				out,
+				distortedKey,
+				variant,
+				providerResult,
+				signal,
+				execution,
+				pairCount,
+				executionProfile,
+				measurementMethod,
+				referenceCredential,
+				resourceSession,
+				referenceResource,
+				referenceProbe,
+				selection,
+				banding,
+				referencePreparation,
+				error,
 			);
-		} else await score();
+		}
 	}
 
 	async function run(

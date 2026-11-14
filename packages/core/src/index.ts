@@ -1436,9 +1436,14 @@ export {
 	timelineFromProfile,
 } from "./vmaf/loop-timeline";
 export {
+	VMAF_GPU_PAIR_REASONS,
+	type VmafGpuPairReason,
 	type VmafNativeComparison,
+	type VmafNativeFrameTimes,
+	type VmafNativeRefusal,
 	type VmafProbedVideo,
 	vmafNativeComparison,
+	vmafNativeFrameTimes,
 } from "./vmaf/native-comparison";
 export {
 	type NativeDeviceInfo,

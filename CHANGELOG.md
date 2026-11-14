@@ -6,6 +6,15 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-15
+
+For an existing installation, back up the database and configuration, run the
+[upgrade preflight and migrations](./docs/DATABASE-UPGRADES.md), and restart
+compatible Web and Worker services. Native installations need a shared
+`VOD_INPUT_PREVIEW_DIR` that the Worker can write and the Web can read. If you
+use native GPU quality scoring, rebuild and install the scorer and supervisor
+from this release; an older scorer can retain the earlier frame-timing behavior.
+
 ### Added
 
 - Compare the measured videos in CAMBI-only and combined VMAF/CAMBI reports, including across reports. The on-demand two-video player synchronizes presentation time without requiring reference FPS, supports recorded-point stepping and chart seeking, and shows unavailable score samples without inventing values. Finished CAMBI-only reports can be selected together in the Lab; VMAF and CAMBI-only report types are kept separate.
@@ -258,6 +267,7 @@ instructions.
 Record implemented changes under **Unreleased** until their tagged release is
 published.
 
+[1.3.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.0
 [1.2.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.2.0
 [1.1.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.1.0
 [1.0.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.0.0

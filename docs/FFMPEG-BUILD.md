@@ -3862,8 +3862,9 @@ code of the second change, bundled as for test L, with both scorers and the
 | EF | 5 | 72 frames at 24 frames a second, each in its interval, whose last frame lasts three intervals, in Matroska and in MP4; and the same files with an ordinary last frame |
 
 A frame rate that is not that of the frames, group RR. A stream copy with
-`-r 50` gives a file such a default duration, and that of an interlaced file
-can be that of a field. "Frame by frame" is FFmpeg without the filter in
+`-r 50` gives a file such a default duration, in its track header, while each
+frame keeps its own duration of 40 ms; the default duration of an interlaced
+file can be that of a field. "Frame by frame" is FFmpeg without the filter in
 either chain:
 
 | Reference and encode | v1.2.1 | The first and the second change | Frame by frame | The scorer of the second change | Test J's scorer |
@@ -3929,48 +3930,48 @@ reference's 72. In v1.2.1 the command scored 72 frames for the reference of
 the first and the last row, and the cloud worker's two checks are those of
 v1.2.1.
 
-Over the GPU runs of test P but those of the whole measurements, 496 rows,
-each GPU scored 349 different comparisons: 346 over the frames of
-**Local CPU**, whose means were within 0.0000016 of the command's with CUDA
-(1.575e-06) and within 0.0000006 with Vulkan (5.353e-07), and the three pairs
-above with a long last frame in Matroska, over 72 frames beside 74. The
-scorer refused 25 different pairs, 16 with the new sentence, six with "do not
-align" and three with "different frame counts", and the command scored each.
-The 16 pairs of the whole measurements repeat 14 of these and add two, which
-the scorer refused with the new sentence.
+Over the GPU runs of test P with the scorer of the second change, but those of
+the whole measurements, 496 rows, each GPU scored 349 different comparisons: 346
+over the frames of **Local CPU**, whose means were within 0.0000016 of the
+command's with CUDA (1.575e-06) and within 0.0000006 with Vulkan (5.353e-07),
+and the three pairs above with a long last frame in Matroska, over 72 frames
+beside 74. The scorer refused 25 different pairs, 16 with the new sentence, six
+with "do not align" and three with "different frame counts", and the command
+scored each. The 16 pairs of the whole measurements repeat 14 pairs of these
+runs, each with the same result, the means equal to 12 decimals, and add two,
+which the scorer refused with the new sentence.
 
 The scorer's own tests. A copy of the scorer's source of the second change
 without its new check, built with CUDA, Vulkan and the tests on the host of
 test J at 13:27, failed one of its 54 CTest tests: `native_runner`, whose run
 of a Matroska pair that leaves out the same frame expects the new sentence.
 Installed without the tests, that copy scored the first two pairs of group RR
-frame by frame, at 14:02.
-Its `decoder_retention_test`, run by hand with the file that it reads, failed
-with "A frame outside its slot was accepted", where that of the change passed.
-That test needs a file that is not in the repository, so CTest ran it only
-where the build names a directory of such files, and no CI job did; it alone
-held the two limits, a quarter of an interval between the times of the two
-files and from the frame rate. After the review the test checks those limits
-when it is given no file, and CTest runs it so on every build with the tests
-(`decoder_frame_time_boundaries`), CI's `cpu-oracle` job included. Built with
-CUDA, Vulkan and the tests at 14:23, the scorer after the review (`1edd7be9`)
-passed 55 CTest tests of 55, and its decoder test passed without a file and
-with it. Two copies of that source, each allowing half an interval in one of
-the two limits and built at 14:25 as the CI job builds the scorer, without a
-GPU backend, each failed `decoder_frame_time_boundaries` alone of 19 tests,
-with "A frame outside its slot was accepted" and "Timestamp drift beyond the
-original boundary was accepted"; `native_runner` passed with either. The
-scorer after the review gave groups RR and EF the results of the scorer of
-the second change, on both GPUs, at 14:26: its source differs from that of
+frame by frame, at 14:02. Its `decoder_retention_test`, run by hand with the
+file that it reads, failed with "A frame outside its slot was accepted", where
+that of the change passed. That test needs a file that is not in the repository,
+so CTest ran it only where the build names a directory of such files, and no CI
+job did; it alone held the two limits, a quarter of an interval between the
+times of the two files and from the frame rate. After the review the test checks
+those limits when it is given no file, and CTest runs it so on every build with
+the tests (`decoder_frame_time_boundaries`), CI's `cpu-oracle` job included.
+Built with CUDA, Vulkan and the tests at 14:23, the scorer after the review
+(`1edd7be9`) passed 55 CTest tests of 55, and its decoder test passed without a
+file and with it. Two copies of that source, each allowing half an interval in
+one of the two limits and built at 14:25 as the CI job builds the scorer,
+without a GPU backend, each failed `decoder_frame_time_boundaries` alone of 19
+tests, with "A frame outside its slot was accepted" and "Timestamp drift beyond
+the original boundary was accepted"; `native_runner` passed with either. The
+scorer after the review gave groups RR and EF the results of the scorer of the
+second change, on both GPUs, at 14:26: its source differs from that of
 `1e4656dd` in a comment of `decoder_pair.hpp` and in the test and its
 registration alone. The review of these fixes found that the CI test of the
 frame-count sentence, in `tests/runner_test.py`, held its last words alone,
 "different frame counts"; it now holds the whole sentence, as the test of the
-new sentence does. Built as the CI job builds the scorer, at 14:49 to 14:50,
-the source after the review passed 19 tests of 19 with that test; with the
-sentence's first words changed in the scorer, to "Compared inputs have
-different frame counts", `native_runner` failed alone, and with the earlier
-test all 19 passed.
+new sentence does. Built as the CI job builds the scorer, at 14:49 to 14:50, the
+source after the review passed 19 tests of 19 with that test; with the
+sentence's first words changed in the scorer, to "Compared inputs have different
+frame counts", `native_runner` failed alone, and with the earlier test all 19
+passed.
 
 Not measured: GPUs of other models or with other drivers; frame rates above
 240 and pictures larger than 3840x2160; and a cloud measurement at a

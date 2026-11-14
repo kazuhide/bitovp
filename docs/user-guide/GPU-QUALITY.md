@@ -393,10 +393,10 @@ worker with both changes, with 43 comparisons of new files: references in
 HEVC, VP9, AV1 and MPEG-2, at 120 frames a second, of 75 and 90 seconds, of
 3840 × 2160, and WebM, FLV, Matroska and MP4 files whose video starts after
 their audio. 17 more followed the review of the change: 240 frames a second,
-ten minutes at 60000/1001, Matroska files whose stored frame duration is that
-of another frame rate than that of their frames, and files whose last frame
-lasts three intervals. In the 346 comparisons that GPU scoring scored over the
-frames of **Local CPU**, the mean score of the CUDA scorer was within
+ten minutes at 60000/1001, Matroska files whose track header gives a frame
+duration of another frame rate than that of their frames, and files whose last
+frame lasts three intervals. In the 346 comparisons that GPU scoring scored
+over the frames of **Local CPU**, the mean score of the CUDA scorer was within
 0.0000016 of the **Local CPU** score, and that of the Vulkan scorer within
 0.0000006. The scorer refused 25 pairs whose frames differ in number or in
 time, and the worker scored them on the CPU. Three pairs with a long last

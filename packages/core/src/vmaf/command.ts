@@ -87,11 +87,11 @@
  *   rate puts them, which the filter now drops and repeats: 66.43 before,
  *   85.32 after, for frames moved by up to 0.6 of a slot.
  * - A reference whose frame rate, as ffprobe gives it, is not that of its
- *   frames: a Matroska file of 25 frames a second whose stored frame duration
- *   is 20 ms, that of 50 a second. Its frames were numbered at that rate
- *   while the encode was conformed to it, so frames of other moments were
- *   compared (1.63); now both have each frame twice (85.89; 87.57 frame by
- *   frame).
+ *   frames: a Matroska file of 25 frames a second whose track header gives a
+ *   frame duration of 20 ms, that of 50 a second. Its frames were numbered
+ *   at that rate while the encode was conformed to it, so frames of other
+ *   moments were compared (1.63); now both have each frame twice (85.89;
+ *   87.57 frame by frame).
  * - A file whose video starts later than the file does, as in a Matroska file
  *   whose audio starts first. The filter sent each frame to the slot nearest
  *   its time from the start of the file, and where the delay is about half a

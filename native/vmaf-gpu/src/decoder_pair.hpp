@@ -3,6 +3,7 @@
 #pragma once
 #include "decoder.hpp"
 #include <cmath>
+#include <cstdint>
 #include <optional>
 #include <stdexcept>
 
@@ -15,8 +16,20 @@ inline std::optional<RetainedPair> next_retained_pair(Decoder &reference, Decode
     if (!has_reference) return std::nullopt;
     return RetainedPair{reference.retain_picture(), distorted.retain_picture()};
 }
-inline void validate_comparison_timestamps(double reference, double distorted, double frames_per_second) {
-    if (std::abs(reference - distorted) > 0.25 / frames_per_second)
+// Frame `index` of each input, timed from that input's first frame. FFmpeg's
+// libvmaf filter, as the ordinary method runs it, gives each input one frame
+// per slot of the frame rate, counted from its first frame, and compares slot
+// N of the two; this scorer compares the frames in their order. The two are
+// the same comparison only when frame N of each input lies in slot N: an
+// input that leaves a slot out, puts two frames in one or drifts from its
+// frame rate has frames repeated or dropped there, and is refused here.
+inline void validate_comparison_timestamps(std::uint64_t index, double reference, double distorted,
+                                           double frames_per_second) {
+    const double quarter = 0.25 / frames_per_second;
+    if (std::abs(reference - distorted) > quarter)
         throw std::runtime_error("Comparison presentation timestamps do not align");
+    const double slot = double(index) / frames_per_second;
+    if (std::abs(reference - slot) > quarter || std::abs(distorted - slot) > quarter)
+        throw std::runtime_error("Comparison frame times do not follow the frame rate");
 }
 }

@@ -151,6 +151,41 @@ describe.skipIf(!haveFfmpeg)("VMAF frame pairing (real ffmpeg)", () => {
 			});
 		}, 30_000);
 	}
+
+	// A file with a frame in every slot whose video starts later than the file
+	// by about half a slot, in a container that keeps times in milliseconds: a
+	// Matroska file whose audio starts at zero, for one. Every frame then lies
+	// near the border of two slots, and the millisecond puts some on one side
+	// and the rest on the other. The `fps` filter counted the slots from zero
+	// until 2026-11-14, sent two frames to one slot and none to the next, and
+	// dropped and repeated frames of such a file; each file's slots are counted
+	// from its own first frame since.
+	const lateBy = (rate: string, milliseconds: number) =>
+		`nullsrc=size=64x48:rate=${rate},geq=lum='mod(X+Y+5*N\\,256)':cb=128:cr=128,trim=end_frame=96,settb=1/1000,setpts=PTS+${milliseconds}[out0];anullsrc=r=48000:cl=mono,atrim=end_sample=192000[out1]`;
+	for (const [rate, fps, milliseconds] of [
+		["24", 24, 21],
+		["30000/1001", 30000 / 1001, 17],
+	] as const) {
+		it(`${rate}: compares every frame of a reference whose video starts ${milliseconds} ms after its audio`, () => {
+			expect(
+				differing(
+					frames96(rate, "1/1000", false),
+					lateBy(rate, milliseconds),
+					fps,
+				),
+			).toEqual({ compared: 96, differing: [] });
+		}, 30_000);
+
+		it(`${rate}: compares every frame of an encode whose video starts ${milliseconds} ms after its audio`, () => {
+			expect(
+				differing(
+					lateBy(rate, milliseconds),
+					frames96(rate, "1/1000", false),
+					fps,
+				),
+			).toEqual({ compared: 96, differing: [] });
+		}, 30_000);
+	}
 });
 
 describe.skipIf(!haveFfmpeg)(

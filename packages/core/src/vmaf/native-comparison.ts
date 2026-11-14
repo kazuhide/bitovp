@@ -40,9 +40,9 @@
  * them.
  *
  * The ordinary method also gives both files one frame per slot of the
- * reference's frame rate (FFmpeg's `fps` filter, on both inputs since
- * 2026-11-14), repeating and dropping frames, and the scorer pairs the frames
- * of the two files in their order. The two compare the same frames where that
+ * reference's frame rate, counted from each file's first frame (FFmpeg's `fps`
+ * filter, on both inputs since 2026-11-14), repeating and dropping frames, and
+ * the scorer pairs the frames of the two files in their order. The two compare the same frames where that
  * filter changes neither file (`vmafNativeFrameTimes`):
  *
  * - Each file has a frame in every slot of its frame rate. ffprobe's
@@ -69,21 +69,22 @@
  * - ffprobe gives a Matroska, WebM or MPEG-TS file that leaves frames out
  *   two equal rates and no frame count, 30000/1001 twice for a file with 47
  *   frames in 148 slots. The scorer stops at the first frame whose time is
- *   more than a quarter of a frame apart in the two files, and at the end of
- *   a file that has fewer frames, and the worker takes that for a refusal of
- *   the pair (`NativePairRefusal`). Where both files leave out the same
- *   frames, it scores them, each frame once, where the ordinary method
- *   scores the repeated frames as well. How far the two are apart depends
- *   on which frames are left out and on what the pictures show: the scorer
- *   was 0.009 to 0.023 above the ordinary method in five pairs, three of
- *   which leave out one frame of 150, and from 7.78 below it (a still part
- *   that keeps one frame in 24) to 4.51 above it (every third frame kept) in
- *   six further pairs.
- * - A file of the second kind that `VMAF_SCORING_VERSION` names, whose video
- *   starts later than the file does by about half a slot, or by that plus a
- *   whole number of slots, passes here, and the scorer, which reads each
- *   file's times from its first frame, scores what the ordinary method
- *   scored before the filter: 90.51 where the ordinary method gives 67.84.
+ *   more than a quarter of a frame apart in the two files, at the end of a
+ *   file that has fewer frames, and, since 2026-11-14, at the first frame N
+ *   of either file that is more than a quarter of a frame from N frames after
+ *   that file's first. The worker takes each for a refusal of the pair
+ *   (`NativePairRefusal`). The last stop is for two files that leave out the
+ *   same frames: the scorer scored them, each frame once, where the ordinary
+ *   method scores the repeated frames as well, and how far the two were apart
+ *   depended on which frames are left out and on what the pictures show,
+ *   0.009 to 0.023 in five pairs and from 7.78 below the ordinary method (a
+ *   still part that keeps one frame in 24) to 4.51 above it (every third
+ *   frame kept) in six further pairs.
+ * - A file whose video starts later than the file does by about half a slot,
+ *   or by that plus a whole number of slots, passes here. The scorer reads
+ *   each file's times from its first frame, and so does the ordinary method
+ *   since 2026-11-14 (`VMAF_SCORING_VERSION`): both give 90.51 for such a
+ *   reference of 24 frames a second whose video starts 21 milliseconds late.
  */
 
 import { vmafConvertedChromaLayout } from "./size-limits";

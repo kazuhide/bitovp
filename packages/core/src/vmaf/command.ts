@@ -60,30 +60,34 @@
  * minima — recorded here rather than pretended away, because a version number
  * invites exactly that assumption.
  *
- * Nor does it capture the `fps` filter on the reference (2026-11-14). The
- * encode has had that filter since the first commit. The reference got it so
- * that a reference that leaves frames out is compared slot by slot with its
- * encode; its frames were numbered as they came before. The generation stays
- * 3, because the filter passes a file with a frame in every slot of its frame
- * rate unchanged, and a new generation would mark every stored report as
- * outdated: in 530 comparisons of such files (12 to 60 frames a second; MP4,
- * fragmented MP4, QuickTime, Matroska, WebM and MPEG-TS; first frames a part
- * of a slot after zero; with and without audio) the score and the frame count
- * were the same before and after, in four of them, of pictures 216 pixels
- * wide, with one libvmaf thread. Two kinds of reference score otherwise than
- * before:
+ * Nor does it capture two changes of 2026-11-14 to the frame times. The
+ * encode has had the `fps` filter since the first commit, and the reference
+ * got it as well, so that a reference that leaves frames out is compared slot
+ * by slot with its encode; its frames were numbered as they came before. Then
+ * both inputs got `setpts=PTS-STARTPTS` before the filter, which counts each
+ * input's slots from its own first frame instead of from the start of its
+ * file. The generation stays 3, because the two pass a file with a frame in
+ * every slot of its frame rate unchanged, and a new generation would mark every
+ * stored report as outdated: in 530 comparisons of such files (12 to 60
+ * frames a second; MP4, fragmented MP4, QuickTime, Matroska, WebM and
+ * MPEG-TS; first frames a part of a slot after zero; with and without audio)
+ * the score and the frame count were the same before and after, in four of
+ * them, of pictures 216 pixels wide, with one libvmaf thread. Two kinds of
+ * file score otherwise than before:
  *
- * - One that leaves frames out. With an encode that leaves out the same
- *   frames: 19.31 before, 44.01 after. With an encode that has every frame:
- *   18.26 before, 28.53 after.
- * - One with a frame in every slot whose container keeps times in
+ * - A reference that leaves frames out. With an encode that leaves out the
+ *   same frames: 19.31 before, 44.01 after. With an encode that has every
+ *   frame: 18.26 before, 28.53 after.
+ * - An encode with a frame in every slot whose container keeps times in
  *   milliseconds and whose video starts later than the file does by about
  *   half a slot, or by that plus a whole number of slots, as in a Matroska
- *   file whose audio starts first. The filter rounds each time to a slot,
- *   and the millisecond's rounding then sends neighbouring frames to one
- *   slot: 90.51 before and 67.84 after for such a reference of 24 frames a
- *   second whose video starts 21 milliseconds late. An encode of that kind
- *   has scored so since the first commit (69.01).
+ *   file whose audio starts first. The filter sent each frame to the slot
+ *   nearest its time, counted from the start of the file, and the
+ *   millisecond's rounding sent neighbouring frames to one slot: such an
+ *   encode of 24 frames a second whose video starts 21 milliseconds late
+ *   scored 69.01, and scores 90.51, the score of the same encode without the
+ *   delay. A reference of that kind passed unchanged before the first change,
+ *   and does again.
  *
  * "The reference's frame times" in docs/FFMPEG-BUILD.md records the
  * measurements.
@@ -224,11 +228,11 @@ export type VmafCommandOptions = {
 	scaleToReference?: { width: number; height: number };
 	/**
 	 * The reference's frame rate. Both inputs get one frame per slot of it
-	 * (FFmpeg's `fps` filter), the reference as well as the encode: a file with
-	 * a frame in every slot passes unchanged, and one that leaves slots out, or
-	 * has another frame rate, has frames repeated or dropped, so that frame N of
-	 * the two is the same moment. `VMAF_SCORING_VERSION` names the one kind of
-	 * evenly spaced file that does not pass unchanged.
+	 * (FFmpeg's `fps` filter), the reference as well as the encode, with each
+	 * input's slots counted from its own first frame: a file with a frame in
+	 * every slot passes unchanged, and one that leaves slots out, or has another
+	 * frame rate, has frames repeated or dropped, so that frame N of the two is
+	 * the same moment.
 	 */
 	fpsConform?: number;
 	/** libvmaf worker threads (n_threads); omitted ⇒ libvmaf default. */
@@ -383,8 +387,16 @@ export function buildVmafCommand(opts: VmafCommandOptions): string[] {
 	// both went through this filter. On the encode alone, as it was until
 	// 2026-11-14, a reference that leaves slots out had its frame N compared
 	// with another moment of the encode (see `VMAF_SCORING_VERSION`).
+	//
+	// Each pad's slots count from its own first frame (`setpts=PTS-STARTPTS`).
+	// FFmpeg times a file from the start of its earliest stream, and the filter
+	// sends a frame to the slot nearest its time: a video that starts half a
+	// slot after its file, with times in whole milliseconds as Matroska keeps
+	// them, had two frames sent to one slot and none to the next.
 	const frameTimes =
-		opts.fpsConform !== undefined ? [`fps=${opts.fpsConform}`] : [];
+		opts.fpsConform !== undefined
+			? ["setpts=PTS-STARTPTS", `fps=${opts.fpsConform}`]
+			: [];
 
 	// Distorted-side conform chain feeding libvmaf's [main] pad. flags=bicubic
 	// keeps the resampled distorted frame faithful; fps re-times so frame

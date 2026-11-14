@@ -101,7 +101,7 @@ void retained_pair_pipeline(const std::string &file, unsigned width, unsigned he
         if (!count) require(second_ready.wait_for(std::chrono::seconds(10)) == std::future_status::ready,
                             "Pair prefetch did not produce while the consumer retained the first frame");
         compare(pair->reference, wanted[count]); compare(pair->distorted, wanted[count]);
-        validate_comparison_timestamps(pair->reference.timestamp(), pair->distorted.timestamp(),
+        validate_comparison_timestamps(count, pair->reference.timestamp(), pair->distorted.timestamp(),
                                        reference.source_info().frames_per_second);
         reference_surfaces.insert(address(pair->reference.picture()));
         distorted_surfaces.insert(address(pair->distorted.picture()));
@@ -136,16 +136,38 @@ void paired_end_and_error(const std::string &file) {
 }
 void timestamp_boundary() {
     const double frames_per_second = 24, allowed = 0.25 / frames_per_second;
-    validate_comparison_timestamps(0, allowed, frames_per_second);
-    validate_comparison_timestamps(allowed, 0, frames_per_second);
+    validate_comparison_timestamps(0, 0, allowed, frames_per_second);
+    validate_comparison_timestamps(0, allowed, 0, frames_per_second);
     for (const bool reference_leads : {false, true}) {
         const auto beyond = std::nextafter(allowed, INFINITY);
         bool rejected = false;
-        try { validate_comparison_timestamps(reference_leads ? beyond : 0, reference_leads ? 0 : beyond, frames_per_second); }
+        try { validate_comparison_timestamps(0, reference_leads ? beyond : 0, reference_leads ? 0 : beyond, frames_per_second); }
         catch (const std::runtime_error &error) {
             rejected = std::string(error.what()) == "Comparison presentation timestamps do not align";
         }
         require(rejected, "Timestamp drift beyond the original boundary was accepted");
+    }
+}
+// Two inputs whose frame N lie together, but not in slot N: both leave out
+// the same slot, or both lie off their frame rate. Four frames a second keep
+// the slot, its quarter and their sums exact in binary.
+void slot_boundary() {
+    const double frames_per_second = 4, allowed = 0.25 / frames_per_second, slot = 3 / frames_per_second;
+    validate_comparison_timestamps(3, slot + allowed, slot + allowed, frames_per_second);
+    validate_comparison_timestamps(3, slot - allowed, slot - allowed, frames_per_second);
+    validate_comparison_timestamps(3, slot, slot + allowed, frames_per_second);
+    for (const double time : {std::nextafter(slot + allowed, INFINITY), std::nextafter(slot - allowed, -INFINITY),
+                              4 / frames_per_second}) {
+        for (const bool both : {true, false}) {
+            bool rejected = false;
+            try { validate_comparison_timestamps(3, time, both ? time : slot, frames_per_second); }
+            catch (const std::runtime_error &error) {
+                const std::string said = error.what();
+                rejected = said == "Comparison frame times do not follow the frame rate" ||
+                    (!both && said == "Comparison presentation timestamps do not align");
+            }
+            require(rejected, "A frame outside its slot was accepted");
+        }
     }
 }
 }
@@ -157,8 +179,8 @@ int main(int argc, char **argv) {
             retained_surfaces(argv[1], dimensions[0], dimensions[1], depth);
             retained_pair_pipeline(argv[1], dimensions[0], dimensions[1], depth);
         }
-        paired_end_and_error(argv[1]); timestamp_boundary();
-        std::cout << "PASS decoder retention: 12 depth/stride/ownership cases, pair EOF/error and timestamp boundaries\n";
+        paired_end_and_error(argv[1]); timestamp_boundary(); slot_boundary();
+        std::cout << "PASS decoder retention: 12 depth/stride/ownership cases, pair EOF/error, timestamp and slot boundaries\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL decoder retention: " << error.what() << '\n'; return 1;
     }

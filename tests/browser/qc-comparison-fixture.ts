@@ -160,6 +160,120 @@ const videoState = (page: Page) =>
 		}),
 	);
 
+/** Measure rendered plots, rather than accepting layout class names as proof. */
+export async function verifyQcChartLayout(
+	page: Page,
+	viewportWidth: number,
+	locale: "en" | "ja",
+) {
+	await expect(page.locator(".recharts-wrapper")).toHaveCount(2);
+	await page.evaluate(() => document.fonts.ready);
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+			),
+	);
+	const figure = page.getByRole("figure", {
+		name: locale === "ja" ? "VMAF 分布" : "VMAF distribution",
+		exact: true,
+	});
+	const geometry = await figure.evaluate((figure) => {
+		const rect = (element: Element) => {
+			const { x, y, width, height, right, bottom } =
+				element.getBoundingClientRect();
+			return { x, y, width, height, right, bottom };
+		};
+		const charts = document.querySelectorAll(".recharts-wrapper");
+		const frame = charts[0],
+			ladder = charts[1];
+		const svg = figure.querySelector('svg[role="img"]');
+		const panel = Array.from(figure.children).find(
+			(child) => child instanceof HTMLElement && child.contains(svg),
+		);
+		const axis = svg?.querySelector("text");
+		const preview = Array.from(
+			document.querySelectorAll("section[aria-label]"),
+		).find((section) => section.querySelector("video"));
+		if (
+			!frame ||
+			!ladder ||
+			!svg ||
+			!axis ||
+			!preview ||
+			!(panel instanceof HTMLElement)
+		)
+			throw new Error("QC chart geometry is unavailable");
+		const padding = getComputedStyle(panel);
+		return {
+			frame: rect(frame),
+			violin: rect(figure),
+			ladder: rect(ladder),
+			preview: rect(preview),
+			svg: rect(svg),
+			axisTextHeight: rect(axis).height,
+			plotWidth:
+				panel.clientWidth -
+				parseFloat(padding.paddingLeft) -
+				parseFloat(padding.paddingRight),
+			documentWidth: document.documentElement.scrollWidth,
+			frameBeforeViolin: Boolean(
+				frame.compareDocumentPosition(figure) &
+					Node.DOCUMENT_POSITION_FOLLOWING,
+			),
+			violinBeforeLadder: Boolean(
+				figure.compareDocumentPosition(ladder) &
+					Node.DOCUMENT_POSITION_FOLLOWING,
+			),
+		};
+	});
+	const controls = await page
+		.getByRole("button", {
+			name:
+				locale === "ja" ? "比較プレビューを閉じる" : "Close comparison preview",
+			exact: true,
+		})
+		.evaluate((button) => {
+			if (!button.parentElement)
+				throw new Error("QC preview controls are unavailable");
+			const { x, right, bottom } = button.parentElement.getBoundingClientRect();
+			return { x, right, bottom };
+		});
+	expect(geometry.documentWidth).toBeLessThanOrEqual(viewportWidth);
+	// A min-width plot may scroll inside its viewport; it must never leave unused
+	// visible width, as the previous fixed568px/312px centred SVGs did.
+	expect(geometry.plotWidth - geometry.svg.width).toBeLessThanOrEqual(2);
+	expect(geometry.axisTextHeight).toBeGreaterThan(8);
+	expect(geometry.axisTextHeight).toBeLessThan(20);
+	expect(geometry.frameBeforeViolin).toBe(true);
+	expect(geometry.violinBeforeLadder).toBe(true);
+	const left = Math.min(geometry.frame.x, geometry.violin.x);
+	const right = Math.max(geometry.frame.right, geometry.violin.right);
+	expect(geometry.preview.x).toBeLessThanOrEqual(left);
+	expect(geometry.preview.right).toBeGreaterThanOrEqual(right);
+	expect(controls.x).toBeLessThanOrEqual(left);
+	expect(controls.right).toBeGreaterThanOrEqual(right);
+	expect(geometry.preview.bottom).toBeLessThanOrEqual(
+		Math.min(geometry.frame.y, geometry.violin.y),
+	);
+	expect(controls.bottom).toBeLessThanOrEqual(geometry.preview.y);
+	if (viewportWidth >= 1280) {
+		expect(geometry.frame.right).toBeLessThanOrEqual(geometry.violin.x);
+		expect(geometry.ladder.right).toBeLessThanOrEqual(geometry.violin.x);
+		expect(geometry.ladder.y).toBeGreaterThanOrEqual(geometry.frame.bottom);
+		const overlap =
+			Math.min(geometry.frame.bottom, geometry.violin.bottom) -
+			Math.max(geometry.frame.y, geometry.violin.y);
+		expect(overlap).toBeGreaterThan(
+			Math.min(geometry.frame.height, geometry.violin.height) / 2,
+		);
+	} else {
+		expect(geometry.violin.y).toBeGreaterThanOrEqual(geometry.frame.bottom);
+		expect(geometry.ladder.y).toBeGreaterThanOrEqual(geometry.violin.bottom);
+	}
+	return geometry;
+}
+
 export async function verifyQcComparisonBrowser(
 	browser: Browser,
 	baseURL: string,
@@ -316,6 +430,7 @@ export async function verifyQcComparisonBrowser(
 				),
 			)
 			.toBe(true);
+		await verifyQcChartLayout(page, 1440, "en");
 		const frame = page.getByRole("spinbutton", {
 			name: "Selected frame",
 			exact: true,
@@ -414,34 +529,39 @@ export async function verifyQcComparisonBrowser(
 		await context.addCookies([
 			{ name: "ovp-locale", value: "ja", url: baseURL },
 		]);
-		for (const width of [320, 1440]) {
+		for (const width of [320, 768, 1024, 1440]) {
 			await page.setViewportSize({ width, height: 1000 });
-			await page.goto(comparePath);
-			await expect(
-				page.getByRole("figure", { name: "VMAF 分布", exact: true }),
-			).toBeVisible();
-			await page
-				.getByRole("button", { name: "比較プレビューを開く", exact: true })
-				.click();
-			await expect
-				.poll(async () =>
-					(await videoState(page)).every(
-						(video) => video.ready >= 2 && video.decoded > 0,
-					),
-				)
-				.toBe(true);
-			await page.evaluate(() => document.fonts.ready);
-			await expect
-				.poll(() =>
-					page.evaluate(
-						() => document.documentElement.scrollWidth <= innerWidth,
-					),
-				)
-				.toBe(true);
-			await page.screenshot({
-				path: info.outputPath(`qc-comparison-ja-${width}.png`),
-				fullPage: true,
-			});
+			for (const mode of ["comparison", "detail"] as const) {
+				await page.goto(mode === "comparison" ? comparePath : `/qc/${JOBS[0]}`);
+				await expect(
+					page.getByRole("figure", { name: "VMAF 分布", exact: true }),
+				).toBeVisible();
+				await page
+					.getByRole("button", { name: "比較プレビューを開く", exact: true })
+					.click();
+				await expect
+					.poll(async () =>
+						(await videoState(page)).every(
+							(video) => video.ready >= 2 && video.decoded > 0,
+						),
+					)
+					.toBe(true);
+				await page.evaluate(() => document.fonts.ready);
+				await expect
+					.poll(() =>
+						page.evaluate(
+							() => document.documentElement.scrollWidth <= innerWidth,
+						),
+					)
+					.toBe(true);
+				await verifyQcChartLayout(page, width, "ja");
+				if (width === 320 || width === 1440) {
+					await page.screenshot({
+						path: info.outputPath(`qc-${mode}-ja-${width}.png`),
+						fullPage: true,
+					});
+				}
+			}
 		}
 		expect(unexpected).toEqual([]);
 	} finally {

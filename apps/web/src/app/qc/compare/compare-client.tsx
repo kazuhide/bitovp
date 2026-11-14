@@ -25,8 +25,6 @@ import {
 	type VmafJobDetail,
 	type VmafResultDetail,
 } from "../vmaf-shared";
-import { VmafViolinChart } from "../vmaf-violin";
-import { CompareLadderChart } from "./compare-ladder-chart";
 import { ReportFrameComparison } from "./report-frame-comparison";
 
 /** Bounds for the comparison overlay — keep it readable, keep the URL sane. */
@@ -372,40 +370,11 @@ export function CompareClient() {
 						onAll={setAll}
 					/>
 
-					<h2 className="mt-8 font-medium text-sm text-zinc-200">
-						{t("qc.perFrame")}
-						<span className="ml-2 font-normal text-xs text-zinc-500">
-							{t("uiX.downsampledSeries", {
-								shown: shownSeries.length,
-								total: series.length,
-							})}
-						</span>
-					</h2>
 					<ReportFrameComparison
 						jobs={loadedJobs}
 						series={series}
 						shownSeries={shownSeries}
 					/>
-					<div className="mt-6">
-						<VmafViolinChart
-							series={shownSeries.map((item) => ({
-								key: item.key,
-								label: item.label,
-								color: item.color,
-								distribution: item.result.distribution,
-								subsample: loadedJobs.find((job) => job.id === item.jobId)
-									?.subsample,
-							}))}
-						/>
-					</div>
-
-					<h2 className="mt-8 font-medium text-sm text-zinc-200">
-						{t("qc.qualityLadder")}
-						<span className="ml-2 font-normal text-xs text-zinc-500">
-							{t("ui.meanVmafVsBitrateOneCurvePer")}
-						</span>
-					</h2>
-					<CompareLadderChart series={shownSeries} />
 				</>
 			)}
 		</section>

@@ -20,7 +20,7 @@ export type VmafViolinSeries = {
 };
 
 const LEFT = 56;
-const COLUMN = 128;
+const COLUMN = 120;
 const TOP = 16;
 const HEIGHT = 248;
 
@@ -43,7 +43,7 @@ export function VmafViolinChart({
 	);
 	const min = Math.min(0, ...measured.map((value) => value.min));
 	const max = Math.max(100, ...measured.map((value) => value.max));
-	const width = LEFT + Math.max(1, rows.length) * COLUMN;
+	const plotWidth = Math.max(1, rows.length) * COLUMN;
 	const y = (score: number) =>
 		TOP + HEIGHT * (1 - scoreFraction(score, min, max));
 	const countLabel = (row: VmafViolinSeries, count: number) =>
@@ -63,11 +63,10 @@ export function VmafViolinChart({
 				<InfoHint labelFor={t("qc.violinTitle")} text={t("qc.violinHelp")} />
 			</figcaption>
 			<div className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-950 p-2">
-				<div className="mx-auto" style={{ width, minWidth: width }}>
+				<div className="w-full" style={{ minWidth: LEFT + plotWidth }}>
 					{measured.length > 0 && (
 						<svg
-							viewBox={`0 0 ${width} ${TOP + HEIGHT + 16}`}
-							width={width}
+							width="100%"
 							height={TOP + HEIGHT + 16}
 							className="block"
 							role="img"
@@ -79,7 +78,7 @@ export function VmafViolinChart({
 									<g key={i}>
 										<line
 											x1={LEFT}
-											x2={width}
+											x2="100%"
 											y1={y(score)}
 											y2={y(score)}
 											stroke="var(--color-zinc-800)"
@@ -98,57 +97,71 @@ export function VmafViolinChart({
 									</g>
 								);
 							})}
-							{rows.map((row, i) => {
-								const distribution = row.distribution;
-								if (!distribution) return null;
-								const x = LEFT + (i + 0.5) * COLUMN;
-								const label = `${row.label}: ${countLabel(row, distribution.frameCount)}; ${t("qc.mean")} ${fmtScore(distribution.mean)}, ${t("qc.min")} ${fmtScore(distribution.min)}, ${t("qc.max")} ${fmtScore(distribution.max)}`;
-								const density = violinDensity(distribution);
-								const coordinates = (side: number) =>
-									density.map(
-										(point) =>
-											`${(x + side * point.density * 40).toFixed(3)},${y(point.score).toFixed(3)}`,
-									);
-								return (
-									<g key={row.key} aria-label={label}>
-										<title>{label}</title>
-										{distribution.min === distribution.max ? (
+							{/* Scale only the shapes; axis text stays in CSS pixels. */}
+							<svg
+								x={LEFT}
+								width={`calc(100% - ${LEFT}px)`}
+								height={TOP + HEIGHT + 16}
+								viewBox={`0 0 ${plotWidth} ${TOP + HEIGHT + 16}`}
+								preserveAspectRatio="none"
+								role="presentation"
+							>
+								{rows.map((row, i) => {
+									const distribution = row.distribution;
+									if (!distribution) return null;
+									const x = (i + 0.5) * COLUMN;
+									const label = `${row.label}: ${countLabel(row, distribution.frameCount)}; ${t("qc.mean")} ${fmtScore(distribution.mean)}, ${t("qc.min")} ${fmtScore(distribution.min)}, ${t("qc.max")} ${fmtScore(distribution.max)}`;
+									const density = violinDensity(distribution);
+									const coordinates = (side: number) =>
+										density.map(
+											(point) =>
+												`${(x + side * point.density * 40).toFixed(3)},${y(point.score).toFixed(3)}`,
+										);
+									return (
+										<g key={row.key} aria-label={label}>
+											<title>{label}</title>
+											{distribution.min === distribution.max ? (
+												<line
+													x1={x - 36}
+													x2={x + 36}
+													y1={y(distribution.min)}
+													y2={y(distribution.max)}
+													stroke={row.color}
+													strokeWidth={5}
+													vectorEffect="non-scaling-stroke"
+												/>
+											) : (
+												<path
+													data-violin
+													d={`M${x},${y(distribution.min)} L${coordinates(-1).join(" L")} L${x},${y(distribution.max)} L${coordinates(1).reverse().join(" L")} Z`}
+													fill={row.color}
+													fillOpacity={0.35}
+													stroke={row.color}
+													strokeWidth={1.5}
+													vectorEffect="non-scaling-stroke"
+												/>
+											)}
 											<line
-												x1={x - 36}
-												x2={x + 36}
-												y1={y(distribution.min)}
-												y2={y(distribution.max)}
-												stroke={row.color}
-												strokeWidth={5}
+												x1={x - 12}
+												x2={x + 12}
+												y1={y(distribution.mean)}
+												y2={y(distribution.mean)}
+												stroke="var(--color-zinc-100)"
+												strokeWidth={2}
+												vectorEffect="non-scaling-stroke"
 											/>
-										) : (
-											<path
-												data-violin
-												d={`M${x},${y(distribution.min)} L${coordinates(-1).join(" L")} L${x},${y(distribution.max)} L${coordinates(1).reverse().join(" L")} Z`}
-												fill={row.color}
-												fillOpacity={0.35}
-												stroke={row.color}
-												strokeWidth={1.5}
-											/>
-										)}
-										<line
-											x1={x - 12}
-											x2={x + 12}
-											y1={y(distribution.mean)}
-											y2={y(distribution.mean)}
-											stroke="var(--color-zinc-100)"
-											strokeWidth={2}
-										/>
-									</g>
-								);
-							})}
+										</g>
+									);
+								})}
+							</svg>
 						</svg>
 					)}
 					<div className="flex pb-1" style={{ paddingLeft: LEFT }}>
 						{rows.map((row) => (
 							<div
 								key={row.key}
-								className="w-32 shrink-0 space-y-1 px-2 text-center text-xs"
+								className="flex-1 space-y-1 px-2 text-center text-xs"
+								style={{ minWidth: COLUMN }}
 							>
 								<p
 									className="break-words font-medium"

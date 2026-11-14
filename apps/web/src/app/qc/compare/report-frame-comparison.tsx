@@ -2,9 +2,12 @@
 
 import { useT } from "@/lib/i18n/context";
 import { FrameComparison } from "../[id]/frame-comparison";
+import { AnalysisChartLayout } from "../analysis-chart-layout";
 import type { VmafJobDetail } from "../vmaf-shared";
+import { VmafViolinChart } from "../vmaf-violin";
 import type { CompareSeries } from "./compare-client";
 import { CompareFrameChart } from "./compare-frame-chart";
+import { CompareLadderChart } from "./compare-ladder-chart";
 
 /** Reuse the report player's media lifecycle; the comparison keeps its own chart. */
 export function ReportFrameComparison({
@@ -12,7 +15,7 @@ export function ReportFrameComparison({
 	series,
 	shownSeries,
 }: {
-	jobs: Pick<VmafJobDetail, "id" | "mode" | "reference">[];
+	jobs: Pick<VmafJobDetail, "id" | "mode" | "reference" | "subsample">[];
 	series: CompareSeries[];
 	shownSeries: CompareSeries[];
 }) {
@@ -45,6 +48,30 @@ export function ReportFrameComparison({
 		available.map((item) => [item.key, item.result.preview]),
 		reports.map((job) => [job?.id, job?.mode, job?.reference?.fps]),
 	]);
+	// Keep the static plots unchanged while the player clock advances.
+	const distribution = (
+		<VmafViolinChart
+			series={shownSeries.map((item) => ({
+				key: item.key,
+				label: item.label,
+				color: item.color,
+				distribution: item.result.distribution,
+				subsample: jobs.find((job) => job.id === item.jobId)?.subsample,
+			}))}
+		/>
+	);
+	const ladder = (
+		<>
+			<h2 className="font-medium text-sm text-zinc-200">
+				{t("qc.qualityLadder")}
+				<span className="ml-2 font-normal text-xs text-zinc-500">
+					{t("ui.meanVmafVsBitrateOneCurvePer")}
+				</span>
+			</h2>
+			<CompareLadderChart series={shownSeries} />
+		</>
+	);
+
 	return (
 		<FrameComparison
 			key={scope}
@@ -59,7 +86,24 @@ export function ReportFrameComparison({
 					: undefined
 			}
 			renderChart={(selection) => (
-				<CompareFrameChart series={shownSeries} {...selection} />
+				<AnalysisChartLayout
+					frames={
+						<>
+							<h2 className="font-medium text-sm text-zinc-200">
+								{t("qc.perFrame")}
+								<span className="ml-2 font-normal text-xs text-zinc-500">
+									{t("uiX.downsampledSeries", {
+										shown: shownSeries.length,
+										total: series.length,
+									})}
+								</span>
+							</h2>
+							<CompareFrameChart series={shownSeries} {...selection} />
+						</>
+					}
+					distribution={distribution}
+					ladder={ladder}
+				/>
 			)}
 		/>
 	);

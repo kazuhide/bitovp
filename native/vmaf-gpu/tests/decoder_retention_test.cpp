@@ -173,13 +173,21 @@ void slot_boundary() {
 }
 int main(int argc, char **argv) {
     try {
-        require(argc == 2, "Usage: decoder_retention_test FIXTURE_FILE (at least seven frames)");
+        require(argc <= 2, "Usage: decoder_retention_test [FIXTURE_FILE (at least seven frames)]");
+        // The two boundaries read no file, so CMake runs them on every test
+        // build (decoder_frame_time_boundaries), CI's included; the cases
+        // below need the fixture.
+        timestamp_boundary(); slot_boundary();
+        if (argc == 1) {
+            std::cout << "PASS decoder frame times: timestamp and slot boundaries\n";
+            return 0;
+        }
         for (const unsigned depth : {8u, 10u}) for (const auto dimensions :
              std::array<std::array<unsigned, 2>, 3>{{{65, 67}, {128, 96}, {129, 97}}}) {
             retained_surfaces(argv[1], dimensions[0], dimensions[1], depth);
             retained_pair_pipeline(argv[1], dimensions[0], dimensions[1], depth);
         }
-        paired_end_and_error(argv[1]); timestamp_boundary(); slot_boundary();
+        paired_end_and_error(argv[1]);
         std::cout << "PASS decoder retention: 12 depth/stride/ownership cases, pair EOF/error, timestamp and slot boundaries\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL decoder retention: " << error.what() << '\n'; return 1;

@@ -216,6 +216,8 @@ if(BITOVP_TESTS)
   add_executable(decoder_retention_test tests/decoder_retention_test.cpp)
   target_link_libraries(decoder_retention_test PRIVATE bitovp_decode Threads::Threads)
   target_compile_options(decoder_retention_test PRIVATE -Wall -Wextra -Werror)
+  # Without a file the test checks only the comparison's frame-time limits.
+  add_test(NAME decoder_frame_time_boundaries COMMAND decoder_retention_test)
   if(VMAF_DECODE_FIXTURE_DIR)
     add_test(NAME decoder_cpu_retention COMMAND decoder_retention_test
       "${VMAF_DECODE_FIXTURE_DIR}/bbb-10s-ref.mp4")

@@ -62,15 +62,16 @@ const input = (code: string) => new NativePairRefusal(code, "GPU_PAIR_INPUT");
  * What the scorer says of two files whose frames it does not pair
  * (`native/vmaf-gpu/src/main.cpp` and `decoder_pair.hpp`): FFmpeg's libraries
  * name another frame rate for each of them, a frame's time is more than a
- * quarter of a frame apart in the two, one of them ends before the other, or
- * frame N of a file is more than a quarter of a frame from N frames after
- * its first, as in a file that leaves a frame out. The check before the run
- * reads the frame rates and the frame count that ffprobe gives for each
+ * quarter of a slot apart in the two, one of them ends before the other, or
+ * frame N of a file is more than a quarter of a slot from N slots after its
+ * first, as in two files that leave out the same frame. The check before the
+ * run reads the frame rates and the frame count that ffprobe gives for each
  * file, which show no frame that a Matroska, WebM or MPEG-TS file leaves
  * out, and the scorer reads the frames' times.
  *
- * The scorer's tests hold the last three sentences
- * (`tests/decoder_retention_test.cpp`, `tests/runner_test.py`) and none the
+ * The scorer's tests hold the last three sentences, and CI runs a test of
+ * each (`tests/runner_test.py`, and the frame-time limits of
+ * `tests/decoder_retention_test.cpp`, which need no file). None holds the
  * first, so `local-score.native.test.ts` holds all four against the scorer's
  * source: with another wording there, the worker would end such a
  * measurement with an error again.

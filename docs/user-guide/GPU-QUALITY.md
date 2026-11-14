@@ -25,7 +25,10 @@ The VOD quality settings and VMAF Lab offer **Local CPU** and
 - **Local (GPU if available)** checks the worker's hardware and matching
   native installation. For a supported VMAF v1.0 model, it tries NVIDIA CUDA,
   then AMD Vulkan. If no supported GPU or native runtime is available, or the
-  model is unsupported, it uses the same model on the CPU.
+  model is unsupported, it uses the same model on the CPU. On a worker with a
+  usable GPU it also scores a pair of files that GPU scoring does not take on
+  the CPU, and the other pairs of the measurement on the GPU:
+  [Pairs that GPU scoring does not score](#pairs-that-gpu-scoring-does-not-score).
 
 The GPU belongs to the machine running the worker, not the browser. Automatic
 selection requires the matching native scorer and supervisor on Linux; selecting
@@ -35,12 +38,14 @@ additional comparisons wait for capacity.
 
 A VMAF measurement that decides a delivery gate uses CPU scoring, including when
 automatic GPU selection was requested. Live comparisons also stay on the CPU.
-Input validation errors, invalid native builds and failed CPU numerical checks
-remain errors; they are not hidden by a CPU retry. GPU scoring still requires
-the supported settings described below.
+An unreadable input, an invalid native build, a failed CPU numerical check and
+every other failure of a GPU run remain errors; they are not hidden by a CPU
+retry. Only a pair that GPU scoring does not take is scored on the CPU in its
+place.
 
 Reports show the requested choice, actual decoding and scoring methods, and
-the reason for a CPU selection. The selected backend, native build and device
+the reason for a CPU selection, of the measurement or of one pair. The selected
+backend, native build and device
 are pinned for a measurement so that resuming it cannot mix implementations.
 Creating a new measurement with **Remeasure** retains the requested choice and
 selects again. Historical plans without an explicit choice show **Local (worker
@@ -108,7 +113,12 @@ records the actual device name, index, and UUID.
 The initial worker integration accepts ordinary SDR, square-pixel VOD inputs
 with matching cadence and aligned content. It supports the eight bundled
 standard/high-frame-rate VMAF v1.0 models. Unsupported sampling, timing, crop,
-rotation, HDR, and stream-selection settings produce an explicit error. The
+rotation, HDR, and stream-selection settings produce an explicit error. With
+**Local (GPU if available)**, the worker scores a pair with a rotated, HDR or
+non-square-pixel file, or with a file of more than one video stream, on the
+CPU instead:
+[Pairs that GPU scoring does not score](#pairs-that-gpu-scoring-does-not-score).
+The
 worker currently requires software decoding with this scorer. A separate
 standalone NVDEC-to-CUDA path is available for validation with unchanged
 dimensions; it is not silently substituted into worker measurements.
@@ -336,7 +346,8 @@ filter. A measurement on the GPU also
   the encode before it was scaled, as the FFmpeg command of **Local CPU** tells
   it nothing;
 - is not started for a pair that FFmpeg converts before libvmaf compares it,
-  because the GPU scorer makes no such conversion:
+  or whose frames FFmpeg repeats or drops, because the GPU scorer does
+  neither:
   [Pairs that GPU scoring does not score](#pairs-that-gpu-scoring-does-not-score).
 
 Every GPU run computes a CPU reference, which is libvmaf itself on the
@@ -357,6 +368,18 @@ models were used. 17 of the comparisons used a 10-second 1920 × 1080 clip of
 Big Buck Bunny, as an 8-bit and as a 10-bit reference. The
 [build record](../FFMPEG-BUILD.md#gpu-scoring-and-libvmaf-through-ffmpeg)
 holds the comparisons.
+
+On 2026-11-14 the command of **Local CPU** changed: it gives the reference one
+frame for every frame interval of its frame rate, as it has always given the
+encode
+([Frame rates and frames that are left out](./QUALITY-AND-MONITORING.md#frame-rates-and-frames-that-are-left-out)).
+That changed none of the scores above. The 148 pairs were scored again on the
+same worker, and 132 pairs of 384 × 216 files with a constant frame rate of 12
+to 60 frames a second were added: references in Matroska, MP4 and MPEG-TS, and
+encodes in H.264, HEVC, AV1, VP9 and MPEG-2, in MP4, fragmented MP4,
+QuickTime, Matroska, WebM and MPEG-TS. For the 280 pairs the mean score of the
+CUDA scorer was within 0.0000016 of the **Local CPU** score, and that of the
+Vulkan scorer within 0.0000006.
 
 What follows:
 
@@ -381,16 +404,24 @@ What follows:
 
 Where a GPU score and a **Local CPU** score of one pair can still differ:
 
-- **Frames that are not evenly spaced.** **Local CPU** makes the encode's
-  frames evenly spaced at the reference's frame rate before it compares
-  (FFmpeg's `fps` filter); GPU scoring pairs the frames of the two files in
-  their order. For files with a constant frame rate that is the same, and it
-  was the same in every comparison above. For a reference and an encode that
-  leave out the same frames, GPU scoring compares the frames that belong
-  together and **Local CPU** does not: one such pair scored 52.96 with GPU
-  scoring, and with FFmpeg without that filter, and 21.26 with **Local CPU**.
-  GPU scoring refuses a pair whose two files differ in frame rate or in frame
-  count.
+- **Matroska, WebM and MPEG-TS files that leave out the same frames.**
+  **Local CPU** gives both files one frame for every frame interval of the
+  reference's frame rate and scores the repeated frames as well; GPU scoring
+  pairs the frames of the two files in their order. For files with a constant
+  frame rate that is the same, and it was the same in every comparison above.
+  The worker sends a pair with a file that leaves frames out to the CPU when
+  what ffprobe says of the file shows it, which it does for MP4 and QuickTime
+  files. It does not for Matroska, WebM and MPEG-TS files. GPU scoring then
+  stops when the two files' frames come at different times, and it scores a
+  reference and an encode that leave out the same frames, without repeated
+  frames: 0.009 to 0.023 above **Local CPU** in five pairs.
+- **A Matroska or WebM file whose video starts about half a frame interval
+  after the file does.** **Local CPU** drops and repeats frames of such a
+  file, and GPU scoring, which reads each file's times from its first frame,
+  does not: one pair scored 67.84 with **Local CPU** and 90.51 with GPU
+  scoring.
+  [Frame rates and frames that are left out](./QUALITY-AND-MONITORING.md#frame-rates-and-frames-that-are-left-out)
+  describes the files.
 - **Workers of different processor architectures.** FFmpeg's scale filter
   makes other 8-bit pictures on x86-64 than on arm64. **Local CPU** therefore
   scores an encode that is scaled and compared in 8 bits differently on the
@@ -410,9 +441,9 @@ Where a GPU score and a **Local CPU** score of one pair can still differ:
   where it can also differ from run to run:
   [libvmaf and its thread count](../FFMPEG-BUILD.md#libvmaf-and-its-thread-count).
 
-Not measured: a reference or an encode in HEVC or VP9, and a reference in AV1;
-frame rates other than 24 and 30; sizes above 1920 × 1080; HDR files, which GPU
-scoring does not take; and other GPUs and drivers than the two above.
+Not measured: a reference in HEVC, VP9 or AV1; frame rates above 60; sizes
+above 1920 × 1080; HDR files, which GPU scoring does not take; and other GPUs
+and drivers than the two above.
 
 #### GPU results of scoring generations 9 and 10
 
@@ -456,9 +487,12 @@ of the table for all eight, to within 0.000001.
 
 FFmpeg converts some pairs before libvmaf compares them, and the GPU scorer
 makes no such conversion: it turns both files into 4:2:0 pictures of 8 or of 10
-bits and changes nothing else. For these pairs its score would not be that of
-**Local CPU**. In 22 measured comparisons the two differed by 0.00003 to 13.3.
-A measurement on the GPU is therefore not started for them:
+bits and changes nothing else. FFmpeg also repeats and drops frames so that
+both files have one frame for every frame interval of the reference's frame
+rate, and the GPU scorer compares the frames of the two files in their order.
+For these pairs its score would not be that of **Local CPU**. In 22 measured
+comparisons of the first kind the two differed by 0.00003 to 13.3. GPU scoring
+is therefore not started for them:
 
 | Pair | What FFmpeg does for **Local CPU** |
 | --- | --- |
@@ -466,6 +500,10 @@ A measurement on the GPU is therefore not started for them:
 | The reference is `yuvj420p`, 8-bit full range as ffprobe names it for H.264, and the encode is not 8-bit 4:2:0 | FFmpeg converts the reference to the encode's format |
 | One of the two files is full range and the other is not | FFmpeg converts one of them to the other's range |
 | The two files name different colour matrices, or one of them names none | FFmpeg converts the encode to the reference's matrix, and it takes a file that names none for BT.601 |
+| One of the two files leaves frames out, by what ffprobe says of it | FFmpeg repeats a frame for each that is left out |
+| The two files have different frame rates, or different numbers of frames | FFmpeg repeats or drops frames of the encode |
+| FFmpeg names two frame rates for the two files although they have one: 19001/317 for a Matroska or WebM file of 60000/1001 frames a second | FFmpeg changes neither file, and the GPU scorer itself refuses the pair |
+| A file with non-square pixels, a rotation, HDR colour or more than one video stream | GPU scoring takes no such file |
 
 So GPU scoring takes a reference in `yuv420p` or `yuv420p10le`, and a
 `yuvj420p` reference with an 8-bit 4:2:0 encode. Of the encode's pixel format it
@@ -474,15 +512,31 @@ in 4:2:2 or 4:4:4, or with 10 or 12 bits, is scored against such a reference.
 16-bit encodes, `yuv422p12le` and `yuvj444p` encodes, and 4:4:4 encodes of
 more than 8 bits, were not among the measured ones.
 
-The measurement ends before any scoring, with an error that names the reason:
+With **Local (GPU if available)**, the worker scores such a pair on the CPU,
+with the command of **Local CPU** and so with its score, and the other pairs of
+the measurement on the GPU. The report names the processor of each result and
+the reason for the CPU. The worker finds most of these pairs before any
+scoring, from what ffprobe says of the two files. ffprobe does not show a
+frame that a Matroska, WebM or MPEG-TS file leaves out. GPU scoring finds such
+a pair when it reads the frames: it stops at the first frame whose time is
+more than a quarter of a frame interval apart in the two files, or where one
+file ends before the other. The worker then fetches the encode again and scores
+the pair on the CPU.
+
+Two kinds of measurement ask for the GPU scorer itself: one with a reference
+that is prepared for it
+([display-scaled references](#separate-banding-from-a-display-scaled-reference-comparison)),
+and one on a worker whose settings name the scorer (`VMAF_SCORING_BACKEND`)
+for a plan without a local processing choice. Nothing is scored in the
+scorer's place for them, and the measurement ends with an error that names the
+reason:
 
 ```text
 GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the reference's pixel format is yuv422p10le, and GPU scoring compares 8-bit and 10-bit 4:2:0 pictures only, for references in yuv420p and yuv420p10le. Use Local CPU for this pair.
 ```
 
-No CPU scoring is started in its place. This holds for **Local (GPU if
-available)** as well: on a worker with a usable GPU that choice scores on the
-GPU, so choose **Local CPU** for such a pair.
+A failure of a GPU run that is no property of the pair, such as a numerical
+check that does not pass, ends the measurement with either choice.
 
 The last row of the table changes scores with **Local CPU** too, and it is how
 FFmpeg's libvmaf filter works. Three pairs with the same pixel data, a 320 ×

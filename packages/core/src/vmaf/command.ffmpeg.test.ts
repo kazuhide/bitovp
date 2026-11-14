@@ -69,6 +69,88 @@ describe.skipIf(!haveFfmpeg)("VMAF frame pairing (real ffmpeg)", () => {
 			}
 		}
 	}
+
+	// A file that leaves slots of its frame rate out: frames 3, 10, 17 ... of
+	// 96 are not there, and the others keep their times. The `fps` filter
+	// repeats the frame before in such a slot. Until 2026-11-14 only the encode
+	// went through it, so a reference like this one was compared, from its
+	// first left-out slot on, with other moments of the encode.
+	const LEFT_OUT = Array.from({ length: 14 }, (_, index) => 3 + 7 * index);
+	// Every picture differs from the one before, which `testsrc2` at this size
+	// does not always do.
+	const frames96 = (rate: string, timebase: string, leaveOut: boolean) =>
+		`nullsrc=size=64x48:rate=${rate},geq=lum='mod(X+Y+5*N\\,256)':cb=128:cr=128,trim=end_frame=96,${
+			leaveOut ? "select='not(eq(mod(n\\,7)\\,3))'," : ""
+		}settb=${timebase},setpts=PTS+5/TB`;
+	/** The 1-based numbers of the compared frames that are not identical. */
+	const differing = (distorted: string, reference: string, fps: number) => {
+		const dir = mkdtempSync(join(tmpdir(), "bitovp-vmaf-slots-"));
+		try {
+			const stats = join(dir, "psnr.log");
+			const argv = buildVmafCommand({
+				distortedPath: distorted,
+				referencePath: reference,
+				model: "vmaf_v0.6.1",
+				logPath: join(dir, "unused.json"),
+				fpsConform: fps,
+			});
+			const graphIndex = argv.indexOf("-filter_complex") + 1;
+			const graph = argv[graphIndex];
+			if (graphIndex === 0 || !graph) throw new Error("Missing scoring graph");
+			argv[graphIndex] = graph.replace(
+				/libvmaf=.*\[out\]$/,
+				`psnr=stats_file=${stats}[out]`,
+			);
+			execFileSync(
+				"ffmpeg",
+				[
+					"-v",
+					"error",
+					...argv.flatMap((arg) =>
+						arg === "-i" ? ["-f", "lavfi", "-i"] : [arg],
+					),
+				],
+				{ stdio: ["ignore", "ignore", "pipe"], timeout: 20_000 },
+			);
+			const lines = readFileSync(stats, "utf8").trim().split("\n");
+			return {
+				compared: lines.length,
+				differing: lines
+					.filter((line) => !line.includes("psnr_avg:inf"))
+					.map((line) => Number(/^n:(\d+) /.exec(line)?.[1])),
+			};
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	};
+	for (const [rate, fps] of [
+		["24", 24],
+		["30000/1001", 30000 / 1001],
+	] as const) {
+		it(`${rate}: compares a reference and an encode that leave out the same slots at the same moments`, () => {
+			expect(
+				differing(
+					frames96(rate, "1/30000", true),
+					frames96(rate, "1/15360", true),
+					fps,
+				),
+			).toEqual({ compared: 96, differing: [] });
+		}, 30_000);
+
+		it(`${rate}: compares a reference that leaves slots out with an encode that has them all, and differs in those slots only`, () => {
+			expect(
+				differing(
+					frames96(rate, "1/30000", false),
+					frames96(rate, "1/15360", true),
+					fps,
+				),
+			).toEqual({
+				compared: 96,
+				// The reference's frame before is in the slot, the encode's own.
+				differing: LEFT_OUT.map((slot) => slot + 1),
+			});
+		}, 30_000);
+	}
 });
 
 describe.skipIf(!haveFfmpeg)(

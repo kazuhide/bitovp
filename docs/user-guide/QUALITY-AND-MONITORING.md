@@ -92,6 +92,72 @@ The application preserves alignment confidence, offsets, drift warnings, and
 unmeasured results. Low-confidence diagnostic scores are not presented as
 verified alignment. Read these warnings before comparing scores or applying gates.
 
+### Frame rates and frames that are left out
+
+Before libvmaf compares them, FFmpeg gives the reference and the encode one
+frame for every frame interval of the reference's frame rate (its `fps`
+filter). It repeats a frame where a file leaves one out, and it repeats or
+drops frames of an encode that has another frame rate. The frames of the two
+files are then compared in their order, so frame N of the reference and frame
+N of the encode are the same moment. This is the standard method of **Local
+CPU** and of a pair that **Local (GPU if available)** scores on the CPU. A
+cloud measurement uses it once its worker image is rebuilt from this version.
+The “Frame index · BT.709 · 10-bit” method pairs frames by their index instead
+and is unchanged.
+
+Until 2026-11-14 only the encode's frames were treated so, and the frames of a
+reference that leaves frames out, one with a variable frame rate, were
+compared with other moments of the encode:
+
+| Reference of 24 frames a second with every sixth frame left out | Before | Now |
+| --- | --- | --- |
+| A 320 × 180 encode that leaves out the same frames | 19.31 | 44.01 |
+| A 640 × 360 encode that leaves out the same frames | 21.26 | 52.96 |
+| A 320 × 180 encode that has every frame | 18.26 | 28.53 |
+
+These are the scores of an arm64 worker. An x86-64 worker gave 19.32 and 44.02
+for the first pair and 18.35 and 28.62 for the third
+([the score of one pair on arm64 and on x86-64](../FFMPEG-BUILD.md#the-score-of-one-pair-on-arm64-and-on-x86-64)).
+
+A measurement of a reference with a constant frame rate gives the score that
+it gave before: 530 pairs of such files, of 12 to 60 frames a second in MP4,
+fragmented MP4, QuickTime, Matroska, WebM and MPEG-TS, scored the same before
+and after. The measurement generation is therefore still 3, and a report from
+before the change is not marked as outdated. Measure again where the
+reference of an earlier report has a variable frame rate.
+
+One kind of file with a constant frame rate is not compared frame for frame.
+Matroska and WebM keep times in milliseconds. When the video of such a file
+starts about half a frame interval after the file does, for example because
+its audio starts first, FFmpeg sends some frames to the interval before and
+some to the one after, so it drops some frames and repeats others. A copy of
+the file in another container keeps those times. With a reference of 24
+frames a second:
+
+| Pair | Score |
+| --- | --- |
+| Neither file's video starts late | 90.51 |
+| The reference's video starts 21 milliseconds late | 67.84 |
+| The encode's video starts 21 milliseconds late | 69.01 |
+| Both start 21 milliseconds late | 89.30 |
+
+An encode of this kind has always scored so; a reference does since the
+change, and scored 90.51 before it. The delay has to be close to half an
+interval, which is 20.85 milliseconds at 24000/1001 frames a second: a delay
+of 21 milliseconds lowered the score there, and delays of 10, 20 and 22 did
+not. At 25 frames a second, where an interval is a whole number of
+milliseconds, a delay of half an interval did not either. A copy that holds
+the video stream alone scored 90.51 in each of the three cases:
+
+```sh
+ffmpeg -i reference.mkv -map 0:v -c copy reference-video.mkv
+```
+
+GPU scoring reads each file's times from its first frame and gave 90.51 for
+all four pairs. The
+[build record](../FFMPEG-BUILD.md#the-references-frame-times) holds the
+measurements.
+
 Live measurements need a known pseudo-live reference and matching output capture.
 The application cannot derive the original reference from an arbitrary live feed.
 Readable output storage or an unambiguous declared mirror is required. MP4

@@ -27,6 +27,7 @@ import {
 	type LocalVmafResources,
 } from "./local-resources";
 import * as localScoring from "./local-score";
+import { NativePairRefusal } from "./native-score";
 import { createVmafProcessor, type VmafProcessorDeps } from "./processor";
 import * as referencePreparation from "./reference-preparation";
 import type { VmafResourceLeaseRequest } from "./resource-leases";
@@ -3368,6 +3369,7 @@ const RESOURCE_PROBE_JSON = JSON.stringify({
 			height: 1080,
 			pix_fmt: "yuv420p",
 			r_frame_rate: "30/1",
+			avg_frame_rate: "30/1",
 			duration: "10",
 			nb_frames: "300",
 		},
@@ -4162,7 +4164,11 @@ it("keeps interleaved CPU and AUTO jobs isolated through selection, admission an
 
 function autoNativeFailureHarness(
 	admitGpu = true,
-	overrides: { download?: VmafDownload; job?: Row } = {},
+	overrides: {
+		download?: VmafDownload;
+		job?: Row;
+		resolveLocalResources?: VmafProcessorDeps["resolveLocalResources"];
+	} = {},
 ) {
 	const chosen = {
 		backend: "cuda" as const,
@@ -4189,19 +4195,25 @@ function autoNativeFailureHarness(
 			}),
 			execute: async (_plan, signal, work) => work(signal, async () => {}),
 		}),
-		resolveLocalResources: async () => ({
-			threads: 1,
-			concurrency: 1,
-			estimatedBytes: 1024,
-			exclusive: false,
-			manualFallback: false,
-			...(admitGpu
-				? {
-						nativeDevice: 2,
-						gpu: { deviceKey: "e".repeat(64), bytes: 1024, computeCredits: 1 },
-					}
-				: {}),
-		}),
+		resolveLocalResources:
+			overrides.resolveLocalResources ??
+			(async () => ({
+				threads: 1,
+				concurrency: 1,
+				estimatedBytes: 1024,
+				exclusive: false,
+				manualFallback: false,
+				...(admitGpu
+					? {
+							nativeDevice: 2,
+							gpu: {
+								deviceKey: "e".repeat(64),
+								bytes: 1024,
+								computeCredits: 1,
+							},
+						}
+					: {}),
+			})),
 		job: {
 			model: "vmaf_v1.0.16_3d0h",
 			scoringVersion: VMAF_SCORING_VERSION,
@@ -4256,6 +4268,379 @@ it("refuses AUTO GPU execution without an owned GPU admission", async () => {
 		score.mockRestore();
 	}
 });
+describe("a pair of a Local (GPU if available) measurement that the GPU scorer does not take", () => {
+	/** What ffprobe says of a file, as `RESOURCE_PROBE_JSON` with other values. */
+	const probeWith = (extra: Row = {}) =>
+		JSON.stringify({
+			streams: [{ ...JSON.parse(RESOURCE_PROBE_JSON).streams[0], ...extra }],
+		});
+	/**
+	 * A measurement of two encodes, `v360` and `v540`, on a worker with a
+	 * qualified GPU. The planner answers as the automatic one does: the GPU
+	 * for a pair that asks for the scorer, CPU threads for one that does not.
+	 */
+	const autoPairs = (probes: {
+		reference?: string;
+		v360?: string;
+		v540?: string;
+	}) => {
+		const planned = vi.fn<
+			NonNullable<VmafProcessorDeps["resolveLocalResources"]>
+		>(async (request) => ({
+			threads: 1,
+			concurrency: 1,
+			estimatedBytes: 1024,
+			exclusive: false,
+			manualFallback: false,
+			...(request.options.scoring
+				? {
+						nativeDevice: 2,
+						gpu: { deviceKey: "e".repeat(64), bytes: 1024, computeCredits: 1 },
+					}
+				: {}),
+		}));
+		const t = autoNativeFailureHarness(true, {
+			resolveLocalResources: planned,
+		});
+		const raw = vi.mocked(t.runner.run).getMockImplementation();
+		const localRunner = t.deps.localRunner;
+		if (!raw || !localRunner) throw new Error("Missing runner fixture");
+		const probed = async (bin: string, argv: string[], options?: unknown) => {
+			const path = argv.at(-1) ?? "";
+			return argv.includes("-show_streams")
+				? {
+						code: 0,
+						stderr: "",
+						stdout:
+							(/\/ref-\d+\./.test(path)
+								? probes.reference
+								: path.includes("dist-v360-")
+									? probes.v360
+									: probes.v540) ?? RESOURCE_PROBE_JSON,
+					}
+				: raw(bin, argv, options as never);
+		};
+		vi.mocked(t.runner.run).mockImplementation(probed);
+		vi.mocked(localRunner.run).mockImplementation(probed);
+		// The scorer's stand-in answers a pair that asks for it; a pair that
+		// does not goes to the ordinary method, which runs FFmpeg.
+		const ordinaryScore = localScoring.runLocalVmafScore;
+		const score = vi
+			.spyOn(localScoring, "runLocalVmafScore")
+			.mockImplementation(async (deps, options, context) =>
+				options.scoring
+					? {
+							run: { code: 0, stderr: "" },
+							log: JSON.parse(vmafJson([95, 96, 94, 97, 93])),
+							execution: {
+								version: 1,
+								requestedDecode: "cpu",
+								decode: {
+									reference: { backend: "cpu" },
+									distorted: { backend: "cpu" },
+								},
+								attempts: 1,
+								scoring: {
+									backend: "cuda",
+									implementation: "bitovp-owned",
+									model: options.model,
+									modelSha256: "f".repeat(64),
+									features: ["a", "b", "c", "d", "e", "f", "g"],
+									bitDepth: 8,
+									distortedOriginal: { width: 1920, height: 1080, bitdepth: 8 },
+									officialRevision: NATIVE_OFFICIAL_REVISION,
+									sourceSha256: "a".repeat(64),
+									device: {
+										index: 2,
+										name: "Fixture GPU",
+										uuid: "GPU-fixture",
+										vendorId: 0x10de,
+										deviceId: 1,
+										integrated: false,
+									},
+									cpuParity: {
+										checked: true,
+										featureCount: 35,
+										scoreCount: 5,
+										maxFeatureError: 0,
+										maxScoreError: 0,
+									},
+								},
+							} satisfies LocalVmafExecution,
+						}
+					: ordinaryScore(deps, options, context),
+			);
+		const of = (rendition: string) => {
+			const result = t.results.find(
+				(row) => (row.renditionRef as Row).renditionKey === rendition,
+			);
+			if (!result) throw new Error(`No result for ${rendition}`);
+			return (result.provenance as Row).localExecution as LocalVmafExecution;
+		};
+		const scored = (rendition: string) =>
+			score.mock.calls.filter(([, options]) =>
+				options.distortedPath.includes(`dist-${rendition}-`),
+			);
+		return Object.assign(t, { planned, score, ordinaryScore, of, scored });
+	};
+
+	it("scores that pair with the ordinary method on the CPU and the other pair on the GPU", async () => {
+		// The encode of 360 lines is full range and the reference is not.
+		const t = autoPairs({ v360: probeWith({ color_range: "pc" }) });
+		try {
+			expect(
+				await t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).toMatchObject({ status: "FINISHED", results: 2 });
+			// The pair that the scorer takes: on the GPU, as before.
+			expect(t.scored("v540")).toHaveLength(1);
+			expect(t.scored("v540")[0]?.[1]).toMatchObject({
+				scoring: { backend: "cuda", device: 2 },
+			});
+			expect(t.scored("v540")[0]?.[1]).not.toHaveProperty("fpsConform");
+			expect(t.of("v540")).toMatchObject({
+				selection: { requested: "AUTO" },
+				scoring: { backend: "cuda", implementation: "bitovp-owned" },
+			});
+			expect(t.of("v540").selection).not.toHaveProperty("reason");
+			// The other pair: the options of a Local CPU measurement, with
+			// nothing of the scorer in them.
+			expect(t.scored("v360")).toHaveLength(1);
+			const [, options, context] = t.scored("v360")[0] ?? [];
+			expect(options).toMatchObject({
+				fpsConform: 30,
+				scaleToReference: { width: 1920, height: 1080 },
+				threads: 1,
+			});
+			expect(options).not.toHaveProperty("scoring");
+			expect(options).not.toHaveProperty("distortedOriginal");
+			expect(context).not.toHaveProperty("expectedReferenceSha256");
+			expect(context?.nativeInflightFrames).toBeUndefined();
+			// One run of FFmpeg, with the ordinary method's graph.
+			expect(t.filterComplexArgs).toHaveLength(1);
+			expect(t.filterComplexArgs[0]).toMatch(
+				/^\[0:v\]scale=1920:1080:flags=bicubic,fps=30,settb=AVTB,setpts=N\/FRAME_RATE\/TB\[dist\];\[1:v\]fps=30,settb=AVTB,setpts=N\/FRAME_RATE\/TB\[ref\];\[dist\]\[ref\]libvmaf=/,
+			);
+			// The result names the processor and the kind of the reason.
+			expect(t.of("v360")).toMatchObject({
+				selection: { requested: "AUTO", reason: "GPU_PAIR_COLOR_RANGE" },
+				scoring: { backend: "cpu", implementation: "libvmaf" },
+			});
+			// Resources: CPU threads for that pair and the GPU for the other.
+			const plans = new Map(
+				t.planned.mock.calls.map(([request]) => [
+					request.options.distortedPath.includes("dist-v360-")
+						? "v360"
+						: "v540",
+					request,
+				]),
+			);
+			expect(plans.get("v360")?.options).not.toHaveProperty("scoring");
+			expect(plans.get("v360")?.pair).not.toHaveProperty("scoringBackend");
+			expect(plans.get("v360")).not.toHaveProperty("selectedNativeDevice");
+			expect(plans.get("v360")).not.toHaveProperty("selectedNativeIdentity");
+			expect(plans.get("v540")).toMatchObject({
+				options: { scoring: { backend: "cuda" } },
+				pair: { scoringBackend: "cuda" },
+				selectedNativeDevice: 2,
+			});
+			// The measurement keeps its choice of the GPU and its generation.
+			expect((t.job.params as Row).localSelection).toMatchObject({
+				requested: "AUTO",
+				backend: "cuda",
+				device: 2,
+			});
+			expect((t.job.params as Row).localSelection).not.toHaveProperty("reason");
+			expect(t.job.scoringVersion).not.toBe(VMAF_SCORING_VERSION);
+			expect(t.job.status).toBe("FINISHED");
+		} finally {
+			t.score.mockRestore();
+		}
+	});
+
+	it.each([
+		["GPU_PAIR_PIXEL_FORMAT", { pix_fmt: "gbrp" }],
+		["GPU_PAIR_COLOR_RANGE", { pix_fmt: "yuvj420p", color_range: "pc" }],
+		["GPU_PAIR_COLOR_MATRIX", { color_space: "bt709" }],
+		// 299 frames over the duration of 300: one slot is left out.
+		["GPU_PAIR_FRAME_TIMES", { avg_frame_rate: "2990/100", nb_frames: "299" }],
+		["GPU_PAIR_FRAME_TIMES", { r_frame_rate: "25/1", avg_frame_rate: "25/1" }],
+		["GPU_PAIR_FRAME_TIMES", { nb_frames: "301" }],
+		["GPU_PAIR_INPUT", { sample_aspect_ratio: "4:3" }],
+		["GPU_PAIR_INPUT", { color_transfer: "smpte2084" }],
+	] as const)("keeps %s as the reason of the result (%#)", async (reason, encode) => {
+		const t = autoPairs({ v360: probeWith(encode) });
+		try {
+			expect(
+				await t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).toMatchObject({ status: "FINISHED", results: 2 });
+			expect(t.of("v360")).toMatchObject({
+				selection: { requested: "AUTO", reason },
+				scoring: { backend: "cpu" },
+			});
+			expect(t.scored("v360")[0]?.[1]).not.toHaveProperty("scoring");
+			expect(t.of("v540")).toMatchObject({ scoring: { backend: "cuda" } });
+		} finally {
+			t.score.mockRestore();
+		}
+	});
+
+	it("scores every pair on the CPU when it is the reference that the scorer does not take", async () => {
+		const t = autoPairs({
+			reference: probeWith({ pix_fmt: "yuv422p10le" }),
+		});
+		try {
+			expect(
+				await t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).toMatchObject({ status: "FINISHED", results: 2 });
+			for (const rendition of ["v360", "v540"]) {
+				expect(t.of(rendition)).toMatchObject({
+					selection: { requested: "AUTO", reason: "GPU_PAIR_PIXEL_FORMAT" },
+					scoring: { backend: "cpu" },
+				});
+				expect(t.scored(rendition)[0]?.[1]).not.toHaveProperty("scoring");
+			}
+			expect(t.filterComplexArgs).toHaveLength(2);
+			expect((t.job.params as Row).localSelection).toMatchObject({
+				requested: "AUTO",
+				backend: "cuda",
+			});
+		} finally {
+			t.score.mockRestore();
+		}
+	});
+
+	it("still ends the measurement when the scorer fails on the pair that it took", async () => {
+		// Only a pair that the scorer does not take is scored on the CPU: a
+		// run of the scorer that fails is an error, as it was.
+		const t = autoPairs({ v360: probeWith({ color_range: "pc" }) });
+		t.score.mockImplementation(async (deps, options, context) => {
+			if (options.scoring)
+				throw new Error("NATIVE_RECEIPT_CPU_PARITY_MISMATCH");
+			return t.ordinaryScore(deps, options, context);
+		});
+		try {
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow("NATIVE_RECEIPT_CPU_PARITY_MISMATCH");
+			expect(t.job.status).toBe("ERROR");
+			// The scorer ran once, and no FFmpeg ran for that pair in its place.
+			expect(t.scored("v540")).toHaveLength(1);
+			expect(
+				t.scored("v540").every(([, options]) => options.scoring !== undefined),
+			).toBe(true);
+		} finally {
+			t.score.mockRestore();
+		}
+	});
+
+	/** What the scorer says of the encode of 360 lines when it has the pair open. */
+	const scorerSays = (said: string) =>
+		new NativePairRefusal(
+			`NATIVE_SCORING_FAILED (1): bitovp-vmaf: ${said}\n`,
+			"GPU_PAIR_FRAME_TIMES",
+		);
+	const of360 = (path: string) => path.includes("dist-v360-");
+
+	it.each([
+		"Inputs must have the same known frame rate; conform them before comparison",
+		"Comparison presentation timestamps do not align",
+		"Comparison inputs have different frame counts",
+	])("scores once more, on the CPU, a pair that the scorer refuses while it runs: %s", async (said) => {
+		// ffprobe says the same of every file here, as it does of a Matroska
+		// file that leaves frames out: nothing refuses the pair before the run.
+		const t = autoPairs({});
+		const standIn = t.score.getMockImplementation();
+		if (!standIn) throw new Error("Missing scorer stand-in");
+		t.score.mockImplementation(async (deps, options, context) => {
+			if (options.scoring && of360(options.distortedPath))
+				throw scorerSays(said);
+			return standIn(deps, options, context);
+		});
+		try {
+			expect(
+				await t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).toMatchObject({ status: "FINISHED", results: 2 });
+			// The scorer first, then the ordinary method with the options of a
+			// Local CPU measurement.
+			const runs = t.scored("v360");
+			expect(runs).toHaveLength(2);
+			expect(runs[0]?.[1]).toMatchObject({
+				scoring: { backend: "cuda", device: 2 },
+			});
+			expect(runs[1]?.[1]).toMatchObject({ fpsConform: 30, threads: 1 });
+			expect(runs[1]?.[1]).not.toHaveProperty("scoring");
+			expect(runs[1]?.[1]).not.toHaveProperty("distortedOriginal");
+			expect(runs[1]?.[2]?.nativeInflightFrames).toBeUndefined();
+			expect(t.filterComplexArgs).toHaveLength(1);
+			expect(t.filterComplexArgs[0]).toMatch(
+				/^\[0:v\]scale=1920:1080:flags=bicubic,fps=30,settb=AVTB,setpts=N\/FRAME_RATE\/TB\[dist\];\[1:v\]fps=30,/,
+			);
+			expect(t.of("v360")).toMatchObject({
+				selection: { requested: "AUTO", reason: "GPU_PAIR_FRAME_TIMES" },
+				scoring: { backend: "cpu", implementation: "libvmaf" },
+			});
+			// One result for each encode, and the other pair on the GPU.
+			expect(t.results).toHaveLength(2);
+			expect(t.scored("v540")).toHaveLength(1);
+			expect(t.of("v540")).toMatchObject({ scoring: { backend: "cuda" } });
+			// Resources: the GPU for the first pass, CPU threads for the second.
+			const plans = t.planned.mock.calls
+				.map(([request]) => request)
+				.filter((request) => of360(request.options.distortedPath));
+			expect(plans).toHaveLength(2);
+			expect(plans[0]).toMatchObject({
+				options: { scoring: { backend: "cuda" } },
+				pair: { scoringBackend: "cuda" },
+				selectedNativeDevice: 2,
+			});
+			expect(plans[1]?.options).not.toHaveProperty("scoring");
+			expect(plans[1]?.pair).not.toHaveProperty("scoringBackend");
+			expect(plans[1]).not.toHaveProperty("selectedNativeDevice");
+			// The first pass removed the encode, so the second fetched it again.
+			const fetched = (rendition: string) =>
+				t.downloaded.filter(({ destPath }) =>
+					destPath.includes(`dist-${rendition}-`),
+				);
+			expect(fetched("v360")).toHaveLength(2);
+			expect(fetched("v540")).toHaveLength(1);
+			// The measurement keeps its choice of the GPU.
+			expect((t.job.params as Row).localSelection).toMatchObject({
+				requested: "AUTO",
+				backend: "cuda",
+				device: 2,
+			});
+			expect(t.job.status).toBe("FINISHED");
+		} finally {
+			t.score.mockRestore();
+		}
+	});
+
+	it("scores a pair no third time", async () => {
+		// The ordinary method refuses no pair. Were the second pass to end
+		// with a refusal, the measurement ends with it.
+		const t = autoPairs({});
+		const standIn = t.score.getMockImplementation();
+		if (!standIn) throw new Error("Missing scorer stand-in");
+		t.score.mockImplementation(async (deps, options, context) => {
+			if (of360(options.distortedPath))
+				throw scorerSays("Comparison presentation timestamps do not align");
+			return standIn(deps, options, context);
+		});
+		try {
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(
+				"NATIVE_SCORING_FAILED (1): bitovp-vmaf: Comparison presentation timestamps do not align",
+			);
+			expect(t.scored("v360")).toHaveLength(2);
+			expect(t.scored("v360")[1]?.[1]).not.toHaveProperty("scoring");
+			expect(t.job.status).toBe("ERROR");
+		} finally {
+			t.score.mockRestore();
+		}
+	});
+});
+
 it("does not score when its CPU selection cannot be persisted", async () => {
 	const t = setup({
 		job: {
@@ -5086,6 +5471,76 @@ describe("explicit lossless reference preparation", () => {
 		}
 	});
 
+	it("ends with the refusal, and scores nothing on the CPU, when the scorer does not take a pair of a prepared reference", async () => {
+		// A prepared reference is a request for the scorer itself: the CPU
+		// path takes no prepared reference, so no pair is scored in its place.
+		const t = preparedHarness();
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockImplementation(async (args) => ({
+				path: args.preparedPath,
+				probe: JSON.stringify({
+					streams: [
+						{
+							...JSON.parse(RESOURCE_PROBE_JSON).streams[0],
+							color_range: "pc",
+						},
+					],
+				}),
+				evidence,
+			}));
+		const score = mockScore();
+		try {
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(
+				"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the reference is full range and the encode is limited range, and FFmpeg converts one of the two before libvmaf compares them. Use Local CPU for this pair.",
+			);
+			expect(t.job.status).toBe("ERROR");
+			expect(score).not.toHaveBeenCalled();
+			expect(t.results).toHaveLength(0);
+			expect(t.filterComplexArgs).toHaveLength(0);
+		} finally {
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
+
+	it("ends with what the scorer says of a pair of a prepared reference while it runs, and scores nothing on the CPU", async () => {
+		const t = preparedHarness();
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockImplementation(async (args) => ({
+				path: args.preparedPath,
+				probe: RESOURCE_PROBE_JSON,
+				evidence,
+			}));
+		const failure =
+			"NATIVE_SCORING_FAILED (1): bitovp-vmaf: Comparison presentation timestamps do not align";
+		const score = vi
+			.spyOn(localScoring, "runLocalVmafScore")
+			.mockRejectedValue(
+				new NativePairRefusal(`${failure}\n`, "GPU_PAIR_FRAME_TIMES"),
+			);
+		try {
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(failure);
+			expect(t.job.status).toBe("ERROR");
+			expect(score).toHaveBeenCalled();
+			expect(
+				score.mock.calls.every(
+					([, options]) => options.scoring?.backend === "cuda",
+				),
+			).toBe(true);
+			expect(t.results).toHaveLength(0);
+			expect(t.filterComplexArgs).toHaveLength(0);
+		} finally {
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
+
 	it("keeps the measurement failed when verified reference coverage does not match the scores", async () => {
 		const t = preparedHarness();
 		const prepare = vi
@@ -5185,6 +5640,12 @@ describe("explicit lossless reference preparation", () => {
 
 describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 	const v1 = "vmaf_v1.0.16_3d0h";
+	/** A probe with other values for its video stream. */
+	const streamWith = (probe: string, extra: Row) => {
+		const parsed = JSON.parse(probe);
+		Object.assign(parsed.streams[0], extra);
+		return JSON.stringify(parsed);
+	};
 	const probeOf = (width: number, height: number, pixelFormat?: string) =>
 		JSON.stringify({
 			streams: [
@@ -5459,6 +5920,27 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 			probeOf(256, 144, "yuv420p"),
 			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the reference's pixel format is yuv444p, and GPU scoring compares 8-bit and 10-bit 4:2:0 pictures only, for references in yuv420p and yuv420p10le. Use Local CPU for this pair.",
 		],
+		// Frames that FFmpeg would repeat or drop, which the scorer pairs in
+		// their order: an encode that leaves a slot out, and one of another
+		// frame rate.
+		[
+			"cuda",
+			probeOf(1920, 1080, "yuv420p"),
+			streamWith(probeOf(960, 540, "yuv420p"), {
+				avg_frame_rate: "249/10",
+				nb_frames: "249",
+			}),
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the encode's frames are not evenly spaced by what ffprobe says of it (r_frame_rate 25/1, avg_frame_rate 249/10), and FFmpeg gives each file one frame per slot of the reference's frame rate, repeating and dropping frames, before libvmaf compares them. Use Local CPU for this pair.",
+		],
+		[
+			"vulkan",
+			probeOf(1920, 1080, "yuv420p"),
+			streamWith(probeOf(960, 540, "yuv420p"), {
+				r_frame_rate: "30/1",
+				avg_frame_rate: "30/1",
+			}),
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the reference's frame rate is 25/1 and the encode's is 30/1, and GPU scoring takes two files only where FFmpeg names one frame rate for both. Use Local CPU for this pair.",
+		],
 	] as const)("refuses for the %s scorer a pair that it cannot compare as libvmaf through FFmpeg does, before any scorer runs (%#)", async (backend, reference, encode, message) => {
 		const native = nativeRun({ code: 0, stderr: "" });
 		try {
@@ -5473,6 +5955,48 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 			expect(native).not.toHaveBeenCalled();
 			expect(scoringRuns(t)).toHaveLength(0);
 			expect(t.planned).not.toHaveBeenCalled();
+		} finally {
+			native.mockRestore();
+		}
+	});
+
+	it.each([
+		"cuda",
+		"vulkan",
+	] as const)("ends with what the %s scorer says of a pair while it runs, on a worker whose environment names the scorer", async (backend) => {
+		// No choice of "Local (GPU if available)" is recorded for such a
+		// measurement, so nothing is scored in the scorer's place.
+		const failure =
+			"NATIVE_SCORING_FAILED (1): bitovp-vmaf: Comparison presentation timestamps do not align";
+		const native = vi
+			.spyOn(localScoring, "runLocalVmafScore")
+			.mockRejectedValue(
+				new NativePairRefusal(`${failure}\n`, "GPU_PAIR_FRAME_TIMES"),
+			);
+		try {
+			const t = nativeSetup(
+				backend,
+				probeOf(1920, 1080, "yuv420p"),
+				probeOf(960, 540, "yuv420p"),
+			);
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(failure);
+			expect(t.job.status).toBe("ERROR");
+			expect(t.job.error).toContain(failure);
+			expect(native).toHaveBeenCalled();
+			expect(
+				native.mock.calls.every(
+					([, options]) => options.scoring?.backend === backend,
+				),
+			).toBe(true);
+			expect(scoringRuns(t)).toHaveLength(0);
+			expect(t.results).toHaveLength(0);
+			// No second pass: each encode that reached the scorer was fetched
+			// once.
+			expect(
+				t.downloaded.filter(({ destPath }) => destPath.includes("dist-")),
+			).toHaveLength(native.mock.calls.length);
 		} finally {
 			native.mockRestore();
 		}

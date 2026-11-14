@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { runLocalVmafScore } from "./local-score";
 import { NATIVE_OFFICIAL_REVISION } from "./native-contract";
 import { fixtureValue, nativeReceipt, SHA } from "./native-fixture.test-helper";
+import { NativePairRefusal } from "./native-score";
 
 const cleanup = vi.hoisted(() => ({
 	afterRemove: undefined as undefined | ((path: unknown) => void),
@@ -287,16 +288,129 @@ describe("owned native local scoring", () => {
 		{ tags: { rotate: "90" } },
 		{ sample_aspect_ratio: "2:1" },
 		{ color_transfer: "smpte2084" },
-		{ r_frame_rate: "24/1", avg_frame_rate: "24/1" },
 	])("refuses unqualified input presentation: %j", async (extra) => {
 		const h = await setup();
-		await expect(
-			runLocalVmafScore(h.deps, h.options, {
-				...h.context,
-				distortedProbe: probe(extra),
-			}),
-		).rejects.toThrow(/NATIVE_UNSUPPORTED/);
+		const scored = runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			distortedProbe: probe(extra),
+		});
+		await expect(scored).rejects.toThrow(/NATIVE_UNSUPPORTED/);
+		// A file that the scorer does not take, whatever the other file is.
+		await expect(scored).rejects.toMatchObject({
+			name: "NativePairRefusal",
+			reason: "GPU_PAIR_INPUT",
+		});
 		expect(h.run).not.toHaveBeenCalled();
+	});
+	it("refuses a pair whose frames FFmpeg would repeat or drop, before any process starts", async () => {
+		const start =
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: ";
+		const slots =
+			", and FFmpeg gives each file one frame per slot of the reference's frame rate, repeating and dropping frames, before libvmaf compares them. Use Local CPU for this pair.";
+		for (const [reference, encode, message] of [
+			// Two frame rates.
+			[
+				{},
+				{ r_frame_rate: "24/1", avg_frame_rate: "24/1" },
+				`${start}the reference's frame rate is 30/1 and the encode's is 24/1, and GPU scoring takes two files only where FFmpeg names one frame rate for both. Use Local CPU for this pair.`,
+			],
+			// A file that leaves slots of its frame rate out.
+			[
+				{ avg_frame_rate: "20/1" },
+				{},
+				`${start}the reference's frames are not evenly spaced by what ffprobe says of it (r_frame_rate 30/1, avg_frame_rate 20/1)${slots}`,
+			],
+			[
+				{},
+				{ avg_frame_rate: "0/0" },
+				`${start}the encode's frames are not evenly spaced by what ffprobe says of it (r_frame_rate 30/1, avg_frame_rate 0/0)${slots}`,
+			],
+			// Two frame counts.
+			[
+				{},
+				{ nb_frames: "3", avg_frame_rate: "30/1" },
+				`${start}the reference has 2 frames and the encode 3, and GPU scoring compares two files of the same number of frames. Use Local CPU for this pair.`,
+			],
+		] as const) {
+			const h = await setup();
+			await expect(
+				runLocalVmafScore(h.deps, h.options, {
+					referenceProbe: probe(reference),
+					distortedProbe: probe(encode),
+				}),
+				JSON.stringify([reference, encode]),
+			).rejects.toMatchObject({
+				message,
+				name: "NativePairRefusal",
+				reason: "GPU_PAIR_FRAME_TIMES",
+			});
+			// Neither the scorer nor FFmpeg in its place.
+			expect(h.run).not.toHaveBeenCalled();
+		}
+	});
+	it("times the scorer on the first frames of a pair, whatever ffprobe says of the two cuts", async () => {
+		// A calibration run scores cuts of a pair that has passed the check:
+		// ffprobe's rates and counts of a short Matroska cut are not the file's.
+		const cut = probe({ avg_frame_rate: "0/0", nb_frames: "66" });
+		const h = await setup();
+		Object.assign(h.receipt, {
+			inflightFrames: 1,
+			cpuThreads: 2,
+			decodeThreads: 2,
+			resourceSnapshotScope: "before-result-serialization",
+			memory: { maxRssBytes: 64_000_000, gpuAllocatedBytes: 32_000_000 },
+		});
+		await runLocalVmafScore(h.deps, h.options, {
+			referenceProbe: probe(),
+			distortedProbe: cut,
+			nativeInflightFrames: 1,
+			calibrationFrames: 2,
+		});
+		expect(h.run.mock.calls.map(([binary]) => binary)).toEqual([
+			"bitovp-vmaf",
+			"bitovp-vmaf",
+		]);
+		// The same two files as a measurement are refused.
+		const measured = await setup();
+		await expect(
+			runLocalVmafScore(measured.deps, measured.options, {
+				referenceProbe: probe(),
+				distortedProbe: cut,
+			}),
+		).rejects.toMatchObject({ reason: "GPU_PAIR_FRAME_TIMES" });
+		expect(measured.run).not.toHaveBeenCalled();
+	});
+	it("names the kind of each refusal, which a result scored on the CPU in the scorer's place keeps", async () => {
+		for (const [reference, encode, reason] of [
+			[{ pix_fmt: "yuv444p" }, {}, "GPU_PAIR_PIXEL_FORMAT"],
+			[{ pix_fmt: "yuvj420p", color_range: "pc" }, {}, "GPU_PAIR_COLOR_RANGE"],
+			[{ color_space: "bt709" }, {}, "GPU_PAIR_COLOR_MATRIX"],
+			[
+				{},
+				{ r_frame_rate: "25/1", avg_frame_rate: "25/1" },
+				"GPU_PAIR_FRAME_TIMES",
+			],
+			[{ sample_aspect_ratio: "2:1" }, {}, "GPU_PAIR_INPUT"],
+		] as const) {
+			const h = await setup();
+			await expect(
+				runLocalVmafScore(h.deps, h.options, {
+					referenceProbe: probe(reference),
+					distortedProbe: probe(encode),
+				}),
+				reason,
+			).rejects.toMatchObject({ name: "NativePairRefusal", reason });
+			expect(h.run).not.toHaveBeenCalled();
+		}
+		// A probe that cannot be read is an error of the measurement, not a
+		// pair that the ordinary method would score.
+		const h = await setup();
+		const unreadable = runLocalVmafScore(h.deps, h.options, {
+			referenceProbe: "not JSON",
+			distortedProbe: probe(),
+		});
+		await expect(unreadable).rejects.toThrow("NATIVE_UNSUPPORTED_PROBE");
+		await expect(unreadable).rejects.not.toHaveProperty("reason");
 	});
 	it("compares at the bit depth of the reference, whatever the encode's is", async () => {
 		const ten = { pix_fmt: "yuv420p10le", bits_per_raw_sample: "10" };
@@ -479,16 +593,51 @@ describe("owned native local scoring", () => {
 			"bitovp-vmaf: input is too small or too large for official SpEED chroma blocks\n",
 			"bitovp-vmaf: invalid Vulkan CAMBI encoding geometry\n",
 			"bitovp-vmaf: CUDA error: out of memory\n",
+			// Frames that the scorer's two decoders do not give alike are its
+			// own failure, and no property of the pair.
+			"bitovp-vmaf: CPU/NVDEC reference frame coverage differs\n",
 		]) {
 			failsWith(stderr);
 			await expect(
 				runLocalVmafScore(h.deps, h.options, h.context),
 			).rejects.toMatchObject({
+				name: "Error",
 				message: `NATIVE_SCORING_FAILED (1): ${stderr}`,
 			});
 		}
+		// What the scorer says of two files whose frames it does not pair is a
+		// refusal of the pair, in the same words: the sentences of
+		// `native/vmaf-gpu/src/main.cpp` and `decoder_pair.hpp`, as the scorer
+		// gave them on 2026-11-14 for a Matroska and an MP4 file of 60000/1001
+		// frames a second, and for a Matroska reference that leaves a frame out
+		// against an encode that has it.
+		for (const stderr of [
+			"bitovp-vmaf: Inputs must have the same known frame rate; conform them before comparison\n",
+			"bitovp-vmaf: Comparison presentation timestamps do not align\n",
+			"bitovp-vmaf: Comparison inputs have different frame counts\n",
+			"[matroska,webm @ 0x55d0] Could not find codec parameters\nbitovp-vmaf: Comparison presentation timestamps do not align\n",
+		]) {
+			failsWith(stderr);
+			const refusal = await runLocalVmafScore(
+				h.deps,
+				h.options,
+				h.context,
+			).catch((error: unknown) => error);
+			expect(refusal).toBeInstanceOf(NativePairRefusal);
+			expect(refusal).toMatchObject({
+				name: "NativePairRefusal",
+				reason: "GPU_PAIR_FRAME_TIMES",
+				message: `NATIVE_SCORING_FAILED (1): ${stderr}`,
+			});
+		}
+		// The sentence in another program's line is not the scorer's.
+		failsWith("ffmpeg: Comparison presentation timestamps do not align\n");
+		await expect(
+			runLocalVmafScore(h.deps, h.options, h.context),
+		).rejects.toMatchObject({ name: "Error" });
 		// An encode that is smaller than CAMBI's range for a declared encode is
 		// started as every other: nothing of it is declared.
+		failsWith("bitovp-vmaf: CUDA error: out of memory\n");
 		h.run.mockClear();
 		await expect(
 			runLocalVmafScore(

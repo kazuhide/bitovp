@@ -63,8 +63,8 @@
  * and 52.956566 there, and the ordinary method 44.015701 and 52.963515,
  * because it scores the repeated frames as well.
  *
- * What ffprobe says does not show everything, and the scorer reads the
- * frames' times itself:
+ * The frame rates and the frame count that ffprobe gives do not show
+ * everything, and the scorer reads the frames' times itself:
  *
  * - ffprobe gives a Matroska, WebM or MPEG-TS file that leaves frames out
  *   two equal rates and no frame count, 30000/1001 twice for a file with 47
@@ -74,10 +74,11 @@
  *   the pair (`NativePairRefusal`). Where both files leave out the same
  *   frames, it scores them, each frame once, where the ordinary method
  *   scores the repeated frames as well. How far the two are apart depends
- *   on what the left-out frames show: the scorer was 0.009 to 0.023 above
- *   the ordinary method in five pairs of an evenly moving picture, and from
- *   7.78 below it (a still part that keeps one frame in 24) to 4.51 above
- *   it (every third frame kept) in six further pairs.
+ *   on which frames are left out and on what the pictures show: the scorer
+ *   was 0.009 to 0.023 above the ordinary method in five pairs, three of
+ *   which leave out one frame of 150, and from 7.78 below it (a still part
+ *   that keeps one frame in 24) to 4.51 above it (every third frame kept) in
+ *   six further pairs.
  * - A file of the second kind that `VMAF_SCORING_VERSION` names, whose video
  *   starts later than the file does by about half a slot, or by that plus a
  *   whole number of slots, passes here, and the scorer, which reads each

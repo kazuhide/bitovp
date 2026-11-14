@@ -384,10 +384,12 @@ of the Vulkan scorer within 0.0000006.
 What follows:
 
 - Scores of GPU scoring and of **Local CPU** can be compared with each other,
-  and the comparison screen does not warn when it shows both.
+  and the comparison screen does not warn when it shows both. The files of the
+  first two points under "Where a GPU score and a **Local CPU** score of one
+  pair can still differ" below are the exception, and the screen does not warn
+  for them either.
 - **Local (GPU if available)** gives one score for a pair, whether the worker
-  scores it on a GPU or on the CPU, but for the files of the first two points
-  of the list below.
+  scores it on a GPU or on the CPU, with the same exception.
 - A measurement that decides a delivery gate uses CPU scoring, and a model
   outside the eight VMAF v1.0 models is scored on the CPU with either choice.
 - The worker takes a result only when the scorer's receipt shows the bit depth
@@ -416,13 +418,15 @@ Where a GPU score and a **Local CPU** score of one pair can still differ:
   and MPEG-TS files. GPU scoring then stops when the two files' frames come at
   different times, and it scores a reference and an encode that leave out the
   same frames. How far that score is from the **Local CPU** score depends on
-  what the left-out frames show. It was 0.009 to 0.023 higher in five pairs of
-  a test picture that moves evenly, and from 7.78 lower to 4.51 higher in six
-  further pairs: two files that keep one frame in 24 of a part that stands
-  still scored 79.21 with GPU scoring and 87.00 with **Local CPU**, and two
-  that keep every third frame of a moving picture 96.32 and 91.81. Choose
-  **Local CPU** for such files where the score has to be that of **Local
-  CPU**.
+  which frames are left out and on what the pictures show. It was 0.009 to
+  0.023 higher in five pairs, three of which leave out one frame of 150, and
+  from 7.78 lower to 4.51 higher in six further pairs: two files that keep one
+  frame in 24 of a part that stands still scored 79.21 with GPU scoring and
+  87.00 with **Local CPU**, and two that keep every third frame of a moving
+  picture 96.32 and 91.81. Choose **Local CPU** for such files where the score
+  has to be that of **Local CPU**.
+  [Frame rates and frames that are left out](./QUALITY-AND-MONITORING.md#frame-rates-and-frames-that-are-left-out)
+  shows how to see such a file.
 - **A Matroska or WebM file whose video starts later than the file does by
   about half a frame interval, or by that plus a whole number of intervals.**
   **Local CPU** drops and repeats frames of such a file, and GPU scoring,
@@ -526,13 +530,14 @@ With **Local (GPU if available)**, the worker scores such a pair on the CPU,
 with the command of **Local CPU** and so with its score, and the other pairs of
 the measurement on the GPU. The report names the processor of each result and
 the reason for the CPU. The worker finds most of these pairs before any
-scoring, from what ffprobe says of the two files. ffprobe does not show a
-frame that a Matroska, WebM or MPEG-TS file leaves out. GPU scoring finds such
-a pair when it reads the frames: it stops at the first frame whose time is
-more than a quarter of a frame interval apart in the two files, or where one
-file ends before the other. The worker then fetches the encode again and scores
-the pair on the CPU. GPU scoring does not stop where both files leave out the
-same frames, and its score for such a pair is not that of **Local CPU**:
+scoring, from the frame rates and frame counts that ffprobe gives for the two
+files. Those do not show a frame that a Matroska, WebM or MPEG-TS file leaves
+out. GPU scoring finds such a pair when it reads the frames: it stops at the
+first frame whose time is more than a quarter of a frame interval apart in the
+two files, or where one file ends before the other. The worker then fetches
+the encode again and scores the pair on the CPU. GPU scoring does not stop
+where both files leave out the same frames, and its score for such a pair is
+not that of **Local CPU**:
 [GPU scores and Local CPU scores](#gpu-scores-and-local-cpu-scores).
 
 Two kinds of measurement ask for the GPU scorer itself: one with a reference

@@ -63,9 +63,9 @@ const input = (code: string) => new NativePairRefusal(code, "GPU_PAIR_INPUT");
  * (`native/vmaf-gpu/src/main.cpp` and `decoder_pair.hpp`): FFmpeg's libraries
  * name another frame rate for each of them, a frame's time is more than a
  * quarter of a frame apart in the two, or one of them ends before the other.
- * The check before the run reads what ffprobe says of each file, which shows
- * no frame that a Matroska, WebM or MPEG-TS file leaves out, and the scorer
- * reads the frames' times.
+ * The check before the run reads the frame rates and the frame count that
+ * ffprobe gives for each file, which show no frame that a Matroska, WebM or
+ * MPEG-TS file leaves out, and the scorer reads the frames' times.
  *
  * A test of the scorer holds the last two sentences
  * (`tests/decoder_retention_test.cpp`) and none the first, so

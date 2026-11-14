@@ -346,7 +346,7 @@ int main(int argc, char **argv) {
         double extract_ms = 0;
         std::uint64_t count = 0;
         const auto consume = [&](const Picture &ref, const Picture &dist, double reference_time, double distorted_time) {
-            validate_comparison_timestamps(reference_time, distorted_time, first.frames_per_second);
+            validate_comparison_timestamps(count, reference_time, distorted_time, first.frames_per_second);
             const auto feature_start = Clock::now();
             if (backend) oracle.import_scores(backend->extract(count, ref, dist));
             else oracle.submit(count, ref, dist);

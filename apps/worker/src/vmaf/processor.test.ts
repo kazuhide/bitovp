@@ -4418,7 +4418,7 @@ describe("a pair of a Local (GPU if available) measurement that the GPU scorer d
 			// One run of FFmpeg, with the ordinary method's graph.
 			expect(t.filterComplexArgs).toHaveLength(1);
 			expect(t.filterComplexArgs[0]).toMatch(
-				/^\[0:v\]scale=1920:1080:flags=bicubic,fps=30,settb=AVTB,setpts=N\/FRAME_RATE\/TB\[dist\];\[1:v\]fps=30,settb=AVTB,setpts=N\/FRAME_RATE\/TB\[ref\];\[dist\]\[ref\]libvmaf=/,
+				/^\[0:v\]scale=1920:1080:flags=bicubic,setpts=PTS-STARTPTS,fps=30,settb=AVTB,setpts=N\/FRAME_RATE\/TB\[dist\];\[1:v\]setpts=PTS-STARTPTS,fps=30,settb=AVTB,setpts=N\/FRAME_RATE\/TB\[ref\];\[dist\]\[ref\]libvmaf=/,
 			);
 			// The result names the processor and the kind of the reason.
 			expect(t.of("v360")).toMatchObject({
@@ -4545,6 +4545,7 @@ describe("a pair of a Local (GPU if available) measurement that the GPU scorer d
 		"Inputs must have the same known frame rate; conform them before comparison",
 		"Comparison presentation timestamps do not align",
 		"Comparison inputs have different frame counts",
+		"Comparison frame times do not follow the frame rate",
 	])("scores once more, on the CPU, a pair that the scorer refuses while it runs: %s", async (said) => {
 		// ffprobe says the same of every file here, as it does of a Matroska
 		// file that leaves frames out: nothing refuses the pair before the run.
@@ -4573,7 +4574,7 @@ describe("a pair of a Local (GPU if available) measurement that the GPU scorer d
 			expect(runs[1]?.[2]?.nativeInflightFrames).toBeUndefined();
 			expect(t.filterComplexArgs).toHaveLength(1);
 			expect(t.filterComplexArgs[0]).toMatch(
-				/^\[0:v\]scale=1920:1080:flags=bicubic,fps=30,settb=AVTB,setpts=N\/FRAME_RATE\/TB\[dist\];\[1:v\]fps=30,/,
+				/^\[0:v\]scale=1920:1080:flags=bicubic,setpts=PTS-STARTPTS,fps=30,settb=AVTB,setpts=N\/FRAME_RATE\/TB\[dist\];\[1:v\]setpts=PTS-STARTPTS,fps=30,/,
 			);
 			expect(t.of("v360")).toMatchObject({
 				selection: { requested: "AUTO", reason: "GPU_PAIR_FRAME_TIMES" },

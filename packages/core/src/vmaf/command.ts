@@ -60,30 +60,50 @@
  * minima — recorded here rather than pretended away, because a version number
  * invites exactly that assumption.
  *
- * Nor does it capture the `fps` filter on the reference (2026-11-14). The
- * encode has had that filter since the first commit. The reference got it so
- * that a reference that leaves frames out is compared slot by slot with its
- * encode; its frames were numbered as they came before. The generation stays
- * 3, because the filter passes a file with a frame in every slot of its frame
- * rate unchanged, and a new generation would mark every stored report as
- * outdated: in 530 comparisons of such files (12 to 60 frames a second; MP4,
- * fragmented MP4, QuickTime, Matroska, WebM and MPEG-TS; first frames a part
- * of a slot after zero; with and without audio) the score and the frame count
- * were the same before and after, in four of them, of pictures 216 pixels
- * wide, with one libvmaf thread. Two kinds of reference score otherwise than
- * before:
+ * Nor does it capture two changes of 2026-11-14 to the frame times. The
+ * encode has had the `fps` filter since the first commit, and the reference
+ * got it as well, so that a reference that leaves frames out is compared slot
+ * by slot with its encode; its frames were numbered as they came before. Then
+ * both inputs got `setpts=PTS-STARTPTS` before the filter, which counts each
+ * input's slots from its own first frame instead of from the start of its
+ * file. The generation stays 3, because a new generation would mark every
+ * stored report as outdated, and the two leave the score of two files with a
+ * frame in every slot whose video starts with the file as it was: in 579 such
+ * comparisons (12 to 120 frames a second; MP4, fragmented MP4, QuickTime,
+ * Matroska, WebM and MPEG-TS; first frames a part of a slot after zero; with
+ * and without audio) the score and the frame count were those of v1.2.1,
+ * except in four whose score moves from run to run with four libvmaf threads
+ * (pictures 216 pixels wide), and which gave one score with one thread. These
+ * kinds of file score otherwise:
  *
- * - One that leaves frames out. With an encode that leaves out the same
- *   frames: 19.31 before, 44.01 after. With an encode that has every frame:
- *   18.26 before, 28.53 after.
- * - One with a frame in every slot whose container keeps times in
- *   milliseconds and whose video starts later than the file does by about
- *   half a slot, or by that plus a whole number of slots, as in a Matroska
- *   file whose audio starts first. The filter rounds each time to a slot,
- *   and the millisecond's rounding then sends neighbouring frames to one
- *   slot: 90.51 before and 67.84 after for such a reference of 24 frames a
- *   second whose video starts 21 milliseconds late. An encode of that kind
- *   has scored so since the first commit (69.01).
+ * - A reference that leaves frames out. With an encode that leaves out the
+ *   same frames: 19.31 before, 44.01 after. With an encode that has every
+ *   frame: 18.26 before, 28.53 after. A reference whose last frame lasts
+ *   several slots leaves out the slots after it: that frame is now repeated
+ *   for each of them, as an encode's has been since the first commit
+ *   (86.963109 over 72 frames before, 86.846459 over 74 after, for 72 frames
+ *   at 24 a second whose last lasts three slots).
+ * - A reference whose frames lie more than half a slot from where its frame
+ *   rate puts them, which the filter now drops and repeats: 66.43 before,
+ *   85.32 after, for frames moved by up to 0.6 of a slot.
+ * - A reference whose frame rate, as ffprobe gives it, is not that of its
+ *   frames: a Matroska file of 25 frames a second whose track header gives a
+ *   frame duration of 20 ms, that of 50 a second. Its frames were numbered
+ *   at that rate while the encode was conformed to it, so frames of other
+ *   moments were compared (1.63); now both have each frame twice (85.89;
+ *   87.57 frame by frame).
+ * - A file whose video starts later than the file does, as in a Matroska file
+ *   whose audio starts first. The filter sent each frame to the slot nearest
+ *   its time from the start of the file, and where the delay is about half a
+ *   slot, or that plus whole slots, the rounding of the times to milliseconds
+ *   sent neighbouring frames to one slot. An encode was compared so since the
+ *   first commit: one of 24 frames a second whose video starts 21
+ *   milliseconds late scored 69.01, and scores 90.51, the score of the same
+ *   encode without the delay. A reference was compared so between the two
+ *   changes only. In 95 comparisons with such a file (delays of 4 to 146
+ *   milliseconds; FLV, MP4, Matroska, WebM, MPEG-PS and MPEG-TS) each score
+ *   is that of the same files without the delay; v1.2.1 gave that score in 67
+ *   of them, the command between the two changes in 39.
  *
  * "The reference's frame times" in docs/FFMPEG-BUILD.md records the
  * measurements.
@@ -224,11 +244,11 @@ export type VmafCommandOptions = {
 	scaleToReference?: { width: number; height: number };
 	/**
 	 * The reference's frame rate. Both inputs get one frame per slot of it
-	 * (FFmpeg's `fps` filter), the reference as well as the encode: a file with
-	 * a frame in every slot passes unchanged, and one that leaves slots out, or
-	 * has another frame rate, has frames repeated or dropped, so that frame N of
-	 * the two is the same moment. `VMAF_SCORING_VERSION` names the one kind of
-	 * evenly spaced file that does not pass unchanged.
+	 * (FFmpeg's `fps` filter), the reference as well as the encode, with each
+	 * input's slots counted from its own first frame: a file with a frame in
+	 * every slot passes unchanged, and one that leaves slots out, or has another
+	 * frame rate, has frames repeated or dropped, so that frame N of the two is
+	 * the same moment.
 	 */
 	fpsConform?: number;
 	/** libvmaf worker threads (n_threads); omitted ⇒ libvmaf default. */
@@ -383,8 +403,16 @@ export function buildVmafCommand(opts: VmafCommandOptions): string[] {
 	// both went through this filter. On the encode alone, as it was until
 	// 2026-11-14, a reference that leaves slots out had its frame N compared
 	// with another moment of the encode (see `VMAF_SCORING_VERSION`).
+	//
+	// Each pad's slots count from its own first frame (`setpts=PTS-STARTPTS`).
+	// FFmpeg times a file from the start of its earliest stream, and the filter
+	// sends a frame to the slot nearest its time: a video that starts half a
+	// slot after its file, with times in whole milliseconds as Matroska keeps
+	// them, had two frames sent to one slot and none to the next.
 	const frameTimes =
-		opts.fpsConform !== undefined ? [`fps=${opts.fpsConform}`] : [];
+		opts.fpsConform !== undefined
+			? ["setpts=PTS-STARTPTS", `fps=${opts.fpsConform}`]
+			: [];
 
 	// Distorted-side conform chain feeding libvmaf's [main] pad. flags=bicubic
 	// keeps the resampled distorted frame faithful; fps re-times so frame

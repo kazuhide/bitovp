@@ -154,8 +154,38 @@ class RunnerTests(unittest.TestCase):
     def test_different_input_lengths_fail_without_publishing_a_result(self):
         run, output = self.score("mismatched.json", distorted=self.short)
         self.assertNotEqual(run.returncode, 0)
-        self.assertIn("different frame counts", run.stderr)
+        self.assertIn("bitovp-vmaf: Comparison inputs have different frame counts", run.stderr)
         self.assertFalse(output.exists())
+
+    def test_inputs_that_leave_out_the_same_frames_fail_without_publishing_a_result(self):
+        # Matroska keeps the times of the frames that a file holds, and ffprobe
+        # gives such a file the frame rate of the others. FFmpeg's libvmaf
+        # filter, as the ordinary method runs it, repeats the frame before in
+        # the left-out slot of each input; this scorer would score the held
+        # frames once, so it refuses the pair.
+        gaps = self.root / "gaps.mkv"
+        gaps_distorted = self.root / "gaps-distorted.mkv"
+        late = self.root / "late.mkv"
+        commands = [
+            ["-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24", "-frames:v", "8",
+             "-vf", r"select='not(eq(n\,3))'", "-fps_mode", "passthrough", "-c:v", "ffv1", str(gaps)],
+            ["-i", str(gaps), "-vf", "eq=brightness=0.03", "-fps_mode", "passthrough",
+             "-c:v", "ffv1", str(gaps_distorted)],
+            # Every frame half a slot late as a whole: the scorer times each
+            # input from its first frame, and so does the ordinary method.
+            ["-i", str(self.reference), "-c", "copy", "-output_ts_offset", "0.021", str(late)],
+        ]
+        for command in commands:
+            subprocess.run([args.ffmpeg, "-v", "error", "-nostdin", *command], check=True,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+        for label, distorted in (("same", gaps), ("encoded", gaps_distorted)):
+            run, output = self.score(f"gaps-{label}.json", reference=gaps, distorted=distorted)
+            self.assertNotEqual(run.returncode, 0, label)
+            self.assertIn("bitovp-vmaf: Comparison frame times do not follow the frame rate", run.stderr, label)
+            self.assertFalse(output.exists(), label)
+        run, output = self.score("late.json", reference=late, distorted=late)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(json.loads(output.read_text())["frames"], 6)
 
     def test_invalid_backend_never_falls_back_to_cpu(self):
         run, output = self.score("backend.json", extra=("--backend", "nvenc"))

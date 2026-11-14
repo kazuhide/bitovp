@@ -609,12 +609,14 @@ describe("owned native local scoring", () => {
 		// refusal of the pair, in the same words: the sentences of
 		// `native/vmaf-gpu/src/main.cpp` and `decoder_pair.hpp`, as the scorer
 		// gave them on 2026-11-14 for a Matroska and an MP4 file of 60000/1001
-		// frames a second, and for a Matroska reference that leaves a frame out
-		// against an encode that has it.
+		// frames a second, for a Matroska reference that leaves a frame out
+		// against an encode that has it, and for a Matroska reference and encode
+		// that leave out the same frames.
 		for (const stderr of [
 			"bitovp-vmaf: Inputs must have the same known frame rate; conform them before comparison\n",
 			"bitovp-vmaf: Comparison presentation timestamps do not align\n",
 			"bitovp-vmaf: Comparison inputs have different frame counts\n",
+			"bitovp-vmaf: Comparison frame times do not follow the frame rate\n",
 			"[matroska,webm @ 0x55d0] Could not find codec parameters\nbitovp-vmaf: Comparison presentation timestamps do not align\n",
 		]) {
 			failsWith(stderr);
@@ -662,7 +664,7 @@ describe("owned native local scoring", () => {
 	});
 	it("names the scorer's refusals of a pair in the words of the scorer's source", async () => {
 		// The worker scores a pair on the CPU when the scorer ends with one of
-		// these sentences. The scorer's own tests hold two of the three, so
+		// these sentences. The scorer's own tests hold three of the four, so
 		// each is held here against its source: with another wording there,
 		// such a measurement would end with an error again.
 		const source = (
@@ -675,7 +677,7 @@ describe("owned native local scoring", () => {
 				),
 			)
 		).join("\n");
-		expect(SCORER_PAIR_REFUSALS).toHaveLength(3);
+		expect(SCORER_PAIR_REFUSALS).toHaveLength(4);
 		for (const said of SCORER_PAIR_REFUSALS)
 			expect(source).toContain(`std::runtime_error("${said}")`);
 		// The scorer writes what it throws after its name.

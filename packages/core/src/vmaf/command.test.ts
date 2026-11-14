@@ -161,8 +161,12 @@ describe("buildVmafCommand", () => {
 			// both have a frame in every slot. With the filter on the encode alone,
 			// a reference and an encode that leave out the same slots scored 21.26
 			// where they score 52.96 with it on both.
-			"[0:v]scale=1920:1080:flags=bicubic,fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[dist];" +
-				"[1:v]fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[ref];" +
+			//
+			// Each pad's slots count from its own first frame: a video that
+			// starts half a slot after its file, in whole milliseconds, had
+			// frames dropped and repeated by the filter otherwise.
+			"[0:v]scale=1920:1080:flags=bicubic,setpts=PTS-STARTPTS,fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[dist];" +
+				"[1:v]setpts=PTS-STARTPTS,fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[ref];" +
 				"[dist][ref]libvmaf=model=version=vmaf_v0.6.1:log_path=/spool/qc/v360.vmaf.json:log_fmt=json[out]",
 		);
 	});
@@ -172,10 +176,10 @@ describe("buildVmafCommand", () => {
 			const fc = filterComplexOf(buildVmafCommand({ ...BASE, fpsConform }));
 			const [dist, ref] = fc.split(";");
 			expect(dist).toBe(
-				`[0:v]scale=1920:1080:flags=bicubic,fps=${fpsConform},settb=AVTB,setpts=N/FRAME_RATE/TB[dist]`,
+				`[0:v]scale=1920:1080:flags=bicubic,setpts=PTS-STARTPTS,fps=${fpsConform},settb=AVTB,setpts=N/FRAME_RATE/TB[dist]`,
 			);
 			expect(ref).toBe(
-				`[1:v]fps=${fpsConform},settb=AVTB,setpts=N/FRAME_RATE/TB[ref]`,
+				`[1:v]setpts=PTS-STARTPTS,fps=${fpsConform},settb=AVTB,setpts=N/FRAME_RATE/TB[ref]`,
 			);
 		}
 	});
@@ -311,8 +315,8 @@ describe("buildVmafCommand", () => {
 				}),
 			),
 		).toBe(
-			"[0:v]fps=30,settb=AVTB,setpts=N/FRAME_RATE/TB[dist];" +
-				"[1:v]fps=30,settb=AVTB,setpts=N/FRAME_RATE/TB[ref];" +
+			"[0:v]setpts=PTS-STARTPTS,fps=30,settb=AVTB,setpts=N/FRAME_RATE/TB[dist];" +
+				"[1:v]setpts=PTS-STARTPTS,fps=30,settb=AVTB,setpts=N/FRAME_RATE/TB[ref];" +
 				"[dist][ref]libvmaf=model=version=m:log_path=l:log_fmt=json[out]",
 		);
 	});
@@ -438,9 +442,11 @@ describe("buildVmafCommand — alignFrames", () => {
 		// Scale and fps FIRST, then the drop: dropping before the fps conform
 		// would count frames at the wrong rate.
 		expect(g).toContain(
-			"[0:v]scale=1920:1080:flags=bicubic,fps=24,select='gte(n\\,1)',settb=AVTB,setpts=N/FRAME_RATE/TB[dist]",
+			"[0:v]scale=1920:1080:flags=bicubic,setpts=PTS-STARTPTS,fps=24,select='gte(n\\,1)',settb=AVTB,setpts=N/FRAME_RATE/TB[dist]",
 		);
-		expect(g).toContain("[1:v]fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[ref]");
+		expect(g).toContain(
+			"[1:v]setpts=PTS-STARTPTS,fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[ref]",
+		);
 	});
 
 	it("drops the reference's leading frames after its frame-rate filter, as on the distorted side", () => {
@@ -454,10 +460,10 @@ describe("buildVmafCommand — alignFrames", () => {
 		);
 		// The offset counts slots of the reference's frame rate on both sides.
 		expect(g).toContain(
-			"[1:v]fps=24,select='gte(n\\,2)',settb=AVTB,setpts=N/FRAME_RATE/TB[ref]",
+			"[1:v]setpts=PTS-STARTPTS,fps=24,select='gte(n\\,2)',settb=AVTB,setpts=N/FRAME_RATE/TB[ref]",
 		);
 		expect(g).toContain(
-			"[0:v]scale=1920:1080:flags=bicubic,fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[dist]",
+			"[0:v]scale=1920:1080:flags=bicubic,setpts=PTS-STARTPTS,fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[dist]",
 		);
 	});
 });

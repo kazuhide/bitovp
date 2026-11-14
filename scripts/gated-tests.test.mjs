@@ -172,7 +172,7 @@ test("every listed file exists once, and every FFmpeg, Redis or script test file
 		WORKER_SCRIPTS.files.map((file) => file.slice("scripts/".length)).sort(),
 	);
 	// A changed count is a decision: it moves a test into or out of a job.
-	assert.equal(total(NATIVE_MEDIA), 29);
+	assert.equal(total(NATIVE_MEDIA), 33);
 	assert.equal(WORKER_SCRIPTS.tests, 43);
 	assert.equal(total([REDIS.leases]), 29);
 	assert.equal(total([REDIS.queues]), 3);
@@ -180,7 +180,7 @@ test("every listed file exists once, and every FFmpeg, Redis or script test file
 
 test("a plain run may skip the tests that another job runs", () => {
 	for (const [workspace, skipped] of [
-		["@bitovp/core", 21],
+		["@bitovp/core", 25],
 		["@bitovp/db", 70],
 		["@bitovp/worker", 67],
 		// Includes six favorite-registry, two still-image, two archive/restore and
@@ -248,14 +248,14 @@ test("a skipped test that no other job runs is named", () => {
 					file.name === resolve(root, gated)
 						? fileResult(
 								gated,
-								Array.from({ length: 16 }, () => "skipped"),
+								Array.from({ length: 20 }, () => "skipped"),
 							)
 						: file,
 				),
 			[
-				`${gated}: 16 tests skipped, 15 may be (the native media job runs them)`,
+				`${gated}: 20 tests skipped, 19 may be (the native media job runs them)`,
 				...Array.from(
-					{ length: 16 },
+					{ length: 20 },
 					(_, index) => `"skipped": ${gated} > test ${index + 1}`,
 				),
 			],
@@ -287,7 +287,7 @@ test("a skipped test that no other job runs is named", () => {
 	const hidden = plainRun("@bitovp/core");
 	hidden.numPendingTests += 1;
 	assert.deepEqual(skipProblems(hidden, "@bitovp/core", root).problems, [
-		"the report counts 22 skipped tests but lists 21",
+		"the report counts 26 skipped tests but lists 25",
 	]);
 	for (const empty of [undefined, {}, { testResults: [] }, { testResults: 1 }])
 		assert.deepEqual(skipProblems(empty, "@bitovp/core", root).problems, [
@@ -296,7 +296,7 @@ test("a skipped test that no other job runs is named", () => {
 	// Another workspace's allowance does not apply.
 	assert.equal(
 		skipProblems(plainRun("@bitovp/core"), "@bitovp/db", root).problems[0],
-		`${gated}: 15 tests skipped, none may be`,
+		`${gated}: 19 tests skipped, none may be`,
 	);
 });
 
@@ -414,7 +414,7 @@ test("a native media run passes only when every listed test ran and passed", asy
 	});
 	assert.equal(passed.lines, undefined);
 	assert.deepEqual(passed.notes, [
-		"@bitovp/core: 21 tests that need FFmpeg passed, 0 skipped",
+		"@bitovp/core: 25 tests that need FFmpeg passed, 0 skipped",
 		"@bitovp/worker: 8 tests that need FFmpeg passed, 0 skipped",
 		"Worker scripts: 43 tests in 3 files passed, 0 skipped",
 	]);
@@ -488,8 +488,8 @@ test("a native media run passes only when every listed test ran and passed", asy
 				"Step: running @bitovp/core tests that need FFmpeg",
 				"Reason: Native media tests must all run and pass",
 				"  - skipped tests: 1, required 0",
-				"  - tests passed: 20, required 21",
-				"  - src/vmaf/command.ffmpeg.test.ts: 14 of 15 tests passed, 15 required",
+				"  - tests passed: 24, required 25",
+				"  - src/vmaf/command.ffmpeg.test.ts: 18 of 19 tests passed, 19 required",
 				`  - "skipped": ${first(core)} > test 1`,
 			],
 		],
@@ -585,8 +585,8 @@ test("a native media run passes only when every listed test ran and passed", asy
 			[
 				"Step: running @bitovp/core tests that need FFmpeg",
 				"Reason: Native media tests must all run and pass",
-				"  - tests discovered: 22, required 21",
-				"  - tests passed: 22, required 21",
+				"  - tests discovered: 26, required 25",
+				"  - tests passed: 26, required 25",
 				"  - src/other.test.ts: not a required native media test file",
 			],
 		],
@@ -1604,7 +1604,7 @@ test("the command reports through its exit status", () => {
 		assert.equal(clean.status, 0, clean.stderr);
 		assert.equal(
 			clean.stdout,
-			"@bitovp/core: 21 tests skipped by the plain run; another job runs each of them\n",
+			"@bitovp/core: 25 tests skipped by the plain run; another job runs each of them\n",
 		);
 		const worker = run(
 			"--audit",

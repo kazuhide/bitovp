@@ -1247,9 +1247,14 @@ function createLiveVmafProcessorRun(
 						}
 					}
 					// Grid identity (rev427 re-review Q3): `include` is over the distorted
-					// signature grid, `frameNum` over libvmaf's own decode of the same
-					// clip through the same fps conform. A run that scored fewer frames
-					// than the grid (by more than the subsample stride) is said out loud.
+					// signature grid (`fps` alone), `frameNum` over libvmaf's own decode
+					// of the same clip through the same fps conform, after
+					// `setpts=PTS-STARTPTS`. The two grids hold the same frames because
+					// each pass reads the clip's video alone: FFmpeg times an fMP4 clip
+					// from its first frame, which is the clip's start, and starts an
+					// MPEG-TS clip, which can hold audio, at the streams that it reads.
+					// A run that scored fewer frames than the grid (by more than the
+					// subsample stride) is said out loud.
 					const stride = Math.max(1, deps.subsample ?? 1);
 					const lastScored = parsed.frames.reduce(
 						(acc, frame) => Math.max(acc, frame.frameNum),

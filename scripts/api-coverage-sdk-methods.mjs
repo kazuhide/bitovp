@@ -38,6 +38,7 @@ export function canonicalSdkMethods(file, source) {
 	if (ast.parseDiagnostics.length)
 		throw new Error(`Cannot parse SDK source: ${file}`);
 	const methods = [];
+	const namespaces = [];
 	const classes = ast.statements.filter(ts.isClassDeclaration);
 	const classNames = new Set(classes.map((c) => c.name?.text));
 	const aliases = new Set([
@@ -50,6 +51,23 @@ export function canonicalSdkMethods(file, source) {
 					.map((d) => d.name.text),
 			),
 	]);
+	const importPaths = new Map(
+		ast.statements
+			.filter(ts.isVariableStatement)
+			.flatMap((statement) =>
+				statement.declarationList.declarations
+					.filter(
+						(d) =>
+							id(d.name) &&
+							d.initializer &&
+							ts.isCallExpression(d.initializer) &&
+							id(d.initializer.expression, "require") &&
+							args(d.initializer).length === 1 &&
+							ts.isStringLiteral(args(d.initializer)[0]),
+					)
+					.map((d) => [d.name.text, args(d.initializer)[0].text]),
+			),
+	);
 	function bindingNames(parameters) {
 		const names = parameters.map((p) =>
 			id(p.name) &&
@@ -103,45 +121,58 @@ export function canonicalSdkMethods(file, source) {
 			? expression.right
 			: undefined;
 	};
-	function constructor(member) {
+	function constructor(member, owner, methodNames) {
 		const names = bindingNames(member.parameters);
-		for (const statement of member.body.statements) {
+		const [first, ...statements] = member.body.statements;
+		if (
+			names.length !== 1 ||
+			!first ||
+			!ts.isExpressionStatement(first) ||
+			!ts.isCallExpression(first.expression) ||
+			first.expression.expression.kind !== ts.SyntaxKind.SuperKeyword ||
+			args(first.expression).length !== 1 ||
+			!id(args(first.expression)[0], names[0])
+		)
+			fail();
+		const slots = new Set([
+			"restClient",
+			"prototype",
+			"__proto__",
+			"constructor",
+			...methodNames,
+		]);
+		for (const statement of statements) {
 			if (!ts.isExpressionStatement(statement)) fail();
 			const e = statement.expression;
-			if (
-				ts.isCallExpression(e) &&
-				e.expression.kind === ts.SyntaxKind.SuperKeyword &&
-				args(e).length === 1 &&
-				id(args(e)[0]) &&
-				names.includes(args(e)[0].text)
-			)
-				continue;
 			if (
 				!ts.isBinaryExpression(e) ||
 				e.operatorToken.kind !== ts.SyntaxKind.EqualsToken ||
 				!ts.isPropertyAccessExpression(e.left) ||
 				e.left.expression.kind !== ts.SyntaxKind.ThisKeyword ||
-				e.left.questionDotToken
+				e.left.questionDotToken ||
+				!id(e.left.name) ||
+				slots.has(e.left.name.text)
 			)
 				fail();
-			if (
-				e.left.name.text === "restClient" &&
-				id(e.right) &&
-				names.includes(e.right.text)
-			)
-				continue;
 			if (
 				!ts.isNewExpression(e.right) ||
 				!property(e.right.expression, "default") ||
 				!id(e.right.expression.expression) ||
+				!importPaths.has(e.right.expression.expression.text) ||
 				names.includes(e.right.expression.expression.text) ||
 				args(e.right).length !== 1 ||
-				!id(args(e.right)[0]) ||
-				!names.includes(args(e.right)[0].text)
+				!id(args(e.right)[0], names[0])
 			)
 				fail();
+			slots.add(e.left.name.text);
+			namespaces.push({
+				owner,
+				slot: e.left.name.text,
+				importPath: importPaths.get(e.right.expression.expression.text),
+			});
 		}
 	}
+
 	function responseMapping(callback, names) {
 		if (
 			!callback ||
@@ -357,9 +388,15 @@ export function canonicalSdkMethods(file, source) {
 					!id(heritage[0].types[0].expression.expression, "BaseAPI_1"))
 			)
 				fail();
+			if (statement.members.filter(ts.isConstructorDeclaration).length > 1)
+				fail();
+			const methodNames = statement.members
+				.filter(ts.isMethodDeclaration)
+				.filter((member) => id(member.name))
+				.map((member) => member.name.text);
 			for (const member of statement.members) {
 				if (ts.isConstructorDeclaration(member)) {
-					constructor(member);
+					constructor(member, statement.name.text, methodNames);
 					continue;
 				}
 				methods.push(operation(member));
@@ -406,5 +443,5 @@ export function canonicalSdkMethods(file, source) {
 		}
 		fail();
 	}
-	return { ast, methods };
+	return { ast, methods, namespaces };
 }

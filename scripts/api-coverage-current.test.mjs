@@ -36,7 +36,7 @@ test("unknown SDK transport members and aliases fail rather than shrinking the d
 		`return externalTransport('/encoding/items');`,
 	]) assert.throws(() => enumerateOperations("encoding/items/ItemsApi.js", `class ItemsApi { get() { ${body} } }`), /Unresolved SDK transport/);
 	assert.equal(enumerateOperations("encoding/items/ItemsApi.js", `class ItemsApi {
-	 constructor(client) { this.restClient = client; }
+	 constructor(configuration) { super(configuration); }
 	 get() { return this.restClient.get('/encoding/items'); }
 	}`).length, 1);
 });
@@ -48,7 +48,7 @@ test("method statement allowlist rejects hidden operations mixed with a canonica
 
 test("each generated SDK method has exactly one transport; namespace constructors need none", () => {
 	assert.throws(() => enumerateOperations("encoding/items/ItemsApi.js", `class ItemsApi { get() { this.restClient.get('/encoding/items'); return this.restClient.get('/encoding/items/other'); } }`), /Unresolved SDK/);
-	assert.deepEqual(enumerateOperations("encoding/EncodingApi.js", `class EncodingApi { constructor(client) { this.items = new ItemsApi_1.default(client); } }`), []);
+	assert.deepEqual(enumerateOperations("encoding/EncodingApi.js", `const ItemsApi_1=require("./items/ItemsApi");class EncodingApi { constructor(configuration) { super(configuration); this.items = new ItemsApi_1.default(configuration); } }`), []);
 });
 
 test("malformed SDK source fails closed instead of accepting a partial parse", () => {

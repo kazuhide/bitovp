@@ -178,6 +178,34 @@ test("canonical local bindings cannot shadow module imports, class names or help
 	]) assert.throws(()=>transportBindings("encoding/items/ItemsApi.js",source),/Unresolved SDK/);
 });
 
+test("constructor child resources cannot replace transport, methods or duplicate slots", () => {
+	for (const assignments of [
+		`this.restClient=new Child_1.default(configuration);`,
+		`this.get=new Child_1.default(configuration);`,
+		`this.prototype=new Child_1.default(configuration);`,
+		`this.__proto__=new Child_1.default(configuration);`,
+		`this.constructor=new Child_1.default(configuration);`,
+		`this.child=new Child_1.default(configuration);this.child=new Child_1.default(configuration);`,
+		`this.restClient=configuration;`,
+	]) assert.throws(()=>transportBindings("encoding/items/ItemsApi.js",`const Child_1=require('./ChildApi');class ItemsApi {constructor(configuration){super(configuration);${assignments}} get(){return this.restClient.get('/encoding/items',{});}}`),/Unresolved SDK/);
+});
+
+test("constructor namespace slots and imported targets match their own public declarations", () => fixture(({root,js,generate}) => {
+	writeFileSync(join(root,"encoding/items/ChildApi.d.ts"),"export default class ChildApi {} ");
+	writeFileSync(join(root,"encoding/items/OtherApi.d.ts"),"export default class OtherApi {} ");
+	const declaration=`import Child from './ChildApi';export default class ItemsApi {child:Child;get(itemId:string):Promise<void>;}`;
+	writeFileSync(js.replace(/js$/,"d.ts"),declaration);
+	const source=slot=>`const Child_1=require('./ChildApi');const Other_1=require('./OtherApi');class ItemsApi {constructor(configuration){super(configuration);this.${slot}=new Child_1.default(configuration);}get(itemId){return this.restClient.get('/encoding/items/{item_id}',{item_id:itemId});}}`;
+	writeFileSync(js,source("child"));
+	assert.equal(generate().operations.length,1);
+	writeFileSync(js,source("undeclared"));
+	assert.throws(generate,/namespace|child|property/);
+	writeFileSync(js,source("child").replace("new Child_1.default","new Other_1.default"));
+	assert.throws(generate,/namespace|child|property/);
+	writeFileSync(js,`class ItemsApi {get(itemId){return this.restClient.get('/encoding/items/{item_id}',{item_id:itemId});}}`);
+	assert.throws(generate,/namespace|child|property/);
+}));
+
 test("an unused declared parameter is not silently dropped from the inventory", () => fixture(({js,generate}) => {
 	writeFileSync(js.replace(/js$/,"d.ts"), `export default class ItemsApi { create(itemId:string,body?:{name:string},extra?:boolean):Promise<void>;list(query?:{limit:number}):Promise<void>;get(itemId:string):Promise<void>;}`);
 	assert.throws(generate,/parameter|signature/);

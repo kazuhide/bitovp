@@ -40,8 +40,10 @@ export function canonicalSdkMethods(file, source) {
 	const methods = [];
 	const namespaces = [];
 	const classes = ast.statements.filter(ts.isClassDeclaration);
+	if (classes.length !== 1) fail();
 	const classNames = new Set(classes.map((c) => c.name?.text));
-	const aliases = new Set([
+	const moduleRoles = { strict: [], marker: [], default: [] };
+	const moduleBindings = [
 		...classNames,
 		...ast.statements
 			.filter(ts.isVariableStatement)
@@ -50,7 +52,16 @@ export function canonicalSdkMethods(file, source) {
 					.filter((d) => id(d.name))
 					.map((d) => d.name.text),
 			),
-	]);
+	];
+	const aliases = new Set(moduleBindings);
+	if (
+		aliases.size !== moduleBindings.length ||
+		moduleBindings.some((name) =>
+			["Object", "exports", "module", "require"].includes(name),
+		)
+	)
+		fail();
+
 	const importPaths = new Map(
 		ast.statements
 			.filter(ts.isVariableStatement)
@@ -68,6 +79,17 @@ export function canonicalSdkMethods(file, source) {
 					.map((d) => [d.name.text, args(d.initializer)[0].text]),
 			),
 	);
+	const encodingIndex = file.lastIndexOf("/encoding/");
+	const localFile = file.startsWith("encoding/")
+		? file
+		: encodingIndex >= 0
+			? file.slice(encodingIndex + 1)
+			: fail();
+	if (
+		importPaths.get("BaseAPI_1") !==
+		`${"../".repeat(localFile.split("/").length - 1)}common/BaseAPI`
+	)
+		fail();
 	function bindingNames(parameters) {
 		const names = parameters.map((p) =>
 			id(p.name) &&
@@ -380,12 +402,12 @@ export function canonicalSdkMethods(file, source) {
 			if (!id(statement.name) || statement.modifiers?.length) fail();
 			const heritage = statement.heritageClauses;
 			if (
-				heritage?.length &&
-				(heritage.length !== 1 ||
-					heritage[0].token !== ts.SyntaxKind.ExtendsKeyword ||
-					heritage[0].types.length !== 1 ||
-					!property(heritage[0].types[0].expression, "BaseAPI") ||
-					!id(heritage[0].types[0].expression.expression, "BaseAPI_1"))
+				!heritage ||
+				heritage.length !== 1 ||
+				heritage[0].token !== ts.SyntaxKind.ExtendsKeyword ||
+				heritage[0].types.length !== 1 ||
+				!property(heritage[0].types[0].expression, "BaseAPI") ||
+				!id(heritage[0].types[0].expression.expression, "BaseAPI_1")
 			)
 				fail();
 			if (statement.members.filter(ts.isConstructorDeclaration).length > 1)
@@ -415,7 +437,10 @@ export function canonicalSdkMethods(file, source) {
 			continue;
 		if (ts.isExpressionStatement(statement)) {
 			const e = statement.expression;
-			if (ts.isStringLiteral(e) && e.text === "use strict") continue;
+			if (ts.isStringLiteral(e) && e.text === "use strict") {
+				moduleRoles.strict.push(statement);
+				continue;
+			}
 			if (
 				ts.isCallExpression(e) &&
 				property(e.expression, "defineProperty") &&
@@ -429,8 +454,10 @@ export function canonicalSdkMethods(file, source) {
 				ts.isPropertyAssignment(args(e)[2].properties[0]) &&
 				id(args(e)[2].properties[0].name, "value") &&
 				args(e)[2].properties[0].initializer.kind === ts.SyntaxKind.TrueKeyword
-			)
+			) {
+				moduleRoles.marker.push(statement);
 				continue;
+			}
 			if (
 				ts.isBinaryExpression(e) &&
 				e.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
@@ -438,10 +465,22 @@ export function canonicalSdkMethods(file, source) {
 				id(e.left.expression, "exports") &&
 				id(e.right) &&
 				classNames.has(e.right.text)
-			)
+			) {
+				moduleRoles.default.push(statement);
 				continue;
+			}
 		}
 		fail();
 	}
-	return { ast, methods, namespaces };
+	if (
+		moduleRoles.strict.length !== 1 ||
+		moduleRoles.marker.length !== 1 ||
+		moduleRoles.default.length !== 1 ||
+		ast.statements[0] !== moduleRoles.strict[0] ||
+		ast.statements[1] !== moduleRoles.marker[0] ||
+		ast.statements.at(-2) !== classes[0] ||
+		ast.statements.at(-1) !== moduleRoles.default[0]
+	)
+		fail();
+	return { ast, methods, namespaces, apiClassName: classes[0].name.text };
 }

@@ -5,8 +5,18 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { enumerateOperations, collectEvidence, censusContent, censusDifferences, censusRunDifferences, runCensus } from "./api-coverage-current.mjs";
+import { enumerateOperations as scanOperations, collectEvidence, censusContent, censusDifferences, censusRunDifferences, runCensus } from "./api-coverage-current.mjs";
 import { enumerateBodyParameters, createRequestFieldAudit } from "./api-coverage-fields.mjs";
+
+// Explicit unit-only wrappers emit the full CommonJS shape. Production has no loose mode.
+const moduleBody=(source,file="encoding/items/ItemsApi.js")=> {
+ const local=file.startsWith("encoding/")?file:file.slice(file.lastIndexOf("/encoding/")+1);
+ const base="../".repeat(local.split("/").length-1)+"common/BaseAPI";
+ const extended=source.replace(/\bclass\s+([A-Za-z_$][\w$]*)\s*\{/g,"class $1 extends BaseAPI_1.BaseAPI {");
+ return `"use strict";Object.defineProperty(exports,"__esModule",{value:true});const BaseAPI_1=require(${JSON.stringify(base)});${extended}`;
+};
+const sdkFixture=(source,file)=>`${moduleBody(source,file)}\nexports.default = ${/\bclass\s+([A-Za-z_$][\w$]*)/.exec(source)?.[1]??"InvalidFixture"};`;
+const enumerateOperations=(file,source)=>scanOperations(file,sdkFixture(source,file));
 
 test("operation denominator preserves shared GET/DELETE paths and customData", () => {
 	const rows = enumerateOperations("encoding/items/ItemsApi.js", `class ItemsApi {
@@ -49,6 +59,36 @@ test("method statement allowlist rejects hidden operations mixed with a canonica
 test("each generated SDK method has exactly one transport; namespace constructors need none", () => {
 	assert.throws(() => enumerateOperations("encoding/items/ItemsApi.js", `class ItemsApi { get() { this.restClient.get('/encoding/items'); return this.restClient.get('/encoding/items/other'); } }`), /Unresolved SDK/);
 	assert.deepEqual(enumerateOperations("encoding/EncodingApi.js", `const ItemsApi_1=require("./items/ItemsApi");class EncodingApi { constructor(configuration) { super(configuration); this.items = new ItemsApi_1.default(configuration); } }`), []);
+});
+
+test("the module has exactly one API class and one default export owned by it", () => {
+	const api=`class ItemsApi {get(){return this.restClient.get('/encoding/items',{});}}`;
+	for(const source of [
+		api,
+		`${api} exports.default=Missing;`,
+		`${api} class EmptyApi {} exports.default=EmptyApi;`,
+		`${api} class EmptyApi {} exports.default=ItemsApi;`,
+		`${api} exports.default=ItemsApi;exports.default=ItemsApi;`,
+		`${api} exports.default=ItemsApi;exports.default=Missing;`,
+	]) assert.throws(()=>scanOperations("encoding/items/ItemsApi.js",moduleBody(source)),/Unresolved SDK/);
+	assert.equal(scanOperations("encoding/items/ItemsApi.js",moduleBody(`${api} exports.default=ItemsApi;`)).length,1);
+});
+
+test("canonical CommonJS module roles occur once and in generator order", () => {
+	const valid=sdkFixture(`class ItemsApi {get(){return this.restClient.get('/encoding/items',{});}}`);
+	const marker=`Object.defineProperty(exports,"__esModule",{value:true});`;
+	const exported=`exports.default = ItemsApi;`;
+	for(const source of [
+		valid.replace(`"use strict";`,""),
+		`"use strict";${valid}`,
+		valid.replace(marker,""),
+		valid.replace(marker,marker+marker),
+		valid.replace(`"../../common/BaseAPI"`,`"../common/BaseAPI"`),
+		valid.replace(exported,"").replace("class ItemsApi",`${exported}class ItemsApi`),
+		valid.replace("class ItemsApi",`const Object=require('./other');class ItemsApi`),
+		valid.replace("class ItemsApi",`const require=require('./other');class ItemsApi`),
+		valid.replace("class ItemsApi",`const BaseAPI_1=require('../../common/BaseAPI');class ItemsApi`),
+	]) assert.throws(()=>scanOperations("encoding/items/ItemsApi.js",source),/Unresolved SDK/);
 });
 
 test("malformed SDK source fails closed instead of accepting a partial parse", () => {

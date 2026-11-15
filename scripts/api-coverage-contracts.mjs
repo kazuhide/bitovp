@@ -142,33 +142,36 @@ export function buildRequestContracts({sdkRoot,files,sdkVersion}) {
 	const diagnostics=[...program.getSyntacticDiagnostics(),...program.getSemanticDiagnostics()].filter(d=>d.file && !slash(relative(sdkRoot,d.file.fileName)).startsWith("../"));
 	if(diagnostics.length) fail(`Unresolved SDK declaration: ${ts.flattenDiagnosticMessageText(diagnostics[0].messageText," ")}`);
 	const checker=program.getTypeChecker();
-	const declaredOperations=sources.flatMap(file=> {
-		const declarationFile=file.replace(/\.js$/,".d.ts");
-		const declaration=program.getSourceFile(declarationFile);
-		if(!declaration) fail(`Unresolved SDK declaration: ${declarationFile}`);
-		return declaration.statements.filter(ts.isClassDeclaration).flatMap(owner=>owner.members.filter(member=>ts.isMethodDeclaration(member)&&!member.modifiers?.some(modifier=>[ts.SyntaxKind.PrivateKeyword,ts.SyntaxKind.ProtectedKeyword,ts.SyntaxKind.StaticKeyword].includes(modifier.kind))).map(member=>`${slash(relative(sdkRoot,declarationFile))}#${member.name.getText(declaration)}`));
-	});
-	if(JSON.stringify([...declaredOperations].sort())!==JSON.stringify(operations.map(row=>row.identity).sort())) fail("SDK public method declaration/operation denominator mismatch");
-	for(const file of sources) {
-		const {namespaces}=canonicalSdkMethods(slash(relative(sdkRoot,file)),readFileSync(file,"utf8"));
-		const declaration=program.getSourceFile(file.replace(/\.js$/,".d.ts"));
-		const declaredNamespaces=declaration.statements.filter(ts.isClassDeclaration).flatMap(owner=>owner.members.filter(member=>ts.isPropertyDeclaration(member)&&!member.modifiers?.some(modifier=>[ts.SyntaxKind.PrivateKeyword,ts.SyntaxKind.ProtectedKeyword,ts.SyntaxKind.StaticKeyword].includes(modifier.kind))).map(member=> {
-			const target=member.type&&checker.getTypeFromTypeNode(member.type).getSymbol()?.declarations?.find(ts.isClassDeclaration);
-			if(!target) fail(`Unresolved SDK namespace property type: ${file}`);
-			return `${owner.name.text}#${member.name.getText(declaration)}#${slash(relative(sdkRoot,target.getSourceFile().fileName))}`;
-		}));
-		const assignedNamespaces=namespaces.map(({owner,slot,importPath})=>`${owner}#${slot}#${slash(relative(sdkRoot,resolve(dirname(file),`${importPath.replace(/\.js$/,"")}.d.ts`)))}`);
-		if(JSON.stringify(declaredNamespaces.sort())!==JSON.stringify(assignedNamespaces.sort())) fail(`SDK namespace property/import target mismatch: ${file}`);
-	}
+ const apiDeclarations=new Map(sources.map(file=> {
+  const declarationFile=file.replace(/\.js$/,".d.ts");
+  const source=program.getSourceFile(declarationFile);
+  const owners=source?.statements.filter(ts.isClassDeclaration)??[];
+  const moduleSymbol=source&&checker.getSymbolAtLocation(source);
+  let defaultSymbol=moduleSymbol&&checker.getExportsOfModule(moduleSymbol).find(symbol=>symbol.name==="default");
+  if(defaultSymbol?.flags&ts.SymbolFlags.Alias) defaultSymbol=checker.getAliasedSymbol(defaultSymbol);
+  const owner=defaultSymbol?.declarations?.find(ts.isClassDeclaration);
+  const runtime=canonicalSdkMethods(slash(relative(sdkRoot,file)),readFileSync(file,"utf8"));
+  if(owners.length!==1 || owner!==owners[0] || owner.name?.text!==runtime.apiClassName) fail(`SDK default declaration owner mismatch: ${declarationFile}`);
+  return [slash(relative(sdkRoot,declarationFile)),{source,owner,runtime}];
+ }));
+ const publicMember=member=>!member.modifiers?.some(modifier=>[ts.SyntaxKind.PrivateKeyword,ts.SyntaxKind.ProtectedKeyword,ts.SyntaxKind.StaticKeyword].includes(modifier.kind));
+ const declaredOperations=[...apiDeclarations].flatMap(([file,{source,owner}])=>owner.members.filter(member=>ts.isMethodDeclaration(member)&&publicMember(member)).map(member=>`${file}#${member.name.getText(source)}`));
+ if(JSON.stringify([...declaredOperations].sort())!==JSON.stringify(operations.map(row=>row.identity).sort())) fail("SDK public method declaration/operation denominator mismatch");
+ for(const [file,{source,owner,runtime}] of apiDeclarations) {
+  const declaredNamespaces=owner.members.filter(member=>ts.isPropertyDeclaration(member)&&publicMember(member)).map(member=> {
+   const target=member.type&&checker.getTypeFromTypeNode(member.type).getSymbol()?.declarations?.find(ts.isClassDeclaration);
+   if(!target) fail(`Unresolved SDK namespace property type: ${file}`);
+   return `${owner.name.text}#${member.name.getText(source)}#${slash(relative(sdkRoot,target.getSourceFile().fileName))}`;
+  });
+  const assignedNamespaces=runtime.namespaces.map(({owner,slot,importPath})=>`${owner}#${slot}#${slash(relative(sdkRoot,resolve(dirname(join(sdkRoot,file)),`${importPath.replace(/\.js$/,"")}.d.ts`)))}`);
+  if(JSON.stringify(declaredNamespaces.sort())!==JSON.stringify(assignedNamespaces.sort())) fail(`SDK namespace property/import target mismatch: ${file}`);
+ }
 	const graph=schemaGraph(checker,sdkRoot);
 	const rows=bindings.map(binding=> {
 		const [file,name]=binding.identity.split("#");
-		const source=program.getSourceFile(join(sdkRoot,file));
-		const declarations=[];
-		function find(node) {if(ts.isMethodDeclaration(node)&&node.name.getText(source)===name)declarations.push(node);ts.forEachChild(node,find);}
-		if(!source) fail(`Unresolved SDK declaration: ${file}`);
-		find(source);
-		if(declarations.length!==1) fail(`Unresolved SDK method declaration: ${binding.identity}`);
+  const {source,owner}=apiDeclarations.get(file);
+  const declarations=owner.members.filter(node=>ts.isMethodDeclaration(node)&&node.name.getText(source)===name);
+  if(declarations.length!==1) fail(`Unresolved SDK method declaration: ${binding.identity}`);
 		const declaration=declarations[0];
 		if(declaration.parameters.length!==binding.parameterNames.length || declaration.parameters.some((p,i)=>p.name.getText(source)!==binding.parameterNames[i])) fail(`SDK signature parameter mismatch: ${binding.identity}`);
 		const {identity:_identity,parameterNames:_names,...row}=binding;

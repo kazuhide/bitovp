@@ -3,8 +3,19 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { buildRequestContracts, transportBindings, contractContent } from "./api-coverage-contracts.mjs";
+import { buildRequestContracts, transportBindings as scanBindings, contractContent } from "./api-coverage-contracts.mjs";
 import { writeContracts, readContracts } from "./api-coverage-contract-files.mjs";
+
+// Explicit unit-only wrappers emit the full CommonJS shape. Production has no loose mode.
+const moduleBody=(source,file="encoding/items/ItemsApi.js")=> {
+ const local=file.startsWith("encoding/")?file:file.slice(file.lastIndexOf("/encoding/")+1);
+ const base="../".repeat(local.split("/").length-1)+"common/BaseAPI";
+ const extended=source.replace(/\bclass\s+([A-Za-z_$][\w$]*)\s*\{/g,"class $1 extends BaseAPI_1.BaseAPI {");
+ return `"use strict";Object.defineProperty(exports,"__esModule",{value:true});const BaseAPI_1=require(${JSON.stringify(base)});${extended}`;
+};
+const sdkFixture=(source,file)=>`${moduleBody(source,file)}\nexports.default = ${/\bclass\s+([A-Za-z_$][\w$]*)/.exec(source)?.[1]??"InvalidFixture"};`;
+const transportBindings=(file,source)=>scanBindings(file,sdkFixture(source,file));
+const writeSdkModule=(file,source)=>writeFileSync(file,sdkFixture(source,file));
 
 function fixture(run) {
 	const root = mkdtempSync(join(tmpdir(), "api-contracts-"));
@@ -12,7 +23,7 @@ function fixture(run) {
 		mkdirSync(join(root, "encoding/items"), { recursive: true });
 		mkdirSync(join(root, "models"));
 		const js = join(root, "encoding/items/ItemsApi.js");
-		writeFileSync(js, `class ItemsApi {
+		writeSdkModule(js, `class ItemsApi {
  create(itemId, body) { const paths = {item_id: itemId}; return this.restClient.post('/encoding/items/{item_id}', paths, body); }
  list(query) { return this.restClient.get('/encoding/items', {}, query); }
  get(itemId) { return this.restClient.get('/encoding/items/{item_id}', {item_id:itemId}); }
@@ -96,7 +107,7 @@ test("declared undefined/null alternatives are preserved independently of option
 }));
 
 test("standard SDK query builder keeps callable helper as a separate declared alternative", () => fixture(({root,js,generate}) => {
-	writeFileSync(js, `class ItemsApi { list(query) { let queryParams={}; if(typeof query==='function') { queryParams=query(new Builder()).buildQueryParams(); } else if(query) { queryParams=query; } return this.restClient.get('/encoding/items', {}, queryParams); } }`);
+	writeSdkModule(js, `class ItemsApi { list(query) { let queryParams={}; if(typeof query==='function') { queryParams=query(new Builder()).buildQueryParams(); } else if(query) { queryParams=query; } return this.restClient.get('/encoding/items', {}, queryParams); } }`);
 	writeFileSync(js.replace(/js$/,"d.ts"), `export default class ItemsApi { list(query?: {limit?:number} | ((builder:unknown)=>unknown)):Promise<void>; }`);
 	const parameter=generate().operations[0].parameters[0];
 	assert.equal(parameter.binding,"sdk-query-builder");
@@ -117,15 +128,15 @@ test("unknown transport body or query transformations and path mismatches fail c
 
 test("computed/unknown SDK transport calls cannot disappear from both inventories", () => fixture(({js,generate}) => {
 	for (const expression of ["this.restClient['get']", "this.restClient.head", "this['restClient'].get"]) {
-		writeFileSync(js, `class ItemsApi { get(itemId) { return ${expression}('/encoding/items/{item_id}', {item_id:itemId}); } }`);
+		writeSdkModule(js, `class ItemsApi { get(itemId) { return ${expression}('/encoding/items/{item_id}', {item_id:itemId}); } }`);
 		assert.throws(generate, /Unresolved SDK transport/);
 	}
 }));
 
 test("public arrow fields and missing JS methods cannot shrink the SDK operation denominator", () => fixture(({js,generate}) => {
-	writeFileSync(js, `class ItemsApi { get = (itemId)=>{const {restClient}=this;return restClient.get('/encoding/items/{item_id}',{item_id:itemId});}; }`);
+	writeSdkModule(js, `class ItemsApi { get = (itemId)=>{const {restClient}=this;return restClient.get('/encoding/items/{item_id}',{item_id:itemId});}; }`);
 	assert.throws(generate,/Unresolved SDK/);
-	writeFileSync(js, `class ItemsApi { create(itemId,body){return this.restClient.post('/encoding/items/{item_id}',{item_id:itemId},body);} list(query){return this.restClient.get('/encoding/items',{},query);} }`);
+	writeSdkModule(js, `class ItemsApi { create(itemId,body){return this.restClient.post('/encoding/items/{item_id}',{item_id:itemId},body);} list(query){return this.restClient.get('/encoding/items',{},query);} }`);
 	assert.throws(generate,/declaration|denominator|method/);
 }));
 
@@ -196,14 +207,32 @@ test("constructor namespace slots and imported targets match their own public de
 	const declaration=`import Child from './ChildApi';export default class ItemsApi {child:Child;get(itemId:string):Promise<void>;}`;
 	writeFileSync(js.replace(/js$/,"d.ts"),declaration);
 	const source=slot=>`const Child_1=require('./ChildApi');const Other_1=require('./OtherApi');class ItemsApi {constructor(configuration){super(configuration);this.${slot}=new Child_1.default(configuration);}get(itemId){return this.restClient.get('/encoding/items/{item_id}',{item_id:itemId});}}`;
-	writeFileSync(js,source("child"));
+	writeSdkModule(js,source("child"));
 	assert.equal(generate().operations.length,1);
-	writeFileSync(js,source("undeclared"));
+	writeSdkModule(js,source("undeclared"));
 	assert.throws(generate,/namespace|child|property/);
-	writeFileSync(js,source("child").replace("new Child_1.default","new Other_1.default"));
+	writeSdkModule(js,source("child").replace("new Child_1.default","new Other_1.default"));
 	assert.throws(generate,/namespace|child|property/);
-	writeFileSync(js,`class ItemsApi {get(itemId){return this.restClient.get('/encoding/items/{item_id}',{item_id:itemId});}}`);
+	writeSdkModule(js,`class ItemsApi {get(itemId){return this.restClient.get('/encoding/items/{item_id}',{item_id:itemId});}}`);
 	assert.throws(generate,/namespace|child|property/);
+}));
+
+test("runtime and declaration default exports own the inventoried public API", () => fixture(({root,js,generate}) => {
+	const api=`class ItemsApi {get(itemId){return this.restClient.get('/encoding/items/{item_id}',{item_id:itemId});}}`;
+	writeFileSync(js.replace(/js$/,"d.ts"),`export default class ItemsApi {get(itemId:string):Promise<void>;}`);
+	for(const source of [api,`${api} class EmptyApi {} exports.default=EmptyApi;`,`${api} exports.default=ItemsApi;exports.default=ItemsApi;`]) {
+		writeFileSync(js,moduleBody(source));
+		assert.throws(generate,/Unresolved SDK/);
+	}
+	writeFileSync(js,moduleBody(`${api} exports.default=ItemsApi;`));
+	for(const declaration of [
+		`export class ItemsApi {get(itemId:string):Promise<void>;}`,
+		`export class ItemsApi {get(itemId:string):Promise<void>;} export default class EmptyApi {}`,
+		`class ItemsApi {get(itemId:string):Promise<void>;} declare const other:number;export default other;`,
+	]) {
+		writeFileSync(js.replace(/js$/,"d.ts"),declaration);
+		assert.throws(generate,/default|declaration/);
+	}
 }));
 
 test("an unused declared parameter is not silently dropped from the inventory", () => fixture(({js,generate}) => {

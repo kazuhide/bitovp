@@ -214,7 +214,7 @@ operation is missing:
 
 The SDK 1.288.0 MOQ output API is a newly declared operation family to assess;
 upgrading the SDK does not make MOQ an available application destination.
-AV1 Per-Title `maxBitrate` is an existing field whose upstream documentation
+AV1 Per-Title `targetQualityCrf` is an existing field whose upstream documentation
 changed, not an operation or field newly implemented by this upgrade.
 
 A successful encode, an available manifest, and browser playback are separate

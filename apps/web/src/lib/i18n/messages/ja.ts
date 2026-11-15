@@ -34,7 +34,7 @@ export const ja = {
 		nativeRecovery:
 			"不足している実行ファイル・モデル・フォントと保存先の権限を、編集サービスの実行ユーザーで確認してください。既存プロジェクトの編集は続けられます。",
 		nativeComponents: {
-			MEDIA_TOOLS: "FFmpeg・ffprobe",
+			MEDIA_TOOLS: "メディア処理ツール",
 			ASR_RUNTIME: "音声認識プログラム",
 			ASR_MODEL: "音声認識モデル",
 			VAD_MODEL: "発話検出モデル",

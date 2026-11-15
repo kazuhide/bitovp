@@ -56,7 +56,7 @@ export const en = {
 		nativeRecovery:
 			"Check the missing executables, models, fonts and writable paths as the editing service user. Existing projects can still be edited.",
 		nativeComponents: {
-			MEDIA_TOOLS: "FFmpeg and ffprobe",
+			MEDIA_TOOLS: "Media processing tools",
 			ASR_RUNTIME: "Speech recognition runtime",
 			ASR_MODEL: "Speech model",
 			VAD_MODEL: "Speech detection model",

@@ -110,12 +110,13 @@ class RuntimeGpuCapability:
                 and os.access(path, os.R_OK | os.W_OK))
 
     @staticmethod
-    def registered_device(path):
+    def registered_device(path, *, expected_minor=None):
         value = path.read_text().strip()
         if not re.fullmatch(r'[0-9]{1,7}:[0-9]{1,7}', value):
             raise ValueError('unknown kernel device number')
         major, minor = map(int, value.split(':'))
-        if not 0 < major <= 4095 or not 0 <= minor <= 1048575:
+        if (not 0 < major <= 4095 or not 0 <= minor <= 1048575
+                or (expected_minor is not None and minor != expected_minor)):
             raise ValueError('unknown kernel device number')
         return os.makedev(major, minor)
 
@@ -161,10 +162,9 @@ class RuntimeGpuCapability:
         # candidate, and leave actual selected-backend enumeration to job use.
         for _, minor in nodes:
             device = self.sysfs / f'class/drm/renderD{minor}/device'
-            registered = self.registered_device(device.parent / 'dev')
+            registered = self.registered_device(device.parent / 'dev', expected_minor=minor)
             if ((device / 'vendor').read_text().strip().lower() != '0x1002'
                     or (device / 'driver').resolve(strict=True).name != 'amdgpu'
-                    or os.minor(registered) != minor
                     or not self.device_access(self.devices / f'dri/renderD{minor}', device_number=registered)):
                 return False
         return True

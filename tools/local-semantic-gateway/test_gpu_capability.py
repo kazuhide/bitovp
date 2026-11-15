@@ -140,7 +140,7 @@ class RuntimeGpuCapabilityTests(unittest.TestCase):
         node.mkdir(parents=True)
         (node / 'gpu_id').write_text('12345\n')
         (node / 'properties').write_text('drm_render_minor 128\n')
-        (node.parent.parent / 'dev').write_text('511:0\n')
+        (node.parent.parent.parent / 'dev').write_text('511:0\n')
         device = self.gate.sysfs / 'class/drm/renderD128/device'
         device.mkdir(parents=True)
         (device / 'vendor').write_text('0x1002\n')

@@ -1408,6 +1408,8 @@ export {
 	VMAF_SCORING_VERSION,
 	vmafComparableScoringVersion,
 } from "./vmaf/command";
+export * from "./vmaf/hdr";
+export * from "./vmaf/hls-source";
 export type {
 	LiveCaptureTarget,
 	LiveSegmentKind,
@@ -1492,6 +1494,7 @@ export {
 export * from "./vmaf/streamable-io";
 export type {
 	BandingTarget,
+	HlsQcTarget,
 	QcDistorted,
 	QcReference,
 	QcTarget,
@@ -1500,12 +1503,14 @@ export {
 	enumerateBandingQcTargets,
 	enumerateBandingTargets,
 	enumerateExistingBandingMp4Targets,
+	enumerateExistingHlsQcTargets,
 	enumerateExistingMp4Targets,
 	enumerateExistingQcMirrorTargets,
 	enumerateFrameIndexQcTargets,
 	enumerateQcMirrorsWithoutReference,
 	enumerateQcTargets,
 	gateExpectedRenditionKeys,
+	retainedHlsQcKey,
 	sameQcTargetPopulation,
 } from "./vmaf/targets";
 export type { HeartbeatRegistrationConfig } from "./webhooks/heartbeat-registration";

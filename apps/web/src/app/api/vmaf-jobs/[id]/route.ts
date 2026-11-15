@@ -1,6 +1,8 @@
 import type { PooledMetrics } from "@bitovp/core";
 import {
+	hdrMeasurementOf,
 	localVmafExecutionOf,
+	publicHlsQcEvidenceOf,
 	referencePreparationOf,
 	vmafExecutionSchema,
 } from "@bitovp/core";
@@ -212,6 +214,8 @@ export async function GET(req: Request, { params }: RouteParams) {
 			} = pooledRaw;
 			const localExecution = localVmafExecutionOf(r.provenance);
 			const referencePreparation = referencePreparationOf(r.provenance);
+			const hdrMeasurement = hdrMeasurementOf(r.provenance);
+			const hlsSource = publicHlsQcEvidenceOf(r.provenance);
 			results.push({
 				id: r.id,
 				renditionRef: r.renditionRef as RenditionRef,
@@ -226,6 +230,8 @@ export async function GET(req: Request, { params }: RouteParams) {
 				preview: previewDescriptor(id, job, r, requestOrganizationId(ctx)),
 				...(localExecution ? { localExecution } : {}),
 				...(referencePreparation ? { referencePreparation } : {}),
+				...(hdrMeasurement ? { hdrMeasurement } : {}),
+				...(hlsSource ? { hlsSource } : {}),
 				...(live ? { live } : {}),
 			});
 		}

@@ -1,3 +1,4 @@
+import { HDR_VMAF_MODELS } from "@bitovp/core";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
@@ -287,6 +288,56 @@ function submittedMeasurement() {
 	);
 	return call ? JSON.parse(call[1].body) : undefined;
 }
+it.each(
+	HDR_VMAF_MODELS,
+)("submits $id with its full model label and explicit HDR HLS CPU protocol", async ({
+	id,
+}) => {
+	const user = await openMeasurementOptions();
+	expect(screen.getAllByRole("option", { name: /^hdr_vmaf_/ })).toHaveLength(
+		HDR_VMAF_MODELS.length,
+	);
+	expect(screen.getByRole("option", { name: id })).toHaveValue(id);
+	await user.selectOptions(screen.getByLabelText("Model"), id);
+	await user.selectOptions(screen.getByLabelText("Measurement"), "COMBINED");
+	expect(screen.getByLabelText("Measurement source")).toHaveValue("OUTPUT_HLS");
+	expect(screen.getByLabelText("Run on")).toHaveValue("");
+	expect(screen.getByLabelText("Run on")).toBeDisabled();
+	await user.selectOptions(
+		screen.getByLabelText("HDR reference color"),
+		"P3_D65_PQ_RGB_FULL",
+	);
+	await user.click(screen.getByRole("button", { name: "Measure" }));
+	await waitFor(() => expect(submittedMeasurement()).toBeDefined());
+	expect(submittedMeasurement()).toMatchObject({
+		model: id,
+		banding: true,
+		source: "OUTPUT_HLS",
+		psnr: false,
+		hdrReferenceColor: "P3_D65_PQ_RGB_FULL",
+		execution: { backend: "LOCAL", localMode: "CPU" },
+	});
+	expect(submittedMeasurement()).not.toHaveProperty("measurementMethod");
+});
+it("resets HDR-only source and color intent when returning to an SDR model", async () => {
+	const user = await openMeasurementOptions();
+	await user.selectOptions(
+		screen.getByLabelText("Model"),
+		"hdr_vmaf_v1.1.8_3d0h_2160",
+	);
+	await user.selectOptions(
+		screen.getByLabelText("HDR reference color"),
+		"P3_D65_PQ_RGB_FULL",
+	);
+	await user.selectOptions(screen.getByLabelText("Model"), "vmaf_v0.6.1");
+	expect(
+		screen.queryByLabelText("HDR reference color"),
+	).not.toBeInTheDocument();
+	expect(screen.getByLabelText("Measurement source")).toHaveValue("");
+	await user.click(screen.getByRole("button", { name: "Measure" }));
+	await waitFor(() => expect(submittedMeasurement()).toBeDefined());
+	expect(submittedMeasurement()).not.toHaveProperty("hdrReferenceColor");
+});
 it("preserves automatic source and inherited PSNR when options are untouched", async () => {
 	const user = await openMeasurementOptions();
 	expect(screen.getByLabelText("Measurement source")).toHaveValue("");

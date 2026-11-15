@@ -10,6 +10,7 @@ import {
 	type VmafFrame,
 } from "@bitovp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { hdrMeasurementFixture } from "@/test/hdr-measurement";
 import { referencePreparationEvidence } from "@/test/vmaf-reference-preparation";
 
 const findUnique = vi.fn();
@@ -84,6 +85,41 @@ beforeEach(() => {
 });
 
 describe("GET /api/vmaf-jobs/[id]", () => {
+	it.each([
+		true,
+		false,
+	])("projects only validated HDR evidence (valid=%s)", async (valid) => {
+		const evidence = hdrMeasurementFixture(true);
+		findUnique.mockResolvedValueOnce({
+			id: JOB_ID,
+			mode: "VOD",
+			model: evidence.model,
+			scoringVersion: 14,
+			params: { source: "OUTPUT_HLS" },
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			results: [
+				{
+					id: "hdr-result",
+					renditionRef: {},
+					pooled: computePooled(frames([95, 96])),
+					framesGzip: gz(frames([95, 96])),
+					provenance: {
+						hdrMeasurement: valid
+							? evidence
+							: { ...evidence, privatePath: "/private/receipt" },
+						path: "/private/source",
+					},
+				},
+			],
+		});
+		const response = await GET(req(), params(JOB_ID)),
+			body = await response.json();
+		expect(response.status).toBe(200);
+		if (valid) expect(body.results[0].hdrMeasurement).toEqual(evidence);
+		else expect(body.results[0]).not.toHaveProperty("hdrMeasurement");
+		expect(JSON.stringify(body)).not.toMatch(/private|provenance/);
+	});
 	it.each([
 		{ evidence: referencePreparationEvidence, visible: true },
 		{ evidence: undefined, visible: false },

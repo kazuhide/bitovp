@@ -11,6 +11,7 @@ import {
 import {
 	syntheticCombinedReports,
 	verifyCombinedQcBrowser,
+	verifyHdrQcBrowser,
 } from "./qc-combined-fixture";
 
 const JOBS = [
@@ -1161,6 +1162,13 @@ export async function verifyQcComparisonBrowser(
 		}
 		await verifyCambiComparisonBrowser(page, context, info);
 		await verifyCombinedQcBrowser(page, context, info, combinedReports);
+		await verifyHdrQcBrowser(
+			browser,
+			baseURL,
+			storageState,
+			info,
+			syntheticReports(),
+		);
 		expect(unexpected).toEqual([]);
 	} finally {
 		try {

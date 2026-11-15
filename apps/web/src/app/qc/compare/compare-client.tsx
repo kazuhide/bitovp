@@ -14,6 +14,7 @@ import {
 	comparedSubsamples,
 	fmtScore,
 	jobShortLabel,
+	mixesHdrMeasurementContexts,
 	mixesModels,
 	mixesReferenceCanvases,
 	mixesScoringGenerations,
@@ -319,6 +320,11 @@ export function CompareClient() {
 			{bandingJobs.length === 0 ? (
 				<>
 					<VmafScoreLegend className="mt-3" />
+					{mixesHdrMeasurementContexts(loadedJobs) ? (
+						<p role="alert" className="mt-3 text-amber-400 text-xs">
+							{t("qc.mixedHdrContexts")}
+						</p>
+					) : null}
 					{mixesReferenceCanvases(loadedJobs) ? (
 						<p role="alert" className="mt-3 text-amber-400 text-xs">
 							{t("qc.mixedReferenceCanvases")}

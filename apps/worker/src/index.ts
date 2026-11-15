@@ -199,6 +199,7 @@ import {
 import { queueExcessVmafJobs } from "./vmaf/job-capacity";
 import { createLiveVmafProcessor } from "./vmaf/live-processor";
 import { createLocalVmafResources } from "./vmaf/local-resources";
+import { createVmafModelResolver } from "./vmaf/model-path";
 import { createVmafProcessor } from "./vmaf/processor";
 import { createStrandedVmafReconciler } from "./vmaf/reconcile-stranded";
 import { readLocalResources } from "./vmaf/resources";
@@ -1408,14 +1409,13 @@ const vmafSubsample = env.VMAF_SUBSAMPLE;
 // NOT libvmaf built-ins — they only load from a model FILE — so the runner maps
 // a model name to its bundled JSON when one is present and uses `model=path=`;
 // otherwise it falls back to the built-in `model=version=` (the v0.6.1 family,
-// reachable on the host too). Undefined when VMAF_MODEL_DIR is unset (host dev).
+// reachable on the host too). HDR can use a separate model directory without
+// changing the existing SDR installation.
 const vmafModelDir = env.VMAF_MODEL_DIR;
-const resolveModelPath = vmafModelDir
-	? (model: string): string | undefined => {
-			const file = join(vmafModelDir, `${model}.json`);
-			return existsSync(file) ? file : undefined;
-		}
-	: undefined;
+const resolveModelPath = createVmafModelResolver({
+	sdrDir: vmafModelDir,
+	hdrDir: env.VMAF_HDR_MODEL_DIR,
+});
 /**
  * The capability the orchestrator refuses against (review-234 I1): a model is
  * scorable here if libvmaf has it built in, or if a bundled JSON exists.
@@ -1472,6 +1472,8 @@ const vmafProcessor = tenantService(() =>
 			: {}),
 		nativeSelectionFailure: automaticVmafSelectionState.failure,
 		ffmpegPath: env.VMAF_FFMPEG_PATH ?? env.FFMPEG_PATH,
+		hdrFfmpegPath: env.VMAF_HDR_FFMPEG_PATH,
+		hdrFfprobePath: env.VMAF_HDR_FFPROBE_PATH,
 		ffprobePath: env.FFPROBE_PATH,
 		workDir: join(vmafWorkDir, requireOrganizationId()),
 		decodePolicy: {

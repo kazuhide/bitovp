@@ -8,6 +8,7 @@ import {
 	type ReactNode,
 } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { hdrMeasurementFixture } from "@/test/hdr-measurement";
 import { renderWithQuery as wrap } from "@/test/render";
 import type {
 	BandingJobDetail,
@@ -169,6 +170,38 @@ afterEach(() => {
 });
 
 describe("CompareClient", () => {
+	it.each([
+		false,
+		true,
+	])("warns about mixed HDR measurement contexts (HLG=%s)", async (hlg) => {
+		const evidence = hdrMeasurementFixture(hlg);
+		const hdr = {
+			...JOB_B,
+			model: evidence.model,
+			scoringVersion: 14,
+			results: JOB_B.results.map((result) => ({
+				...result,
+				hdrMeasurement: evidence,
+			})),
+		};
+		const first = hlg
+			? {
+					...JOB_A,
+					model: evidence.model,
+					scoringVersion: 14,
+					results: JOB_A.results.map((result) => ({
+						...result,
+						hdrMeasurement: hdrMeasurementFixture(),
+					})),
+				}
+			: JOB_A;
+		searchParams = new URLSearchParams({ jobs: `${first.id},${hdr.id}` });
+		serve([first, hdr]);
+		wrap(<CompareClient />);
+		expect(
+			await screen.findByText(/HDR\/SDR or HLG normalization differs/),
+		).toBeVisible();
+	});
 	it("compares CAMBI-only reports without a VMAF clock and disambiguates shared result IDs", async () => {
 		const a = { ...bandingJob(JOB_A), encodingName: "same-encode" };
 		const b = { ...bandingJob(JOB_B), encodingName: "same-encode" };

@@ -2202,6 +2202,32 @@ test("the VMAF proof passes only when FFmpeg ends without an error and scores tw
 	}
 });
 
+// The native HDR runtime is deliberately a second program, not a replacement
+// for SDR FFmpeg. Only these exact additions may be outside the SDR contract;
+// the HDR source/consumer contract below checks all of them independently.
+const hdrRuntimeLines = [
+	"COPY --from=ffmpeg-hdr /bin/ffmpeg-hdr /bin/ffprobe-hdr /opt/bitovp-hdr/bin/",
+	"COPY --from=ffmpeg-hdr /model/ /opt/bitovp-hdr/model/",
+	"COPY --from=ffmpeg-hdr /share/ /opt/bitovp-hdr/share/",
+	"ENV VMAF_HDR_FFMPEG_PATH=/opt/bitovp-hdr/bin/ffmpeg-hdr VMAF_HDR_FFPROBE_PATH=/opt/bitovp-hdr/bin/ffprobe-hdr VMAF_HDR_MODEL_DIR=/opt/bitovp-hdr/model",
+];
+const hdrRuntimeBlock = `${hdrRuntimeLines.slice(0, 3).join("\n")}\nENV VMAF_HDR_FFMPEG_PATH=/opt/bitovp-hdr/bin/ffmpeg-hdr \\\n\tVMAF_HDR_FFPROBE_PATH=/opt/bitovp-hdr/bin/ffprobe-hdr \\\n\tVMAF_HDR_MODEL_DIR=/opt/bitovp-hdr/model\n`;
+
+function isolatedHdrStages(dockerfile) {
+	const first = dockerfile.indexOf(
+		"FROM ffmpeg-toolchain AS ffmpeg-hdr-vmaf\n",
+	);
+	const last = dockerfile.indexOf("\nFROM node:", first);
+	assert(first > 0 && last > first, "the isolated HDR stages exist once");
+	const block = dockerfile.slice(first, last);
+	assert.deepEqual(block.match(/^FROM .*$/gm), [
+		"FROM ffmpeg-toolchain AS ffmpeg-hdr-vmaf",
+		"FROM ffmpeg-build AS ffmpeg-hdr-build",
+		"FROM scratch AS ffmpeg-hdr",
+	]);
+	return block;
+}
+
 test("the worker image compiles FFmpeg from sources pinned by commit or release and by checksum, without network access", () => {
 	const dockerfile = readFileSync(resolve(root, "Dockerfile"), "utf8");
 	// Docker's own frontend reads the file, and a backslash continues a line.
@@ -2503,14 +2529,21 @@ test("the worker image compiles FFmpeg from sources pinned by commit or release 
 	assert.match(checks, /^RUN [^-\s]/, checks);
 	assert.doesNotMatch(checks, /;|\|\||(?<!&)&(?!&)/, checks);
 	assert.doesNotMatch(
-		image.lines.join("\n"),
+		image.lines.filter((line) => !hdrRuntimeLines.includes(line)).join("\n"),
 		/FFMPEG|ffmpeg[^\n]*\.tar|releases\/download/,
 	);
+	for (const line of hdrRuntimeLines)
+		assert.equal(
+			image.lines.filter((candidate) => candidate === line).length,
+			1,
+		);
 	// No other instruction of the image names the two programs: no second
 	// copy, package, download or mount. These four, in this order: the
 	// programs and the licences arrive, then the checks, then the proof.
 	assert.deepEqual(
-		image.lines.filter((line) => /ffmpeg|ffprobe/i.test(line)),
+		image.lines.filter(
+			(line) => /ffmpeg|ffprobe/i.test(line) && !hdrRuntimeLines.includes(line),
+		),
 		[
 			"COPY --from=ffmpeg /bin/ffmpeg /bin/ffprobe /usr/local/bin/",
 			"COPY --from=ffmpeg /share/licenses/ /usr/local/share/licenses/",
@@ -2521,6 +2554,104 @@ test("the worker image compiles FFmpeg from sources pinned by commit or release 
 				),
 			),
 		],
+	);
+});
+
+test("the isolated HDR runtime pins every added source and patch, closes compile networks, and records its own stage and consumer bytes", () => {
+	const dockerfile = readFileSync(resolve(root, "Dockerfile"), "utf8");
+	const block = isolatedHdrStages(dockerfile);
+	const args = new Map(
+		[...block.matchAll(/^ARG ([A-Z_]+)="([a-f0-9]{40})"$/gm)].map(
+			([, name, value]) => [name, value],
+		),
+	);
+	assert.deepEqual([...args.keys()], ["HDR_ZIMG_COMMIT", "HDR_LIBVMAF_COMMIT"]);
+	assert.equal(
+		args.get("HDR_ZIMG_COMMIT"),
+		"f819b14e8f39d1282400b0d9543e8ef73c1b2bbd",
+	);
+	assert.equal(
+		args.get("HDR_LIBVMAF_COMMIT"),
+		"a6ed0f18285cab504b779bbccb0bbaddc3bf44c2",
+	);
+	const sources = block.match(/^ADD .*$/gm);
+	assert.equal(sources.length, 6);
+	for (const line of sources) {
+		assert.match(
+			line,
+			/^ADD --checksum=sha256:[a-f0-9]{64} https:\/\/(?:codeload\.github\.com\/(?:sekrit-twc\/zimg|Netflix\/vmaf)\/tar\.gz\/\$\{HDR_(?:ZIMG|LIBVMAF)_COMMIT\}|raw\.githubusercontent\.com\/Netflix\/vmaf\/a6ed0f18285cab504b779bbccb0bbaddc3bf44c2\/model\/(hdr_vmaf_v1\.1\.8(?:_hfr)?)\/\1_(?:3d0h|1d5h)_2160\.json) \S+$/,
+		);
+	}
+	const commands = block.replace(/\s*\\\n\s*/g, " ").match(/^RUN .*$/gm);
+	assert.equal(commands.length, 6);
+	const network = commands.filter(
+		(line) => !line.startsWith("RUN --network=none "),
+	);
+	assert.deepEqual(network, [
+		"RUN apt-get update && apt-get install -y --no-install-recommends patch && rm -rf /var/lib/apt/lists/*",
+	]);
+	for (const command of commands.filter((line) =>
+		line.startsWith("RUN --network=none "),
+	)) {
+		assert.doesNotMatch(command, /\b(?:curl|wget|git|pip|npm|pnpm)\b/);
+		assert.equal(
+			command.split("meson setup ").length,
+			command.split("--wrap-mode=nodownload ").length,
+		);
+	}
+	const copies = block.match(/^COPY .*$/gm);
+	assert.deepEqual(copies, [
+		"COPY --from=ffmpeg-hdr-vmaf /opt/ffbuild/ /opt/ffbuild/",
+		"COPY docker/ffmpeg-hdr-wrap.patch /tmp/ffmpeg-hdr-wrap.patch",
+		"COPY docker/ffmpeg-hdr-colorimetry.patch /tmp/ffmpeg-hdr-colorimetry.patch",
+		"COPY docker/hdr-ffmpeg-patches.sha256 /tmp/hdr-ffmpeg-patches.sha256",
+		"COPY docker/hdr-vmaf-models.sha256 /hdr-out/model/hdr-vmaf-models.sha256",
+		"COPY docker/hdr-build-proof.sh /tmp/hdr-build-proof.sh",
+		"COPY docker/hdr-build-proof.py /tmp/hdr-build-proof.py",
+		"COPY --from=ffmpeg-hdr-build /hdr-out/ /",
+	]);
+	const manifest = readFileSync(
+		resolve(root, "docker/hdr-ffmpeg-patches.sha256"),
+		"utf8",
+	);
+	const patchLines = manifest
+		.split("\n")
+		.filter((line) => line && !line.startsWith("#"));
+	assert.equal(patchLines.length, 2);
+	const patchNames = [];
+	for (const line of patchLines) {
+		const match =
+			/^([a-f0-9]{64}) {2}(ffmpeg-hdr-(?:wrap|colorimetry)\.patch)$/.exec(line);
+		assert(match, line);
+		patchNames.push(match[2]);
+		assert.equal(
+			createHash("sha256")
+				.update(readFileSync(resolve(root, "docker", match[2])))
+				.digest("hex"),
+			match[1],
+		);
+	}
+	assert.deepEqual(patchNames, [
+		"ffmpeg-hdr-wrap.patch",
+		"ffmpeg-hdr-colorimetry.patch",
+	]);
+	assert(block.includes("-Denable_zimg=true"));
+	assert(block.includes("--enable-libzimg"));
+	assert(block.includes("--fuzz=0 < /tmp/ffmpeg-hdr-wrap.patch"));
+	assert(block.includes("--fuzz=0 < /tmp/ffmpeg-hdr-colorimetry.patch"));
+	assert(block.includes("sh /tmp/hdr-build-proof.sh"));
+	const section = readFileSync(
+		resolve(root, "docs/FFMPEG-BUILD.md"),
+		"utf8",
+	).split("\n## Isolated HDR QC runtime\n")[1];
+	assert(section, "the HDR build has its own record");
+	assert(
+		section.includes(block.replaceAll("\t", "  ")),
+		"the record names every HDR stage/source/command in order",
+	);
+	assert(
+		section.includes(hdrRuntimeBlock.replaceAll("\t", "  ")),
+		"the record names the exact HDR consumers and paths",
 	);
 });
 
@@ -2535,8 +2666,16 @@ test("the worker image compiles FFmpeg from sources pinned by commit or release 
 // the record says in its own words about a build's log is not compared
 // either.
 test("the FFmpeg build record holds the stages, the sources and the commands of the Dockerfile's FFmpeg build in their order, and no other", () => {
-	const dockerfile = readFileSync(resolve(root, "Dockerfile"), "utf8");
-	const record = readFileSync(resolve(root, "docs/FFMPEG-BUILD.md"), "utf8");
+	const completeDockerfile = readFileSync(resolve(root, "Dockerfile"), "utf8");
+	// Preserve the original record's full, exact SDR contract. The additions
+	// removed here have their own strict source/record contract above.
+	const dockerfile = completeDockerfile
+		.replace(isolatedHdrStages(completeDockerfile), "")
+		.replace(hdrRuntimeBlock, "");
+	const record = readFileSync(
+		resolve(root, "docs/FFMPEG-BUILD.md"),
+		"utf8",
+	).split("\n## Isolated HDR QC runtime\n")[0];
 	const renew =
 		'Renew docs/FFMPEG-BUILD.md as its section "Renewing this record" says';
 	// The record writes a tab as two spaces.
@@ -4422,6 +4561,199 @@ test("CI audits every package's skipped tests and runs the native media and Redi
 	);
 });
 
+const HDR_SCREENSHOT_UPLOAD =
+	"      - name: Save synthetic HDR UI screenshots\n" +
+	"        if: always() && env.BITOVP_ARCHIVE_DIR != ''\n" +
+	"        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2\n" +
+	"        with:\n" +
+	`          name: hdr-ui-synthetic-\${{ github.run_id }}-\${{ github.run_attempt }}\n` +
+	`          path: \${{ runner.temp }}/bitovp-gui-state.json.hdr-screenshots/*.png\n` +
+	"          retention-days: 7\n" +
+	"          if-no-files-found: warn\n";
+const FORBIDDEN =
+	/\bsecrets\s*(\.|\[|\))|secrets:\s*inherit|id-token|pull_request_target|workflow_run|issue_comment|upload-artifact|docker (push|login)|gh release/;
+
+function withoutInstalledGuiHdrUpload(name, text) {
+	if (name !== "installed-gui.yml") return text;
+	assert.equal(
+		text.split(HDR_SCREENSHOT_UPLOAD).length - 1,
+		1,
+		"Installed GUI must contain the exact safe HDR screenshot upload once",
+	);
+	return text.replace(HDR_SCREENSHOT_UPLOAD, "");
+}
+
+test("the HDR screenshot contract permits exactly the pinned PNG step once only in Installed GUI", () => {
+	const before = "original workflow prefix\n";
+	const after = "original workflow suffix\n";
+	assert.equal(
+		withoutInstalledGuiHdrUpload(
+			"installed-gui.yml",
+			before + HDR_SCREENSHOT_UPLOAD + after,
+		),
+		before + after,
+	);
+	for (const name of ["ci.yml", "offline-media.yml", "ffmpeg-source-build.yml"])
+		assert.equal(
+			withoutInstalledGuiHdrUpload(name, before + after),
+			before + after,
+		);
+});
+
+test("the HDR screenshot contract rejects altered fields and incomplete upload blocks", () => {
+	for (const [label, block] of [
+		["absent block", ""],
+		[
+			"pin",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+				"0".repeat(40),
+			),
+		],
+		[
+			"action",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"actions/upload-artifact@",
+				"example/upload-artifact@",
+			),
+		],
+		[
+			"mutable version",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2",
+				"v7",
+			),
+		],
+		[
+			"condition",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"always() && env.BITOVP_ARCHIVE_DIR != ''",
+				"success()",
+			),
+		],
+		[
+			"missing archive condition",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"always() && env.BITOVP_ARCHIVE_DIR != ''",
+				"always()",
+			),
+		],
+		[
+			"path",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"bitovp-gui-state.json.hdr-screenshots/*.png",
+				"*.png",
+			),
+		],
+		[
+			"recursive path",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"hdr-screenshots/*.png",
+				"hdr-screenshots/**",
+			),
+		],
+		[
+			"private report",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"bitovp-gui-state.json.hdr-screenshots/*.png",
+				"browser-results.json",
+			),
+		],
+		[
+			"private fixture",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"bitovp-gui-state.json.hdr-screenshots/*.png",
+				"bitovp-gui-state.json",
+			),
+		],
+		[
+			"traversal",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"hdr-screenshots/*.png",
+				"hdr-screenshots/../browser.json",
+			),
+		],
+		[
+			"retention",
+			HDR_SCREENSHOT_UPLOAD.replace("retention-days: 7", "retention-days: 90"),
+		],
+		[
+			"missing-file policy",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"if-no-files-found: warn",
+				"if-no-files-found: ignore",
+			),
+		],
+		[
+			"artifact name",
+			HDR_SCREENSHOT_UPLOAD.replace("hdr-ui-synthetic-", "private-fixture-"),
+		],
+		[
+			"extra input",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"        with:\n",
+				"        with:\n          include-hidden-files: true\n",
+			),
+		],
+		[
+			"missing step name",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"      - name: Save synthetic HDR UI screenshots\n",
+				"",
+			),
+		],
+		["missing pin", HDR_SCREENSHOT_UPLOAD.replace(/^.*uses:.*\n/m, "")],
+		["missing path", HDR_SCREENSHOT_UPLOAD.replace(/^.*path:.*\n/m, "")],
+		[
+			"incomplete block",
+			HDR_SCREENSHOT_UPLOAD.replace("          if-no-files-found: warn\n", ""),
+		],
+	])
+		assert.throws(
+			() => withoutInstalledGuiHdrUpload("installed-gui.yml", block),
+			assert.AssertionError,
+			label,
+		);
+});
+
+test("the HDR screenshot contract preserves the forbidden policy for extra uploads and every other byte or workflow", () => {
+	const assertPolicy = (name, text) =>
+		assert.doesNotMatch(withoutInstalledGuiHdrUpload(name, text), FORBIDDEN);
+	for (const extra of [
+		HDR_SCREENSHOT_UPLOAD,
+		"      - uses: actions/upload-artifact@v7\n",
+		"      - uses: example/upload-artifact@v7\n        with:\n          path: browser-results.json\n",
+		`\${{ secrets.VALUE }}`,
+		`\${{ secrets['VALUE'] }}`,
+		`\${{ toJSON(secrets) }}`,
+		"secrets: inherit",
+		"id-token: write",
+		"pull_request_target:",
+		"workflow_run:",
+		"issue_comment:",
+		"docker push image",
+		"docker login registry",
+		"gh release create tag",
+	])
+		assert.throws(
+			() => assertPolicy("installed-gui.yml", HDR_SCREENSHOT_UPLOAD + extra),
+			assert.AssertionError,
+			extra,
+		);
+	for (const name of [
+		"ci.yml",
+		"offline-media.yml",
+		"ffmpeg-source-build.yml",
+		"native-vmaf.yml",
+		"installed-gui-copy.yml",
+	])
+		assert.throws(
+			() => assertPolicy(name, HDR_SCREENSHOT_UPLOAD),
+			assert.AssertionError,
+			name,
+		);
+});
+
 test("the three jobs that need the image's FFmpeg reuse a build only under the key of the installer's own inputs and hold nothing that a wrong build could reach, and two weekly jobs build from the sources", () => {
 	const directory = resolve(root, ".github/workflows");
 	const workflow = (name) => readFileSync(join(directory, name), "utf8");
@@ -4517,10 +4849,10 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 	// request has. A command that publishes: the list is of the ones that a
 	// workflow here could plausibly gain, and is no proof that nothing is
 	// published.
-	const FORBIDDEN =
-		/\bsecrets\s*(\.|\[|\))|secrets:\s*inherit|id-token|pull_request_target|workflow_run|issue_comment|upload-artifact|docker (push|login)|gh release/;
 	for (const [name, [job, steps]] of Object.entries(jobs)) {
-		const text = workflow(name);
+		// Validate the sole PNG upload in full before applying every original
+		// golden adjacency, condition and forbidden-byte assertion to the rest.
+		const text = withoutInstalledGuiHdrUpload(name, workflow(name));
 		const holder = jobOf(text, job);
 		assert(holder.includes(steps), name);
 		// The three jobs are checks that a pull request must pass, and GitHub

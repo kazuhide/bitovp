@@ -12,6 +12,32 @@ const execution = {
 };
 
 describe("public Banding evidence", () => {
+	it("preserves explicit PQ CAMBI and HLG normalization while refusing mixed legacy claims", () => {
+		const pq = {
+			...execution,
+			backend: "cpu",
+			implementation: "libvmaf",
+			scoringVersion: 2,
+			eotf: "PQ",
+			inputTransfer: "PQ",
+			normalization: "NONE",
+		};
+		const hlg = {
+			...pq,
+			inputTransfer: "HLG",
+			normalization: "HLG_TO_PQ_1000_NITS_444_16",
+		};
+		expect(bandingExecutionOf({ bandingExecution: pq })).toEqual(pq);
+		expect(bandingExecutionOf({ bandingExecution: hlg })).toEqual(hlg);
+		for (const invalid of [
+			{ ...pq, scoringVersion: 1 },
+			{ ...pq, eotf: undefined },
+			{ ...pq, inputTransfer: "HLG" },
+			{ ...pq, backend: "cuda", implementation: "bitovp-owned" },
+			{ ...hlg, normalization: "NONE" },
+		])
+			expect(bandingExecutionOf({ bandingExecution: invalid })).toBeUndefined();
+	});
 	it("projects actual backend and canonical precision while stripping private native evidence", () => {
 		expect(
 			bandingExecutionOf({

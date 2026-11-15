@@ -64,6 +64,15 @@ function basePlan() {
 	});
 }
 
+it("keeps HDR models on the explicit existing-output protocol before paid encoding", () => {
+	const plan = encodingPlanSchema.parse({
+		...basePlan(),
+		qc: { vmaf: true, model: "hdr_vmaf_v1.1.8_3d0h_2160" },
+	});
+	const codes = validatePlan(plan).map((issue) => issue.code);
+	expect(codes).toContain("PLAN_HDR_QC_EXISTING_OUTPUT_REQUIRED");
+});
+
 describe("validatePlan", () => {
 	it("rejects a retained numeric per-title template bitrate before provider creation", () => {
 		const plan = basePlan();

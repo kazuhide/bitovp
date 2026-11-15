@@ -420,6 +420,15 @@ export function validatePlan(
 			});
 		}
 	}
+	if ((plan.qc?.vmaf || plan.qc?.psnr) && plan.qc.model.startsWith("hdr_")) {
+		issues.push({
+			level: "error",
+			code: "PLAN_HDR_QC_EXISTING_OUTPUT_REQUIRED",
+			path: "qc.model",
+			message:
+				"HDR QC uses the explicit existing-output HLS protocol. Finish the encode, then select an HDR model and local CPU in QC Lab.",
+		});
+	}
 
 	checkUniqueKeys(plan.inputs, "inputs", issues);
 	checkUniqueKeys(plan.outputs, "outputs", issues);

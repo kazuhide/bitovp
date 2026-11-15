@@ -5,6 +5,12 @@ import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import {
 	capturePerTitleResults,
+	encodingPlanSchema,
+	enumerateExistingHlsQcTargets,
+	HDR_LIBVMAF_REVISION,
+	HDR_VMAF_MODELS,
+	hdrInputFromProbe,
+	hdrMeasurementSchema,
 	type LocalVmafExecution,
 	NATIVE_OFFICIAL_REVISION,
 	PER_TITLE_ATTRIBUTION_VERSION,
@@ -12,6 +18,7 @@ import {
 	PER_TITLE_RESULT_MODE,
 	PER_TITLE_SCHEMA_VERSION,
 	type PerTitleCapturePort,
+	retainedHlsQcKey,
 	type ScannedMuxing,
 	type ScannedStream,
 	VMAF_SCORING_VERSION,
@@ -21,7 +28,10 @@ import { labManualTriggerPrefix } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProcessRunner } from "../feeder/supervisor";
 import type { ResolvedCredential } from "../orchestrator/executor";
+import * as bandingScoring from "./banding-score";
 import type { VmafDownload } from "./download";
+import * as hdrScoring from "./hdr-score";
+import * as hlsAcquisition from "./hls-source";
 import {
 	createLocalVmafResources,
 	type LocalVmafResources,
@@ -31,6 +41,7 @@ import { NativePairRefusal } from "./native-score";
 import { createVmafProcessor, type VmafProcessorDeps } from "./processor";
 import * as referencePreparation from "./reference-preparation";
 import type { VmafResourceLeaseRequest } from "./resource-leases";
+import { planLocalResources } from "./resource-plan";
 import { createSharedVmafExecution } from "./shared-execution";
 
 /**
@@ -595,6 +606,348 @@ beforeEach(() => {
 });
 afterEach(() => {
 	rmSync(workDir, { recursive: true, force: true });
+});
+
+describe("HDR QC execution policy", () => {
+	const hdrRequest = {
+		model: "hdr_vmaf_v1.1.8_3d0h_2160",
+		scoringVersion: 14,
+		triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}hdr`,
+		params: {
+			source: "OUTPUT_HLS",
+			execution: { backend: "LOCAL", localMode: "CPU" },
+		},
+	};
+	it("refuses missing HDR runtime before any media transfer", async () => {
+		const t = setup({ job: hdrRequest });
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("HDR_RUNTIME_NOT_CONFIGURED");
+		expect(t.downloaded).toHaveLength(0);
+		expect(t.results).toHaveLength(0);
+	});
+	it("refuses cloud or AUTO HDR even when an HDR runtime is configured", async () => {
+		for (const execution of [
+			{ backend: "CLOUD", profileId: "cloud", budgetUsd: 1 },
+			{ backend: "LOCAL", localMode: "AUTO" },
+		]) {
+			const t = setup({
+				job: { ...hdrRequest, params: { ...hdrRequest.params, execution } },
+			});
+			Object.assign(t.deps, {
+				hdrFfmpegPath: "ffmpeg-hdr",
+				hdrFfprobePath: "ffprobe-hdr",
+			});
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow("HDR_MEASUREMENT_POLICY_INVALID");
+			expect(t.downloaded).toHaveLength(0);
+		}
+	});
+	it("never treats a forged HDR generation as an ordinary SDR run", async () => {
+		const t = setup({ job: { ...hdrRequest, model: "vmaf_v0.6.1" } });
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("HDR_SCORING_VERSION_MISMATCH");
+		expect(t.results).toHaveLength(0);
+	});
+	it("never scores PQ-tagged pictures using an SDR model", async () => {
+		const t = setup({
+			probeJson: JSON.stringify({
+				streams: [
+					{
+						codec_type: "video",
+						codec_name: "av1",
+						width: 3840,
+						height: 2160,
+						pix_fmt: "yuv420p10le",
+						r_frame_rate: "24/1",
+						color_transfer: "smpte2084",
+					},
+				],
+			}),
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("HDR_MODEL_REQUIRED");
+		expect(t.filterComplexArgs).toHaveLength(0);
+	});
+	it("requires CPU/memory admission for HDR even with an explicitly configured runtime", async () => {
+		const t = setup({
+			job: hdrRequest,
+			resolveModelPath: () => "/models/hdr.json",
+		});
+		Object.assign(t.deps, {
+			hdrFfmpegPath: "ffmpeg-hdr",
+			hdrFfprobePath: "ffprobe-hdr",
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("HDR_RESOURCE_ADMISSION_REQUIRED");
+		expect(t.downloaded).toHaveLength(0);
+	});
+	it.each([
+		{ transfer: "smpte2084", banding: false, externalPlanner: false },
+		{ transfer: "smpte2084", banding: true, externalPlanner: false },
+		{ transfer: "arib-std-b67", banding: true, externalPlanner: false },
+		{ transfer: "smpte2084", banding: true, externalPlanner: true },
+		{ transfer: "arib-std-b67", banding: true, externalPlanner: true },
+	])("retains full-frame HDR/HLS and CAMBI evidence ($transfer, banding=$banding, externalPlanner=$externalPlanner)", async ({
+		transfer,
+		banding,
+		externalPlanner,
+	}) => {
+		const plan = qcPlan();
+		delete plan.qc;
+		plan.generation = { timing: "POST_ENCODING" };
+		plan.renditions = [
+			{
+				key: "v360",
+				ingestKey: "video",
+				codec: "AV1",
+				width: 3840,
+				height: 2160,
+				bitrate: 8000000,
+				rate: 24,
+			},
+		];
+		plan.muxings = [
+			{
+				key: "fmp4",
+				kind: "FMP4",
+				streamKey: "v360",
+				segmentLength: 2,
+				segmentNaming: "seg_%number%.m4s",
+				initSegmentName: "init.mp4",
+				destination: { outputKey: "origin", path: "out/video" },
+			},
+		];
+		plan.manifests = [
+			{
+				key: "hls",
+				kind: "HLS",
+				manifestName: "stream.m3u8",
+				destination: { outputKey: "origin", path: "out" },
+			},
+		];
+		const video = {
+			codec_type: "video",
+			codec_name: "av1",
+			width: 3840,
+			height: 2160,
+			pix_fmt: "yuv420p10le",
+			color_range: "tv",
+			color_space: "bt2020nc",
+			color_primaries: "bt2020",
+			color_transfer: transfer,
+			sample_aspect_ratio: "1:1",
+			r_frame_rate: "24/1",
+			avg_frame_rate: "24/1",
+			duration: "0.041666667",
+			nb_frames: "1",
+		};
+		const probe = JSON.stringify({ streams: [video] });
+		const input = hdrInputFromProbe(probe, "distorted");
+		const readResources = () => ({
+			cpuCapacity: 4,
+			memoryLimitBytes: 9 * 1024 ** 3,
+			headroomBytes: 9 * 1024 ** 3,
+			reserveBytes: 1024 ** 3,
+			budgetBytes: 8 * 1024 ** 3,
+		});
+		const resources = createLocalVmafResources({
+			threads: 1,
+			readResources,
+		});
+		const t = setup({
+			plan,
+			job: {
+				...hdrRequest,
+				params: { ...hdrRequest.params, banding, subsample: 8 },
+			},
+			subsample: 4,
+			probeJson: probe,
+			resolveModelPath: () => "/models/hdr.json",
+			localResources: resources,
+		});
+		Object.assign(t.deps, {
+			hdrFfmpegPath: "ffmpeg-hdr",
+			hdrFfprobePath: "ffprobe-hdr",
+		});
+		if (externalPlanner) {
+			t.deps.resolveLocalResources = vi.fn(async (request) =>
+				planLocalResources(
+					readResources(),
+					request.pair,
+					{ threads: 1 },
+					request.pairCount,
+				),
+			);
+			t.deps.resolveBandingResources = vi.fn(async (request) => {
+				if (!request.basePlan)
+					throw new Error("HDR combined base allocation missing");
+				return request.basePlan;
+			});
+		}
+		const [target] = enumerateExistingHlsQcTargets(
+			encodingPlanSchema.parse(plan),
+		);
+		if (!target) throw new Error("HDR fixture target missing");
+		const hash = "a".repeat(64);
+		const witness = {
+			version: 1 as const,
+			method: "FMP4_INIT_SEGMENTS" as const,
+			vmafJobId: VMAF_JOB_ID,
+			renditionKey: "v360",
+			muxingKey: "fmp4",
+			bucket: "out-bucket",
+			masterKey: "out/stream.m3u8",
+			mediaKey: "out/video.m3u8",
+			segmentCount: 1,
+			durationSeconds: 1 / 24,
+			assembledSha256: hash,
+			assembledBytes: 2,
+			complete: true as const,
+			objects: (["MASTER", "MEDIA", "INIT", "SEGMENT"] as const).map(
+				(role, n) => ({
+					role,
+					key:
+						[
+							"out/stream.m3u8",
+							"out/video.m3u8",
+							target.hls.initKey,
+							"out/video/seg_1.m4s",
+						][n] ?? "out/invalid",
+					bytes: 1,
+					sha256: hash,
+					identity: { size: 1, etag: '"one"' },
+				}),
+			),
+		};
+		const retainedKey = retainedHlsQcKey(target, VMAF_JOB_ID, hash);
+		const acquire = vi
+			.spyOn(hlsAcquisition, "acquireHlsQcOutput")
+			.mockImplementation(async () => {
+				const path = join(workDir, VMAF_JOB_ID, "hls-v360.mp4");
+				await writeFile(path, "12");
+				return {
+					path,
+					provenance: {
+						bucket: "out-bucket",
+						key: retainedKey,
+						bytes: 2,
+						sha256: hash,
+						pinned: true,
+						identity: { etag: '"retained"', size: 2 },
+					},
+					hlsSource: witness,
+					target: {
+						...target,
+						distorted: { outputKey: "origin", path: retainedKey },
+					},
+				};
+			});
+		const hdrMeasurement = hdrMeasurementSchema.parse({
+			version: 1,
+			method: "HDR_VMAF_PQ_ICTCP_16",
+			scope: "HDR_BASE_LAYER",
+			dolbyRpuApplied: false,
+			model: HDR_VMAF_MODELS[0].id,
+			modelSha256: HDR_VMAF_MODELS[0].sha256,
+			libvmafRevision: HDR_LIBVMAF_REVISION,
+			normalization: "ZIMG_BT2020_PQ_YUV444_16",
+			comparison: "LIMITED_BT2020_PQ_ICTCP420_16_DISPLAY2160",
+			reference: input,
+			distorted: input,
+			frameCount: 1,
+			...(transfer === "arib-std-b67"
+				? {
+						hlgReferenceDisplay: {
+							peakNits: 1000,
+							blackNits: 0,
+							systemGamma: 1.2,
+							approximateGamma: false,
+						},
+					}
+				: {}),
+		});
+		const score = vi.spyOn(hdrScoring, "runHdrVmafScore").mockResolvedValue({
+			run: { code: 0, stdout: "", stderr: "" },
+			log: JSON.parse(vmafJson([95])),
+			hdrMeasurement,
+			execution: {
+				version: 1,
+				requestedDecode: "cpu",
+				decode: {
+					reference: { backend: "cpu" },
+					distorted: { backend: "cpu" },
+				},
+				scoring: {
+					backend: "cpu",
+					implementation: "libvmaf",
+					model: HDR_VMAF_MODELS[0].id,
+				},
+				attempts: 1,
+			},
+		});
+		const cambi = vi
+			.spyOn(bandingScoring, "runCpuBandingScore")
+			.mockResolvedValue({
+				frames: [
+					{
+						frameNum: 0,
+						timestampSeconds: 0,
+						durationSeconds: 1 / 24,
+						cambi: 12,
+					},
+				],
+				libvmafVersion: "a6ed0f1",
+				featureName: "cambi_encbd_10_ench_2160_encw_3840_eotf_pq",
+			});
+		try {
+			await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+			expect(t.results).toHaveLength(1);
+			expect(t.results[0]?.provenance).toMatchObject({
+				hdrMeasurement,
+				hlsSource: witness,
+				distorted: { key: retainedKey },
+				localExecution: { selection: { requested: "CPU" } },
+			});
+			expect(t.encodingJobWrites).toHaveLength(0);
+			expect(score).toHaveBeenCalledOnce();
+			expect(t.job.params).toMatchObject({ subsample: 1 });
+			if (banding) {
+				expect(cambi).toHaveBeenCalledOnce();
+				expect(t.results[0]?.pooled).toMatchObject({
+					banding: { max: 12, frameCount: 1 },
+				});
+				expect(t.results[0]?.provenance).toMatchObject({
+					bandingExecution: {
+						eotf: "PQ",
+						inputTransfer: transfer === "arib-std-b67" ? "HLG" : "PQ",
+						normalization:
+							transfer === "arib-std-b67"
+								? "HLG_TO_PQ_1000_NITS_444_16"
+								: "NONE",
+					},
+				});
+			}
+			if (externalPlanner) {
+				expect(t.deps.resolveLocalResources).toHaveBeenCalledOnce();
+				expect(t.deps.resolveBandingResources).toHaveBeenCalledOnce();
+				const localPlanner = t.deps.resolveLocalResources;
+				if (!localPlanner)
+					throw new Error("External HDR resource planner missing");
+				expect(
+					vi.mocked(localPlanner).mock.calls[0]?.[0].options,
+				).toMatchObject({ subsample: 1 });
+			}
+		} finally {
+			acquire.mockRestore();
+			score.mockRestore();
+			cambi.mockRestore();
+		}
+	});
 });
 
 describe("createVmafProcessor", () => {

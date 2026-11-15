@@ -71,6 +71,14 @@ jobs:
         run: sh scripts/native-media-tools.sh --cache "$RUNNER_TEMP/ffmpeg-build" "$RUNNER_TEMP/native-media"
       - run: node scripts/installed-gui-smoke.mjs --ffmpeg "$RUNNER_TEMP/native-media" --state-file "$RUNNER_TEMP/bitovp-gui-state.json"
         working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
+      - name: Save synthetic HDR UI screenshots
+        if: always() && env.BITOVP_ARCHIVE_DIR != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hdr-ui-synthetic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bitovp-gui-state.json.hdr-screenshots/*.png
+          retention-days: 7
+          if-no-files-found: warn
       - name: Remove only this job's owned test resources
         if: always() && env.BITOVP_ARCHIVE_DIR != ''
         working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}

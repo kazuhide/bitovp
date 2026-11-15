@@ -1,5 +1,9 @@
 import {
 	type BandingPooled,
+	type HdrMeasurement,
+	type HlsQcEvidence,
+	hdrMeasurementOf,
+	isHdrVmafModel,
 	type LocalVmafExecution,
 	type PooledMetrics,
 	type VmafCloudProfile,
@@ -205,6 +209,17 @@ export type MeasuredMediaPreview =
 	  };
 
 export type VmafResultDetail = BandingResultData & {
+	hdrMeasurement?: HdrMeasurement;
+	hlsSource?: Pick<
+		HlsQcEvidence,
+		| "version"
+		| "method"
+		| "segmentCount"
+		| "durationSeconds"
+		| "assembledSha256"
+		| "assembledBytes"
+		| "complete"
+	>;
 	id: string;
 	/** Validated local decode/scoring implementation; absent on historical reports. */
 	localExecution?: LocalVmafExecution;
@@ -619,4 +634,31 @@ export function mixesSubsampling(
 	jobs: readonly { subsample?: number | null }[],
 ): boolean {
 	return comparedSubsamples(jobs).length > 1;
+}
+
+/** HDR and SDR models, and HLG's explicit reference-display normalization,
+ * describe different measurement conditions even when their model agrees. */
+export function mixesHdrMeasurementContexts(
+	jobs: readonly {
+		model?: string | null;
+		results?: readonly { hdrMeasurement?: HdrMeasurement }[];
+	}[],
+): boolean {
+	const domains = new Set<string>();
+	for (const job of jobs) {
+		const results = job.results?.length ? job.results : [{}];
+		for (const result of results) {
+			const evidence = hdrMeasurementOf(result);
+			domains.add(
+				evidence
+					? evidence.hlgReferenceDisplay
+						? "HDR_HLG_PQ_1000"
+						: "HDR_PQ"
+					: isHdrVmafModel(job.model ?? "")
+						? "HDR_UNVERIFIED"
+						: "SDR",
+			);
+		}
+	}
+	return domains.size > 1;
 }

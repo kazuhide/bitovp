@@ -30,6 +30,7 @@ import { BandingPanels, BandingReport } from "./banding-panel";
 import { ExportButtons } from "./export-buttons";
 import { FrameChart } from "./frame-chart";
 import { FrameComparison } from "./frame-comparison";
+import { HdrMeasurementSummary } from "./hdr-measurement-summary";
 import { LadderScatter } from "./ladder-scatter";
 import { LivePanels, LiveQualityWarnings } from "./live-panels";
 import { PooledTable } from "./pooled-table";
@@ -392,6 +393,7 @@ export function VmafReport({ id }: { id: string }) {
 			{hasResults ? (
 				<>
 					<ReferencePreparationSummary results={job.results} />
+					<HdrMeasurementSummary results={job.results} />
 					{/* Above the numbers, deliberately: a correct score with no context is
 					    what turned a healthy pipeline into an hours-long investigation. */}
 					<VmafContextBanner

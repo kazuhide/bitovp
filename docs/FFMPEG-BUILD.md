@@ -4954,3 +4954,183 @@ for canvas in 640x360 480x270 426x240 384x216 320x180 256x144 192x108; do
   done
 done
 ```
+
+
+## Isolated HDR QC runtime
+
+Added on 2026-11-16 for the measurement protocol in [HDR-QC.md](HDR-QC.md).
+The `ffmpeg` export and its SDR libvmaf pin remain as recorded above. HDR uses
+separate `ffmpeg-hdr` and `ffprobe-hdr` programs, with the same FFmpeg decoder
+source revision and codec libraries, a separately pinned libvmaf, and zimg.
+
+The additional source pins are:
+
+| Source | Commit | Archive SHA256 |
+|---|---|---|
+| libvmaf | `a6ed0f18285cab504b779bbccb0bbaddc3bf44c2` | `fdf254f9034a406745b5aa325d04675f8e7e64e482840a4fbd726f609544c82c` |
+| zimg release-3.0.6 | `f819b14e8f39d1282400b0d9543e8ef73c1b2bbd` | `4dc9faba466bce429226f0f5454cb7948ec2b70f6b5b6de383898227b38e51da` |
+
+The FFmpeg changes are backports of upstream commits
+`179d08349347e00b2a24593cfa8b3cbbde2a6cfb` and
+`58584087cfc34a6b0894886b23e3d912ca4568f2`. Their configure hunk context is
+adapted to release/8.1; their code changes are unchanged. The patch manifest
+checks the actual backport bytes, and applying either patch with fuzz is forbidden.
+The new library is built with `-Denable_zimg=true`; FFmpeg also enables zscale.
+Every compile step is offline. The only additional network-enabled RUN installs
+the system patch utility before compilation.
+
+The HDR stages, copied with tabs written as two spaces:
+
+```dockerfile
+FROM ffmpeg-toolchain AS ffmpeg-hdr-vmaf
+ARG HDR_ZIMG_COMMIT="f819b14e8f39d1282400b0d9543e8ef73c1b2bbd"
+ADD --checksum=sha256:4dc9faba466bce429226f0f5454cb7948ec2b70f6b5b6de383898227b38e51da https://codeload.github.com/sekrit-twc/zimg/tar.gz/${HDR_ZIMG_COMMIT} hdr-zimg.tar.gz
+RUN --network=none mkdir hdr-zimg && tar xzf hdr-zimg.tar.gz -C hdr-zimg --strip-components=1 && cd hdr-zimg \
+  && ./autogen.sh && STL_LIBS="-l:libstdc++.a -lm" ./configure --prefix=/opt/ffbuild --disable-shared --enable-static --with-pic \
+  && make -j"$(nproc)" && make install \
+  && install -D -m 0644 COPYING /opt/ffbuild/share/licenses/zimg/COPYING
+ARG HDR_LIBVMAF_COMMIT="a6ed0f18285cab504b779bbccb0bbaddc3bf44c2"
+ADD --checksum=sha256:fdf254f9034a406745b5aa325d04675f8e7e64e482840a4fbd726f609544c82c https://codeload.github.com/Netflix/vmaf/tar.gz/${HDR_LIBVMAF_COMMIT} hdr-vmaf.tar.gz
+RUN --network=none mkdir hdr-vmaf && tar xzf hdr-vmaf.tar.gz -C hdr-vmaf --strip-components=1 && cd hdr-vmaf \
+  && revision=$(printf '%.7s' "$HDR_LIBVMAF_COMMIT") \
+  && sed -i "s/@VCS_TAG@/$revision/" libvmaf/include/vcs_version.h.in \
+  && grep -q "\"$revision\"" libvmaf/include/vcs_version.h.in \
+  && echo > libvmaf/tools/meson.build \
+  && sed -i -E -e 's/([^.>:_[:alnum:]])swap\(/\1libsvm_swap(/g' -e 's/([^.>:_[:alnum:]])min\(/\1libsvm_min(/g' -e 's/([^.>:_[:alnum:]])max\(/\1libsvm_max(/g' libvmaf/src/svm.cpp \
+  && meson setup build libvmaf --wrap-mode=nodownload --prefix=/opt/ffbuild --libdir=lib --buildtype=release --default-library=static \
+    -Dbuilt_in_models=true -Denable_tests=false -Denable_docs=false -Denable_float=true -Denable_avx512=true -Denable_asm=true -Denable_zimg=true \
+  && ninja -C build install \
+  && sed -i 's/Libs.private:/Libs.private: -l:libstdc++.a/; t; $ a Libs.private: -l:libstdc++.a' /opt/ffbuild/lib/pkgconfig/libvmaf.pc \
+  && install -D -m 0644 LICENSE /opt/ffbuild/share/licenses/libvmaf/LICENSE
+
+FROM ffmpeg-build AS ffmpeg-hdr-build
+COPY --from=ffmpeg-hdr-vmaf /opt/ffbuild/ /opt/ffbuild/
+# These two official FFmpeg changes pass complete AVFrame colorimetry to the
+# HDR library. They are applied only to this copy of the pinned release source.
+COPY docker/ffmpeg-hdr-wrap.patch /tmp/ffmpeg-hdr-wrap.patch
+COPY docker/ffmpeg-hdr-colorimetry.patch /tmp/ffmpeg-hdr-colorimetry.patch
+COPY docker/hdr-ffmpeg-patches.sha256 /tmp/hdr-ffmpeg-patches.sha256
+RUN apt-get update && apt-get install -y --no-install-recommends patch && rm -rf /var/lib/apt/lists/*
+RUN --network=none cd /tmp && sha256sum -c --strict hdr-ffmpeg-patches.sha256 \
+  && cd /src/ffmpeg && make distclean \
+  && patch --batch --forward -p1 --fuzz=0 < /tmp/ffmpeg-hdr-wrap.patch \
+  && patch --batch --forward -p1 --fuzz=0 < /tmp/ffmpeg-hdr-colorimetry.patch \
+  && printf '%s-hdr1\n' "$FFMPEG_VER" > VERSION \
+  && ./configure --prefix=/opt/ffmpeg-hdr --pkg-config-flags=--static \
+    --extra-ldflags="-static-libgcc" --extra-ldexeflags=-pie \
+    --disable-autodetect --disable-debug --disable-doc --disable-ffplay \
+    --enable-gpl --enable-version3 \
+    --enable-zlib --enable-iconv --enable-openssl --enable-libxml2 \
+    --enable-libfreetype --enable-libharfbuzz --enable-libfribidi --enable-fontconfig --enable-libass \
+    --enable-libvmaf --enable-libzimg --enable-libx264 --enable-libsvtav1 --enable-libdav1d --enable-libsrt \
+    --enable-ffnvcodec --enable-cuda --enable-cuvid --enable-nvdec --enable-nvenc \
+  || { tail -n 60 ffbuild/config.log; exit 1; }
+RUN --network=none cd /src/ffmpeg && make -j"$(nproc)" && make install \
+  && mkdir -p /hdr-out/bin /hdr-out/share/licenses \
+  && cp /opt/ffmpeg-hdr/bin/ffmpeg /hdr-out/bin/ffmpeg-hdr \
+  && cp /opt/ffmpeg-hdr/bin/ffprobe /hdr-out/bin/ffprobe-hdr \
+  && cp -a /opt/ffbuild/share/licenses/. /hdr-out/share/licenses/ \
+  && install -D -m 0644 -t /hdr-out/share/licenses/ffmpeg COPYING.GPLv3 LICENSE.md \
+  && /hdr-out/bin/ffmpeg-hdr -hide_banner -version \
+  && ldd /hdr-out/bin/ffmpeg-hdr && ldd /hdr-out/bin/ffprobe-hdr
+ADD --checksum=sha256:6e1bb29ade13e1cad05e1d13fed2ad76fc8e3d3621bd5e02ab23e5c98c0afffd https://raw.githubusercontent.com/Netflix/vmaf/a6ed0f18285cab504b779bbccb0bbaddc3bf44c2/model/hdr_vmaf_v1.1.8/hdr_vmaf_v1.1.8_3d0h_2160.json /hdr-out/model/hdr_vmaf_v1.1.8_3d0h_2160.json
+ADD --checksum=sha256:53d36d3173012efa6eb65ada92aa3967d3caceee68d088275b2a51a320948510 https://raw.githubusercontent.com/Netflix/vmaf/a6ed0f18285cab504b779bbccb0bbaddc3bf44c2/model/hdr_vmaf_v1.1.8/hdr_vmaf_v1.1.8_1d5h_2160.json /hdr-out/model/hdr_vmaf_v1.1.8_1d5h_2160.json
+ADD --checksum=sha256:f32904ac748319a8dc584aeffa776df30e5002e95270414a57a9802a9c2b31d1 https://raw.githubusercontent.com/Netflix/vmaf/a6ed0f18285cab504b779bbccb0bbaddc3bf44c2/model/hdr_vmaf_v1.1.8_hfr/hdr_vmaf_v1.1.8_hfr_3d0h_2160.json /hdr-out/model/hdr_vmaf_v1.1.8_hfr_3d0h_2160.json
+ADD --checksum=sha256:c8a979574c0d79bb22198323e6b4024b47bd305e5aa09575c4735fef43476bd8 https://raw.githubusercontent.com/Netflix/vmaf/a6ed0f18285cab504b779bbccb0bbaddc3bf44c2/model/hdr_vmaf_v1.1.8_hfr/hdr_vmaf_v1.1.8_hfr_1d5h_2160.json /hdr-out/model/hdr_vmaf_v1.1.8_hfr_1d5h_2160.json
+COPY docker/hdr-vmaf-models.sha256 /hdr-out/model/hdr-vmaf-models.sha256
+COPY docker/hdr-build-proof.sh /tmp/hdr-build-proof.sh
+COPY docker/hdr-build-proof.py /tmp/hdr-build-proof.py
+RUN --network=none cd /hdr-out/model && sha256sum -c --strict hdr-vmaf-models.sha256 \
+  && sh /tmp/hdr-build-proof.sh /hdr-out/bin/ffmpeg-hdr /hdr-out/model /hdr-out/share/hdr-build-proof
+
+# Export without changing the SDR-only "ffmpeg" export target.
+FROM scratch AS ffmpeg-hdr
+COPY --from=ffmpeg-hdr-build /hdr-out/ /
+
+```
+
+The final worker consumes that export at these distinct paths. Its existing
+`VMAF_HDR_MODEL_DIR` holds the HDR models in the isolated HDR runtime. The
+existing `VMAF_MODEL_DIR` and SDR model set remain unchanged. If the HDR-specific
+directory is not configured, shared-directory installations remain supported;
+an explicitly configured HDR directory never falls back when a file is missing.
+
+```dockerfile
+COPY --from=ffmpeg-hdr /bin/ffmpeg-hdr /bin/ffprobe-hdr /opt/bitovp-hdr/bin/
+COPY --from=ffmpeg-hdr /model/ /opt/bitovp-hdr/model/
+COPY --from=ffmpeg-hdr /share/ /opt/bitovp-hdr/share/
+ENV VMAF_HDR_FFMPEG_PATH=/opt/bitovp-hdr/bin/ffmpeg-hdr \
+  VMAF_HDR_FFPROBE_PATH=/opt/bitovp-hdr/bin/ffprobe-hdr \
+  VMAF_HDR_MODEL_DIR=/opt/bitovp-hdr/model
+```
+
+Build and export it independently:
+
+```sh
+docker build --platform linux/amd64 --file Dockerfile --target ffmpeg-hdr --output type=local,dest=<new directory> .
+```
+
+The export holds `bin/ffmpeg-hdr`, `bin/ffprobe-hdr`, the four checked model files
+under `model/`, licences under `share/licenses/`, and real execution receipts
+under `share/hdr-build-proof/`. The model manifest is
+`docker/hdr-vmaf-models.sha256`; it is separate from the SDR manifest.
+
+### HDR proof record
+
+The Linux arm64 Docker build passed on 2026-11-16. It loaded both standard-rate
+2160p HDR models and scored two complete synthetic frames with complete input color tags.
+The 3H model identity mean was `109.588384`; the 1.5H identity mean was `100`.
+Changing only one input from BT.2020 to BT.709 primaries reduced the 3H result
+to `77.2979575`, proving that the bridge conveys effective color attributes.
+Missing input primaries failed the HDR run.
+
+The two separate HFR models were also loaded and scored six complete synthetic
+frames at 60 fps. Their identity means were `107.84164966666667` for 3H and
+`100` for 1.5H on arm64. These HFR models are distinct from the standard-rate
+models; selecting one for real input requires the matching frame-rate protocol
+in [HDR-QC.md](HDR-QC.md). The short fixtures prove runtime compatibility and
+color handling, rather than content quality or a display-device measurement.
+
+A separate CAMBI run accepted 16-bit 4:4:4 PQ frames, declared 3840×2160/10-bit
+encoding geometry, and explicitly selected `eotf=pq`. Its feature key was
+`cambi_encbd_10_ench_2160_encw_3840_eotf_pq`, with mean `0.010831` across both
+frames. This independent configuration differs from the CAMBI feature options
+embedded in the HDR VMAF models.
+
+The HLG proof converts seven RGB-float samples with the pinned zimg, a fixed
+1000-nit HLG reference display, zero black level, system gamma 1.2, and
+`agamma=false`. It verifies grey anchors and saturated red/green/blue against
+independently calculated HLG inverse-OETF, luma-weighted OOTF and PQ equations.
+The maximum PQ-code error is below `0.00002`. HLG 75% grey maps to PQ
+`0.58076727` (about 203 nits), and HLG 100% maps to PQ `0.75182581` (about 1000
+nits). Saturated colours make a per-channel approximate OOTF fail the proof.
+This is the explicit `HLG_TO_PQ_1000_NITS` conversion protocol, not an HLG-trained
+VMAF model or a simulation of arbitrary real displays.
+
+The build proof checks scored populations, contiguous indices, finite values
+and pooled mean/min/max consistency. It retains each command, error output,
+raw conversion sample and JSON result. The implementation is
+`docker/hdr-build-proof.py`, invoked by `docker/hdr-build-proof.sh`.
+
+Source-contract tests retain the complete SDR checks and separately enumerate
+the added HDR sources, local patches, offline compile commands, exports and
+consumer paths. The record contract compares this entire HDR stage block and
+its consumers against the Dockerfile.
+
+
+The Linux amd64 export also passed the same real proof on 2026-11-16, built
+with local Docker emulation after the remote host refused the ordinary user
+access to its Docker socket. The 3H identity mean was `109.588407`, the 1.5H
+identity mean `100`, and the primaries-mismatch mean `77.2928845`. PQ CAMBI
+and the HLG conversion anchors agreed with the arm64 proof. These small VMAF
+differences are recorded per architecture; no cross-platform bit identity is
+claimed.
+
+The amd64 HFR identity means for six frames at 60 fps were `107.8416335`
+for 3H and `100` for 1.5H. All four models passed the checked manifest at
+the same pinned upstream revision.
+
+| Linux amd64 program | SHA256 |
+|---|---|
+| ffmpeg-hdr | `d141bfd8f687b46e09e5fd89d2395f71b6a3db75045524bc070647c6998d2a23` |
+| ffprobe-hdr | `659b36d70bffe6caba3abb3bba82ebe7f2f68af1875b4d9877ad4f9e81e91cf6` |

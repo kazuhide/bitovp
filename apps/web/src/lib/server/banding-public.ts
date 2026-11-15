@@ -8,7 +8,10 @@ const executionSchema = z
 	.object({
 		version: z.literal(1),
 		metric: z.literal("CAMBI_NR"),
-		scoringVersion: z.literal(1).optional(),
+		scoringVersion: z.union([z.literal(1), z.literal(2)]).optional(),
+		eotf: z.literal("PQ").optional(),
+		inputTransfer: z.enum(["PQ", "HLG"]).optional(),
+		normalization: z.enum(["NONE", "HLG_TO_PQ_1000_NITS_444_16"]).optional(),
 		backend: z.enum(["cpu", "cuda", "vulkan"]),
 		decodeBackend: z.literal("cpu").optional(),
 		implementation: z.enum(["libvmaf", "bitovp-owned"]),
@@ -38,6 +41,19 @@ const executionSchema = z
 		execution.backend === "cpu"
 			? execution.implementation === "libvmaf"
 			: execution.implementation === "bitovp-owned",
+	)
+	.refine((execution) =>
+		execution.scoringVersion === 2
+			? execution.backend === "cpu" &&
+				execution.implementation === "libvmaf" &&
+				execution.eotf === "PQ" &&
+				(execution.inputTransfer === "PQ"
+					? execution.normalization === "NONE"
+					: execution.inputTransfer === "HLG" &&
+						execution.normalization === "HLG_TO_PQ_1000_NITS_444_16")
+			: execution.eotf === undefined &&
+				execution.inputTransfer === undefined &&
+				execution.normalization === undefined,
 	);
 export type PublicBandingExecution = z.infer<typeof executionSchema>;
 

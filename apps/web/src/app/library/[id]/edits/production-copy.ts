@@ -601,6 +601,7 @@ export function productionWarning(code: string, c: ProductionCopy): string {
 		ASR_MODEL_NOT_CONFIGURED: "noModel",
 		WORD_ALIGNMENT_UNAVAILABLE: "segmentOnly",
 		CAPTION_ALIGNMENT_UNAVAILABLE: "segmentOnly",
+		CAPTION_ALIGNMENT_PARTIAL: "segmentOnly",
 		SEGMENT_END_CLAMPED: "clamped",
 		TRACKING_FIT_FALLBACK: "fit",
 		TRACKING_NO_SHOT_EVIDENCE: "noShot",

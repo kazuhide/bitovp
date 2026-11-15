@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { captionOmissionsSchema } from "./caption-omissions";
 import { isLocalStoryPolicy } from "./local-semantic-protocol";
 import { localStoryEvidenceSchema } from "./local-story-contracts";
 import {
@@ -91,6 +92,7 @@ export const automaticGenerationSchema = z
 		semanticEvidence: semanticEvidenceSchema.optional(),
 		storyEvidence: storyEvidenceSchema.optional(),
 		localStoryEvidence: localStoryEvidenceSchema.optional(),
+		captionOmissions: captionOmissionsSchema.optional(),
 	})
 	.refine(
 		(value) => value.generatedDurationFrames <= value.requestedDurationFrames,

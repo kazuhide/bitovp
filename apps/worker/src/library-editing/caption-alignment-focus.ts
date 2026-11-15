@@ -147,6 +147,7 @@ export function planCaptionAlignmentFocus(input: PlanningInput) {
 		if (r.startUs < prior || !contains(source, r)) invalid();
 		prior = r.endUs;
 	}
+	for (const r of e.speechCoverage ?? []) if (!contains(source, r)) invalid();
 	const runs = merged(input.selectedRanges),
 		buckets = runs.map(() => [] as CaptionFocusCandidate[]);
 	const rawByKey = new Map<
@@ -397,6 +398,7 @@ export function planCaptionAlignmentFocus(input: PlanningInput) {
 			transcriptHash: e.transcriptHash,
 			rawSegmentsHash: hashEditingEvidence(e.rawSegments),
 			speechIntervalsHash: hashEditingEvidence(e.speechIntervals),
+			...(e.speechCoverage ? { speechCoverage: e.speechCoverage } : {}),
 		},
 	};
 }

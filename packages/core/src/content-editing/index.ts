@@ -1,6 +1,7 @@
 export * from "./auto-portrait";
 export * from "./automatic-binding";
 export * from "./caption-alignment";
+export * from "./caption-omissions";
 export type { RenderRecipe, RenderSegment } from "./compile";
 export { ContentEditingError, compileEditDocument } from "./compile";
 export * from "./composition-audio";

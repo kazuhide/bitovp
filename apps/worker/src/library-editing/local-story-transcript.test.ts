@@ -273,6 +273,12 @@ it("projects caption-only raw timing evidence from the loaded immutable transcri
 		startUs: 77_100_000,
 		endUs: 77_200_000,
 	});
+	expect(timing?.speechCoverage).toEqual(
+		projected.languageWindows?.map(({ startUs, endUs }) => ({
+			startUs,
+			endUs,
+		})),
+	);
 	const expected = structuredClone(timing);
 	const token = timing?.rawSegments[0]?.tokens?.[0];
 	if (!token) throw new Error("Missing authored raw timing token");

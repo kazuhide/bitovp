@@ -24,6 +24,7 @@ export const CAPTION_ALIGNMENT_POLICY = {
 	alignmentScope: "selected-zero-points-v1",
 	zeroDurationDecoding: "anchored-zero-logit-path-v1",
 	zeroDurationHandling: "same-paragraph-anchor-or-abstain-v2",
+	speechSupport: "complete-observation-overlap-v1",
 	confidence: "NOT_REPORTED",
 	contextUs: 3_000_000,
 	maxWindowUs: 60_000_000,
@@ -58,17 +59,32 @@ export const captionTimingEvidenceSchema = z.strictObject({
 	transcriptHash: digest,
 	rawSegments: z.array(transcriptionRawSegmentSchema).max(5000),
 	speechIntervals: z.array(transcriptionSpeechIntervalSchema).max(10000),
+	/** Actual inspected audio ranges, including ranges where VAD found no speech. */
+	speechCoverage: z
+		.array(transcriptionSpeechIntervalSchema)
+		.min(1)
+		.max(5000)
+		.refine((ranges) =>
+			ranges.every(
+				(range, index) =>
+					index === 0 ||
+					range.startUs >= (ranges[index - 1]?.endUs ?? Infinity),
+			),
+		)
+		.optional(),
 });
 export type CaptionTimingEvidence = Omit<
 	z.infer<typeof captionTimingEvidenceSchema>,
-	"rawSegments" | "speechIntervals"
+	"rawSegments" | "speechIntervals" | "speechCoverage"
 > & {
 	rawSegments: readonly z.infer<typeof transcriptionRawSegmentSchema>[];
 	speechIntervals: readonly z.infer<typeof transcriptionSpeechIntervalSchema>[];
+	speechCoverage?: readonly z.infer<typeof transcriptionSpeechIntervalSchema>[];
 };
 const provenanceSchema = captionTimingEvidenceSchema
 	.omit({ rawSegments: true, speechIntervals: true })
 	.extend({ rawSegmentsHash: digest, speechIntervalsHash: digest });
+const legacyProvenanceSchema = provenanceSchema.omit({ speechCoverage: true });
 const windowSchema = z.strictObject({
 	startUs: us,
 	endUs: us,
@@ -177,7 +193,7 @@ const legacyV6CaptionAlignmentReceiptSchema = z
 		version: z.literal("qwen3-caption-alignment-v6"),
 		baseOutputHash: digest,
 		modelManifestHash: z.literal(CAPTION_ALIGNMENT_POLICY.modelManifestHash),
-		evidence: provenanceSchema.optional(),
+		evidence: legacyProvenanceSchema.optional(),
 		focusWindows: z
 			.array(focusWindow)
 			.max(CAPTION_ALIGNMENT_POLICY.focus.maxCandidates),
@@ -282,6 +298,7 @@ const currentCaptionAlignmentReceiptObject = z.strictObject({
 		.array(currentFocusWindow)
 		.max(CAPTION_ALIGNMENT_POLICY.focus.maxCandidates),
 	omittedParagraphs: captionOmissionsSchema.optional(),
+	speechSupport: z.enum(["CHECKED", "PARTIAL", "UNKNOWN"]).optional(),
 	measurements: z.strictObject({
 		base: z.array(nativeMeasurement).max(30000),
 		focus: z.array(nativeMeasurement).max(30000),
@@ -366,17 +383,33 @@ function checkCurrentReceipt(
 		}
 	for (const omitted of r.omittedParagraphs ?? []) {
 		if (
-			!r.measurements.base.some(
-				(m) => m.segmentIndex === omitted.segmentIndex && m.startUs === m.endUs,
-			) ||
+			(omitted.reason === "ZERO_DURATION_NO_ANCHOR"
+				? !r.measurements.base.some(
+						(m) =>
+							m.segmentIndex === omitted.segmentIndex && m.startUs === m.endUs,
+					)
+				: !["CHECKED", "PARTIAL"].includes(r.speechSupport ?? "") ||
+					!r.evidence?.speechCoverage?.length ||
+					![...r.measurements.base, ...r.measurements.focus].some(
+						(m) =>
+							m.segmentIndex === omitted.segmentIndex && m.endUs > m.startUs,
+					)) ||
 			r.measurements.final.some((m) => m.segmentIndex === omitted.segmentIndex)
 		)
 			ctx.addIssue({
 				code: "custom",
 				message:
-					"Omitted paragraphs require zero-duration evidence and no adopted words",
+					"Omitted paragraphs require measured evidence and no adopted words",
 			});
 	}
+	if (
+		(r.speechSupport === "CHECKED" || r.speechSupport === "PARTIAL") &&
+		!r.evidence?.speechCoverage?.length
+	)
+		ctx.addIssue({
+			code: "custom",
+			message: "Measured speech support requires inspected coverage",
+		});
 }
 export const currentCaptionAlignmentReceiptSchema =
 	currentCaptionAlignmentReceiptObject.superRefine(checkCurrentReceipt);
@@ -384,7 +417,9 @@ const legacyV7CaptionAlignmentReceiptSchema = z
 	.strictObject({
 		...currentCaptionAlignmentReceiptObject.shape,
 		version: z.literal("qwen3-caption-alignment-v7"),
+		evidence: legacyProvenanceSchema.optional(),
 		omittedParagraphs: z.never().optional(),
+		speechSupport: z.never().optional(),
 	})
 	.superRefine(checkCurrentReceipt);
 export const captionAlignmentReceiptSchema = z.union([

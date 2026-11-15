@@ -9,6 +9,7 @@ import {
 	type CaptionOmission,
 	type CaptionTimingEvidence,
 	type CompositionSourceSegment,
+	captionTimingEvidenceSchema,
 	compositionSourceSegmentSchema,
 	currentCaptionAlignmentReceiptSchema,
 	hashEditingEvidence,
@@ -30,6 +31,30 @@ import { MediaOperationError, runMediaProcess } from "./process";
 
 type Range = { startUs: number; endUs: number };
 type Window = Range & { requiredEndUs: number; indices: number[] };
+function firstRangeAfter(ranges: readonly Range[], startUs: number) {
+	let low = 0,
+		high = ranges.length;
+	while (low < high) {
+		const middle = Math.floor((low + high) / 2);
+		if ((ranges[middle]?.endUs ?? 0) <= startUs) low = middle + 1;
+		else high = middle;
+	}
+	return low;
+}
+function fullyObserved(range: Range, coverage: readonly Range[]) {
+	let cursor = range.startUs;
+	for (
+		let index = firstRangeAfter(coverage, cursor);
+		index < coverage.length;
+		index++
+	) {
+		const observed = coverage[index];
+		if (!observed || observed.startUs > cursor) return false;
+		cursor = Math.max(cursor, observed.endUs);
+		if (cursor >= range.endUs) return true;
+	}
+	return false;
+}
 function fail(code: string): never {
 	throw new MediaOperationError(code);
 }
@@ -549,6 +574,12 @@ export async function alignSelectedCaptionSegments(
 		)
 			fail("CAPTION_ALIGNMENT_INPUT_INVALID");
 		const segments = parsed.data;
+		const timing =
+			input.captionTimingEvidence === undefined
+				? undefined
+				: captionTimingEvidenceSchema.safeParse(input.captionTimingEvidence);
+		if (timing && !timing.success) fail("CAPTION_ALIGNMENT_INPUT_INVALID");
+		const captionTimingEvidence = timing?.data;
 		let priorEnd = input.sourceOriginUs;
 		for (const segment of segments) {
 			if (segment.startUs < priorEnd || segment.endUs > sourceEndUs)
@@ -582,6 +613,7 @@ export async function alignSelectedCaptionSegments(
 			fail("CAPTION_ALIGNMENT_LIMIT");
 		const focusPlan = planCaptionAlignmentFocus({
 			...input,
+			captionTimingEvidence,
 			segments,
 			remainingTextChars: 200000 - primaryTextChars,
 			remainingAudioUs:
@@ -992,10 +1024,56 @@ export async function alignSelectedCaptionSegments(
 				candidates: focusPlan.candidates,
 				focused: focusWords,
 				selectedRanges: selected,
-				captionTimingEvidence: input.captionTimingEvidence,
+				captionTimingEvidence,
 				evidence: focusPlan.evidence,
 			});
 			aligned = focused.aligned;
+			let checkedSpeechParagraphs = 0,
+				unknownSpeechParagraphs = 0;
+			for (const [segmentIndex, segment] of aligned) {
+				const original = segments[segmentIndex];
+				if (!original) invalidOutput("NODE_OUTPUT_CONTRACT");
+				const words = segment.words ?? [];
+				const range = words.reduce(
+					(bound, word) => ({
+						startUs: Math.min(bound.startUs, word.startUs),
+						endUs: Math.max(bound.endUs, word.endUs),
+					}),
+					{ startUs: original.startUs, endUs: original.endUs },
+				);
+				if (
+					!captionTimingEvidence?.speechCoverage ||
+					!fullyObserved(range, captionTimingEvidence.speechCoverage)
+				) {
+					unknownSpeechParagraphs++;
+					continue;
+				}
+				checkedSpeechParagraphs++;
+				if (
+					words.some((word) => {
+						const interval =
+							captionTimingEvidence.speechIntervals[
+								firstRangeAfter(
+									captionTimingEvidence.speechIntervals,
+									word.startUs,
+								)
+							];
+						return !interval || interval.startUs >= word.endUs;
+					})
+				) {
+					// Absence is meaningful only inside explicitly inspected audio.
+					// Never move or stretch the model's word toward another speech island.
+					omittedParagraphs.push({
+						segmentIndex,
+						sourceStartUs: original.startUs,
+						sourceEndUs: original.endUs,
+						textPreview: original.text.slice(0, 160),
+						textHash: hashEditingEvidence(original.text),
+						reason: "NO_MEASURED_SPEECH_OVERLAP",
+					});
+					aligned.delete(segmentIndex);
+				}
+			}
 			const finalMeasurements: CaptionAlignmentFinalMeasurement[] = [];
 			for (const [segmentIndex, segment] of [...aligned.entries()].sort(
 				([a], [b]) => a - b,
@@ -1060,6 +1138,11 @@ export async function alignSelectedCaptionSegments(
 			);
 			const receipt = currentCaptionAlignmentReceiptSchema.parse({
 				version: CAPTION_ALIGNMENT_POLICY.version,
+				speechSupport: checkedSpeechParagraphs
+					? unknownSpeechParagraphs
+						? "PARTIAL"
+						: "CHECKED"
+					: "UNKNOWN",
 				...(omittedParagraphs.length ? { omittedParagraphs } : {}),
 				baseOutputHash,
 				focusWindows: focusPlan.candidates.map((c, i) => ({

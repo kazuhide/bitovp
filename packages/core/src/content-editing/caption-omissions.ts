@@ -8,7 +8,7 @@ export const captionOmissionSchema = z
 		sourceEndUs: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
 		textPreview: z.string().min(1).max(160),
 		textHash: z.string().regex(/^[a-f0-9]{64}$/),
-		reason: z.literal("ZERO_DURATION_NO_ANCHOR"),
+		reason: z.enum(["ZERO_DURATION_NO_ANCHOR", "NO_MEASURED_SPEECH_OVERLAP"]),
 	})
 	.refine((value) => value.sourceEndUs > value.sourceStartUs);
 export const captionOmissionsSchema = z

@@ -205,6 +205,24 @@ describe("v6 focus receipt compatibility", () => {
 		};
 		expect(captionTimingEvidenceSchema.parse(evidence)).toEqual(evidence);
 		expect(
+			captionTimingEvidenceSchema.parse({
+				...evidence,
+				speechCoverage: [{ startUs: 0, endUs: 10 }],
+			}).speechCoverage,
+		).toEqual([{ startUs: 0, endUs: 10 }]);
+		for (const speechCoverage of [
+			[],
+			[{ startUs: 10, endUs: 5 }],
+			[
+				{ startUs: 0, endUs: 10 },
+				{ startUs: 5, endUs: 15 },
+			],
+		])
+			expect(
+				captionTimingEvidenceSchema.safeParse({ ...evidence, speechCoverage })
+					.success,
+			).toBe(false);
+		expect(
 			captionTimingEvidenceSchema.safeParse({
 				...evidence,
 				sourceTimeDomain: "MEDIA_RELATIVE",

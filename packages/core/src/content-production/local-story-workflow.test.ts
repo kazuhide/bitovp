@@ -147,15 +147,15 @@ describe("local story workflow task pin", () => {
 			parsedEnvelopeHash: hashEditingEvidence(parsed),
 		}).toEqual({
 			generationPolicyFingerprint:
-				"a856aecac87c992c4419c937c0fa31dfd9bc92554b34d2250559f120ec11a428",
+				"b15111786180b5234bee72faeed89e28a30badd46e8ee01f6771228db8bf8473",
 			intentHash:
 				"6e27558d425d402e0872f5c9bcc5e02985df35c195fc1e142b4c06992fd066c6",
 			modelHash:
 				"dd2fd082d0cca8c4d8313ceb92163acdcdb077a8eb1dac283ced32d87c8bb3bf",
 			cacheKey:
-				"d096e0e046bda9fbee97c6141511e030c4760ce9799840d9cca4c87571e9e19f",
+				"6e7b5abd5c119c4613b76741a2d2fc948889c5b9c5155492e4cd5867525315ff",
 			parsedEnvelopeHash:
-				"d80c09a039fcde422a4f0efcb23a9d1181e923715f524f1c99501994ddcd3bde",
+				"9b7832fe50c3ea5623bbb0c1767a71f86602dc2f85e0aacd28d249ad24b10971",
 		});
 		expect(mediaTaskIntentHash(parsed.input)).toBe(
 			mediaTaskIntentHash(legacyInput),
@@ -272,7 +272,7 @@ describe("local story workflow task pin", () => {
 
 	it("keeps the FLOW v1 base immutable while ordinary generation adopts the current caption policy", () => {
 		expect(GENERATION_POLICY_FINGERPRINT).toBe(
-			"a856aecac87c992c4419c937c0fa31dfd9bc92554b34d2250559f120ec11a428",
+			"b15111786180b5234bee72faeed89e28a30badd46e8ee01f6771228db8bf8473",
 		);
 		expect(GENERATION_POLICY_FINGERPRINT).not.toBe(
 			capturedLegacyGenerationPolicyFingerprint,

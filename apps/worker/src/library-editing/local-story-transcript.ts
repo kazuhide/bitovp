@@ -385,6 +385,10 @@ export async function prepareLocalStoryTranscript(input: {
 				modelSha256: loaded.value.modelSha256,
 				qualityPolicyFingerprint: loaded.value.qualityPolicyFingerprint,
 				transcriptHash: loaded.hash,
+				speechCoverage: languageWindows.map(({ startUs, endUs }) => ({
+					startUs,
+					endUs,
+				})),
 				rawSegments: structuredClone(loaded.value.rawSegments),
 				speechIntervals: structuredClone(loaded.value.speechIntervals),
 			},

@@ -7,6 +7,7 @@ import { ClipInspector } from "./clip-inspector";
 import { EditorToolbar } from "./editor-toolbar";
 import { ImagePlacementDialog } from "./image-placement-dialog";
 import { taskErrorText } from "./labels";
+import { PrepareTimelineControl } from "./prepare-timeline-control";
 import {
 	buildPreparedImagePlacement,
 	preparedImageFile,
@@ -15,6 +16,7 @@ import { PreviewMonitor } from "./preview-monitor";
 import { availableSourceDuration } from "./source-availability";
 import { SourceBin } from "./source-bin";
 import { SourceInsertionControls } from "./source-insertion-controls";
+import { timelinePreparationKey } from "./timeline-preparation";
 import { TimelineTracks } from "./timeline-tracks";
 import type { VodInputTimelineEditorProps } from "./types";
 import { useInputTimelineWorkbench } from "./use-input-timeline-workbench";
@@ -43,6 +45,20 @@ export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
 			className="min-w-0 space-y-3 rounded-md border border-zinc-800 p-3"
 			onKeyDown={w.onKeyDown}
 		>
+			<PrepareTimelineControl
+				document={document}
+				probeId={w.state.probeId}
+				output={props.imageOutput}
+				preparationKey={timelinePreparationKey(
+					document,
+					sources,
+					props.imageOutput ?? { credentialId: "", bucket: "", prefix: "" },
+					w.state.probeId,
+				)}
+				ready={w.state.ready}
+				disabled={disabled || w.dragging}
+				onChange={props.onPreparationChange}
+			/>
 			<div className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(140px,0.8fr)_minmax(0,2fr)_minmax(110px,0.65fr)]">
 				<SourceBin
 					sources={sources}

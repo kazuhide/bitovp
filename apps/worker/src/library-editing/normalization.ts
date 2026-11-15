@@ -415,10 +415,11 @@ export async function normalizeEditingMedia(input: {
 						: []),
 					"-c:v",
 					"libx264",
+					// Bound CPU use while keeping long-source preparation within its deadline.
 					"-threads",
-					"2",
+					"4",
 					"-preset",
-					"fast",
+					"veryfast",
 					"-crf",
 					"18",
 					"-pix_fmt",

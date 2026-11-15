@@ -2210,6 +2210,70 @@ describe("live channel actions", () => {
 		bitmovinEncodingId: "bm-live-enc",
 	};
 
+	it("keeps a pending AISA STOP rejected and UNKNOWN while reset cleanup waits for the database", async () => {
+		const failure = new AisaLiveFinalizationPendingError();
+		const h = setup(runningRow, {
+			stopLiveEncoding: async () => {
+				throw failure;
+			},
+		});
+		let projectionComplete = false;
+		liveEffectMocks.markAmbiguous.mockImplementationOnce(async () => {
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			projectionComplete = true;
+			return true;
+		});
+		let cleanupEntered!: () => void;
+		const entered = new Promise<void>((resolve) => {
+			cleanupEntered = resolve;
+		});
+		let releaseCleanup!: () => void;
+		const cleanupWait = new Promise<void>((resolve) => {
+			releaseCleanup = resolve;
+		});
+		const ack = vi.fn(async () => {});
+		h.deps.acknowledgeResetEntity = ack;
+		Object.assign(h.deps.prisma, {
+			liveEffectClaim: {
+				findUnique: async () => {
+					cleanupEntered();
+					await cleanupWait;
+					return { id: "retained-ambiguous-claim" };
+				},
+			},
+		});
+		const outcome = h
+			.process({ liveChannelId: CHANNEL_ID, action: "stop" })
+			.then(
+				() => ({ rejected: false, error: undefined }),
+				(error: unknown) => ({ rejected: true, error }),
+			);
+		await entered;
+		try {
+			// The failure helper must already be owned and settled when finally
+			// starts; returning its Promise can leave it unhandled during this IO.
+			expect(projectionComplete).toBe(true);
+			expect(h.row.status).toBe("ERROR");
+			expect(h.row.error).toBe("AISA_LIVE_FINALIZATION_PENDING");
+		} finally {
+			releaseCleanup();
+			await outcome;
+		}
+		expect(await outcome).toEqual({ rejected: true, error: failure });
+		expect(ack).not.toHaveBeenCalled();
+		expect(liveEffectMocks.markAcked).not.toHaveBeenCalled();
+		expect(liveEffectMocks.resolveAfterStop).not.toHaveBeenCalled();
+		expect(h.liveSchedule.updateMany.mock.calls).toEqual(
+			expect.arrayContaining([
+				[
+					expect.objectContaining({
+						data: expect.objectContaining({ outcome: "UNKNOWN" }),
+					}),
+				],
+			]),
+		);
+	});
+
 	it("stops a RUNNING channel: STOPPING → stop API → STOPPED", async () => {
 		try {
 			const { process, row, updates, sdk } = setup(runningRow, {
@@ -2988,6 +3052,51 @@ describe("live channel actions", () => {
 				params: {},
 			}),
 		).rejects.toThrow(/RUNNING channel/);
+	});
+
+	it("projects a completion-write rejection as UNKNOWN before asynchronous reset cleanup", async () => {
+		const h = setup(runningRow);
+		liveEffectMocks.markAcked.mockRejectedValueOnce(
+			new Error("effect completion write unavailable"),
+		);
+		h.deps.acknowledgeResetEntity = vi.fn(async () => {});
+		Object.assign(h.deps.prisma, {
+			liveEffectClaim: {
+				findUnique: async () => {
+					await new Promise<void>((resolve) => setImmediate(resolve));
+					return { id: "retained-ambiguous-claim" };
+				},
+			},
+		});
+		await expect(
+			h.process({
+				liveChannelId: CHANNEL_ID,
+				action: "reset-timeshift",
+				params: {},
+				effect: {
+					idempotencyKey: "completion-write-rejection",
+					liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+					providerEncodingId: "bm-live-enc",
+					admissionFenceVersion: 0,
+					action: "TIMESHIFT_RESET",
+					scheduleId: "00000000-0000-4000-8000-0000000000dd",
+				},
+			}),
+		).resolves.toMatchObject({ status: "EFFECT_AMBIGUOUS" });
+		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.stringContaining("effect completion write unavailable"),
+		);
+		expect(h.deps.acknowledgeResetEntity).not.toHaveBeenCalled();
+		expect(h.sdk.resetLiveManifestTimeshift).toHaveBeenCalledOnce();
+		expect(h.liveSchedule.updateMany.mock.calls).toEqual([
+			[
+				expect.objectContaining({
+					data: expect.objectContaining({ outcome: "UNKNOWN" }),
+				}),
+			],
+		]);
 	});
 
 	it("inserts SCTE-35 cues and validates params at the worker boundary", async () => {

@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-15T08:50:18.795Z",
-		"sourceCommit": "cbcf5dd32f951f703bbcbe71315b9c3005f0e3a0",
-		"sourceFingerprint": "d67a13f84763c785a01a1be4891979330fc2711d0a90baeeeccb107b1c577c68",
+		"generatedAt": "2026-11-15T09:13:54.039Z",
+		"sourceCommit": "03973d2036bcb7a9be0e5ff47fcb73e845ee8bae",
+		"sourceFingerprint": "b46591ce019b02d2cc1b4996f89df2874f1dc53fc7ecc1ba91f845e2458436ea",
 		"sdkVersion": "1.287.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "4e616dafb9c392b4c287993ae433f23201282723cb9d847a7a88ceffdde525a9",

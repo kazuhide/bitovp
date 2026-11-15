@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
 import { PrepareTimelineControl } from "./prepare-timeline-control";
@@ -110,6 +116,57 @@ it("cancels the durable task when the user cancels preparation", async () => {
 			`/api/vod/input-previews/${prepared.id}`,
 			{ method: "DELETE" },
 		),
+	);
+});
+
+it.each([
+	"cancel",
+	"unmount",
+])("cancels a task whose create response arrives after %s", async (action) => {
+	let completeCreate: (() => void) | undefined;
+	let creationSignal: AbortSignal | undefined;
+	apiFetch.mockImplementation((_url, init) => {
+		if (init?.method !== "POST") return Promise.resolve(undefined);
+		creationSignal = init.signal;
+		return new Promise((resolve, reject) => {
+			completeCreate = () =>
+				resolve({
+					task: { ...prepared, status: "RUNNING", result: undefined },
+				});
+			init.signal?.addEventListener("abort", () =>
+				reject(new DOMException("Aborted", "AbortError")),
+			);
+		});
+	});
+	const onChange = vi.fn();
+	const { unmount } = renderLocalized(
+		<PrepareTimelineControl
+			document={document}
+			output={output}
+			probeId={taskId}
+			preparationKey="deferred-create"
+			ready
+			disabled={false}
+			onChange={onChange}
+		/>,
+	);
+	fireEvent.click(
+		screen.getByRole("button", { name: "Prepare encoding input" }),
+	);
+	await waitFor(() => expect(completeCreate).toBeDefined());
+	if (action === "cancel")
+		fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+	else unmount();
+	expect(creationSignal?.aborted ?? false).toBe(false);
+	await act(async () => completeCreate?.());
+	await waitFor(() =>
+		expect(apiFetch).toHaveBeenCalledWith(
+			`/api/vod/input-previews/${prepared.id}`,
+			{ method: "DELETE" },
+		),
+	);
+	expect(onChange).not.toHaveBeenCalledWith(
+		expect.objectContaining({ task: expect.anything() }),
 	);
 });
 

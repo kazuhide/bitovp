@@ -51,7 +51,12 @@ export async function prepareVodInputTimeline(
 			.filter(Boolean)
 			.join("/"),
 	};
-	const browser = await input.browserFor(source.credentialId);
+	input.signal.throwIfAborted();
+	const browser = await abortableVodOperation(
+		input.browserFor(source.credentialId),
+		input.signal,
+		(late) => late.dispose?.(),
+	);
 	try {
 		if (!browser.putObject || !browser.headObject || !browser.getObject)
 			return fail("PREPARATION_OUTPUT_UNSUPPORTED");
@@ -62,18 +67,26 @@ export async function prepareVodInputTimeline(
 		for (const key of getVodInputTimelineUsedSourceKeys(
 			input.request.document,
 		)) {
+			input.signal.throwIfAborted();
 			const ref = input.sources.find((source) => source.key === key),
 				fact = input.facts.find((fact) => fact.key === key);
 			if (!ref || !fact) return fail("SOURCE_NOT_READY");
-			const sourceBrowser = await input.browserFor(ref.credentialId);
+			const sourceBrowser = await abortableVodOperation(
+				input.browserFor(ref.credentialId),
+				input.signal,
+				(late) => late.dispose?.(),
+			);
 			try {
 				if (
 					!sourceBrowser.headObject ||
 					!sameTimelineObject(
-						await sourceBrowser.headObject({
-							bucket: ref.bucket,
-							key: ref.objectKey,
-						}),
+						await abortableVodOperation(
+							sourceBrowser.headObject({
+								bucket: ref.bucket,
+								key: ref.objectKey,
+							}),
+							input.signal,
+						),
 						fact.identity,
 					)
 				)
@@ -94,10 +107,13 @@ export async function prepareVodInputTimeline(
 			}),
 			input.signal,
 		);
-		const head = await browser.headObject({
-			bucket: source.bucket,
-			key: source.objectKey,
-		});
+		const head = await abortableVodOperation(
+			browser.headObject({
+				bucket: source.bucket,
+				key: source.objectKey,
+			}),
+			input.signal,
+		);
 		if (head.size !== rendered.size)
 			return fail("PREPARATION_OUTPUT_UNVERIFIED");
 		await verifyTimelineObjectDigest({
@@ -115,10 +131,13 @@ export async function prepareVodInputTimeline(
 			!facts.video ||
 			Math.abs(facts.durationMs - rendered.durationMs) > 100 ||
 			!sameTimelineObject(
-				await browser.headObject({
-					bucket: source.bucket,
-					key: source.objectKey,
-				}),
+				await abortableVodOperation(
+					browser.headObject({
+						bucket: source.bucket,
+						key: source.objectKey,
+					}),
+					input.signal,
+				),
 				head,
 			)
 		)

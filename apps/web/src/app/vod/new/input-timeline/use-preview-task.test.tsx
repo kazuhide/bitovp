@@ -167,6 +167,32 @@ it("does not delete a completed cached preview when the editor unmounts", async 
 	).toHaveLength(0);
 });
 
+it("aborts an in-flight poll and deletes the known durable task on unmount", async () => {
+	let pollingSignal: AbortSignal | undefined;
+	vi.mocked(apiFetch).mockImplementation((_url, init) => {
+		if (init?.method === "POST")
+			return Promise.resolve({
+				task: previewTask({ status: "RUNNING", result: undefined }),
+			});
+		if (init?.method === "DELETE") return Promise.resolve(undefined);
+		pollingSignal = init?.signal ?? undefined;
+		return new Promise((_resolve, reject) => {
+			pollingSignal?.addEventListener("abort", () =>
+				reject(new DOMException("Aborted", "AbortError")),
+			);
+		});
+	});
+	const { unmount } = renderHook(() =>
+		usePreviewTask(request(), { debounceMs: 0, pollMs: 1 }),
+	);
+	await waitFor(() => expect(pollingSignal).toBeDefined());
+	unmount();
+	expect(pollingSignal?.aborted).toBe(true);
+	expect(apiFetch).toHaveBeenCalledWith(`/api/vod/input-previews/${taskId}`, {
+		method: "DELETE",
+	});
+});
+
 it("rejects a successful task whose preview window differs from the request", async () => {
 	vi.mocked(apiFetch).mockResolvedValue({ task: previewTask() });
 	const { result } = renderHook(() =>

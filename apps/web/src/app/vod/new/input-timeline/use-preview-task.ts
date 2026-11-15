@@ -100,27 +100,28 @@ export function usePreviewTask(
 		if (!executionKey) return;
 		const [, body] = JSON.parse(executionKey) as [number, string];
 		const current = JSON.parse(body) as VodInputPreviewSubmission;
-		const controller = new AbortController();
+		const polling = new AbortController();
 		let active = true;
 		let task: VodInputPreviewTask | null = null;
 		setState({ key: executionKey, task: null, error: null });
 		async function run() {
 			try {
+				// Keep creation alive until its durable ID is known. An inactive
+				// editor must still receive that ID and cancel the late task below.
 				task = readTask(
 					await apiFetch(endpoint, {
 						method: "POST",
 						body,
-						signal: controller.signal,
 					}),
 					current,
 				);
 				if (!active) return cancel(task);
 				setState({ key: executionKey, task, error: null });
 				while (taskRunning(task)) {
-					await delay(pollMs, controller.signal);
+					await delay(pollMs, polling.signal);
 					const next = readTask(
 						await apiFetch(`${endpoint}/${task.id}`, {
-							signal: controller.signal,
+							signal: polling.signal,
 						}),
 						current,
 					);
@@ -154,7 +155,7 @@ export function usePreviewTask(
 		return () => {
 			active = false;
 			clearTimeout(timer);
-			controller.abort();
+			polling.abort();
 			cancel(task);
 		};
 	}, [executionKey, debounceMs, pollMs]);

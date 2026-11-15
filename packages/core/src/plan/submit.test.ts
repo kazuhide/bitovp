@@ -54,6 +54,25 @@ function makeDeps(over: Partial<SubmitEncodingJobDeps> = {}) {
 }
 
 describe("submitEncodingJob", () => {
+	it("refuses a prepared-input plan when this submitter has no server receipt validator", async () => {
+		const t = makeDeps();
+		const outcome = await submitEncodingJob(
+			{
+				...PLAN,
+				inputTimelinePreparation: {
+					taskId: "00000000-0000-4000-8000-000000000001",
+					requestHash: "a".repeat(64),
+				},
+			},
+			t.deps,
+		);
+		expect(outcome).toMatchObject({
+			ok: false,
+			code: "INPUT_PREPARATION_INVALID",
+		});
+		expect(t.created).toEqual([]);
+		expect(t.enqueued).toEqual([]);
+	});
 	it("pins native cloud generation6 in the persisted encoding plan", async () => {
 		const t = makeDeps({ cloudVmafProfileAvailable: async () => true });
 		const qc = {

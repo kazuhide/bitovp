@@ -1897,6 +1897,12 @@ export const encodingPlanSchema = z.strictObject({
 			.optional(),
 	}),
 	inputs: z.array(planInputSchema).min(1),
+	inputTimelinePreparation: z
+		.strictObject({
+			taskId: z.uuid(),
+			requestHash: z.string().regex(/^[a-f0-9]{64}$/),
+		})
+		.optional(),
 	outputs: z.array(planOutputSchema).min(1),
 	/**
 	 * Multi-output delivery : every muxing/DRM/thumbnail/sprite/

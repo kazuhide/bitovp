@@ -46,7 +46,9 @@ function readTask(value: unknown, request: VodInputPreviewSubmission) {
 			? task.data.result?.sources
 			: request.kind === "IMAGE_PREPARE"
 				? task.data.result?.prepared
-				: task.data.result?.preview)
+				: request.kind === "TIMELINE_PREPARE"
+					? task.data.result?.preparation
+					: task.data.result?.preview)
 	)
 		throw new Error("invalidResponse");
 	const preview = task.data.result?.preview;
@@ -62,6 +64,14 @@ function readTask(value: unknown, request: VodInputPreviewSubmission) {
 		if (
 			prepared?.requestedDurationMs !== request.durationMs ||
 			prepared.source.credentialId !== request.output.credentialId ||
+			prepared.source.bucket !== request.output.bucket
+		)
+			throw new Error("invalidResponse");
+	}
+	if (task.data.status === "SUCCEEDED" && request.kind === "TIMELINE_PREPARE") {
+		const prepared = task.data.result?.preparation;
+		if (
+			prepared?.source.credentialId !== request.output.credentialId ||
 			prepared.source.bucket !== request.output.bucket
 		)
 			throw new Error("invalidResponse");
@@ -90,27 +100,28 @@ export function usePreviewTask(
 		if (!executionKey) return;
 		const [, body] = JSON.parse(executionKey) as [number, string];
 		const current = JSON.parse(body) as VodInputPreviewSubmission;
-		const controller = new AbortController();
+		const polling = new AbortController();
 		let active = true;
 		let task: VodInputPreviewTask | null = null;
 		setState({ key: executionKey, task: null, error: null });
 		async function run() {
 			try {
+				// Keep creation alive until its durable ID is known. An inactive
+				// editor must still receive that ID and cancel the late task below.
 				task = readTask(
 					await apiFetch(endpoint, {
 						method: "POST",
 						body,
-						signal: controller.signal,
 					}),
 					current,
 				);
 				if (!active) return cancel(task);
 				setState({ key: executionKey, task, error: null });
 				while (taskRunning(task)) {
-					await delay(pollMs, controller.signal);
+					await delay(pollMs, polling.signal);
 					const next = readTask(
 						await apiFetch(`${endpoint}/${task.id}`, {
-							signal: controller.signal,
+							signal: polling.signal,
 						}),
 						current,
 					);
@@ -126,7 +137,9 @@ export function usePreviewTask(
 						key: executionKey,
 						task,
 						error:
-							task.error?.message ??
+							(current.kind === "TIMELINE_PREPARE"
+								? task.error?.code
+								: task.error?.message) ??
 							(task.status === "CANCELED" ? "canceled" : "failed"),
 					});
 			} catch (error) {
@@ -142,7 +155,7 @@ export function usePreviewTask(
 		return () => {
 			active = false;
 			clearTimeout(timer);
-			controller.abort();
+			polling.abort();
 			cancel(task);
 		};
 	}, [executionKey, debounceMs, pollMs]);

@@ -4,6 +4,7 @@ import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
 	cipherFromEnv,
+	DEFAULT_ASR_MODEL_SHA256,
 	enqueueFeederJob,
 	FEEDER_CONCURRENCY,
 	hashEditingEvidence,
@@ -43,7 +44,10 @@ import {
 	TENANT_ORGANIZATION,
 } from "@bitovp/db";
 import type { BrowserCredential } from "@bitovp/storage";
-import { createBrowserForCredential } from "@bitovp/storage";
+import {
+	createBrowserForCredential,
+	verifyInputTimelinePreparation,
+} from "@bitovp/storage";
 import { type Job, Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
 import { createAlertEngine, createOrphanResolver } from "./alerts/engine";
@@ -80,6 +84,12 @@ import { createConfiguredLocalCaptionTranslator } from "./library-editing/config
 import { createLibraryGenerationHandler } from "./library-editing/generation";
 import { createLocalStoryEngine } from "./library-editing/local-story-engine";
 import { createLibraryMediaTaskSweep } from "./library-editing/media-task-sweep";
+import {
+	assertNativeGenerationReady,
+	nativeGenerationComponents,
+	probeNativeEditingRuntime,
+} from "./library-editing/native-preflight";
+import { MediaOperationError } from "./library-editing/process";
 import {
 	startLocalSemanticDiagnostics,
 	startLocalStoryChoiceDiagnostics,
@@ -657,12 +667,10 @@ const editingBrowserFor = async (credentialId: string) => {
 	);
 };
 const editingAsrModel =
-	process.env.WHISPER_MODEL_PATH &&
-	process.env.WHISPER_MODEL_SHA256 &&
-	existsSync(process.env.WHISPER_MODEL_PATH)
+	process.env.WHISPER_MODEL_PATH && existsSync(process.env.WHISPER_MODEL_PATH)
 		? {
 				path: process.env.WHISPER_MODEL_PATH,
-				sha256: process.env.WHISPER_MODEL_SHA256,
+				sha256: process.env.WHISPER_MODEL_SHA256 ?? DEFAULT_ASR_MODEL_SHA256,
 			}
 		: undefined;
 let editingCaptionModelHash: string | undefined;
@@ -699,6 +707,15 @@ const editingSweepLoop = createConfiguredLibraryEditing(
 					ffmpegPath: env.FFMPEG_PATH,
 					localStoryEngine: editingLocalStoryEngine,
 					captionAligner: alignSelectedCaptionSegments,
+					preflight: async (parameters, signal, hasAudio) => {
+						const components = nativeGenerationComponents(parameters, hasAudio);
+						const result = await probeNativeEditingRuntime({
+							components,
+							signal,
+						});
+						if (signal.aborted) throw new MediaOperationError("CANCELED");
+						assertNativeGenerationReady(result, components);
+					},
 					captionTranslator: createConfiguredLocalCaptionTranslator({
 						prisma,
 						config: editingSemanticConfiguration,
@@ -784,6 +801,7 @@ const editingRuntimeHeartbeat = startLocalSemanticHeartbeat({
 }).catch(() => ({ stop: async () => {} }));
 const editingRuntimeDiagnostics = startLocalSemanticDiagnostics({
 	env: process.env,
+	nativeProbe: (signal) => probeNativeEditingRuntime({ signal }),
 	captionModelHash: editingCaptionModelHash,
 	captionSelection: editingCaptionSelection,
 	claim: (keys) => wakePublisher.rpop(keys.requests),
@@ -952,6 +970,19 @@ const processorDeps: LiveChannelDeps = {
 const orchestrate = tenantService(() =>
 	createOrchestratorProcessor({
 		...processorDeps,
+		validateInputPreparation: (plan) =>
+			verifyInputTimelinePreparation({
+				plan,
+				organizationId: requireOrganizationId(),
+				allowExpired: true,
+				findTask: (id) =>
+					prisma.vodInputPreviewTask.findUnique({ where: { id } }),
+				browserFor: editingBrowserFor,
+				signal: AbortSignal.any([
+					editingShutdownController.signal,
+					AbortSignal.timeout(120_000),
+				]),
+			}),
 		captureIngestInput: createEncodingInputCapture({
 			prisma,
 			browserFor: editingBrowserFor,

@@ -28,6 +28,17 @@ describe("editing error messages", () => {
 			ja.editing.failed,
 		);
 	});
+	it("identifies missing native prerequisites and points to the settings diagnosis", () => {
+		expect(editingErrorMessage("NATIVE_PREFLIGHT_ASR_MODEL", english)).toMatch(
+			/Speech model.*Clip editing/,
+		);
+		expect(
+			editingErrorMessage("NATIVE_PREFLIGHT_CAPTION_FONT", japanese),
+		).toMatch(/字幕フォント.*クリップ編集/);
+		expect(editingErrorMessage("NATIVE_PREFLIGHT_private/path", english)).toBe(
+			en.editing.failed,
+		);
+	});
 	it.each([
 		"CLIP_EDITING_UNAVAILABLE",
 		"LOCAL_STORY_ENGINE_UNAVAILABLE",

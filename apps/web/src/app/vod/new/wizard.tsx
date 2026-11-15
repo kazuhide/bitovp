@@ -11,6 +11,7 @@ import {
 	MAX_VOD_TIMELINE_SOURCES,
 	type VodInputTimelineSourceFacts,
 	validateVodInputTimeline,
+	vodInputTimelineNeedsPreparation,
 } from "@bitovp/core/vod-input-timeline";
 import { applyVodInputFavorite } from "@bitovp/core/wizard";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -42,6 +43,7 @@ import {
 } from "./automatic-audio-packaging";
 import {
 	applyMirrorCredentialSelection,
+	applyPreparedVodInputTimeline,
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
 	hasInvalidHevcV2Ladder,
@@ -64,6 +66,10 @@ import { FileOutputSection } from "./file-output-section";
 import { VodFlowSwitch } from "./flow-switch";
 import { VodInputTimelineEditor } from "./input-timeline/input-timeline-editor";
 import { importPreparedImageFile } from "./input-timeline/prepared-image-placement";
+import {
+	type TimelinePreparation,
+	timelinePreparationKey,
+} from "./input-timeline/timeline-preparation";
 import { MuxingsSection } from "./muxings-section";
 import { PlaceholderRefsList } from "./placeholder-refs-list";
 import {
@@ -216,20 +222,53 @@ export function VodWizard({
 	);
 	const [timelineReadiness, setTimelineReadiness] = useState<{
 		ready: boolean;
+		probeId?: string | null;
 		facts: VodInputTimelineSourceFacts[];
 		sourceSignature: string;
 	}>({ ready: false, facts: [], sourceSignature: "" });
 	const onTimelineReadiness = useCallback(
-		(status: { ready: boolean; facts: VodInputTimelineSourceFacts[] }) =>
+		(status: {
+			ready: boolean;
+			probeId?: string | null;
+			facts: VodInputTimelineSourceFacts[];
+		}) =>
 			setTimelineReadiness({
 				...status,
 				sourceSignature: timelineSourcesSignature,
 			}),
 		[timelineSourcesSignature],
 	);
+	const [timelinePreparation, setTimelinePreparation] =
+		useState<TimelinePreparation | null>(null);
+	const preparationKey = state.inputTimeline
+		? timelinePreparationKey(
+				state.inputTimeline,
+				state.inputFiles,
+				{
+					credentialId: state.output.credentialId,
+					bucket: state.output.bucket,
+					prefix: state.output.basePath,
+				},
+				timelineReadiness.probeId,
+			)
+		: null;
+	const preparationRequired =
+		!!state.inputTimeline &&
+		vodInputTimelineNeedsPreparation(state.inputTimeline);
+	const prepared =
+		timelinePreparation?.key === preparationKey &&
+		timelinePreparation.task.status === "SUCCEEDED" &&
+		Date.parse(timelinePreparation.task.expiresAt) > Date.now()
+			? timelinePreparation.task
+			: null;
+	const submissionState =
+		prepared && state.inputTimeline
+			? applyPreparedVodInputTimeline(state, prepared)
+			: state;
 	const timelineBlocked = Boolean(
 		state.inputTimeline &&
 			(!timelineReadiness.ready ||
+				(preparationRequired && !prepared) ||
 				timelineReadiness.sourceSignature !== timelineSourcesSignature ||
 				validateVodInputTimeline(state.inputTimeline, timelineReadiness.facts, {
 					requireVideo: true,
@@ -306,7 +345,7 @@ export function VodWizard({
 	};
 	const evaluation = imported
 		? evaluatePlanDocument(imported.raw, t, validationOptions)
-		: evaluateWizardState(state, t, validationOptions);
+		: evaluateWizardState(submissionState, t, validationOptions);
 	// Delivery-spec drift : the CURRENT plan — form-built or
 	// verbatim-imported — checked against the spec the operator loaded. The
 	// RAW plan object, deliberately not `evaluation.plan`: mapping a preset
@@ -324,11 +363,11 @@ export function VodWizard({
 				(!hasInvalidHevcV2Ladder(state) &&
 					(!state.inputTimeline || evaluation.ok)))
 				? checkDeliverySpec(
-						imported ? imported.raw : buildPlan(state),
+						imported ? imported.raw : buildPlan(submissionState),
 						driftSpec,
 					)
 				: [],
-		[driftSpec, imported, state, evaluation.ok],
+		[driftSpec, imported, submissionState, state, evaluation.ok],
 	);
 	// Preset map-and-gate: a preset's sample-path tokens (<INSERT…>/{YOUR…})
 	// prefill the form's path fields verbatim. They're valid strings, so they
@@ -625,7 +664,7 @@ export function VodWizard({
 			return creation.submit<{ id: string }>({
 				plan: imported
 					? buildSubmissionPlan(imported, state.accountId)
-					: buildPlan(state),
+					: buildPlan(submissionState),
 			});
 		},
 		onSuccess: (job) => {
@@ -645,7 +684,7 @@ export function VodWizard({
 				body: JSON.stringify({
 					plan: imported
 						? buildSubmissionPlan(imported, state.accountId)
-						: buildPlan(state),
+						: buildPlan(submissionState),
 					expectedUpdatedAt: appliedTemplateUpdatedAt,
 				}),
 			});
@@ -1522,6 +1561,7 @@ export function VodWizard({
 											})
 										}
 										onReadinessChange={onTimelineReadiness}
+										onPreparationChange={setTimelinePreparation}
 									/>
 									<details className="rounded-md border border-zinc-800 p-3">
 										<summary className="cursor-pointer text-sm text-zinc-400">

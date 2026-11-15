@@ -98,6 +98,39 @@ final clean candidate. The rehearsal creates no release or tag.
 Run migrations with the private administrative environment; web and worker use
 restricted runtime roles. Preserve [organization isolation](./OPERATIONS.md#upgrades).
 
+## Prepare independent VOD timelines (Unreleased)
+
+`20261115100000_vod_input_timeline_preparation` adds `TIMELINE_PREPARE` to
+`VodInputPreviewTask_kind_check`. The existing `PROBE`, `PREVIEW`, and
+`IMAGE_PREPARE` values, other constraints, tenant policies and immutable-intent
+trigger remain intact. It does not rewrite or delete existing rows. Apply it
+before starting the new Web and Worker; the Prisma `String` type alone does
+not show this PostgreSQL check constraint.
+
+The two ALTERs run in one transaction. PostgreSQL takes an exclusive table
+lock and validates the replacement check against existing rows. The migration
+waits at most five seconds for its lock and allows at most thirty seconds per
+statement; a failure rolls back both ALTERs. Pause writers as described above
+and investigate lock contention or an unexpectedly large task table instead
+of disabling the check. Actual lock duration depends on the existing table;
+the integration/rehearsal timing is not a production measurement.
+
+Old kinds remain readable and writable with the expanded constraint. Older
+application versions do not understand new preparation requests or the new
+plan provenance field. Stop/cancel outstanding preparations and preserve a
+database backup before rolling back code. Do not start an older Worker against
+new preparation history: its preview cleanup does not retain those receipts.
+Keep a compatible Worker, or restore the separately verified pre-upgrade
+database under the normal closed-admission rollback procedure. Do not shrink
+the constraint or delete new history merely to make an older reader start.
+
+New code keeps preparation receipts after editor expiry so retained job
+retries can recheck their source/output identities. Local scratch is removed;
+customer storage DELETE permission is not added. A canceled/failed upload may
+leave a uniquely owned object. Its task records `preparationCleanup` with the
+object prefix and attempt ID for later inspection. Remote orphan collection
+requires a separate ownership-aware cleanup feature.
+
 ## Enable Library editing and derived sources
 
 `20261101000000_library_editing` adds six tenant-scoped editing tables and the

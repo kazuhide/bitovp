@@ -185,6 +185,9 @@ export type PutObjectInput = {
 	/** Local file to upload; the driver streams it and sets Content-Length from its size. */
 	filePath: string;
 	contentType?: string;
+	/** Optional bounded upload deadline; readiness GET/HEAD timeouts are unaffected. */
+	timeoutMs?: number;
+	signal?: AbortSignal;
 };
 
 export type BucketCorsRule = {

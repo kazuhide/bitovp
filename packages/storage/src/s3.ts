@@ -9,6 +9,7 @@ import {
 	ListObjectsV2Command,
 	PutObjectCommand,
 	S3Client,
+	type S3ClientConfig,
 } from "@aws-sdk/client-s3";
 import {
 	type BucketCorsRule,
@@ -71,7 +72,7 @@ export type S3BrowserOptions = {
 export function createS3Browser(
 	options: S3BrowserOptions,
 ): ObjectStorageBrowser {
-	const client = new S3Client({
+	const configuration = {
 		region: options.region,
 		credentials: options.credentials,
 		...(options.readTimeoutMs === undefined
@@ -91,7 +92,19 @@ export function createS3Browser(
 					forcePathStyle: options.forcePathStyle ?? true,
 				}
 			: {}),
-	});
+	} satisfies S3ClientConfig;
+	const client = new S3Client(configuration);
+	const ownedUploads = new Set<S3Client>();
+	const stripEndpointMarker = (target: S3Client) =>
+		target.middlewareStack.add(
+			(next) => async (args) => {
+				const request = args.request as { query?: Record<string, unknown> };
+				if (request.query && "x-id" in request.query)
+					delete request.query["x-id"];
+				return next(args);
+			},
+			{ step: "build", name: "stripXIdForS3Compatible" },
+		);
 
 	if (options.endpoint) {
 		/**
@@ -132,18 +145,7 @@ export function createS3Browser(
 		 * AWS itself is left alone (no `endpoint` ⇒ no middleware): `x-id` is
 		 * AWS's own marker and S3 handles it correctly.
 		 */
-		client.middlewareStack.add(
-			(next) => async (args) => {
-				const request = args.request as {
-					query?: Record<string, unknown>;
-				};
-				if (request.query && "x-id" in request.query) {
-					delete request.query["x-id"];
-				}
-				return next(args);
-			},
-			{ step: "build", name: "stripXIdForS3Compatible" },
-		);
+		stripEndpointMarker(client);
 	}
 
 	return {
@@ -291,14 +293,46 @@ export function createS3Browser(
 		},
 
 		async putObject(input: PutObjectInput): Promise<void> {
+			input.signal?.throwIfAborted();
+			const { size } = await stat(input.filePath);
+			input.signal?.throwIfAborted();
+			if (
+				input.timeoutMs !== undefined &&
+				(!Number.isSafeInteger(input.timeoutMs) ||
+					input.timeoutMs < 1 ||
+					input.timeoutMs > 4 * 3600_000)
+			)
+				throw new RangeError("Invalid upload timeout");
+			const uploadClient =
+				input.timeoutMs === undefined
+					? client
+					: new S3Client({
+							...configuration,
+							maxAttempts: 1,
+							requestHandler: {
+								requestTimeout: input.timeoutMs,
+								connectionTimeout: Math.min(
+									options.readTimeoutMs ?? 15_000,
+									input.timeoutMs,
+								),
+								socketTimeout: Math.min(60_000, input.timeoutMs),
+								throwOnRequestTimeout: true,
+							},
+						});
+			if (uploadClient !== client) {
+				ownedUploads.add(uploadClient);
+				if (options.endpoint) stripEndpointMarker(uploadClient);
+			}
 			// Content-Length from the file, so the SDK sends a single signed PUT
 			// (a bodyless-length stream would make it buffer or refuse); the
 			// object lands next to its source with the same credential that read
 			// the source, which is exactly the permission the operator vaulted.
-			const { size } = await stat(input.filePath);
 			const body = createReadStream(input.filePath);
+			const canceled = () => body.destroy();
+			input.signal?.addEventListener("abort", canceled, { once: true });
 			try {
-				await client.send(
+				input.signal?.throwIfAborted();
+				await uploadClient.send(
 					new PutObjectCommand({
 						Bucket: input.bucket,
 						Key: input.key,
@@ -306,12 +340,16 @@ export function createS3Browser(
 						ContentLength: size,
 						...(input.contentType ? { ContentType: input.contentType } : {}),
 					}),
+					{ abortSignal: input.signal },
 				);
-			} catch (err) {
-				// A rejection before the body was consumed (signing, credentials)
-				// would otherwise hold the descriptor until GC.
+			} finally {
+				input.signal?.removeEventListener("abort", canceled);
+				// Includes rejection before the body was consumed (signing, credentials).
 				body.destroy();
-				throw err;
+				if (uploadClient !== client) {
+					ownedUploads.delete(uploadClient);
+					uploadClient.destroy();
+				}
 			}
 		},
 		async getBucketCors(bucket: string): Promise<BucketCorsRule[] | null> {
@@ -341,6 +379,8 @@ export function createS3Browser(
 		},
 
 		dispose(): void {
+			for (const upload of ownedUploads) upload.destroy();
+			ownedUploads.clear();
 			client.destroy();
 		},
 	};

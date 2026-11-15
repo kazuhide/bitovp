@@ -4,16 +4,19 @@ import { masterKeyFromEnv } from "@bitovp/core";
 import {
 	getVodInputTimelineDurationMs,
 	MAX_VOD_INPUT_IMAGE_BYTES,
+	resolveVodInputTimeline,
 	VOD_INPUT_IMAGE_OUTPUT_PROVIDERS,
 	type VodInputImagePrepareInput,
 	type VodInputPreviewRequest,
 	type VodInputPreviewTask,
 	validateVodInputPreview,
+	validateVodInputTimeline,
 	vodInputImagePrepareRequestSchema,
 	vodInputPreviewRequestSchema,
 	vodInputPreviewResultSchema,
 	vodInputPreviewSubmissionSchema,
 	vodInputPreviewTaskSchema,
+	vodInputTimelineHasSubframeVideo,
 } from "@bitovp/core/vod-input-timeline";
 import type { VodInputPreviewTask as TaskRow } from "@bitovp/db";
 import {
@@ -99,7 +102,9 @@ async function sourcesForRow(ctx: ServerContext, row: TaskRow) {
 	const sourceRequest = vodInputPreviewRequestSchema.parse(probe.request);
 	if (sourceRequest.kind !== "PROBE")
 		throw new VodInputPreviewError(409, "SOURCE_PROBE_NOT_READY");
-	return sourceRequest.sources;
+	return request.kind === "TIMELINE_PREPARE"
+		? [...sourceRequest.sources, request.output]
+		: sourceRequest.sources;
 }
 
 function requireCurrentProbeGeometry(probe: TaskRow) {
@@ -238,7 +243,7 @@ export async function getVodInputPreviewTaskRow(id: string) {
 	const request = vodInputPreviewRequestSchema.parse(row.request);
 	if (request.kind === "IMAGE_PREPARE")
 		requireImageOutputProvider(credentials, request.output.credentialId);
-	if (request.kind === "PREVIEW")
+	if (request.kind === "PREVIEW" || request.kind === "TIMELINE_PREPARE")
 		requireCurrentProbeGeometry(await ownedRow(ctx, request.probeId));
 	return row;
 }
@@ -258,20 +263,47 @@ export async function createVodInputPreviewTask(
 			: submission;
 	let sourceExpiresAt: Date | undefined;
 	if (input.kind === "PROBE") await requireCredentials(ctx, input.sources);
-	else if (input.kind === "PREVIEW") {
+	else if (input.kind === "PREVIEW" || input.kind === "TIMELINE_PREPARE") {
 		const probe = await ownedRow(ctx, input.probeId);
 		sourceExpiresAt = probe.expiresAt;
 		if (probe.kind !== "PROBE" || probe.status !== "SUCCEEDED")
 			throw new VodInputPreviewError(409, "SOURCE_PROBE_NOT_READY");
 		const result = vodInputPreviewResultSchema.parse(probe.result);
-		const issues = validateVodInputPreview(input, result.sources ?? []);
+		const issues =
+			input.kind === "PREVIEW"
+				? validateVodInputPreview(input, result.sources ?? [])
+				: validateVodInputTimeline(input.document, result.sources ?? [], {
+						requireVideo: true,
+					});
 		if (issues[0]) throw new VodInputPreviewError(422, issues[0].code);
+		const mainKey = resolveVodInputTimeline(input.document).mainVideoSourceKey;
+		const frameRate =
+			input.kind === "PREVIEW"
+				? { num: 30, den: 1 }
+				: result.sources?.find((source) => source.key === mainKey)?.video
+						?.frameRate;
+		if (
+			frameRate &&
+			vodInputTimelineHasSubframeVideo(
+				input.document,
+				frameRate,
+				input.kind === "PREVIEW" ? input.range : undefined,
+			)
+		)
+			throw new VodInputPreviewError(422, "TIMELINE_INTERVAL_TOO_SHORT");
 		// Old cached previews may have lost anamorphic/rotation geometry.
 		// Re-probe before cache lookup as well as before serving their content.
 		requireCurrentProbeGeometry(probe);
-		if (input.range.startMs >= getVodInputTimelineDurationMs(input.document))
+		if (
+			input.kind === "PREVIEW" &&
+			input.range.startMs >= getVodInputTimelineDurationMs(input.document)
+		)
 			throw new VodInputPreviewError(422, "PREVIEW_RANGE_INVALID");
 		await requireCredentials(ctx, await sourcesForRow(ctx, probe));
+		if (input.kind === "TIMELINE_PREPARE") {
+			const credentials = await requireCredentials(ctx, [input.output]);
+			requireImageOutputProvider(credentials, input.output.credentialId);
+		}
 	}
 	const now = new Date();
 	const requestHash = createHash("sha256")
@@ -304,7 +336,9 @@ export async function createVodInputPreviewTask(
 				stage: "QUEUED",
 				requestHash,
 				request: input,
-				...(input.kind === "PREVIEW" ? { probeId: input.probeId } : {}),
+				...(input.kind === "PREVIEW" || input.kind === "TIMELINE_PREPARE"
+					? { probeId: input.probeId }
+					: {}),
 				createdBy: ctx.tenant?.actorUserId,
 				expiresAt: new Date(
 					Math.min(

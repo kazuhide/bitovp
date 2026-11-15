@@ -120,6 +120,35 @@ it("does not probe the gateway on startup or while idle", async () => {
 	expect(publish).not.toHaveBeenCalled();
 	await runtime.stop();
 });
+it("reports native component failures separately from a healthy metadata gateway", async () => {
+	vi.useFakeTimers();
+	const value = request();
+	const publish = vi.fn();
+	const native = {
+		version: "bitovp-native-editing-preflight-v1" as const,
+		checkedAt: Date.now(),
+		code: "UNAVAILABLE" as const,
+		checks: [{ component: "ASR_MODEL" as const, code: "MISSING" as const }],
+	};
+	const nativeProbe = vi.fn().mockResolvedValue(native);
+	const runtime = await startLocalSemanticDiagnostics({
+		env,
+		claim: vi
+			.fn()
+			.mockResolvedValueOnce(JSON.stringify(value))
+			.mockResolvedValue(null),
+		publish,
+		probe: vi.fn().mockResolvedValue({ code: "READY", scope: "METADATA_ONLY" }),
+		nativeProbe,
+	});
+	await vi.advanceTimersByTimeAsync(1_000);
+	expect(nativeProbe).toHaveBeenCalledTimes(1);
+	expect(publish.mock.calls[0]?.[1].diagnostic).toMatchObject({
+		code: "READY",
+		native,
+	});
+	await runtime.stop();
+});
 it.each([
 	null,
 	"bad json",

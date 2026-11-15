@@ -67,6 +67,44 @@ it("automatically diagnoses configured services when the settings page opens", a
 	expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 	expect(document.querySelector("details")?.open).toBe(false);
 });
+it("shows unavailable native dependencies even when the local model is ready", async () => {
+	apiFetch.mockResolvedValueOnce(initial).mockResolvedValueOnce({
+		...diagnosed(),
+		gateway: {
+			code: "READY",
+			scope: "METADATA_ONLY",
+			native: {
+				version: "bitovp-native-editing-preflight-v1",
+				checkedAt: Date.now(),
+				code: "UNAVAILABLE",
+				checks: [{ component: "ASR_MODEL", code: "MISSING" }],
+			},
+		},
+	});
+	renderWithQuery(<ClipEditingClient />);
+	await screen.findByText("Native editing dependencies");
+	await screen.findByText("Some dependencies are unavailable");
+	expect(screen.getByText("Speech model")).toBeInTheDocument();
+	expect(screen.getByText("Not installed")).toBeInTheDocument();
+});
+it("does not call a partial native report complete readiness", async () => {
+	apiFetch.mockResolvedValueOnce(initial).mockResolvedValueOnce({
+		...diagnosed(),
+		gateway: {
+			code: "READY",
+			scope: "METADATA_ONLY",
+			native: {
+				version: "bitovp-native-editing-preflight-v1",
+				checkedAt: Date.now(),
+				code: "READY",
+				checks: [{ component: "ASR_MODEL", code: "READY" }],
+			},
+		},
+	});
+	renderWithQuery(<ClipEditingClient />);
+	const label = await screen.findByText("Native editing dependencies");
+	expect(label.parentElement).toHaveTextContent("Not checked");
+});
 
 it("deduplicates the initial diagnostic and retains a manual recheck", async () => {
 	apiFetch

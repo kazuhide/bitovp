@@ -6,6 +6,7 @@ import type {
 } from "@bitovp/core/vod-input-timeline";
 import type { WizardInputFile } from "../build-plan";
 import type { ImageOutputLocation } from "./image-placement-dialog";
+import type { TimelinePreparation } from "./timeline-preparation";
 
 export type InputTimelineReadiness = {
 	ready: boolean;
@@ -26,4 +27,5 @@ export type VodInputTimelineEditorProps = {
 	onImportPreparedSource?: (source: WizardInputFile) => void;
 	disabled?: boolean;
 	onReadinessChange?: (state: InputTimelineReadiness) => void;
+	onPreparationChange?: (value: TimelinePreparation | null) => void;
 };

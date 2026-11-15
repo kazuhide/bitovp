@@ -33,6 +33,10 @@ import {
 	type LocalStoryGeneration,
 	localStoryArtifactHash,
 } from "./local-story-engine";
+import {
+	assertNativeGenerationReady,
+	nativeGenerationComponents,
+} from "./native-preflight";
 import { MediaOperationError } from "./process";
 import * as tracking from "./tracking";
 
@@ -56,6 +60,9 @@ function fixture(
 		prepared?: boolean;
 		captionTranslator?: LocalCaptionTranslator;
 		captionAligner?: typeof alignSelectedCaptionSegments;
+		preflight?: Parameters<
+			typeof createLibraryGenerationHandler
+		>[0]["preflight"];
 	} = {},
 ) {
 	const f = generationDependencyFixture("TRACK");
@@ -243,6 +250,7 @@ function fixture(
 				localStoryEngine: engine,
 				captionTranslator: options.captionTranslator,
 				captionAligner: options.captionAligner,
+				preflight: options.preflight,
 			})(f.context),
 		render: vi.spyOn(f.prisma.renderRun, "create"),
 		derive: vi.spyOn(f.prisma.contentDerivation, "create"),
@@ -260,6 +268,50 @@ function expectNoPublication(f: ReturnType<typeof fixture>) {
 }
 
 describe("local story project generation", () => {
+	it.each([
+		"OFF",
+		"AUTO",
+	] as const)("keeps a video-only editable project with captions=%s when speech dependencies are missing", async (captions) => {
+		const preflight = vi.fn<
+			NonNullable<
+				Parameters<typeof createLibraryGenerationHandler>[0]["preflight"]
+			>
+		>(async (parameters, _signal, hasAudio) => {
+			assertNativeGenerationReady(
+				{
+					version: "bitovp-native-editing-preflight-v1",
+					checkedAt: Date.now(),
+					code: "UNAVAILABLE",
+					checks: [
+						{ component: "MEDIA_TOOLS", code: "READY" },
+						{ component: "SCRATCH", code: "READY" },
+						{ component: "ASR_RUNTIME", code: "MISSING" },
+						{ component: "ASR_MODEL", code: "MISSING" },
+						{ component: "VAD_MODEL", code: "MISSING" },
+						{ component: "CAPTION_ALIGNMENT", code: "MISSING" },
+						{ component: "CAPTION_FONT", code: "MISSING" },
+					],
+				},
+				nativeGenerationComponents(parameters, hasAudio),
+			);
+		});
+		const f = fixture({ captions, preflight });
+		f.media.probe.streams = [];
+		f.authored.segments = [];
+		f.authored.warnings.push("SOURCE_HAS_NO_AUDIO");
+		const result = await f.run();
+		expect(preflight).toHaveBeenCalledExactlyOnceWith(
+			f.context.parameters,
+			f.context.signal,
+			false,
+		);
+		expect(f.plan).toHaveBeenCalledWith(
+			expect.objectContaining({ hasAudio: false }),
+		);
+		expect(f.projects).toHaveLength(1);
+		expect(document(f).captions ?? []).toEqual([]);
+		expect(result.warnings).toContain("SOURCE_HAS_NO_AUDIO");
+	});
 	it.each([
 		undefined,
 		"f".repeat(64),

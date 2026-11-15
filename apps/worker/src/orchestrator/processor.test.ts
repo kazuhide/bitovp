@@ -204,6 +204,26 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("orchestrator processor", () => {
+	it.each([
+		false,
+		true,
+	])("refuses a prepared input before provider calls when receipt validation is unavailable or rejects (validator=%s)", async (supplied) => {
+		const f = setup();
+		(f.row.plan as Record<string, unknown>).inputTimelinePreparation = {
+			taskId: "00000000-0000-4000-8000-000000000001",
+			requestHash: "a".repeat(64),
+		};
+		if (supplied)
+			f.deps.validateInputPreparation = vi.fn(async () => {
+				throw new Error("INPUT_PREPARATION_INVALID");
+			});
+		await expect(f.processor({ encodingJobId: JOB_ID })).rejects.toThrow(
+			/PREPARATION/,
+		);
+		expect(f.row.status).toBe("ERROR");
+		expect(f.sdk.createEncoding).not.toHaveBeenCalled();
+		expect(f.sdk.startEncoding).not.toHaveBeenCalled();
+	});
 	it("acknowledges an ERROR row without reporting a held lease", async () => {
 		const { processor, updateMany, updates, sdk } = setup({ status: "ERROR" });
 		await expect(processor({ encodingJobId: JOB_ID })).resolves.toMatchObject({

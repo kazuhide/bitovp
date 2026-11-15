@@ -10,7 +10,8 @@
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit",
 		"smoke": "tsx scripts/sdk-interop-smoke.ts",
-		"verify": "tsx scripts/verify.ts"
+		"verify": "tsx scripts/verify.ts",
+		"native:preflight": "tsx scripts/native-editing-preflight.ts"
 	},
 	"dependencies": {
 		"@aws-sdk/client-batch": "^3.1161.0",

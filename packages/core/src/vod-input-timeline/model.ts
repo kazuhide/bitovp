@@ -39,6 +39,25 @@ export function getVodInputTimelineDurationMs(
 		: document.clips.reduce((sum, clip) => sum + clip.outMs - clip.inMs, 0);
 }
 
+/** Separate editorial programs need a baked shared AV input for cloud execution. */
+export function vodInputTimelineNeedsPreparation(
+	document: VodInputTimelineDocument,
+): boolean {
+	const normalized = normalizeVodInputTimelineDocument(document);
+	if (!normalized.audioEnabled || !normalized.audioClips.length) return false;
+	const signature = (clips: VodInputTimelinePlacedClip[]) =>
+		clips.map(({ sourceKey, startMs, inMs, outMs }) => ({
+			sourceKey,
+			startMs,
+			inMs,
+			outMs,
+		}));
+	return (
+		JSON.stringify(signature(normalized.videoClips)) !==
+		JSON.stringify(signature(normalized.audioClips))
+	);
+}
+
 export function getVodInputTimelineTrack(
 	document: VodInputTimelineDocument,
 	track: VodInputTimelineTrack,
@@ -206,6 +225,32 @@ export function resolveVodInputTimeline(
 			? segments(document.audioClips, startMs, endMs)
 			: [],
 	};
+}
+
+/** Round absolute boundaries once; rounding each duration independently drifts at every cut. */
+export function vodInputTimelineFrameCount(
+	startMs: number,
+	durationMs: number,
+	frameRate: { num: number; den: number },
+): number {
+	const frameAt = (milliseconds: number) =>
+		Math.round((milliseconds * frameRate.num) / (1000 * frameRate.den));
+	return frameAt(startMs + durationMs) - frameAt(startMs);
+}
+
+export function vodInputTimelineHasSubframeVideo(
+	document: VodInputTimelineDocument,
+	frameRate: { num: number; den: number },
+	range?: { startMs: number; durationMs: number },
+) {
+	return resolveVodInputTimeline(document, range).videoSegments.some(
+		(segment) =>
+			vodInputTimelineFrameCount(
+				segment.startMs,
+				segment.durationMs,
+				frameRate,
+			) < 1,
+	);
 }
 
 export function sliceVodInputTimeline(

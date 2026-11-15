@@ -52,9 +52,29 @@ export const en = {
 		configuration: "Configuration",
 		worker: "Editing service",
 		gateway: "Local model",
+		native: "Native editing dependencies",
+		nativeRecovery:
+			"Check the missing executables, models, fonts and writable paths as the editing service user. Existing projects can still be edited.",
+		nativeComponents: {
+			MEDIA_TOOLS: "Media processing tools",
+			ASR_RUNTIME: "Speech recognition runtime",
+			ASR_MODEL: "Speech model",
+			VAD_MODEL: "Speech detection model",
+			CAPTION_ALIGNMENT: "Caption timing runtime",
+			CAPTION_FONT: "Caption font",
+			SCRATCH: "Temporary storage",
+			VOD_PREVIEW_STORAGE: "Input preview storage",
+		},
+		nativeStates: {
+			READY: "Available",
+			MISSING: "Not installed",
+			ACCESS_DENIED: "Access denied",
+			MISMATCH: "File or version mismatch",
+			FAILED: "Could not verify",
+		},
 		details: "Diagnosis details and recovery",
 		scope:
-			"Checks configuration, service initialization, model identity and GPU capability. It does not load a model or run inference.",
+			"Checks configuration, service initialization, model identity, GPU capability, native dependencies and writable paths. It does not load a model or run inference.",
 		counts: "Ready: {ready}; initialization failed: {failed}",
 		checkedAt: "Checked: {time}",
 		stale: "Diagnosis expired",
@@ -74,6 +94,7 @@ export const en = {
 			NOT_CHECKED: "Not checked",
 			MISSING: "No recent service status",
 			READY: "Ready",
+			NATIVE_UNAVAILABLE: "Some dependencies are unavailable",
 			MIXED: "Some services are unavailable",
 			INITIALIZATION_FAILED: "Initialization failed",
 			REGISTRY_UNAVAILABLE: "Service status unavailable",
@@ -179,6 +200,8 @@ export const en = {
 		generatedPreviewStale:
 			"This generated preview belongs to an earlier edit. Save a confirmed revision and generate again to update it.",
 		errors: {
+			nativePrerequisites:
+				"{component} is unavailable. Check the diagnosis under Settings → Clip editing.",
 			hlsUnsupported:
 				"This HLS format cannot be prepared for editing. Choose an MP4 output or another content item.",
 			hlsLimit:

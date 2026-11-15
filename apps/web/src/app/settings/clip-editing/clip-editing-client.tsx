@@ -3,6 +3,7 @@
 import {
 	LOCAL_SEMANTIC_HEARTBEAT_TTL_MS,
 	type LocalSemanticReadinessReport,
+	NATIVE_EDITING_COMPONENTS,
 } from "@bitovp/core";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -68,6 +69,14 @@ export function ClipEditingClient() {
 		(expiredAt === checkedAt ||
 			!Number.isFinite(Date.parse(checkedAt)) ||
 			Date.now() - Date.parse(checkedAt) >= LOCAL_SEMANTIC_HEARTBEAT_TTL_MS);
+	const native = data?.gateway.native;
+	const nativeComplete = NATIVE_EDITING_COMPONENTS.every((component) =>
+		native?.checks.some((check) => check.component === component),
+	);
+	const nativeExpired =
+		!!native &&
+		(native.checkedAt < Date.now() - LOCAL_SEMANTIC_HEARTBEAT_TTL_MS ||
+			native.checkedAt > Date.now() + 5_000);
 	const rows = data
 		? [
 				{
@@ -76,6 +85,15 @@ export function ClipEditingClient() {
 				},
 				{ label: "clipDiagnostics.worker" as const, code: data.worker.code },
 				{ label: "clipDiagnostics.gateway" as const, code: data.gateway.code },
+				{
+					label: "clipDiagnostics.native" as const,
+					code:
+						nativeExpired || (native?.code === "READY" && !nativeComplete)
+							? ("NOT_CHECKED" as const)
+							: native?.code === "UNAVAILABLE"
+								? ("NATIVE_UNAVAILABLE" as const)
+								: (native?.code ?? ("NOT_CHECKED" as const)),
+				},
 			]
 		: [];
 	return (
@@ -163,6 +181,26 @@ export function ClipEditingClient() {
 						</summary>
 						<div className="mt-3 space-y-3 leading-relaxed">
 							<p>{t("clipDiagnostics.scope")}</p>
+							{native && !expired && !nativeExpired ? (
+								<dl className="space-y-2">
+									{native.checks.map((check) => (
+										<div
+											key={check.component}
+											className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4"
+										>
+											<dt>
+												{t(
+													`clipDiagnostics.nativeComponents.${check.component}`,
+												)}
+											</dt>
+											<dd>{t(`clipDiagnostics.nativeStates.${check.code}`)}</dd>
+										</div>
+									))}
+								</dl>
+							) : null}
+							{native?.code === "UNAVAILABLE" && !expired && !nativeExpired ? (
+								<p>{t("clipDiagnostics.nativeRecovery")}</p>
+							) : null}
 							{data.configuration !== "CONFIGURED" ? (
 								<p>{t("clipDiagnostics.configurationRecovery")}</p>
 							) : null}

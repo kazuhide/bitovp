@@ -9,6 +9,9 @@ export const MAX_VOD_TIMELINE_INTERIOR_GAP_MS = MAX_VOD_TIMELINE_GAP_MS * 2;
 export const MAX_VOD_TIMELINE_DURATION_MS = 24 * 60 * 60 * 1000;
 export const MAX_VOD_INPUT_PREVIEW_DURATION_MS = 180_000;
 export const DEFAULT_VOD_INPUT_PREVIEW_DURATION_MS = 30_000;
+export const MAX_VOD_INPUT_PREPARATION_DURATION_MS = 3_600_000;
+/** Keep the current single-PUT storage implementation below S3's 5 GB ceiling. */
+export const MAX_VOD_INPUT_PREPARATION_BYTES = 4 * 1024 ** 3;
 const timeMs = z.number().int().min(0).max(MAX_VOD_TIMELINE_DURATION_MS);
 const key = z
 	.string()
@@ -164,6 +167,10 @@ export const vodInputTimelineSourceFactsSchema = z
 				streamIndex: z.number().int().min(0).max(1024),
 				width: z.number().int().positive().max(32768),
 				height: z.number().int().positive().max(32768),
+				pixelFormat: z.string().min(1).max(64).optional(),
+				colorTransfer: z.string().min(1).max(64).optional(),
+				colorSpace: z.string().min(1).max(64).optional(),
+				colorPrimaries: z.string().min(1).max(64).optional(),
 				displayAspectRatio: z
 					.strictObject({
 						num: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
@@ -278,6 +285,25 @@ export const vodInputImagePrepareInputSchema = z.strictObject({
 export type VodInputImagePrepareInput = z.infer<
 	typeof vodInputImagePrepareInputSchema
 >;
+export const vodInputTimelinePrepareRequestSchema = z.strictObject({
+	kind: z.literal("TIMELINE_PREPARE"),
+	probeId: z.uuid(),
+	document: vodInputTimelineDocumentSchema.refine((doc) => {
+		const duration =
+			doc.schemaVersion === 2
+				? doc.durationMs
+				: doc.clips.reduce((sum, clip) => sum + clip.outMs - clip.inMs, 0);
+		return duration > 0 && duration <= MAX_VOD_INPUT_PREPARATION_DURATION_MS;
+	}, "Preparation supports programs up to one hour"),
+	output: vodInputImagePrepareInputSchema.shape.output,
+});
+export type VodInputTimelinePrepareRequest = z.infer<
+	typeof vodInputTimelinePrepareRequestSchema
+>;
+export const vodInputTimelinePreparationReferenceSchema = z.strictObject({
+	taskId: z.uuid(),
+	requestHash: z.string().regex(/^[a-f0-9]{64}$/),
+});
 export const vodInputImagePrepareRequestSchema =
 	vodInputImagePrepareInputSchema.extend({
 		sourceIdentity: vodInputTimelineSourceFactsSchema.shape.identity
@@ -303,6 +329,7 @@ export const vodInputPreviewSubmissionSchema = z.discriminatedUnion("kind", [
 	probeRequestSchema,
 	previewRequestSchema,
 	vodInputImagePrepareInputSchema,
+	vodInputTimelinePrepareRequestSchema,
 ]);
 export type VodInputPreviewSubmission = z.infer<
 	typeof vodInputPreviewSubmissionSchema
@@ -311,11 +338,37 @@ export const vodInputPreviewRequestSchema = z.discriminatedUnion("kind", [
 	probeRequestSchema,
 	previewRequestSchema,
 	vodInputImagePrepareRequestSchema,
+	vodInputTimelinePrepareRequestSchema,
 ]);
 export type VodInputPreviewRequest = z.infer<
 	typeof vodInputPreviewRequestSchema
 >;
 export const vodInputPreviewResultSchema = z.strictObject({
+	preparationCleanup: z
+		.strictObject({
+			objectPrefix: z.string().min(1).max(1024),
+			attemptId: z.uuid(),
+			remoteObjectMayRemain: z.literal(true),
+		})
+		.optional(),
+	preparation: z
+		.strictObject({
+			source: vodInputTimelineSourceSchema,
+			facts: vodInputTimelineSourceFactsSchema,
+			durationMs: z
+				.number()
+				.int()
+				.positive()
+				.max(MAX_VOD_INPUT_PREPARATION_DURATION_MS),
+			sha256: z.string().regex(/^[a-f0-9]{64}$/),
+			profile: z.literal("H264_CRF12_AAC320_SDR8_V1"),
+		})
+		.refine(
+			(value) =>
+				value.source.key === value.facts.key && value.facts.video !== null,
+			"A prepared timeline requires matching video source evidence",
+		)
+		.optional(),
 	sources: z
 		.array(vodInputTimelineSourceFactsSchema)
 		.min(1)
@@ -353,7 +406,7 @@ export const vodInputPreviewResultSchema = z.strictObject({
 export type VodInputPreviewResult = z.infer<typeof vodInputPreviewResultSchema>;
 export const vodInputPreviewTaskSchema = z.strictObject({
 	id: z.uuid(),
-	kind: z.enum(["PROBE", "PREVIEW", "IMAGE_PREPARE"]),
+	kind: z.enum(["PROBE", "PREVIEW", "IMAGE_PREPARE", "TIMELINE_PREPARE"]),
 	status: z.enum(["PENDING", "RUNNING", "SUCCEEDED", "FAILED", "CANCELED"]),
 	stage: z.string().min(1).max(64),
 	requestHash: z.string().regex(/^[a-f0-9]{64}$/),

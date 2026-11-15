@@ -6,9 +6,16 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- Prepare independent VOD video/audio timeline edits as one full-resolution shared cloud input before starting an encoding job. The explicit preparation action keeps the primary source FPS, supports measured 8-bit BT.709 SDR video, uses H.264 CRF12 / AAC 320kbps, and verifies the uploaded object against its SHA-256 and source versions. Preparation is bounded to one hour / 4GiB; changing an edit invalidates readiness. This is a high-quality re-encode, not a lossless intermediate.
+
 ### Fixed
 
 - Keep clip projects editable when a subtitle paragraph has no measured timing anchor or its words fall wholly outside observed speech in a fully inspected audio range. Only that paragraph is omitted, with source context available in the editor; verified subtitles and the selected story remain intact. Missing observation coverage stays unknown and never becomes a silence claim.
+- Check native clip-generation dependencies before long analysis, including the pinned ASR/VAD models, quality-adapter CLI, caption-alignment runtime, actual subtitle rendering and writable storage. Settings show component failures separately from local-model readiness; a shared CLI reports the effective service execution context for deployment preflight.
+- Quantize timeline preview and prepared-input video cuts against one program frame clock, preventing cumulative cut drift across short clips while preserving the 30fps preview. Refuse intervals that cannot occupy an output frame before queueing media work.
+- Validate prepared-timeline ownership and current source/output identity before submission, rerun, retry and Worker provider calls. Retain preparation receipts after preview expiry; canceled or unverifiable preparations cannot start a cloud job. An expand-only database migration adds the new task kind before Web/Worker replacement.
 - Refuse cloud jobs before creation when paired audio/video concatenation programmes differ in source files, trims, positions or padding. Independent timeline editing and CPU previews remain available; use matching programmes or a source file containing the combined edit.
 
 ## [1.3.0] - 2026-11-15

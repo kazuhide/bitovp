@@ -11,7 +11,10 @@ import {
 	liveHlsDetailedOptionsSchema,
 	watermarkFilterSchema,
 } from "@bitovp/core";
-import { vodInputTimelineDocumentSchema } from "@bitovp/core/vod-input-timeline";
+import {
+	vodInputTimelineDocumentSchema,
+	vodInputTimelinePreparationReferenceSchema,
+} from "@bitovp/core/vod-input-timeline";
 import { z } from "zod";
 import type { SessionDto } from "./auth/dto";
 
@@ -360,6 +363,8 @@ const vod = fields(
 		videos: rows(vodRendition),
 		filters: watermarkDrafts,
 		inputTimeline: vodInputTimelineDocumentSchema.optional(),
+		inputTimelinePreparation:
+			vodInputTimelinePreparationReferenceSchema.optional(),
 		prewarmedEncoderPoolIds: strings,
 		internal: group(
 			fields("", "", "", { hevcV2: group(fields("bcfVersion")) }),

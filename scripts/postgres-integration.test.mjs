@@ -123,13 +123,13 @@ test("accepts exactly the required files and all passed assertions", () => {
 	}
 	// VOD fixed sources add six persistence/concurrency assertions; Library
 	// archive/restore and WebM recovery add three more PostgreSQL cases.
-	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 34);
+	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 35);
 	assert.equal(
 		GROUPS.flatMap((group) => Object.values(group.files)).reduce(
 			(a, b) => a + b,
 			0,
 		),
-		228,
+		229,
 	);
 });
 

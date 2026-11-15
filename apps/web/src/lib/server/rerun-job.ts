@@ -14,6 +14,7 @@ import {
 } from "@/lib/server/plan-validation";
 import type { getOrchestratorQueue } from "@/lib/server/queue";
 import { readFeatureFlags } from "./feature-flags";
+import { validateVodInputPreparation } from "./vod-input-preparation";
 
 /**
  * Dependencies the re-run helper needs — passed in (not imported) so routes
@@ -110,6 +111,7 @@ export async function reRunJob(
 		});
 	}
 	const outcome = await submitEncodingJob(sourceJob.plan, {
+		validateInputPreparation: (plan) => validateVodInputPreparation(plan, true),
 		internalHevcV2AccountId: process.env.BITOVP_INTERNAL_HEVC_V2_ACCOUNT_ID,
 		//  (review-265 131-A2): a re-run hands us a plan authored
 		// when QC may have been ON. Without this, one click on an old QC'd job

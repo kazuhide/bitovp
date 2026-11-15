@@ -240,7 +240,7 @@ export async function prepareVodInputImage(
 		const foreground = [
 			...vodStillImageOrientationFilters(header.orientation),
 			"format=rgba",
-			"scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2",
+			"scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2:out_color_matrix=bt709:out_range=tv",
 			"setsar=1",
 			"loop=loop=-1:size=1:start=0",
 			"setpts=N/(30*TB)",
@@ -282,7 +282,7 @@ export async function prepareVodInputImage(
 				"-filter_complex",
 				"[0:v]" +
 					foreground +
-					"[image];color=c=black:s=1920x1080:r=30[black];[black][image]overlay=(W-w)/2:(H-h)/2:shortest=1,format=yuv420p[out]",
+					"[image];color=c=black:s=1920x1080:r=30[black];[black][image]overlay=(W-w)/2:(H-h)/2:shortest=1:format=rgb,scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709[out]",
 				"-map",
 				"[out]",
 				"-map",

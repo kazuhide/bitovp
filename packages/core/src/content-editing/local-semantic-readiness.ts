@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { LocalSemanticConfiguration } from "./local-semantic-config";
+import type { NativeEditingPreflight } from "./native-editing-preflight";
 
 export const LOCAL_SEMANTIC_HEARTBEAT_TTL_MS = 45_000;
 export const LOCAL_CLIP_AVAILABILITY_TTL_MS = 15_000;
@@ -172,6 +173,7 @@ export type LocalSemanticReadinessReport = {
 		failedCount: number;
 	};
 	gateway: {
+		native?: NativeEditingPreflight;
 		code:
 			| "NOT_CHECKED"
 			| z.infer<typeof localSemanticGatewayReadinessSchema>["code"]

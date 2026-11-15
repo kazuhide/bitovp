@@ -156,6 +156,24 @@ afterEach(() => {
 });
 
 describe("POST /api/encoding-jobs/[id]/retry", () => {
+	it("does not reset steps or enqueue a prepared-input retry without current owned evidence", async () => {
+		const plan = nativeQcPlan();
+		plan.inputTimelinePreparation = { taskId: ID, requestHash: "a".repeat(64) };
+		findUnique.mockResolvedValueOnce({
+			id: ID,
+			status: "ERROR",
+			plan,
+			stepLog: failedStart,
+		});
+		const response = await POST(req(), params);
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			details: { code: "INPUT_PREPARATION_INVALID" },
+		});
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(update).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
 	it.each([
 		"failed start",
 		"failed await after completed start",

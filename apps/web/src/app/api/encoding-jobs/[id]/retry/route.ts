@@ -10,6 +10,7 @@ import { getServerContext } from "@/lib/server/context";
 import { invalidIdResponse, jsonError, routeError } from "@/lib/server/http";
 import { serverPlanValidationOptions } from "@/lib/server/plan-validation";
 import { getOrchestratorQueue } from "@/lib/server/queue";
+import { validateVodInputPreparation } from "@/lib/server/vod-input-preparation";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -48,6 +49,17 @@ export async function POST(_req: Request, { params }: RouteParams) {
 		// and unqualified paired AV concatenation, without migrating or rejecting
 		// saved jobs for unrelated historical configuration rules.
 		const plan = encodingPlanSchema.safeParse(row.plan);
+		if (plan.success && plan.data.inputTimelinePreparation) {
+			try {
+				await validateVodInputPreparation(plan.data, true);
+			} catch {
+				return jsonError(
+					409,
+					"The prepared timeline is unavailable or changed. Prepare a new input before retrying.",
+					{ code: "INPUT_PREPARATION_INVALID" },
+				);
+			}
+		}
 		if (
 			plan.success &&
 			(plan.data.internal?.hevcV2 || plan.data.concatenationStreams.length > 0)

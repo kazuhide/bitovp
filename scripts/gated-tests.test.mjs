@@ -182,7 +182,7 @@ test("a plain run may skip the tests that another job runs", () => {
 	for (const [workspace, skipped] of [
 		["@bitovp/core", 25],
 		["@bitovp/db", 70],
-		["@bitovp/worker", 67],
+		["@bitovp/worker", 68],
 		// Includes six favorite-registry, two still-image, two archive/restore and
 		// one WebM recovery case in the PostgreSQL job.
 		["@bitovp/web", 110],
@@ -773,7 +773,7 @@ test("the audit keeps each allowance to its own file and list, and treats what i
 					: entry,
 			),
 		),
-		{ problems: [], skipped: 67 - gated.count },
+		{ problems: [], skipped: 68 - gated.count },
 	);
 	// The report of a failed run is refused: it lacks the tests of a file that
 	// did not load.
@@ -824,13 +824,13 @@ test("the audit keeps each allowance to its own file and list, and treats what i
 		audit(undefined, (report) => {
 			report.numPendingTests -= 2;
 		}).problems,
-		["the report counts 65 skipped tests but lists 67"],
+		["the report counts 66 skipped tests but lists 68"],
 	);
 	assert.deepEqual(
 		audit(undefined, (report) => {
 			delete report.numPendingTests;
 		}).problems,
-		["the report counts undefined skipped tests but lists 67"],
+		["the report counts undefined skipped tests but lists 68"],
 	);
 	assert.equal(
 		audit(undefined, (report) => {
@@ -1614,7 +1614,7 @@ test("the command reports through its exit status", () => {
 		assert.equal(worker.status, 0, worker.stderr);
 		assert.equal(
 			worker.stdout,
-			"@bitovp/worker: 67 tests skipped by the plain run; another job runs each of them\n",
+			"@bitovp/worker: 68 tests skipped by the plain run; another job runs each of them\n",
 		);
 
 		const hiding = run(

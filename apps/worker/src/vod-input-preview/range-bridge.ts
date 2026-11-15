@@ -67,12 +67,14 @@ export async function createVodRangeBridge(input: {
 	signal?: AbortSignal;
 	maxBytes?: number;
 	maxRequestBytes?: number;
+	maxRequests?: number;
 	timeoutMs?: number;
 }) {
 	const maxBytes = input.maxBytes ?? 256 * 1024 ** 2;
 	const maxRequestBytes = input.maxRequestBytes ?? 8 * 1024 ** 2;
 	const timeoutMs = input.timeoutMs ?? 15_000;
-	for (const value of [maxBytes, maxRequestBytes, timeoutMs]) {
+	const maxRequests = input.maxRequests ?? 512;
+	for (const value of [maxBytes, maxRequestBytes, timeoutMs, maxRequests]) {
 		if (!Number.isSafeInteger(value) || value < 1)
 			throw new RangeError("Invalid preview transfer bound");
 	}
@@ -142,7 +144,7 @@ export async function createVodRangeBridge(input: {
 				requestedEnd < start
 			)
 				return respond(res, 416);
-			if (++requests > 512 || active >= 2 || transferred >= maxBytes) {
+			if (++requests > maxRequests || active >= 2 || transferred >= maxBytes) {
 				fail(new MediaOperationError("SOURCE_READ_LIMIT"));
 				return respond(res, 429);
 			}

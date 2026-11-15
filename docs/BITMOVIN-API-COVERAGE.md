@@ -156,6 +156,8 @@ The coverage data has separate purposes:
 | `implementation-audit.json` | Bounded, manually reviewed GUI or JSON access and implementation findings, with source, contract-test, and provider-verification evidence kept separate. Items without a reviewed finding remain unconfirmed. |
 | `summary.json` | Historical GUI/JSON parameter survey. Its date, SDK version, scope, and method differ from the current inventories. |
 
+Unknown SDK implementation syntax stops the request audit for review.
+
 Settings → API coverage lists operations under `/encoding/` in the installed
 provider SDK and marks calls found in application source code as source-confirmed.
 Account, notification, and other product APIs are outside this inventory. This is not a

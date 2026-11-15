@@ -874,6 +874,60 @@ it("adds caption-only aligned times once while preserving the accepted story tra
 	expect(f.render).not.toHaveBeenCalled();
 });
 
+it("keeps an editable story when every requested subtitle abstains and records original paragraph context", async () => {
+	const base = captionAlignmentStub();
+	const aligner = vi.fn<typeof alignSelectedCaptionSegments>(async (input) => {
+		const result = await base(input);
+		const original = input.segments[0];
+		if (!original) throw new Error("Missing fixture paragraph");
+		const omitted = {
+			segmentIndex: 0,
+			sourceStartUs: original.startUs,
+			sourceEndUs: original.endUs,
+			textPreview: original.text,
+			textHash: hashEditingEvidence(original.text),
+			reason: "ZERO_DURATION_NO_ANCHOR" as const,
+		};
+		return {
+			segments: [],
+			warnings: ["CAPTION_ALIGNMENT_PARTIAL"],
+			receipt: {
+				...result.receipt,
+				omittedParagraphs: [omitted],
+				baseOutputHash: hashEditingEvidence([]),
+				outputHash: hashEditingEvidence([]),
+				measurements: {
+					base: result.receipt.measurements.base.map((m) => ({
+						...m,
+						endUs: m.startUs,
+					})),
+					focus: [],
+					final: [],
+				},
+			},
+		};
+	});
+	const f = fixture({ captions: "ORIGINAL", captionAligner: aligner });
+	f.authored.transcriptLanguage = "en";
+	f.authored.segments = [{ startUs: 0, endUs: 4_000_000, text: "NOO" }];
+	const before = structuredClone(f.authored);
+	const result = await f.run();
+	expect(f.authored).toEqual(before);
+	expect(result.warnings).toContain("CAPTION_ALIGNMENT_PARTIAL");
+	expect(result.projectIds).toHaveLength(1);
+	expect(document(f).clips.length).toBeGreaterThan(0);
+	expect(document(f).captions ?? []).toEqual([]);
+	if (result.captionAlignment?.version !== CAPTION_ALIGNMENT_POLICY.version)
+		throw new Error("Missing current alignment receipt");
+	expect(document(f).autoGeneration?.captionOmissions).toEqual(
+		result.captionAlignment.omittedParagraphs,
+	);
+	expect(document(f).autoGeneration?.captionOmissions?.[0]?.textPreview).toBe(
+		"NOO",
+	);
+	expect(f.render).not.toHaveBeenCalled();
+});
+
 it("passes immutable raw timing evidence only to the caption aligner, without changing semantic input or cache identity", async () => {
 	const aligner = vi
 		.fn<typeof alignSelectedCaptionSegments>()

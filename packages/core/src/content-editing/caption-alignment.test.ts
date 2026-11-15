@@ -37,12 +37,12 @@ describe("caption-only alignment evidence", () => {
 
 	it("identifies anchored zero-logit BF16 timing and rejects prior receipt identities", () => {
 		expect(CAPTION_ALIGNMENT_POLICY).toMatchObject({
-			version: "qwen3-caption-alignment-v7",
+			version: "qwen3-caption-alignment-v8",
 			device: "cpu",
 			dtype: "bfloat16",
 			alignmentScope: "selected-zero-points-v1",
 			zeroDurationDecoding: "anchored-zero-logit-path-v1",
-			zeroDurationHandling: "same-paragraph-exact-endpoint-v1",
+			zeroDurationHandling: "same-paragraph-anchor-or-abstain-v2",
 		});
 		for (const old of [
 			{ version: "qwen3-caption-alignment-v1" },
@@ -140,7 +140,7 @@ describe("v6 focus receipt compatibility", () => {
 		if (!primary) throw new Error("fixture");
 		const current = {
 			...receipt(),
-			version: "qwen3-caption-alignment-v7",
+			version: "qwen3-caption-alignment-v8",
 			baseOutputHash: "1".repeat(64),
 			focusWindows: [],
 			measurements: { base: [], focus: [], final: [] },
@@ -210,7 +210,7 @@ describe("v6 focus receipt compatibility", () => {
 				sourceTimeDomain: "MEDIA_RELATIVE",
 			}).success,
 		).toBe(false);
-		expect(CAPTION_ALIGNMENT_POLICY.version).toBe("qwen3-caption-alignment-v7");
+		expect(CAPTION_ALIGNMENT_POLICY.version).toBe("qwen3-caption-alignment-v8");
 	});
 });
 
@@ -225,7 +225,7 @@ it("matches exact final tuples to segments while preserving legitimate anchored-
 	};
 	const r = {
 		...receipt(),
-		version: "qwen3-caption-alignment-v7",
+		version: "qwen3-caption-alignment-v8",
 		baseOutputHash: "1".repeat(64),
 		focusWindows: [],
 		measurements: {
@@ -299,10 +299,13 @@ it("matches exact final tuples to segments while preserving legitimate anchored-
 	).toBe(true);
 });
 
-it("reads frozen v6 without source-tag reinterpretation while requiring fresh v7", () => {
+it.each([
+	"qwen3-caption-alignment-v6",
+	"qwen3-caption-alignment-v7",
+])("reads frozen %s without source-tag reinterpretation while requiring fresh v8", (version) => {
 	const old = {
 		...receipt(),
-		version: "qwen3-caption-alignment-v6",
+		version,
 		baseOutputHash: "1".repeat(64),
 		focusWindows: [],
 		measurements: { base: [], focus: [], final: [] },
@@ -311,4 +314,66 @@ it("reads frozen v6 without source-tag reinterpretation while requiring fresh v7
 	expect(currentCaptionAlignmentReceiptSchema.safeParse(old).success).toBe(
 		false,
 	);
+});
+
+it("requires omitted paragraphs to retain zero evidence without adopting a caption time", () => {
+	const omission = {
+		segmentIndex: 0,
+		sourceStartUs: 508_000_000,
+		sourceEndUs: 509_000_000,
+		textPreview: "NOO",
+		textHash: "1".repeat(64),
+		reason: "ZERO_DURATION_NO_ANCHOR",
+	};
+	const zero = {
+		timingSource: "MODEL_BASE",
+		windowIndex: 0,
+		segmentIndex: 0,
+		startChar: 0,
+		endChar: 3,
+		startUs: 508_000_000,
+		endUs: 508_000_000,
+	};
+	const current = {
+		...receipt(),
+		version: CAPTION_ALIGNMENT_POLICY.version,
+		baseOutputHash: "1".repeat(64),
+		focusWindows: [],
+		omittedParagraphs: [omission],
+		measurements: { base: [zero], focus: [], final: [] },
+	};
+	expect(currentCaptionAlignmentReceiptSchema.safeParse(current).success).toBe(
+		true,
+	);
+	for (const delta of [
+		{ omittedParagraphs: [omission, omission] },
+		{ omittedParagraphs: [{ ...omission, textPreview: "x".repeat(161) }] },
+		{
+			omittedParagraphs: [{ ...omission, sourceEndUs: omission.sourceStartUs }],
+		},
+		{
+			measurements: {
+				base: [{ ...zero, endUs: zero.startUs + 1 }],
+				focus: [],
+				final: [],
+			},
+		},
+		{
+			measurements: {
+				base: [zero],
+				focus: [],
+				final: [{ ...zero, endUs: zero.startUs + 1 }],
+			},
+		},
+	])
+		expect(
+			currentCaptionAlignmentReceiptSchema.safeParse({ ...current, ...delta })
+				.success,
+		).toBe(false);
+	expect(
+		captionAlignmentReceiptSchema.safeParse({
+			...current,
+			version: "qwen3-caption-alignment-v7",
+		}).success,
+	).toBe(false);
 });

@@ -106,6 +106,59 @@ it("binds the CPU BF16 runtime script and unchanged model weights to the current
 		sha256: "47831d0e82f96b20e9034dba01a075ee06436654719f6a68289e49f1b65ce0e7",
 	});
 });
+it("abstains only an unanchored shout paragraph and preserves measured adjacent speech", async () => {
+	const base = await fixture();
+	const input = {
+		...base,
+		segments: [
+			{ startUs: 104_000_000, endUs: 106_000_000, text: "Before" },
+			{ startUs: 108_000_000, endUs: 111_000_000, text: " NOO" },
+			{ startUs: 112_000_000, endUs: 114_000_000, text: "After" },
+		],
+		selectedRanges: [{ startUs: 104_000_000, endUs: 114_000_000 }],
+	};
+	const original = execute.getMockImplementation();
+	execute.mockImplementation(async (...args) => {
+		const value = await original?.(...args);
+		if (args[0] === "ffmpeg") return value;
+		const out = JSON.parse(value.stdout);
+		out.windows[0].items = [
+			{ text: "Before", startUs: 3_000_000, endUs: 4_000_000 },
+			{ text: "NOO", startUs: 9_000_000, endUs: 9_000_000 },
+			{ text: "After", startUs: 11_000_000, endUs: 12_000_000 },
+		];
+		return { stdout: JSON.stringify(out), stderr: "" };
+	});
+	const before = structuredClone(input.segments);
+	const result = await alignSelectedCaptionSegments(input);
+	expect(input.segments).toEqual(before);
+	expect(
+		result.segments.map((segment) => [
+			segment.text,
+			segment.startUs,
+			segment.endUs,
+		]),
+	).toEqual([
+		["Before", 104_000_000, 105_000_000],
+		["After", 112_000_000, 113_000_000],
+	]);
+	expect(result.receipt).toMatchObject({
+		omittedParagraphs: [
+			{
+				segmentIndex: 1,
+				sourceStartUs: 108_000_000,
+				sourceEndUs: 111_000_000,
+				textPreview: " NOO",
+				textHash: hashEditingEvidence(" NOO"),
+				reason: "ZERO_DURATION_NO_ANCHOR",
+			},
+		],
+	});
+	expect(result.receipt.measurements.final.map((m) => m.segmentIndex)).toEqual([
+		0, 2,
+	]);
+	expect(result.warnings).toEqual(["CAPTION_ALIGNMENT_PARTIAL"]);
+});
 it("includes the entire ASR paragraph audio and maps estimated words once to original UTF16 offsets", async () => {
 	const input = await fixture();
 	const before = structuredClone(input.segments);
@@ -135,7 +188,7 @@ it("includes the entire ASR paragraph audio and maps estimated words once to ori
 	});
 	expect(input.segments).toEqual(before);
 	expect(result.receipt).toMatchObject({
-		version: "qwen3-caption-alignment-v7",
+		version: "qwen3-caption-alignment-v8",
 		confidence: "NOT_REPORTED",
 		sourceAudioUs: 18_000_000,
 		inputHash: hashEditingEvidence({
@@ -489,9 +542,18 @@ describe("zero duration endpoint grouping", () => {
 				item("次", 30_000_000, 30_000_000),
 			],
 		},
-	])("rejects $name instead of guessing timing", async ({ text, items }) => {
+	])("does not invent timing for $name", async ({ name, text, items }) => {
 		vi.spyOn(console, "warn").mockImplementation(() => {});
 		const input = await zeroFixture(text, items);
+		if (
+			["all zero", "leading gap", "trailing gap", "middle gap"].includes(name)
+		) {
+			const result = await alignSelectedCaptionSegments(input);
+			expect(result.segments).toEqual([]);
+			expect(result.receipt.omittedParagraphs).toHaveLength(1);
+			expect(result.receipt.measurements.final).toEqual([]);
+			return;
+		}
 		await expect(alignSelectedCaptionSegments(input)).rejects.toMatchObject({
 			code: "CAPTION_ALIGNMENT_OUTPUT_INVALID",
 		});
@@ -510,24 +572,25 @@ describe("zero duration endpoint grouping", () => {
 				: [item("前中次", 3_000_000, 4_000_000)];
 		const base = await zeroFixture("unused", items);
 		vi.spyOn(console, "warn").mockImplementation(() => {});
-		await expect(
-			alignSelectedCaptionSegments({
-				...base,
-				segments: [
-					{ startUs: 104_000_000, endUs: 106_000_000, text: "前" },
-					{ startUs: 110_000_000, endUs: 112_000_000, text: "中次" },
-				],
-				selectedRanges: [
-					{ startUs: 105_000_000, endUs: 105_500_000 },
-					{ startUs: 111_000_000, endUs: 111_500_000 },
-				],
-			}),
-		).rejects.toMatchObject({
-			code:
-				change === "borrow previous paragraph"
-					? "CAPTION_ALIGNMENT_OUTPUT_INVALID"
-					: "CAPTION_ALIGNMENT_TEXT_MISMATCH",
+		const result = alignSelectedCaptionSegments({
+			...base,
+			segments: [
+				{ startUs: 104_000_000, endUs: 106_000_000, text: "前" },
+				{ startUs: 110_000_000, endUs: 112_000_000, text: "中次" },
+			],
+			selectedRanges: [
+				{ startUs: 105_000_000, endUs: 105_500_000 },
+				{ startUs: 111_000_000, endUs: 111_500_000 },
+			],
 		});
+		if (change === "borrow previous paragraph") {
+			const aligned = await result;
+			expect(aligned.segments.map((s) => s.text)).toEqual(["前"]);
+			expect(aligned.receipt.omittedParagraphs?.[0]?.segmentIndex).toBe(1);
+		} else
+			await expect(result).rejects.toMatchObject({
+				code: "CAPTION_ALIGNMENT_TEXT_MISMATCH",
+			});
 	});
 	describe("selected zero point scope", () => {
 		it("handles a synthetic 20ms coarse overlap without claiming unused zero-token timing", async () => {
@@ -651,7 +714,10 @@ describe("zero duration endpoint grouping", () => {
 					...base,
 					selectedRanges: [{ startUs: 104_000_000, endUs: 104_500_000 }],
 				}),
-			).rejects.toMatchObject({ code: "CAPTION_ALIGNMENT_OUTPUT_INVALID" });
+			).resolves.toMatchObject({
+				segments: [],
+				warnings: ["CAPTION_ALIGNMENT_PARTIAL"],
+			});
 		});
 		it.each([
 			"lexical mismatch",
@@ -706,8 +772,9 @@ describe("zero duration endpoint grouping", () => {
 					selectedRanges: [{ startUs: 104_000_000, endUs: 106_000_000 }],
 				};
 			}
-			await expect(alignSelectedCaptionSegments(input)).rejects.toMatchObject({
-				code: "CAPTION_ALIGNMENT_OUTPUT_INVALID",
+			await expect(alignSelectedCaptionSegments(input)).resolves.toMatchObject({
+				segments: [],
+				warnings: ["CAPTION_ALIGNMENT_PARTIAL"],
 			});
 			const gap = kind === "gap";
 			expect(warning.mock.calls.map(([line]) => JSON.parse(line))).toEqual([
@@ -753,15 +820,9 @@ describe("zero duration endpoint grouping", () => {
 					leftCharAdjacent: gap ? true : null,
 					rightCharAdjacent: true,
 				},
-				{
-					event: "caption_alignment_output_rejected",
-					errorCode: "CAPTION_ALIGNMENT_OUTPUT_INVALID",
-					reason: "NODE_ZERO_DURATION_NO_ANCHOR",
-					windowIndex: 0,
-				},
 			]);
 		});
-		it("excludes text and preserves strict rejection if both diagnostic sinks throw", async () => {
+		it("excludes text and preserves the omission if the diagnostic sink throws", async () => {
 			const warning = vi.spyOn(console, "warn").mockImplementation(() => {
 				throw new Error("synthetic-private /never-log/token");
 			});
@@ -772,10 +833,11 @@ describe("zero duration endpoint grouping", () => {
 				])),
 				selectedRanges: [{ startUs: 106_000_000, endUs: 106_500_000 }],
 			};
-			await expect(alignSelectedCaptionSegments(input)).rejects.toMatchObject({
-				code: "CAPTION_ALIGNMENT_OUTPUT_INVALID",
+			await expect(alignSelectedCaptionSegments(input)).resolves.toMatchObject({
+				segments: [],
+				warnings: ["CAPTION_ALIGNMENT_PARTIAL"],
 			});
-			expect(warning).toHaveBeenCalledTimes(2);
+			expect(warning).toHaveBeenCalledTimes(1);
 			expect(JSON.parse(warning.mock.calls[0]?.[0]).zeroSelected).toBe(true);
 			const logged = JSON.stringify(warning.mock.calls);
 			for (const sensitive of [
@@ -807,6 +869,13 @@ it.each([
 		if (change === "outside") items[1].endUs = 90_000_000;
 		return { stdout: JSON.stringify(out), stderr: "" };
 	});
+	if (change === "zero") {
+		const aligned = await alignSelectedCaptionSegments(input);
+		expect(aligned.segments).toEqual([]);
+		expect(aligned.receipt.omittedParagraphs).toHaveLength(1);
+		expect(aligned.receipt.measurements.final).toEqual([]);
+		return;
+	}
 	await expect(alignSelectedCaptionSegments(input)).rejects.toMatchObject({
 		code: expect.stringMatching(/^CAPTION_ALIGNMENT_/),
 	});

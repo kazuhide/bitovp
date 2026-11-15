@@ -8,6 +8,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- Keep clip projects editable when a subtitle paragraph has no measured timing anchor. Only that paragraph is omitted, with source context available in the editor; verified subtitles and the selected story remain intact.
 - Refuse cloud jobs before creation when paired audio/video concatenation programmes differ in source files, trims, positions or padding. Independent timeline editing and CPU previews remain available; use matching programmes or a source file containing the combined edit.
 
 ## [1.3.0] - 2026-11-15

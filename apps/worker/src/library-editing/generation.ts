@@ -8,12 +8,12 @@ import {
 	buildSpeechContextWindow,
 	buildStoryModelInput,
 	buildStorySelection,
-	type CaptionAlignmentReceipt,
 	COMPOSITION_TEMPLATE_PRESETS,
 	type CompositionSourceFacts,
 	type CompositionSourceSegment,
 	type CompositionTrackingFallback,
 	type CompositionTrackingObservation,
+	type CurrentCaptionAlignmentReceipt,
 	captionsFromSourceSegments,
 	compileComposition,
 	compositionDocumentSchema,
@@ -983,7 +983,7 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 		// Keep the semantic/subject transcript immutable. Alignment changes only
 		// the caption projection after the final selected clips are known.
 		let captionSegments = segments;
-		let captionAlignment: CaptionAlignmentReceipt | undefined;
+		let captionAlignment: CurrentCaptionAlignmentReceipt | undefined;
 		const selectedRanges = segments.length
 			? selectedCaptionAudioRanges(selection.clips, verified.map)
 			: [];
@@ -1046,6 +1046,16 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 						receipt.mediaSha256 !== verified.media.sha256 ||
 						receipt.inputHash !== inputHash ||
 						receipt.outputHash !== hashEditingEvidence(aligned.segments) ||
+						receipt.omittedParagraphs?.some((omitted) => {
+							const original = segments[omitted.segmentIndex];
+							return (
+								!original ||
+								original.startUs !== omitted.sourceStartUs ||
+								original.endUs !== omitted.sourceEndUs ||
+								original.text.slice(0, 160) !== omitted.textPreview ||
+								hashEditingEvidence(original.text) !== omitted.textHash
+							);
+						}) ||
 						!matchesFinalCaptionAlignmentMeasurements(receipt, aligned.segments)
 					)
 						throw new MediaOperationError("CAPTION_ALIGNMENT_UNVERIFIED");
@@ -1284,6 +1294,13 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 							}
 						: {}),
 				});
+			if (
+				document.autoGeneration &&
+				captionAlignment?.omittedParagraphs?.length
+			)
+				document.autoGeneration.captionOmissions = structuredClone(
+					captionAlignment.omittedParagraphs,
+				);
 			document = compositionDocumentSchema.parse(document);
 			compileComposition(document, sources, {
 				allowUnconfirmed:

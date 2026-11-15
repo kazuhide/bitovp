@@ -6,6 +6,7 @@ import {
 	CAPTION_ALIGNMENT_POLICY,
 	type CaptionAlignmentFinalMeasurement,
 	type CaptionAlignmentMeasurement,
+	type CaptionOmission,
 	type CaptionTimingEvidence,
 	type CompositionSourceSegment,
 	compositionSourceSegmentSchema,
@@ -292,7 +293,7 @@ function groupZeroDurationWords(
 	text: string,
 	words: readonly AlignedWord[],
 	context: ZeroGroupContext,
-): AlignedWord[] {
+): AlignedWord[] | undefined {
 	const { windowIndex } = context;
 	const output: AlignedWord[] = [];
 	const adjacent = (left: AlignedWord, right: AlignedWord) =>
@@ -352,7 +353,9 @@ function groupZeroDurationWords(
 			index = nextIndex + 1;
 		} else {
 			logUnresolvedZeroGroup(text, words, index, nextIndex, context);
-			invalidOutput("NODE_ZERO_DURATION_NO_ANCHOR", windowIndex);
+			// Shape, source bounds and exact text coverage were already validated.
+			// No measured anchor supports this paragraph: abstain, never infer time.
+			return undefined;
 		}
 	}
 	return output;
@@ -921,6 +924,7 @@ export async function alignSelectedCaptionSegments(
 			}
 			// Validate every raw window before applying the caption-only scope gate.
 			let omittedOutsideZeroParagraphs = 0;
+			const omittedParagraphs: CaptionOmission[] = [];
 			for (const [index, window] of windows.entries()) {
 				for (const segmentIndex of window.indices) {
 					const target = aligned.get(segmentIndex);
@@ -943,6 +947,20 @@ export async function alignSelectedCaptionSegments(
 						windowStartUs: window.startUs,
 						windowEndUs: window.endUs,
 					});
+					if (words === undefined) {
+						const original = segments[segmentIndex];
+						if (!original) invalidOutput("NODE_OUTPUT_CONTRACT");
+						omittedParagraphs.push({
+							segmentIndex,
+							sourceStartUs: original.startUs,
+							sourceEndUs: original.endUs,
+							textPreview: original.text.slice(0, 160),
+							textHash: hashEditingEvidence(original.text),
+							reason: "ZERO_DURATION_NO_ANCHOR",
+						});
+						aligned.delete(segmentIndex);
+						continue;
+					}
 					if (!words.length) {
 						aligned.delete(segmentIndex);
 						omittedOutsideZeroParagraphs++;
@@ -1026,7 +1044,9 @@ export async function alignSelectedCaptionSegments(
 					[...aligned.entries()].sort(([a], [b]) => a - b).map(([, s]) => s),
 				);
 			if (
-				(!outputSegments.length && omittedOutsideZeroParagraphs === 0) ||
+				(!outputSegments.length &&
+					omittedOutsideZeroParagraphs === 0 &&
+					omittedParagraphs.length === 0) ||
 				rawWordCount > 30000 ||
 				outputSegments.reduce((n, s) => n + (s.words?.length ?? 0), 0) > 30000
 			)
@@ -1040,6 +1060,7 @@ export async function alignSelectedCaptionSegments(
 			);
 			const receipt = currentCaptionAlignmentReceiptSchema.parse({
 				version: CAPTION_ALIGNMENT_POLICY.version,
+				...(omittedParagraphs.length ? { omittedParagraphs } : {}),
 				baseOutputHash,
 				focusWindows: focusPlan.candidates.map((c, i) => ({
 					id: c.id,
@@ -1086,7 +1107,11 @@ export async function alignSelectedCaptionSegments(
 			});
 			if (!matchesFinalCaptionAlignmentMeasurements(receipt, outputSegments))
 				fail("CAPTION_ALIGNMENT_UNVERIFIED");
-			return { segments: outputSegments, receipt, warnings: [] as string[] };
+			return {
+				segments: outputSegments,
+				receipt,
+				warnings: omittedParagraphs.length ? ["CAPTION_ALIGNMENT_PARTIAL"] : [],
+			};
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}

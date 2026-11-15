@@ -33,6 +33,7 @@ import {
 	EditingHelp,
 	EditingHelpText,
 } from "../../editing-help";
+import { CaptionOmissions } from "./caption-omissions";
 import { useCompositionCopy } from "./composition-copy";
 import { useCompositionPendingInput } from "./composition-inputs";
 import type { CompositionSourceFrameReader } from "./composition-source-frame";
@@ -423,6 +424,10 @@ export function CompositionInspector(props: Props) {
 	const zoom = Math.max(1, Math.min(3, maxCrop.w / rect.w));
 	return (
 		<aside className="min-w-0 space-y-4 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+			<CaptionOmissions
+				omissions={doc.autoGeneration?.captionOmissions}
+				onEdit={() => setTab("TEXT")}
+			/>
 			<div className="flex gap-1 rounded-lg bg-zinc-900 p-1">
 				{(["VIDEO", "AUDIO", "TEXT"] as const).map((item) => (
 					<Button

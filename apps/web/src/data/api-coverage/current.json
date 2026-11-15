@@ -1,20 +1,20 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-15T21:08:40.133Z",
-		"sourceCommit": "ce9335dd167acf915546b93d1feefc0dc37474ca",
-		"sourceFingerprint": "170669f2061a8f27acdea621323eb1dcd3153d906c979b170832d643f5c80500",
-		"sdkVersion": "1.287.0",
+		"generatedAt": "2026-11-15T22:00:12.135Z",
+		"sourceCommit": "fe7f728fdf3146b764c071745c6421b75eafd9f7",
+		"sourceFingerprint": "7e3cfc91797f30d6d80456d74f3d2b8e36787c14521d2b9354c876c73adc12fb",
+		"sdkVersion": "1.288.0",
 		"typescriptVersion": "5.9.3",
-		"sdkFingerprint": "4e616dafb9c392b4c287993ae433f23201282723cb9d847a7a88ceffdde525a9",
+		"sdkFingerprint": "062c5c8a30072d4d3330028f0cab877d9f7183138b08fa4a7de22f4b69853f04",
 		"method": "typescript-resolved-sdk-signatures-v1",
 		"scope": "encoding"
 	},
 	"summary": {
-		"totalOperations": 1089,
+		"totalOperations": 1094,
 		"sourceConfirmed": 283,
-		"unconfirmed": 806,
-		"createTotal": 217,
+		"unconfirmed": 811,
+		"createTotal": 218,
 		"createSourceConfirmed": 129
 	},
 	"families": [
@@ -68,9 +68,9 @@
 		},
 		{
 			"family": "outputs",
-			"total": 66,
+			"total": 71,
 			"sourceConfirmed": 11,
-			"unconfirmed": 55
+			"unconfirmed": 60
 		},
 		{
 			"family": "statistics",
@@ -11002,6 +11002,51 @@
 			"evidence": []
 		},
 		{
+			"path": "/encoding/outputs/moq",
+			"httpVerb": "POST",
+			"operation": "create",
+			"sdkMethod": "encoding.outputs.moq.create",
+			"family": "outputs",
+			"status": "unconfirmed",
+			"evidence": []
+		},
+		{
+			"path": "/encoding/outputs/moq/{output_id}",
+			"httpVerb": "DELETE",
+			"operation": "delete",
+			"sdkMethod": "encoding.outputs.moq.delete",
+			"family": "outputs",
+			"status": "unconfirmed",
+			"evidence": []
+		},
+		{
+			"path": "/encoding/outputs/moq/{output_id}",
+			"httpVerb": "GET",
+			"operation": "get",
+			"sdkMethod": "encoding.outputs.moq.get",
+			"family": "outputs",
+			"status": "unconfirmed",
+			"evidence": []
+		},
+		{
+			"path": "/encoding/outputs/moq",
+			"httpVerb": "GET",
+			"operation": "list",
+			"sdkMethod": "encoding.outputs.moq.list",
+			"family": "outputs",
+			"status": "unconfirmed",
+			"evidence": []
+		},
+		{
+			"path": "/encoding/outputs/moq/{output_id}/customData",
+			"httpVerb": "GET",
+			"operation": "get",
+			"sdkMethod": "encoding.outputs.moq.customdata.get",
+			"family": "outputs",
+			"status": "unconfirmed",
+			"evidence": []
+		},
+		{
 			"path": "/encoding/outputs/s3",
 			"httpVerb": "POST",
 			"operation": "create",
@@ -11525,12 +11570,12 @@
 		"method": "typescript-sdk-body-properties-v1",
 		"scope": "Top-level SDK-declared body-model properties per Encoding write operation; inherited public properties included; nested objects, arrays, unions, dictionaries and opaque bodies are not expanded. Shared response properties may occur. Source assignments are syntax evidence only, not write support, GUI reachability or runtime success.",
 		"summary": {
-			"bodyOperations": 229,
-			"expandedOperations": 226,
+			"bodyOperations": 230,
+			"expandedOperations": 227,
 			"unexpandedOperations": 3,
-			"totalFields": 2562,
+			"totalFields": 2574,
 			"sourceAssigned": 275,
-			"unconfirmed": 2287
+			"unconfirmed": 2299
 		},
 		"operations": [
 			{
@@ -39282,7 +39327,7 @@
 						"type": "AclEntry[] | undefined",
 						"sdkEvidence": {
 							"file": "models/Output.d.ts",
-							"line": 31
+							"line": 32
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -39412,7 +39457,7 @@
 						"type": "AclEntry[] | undefined",
 						"sdkEvidence": {
 							"file": "models/Output.d.ts",
-							"line": 31
+							"line": 32
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -39578,7 +39623,7 @@
 						"type": "AclEntry[] | undefined",
 						"sdkEvidence": {
 							"file": "models/Output.d.ts",
-							"line": 31
+							"line": 32
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -39690,7 +39735,7 @@
 						"type": "AclEntry[] | undefined",
 						"sdkEvidence": {
 							"file": "models/Output.d.ts",
-							"line": 31
+							"line": 32
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -39856,7 +39901,7 @@
 						"type": "AclEntry[] | undefined",
 						"sdkEvidence": {
 							"file": "models/Output.d.ts",
-							"line": 31
+							"line": 32
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -39990,7 +40035,7 @@
 						"type": "AclEntry[] | undefined",
 						"sdkEvidence": {
 							"file": "models/Output.d.ts",
-							"line": 31
+							"line": 32
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -40150,7 +40195,7 @@
 						"type": "AclEntry[] | undefined",
 						"sdkEvidence": {
 							"file": "models/Output.d.ts",
-							"line": 31
+							"line": 32
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -40342,7 +40387,7 @@
 						"type": "AclEntry[] | undefined",
 						"sdkEvidence": {
 							"file": "models/Output.d.ts",
-							"line": 31
+							"line": 32
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -40442,7 +40487,7 @@
 						"type": "AclEntry[] | undefined",
 						"sdkEvidence": {
 							"file": "models/Output.d.ts",
-							"line": 31
+							"line": 32
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -40520,6 +40565,136 @@
 				]
 			},
 			{
+				"sdkMethod": "encoding.outputs.moq.create",
+				"path": "/encoding/outputs/moq",
+				"httpVerb": "POST",
+				"bodyParameterIndex": 0,
+				"bodyModel": "MoqOutput",
+				"expansion": "expanded",
+				"fields": [
+					{
+						"name": "acl",
+						"type": "AclEntry[] | undefined",
+						"sdkEvidence": {
+							"file": "models/Output.d.ts",
+							"line": 32
+						},
+						"status": "unconfirmed",
+						"evidence": []
+					},
+					{
+						"name": "authToken",
+						"type": "string | undefined",
+						"sdkEvidence": {
+							"file": "models/MoqOutput.d.ts",
+							"line": 39
+						},
+						"status": "unconfirmed",
+						"evidence": []
+					},
+					{
+						"name": "authTokenType",
+						"type": "number | undefined",
+						"sdkEvidence": {
+							"file": "models/MoqOutput.d.ts",
+							"line": 45
+						},
+						"status": "unconfirmed",
+						"evidence": []
+					},
+					{
+						"name": "createdAt",
+						"type": "Date | undefined",
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"status": "unconfirmed",
+						"evidence": []
+					},
+					{
+						"name": "customData",
+						"type": "{ [key: string]: any; } | undefined",
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"status": "unconfirmed",
+						"evidence": []
+					},
+					{
+						"name": "description",
+						"type": "string | undefined",
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"status": "unconfirmed",
+						"evidence": []
+					},
+					{
+						"name": "draftVersion",
+						"type": "MoqDraftVersion | undefined",
+						"sdkEvidence": {
+							"file": "models/MoqOutput.d.ts",
+							"line": 33
+						},
+						"status": "unconfirmed",
+						"evidence": []
+					},
+					{
+						"name": "id",
+						"type": "string | undefined",
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"status": "unconfirmed",
+						"evidence": []
+					},
+					{
+						"name": "modifiedAt",
+						"type": "Date | undefined",
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"status": "unconfirmed",
+						"evidence": []
+					},
+					{
+						"name": "name",
+						"type": "string | undefined",
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"status": "unconfirmed",
+						"evidence": []
+					},
+					{
+						"name": "relayUrl",
+						"type": "string | undefined",
+						"sdkEvidence": {
+							"file": "models/MoqOutput.d.ts",
+							"line": 21
+						},
+						"status": "unconfirmed",
+						"evidence": []
+					},
+					{
+						"name": "trackNamespace",
+						"type": "string[] | undefined",
+						"sdkEvidence": {
+							"file": "models/MoqOutput.d.ts",
+							"line": 27
+						},
+						"status": "unconfirmed",
+						"evidence": []
+					}
+				]
+			},
+			{
 				"sdkMethod": "encoding.outputs.s3.create",
 				"path": "/encoding/outputs/s3",
 				"httpVerb": "POST",
@@ -40548,7 +40723,7 @@
 						"type": "AclEntry[] | undefined",
 						"sdkEvidence": {
 							"file": "models/Output.d.ts",
-							"line": 31
+							"line": 32
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -40706,7 +40881,7 @@
 						"type": "AclEntry[] | undefined",
 						"sdkEvidence": {
 							"file": "models/Output.d.ts",
-							"line": 31
+							"line": 32
 						},
 						"status": "unconfirmed",
 						"evidence": []
@@ -40856,7 +41031,7 @@
 						"type": "AclEntry[] | undefined",
 						"sdkEvidence": {
 							"file": "models/Output.d.ts",
-							"line": 31
+							"line": 32
 						},
 						"status": "unconfirmed",
 						"evidence": []

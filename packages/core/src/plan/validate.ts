@@ -15,6 +15,7 @@ import {
 	checkCodecDetailControls,
 } from "./codec-detail-controls";
 import { qcMirrorMuxingKind, renditionOutputBase } from "./compiler";
+import { checkConcatenationAvQualification } from "./concatenation-av-qualification";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
 import { defaultHlsPathConflicts } from "./default-manifest-paths";
 import { defaultManifestSelection } from "./default-manifest-selection";
@@ -389,6 +390,7 @@ export function validatePlan(
 	issues.push(...checkH26xCodecControls(plan.renditions));
 	issues.push(...checkAv1CodecControls(plan.renditions));
 	issues.push(...checkCodecDetailControls(plan.renditions));
+	issues.push(...checkConcatenationAvQualification(plan));
 	issues.push(...checkAv1DetailPreservationVersion(plan));
 	issues.push(...checkHlsVideoUris(plan));
 	for (const [i, output] of plan.outputs.entries())

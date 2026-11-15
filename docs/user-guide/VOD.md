@@ -60,6 +60,12 @@ Importing or copying settings does not create a job. Settings that the form
 cannot represent remain available through the JSON editor instead of being
 silently discarded. Resolve validation errors before submission.
 
+Independent timeline edits remain available in CPU preview. Cloud submission
+refuses paired audio/video concatenations with different source files, trims,
+positions or padding (`PLAN_CONCATENATION_AV_UNQUALIFIED`). Match both programmes,
+or first provide a physical source file containing the combined edit. Ordinary
+independent AV inputs without concatenation and single-track outputs are unaffected.
+
 Drafts are saved in this browser for seven days, separately by user, organization,
 and creation source. Secret values, URLs, DRM settings, filters, and imported JSON
 are excluded. Review omitted settings and output destinations after restoring.

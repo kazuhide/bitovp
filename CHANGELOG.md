@@ -6,6 +6,10 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Fixed
+
+- Refuse cloud jobs before creation when paired audio/video concatenation programmes differ in source files, trims, positions or padding. Independent timeline editing and CPU previews remain available; use matching programmes or a source file containing the combined edit.
+
 ## [1.3.0] - 2026-11-15
 
 For an existing installation, back up the database and configuration, run the

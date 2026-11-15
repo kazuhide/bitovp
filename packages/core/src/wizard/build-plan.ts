@@ -963,6 +963,7 @@ export type WizardKantar = {
 export type WizardState = {
 	/** Manual, CPU-previewed input sequence. Absent preserves the ordinary wizard graph. */
 	inputTimeline?: import("../vod-input-timeline/contracts").VodInputTimelineDocument;
+	inputTimelinePreparation?: { taskId: string; requestHash: string };
 	/** Internal account-gated profile; never inferred from the selected account. */
 	internal?: EncodingPlanInput["internal"];
 	name: string;
@@ -2566,6 +2567,9 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				: {}),
 		},
 		inputs: inputDecls(),
+		...(state.inputTimelinePreparation
+			? { inputTimelinePreparation: state.inputTimelinePreparation }
+			: {}),
 		outputs: outputDecls(),
 		...(state.additionalOutputs.length > 0
 			? {

@@ -51,7 +51,8 @@ export type SubmitRefusal = {
 		| "INTERNAL_FEATURE_DISABLED"
 		| "QC_DISABLED"
 		| "QC_CLOUD_UNAVAILABLE"
-		| "QC_CLOUD_PROFILE_INVALID";
+		| "QC_CLOUD_PROFILE_INVALID"
+		| "INPUT_PREPARATION_INVALID";
 	message: string;
 	details?: unknown;
 	issues?: PlanIssue[];
@@ -93,6 +94,8 @@ export type EncodingJobCreateData = {
 };
 
 export type SubmitEncodingJobDeps = {
+	/** Prepared inputs are admitted only after an owned, current storage receipt is checked. */
+	validateInputPreparation?: (plan: EncodingPlan) => Promise<void>;
 	validationOptions: PlanValidationOptions;
 	/** Absent means disabled, including replay/watch/copy submission paths. */
 	internalHevcV2AccountId?: string;
@@ -241,6 +244,20 @@ export async function submitEncodingJob(
 		};
 	}
 	const rawPlan = parsed.data;
+	if (rawPlan.inputTimelinePreparation) {
+		try {
+			if (!deps.validateInputPreparation)
+				throw new Error("INPUT_PREPARATION_VALIDATOR_REQUIRED");
+			await deps.validateInputPreparation(rawPlan);
+		} catch {
+			return {
+				ok: false,
+				code: "INPUT_PREPARATION_INVALID",
+				message:
+					"The prepared timeline is unavailable or changed. Prepare the timeline again before starting a new job.",
+			};
+		}
+	}
 	if (
 		rawPlan.internal?.hevcV2 &&
 		!isInternalHevcV2Account(

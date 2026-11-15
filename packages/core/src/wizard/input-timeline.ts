@@ -1,5 +1,6 @@
 import {
 	MAX_VOD_TIMELINE_GAP_MS,
+	type VodInputPreviewTask,
 	vodInputTimelineDocumentSchema,
 } from "../vod-input-timeline/contracts";
 import {
@@ -27,6 +28,68 @@ export class WizardInputTimelineError extends Error {
 		super(code);
 		this.name = "WizardInputTimelineError";
 	}
+}
+
+/** Use one physical shared ingest, without altering the editor's source document. */
+export function applyPreparedVodInputTimeline(
+	state: WizardState,
+	task: VodInputPreviewTask,
+): WizardState {
+	if (
+		!["S3", "GENERIC_S3", "GCS"].includes(state.output.kind) ||
+		state.output.kind === "SFTP"
+	)
+		throw new WizardInputTimelineError("TIMELINE_INVALID");
+	const prepared = task.result?.preparation;
+	if (
+		!state.inputTimeline ||
+		task.kind !== "TIMELINE_PREPARE" ||
+		task.status !== "SUCCEEDED" ||
+		!prepared
+	)
+		throw new WizardInputTimelineError("TIMELINE_INVALID");
+	const normalized = normalizeVodInputTimelineDocument(state.inputTimeline);
+	if (normalized.durationMs !== prepared.durationMs)
+		throw new WizardInputTimelineError("TIMELINE_INVALID");
+	const key = prepared.source.key,
+		ingestKey = `${key}_av`;
+	return {
+		...state,
+		inputTimeline: undefined,
+		inputTimelinePreparation: {
+			taskId: task.id,
+			requestHash: task.requestHash,
+		},
+		inputFiles: [
+			{
+				key,
+				inputKey: key,
+				kind: state.output.kind,
+				credentialId: prepared.source.credentialId,
+				bucket: prepared.source.bucket,
+				path: prepared.source.objectKey,
+				...(state.output.region ? { region: state.output.region } : {}),
+			},
+			...state.inputFiles,
+		],
+		audioInputFile: undefined,
+		sources: {
+			tracks: [
+				{ key: ingestKey, inputFile: key, selectionMode: "AUTO", position: 0 },
+			],
+		},
+		videos: state.videos.map((video) => ({
+			...video,
+			extras: { ...video.extras, source: ingestKey },
+		})),
+		audios:
+			normalized.audioEnabled && normalized.audioClips.length
+				? state.audios.map((audio) => ({
+						...audio,
+						extras: { ...audio.extras, source: ingestKey },
+					}))
+				: [],
+	};
 }
 
 /** Derive the native graph from the same independent program the preview resolves. */
@@ -157,6 +220,7 @@ export function applyVodInputTimeline(state: WizardState): WizardState {
 	return {
 		...state,
 		inputTimeline: undefined,
+		inputTimelinePreparation: undefined,
 		sources: {
 			...sources,
 			tracks: [...(sources.tracks ?? []), ...tracks],

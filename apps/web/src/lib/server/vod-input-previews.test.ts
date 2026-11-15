@@ -121,6 +121,26 @@ beforeEach(() => {
 });
 
 describe("manual VOD preview service", () => {
+	it("creates a full timeline preparation intent with server-owned probe binding and output credentials", async () => {
+		db.vodInputPreviewTask.findUnique.mockResolvedValue(row);
+		const input = {
+			kind: "TIMELINE_PREPARE",
+			probeId: id,
+			document: {
+				schemaVersion: 1,
+				id,
+				audioEnabled: false,
+				clips: [{ id, sourceKey: "a", inMs: 0, outMs: 5000 }],
+			},
+			output: { credentialId: id, bucket: "output", prefix: "prepared/" },
+		};
+		const task = await createVodInputPreviewTask(input);
+		expect(task).toMatchObject({ kind: "TIMELINE_PREPARE", status: "PENDING" });
+		expect(db.vodInputPreviewTask.create.mock.calls[0]?.[0].data).toMatchObject(
+			{ request: input, probeId: id },
+		);
+		expect(add).toHaveBeenCalledOnce();
+	});
 	it("allows a natural source audition beyond ten seconds of trailing video while edited programs retain the native gap limit", async () => {
 		const fixture = longSourceAudition();
 		db.vodInputPreviewTask.findUnique.mockResolvedValue(fixture.probe);

@@ -54,7 +54,10 @@ function row(request: VodInputPreviewRequest, taskId = id) {
 			.digest("hex"),
 		result: null,
 		error: null,
-		probeId: request.kind === "PREVIEW" ? request.probeId : null,
+		probeId:
+			request.kind === "PREVIEW" || request.kind === "TIMELINE_PREPARE"
+				? request.probeId
+				: null,
 		artifactPath: null,
 		artifactToken: null,
 		artifactSize: null,
@@ -145,6 +148,21 @@ function setup() {
 		};
 	});
 	const browserFor = vi.fn();
+	const prepareTimeline = vi.fn(async (input) => {
+		await writeFile(join(input.directory, "prepared.mp4"), "prepared");
+		return {
+			source: {
+				...source,
+				key: "prepared",
+				bucket: "output",
+				objectKey: "owned.mp4",
+			},
+			facts: { ...facts, key: "prepared" },
+			durationMs: 1000,
+			sha256: "c".repeat(64),
+			profile: "H264_CRF12_AAC320_SDR8_V1" as const,
+		};
+	});
 	const prepareImage = vi.fn(async (input) => {
 		await writeFile(join(input.directory, "prepared.mp4"), "prepared");
 		return {
@@ -178,6 +196,7 @@ function setup() {
 		render,
 		browserFor,
 		prepareImage,
+		prepareTimeline,
 		process: createVodInputPreviewProcessor({
 			prisma: prisma as unknown as AppPrismaClient,
 			browserFor,
@@ -185,12 +204,72 @@ function setup() {
 			probe,
 			render,
 			prepareImage,
+			prepareTimeline,
 			heartbeatMs: 10,
 		}),
 	};
 }
 
 describe("durable CPU input preview ownership", () => {
+	it.each([
+		false,
+		true,
+	])("adopts prepared source evidence only while the task remains owned (canceled=%s)", async (canceled) => {
+		const f = setup();
+		const request: Extract<
+			VodInputPreviewRequest,
+			{ kind: "TIMELINE_PREPARE" }
+		> = {
+			kind: "TIMELINE_PREPARE",
+			probeId,
+			document: {
+				schemaVersion: 1,
+				id,
+				audioEnabled: false,
+				clips: [{ id, sourceKey: source.key, inMs: 0, outMs: 1000 }],
+			},
+			output: {
+				credentialId: source.credentialId,
+				bucket: "output",
+				prefix: "prepared",
+			},
+		};
+		Object.assign(f.task, row(request));
+		f.rows.set(probeId, {
+			...row({ kind: "PROBE", sources: [source] }, probeId),
+			status: "SUCCEEDED",
+			result: { sources: [facts] },
+		});
+		if (canceled) {
+			const prepare = f.prepareTimeline.getMockImplementation();
+			if (!prepare) throw new Error("Expected preparation fixture");
+			f.prepareTimeline.mockImplementation(async (input) => {
+				const result = await prepare(input);
+				Object.assign(f.task, {
+					cancelRequestedAt: new Date(),
+					status: "CANCELED",
+				});
+				return result;
+			});
+		}
+		await f.process({ taskId: id });
+		expect(f.prepareTimeline).toHaveBeenCalledOnce();
+		expect(f.render).not.toHaveBeenCalled();
+		expect(f.task.status).toBe(canceled ? "CANCELED" : "SUCCEEDED");
+		const result = f.task.result as unknown as Record<string, unknown>;
+		if (canceled) {
+			expect(result.preparation).toBeUndefined();
+			expect(result.preparationCleanup).toMatchObject({
+				objectPrefix: `prepared/bitovp-generated-inputs/${org}/${id}/`,
+				remoteObjectMayRemain: true,
+			});
+		} else
+			expect(result.preparation).toMatchObject({
+				profile: "H264_CRF12_AAC320_SDR8_V1",
+				durationMs: 1000,
+			});
+		expect(await readdir(join(directory, org, id))).toEqual([]);
+	});
 	it("adopts image preparation as a persistent storage reference and cleans local intermediates", async () => {
 		const f = setup();
 		Object.assign(f.task, row(imageIntent()));

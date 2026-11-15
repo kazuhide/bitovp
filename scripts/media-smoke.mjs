@@ -44,6 +44,7 @@ export const FIXTURES = Object.freeze({
 	"src/library-editing/render-movie-clock.media.ts": 17,
 	"src/vmaf/reference-preparation.media.ts": 2,
 	"src/vod-input-preview/preview.media.ts": 3,
+	"src/vod-input-preview/preparation.media.ts": 1,
 });
 const resourceName = (id) => `bitovp-media-${id}`;
 const inside = (parent, path) => {

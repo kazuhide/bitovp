@@ -33,6 +33,12 @@ export {
 	SEARCH_MAX_PAGES,
 	searchObjects,
 } from "./search";
+export {
+	sameTimelineObject,
+	type TimelinePreparationRow,
+	verifyInputTimelinePreparation,
+	verifyTimelineObjectDigest,
+} from "./timeline-preparation";
 export type {
 	BucketCorsRule,
 	GetObjectInput,

@@ -56,6 +56,9 @@ import type { StartRetryControl } from "./start-1004-retry";
  */
 
 export type OrchestratorDeps = {
+	validateInputPreparation?: (
+		plan: import("@bitovp/core").EncodingPlan,
+	) => Promise<void>;
 	captureIngestInput?: (
 		request: import("../library/input-capture").CaptureIngestRequest,
 	) => Promise<import("../library/input-capture").CapturedIngestInput | null>;
@@ -459,6 +462,11 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		let accountId: string;
 		try {
 			plan = encodingPlanSchema.parse(row.plan);
+			if (!row.cancelRequested && plan.inputTimelinePreparation) {
+				if (!deps.validateInputPreparation)
+					throw new Error("INPUT_PREPARATION_VALIDATOR_REQUIRED");
+				await deps.validateInputPreparation(plan);
+			}
 			entries = stepLogSchema.parse(row.stepLog);
 			resetOwner.entries = entries;
 			const verification = verificationCreateIdentity(

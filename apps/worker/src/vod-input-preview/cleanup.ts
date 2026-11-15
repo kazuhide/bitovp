@@ -173,6 +173,7 @@ export function createVodInputPreviewSweep(deps: {
 			const expired = await deps.prisma.vodInputPreviewTask.findMany({
 				where: {
 					expiresAt: { lt: new Date(now.getTime() - 5 * 60_000) },
+					NOT: { kind: "TIMELINE_PREPARE" },
 					previews: { none: {} },
 					OR: [
 						{ leaseUntil: null },
@@ -186,6 +187,7 @@ export function createVodInputPreviewSweep(deps: {
 				await deps.prisma.vodInputPreviewTask.deleteMany({
 					where: {
 						id: { in: expired.map((row) => row.id) },
+						NOT: { kind: "TIMELINE_PREPARE" },
 						previews: { none: {} },
 					},
 				});

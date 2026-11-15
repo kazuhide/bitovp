@@ -206,6 +206,18 @@ export function inspectVodInputProbe(
 					height,
 					displayAspectRatio: displayAspectRatio(video, width, height),
 					...(frameRate ? { frameRate } : {}),
+					...(typeof video.pix_fmt === "string"
+						? { pixelFormat: video.pix_fmt }
+						: {}),
+					...(typeof video.color_transfer === "string"
+						? { colorTransfer: video.color_transfer }
+						: {}),
+					...(typeof video.color_space === "string"
+						? { colorSpace: video.color_space }
+						: {}),
+					...(typeof video.color_primaries === "string"
+						? { colorPrimaries: video.color_primaries }
+						: {}),
 					...(videoDurationMs !== undefined
 						? { durationMs: videoDurationMs }
 						: {}),

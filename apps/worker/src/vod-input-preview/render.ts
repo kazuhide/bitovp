@@ -3,12 +3,14 @@ import { createReadStream } from "node:fs";
 import { chmod, rm, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import {
+	MAX_VOD_INPUT_PREPARATION_BYTES,
 	resolveVodInputTimeline,
 	type VodInputPreviewRequest,
 	type VodInputTimelineSegment,
 	type VodInputTimelineSource,
 	type VodInputTimelineSourceFacts,
 	validateVodInputPreview,
+	validateVodInputTimeline,
 } from "@bitovp/core/vod-input-timeline";
 import {
 	MediaOperationError,
@@ -17,6 +19,7 @@ import {
 import {
 	VOD_INPUT_PREVIEW_MAX_OUTPUT_BYTES,
 	type VodInputMediaDependencies,
+	vodInputPreparationProfile,
 	vodInputPreviewCanvas,
 	vodInputPreviewReadArgs,
 } from "./media-profile";
@@ -30,7 +33,10 @@ const record = (value: unknown): Record<string, unknown> =>
 /** V1 and A1 keep independent boundaries; only the final mux combines them. */
 export async function renderVodInputPreview(
 	input: VodInputMediaDependencies & {
-		request: Extract<VodInputPreviewRequest, { kind: "PREVIEW" }>;
+		request: Extract<
+			VodInputPreviewRequest,
+			{ kind: "PREVIEW" | "TIMELINE_PREPARE" }
+		>;
 		sources: readonly VodInputTimelineSource[];
 		facts: readonly VodInputTimelineSourceFacts[];
 		directory: string;
@@ -44,11 +50,17 @@ export async function renderVodInputPreview(
 }> {
 	if (!isAbsolute(input.directory) || input.directory.includes("\0"))
 		throw new MediaOperationError("INVALID_LOCAL_PATH");
-	const issues = validateVodInputPreview(input.request, input.facts);
+	const preparing = input.request.kind === "TIMELINE_PREPARE";
+	const issues =
+		input.request.kind === "PREVIEW"
+			? validateVodInputPreview(input.request, input.facts)
+			: validateVodInputTimeline(input.request.document, input.facts, {
+					requireVideo: true,
+				});
 	if (issues[0]) throw new MediaOperationError(issues[0].code);
 	const program = resolveVodInputTimeline(
 		input.request.document,
-		input.request.range,
+		input.request.kind === "PREVIEW" ? input.request.range : undefined,
 	);
 	if (!program.durationMs)
 		throw new MediaOperationError("SOURCE_RANGE_INVALID");
@@ -73,9 +85,33 @@ export async function renderVodInputPreview(
 	}
 	if (main && !main.displayAspectRatio)
 		throw new MediaOperationError("PROBE_UNAVAILABLE");
-	const canvas = main
-		? vodInputPreviewCanvas(main.width, main.height, main.displayAspectRatio)
-		: { width: 640, height: 360 };
+	const preparedProfile =
+		preparing && main
+			? vodInputPreparationProfile(
+					main,
+					[
+						...new Set(
+							program.videoSegments.flatMap((segment) =>
+								segment.kind === "source" ? [segment.sourceKey] : [],
+							),
+						),
+					]
+						.map((key) => sourceFacts(key).video)
+						.filter(
+							(video): video is NonNullable<typeof video> => video !== null,
+						),
+				)
+			: null;
+	const canvas =
+		preparedProfile ??
+		(main
+			? vodInputPreviewCanvas(main.width, main.height, main.displayAspectRatio)
+			: { width: 640, height: 360 });
+	const fps = preparedProfile?.fps ?? "30";
+	const frameMs = preparedProfile?.frameMs ?? 1000 / 30;
+	const maxBytes = preparing
+		? MAX_VOD_INPUT_PREPARATION_BYTES
+		: VOD_INPUT_PREVIEW_MAX_OUTPUT_BYTES;
 	const audioSegments: VodInputTimelineSegment[] = !program.hasAudio
 		? []
 		: program.audioSegments.length
@@ -96,6 +132,13 @@ export async function renderVodInputPreview(
 		})),
 		browserFor: input.browserFor,
 		signal: input.signal,
+		...(preparing
+			? {
+					maxBytes: 128 * 1024 ** 3,
+					maxRequestBytes: 64 * 1024 ** 2,
+					maxRequests: 65_536,
+				}
+			: {}),
 	});
 	const execute = input.execute ?? runMediaProcess;
 	const deadline = Date.now() + (input.timeoutMs ?? 180_000);
@@ -119,7 +162,10 @@ export async function renderVodInputPreview(
 		"-n",
 	];
 	const temporary = new Set<string>();
-	const path = join(input.directory, "preview.mp4");
+	const path = join(
+		input.directory,
+		preparing ? "prepared.mp4" : "preview.mp4",
+	);
 	let partBytes = 0,
 		completed = false;
 	const part = async (
@@ -129,7 +175,12 @@ export async function renderVodInputPreview(
 	) => {
 		input.signal.throwIfAborted();
 		const seconds = String(segment.durationMs / 1000);
-		const name = `${media}-part-${index}.${media === "video" ? "mkv" : "wav"}`;
+		const frameCount =
+			Math.round((segment.startMs + segment.durationMs) / frameMs) -
+			Math.round(segment.startMs / frameMs);
+		if (preparing && media === "video" && frameCount < 1)
+			throw new MediaOperationError("PREPARATION_INTERVAL_TOO_SHORT");
+		const name = `${media}-part-${index}.${media === "video" ? (preparing ? "mp4" : "mkv") : "wav"}`;
 		const output = join(input.directory, name);
 		temporary.add(output);
 		let read: string[], selected: string;
@@ -152,7 +203,7 @@ export async function renderVodInputPreview(
 				"lavfi",
 				"-i",
 				media === "video"
-					? `color=c=black:s=${canvas.width}x${canvas.height}:r=30:d=${seconds}`
+					? `color=c=black:s=${canvas.width}x${canvas.height}:r=${fps}:d=${seconds}`
 					: "anullsrc=channel_layout=stereo:sample_rate=48000",
 			];
 			selected = media === "video" ? "0:v:0" : "0:a:0";
@@ -176,23 +227,33 @@ export async function renderVodInputPreview(
 					? [
 							"-an",
 							"-vf",
-							`scale=${canvas.width}:${canvas.height}:force_original_aspect_ratio=decrease:force_divisible_by=2:reset_sar=1,pad=${canvas.width}:${canvas.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30`,
+							`scale=${canvas.width}:${canvas.height}:force_original_aspect_ratio=decrease:force_divisible_by=2:reset_sar=1,pad=${canvas.width}:${canvas.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps}${preparing ? ",setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709" : ""}`,
 							"-c:v",
 							"libx264",
 							"-preset",
-							"ultrafast",
+							preparing ? "veryfast" : "ultrafast",
 							"-crf",
-							"32",
-							"-maxrate",
-							"1200k",
-							"-bufsize",
-							"2400k",
+							preparedProfile?.crf ?? "32",
+							...(preparing
+								? [
+										"-color_primaries",
+										"bt709",
+										"-color_trc",
+										"bt709",
+										"-colorspace",
+										"bt709",
+									]
+								: ["-maxrate", "1200k", "-bufsize", "2400k"]),
 							"-threads",
 							"1",
 							"-pix_fmt",
 							"yuv420p",
 							"-f",
-							"matroska",
+							preparing ? "mp4" : "matroska",
+							...(preparing && main?.frameRate
+								? ["-video_track_timescale", String(main.frameRate.num)]
+								: []),
+							...(preparing ? ["-frames:v", String(frameCount)] : []),
 						]
 					: [
 							"-vn",
@@ -210,7 +271,7 @@ export async function renderVodInputPreview(
 							"wav",
 						]),
 				"-fs",
-				String(VOD_INPUT_PREVIEW_MAX_OUTPUT_BYTES),
+				String(maxBytes),
 				output,
 			],
 			options(),
@@ -220,8 +281,8 @@ export async function renderVodInputPreview(
 		partBytes += size;
 		if (
 			size < 1 ||
-			size >= VOD_INPUT_PREVIEW_MAX_OUTPUT_BYTES ||
-			partBytes > 128 * 1024 ** 2
+			size >= maxBytes ||
+			partBytes > (preparing ? 64 * 1024 ** 3 : 128 * 1024 ** 2)
 		)
 			throw new MediaOperationError("OUTPUT_LIMIT");
 		return name;
@@ -268,8 +329,20 @@ export async function renderVodInputPreview(
 				"-1",
 				"-c:v",
 				"copy",
+				...(preparing && main?.frameRate
+					? ["-video_track_timescale", String(main.frameRate.num)]
+					: []),
 				...(program.hasAudio
-					? ["-c:a", "aac", "-b:a", "64k", "-ar", "48000", "-ac", "2"]
+					? [
+							"-c:a",
+							"aac",
+							"-b:a",
+							preparedProfile?.audioBitrate ?? "64k",
+							"-ar",
+							"48000",
+							"-ac",
+							"2",
+						]
 					: []),
 				"-threads",
 				"1",
@@ -278,7 +351,7 @@ export async function renderVodInputPreview(
 				"-movflags",
 				"+faststart",
 				"-fs",
-				String(VOD_INPUT_PREVIEW_MAX_OUTPUT_BYTES),
+				String(maxBytes),
 				path,
 			],
 			options(),
@@ -309,7 +382,7 @@ export async function renderVodInputPreview(
 		if (
 			!Number.isFinite(durationMs) ||
 			Math.abs(durationMs - program.durationMs) >
-				100 + videoSegments.length * (1000 / 30) ||
+				(preparing ? frameMs + 25 : 100 + videoSegments.length * frameMs) ||
 			streams.filter((stream) => stream.codec_type === "video").length !== 1 ||
 			streams.some(
 				(stream) =>
@@ -330,8 +403,31 @@ export async function renderVodInputPreview(
 		)
 			throw new MediaOperationError("OUTPUT_INVALID");
 		const size = (await stat(path)).size;
-		if (size < 1 || size >= VOD_INPUT_PREVIEW_MAX_OUTPUT_BYTES)
+		if (size < 1 || size >= maxBytes)
 			throw new MediaOperationError("OUTPUT_LIMIT");
+		if (preparing)
+			await execute(
+				input.ffmpegPath ?? "ffmpeg",
+				[
+					"-v",
+					"error",
+					"-xerror",
+					"-nostdin",
+					"-threads",
+					"1",
+					"-protocol_whitelist",
+					"file,pipe",
+					"-i",
+					path,
+					"-map",
+					"0:v:0",
+					...(program.hasAudio ? ["-map", "0:a:0"] : []),
+					"-f",
+					"null",
+					"-",
+				],
+				options(),
+			);
 		await chmod(path, 0o600);
 		const hash = createHash("sha256");
 		for await (const bytes of createReadStream(path, { signal: input.signal }))

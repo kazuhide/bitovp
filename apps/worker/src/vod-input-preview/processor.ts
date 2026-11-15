@@ -11,6 +11,7 @@ import {
 import { type AppPrismaClient, DB_NULL, type Prisma } from "@bitovp/db";
 import { MediaOperationError } from "../library-editing/process";
 import { probeVodInputSources, renderVodInputPreview } from "./media";
+import { prepareVodInputTimeline } from "./prepare-timeline";
 import type { VodInputBrowserFactory } from "./range-bridge";
 import { prepareVodInputImage } from "./still-image";
 
@@ -42,6 +43,14 @@ export function vodInputPreviewAttemptDirectory(
 }
 
 const errorMessages: Record<string, string> = {
+	PREPARATION_SOURCE_UNSUPPORTED:
+		"Preparation requires measured 8-bit BT.709 SDR video, square pixels and a known frame rate. Inspect the sources again or use a supported source.",
+	PREPARATION_OUTPUT_UNSUPPORTED:
+		"Preparation requires readable and writable S3-compatible or GCS HMAC output storage.",
+	PREPARATION_OUTPUT_UNVERIFIED:
+		"The prepared timeline could not be verified in output storage. Prepare it again.",
+	PREPARATION_INTERVAL_TOO_SHORT:
+		"A video interval is shorter than one output frame. Extend that interval before preparing.",
 	SOURCE_CHANGED: "The source changed. Inspect the source again.",
 	SOURCE_UNVERIFIED: "The storage provider cannot verify this source version.",
 	SOURCE_UNSUPPORTED:
@@ -92,6 +101,7 @@ export function createVodInputPreviewProcessor(deps: {
 	probe?: typeof probeVodInputSources;
 	render?: typeof renderVodInputPreview;
 	prepareImage?: typeof prepareVodInputImage;
+	prepareTimeline?: typeof prepareVodInputTimeline;
 	heartbeatMs?: number;
 }) {
 	const now = deps.now ?? (() => new Date());
@@ -142,7 +152,11 @@ export function createVodInputPreviewProcessor(deps: {
 			token,
 		);
 		const controller = new AbortController();
-		const deadline = AbortSignal.timeout(VOD_INPUT_PREVIEW_TASK_TIMEOUT_MS);
+		const deadline = AbortSignal.timeout(
+			row.kind === "TIMELINE_PREPARE"
+				? 4 * 3600_000
+				: VOD_INPUT_PREVIEW_TASK_TIMEOUT_MS,
+		);
 		const signal = AbortSignal.any([
 			controller.signal,
 			deadline,
@@ -277,27 +291,49 @@ export function createVodInputPreviewProcessor(deps: {
 						facts.video ? facts.video.width * facts.video.height : 0,
 					),
 				);
-				const rendered = await reserve(pixels, signal, (permitSignal) =>
-					(deps.render ?? renderVodInputPreview)({
-						...media,
-						signal: permitSignal,
-						sources,
-						facts,
-						request,
-						directory,
-					}),
+				const rendered = await reserve(pixels, signal, async (permitSignal) =>
+					request.kind === "TIMELINE_PREPARE"
+						? (deps.prepareTimeline ?? prepareVodInputTimeline)({
+								...media,
+								signal: permitSignal,
+								timeoutMs: 4 * 3600_000,
+								sources,
+								facts,
+								request,
+								directory,
+								organizationId: row.organizationId,
+								taskId,
+								attemptId: token,
+							})
+						: (deps.render ?? renderVodInputPreview)({
+								...media,
+								signal: permitSignal,
+								sources,
+								facts,
+								request,
+								directory,
+							}),
 				);
-				if (rendered.path !== join(directory, "preview.mp4"))
-					throw new MediaOperationError("OUTPUT_INVALID");
-				artifact = rendered;
-				result = {
-					preview: {
-						startMs: request.range.startMs,
-						durationMs: rendered.durationMs,
-						size: rendered.size,
-						sha256: rendered.sha256,
-					},
-				};
+				if (request.kind === "TIMELINE_PREPARE") {
+					if (!("profile" in rendered))
+						throw new MediaOperationError("OUTPUT_INVALID");
+					result = { preparation: rendered };
+					sources = [...sources, rendered.source];
+				} else {
+					if (!("path" in rendered))
+						throw new MediaOperationError("OUTPUT_INVALID");
+					if (rendered.path !== join(directory, "preview.mp4"))
+						throw new MediaOperationError("OUTPUT_INVALID");
+					artifact = rendered;
+					result = {
+						preview: {
+							startMs: request.range.startMs,
+							durationMs: rendered.durationMs,
+							size: rendered.size,
+							sha256: rendered.sha256,
+						},
+					};
+				}
 			}
 			const credentialIds = [
 				...new Set(sources.map((source) => source.credentialId)),
@@ -332,6 +368,22 @@ export function createVodInputPreviewProcessor(deps: {
 			adopted = completed.count > 0;
 			return { status: adopted ? "SUCCEEDED" : "LEASE_LOST" };
 		} catch (error) {
+			const cleanupIntent = vodInputPreviewRequestSchema.safeParse(row.request);
+			const preparationCleanup =
+				cleanupIntent.success && cleanupIntent.data.kind === "TIMELINE_PREPARE"
+					? {
+							objectPrefix: `${[
+								cleanupIntent.data.output.prefix.replace(/\/$/, ""),
+								"bitovp-generated-inputs",
+								row.organizationId,
+								taskId,
+							]
+								.filter(Boolean)
+								.join("/")}/`,
+							attemptId: token,
+							remoteObjectMayRemain: true as const,
+						}
+					: undefined;
 			const latest = await deps.prisma.vodInputPreviewTask.findUnique({
 				where: { id: taskId },
 			});
@@ -351,9 +403,11 @@ export function createVodInputPreviewProcessor(deps: {
 							? "RESOURCE_UNAVAILABLE"
 							: error instanceof MediaOperationError
 								? error.code
-								: row.kind === "IMAGE_PREPARE"
-									? "IMAGE_PREPARE_FAILED"
-									: "PREVIEW_FAILED";
+								: row.kind === "TIMELINE_PREPARE"
+									? "PREPARATION_FAILED"
+									: row.kind === "IMAGE_PREPARE"
+										? "IMAGE_PREPARE_FAILED"
+										: "PREVIEW_FAILED";
 			if (
 				latest?.leaseToken === token &&
 				latest.leaseUntil &&
@@ -367,6 +421,7 @@ export function createVodInputPreviewProcessor(deps: {
 					},
 					data: {
 						status: canceled ? "CANCELED" : "FAILED",
+						...(preparationCleanup ? { result: { preparationCleanup } } : {}),
 						stage: canceled ? "CANCELED" : "FAILED",
 						error: {
 							code,
@@ -384,7 +439,11 @@ export function createVodInputPreviewProcessor(deps: {
 			clearInterval(heartbeat);
 			controller.abort();
 			await renewing;
-			if (!adopted || row.kind === "IMAGE_PREPARE")
+			if (
+				!adopted ||
+				row.kind === "IMAGE_PREPARE" ||
+				row.kind === "TIMELINE_PREPARE"
+			)
 				await rm(directory, { recursive: true, force: true });
 		}
 	};

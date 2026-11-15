@@ -12,6 +12,7 @@ import {
 	type WizardState,
 } from "./build-plan";
 import {
+	applyPreparedVodInputTimeline,
 	applyVodInputTimeline,
 	WizardInputTimelineError,
 } from "./input-timeline";
@@ -83,6 +84,73 @@ const sequence = {
 };
 
 describe("VOD manual input graph", () => {
+	it("uses one verified shared ingest while retaining the independent editor document", () => {
+		const editable = { ...state, inputTimeline: sequence };
+		const before = JSON.stringify(editable);
+		const source = {
+			key: "prepared",
+			credentialId: id,
+			bucket: "output",
+			objectKey: "owned/sequence.mp4",
+		};
+		const prepared = {
+			source,
+			facts: {
+				key: "prepared",
+				durationMs: 4500,
+				video: { streamIndex: 0, width: 1920, height: 1080 },
+				audio: { streamIndex: 1, sampleRate: 48000, channels: 2 },
+				identity: { size: 1000, etag: "verified" },
+			},
+			durationMs: 4500,
+			sha256: "a".repeat(64),
+			profile: "H264_CRF12_AAC320_SDR8_V1" as const,
+		};
+		const task = {
+			id,
+			kind: "TIMELINE_PREPARE" as const,
+			status: "SUCCEEDED" as const,
+			stage: "READY",
+			requestHash: "b".repeat(64),
+			createdAt: new Date().toISOString(),
+			expiresAt: new Date(Date.now() + 60000).toISOString(),
+			result: { preparation: prepared },
+		};
+		const plan = encodingPlanSchema.parse(
+			buildPlan(applyPreparedVodInputTimeline(editable, task)),
+		);
+		const reedited = encodingPlanSchema.parse(
+			buildPlan({
+				...editable,
+				inputTimelinePreparation: { taskId: id, requestHash: task.requestHash },
+			}),
+		);
+		expect(reedited.inputTimelinePreparation).toBeUndefined();
+		expect(plan.ingest).toEqual([
+			{
+				key: "prepared_av",
+				inputKey: "prepared",
+				inputPath: source.objectKey,
+				selectionMode: "AUTO",
+				position: 0,
+			},
+		]);
+		expect(
+			plan.renditions.every(
+				(rendition) => rendition.ingestKey === "prepared_av",
+			),
+		).toBe(true);
+		expect(plan.concatenationStreams).toEqual([]);
+		expect(plan.trimmingStreams).toEqual([]);
+		expect(plan.inputTimelinePreparation).toEqual({
+			taskId: id,
+			requestHash: task.requestHash,
+		});
+		expect(
+			validatePlan(plan).filter((issue) => issue.level === "error"),
+		).toEqual([]);
+		expect(JSON.stringify(editable)).toBe(before);
+	});
 	it.each([
 		"audio",
 		"video",

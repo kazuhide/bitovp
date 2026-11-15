@@ -2080,6 +2080,14 @@ export function planToWizardState(
 		accountId: asString(bitmovin.accountId) ?? "",
 		cloudRegion: asString(bitmovin.cloudRegion) ?? "AUTO",
 		encoderVersion: asString(bitmovin.encoderVersion) ?? "STABLE",
+		...(raw.inputTimelinePreparation
+			? {
+					inputTimelinePreparation:
+						encodingPlanSchema.shape.inputTimelinePreparation.parse(
+							raw.inputTimelinePreparation,
+						),
+				}
+			: {}),
 		inputFiles,
 		output: {
 			credentialId: asString(origin.credentialId) ?? "",

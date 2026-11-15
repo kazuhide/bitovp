@@ -39,6 +39,25 @@ export function getVodInputTimelineDurationMs(
 		: document.clips.reduce((sum, clip) => sum + clip.outMs - clip.inMs, 0);
 }
 
+/** Separate editorial programs need a baked shared AV input for cloud execution. */
+export function vodInputTimelineNeedsPreparation(
+	document: VodInputTimelineDocument,
+): boolean {
+	const normalized = normalizeVodInputTimelineDocument(document);
+	if (!normalized.audioEnabled || !normalized.audioClips.length) return false;
+	const signature = (clips: VodInputTimelinePlacedClip[]) =>
+		clips.map(({ sourceKey, startMs, inMs, outMs }) => ({
+			sourceKey,
+			startMs,
+			inMs,
+			outMs,
+		}));
+	return (
+		JSON.stringify(signature(normalized.videoClips)) !==
+		JSON.stringify(signature(normalized.audioClips))
+	);
+}
+
 export function getVodInputTimelineTrack(
 	document: VodInputTimelineDocument,
 	track: VodInputTimelineTrack,

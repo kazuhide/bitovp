@@ -1,3 +1,4 @@
+import type { VodInputTimelineSourceFacts } from "@bitovp/core/vod-input-timeline";
 import {
 	MediaOperationError,
 	type runMediaProcess,
@@ -57,5 +58,40 @@ export function vodInputPreviewCanvas(
 	return {
 		width: Math.max(2, Math.floor((aspect.num * scale) / 2) * 2),
 		height: Math.max(2, Math.floor((aspect.den * scale) / 2) * 2),
+	};
+}
+
+/** A full-resolution preparation is a separate, qualified SDR conversion. */
+export function vodInputPreparationProfile(
+	main: NonNullable<VodInputTimelineSourceFacts["video"]>,
+	videos: NonNullable<VodInputTimelineSourceFacts["video"]>[],
+) {
+	for (const video of videos) {
+		if (
+			video.pixelFormat !== "yuv420p" ||
+			video.colorTransfer !== "bt709" ||
+			video.colorSpace !== "bt709" ||
+			video.colorPrimaries !== "bt709" ||
+			!video.displayAspectRatio ||
+			video.displayAspectRatio.num * video.height !==
+				video.displayAspectRatio.den * video.width
+		)
+			throw new MediaOperationError("PREPARATION_SOURCE_UNSUPPORTED");
+	}
+	if (
+		!main.frameRate ||
+		main.frameRate.num / main.frameRate.den > 120 ||
+		main.frameRate.num / main.frameRate.den < 1 ||
+		main.width % 2 ||
+		main.height % 2
+	)
+		throw new MediaOperationError("PREPARATION_SOURCE_UNSUPPORTED");
+	return {
+		width: main.width,
+		height: main.height,
+		fps: `${main.frameRate.num}/${main.frameRate.den}`,
+		frameMs: (1000 * main.frameRate.den) / main.frameRate.num,
+		crf: "12",
+		audioBitrate: "320k",
 	};
 }

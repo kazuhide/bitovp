@@ -44,7 +44,10 @@ import {
 	TENANT_ORGANIZATION,
 } from "@bitovp/db";
 import type { BrowserCredential } from "@bitovp/storage";
-import { createBrowserForCredential } from "@bitovp/storage";
+import {
+	createBrowserForCredential,
+	verifyInputTimelinePreparation,
+} from "@bitovp/storage";
 import { type Job, Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
 import { createAlertEngine, createOrphanResolver } from "./alerts/engine";
@@ -967,6 +970,19 @@ const processorDeps: LiveChannelDeps = {
 const orchestrate = tenantService(() =>
 	createOrchestratorProcessor({
 		...processorDeps,
+		validateInputPreparation: (plan) =>
+			verifyInputTimelinePreparation({
+				plan,
+				organizationId: requireOrganizationId(),
+				allowExpired: true,
+				findTask: (id) =>
+					prisma.vodInputPreviewTask.findUnique({ where: { id } }),
+				browserFor: editingBrowserFor,
+				signal: AbortSignal.any([
+					editingShutdownController.signal,
+					AbortSignal.timeout(120_000),
+				]),
+			}),
 		captureIngestInput: createEncodingInputCapture({
 			prisma,
 			browserFor: editingBrowserFor,

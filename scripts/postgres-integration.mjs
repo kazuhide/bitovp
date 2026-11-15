@@ -79,6 +79,7 @@ export const GROUPS = [
 			"src/library-editing/generation-speech.integration.test.ts": 2,
 			"src/library-editing/generation-duration-review.integration.test.ts": 2,
 			"src/library-editing/dialogue-source.integration.test.ts": 2,
+			"src/vod-input-preview/preparation.integration.test.ts": 1,
 		},
 	},
 ];

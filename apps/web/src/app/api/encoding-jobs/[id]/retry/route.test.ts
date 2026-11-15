@@ -3,6 +3,8 @@ import {
 	encodingPlanSchema,
 	validatePlan,
 } from "@bitovp/core";
+import type { VodInputTimelinePlacedClip } from "@bitovp/core/vod-input-timeline";
+import { buildPlan, DEFAULT_WIZARD_STATE } from "@bitovp/core/wizard";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
@@ -71,6 +73,66 @@ function nativeQcPlan(only = false): EncodingPlan {
 	});
 }
 
+function independentConcatenationPlan(aligned = false): EncodingPlan {
+	const clip = (
+		n: number,
+		sourceKey: string,
+		startMs: number,
+		inMs: number,
+		outMs: number,
+	): VodInputTimelinePlacedClip => ({
+		id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+		sourceKey,
+		startMs,
+		inMs,
+		outMs,
+	});
+	const videoClips = [
+		clip(2, "bbb", 0, 10_000, 18_000),
+		clip(3, "normalized", 8000, 0, 2000),
+		clip(4, "still", 10_000, 0, 2000),
+		clip(5, "normalized", 12_000, 4000, 8000),
+		clip(6, "bbb", 16_000, 60_000, 68_000),
+	];
+	return encodingPlanSchema.parse(
+		buildPlan({
+			...structuredClone(DEFAULT_WIZARD_STATE),
+			name: "Retained five-video/three-audio qualification",
+			accountId: ID,
+			inputFiles: ["bbb", "normalized", "still"].map((key) => ({
+				key,
+				inputKey: "source",
+				kind: "S3",
+				credentialId: ID,
+				bucket: "input",
+				path: `${key}.mp4`,
+			})),
+			output: {
+				...DEFAULT_WIZARD_STATE.output,
+				credentialId: ID,
+				bucket: "output",
+			},
+			videos: [{ height: 360, bitrate: 400_000 }],
+			audios: [{ bitrate: 96_000, rate: 48_000 }],
+			manifests: { hls: false, dash: false },
+			inputTimeline: {
+				schemaVersion: 2,
+				id: ID,
+				audioEnabled: true,
+				durationMs: 24_000,
+				videoClips,
+				audioClips: aligned
+					? structuredClone(videoClips)
+					: [
+							clip(7, "bbb", 0, 10_000, 18_000),
+							clip(8, "normalized", 8000, 0, 8000),
+							clip(9, "bbb", 16_000, 60_000, 68_000),
+						],
+			},
+		}),
+	);
+}
+
 const failedStart = [
 	{
 		step: "start",
@@ -94,6 +156,72 @@ afterEach(() => {
 });
 
 describe("POST /api/encoding-jobs/[id]/retry", () => {
+	it.each([
+		"failed start",
+		"failed await after completed start",
+	])("refuses the retained unqualified five-video/three-audio plan with %s before changing or enqueueing it", async (shape) => {
+		const plan = independentConcatenationPlan();
+		expect(
+			plan.concatenationStreams.map((item) => item.sources.length),
+		).toEqual([5, 3]);
+		expect(validatePlan(plan)).toContainEqual(
+			expect.objectContaining({
+				code: "PLAN_CONCATENATION_AV_UNQUALIFIED",
+				level: "error",
+			}),
+		);
+		const stepLog = [
+			{
+				step: "encoding",
+				kind: "CREATE_ENCODING",
+				status: "DONE",
+				payload: {},
+				refs: {},
+				resourceId: "retained-encoding",
+			},
+			{
+				...failedStart[0],
+				status: shape === "failed start" ? "FAILED" : "DONE",
+			},
+			{
+				step: "await",
+				kind: "AWAIT_ENCODING",
+				status: shape === "failed start" ? "PENDING" : "FAILED",
+				payload: {},
+				refs: { encodingId: "retained-encoding" },
+			},
+		];
+		const row = { id: ID, status: "ERROR", plan, stepLog };
+		const snapshot = structuredClone(row);
+		findUnique.mockResolvedValueOnce(row);
+		const response = await POST(req(), params);
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			details: { code: "PLAN_CONCATENATION_AV_UNQUALIFIED" },
+			error: expect.stringContaining("corrected new job"),
+		});
+		expect(row).toEqual(snapshot);
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(update).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it("preserves retry of a qualified aligned AV concatenation", async () => {
+		const plan = independentConcatenationPlan(true);
+		expect(
+			validatePlan(plan).filter((issue) => issue.level === "error"),
+		).toEqual([]);
+		findUnique.mockResolvedValueOnce({
+			id: ID,
+			status: "ERROR",
+			plan,
+			stepLog: failedStart,
+		});
+		expect((await POST(req(), params)).status).toBe(200);
+		expect(updateMany).toHaveBeenCalledOnce();
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+
 	it.each([
 		"generated QC mirror",
 		"two delivery muxings",

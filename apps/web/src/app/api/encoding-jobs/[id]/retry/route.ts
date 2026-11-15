@@ -44,14 +44,16 @@ export async function POST(_req: Request, { params }: RouteParams) {
 				"Remote STOP was requested; use re-run-as-new instead of reusing these resources",
 			);
 		}
-		// Retained steps resume unchanged. Reject the confirmed native SMART_PASS
-		// conflict, without revalidating unrelated historical configuration rules.
+		// Retained steps resume unchanged. Block the confirmed SMART_PASS conflict
+		// and unqualified paired AV concatenation, without migrating or rejecting
+		// saved jobs for unrelated historical configuration rules.
 		const plan = encodingPlanSchema.safeParse(row.plan);
-		if (plan.success && plan.data.internal?.hevcV2) {
-			const conflict = validatePlan(
-				plan.data,
-				serverPlanValidationOptions(),
-			).find(
+		if (
+			plan.success &&
+			(plan.data.internal?.hevcV2 || plan.data.concatenationStreams.length > 0)
+		) {
+			const issues = validatePlan(plan.data, serverPlanValidationOptions());
+			const conflict = issues.find(
 				(issue) => issue.code === "PLAN_INTERNAL_HEVC_V2_MULTIPLE_MUXINGS",
 			);
 			if (conflict)
@@ -59,6 +61,15 @@ export async function POST(_req: Request, { params }: RouteParams) {
 					409,
 					`Create a corrected new job instead of repeating this saved SMART_PASS muxing conflict. ${conflict.message}`,
 					{ code: conflict.code },
+				);
+			const unqualified = issues.find(
+				(issue) => issue.code === "PLAN_CONCATENATION_AV_UNQUALIFIED",
+			);
+			if (unqualified)
+				return jsonError(
+					409,
+					`Create a corrected new job instead of repeating this saved unqualified AV concatenation. ${unqualified.message}`,
+					{ code: unqualified.code },
 				);
 		}
 		const entries = stepLogSchema

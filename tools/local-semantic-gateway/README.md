@@ -16,7 +16,7 @@ BitOVP workerが固定のローカルLLMへ非同期jobを送るための、Pyth
 すべてのAPIに、private tokenによるBearer認証が必要です。tokenは一つのpreview tenantへ固定します。任意のURL・model・runtime設定・schema・shell・toolを要求へ追加できません。CORSによるブラウザー直接接続も提供しません。
 
 - `GET /health`: Gatewayの版、登録stage、固定モデル、`quarantinedProfiles`、`acceptingJobs`を返します。隔離中や停止中は`status: "degraded"`、`acceptingJobs: false`。backend推論の動作確認は別です。
-- `GET /readiness/{profile}`: `amd`または`nvidia`だけを受け付ける認証付きのmetadata診断です。専用runtimeの`/api/version`と`/api/tags`へGETし、固定版・model digestとGPU能力を照合します。停止中・いずれかのprofileが隔離中ならruntimeへ接続しません。モデルの読込・推論・解放は行いません。
+- `GET /readiness/{profile}`: `amd`または`nvidia`だけを受け付ける認証付きのmetadata診断です。専用runtimeの`/api/version`と`/api/tags`へGETし、固定版・model digest、runtimeの実行条件、カーネルのGPU情報とデバイスへのアクセス権を照合します。GPUデバイスをopenせず、`gpu-discover`も実行しません。停止中・いずれかのprofileが隔離中ならruntimeへ接続しません。モデルの読込・推論・解放は行いません。
 - `POST /v1/semantic-jobs`: 初回202、同じ要求の再送200、同じkeyで異なるbodyは409。
 - `GET /v1/semantic-jobs/{id}`: 認証tenantに属するjobだけを返します。
 - `POST /v1/semantic-jobs/{id}/cancel`: `{}`を送り、取消を要求します。
@@ -32,7 +32,8 @@ ready: codeが"READY"の場合だけtrue
 code: "READY" | "GATEWAY_STOPPING" | "RUNTIME_QUARANTINED"
       | "RUNTIME_UNAVAILABLE" | "RUNTIME_VERSION_MISMATCH" | "MODEL_MISMATCH"
       | "GPU_UNVERIFIED"
-gpu: READYの場合だけ、新鮮なbitovp-runtime-gpu-capability-v1の能力情報
+gpu: READYの場合だけ、新鮮なbitovp-runtime-gpu-capability-v1の受動確認情報
+     method: "PASSIVE_DEVICE_ACCESS"
 ```
 
 `/health`の設定値と異なりruntimeの現在の登録情報を読みますが、GPUの空き・モデルの読込可否・推論結果の正しさまでは保証しません。各GETは既存の固定loopback接続・接続5秒/応答読取10秒・応答2MiB上限を使い、redirectやproxyを使いません。二つの読取を直列に行うため、clientはその合計時間も考慮します。raw error、接続先host、観測した未承認model名・digestは応答やログへ出しません。
@@ -148,7 +149,15 @@ registryを書き換えただけではアプリの新方式は有効になりま
 
 既設Gatewayへの更新時に下の初回導入scriptを再実行しません。運用者がidleと所有unitを確認し、既存directory/unitと公開registryをbackupしてから、`gateway.py`・`gpu_capability.py`・`plamo_runtime.py`とregistryを同じ検証済みsnapshotから更新し、同じunitを再起動します。token・tenant・証明書・profile設定は維持します。healthで旧二段と新翻訳stageのschema/prompt identityを照合した後、別途実推論を確認します。
 
-`/readiness/<profile>` の READY は、固定したruntime版・モデルdigestに加え、`bitovp-runtime-gpu-capability-v1` の新鮮なGPU能力情報を要求します。`gpu_capability.py` は、専用user serviceのMainPID、同一UID・mount/user namespace、専用loopback listener、実行中のbinary、profileのGPU選択条件を照合します。実runtimeとGatewayのUID/GID・補助group・有効capability・LSM contextが異なる場合、runtimeにSeccomp filterがある場合、未知のdevice制限がある場合も能力を確認済みとはしません。DeviceAllowはsystemctlが空値を省略するため、固定unitのD-Bus propertyをbusctlで読み、型付きの空配列 `a(ss) 0` を明示確認します。欠落・不正な型・空でない配列は拒否します。そのruntimeと固定backend libraryのSHAを確認し、同じGPU選択条件でOllama 0.40.14の `gpu-discover` だけを実行します。CUDA/ROCm backendが列挙した実デバイスと正の空きメモリを確認し、CPUのみ・sysfsのみ・未知の状態は `GPU_UNVERIFIED` とします。モデルはロードせず、chat/generate/download/unloadも呼びません。モデルを毎回unloadする待機状態でも能力を確認できます。実推論後のGPU配置と解放確認は引き続き別に必須です。
+`/readiness/<profile>` の READY は、固定したruntime版・モデルdigestと、現在のデバイスへの受動的なアクセス確認を示します。`gpu_capability.py` は、専用user serviceのMainPID、同一UID・mount/user namespace、専用loopback listener、実行中のbinary、profileのGPU選択条件を照合します。実runtimeとGatewayのUID/GID・補助group・有効capability・LSM contextが異なる場合、runtimeにSeccomp filterがある場合、未知のdevice制限がある場合は確認済みとしません。DeviceAllowは固定unitのD-Bus propertyから型付きの空配列 `a(ss) 0` を明示確認し、欠落・不正な型・空でない配列は拒否します。runtimeと固定backend libraryのSHA確認も維持します。
+
+待機時の `PASSIVE_DEVICE_ACCESS` は、NVIDIAではカーネルに登録された選択GPUのUUID・device minorとデバイスのアクセス権、AMDではKFDのGPU情報・amdgpu driverと全候補render deviceのアクセス権を確認します。AMDはKFDとROCrの順序が一致するとは仮定せず、候補の一部にアクセスできない場合も利用不可とします。デバイスのopen・ioctl・GPU検出コマンド・モデルのロードは行いません。時刻はこの受動確認の観測時刻です。以前の実GPU検出の時刻を書き換えたり、空きVRAMやbackend実動作を確認済みとしたりはしません。デバイスなし・CPUのみ・権限不足・未知の状態は `GPU_UNVERIFIED` とします。
+
+新しいsemantic/Plamo推論ジョブを受け付ける時と、共有推論leaseを取得した実行直前は、毎回キャッシュを使わずOllama 0.40.14の `gpu-discover` を実行します。`OLLAMA_NATIVE_DISCOVERY` だけを実GPUの根拠として受理し、CUDA/ROCmが列挙した実デバイスと正の空きメモリを確認します。受動確認の結果を代用できません。実推論後のGPU配置と解放確認も引き続き必須です。health・readiness・履歴・取消・同一requestKeyの再読は実GPU検出を起動しません。
+
+デバイスノードは、カーネルに登録されたmajor/minorと実ファイルの `st_rdev` 全体が一致することを要求します。パス名や文字デバイスであることだけでは確認済みとせず、別デバイスへの誤った結び付けを拒否します。
+
+更新時は、新しい方法名を受理するWeb/Workerを先に配備し、その後Gatewayを更新します。旧Web/Workerは `PASSIVE_DEVICE_ACCESS` を未知として拒否するため、Gatewayだけを先に更新するとクリップ機能が一時的に利用不可になります。
 
 Workerは4秒以内のmetadata確認をまとめ、5秒間隔で更新します。元のGPU観測時刻を保持し、15秒を超えた成功はWeb受付にもWorkerの新規claimにも使いません。WebはRedisのWorker状態だけを読み、画面からLANを直接probeしません。取得不能時も既存結果の参照、所有タスクのcancel、確定済みartifactの回復は維持します。GPU-discovery子プロセスはGatewayと同じuser unitのメモリ予算に入ります。モデルを使わない管理用preflightで子プロセスの最大RSSが304,412 KiB、親が25,044 KiBだったため、provisionerのGateway予算は有限の `MemoryMax=512M` とします。既設256Mはこの子プロセスの実測だけでも超えます。配備時は所有Gateway unitも512Mへ更新し、そのunit内の実際の認証付きGETで `MemoryPeak`、OOM、再起動数、timeoutを測定してください。管理用shellの成功はGatewayの権限・制限やcgroup内での成功を保証しません。CLIやfixtureの成功だけを実機確認として扱いません。
 

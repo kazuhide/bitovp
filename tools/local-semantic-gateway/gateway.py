@@ -493,14 +493,14 @@ class Gateway:
         if not hmac.compare_digest(hashlib.sha256(authorization[7:].encode()).hexdigest(), self.token_hash):
             raise GatewayError('UNAUTHORIZED', 401)
 
-    def availability(self, profile):
+    def availability(self, profile, *, discover=False):
         if self.stopping.is_set():
             return 'GATEWAY_STOPPING', None
         if self.store.quarantined_profiles():
             return 'RUNTIME_QUARANTINED', None
         code = self.runtime.readiness(profile)
-        gpu = self.runtime.gpu_capability(profile) if code == 'READY' else None
-        if code == 'READY' and gpu is None:
+        gpu = self.runtime.gpu_capability(profile, discover=discover) if code == 'READY' else None
+        if code == 'READY' and (gpu is None or (discover and gpu.get('method') != 'OLLAMA_NATIVE_DISCOVERY')):
             code = 'GPU_UNVERIFIED'
         if self.stopping.is_set():
             return 'GATEWAY_STOPPING', None
@@ -551,7 +551,7 @@ class Gateway:
                 if self.store.details(job_id) is not None:
                     row, _ = self.store.submit(body)
                     return 200, row
-                code, _ = self.availability(body['profile'])
+                code, _ = self.availability(body['profile'], discover=True)
                 if code != 'READY':
                     raise GatewayError(code, 503)
                 if self.stopping.is_set():
@@ -585,7 +585,7 @@ class Gateway:
                 if self.store.details(job_id) is not None:
                     row, _ = self.store.submit(body)
                     return 200, row
-                code, _ = self.availability(body['profile'])
+                code, _ = self.availability(body['profile'], discover=True)
                 if code != 'READY':
                     raise GatewayError(code, 503)
                 row, created = self.store.submit(body)
@@ -625,7 +625,7 @@ class Gateway:
                     raise GatewayError('RUNTIME_QUARANTINED')
                 if self.plamo_runtime is None:
                     raise GatewayError('MODEL_NOT_INSTALLED')
-                code, _ = self.availability(body['profile'])
+                code, _ = self.availability(body['profile'], discover=True)
                 if code != 'READY':
                     raise GatewayError(code, 503)
                 if any(self.runtime.loaded(profile) for profile in PORTS):
@@ -683,7 +683,7 @@ class Gateway:
                 if self.store.quarantined_profiles():
                     raise GatewayError('RUNTIME_QUARANTINED')
                 self.runtime.identity(body['profile'])
-                code, _ = self.availability(body['profile'])
+                code, _ = self.availability(body['profile'], discover=True)
                 if code != 'READY':
                     raise GatewayError(code, 503)
                 if any(self.runtime.loaded(profile) for profile in PORTS):
@@ -758,19 +758,13 @@ class FixedRuntime:
     def __init__(self):
         self.unconfirmed_profiles = set()
         self.gpu_probe = RuntimeGpuCapability()
-        self.gpu_observations = {}
         self.gpu_probe_lock = threading.Lock()
 
-    def gpu_capability(self, profile):
-        # One bounded discovery per profile per five seconds, including failures.
+    def gpu_capability(self, profile, *, discover=False):
+        # Background readiness never initializes CUDA/ROCm. New jobs and
+        # execution under the inference lease each require a fresh discovery.
         with self.gpu_probe_lock:
-            previous = self.gpu_observations.get(profile)
-            now = time.monotonic()
-            if previous is not None and 0 <= now - previous[0] < 5:
-                return previous[1]
-            result = self.gpu_probe.read(profile)
-            self.gpu_observations[profile] = (time.monotonic(), result)
-            return result
+            return self.gpu_probe.read(profile) if discover else self.gpu_probe.inspect(profile)
 
     @staticmethod
     def request(profile, route, payload=None, control=None):

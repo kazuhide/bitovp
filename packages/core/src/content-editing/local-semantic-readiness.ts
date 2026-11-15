@@ -128,7 +128,7 @@ export function summarizeClipEditingAvailability(
 export const localSemanticGpuCapabilitySchema = z.strictObject({
 	version: z.literal("bitovp-runtime-gpu-capability-v1"),
 	profile: z.enum(["amd", "nvidia"]),
-	method: z.literal("OLLAMA_NATIVE_DISCOVERY"),
+	method: z.enum(["OLLAMA_NATIVE_DISCOVERY", "PASSIVE_DEVICE_ACCESS"]),
 	backend: z.enum(["CUDA", "ROCm"]),
 	observedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
 });

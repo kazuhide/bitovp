@@ -21,6 +21,7 @@ import {
 	type HdrReferenceColor,
 	type HlsQcEvidence,
 	type HlsQcTarget,
+	hdrInputFromProbe,
 	isHdrVmafModel,
 	PER_TITLE_ATTRIBUTION_VERSION,
 	PER_TITLE_SCHEMA_VERSION,
@@ -1004,17 +1005,17 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				: undefined;
 		if (resourceProbe && resourceProbe.code !== 0)
 			throw new Error("Cannot probe quality measurement input");
-		if (banding && resourceProbe)
-			bandingInputFromProbe(
-				resourceProbe.stdout,
-				hdrRequest
-					? JSON.parse(resourceProbe.stdout).streams?.find(
-							(s: { codec_type?: string }) => s.codec_type === "video",
-						)?.color_transfer === "arib-std-b67"
-						? "HLG_TO_PQ_1000_NITS"
-						: "PQ"
-					: undefined,
-			);
+		const hdrBandingMethod =
+			hdrRequest && resourceProbe
+				? hdrInputFromProbe(resourceProbe.stdout, "distorted").transfer ===
+					"arib-std-b67"
+					? "HLG_TO_PQ_1000_NITS"
+					: "PQ"
+				: undefined;
+		const bandingVideo =
+			banding && resourceProbe
+				? bandingInputFromProbe(resourceProbe.stdout, hdrBandingMethod)
+				: undefined;
 		// Per-title rungs carry no plan height/bitrate — probe the downloaded
 		// mirror so the quality ladder can place them. Standard renditions keep
 		// their plan values, so skip the extra probe there.
@@ -1221,7 +1222,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					? { threads: deps.threads }
 					: {}),
 			// Cloud receipts require every frame, regardless of local performance tuning.
-			...(execution.backend === "CLOUD"
+			...(execution.backend === "CLOUD" || hdrRequest
 				? { subsample: 1 }
 				: deps.subsample !== undefined
 					? { subsample: deps.subsample }
@@ -1441,14 +1442,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 									signal: runSignal,
 									allocation,
 									assertOwned,
-									...(hdrMeasurement
-										? {
-												hdrMethod:
-													hdrMeasurement.distorted.transfer === "arib-std-b67"
-														? ("HLG_TO_PQ_1000_NITS" as const)
-														: ("PQ" as const),
-											}
-										: {}),
+									...(hdrBandingMethod ? { hdrMethod: hdrBandingMethod } : {}),
 								},
 							)
 						: undefined;
@@ -1548,8 +1542,8 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 												: {}),
 										})
 									: resourceSession.plan(pair, pairCount);
-								if (!banding) return base;
-								const video = bandingInputFromProbe(resourceProbe.stdout);
+								if (!banding || !bandingVideo) return base;
+								const video = bandingVideo;
 								const selected =
 									banding.selection.backend === "cpu"
 										? undefined
@@ -2564,11 +2558,12 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			// column for report metadata). Local runs omit it when unset or 1; cloud
 			// runs explicitly record their enforced full-frame stride.
 			// Explicit 1 also replaces stale local-stride metadata carried by retries.
-			const subsampling = isCloud
-				? 1
-				: deps.subsample !== undefined && deps.subsample > 1
-					? deps.subsample
-					: undefined;
+			const subsampling =
+				isCloud || hdr
+					? 1
+					: deps.subsample !== undefined && deps.subsample > 1
+						? deps.subsample
+						: undefined;
 			// Each cloud pair owns a separate resource; local scoring keeps its CPU limit.
 			const descriptorConcurrency = isCloud
 				? work.length

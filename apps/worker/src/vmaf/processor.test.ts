@@ -28,6 +28,7 @@ import { labManualTriggerPrefix } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProcessRunner } from "../feeder/supervisor";
 import type { ResolvedCredential } from "../orchestrator/executor";
+import * as bandingScoring from "./banding-score";
 import type { VmafDownload } from "./download";
 import * as hdrScoring from "./hdr-score";
 import * as hlsAcquisition from "./hls-source";
@@ -40,6 +41,7 @@ import { NativePairRefusal } from "./native-score";
 import { createVmafProcessor, type VmafProcessorDeps } from "./processor";
 import * as referencePreparation from "./reference-preparation";
 import type { VmafResourceLeaseRequest } from "./resource-leases";
+import { planLocalResources } from "./resource-plan";
 import { createSharedVmafExecution } from "./shared-execution";
 
 /**
@@ -684,7 +686,17 @@ describe("HDR QC execution policy", () => {
 		).rejects.toThrow("HDR_RESOURCE_ADMISSION_REQUIRED");
 		expect(t.downloaded).toHaveLength(0);
 	});
-	it("retains HDR protocol and exact HLS witness under the existing measurement transaction", async () => {
+	it.each([
+		{ transfer: "smpte2084", banding: false, externalPlanner: false },
+		{ transfer: "smpte2084", banding: true, externalPlanner: false },
+		{ transfer: "arib-std-b67", banding: true, externalPlanner: false },
+		{ transfer: "smpte2084", banding: true, externalPlanner: true },
+		{ transfer: "arib-std-b67", banding: true, externalPlanner: true },
+	])("retains full-frame HDR/HLS and CAMBI evidence ($transfer, banding=$banding, externalPlanner=$externalPlanner)", async ({
+		transfer,
+		banding,
+		externalPlanner,
+	}) => {
 		const plan = qcPlan();
 		delete plan.qc;
 		plan.generation = { timing: "POST_ENCODING" };
@@ -727,7 +739,7 @@ describe("HDR QC execution policy", () => {
 			color_range: "tv",
 			color_space: "bt2020nc",
 			color_primaries: "bt2020",
-			color_transfer: "smpte2084",
+			color_transfer: transfer,
 			sample_aspect_ratio: "1:1",
 			r_frame_rate: "24/1",
 			avg_frame_rate: "24/1",
@@ -736,19 +748,24 @@ describe("HDR QC execution policy", () => {
 		};
 		const probe = JSON.stringify({ streams: [video] });
 		const input = hdrInputFromProbe(probe, "distorted");
+		const readResources = () => ({
+			cpuCapacity: 4,
+			memoryLimitBytes: 9 * 1024 ** 3,
+			headroomBytes: 9 * 1024 ** 3,
+			reserveBytes: 1024 ** 3,
+			budgetBytes: 8 * 1024 ** 3,
+		});
 		const resources = createLocalVmafResources({
 			threads: 1,
-			readResources: () => ({
-				cpuCapacity: 4,
-				memoryLimitBytes: 9 * 1024 ** 3,
-				headroomBytes: 9 * 1024 ** 3,
-				reserveBytes: 1024 ** 3,
-				budgetBytes: 8 * 1024 ** 3,
-			}),
+			readResources,
 		});
 		const t = setup({
 			plan,
-			job: hdrRequest,
+			job: {
+				...hdrRequest,
+				params: { ...hdrRequest.params, banding, subsample: 8 },
+			},
+			subsample: 4,
 			probeJson: probe,
 			resolveModelPath: () => "/models/hdr.json",
 			localResources: resources,
@@ -757,6 +774,21 @@ describe("HDR QC execution policy", () => {
 			hdrFfmpegPath: "ffmpeg-hdr",
 			hdrFfprobePath: "ffprobe-hdr",
 		});
+		if (externalPlanner) {
+			t.deps.resolveLocalResources = vi.fn(async (request) =>
+				planLocalResources(
+					readResources(),
+					request.pair,
+					{ threads: 1 },
+					request.pairCount,
+				),
+			);
+			t.deps.resolveBandingResources = vi.fn(async (request) => {
+				if (!request.basePlan)
+					throw new Error("HDR combined base allocation missing");
+				return request.basePlan;
+			});
+		}
 		const [target] = enumerateExistingHlsQcTargets(
 			encodingPlanSchema.parse(plan),
 		);
@@ -828,6 +860,16 @@ describe("HDR QC execution policy", () => {
 			reference: input,
 			distorted: input,
 			frameCount: 1,
+			...(transfer === "arib-std-b67"
+				? {
+						hlgReferenceDisplay: {
+							peakNits: 1000,
+							blackNits: 0,
+							systemGamma: 1.2,
+							approximateGamma: false,
+						},
+					}
+				: {}),
 		});
 		const score = vi.spyOn(hdrScoring, "runHdrVmafScore").mockResolvedValue({
 			run: { code: 0, stdout: "", stderr: "" },
@@ -848,6 +890,20 @@ describe("HDR QC execution policy", () => {
 				attempts: 1,
 			},
 		});
+		const cambi = vi
+			.spyOn(bandingScoring, "runCpuBandingScore")
+			.mockResolvedValue({
+				frames: [
+					{
+						frameNum: 0,
+						timestampSeconds: 0,
+						durationSeconds: 1 / 24,
+						cambi: 12,
+					},
+				],
+				libvmafVersion: "a6ed0f1",
+				featureName: "cambi_encbd_10_ench_2160_encw_3840_eotf_pq",
+			});
 		try {
 			await t.processor.process({ vmafJobId: VMAF_JOB_ID });
 			expect(t.results).toHaveLength(1);
@@ -859,9 +915,37 @@ describe("HDR QC execution policy", () => {
 			});
 			expect(t.encodingJobWrites).toHaveLength(0);
 			expect(score).toHaveBeenCalledOnce();
+			expect(t.job.params).toMatchObject({ subsample: 1 });
+			if (banding) {
+				expect(cambi).toHaveBeenCalledOnce();
+				expect(t.results[0]?.pooled).toMatchObject({
+					banding: { max: 12, frameCount: 1 },
+				});
+				expect(t.results[0]?.provenance).toMatchObject({
+					bandingExecution: {
+						eotf: "PQ",
+						inputTransfer: transfer === "arib-std-b67" ? "HLG" : "PQ",
+						normalization:
+							transfer === "arib-std-b67"
+								? "HLG_TO_PQ_1000_NITS_444_16"
+								: "NONE",
+					},
+				});
+			}
+			if (externalPlanner) {
+				expect(t.deps.resolveLocalResources).toHaveBeenCalledOnce();
+				expect(t.deps.resolveBandingResources).toHaveBeenCalledOnce();
+				const localPlanner = t.deps.resolveLocalResources;
+				if (!localPlanner)
+					throw new Error("External HDR resource planner missing");
+				expect(
+					vi.mocked(localPlanner).mock.calls[0]?.[0].options,
+				).toMatchObject({ subsample: 1 });
+			}
 		} finally {
 			acquire.mockRestore();
 			score.mockRestore();
+			cambi.mockRestore();
 		}
 	});
 });

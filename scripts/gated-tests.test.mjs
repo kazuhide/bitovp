@@ -4561,6 +4561,199 @@ test("CI audits every package's skipped tests and runs the native media and Redi
 	);
 });
 
+const HDR_SCREENSHOT_UPLOAD =
+	"      - name: Save synthetic HDR UI screenshots\n" +
+	"        if: always() && env.BITOVP_ARCHIVE_DIR != ''\n" +
+	"        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2\n" +
+	"        with:\n" +
+	`          name: hdr-ui-synthetic-\${{ github.run_id }}-\${{ github.run_attempt }}\n` +
+	`          path: \${{ runner.temp }}/bitovp-gui-state.json.hdr-screenshots/*.png\n` +
+	"          retention-days: 7\n" +
+	"          if-no-files-found: warn\n";
+const FORBIDDEN =
+	/\bsecrets\s*(\.|\[|\))|secrets:\s*inherit|id-token|pull_request_target|workflow_run|issue_comment|upload-artifact|docker (push|login)|gh release/;
+
+function withoutInstalledGuiHdrUpload(name, text) {
+	if (name !== "installed-gui.yml") return text;
+	assert.equal(
+		text.split(HDR_SCREENSHOT_UPLOAD).length - 1,
+		1,
+		"Installed GUI must contain the exact safe HDR screenshot upload once",
+	);
+	return text.replace(HDR_SCREENSHOT_UPLOAD, "");
+}
+
+test("the HDR screenshot contract permits exactly the pinned PNG step once only in Installed GUI", () => {
+	const before = "original workflow prefix\n";
+	const after = "original workflow suffix\n";
+	assert.equal(
+		withoutInstalledGuiHdrUpload(
+			"installed-gui.yml",
+			before + HDR_SCREENSHOT_UPLOAD + after,
+		),
+		before + after,
+	);
+	for (const name of ["ci.yml", "offline-media.yml", "ffmpeg-source-build.yml"])
+		assert.equal(
+			withoutInstalledGuiHdrUpload(name, before + after),
+			before + after,
+		);
+});
+
+test("the HDR screenshot contract rejects altered fields and incomplete upload blocks", () => {
+	for (const [label, block] of [
+		["absent block", ""],
+		[
+			"pin",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+				"0".repeat(40),
+			),
+		],
+		[
+			"action",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"actions/upload-artifact@",
+				"example/upload-artifact@",
+			),
+		],
+		[
+			"mutable version",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2",
+				"v7",
+			),
+		],
+		[
+			"condition",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"always() && env.BITOVP_ARCHIVE_DIR != ''",
+				"success()",
+			),
+		],
+		[
+			"missing archive condition",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"always() && env.BITOVP_ARCHIVE_DIR != ''",
+				"always()",
+			),
+		],
+		[
+			"path",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"bitovp-gui-state.json.hdr-screenshots/*.png",
+				"*.png",
+			),
+		],
+		[
+			"recursive path",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"hdr-screenshots/*.png",
+				"hdr-screenshots/**",
+			),
+		],
+		[
+			"private report",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"bitovp-gui-state.json.hdr-screenshots/*.png",
+				"browser-results.json",
+			),
+		],
+		[
+			"private fixture",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"bitovp-gui-state.json.hdr-screenshots/*.png",
+				"bitovp-gui-state.json",
+			),
+		],
+		[
+			"traversal",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"hdr-screenshots/*.png",
+				"hdr-screenshots/../browser.json",
+			),
+		],
+		[
+			"retention",
+			HDR_SCREENSHOT_UPLOAD.replace("retention-days: 7", "retention-days: 90"),
+		],
+		[
+			"missing-file policy",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"if-no-files-found: warn",
+				"if-no-files-found: ignore",
+			),
+		],
+		[
+			"artifact name",
+			HDR_SCREENSHOT_UPLOAD.replace("hdr-ui-synthetic-", "private-fixture-"),
+		],
+		[
+			"extra input",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"        with:\n",
+				"        with:\n          include-hidden-files: true\n",
+			),
+		],
+		[
+			"missing step name",
+			HDR_SCREENSHOT_UPLOAD.replace(
+				"      - name: Save synthetic HDR UI screenshots\n",
+				"",
+			),
+		],
+		["missing pin", HDR_SCREENSHOT_UPLOAD.replace(/^.*uses:.*\n/m, "")],
+		["missing path", HDR_SCREENSHOT_UPLOAD.replace(/^.*path:.*\n/m, "")],
+		[
+			"incomplete block",
+			HDR_SCREENSHOT_UPLOAD.replace("          if-no-files-found: warn\n", ""),
+		],
+	])
+		assert.throws(
+			() => withoutInstalledGuiHdrUpload("installed-gui.yml", block),
+			assert.AssertionError,
+			label,
+		);
+});
+
+test("the HDR screenshot contract preserves the forbidden policy for extra uploads and every other byte or workflow", () => {
+	const assertPolicy = (name, text) =>
+		assert.doesNotMatch(withoutInstalledGuiHdrUpload(name, text), FORBIDDEN);
+	for (const extra of [
+		HDR_SCREENSHOT_UPLOAD,
+		"      - uses: actions/upload-artifact@v7\n",
+		"      - uses: example/upload-artifact@v7\n        with:\n          path: browser-results.json\n",
+		`\${{ secrets.VALUE }}`,
+		`\${{ secrets['VALUE'] }}`,
+		`\${{ toJSON(secrets) }}`,
+		"secrets: inherit",
+		"id-token: write",
+		"pull_request_target:",
+		"workflow_run:",
+		"issue_comment:",
+		"docker push image",
+		"docker login registry",
+		"gh release create tag",
+	])
+		assert.throws(
+			() => assertPolicy("installed-gui.yml", HDR_SCREENSHOT_UPLOAD + extra),
+			assert.AssertionError,
+			extra,
+		);
+	for (const name of [
+		"ci.yml",
+		"offline-media.yml",
+		"ffmpeg-source-build.yml",
+		"native-vmaf.yml",
+		"installed-gui-copy.yml",
+	])
+		assert.throws(
+			() => assertPolicy(name, HDR_SCREENSHOT_UPLOAD),
+			assert.AssertionError,
+			name,
+		);
+});
+
 test("the three jobs that need the image's FFmpeg reuse a build only under the key of the installer's own inputs and hold nothing that a wrong build could reach, and two weekly jobs build from the sources", () => {
 	const directory = resolve(root, ".github/workflows");
 	const workflow = (name) => readFileSync(join(directory, name), "utf8");
@@ -4656,10 +4849,10 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 	// request has. A command that publishes: the list is of the ones that a
 	// workflow here could plausibly gain, and is no proof that nothing is
 	// published.
-	const FORBIDDEN =
-		/\bsecrets\s*(\.|\[|\))|secrets:\s*inherit|id-token|pull_request_target|workflow_run|issue_comment|upload-artifact|docker (push|login)|gh release/;
 	for (const [name, [job, steps]] of Object.entries(jobs)) {
-		const text = workflow(name);
+		// Validate the sole PNG upload in full before applying every original
+		// golden adjacency, condition and forbidden-byte assertion to the rest.
+		const text = withoutInstalledGuiHdrUpload(name, workflow(name));
 		const holder = jobOf(text, job);
 		assert(holder.includes(steps), name);
 		// The three jobs are checks that a pull request must pass, and GitHub

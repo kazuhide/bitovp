@@ -30,6 +30,57 @@ const timeline = (frames: unknown[]) =>
 	JSON.stringify({ streams: [{ time_base: "1/24000" }], frames });
 
 describe("full-frame HDR measurement", () => {
+	it.each([
+		"24000/1001",
+		"60000/1001",
+	])("accepts complete %s frames quantized to a 90 kHz clock and rejects dropped/repeated slots", (frameRate) => {
+		const fractional = hdrInputFromProbe(
+			JSON.stringify({
+				streams: [
+					{
+						...video,
+						avg_frame_rate: frameRate,
+						r_frame_rate: frameRate,
+					},
+				],
+			}),
+			"distorted",
+		);
+		const [numerator, denominator] = frameRate.split("/").map(Number);
+		const ticks = (90000 * Number(denominator)) / Number(numerator);
+		const frames = Array.from({ length: 10 }, (_, n) => ({
+			...frame(n),
+			best_effort_timestamp: 125 + Math.round(n * ticks),
+			duration: Math.round((n + 1) * ticks) - Math.round(n * ticks),
+		}));
+		const encode = (population: unknown[]) =>
+			JSON.stringify({
+				streams: [{ time_base: "1/90000" }],
+				frames: population,
+			});
+		expect(validateHdrFrameTimeline(encode(frames), fractional)).toBe(10);
+		expect(() =>
+			validateHdrFrameTimeline(encode([frames[0], frames[2]]), fractional),
+		).toThrow("HDR_FRAME_CADENCE");
+		expect(() =>
+			validateHdrFrameTimeline(encode([frames[0], frames[0]]), fractional),
+		).toThrow("HDR_FRAME_CADENCE");
+	});
+	it("keeps exactly representable one-tick frames strict", () => {
+		const encode = (positions: number[]) =>
+			JSON.stringify({
+				streams: [{ time_base: "1/24" }],
+				frames: positions.map((n) => ({
+					...frame(n),
+					best_effort_timestamp: n,
+					duration: 1,
+				})),
+			});
+		expect(validateHdrFrameTimeline(encode([0, 1, 2]), input)).toBe(3);
+		expect(() => validateHdrFrameTimeline(encode([0, 2, 3]), input)).toThrow(
+			"HDR_FRAME_CADENCE",
+		);
+	});
 	it("requires an uninterrupted decoded presentation slot for every input frame", () => {
 		expect(
 			validateHdrFrameTimeline(timeline([frame(0), frame(1), frame(2)]), input),

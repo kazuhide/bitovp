@@ -43,9 +43,22 @@ export function validateHdrFrameTimeline(
 		frames.length > 500_000
 	)
 		throw new Error("HDR_FRAME_TIMING_REQUIRED");
-	const rate = input.frameRate.split("/").map(Number);
-	const interval = Number(rate[1]) / Number(rate[0]);
+	const [rateNumerator = 0n, rateDenominator = 0n] = input.frameRate
+		.split("/")
+		.map((part) => BigInt(part));
+	const stepNumerator = rateDenominator * BigInt(match[2] ?? "0");
+	const stepDenominator = rateNumerator * BigInt(match[1] ?? "0");
+	if (
+		stepDenominator <= 0n ||
+		stepNumerator < stepDenominator ||
+		(stepNumerator % stepDenominator !== 0n &&
+			stepNumerator < 2n * stepDenominator)
+	)
+		throw new Error("HDR_FRAME_TIMING_REQUIRED");
+	const floorDuration = stepNumerator / stepDenominator;
+	const ceilDuration = (stepNumerator + stepDenominator - 1n) / stepDenominator;
 	let origin: number | undefined;
+	let previousPts: number | undefined;
 	for (const [index, value] of frames.entries()) {
 		const f = object(value);
 		const pts = Number(f?.best_effort_timestamp);
@@ -57,11 +70,22 @@ export function validateHdrFrameTimeline(
 		)
 			throw new Error("HDR_FRAME_TIMING_REQUIRED");
 		origin ??= pts;
+		// CFR timestamps/durations can alternate between adjacent clock ticks
+		// (e.g. 24000/1001 fps at 90 kHz). Bound each complete slot using the
+		// exact rational clock, without accumulating drift or accepting repeats.
+		const expected = BigInt(index) * stepNumerator;
+		const floorPts = expected / stepDenominator;
+		const ceilPts = (expected + stepDenominator - 1n) / stepDenominator;
+		const relativePts = BigInt(pts) - BigInt(origin);
 		if (
-			Math.abs((pts - origin) * tick - index * interval) > 1e-6 ||
-			Math.abs(duration * tick - interval) > 1e-6
+			(previousPts !== undefined && pts <= previousPts) ||
+			relativePts < floorPts ||
+			relativePts > ceilPts ||
+			BigInt(duration) < floorDuration ||
+			BigInt(duration) > ceilDuration
 		)
 			throw new Error("HDR_FRAME_CADENCE");
+		previousPts = pts;
 		if (
 			f?.width !== input.width ||
 			f?.height !== input.height ||

@@ -46,7 +46,7 @@ describe("standalone HDR banding", () => {
 		try {
 			const measured = await measureBanding(
 				{
-						runner: { run: vi.fn(), spawn: vi.fn() },
+					runner: { run: vi.fn(), spawn: vi.fn() },
 					ffmpegPath: "ffmpeg-hdr",
 					ffprobePath: "ffprobe-hdr",
 				},

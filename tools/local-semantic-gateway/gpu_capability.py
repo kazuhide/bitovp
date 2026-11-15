@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import time
 
@@ -18,9 +19,10 @@ PORTS = {'nvidia': 11435, 'amd': 11436}
 
 
 class RuntimeGpuCapability:
-    def __init__(self, base=None, *, proc=Path('/proc'), run=subprocess.run, now=time.time):
+    def __init__(self, base=None, *, proc=Path('/proc'), sysfs=Path('/sys'), devices=Path('/dev'), run=subprocess.run, now=time.time):
         self.base = base or Path.home() / '.local/share/bitovp-llm-lab'
         self.proc, self.run, self.now = proc, run, now
+        self.sysfs, self.devices = sysfs, devices
         self.verified_files = {}
 
     def pinned(self, file, expected):
@@ -100,6 +102,74 @@ class RuntimeGpuCapability:
                 or any(env.get(key) for key in ('LD_PRELOAD', 'LD_AUDIT', 'HSA_OVERRIDE_GFX_VERSION', 'GPU_DEVICE_ORDINAL'))):
             raise ValueError('runtime environment mismatch')
         return folder, (folder / 'stat').read_text().rsplit(')', 1)[1].split()[19], env
+
+    @staticmethod
+    def device_access(path, *, minor=None):
+        info = path.stat()
+        return (stat.S_ISCHR(info.st_mode) and (minor is None or os.minor(info.st_rdev) == minor)
+                and os.access(path, os.R_OK | os.W_OK))
+
+    def passive_devices(self, profile, env):
+        """Read kernel metadata and permissions, without opening a GPU device."""
+        if profile == 'nvidia':
+            matches = []
+            for folder in (self.proc / 'driver/nvidia/gpus').iterdir():
+                data = (folder / 'information').read_text()
+                if len(data) > 16_384:
+                    return False
+                fields = dict((key.strip(), value.strip()) for line in data.splitlines()
+                              if ':' in line for key, value in [line.split(':', 1)])
+                if fields.get('GPU UUID') == env['CUDA_VISIBLE_DEVICES']:
+                    value = fields.get('Device Minor', '')
+                    if not re.fullmatch(r'[0-9]{1,3}', value) or int(value) >= 255:
+                        return False
+                    matches.append(int(value))
+            return (len(matches) == 1
+                    and self.device_access(self.devices / f'nvidia{matches[0]}', minor=matches[0])
+                    and self.device_access(self.devices / 'nvidiactl', minor=255))
+        nodes = []
+        for node in (self.sysfs / 'class/kfd/kfd/topology/nodes').iterdir():
+            gpu_id = int((node / 'gpu_id').read_text().strip())
+            if gpu_id == 0:
+                continue
+            properties = dict(line.split(None, 1) for line in (node / 'properties').read_text().splitlines())
+            minor = int(properties['drm_render_minor'])
+            if gpu_id < 0 or not 128 <= minor <= 4095:
+                return False
+            nodes.append((gpu_id, minor))
+        if (not 1 <= len(nodes) <= 16 or len(set(nodes)) != len(nodes)
+                or len({minor for _, minor in nodes}) != len(nodes)
+                or int(env['ROCR_VISIBLE_DEVICES']) >= len(nodes)
+                or not self.device_access(self.devices / 'kfd')):
+            return False
+        # KFD ordering need not equal ROCr ordering. Require access to every
+        # candidate, and leave actual selected-backend enumeration to job use.
+        for _, minor in nodes:
+            device = self.sysfs / f'class/drm/renderD{minor}/device'
+            if ((device / 'vendor').read_text().strip().lower() != '0x1002'
+                    or (device / 'driver').resolve(strict=True).name != 'amdgpu'
+                    or not self.device_access(self.devices / f'dri/renderD{minor}', minor=minor)):
+                return False
+        return True
+
+    def inspect(self, profile):
+        """Metadata readiness only; does not prove free VRAM or initialize a backend."""
+        try:
+            if profile not in BACKEND_PINS:
+                return None
+            prefix = self.base / 'runtime/0.40.14'
+            binary, libraries = prefix / 'bin/ollama', prefix / 'lib/ollama'
+            backend, library, expected = BACKEND_PINS[profile]
+            if not self.pinned(binary, RUNTIME_SHA256) or not self.pinned(libraries / backend / library, expected):
+                return None
+            folder, identity, env = self.process(profile, binary)
+            if not self.passive_devices(profile, env) or self.process(profile, binary)[:2] != (folder, identity):
+                return None
+            return {'version': 'bitovp-runtime-gpu-capability-v1', 'profile': profile,
+                    'method': 'PASSIVE_DEVICE_ACCESS', 'backend': 'CUDA' if profile == 'nvidia' else 'ROCm',
+                    'observedAt': round(self.now() * 1000)}
+        except (OSError, ValueError, KeyError, IndexError, TypeError, subprocess.SubprocessError):
+            return None
 
     def read(self, profile):
         """No model file, server start, chat, generate, download, unload or shell."""

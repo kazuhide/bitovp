@@ -35,7 +35,7 @@ class SyntheticRuntime:
         return []
     def readiness(self, profile):
         return 'READY'
-    def gpu_capability(self, profile):
+    def gpu_capability(self, profile, *, discover=False):
         return {'version': 'bitovp-runtime-gpu-capability-v1', 'profile': profile,
                 'method': 'OLLAMA_NATIVE_DISCOVERY', 'backend': 'CUDA' if profile == 'nvidia' else 'ROCm',
                 'observedAt': round(time.time() * 1000)}
@@ -88,10 +88,27 @@ class PlamoTests(unittest.TestCase):
                 'manifestHash': self.identity['manifestHash']}
 
     def test_caption_job_admission_requires_verified_gpu_before_model_start(self):
-        self.gateway.runtime.gpu_capability = lambda profile: None
+        self.gateway.runtime.gpu_capability = lambda profile, *, discover=False: None
         status, result = self.gateway.route('POST', '/v1/plamo-caption-jobs', self.headers, self.body())
         self.assertEqual((status, result), (503, {'error': {'code': 'GPU_UNVERIFIED'}}))
         self.assertIsNone(self.gateway.store.next_queued())
+
+    def test_caption_execution_rechecks_gpu_after_admission(self):
+        proof = self.gateway.runtime.gpu_capability('nvidia')
+        observations = []
+        def capability(profile, *, discover=False):
+            observations.append(discover)
+            return proof if discover and len(observations) == 1 else None
+        self.gateway.runtime.gpu_capability = capability
+        with patch.object(self.runtime, 'metadata', return_value=('READY', self.identity)):
+            status, job = self.gateway.route('POST', '/v1/plamo-caption-jobs', self.headers, self.body())
+        self.assertEqual(status, 202)
+        with patch.object(self.runtime, 'run', side_effect=AssertionError('unverified model start')) as model:
+            self.assertTrue(self.gateway.run_one())
+            model.assert_not_called()
+        result = self.gateway.store.get(job['id'], ORG)
+        self.assertEqual((result['state'], result['errorCode']), ('FAILED', 'GPU_UNVERIFIED'))
+        self.assertEqual(observations, [True, True])
 
     def unit(self, active='inactive'):
         return {'ActiveState': active, 'MainPID': '99' if active == 'active' else '0',

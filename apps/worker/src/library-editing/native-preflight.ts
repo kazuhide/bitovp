@@ -72,10 +72,12 @@ Dialogue: 0,0:00:00.00,0:00:01.00,Default,字幕A
 
 /** Match the calling process's executable lookup, then bind every probe to it. */
 async function resolveExecutable(binary: string) {
+	// Node's Unix default applies only when PATH is absent; empty PATH searches CWD.
+	// https://github.com/nodejs/node/blob/v24.x/doc/api/child_process.md
 	const candidates =
 		isAbsolute(binary) || binary.includes("/")
 			? [resolve(binary)]
-			: (process.env.PATH ?? "")
+			: (process.env.PATH ?? "/usr/bin:/bin")
 					.split(":")
 					.map((directory) => resolve(directory, binary));
 	let accessDenied = false;

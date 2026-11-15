@@ -23,7 +23,9 @@ vi.mock("./analysis-io", async (load) => ({
 	verifyAnalysisFile: io.file,
 }));
 const owned: string[] = [];
+const originalCwd = process.cwd();
 afterEach(async () => {
+	process.chdir(originalCwd);
 	vi.resetAllMocks();
 	vi.unstubAllEnvs();
 	await Promise.all(
@@ -154,6 +156,58 @@ esac
 		selected,
 		selected,
 	]);
+});
+
+it.each([
+	undefined,
+	"",
+])("matches actual Unix spawn lookup with PATH=%s and a patched cwd shadow", async (path) => {
+	const f = await fixture();
+	const shadow = join(f.root, "whisper-cli");
+	const sentinel = "authored-cwd-whisper-shadow";
+	await writeFile(
+		shadow,
+		`#!/bin/sh
+case "$1" in
+--version) printf '%s\\n' 'whisper.cpp version: 1.9.5'; printf '%s\\n' '${sentinel}' >&2 ;;
+--help) printf '%s\\n' '--vad -vm -vt -vspd -vsd -vp -vo -nth -lpt -ng -nf -tp -bs -bo -ojf' ;;
+*) exit 2 ;;
+esac
+# bitovp-mapped-quality-v1
+`,
+	);
+	await chmod(shadow, 0o700);
+	process.chdir(f.root);
+	const selectedShadow = join(process.cwd(), "whisper-cli");
+	vi.stubEnv("PATH", path);
+	const direct = await runMediaProcess("whisper-cli", ["--version"]).catch(
+		() => ({ stdout: "", stderr: "" }),
+	);
+	const run = vi.fn(runMediaProcess);
+	const { WHISPER_CLI_PATH: _binary, ...env } = f.env;
+	const result = await probeNativeEditingRuntime({
+		...f,
+		env,
+		run,
+		components: ["ASR_RUNTIME"],
+	});
+	if (path === "") {
+		expect(direct.stderr).toContain(sentinel);
+		expect(result.code).toBe("READY");
+		expect(run.mock.calls.map(([binary]) => binary)).toEqual([
+			selectedShadow,
+			selectedShadow,
+		]);
+	} else {
+		expect(direct.stderr).not.toContain(sentinel);
+		// The installed default command may be absent or may be a real Whisper;
+		// neither case may inspect or execute the unused working-directory shim.
+		expect(run.mock.calls.map(([binary]) => binary)).not.toContain(
+			selectedShadow,
+		);
+		for (const [binary] of run.mock.calls)
+			expect(["/usr/bin/whisper-cli", "/bin/whisper-cli"]).toContain(binary);
+	}
 });
 
 it("verifies the actual copied caption font bytes before trying libass", async () => {

@@ -1,0 +1,1056 @@
+{
+	"schemaVersion": 1,
+	"kind": "schemas",
+	"items": [
+		[
+			"encoding/encodings/muxings/progressiveTs/id3/raw/RawId3TagListQueryParams.d.ts#RawId3TagListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/muxings/progressiveTs/id3/raw/RawId3TagListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/progressiveTs/id3/raw/RawId3TagListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "RawId3TagListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/progressiveTs/id3/raw/RawId3TagListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "RawId3TagListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/filters/rotate/RotateFilterListQueryParams.d.ts#RotateFilterListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/filters/rotate/RotateFilterListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/rotate/RotateFilterListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "RotateFilterListQueryParams" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/rotate/RotateFilterListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter filters by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "RotateFilterListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/rotate/RotateFilterListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "RotateFilterListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/inputs/redundantRtmp/RedundantRtmpInputListQueryParams.d.ts#RedundantRtmpInputListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/inputs/redundantRtmp/RedundantRtmpInputListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/inputs/redundantRtmp/RedundantRtmpInputListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "RedundantRtmpInputListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/inputs/redundantRtmp/RedundantRtmpInputListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter inputs by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "RedundantRtmpInputListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/inputs/redundantRtmp/RedundantRtmpInputListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "RedundantRtmpInputListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/inputs/rtmp/RtmpInputListQueryParams.d.ts#RtmpInputListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/inputs/rtmp/RtmpInputListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/inputs/rtmp/RtmpInputListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "RtmpInputListQueryParams" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/inputs/rtmp/RtmpInputListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter inputs by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "RtmpInputListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/inputs/rtmp/RtmpInputListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "RtmpInputListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/RaiUnit.d.ts#RaiUnit",
+			{
+				"kind": "enum",
+				"values": [
+					"NONE",
+					"ALL_PES_PACKETS",
+					"ACQUISITION_POINT_PACKETS",
+					"ACCORDING_TO_INPUT"
+				],
+				"sdkEvidence": { "file": "models/RaiUnit.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/RateDistortionLevelForQuantization.d.ts#RateDistortionLevelForQuantization",
+			{
+				"kind": "enum",
+				"values": ["DISABLED", "LEVELS", "LEVELS_AND_CODING_GROUPS"],
+				"sdkEvidence": {
+					"file": "models/RateDistortionLevelForQuantization.d.ts",
+					"line": 5
+				}
+			}
+		],
+		[
+			"models/RateDistortionPenaltyMode.d.ts#RateDistortionPenaltyMode",
+			{
+				"kind": "enum",
+				"values": ["DISABLED", "NORMAL", "MAXIMUM"],
+				"sdkEvidence": {
+					"file": "models/RateDistortionPenaltyMode.d.ts",
+					"line": 6
+				}
+			}
+		],
+		[
+			"models/RawId3Tag.d.ts#RawId3Tag",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/RawId3Tag.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "bytes",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/RawId3Tag.d.ts", "line": 19 },
+						"documentation": "Base64 Encoded Data (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "RawId3Tag" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "frame",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Id3Tag.d.ts", "line": 26 },
+						"documentation": "Frame number at which the Tag should be inserted",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Id3Tag" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "positionMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/Id3TagPositionMode.d.ts#Id3TagPositionMode"
+						},
+						"sdkEvidence": { "file": "models/Id3Tag.d.ts", "line": 20 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Id3TagPositionMode}" },
+							{ "name": "memberof", "text": "Id3Tag" }
+						]
+					},
+					{
+						"name": "time",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Id3Tag.d.ts", "line": 32 },
+						"documentation": "Time in seconds where the Tag should be inserted",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Id3Tag" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/Id3TagType.d.ts#Id3TagType" },
+						"sdkEvidence": { "file": "models/RawId3Tag.d.ts", "line": 13 },
+						"documentation": "Discriminator property for Id3Tag",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "RawId3Tag" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/RedundantRtmpInput.d.ts#RedundantRtmpInput",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/RedundantRtmpInput.d.ts", "line": 9 },
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "delayThreshold",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/RedundantRtmpInput.d.ts",
+							"line": 21
+						},
+						"documentation": "When there is no input signal present and this threshold in seconds is reached it will switch to another ingest point",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "RedundantRtmpInput" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "ingestPoints",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/RtmpIngestPoint.d.ts#RtmpIngestPoint" }
+						},
+						"sdkEvidence": {
+							"file": "models/RedundantRtmpInput.d.ts",
+							"line": 27
+						},
+						"documentation": "Configuration for ingest points that use a dynamic IP based endpoint to stream to e.g.: rtmp://41.167.11.21/live Either ingestPoints **or** staticIngestPoints can be set",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{RtmpIngestPoint[]}" },
+							{ "name": "memberof", "text": "RedundantRtmpInput" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "staticIngestPoints",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": {
+								"ref": "models/StaticRtmpIngestPoint.d.ts#StaticRtmpIngestPoint"
+							}
+						},
+						"sdkEvidence": {
+							"file": "models/RedundantRtmpInput.d.ts",
+							"line": 33
+						},
+						"documentation": "Configuration for static ingest points. These ingest points use a consistent endpoint to stream to e.g.: rtmps://live-ingest.bitmovin.com/live Either ingestPoints **or** staticIngestPoints can be set",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{StaticRtmpIngestPoint[]}" },
+							{ "name": "memberof", "text": "RedundantRtmpInput" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/InputType.d.ts#InputType" },
+						"sdkEvidence": {
+							"file": "models/RedundantRtmpInput.d.ts",
+							"line": 15
+						},
+						"documentation": "Discriminator property for Input",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "RedundantRtmpInput" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/ReprioritizeEncodingRequest.d.ts#ReprioritizeEncodingRequest",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/ReprioritizeEncodingRequest.d.ts",
+					"line": 5
+				},
+				"properties": [
+					{
+						"name": "priority",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/ReprioritizeEncodingRequest.d.ts",
+							"line": 11
+						},
+						"documentation": "Priority of the Encoding (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ReprioritizeEncodingRequest" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/RescheduleEncodingRequest.d.ts#RescheduleEncodingRequest",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/RescheduleEncodingRequest.d.ts",
+					"line": 5
+				},
+				"properties": [
+					{
+						"name": "infrastructureId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/RescheduleEncodingRequest.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of a custom infrastructure, e.g., AWS Cloud Connect",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "RescheduleEncodingRequest" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/ResetLiveManifestTimeShift.d.ts#ResetLiveManifestTimeShift",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/ResetLiveManifestTimeShift.d.ts",
+					"line": 6
+				},
+				"properties": [
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "manifestIds",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "array", "items": { "kind": "string" } },
+						"sdkEvidence": {
+							"file": "models/ResetLiveManifestTimeShift.d.ts",
+							"line": 24
+						},
+						"documentation": "The IDs of the manifests to update. If omitted, all supported manifests associated with the encoding are updated. HLS live manifests are supported. DASH live manifests require encoder version 2.235.0 or later.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string[]}" },
+							{ "name": "memberof", "text": "ResetLiveManifestTimeShift" }
+						]
+					},
+					{
+						"name": "offsetInSeconds",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/ResetLiveManifestTimeShift.d.ts",
+							"line": 18
+						},
+						"documentation": "Specifies an offset, in seconds, from the start of the live event. All segments before this position are removed from the affected manifests. For example, assume a segment length of 2 seconds and a configured `timeshift` of 120 seconds (2 minutes). If the most recent segment is `segment_80.ts`, the manifest contains 60 segments, from `segment_21.ts` through `segment_80.ts`. Setting `offsetInSeconds` to `120` sets the target segment number to 60 (`targetSegmentNumber = offsetInSeconds / segmentLength`). All segments before `segment_60.ts` are removed. Each affected manifest then contains `segment_60.ts` through `segment_80.ts`.  *Note:* Do not set both `offsetInSeconds` and `residualPeriodInSeconds`.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ResetLiveManifestTimeShift" }
+						]
+					},
+					{
+						"name": "residualPeriodInSeconds",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/ResetLiveManifestTimeShift.d.ts",
+							"line": 12
+						},
+						"documentation": "Specifies how many seconds of content remain in the manifest after older segments are removed. At least one segment is always retained. If neither `residualPeriodInSeconds` nor `offsetInSeconds` is set, all segments except the most recent are removed. For DASH manifests that use SegmentTemplate, the retained duration also includes the value configured for `liveEdgeOffset`.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ResetLiveManifestTimeShift" }
+						]
+					},
+					{
+						"name": "shiftProgressiveMuxingStartPosition",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/ResetLiveManifestTimeShift.d.ts",
+							"line": 30
+						},
+						"documentation": "If set to true, the Progressive muxing start position will be shifted to the start of the first remaining segment after the removal.  NOTE: This only works for Progressive MP4 muxings.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "ResetLiveManifestTimeShift" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/ReuploadSettings.d.ts#ReuploadSettings",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/ReuploadSettings.d.ts", "line": 5 },
+				"properties": [
+					{
+						"name": "dashManifestInterval",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/ReuploadSettings.d.ts",
+							"line": 11
+						},
+						"documentation": "Interval in seconds to reupload the DASH manifest. Valid values are either `null` to never reupload the dash manifest or at least `30`.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ReuploadSettings" }
+						]
+					},
+					{
+						"name": "hlsManifestInterval",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/ReuploadSettings.d.ts",
+							"line": 17
+						},
+						"documentation": "Interval in seconds to reupload the HLS master file. Valid values are either `0` to never reupload the hls manifest or at least `30`. This is currently not used, as the master file will always be uploaded when one of the playlist files has changed.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ReuploadSettings" }
+						]
+					},
+					{
+						"name": "muxingInitFileInterval",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/ReuploadSettings.d.ts",
+							"line": 23
+						},
+						"documentation": "The interval in seconds to reupload the init file for segmented muxings, e.g. fMP4, WebM. Valid values are either `null` to never reupload the init file for segmented muxings or at least `30`.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ReuploadSettings" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/RotateFilter.d.ts#RotateFilter",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/RotateFilter.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "rotation",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/RotateFilter.d.ts", "line": 19 },
+						"documentation": "Rotation of the video in degrees. A positive value will rotate the video clockwise and a negative one counter clockwise. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "RotateFilter" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/FilterType.d.ts#FilterType" },
+						"sdkEvidence": { "file": "models/RotateFilter.d.ts", "line": 13 },
+						"documentation": "Discriminator property for Filter",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "RotateFilter" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/RtmpIngestPoint.d.ts#RtmpIngestPoint",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/RtmpIngestPoint.d.ts", "line": 5 },
+				"properties": [
+					{
+						"name": "applicationName",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/RtmpIngestPoint.d.ts",
+							"line": 11
+						},
+						"documentation": "The name of the application where the ingest is streamed to. This has to be unique for each ingest point (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "RtmpIngestPoint" }
+						]
+					},
+					{
+						"name": "streamKey",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/RtmpIngestPoint.d.ts",
+							"line": 17
+						},
+						"documentation": "The stream key for the backup input (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "RtmpIngestPoint" }
+						]
+					}
+				]
+			}
+		]
+	]
+}

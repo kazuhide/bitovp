@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 1,
+	"kind": "operations",
+	"items": [
+		{
+			"sdkMethod": "encoding.errorDefinitions.list",
+			"path": "/encoding/error-definitions",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/errorDefinitions/EncodingErrorDefinitionListQueryParams.d.ts#EncodingErrorDefinitionListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: EncodingErrorDefinitionListQueryParamsBuilder) => EncodingErrorDefinitionListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/errorDefinitions/ErrorDefinitionsApi.d.ts",
+						"line": 20
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/errorDefinitions/ErrorDefinitionsApi.d.ts",
+				"line": 20
+			}
+		}
+	]
+}

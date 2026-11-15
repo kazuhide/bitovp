@@ -1,0 +1,281 @@
+{
+	"schemaVersion": 1,
+	"kind": "schemas",
+	"items": [
+		[
+			"encoding/encodings/streams/watermarking/nexguardFileMarker/NexGuardFileMarkerListQueryParams.d.ts#NexGuardFileMarkerListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/streams/watermarking/nexguardFileMarker/NexGuardFileMarkerListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/streams/watermarking/nexguardFileMarker/NexGuardFileMarkerListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "NexGuardFileMarkerListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/streams/watermarking/nexguardFileMarker/NexGuardFileMarkerListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "NexGuardFileMarkerListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/NexGuardFileMarker.d.ts#NexGuardFileMarker",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/NexGuardFileMarker.d.ts", "line": 8 },
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "license",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/NexGuardFileMarker.d.ts",
+							"line": 14
+						},
+						"documentation": "Use the base64 license string that Nagra provides you. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "NexGuardFileMarker" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "payload",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/NexGuardFileMarker.d.ts",
+							"line": 26
+						},
+						"documentation": "Specify the payload ID that you want to be associated with this output. Valid values vary depending on your Nagra NexGuard forensic watermarking workflow. For PreRelease Content (NGPR), specify an integer from 1 through 4,194,303. You must generate a unique ID for each asset you watermark, and keep a record of th ID. Neither Nagra nor Bitmovin keep track of this for you.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "NexGuardFileMarker" }
+						]
+					},
+					{
+						"name": "preset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/NexGuardFileMarker.d.ts",
+							"line": 32
+						},
+						"documentation": "Enter one of the watermarking preset strings that Nagra provides you.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "NexGuardFileMarker" }
+						]
+					},
+					{
+						"name": "strength",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/NexGuardWatermarkingStrength.d.ts#NexGuardWatermarkingStrength"
+						},
+						"sdkEvidence": {
+							"file": "models/NexGuardFileMarker.d.ts",
+							"line": 38
+						},
+						"documentation": "Optional. Ignore this setting unless Nagra support directs you to specify a value. When you don't specify a value here, the Nagra NexGuard library uses its default value.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{NexGuardWatermarkingStrength}" },
+							{ "name": "memberof", "text": "NexGuardFileMarker" }
+						]
+					},
+					{
+						"name": "watermarkType",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/NexGuardWatermarkingType.d.ts#NexGuardWatermarkingType"
+						},
+						"sdkEvidence": {
+							"file": "models/NexGuardFileMarker.d.ts",
+							"line": 20
+						},
+						"documentation": "The type of watermarking to be used: * `OTT` - A/B watermarking (for video streams only) * `DUPLICATED` - Stream duplication to match A/B video streams in CDN delivery (for audio streams only)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{NexGuardWatermarkingType}" },
+							{ "name": "memberof", "text": "NexGuardFileMarker" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/NexGuardWatermarkingStrength.d.ts#NexGuardWatermarkingStrength",
+			{
+				"kind": "enum",
+				"values": ["LIGHTEST", "LIGHTER", "DEFAULT", "STRONGER", "STRONGEST"],
+				"sdkEvidence": {
+					"file": "models/NexGuardWatermarkingStrength.d.ts",
+					"line": 5
+				}
+			}
+		],
+		[
+			"models/NexGuardWatermarkingType.d.ts#NexGuardWatermarkingType",
+			{
+				"kind": "enum",
+				"values": ["OTT", "DUPLICATED"],
+				"sdkEvidence": {
+					"file": "models/NexGuardWatermarkingType.d.ts",
+					"line": 5
+				}
+			}
+		]
+	]
+}

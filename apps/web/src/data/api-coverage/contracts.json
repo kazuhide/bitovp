@@ -1,0 +1,168 @@
+{
+	"schemaVersion": 1,
+	"provenance": {
+		"generatedAt": "2026-11-15T22:06:28.243Z",
+		"sdkVersion": "1.288.0",
+		"typescriptVersion": "5.9.3",
+		"sdkFingerprint": "1a8651b821a3df916423cbec20bc3eb9024937367af3a7ea72e20a90b75e8afd",
+		"method": "sdk-transport-request-contracts-v1",
+		"scope": "encoding",
+		"limitations": "SDK declarations and comments, not the complete server contract. API writeability and conditional acceptance remain unconfirmed. Callable query-builder alternatives are SDK helpers, not wire fields."
+	},
+	"summary": {
+		"totalOperations": 1094,
+		"pathParameters": 1607,
+		"queryParameters": 241,
+		"bodyParameters": 230,
+		"schemas": 787,
+		"properties": 3503
+	},
+	"operationShards": [
+		{
+			"file": "contracts/operations-configurations-000.json",
+			"sha256": "caf5e2175379a6cb0fba78f9e955dcda6a8fc2bc1758e845eb4daed06e0448e7"
+		},
+		{
+			"file": "contracts/operations-encodings-000.json",
+			"sha256": "3b896c9ce082a43d2242828580fd9443543b48d8a70972ed817f9392db07d30f"
+		},
+		{
+			"file": "contracts/operations-errordefinitions-000.json",
+			"sha256": "24d0a0d69592a8044a7ec14b9880c2c78b45c9baec3dd9a5e57f935082a3456e"
+		},
+		{
+			"file": "contracts/operations-filters-000.json",
+			"sha256": "0392091e7e289a9ab835215f18f196c5c2c261c6f69c19963fcaaa7ef549a443"
+		},
+		{
+			"file": "contracts/operations-infrastructure-000.json",
+			"sha256": "6428c63db22541e178766d9b23a4fd9e02d09d10c4fc0d5f6c6a51ad9b1577e1"
+		},
+		{
+			"file": "contracts/operations-inputs-000.json",
+			"sha256": "fd7456307c439eaf3106300d1d2957e192275bb9852e2489b09060f82577de2e"
+		},
+		{
+			"file": "contracts/operations-live-000.json",
+			"sha256": "a0fa26eeb96a93e3969c79cf2ef8023883bb281cc4de08ec25ca1673d1fc0813"
+		},
+		{
+			"file": "contracts/operations-manifests-000.json",
+			"sha256": "f37a382636c027cf975130a9150b2665b414a196532ba6b197c99bbaa296f02d"
+		},
+		{
+			"file": "contracts/operations-outputs-000.json",
+			"sha256": "74ca70397164eccd74654a088c5f82ef88f668fb7645c6a9ba4fda0189b1fba4"
+		},
+		{
+			"file": "contracts/operations-statistics-000.json",
+			"sha256": "5adc3a561ed992925c34f48ff9d42eff5d933e28b6352ffef7261869815de3a4"
+		},
+		{
+			"file": "contracts/operations-templates-000.json",
+			"sha256": "c6982d25d391aba54e22fd812ba3a030a40dfce9f8c949e18fb8d1809eae076e"
+		},
+		{
+			"file": "contracts/operations-watchfolders-000.json",
+			"sha256": "01beed02ef0f836116688b76ee27fc41bf2491b8267d1a7e8d2243c01a65a251"
+		}
+	],
+	"schemaShards": [
+		{
+			"file": "contracts/schemas-a-000.json",
+			"sha256": "0a72dfb297d9208e1ac310375dd0c961437c76b713cd0dee17db1c7558eb9442"
+		},
+		{
+			"file": "contracts/schemas-d-000.json",
+			"sha256": "0b3bd3150c0ba4b353f403c20e1af719fc1b37a5dc4b442139c9e961b8e44929"
+		},
+		{
+			"file": "contracts/schemas-e-000.json",
+			"sha256": "15342e25ea46e6bf9fa3ad6d4d360fb4b67c9d8924e57bd1774bf79c8366f200"
+		},
+		{
+			"file": "contracts/schemas-h-000.json",
+			"sha256": "2aa36073cf4c3f3e03394f1f95335d6a94364cd82c9dc1b954c45d83bbbb0a3f"
+		},
+		{
+			"file": "contracts/schemas-m-000.json",
+			"sha256": "ee41dfd8043fd763da0a7abaf20b3636a91d9a656d634e020014cfd84a30ab6b"
+		},
+		{
+			"file": "contracts/schemas-o-000.json",
+			"sha256": "068c24dc9ce290c7672426dc338284c08affe18fbcffccccffc1c3822bcb7955"
+		},
+		{
+			"file": "contracts/schemas-p-000.json",
+			"sha256": "88629b4a555bd9bb871c847517eeae1172cd03241250265fd3ca71b064ed4d41"
+		},
+		{
+			"file": "contracts/schemas-v-000.json",
+			"sha256": "1c5baf38b235ec2eb7ebb53756c8d7932fd9406acdbedceb3fbcd6151dfa3cb4"
+		},
+		{
+			"file": "contracts/schemas-c-000.json",
+			"sha256": "4ec3c5f0bf6eff39f479a7616e0f471ffddd349d86544cf336a9db7cb0fc6eda"
+		},
+		{
+			"file": "contracts/schemas-i-000.json",
+			"sha256": "8c1f3348fa3629a8c1bfdd20ea4a3ebc882412bbba264031415d0dd07f1714a2"
+		},
+		{
+			"file": "contracts/schemas-w-000.json",
+			"sha256": "8bf52031fbb2aec2a2c86d288923a822c711aa3426c5e4f8c2e7f1c2e47095f6"
+		},
+		{
+			"file": "contracts/schemas-f-000.json",
+			"sha256": "1a397031e15dbd150be39f9c09a1a69e352c3ff011c16c5625d131c5adc130ce"
+		},
+		{
+			"file": "contracts/schemas-t-000.json",
+			"sha256": "8eed55e0c7ae9066feb922dd41c56fa0696bc514d779e1f9c14955c71ee762dd"
+		},
+		{
+			"file": "contracts/schemas-k-000.json",
+			"sha256": "9fa7f22c92b80f80edd4f6e178c967fa0819bbe80dc001ea49096813c13cef3a"
+		},
+		{
+			"file": "contracts/schemas-s-000.json",
+			"sha256": "460251da509f518d95f10873589afa7afce32dd5574440a1a696a1efc9c66a45"
+		},
+		{
+			"file": "contracts/schemas-b-000.json",
+			"sha256": "4537d4bcbdb9dac8ce629655597133c74accfe2134cbdf3085f1729319d9e8bb"
+		},
+		{
+			"file": "contracts/schemas-r-000.json",
+			"sha256": "4f3bf8c3d2fa56f790a25a11046f91ab5c731cc3f561a474cf24e77da2e56e93"
+		},
+		{
+			"file": "contracts/schemas-n-000.json",
+			"sha256": "41e1cd11e3b64edb8cc73fe1c9ab77a1307d8160589b53d1930869f04fdbec16"
+		},
+		{
+			"file": "contracts/schemas-u-000.json",
+			"sha256": "e276c2ebd3d3cd893baf9404440163bdfc9d5c719d34b7e023712af91876de94"
+		},
+		{
+			"file": "contracts/schemas-g-000.json",
+			"sha256": "f36e836e67ec2afe7facca297559b667ecf8edb01090b5af6b000b4846a34617"
+		},
+		{
+			"file": "contracts/schemas-l-000.json",
+			"sha256": "b9092c9d40b2087558a18d1cb338ad3bc31f9fcb3e5edf91a694bfc34fff274c"
+		},
+		{
+			"file": "contracts/schemas-z-000.json",
+			"sha256": "e170565595097034911d8acfcedf897ee3a27873786c755375a4706810d14d91"
+		},
+		{
+			"file": "contracts/schemas-q-000.json",
+			"sha256": "2ac5751703b6d6da9381a197976e80b14541ab53a9a9cac736809493856ac5a1"
+		},
+		{
+			"file": "contracts/schemas-x-000.json",
+			"sha256": "babedd856e47b549c69dbb550c2b4ba630f5e83ff5d0f1d0a320cfe0e1b63fe8"
+		}
+	]
+}

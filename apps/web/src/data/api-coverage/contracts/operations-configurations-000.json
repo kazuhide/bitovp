@@ -1,0 +1,3651 @@
+{
+	"schemaVersion": 1,
+	"kind": "operations",
+	"items": [
+		{
+			"sdkMethod": "encoding.configurations.get",
+			"path": "/encoding/configurations/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/ConfigurationsApi.d.ts",
+						"line": 28
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/ConfigurationsApi.d.ts",
+				"line": 28
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.list",
+			"path": "/encoding/configurations",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/CodecConfigurationListQueryParams.d.ts#CodecConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: CodecConfigurationListQueryParamsBuilder) => CodecConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/ConfigurationsApi.d.ts",
+						"line": 35
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/ConfigurationsApi.d.ts",
+				"line": 35
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.aac.create",
+			"path": "/encoding/configurations/audio/aac",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "aacAudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/AacAudioConfiguration.d.ts#AacAudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/aac/AacApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/aac/AacApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.aac.delete",
+			"path": "/encoding/configurations/audio/aac/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/aac/AacApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/aac/AacApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.aac.get",
+			"path": "/encoding/configurations/audio/aac/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/aac/AacApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/aac/AacApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.aac.list",
+			"path": "/encoding/configurations/audio/aac",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/aac/AacAudioConfigurationListQueryParams.d.ts#AacAudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AacAudioConfigurationListQueryParamsBuilder) => AacAudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/aac/AacApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/aac/AacApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.aac.customdata.get",
+			"path": "/encoding/configurations/audio/aac/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/aac/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/aac/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.ac3.create",
+			"path": "/encoding/configurations/audio/ac3",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "ac3AudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/Ac3AudioConfiguration.d.ts#Ac3AudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/ac3/Ac3Api.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/ac3/Ac3Api.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.ac3.delete",
+			"path": "/encoding/configurations/audio/ac3/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/ac3/Ac3Api.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/ac3/Ac3Api.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.ac3.get",
+			"path": "/encoding/configurations/audio/ac3/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/ac3/Ac3Api.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/ac3/Ac3Api.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.ac3.list",
+			"path": "/encoding/configurations/audio/ac3",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/ac3/Ac3AudioConfigurationListQueryParams.d.ts#Ac3AudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: Ac3AudioConfigurationListQueryParamsBuilder) => Ac3AudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/ac3/Ac3Api.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/ac3/Ac3Api.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.ac3.customdata.get",
+			"path": "/encoding/configurations/audio/ac3/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/ac3/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/ac3/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyAtmos.create",
+			"path": "/encoding/configurations/audio/dolby-atmos",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "dolbyAtmosAudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/DolbyAtmosAudioConfiguration.d.ts#DolbyAtmosAudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dolbyAtmos/DolbyAtmosApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dolbyAtmos/DolbyAtmosApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyAtmos.delete",
+			"path": "/encoding/configurations/audio/dolby-atmos/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dolbyAtmos/DolbyAtmosApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dolbyAtmos/DolbyAtmosApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyAtmos.get",
+			"path": "/encoding/configurations/audio/dolby-atmos/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dolbyAtmos/DolbyAtmosApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dolbyAtmos/DolbyAtmosApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyAtmos.list",
+			"path": "/encoding/configurations/audio/dolby-atmos",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/dolbyAtmos/DolbyAtmosAudioConfigurationListQueryParams.d.ts#DolbyAtmosAudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DolbyAtmosAudioConfigurationListQueryParamsBuilder) => DolbyAtmosAudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dolbyAtmos/DolbyAtmosApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dolbyAtmos/DolbyAtmosApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyAtmos.customdata.get",
+			"path": "/encoding/configurations/audio/dolby-atmos/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dolbyAtmos/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dolbyAtmos/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigital.create",
+			"path": "/encoding/configurations/audio/dolby-digital",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "dolbyDigitalAudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/DolbyDigitalAudioConfiguration.d.ts#DolbyDigitalAudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dolbyDigital/DolbyDigitalApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dolbyDigital/DolbyDigitalApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigital.delete",
+			"path": "/encoding/configurations/audio/dolby-digital/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dolbyDigital/DolbyDigitalApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dolbyDigital/DolbyDigitalApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigital.get",
+			"path": "/encoding/configurations/audio/dolby-digital/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dolbyDigital/DolbyDigitalApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dolbyDigital/DolbyDigitalApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigital.list",
+			"path": "/encoding/configurations/audio/dolby-digital",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/dolbyDigital/DolbyDigitalAudioConfigurationListQueryParams.d.ts#DolbyDigitalAudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DolbyDigitalAudioConfigurationListQueryParamsBuilder) => DolbyDigitalAudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dolbyDigital/DolbyDigitalApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dolbyDigital/DolbyDigitalApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigital.customdata.get",
+			"path": "/encoding/configurations/audio/dolby-digital/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dolbyDigital/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dolbyDigital/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigitalPlus.create",
+			"path": "/encoding/configurations/audio/dolby-digital-plus",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "dolbyDigitalPlusAudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/DolbyDigitalPlusAudioConfiguration.d.ts#DolbyDigitalPlusAudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dolbyDigitalPlus/DolbyDigitalPlusApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dolbyDigitalPlus/DolbyDigitalPlusApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigitalPlus.delete",
+			"path": "/encoding/configurations/audio/dolby-digital-plus/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dolbyDigitalPlus/DolbyDigitalPlusApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dolbyDigitalPlus/DolbyDigitalPlusApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigitalPlus.get",
+			"path": "/encoding/configurations/audio/dolby-digital-plus/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dolbyDigitalPlus/DolbyDigitalPlusApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dolbyDigitalPlus/DolbyDigitalPlusApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigitalPlus.list",
+			"path": "/encoding/configurations/audio/dolby-digital-plus",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/dolbyDigitalPlus/DolbyDigitalPlusAudioConfigurationListQueryParams.d.ts#DolbyDigitalPlusAudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DolbyDigitalPlusAudioConfigurationListQueryParamsBuilder) => DolbyDigitalPlusAudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dolbyDigitalPlus/DolbyDigitalPlusApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dolbyDigitalPlus/DolbyDigitalPlusApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigitalPlus.customdata.get",
+			"path": "/encoding/configurations/audio/dolby-digital-plus/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dolbyDigitalPlus/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dolbyDigitalPlus/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dts.create",
+			"path": "/encoding/configurations/audio/dts",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "dtsAudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/DtsAudioConfiguration.d.ts#DtsAudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dts/DtsApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dts/DtsApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dts.delete",
+			"path": "/encoding/configurations/audio/dts/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dts/DtsApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dts/DtsApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dts.get",
+			"path": "/encoding/configurations/audio/dts/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dts/DtsApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dts/DtsApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dts.list",
+			"path": "/encoding/configurations/audio/dts",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/dts/DtsAudioConfigurationListQueryParams.d.ts#DtsAudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DtsAudioConfigurationListQueryParamsBuilder) => DtsAudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dts/DtsApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dts/DtsApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dts.customdata.get",
+			"path": "/encoding/configurations/audio/dts/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dts/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dts/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.create",
+			"path": "/encoding/configurations/audio/dts-passthrough",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "dtsPassthroughAudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/DtsPassthroughAudioConfiguration.d.ts#DtsPassthroughAudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dtsPassthrough/DtsPassthroughApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dtsPassthrough/DtsPassthroughApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.delete",
+			"path": "/encoding/configurations/audio/dts-passthrough/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dtsPassthrough/DtsPassthroughApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dtsPassthrough/DtsPassthroughApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.get",
+			"path": "/encoding/configurations/audio/dts-passthrough/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dtsPassthrough/DtsPassthroughApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dtsPassthrough/DtsPassthroughApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.list",
+			"path": "/encoding/configurations/audio/dts-passthrough",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/dtsPassthrough/DtsPassthroughAudioConfigurationListQueryParams.d.ts#DtsPassthroughAudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DtsPassthroughAudioConfigurationListQueryParamsBuilder) => DtsPassthroughAudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dtsPassthrough/DtsPassthroughApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dtsPassthrough/DtsPassthroughApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.customdata.get",
+			"path": "/encoding/configurations/audio/dts-passthrough/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dtsPassthrough/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dtsPassthrough/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsx.create",
+			"path": "/encoding/configurations/audio/dtsx",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "dtsXAudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/DtsXAudioConfiguration.d.ts#DtsXAudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dtsx/DtsxApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dtsx/DtsxApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsx.delete",
+			"path": "/encoding/configurations/audio/dtsx/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dtsx/DtsxApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dtsx/DtsxApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsx.get",
+			"path": "/encoding/configurations/audio/dtsx/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dtsx/DtsxApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dtsx/DtsxApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsx.list",
+			"path": "/encoding/configurations/audio/dtsx",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/dtsx/DtsXAudioConfigurationListQueryParams.d.ts#DtsXAudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DtsXAudioConfigurationListQueryParamsBuilder) => DtsXAudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dtsx/DtsxApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dtsx/DtsxApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsx.customdata.get",
+			"path": "/encoding/configurations/audio/dtsx/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/dtsx/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/dtsx/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.eac3.create",
+			"path": "/encoding/configurations/audio/eac3",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "eac3AudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/Eac3AudioConfiguration.d.ts#Eac3AudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/eac3/Eac3Api.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/eac3/Eac3Api.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.eac3.delete",
+			"path": "/encoding/configurations/audio/eac3/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/eac3/Eac3Api.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/eac3/Eac3Api.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.eac3.get",
+			"path": "/encoding/configurations/audio/eac3/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/eac3/Eac3Api.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/eac3/Eac3Api.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.eac3.list",
+			"path": "/encoding/configurations/audio/eac3",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/eac3/Eac3AudioConfigurationListQueryParams.d.ts#Eac3AudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: Eac3AudioConfigurationListQueryParamsBuilder) => Eac3AudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/eac3/Eac3Api.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/eac3/Eac3Api.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.eac3.customdata.get",
+			"path": "/encoding/configurations/audio/eac3/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/eac3/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/eac3/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV1.create",
+			"path": "/encoding/configurations/audio/he-aac-v1",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "heAacV1AudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/HeAacV1AudioConfiguration.d.ts#HeAacV1AudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/heAacV1/HeAacV1Api.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/heAacV1/HeAacV1Api.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV1.delete",
+			"path": "/encoding/configurations/audio/he-aac-v1/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/heAacV1/HeAacV1Api.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/heAacV1/HeAacV1Api.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV1.get",
+			"path": "/encoding/configurations/audio/he-aac-v1/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/heAacV1/HeAacV1Api.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/heAacV1/HeAacV1Api.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV1.list",
+			"path": "/encoding/configurations/audio/he-aac-v1",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/heAacV1/HeAacV1AudioConfigurationListQueryParams.d.ts#HeAacV1AudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: HeAacV1AudioConfigurationListQueryParamsBuilder) => HeAacV1AudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/heAacV1/HeAacV1Api.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/heAacV1/HeAacV1Api.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV1.customdata.get",
+			"path": "/encoding/configurations/audio/he-aac-v1/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/heAacV1/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/heAacV1/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV2.create",
+			"path": "/encoding/configurations/audio/he-aac-v2",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "heAacV2AudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/HeAacV2AudioConfiguration.d.ts#HeAacV2AudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/heAacV2/HeAacV2Api.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/heAacV2/HeAacV2Api.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV2.delete",
+			"path": "/encoding/configurations/audio/he-aac-v2/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/heAacV2/HeAacV2Api.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/heAacV2/HeAacV2Api.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV2.get",
+			"path": "/encoding/configurations/audio/he-aac-v2/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/heAacV2/HeAacV2Api.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/heAacV2/HeAacV2Api.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV2.list",
+			"path": "/encoding/configurations/audio/he-aac-v2",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/heAacV2/HeAacV2AudioConfigurationListQueryParams.d.ts#HeAacV2AudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: HeAacV2AudioConfigurationListQueryParamsBuilder) => HeAacV2AudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/heAacV2/HeAacV2Api.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/heAacV2/HeAacV2Api.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV2.customdata.get",
+			"path": "/encoding/configurations/audio/he-aac-v2/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/heAacV2/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/heAacV2/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp2.create",
+			"path": "/encoding/configurations/audio/mp2",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "mp2AudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/Mp2AudioConfiguration.d.ts#Mp2AudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/mp2/Mp2Api.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/mp2/Mp2Api.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp2.delete",
+			"path": "/encoding/configurations/audio/mp2/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/mp2/Mp2Api.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/mp2/Mp2Api.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp2.get",
+			"path": "/encoding/configurations/audio/mp2/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/mp2/Mp2Api.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/mp2/Mp2Api.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp2.list",
+			"path": "/encoding/configurations/audio/mp2",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/mp2/Mp2AudioConfigurationListQueryParams.d.ts#Mp2AudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: Mp2AudioConfigurationListQueryParamsBuilder) => Mp2AudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/mp2/Mp2Api.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/mp2/Mp2Api.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp2.customdata.get",
+			"path": "/encoding/configurations/audio/mp2/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/mp2/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/mp2/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp3.create",
+			"path": "/encoding/configurations/audio/mp3",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "mp3AudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/Mp3AudioConfiguration.d.ts#Mp3AudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/mp3/Mp3Api.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/mp3/Mp3Api.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp3.delete",
+			"path": "/encoding/configurations/audio/mp3/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/mp3/Mp3Api.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/mp3/Mp3Api.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp3.get",
+			"path": "/encoding/configurations/audio/mp3/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/mp3/Mp3Api.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/mp3/Mp3Api.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp3.list",
+			"path": "/encoding/configurations/audio/mp3",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/mp3/Mp3AudioConfigurationListQueryParams.d.ts#Mp3AudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: Mp3AudioConfigurationListQueryParamsBuilder) => Mp3AudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/mp3/Mp3Api.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/mp3/Mp3Api.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp3.customdata.get",
+			"path": "/encoding/configurations/audio/mp3/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/mp3/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/mp3/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.opus.create",
+			"path": "/encoding/configurations/audio/opus",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "opusAudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/OpusAudioConfiguration.d.ts#OpusAudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/opus/OpusApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/opus/OpusApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.opus.delete",
+			"path": "/encoding/configurations/audio/opus/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/opus/OpusApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/opus/OpusApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.opus.get",
+			"path": "/encoding/configurations/audio/opus/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/opus/OpusApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/opus/OpusApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.opus.list",
+			"path": "/encoding/configurations/audio/opus",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/opus/OpusAudioConfigurationListQueryParams.d.ts#OpusAudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: OpusAudioConfigurationListQueryParamsBuilder) => OpusAudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/opus/OpusApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/opus/OpusApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.opus.customdata.get",
+			"path": "/encoding/configurations/audio/opus/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/opus/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/opus/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.passthrough.create",
+			"path": "/encoding/configurations/audio/passthrough",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "passthroughAudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/PassthroughAudioConfiguration.d.ts#PassthroughAudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/passthrough/PassthroughApi.d.ts",
+						"line": 21
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/passthrough/PassthroughApi.d.ts",
+				"line": 21
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.passthrough.delete",
+			"path": "/encoding/configurations/audio/passthrough/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/passthrough/PassthroughApi.d.ts",
+						"line": 28
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/passthrough/PassthroughApi.d.ts",
+				"line": 28
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.passthrough.get",
+			"path": "/encoding/configurations/audio/passthrough/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/passthrough/PassthroughApi.d.ts",
+						"line": 35
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/passthrough/PassthroughApi.d.ts",
+				"line": 35
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.passthrough.list",
+			"path": "/encoding/configurations/audio/passthrough",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/passthrough/PassthroughAudioConfigurationListQueryParams.d.ts#PassthroughAudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: PassthroughAudioConfigurationListQueryParamsBuilder) => PassthroughAudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/passthrough/PassthroughApi.d.ts",
+						"line": 42
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/passthrough/PassthroughApi.d.ts",
+				"line": 42
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.pcm.create",
+			"path": "/encoding/configurations/audio/pcm",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "pcmAudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/PcmAudioConfiguration.d.ts#PcmAudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/pcm/PcmApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/pcm/PcmApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.pcm.delete",
+			"path": "/encoding/configurations/audio/pcm/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/pcm/PcmApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/pcm/PcmApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.pcm.get",
+			"path": "/encoding/configurations/audio/pcm/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/pcm/PcmApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/pcm/PcmApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.pcm.list",
+			"path": "/encoding/configurations/audio/pcm",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/pcm/PcmAudioConfigurationListQueryParams.d.ts#PcmAudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: PcmAudioConfigurationListQueryParamsBuilder) => PcmAudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/pcm/PcmApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/pcm/PcmApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.pcm.customdata.get",
+			"path": "/encoding/configurations/audio/pcm/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/pcm/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/pcm/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.vorbis.create",
+			"path": "/encoding/configurations/audio/vorbis",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "vorbisAudioConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/VorbisAudioConfiguration.d.ts#VorbisAudioConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/vorbis/VorbisApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/vorbis/VorbisApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.vorbis.delete",
+			"path": "/encoding/configurations/audio/vorbis/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/vorbis/VorbisApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/vorbis/VorbisApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.vorbis.get",
+			"path": "/encoding/configurations/audio/vorbis/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/vorbis/VorbisApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/vorbis/VorbisApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.vorbis.list",
+			"path": "/encoding/configurations/audio/vorbis",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/audio/vorbis/VorbisAudioConfigurationListQueryParams.d.ts#VorbisAudioConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: VorbisAudioConfigurationListQueryParamsBuilder) => VorbisAudioConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/vorbis/VorbisApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/vorbis/VorbisApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.vorbis.customdata.get",
+			"path": "/encoding/configurations/audio/vorbis/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/audio/vorbis/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/audio/vorbis/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.create",
+			"path": "/encoding/configurations/subtitles/dvb-subtitle",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "dvbSubtitleConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/DvbSubtitleConfiguration.d.ts#DvbSubtitleConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/subtitles/dvbSubtitle/DvbSubtitleApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/subtitles/dvbSubtitle/DvbSubtitleApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.delete",
+			"path": "/encoding/configurations/subtitles/dvb-subtitle/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/subtitles/dvbSubtitle/DvbSubtitleApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/subtitles/dvbSubtitle/DvbSubtitleApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.get",
+			"path": "/encoding/configurations/subtitles/dvb-subtitle/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/subtitles/dvbSubtitle/DvbSubtitleApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/subtitles/dvbSubtitle/DvbSubtitleApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.list",
+			"path": "/encoding/configurations/subtitles/dvb-subtitle",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/subtitles/dvbSubtitle/DvbSubtitleConfigurationListQueryParams.d.ts#DvbSubtitleConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DvbSubtitleConfigurationListQueryParamsBuilder) => DvbSubtitleConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/subtitles/dvbSubtitle/DvbSubtitleApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/subtitles/dvbSubtitle/DvbSubtitleApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.customdata.get",
+			"path": "/encoding/configurations/subtitles/dvb-subtitle/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/subtitles/dvbSubtitle/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/subtitles/dvbSubtitle/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.imsc.create",
+			"path": "/encoding/configurations/subtitles/imsc",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "imscConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/ImscConfiguration.d.ts#ImscConfiguration" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/subtitles/imsc/ImscApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/subtitles/imsc/ImscApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.imsc.delete",
+			"path": "/encoding/configurations/subtitles/imsc/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/subtitles/imsc/ImscApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/subtitles/imsc/ImscApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.imsc.get",
+			"path": "/encoding/configurations/subtitles/imsc/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/subtitles/imsc/ImscApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/subtitles/imsc/ImscApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.imsc.list",
+			"path": "/encoding/configurations/subtitles/imsc",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/subtitles/imsc/ImscConfigurationListQueryParams.d.ts#ImscConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: ImscConfigurationListQueryParamsBuilder) => ImscConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/subtitles/imsc/ImscApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/subtitles/imsc/ImscApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.imsc.customdata.get",
+			"path": "/encoding/configurations/subtitles/imsc/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/subtitles/imsc/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/subtitles/imsc/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.webvtt.create",
+			"path": "/encoding/configurations/subtitles/webvtt",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "webVttConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/WebVttConfiguration.d.ts#WebVttConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/subtitles/webvtt/WebvttApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/subtitles/webvtt/WebvttApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.webvtt.delete",
+			"path": "/encoding/configurations/subtitles/webvtt/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/subtitles/webvtt/WebvttApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/subtitles/webvtt/WebvttApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.webvtt.get",
+			"path": "/encoding/configurations/subtitles/webvtt/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/subtitles/webvtt/WebvttApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/subtitles/webvtt/WebvttApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.webvtt.list",
+			"path": "/encoding/configurations/subtitles/webvtt",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/subtitles/webvtt/WebVttConfigurationListQueryParams.d.ts#WebVttConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: WebVttConfigurationListQueryParamsBuilder) => WebVttConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/subtitles/webvtt/WebvttApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/subtitles/webvtt/WebvttApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.webvtt.customdata.get",
+			"path": "/encoding/configurations/subtitles/webvtt/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/subtitles/webvtt/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/subtitles/webvtt/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.type.get",
+			"path": "/encoding/configurations/{configuration_id}/type",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/type/TypeApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/type/TypeApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.av1.create",
+			"path": "/encoding/configurations/video/av1",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "av1VideoConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/Av1VideoConfiguration.d.ts#Av1VideoConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/av1/Av1Api.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/av1/Av1Api.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.av1.delete",
+			"path": "/encoding/configurations/video/av1/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/av1/Av1Api.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/av1/Av1Api.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.av1.get",
+			"path": "/encoding/configurations/video/av1/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/av1/Av1Api.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/av1/Av1Api.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.av1.list",
+			"path": "/encoding/configurations/video/av1",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/video/av1/Av1VideoConfigurationListQueryParams.d.ts#Av1VideoConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: Av1VideoConfigurationListQueryParamsBuilder) => Av1VideoConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/av1/Av1Api.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/av1/Av1Api.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.av1.customdata.get",
+			"path": "/encoding/configurations/video/av1/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/av1/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/av1/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h262.create",
+			"path": "/encoding/configurations/video/h262",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "h262VideoConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/H262VideoConfiguration.d.ts#H262VideoConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h262/H262Api.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h262/H262Api.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h262.delete",
+			"path": "/encoding/configurations/video/h262/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h262/H262Api.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h262/H262Api.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h262.get",
+			"path": "/encoding/configurations/video/h262/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h262/H262Api.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h262/H262Api.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h262.list",
+			"path": "/encoding/configurations/video/h262",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/video/h262/H262VideoConfigurationListQueryParams.d.ts#H262VideoConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: H262VideoConfigurationListQueryParamsBuilder) => H262VideoConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h262/H262Api.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h262/H262Api.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h262.customdata.get",
+			"path": "/encoding/configurations/video/h262/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h262/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h262/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h264.create",
+			"path": "/encoding/configurations/video/h264",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "h264VideoConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/H264VideoConfiguration.d.ts#H264VideoConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h264/H264Api.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h264/H264Api.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h264.delete",
+			"path": "/encoding/configurations/video/h264/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h264/H264Api.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h264/H264Api.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h264.get",
+			"path": "/encoding/configurations/video/h264/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h264/H264Api.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h264/H264Api.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h264.list",
+			"path": "/encoding/configurations/video/h264",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/video/h264/H264VideoConfigurationListQueryParams.d.ts#H264VideoConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: H264VideoConfigurationListQueryParamsBuilder) => H264VideoConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h264/H264Api.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h264/H264Api.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h264.customdata.get",
+			"path": "/encoding/configurations/video/h264/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h264/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h264/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265.create",
+			"path": "/encoding/configurations/video/h265",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "h265VideoConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/H265VideoConfiguration.d.ts#H265VideoConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h265/H265Api.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h265/H265Api.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265.delete",
+			"path": "/encoding/configurations/video/h265/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h265/H265Api.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h265/H265Api.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265.get",
+			"path": "/encoding/configurations/video/h265/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h265/H265Api.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h265/H265Api.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265.list",
+			"path": "/encoding/configurations/video/h265",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/video/h265/H265VideoConfigurationListQueryParams.d.ts#H265VideoConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: H265VideoConfigurationListQueryParamsBuilder) => H265VideoConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h265/H265Api.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h265/H265Api.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265.customdata.get",
+			"path": "/encoding/configurations/video/h265/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h265/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h265/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265v2.create",
+			"path": "/encoding/configurations/video/h265v2",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "h265V2VideoConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/H265V2VideoConfiguration.d.ts#H265V2VideoConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h265v2/H265v2Api.d.ts",
+						"line": 21
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h265v2/H265v2Api.d.ts",
+				"line": 21
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265v2.delete",
+			"path": "/encoding/configurations/video/h265v2/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h265v2/H265v2Api.d.ts",
+						"line": 28
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h265v2/H265v2Api.d.ts",
+				"line": 28
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265v2.get",
+			"path": "/encoding/configurations/video/h265v2/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h265v2/H265v2Api.d.ts",
+						"line": 35
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h265v2/H265v2Api.d.ts",
+				"line": 35
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265v2.list",
+			"path": "/encoding/configurations/video/h265v2",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/video/h265v2/H265V2VideoConfigurationListQueryParams.d.ts#H265V2VideoConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: H265V2VideoConfigurationListQueryParamsBuilder) => H265V2VideoConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/h265v2/H265v2Api.d.ts",
+						"line": 42
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/h265v2/H265v2Api.d.ts",
+				"line": 42
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.mjpeg.create",
+			"path": "/encoding/configurations/video/mjpeg",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "mjpegVideoConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/MjpegVideoConfiguration.d.ts#MjpegVideoConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/mjpeg/MjpegApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/mjpeg/MjpegApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.mjpeg.delete",
+			"path": "/encoding/configurations/video/mjpeg/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/mjpeg/MjpegApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/mjpeg/MjpegApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.mjpeg.get",
+			"path": "/encoding/configurations/video/mjpeg/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/mjpeg/MjpegApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/mjpeg/MjpegApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.mjpeg.list",
+			"path": "/encoding/configurations/video/mjpeg",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/video/mjpeg/MjpegVideoConfigurationListQueryParams.d.ts#MjpegVideoConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: MjpegVideoConfigurationListQueryParamsBuilder) => MjpegVideoConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/mjpeg/MjpegApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/mjpeg/MjpegApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.mjpeg.customdata.get",
+			"path": "/encoding/configurations/video/mjpeg/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/mjpeg/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/mjpeg/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp8.create",
+			"path": "/encoding/configurations/video/vp8",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "vp8VideoConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/Vp8VideoConfiguration.d.ts#Vp8VideoConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/vp8/Vp8Api.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/vp8/Vp8Api.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp8.delete",
+			"path": "/encoding/configurations/video/vp8/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/vp8/Vp8Api.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/vp8/Vp8Api.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp8.get",
+			"path": "/encoding/configurations/video/vp8/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/vp8/Vp8Api.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/vp8/Vp8Api.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp8.list",
+			"path": "/encoding/configurations/video/vp8",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/video/vp8/Vp8VideoConfigurationListQueryParams.d.ts#Vp8VideoConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: Vp8VideoConfigurationListQueryParamsBuilder) => Vp8VideoConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/vp8/Vp8Api.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/vp8/Vp8Api.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp8.customdata.get",
+			"path": "/encoding/configurations/video/vp8/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/vp8/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/vp8/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp9.create",
+			"path": "/encoding/configurations/video/vp9",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "vp9VideoConfiguration",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/Vp9VideoConfiguration.d.ts#Vp9VideoConfiguration"
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/vp9/Vp9Api.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/vp9/Vp9Api.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp9.delete",
+			"path": "/encoding/configurations/video/vp9/{configuration_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/vp9/Vp9Api.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/vp9/Vp9Api.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp9.get",
+			"path": "/encoding/configurations/video/vp9/{configuration_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/vp9/Vp9Api.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/vp9/Vp9Api.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp9.list",
+			"path": "/encoding/configurations/video/vp9",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/configurations/video/vp9/Vp9VideoConfigurationListQueryParams.d.ts#Vp9VideoConfigurationListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: Vp9VideoConfigurationListQueryParamsBuilder) => Vp9VideoConfigurationListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/vp9/Vp9Api.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/vp9/Vp9Api.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp9.customdata.get",
+			"path": "/encoding/configurations/video/vp9/{configuration_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "configurationId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "configuration_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/configurations/video/vp9/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/configurations/video/vp9/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		}
+	]
+}

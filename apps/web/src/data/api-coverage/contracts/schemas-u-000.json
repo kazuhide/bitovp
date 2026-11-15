@@ -1,0 +1,348 @@
+{
+	"schemaVersion": 1,
+	"kind": "schemas",
+	"items": [
+		[
+			"encoding/filters/unsharp/UnsharpFilterListQueryParams.d.ts#UnsharpFilterListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/filters/unsharp/UnsharpFilterListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/unsharp/UnsharpFilterListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "UnsharpFilterListQueryParams" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/unsharp/UnsharpFilterListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter filters by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "UnsharpFilterListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/unsharp/UnsharpFilterListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "UnsharpFilterListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/UnsharpFilter.d.ts#UnsharpFilter",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/UnsharpFilter.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "chromaEffectStrength",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/UnsharpFilter.d.ts", "line": 49 },
+						"documentation": "Negative value: blur, positive value: sharpen, floating point number, valid value range: -1.5 - 1.5",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "UnsharpFilter" }
+						]
+					},
+					{
+						"name": "chromaMatrixHorizontalSize",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/UnsharpFilter.d.ts", "line": 37 },
+						"documentation": "Must be an odd integer between 3 and 23",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "UnsharpFilter" }
+						]
+					},
+					{
+						"name": "chromaMatrixVerticalSize",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/UnsharpFilter.d.ts", "line": 43 },
+						"documentation": "Must be an odd integer between 3 and 23",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "UnsharpFilter" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "lumaEffectStrength",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/UnsharpFilter.d.ts", "line": 31 },
+						"documentation": "Negative value: blur, positive value: sharpen, floating point number, valid value range: -1.5 - 1.5",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "UnsharpFilter" }
+						]
+					},
+					{
+						"name": "lumaMatrixHorizontalSize",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/UnsharpFilter.d.ts", "line": 19 },
+						"documentation": "Must be an odd integer between 3 and 23",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "UnsharpFilter" }
+						]
+					},
+					{
+						"name": "lumaMatrixVerticalSize",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/UnsharpFilter.d.ts", "line": 25 },
+						"documentation": "Must be an odd integer between 3 and 23",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "UnsharpFilter" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/FilterType.d.ts#FilterType" },
+						"sdkEvidence": { "file": "models/UnsharpFilter.d.ts", "line": 13 },
+						"documentation": "Discriminator property for Filter",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "UnsharpFilter" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/UpdateEncodingRtmpIngestPointRequest.d.ts#UpdateEncodingRtmpIngestPointRequest",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/UpdateEncodingRtmpIngestPointRequest.d.ts",
+					"line": 6
+				},
+				"properties": [
+					{
+						"name": "ingestPoints",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/RtmpIngestPoint.d.ts#RtmpIngestPoint" }
+						},
+						"sdkEvidence": {
+							"file": "models/UpdateEncodingRtmpIngestPointRequest.d.ts",
+							"line": 12
+						},
+						"documentation": "List of ingest points to be updated for the encoding. The RTMPs application name and streamKey will be assigned to the encoding.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{RtmpIngestPoint[]}" },
+							{
+								"name": "memberof",
+								"text": "UpdateEncodingRtmpIngestPointRequest"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/UtcTiming.d.ts#UtcTiming",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/UtcTiming.d.ts", "line": 5 },
+				"properties": [
+					{
+						"name": "schemeIdUri",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/UtcTiming.d.ts", "line": 17 },
+						"documentation": "The scheme id to use. Please refer to the DASH standard. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "UtcTiming" }
+						]
+					},
+					{
+						"name": "value",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/UtcTiming.d.ts", "line": 11 },
+						"documentation": "The server to get the time from (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "UtcTiming" }
+						]
+					}
+				]
+			}
+		]
+	]
+}

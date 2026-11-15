@@ -1,0 +1,689 @@
+{
+	"schemaVersion": 1,
+	"kind": "operations",
+	"items": [
+		{
+			"sdkMethod": "encoding.live.dnsMappings.list",
+			"path": "/encoding/live/dns-mappings",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/live/dnsMappings/DnsMappingResponseListQueryParams.d.ts#DnsMappingResponseListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DnsMappingResponseListQueryParamsBuilder) => DnsMappingResponseListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/live/dnsMappings/DnsMappingsApi.d.ts",
+						"line": 20
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/dnsMappings/DnsMappingsApi.d.ts",
+				"line": 20
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.encodings.actions.patch",
+			"path": "/encoding/live/encodings/{encoding_id}/actions/update-rtmp-ingest-points",
+			"httpVerb": "PATCH",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/encodings/actions/ActionsApi.d.ts",
+						"line": 20
+					}
+				},
+				{
+					"name": "updateEncodingRtmpIngestPointRequest",
+					"parameterIndex": 1,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/UpdateEncodingRtmpIngestPointRequest.d.ts#UpdateEncodingRtmpIngestPointRequest"
+					},
+					"sdkEvidence": {
+						"file": "encoding/live/encodings/actions/ActionsApi.d.ts",
+						"line": 20
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/encodings/actions/ActionsApi.d.ts",
+				"line": 20
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.encodings.dnsMappings.create",
+			"path": "/encoding/live/encodings/{encoding_id}/dns-mappings",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/encodings/dnsMappings/DnsMappingsApi.d.ts",
+						"line": 24
+					}
+				},
+				{
+					"name": "dnsMappingRequest",
+					"parameterIndex": 1,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/DnsMappingRequest.d.ts#DnsMappingRequest" },
+					"sdkEvidence": {
+						"file": "encoding/live/encodings/dnsMappings/DnsMappingsApi.d.ts",
+						"line": 24
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/encodings/dnsMappings/DnsMappingsApi.d.ts",
+				"line": 24
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.encodings.dnsMappings.delete",
+			"path": "/encoding/live/encodings/{encoding_id}/dns-mappings/{id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/encodings/dnsMappings/DnsMappingsApi.d.ts",
+						"line": 32
+					}
+				},
+				{
+					"name": "id",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/encodings/dnsMappings/DnsMappingsApi.d.ts",
+						"line": 32
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/encodings/dnsMappings/DnsMappingsApi.d.ts",
+				"line": 32
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.encodings.dnsMappings.deleteAll",
+			"path": "/encoding/live/encodings/{encoding_id}/dns-mappings",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/encodings/dnsMappings/DnsMappingsApi.d.ts",
+						"line": 39
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/encodings/dnsMappings/DnsMappingsApi.d.ts",
+				"line": 39
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.encodings.dnsMappings.get",
+			"path": "/encoding/live/encodings/{encoding_id}/dns-mappings/{id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/encodings/dnsMappings/DnsMappingsApi.d.ts",
+						"line": 47
+					}
+				},
+				{
+					"name": "id",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/encodings/dnsMappings/DnsMappingsApi.d.ts",
+						"line": 47
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/encodings/dnsMappings/DnsMappingsApi.d.ts",
+				"line": 47
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.encodings.dnsMappings.list",
+			"path": "/encoding/live/encodings/{encoding_id}/dns-mappings",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/encodings/dnsMappings/DnsMappingsApi.d.ts",
+						"line": 55
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 1,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/live/encodings/dnsMappings/DnsMappingResponseListQueryParams.d.ts#DnsMappingResponseListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DnsMappingResponseListQueryParamsBuilder) => DnsMappingResponseListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/live/encodings/dnsMappings/DnsMappingsApi.d.ts",
+						"line": 55
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/encodings/dnsMappings/DnsMappingsApi.d.ts",
+				"line": 55
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.standbyPools.create",
+			"path": "/encoding/live/standby-pools",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "liveStandbyPoolRequest",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/LiveStandbyPoolRequest.d.ts#LiveStandbyPoolRequest"
+					},
+					"sdkEvidence": {
+						"file": "encoding/live/standbyPools/StandbyPoolsApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/standbyPools/StandbyPoolsApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.standbyPools.delete",
+			"path": "/encoding/live/standby-pools/{pool_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/standbyPools/StandbyPoolsApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/standbyPools/StandbyPoolsApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.standbyPools.get",
+			"path": "/encoding/live/standby-pools/{pool_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/standbyPools/StandbyPoolsApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/standbyPools/StandbyPoolsApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.standbyPools.list",
+			"path": "/encoding/live/standby-pools",
+			"httpVerb": "GET",
+			"parameters": [],
+			"sdkEvidence": {
+				"file": "encoding/live/standbyPools/StandbyPoolsApi.d.ts",
+				"line": 49
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.standbyPools.patch",
+			"path": "/encoding/live/standby-pools/{pool_id}",
+			"httpVerb": "PATCH",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/standbyPools/StandbyPoolsApi.d.ts",
+						"line": 57
+					}
+				},
+				{
+					"name": "liveStandbyPoolUpdate",
+					"parameterIndex": 1,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/LiveStandbyPoolUpdate.d.ts#LiveStandbyPoolUpdate"
+					},
+					"sdkEvidence": {
+						"file": "encoding/live/standbyPools/StandbyPoolsApi.d.ts",
+						"line": 57
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/standbyPools/StandbyPoolsApi.d.ts",
+				"line": 57
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.standbyPools.actions.acquireEncoding",
+			"path": "/encoding/live/standby-pools/{pool_id}/actions/acquire-encoding",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/standbyPools/actions/ActionsApi.d.ts",
+						"line": 20
+					}
+				},
+				{
+					"name": "liveStandbyPoolAcquireEncoding",
+					"parameterIndex": 1,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/LiveStandbyPoolAcquireEncoding.d.ts#LiveStandbyPoolAcquireEncoding"
+					},
+					"sdkEvidence": {
+						"file": "encoding/live/standbyPools/actions/ActionsApi.d.ts",
+						"line": 20
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/standbyPools/actions/ActionsApi.d.ts",
+				"line": 20
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.standbyPools.actions.deleteErrorEncodings",
+			"path": "/encoding/live/standby-pools/{pool_id}/actions/delete-error-encodings",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/standbyPools/actions/ActionsApi.d.ts",
+						"line": 27
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/standbyPools/actions/ActionsApi.d.ts",
+				"line": 27
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.standbyPools.encodings.delete",
+			"path": "/encoding/live/standby-pools/{pool_id}/encodings/{id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/standbyPools/encodings/EncodingsApi.d.ts",
+						"line": 22
+					}
+				},
+				{
+					"name": "id",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/standbyPools/encodings/EncodingsApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/standbyPools/encodings/EncodingsApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.standbyPools.encodings.list",
+			"path": "/encoding/live/standby-pools/{pool_id}/encodings",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/standbyPools/encodings/EncodingsApi.d.ts",
+						"line": 30
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 1,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/live/standbyPools/encodings/LiveStandbyPoolEncodingListQueryParams.d.ts#LiveStandbyPoolEncodingListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: LiveStandbyPoolEncodingListQueryParamsBuilder) => LiveStandbyPoolEncodingListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/live/standbyPools/encodings/EncodingsApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/standbyPools/encodings/EncodingsApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.standbyPools.logs.list",
+			"path": "/encoding/live/standby-pools/{pool_id}/logs",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/standbyPools/logs/LogsApi.d.ts",
+						"line": 21
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 1,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/live/standbyPools/logs/LiveStandbyPoolEventLogListQueryParams.d.ts#LiveStandbyPoolEventLogListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: LiveStandbyPoolEventLogListQueryParamsBuilder) => LiveStandbyPoolEventLogListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/live/standbyPools/logs/LogsApi.d.ts",
+						"line": 21
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/standbyPools/logs/LogsApi.d.ts",
+				"line": 21
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.streamKeys.create",
+			"path": "/encoding/live/stream-keys",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "streamKey",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/StreamKey.d.ts#StreamKey" },
+					"sdkEvidence": {
+						"file": "encoding/live/streamKeys/StreamKeysApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/streamKeys/StreamKeysApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.streamKeys.delete",
+			"path": "/encoding/live/stream-keys/{stream_key_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "streamKeyId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "stream_key_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/streamKeys/StreamKeysApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/streamKeys/StreamKeysApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.streamKeys.get",
+			"path": "/encoding/live/stream-keys/{stream_key_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "streamKeyId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "stream_key_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/live/streamKeys/StreamKeysApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/streamKeys/StreamKeysApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.streamKeys.list",
+			"path": "/encoding/live/stream-keys",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/live/streamKeys/StreamKeyListQueryParams.d.ts#StreamKeyListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: StreamKeyListQueryParamsBuilder) => StreamKeyListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/live/streamKeys/StreamKeysApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/streamKeys/StreamKeysApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.live.streamKeys.actions.unassign",
+			"path": "/encoding/live/stream-keys/actions/unassign",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "streamKeysUnassignAction",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/StreamKeysUnassignAction.d.ts#StreamKeysUnassignAction"
+					},
+					"sdkEvidence": {
+						"file": "encoding/live/streamKeys/actions/ActionsApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/live/streamKeys/actions/ActionsApi.d.ts",
+				"line": 18
+			}
+		}
+	]
+}

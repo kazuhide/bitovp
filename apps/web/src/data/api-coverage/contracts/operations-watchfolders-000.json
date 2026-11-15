@@ -1,0 +1,156 @@
+{
+	"schemaVersion": 1,
+	"kind": "operations",
+	"items": [
+		{
+			"sdkMethod": "encoding.watchFolders.create",
+			"path": "/encoding/watch-folders",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "watchFolder",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/WatchFolder.d.ts#WatchFolder" },
+					"sdkEvidence": {
+						"file": "encoding/watchFolders/WatchFoldersApi.d.ts",
+						"line": 21
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/watchFolders/WatchFoldersApi.d.ts",
+				"line": 21
+			}
+		},
+		{
+			"sdkMethod": "encoding.watchFolders.delete",
+			"path": "/encoding/watch-folders/{watch_folder_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "watchFolderId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "watch_folder_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/watchFolders/WatchFoldersApi.d.ts",
+						"line": 28
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/watchFolders/WatchFoldersApi.d.ts",
+				"line": 28
+			}
+		},
+		{
+			"sdkMethod": "encoding.watchFolders.get",
+			"path": "/encoding/watch-folders/{watch_folder_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "watchFolderId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "watch_folder_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/watchFolders/WatchFoldersApi.d.ts",
+						"line": 35
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/watchFolders/WatchFoldersApi.d.ts",
+				"line": 35
+			}
+		},
+		{
+			"sdkMethod": "encoding.watchFolders.list",
+			"path": "/encoding/watch-folders",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/watchFolders/WatchFolderListQueryParams.d.ts#WatchFolderListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: WatchFolderListQueryParamsBuilder) => WatchFolderListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/watchFolders/WatchFoldersApi.d.ts",
+						"line": 42
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/watchFolders/WatchFoldersApi.d.ts",
+				"line": 42
+			}
+		},
+		{
+			"sdkMethod": "encoding.watchFolders.start",
+			"path": "/encoding/watch-folders/{watch_folder_id}/start",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "watchFolderId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "watch_folder_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/watchFolders/WatchFoldersApi.d.ts",
+						"line": 49
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/watchFolders/WatchFoldersApi.d.ts",
+				"line": 49
+			}
+		},
+		{
+			"sdkMethod": "encoding.watchFolders.stop",
+			"path": "/encoding/watch-folders/{watch_folder_id}/stop",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "watchFolderId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "watch_folder_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/watchFolders/WatchFoldersApi.d.ts",
+						"line": 56
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/watchFolders/WatchFoldersApi.d.ts",
+				"line": 56
+			}
+		}
+	]
+}

@@ -1,0 +1,141 @@
+{
+	"schemaVersion": 1,
+	"kind": "operations",
+	"items": [
+		{
+			"sdkMethod": "encoding.templates.create",
+			"path": "/encoding/templates",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "encodingTemplateRequest",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"kind": "opaque",
+						"type": "any",
+						"reason": "SDK any; acceptance unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/templates/TemplatesApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/templates/TemplatesApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.templates.delete",
+			"path": "/encoding/templates/{encoding_template_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "encodingTemplateId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_template_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/templates/TemplatesApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/templates/TemplatesApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.templates.get",
+			"path": "/encoding/templates/{encoding_template_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "encodingTemplateId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_template_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/templates/TemplatesApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/templates/TemplatesApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.templates.list",
+			"path": "/encoding/templates",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/templates/EncodingTemplateResponseListQueryParams.d.ts#EncodingTemplateResponseListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: EncodingTemplateResponseListQueryParamsBuilder) => EncodingTemplateResponseListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/templates/TemplatesApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/templates/TemplatesApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.templates.start",
+			"path": "/encoding/templates/start",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "encodingTemplateRequest",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"kind": "opaque",
+						"type": "any",
+						"reason": "SDK any; acceptance unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/templates/TemplatesApi.d.ts",
+						"line": 51
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/templates/TemplatesApi.d.ts",
+				"line": 51
+			}
+		}
+	]
+}

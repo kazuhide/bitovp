@@ -1,0 +1,1776 @@
+{
+	"schemaVersion": 1,
+	"kind": "operations",
+	"items": [
+		{
+			"sdkMethod": "encoding.outputs.checkPermissions",
+			"path": "/encoding/outputs/{output_id}/check-permissions",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/OutputsApi.d.ts",
+						"line": 53
+					}
+				},
+				{
+					"name": "checkOutputPermissionsRequest",
+					"parameterIndex": 1,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/CheckOutputPermissionsRequest.d.ts#CheckOutputPermissionsRequest"
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/OutputsApi.d.ts",
+						"line": 53
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/OutputsApi.d.ts", "line": 53 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.get",
+			"path": "/encoding/outputs/{output_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/OutputsApi.d.ts",
+						"line": 60
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/OutputsApi.d.ts", "line": 60 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.list",
+			"path": "/encoding/outputs",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/outputs/OutputListQueryParams.d.ts#OutputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: OutputListQueryParamsBuilder) => OutputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/OutputsApi.d.ts",
+						"line": 67
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/OutputsApi.d.ts", "line": 67 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiMsl.create",
+			"path": "/encoding/outputs/akamai-msl",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "akamaiMslOutput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/AkamaiMslOutput.d.ts#AkamaiMslOutput" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/akamaiMsl/AkamaiMslApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/akamaiMsl/AkamaiMslApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiMsl.delete",
+			"path": "/encoding/outputs/akamai-msl/{output_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/akamaiMsl/AkamaiMslApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/akamaiMsl/AkamaiMslApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiMsl.get",
+			"path": "/encoding/outputs/akamai-msl/{output_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/akamaiMsl/AkamaiMslApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/akamaiMsl/AkamaiMslApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiMsl.list",
+			"path": "/encoding/outputs/akamai-msl",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/outputs/akamaiMsl/AkamaiMslOutputListQueryParams.d.ts#AkamaiMslOutputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AkamaiMslOutputListQueryParamsBuilder) => AkamaiMslOutputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/akamaiMsl/AkamaiMslApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/akamaiMsl/AkamaiMslApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiMsl.customdata.get",
+			"path": "/encoding/outputs/akamai-msl/{output_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/akamaiMsl/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/akamaiMsl/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiNetstorage.create",
+			"path": "/encoding/outputs/akamai-netstorage",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "akamaiNetStorageOutput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/AkamaiNetStorageOutput.d.ts#AkamaiNetStorageOutput"
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiNetstorage.delete",
+			"path": "/encoding/outputs/akamai-netstorage/{output_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiNetstorage.get",
+			"path": "/encoding/outputs/akamai-netstorage/{output_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiNetstorage.list",
+			"path": "/encoding/outputs/akamai-netstorage",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/outputs/akamaiNetstorage/AkamaiNetStorageOutputListQueryParams.d.ts#AkamaiNetStorageOutputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AkamaiNetStorageOutputListQueryParamsBuilder) => AkamaiNetStorageOutputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiNetstorage.customdata.get",
+			"path": "/encoding/outputs/akamai-netstorage/{output_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/akamaiNetstorage/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/akamaiNetstorage/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.azure.create",
+			"path": "/encoding/outputs/azure",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "azureOutput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/AzureOutput.d.ts#AzureOutput" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/azure/AzureApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/azure/AzureApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.azure.delete",
+			"path": "/encoding/outputs/azure/{output_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/azure/AzureApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/azure/AzureApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.azure.get",
+			"path": "/encoding/outputs/azure/{output_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/azure/AzureApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/azure/AzureApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.azure.list",
+			"path": "/encoding/outputs/azure",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/outputs/azure/AzureOutputListQueryParams.d.ts#AzureOutputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AzureOutputListQueryParamsBuilder) => AzureOutputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/azure/AzureApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/azure/AzureApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.azure.customdata.get",
+			"path": "/encoding/outputs/azure/{output_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/azure/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/azure/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.cdn.get",
+			"path": "/encoding/outputs/cdn/{output_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/cdn/CdnApi.d.ts",
+						"line": 20
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/cdn/CdnApi.d.ts", "line": 20 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.cdn.list",
+			"path": "/encoding/outputs/cdn",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/outputs/cdn/CdnOutputListQueryParams.d.ts#CdnOutputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: CdnOutputListQueryParamsBuilder) => CdnOutputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/cdn/CdnApi.d.ts",
+						"line": 27
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/cdn/CdnApi.d.ts", "line": 27 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.ftp.create",
+			"path": "/encoding/outputs/ftp",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "ftpOutput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/FtpOutput.d.ts#FtpOutput" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/ftp/FtpApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/ftp/FtpApi.d.ts", "line": 22 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.ftp.delete",
+			"path": "/encoding/outputs/ftp/{output_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/ftp/FtpApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/ftp/FtpApi.d.ts", "line": 29 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.ftp.get",
+			"path": "/encoding/outputs/ftp/{output_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/ftp/FtpApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/ftp/FtpApi.d.ts", "line": 36 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.ftp.list",
+			"path": "/encoding/outputs/ftp",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/outputs/ftp/FtpOutputListQueryParams.d.ts#FtpOutputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: FtpOutputListQueryParamsBuilder) => FtpOutputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/ftp/FtpApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/ftp/FtpApi.d.ts", "line": 43 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.ftp.customdata.get",
+			"path": "/encoding/outputs/ftp/{output_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/ftp/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/ftp/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcs.create",
+			"path": "/encoding/outputs/gcs",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "gcsOutput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/GcsOutput.d.ts#GcsOutput" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/gcs/GcsApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/gcs/GcsApi.d.ts", "line": 22 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcs.delete",
+			"path": "/encoding/outputs/gcs/{output_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/gcs/GcsApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/gcs/GcsApi.d.ts", "line": 29 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcs.get",
+			"path": "/encoding/outputs/gcs/{output_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/gcs/GcsApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/gcs/GcsApi.d.ts", "line": 36 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcs.list",
+			"path": "/encoding/outputs/gcs",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/outputs/gcs/GcsOutputListQueryParams.d.ts#GcsOutputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: GcsOutputListQueryParamsBuilder) => GcsOutputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/gcs/GcsApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/gcs/GcsApi.d.ts", "line": 43 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcs.customdata.get",
+			"path": "/encoding/outputs/gcs/{output_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/gcs/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/gcs/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcsServiceAccount.create",
+			"path": "/encoding/outputs/gcs-service-account",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "gcsServiceAccountOutput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/GcsServiceAccountOutput.d.ts#GcsServiceAccountOutput"
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcsServiceAccount.delete",
+			"path": "/encoding/outputs/gcs-service-account/{output_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcsServiceAccount.get",
+			"path": "/encoding/outputs/gcs-service-account/{output_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcsServiceAccount.list",
+			"path": "/encoding/outputs/gcs-service-account",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/outputs/gcsServiceAccount/GcsServiceAccountOutputListQueryParams.d.ts#GcsServiceAccountOutputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: GcsServiceAccountOutputListQueryParamsBuilder) => GcsServiceAccountOutputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcsServiceAccount.customdata.get",
+			"path": "/encoding/outputs/gcs-service-account/{output_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/gcsServiceAccount/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/gcsServiceAccount/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.genericS3.create",
+			"path": "/encoding/outputs/generic-s3",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "genericS3Output",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/GenericS3Output.d.ts#GenericS3Output" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/genericS3/GenericS3Api.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/genericS3/GenericS3Api.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.genericS3.delete",
+			"path": "/encoding/outputs/generic-s3/{output_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/genericS3/GenericS3Api.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/genericS3/GenericS3Api.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.genericS3.get",
+			"path": "/encoding/outputs/generic-s3/{output_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/genericS3/GenericS3Api.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/genericS3/GenericS3Api.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.genericS3.list",
+			"path": "/encoding/outputs/generic-s3",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/outputs/genericS3/GenericS3OutputListQueryParams.d.ts#GenericS3OutputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: GenericS3OutputListQueryParamsBuilder) => GenericS3OutputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/genericS3/GenericS3Api.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/genericS3/GenericS3Api.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.genericS3.customdata.get",
+			"path": "/encoding/outputs/generic-s3/{output_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/genericS3/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/genericS3/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.liveMediaIngest.create",
+			"path": "/encoding/outputs/live-media-ingest",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "liveMediaIngestOutput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/LiveMediaIngestOutput.d.ts#LiveMediaIngestOutput"
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/liveMediaIngest/LiveMediaIngestApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/liveMediaIngest/LiveMediaIngestApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.liveMediaIngest.delete",
+			"path": "/encoding/outputs/live-media-ingest/{output_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/liveMediaIngest/LiveMediaIngestApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/liveMediaIngest/LiveMediaIngestApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.liveMediaIngest.get",
+			"path": "/encoding/outputs/live-media-ingest/{output_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/liveMediaIngest/LiveMediaIngestApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/liveMediaIngest/LiveMediaIngestApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.liveMediaIngest.list",
+			"path": "/encoding/outputs/live-media-ingest",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/outputs/liveMediaIngest/LiveMediaIngestOutputListQueryParams.d.ts#LiveMediaIngestOutputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: LiveMediaIngestOutputListQueryParamsBuilder) => LiveMediaIngestOutputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/liveMediaIngest/LiveMediaIngestApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/liveMediaIngest/LiveMediaIngestApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.liveMediaIngest.customdata.get",
+			"path": "/encoding/outputs/live-media-ingest/{output_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/liveMediaIngest/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/liveMediaIngest/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.local.create",
+			"path": "/encoding/outputs/local",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "localOutput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/LocalOutput.d.ts#LocalOutput" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/local/LocalApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/local/LocalApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.local.delete",
+			"path": "/encoding/outputs/local/{output_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/local/LocalApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/local/LocalApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.local.get",
+			"path": "/encoding/outputs/local/{output_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/local/LocalApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/local/LocalApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.local.list",
+			"path": "/encoding/outputs/local",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/outputs/local/LocalOutputListQueryParams.d.ts#LocalOutputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: LocalOutputListQueryParamsBuilder) => LocalOutputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/local/LocalApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/local/LocalApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.local.customdata.get",
+			"path": "/encoding/outputs/local/{output_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/local/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/local/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.create",
+			"path": "/encoding/outputs/moq",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "moqOutput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/MoqOutput.d.ts#MoqOutput" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/moq/MoqApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/moq/MoqApi.d.ts", "line": 23 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.delete",
+			"path": "/encoding/outputs/moq/{output_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/moq/MoqApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/moq/MoqApi.d.ts", "line": 30 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.get",
+			"path": "/encoding/outputs/moq/{output_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/moq/MoqApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/moq/MoqApi.d.ts", "line": 37 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.list",
+			"path": "/encoding/outputs/moq",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/outputs/moq/MoqOutputListQueryParams.d.ts#MoqOutputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: MoqOutputListQueryParamsBuilder) => MoqOutputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/moq/MoqApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/moq/MoqApi.d.ts", "line": 44 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.customdata.get",
+			"path": "/encoding/outputs/moq/{output_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/moq/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/moq/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3.create",
+			"path": "/encoding/outputs/s3",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "s3Output",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/S3Output.d.ts#S3Output" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/s3/S3Api.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/s3/S3Api.d.ts", "line": 22 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3.delete",
+			"path": "/encoding/outputs/s3/{output_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/s3/S3Api.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/s3/S3Api.d.ts", "line": 29 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3.get",
+			"path": "/encoding/outputs/s3/{output_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/s3/S3Api.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/s3/S3Api.d.ts", "line": 36 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3.list",
+			"path": "/encoding/outputs/s3",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/outputs/s3/S3OutputListQueryParams.d.ts#S3OutputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: S3OutputListQueryParamsBuilder) => S3OutputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/s3/S3Api.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/outputs/s3/S3Api.d.ts", "line": 43 }
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3.customdata.get",
+			"path": "/encoding/outputs/s3/{output_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/s3/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/s3/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3RoleBased.create",
+			"path": "/encoding/outputs/s3-role-based",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "s3RoleBasedOutput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/S3RoleBasedOutput.d.ts#S3RoleBasedOutput" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/s3RoleBased/S3RoleBasedApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/s3RoleBased/S3RoleBasedApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3RoleBased.delete",
+			"path": "/encoding/outputs/s3-role-based/{output_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/s3RoleBased/S3RoleBasedApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/s3RoleBased/S3RoleBasedApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3RoleBased.get",
+			"path": "/encoding/outputs/s3-role-based/{output_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/s3RoleBased/S3RoleBasedApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/s3RoleBased/S3RoleBasedApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3RoleBased.list",
+			"path": "/encoding/outputs/s3-role-based",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/outputs/s3RoleBased/S3RoleBasedOutputListQueryParams.d.ts#S3RoleBasedOutputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: S3RoleBasedOutputListQueryParamsBuilder) => S3RoleBasedOutputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/s3RoleBased/S3RoleBasedApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/s3RoleBased/S3RoleBasedApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3RoleBased.customdata.get",
+			"path": "/encoding/outputs/s3-role-based/{output_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/s3RoleBased/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/s3RoleBased/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.sftp.create",
+			"path": "/encoding/outputs/sftp",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "sftpOutput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/SftpOutput.d.ts#SftpOutput" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/sftp/SftpApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/sftp/SftpApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.sftp.delete",
+			"path": "/encoding/outputs/sftp/{output_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/sftp/SftpApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/sftp/SftpApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.sftp.get",
+			"path": "/encoding/outputs/sftp/{output_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/sftp/SftpApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/sftp/SftpApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.sftp.list",
+			"path": "/encoding/outputs/sftp",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/outputs/sftp/SftpOutputListQueryParams.d.ts#SftpOutputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: SftpOutputListQueryParamsBuilder) => SftpOutputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/outputs/sftp/SftpApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/sftp/SftpApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.sftp.customdata.get",
+			"path": "/encoding/outputs/sftp/{output_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/sftp/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/sftp/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.type.get",
+			"path": "/encoding/outputs/{output_id}/type",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "outputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "output_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/outputs/type/TypeApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/outputs/type/TypeApi.d.ts",
+				"line": 18
+			}
+		}
+	]
+}

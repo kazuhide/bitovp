@@ -1,0 +1,1846 @@
+{
+	"schemaVersion": 1,
+	"kind": "schemas",
+	"items": [
+		[
+			"encoding/configurations/subtitles/webvtt/WebVttConfigurationListQueryParams.d.ts#WebVttConfigurationListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/configurations/subtitles/webvtt/WebVttConfigurationListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/subtitles/webvtt/WebVttConfigurationListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "WebVttConfigurationListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/subtitles/webvtt/WebVttConfigurationListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter configuration by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "WebVttConfigurationListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/subtitles/webvtt/WebVttConfigurationListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "WebVttConfigurationListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/muxings/fmp4/drm/widevine/WidevineDrmListQueryParams.d.ts#WidevineDrmListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/muxings/fmp4/drm/widevine/WidevineDrmListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/fmp4/drm/widevine/WidevineDrmListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WidevineDrmListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/fmp4/drm/widevine/WidevineDrmListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WidevineDrmListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/muxings/mp4/drm/widevine/WidevineDrmListQueryParams.d.ts#WidevineDrmListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/muxings/mp4/drm/widevine/WidevineDrmListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/mp4/drm/widevine/WidevineDrmListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WidevineDrmListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/mp4/drm/widevine/WidevineDrmListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WidevineDrmListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/muxings/webm/WebmMuxingListQueryParams.d.ts#WebmMuxingListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/muxings/webm/WebmMuxingListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/webm/WebmMuxingListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WebmMuxingListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/webm/WebmMuxingListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WebmMuxingListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/sidecars/webvtt/WebVttSidecarFileListQueryParams.d.ts#WebVttSidecarFileListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/sidecars/webvtt/WebVttSidecarFileListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/sidecars/webvtt/WebVttSidecarFileListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WebVttSidecarFileListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/sidecars/webvtt/WebVttSidecarFileListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WebVttSidecarFileListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/filters/watermark/WatermarkFilterListQueryParams.d.ts#WatermarkFilterListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/filters/watermark/WatermarkFilterListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/watermark/WatermarkFilterListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WatermarkFilterListQueryParams" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/watermark/WatermarkFilterListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter filters by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WatermarkFilterListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/watermark/WatermarkFilterListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WatermarkFilterListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/watchFolders/WatchFolderListQueryParams.d.ts#WatchFolderListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/watchFolders/WatchFolderListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/watchFolders/WatchFolderListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WatchFolderListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/watchFolders/WatchFolderListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WatchFolderListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/WatchFolder.d.ts#WatchFolder",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/WatchFolder.d.ts", "line": 9 },
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "input",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/WatchFolderInput.d.ts#WatchFolderInput" },
+						"sdkEvidence": { "file": "models/WatchFolder.d.ts", "line": 14 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{WatchFolderInput}" },
+							{ "name": "memberof", "text": "WatchFolder" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "outputs",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": {
+								"ref": "models/WatchFolderOutput.d.ts#WatchFolderOutput"
+							}
+						},
+						"sdkEvidence": { "file": "models/WatchFolder.d.ts", "line": 19 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{WatchFolderOutput[]}" },
+							{ "name": "memberof", "text": "WatchFolder" }
+						]
+					},
+					{
+						"name": "status",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/WatchFolderStatus.d.ts#WatchFolderStatus"
+						},
+						"sdkEvidence": { "file": "models/WatchFolder.d.ts", "line": 25 },
+						"documentation": "The current status of the Watch Folder. The default value is `STOPPED` (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{WatchFolderStatus}" },
+							{ "name": "memberof", "text": "WatchFolder" }
+						]
+					},
+					{
+						"name": "statusText",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/WatchFolder.d.ts", "line": 31 },
+						"documentation": "A description text of the current status (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WatchFolder" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/WatchFolderInput.d.ts#WatchFolderInput",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/WatchFolderInput.d.ts", "line": 5 },
+				"properties": [
+					{
+						"name": "inputId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/WatchFolderInput.d.ts",
+							"line": 11
+						},
+						"documentation": "Input id (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WatchFolderInput" }
+						]
+					},
+					{
+						"name": "inputPath",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/WatchFolderInput.d.ts",
+							"line": 17
+						},
+						"documentation": "Path of the directory to monitor (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WatchFolderInput" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/WatchFolderOutput.d.ts#WatchFolderOutput",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/WatchFolderOutput.d.ts", "line": 5 },
+				"properties": [
+					{
+						"name": "outputId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/WatchFolderOutput.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the corresponding output (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WatchFolderOutput" }
+						]
+					},
+					{
+						"name": "outputPath",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/WatchFolderOutput.d.ts",
+							"line": 17
+						},
+						"documentation": "Subdirectory where to save the files to (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WatchFolderOutput" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/WatchFolderStatus.d.ts#WatchFolderStatus",
+			{
+				"kind": "enum",
+				"values": ["STOPPED", "STARTED", "ERROR"],
+				"sdkEvidence": { "file": "models/WatchFolderStatus.d.ts", "line": 5 }
+			}
+		],
+		[
+			"models/WatermarkFilter.d.ts#WatermarkFilter",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/WatermarkFilter.d.ts", "line": 8 },
+				"properties": [
+					{
+						"name": "bottom",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/WatermarkFilter.d.ts",
+							"line": 44
+						},
+						"documentation": "Distance from the bottom edge of the input video to the bottom edge of the watermark image. May not be set if 'top' is set.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WatermarkFilter" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "image",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/WatermarkFilter.d.ts",
+							"line": 20
+						},
+						"documentation": "URL of the file to be used as watermark image. Supported image formats: PNG, JPEG, BMP, GIF (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WatermarkFilter" }
+						]
+					},
+					{
+						"name": "left",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/WatermarkFilter.d.ts",
+							"line": 26
+						},
+						"documentation": "Distance from the left edge of the input video to the left edge of the watermark image. May not be set if 'right' is set.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WatermarkFilter" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "right",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/WatermarkFilter.d.ts",
+							"line": 32
+						},
+						"documentation": "Distance from the right edge of the input video to the right edge of the watermark image . May not be set if 'left' is set.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WatermarkFilter" }
+						]
+					},
+					{
+						"name": "top",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/WatermarkFilter.d.ts",
+							"line": 38
+						},
+						"documentation": "Distance from the top edge of the input video to the top edge of the watermark image. May not be set if 'bottom' is set.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WatermarkFilter" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/FilterType.d.ts#FilterType" },
+						"sdkEvidence": {
+							"file": "models/WatermarkFilter.d.ts",
+							"line": 14
+						},
+						"documentation": "Discriminator property for Filter",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WatermarkFilter" }
+						]
+					},
+					{
+						"name": "unit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/PositionUnit.d.ts#PositionUnit" },
+						"sdkEvidence": {
+							"file": "models/WatermarkFilter.d.ts",
+							"line": 50
+						},
+						"documentation": "Specifies if the values of 'left', 'right', 'top' and 'bottom' are interpreted as pixels or as a percentage of the input video's dimensions.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{PositionUnit}" },
+							{ "name": "memberof", "text": "WatermarkFilter" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/WebmMuxing.d.ts#WebmMuxing",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/WebmMuxing.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "avgBitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 47 },
+						"documentation": "Average bitrate. Available after encoding finishes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "ignoredBy",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/Ignoring.d.ts#Ignoring" }
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 65 },
+						"documentation": "This read-only property is set during the analysis step of the encoding. If it contains items, the Muxing has been ignored during the encoding process according to its 'streamConditionsMode'",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Ignoring[]}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "initSegmentName",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/WebmMuxing.d.ts", "line": 37 },
+						"documentation": "Init segment name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WebmMuxing" }
+						]
+					},
+					{
+						"name": "initSegmentNameTemplate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/WebmMuxing.d.ts", "line": 43 },
+						"documentation": "Segment naming policy containing a placeholder of the format '{rand_chars:x}', which will be replaced by a random alphanumeric string of length x (default 32) on each (re)start of the encoding. The resulting string will be copied to the initSegmentName property. Intended to avoid re-use of segment names after restarting a live encoding. If initSegmentNameTemplate is set, initSegmentName must not be set.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WebmMuxing" }
+						]
+					},
+					{
+						"name": "maxBitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 59 },
+						"documentation": "Max bitrate. Available after encoding finishes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "minBitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 53 },
+						"documentation": "Min bitrate. Available after encoding finishes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "outputs",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/EncodingOutput.d.ts#EncodingOutput" }
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 41 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingOutput[]}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "segmentLength",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/WebmMuxing.d.ts", "line": 19 },
+						"documentation": "Length of the fragments in seconds (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WebmMuxing" }
+						]
+					},
+					{
+						"name": "segmentNaming",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/WebmMuxing.d.ts", "line": 25 },
+						"documentation": "Segment naming policy",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WebmMuxing" }
+						]
+					},
+					{
+						"name": "segmentNamingTemplate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/WebmMuxing.d.ts", "line": 31 },
+						"documentation": "Segment naming policy containing one or both of the following placeholders: - '{rand_chars:x}', which will be replaced by a random alphanumeric string of length x (default 32)   on each (re)start of the encoding. The resulting string will be copied to the segmentNaming property.   Intended to avoid re-use of segment names after restarting a live encoding. - '{segment_rand_chars:x}', which will be replaced by a random alphanumeric string of length x (default 32)   for each different segment. This is intended to avoid guessing segment URLs by replacing segment numbers.  If segmentNamingTemplate is set, segmentNaming must not be set.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WebmMuxing" }
+						]
+					},
+					{
+						"name": "segmentsMuxed",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/WebmMuxing.d.ts", "line": 49 },
+						"documentation": "Number of segments which have been encoded",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WebmMuxing" }
+						]
+					},
+					{
+						"name": "streamConditionsMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/StreamConditionsMode.d.ts#StreamConditionsMode"
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 71 },
+						"documentation": "Specifies how to proceed with the Muxing when some of its Streams are ignored (see 'condition' property of the Stream resource). The settings only make a difference for Muxings with more than one Stream. When retrieving the resource after the analysis step of the encoding has finished, 'ignoredBy' will indicate if and why it has been ignored.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{StreamConditionsMode}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "streams",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/MuxingStream.d.ts#MuxingStream" }
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 36 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{MuxingStream[]}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/MuxingType.d.ts#MuxingType" },
+						"sdkEvidence": { "file": "models/WebmMuxing.d.ts", "line": 13 },
+						"documentation": "Discriminator property for Muxing",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WebmMuxing" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/WebVttConfiguration.d.ts#WebVttConfiguration",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/WebVttConfiguration.d.ts", "line": 9 },
+				"properties": [
+					{
+						"name": "appendOptionalZeroHour",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/WebVttConfiguration.d.ts",
+							"line": 21
+						},
+						"documentation": "If set to true, the hours section on webvtt timestamp values will explicitely have zeroes instead of being omitted for values where hours = 0.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "WebVttConfiguration" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "cueIdentifierPolicy",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/WebVttCueIdentifierPolicy.d.ts#WebVttCueIdentifierPolicy"
+						},
+						"sdkEvidence": {
+							"file": "models/WebVttConfiguration.d.ts",
+							"line": 32
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{WebVttCueIdentifierPolicy}" },
+							{ "name": "memberof", "text": "WebVttConfiguration" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "ignoreRegion",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/WebVttConfiguration.d.ts",
+							"line": 27
+						},
+						"documentation": "If set to true, the region information of the resulting webvtt file will be omitted. Defaults to false.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "WebVttConfiguration" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "styling",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/WebVttStyling.d.ts#WebVttStyling" },
+						"sdkEvidence": {
+							"file": "models/WebVttConfiguration.d.ts",
+							"line": 37
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{WebVttStyling}" },
+							{ "name": "memberof", "text": "WebVttConfiguration" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CodecConfigType.d.ts#CodecConfigType" },
+						"sdkEvidence": {
+							"file": "models/WebVttConfiguration.d.ts",
+							"line": 15
+						},
+						"documentation": "Discriminator property for CodecConfiguration",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WebVttConfiguration" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/WebVttCueIdentifierPolicy.d.ts#WebVttCueIdentifierPolicy",
+			{
+				"kind": "enum",
+				"values": ["INCLUDE_IDENTIFIERS", "OMIT_IDENTIFIERS"],
+				"sdkEvidence": {
+					"file": "models/WebVttCueIdentifierPolicy.d.ts",
+					"line": 5
+				}
+			}
+		],
+		[
+			"models/WebVttSidecarFile.d.ts#WebVttSidecarFile",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/WebVttSidecarFile.d.ts", "line": 9 },
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "errorMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/SidecarErrorMode.d.ts#SidecarErrorMode" },
+						"sdkEvidence": { "file": "models/SidecarFile.d.ts", "line": 38 },
+						"documentation": "This defines how errors should be handled",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{SidecarErrorMode}" },
+							{ "name": "memberof", "text": "SidecarFile" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "inputId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/SidecarFile.d.ts", "line": 21 },
+						"documentation": "Id of input (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "SidecarFile" }
+						]
+					},
+					{
+						"name": "inputPath",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/SidecarFile.d.ts", "line": 27 },
+						"documentation": "Path to sidecar file (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "SidecarFile" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "outputs",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/EncodingOutput.d.ts#EncodingOutput" }
+						},
+						"sdkEvidence": { "file": "models/SidecarFile.d.ts", "line": 32 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingOutput[]}" },
+							{ "name": "memberof", "text": "SidecarFile" }
+						]
+					},
+					{
+						"name": "segmentation",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/WebVttSidecarFileSegmentation.d.ts#WebVttSidecarFileSegmentation"
+						},
+						"sdkEvidence": {
+							"file": "models/WebVttSidecarFile.d.ts",
+							"line": 20
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{WebVttSidecarFileSegmentation}" },
+							{ "name": "memberof", "text": "WebVttSidecarFile" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string", "literal": "WEB_VTT" },
+						"sdkEvidence": {
+							"file": "models/WebVttSidecarFile.d.ts",
+							"line": 15
+						},
+						"documentation": "Discriminator property for SidecarFile",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WebVttSidecarFile" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/WebVttSidecarFileSegmentation.d.ts#WebVttSidecarFileSegmentation",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/WebVttSidecarFileSegmentation.d.ts",
+					"line": 6
+				},
+				"properties": [
+					{
+						"name": "segmentLength",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/WebVttSidecarFileSegmentation.d.ts",
+							"line": 12
+						},
+						"documentation": "The length of the WebVTT fragments in seconds (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "WebVttSidecarFileSegmentation" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/WebVttStyling.d.ts#WebVttStyling",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/WebVttStyling.d.ts", "line": 6 },
+				"properties": [
+					{
+						"name": "mode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/WebVttStylingMode.d.ts#WebVttStylingMode"
+						},
+						"sdkEvidence": { "file": "models/WebVttStyling.d.ts", "line": 11 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{WebVttStylingMode}" },
+							{ "name": "memberof", "text": "WebVttStyling" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/WebVttStylingMode.d.ts#WebVttStylingMode",
+			{
+				"kind": "enum",
+				"values": ["PASSTHROUGH", "DROP_STYLING"],
+				"sdkEvidence": { "file": "models/WebVttStylingMode.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/WeightedPredictionPFrames.d.ts#WeightedPredictionPFrames",
+			{
+				"kind": "enum",
+				"values": ["DISABLED", "SIMPLE", "SMART"],
+				"sdkEvidence": {
+					"file": "models/WeightedPredictionPFrames.d.ts",
+					"line": 6
+				}
+			}
+		],
+		[
+			"models/WidevineDrm.d.ts#WidevineDrm",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/WidevineDrm.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "key",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/WidevineDrm.d.ts", "line": 19 },
+						"documentation": "16 byte Encryption key, 32 hexadecimal characters (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WidevineDrm" }
+						]
+					},
+					{
+						"name": "kid",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/WidevineDrm.d.ts", "line": 25 },
+						"documentation": "16 byte Key id, 32 hexadecimal characters (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WidevineDrm" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "outputs",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/EncodingOutput.d.ts#EncodingOutput" }
+						},
+						"sdkEvidence": { "file": "models/Drm.d.ts", "line": 26 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingOutput[]}" },
+							{ "name": "memberof", "text": "Drm" }
+						]
+					},
+					{
+						"name": "pssh",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/WidevineDrm.d.ts", "line": 31 },
+						"documentation": "Base 64 Encoded (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WidevineDrm" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/DrmType.d.ts#DrmType" },
+						"sdkEvidence": { "file": "models/WidevineDrm.d.ts", "line": 13 },
+						"documentation": "Discriminator property for Drm",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "WidevineDrm" }
+						]
+					}
+				]
+			}
+		]
+	]
+}

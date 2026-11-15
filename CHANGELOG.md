@@ -38,6 +38,7 @@ from this release; an older scorer can retain the earlier frame-timing behavior.
 
 ### Fixed
 
+- A pending AISA Live finalization or failed effect-state write no longer terminates the Worker while asynchronous cleanup is waiting for the database. Failed jobs retain their errors and uncertain outcomes for retry and review.
 - Reduce CPU preparation time for long Library editing sources, preserving full resolution, the indexed 30 fps timeline and audio timing without extending processing deadlines.
 - VMAF report and comparison charts use a compact desktop layout: frame history and the quality ladder sit beside the violin distribution, while the video preview keeps the full width. Violin plots fill the available space without stretching score labels or stroke widths; smaller screens retain a single column and many-series plots scroll inside their panel.
 - VMAF comparison rendition selectors fit narrow viewports, and Japanese frame-count units stay together. Mandatory installed-browser qualification now decodes a small synthetic QC asset and checks cross-report seeking, playback, violin data, cleanup and 320-pixel layouts.

@@ -4582,6 +4582,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 
 	const actions = createLiveChannelActions(deps);
 
+	// Await completion/failure helpers inside each action's try/catch, before
+	// this asynchronous finally cleanup. Returning a still-rejecting Promise
+	// leaves it unowned while the database read below is pending.
 	async function acknowledgeResetEffect(fence: LiveEffectFence) {
 		if (!deps.acknowledgeResetEntity) return;
 		const row = await deps.prisma.liveEffectClaim.findUnique({
@@ -6658,7 +6661,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					}
 					return effectResult(job, confirmedAisaFailure ? "ERROR" : "STOPPED");
 				} catch (err) {
-					return failLiveEffect(job, prepared.fence, err);
+					return await failLiveEffect(job, prepared.fence, err);
 				} finally {
 					await acknowledgeResetEffect(prepared.fence);
 				}
@@ -6670,9 +6673,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				if (prepared.kind === "RETURN") return prepared.result;
 				try {
 					await actions.restartChannel(liveChannelId, prepared.fence);
-					return finishLiveEffect(job, prepared.fence, "RUNNING");
+					return await finishLiveEffect(job, prepared.fence, "RUNNING");
 				} catch (err) {
-					return failLiveEffect(job, prepared.fence, err);
+					return await failLiveEffect(job, prepared.fence, err);
 				} finally {
 					await acknowledgeResetEffect(prepared.fence);
 				}
@@ -6689,9 +6692,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						job.effect?.requestSha256,
 						prepared.fence,
 					);
-					return finishLiveEffect(job, prepared.fence, "RUNNING");
+					return await finishLiveEffect(job, prepared.fence, "RUNNING");
 				} catch (err) {
-					return failLiveEffect(job, prepared.fence, err);
+					return await failLiveEffect(job, prepared.fence, err);
 				} finally {
 					await acknowledgeResetEffect(prepared.fence);
 				}
@@ -6708,9 +6711,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						job.effect?.requestSha256,
 						prepared.fence,
 					);
-					return finishLiveEffect(job, prepared.fence, "RUNNING");
+					return await finishLiveEffect(job, prepared.fence, "RUNNING");
 				} catch (err) {
-					return failLiveEffect(job, prepared.fence, err);
+					return await failLiveEffect(job, prepared.fence, err);
 				} finally {
 					await acknowledgeResetEffect(prepared.fence);
 				}
@@ -6726,9 +6729,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						liveResetTimeshiftParamsSchema.parse(job.params ?? {}),
 						prepared.fence,
 					);
-					return finishLiveEffect(job, prepared.fence, "RUNNING");
+					return await finishLiveEffect(job, prepared.fence, "RUNNING");
 				} catch (err) {
-					return failLiveEffect(job, prepared.fence, err);
+					return await failLiveEffect(job, prepared.fence, err);
 				} finally {
 					await acknowledgeResetEffect(prepared.fence);
 				}
@@ -6742,11 +6745,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						liveScte35ParamsSchema.parse(job.params),
 						prepared.fence,
 					);
-					return finishLiveEffect(job, prepared.fence, "RUNNING", {
+					return await finishLiveEffect(job, prepared.fence, "RUNNING", {
 						...(providerCue.id ? { providerResultId: providerCue.id } : {}),
 					});
 				} catch (err) {
-					return failLiveEffect(job, prepared.fence, err);
+					return await failLiveEffect(job, prepared.fence, err);
 				} finally {
 					await acknowledgeResetEffect(prepared.fence);
 				}
@@ -6774,9 +6777,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				if (prepared.kind === "RETURN") return prepared.result;
 				try {
 					await actions.insertContent(liveChannelId, params, prepared.fence);
-					return finishLiveEffect(job, prepared.fence, "RUNNING");
+					return await finishLiveEffect(job, prepared.fence, "RUNNING");
 				} catch (err) {
-					return failLiveEffect(job, prepared.fence, err);
+					return await failLiveEffect(job, prepared.fence, err);
 				} finally {
 					await acknowledgeResetEffect(prepared.fence);
 				}
@@ -6802,9 +6805,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						);
 						return effectResult(job, "EFFECT_AMBIGUOUS");
 					}
-					return finishLiveEffect(job, prepared.fence, status);
+					return await finishLiveEffect(job, prepared.fence, status);
 				} catch (err) {
-					return failLiveEffect(job, prepared.fence, err);
+					return await failLiveEffect(job, prepared.fence, err);
 				} finally {
 					await acknowledgeResetEffect(prepared.fence);
 				}
@@ -6865,7 +6868,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						prepared.fence,
 					);
 				} catch (err) {
-					return failLiveEffect(job, prepared.fence, err);
+					return await failLiveEffect(job, prepared.fence, err);
 				} finally {
 					await acknowledgeResetEffect(prepared.fence);
 				}
@@ -6914,7 +6917,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						prepared.fence,
 					);
 				} catch (err) {
-					return failLiveEffect(job, prepared.fence, err);
+					return await failLiveEffect(job, prepared.fence, err);
 				} finally {
 					await acknowledgeResetEffect(prepared.fence);
 				}
@@ -6985,7 +6988,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						prepared.fence,
 					);
 				} catch (err) {
-					return failLiveEffect(job, prepared.fence, err);
+					return await failLiveEffect(job, prepared.fence, err);
 				} finally {
 					await acknowledgeResetEffect(prepared.fence);
 				}

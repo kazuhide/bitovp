@@ -86,7 +86,7 @@ describe("VOD manual input graph", () => {
 	it.each([
 		"audio",
 		"video",
-	] as const)("lowers only the overwritten %s track into three parts", (track) => {
+	] as const)("preserves the overwritten %s track while withholding its unqualified cloud composition", (track) => {
 		const document = normalizeVodInputTimelineDocument({
 			...sequence,
 			clips: [
@@ -150,7 +150,12 @@ describe("VOD manual input graph", () => {
 		);
 		expect(
 			validatePlan(plan).filter((issue) => issue.level === "error"),
-		).toEqual([]);
+		).toEqual([
+			expect.objectContaining({
+				code: "PLAN_CONCATENATION_AV_UNQUALIFIED",
+				level: "error",
+			}),
+		]);
 	});
 	it("splits interior black/silence gaps into bounded native pads and retains ten-second edge limits", () => {
 		const base = normalizeVodInputTimelineDocument({
@@ -291,7 +296,7 @@ describe("VOD manual input graph", () => {
 			buildPlan({ ...state, inputTimeline: gapped(20_001) }),
 		).toThrowError(expect.objectContaining({ code: "TIMELINE_GAP_TOO_LONG" }));
 	});
-	it("compiles the screenshot's A1 move with an 11.658-second gap without changing V1 or source clocks", () => {
+	it("preserves the screenshot's A1 move and source clocks while withholding its unqualified cloud composition", () => {
 		const placed = (
 			n: number,
 			sourceKey: string,
@@ -360,7 +365,12 @@ describe("VOD manual input graph", () => {
 		]);
 		expect(
 			validatePlan(after).filter((issue) => issue.level === "error"),
-		).toEqual([]);
+		).toEqual([
+			expect.objectContaining({
+				code: "PLAN_CONCATENATION_AV_UNQUALIFIED",
+				level: "error",
+			}),
+		]);
 	});
 	it("omits empty audio instead of emitting an empty concat or dangling muxed audio", () => {
 		const base = normalizeVodInputTimelineDocument(sequence);

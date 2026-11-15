@@ -7,7 +7,8 @@ import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { enumerateOperations, sdkTransportVerb } from "./api-coverage-current.mjs";
+import { enumerateOperations } from "./api-coverage-current.mjs";
+import { canonicalSdkMethods } from "./api-coverage-sdk-methods.mjs";
 import { writeContracts, readContracts } from "./api-coverage-contract-files.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -18,63 +19,12 @@ const walk = (dir, suffix) => readdirSync(dir, {withFileTypes:true}).flatMap(ent
 const fail = message => { throw new Error(message); };
 const textName = node => ts.isIdentifier(node) || ts.isStringLiteral(node) ? node.text : fail("Unresolved SDK name");
 
-function unchangedParameters(method, names) {
-	const targets = node => {
-		if (ts.isIdentifier(node)) return names.includes(node.text);
-		if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node) || ts.isParenthesizedExpression(node)) return targets(node.expression);
-		if (ts.isObjectLiteralExpression(node)) return node.properties.some(p=>targets(ts.isPropertyAssignment(p)?p.initializer:ts.isShorthandPropertyAssignment(p)?p.name:p.expression));
-		if (ts.isArrayLiteralExpression(node)) return node.elements.some(targets);
-		if (ts.isObjectBindingPattern(node) || ts.isArrayBindingPattern(node)) return node.elements.some(e=>ts.isBindingElement(e)&&targets(e.name));
-		return false;
-	};
-	function visit(node) {
-		const assignment = ts.isBinaryExpression(node) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment;
-		const update = (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) && [ts.SyntaxKind.PlusPlusToken,ts.SyntaxKind.MinusMinusToken].includes(node.operator);
-		if ((assignment && targets(node.left)) || (update && targets(node.operand)) || (ts.isDeleteExpression(node) && targets(node.expression)) || (ts.isVariableDeclaration(node) && (targets(node.name) || (node.initializer && ts.isIdentifier(node.initializer) && targets(node.initializer))))) fail("Unresolved SDK parameter mutation or alias");
-		ts.forEachChild(node,visit);
-	}
-	visit(method.body);
-}
-
-function standardQuery(method, local, parameters) {
-	const declarations=[];
-	const writes=[];
-	function visit(node) {
-		if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text===local) declarations.push(node);
-		if (ts.isBinaryExpression(node) && node.operatorToken.kind===ts.SyntaxKind.EqualsToken && ts.isIdentifier(node.left) && node.left.text===local) writes.push(node.right);
-		ts.forEachChild(node,visit);
-	}
-	visit(method);
-	if (declarations.length!==1 || !declarations[0].initializer || !ts.isObjectLiteralExpression(declarations[0].initializer) || declarations[0].initializer.properties.length!==0 || writes.length!==2) fail("Unresolved SDK query transformation");
-	const direct=writes.find(node=>ts.isIdentifier(node) && parameters.includes(node.text));
-	const built=writes.find(node=>ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text==="buildQueryParams" && node.arguments.length===0);
-	if (!direct || !built) fail("Unresolved SDK query transformation");
-	const call=built.expression.expression;
-	if (!ts.isCallExpression(call) || !ts.isIdentifier(call.expression) || call.expression.text!==direct.text || call.arguments.length!==1 || !ts.isNewExpression(call.arguments[0])) fail("Unresolved SDK query builder");
-	// Accept only the generator's guarded callable/plain-object branches. Merely
-	// mentioning a parameter in a local expression must not qualify its wire use.
-	const branches=method.body.statements.filter(ts.isIfStatement);
-	if (branches.length!==1) fail("Unresolved SDK query guards");
-	const branch=branches[0];
-	const condition=branch.expression;
-	if (!ts.isBinaryExpression(condition) || condition.operatorToken.kind!==ts.SyntaxKind.EqualsEqualsEqualsToken || !ts.isTypeOfExpression(condition.left) || condition.left.expression.getText()!==direct.text || !ts.isStringLiteral(condition.right) || condition.right.text!=="function" || !branch.elseStatement || !ts.isIfStatement(branch.elseStatement) || branch.elseStatement.expression.getText()!==direct.text) fail("Unresolved SDK query guards");
-	const assigned=block=>ts.isBlock(block) && block.statements.length===1 && ts.isExpressionStatement(block.statements[0]) && ts.isBinaryExpression(block.statements[0].expression) ? block.statements[0].expression.right : undefined;
-	if(assigned(branch.thenStatement)!==built || assigned(branch.elseStatement.thenStatement)!==direct) fail("Unresolved SDK query branch assignments");
-	return direct.text;
-}
-
 /** Resolve every transport binding; fail instead of dropping unsupported inputs. */
 export function transportBindings(file, source) {
-	const ast=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
-	if(ast.parseDiagnostics.length) fail(`Unresolved SDK parse: ${file}`);
+	const {ast,methods}=canonicalSdkMethods(file,source);
 	const rows=[];
-	function visit(node, method) {
-		if(ts.isMethodDeclaration(node)) method=node;
-		const verb=sdkTransportVerb(node,file);
-		if(verb) {
-			if(!method || !ts.isStringLiteralLike(node.arguments[0]) || !node.arguments[0].text.startsWith("/encoding/")) fail(`Unresolved SDK transport: ${file}`);
+	for(const {method,call:node,verb,pathMap,queryParameter} of methods) {
 			const names=method.parameters.map(p=>textName(p.name));
-			unchangedParameters(method,names);
 			const path=node.arguments[0].text;
 			const httpVerb=verb.toUpperCase();
 			const parameters=[];
@@ -83,14 +33,7 @@ export function transportBindings(file, source) {
 				if(parameterIndex<0) fail(`Unresolved SDK parameter: ${file} ${name}`);
 				parameters.push({name,parameterIndex,location,...extra});
 			};
-			let paths=node.arguments[1];
-			if(paths && ts.isIdentifier(paths)) {
-				const declarations=[];
-				const find=n=>{if(ts.isVariableDeclaration(n)&&n.name.getText(ast)===paths.text)declarations.push(n);ts.forEachChild(n,find);};
-				find(method);
-				if(declarations.length!==1) fail(`Unresolved SDK path map: ${file}`);
-				paths=declarations[0].initializer;
-			}
+			const paths=pathMap;
 			if(!paths || !ts.isObjectLiteralExpression(paths)) fail(`Unresolved SDK path map: ${file}`);
 			const wireNames=[];
 			for(const property of paths.properties) {
@@ -110,15 +53,12 @@ export function transportBindings(file, source) {
 				const location=httpVerb==="GET"?"query":"body";
 				if(httpVerb==="DELETE") fail(`Unresolved DELETE request body: ${file}`);
 				if(names.includes(argument.text)) add(argument.text,location,{binding:"direct"});
-				else if(location==="query") add(standardQuery(method,argument.text,names),location,{binding:"sdk-query-builder"});
+				else if(location==="query") add(queryParameter,location,{binding:"sdk-query-builder"});
 				else fail(`Unresolved SDK body binding: ${file}`);
 			}
 			if(names.some((name,index)=>!parameters.some(p=>p.parameterIndex===index))) fail(`Unresolved unused SDK parameter: ${file}`);
 			rows.push({identity:`${file.replace(/\.js$/,".d.ts")}#${method.name.getText(ast)}`,sdkMethod:`${slash(dirname(file)).replaceAll("/",".")}.${method.name.getText(ast)}`,path,httpVerb,parameterNames:names,parameters:parameters.sort((a,b)=>a.parameterIndex-b.parameterIndex)});
-		}
-		ts.forEachChild(node,child=>visit(child,method));
 	}
-	visit(ast);
 	if(new Set(rows.map(row=>row.identity)).size!==rows.length) fail(`Duplicate SDK request operation: ${file}`);
 	return rows;
 }
@@ -202,6 +142,13 @@ export function buildRequestContracts({sdkRoot,files,sdkVersion}) {
 	const diagnostics=[...program.getSyntacticDiagnostics(),...program.getSemanticDiagnostics()].filter(d=>d.file && !slash(relative(sdkRoot,d.file.fileName)).startsWith("../"));
 	if(diagnostics.length) fail(`Unresolved SDK declaration: ${ts.flattenDiagnosticMessageText(diagnostics[0].messageText," ")}`);
 	const checker=program.getTypeChecker();
+	const declaredOperations=sources.flatMap(file=> {
+		const declarationFile=file.replace(/\.js$/,".d.ts");
+		const declaration=program.getSourceFile(declarationFile);
+		if(!declaration) fail(`Unresolved SDK declaration: ${declarationFile}`);
+		return declaration.statements.filter(ts.isClassDeclaration).flatMap(owner=>owner.members.filter(member=>ts.isMethodDeclaration(member)&&!member.modifiers?.some(modifier=>[ts.SyntaxKind.PrivateKeyword,ts.SyntaxKind.ProtectedKeyword,ts.SyntaxKind.StaticKeyword].includes(modifier.kind))).map(member=>`${slash(relative(sdkRoot,declarationFile))}#${member.name.getText(declaration)}`));
+	});
+	if(JSON.stringify([...declaredOperations].sort())!==JSON.stringify(operations.map(row=>row.identity).sort())) fail("SDK public method declaration/operation denominator mismatch");
 	const graph=schemaGraph(checker,sdkRoot);
 	const rows=bindings.map(binding=> {
 		const [file,name]=binding.identity.split("#");

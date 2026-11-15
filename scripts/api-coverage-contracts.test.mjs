@@ -122,14 +122,60 @@ test("computed/unknown SDK transport calls cannot disappear from both inventorie
 	}
 }));
 
+test("public arrow fields and missing JS methods cannot shrink the SDK operation denominator", () => fixture(({js,generate}) => {
+	writeFileSync(js, `class ItemsApi { get = (itemId)=>{const {restClient}=this;return restClient.get('/encoding/items/{item_id}',{item_id:itemId});}; }`);
+	assert.throws(generate,/Unresolved SDK/);
+	writeFileSync(js, `class ItemsApi { create(itemId,body){return this.restClient.post('/encoding/items/{item_id}',{item_id:itemId},body);} list(query){return this.restClient.get('/encoding/items',{},query);} }`);
+	assert.throws(generate,/declaration|denominator|method/);
+}));
+
 test("reassigned or mutated SDK parameters never retain a direct original-type binding", () => {
 	for (const change of [
 		`body = JSON.stringify(body);`, `body ||= {};`, `body++;`, `--body;`,
 		`({body} = source);`, `[body] = source;`, `body.name = 'changed';`,
 		`delete body.name;`, `const alias=body; alias.name='changed';`,
-	]) assert.throws(() => transportBindings("encoding/items/ItemsApi.js", `class ItemsApi { create(body) { ${change} return this.restClient.post('/encoding/items', {}, body); } }`), /Unresolved SDK parameter/);
-	assert.throws(() => transportBindings("encoding/items/ItemsApi.js", `class ItemsApi { list(query) { query=normalize(query);return this.restClient.get('/encoding/items', {}, query); } }`), /Unresolved SDK parameter/);
-	assert.throws(() => transportBindings("encoding/items/ItemsApi.js", `class ItemsApi { get(id) { id='other';return this.restClient.get('/encoding/items/{id}', {id}); } }`), /Unresolved SDK parameter/);
+	]) assert.throws(() => transportBindings("encoding/items/ItemsApi.js", `class ItemsApi { create(body) { ${change} return this.restClient.post('/encoding/items', {}, body); } }`), /Unresolved SDK/);
+	assert.throws(() => transportBindings("encoding/items/ItemsApi.js", `class ItemsApi { list(query) { query=normalize(query);return this.restClient.get('/encoding/items', {}, query); } }`), /Unresolved SDK/);
+	assert.throws(() => transportBindings("encoding/items/ItemsApi.js", `class ItemsApi { get(id) { id='other';return this.restClient.get('/encoding/items/{id}', {id}); } }`), /Unresolved SDK/);
+});
+
+test("unconsumed statements cannot hide aliases, path mutation or extra transport calls", () => {
+	for (const source of [
+		`class ItemsApi { create(body){const alias=(body);alias.toJSON=()=>"string";return this.restClient.post('/encoding/items',{},body);} }`,
+		`class ItemsApi { get(id){const paths={id};paths.id='different';return this.restClient.get('/encoding/items/{id}',paths);} }`,
+		`class ItemsApi { get(id){const paths={id};paths={id:'different'};return this.restClient.get('/encoding/items/{id}',paths);} }`,
+		`class ItemsApi { get(id){const {restClient}=this;restClient.get('/encoding/items/hidden',{});return this.restClient.get('/encoding/items/{id}',{id});} }`,
+		`class ItemsApi { create(body){Object.defineProperty(body,'toJSON',{value:()=>"string"});return this.restClient.post('/encoding/items',{},body);} }`,
+		`class ItemsApi { get(id){const paths={id};normalize(paths);return this.restClient.get('/encoding/items/{id}',paths);} }`,
+		`class ItemsApi { get(id){const unused={};return this.restClient.get('/encoding/items/{id}',{id});} }`,
+		`class ItemsApi { get(id){return this.restClient.get('/encoding/items/{id}',{id}).then(response=>{fetch('/hidden');return response;});} }`,
+		`class ItemsApi { list(query){let params={};if(typeof query==='function'){params=query(new Builder()).buildQueryParams();normalize(params);}else if(query){params=query;}return this.restClient.get('/encoding/items',{},params);} }`,
+		`class ItemsApi { list(query){let params={};if(typeof query==='function'){params=query(new Builder(query)).buildQueryParams();}else if(query){params=query;}return this.restClient.get('/encoding/items',{},params);} }`,
+		`class ItemsApi { list(query){let params={};if(typeof query==='function'){params=query(new Builder()).buildQueryParams();}else if(query){params=query;}params.limit='changed';return this.restClient.get('/encoding/items',{},params);} }`,
+	]) assert.throws(()=>transportBindings("encoding/items/ItemsApi.js",source),/Unresolved SDK/);
+});
+
+test("unknown generated parameter and class member forms require an explicit grammar review", () => {
+	for (const declaration of [
+		`create(body={}){return this.restClient.post('/encoding/items',{},body);}`,
+		`create(...body){return this.restClient.post('/encoding/items',{},body);}`,
+		`create({body}){return this.restClient.post('/encoding/items',{},body);}`,
+		`static get(){return this.restClient.get('/encoding/items',{});}`,
+		`get response(){return this.restClient.get('/encoding/items',{});}`,
+		`get=()=>this.restClient.get('/encoding/items',{});`,
+	]) assert.throws(()=>transportBindings("encoding/items/ItemsApi.js",`class ItemsApi {${declaration}}`),/Unresolved SDK/);
+	assert.throws(()=>transportBindings("encoding/items/ItemsApi.js",`class ItemsApi extends factory(){get(){return this.restClient.get('/encoding/items',{});}}`),/Unresolved SDK/);
+	assert.throws(()=>transportBindings("encoding/items/ItemsApi.js",`class ItemsApi {get(){return this.restClient.get('/encoding/items',{}).then(Mapper_1=>{return (0,Mapper_1.map)(Mapper_1);});}}`),/Unresolved SDK/);
+});
+
+test("canonical local bindings cannot shadow module imports, class names or helper namespaces", () => {
+	for (const source of [
+		`const Mapper_1=require('mapper');class ItemsApi {create(Mapper_1){return this.restClient.post('/encoding/items',{},Mapper_1);}}`,
+		`const Mapper_1=require('mapper');class ItemsApi {get(id){const Mapper_1={id};return this.restClient.get('/encoding/items/{id}',Mapper_1).then(response=>{return (0,Mapper_1.map)(response);});}}`,
+		`const Model_1=require('model');class ItemsApi {get(){return this.restClient.get('/encoding/items',{}).then(Model_1=>{return (0,Mapper_1.map)(Model_1,Model_1.default);});}}`,
+		`class ItemsApi {create(ItemsApi){return this.restClient.post('/encoding/items',{},ItemsApi);}}`,
+		`class ItemsApi {list(query){let params={};if(typeof query==='function'){params=query(new query.Builder()).buildQueryParams();}else if(query){params=query;}return this.restClient.get('/encoding/items',{},params);}}`,
+	]) assert.throws(()=>transportBindings("encoding/items/ItemsApi.js",source),/Unresolved SDK/);
 });
 
 test("an unused declared parameter is not silently dropped from the inventory", () => fixture(({js,generate}) => {

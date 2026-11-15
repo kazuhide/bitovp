@@ -1,0 +1,122 @@
+From 179d08349347e00b2a24593cfa8b3cbbde2a6cfb Mon Sep 17 00:00:00 2001
+From: Kyle Swanson <kswanson@netflix.com>
+Date: Thu, 8 Oct 2026 20:11:29 +0000
+Subject: [PATCH] avfilter/vf_libvmaf: use vmaf_picture_wrap() if available
+
+Backport: adapt configure HAVE_LIST context to pinned release/8.1.
+
+Signed-off-by: Kyle Swanson <kswanson@netflix.com>
+---
+ configure                |  6 +++--
+ libavfilter/vf_libvmaf.c | 48 ++++++++++++++++++++++++++++++++++++++--
+ 2 files changed, 50 insertions(+), 4 deletions(-)
+
+diff --git a/configure b/configure
+index c8b25c26d943c..007da1ee00cd5 100755
+--- a/configure
++++ b/configure
+@@ -2658,6 +2658,7 @@ HAVE_LIST="
+     gzip
+     ioctl_posix
+     libdrm_getfb2
++    libvmaf_picture_wrap
+     makeinfo
+     makeinfo_html
+     opencl_d3d11
+@@ -7366,8 +7367,9 @@ enabled libtwolame        && require libtwolame twolame.h twolame_init -ltwolame
+ enabled libuavs3d         && require_pkg_config libuavs3d "uavs3d >= 1.1.41" uavs3d.h uavs3d_decode
+ enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_ioctl
+ enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
+-enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init
+-enabled libvmaf           && check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf_cuda.h vmaf_cuda_state_init
++enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init &&
++                             { check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf_cuda.h vmaf_cuda_state_init;
++                               check_pkg_config libvmaf_picture_wrap "libvmaf >= 2.0.0" libvmaf.h vmaf_picture_wrap; }
+ enabled libvo_amrwbenc    && { check_pkg_config libvo_amrwbenc vo-amrwbenc vo-amrwbenc/enc_if.h E_IF_init ||
+                                require libvo_amrwbenc vo-amrwbenc/enc_if.h E_IF_init -lvo-amrwbenc; }
+ enabled libvorbis         && require_pkg_config libvorbis vorbis vorbis/codec.h vorbis_info_init &&
+diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
+index 47715416642f0..46aa377f8f36d 100644
+--- a/libavfilter/vf_libvmaf.c
++++ b/libavfilter/vf_libvmaf.c
+@@ -24,6 +24,7 @@
+  * Calculate the VMAF between two input videos.
+  */
+ 
++#include "config.h"
+ #include "config_components.h"
+ 
+ #include <libvmaf.h>
+@@ -105,6 +106,39 @@ static enum VmafPixelFormat pix_fmt_map(enum AVPixelFormat av_pix_fmt)
+     }
+ }
+ 
++#if HAVE_LIBVMAF_PICTURE_WRAP
++static int release_frame(VmafPicture *pic, void *cookie)
++{
++    AVFrame *frame = cookie;
++    av_frame_free(&frame);
++    return 0;
++}
++
++static int wrap_picture_data(AVFrame *src, VmafPicture *dst, unsigned bpc)
++{
++    AVFrame *ref = av_frame_clone(src);
++    if (!ref)
++        return AVERROR(ENOMEM);
++
++    VmafPictureWrapped pic_wrapped = {
++        .pix_fmt = pix_fmt_map(src->format),
++        .bpc = bpc,
++        .w = src->width,
++        .h = src->height,
++        .data = { src->data[0], src->data[1], src->data[2] },
++        .stride = { src->linesize[0], src->linesize[1], src->linesize[2] },
++        .cookie = ref,
++        .release_picture = release_frame,
++    };
++
++    if (vmaf_picture_wrap(dst, pic_wrapped)) {
++        av_frame_free(&ref);
++        return AVERROR(ENOMEM);
++    }
++
++    return 0;
++}
++#else
+ static int copy_picture_data(AVFrame *src, VmafPicture *dst, unsigned bpc)
+ {
+     const int bytes_per_value = bpc > 8 ? 2 : 1;
+@@ -125,6 +159,16 @@ static int copy_picture_data(AVFrame *src, VmafPicture *dst, unsigned bpc)
+ 
+     return 0;
+ }
++#endif
++
++static int get_picture(AVFrame *src, VmafPicture *dst, unsigned bpc)
++{
++#if HAVE_LIBVMAF_PICTURE_WRAP
++    return wrap_picture_data(src, dst, bpc);
++#else
++    return copy_picture_data(src, dst, bpc);
++#endif
++}
+ 
+ static int do_vmaf(FFFrameSync *fs)
+ {
+@@ -147,13 +191,13 @@ static int do_vmaf(FFFrameSync *fs)
+                av_color_range_name(ref->color_range));
+     }
+ 
+-    err = copy_picture_data(ref, &pic_ref, s->bpc);
++    err = get_picture(ref, &pic_ref, s->bpc);
+     if (err) {
+         av_log(ctx, AV_LOG_ERROR, "problem during vmaf_picture_alloc.\n");
+         return AVERROR(ENOMEM);
+     }
+ 
+-    err = copy_picture_data(dist, &pic_dist, s->bpc);
++    err = get_picture(dist, &pic_dist, s->bpc);
+     if (err) {
+         av_log(ctx, AV_LOG_ERROR, "problem during vmaf_picture_alloc.\n");
+         vmaf_picture_unref(&pic_ref);

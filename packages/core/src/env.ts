@@ -76,6 +76,10 @@ const envSchema = z.object({
 	VMAF_GPU_DEVICE: z.coerce.number().int().nonnegative().safe().default(0),
 	/** Optional local VOD binary, independent of the Live feeder and cloud image. */
 	VMAF_FFMPEG_PATH: z.string().min(1).optional(),
+	/** Native HDR scoring uses an independently pinned, color-aware runtime. */
+	VMAF_HDR_FFMPEG_PATH: z.string().min(1).optional(),
+	VMAF_HDR_FFPROBE_PATH: z.string().min(1).optional(),
+	VMAF_HDR_MODEL_DIR: z.string().min(1).optional(),
 	/**
 	 * Local quality settings: CONCURRENCY caps simultaneous mirrors and THREADS
 	 * fixes libvmaf threads per pair. Missing values are selected from the CPU

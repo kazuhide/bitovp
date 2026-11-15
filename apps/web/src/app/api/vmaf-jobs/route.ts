@@ -5,9 +5,13 @@ import {
 	bandingPooledSchema,
 	encodingPlanSchema,
 	enumerateBandingTargets,
+	enumerateExistingHlsQcTargets,
 	enumerateExistingMp4Targets,
 	enumerateExistingQcMirrorTargets,
 	enumerateFrameIndexQcTargets,
+	HDR_VMAF_SCORING_VERSION,
+	hdrModelFrameRateMatches,
+	isHdrVmafModel,
 	sameQcTargetPopulation,
 	VMAF_FRAME_INDEX_SCORING_VERSION,
 	VMAF_SCORING_VERSION,
@@ -195,7 +199,8 @@ const measureExistingSchema = z.object({
 	banding: z.boolean().optional(),
 	model: vmafModelNameSchema.optional(),
 	execution: vmafExecutionSchema.optional(),
-	source: z.enum(["QC_MIRROR", "OUTPUT_MP4"]).optional(),
+	source: z.enum(["QC_MIRROR", "OUTPUT_MP4", "OUTPUT_HLS"]).optional(),
+	hdrReferenceColor: z.literal("P3_D65_PQ_RGB_FULL").optional(),
 	psnr: z.boolean().optional(),
 	measurementMethod: z.literal("FRAME_INDEX_BT709_10BIT").optional(),
 	referencePreparation: z.literal("LOSSLESS_DISPLAY_SCALE_REMUX").optional(),
@@ -226,6 +231,24 @@ export async function POST(req: Request) {
 				"CAMBI is a detector, not a VMAF model; use kind BANDING for model-free measurement",
 			);
 		const execution = parsed.data.execution ?? { backend: "LOCAL" as const };
+		const hdr = isHdrVmafModel(parsed.data.model ?? "");
+		if (
+			(hdr ||
+				parsed.data.source === "OUTPUT_HLS" ||
+				parsed.data.hdrReferenceColor !== undefined) &&
+			(!hdr ||
+				parsed.data.source !== "OUTPUT_HLS" ||
+				parsed.data.execution?.backend !== "LOCAL" ||
+				parsed.data.execution.localMode !== "CPU" ||
+				bandingOnly ||
+				parsed.data.psnr === true ||
+				parsed.data.measurementMethod !== undefined ||
+				parsed.data.referencePreparation !== undefined)
+		)
+			return jsonError(
+				400,
+				"HDR QC requires an explicit HDR model, OUTPUT_HLS and local CPU execution; SDR methods, PSNR and Banding-only are not supported in this protocol",
+			);
 		if (
 			parsed.data.referencePreparation &&
 			(parsed.data.execution?.backend !== "LOCAL" ||
@@ -299,14 +322,18 @@ export async function POST(req: Request) {
 				: "OUTPUT_MP4");
 		const comparisonTargets = bandingOnly
 			? []
-			: source === "OUTPUT_MP4"
-				? enumerateExistingMp4Targets(plan.data)
-				: enumerateExistingQcMirrorTargets(plan.data);
+			: source === "OUTPUT_HLS"
+				? enumerateExistingHlsQcTargets(plan.data)
+				: source === "OUTPUT_MP4"
+					? enumerateExistingMp4Targets(plan.data)
+					: enumerateExistingQcMirrorTargets(plan.data);
 		const bandingTargets = banding
-			? enumerateBandingTargets(
-					plan.data,
-					source === "OUTPUT_MP4" ? "EXISTING_MP4" : source,
-				)
+			? source === "OUTPUT_HLS"
+				? comparisonTargets
+				: enumerateBandingTargets(
+						plan.data,
+						source === "OUTPUT_MP4" ? "EXISTING_MP4" : source,
+					)
 			: [];
 		const selectedTargets = bandingOnly ? bandingTargets : comparisonTargets;
 		if (selectedTargets.length === 0) {
@@ -317,6 +344,19 @@ export async function POST(req: Request) {
 					: "This job has no usable QC mirror or complete clear fixed-ladder MP4 outputs with a direct full-length source",
 			);
 		}
+		if (
+			source === "OUTPUT_HLS" &&
+			selectedTargets.some((target) => {
+				const output = plan.data.outputs.find(
+					(item) => item.key === target.distorted.outputKey,
+				);
+				return output?.kind !== "S3" && output?.kind !== "GENERIC_S3";
+			})
+		)
+			return jsonError(
+				409,
+				"Retained HLS QC currently requires S3-compatible output storage with upload support",
+			);
 		if (
 			selectedTargets.some((target) => {
 				const output = plan.data.outputs.find(
@@ -356,6 +396,26 @@ export async function POST(req: Request) {
 		const model = bandingOnly
 			? BANDING_DETECTOR_ID
 			: (parsed.data.model ?? plan.data.qc?.model ?? "vmaf_v0.6.1");
+		if (isHdrVmafModel(model) && !hdr)
+			return jsonError(
+				400,
+				"An HDR model must be explicitly selected with OUTPUT_HLS and local CPU execution",
+			);
+		if (
+			hdr &&
+			selectedTargets.some((target) => {
+				const rendition = plan.data.renditions.find(
+					(item) => item.key === target.renditionKey,
+				);
+				const rate =
+					rendition && "rate" in rendition ? rendition.rate : undefined;
+				return rate != null && !hdrModelFrameRateMatches(model, rate);
+			})
+		)
+			return jsonError(
+				400,
+				"The HDR model does not match the selected rendition frame rate",
+			);
 		let created: { id: string };
 		try {
 			created = await ctx.prisma.$transaction(
@@ -381,11 +441,13 @@ export async function POST(req: Request) {
 							encodingJobId,
 							mode: "VOD",
 							model,
-							scoringVersion: bandingOnly
-								? BANDING_JOB_SCORING_VERSION
-								: parsed.data.measurementMethod
-									? VMAF_FRAME_INDEX_SCORING_VERSION
-									: VMAF_SCORING_VERSION,
+							scoringVersion: hdr
+								? HDR_VMAF_SCORING_VERSION
+								: bandingOnly
+									? BANDING_JOB_SCORING_VERSION
+									: parsed.data.measurementMethod
+										? VMAF_FRAME_INDEX_SCORING_VERSION
+										: VMAF_SCORING_VERSION,
 							status: "PENDING",
 							params: {
 								...(bandingOnly ? { kind: "BANDING" } : {}),
@@ -394,8 +456,13 @@ export async function POST(req: Request) {
 								banding,
 								execution,
 								source,
-								...(parsed.data.psnr !== undefined
-									? { psnr: parsed.data.psnr }
+								...(hdr
+									? { psnr: false }
+									: parsed.data.psnr !== undefined
+										? { psnr: parsed.data.psnr }
+										: {}),
+								...(parsed.data.hdrReferenceColor
+									? { hdrReferenceColor: parsed.data.hdrReferenceColor }
 									: {}),
 								...(parsed.data.measurementMethod
 									? { measurementMethod: parsed.data.measurementMethod }

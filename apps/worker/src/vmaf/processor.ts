@@ -8,6 +8,7 @@ import {
 	type EncodingPlan,
 	encodingPlanSchema,
 	enumerateBandingTargets,
+	enumerateExistingHlsQcTargets,
 	enumerateExistingMp4Targets,
 	enumerateExistingQcMirrorTargets,
 	enumerateFrameIndexQcTargets,
@@ -15,6 +16,12 @@ import {
 	evaluateQcGate,
 	frameIndexDisplayGeometry,
 	gateExpectedRenditionKeys,
+	HDR_VMAF_SCORING_VERSION,
+	type HdrMeasurement,
+	type HdrReferenceColor,
+	type HlsQcEvidence,
+	type HlsQcTarget,
+	isHdrVmafModel,
 	PER_TITLE_ATTRIBUTION_VERSION,
 	PER_TITLE_SCHEMA_VERSION,
 	type PerTitleProviderResult,
@@ -82,6 +89,8 @@ import {
 	pixelFormatFromProbe,
 } from "./geometry";
 import type { DecodePolicy } from "./hardware-decode";
+import { runHdrVmafScore } from "./hdr-score";
+import { acquireHlsQcOutput } from "./hls-source";
 import type {
 	LocalVmafResourceSession,
 	LocalVmafResources,
@@ -201,6 +210,9 @@ export type VmafProcessorDeps = {
 	localRunner?: ProcessRunner;
 	ffmpegPath: string;
 	ffprobePath: string;
+	/** Isolated HDR runtime; never falls back to the SDR binary. */
+	hdrFfmpegPath?: string;
+	hdrFfprobePath?: string;
 	/** Working directory root; a per-job subdir is created under it. */
 	workDir: string;
 	now(): string;
@@ -916,25 +928,59 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		// What the scorer said of this pair when it had the two files open, on
 		// the pass before this one.
 		scorerRefusal?: NativePairRefusal,
+		hdrRequest?: { target: HlsQcTarget; referenceColor?: HdrReferenceColor },
 	): Promise<void> {
 		const runner =
 			execution.backend === "LOCAL"
 				? (deps.localRunner ?? deps.runner)
 				: deps.runner;
-		const { slot, distortedPath, logPath } = scoreFiles(
-			jobDir,
-			target,
-			variant,
-		);
-		const distortedProvenance = await download({
-			signal,
-			credential: out.credential,
-			bucket: out.bucket,
-			key: distortedKey,
-			destPath: distortedPath,
-			label: `distorted qc mirror for rendition ${target.renditionKey}${variant ? ` rung ${variant}` : ""} (output "${target.distorted.outputKey}")`,
-		});
+		if (
+			!hdrRequest &&
+			referenceProbe &&
+			JSON.parse(referenceProbe).streams?.some(
+				(stream: { codec_type?: string; color_transfer?: string }) =>
+					stream.codec_type === "video" &&
+					["smpte2084", "arib-std-b67", "smpte428"].includes(
+						stream.color_transfer ?? "",
+					),
+			)
+		)
+			throw new Error(
+				"HDR_MODEL_REQUIRED: use an HDR model with the explicit existing-output HLS protocol",
+			);
+		const {
+			slot,
+			logPath,
+			distortedPath: originalDistortedPath,
+		} = scoreFiles(jobDir, target, variant);
+		let distortedPath = originalDistortedPath;
+		let hlsSource: HlsQcEvidence | undefined;
+		const acquired = hdrRequest
+			? await acquireHlsQcOutput({
+					target: hdrRequest.target,
+					vmafJobId,
+					bucket: out.bucket,
+					jobDir,
+					credential: out.credential,
+					signal,
+				})
+			: undefined;
+		if (acquired) {
+			distortedPath = acquired.path;
+			hlsSource = acquired.hlsSource;
+		}
+		const distortedProvenance =
+			acquired?.provenance ??
+			(await download({
+				signal,
+				credential: out.credential,
+				bucket: out.bucket,
+				key: distortedKey,
+				destPath: distortedPath,
+				label: `distorted qc mirror for rendition ${target.renditionKey}${variant ? ` rung ${variant}` : ""} (output "${target.distorted.outputKey}")`,
+			}));
 		const resourceProbe =
+			hdrRequest ||
 			banding ||
 			resourceSession ||
 			(execution.backend === "LOCAL" &&
@@ -958,7 +1004,17 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				: undefined;
 		if (resourceProbe && resourceProbe.code !== 0)
 			throw new Error("Cannot probe quality measurement input");
-		if (banding && resourceProbe) bandingInputFromProbe(resourceProbe.stdout);
+		if (banding && resourceProbe)
+			bandingInputFromProbe(
+				resourceProbe.stdout,
+				hdrRequest
+					? JSON.parse(resourceProbe.stdout).streams?.find(
+							(s: { codec_type?: string }) => s.codec_type === "video",
+						)?.color_transfer === "arib-std-b67"
+						? "HLG_TO_PQ_1000_NITS"
+						: "PQ"
+					: undefined,
+			);
 		// Per-title rungs carry no plan height/bitrate — probe the downloaded
 		// mirror so the quality ladder can place them. Standard renditions keep
 		// their plan values, so skip the extra probe there.
@@ -1193,7 +1249,39 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				let run: { code: number | null; stderr: string };
 				let localExecution: LocalVmafExecution | undefined;
 				let localLog: unknown;
-				if (execution.backend === "CLOUD") {
+				let hdrMeasurement: HdrMeasurement | undefined;
+				if (hdrRequest) {
+					if (
+						!modelPath ||
+						!referenceProbe ||
+						!resourceProbe ||
+						execution.backend !== "LOCAL"
+					)
+						throw new Error("HDR_MEASUREMENT_CONTRACT_INVALID");
+					const result = await runHdrVmafScore(
+						{ ...deps, runner },
+						{
+							referencePath,
+							distortedPath,
+							model,
+							modelPath,
+							logPath,
+							referenceProbe,
+							distortedProbe: resourceProbe.stdout,
+							referenceColor: hdrRequest.referenceColor,
+							threads: allocation?.threads ?? deps.threads ?? 1,
+							decoderThreads: allocation?.decoderThreads ?? 1,
+							signal: runSignal,
+						},
+					);
+					run = result.run;
+					localLog = result.log;
+					hdrMeasurement = result.hdrMeasurement;
+					localExecution = {
+						...result.execution,
+						selection: { requested: "CPU" },
+					};
+				} else if (execution.backend === "CLOUD") {
 					if (!deps.cloudScore)
 						throw new Error("Cloud VMAF is not configured on this worker");
 					const ttl = Math.min(
@@ -1353,6 +1441,14 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 									signal: runSignal,
 									allocation,
 									assertOwned,
+									...(hdrMeasurement
+										? {
+												hdrMethod:
+													hdrMeasurement.distorted.transfer === "arib-std-b67"
+														? ("HLG_TO_PQ_1000_NITS" as const)
+														: ("PQ" as const),
+											}
+										: {}),
 								},
 							)
 						: undefined;
@@ -1398,6 +1494,8 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 							reference: referenceProvenance,
 							...(referencePreparation ? { referencePreparation } : {}),
 							distorted: distortedProvenance,
+							...(hlsSource ? { hlsSource } : {}),
+							...(hdrMeasurement ? { hdrMeasurement } : {}),
 							...(providerResult !== undefined ? { providerResult } : {}),
 							...(localExecution ? { localExecution } : {}),
 							...(measuredBanding
@@ -1652,6 +1750,38 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			const execution = vmafExecutionSchema.parse(
 				paramsAcc.execution ?? { backend: "LOCAL" },
 			);
+			const hdr = isHdrVmafModel(row.model);
+			if (hdr !== (row.scoringVersion === HDR_VMAF_SCORING_VERSION))
+				throw new Error("HDR_SCORING_VERSION_MISMATCH");
+			if (paramsAcc.source === "OUTPUT_HLS" || hdr) {
+				if (
+					!hdr ||
+					execution.backend !== "LOCAL" ||
+					execution.localMode !== "CPU" ||
+					paramsAcc.source !== "OUTPUT_HLS" ||
+					paramsAcc.kind === "BANDING" ||
+					paramsAcc.psnr === true ||
+					paramsAcc.measurementMethod !== undefined ||
+					paramsAcc.referencePreparation !== undefined ||
+					gateCtx ||
+					!row.triggerKey?.startsWith(
+						labManualTriggerPrefix(row.encodingJobId ?? ""),
+					) ||
+					row.encodingJob?.status !== "FINISHED"
+				)
+					throw new Error("HDR_MEASUREMENT_POLICY_INVALID");
+				if (!deps.hdrFfmpegPath || !deps.hdrFfprobePath)
+					throw new Error("HDR_RUNTIME_NOT_CONFIGURED");
+				if (!deps.resolveModelPath?.(row.model))
+					throw new Error("HDR_MODEL_NOT_CONFIGURED");
+				if (!deps.localResources)
+					throw new Error("HDR_RESOURCE_ADMISSION_REQUIRED");
+				if (
+					paramsAcc.hdrReferenceColor !== undefined &&
+					paramsAcc.hdrReferenceColor !== "P3_D65_PQ_RGB_FULL"
+				)
+					throw new Error("HDR_REFERENCE_DECLARATION_INVALID");
+			}
 			isCloud = execution.backend === "CLOUD";
 			const executionProfile =
 				execution.backend === "CLOUD"
@@ -1733,6 +1863,13 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				? { selection: bandingSelection, gate: plan.qc?.gate }
 				: undefined;
 			const useOutputMp4 = paramsAcc.source === "OUTPUT_MP4";
+			const hlsTargets =
+				paramsAcc.source === "OUTPUT_HLS"
+					? enumerateExistingHlsQcTargets(plan)
+					: [];
+			if (hdr && hlsTargets.length !== 1)
+				throw new Error("HDR_HLS_TARGET_UNAVAILABLE");
+			const hdrTarget = hlsTargets[0];
 			if (
 				useOutputMp4 &&
 				(gateCtx ||
@@ -1789,6 +1926,12 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			const jobDeps: VmafProcessorDeps = selection
 				? {
 						...deps,
+						...(hdr
+							? {
+									ffmpegPath: deps.hdrFfmpegPath as string,
+									ffprobePath: deps.hdrFfprobePath as string,
+								}
+							: {}),
 						scoringBackend: selection.backend,
 						decodePolicy: {
 							backend: "cpu",
@@ -1915,24 +2058,28 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					"Frame-index measurements require a manual FINISHED encoding",
 				);
 			const bandingTargets = wantBanding
-				? enumerateBandingTargets(
-						plan,
-						useOutputMp4 ? "EXISTING_MP4" : "QC_MIRROR",
-					)
+				? hdr
+					? hlsTargets
+					: enumerateBandingTargets(
+							plan,
+							useOutputMp4 ? "EXISTING_MP4" : "QC_MIRROR",
+						)
 				: [];
 			const manualMeasurement =
 				row.triggerKey?.startsWith(
 					labManualTriggerPrefix(row.encodingJobId ?? ""),
 				) === true;
-			const targets = bandingOnly
-				? bandingTargets
-				: useOutputMp4
-					? enumerateExistingMp4Targets(plan)
-					: measurementMethod
-						? enumerateFrameIndexQcTargets(plan)
-						: manualMeasurement || wantBanding
-							? enumerateExistingQcMirrorTargets(plan)
-							: enumerateQcTargets(plan);
+			const targets = hdr
+				? hlsTargets
+				: bandingOnly
+					? bandingTargets
+					: useOutputMp4
+						? enumerateExistingMp4Targets(plan)
+						: measurementMethod
+							? enumerateFrameIndexQcTargets(plan)
+							: manualMeasurement || wantBanding
+								? enumerateExistingQcMirrorTargets(plan)
+								: enumerateQcTargets(plan);
 			if (
 				wantBanding &&
 				!bandingOnly &&
@@ -2538,6 +2685,15 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 									selection,
 									banding,
 									reference.preparation,
+									undefined,
+									hdrTarget
+										? {
+												target: hdrTarget,
+												...(paramsAcc.hdrReferenceColor === "P3_D65_PQ_RGB_FULL"
+													? { referenceColor: "P3_D65_PQ_RGB_FULL" as const }
+													: {}),
+											}
+										: undefined,
 								);
 							}
 							resultCount += 1;

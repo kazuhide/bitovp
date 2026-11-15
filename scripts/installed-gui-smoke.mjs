@@ -6,6 +6,7 @@ import {
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	realpathSync,
 	rmSync,
@@ -827,6 +828,84 @@ const privateDirectory = (state) => {
 	);
 };
 
+const HDR_SCREENSHOT_NAMES = new Set(
+	["en-1440", "ja-320"].flatMap((view) =>
+		[
+			"controls",
+			"pq",
+			"hlg-hfr",
+			"compare-sdr-pq",
+			"compare-pq-hlg",
+			"compare-pq-pq",
+		].map((scene) => `hdr-${scene}-${view}.png`),
+	),
+);
+/** Preserve only synthetic HDR UI PNGs; private fixture/report files stay private. */
+export function exportHdrScreenshots(state, statePath) {
+	if (!statePath) return [];
+	privateDirectory(state);
+	assert(
+		isAbsolute(statePath) &&
+			!inside(ROOT, statePath) &&
+			realpathSync(dirname(statePath)) === dirname(state.directory),
+		"HDR screenshot output must be a sibling of the owned smoke directory",
+	);
+	const root = join(state.directory, "browser-output");
+	if (!existsSync(root)) return [];
+	const canonicalDirectory = (path) =>
+		assert(
+			lstatSync(path).isDirectory() && realpathSync(path) === path,
+			"HDR screenshot directory must be canonical (no symlinks)",
+		);
+	canonicalDirectory(root);
+	const pngs = new Map();
+	for (const entry of readdirSync(root, { withFileTypes: true })) {
+		assert(
+			!entry.isSymbolicLink(),
+			"HDR screenshot case must not be a symlink",
+		);
+		if (!entry.isDirectory()) continue;
+		const directory = join(root, entry.name);
+		canonicalDirectory(directory);
+		for (const file of readdirSync(directory, { withFileTypes: true })) {
+			if (!HDR_SCREENSHOT_NAMES.has(file.name)) continue;
+			const path = join(directory, file.name);
+			const stat = lstatSync(path);
+			assert(
+				stat.isFile() && realpathSync(path) === path,
+				"HDR screenshot must be a regular canonical PNG",
+			);
+			assert(
+				stat.size >= 8 && stat.size <= 5_000_000,
+				"HDR screenshot size is invalid",
+			);
+			assert(!pngs.has(file.name), "HDR screenshot name is duplicate");
+			const bytes = readFileSync(path);
+			assert(
+				bytes
+					.subarray(0, 8)
+					.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+				"HDR screenshot is not a PNG",
+			);
+			pngs.set(file.name, bytes);
+		}
+	}
+	if (!pngs.size) return [];
+	const output = join(
+		realpathSync(dirname(statePath)),
+		`${basename(statePath)}.hdr-screenshots`,
+	);
+	// A new directory and exclusive files never overwrite an earlier run's output.
+	mkdirSync(output, { mode: 0o700 });
+	const names = [...pngs.keys()].sort();
+	for (const name of names)
+		writeFileSync(join(output, name), pngs.get(name), {
+			mode: 0o600,
+			flag: "wx",
+		});
+	return names;
+}
+
 export async function cleanupFixture(
 	state,
 	execute = command,
@@ -1358,9 +1437,17 @@ export async function runFixture({
 			});
 		throw error;
 	} finally {
-		await cleanupFixture(state, command, env);
-		if (stateWritten) rmSync(stateFile, { force: true });
-		notify("Owned smoke containers, volumes, images and private files removed");
+		try {
+			const screenshots = exportHdrScreenshots(state, statePath);
+			if (screenshots.length)
+				notify(`Saved ${screenshots.length} synthetic HDR UI screenshots`);
+		} finally {
+			await cleanupFixture(state, command, env);
+			if (stateWritten) rmSync(stateFile, { force: true });
+			notify(
+				"Owned smoke containers, volumes, images and private files removed",
+			);
+		}
 	}
 }
 

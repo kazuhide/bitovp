@@ -26,6 +26,7 @@ import {
 	childEnvironment,
 	cleanupFixture,
 	composeOverride,
+	exportHdrScreenshots,
 	failureSummary,
 	inside,
 	runFixture,
@@ -107,6 +108,162 @@ test("all browser definitions load in collection-only mode without running a cas
 	} finally {
 		rmSync(directory, { recursive: true });
 	}
+});
+
+const hdrPng = Buffer.from(
+	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jL1sAAAAASUVORK5CYII=",
+	"base64",
+);
+function withHdrScreenshots(run) {
+	const parent = realpathSync(mkdtempSync(join(tmpdir(), "bitovp-hdr-test-")));
+	const directory = join(parent, "bitovp-gui-owned");
+	const screenshots = join(directory, "browser-output", "qc-case");
+	mkdirSync(screenshots, { recursive: true, mode: 0o700 });
+	writeFileSync(join(directory, ".owner"), id, { mode: 0o600 });
+	const statePath = join(parent, "state.json");
+	try {
+		run({
+			parent,
+			state: { id, directory },
+			statePath,
+			screenshots,
+			output: `${statePath}.hdr-screenshots`,
+		});
+	} finally {
+		rmSync(parent, { recursive: true, force: true });
+	}
+}
+
+test("HDR screenshots are not exported without an explicit state path", () => {
+	withHdrScreenshots(({ parent, state, screenshots }) => {
+		writeFileSync(join(screenshots, "hdr-controls-en-1440.png"), hdrPng);
+		assert.deepEqual(exportHdrScreenshots(state), []);
+		assert.deepEqual(readdirSync(parent), ["bitovp-gui-owned"]);
+	});
+});
+
+test("HDR export keeps only exact observed PNG names and ignores private reports and traversal paths", () => {
+	withHdrScreenshots(({ parent, state, statePath, screenshots, output }) => {
+		const names = [
+			"hdr-controls-en-1440.png",
+			"hdr-controls-ja-320.png",
+			"hdr-pq-en-1440.png",
+			"hdr-pq-ja-320.png",
+			"hdr-hlg-hfr-en-1440.png",
+			"hdr-hlg-hfr-ja-320.png",
+			"hdr-compare-sdr-pq-en-1440.png",
+			"hdr-compare-sdr-pq-ja-320.png",
+			"hdr-compare-pq-hlg-en-1440.png",
+			"hdr-compare-pq-hlg-ja-320.png",
+			"hdr-compare-pq-pq-en-1440.png",
+			"hdr-compare-pq-pq-ja-320.png",
+		].sort();
+		for (const name of names) writeFileSync(join(screenshots, name), hdrPng);
+		writeFileSync(join(screenshots, "credentials.png"), hdrPng);
+		writeFileSync(join(screenshots, "hdr-controls-en-1440.png.txt"), "private");
+		writeFileSync(join(parent, "hdr-controls-en-1440.png"), "outside");
+		writeFileSync(
+			join(state.directory, "browser-results.json"),
+			JSON.stringify({
+				attachments: [{ path: "../hdr-controls-en-1440.png" }],
+			}),
+		);
+		writeFileSync(join(state.directory, "browser.json"), "private fixture");
+		assert.deepEqual(exportHdrScreenshots(state, statePath), names);
+		assert.deepEqual(readdirSync(output).sort(), names);
+		for (const name of names)
+			assert.deepEqual(readFileSync(join(output, name)), hdrPng);
+		assert.equal(
+			readFileSync(join(state.directory, "browser.json"), "utf8"),
+			"private fixture",
+		);
+	});
+});
+
+test("HDR export requires the owned canonical private directory and its sibling state path", () => {
+	withHdrScreenshots(({ state, statePath, screenshots, output }) => {
+		writeFileSync(join(screenshots, "hdr-controls-en-1440.png"), hdrPng);
+		writeFileSync(join(state.directory, ".owner"), "wrong");
+		assert.throws(() => exportHdrScreenshots(state, statePath), /ownership/);
+		writeFileSync(join(state.directory, ".owner"), id);
+		assert.throws(() => exportHdrScreenshots(state, join(root, "state.json")));
+		assert.throws(() =>
+			exportHdrScreenshots(state, join(state.directory, "state.json")),
+		);
+		assert.equal(existsSync(output), false);
+	});
+});
+
+test("HDR export rejects symlinked screenshot roots, cases and PNGs", () => {
+	for (const target of [
+		"browser-output",
+		"qc-case",
+		"hdr-controls-en-1440.png",
+	]) {
+		withHdrScreenshots(({ parent, state, statePath, screenshots, output }) => {
+			const outside = join(parent, "outside");
+			mkdirSync(outside, { mode: 0o700 });
+			writeFileSync(join(outside, "hdr-controls-en-1440.png"), hdrPng);
+			const link =
+				target === "browser-output"
+					? join(state.directory, target)
+					: target === "qc-case"
+						? screenshots
+						: join(screenshots, target);
+			rmSync(link, { recursive: true, force: true });
+			symlinkSync(
+				target.endsWith(".png") ? join(outside, target) : outside,
+				link,
+			);
+			assert.throws(
+				() => exportHdrScreenshots(state, statePath),
+				/canonical|regular|symlink/,
+			);
+			assert.equal(existsSync(output), false);
+		});
+	}
+});
+
+test("HDR export rejects invalid PNG bytes, excessive files and ambiguous names", () => {
+	for (const kind of ["not-png", "too-large", "duplicate"]) {
+		withHdrScreenshots(({ state, statePath, screenshots, output }) => {
+			writeFileSync(
+				join(screenshots, "hdr-controls-en-1440.png"),
+				kind === "not-png"
+					? "private text"
+					: kind === "too-large"
+						? Buffer.alloc(5_000_001)
+						: hdrPng,
+			);
+			if (kind === "duplicate") {
+				const duplicate = join(
+					state.directory,
+					"browser-output",
+					"duplicate-case",
+				);
+				mkdirSync(duplicate);
+				writeFileSync(join(duplicate, "hdr-controls-en-1440.png"), hdrPng);
+			}
+			assert.throws(
+				() => exportHdrScreenshots(state, statePath),
+				/PNG|size|duplicate/,
+			);
+			assert.equal(existsSync(output), false);
+		});
+	}
+});
+
+test("HDR export preserves preexisting output paths and writes nothing when no observations exist", () => {
+	withHdrScreenshots(({ state, statePath, screenshots, output }) => {
+		assert.deepEqual(exportHdrScreenshots(state, statePath), []);
+		assert.equal(existsSync(output), false);
+		mkdirSync(output);
+		writeFileSync(join(output, "keep"), "existing");
+		writeFileSync(join(screenshots, "hdr-controls-en-1440.png"), hdrPng);
+		assert.throws(() => exportHdrScreenshots(state, statePath), /EEXIST/);
+		assert.equal(readFileSync(join(output, "keep"), "utf8"), "existing");
+		assert.deepEqual(readdirSync(output), ["keep"]);
+	});
 });
 
 test("private state paths cannot use a dot-prefixed child or the checkout itself", () => {

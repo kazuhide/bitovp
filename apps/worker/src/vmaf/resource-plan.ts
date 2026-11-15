@@ -1,3 +1,4 @@
+import { isHdrVmafModel } from "@bitovp/core";
 import { geometryFromProbe } from "./geometry";
 import { ResourceUnavailableError } from "./resource-admission";
 import type { LocalResources } from "./resources";
@@ -144,6 +145,7 @@ export function planLocalResources(
 		if (n !== undefined && (!Number.isSafeInteger(n) || n <= 0))
 			throw new ResourceUnavailableError("estimate");
 	const units = Math.max(1, pairCount);
+	const hdr = isHdrVmafModel(pair.model);
 	if (pair.metric === "CAMBI_NR") {
 		if (resources.budgetBytes === undefined)
 			throw new ResourceUnavailableError("unknown");
@@ -180,6 +182,7 @@ export function planLocalResources(
 		};
 	}
 	if (resources.budgetBytes === undefined) {
+		if (hdr) throw new ResourceUnavailableError("unknown");
 		if (options.threads === undefined || options.concurrency === undefined)
 			throw new ResourceUnavailableError("unknown");
 		return {
@@ -210,11 +213,13 @@ export function planLocalResources(
 		!pair.scoringBackend &&
 		pixels <= UHD;
 	const depth = Math.max(
+		hdr ? 16 : 8,
 		pair.reference.bitDepth ?? 16,
 		pair.distorted.bitDepth ?? 16,
 		pair.measurementMethod || pair.scoringBackend ? 10 : 8,
 	);
 	const chroma = Math.max(
+		hdr ? 2 : 1,
 		pair.reference.chromaFactor ?? 2,
 		pair.distorted.chromaFactor ?? 2,
 	);

@@ -345,3 +345,149 @@ export function enumerateFrameIndexQcTargets(plan: EncodingPlan): QcTarget[] {
 	const targets = enumerateExistingQcMirrorTargets(plan);
 	return targets.length === videos.length ? targets : [];
 }
+
+/** Manual HDR QC reads one complete, clear fMP4 video from its VOD playlist.
+ * Keep this resolver separate: legacy mirror readers must not infer Dolby
+ * sources or claim a nonexistent progressive mirror. */
+export type HlsQcTarget = QcTarget & {
+	hls: {
+		muxingKey: string;
+		rootPrefix: string;
+		outputPrefix: string;
+		initKey: string;
+		segmentNaming: string;
+	};
+};
+
+function hlsPath(path: string, directory = false): string | undefined {
+	if (
+		path.length > 4096 ||
+		!/^[A-Za-z0-9._/-]*$/.test(path) ||
+		path.startsWith("/") ||
+		path.split("/").some((part) => part === "." || part === "..") ||
+		path.includes("//")
+	)
+		return undefined;
+	return directory && path ? `${path.replace(/\/$/, "")}/` : path;
+}
+
+export function enumerateExistingHlsQcTargets(
+	plan: EncodingPlan,
+): HlsQcTarget[] {
+	if (
+		plan.trimmingStreams.length ||
+		plan.concatenationStreams.length ||
+		plan.filters.length ||
+		plan.drm.length
+	)
+		return [];
+	const videos = plan.renditions.filter(isVideoCodec);
+	if (videos.length !== 1) return [];
+	const rendition = videos[0];
+	if (
+		rendition?.mode !== "STANDARD" ||
+		rendition.filters?.length ||
+		!rendition.height ||
+		!rendition.bitrate
+	)
+		return [];
+	if (
+		"dynamicRangeFormat" in rendition &&
+		rendition.dynamicRangeFormat?.startsWith("DOLBY_VISION") &&
+		rendition.dynamicRangeFormat !== "DOLBY_VISION_PROFILE_10_1"
+	)
+		return [];
+	const ingest = plan.ingest.find((item) => item.key === rendition.ingestKey);
+	const vision = plan.dolbyStreams.find(
+		(item) => item.key === rendition.ingestKey && item.kind === "VISION",
+	);
+	const reference =
+		ingest &&
+		ingest.position === 0 &&
+		["AUTO", "VIDEO_RELATIVE"].includes(ingest.selectionMode)
+			? { inputKey: ingest.inputKey, inputPath: ingest.inputPath }
+			: vision?.kind === "VISION"
+				? { inputKey: vision.inputKey, inputPath: vision.videoInputPath }
+				: undefined;
+	if (!reference) return [];
+	const muxings = plan.muxings.filter(
+		(item) => item.streamKey === rendition.key,
+	);
+	const muxing = muxings[0];
+	if (
+		muxings.length !== 1 ||
+		muxing?.kind !== "FMP4" ||
+		!muxing.destination ||
+		muxing.segmentNamingTemplate
+	)
+		return [];
+	const manifests = plan.manifests.filter((item) => item.kind === "HLS");
+	const manifest = manifests[0];
+	if (
+		manifests.length !== 1 ||
+		manifest?.kind !== "HLS" ||
+		manifest.drmKind ||
+		manifest.detailed ||
+		manifest.variantsPerAudioGroup ||
+		manifest.audioVariantStreams ||
+		(manifest.videoMuxingKind && manifest.videoMuxingKind !== "FMP4") ||
+		manifest.destination.outputKey !== muxing.destination.outputKey
+	)
+		return [];
+	const rootPrefix = hlsPath(manifest.destination.path, true);
+	const outputPrefix = hlsPath(muxing.destination.path, true);
+	const manifestName = hlsPath(manifest.manifestName);
+	const init = hlsPath(muxing.initSegmentName);
+	const segmentParts = muxing.segmentNaming.split("%number%");
+	if (
+		rootPrefix === undefined ||
+		outputPrefix === undefined ||
+		!outputPrefix.startsWith(rootPrefix) ||
+		!manifestName?.endsWith(".m3u8") ||
+		manifestName.includes("/") ||
+		!init ||
+		init.includes("/") ||
+		segmentParts.length !== 2 ||
+		!segmentParts.every((part) => hlsPath(part) !== undefined) ||
+		muxing.segmentNaming.includes("/")
+	)
+		return [];
+	return [
+		{
+			renditionKey: rendition.key,
+			codec: rendition.codec,
+			height: rendition.height,
+			bitrate: rendition.bitrate,
+			...(rendition.streamName ? { streamName: rendition.streamName } : {}),
+			reference,
+			distorted: {
+				outputKey: muxing.destination.outputKey,
+				path: `${rootPrefix}${manifestName}`,
+			},
+			hls: {
+				muxingKey: muxing.key,
+				rootPrefix,
+				outputPrefix,
+				initKey: `${outputPrefix}${init}`,
+				segmentNaming: muxing.segmentNaming,
+			},
+		},
+	];
+}
+
+export function retainedHlsQcKey(
+	target: HlsQcTarget,
+	vmafJobId: string,
+	assembledSha256: string,
+): string {
+	if (
+		!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+			vmafJobId,
+		) ||
+		!/^[A-Za-z0-9_-]+$/.test(target.renditionKey) ||
+		!/^[a-f0-9]{64}$/.test(assembledSha256) ||
+		hlsPath(target.hls.outputPrefix, true) !== target.hls.outputPrefix
+	)
+		throw new Error("HLS_QC_IDENTITY_INVALID");
+	return `${target.hls.outputPrefix}qc-retained/${vmafJobId}/${target.renditionKey}-${assembledSha256}.mp4`;
+}

@@ -1,9 +1,51 @@
 import { gzipSync } from "node:zlib";
 import { describe, expect, it, vi } from "vitest";
+import { hdrMeasurementFixture } from "@/test/hdr-measurement";
 import { referencePreparationEvidence } from "@/test/vmaf-reference-preparation";
 import { vmafExportStream } from "./vmaf-export";
 
 describe("streamed VMAF export bytes", () => {
+	it("exports validated HDR measurement conditions in JSON and per-frame CSV", async () => {
+		const evidence = hdrMeasurementFixture(true);
+		const job = {
+			id: "hdr",
+			model: evidence.model,
+			results: [
+				{
+					id: "valid",
+					renditionRef: {},
+					provenance: {
+						hdrMeasurement: evidence,
+						privatePath: "/private/media",
+					},
+				},
+				{
+					id: "invalid",
+					renditionRef: {},
+					provenance: {
+						hdrMeasurement: { ...evidence, privatePath: "/private/receipt" },
+					},
+				},
+			],
+		};
+		const read = async () =>
+			gzipSync(JSON.stringify([{ frameNum: 0, vmaf: 95 }]));
+		const json = await new Response(
+			vmafExportStream(job, "json", read, new AbortController().signal),
+		).json();
+		expect(json.renditions[0].hdrMeasurement).toEqual(evidence);
+		expect(json.renditions[1]).not.toHaveProperty("hdrMeasurement");
+		expect(JSON.stringify(json)).not.toContain("private");
+		const csv = await new Response(
+			vmafExportStream(job, "csv", read, new AbortController().signal),
+		).text();
+		expect(csv).toContain(
+			"hdrMethod,hdrComparison,hdrReferenceTransfer,hdrDistortedTransfer,hlgDisplayPeakNits,modelSha256",
+		);
+		expect(csv).toContain(
+			`HDR_VMAF_PQ_ICTCP_16,LIMITED_BT2020_PQ_ICTCP420_16_DISPLAY2160,smpte2084,arib-std-b67,1000,${evidence.modelSha256}`,
+		);
+	});
 	it("exports validated preparation proof without private paths or a request-only claim", async () => {
 		const text = await new Response(
 			vmafExportStream(

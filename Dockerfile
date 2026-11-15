@@ -224,6 +224,73 @@ RUN --network=none cd ffmpeg && make -j"$(nproc)" && make install \
 FROM scratch AS ffmpeg
 COPY --from=ffmpeg-build /out/ /
 
+# HDR QC has a separate library and program. The existing ffmpeg target above
+# keeps its original libvmaf and numerical behavior.
+FROM ffmpeg-toolchain AS ffmpeg-hdr-vmaf
+ARG HDR_ZIMG_COMMIT="f819b14e8f39d1282400b0d9543e8ef73c1b2bbd"
+ADD --checksum=sha256:4dc9faba466bce429226f0f5454cb7948ec2b70f6b5b6de383898227b38e51da https://codeload.github.com/sekrit-twc/zimg/tar.gz/${HDR_ZIMG_COMMIT} hdr-zimg.tar.gz
+RUN --network=none mkdir hdr-zimg && tar xzf hdr-zimg.tar.gz -C hdr-zimg --strip-components=1 && cd hdr-zimg \
+	&& ./autogen.sh && STL_LIBS="-l:libstdc++.a -lm" ./configure --prefix=/opt/ffbuild --disable-shared --enable-static --with-pic \
+	&& make -j"$(nproc)" && make install \
+	&& install -D -m 0644 COPYING /opt/ffbuild/share/licenses/zimg/COPYING
+ARG HDR_LIBVMAF_COMMIT="a6ed0f18285cab504b779bbccb0bbaddc3bf44c2"
+ADD --checksum=sha256:fdf254f9034a406745b5aa325d04675f8e7e64e482840a4fbd726f609544c82c https://codeload.github.com/Netflix/vmaf/tar.gz/${HDR_LIBVMAF_COMMIT} hdr-vmaf.tar.gz
+RUN --network=none mkdir hdr-vmaf && tar xzf hdr-vmaf.tar.gz -C hdr-vmaf --strip-components=1 && cd hdr-vmaf \
+	&& revision=$(printf '%.7s' "$HDR_LIBVMAF_COMMIT") \
+	&& sed -i "s/@VCS_TAG@/$revision/" libvmaf/include/vcs_version.h.in \
+	&& grep -q "\"$revision\"" libvmaf/include/vcs_version.h.in \
+	&& echo > libvmaf/tools/meson.build \
+	&& sed -i -E -e 's/([^.>:_[:alnum:]])swap\(/\1libsvm_swap(/g' -e 's/([^.>:_[:alnum:]])min\(/\1libsvm_min(/g' -e 's/([^.>:_[:alnum:]])max\(/\1libsvm_max(/g' libvmaf/src/svm.cpp \
+	&& meson setup build libvmaf --wrap-mode=nodownload --prefix=/opt/ffbuild --libdir=lib --buildtype=release --default-library=static \
+		-Dbuilt_in_models=true -Denable_tests=false -Denable_docs=false -Denable_float=true -Denable_avx512=true -Denable_asm=true -Denable_zimg=true \
+	&& ninja -C build install \
+	&& sed -i 's/Libs.private:/Libs.private: -l:libstdc++.a/; t; $ a Libs.private: -l:libstdc++.a' /opt/ffbuild/lib/pkgconfig/libvmaf.pc \
+	&& install -D -m 0644 LICENSE /opt/ffbuild/share/licenses/libvmaf/LICENSE
+
+FROM ffmpeg-build AS ffmpeg-hdr-build
+COPY --from=ffmpeg-hdr-vmaf /opt/ffbuild/ /opt/ffbuild/
+# These two official FFmpeg changes pass complete AVFrame colorimetry to the
+# HDR library. They are applied only to this copy of the pinned release source.
+COPY docker/ffmpeg-hdr-wrap.patch /tmp/ffmpeg-hdr-wrap.patch
+COPY docker/ffmpeg-hdr-colorimetry.patch /tmp/ffmpeg-hdr-colorimetry.patch
+COPY docker/hdr-ffmpeg-patches.sha256 /tmp/hdr-ffmpeg-patches.sha256
+RUN apt-get update && apt-get install -y --no-install-recommends patch && rm -rf /var/lib/apt/lists/*
+RUN --network=none cd /tmp && sha256sum -c --strict hdr-ffmpeg-patches.sha256 \
+	&& cd /src/ffmpeg && make distclean \
+	&& patch --batch --forward -p1 --fuzz=0 < /tmp/ffmpeg-hdr-wrap.patch \
+	&& patch --batch --forward -p1 --fuzz=0 < /tmp/ffmpeg-hdr-colorimetry.patch \
+	&& printf '%s-hdr1\n' "$FFMPEG_VER" > VERSION \
+	&& ./configure --prefix=/opt/ffmpeg-hdr --pkg-config-flags=--static \
+		--extra-ldflags="-static-libgcc" --extra-ldexeflags=-pie \
+		--disable-autodetect --disable-debug --disable-doc --disable-ffplay \
+		--enable-gpl --enable-version3 \
+		--enable-zlib --enable-iconv --enable-openssl --enable-libxml2 \
+		--enable-libfreetype --enable-libharfbuzz --enable-libfribidi --enable-fontconfig --enable-libass \
+		--enable-libvmaf --enable-libzimg --enable-libx264 --enable-libsvtav1 --enable-libdav1d --enable-libsrt \
+		--enable-ffnvcodec --enable-cuda --enable-cuvid --enable-nvdec --enable-nvenc \
+	|| { tail -n 60 ffbuild/config.log; exit 1; }
+RUN --network=none cd /src/ffmpeg && make -j"$(nproc)" && make install \
+	&& mkdir -p /hdr-out/bin /hdr-out/share/licenses \
+	&& cp /opt/ffmpeg-hdr/bin/ffmpeg /hdr-out/bin/ffmpeg-hdr \
+	&& cp /opt/ffmpeg-hdr/bin/ffprobe /hdr-out/bin/ffprobe-hdr \
+	&& cp -a /opt/ffbuild/share/licenses/. /hdr-out/share/licenses/ \
+	&& install -D -m 0644 -t /hdr-out/share/licenses/ffmpeg COPYING.GPLv3 LICENSE.md \
+	&& /hdr-out/bin/ffmpeg-hdr -hide_banner -version \
+	&& ldd /hdr-out/bin/ffmpeg-hdr && ldd /hdr-out/bin/ffprobe-hdr
+ADD --checksum=sha256:6e1bb29ade13e1cad05e1d13fed2ad76fc8e3d3621bd5e02ab23e5c98c0afffd https://raw.githubusercontent.com/Netflix/vmaf/a6ed0f18285cab504b779bbccb0bbaddc3bf44c2/model/hdr_vmaf_v1.1.8/hdr_vmaf_v1.1.8_3d0h_2160.json /hdr-out/model/hdr_vmaf_v1.1.8_3d0h_2160.json
+ADD --checksum=sha256:53d36d3173012efa6eb65ada92aa3967d3caceee68d088275b2a51a320948510 https://raw.githubusercontent.com/Netflix/vmaf/a6ed0f18285cab504b779bbccb0bbaddc3bf44c2/model/hdr_vmaf_v1.1.8/hdr_vmaf_v1.1.8_1d5h_2160.json /hdr-out/model/hdr_vmaf_v1.1.8_1d5h_2160.json
+ADD --checksum=sha256:f32904ac748319a8dc584aeffa776df30e5002e95270414a57a9802a9c2b31d1 https://raw.githubusercontent.com/Netflix/vmaf/a6ed0f18285cab504b779bbccb0bbaddc3bf44c2/model/hdr_vmaf_v1.1.8_hfr/hdr_vmaf_v1.1.8_hfr_3d0h_2160.json /hdr-out/model/hdr_vmaf_v1.1.8_hfr_3d0h_2160.json
+ADD --checksum=sha256:c8a979574c0d79bb22198323e6b4024b47bd305e5aa09575c4735fef43476bd8 https://raw.githubusercontent.com/Netflix/vmaf/a6ed0f18285cab504b779bbccb0bbaddc3bf44c2/model/hdr_vmaf_v1.1.8_hfr/hdr_vmaf_v1.1.8_hfr_1d5h_2160.json /hdr-out/model/hdr_vmaf_v1.1.8_hfr_1d5h_2160.json
+COPY docker/hdr-vmaf-models.sha256 /hdr-out/model/hdr-vmaf-models.sha256
+COPY docker/hdr-build-proof.sh /tmp/hdr-build-proof.sh
+COPY docker/hdr-build-proof.py /tmp/hdr-build-proof.py
+RUN --network=none cd /hdr-out/model && sha256sum -c --strict hdr-vmaf-models.sha256 \
+	&& sh /tmp/hdr-build-proof.sh /hdr-out/bin/ffmpeg-hdr /hdr-out/model /hdr-out/share/hdr-build-proof
+
+# Export without changing the SDR-only "ffmpeg" export target.
+FROM scratch AS ffmpeg-hdr
+COPY --from=ffmpeg-hdr-build /hdr-out/ /
+
 FROM node:24.22.2-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
 COPY --from=whisper-build /source/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=whisper-build /source/LICENSE /usr/local/share/licenses/whisper.cpp/LICENSE
@@ -289,6 +356,13 @@ RUN --mount=type=bind,source=docker/vmaf-build-proof.sh,target=/tmp/vmaf-build-p
 	&& sh /tmp/vmaf-build-proof.sh ffmpeg "$VMAF_MODEL_DIR" \
 	&& apt-get purge -y --auto-remove curl \
 	&& rm -rf /var/lib/apt/lists/*
+
+COPY --from=ffmpeg-hdr /bin/ffmpeg-hdr /bin/ffprobe-hdr /opt/bitovp-hdr/bin/
+COPY --from=ffmpeg-hdr /model/ /opt/bitovp-hdr/model/
+COPY --from=ffmpeg-hdr /share/ /opt/bitovp-hdr/share/
+ENV VMAF_HDR_FFMPEG_PATH=/opt/bitovp-hdr/bin/ffmpeg-hdr \
+	VMAF_HDR_FFPROBE_PATH=/opt/bitovp-hdr/bin/ffprobe-hdr \
+	VMAF_HDR_MODEL_DIR=/opt/bitovp-hdr/model
 
 COPY --from=caption-alignment-runtime /opt/bitovp-caption-alignment /opt/bitovp-caption-alignment
 RUN apt-get update \

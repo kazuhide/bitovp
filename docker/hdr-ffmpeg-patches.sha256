@@ -1,0 +1,5 @@
+# Backports of official FFmpeg commits 179d08349347e00b2a24593cfa8b3cbbde2a6cfb
+# and 58584087cfc34a6b0894886b23e3d912ca4568f2. Only configure hunk
+# context changes for pinned release/8.1; code changes are unchanged, no fuzz.
+84ca00f17015d72dfd8b153c88a2f235c9707ae8a3b30bbfe75e37068babef79  ffmpeg-hdr-wrap.patch
+93971124ecd29e88da8960491281f317529be49a3be0effa5d3df053bc19b3e3  ffmpeg-hdr-colorimetry.patch

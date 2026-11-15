@@ -1,0 +1,129 @@
+From 58584087cfc34a6b0894886b23e3d912ca4568f2 Mon Sep 17 00:00:00 2001
+From: Kyle Swanson <kswanson@netflix.com>
+Date: Fri, 23 Oct 2026 17:46:06 +0000
+Subject: [PATCH] avfilter/vf_libvmaf: pass frame colorimetry to libvmaf
+
+Backport: adapt configure HAVE_LIST context to pinned release/8.1.
+
+Signed-off-by: Kyle Swanson <kswanson@netflix.com>
+---
+ configure                |  2 ++
+ libavfilter/vf_libvmaf.c | 62 ++++++++++++++++++++++++++++++++--------
+ 2 files changed, 52 insertions(+), 12 deletions(-)
+
+diff --git a/configure b/configure
+index 6fb518795dd13..df80cf5fa17f4 100755
+--- a/configure
++++ b/configure
+@@ -2659,6 +2659,7 @@ HAVE_LIST="
+     ioctl_posix
+     libdrm_getfb2
++    libvmaf_picture_convert
+     libvmaf_picture_wrap
+     makeinfo
+     makeinfo_html
+     opencl_d3d11
+@@ -7373,6 +7374,7 @@ enabled libv4l2           && require_pkg_config libv4l2 libv4l2 libv4l2.h v4l2_i
+ enabled libvidstab        && require_pkg_config libvidstab "vidstab >= 0.98" vid.stab/libvidstab.h vsMotionDetectInit
+ enabled libvmaf           && require_pkg_config libvmaf "libvmaf >= 2.0.0" libvmaf.h vmaf_init &&
+                              { check_pkg_config libvmaf_cuda "libvmaf >= 2.0.0" libvmaf_cuda.h vmaf_cuda_state_init;
++                               check_pkg_config libvmaf_picture_convert "libvmaf >= 2.0.0" libvmaf.h vmaf_picture_convert;
+                                check_pkg_config libvmaf_picture_wrap "libvmaf >= 2.0.0" libvmaf.h vmaf_picture_wrap; }
+ enabled libvo_amrwbenc    && { check_pkg_config libvo_amrwbenc vo-amrwbenc vo-amrwbenc/enc_if.h E_IF_init ||
+                                require libvo_amrwbenc vo-amrwbenc/enc_if.h E_IF_init -lvo-amrwbenc; }
+diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
+index 46aa377f8f36d..851b0982f028c 100644
+--- a/libavfilter/vf_libvmaf.c
++++ b/libavfilter/vf_libvmaf.c
+@@ -106,6 +106,44 @@ static enum VmafPixelFormat pix_fmt_map(enum AVPixelFormat av_pix_fmt)
+     }
+ }
+ 
++#if HAVE_LIBVMAF_PICTURE_CONVERT
++static VmafColor color_map(const AVFrame *f)
++{
++    VmafColor c = { 0 };
++
++    switch (f->color_range) {
++    case AVCOL_RANGE_MPEG: c.range = VMAF_COLOR_RANGE_LIMITED; break;
++    case AVCOL_RANGE_JPEG: c.range = VMAF_COLOR_RANGE_FULL;    break;
++    default:               c.range = VMAF_COLOR_RANGE_UNKNOWN; break;
++    }
++
++    switch (f->color_primaries) {
++    case AVCOL_PRI_BT709:    c.primaries = VMAF_COLOR_PRIMARIES_BT709;    break;
++    case AVCOL_PRI_BT2020:   c.primaries = VMAF_COLOR_PRIMARIES_BT2020;   break;
++    case AVCOL_PRI_SMPTE432: c.primaries = VMAF_COLOR_PRIMARIES_SMPTE432; break;
++    default:                 c.primaries = VMAF_COLOR_PRIMARIES_UNKNOWN;  break;
++    }
++
++    switch (f->color_trc) {
++    case AVCOL_TRC_SMPTE170M:
++    case AVCOL_TRC_BT2020_10:
++    case AVCOL_TRC_BT2020_12:
++    case AVCOL_TRC_BT709:     c.trc = VMAF_COLOR_TRC_BT709;     break;
++    case AVCOL_TRC_SMPTE2084: c.trc = VMAF_COLOR_TRC_SMPTE2084; break;
++    default:                  c.trc = VMAF_COLOR_TRC_UNKNOWN;   break;
++    }
++
++    switch (f->colorspace) {
++    case AVCOL_SPC_BT709:      c.matrix = VMAF_COLOR_MATRIX_BT709;      break;
++    case AVCOL_SPC_BT2020_NCL: c.matrix = VMAF_COLOR_MATRIX_BT2020_NCL; break;
++    case AVCOL_SPC_ICTCP:      c.matrix = VMAF_COLOR_MATRIX_ICTCP;      break;
++    default:                   c.matrix = VMAF_COLOR_MATRIX_UNKNOWN;    break;
++    }
++
++    return c;
++}
++#endif
++
+ #if HAVE_LIBVMAF_PICTURE_WRAP
+ static int release_frame(VmafPicture *pic, void *cookie)
+ {
+@@ -164,10 +202,15 @@ static int copy_picture_data(AVFrame *src, VmafPicture *dst, unsigned bpc)
+ static int get_picture(AVFrame *src, VmafPicture *dst, unsigned bpc)
+ {
+ #if HAVE_LIBVMAF_PICTURE_WRAP
+-    return wrap_picture_data(src, dst, bpc);
++    int err = wrap_picture_data(src, dst, bpc);
+ #else
+-    return copy_picture_data(src, dst, bpc);
++    int err = copy_picture_data(src, dst, bpc);
++#endif
++#if HAVE_LIBVMAF_PICTURE_CONVERT
++    if (!err)
++        dst->color = color_map(src);
+ #endif
++    return err;
+ }
+ 
+ static int do_vmaf(FFFrameSync *fs)
+@@ -518,16 +561,6 @@ static int config_input_ref(AVFilterLink *inlink)
+     const AVPixFmtDescriptor *desc;
+     int err = 0;
+ 
+-    if (ctx->inputs[0]->w != ctx->inputs[1]->w) {
+-        av_log(ctx, AV_LOG_ERROR, "input width must match.\n");
+-        err |= AVERROR(EINVAL);
+-    }
+-
+-    if (ctx->inputs[0]->h != ctx->inputs[1]->h) {
+-        av_log(ctx, AV_LOG_ERROR, "input height must match.\n");
+-        err |= AVERROR(EINVAL);
+-    }
+-
+     if (ctx->inputs[0]->format != ctx->inputs[1]->format) {
+         av_log(ctx, AV_LOG_ERROR, "input pix_fmt must match.\n");
+         err |= AVERROR(EINVAL);
+@@ -735,6 +768,11 @@ static int config_props_cuda(AVFilterLink *outlink)
+         return AVERROR(EINVAL);
+     }
+ 
++    if (ctx->inputs[1]->w != inlink->w || ctx->inputs[1]->h != inlink->h) {
++        av_log(ctx, AV_LOG_ERROR, "CUDA input dimensions must match.\n");
++        return AVERROR(EINVAL);
++    }
++
+     err = vmaf_init(&s->vmaf, cfg);
+     if (err)
+         return AVERROR(EINVAL);

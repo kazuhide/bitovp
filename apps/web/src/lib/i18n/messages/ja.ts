@@ -30,9 +30,29 @@ export const ja = {
 		configuration: "利用設定",
 		worker: "編集サービス",
 		gateway: "ローカルモデル",
+		native: "編集機能の実行環境",
+		nativeRecovery:
+			"不足している実行ファイル・モデル・フォントと保存先の権限を、編集サービスの実行ユーザーで確認してください。既存プロジェクトの編集は続けられます。",
+		nativeComponents: {
+			MEDIA_TOOLS: "FFmpeg・ffprobe",
+			ASR_RUNTIME: "音声認識プログラム",
+			ASR_MODEL: "音声認識モデル",
+			VAD_MODEL: "発話検出モデル",
+			CAPTION_ALIGNMENT: "字幕の時刻調整",
+			CAPTION_FONT: "字幕フォント",
+			SCRATCH: "一時保存先",
+			VOD_PREVIEW_STORAGE: "入力プレビュー保存先",
+		},
+		nativeStates: {
+			READY: "利用可能",
+			MISSING: "未導入",
+			ACCESS_DENIED: "アクセスできません",
+			MISMATCH: "ファイル・版が一致しません",
+			FAILED: "確認できません",
+		},
 		details: "診断の詳細・復帰方法",
 		scope:
-			"設定、編集サービスの初期化、モデルの識別情報、GPUの利用能力を確認します。モデルのロードや推論は行いません。",
+			"設定、編集サービス、モデルの識別情報、GPU、実行ファイル・保存先を確認します。モデルのロードや推論は行いません。",
 		counts: "準備済み {ready} 台 ／ 初期化失敗 {failed} 台",
 		checkedAt: "診断時刻：{time}",
 		stale: "診断結果の期限切れ",
@@ -52,6 +72,7 @@ export const ja = {
 			NOT_CHECKED: "未診断",
 			MISSING: "最近の応答がありません",
 			READY: "準備済み",
+			NATIVE_UNAVAILABLE: "利用できない項目があります",
 			MIXED: "一部の編集サービスが利用できません",
 			INITIALIZATION_FAILED: "初期化に失敗しました",
 			REGISTRY_UNAVAILABLE: "編集サービスの状態を取得できません",
@@ -158,6 +179,8 @@ export const ja = {
 		generatedPreviewStale:
 			"この生成済みプレビューには現在の編集が反映されていません。確認済みの版を保存して再生成すると更新されます。",
 		errors: {
+			nativePrerequisites:
+				"{component}を利用できません。設定の「クリップ編集」で診断結果を確認してください。",
 			hlsUnsupported:
 				"このHLS形式は編集用素材に変換できません。MP4出力、または別のコンテンツを選んでください。",
 			hlsLimit:

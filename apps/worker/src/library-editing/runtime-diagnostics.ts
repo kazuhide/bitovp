@@ -15,6 +15,7 @@ import {
 	localStoryFlowDiagnosticKeys,
 	localStoryFlowOperatorGate,
 	localStoryFlowWorkerHeartbeatSchema,
+	type NativeEditingPreflight,
 	parseLocalStoryFlowDiagnosticRequest,
 	parseLocalStoryFlowDiagnosticResult,
 	readLocalSemanticConfiguration,
@@ -31,6 +32,7 @@ export async function startLocalSemanticDiagnostics(input: {
 	env: Record<string, string | undefined>;
 	captionModelHash?: string;
 	captionSelection?: LocalCaptionTranslationSelection;
+	nativeProbe?: (signal: AbortSignal) => Promise<NativeEditingPreflight>;
 	claim(keys: Keys): Promise<string | null>;
 	publish(keys: Keys, result: LocalSemanticDiagnosticResult): Promise<unknown>;
 	probe?: (
@@ -71,7 +73,7 @@ export async function startLocalSemanticDiagnostics(input: {
 				shutdown.signal,
 				AbortSignal.timeout(request.expiresAt - now),
 			]);
-			const diagnostic = await (
+			const gatewayDiagnostic = (
 				input.probe ??
 				((configuration, abort) =>
 					probeLocalSemanticGateway(
@@ -81,6 +83,10 @@ export async function startLocalSemanticDiagnostics(input: {
 						input.captionSelection,
 					))
 			)(configured, signal);
+			const [diagnostic, native] = await Promise.all([
+				gatewayDiagnostic,
+				input.nativeProbe?.(signal),
+			]);
 			if (stopped || signal.aborted) return;
 			const result = localSemanticDiagnosticResultSchema.parse({
 				version: "local-semantic-diagnostic-result-v1",
@@ -88,7 +94,7 @@ export async function startLocalSemanticDiagnostics(input: {
 				connectionHash,
 				profile: configured.profile,
 				observedAt: Date.now(),
-				diagnostic,
+				diagnostic: { ...diagnostic, ...(native ? { native } : {}) },
 			});
 			await input.publish(keys, result);
 		})()

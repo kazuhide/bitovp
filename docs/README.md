@@ -16,3 +16,4 @@ and the first encoding. Use the [user guide](./USER-GUIDE.md) for other tasks.
 | [Database upgrades](./DATABASE-UPGRADES.md) | Checks and maintenance steps for affected existing databases |
 | [Delivery preset authoring](./DELIVERY-PRESET-AUTHORING.md) | Importing reusable delivery requirements |
 | [Verification prerequisites](./VERIFY-ENVIRONMENT.md) | Resolve missing resources when using optional verification tools |
+| [Native editing preflight (Japanese)](./NATIVE-FEATURE-PREFLIGHT.ja.md) | Verify clip-generation dependencies and actual service permissions before analysis or deployment |

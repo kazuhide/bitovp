@@ -1,3 +1,4 @@
+import { NATIVE_EDITING_COMPONENTS } from "@bitovp/core";
 import { ApiError } from "@/lib/api";
 import type { Translator } from "@/lib/i18n/context";
 
@@ -23,6 +24,13 @@ export function editingErrorMessage(failure: unknown, t: Translator): string {
 	if (failure instanceof ApiError && failure.status === 403)
 		return t("editing.errors.permission");
 	const code = editingFailureCode(failure);
+	const nativeComponent = NATIVE_EDITING_COMPONENTS.find(
+		(component) => code === `NATIVE_PREFLIGHT_${component}`,
+	);
+	if (nativeComponent)
+		return t("editing.errors.nativePrerequisites", {
+			component: t(`clipDiagnostics.nativeComponents.${nativeComponent}`),
+		});
 	const keys = {
 		HLS_UNSUPPORTED: "editing.errors.hlsUnsupported",
 		HLS_LIMIT: "editing.errors.hlsLimit",

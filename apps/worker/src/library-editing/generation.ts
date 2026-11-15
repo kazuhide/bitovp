@@ -104,6 +104,10 @@ type Dependencies = {
 	captionTranslator?: LocalCaptionTranslator;
 	captionAligner?: typeof alignSelectedCaptionSegments;
 	ffmpegPath?: string;
+	preflight?: (
+		parameters: GenerationTaskParameters,
+		signal: AbortSignal,
+	) => Promise<void>;
 	now?: () => Date;
 };
 const json = (value: unknown): Prisma.InputJsonValue =>
@@ -352,6 +356,8 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 			include: { content: true },
 		});
 		if (!link) throw new MediaOperationError("CONTENT_MEDIA_MISMATCH");
+		await deps.preflight?.(parameters, context.signal);
+		checkSignal(context.signal);
 		const warnings = new Set<string>(),
 			metrics: Record<string, number> = {};
 		let cacheable = true;

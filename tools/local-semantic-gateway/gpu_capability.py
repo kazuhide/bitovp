@@ -104,14 +104,29 @@ class RuntimeGpuCapability:
         return folder, (folder / 'stat').read_text().rsplit(')', 1)[1].split()[19], env
 
     @staticmethod
-    def device_access(path, *, minor=None):
+    def device_access(path, *, device_number):
         info = path.stat()
-        return (stat.S_ISCHR(info.st_mode) and (minor is None or os.minor(info.st_rdev) == minor)
+        return (stat.S_ISCHR(info.st_mode) and info.st_rdev == device_number
                 and os.access(path, os.R_OK | os.W_OK))
+
+    @staticmethod
+    def registered_device(path):
+        value = path.read_text().strip()
+        if not re.fullmatch(r'[0-9]{1,7}:[0-9]{1,7}', value):
+            raise ValueError('unknown kernel device number')
+        major, minor = map(int, value.split(':'))
+        if not 0 < major <= 4095 or not 0 <= minor <= 1048575:
+            raise ValueError('unknown kernel device number')
+        return os.makedev(major, minor)
 
     def passive_devices(self, profile, env):
         """Read kernel metadata and permissions, without opening a GPU device."""
         if profile == 'nvidia':
+            character_devices = (self.proc / 'devices').read_text().partition('Character devices:\n')[2].partition('\nBlock devices:')[0]
+            majors = [int(match[1]) for line in character_devices.splitlines()
+                      if (match := re.fullmatch(r'\s*([0-9]{1,4})\s+nvidia(?:-frontend)?\s*', line))]
+            if len(majors) != 1 or not 0 < majors[0] <= 4095:
+                return False
             matches = []
             for folder in (self.proc / 'driver/nvidia/gpus').iterdir():
                 data = (folder / 'information').read_text()
@@ -125,8 +140,8 @@ class RuntimeGpuCapability:
                         return False
                     matches.append(int(value))
             return (len(matches) == 1
-                    and self.device_access(self.devices / f'nvidia{matches[0]}', minor=matches[0])
-                    and self.device_access(self.devices / 'nvidiactl', minor=255))
+                    and self.device_access(self.devices / f'nvidia{matches[0]}', device_number=os.makedev(majors[0], matches[0]))
+                    and self.device_access(self.devices / 'nvidiactl', device_number=os.makedev(majors[0], 255)))
         nodes = []
         for node in (self.sysfs / 'class/kfd/kfd/topology/nodes').iterdir():
             gpu_id = int((node / 'gpu_id').read_text().strip())
@@ -140,15 +155,17 @@ class RuntimeGpuCapability:
         if (not 1 <= len(nodes) <= 16 or len(set(nodes)) != len(nodes)
                 or len({minor for _, minor in nodes}) != len(nodes)
                 or int(env['ROCR_VISIBLE_DEVICES']) >= len(nodes)
-                or not self.device_access(self.devices / 'kfd')):
+                or not self.device_access(self.devices / 'kfd', device_number=self.registered_device(self.sysfs / 'class/kfd/kfd/dev'))):
             return False
         # KFD ordering need not equal ROCr ordering. Require access to every
         # candidate, and leave actual selected-backend enumeration to job use.
         for _, minor in nodes:
             device = self.sysfs / f'class/drm/renderD{minor}/device'
+            registered = self.registered_device(device.parent / 'dev')
             if ((device / 'vendor').read_text().strip().lower() != '0x1002'
                     or (device / 'driver').resolve(strict=True).name != 'amdgpu'
-                    or not self.device_access(self.devices / f'dri/renderD{minor}', minor=minor)):
+                    or os.minor(registered) != minor
+                    or not self.device_access(self.devices / f'dri/renderD{minor}', device_number=registered)):
                 return False
         return True
 

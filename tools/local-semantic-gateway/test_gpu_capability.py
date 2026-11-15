@@ -86,6 +86,7 @@ class RuntimeGpuCapabilityTests(unittest.TestCase):
         self.assertNotIn('model', json.dumps([call.args for call in self.run.call_args_list]))
 
     def nvidia_information(self):
+        (self.proc / 'devices').write_text('Character devices:\n195 nvidia-frontend\n\nBlock devices:\n')
         info = self.proc / 'driver/nvidia/gpus/0000:01:00.0/information'
         info.parent.mkdir(parents=True, exist_ok=True)
         info.write_text('GPU UUID: ' + self.env['CUDA_VISIBLE_DEVICES'] + '\nDevice Minor: 0\n')
@@ -98,8 +99,8 @@ class RuntimeGpuCapabilityTests(unittest.TestCase):
         self.assertEqual(result, {'version': 'bitovp-runtime-gpu-capability-v1', 'profile': 'nvidia',
                                  'method': 'PASSIVE_DEVICE_ACCESS', 'backend': 'CUDA', 'observedAt': 1_000_000})
         self.assertEqual(access.call_args_list, [
-            unittest.mock.call(Path('/dev/nvidia0'), minor=0),
-            unittest.mock.call(Path('/dev/nvidiactl'), minor=255)])
+            unittest.mock.call(Path('/dev/nvidia0'), device_number=os.makedev(195, 0)),
+            unittest.mock.call(Path('/dev/nvidiactl'), device_number=os.makedev(195, 255))])
         self.assertFalse(any(call.args[0][0] == str(self.binary) for call in self.run.call_args_list))
 
     def test_passive_nvidia_requires_matching_kernel_uuid_and_device_access(self):
@@ -118,9 +119,15 @@ class RuntimeGpuCapabilityTests(unittest.TestCase):
         self.assertIsNone(self.gate.inspect('nvidia'))
 
     def test_device_access_rejects_a_regular_file_without_opening_it(self):
-        self.assertFalse(self.gate.device_access(self.binary))
+        self.assertFalse(self.gate.device_access(self.binary, device_number=os.makedev(195, 0)))
+
+    def test_character_device_must_match_the_complete_registered_device_number(self):
+        null = Path('/dev/null')
+        self.assertFalse(self.gate.device_access(null, device_number=os.makedev(511, 0)))
+        self.assertTrue(self.gate.device_access(null, device_number=null.stat().st_rdev))
 
     def test_passive_amd_requires_kfd_and_all_candidate_render_access(self):
+        real_device_access = self.gate.device_access
         self.library = self.library.parent.parent / 'rocm_v7_2/libggml-hip.so'
         self.library.parent.mkdir()
         self.library.write_bytes(b'pinned-fixture')
@@ -133,9 +140,11 @@ class RuntimeGpuCapabilityTests(unittest.TestCase):
         node.mkdir(parents=True)
         (node / 'gpu_id').write_text('12345\n')
         (node / 'properties').write_text('drm_render_minor 128\n')
+        (node.parent.parent / 'dev').write_text('511:0\n')
         device = self.gate.sysfs / 'class/drm/renderD128/device'
         device.mkdir(parents=True)
         (device / 'vendor').write_text('0x1002\n')
+        (device.parent / 'dev').write_text('226:128\n')
         driver = self.gate.sysfs / 'bus/pci/drivers/amdgpu'
         driver.mkdir(parents=True)
         (device / 'driver').symlink_to(driver)
@@ -150,6 +159,14 @@ class RuntimeGpuCapabilityTests(unittest.TestCase):
             (node / 'gpu_id').write_text('12345\n')
             (device / 'vendor').write_text('0x10de\n')
             self.assertIsNone(self.gate.inspect('amd'))
+            (device / 'vendor').write_text('0x1002\n')
+            self.gate.devices = self.root / 'devices'
+            self.gate.devices.mkdir()
+            (self.gate.devices / 'kfd').symlink_to('/dev/null')
+            def wrong_kfd(path, **kwargs):
+                return True if path.name.startswith('renderD') else real_device_access(path, **kwargs)
+            with patch.object(self.gate, 'device_access', side_effect=wrong_kfd):
+                self.assertIsNone(self.gate.inspect('amd'), 'an unrelated character device is not KFD')
         self.assertFalse(any(call.args[0][0] == str(self.binary) for call in self.run.call_args_list))
 
     def test_cold_amd_requires_backend_enumeration_not_only_sysfs_metadata(self):

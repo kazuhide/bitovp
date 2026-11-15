@@ -121,6 +121,40 @@ beforeEach(() => {
 });
 
 describe("manual VOD preview service", () => {
+	it.each([
+		"PREVIEW",
+		"TIMELINE_PREPARE",
+	] as const)("refuses unrepresentable video intervals before creating or queueing %s", async (kind) => {
+		db.vodInputPreviewTask.findUnique.mockResolvedValue({
+			...row,
+			result: {
+				sources: facts.map((fact) => ({
+					...fact,
+					video: { ...fact.video, frameRate: { num: 30, den: 1 } },
+				})),
+			},
+		});
+		const input = {
+			kind,
+			probeId: id,
+			document: {
+				schemaVersion: 1,
+				id,
+				audioEnabled: false,
+				clips: [{ id, sourceKey: "a", inMs: 0, outMs: 1 }],
+			},
+			...(kind === "PREVIEW"
+				? { range: { startMs: 0, durationMs: 1 } }
+				: {
+						output: { credentialId: id, bucket: "output", prefix: "prepared/" },
+					}),
+		};
+		await expect(createVodInputPreviewTask(input)).rejects.toMatchObject({
+			code: "TIMELINE_INTERVAL_TOO_SHORT",
+		});
+		expect(db.vodInputPreviewTask.create).not.toHaveBeenCalled();
+		expect(add).not.toHaveBeenCalled();
+	});
 	it("creates a full timeline preparation intent with server-owned probe binding and output credentials", async () => {
 		db.vodInputPreviewTask.findUnique.mockResolvedValue(row);
 		const input = {

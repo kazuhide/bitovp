@@ -49,7 +49,7 @@ const errorMessages: Record<string, string> = {
 		"Preparation requires readable and writable S3-compatible or GCS HMAC output storage.",
 	PREPARATION_OUTPUT_UNVERIFIED:
 		"The prepared timeline could not be verified in output storage. Prepare it again.",
-	PREPARATION_INTERVAL_TOO_SHORT:
+	TIMELINE_INTERVAL_TOO_SHORT:
 		"A video interval is shorter than one output frame. Extend that interval before preparing.",
 	SOURCE_CHANGED: "The source changed. Inspect the source again.",
 	SOURCE_UNVERIFIED: "The storage provider cannot verify this source version.",

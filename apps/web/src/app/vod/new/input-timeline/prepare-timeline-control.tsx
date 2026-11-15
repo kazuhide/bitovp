@@ -65,8 +65,8 @@ export function PrepareTimelineControl({
 		SOURCE_CHANGED:
 			"素材が更新されています。素材を再解析して準備してください。",
 		OUTPUT_LIMIT:
-			"準備する素材が32GiBの上限に達しました。タイムラインを短くしてください。",
-		PREPARATION_INTERVAL_TOO_SHORT:
+			"準備する素材が4GiBの上限に達しました。タイムラインを短くしてください。",
+		TIMELINE_INTERVAL_TOO_SHORT:
 			"1フレームより短い映像区間があります。区間を伸ばしてください。",
 		TIMED_OUT:
 			"準備が制限時間を超えました。タイムラインを短くして再試行してください。",
@@ -132,8 +132,8 @@ export function PrepareTimelineControl({
 				</summary>
 				<p className="max-w-xl whitespace-normal pt-1">
 					{ja
-						? "V1とA1を結合し、出力ストレージへ保存します。主映像の解像度とFPSを保ち、8bit・BT.709 SDRをH.264 CRF12／AAC 320kbpsで再エンコードします（ロスレスではありません）。最大1時間・32GiB。編集を変更すると再準備が必要です。"
-						: "Combines V1 and A1 in output storage at the primary video's resolution and FPS. Supports 8-bit BT.709 SDR, re-encoded as H.264 CRF12 / AAC 320kbps (not lossless). Maximum 1 hour / 32GiB. Editing invalidates this preparation."}
+						? "V1とA1を結合し、出力ストレージへ保存します。主映像の解像度とFPSを保ち、8bit・BT.709 SDRをH.264 CRF12／AAC 320kbpsで再エンコードします（ロスレスではありません）。最大1時間かつ4GiB。編集を変更すると再準備が必要です。"
+						: "Combines V1 and A1 in output storage at the primary video's resolution and FPS. Supports 8-bit BT.709 SDR, re-encoded as H.264 CRF12 / AAC 320kbps (not lossless). Maximum 1 hour and 4GiB. Editing invalidates this preparation."}
 				</p>
 			</details>
 		</div>

@@ -59,6 +59,8 @@ const en = {
 	addClip: "Add a source to the sequence.",
 	sourceUnavailable: "Prepare the selected source before editing.",
 	invalidRange: "Choose a range within the source duration.",
+	intervalTooShort:
+		"A video interval is shorter than one output frame. Extend the interval.",
 	missingAudio:
 		"A selected source has no audio. Disable audio or choose another source.",
 	retrySources: "Retry source preparation",
@@ -141,6 +143,8 @@ const ja: typeof en = {
 	addClip: "素材をタイムラインへ追加してください。",
 	sourceUnavailable: "素材の準備完了後に編集できます。",
 	invalidRange: "素材の長さに収まる範囲を指定してください。",
+	intervalTooShort:
+		"映像の1フレームより短い区間があります。区間を伸ばしてください。",
 	missingAudio:
 		"音声のない素材があります。音声を無効にするか、別の素材を選んでください。",
 	retrySources: "素材の準備を再試行",
@@ -170,6 +174,7 @@ export function useTimelineLabels() {
 	return locale === "ja" ? ja : en;
 }
 export function taskErrorText(error: string, labels: TimelineLabels) {
+	if (error === "TIMELINE_INTERVAL_TOO_SHORT") return labels.intervalTooShort;
 	return Object.hasOwn(labels, error)
 		? labels[error as keyof TimelineLabels]
 		: error;

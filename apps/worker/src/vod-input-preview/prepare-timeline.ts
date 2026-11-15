@@ -30,6 +30,7 @@ export async function prepareVodInputTimeline(
 		directory: string;
 	},
 ): Promise<NonNullable<VodInputPreviewResult["preparation"]>> {
+	const deadline = Date.now() + (input.timeoutMs ?? 180_000);
 	const fail = (code: string): never => {
 		throw new MediaOperationError(code);
 	};
@@ -88,6 +89,8 @@ export async function prepareVodInputTimeline(
 				key: source.objectKey,
 				filePath: rendered.path,
 				contentType: "video/mp4",
+				signal: input.signal,
+				timeoutMs: Math.max(1, deadline - Date.now()),
 			}),
 			input.signal,
 		);

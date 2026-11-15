@@ -7,7 +7,7 @@ import { join } from "node:path";
 import test from "node:test";
 import type { ObjectStorageBrowser } from "@bitovp/storage";
 import { runMediaProcess } from "../library-editing/process";
-import { probeVodInputSources } from "./media";
+import { probeVodInputSources, renderVodInputPreview } from "./media";
 import { prepareVodInputTimeline } from "./prepare-timeline";
 
 test("full-resolution prepared input preserves five video cuts against three independent audio cuts", {
@@ -225,6 +225,79 @@ test("full-resolution prepared input preserves five video cuts against three ind
 			assert.ok(
 				energy(expected) > 100 * energy(expected === 440 ? 880 : 440),
 				`wrong audio at ${at}s`,
+			);
+		}
+		// Sub-second edits must use one program clock, rather than adding one rounded frame per part.
+		const shortDirectory = join(directory, "short-preview");
+		await mkdir(shortDirectory);
+		const shortDocument = {
+			schemaVersion: 2 as const,
+			id: randomUUID(),
+			audioEnabled: false,
+			durationMs: 13 * 117,
+			videoClips: Array.from({ length: 13 }, (_, index) =>
+				clip(index % 2 ? "b" : "a", index * 117, 0, 117),
+			),
+			audioClips: [],
+		};
+		const shortPreview = await renderVodInputPreview({
+			browserFor,
+			sources,
+			facts,
+			signal,
+			directory: shortDirectory,
+			request: {
+				kind: "PREVIEW",
+				probeId: randomUUID(),
+				document: shortDocument,
+				range: { startMs: 0, durationMs: shortDocument.durationMs },
+			},
+		});
+		const shortPreparedDirectory = join(directory, "short-prepared");
+		await mkdir(shortPreparedDirectory);
+		const shortPrepared = await renderVodInputPreview({
+			browserFor,
+			sources,
+			facts,
+			signal,
+			directory: shortPreparedDirectory,
+			request: {
+				kind: "TIMELINE_PREPARE",
+				probeId: randomUUID(),
+				document: shortDocument,
+				output: {
+					credentialId: "00000000-0000-4000-8000-000000000001",
+					bucket: "output",
+					prefix: "short",
+				},
+			},
+		});
+		for (const [name, path] of [
+			["preview", shortPreview.path],
+			["prepared", shortPrepared.path],
+		] as const) {
+			const frame = join(directory, `short-clock-${name}.rgb`);
+			await runMediaProcess("ffmpeg", [
+				"-v",
+				"error",
+				"-ss",
+				"1.23",
+				"-i",
+				path,
+				"-frames:v",
+				"1",
+				"-vf",
+				"scale=1:1",
+				"-f",
+				"rawvideo",
+				"-pix_fmt",
+				"rgb24",
+				frame,
+			]);
+			const pixel = await readFile(frame);
+			assert.ok(
+				(pixel[0] ?? -1) > 150 && (pixel[2] ?? 256) < 50,
+				`${name} cut 11 must remain red at 1.23s; per-part rounding must not show the earlier blue cut`,
 			);
 		}
 		console.log(

@@ -11,6 +11,8 @@ import {
 	type VodInputTimelineSourceFacts,
 	validateVodInputPreview,
 	validateVodInputTimeline,
+	vodInputTimelineFrameCount,
+	vodInputTimelineHasSubframeVideo,
 } from "@bitovp/core/vod-input-timeline";
 import {
 	MediaOperationError,
@@ -109,6 +111,16 @@ export async function renderVodInputPreview(
 			: { width: 640, height: 360 });
 	const fps = preparedProfile?.fps ?? "30";
 	const frameMs = preparedProfile?.frameMs ?? 1000 / 30;
+	const frameRate =
+		preparing && main?.frameRate ? main.frameRate : { num: 30, den: 1 };
+	if (
+		vodInputTimelineHasSubframeVideo(
+			input.request.document,
+			frameRate,
+			input.request.kind === "PREVIEW" ? input.request.range : undefined,
+		)
+	)
+		throw new MediaOperationError("TIMELINE_INTERVAL_TOO_SHORT");
 	const maxBytes = preparing
 		? MAX_VOD_INPUT_PREPARATION_BYTES
 		: VOD_INPUT_PREVIEW_MAX_OUTPUT_BYTES;
@@ -175,12 +187,12 @@ export async function renderVodInputPreview(
 	) => {
 		input.signal.throwIfAborted();
 		const seconds = String(segment.durationMs / 1000);
-		const frameCount =
-			Math.round((segment.startMs + segment.durationMs) / frameMs) -
-			Math.round(segment.startMs / frameMs);
-		if (preparing && media === "video" && frameCount < 1)
-			throw new MediaOperationError("PREPARATION_INTERVAL_TOO_SHORT");
-		const name = `${media}-part-${index}.${media === "video" ? (preparing ? "mp4" : "mkv") : "wav"}`;
+		const frameCount = vodInputTimelineFrameCount(
+			segment.startMs,
+			segment.durationMs,
+			frameRate,
+		);
+		const name = `${media}-part-${index}.${media === "video" ? "mp4" : "wav"}`;
 		const output = join(input.directory, name);
 		temporary.add(output);
 		let read: string[], selected: string;
@@ -249,11 +261,11 @@ export async function renderVodInputPreview(
 							"-pix_fmt",
 							"yuv420p",
 							"-f",
-							preparing ? "mp4" : "matroska",
-							...(preparing && main?.frameRate
-								? ["-video_track_timescale", String(main.frameRate.num)]
-								: []),
-							...(preparing ? ["-frames:v", String(frameCount)] : []),
+							"mp4",
+							"-video_track_timescale",
+							String(frameRate.num),
+							"-frames:v",
+							String(frameCount),
 						]
 					: [
 							"-vn",
@@ -282,7 +294,8 @@ export async function renderVodInputPreview(
 		if (
 			size < 1 ||
 			size >= maxBytes ||
-			partBytes > (preparing ? 64 * 1024 ** 3 : 128 * 1024 ** 2)
+			partBytes >
+				(preparing ? 2 * MAX_VOD_INPUT_PREPARATION_BYTES : 128 * 1024 ** 2)
 		)
 			throw new MediaOperationError("OUTPUT_LIMIT");
 		return name;
@@ -329,9 +342,8 @@ export async function renderVodInputPreview(
 				"-1",
 				"-c:v",
 				"copy",
-				...(preparing && main?.frameRate
-					? ["-video_track_timescale", String(main.frameRate.num)]
-					: []),
+				"-video_track_timescale",
+				String(frameRate.num),
 				...(program.hasAudio
 					? [
 							"-c:a",

@@ -10,7 +10,8 @@ export const MAX_VOD_TIMELINE_DURATION_MS = 24 * 60 * 60 * 1000;
 export const MAX_VOD_INPUT_PREVIEW_DURATION_MS = 180_000;
 export const DEFAULT_VOD_INPUT_PREVIEW_DURATION_MS = 30_000;
 export const MAX_VOD_INPUT_PREPARATION_DURATION_MS = 3_600_000;
-export const MAX_VOD_INPUT_PREPARATION_BYTES = 32 * 1024 ** 3;
+/** Keep the current single-PUT storage implementation below S3's 5 GB ceiling. */
+export const MAX_VOD_INPUT_PREPARATION_BYTES = 4 * 1024 ** 3;
 const timeMs = z.number().int().min(0).max(MAX_VOD_TIMELINE_DURATION_MS);
 const key = z
 	.string()

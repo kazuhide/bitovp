@@ -4,6 +4,7 @@ import { masterKeyFromEnv } from "@bitovp/core";
 import {
 	getVodInputTimelineDurationMs,
 	MAX_VOD_INPUT_IMAGE_BYTES,
+	resolveVodInputTimeline,
 	VOD_INPUT_IMAGE_OUTPUT_PROVIDERS,
 	type VodInputImagePrepareInput,
 	type VodInputPreviewRequest,
@@ -15,6 +16,7 @@ import {
 	vodInputPreviewResultSchema,
 	vodInputPreviewSubmissionSchema,
 	vodInputPreviewTaskSchema,
+	vodInputTimelineHasSubframeVideo,
 } from "@bitovp/core/vod-input-timeline";
 import type { VodInputPreviewTask as TaskRow } from "@bitovp/db";
 import {
@@ -274,6 +276,21 @@ export async function createVodInputPreviewTask(
 						requireVideo: true,
 					});
 		if (issues[0]) throw new VodInputPreviewError(422, issues[0].code);
+		const mainKey = resolveVodInputTimeline(input.document).mainVideoSourceKey;
+		const frameRate =
+			input.kind === "PREVIEW"
+				? { num: 30, den: 1 }
+				: result.sources?.find((source) => source.key === mainKey)?.video
+						?.frameRate;
+		if (
+			frameRate &&
+			vodInputTimelineHasSubframeVideo(
+				input.document,
+				frameRate,
+				input.kind === "PREVIEW" ? input.range : undefined,
+			)
+		)
+			throw new VodInputPreviewError(422, "TIMELINE_INTERVAL_TOO_SHORT");
 		// Old cached previews may have lost anamorphic/rotation geometry.
 		// Re-probe before cache lookup as well as before serving their content.
 		requireCurrentProbeGeometry(probe);

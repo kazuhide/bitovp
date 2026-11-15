@@ -227,6 +227,32 @@ export function resolveVodInputTimeline(
 	};
 }
 
+/** Round absolute boundaries once; rounding each duration independently drifts at every cut. */
+export function vodInputTimelineFrameCount(
+	startMs: number,
+	durationMs: number,
+	frameRate: { num: number; den: number },
+): number {
+	const frameAt = (milliseconds: number) =>
+		Math.round((milliseconds * frameRate.num) / (1000 * frameRate.den));
+	return frameAt(startMs + durationMs) - frameAt(startMs);
+}
+
+export function vodInputTimelineHasSubframeVideo(
+	document: VodInputTimelineDocument,
+	frameRate: { num: number; den: number },
+	range?: { startMs: number; durationMs: number },
+) {
+	return resolveVodInputTimeline(document, range).videoSegments.some(
+		(segment) =>
+			vodInputTimelineFrameCount(
+				segment.startMs,
+				segment.durationMs,
+				frameRate,
+			) < 1,
+	);
+}
+
 export function sliceVodInputTimeline(
 	input: VodInputTimelineDocument,
 	range: { startMs: number; durationMs: number },

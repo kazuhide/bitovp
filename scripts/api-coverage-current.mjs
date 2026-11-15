@@ -23,23 +23,44 @@ const VERBS = new Set(["get", "post", "put", "patch", "delete"]);
 const slash = (value) => value.replaceAll("\\", "/");
 const excluded = (file) => /(?:^|\/)(?:__tests__|__fixtures__|__mocks__|test|tests|test-fixtures|generated)(?:\/)|\.(?:test|spec)\.[^.]+$|\.d\.ts$|\/(?:fake-sdk|test-helpers|test-support|schema-fixtures)\.[^.]+$/.test(slash(file));
 
+/** Canonical SDK transport only. Unknown members/aliases must not reduce the denominator. */
+export function sdkTransportVerb(node, file) {
+	const client = (value) => value && ts.isPropertyAccessExpression(value) && value.expression.kind === ts.SyntaxKind.ThisKeyword && value.name.text === "restClient";
+	const unresolved = () => { throw new Error(`Unresolved SDK transport shape: ${file}`); };
+	if (ts.isElementAccessExpression(node) && node.expression.kind === ts.SyntaxKind.ThisKeyword && ts.isStringLiteralLike(node.argumentExpression) && node.argumentExpression.text === "restClient") unresolved();
+	if (client(node)) {
+		const member = node.parent;
+		let owner = node.parent;
+		while (owner && !ts.isFunctionLike(owner)) owner = owner.parent;
+		const constructorAssignment = owner && ts.isConstructorDeclaration(owner) && ts.isBinaryExpression(member) && member.left === node && member.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+		if (!constructorAssignment && !(ts.isPropertyAccessExpression(member) && member.expression === node && ts.isCallExpression(member.parent) && member.parent.expression === member)) unresolved();
+	}
+	if (!ts.isCallExpression(node)) return undefined;
+	const member = node.expression;
+	if (!(ts.isPropertyAccessExpression(member) || ts.isElementAccessExpression(member)) || !client(member.expression)) return undefined;
+	if (!ts.isPropertyAccessExpression(member) || !VERBS.has(member.name.text) || member.questionDotToken || node.questionDotToken) unresolved();
+	return member.name.text;
+}
+
 export function enumerateOperations(file, source) {
 	const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 	if (ast.parseDiagnostics.length) throw new Error(`Cannot parse SDK source: ${file}`);
 	const rows = [];
 	function visit(node, method) {
+		const before = rows.length;
 		if (ts.isMethodDeclaration(node)) method = node.name.getText(ast);
-		if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-			const access = node.expression;
-			if (access.expression.getText(ast) === "this.restClient" && VERBS.has(access.name.text)) {
-				const path = node.arguments[0];
-				if (!method || !path || !ts.isStringLiteralLike(path)) throw new Error(`Non-literal SDK transport: ${file}`);
-				if (!path.text.startsWith("/encoding/")) throw new Error(`Unexpected Encoding path: ${file}`);
-				const dir = slash(dirname(file));
-				rows.push({ identity: `${file.replace(/\.js$/, ".d.ts")}#${method}`, path: path.text, httpVerb: access.name.text.toUpperCase(), operation: method, sdkMethod: `${dir.replaceAll("/", ".")}.${method}`, family: dir.split("/")[1] });
-			}
+		const verb = sdkTransportVerb(node, file);
+		if (verb) {
+			const path = node.arguments[0];
+			if (!method || !path || !ts.isStringLiteralLike(path)) throw new Error(`Non-literal SDK transport: ${file}`);
+			if (!path.text.startsWith("/encoding/")) throw new Error(`Unexpected Encoding path: ${file}`);
+			const dir = slash(dirname(file));
+			rows.push({ identity: `${file.replace(/\.js$/, ".d.ts")}#${method}`, path: path.text, httpVerb: verb.toUpperCase(), operation: method, sdkMethod: `${dir.replaceAll("/", ".")}.${method}`, family: dir.split("/")[1] });
 		}
 		ts.forEachChild(node, (child) => visit(child, method));
+		// Every generated SDK method is one operation. A changed generator shape
+		// needs review even when it hides the client behind an unfamiliar alias.
+		if (ts.isMethodDeclaration(node) && rows.length - before !== 1) throw new Error(`Unresolved SDK transport count for method: ${file}#${method}`);
 	}
 	visit(ast);
 	return rows;

@@ -115,6 +115,23 @@ test("unknown transport body or query transformations and path mismatches fail c
 	]) assert.throws(()=>transportBindings("encoding/items/ItemsApi.js",source),/Unresolved|mismatch/);
 });
 
+test("computed/unknown SDK transport calls cannot disappear from both inventories", () => fixture(({js,generate}) => {
+	for (const expression of ["this.restClient['get']", "this.restClient.head", "this['restClient'].get"]) {
+		writeFileSync(js, `class ItemsApi { get(itemId) { return ${expression}('/encoding/items/{item_id}', {item_id:itemId}); } }`);
+		assert.throws(generate, /Unresolved SDK transport/);
+	}
+}));
+
+test("reassigned or mutated SDK parameters never retain a direct original-type binding", () => {
+	for (const change of [
+		`body = JSON.stringify(body);`, `body ||= {};`, `body++;`, `--body;`,
+		`({body} = source);`, `[body] = source;`, `body.name = 'changed';`,
+		`delete body.name;`, `const alias=body; alias.name='changed';`,
+	]) assert.throws(() => transportBindings("encoding/items/ItemsApi.js", `class ItemsApi { create(body) { ${change} return this.restClient.post('/encoding/items', {}, body); } }`), /Unresolved SDK parameter/);
+	assert.throws(() => transportBindings("encoding/items/ItemsApi.js", `class ItemsApi { list(query) { query=normalize(query);return this.restClient.get('/encoding/items', {}, query); } }`), /Unresolved SDK parameter/);
+	assert.throws(() => transportBindings("encoding/items/ItemsApi.js", `class ItemsApi { get(id) { id='other';return this.restClient.get('/encoding/items/{id}', {id}); } }`), /Unresolved SDK parameter/);
+});
+
 test("an unused declared parameter is not silently dropped from the inventory", () => fixture(({js,generate}) => {
 	writeFileSync(js.replace(/js$/,"d.ts"), `export default class ItemsApi { create(itemId:string,body?:{name:string},extra?:boolean):Promise<void>;list(query?:{limit:number}):Promise<void>;get(itemId:string):Promise<void>;}`);
 	assert.throws(generate,/parameter|signature/);

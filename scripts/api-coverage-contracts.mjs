@@ -7,17 +7,34 @@ import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { enumerateOperations } from "./api-coverage-current.mjs";
+import { enumerateOperations, sdkTransportVerb } from "./api-coverage-current.mjs";
 import { writeContracts, readContracts } from "./api-coverage-contract-files.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(join(root, "apps/web/package.json"));
 const ts = require("typescript");
 const slash = value => value.replaceAll("\\", "/");
-const verbs = new Set(["get", "post", "put", "patch", "delete"]);
 const walk = (dir, suffix) => readdirSync(dir, {withFileTypes:true}).flatMap(entry => entry.isDirectory() ? walk(join(dir,entry.name),suffix) : entry.name.endsWith(suffix) ? [join(dir,entry.name)] : []);
 const fail = message => { throw new Error(message); };
 const textName = node => ts.isIdentifier(node) || ts.isStringLiteral(node) ? node.text : fail("Unresolved SDK name");
+
+function unchangedParameters(method, names) {
+	const targets = node => {
+		if (ts.isIdentifier(node)) return names.includes(node.text);
+		if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node) || ts.isParenthesizedExpression(node)) return targets(node.expression);
+		if (ts.isObjectLiteralExpression(node)) return node.properties.some(p=>targets(ts.isPropertyAssignment(p)?p.initializer:ts.isShorthandPropertyAssignment(p)?p.name:p.expression));
+		if (ts.isArrayLiteralExpression(node)) return node.elements.some(targets);
+		if (ts.isObjectBindingPattern(node) || ts.isArrayBindingPattern(node)) return node.elements.some(e=>ts.isBindingElement(e)&&targets(e.name));
+		return false;
+	};
+	function visit(node) {
+		const assignment = ts.isBinaryExpression(node) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment;
+		const update = (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) && [ts.SyntaxKind.PlusPlusToken,ts.SyntaxKind.MinusMinusToken].includes(node.operator);
+		if ((assignment && targets(node.left)) || (update && targets(node.operand)) || (ts.isDeleteExpression(node) && targets(node.expression)) || (ts.isVariableDeclaration(node) && (targets(node.name) || (node.initializer && ts.isIdentifier(node.initializer) && targets(node.initializer))))) fail("Unresolved SDK parameter mutation or alias");
+		ts.forEachChild(node,visit);
+	}
+	visit(method.body);
+}
 
 function standardQuery(method, local, parameters) {
 	const declarations=[];
@@ -53,11 +70,13 @@ export function transportBindings(file, source) {
 	const rows=[];
 	function visit(node, method) {
 		if(ts.isMethodDeclaration(node)) method=node;
-		if(ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.expression.getText(ast)==="this.restClient" && verbs.has(node.expression.name.text)) {
+		const verb=sdkTransportVerb(node,file);
+		if(verb) {
 			if(!method || !ts.isStringLiteralLike(node.arguments[0]) || !node.arguments[0].text.startsWith("/encoding/")) fail(`Unresolved SDK transport: ${file}`);
 			const names=method.parameters.map(p=>textName(p.name));
+			unchangedParameters(method,names);
 			const path=node.arguments[0].text;
-			const httpVerb=node.expression.name.text.toUpperCase();
+			const httpVerb=verb.toUpperCase();
 			const parameters=[];
 			const add=(name,location,extra={})=> {
 				const parameterIndex=names.indexOf(name);

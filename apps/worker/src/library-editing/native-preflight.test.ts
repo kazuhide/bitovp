@@ -1,4 +1,11 @@
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import {
+	chmod,
+	mkdir,
+	mkdtemp,
+	readdir,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -7,6 +14,7 @@ import {
 	nativeGenerationComponents,
 	probeNativeEditingRuntime,
 } from "./native-preflight";
+import { runMediaProcess } from "./process";
 
 const io = vi.hoisted(() => ({ asr: vi.fn(), file: vi.fn() }));
 vi.mock("./analysis-io", async (load) => ({
@@ -17,6 +25,7 @@ vi.mock("./analysis-io", async (load) => ({
 const owned: string[] = [];
 afterEach(async () => {
 	vi.resetAllMocks();
+	vi.unstubAllEnvs();
 	await Promise.all(
 		owned.splice(0).map((path) => rm(path, { recursive: true, force: true })),
 	);
@@ -39,6 +48,7 @@ async function fixture() {
 		env.WHISPER_CLI_PATH,
 		"authored binary with bitovp-mapped-quality-v1 marker",
 	);
+	await chmod(env.WHISPER_CLI_PATH, 0o700);
 	const run = vi.fn(async (_binary: string, args: readonly string[]) => ({
 		stdout: args.includes("--version")
 			? "whisper.cpp version: 1.9.5\n"
@@ -96,6 +106,54 @@ it("rejects stock Whisper even when it reports the pinned version and supports t
 		(await probeNativeEditingRuntime({ ...f, components: ["ASR_RUNTIME"] }))
 			.checks[0]?.code,
 	).toBe("MISMATCH");
+});
+
+it.each([
+	false,
+	true,
+])("uses only the executable PATH candidate for version, help and quality-marker verification; unused marker=%s", async (unusedHasMarker) => {
+	const f = await fixture();
+	const first = join(f.root, "first"),
+		second = join(f.root, "second");
+	await mkdir(first);
+	await mkdir(second);
+	const ignored = join(first, "whisper-cli"),
+		selected = join(second, "whisper-cli");
+	await writeFile(
+		ignored,
+		unusedHasMarker
+			? "bitovp-mapped-quality-v1"
+			: "unrelated non-executable file",
+	);
+	await chmod(ignored, 0o600);
+	// An authored executable shim proves command lookup/process execution;
+	// it does not claim that Whisper or any model ran in this test.
+	await writeFile(
+		selected,
+		`#!/bin/sh
+case "$1" in
+--version) printf '%s\\n' 'whisper.cpp version: 1.9.5' ;;
+--help) printf '%s\\n' '--vad -vm -vt -vspd -vsd -vp -vo -nth -lpt -ng -nf -tp -bs -bo -ojf' ;;
+*) exit 2 ;;
+esac
+# ${unusedHasMarker ? "stock shim without the quality adapter" : "bitovp-mapped-quality-v1"}
+`,
+	);
+	await chmod(selected, 0o700);
+	vi.stubEnv("PATH", `${first}:${second}:${process.env.PATH ?? ""}`);
+	const { WHISPER_CLI_PATH: _binary, ...env } = f.env;
+	const run = vi.fn(runMediaProcess);
+	const result = await probeNativeEditingRuntime({
+		...f,
+		env,
+		run,
+		components: ["ASR_RUNTIME"],
+	});
+	expect(result.checks[0]?.code).toBe(unusedHasMarker ? "MISMATCH" : "READY");
+	expect(run.mock.calls.map(([binary]) => binary)).toEqual([
+		selected,
+		selected,
+	]);
 });
 
 it("verifies the actual copied caption font bytes before trying libass", async () => {
@@ -196,7 +254,10 @@ it("uses the real writable namespace rather than accepting existing directory me
 
 it("requires ASR with captions OFF for local story but not alignment or fonts", () => {
 	expect(
-		nativeGenerationComponents({ policy: "LOCAL_STORY", captions: "OFF" }),
+		nativeGenerationComponents(
+			{ policy: "LOCAL_STORY", captions: "OFF" },
+			true,
+		),
 	).toEqual([
 		"MEDIA_TOOLS",
 		"SCRATCH",
@@ -205,10 +266,22 @@ it("requires ASR with captions OFF for local story but not alignment or fonts", 
 		"VAD_MODEL",
 	]);
 	expect(
-		nativeGenerationComponents({ policy: "LOCAL_STORY", captions: "JAPANESE" }),
+		nativeGenerationComponents(
+			{ policy: "LOCAL_STORY", captions: "JAPANESE" },
+			true,
+		),
 	).toContain("CAPTION_ALIGNMENT");
 	expect(
-		nativeGenerationComponents({ policy: "AUTO", captions: "OFF" }),
+		nativeGenerationComponents({ policy: "AUTO", captions: "OFF" }, true),
+	).toEqual(["MEDIA_TOOLS", "SCRATCH"]);
+});
+
+it.each([
+	"OFF",
+	"AUTO",
+] as const)("does not require speech dependencies for video-only LOCAL_STORY with captions=%s", (captions) => {
+	expect(
+		nativeGenerationComponents({ policy: "LOCAL_STORY", captions }, false),
 	).toEqual(["MEDIA_TOOLS", "SCRATCH"]);
 });
 

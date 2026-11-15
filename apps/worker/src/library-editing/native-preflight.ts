@@ -1,11 +1,13 @@
+import { constants } from "node:fs";
 import {
+	access,
 	copyFile,
-	type FileHandle,
 	mkdir,
 	mkdtemp,
 	open,
 	readFile,
 	rm,
+	stat,
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -68,43 +70,54 @@ Format: Layer,Start,End,Style,Text
 Dialogue: 0,0:00:00.00,0:00:01.00,Default,字幕A
 `;
 
-/** Detect the fixed quality adapter without loading the model or recognizing audio. */
-async function requireQualityAdapter(binary: string, budget: AnalysisBudget) {
+/** Match the calling process's executable lookup, then bind every probe to it. */
+async function resolveExecutable(binary: string) {
 	const candidates =
 		isAbsolute(binary) || binary.includes("/")
 			? [resolve(binary)]
 			: (process.env.PATH ?? "")
 					.split(":")
 					.map((directory) => resolve(directory, binary));
+	let accessDenied = false;
 	for (const path of candidates) {
-		let file: FileHandle;
 		try {
-			file = await open(path, "r");
+			await access(path, constants.X_OK);
+			if ((await stat(path)).isFile()) return path;
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+			const code = (error as NodeJS.ErrnoException).code;
+			if (["ENOENT", "ENOTDIR"].includes(code ?? "")) continue;
+			if (["EACCES", "EPERM"].includes(code ?? "")) {
+				accessDenied = true;
+				continue;
+			}
 			throw error;
 		}
-		try {
-			const marker = "bitovp-mapped-quality-v1";
-			const buffer = Buffer.alloc(65536);
-			let tail = "",
-				total = 0;
-			for (;;) {
-				budget.check();
-				const { bytesRead } = await file.read(buffer);
-				if (!bytesRead) break;
-				total += bytesRead;
-				if (total > 64 * 1024 ** 2) throw new MediaOperationError("MISMATCH");
-				const text = tail + buffer.subarray(0, bytesRead).toString("latin1");
-				if (text.includes(marker)) return;
-				tail = text.slice(-marker.length);
-			}
-			throw new MediaOperationError("MISMATCH");
-		} finally {
-			await file.close();
-		}
 	}
-	throw new MediaOperationError("MISSING");
+	throw new MediaOperationError(accessDenied ? "ACCESS_DENIED" : "MISSING");
+}
+
+/** Detect the fixed quality adapter in the executable selected for the command probes. */
+async function requireQualityAdapter(binary: string, budget: AnalysisBudget) {
+	const file = await open(binary, "r");
+	try {
+		const marker = "bitovp-mapped-quality-v1";
+		const buffer = Buffer.alloc(65536);
+		let tail = "",
+			total = 0;
+		for (;;) {
+			budget.check();
+			const { bytesRead } = await file.read(buffer);
+			if (!bytesRead) break;
+			total += bytesRead;
+			if (total > 64 * 1024 ** 2) throw new MediaOperationError("MISMATCH");
+			const text = tail + buffer.subarray(0, bytesRead).toString("latin1");
+			if (text.includes(marker)) return;
+			tail = text.slice(-marker.length);
+		}
+		throw new MediaOperationError("MISMATCH");
+	} finally {
+		await file.close();
+	}
 }
 
 /** These checks run as the calling process, including its real mount restrictions. */
@@ -209,7 +222,9 @@ export async function probeNativeEditingRuntime(
 			await run(env.FFPROBE_PATH ?? "ffprobe", ["-version"]);
 		},
 		ASR_RUNTIME: async () => {
-			const binary = env.WHISPER_CLI_PATH ?? "whisper-cli";
+			const binary = await resolveExecutable(
+				env.WHISPER_CLI_PATH ?? "whisper-cli",
+			);
 			const result = await run(binary, ["--version"]);
 			if (
 				result.stdout.trim() !== `whisper.cpp version: ${WHISPER_CPP_VERSION}`
@@ -364,8 +379,10 @@ export async function probeNativeEditingRuntime(
 
 export function nativeGenerationComponents(
 	parameters: Pick<GenerationTaskParameters, "policy" | "captions">,
+	hasAudio: boolean,
 ): NativeEditingComponent[] {
 	const components: NativeEditingComponent[] = ["MEDIA_TOOLS", "SCRATCH"];
+	if (hasAudio === false) return components;
 	if (
 		parameters.policy === "LOCAL_STORY" ||
 		usesGeneratedCaptions(parameters.captions)

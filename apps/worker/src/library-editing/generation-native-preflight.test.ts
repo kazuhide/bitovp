@@ -18,6 +18,7 @@ it("refuses missing native prerequisites before analysis progress or project pub
 	expect(preflight).toHaveBeenCalledExactlyOnceWith(
 		f.context.parameters,
 		f.context.signal,
+		true,
 	);
 	expect(onProgress).not.toHaveBeenCalled();
 });

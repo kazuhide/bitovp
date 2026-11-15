@@ -107,6 +107,7 @@ type Dependencies = {
 	preflight?: (
 		parameters: GenerationTaskParameters,
 		signal: AbortSignal,
+		hasAudio: boolean,
 	) => Promise<void>;
 	now?: () => Date;
 };
@@ -356,7 +357,16 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 			include: { content: true },
 		});
 		if (!link) throw new MediaOperationError("CONTENT_MEDIA_MISMATCH");
-		await deps.preflight?.(parameters, context.signal);
+		const probe = resultObject(verified.media.probe),
+			streams = Array.isArray(probe.streams) ? probe.streams : [];
+		const hasAudio = streams.some(
+			(stream: unknown) =>
+				!!stream &&
+				typeof stream === "object" &&
+				"codec_type" in stream &&
+				stream.codec_type === "audio",
+		);
+		await deps.preflight?.(parameters, context.signal, hasAudio);
 		checkSignal(context.signal);
 		const warnings = new Set<string>(),
 			metrics: Record<string, number> = {};
@@ -396,15 +406,6 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 				);
 			throw error;
 		}
-		const probe = resultObject(verified.media.probe),
-			streams = Array.isArray(probe.streams) ? probe.streams : [];
-		const hasAudio = streams.some(
-			(stream: unknown) =>
-				!!stream &&
-				typeof stream === "object" &&
-				"codec_type" in stream &&
-				stream.codec_type === "audio",
-		);
 		let storyArtifact:
 			| Awaited<ReturnType<typeof loadStoryArtifact>>
 			| undefined;

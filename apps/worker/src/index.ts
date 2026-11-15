@@ -704,8 +704,8 @@ const editingSweepLoop = createConfiguredLibraryEditing(
 					ffmpegPath: env.FFMPEG_PATH,
 					localStoryEngine: editingLocalStoryEngine,
 					captionAligner: alignSelectedCaptionSegments,
-					preflight: async (parameters, signal) => {
-						const components = nativeGenerationComponents(parameters);
+					preflight: async (parameters, signal, hasAudio) => {
+						const components = nativeGenerationComponents(parameters, hasAudio);
 						const result = await probeNativeEditingRuntime({
 							components,
 							signal,

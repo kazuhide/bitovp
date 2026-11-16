@@ -93,6 +93,37 @@ afterEach(() => {
 
 describe("JobsClient", () => {
 	it.each([
+		"FINISHED",
+		"RUNNING",
+	] as const)("offers output comparison only for two finished selections (%s)", async (status) => {
+		const a = job({
+			id: "11111111-1111-4111-8111-111111111111",
+			name: "Compare A",
+		});
+		const b = job({
+			id: "22222222-2222-4222-8222-222222222222",
+			name: "Compare B",
+			status,
+		});
+		mockList([a, b]);
+		wrap(<JobsClient />);
+		await screen.findByText("Compare A");
+		const user = userEvent.setup();
+		await user.click(screen.getByLabelText("Select Compare A"));
+		expect(
+			screen.queryByRole("link", { name: "Compare outputs" }),
+		).not.toBeInTheDocument();
+		await user.click(screen.getByLabelText("Select Compare B"));
+		if (status === "FINISHED")
+			expect(
+				screen.getByRole("link", { name: "Compare outputs" }),
+			).toHaveAttribute("href", `/vod/compare?jobs=${a.id},${b.id}`);
+		else
+			expect(
+				screen.queryByRole("link", { name: "Compare outputs" }),
+			).not.toBeInTheDocument();
+	});
+	it.each([
 		"ja",
 		"en",
 	] as const)("%s: uses one canonical status in each row and filter option", async (locale) => {

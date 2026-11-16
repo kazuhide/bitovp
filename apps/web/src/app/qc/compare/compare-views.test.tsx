@@ -1,5 +1,5 @@
 import { computePooled, type VmafFrame } from "@bitovp/core";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
 	cloneElement,
@@ -15,6 +15,7 @@ import type {
 	QcJobDetail,
 	VmafJobDetail,
 } from "../vmaf-shared";
+import { seriesColor } from "../vmaf-shared";
 
 // Data layer — the compare client fans out one apiFetch per job id.
 const apiFetch = vi.fn();
@@ -164,6 +165,19 @@ function bandingJob(base: VmafJobDetail): BandingJobDetail {
 	};
 }
 
+function hdrJob(base: VmafJobDetail, hlg = false): VmafJobDetail {
+	const evidence = hdrMeasurementFixture(hlg);
+	return {
+		...base,
+		model: evidence.model,
+		scoringVersion: 14,
+		results: base.results.map((result) => ({
+			...result,
+			hdrMeasurement: evidence,
+		})),
+	};
+}
+
 afterEach(() => {
 	vi.clearAllMocks();
 	searchParams = new URLSearchParams();
@@ -173,34 +187,149 @@ describe("CompareClient", () => {
 	it.each([
 		false,
 		true,
-	])("warns about mixed HDR measurement contexts (HLG=%s)", async (hlg) => {
-		const evidence = hdrMeasurementFixture(hlg);
-		const hdr = {
-			...JOB_B,
-			model: evidence.model,
-			scoringVersion: 14,
-			results: JOB_B.results.map((result) => ({
-				...result,
-				hdrMeasurement: evidence,
-			})),
-		};
-		const first = hlg
-			? {
-					...JOB_A,
-					model: evidence.model,
-					scoringVersion: 14,
-					results: JOB_A.results.map((result) => ({
-						...result,
-						hdrMeasurement: hdrMeasurementFixture(),
-					})),
-				}
-			: JOB_A;
+	])("separates incompatible HDR measurement contexts (HLG=%s)", async (hlg) => {
+		const hdr = hdrJob(JOB_B, hlg);
+		const first = hlg ? hdrJob(JOB_A) : JOB_A;
 		searchParams = new URLSearchParams({ jobs: `${first.id},${hdr.id}` });
 		serve([first, hdr]);
 		wrap(<CompareClient />);
 		expect(
-			await screen.findByText(/HDR\/SDR or HLG normalization differs/),
+			await screen.findByText(/measurement conditions differ/),
 		).toBeVisible();
+		const firstGroup = screen.getByRole("region", {
+			name: new RegExp(`clip-low.*${hlg ? "HDR PQ" : "SDR"}`),
+		});
+		const hdrGroup = screen.getByRole("region", {
+			name: new RegExp(`clip-high.*${hlg ? "HDR HLG" : "HDR PQ"}`),
+		});
+		for (const [group, color] of [
+			[firstGroup, seriesColor(0)],
+			[hdrGroup, seriesColor(1)],
+		] as const) {
+			expect(within(group).getAllByRole("checkbox")).toHaveLength(1);
+			expect(
+				within(group).getByRole("heading", { name: /Per-frame VMAF/ }),
+			).toBeVisible();
+			expect(
+				within(group).getByRole("heading", { name: /Quality ladder/ }),
+			).toBeVisible();
+			await waitFor(() => {
+				const strokes = [...group.querySelectorAll(".recharts-line-curve")].map(
+					(path) => path.getAttribute("stroke"),
+				);
+				expect(new Set(strokes)).toEqual(new Set([color]));
+			});
+		}
+		const user = userEvent.setup();
+		await user.click(within(firstGroup).getByRole("button", { name: "None" }));
+		expect(within(firstGroup).getByRole("checkbox")).not.toBeChecked();
+		expect(within(hdrGroup).getByRole("checkbox")).toBeChecked();
+		expect(within(firstGroup).getByText("Series (0/1 shown)")).toBeVisible();
+		await user.click(within(hdrGroup).getByRole("button", { name: "None" }));
+		await user.click(within(firstGroup).getByRole("button", { name: "All" }));
+		expect(within(firstGroup).getByRole("checkbox")).toBeChecked();
+		expect(within(hdrGroup).getByRole("checkbox")).not.toBeChecked();
+	});
+	it("separates mixed contexts within an imported report", async () => {
+		const mixed = {
+			...JOB_A,
+			results: [
+				...JOB_A.results,
+				...hdrJob(JOB_A).results.map((result) => ({
+					...result,
+					id: "hdr-rendition",
+					renditionRef: {
+						label: "HDR output",
+						height: 2160,
+						bitrate: 5_000_000,
+					},
+				})),
+			],
+		};
+		searchParams = new URLSearchParams({ jobs: `${mixed.id},${JOB_B.id}` });
+		serve([mixed, JOB_B]);
+		wrap(<CompareClient />);
+		const sdr = await screen.findByRole("region", { name: /clip-low.*SDR/ });
+		const hdr = screen.getByRole("region", { name: /clip-low.*HDR PQ/ });
+		expect(within(sdr).getAllByRole("checkbox")).toHaveLength(1);
+		expect(within(sdr).getByRole("checkbox")).toHaveAccessibleName(/360p/);
+		expect(within(hdr).getAllByRole("checkbox")).toHaveLength(1);
+		expect(within(hdr).getByRole("checkbox")).toHaveAccessibleName(
+			/HDR output/,
+		);
+	});
+	it("keeps an unverified HDR model separate from retained HDR measurement evidence", async () => {
+		const verified = hdrJob(JOB_A);
+		const unverified = { ...JOB_B, model: verified.model };
+		searchParams = new URLSearchParams({
+			jobs: `${verified.id},${unverified.id}`,
+		});
+		serve([verified, unverified]);
+		wrap(<CompareClient />);
+		expect(
+			await screen.findByRole("region", { name: /clip-low.*HDR PQ/ }),
+		).toBeVisible();
+		expect(
+			screen.getByRole("region", { name: /clip-high.*unverified measurement/ }),
+		).toBeVisible();
+	});
+	it("keeps incompatible measurement preview candidates in their own panels", async () => {
+		const pause = vi
+			.spyOn(HTMLMediaElement.prototype, "pause")
+			.mockImplementation(() => {});
+		const load = vi
+			.spyOn(HTMLMediaElement.prototype, "load")
+			.mockImplementation(() => {});
+		try {
+			const sdr = {
+				...JOB_A,
+				results: JOB_A.results.map((r) => ({
+					...r,
+					preview: { url: "/api/media/sdr" },
+				})),
+			};
+			const hdr = hdrJob({
+				...JOB_B,
+				results: JOB_B.results.map((r) => ({
+					...r,
+					preview: { url: "/api/media/hdr" },
+				})),
+			});
+			searchParams = new URLSearchParams({ jobs: `${sdr.id},${hdr.id}` });
+			serve([sdr, hdr]);
+			wrap(<CompareClient />);
+			const sdrPanel = await screen.findByRole("region", {
+				name: /clip-low.*SDR/,
+			});
+			const hdrPanel = screen.getByRole("region", {
+				name: /clip-high.*HDR PQ/,
+			});
+			const user = userEvent.setup();
+			await user.click(
+				within(sdrPanel).getByRole("button", {
+					name: "Open comparison preview",
+				}),
+			);
+			expect(
+				[...sdrPanel.querySelectorAll("video")].map((v) =>
+					v.getAttribute("src"),
+				),
+			).toEqual(["/api/media/sdr"]);
+			expect(hdrPanel.querySelectorAll("video")).toHaveLength(0);
+			await user.click(
+				within(hdrPanel).getByRole("button", {
+					name: "Open comparison preview",
+				}),
+			);
+			expect(
+				[...hdrPanel.querySelectorAll("video")].map((v) =>
+					v.getAttribute("src"),
+				),
+			).toEqual(["/api/media/hdr"]);
+		} finally {
+			pause.mockRestore();
+			load.mockRestore();
+		}
 	});
 	it("compares CAMBI-only reports without a VMAF clock and disambiguates shared result IDs", async () => {
 		const a = { ...bandingJob(JOB_A), encodingName: "same-encode" };
@@ -360,6 +489,10 @@ describe("CompareClient", () => {
 		expect(screen.getByTestId("compare-counts")).toHaveTextContent(
 			"2 reports · 2 series",
 		);
+		expect(
+			screen.getAllByRole("heading", { name: /Per-frame VMAF/ }),
+		).toHaveLength(1);
+		expect(screen.getAllByText("Series (2/2 shown)")).toHaveLength(1);
 		// Legend lists both series with a toggle each.
 		expect(
 			screen.getByRole("checkbox", {

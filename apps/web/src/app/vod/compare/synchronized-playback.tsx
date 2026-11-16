@@ -1,0 +1,183 @@
+"use client";
+
+import type { PlayerClientConfig } from "@bitovp/core";
+import {
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
+import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n/context";
+import type { PlaybackControl } from "../jobs/[id]/playback-control";
+import { PlaybackSurface } from "../jobs/[id]/playback-surface";
+import type { OutputLink } from "./output-selection";
+import {
+	type AudioSide,
+	type SynchronizedState,
+	synchronizePlayback,
+} from "./synchronize-playback";
+
+type Output = { jobId: string; heading: ReactNode; link: OutputLink };
+const waiting: SynchronizedState = {
+	time: 0,
+	duration: 0,
+	intent: false,
+	status: "waiting",
+};
+const selectStyle =
+	"min-w-0 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 focus-visible:outline-2 focus-visible:outline-emerald-500";
+
+export function SynchronizedPlayback({
+	outputs,
+	player,
+}: {
+	outputs: readonly [Output, Output];
+	player?: PlayerClientConfig;
+}) {
+	const { t } = useT();
+	const [controls, setControls] = useState<
+		readonly [PlaybackControl | null, PlaybackControl | null]
+	>([null, null]);
+	const leftControl = useCallback(
+		(value: PlaybackControl | null) =>
+			setControls((old) => (old[0] === value ? old : [value, old[1]])),
+		[],
+	);
+	const rightControl = useCallback(
+		(value: PlaybackControl | null) =>
+			setControls((old) => (old[1] === value ? old : [old[0], value])),
+		[],
+	);
+	const [state, setState] = useState(waiting);
+	const [audio, setAudio] = useState<AudioSide>("left");
+	const audioRef = useRef(audio);
+	const connection = useRef<ReturnType<typeof synchronizePlayback> | null>(
+		null,
+	);
+	const [left, right] = controls;
+	useEffect(() => {
+		if (!left || !right) {
+			setState(waiting);
+			return;
+		}
+		const sync = synchronizePlayback([left, right], () =>
+			setState(connection.current?.read() ?? waiting),
+		);
+		connection.current = sync;
+		sync.audio(audioRef.current);
+		setState(sync.read());
+		return () => {
+			connection.current = null;
+			sync.dispose();
+		};
+	}, [left, right]);
+	useEffect(() => {
+		audioRef.current = audio;
+		connection.current?.audio(audio);
+	}, [audio]);
+	return (
+		<div data-testid="synchronized-outputs" className="mt-4 space-y-3">
+			<div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
+				{outputs.map((output, index) => {
+					const control = controls[index];
+					const side = index === 0 ? "left" : "right";
+					const qualities = control?.qualities() ?? [];
+					return (
+						<section
+							key={side}
+							data-testid={`output-${side}`}
+							className="min-w-0 space-y-2"
+						>
+							{output.heading}
+							<PlaybackSurface
+								url={output.link.url}
+								kind={output.link.kind}
+								player={player}
+								controls={false}
+								onControl={index === 0 ? leftControl : rightControl}
+								diagnose={{
+									scope: "vod",
+									id: output.jobId,
+									manifestKey: output.link.key,
+								}}
+							/>
+							<label className="flex items-center gap-2 text-xs text-zinc-400">
+								{t("outputCompare.quality")}
+								<select
+									aria-label={`${t("outputCompare.quality")} ${t(`outputCompare.${side}`)}`}
+									className={selectStyle}
+									value={control?.read().qualityId ?? ""}
+									disabled={qualities.length === 0}
+									onChange={(event) => {
+										connection.current?.pause();
+										control?.selectQuality(event.target.value);
+										setState(connection.current?.read() ?? waiting);
+									}}
+								>
+									<option value="">{t("outputCompare.auto")}</option>
+									{qualities.map((quality) => (
+										<option key={quality.id} value={quality.id}>
+											{t("outputCompare.fixed", { height: quality.height })}
+										</option>
+									))}
+								</select>
+							</label>
+						</section>
+					);
+				})}
+			</div>
+			<div className="flex flex-wrap items-center gap-3 rounded-md border border-zinc-800 px-3 py-2">
+				<Button
+					size="sm"
+					disabled={
+						!connection.current || (!state.intent && state.status === "waiting")
+					}
+					onClick={() => {
+						if (state.intent) connection.current?.pause();
+						else void connection.current?.play();
+					}}
+				>
+					{t(state.intent ? "outputCompare.pause" : "outputCompare.play")}
+				</Button>
+				<input
+					type="range"
+					aria-label={t("outputCompare.seek")}
+					className="min-w-24 flex-1 accent-emerald-500"
+					min={0}
+					max={state.duration || 0}
+					step={0.01}
+					value={Math.min(state.time, state.duration)}
+					disabled={!state.duration || state.status === "failed"}
+					onChange={(event) =>
+						connection.current?.seek(Number(event.target.value))
+					}
+				/>
+				<output className="text-xs text-zinc-300 tabular-nums">{`${state.time.toFixed(2)} / ${state.duration.toFixed(2)}`}</output>
+				<label className="flex items-center gap-2 text-xs text-zinc-400">
+					{t("outputCompare.audio")}
+					<select
+						aria-label={t("outputCompare.audio")}
+						className={selectStyle}
+						value={audio}
+						onChange={(event) => setAudio(event.target.value as AudioSide)}
+					>
+						{(["left", "right", "muted"] as const).map((side) => (
+							<option key={side} value={side}>
+								{t(`outputCompare.${side}`)}
+							</option>
+						))}
+					</select>
+				</label>
+				<p
+					role={state.status === "failed" ? "alert" : "status"}
+					className={`text-xs ${state.status === "failed" ? "text-amber-400" : "text-zinc-400"}`}
+				>
+					{t(`outputCompare.${state.status}`)}
+				</p>
+			</div>
+			<p className="text-xs text-zinc-500">{t("outputCompare.syncNotice")}</p>
+		</div>
+	);
+}

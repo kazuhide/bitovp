@@ -281,6 +281,12 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 		floor: "VIEWER",
 	},
 	{
+		page: "/vod/compare",
+		floor: "VIEWER",
+		api: "/api/encoding-jobs/job-1",
+		method: "GET",
+	},
+	{
 		page: "/vod/jobs/[id]",
 		floor: "VIEWER",
 		api: "/api/encoding-jobs/job-1",

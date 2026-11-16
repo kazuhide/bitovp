@@ -670,7 +670,7 @@ export async function verifyHdrQcBrowser(
 			hlg: "HLG → PQ · 1000 nits",
 			scope: "HDR base layer · RPU display mapping not measured",
 			mixed:
-				"HDR/SDR or HLG normalization differs. These scores have different measurement conditions.",
+				"HDR/SDR or HLG measurement conditions differ. Scores and charts are shown separately.",
 			violin: "VMAF distribution",
 		},
 		ja: {
@@ -682,7 +682,7 @@ export async function verifyHdrQcBrowser(
 			hlg: "HLG → PQ・1000nit",
 			scope: "HDRベース映像・RPUによる表示処理は評価対象外",
 			mixed:
-				"測定条件（HDR/SDR・HLG正規化）が異なるため、スコアを直接比較できません。",
+				"HDR/SDR または HLG の測定条件が異なるため、数値とグラフを分けて表示します。",
 			violin: "VMAF 分布",
 		},
 	};
@@ -786,12 +786,27 @@ export async function verifyHdrQcBrowser(
 				await expect(page.getByRole("checkbox")).toHaveCount(
 					comparison.name === "sdr-pq" ? sdr.results.length + 1 : 2,
 				);
-				await expect(
-					page.getByRole("figure", { name: name.violin, exact: true }),
-				).toBeVisible();
+				const figures = page.getByRole("figure", {
+					name: name.violin,
+					exact: true,
+				});
+				await expect(figures).toHaveCount(comparison.mixed ? 2 : 1);
+				for (let i = 0; i < (await figures.count()); i++)
+					await expect(figures.nth(i)).toBeVisible();
 				const warning = page.getByRole("alert").filter({ hasText: name.mixed });
-				if (comparison.mixed) await expect(warning).toBeVisible();
-				else await expect(warning).toHaveCount(0);
+				const groups = page.locator(
+					'section[aria-labelledby^="measurement-context-"]',
+				);
+				await expect(groups).toHaveCount(comparison.mixed ? 2 : 0);
+				if (comparison.mixed) {
+					await expect(warning).toBeVisible();
+					for (let i = 0; i < (await groups.count()); i++)
+						await expect(
+							groups
+								.nth(i)
+								.getByRole("figure", { name: name.violin, exact: true }),
+						).toHaveCount(1);
+				} else await expect(warning).toHaveCount(0);
 				await captureHdrUi(
 					page,
 					info,

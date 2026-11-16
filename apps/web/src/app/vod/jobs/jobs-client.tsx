@@ -443,6 +443,15 @@ export function JobsClient() {
 							{t("uiX.selectedCount", { count: visibleSelected.length })}
 						</span>
 						<div className="flex flex-wrap items-center gap-2">
+							{selectedJobs.length === 2 &&
+							selectedJobs.every((job) => job.status === "FINISHED") ? (
+								<Link
+									href={`/vod/compare?jobs=${visibleSelected.join(",")}`}
+									className="inline-flex h-8 items-center rounded-md border border-zinc-700 bg-zinc-900 px-3 font-medium text-xs text-zinc-200 hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-emerald-500"
+								>
+									{t("outputCompare.title")}
+								</Link>
+							) : null}
 							<Button
 								size="sm"
 								disabled={

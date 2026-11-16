@@ -13,6 +13,8 @@ import {
 	comparedModels,
 	comparedSubsamples,
 	fmtScore,
+	type HdrMeasurementContext,
+	hdrMeasurementContext,
 	jobShortLabel,
 	mixesHdrMeasurementContexts,
 	mixesModels,
@@ -205,6 +207,23 @@ export function CompareClient() {
 	}, [series, selected]);
 
 	const shownSeries = series.filter((s) => effectiveSelected.has(s.key));
+	const mixedHdrContexts = mixesHdrMeasurementContexts(loadedJobs);
+	const separatedGroups = mixedHdrContexts
+		? loadedJobs.flatMap((job) => {
+				const contexts = new Map<HdrMeasurementContext, CompareSeries[]>();
+				for (const item of series.filter((item) => item.jobId === job.id)) {
+					const context = hdrMeasurementContext(job, item.result);
+					const group = contexts.get(context) ?? [];
+					group.push(item);
+					contexts.set(context, group);
+				}
+				return [...contexts].map(([context, items]) => ({
+					job,
+					context,
+					series: items,
+				}));
+			})
+		: [];
 
 	function toggleSeries(key: string) {
 		const base = new Set(effectiveSelected);
@@ -319,33 +338,33 @@ export function CompareClient() {
 			/>
 			{bandingJobs.length === 0 ? (
 				<>
-					<VmafScoreLegend className="mt-3" />
-					{mixesHdrMeasurementContexts(loadedJobs) ? (
+					{!mixedHdrContexts ? <VmafScoreLegend className="mt-3" /> : null}
+					{mixedHdrContexts ? (
 						<p role="alert" className="mt-3 text-amber-400 text-xs">
-							{t("qc.mixedHdrContexts")}
+							{t("qc.separateHdrContexts")}
 						</p>
 					) : null}
-					{mixesReferenceCanvases(loadedJobs) ? (
+					{!mixedHdrContexts && mixesReferenceCanvases(loadedJobs) ? (
 						<p role="alert" className="mt-3 text-amber-400 text-xs">
 							{t("qc.mixedReferenceCanvases")}
 						</p>
 					) : null}
 
-					{mixesScoringGenerations(loadedJobs) ? (
+					{!mixedHdrContexts && mixesScoringGenerations(loadedJobs) ? (
 						<p role="alert" className="mt-3 text-amber-400 text-xs">
 							{t("qc.mixedScoringGenerations", {
 								generations: scoringGenerations(loadedJobs).join(", "),
 							})}
 						</p>
 					) : null}
-					{mixesModels(loadedJobs) ? (
+					{!mixedHdrContexts && mixesModels(loadedJobs) ? (
 						<p role="alert" className="mt-3 text-amber-400 text-xs">
 							{t("qc.mixedModels", {
 								models: comparedModels(loadedJobs).join(", "),
 							})}
 						</p>
 					) : null}
-					{mixesSubsampling(loadedJobs) ? (
+					{!mixedHdrContexts && mixesSubsampling(loadedJobs) ? (
 						<p role="alert" className="mt-3 text-amber-400 text-xs">
 							{t("qc.mixedSubsampling", {
 								strides: comparedSubsamples(loadedJobs).join(", "),
@@ -399,6 +418,53 @@ export function CompareClient() {
 				</p>
 			) : bandingJobs.length ? (
 				<BandingReportComparison jobs={bandingJobs} />
+			) : mixedHdrContexts ? (
+				separatedGroups.map((group) => {
+					const keys = new Set(group.series.map((item) => item.key));
+					const selected = new Set(
+						[...effectiveSelected].filter((key) => keys.has(key)),
+					);
+					const headingId = `measurement-context-${group.job.id}-${group.context}`;
+					const contextLabels = {
+						SDR: "qc.measurementSdr",
+						HDR_PQ: "qc.measurementHdrPq",
+						HDR_HLG_PQ_1000: "qc.measurementHdrHlg",
+						HDR_UNVERIFIED: "qc.measurementHdrUnverified",
+					} as const;
+					return (
+						<section
+							key={headingId}
+							aria-labelledby={headingId}
+							className="mt-6"
+						>
+							<h2 id={headingId} className="font-medium text-sm text-zinc-200">
+								{group.series[0]?.jobLabel} · {t(contextLabels[group.context])}
+							</h2>
+							<VmafScoreLegend className="mt-2" />
+							<SeriesLegend
+								className="mt-3"
+								series={group.series}
+								selected={selected}
+								onToggle={toggleSeries}
+								onAll={(on) => {
+									const next = new Set(effectiveSelected);
+									for (const key of keys) {
+										if (on) next.add(key);
+										else next.delete(key);
+									}
+									setSelected(next);
+								}}
+							/>
+							<ReportFrameComparison
+								jobs={[group.job]}
+								series={group.series}
+								shownSeries={group.series.filter((item) =>
+									selected.has(item.key),
+								)}
+							/>
+						</section>
+					);
+				})
 			) : (
 				<>
 					<SeriesLegend
@@ -475,15 +541,17 @@ function SeriesLegend({
 	selected,
 	onToggle,
 	onAll,
+	className = "mt-6",
 }: {
 	series: CompareSeries[];
 	selected: Set<string>;
 	onToggle: (key: string) => void;
 	onAll: (on: boolean) => void;
+	className?: string;
 }) {
 	const { t } = useT();
 	return (
-		<div className="mt-6 rounded-lg border border-zinc-800">
+		<div className={`${className} rounded-lg border border-zinc-800`}>
 			<div className="flex items-center justify-between border-zinc-800 border-b px-3 py-2">
 				<span className="font-medium text-xs text-zinc-400">
 					{t("uiX.seriesShown", {

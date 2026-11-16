@@ -43,6 +43,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	tx.librarySource.findUnique.mockResolvedValue({
 		id: sourceId,
+		sourceKind: "VOD_JOB",
 		locales: ["en"],
 	});
 	tx.sceneAnalysisRevision.findFirst.mockResolvedValue({ id: "analysis" });
@@ -186,6 +187,136 @@ describe("library writes", () => {
 			),
 		).rejects.toMatchObject({ status: 409 });
 		expect(tx.contentRevision.create).not.toHaveBeenCalled();
+	});
+	it.each([
+		{},
+		{ locale: "en" },
+	])("edits derived-render metadata while retaining its inherited locale (%j)", async (localeUpdate) => {
+		tx.librarySource.findUnique.mockResolvedValue({
+			id: sourceId,
+			sourceKind: "DERIVED_RENDER",
+			locales: [],
+			state: "READY",
+		});
+		tx.content.findUnique.mockResolvedValue(row);
+		const metadata = {
+			title: "Meridian｜英語音声＋日本語字幕（44.9秒）",
+			description: "Edited library description",
+			tags: ["Meridian", "English audio", "Japanese subtitles"],
+		};
+		await updateContent(
+			prisma,
+			contentId,
+			contentUpdateSchema.parse({
+				expectedRevision: 1,
+				...metadata,
+				...localeUpdate,
+			}),
+			"test",
+		);
+		expect(tx.content.updateMany).toHaveBeenCalledWith({
+			where: { id: contentId, revision: 1 },
+			data: { ...metadata, locale: "en", archived: false, revision: 2 },
+		});
+		expect(tx.contentRevision.create).toHaveBeenCalledWith({
+			data: {
+				contentId,
+				sourceId,
+				revision: 2,
+				...metadata,
+				locale: "en",
+				createdBy: "test",
+			},
+		});
+	});
+	it.each([
+		{
+			sourceKind: "DERIVED_RENDER",
+			locales: [],
+			currentLocale: "en",
+			locale: "ja",
+		},
+		{ sourceKind: "VOD_JOB", locales: [], currentLocale: "en", locale: "en" },
+		{
+			sourceKind: "VOD_JOB",
+			locales: ["en"],
+			currentLocale: "en",
+			locale: "ja",
+		},
+		{
+			sourceKind: "DERIVED_RENDER",
+			locales: ["en"],
+			currentLocale: "ja",
+			locale: "ja",
+		},
+	])("rejects unavailable locales for $sourceKind ($locales -> $locale)", async ({
+		sourceKind,
+		locales,
+		currentLocale,
+		locale,
+	}) => {
+		tx.librarySource.findUnique.mockResolvedValue({
+			id: sourceId,
+			sourceKind,
+			locales,
+		});
+		tx.content.findUnique.mockResolvedValue({ ...row, locale: currentLocale });
+		await expect(
+			updateContent(
+				prisma,
+				contentId,
+				contentUpdateSchema.parse({ expectedRevision: 1, locale }),
+				null,
+			),
+		).rejects.toMatchObject({ status: 400 });
+		expect(tx.content.updateMany).not.toHaveBeenCalled();
+		expect(tx.contentRevision.create).not.toHaveBeenCalled();
+	});
+	it("does not admit inherited locales when registering a derived source", async () => {
+		tx.librarySource.findUnique.mockResolvedValue({
+			id: sourceId,
+			sourceKind: "DERIVED_RENDER",
+			locales: [],
+		});
+		await expect(
+			registerContent(prisma, contentRegisterSchema.parse(input), null),
+		).rejects.toMatchObject({ status: 400 });
+		expect(tx.content.create).not.toHaveBeenCalled();
+		expect(tx.contentRevision.create).not.toHaveBeenCalled();
+	});
+	it.each([
+		1, 0,
+	])("keeps the derived-render archive revision fence (updated rows: %s)", async (count) => {
+		tx.librarySource.findUnique.mockResolvedValue({
+			id: sourceId,
+			sourceKind: "DERIVED_RENDER",
+			locales: [],
+		});
+		tx.content.findUnique.mockResolvedValue(row);
+		tx.content.updateMany.mockResolvedValue({ count });
+		const result = updateContent(
+			prisma,
+			contentId,
+			contentUpdateSchema.parse({ expectedRevision: 1, archived: true }),
+			"test",
+		);
+		if (!count) {
+			await expect(result).rejects.toMatchObject({ status: 409 });
+			expect(tx.contentRevision.create).not.toHaveBeenCalled();
+			return;
+		}
+		await result;
+		expect(tx.content.updateMany).toHaveBeenCalledWith({
+			where: { id: contentId, revision: 1 },
+			data: expect.objectContaining({
+				locale: "en",
+				archived: true,
+				revision: 2,
+			}),
+		});
+		expect(tx.contentRevision.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({ sourceId, revision: 2, locale: "en" }),
+		});
 	});
 	it("archives with a new immutable revision, preserving source", async () => {
 		tx.content.findUnique.mockResolvedValue(row);

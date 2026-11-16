@@ -59,6 +59,7 @@ describe("GET /api/encoding-error-definitions", () => {
 			ctx,
 			ID,
 			expect.any(AbortSignal),
+			expect.any(Function),
 		);
 		expect(list).not.toHaveBeenCalled();
 	});

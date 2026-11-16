@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-16T02:53:22.683Z",
-		"sourceCommit": "32910bd11f0221ad09288c0051ec8810bf7bd3b7",
-		"sourceFingerprint": "4e2ff1919414a0a5e64b878084362e0855f76639b7ea13af67d129e4fc11728e",
+		"generatedAt": "2026-11-16T03:10:05.476Z",
+		"sourceCommit": "e1f9a136e9b2d19f315a7949c84ec27a7e42b1ae",
+		"sourceFingerprint": "3a0634cfbb166aad528eba54ccfd0a136e9364187490d4699d638331f1a3510c",
 		"sdkVersion": "1.288.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "062c5c8a30072d4d3330028f0cab877d9f7183138b08fa4a7de22f4b69853f04",
@@ -5880,7 +5880,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/encoding-error-definitions/route.ts",
-					"line": 42
+					"line": 58
 				}
 			]
 		},

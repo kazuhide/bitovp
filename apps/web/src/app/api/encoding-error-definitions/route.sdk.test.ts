@@ -96,4 +96,33 @@ describe("Error Definitions through the installed SDK transport", () => {
 		);
 		expect((await GET(req())).status).toBe(502);
 	});
+
+	it.each([
+		{},
+		{ items: null },
+		{ items: false },
+		{ items: 0 },
+		{ items: "" },
+		{ items: {} },
+	])("does not mistake SDK-normalized missing items for a known empty catalogue %#", async (fields) => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => providerResponse({ totalCount: 0, ...fields })),
+		);
+		const response = await GET(req());
+		expect(response.status).toBe(502);
+		expect(await response.json()).toEqual({
+			error: "Invalid encoding error catalogue from Bitmovin",
+		});
+	});
+
+	it("accepts an explicitly empty raw item array", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => providerResponse({ totalCount: 0, items: [] })),
+		);
+		const response = await GET(req());
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ totalCount: 0, items: [] });
+	});
 });

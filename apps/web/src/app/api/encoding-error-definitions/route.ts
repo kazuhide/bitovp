@@ -30,6 +30,22 @@ const pageSchema = z.object({
 
 class InvalidCatalogueError extends Error {}
 
+const responseSchema = z.object({ data: z.object({ result: pageSchema }) });
+
+async function validateProviderResponse(_url: string, response: Response) {
+	if (!response.ok) return;
+	// The SDK maps absent/null/falsy `items` to [], losing evidence that the
+	// response is incomplete. Validate the original JSON before model mapping.
+	let body: unknown;
+	try {
+		body = await response.clone().json();
+	} catch {
+		throw new InvalidCatalogueError();
+	}
+	if (!responseSchema.safeParse(body).success)
+		throw new InvalidCatalogueError();
+}
+
 /** A complete, validated catalogue, never a truncated page labelled as complete. */
 async function readCatalogue(api: BitmovinApi, signal: AbortSignal) {
 	const items: z.infer<typeof definitionSchema>[] = [];
@@ -74,12 +90,23 @@ export async function GET(req: Request) {
 		const timeout = new AbortController();
 		const timer = setTimeout(() => timeout.abort(), TIMEOUT_MS);
 		const signal = AbortSignal.any([req.signal, timeout.signal]);
+		let invalidResponse = false;
 		try {
 			signal.throwIfAborted();
 			const api = await bitmovinClientForAccount(
 				ctx,
 				query.data.bitmovinAccountId,
 				signal,
+				async (url, response) => {
+					try {
+						await validateProviderResponse(url, response);
+					} catch (err) {
+						// The SDK wraps transport errors. Preserve our rejection reason
+						// without relying on its internal error/cause representation.
+						invalidResponse = true;
+						throw err;
+					}
+				},
 			);
 			if (!api) return jsonError(404, "Bitmovin account not found");
 			try {
@@ -89,7 +116,7 @@ export async function GET(req: Request) {
 				});
 			} catch (err) {
 				if (signal.aborted) throw err;
-				if (err instanceof InvalidCatalogueError) {
+				if (invalidResponse || err instanceof InvalidCatalogueError) {
 					return jsonError(
 						502,
 						"Invalid encoding error catalogue from Bitmovin",

@@ -28,6 +28,8 @@ server設定 `BITOVP_AISA_LIVE_PREVIEW=true` と `BITOVP_AISA_LIVE_PREVIEW_USER_
 
 終了結果の取り込みは読み取り専用とする。選択した過去 run は解析と録画だけに適用し、配信の停止等は常に現在の run を対象とする。`?runId=...#sec-analysis`、VIEWER 投影、ingest とログの権限境界を維持する。VIEWER にも安全な入力/出力の監視値を返し、接続情報・未検証の raw telemetry は返さない。320 / 768 / 1024 / 1440px の画面、通常配信との分岐、初回未検出・履歴選択を検証する。
 
+取り込み時は同じ account の Analysis と backing Encoding がそれぞれ `FINISHED` または `ERROR` であり、対応する最終 snapshot があることを独立に確認する。両方が `FINISHED` の場合は `STOPPED`、どちらかが `ERROR` の場合は channel/run ともに `ERROR` として保存し、実際の provider 状態と取得済みのキーモーメントを保持する。最終結果が存在しても、正常終了したものとして扱わない。取り込みで provider の変更や新規配信を行わない。
+
 ### 監視画面の復元の受け入れ条件（2026-11-08）
 
 - AISA 有効時も通常の配信状態・次の操作・入力/エンコーダー/出力診断・アラート・heartbeat 履歴へ移動できる。

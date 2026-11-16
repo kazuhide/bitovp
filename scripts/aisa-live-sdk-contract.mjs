@@ -6,7 +6,7 @@ import test from "node:test";
 // Explicit opt-in check: this script never loads production credentials or sends requests.
 const require = createRequire(import.meta.url);
 const packageName = "@bitmovin-internal/api-sdk";
-const expectedVersion = "1.288.0-develop.02b690c6";
+const expectedVersion = "1.289.0-develop.4d2bbf1d";
 const configuredPath = process.env.BITOVP_AISA_LIVE_SDK_PATH?.trim();
 const modulePath = configuredPath ? resolve(configuredPath) : packageName;
 let SDK;
@@ -47,7 +47,10 @@ function client(transport, headers = {}) {
 test("the public SDK and pinned preview SDK coexist without replacing each other", () => {
 	const publicRequire = createRequire(new URL("../apps/web/package.json", import.meta.url));
 	const publicSDK = publicRequire("@bitmovin/api-sdk");
-	assert.equal(publicRequire("@bitmovin/api-sdk/package.json").version, "1.287.0");
+	assert.equal(
+		publicRequire("@bitmovin/api-sdk/package.json").version,
+		publicRequire("./package.json").dependencies["@bitmovin/api-sdk"],
+	);
 	const option = { analysisId, outputs };
 	assert.equal(
 		Object.hasOwn(new publicSDK.StartLiveEncodingRequest({ aiSceneAnalysisLive: option }), "aiSceneAnalysisLive"),
@@ -93,6 +96,31 @@ for (const [label, Input, values, expected] of [
 	});
 }
 
+test("HLS creation preserves feature selection and requested versus effective clocks", async () => {
+	const request = {
+		name: "Synthetic HLS clock", input: { type: "HLS", url: "https://example.invalid/live.m3u8" },
+		features: { skipAdvertisements: true }, clockSource: "MANIFEST_WALL_CLOCK",
+		recording, outputs,
+	};
+	const warning = {
+		code: "LIVE_ANALYSIS_CLOCK_SOURCE_FALLBACK", message: "Synthetic clock fallback",
+		timestamp: "2026-11-16T00:00:00.000Z",
+	};
+	const api = client(async (url, init) => {
+		assert.equal(String(url), `${apiBase}/ai-scene-analysis/live-analyses`);
+		assert.deepEqual(JSON.parse(init.body), request);
+		return envelope({
+			analysisId, encodingId, features: request.features, clockSource: request.clockSource,
+			effectiveClockSource: "SYSTEM_CLOCK", warnings: [warning],
+		});
+	});
+	const result = await api.aiSceneAnalysis.liveAnalyses.create(new SDK.AiSceneAnalysisLiveCreateRequest(request));
+	assert.deepEqual(plain(result.features), request.features);
+	assert.equal(result.clockSource, "MANIFEST_WALL_CLOCK");
+	assert.equal(result.effectiveClockSource, "SYSTEM_CLOCK");
+	assert.deepEqual(plain(result.warnings), [warning]);
+});
+
 test("Start and Stop are bodyless and support component headers independently of encoderVersion", async () => {
 	for (const action of ["start", "stop"]) {
 		const api = client(async (url, init) => {
@@ -124,7 +152,9 @@ test("latest results preserve key moments, unknown categories, observations and 
 		producedAt: "2026-11-07T00:00:00Z", mediaTimeOriginUnixMs: 1794009600000,
 		analyzedStartTimeSeconds: 0, analyzedEndTimeSeconds: 20,
 		metadata: { version: "synthetic", disclaimer: "Synthetic fixture" },
-		sourceGaps: [], observations: [observation], keyMoments: [moment],
+		effectiveClockSource: "MANIFEST_WALL_CLOCK",
+		sourceGaps: [{ startTimeSeconds: 10, endTimeSeconds: 12, reason: "ANALYSIS_LAG" }],
+		observations: [observation], keyMoments: [moment],
 	};
 	const api = client(async (url, init) => {
 		assert.equal(String(url), `${apiBase}/ai-scene-analysis/live-analyses/${analysisId}/results/latest`);
@@ -136,6 +166,21 @@ test("latest results preserve key moments, unknown categories, observations and 
 	assert.deepEqual(plain(result.keyMoments[0]), moment);
 	assert.deepEqual(plain(result.metadata), snapshot.metadata);
 	assert.equal(result.mediaTimeOriginUnixMs, snapshot.mediaTimeOriginUnixMs);
+	assert.equal(result.effectiveClockSource, snapshot.effectiveClockSource);
+	assert.deepEqual(plain(result.sourceGaps), snapshot.sourceGaps);
+});
+
+test("service-managed media descriptors use the tenant-authenticated API", async () => {
+	const media = { hlsUrl: "https://api.bitmovin.com/v1/synthetic/recording.m3u8" };
+	const api = client(async (url, init) => {
+		assert.equal(String(url), `${apiBase}/ai-scene-analysis/live-analyses/${analysisId}/media`);
+		assert.equal(init.method, "GET");
+		const headers = new Headers(init.headers);
+		assert.equal(headers.get("X-Api-Key"), "synthetic-test-key");
+		assert.equal(headers.get("X-Tenant-Org-Id"), "synthetic-tenant");
+		return envelope(media);
+	});
+	assert.deepEqual(plain(await api.aiSceneAnalysis.liveAnalyses.media.get(analysisId)), media);
 });
 
 test("result-not-ready retains the documented machine-readable error code", async () => {

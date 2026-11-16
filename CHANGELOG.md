@@ -21,6 +21,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- Read explicitly declared P3 D65/PQ RGB MXF references without footer seeking, accept their missing color tags, and require complete frame timing before HDR VMAF scoring. Preserve the admitted HDR decoder allocation when CAMBI is also enabled.
 - Avoid periodically waking local GPUs during clip-readiness checks. Background checks use runtime and device-access metadata; new inference jobs and their execution each require fresh native GPU discovery. Missing devices or permissions keep clip editing unavailable.
 - Keep clip projects editable when a subtitle paragraph has no measured timing anchor or its words fall wholly outside observed speech in a fully inspected audio range. Only that paragraph is omitted, with source context available in the editor; verified subtitles and the selected story remain intact. Missing observation coverage stays unknown and never becomes a silence claim.
 - Check native clip-generation dependencies before long analysis, including the pinned ASR/VAD models, quality-adapter CLI, caption-alignment runtime, actual subtitle rendering and writable storage. Settings show component failures separately from local-model readiness; a shared CLI reports the effective service execution context for deployment preflight.

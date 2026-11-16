@@ -75,7 +75,8 @@ export function hdrInputFromProbe(
 	declared?: HdrReferenceColor,
 ): HdrInput {
 	if (text.length > 1_048_576) throw new Error("HDR_PROBE_LIMIT");
-	const streams: unknown = record(JSON.parse(text))?.streams;
+	const probe = record(JSON.parse(text));
+	const streams: unknown = probe?.streams;
 	const videos = Array.isArray(streams)
 		? streams.map(record).filter((v) => v?.codec_type === "video")
 		: [];
@@ -167,7 +168,31 @@ export function hdrInputFromProbe(
 			: range !== "limited" || matrix !== "bt2020nc" || primaries !== "bt2020"
 	)
 		throw new Error("HDR_COLOR_SPACE_UNSUPPORTED");
-	const frameRate = String(video.avg_frame_rate);
+	let frameRate = String(video.avg_frame_rate);
+	// Some declared RGB MXF streams expose only a nominal edit rate. This is
+	// a candidate clock: the HDR runner must validate every PTS/duration and
+	// every declared edit unit before starting the scorer. Never rewrite avg.
+	if (
+		declared === "P3_D65_PQ_RGB_FULL" &&
+		role === "reference" &&
+		rgb &&
+		record(probe?.format)?.format_name === "mxf" &&
+		frameRate === "0/0" &&
+		typeof video.r_frame_rate === "string" &&
+		/^[1-9]\d{0,7}\/[1-9]\d{0,7}$/.test(video.r_frame_rate) &&
+		typeof video.time_base === "string" &&
+		/^[1-9]\d{0,7}\/[1-9]\d{0,7}$/.test(video.time_base) &&
+		typeof video.duration_ts === "number" &&
+		Number.isSafeInteger(video.duration_ts) &&
+		video.duration_ts > 0 &&
+		video.duration_ts <= 500_000
+	) {
+		const [rateNum = 0n, rateDen = 0n] = video.r_frame_rate
+			.split("/")
+			.map(BigInt);
+		const [tickNum = 0n, tickDen = 0n] = video.time_base.split("/").map(BigInt);
+		if (rateNum * tickNum === rateDen * tickDen) frameRate = video.r_frame_rate;
+	}
 	const parts = frameRate.split("/").map(Number);
 	const rate = (parts[0] ?? 0) / (parts[1] ?? 0);
 	if (

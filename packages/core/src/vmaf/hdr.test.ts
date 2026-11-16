@@ -181,6 +181,38 @@ describe("native HDR QC protocol", () => {
 			),
 		).toThrow("HDR_FRAME_RATE_UNSUPPORTED");
 	});
+	it("takes a provisional nominal clock only from an explicitly declared RGB MXF with one exact frame tick", () => {
+		const source = {
+			...meridianHeader.streams[0],
+			duration_ts: 43093,
+		};
+		const mxf = {
+			streams: [source],
+			format: { format_name: "mxf" },
+		};
+		expect(
+			hdrInputFromProbe(JSON.stringify(mxf), "reference", "P3_D65_PQ_RGB_FULL"),
+		).toMatchObject({
+			frameRate: "60000/1001",
+			attributeSource: "P3_D65_PQ_RGB_FULL",
+		});
+		expect(source.avg_frame_rate).toBe("0/0");
+		for (const changed of [
+			{ ...mxf, format: { format_name: "mov,mp4,m4a,3gp,3g2,mj2" } },
+			{ ...mxf, streams: [{ ...source, time_base: "1/90000" }] },
+			{ ...mxf, streams: [{ ...source, duration_ts: undefined }] },
+			{ ...mxf, streams: [{ ...source, duration_ts: 0 }] },
+			{ ...mxf, streams: [{ ...source, r_frame_rate: "0/0" }] },
+			{ ...mxf, streams: [{ ...source, avg_frame_rate: "24/1" }] },
+		])
+			expect(() =>
+				hdrInputFromProbe(
+					JSON.stringify(changed),
+					"reference",
+					"P3_D65_PQ_RGB_FULL",
+				),
+			).toThrow("HDR_FRAME_RATE_UNSUPPORTED");
+	});
 	it.each([
 		{ color_primaries: "bt2020" },
 		{ color_transfer: "arib-std-b67" },

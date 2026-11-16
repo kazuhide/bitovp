@@ -90,6 +90,7 @@ import {
 	pixelFormatFromProbe,
 } from "./geometry";
 import type { DecodePolicy } from "./hardware-decode";
+import { hdrReferenceInputOptions } from "./hdr-reference-input";
 import { runHdrVmafScore } from "./hdr-score";
 import { acquireHlsQcOutput } from "./hls-source";
 import type {
@@ -2160,15 +2161,30 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						destPath: referencePath,
 						label: `reference source for rendition ${target.renditionKey} (input "${target.reference.inputKey}")`,
 					});
+					const referenceInputOptions = hdr
+						? await hdrReferenceInputOptions(
+								referencePath,
+								paramsAcc.hdrReferenceColor === "P3_D65_PQ_RGB_FULL"
+									? paramsAcc.hdrReferenceColor
+									: undefined,
+								signal,
+							)
+						: [];
 					const probe = await runner.run(
-						deps.ffprobePath,
+						referenceInputOptions.length
+							? jobDeps.ffprobePath
+							: deps.ffprobePath,
 						[
 							"-v",
 							"error",
 							"-print_format",
 							"json",
 							"-show_streams",
-							...(!isCloud && deps.localResources ? ["-show_format"] : []),
+							...(referenceInputOptions.length ||
+							(!isCloud && deps.localResources)
+								? ["-show_format"]
+								: []),
+							...referenceInputOptions,
 							referencePath,
 						],
 						{ signal },

@@ -496,7 +496,11 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 		// Measured from the combined clip and AISA Live route exporters.
 		// Manual VOD preparation adds 3 route files / 5 handlers, all OPERATOR.
 		// Fixed sources add two route files / three OPERATOR handlers.
-		expect(guarded.length).toBe(193);
-		expect(methods.length).toBe(271);
+		// Error Definitions adds one read-only, account-scoped VIEWER route.
+		expect(
+			evaluateRole("VIEWER", "/api/encoding-error-definitions", "GET").allowed,
+		).toBe(true);
+		expect(guarded.length).toBe(194);
+		expect(methods.length).toBe(272);
 	});
 });

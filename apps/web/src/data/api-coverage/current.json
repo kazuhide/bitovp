@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-15T23:32:29.055Z",
-		"sourceCommit": "dab100c07170e0446e6da7fd9d33c2259d5bdb41",
-		"sourceFingerprint": "2543b5ee083d7fe623b55e0168b274570384efd3d670dc09786bbb2886e0aceb",
+		"generatedAt": "2026-11-16T03:10:05.476Z",
+		"sourceCommit": "e1f9a136e9b2d19f315a7949c84ec27a7e42b1ae",
+		"sourceFingerprint": "3a0634cfbb166aad528eba54ccfd0a136e9364187490d4699d638331f1a3510c",
 		"sdkVersion": "1.288.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "062c5c8a30072d4d3330028f0cab877d9f7183138b08fa4a7de22f4b69853f04",
@@ -12,8 +12,8 @@
 	},
 	"summary": {
 		"totalOperations": 1094,
-		"sourceConfirmed": 283,
-		"unconfirmed": 811,
+		"sourceConfirmed": 284,
+		"unconfirmed": 810,
 		"createTotal": 218,
 		"createSourceConfirmed": 129
 	},
@@ -33,8 +33,8 @@
 		{
 			"family": "errorDefinitions",
 			"total": 1,
-			"sourceConfirmed": 0,
-			"unconfirmed": 1
+			"sourceConfirmed": 1,
+			"unconfirmed": 0
 		},
 		{
 			"family": "filters",
@@ -5876,8 +5876,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.errorDefinitions.list",
 			"family": "errorDefinitions",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/app/api/encoding-error-definitions/route.ts",
+					"line": 58
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/{filter_id}",

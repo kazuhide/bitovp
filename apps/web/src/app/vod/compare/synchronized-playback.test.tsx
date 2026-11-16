@@ -59,6 +59,7 @@ function device() {
 }
 let left = device();
 let right = device();
+let center = device();
 vi.mock("../jobs/[id]/playback-surface", () => ({
 	PlaybackSurface: ({
 		url,
@@ -68,7 +69,13 @@ vi.mock("../jobs/[id]/playback-surface", () => ({
 		onControl: (control: PlaybackControl | null) => void;
 	}) => {
 		useEffect(() => {
-			onControl(url.includes("left") ? left.control : right.control);
+			onControl(
+				url.includes("left")
+					? left.control
+					: url.includes("center")
+						? center.control
+						: right.control,
+			);
 			return () => onControl(null);
 		}, [url, onControl]);
 		return <div data-testid="player-placeholder" />;
@@ -103,6 +110,38 @@ const outputs = [
 beforeEach(() => {
 	left = device();
 	right = device();
+	center = device();
+});
+
+it("binds all three columns to common controls and center audio", async () => {
+	const thirdOutput = {
+		...outputs[1],
+		jobId: "center",
+		heading: <h2>Center output</h2>,
+		link: { ...outputs[1].link, url: "https://media.example.test/center.m3u8" },
+	};
+	renderLocalized(
+		<SynchronizedPlayback outputs={[outputs[0], thirdOutput, outputs[1]]} />,
+	);
+	const play = await screen.findByRole("button", { name: "Play together" });
+	await waitFor(() => expect(play).toBeEnabled());
+	expect(screen.getByLabelText("Video quality Center")).toHaveValue("4k");
+	const user = userEvent.setup();
+	await user.click(play);
+	expect([left, center, right].every((device) => !device.state.paused)).toBe(
+		true,
+	);
+	await user.selectOptions(screen.getByLabelText("Audio"), "center");
+	expect(left.control.mute).toHaveBeenLastCalledWith(true);
+	expect(center.control.mute).toHaveBeenLastCalledWith(false);
+	expect(right.control.mute).toHaveBeenLastCalledWith(true);
+	await user.click(screen.getByRole("button", { name: "Pause together" }));
+	fireEvent.change(screen.getByLabelText("Playback position (seconds)"), {
+		target: { value: "12.5" },
+	});
+	expect([left, center, right].map((device) => device.state.time)).toEqual([
+		12.5, 12.5, 12.5,
+	]);
 });
 
 it("binds common controls, advertised 4K selection and one audible side to both players", async () => {

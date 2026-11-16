@@ -122,8 +122,8 @@ describe("catalogue parity", () => {
 		// Runtime measurement includes synchronized-output and separated-QC guidance.
 		pinWithDriftAid(long.length, 1661, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		// Runtime measurement includes synchronized-output labels (deduplicated).
-		pinWithDriftAid(short.size, 3274, "short");
+		// Runtime measurement includes three-way output labels (deduplicated).
+		pinWithDriftAid(short.size, 3276, "short");
 	});
 
 	/**

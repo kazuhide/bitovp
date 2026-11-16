@@ -15,11 +15,17 @@ export type OutputLink = ManifestPlaybackLink & {
 
 export function parseOutputJobIds(raw: string | null): string[] {
 	const ids = raw?.split(",").map((id) => id.trim().toLowerCase()) ?? [];
-	return ids.length === 2 &&
+	return (ids.length === 2 || ids.length === 3) &&
 		ids.every((id) => z.uuid().safeParse(id).success) &&
-		ids[0] !== ids[1]
+		new Set(ids).size === ids.length
 		? ids
 		: [];
+}
+
+export function outputSides(count: number) {
+	return count === 3
+		? (["left", "center", "right"] as const)
+		: (["left", "right"] as const);
 }
 
 export function outputLinks(job?: OutputJob): OutputLink[] {

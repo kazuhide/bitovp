@@ -7,7 +7,7 @@ const PROVISIONS_AT_CREATE =
 export const ja = {
 	outputCompare: {
 		title: "出力を比較",
-		pickTwo: "VOD 一覧で完了したジョブを二つ選び、出力を比較できます。",
+		pickTwo: "VOD 一覧で完了したジョブを二つか三つ選び、出力を比較できます。",
 		loading: "出力を読み込み中",
 		unavailable:
 			"この出力は利用できません。ジョブの状態と再生リンクを確認してください。",
@@ -19,12 +19,16 @@ export const ja = {
 		fixed: "{height}p・固定",
 		audio: "音声",
 		left: "左",
+		center: "中央",
 		right: "右",
 		muted: "消音",
 		play: "同時に再生",
 		pause: "同時に停止",
+		playAll: "同時に再生",
+		pauseAll: "同時に停止",
 		seek: "再生位置（秒）",
 		waiting: "両方の出力を待機中",
+		waitingAll: "すべての出力を待機中",
 		ready: "再生準備完了",
 		playing: "同期再生中",
 		failed: "再生を停止しました。失敗した出力を再試行してください。",

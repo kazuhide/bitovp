@@ -1,5 +1,6 @@
 "use client";
 
+import type { PlayerClientConfig } from "@bitovp/core";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -7,6 +8,8 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
+import { OutputComparison } from "../../vod/compare/output-compare-client";
+import { parseOutputJobIds } from "../../vod/compare/output-selection";
 import { VmafScoreLegend } from "../vmaf-score-legend";
 import {
 	type BandingJobDetail,
@@ -80,7 +83,7 @@ function parseJobIds(raw: string | null): string[] {
  * in both charts. One job failing (404 / error) is noted and skipped; the rest
  * still render.
  */
-export function CompareClient() {
+export function CompareClient({ player }: { player?: PlayerClientConfig }) {
 	const { t } = useT();
 	const queryClient = useQueryClient();
 	const params = useSearchParams();
@@ -329,6 +332,15 @@ export function CompareClient() {
 	const comparisonSeriesCount = bandingJobs.length
 		? bandingJobs.reduce((count, job) => count + job.results.length, 0)
 		: series.length;
+	const outputJobIds =
+		!loading &&
+		failedIds.length === 0 &&
+		loadedReports.length === jobIds.length &&
+		loadedReports.every((job) => job.mode === "VOD" && job.encodingJobId)
+			? parseOutputJobIds(
+					[...new Set(loadedReports.map((job) => job.encodingJobId))].join(","),
+				)
+			: [];
 
 	return (
 		<section>
@@ -336,6 +348,19 @@ export function CompareClient() {
 				jobCount={loadedReports.length}
 				seriesCount={comparisonSeriesCount}
 			/>
+			{outputJobIds.length >= 2 ? (
+				<section className="mt-5" aria-label={t("outputCompare.title")}>
+					<h2 className="font-medium text-sm text-zinc-200">
+						{t("outputCompare.title")}
+					</h2>
+					<OutputComparison
+						key={outputJobIds.join(",")}
+						jobIds={outputJobIds}
+						player={player}
+						path="/qc/compare"
+					/>
+				</section>
+			) : null}
 			{bandingJobs.length === 0 ? (
 				<>
 					{!mixedHdrContexts ? <VmafScoreLegend className="mt-3" /> : null}

@@ -443,7 +443,7 @@ export function JobsClient() {
 							{t("uiX.selectedCount", { count: visibleSelected.length })}
 						</span>
 						<div className="flex flex-wrap items-center gap-2">
-							{selectedJobs.length === 2 &&
+							{(selectedJobs.length === 2 || selectedJobs.length === 3) &&
 							selectedJobs.every((job) => job.status === "FINISHED") ? (
 								<Link
 									href={`/vod/compare?jobs=${visibleSelected.join(",")}`}

@@ -64,6 +64,57 @@ function output(time = 0, duration = 120) {
 afterEach(() => vi.useRealTimers());
 
 describe("synchronized output playback", () => {
+	it("synchronizes both followers and selects one audible output in a three-way comparison", async () => {
+		const left = output(10, 120);
+		const center = output(10, 100);
+		const right = output(8, 80);
+		const sync = synchronizePlayback(
+			[left.control, center.control, right.control],
+			vi.fn(),
+		);
+		try {
+			await sync.play();
+			expect(right.state.time).toBe(10);
+			center.change({ time: 9 });
+			expect(center.state.time).toBe(10);
+			expect(sync.read().duration).toBe(80);
+			sync.audio("right");
+			expect(left.control.mute).toHaveBeenLastCalledWith(true);
+			expect(center.control.mute).toHaveBeenLastCalledWith(true);
+			expect(right.control.mute).toHaveBeenLastCalledWith(false);
+			sync.audio("center");
+			expect(center.control.mute).toHaveBeenLastCalledWith(false);
+			expect(right.control.mute).toHaveBeenLastCalledWith(true);
+			sync.seek(90);
+			expect(left.state.time).toBeLessThan(80);
+			expect(center.state.time).toBe(left.state.time);
+			expect(right.state.time).toBe(left.state.time);
+		} finally {
+			sync.dispose();
+		}
+	});
+	it("waits for the third output and stops every output if it fails", async () => {
+		const devices = [output(), output(), output()] as const;
+		const sync = synchronizePlayback(
+			[devices[0].control, devices[1].control, devices[2].control],
+			vi.fn(),
+		);
+		try {
+			await sync.play();
+			devices[2].change({ ready: false });
+			expect(sync.read()).toMatchObject({ intent: true, status: "waiting" });
+			expect(devices.every((device) => device.state.paused)).toBe(true);
+			devices[2].change({ ready: true });
+			await vi.waitFor(() =>
+				expect(devices.every((device) => !device.state.paused)).toBe(true),
+			);
+			devices[2].change({ failed: true });
+			expect(sync.read()).toMatchObject({ intent: false, status: "failed" });
+			expect(devices.every((device) => device.state.paused)).toBe(true);
+		} finally {
+			sync.dispose();
+		}
+	});
 	it("ignores an interrupted stale play rejection after a common pause", async () => {
 		const left = output();
 		const right = output();

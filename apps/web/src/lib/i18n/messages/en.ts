@@ -30,7 +30,7 @@ export const en = {
 	outputCompare: {
 		title: "Compare outputs",
 		pickTwo:
-			"Select two finished jobs from the VOD list to compare their outputs.",
+			"Select two or three finished jobs from the VOD list to compare their outputs.",
 		loading: "Loading outputs",
 		unavailable:
 			"This output is unavailable. Open the job to check its status and playback links.",
@@ -42,15 +42,20 @@ export const en = {
 		fixed: "{height}p · fixed",
 		audio: "Audio",
 		left: "Left",
+		center: "Center",
 		right: "Right",
 		muted: "Muted",
 		play: "Play both",
 		pause: "Pause both",
+		playAll: "Play together",
+		pauseAll: "Pause together",
 		seek: "Playback position (seconds)",
 		waiting: "Waiting for both outputs",
+		waitingAll: "Waiting for all outputs",
 		ready: "Ready",
 		playing: "Playing together",
-		failed: "Playback stopped. Retry the failed output before playing both.",
+		failed:
+			"Playback stopped. Retry the failed output before playing together.",
 		format: "Output settings: {format}",
 		formatUnknown: "Format not specified",
 		displayNotice:

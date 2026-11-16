@@ -32,11 +32,14 @@ not imply a control for every field.
   frames, and aspect ratios. The VOD form also exposes `crf` (constant rate
   factor); the Live form retains its fixed target bitrate requirement.
   These codec controls are separate from Per-Title bitrate bounds and from
-  keyframe intervals measured in seconds. H.264 `autoLevelSetup` remains
-  unsupported in imported plans.
+  keyframe intervals measured in seconds. H.264 `autoLevelSetup` is available
+  in advanced codec controls and imported plans, including the shared Live
+  H.264 editor.
 - AV1 exposes selected settings, including presets, automatic level setup,
-  and `dynamicRangeFormat`. The SDK also declares `maxLevel`, which current
-  plans do not accept. SDK model availability does not add a form control.
+  `maxLevel`, and `dynamicRangeFormat`. Imported plans accept AV1 level enum
+  names or API wire values; the application normalizes and serializes them.
+  A supplied `maxLevel` with automatic level setup disabled is preserved but
+  carries `PLAN_AV1_MAX_LEVEL_DISABLED`, because the limit is inactive.
 - Running Live channels offer **Encoder automatic stop** under **Maximum run
   time**. Each update replaces all three timers; blank fields disable timers.
   Check the accepted settings and the encoder's returned shutdown time before
@@ -144,6 +147,17 @@ delete operations.
 
 ## Reading the API coverage screen
 
+The coverage data has separate purposes:
+
+| Data | What it establishes |
+|---|---|
+| `current.json` | Installed SDK Encoding operations, source-resolved calls, and direct top-level body-property assignments. |
+| `contracts.json` + hash-bound shards | Versioned SDK request-type inventory: path/query/body parameters, nested model references, enums, and SDK documentation annotations. An SDK declaration does not establish API writeability or conditional requirements. |
+| `implementation-audit.json` | Bounded, manually reviewed GUI or JSON access and implementation findings, with source, contract-test, and provider-verification evidence kept separate. Items without a reviewed finding remain unconfirmed. |
+| `summary.json` | Historical GUI/JSON parameter survey. Its date, SDK version, scope, and method differ from the current inventories. |
+
+Unknown SDK implementation syntax stops the request audit for review.
+
 Settings → API coverage lists operations under `/encoding/` in the installed
 provider SDK and marks calls found in application source code as source-confirmed.
 Account, notification, and other product APIs are outside this inventory. This is not a
@@ -169,6 +183,39 @@ The separately dated historical parameter survey uses a different scope and
 method. Its GUI/JSON reachability figures have not been refreshed and must not
 be compared with the current body-model inventory. The CSV export uses the same
 operation census as this screen, including separate methods sharing one path.
+
+Request-contract and manual-audit files are repository inventories, not GUI percentages.
+
+The manually reviewed audit corrects older unsupported-field claims for H.264
+`autoLevelSetup` and AV1 `maxLevel`. Their form/schema/compiled-request paths
+and SDK serialization have contract tests. This does not qualify all enum
+choices, accounts, or encoder versions for provider execution. Where an SDK
+model combines request and response fields, read-only annotations and unknown
+writeability are recorded separately; an unannotated property is not assumed
+writable. Nested fields, query parameters, and enum choices are not included in
+the top-level direct-property ratio as though they had been audited.
+
+## Next coverage work
+
+These are separate API or GUI gaps, rather than a claim that every unconfirmed
+operation is missing:
+
+1. **Error Definitions lookup**: connect the provider's read-only error catalogue
+   to job failures; it currently has no native integration.
+2. **Native Encoding Templates**: browse/import, manage, and start provider
+   templates through tracked jobs. Presets and YAML export are separate features.
+3. **Live mirrors**: expose MSL and SFTP mirrors in forms while preserving valid
+   expert-JSON plans. Primary MSL output already has a supported authoring path.
+4. **Native Watch Folders**: add create/get/list/delete/start/stop. Current
+   **Watch folders** settings use application watch rules and a storage sweep,
+   not the provider's native API. Distinguish them to prevent duplicate starts.
+5. **Resource management**: trace unconfirmed read/list/delete, custom-data, and
+   query controls through wrappers before declaring the next implementation gap.
+
+The SDK 1.288.0 MOQ output API is a newly declared operation family to assess;
+upgrading the SDK does not make MOQ an available application destination.
+AV1 Per-Title `targetQualityCrf` is an existing field whose upstream documentation
+changed, not an operation or field newly implemented by this upgrade.
 
 A successful encode, an available manifest, and browser playback are separate
 checks. Verify the expected renditions and actual delivery after encoding;

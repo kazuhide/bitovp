@@ -1,0 +1,2989 @@
+{
+	"schemaVersion": 1,
+	"kind": "schemas",
+	"items": [
+		[
+			"encoding/configurations/audio/eac3/Eac3AudioConfigurationListQueryParams.d.ts#Eac3AudioConfigurationListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/configurations/audio/eac3/Eac3AudioConfigurationListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/audio/eac3/Eac3AudioConfigurationListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "Eac3AudioConfigurationListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/audio/eac3/Eac3AudioConfigurationListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter configuration by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "Eac3AudioConfigurationListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/audio/eac3/Eac3AudioConfigurationListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "Eac3AudioConfigurationListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/EncodingListQueryParams.d.ts#EncodingListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+					"line": 3
+				},
+				"properties": [
+					{
+						"name": "cloudRegion",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{ "kind": "string", "literal": "AWS_US_EAST_1" },
+								{ "kind": "string", "literal": "AWS_US_EAST_2" },
+								{ "kind": "string", "literal": "AWS_US_WEST_1" },
+								{ "kind": "string", "literal": "AWS_US_WEST_2" },
+								{ "kind": "string", "literal": "AWS_EU_WEST_1" },
+								{ "kind": "string", "literal": "AWS_EU_CENTRAL_1" },
+								{ "kind": "string", "literal": "AWS_AP_SOUTHEAST_1" },
+								{ "kind": "string", "literal": "AWS_AP_SOUTHEAST_2" },
+								{ "kind": "string", "literal": "AWS_AP_NORTHEAST_1" },
+								{ "kind": "string", "literal": "AWS_AP_NORTHEAST_2" },
+								{ "kind": "string", "literal": "AWS_AP_SOUTH_1" },
+								{ "kind": "string", "literal": "AWS_SA_EAST_1" },
+								{ "kind": "string", "literal": "AWS_EU_WEST_2" },
+								{ "kind": "string", "literal": "AWS_EU_WEST_3" },
+								{ "kind": "string", "literal": "AWS_CA_CENTRAL_1" },
+								{ "kind": "string", "literal": "AWS_EU_NORTH_1" },
+								{ "kind": "string", "literal": "GOOGLE_US_CENTRAL_1" },
+								{ "kind": "string", "literal": "GOOGLE_US_EAST_1" },
+								{ "kind": "string", "literal": "GOOGLE_ASIA_EAST_1" },
+								{ "kind": "string", "literal": "GOOGLE_EUROPE_WEST_1" },
+								{ "kind": "string", "literal": "GOOGLE_US_WEST_1" },
+								{ "kind": "string", "literal": "GOOGLE_ASIA_EAST_2" },
+								{ "kind": "string", "literal": "GOOGLE_ASIA_NORTHEAST_1" },
+								{ "kind": "string", "literal": "GOOGLE_ASIA_SOUTH_1" },
+								{ "kind": "string", "literal": "GOOGLE_ASIA_SOUTHEAST_1" },
+								{ "kind": "string", "literal": "GOOGLE_AUSTRALIA_SOUTHEAST_1" },
+								{ "kind": "string", "literal": "GOOGLE_EUROPE_NORTH_1" },
+								{ "kind": "string", "literal": "GOOGLE_EUROPE_WEST_2" },
+								{ "kind": "string", "literal": "GOOGLE_EUROPE_WEST_3" },
+								{ "kind": "string", "literal": "GOOGLE_EUROPE_WEST_4" },
+								{
+									"kind": "string",
+									"literal": "GOOGLE_NORTHAMERICA_NORTHEAST_1"
+								},
+								{ "kind": "string", "literal": "GOOGLE_SOUTHAMERICA_EAST_1" },
+								{ "kind": "string", "literal": "GOOGLE_US_EAST_4" },
+								{ "kind": "string", "literal": "GOOGLE_US_WEST_2" },
+								{ "kind": "string", "literal": "GOOGLE_ME_CENTRAL_2" },
+								{ "kind": "string", "literal": "AZURE_ASIA_EAST" },
+								{ "kind": "string", "literal": "AZURE_ASIA_SOUTHEAST" },
+								{ "kind": "string", "literal": "AZURE_AUSTRALIA_EAST" },
+								{ "kind": "string", "literal": "AZURE_AUSTRALIA_SOUTHEAST" },
+								{ "kind": "string", "literal": "AZURE_BRAZIL_SOUTH" },
+								{ "kind": "string", "literal": "AZURE_CANADA_CENTRAL" },
+								{ "kind": "string", "literal": "AZURE_EUROPE_NORTH" },
+								{ "kind": "string", "literal": "AZURE_EUROPE_WEST" },
+								{ "kind": "string", "literal": "AZURE_FRANCE_CENTRAL" },
+								{ "kind": "string", "literal": "AZURE_GERMANY_WESTCENTRAL" },
+								{ "kind": "string", "literal": "AZURE_INDIA_CENTRAL" },
+								{ "kind": "string", "literal": "AZURE_INDIA_SOUTH" },
+								{ "kind": "string", "literal": "AZURE_JAPAN_EAST" },
+								{ "kind": "string", "literal": "AZURE_JAPAN_WEST" },
+								{ "kind": "string", "literal": "AZURE_KOREA_CENTRAL" },
+								{ "kind": "string", "literal": "AZURE_UAE_NORTH" },
+								{ "kind": "string", "literal": "AZURE_US_CENTRAL" },
+								{ "kind": "string", "literal": "AZURE_US_EAST" },
+								{ "kind": "string", "literal": "AZURE_US_EAST2" },
+								{ "kind": "string", "literal": "AZURE_US_WEST" },
+								{ "kind": "string", "literal": "AZURE_US_WEST2" },
+								{ "kind": "string", "literal": "AZURE_US_SOUTH_CENTRAL" },
+								{ "kind": "string", "literal": "AZURE_US_NORTH_CENTRAL" },
+								{ "kind": "string", "literal": "AZURE_UK_SOUTH" },
+								{ "kind": "string", "literal": "AKAMAI_AU_MEL" },
+								{ "kind": "string", "literal": "AKAMAI_BR_GRU" },
+								{ "kind": "string", "literal": "AKAMAI_ES_MAD" },
+								{ "kind": "string", "literal": "AKAMAI_FR_PAR" },
+								{ "kind": "string", "literal": "AKAMAI_ID_CGK" },
+								{ "kind": "string", "literal": "AKAMAI_IN_MAA" },
+								{ "kind": "string", "literal": "AKAMAI_IT_MIL" },
+								{ "kind": "string", "literal": "AKAMAI_JP_OSA" },
+								{ "kind": "string", "literal": "AKAMAI_NL_AMS" },
+								{ "kind": "string", "literal": "AKAMAI_SE_STO" },
+								{ "kind": "string", "literal": "AKAMAI_US_LAX" },
+								{ "kind": "string", "literal": "AKAMAI_US_MIA" },
+								{ "kind": "string", "literal": "AKAMAI_US_ORD" },
+								{ "kind": "string", "literal": "AKAMAI_US_SEA" },
+								{ "kind": "string", "literal": "OCI_EU_FRANKFURT_1" },
+								{ "kind": "string", "literal": "OCI_US_ASHBURN_1" },
+								{ "kind": "string", "literal": "NORTH_AMERICA" },
+								{ "kind": "string", "literal": "SOUTH_AMERICA" },
+								{ "kind": "string", "literal": "EUROPE" },
+								{ "kind": "string", "literal": "AFRICA" },
+								{ "kind": "string", "literal": "ASIA" },
+								{ "kind": "string", "literal": "AUSTRALIA" },
+								{ "kind": "string", "literal": "AWS" },
+								{ "kind": "string", "literal": "GOOGLE" },
+								{ "kind": "string", "literal": "EXTERNAL" },
+								{ "kind": "string", "literal": "AUTO" }
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 45
+						},
+						"documentation": "Filter encodings to only show the ones with the cloudRegion specified.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CloudRegion}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "createdAtNewerThan",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{
+									"kind": "builtin",
+									"type": "Date",
+									"scope": "TypeScript builtin; wire representation unconfirmed"
+								}
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 87
+						},
+						"documentation": "Filter encodings to only return those created after this exact time, provided in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "createdAtOlderThan",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{
+									"kind": "builtin",
+									"type": "Date",
+									"scope": "TypeScript builtin; wire representation unconfirmed"
+								}
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 93
+						},
+						"documentation": "Filter encodings to only return those created before this exact time, provided in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "encoderVersion",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 57
+						},
+						"documentation": "Filter encodings to only show the ones with the encoderVersion specified.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "finishedAtNewerThan",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{
+									"kind": "builtin",
+									"type": "Date",
+									"scope": "TypeScript builtin; wire representation unconfirmed"
+								}
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 111
+						},
+						"documentation": "Filter encodings to only return those finished at newer than this exact time, provided in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ Available for all encodings started after REST API Service release v1.50.0 (Changelogs for more information https://bitmovin.com/docs/encoding/changelogs/rest)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "finishedAtOlderThan",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{
+									"kind": "builtin",
+									"type": "Date",
+									"scope": "TypeScript builtin; wire representation unconfirmed"
+								}
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 117
+						},
+						"documentation": "Filter encodings to only return those finished at older than this exact time, provided in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ Available for all encodings started after REST API Service release v1.50.0 (Changelogs for more information https://bitmovin.com/docs/encoding/changelogs/rest)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "includeTotalCount",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{ "kind": "boolean", "literal": false },
+								{ "kind": "boolean", "literal": true }
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 21
+						},
+						"documentation": "A boolean indicating whether the total count should be returned as well. Default is false. Setting this flag to true is discouraged.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 15
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 75
+						},
+						"documentation": "Filter encodings to only show the ones with this exact name.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 9
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "search",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 81
+						},
+						"documentation": "The search query string for advanced filtering.  We are using the [Apache Lucene](https://lucene.apache.org/) query syntax here.  Only lucene queries equivalent to exact matching and startsWith are supported. Also only AND conjunctions supported at the moment.  Please be aware that our filters are **case-insensitive**  Examples of supported lucene queries: + `name:MyEncoding1` - This searches for encodings with names that are equal to `myencoding1`  + `name:\\\"My Encoding\\\"` - This searches for encodings with names that are equal to `my encoding`  + `name:MyEncoding\\\\*` - This searches for encodings with names that are equal to `myencoding*` Please have a look at the [Lucene Documentation - Escaping Special Characters](https://lucene.apache.org/core/8_1_1/queryparser/org/apache/lucene/queryparser/classic/package-summary.html#Escaping_Special_Characters) section to see what characters have to be escaped.  + `name:test*` - This searches for encodings with names that start with `test`  + `name:test* AND labels:Customer1` - This searches for encodings with names starting with `test` and labels containing an entry that is equal to `customer1`  Available search fields: + `name`  + `labels`  Please be aware to send these queries url encoded.  If you provide fields or lucene queries that are not supported, it will result in an error response.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "selectedCloudRegion",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{ "kind": "string", "literal": "AWS_US_EAST_1" },
+								{ "kind": "string", "literal": "AWS_US_EAST_2" },
+								{ "kind": "string", "literal": "AWS_US_WEST_1" },
+								{ "kind": "string", "literal": "AWS_US_WEST_2" },
+								{ "kind": "string", "literal": "AWS_EU_WEST_1" },
+								{ "kind": "string", "literal": "AWS_EU_CENTRAL_1" },
+								{ "kind": "string", "literal": "AWS_AP_SOUTHEAST_1" },
+								{ "kind": "string", "literal": "AWS_AP_SOUTHEAST_2" },
+								{ "kind": "string", "literal": "AWS_AP_NORTHEAST_1" },
+								{ "kind": "string", "literal": "AWS_AP_NORTHEAST_2" },
+								{ "kind": "string", "literal": "AWS_AP_SOUTH_1" },
+								{ "kind": "string", "literal": "AWS_SA_EAST_1" },
+								{ "kind": "string", "literal": "AWS_EU_WEST_2" },
+								{ "kind": "string", "literal": "AWS_EU_WEST_3" },
+								{ "kind": "string", "literal": "AWS_CA_CENTRAL_1" },
+								{ "kind": "string", "literal": "AWS_EU_NORTH_1" },
+								{ "kind": "string", "literal": "GOOGLE_US_CENTRAL_1" },
+								{ "kind": "string", "literal": "GOOGLE_US_EAST_1" },
+								{ "kind": "string", "literal": "GOOGLE_ASIA_EAST_1" },
+								{ "kind": "string", "literal": "GOOGLE_EUROPE_WEST_1" },
+								{ "kind": "string", "literal": "GOOGLE_US_WEST_1" },
+								{ "kind": "string", "literal": "GOOGLE_ASIA_EAST_2" },
+								{ "kind": "string", "literal": "GOOGLE_ASIA_NORTHEAST_1" },
+								{ "kind": "string", "literal": "GOOGLE_ASIA_SOUTH_1" },
+								{ "kind": "string", "literal": "GOOGLE_ASIA_SOUTHEAST_1" },
+								{ "kind": "string", "literal": "GOOGLE_AUSTRALIA_SOUTHEAST_1" },
+								{ "kind": "string", "literal": "GOOGLE_EUROPE_NORTH_1" },
+								{ "kind": "string", "literal": "GOOGLE_EUROPE_WEST_2" },
+								{ "kind": "string", "literal": "GOOGLE_EUROPE_WEST_3" },
+								{ "kind": "string", "literal": "GOOGLE_EUROPE_WEST_4" },
+								{
+									"kind": "string",
+									"literal": "GOOGLE_NORTHAMERICA_NORTHEAST_1"
+								},
+								{ "kind": "string", "literal": "GOOGLE_SOUTHAMERICA_EAST_1" },
+								{ "kind": "string", "literal": "GOOGLE_US_EAST_4" },
+								{ "kind": "string", "literal": "GOOGLE_US_WEST_2" },
+								{ "kind": "string", "literal": "GOOGLE_ME_CENTRAL_2" },
+								{ "kind": "string", "literal": "AZURE_ASIA_EAST" },
+								{ "kind": "string", "literal": "AZURE_ASIA_SOUTHEAST" },
+								{ "kind": "string", "literal": "AZURE_AUSTRALIA_EAST" },
+								{ "kind": "string", "literal": "AZURE_AUSTRALIA_SOUTHEAST" },
+								{ "kind": "string", "literal": "AZURE_BRAZIL_SOUTH" },
+								{ "kind": "string", "literal": "AZURE_CANADA_CENTRAL" },
+								{ "kind": "string", "literal": "AZURE_EUROPE_NORTH" },
+								{ "kind": "string", "literal": "AZURE_EUROPE_WEST" },
+								{ "kind": "string", "literal": "AZURE_FRANCE_CENTRAL" },
+								{ "kind": "string", "literal": "AZURE_GERMANY_WESTCENTRAL" },
+								{ "kind": "string", "literal": "AZURE_INDIA_CENTRAL" },
+								{ "kind": "string", "literal": "AZURE_INDIA_SOUTH" },
+								{ "kind": "string", "literal": "AZURE_JAPAN_EAST" },
+								{ "kind": "string", "literal": "AZURE_JAPAN_WEST" },
+								{ "kind": "string", "literal": "AZURE_KOREA_CENTRAL" },
+								{ "kind": "string", "literal": "AZURE_UAE_NORTH" },
+								{ "kind": "string", "literal": "AZURE_US_CENTRAL" },
+								{ "kind": "string", "literal": "AZURE_US_EAST" },
+								{ "kind": "string", "literal": "AZURE_US_EAST2" },
+								{ "kind": "string", "literal": "AZURE_US_WEST" },
+								{ "kind": "string", "literal": "AZURE_US_WEST2" },
+								{ "kind": "string", "literal": "AZURE_US_SOUTH_CENTRAL" },
+								{ "kind": "string", "literal": "AZURE_US_NORTH_CENTRAL" },
+								{ "kind": "string", "literal": "AZURE_UK_SOUTH" },
+								{ "kind": "string", "literal": "AKAMAI_AU_MEL" },
+								{ "kind": "string", "literal": "AKAMAI_BR_GRU" },
+								{ "kind": "string", "literal": "AKAMAI_ES_MAD" },
+								{ "kind": "string", "literal": "AKAMAI_FR_PAR" },
+								{ "kind": "string", "literal": "AKAMAI_ID_CGK" },
+								{ "kind": "string", "literal": "AKAMAI_IN_MAA" },
+								{ "kind": "string", "literal": "AKAMAI_IT_MIL" },
+								{ "kind": "string", "literal": "AKAMAI_JP_OSA" },
+								{ "kind": "string", "literal": "AKAMAI_NL_AMS" },
+								{ "kind": "string", "literal": "AKAMAI_SE_STO" },
+								{ "kind": "string", "literal": "AKAMAI_US_LAX" },
+								{ "kind": "string", "literal": "AKAMAI_US_MIA" },
+								{ "kind": "string", "literal": "AKAMAI_US_ORD" },
+								{ "kind": "string", "literal": "AKAMAI_US_SEA" },
+								{ "kind": "string", "literal": "OCI_EU_FRANKFURT_1" },
+								{ "kind": "string", "literal": "OCI_US_ASHBURN_1" },
+								{ "kind": "string", "literal": "NORTH_AMERICA" },
+								{ "kind": "string", "literal": "SOUTH_AMERICA" },
+								{ "kind": "string", "literal": "EUROPE" },
+								{ "kind": "string", "literal": "AFRICA" },
+								{ "kind": "string", "literal": "ASIA" },
+								{ "kind": "string", "literal": "AUSTRALIA" },
+								{ "kind": "string", "literal": "AWS" },
+								{ "kind": "string", "literal": "GOOGLE" },
+								{ "kind": "string", "literal": "EXTERNAL" },
+								{ "kind": "string", "literal": "AUTO" }
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 51
+						},
+						"documentation": "Filter encodings to only show the ones with the selectedCloudRegion specified which was selected when cloudregion:AUTO was set",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CloudRegion}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "selectedEncoderVersion",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 63
+						},
+						"documentation": "Filter encodings to only show the ones with the encoderVersion specified that was actually used for the encoding.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "selectedEncodingMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{ "kind": "string", "literal": "STANDARD" },
+								{ "kind": "string", "literal": "SINGLE_PASS" },
+								{ "kind": "string", "literal": "TWO_PASS" },
+								{ "kind": "string", "literal": "THREE_PASS" },
+								{ "kind": "string", "literal": "SMART_PASS" }
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 69
+						},
+						"documentation": "Filter encodings to only show the ones with the encodingMode specified that was actually used for the encoding.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingMode}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "sort",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 27
+						},
+						"documentation": "Order list result according an encoding resource attribute. The fields that can be used for sorting are: + `id` + `startedAt` + `createdAt` + `modifiedAt` + `finishedAt` + `type` + `name` + `status` + `cloudRegion` + `encoderVersion`",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "startedAtNewerThan",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{
+									"kind": "builtin",
+									"type": "Date",
+									"scope": "TypeScript builtin; wire representation unconfirmed"
+								}
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 99
+						},
+						"documentation": "Filter encodings to only return those started after this exact time, provided in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "startedAtOlderThan",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{
+									"kind": "builtin",
+									"type": "Date",
+									"scope": "TypeScript builtin; wire representation unconfirmed"
+								}
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 105
+						},
+						"documentation": "Filter encodings to only return those started before this exact time, provided in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "status",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 39
+						},
+						"documentation": "Filter encodings to only show the ones with the status specified.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/EncodingListQueryParams.d.ts",
+							"line": 33
+						},
+						"documentation": "Filter encodings to only show the ones with the type specified.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EncodingListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/errorDefinitions/EncodingErrorDefinitionListQueryParams.d.ts#EncodingErrorDefinitionListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/errorDefinitions/EncodingErrorDefinitionListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/errorDefinitions/EncodingErrorDefinitionListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EncodingErrorDefinitionListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/errorDefinitions/EncodingErrorDefinitionListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EncodingErrorDefinitionListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/filters/ebuR128SinglePass/EbuR128SinglePassFilterListQueryParams.d.ts#EbuR128SinglePassFilterListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/filters/ebuR128SinglePass/EbuR128SinglePassFilterListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/ebuR128SinglePass/EbuR128SinglePassFilterListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EbuR128SinglePassFilterListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/ebuR128SinglePass/EbuR128SinglePassFilterListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter filters by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "EbuR128SinglePassFilterListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/ebuR128SinglePass/EbuR128SinglePassFilterListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EbuR128SinglePassFilterListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/filters/enhancedDeinterlace/EnhancedDeinterlaceFilterListQueryParams.d.ts#EnhancedDeinterlaceFilterListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/filters/enhancedDeinterlace/EnhancedDeinterlaceFilterListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/enhancedDeinterlace/EnhancedDeinterlaceFilterListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EnhancedDeinterlaceFilterListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/enhancedDeinterlace/EnhancedDeinterlaceFilterListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter filters by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "EnhancedDeinterlaceFilterListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/enhancedDeinterlace/EnhancedDeinterlaceFilterListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EnhancedDeinterlaceFilterListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/filters/enhancedWatermark/EnhancedWatermarkFilterListQueryParams.d.ts#EnhancedWatermarkFilterListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/filters/enhancedWatermark/EnhancedWatermarkFilterListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/enhancedWatermark/EnhancedWatermarkFilterListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EnhancedWatermarkFilterListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/enhancedWatermark/EnhancedWatermarkFilterListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter filters by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "EnhancedWatermarkFilterListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/enhancedWatermark/EnhancedWatermarkFilterListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EnhancedWatermarkFilterListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/statistics/encodings/live/EncodingStatisticsLiveListByDateRangeQueryParams.d.ts#EncodingStatisticsLiveListByDateRangeQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/statistics/encodings/live/EncodingStatisticsLiveListByDateRangeQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/encodings/live/EncodingStatisticsLiveListByDateRangeQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EncodingStatisticsLiveListByDateRangeQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/encodings/live/EncodingStatisticsLiveListByDateRangeQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EncodingStatisticsLiveListByDateRangeQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/statistics/encodings/live/EncodingStatisticsLiveListQueryParams.d.ts#EncodingStatisticsLiveListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/statistics/encodings/live/EncodingStatisticsLiveListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/encodings/live/EncodingStatisticsLiveListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EncodingStatisticsLiveListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/encodings/live/EncodingStatisticsLiveListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EncodingStatisticsLiveListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/statistics/encodings/vod/EncodingStatisticsVodListByDateRangeQueryParams.d.ts#EncodingStatisticsVodListByDateRangeQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/statistics/encodings/vod/EncodingStatisticsVodListByDateRangeQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/encodings/vod/EncodingStatisticsVodListByDateRangeQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EncodingStatisticsVodListByDateRangeQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/encodings/vod/EncodingStatisticsVodListByDateRangeQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EncodingStatisticsVodListByDateRangeQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/statistics/encodings/vod/EncodingStatisticsVodListQueryParams.d.ts#EncodingStatisticsVodListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/statistics/encodings/vod/EncodingStatisticsVodListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/encodings/vod/EncodingStatisticsVodListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EncodingStatisticsVodListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/encodings/vod/EncodingStatisticsVodListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EncodingStatisticsVodListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/templates/EncodingTemplateResponseListQueryParams.d.ts#EncodingTemplateResponseListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/templates/EncodingTemplateResponseListQueryParams.d.ts",
+					"line": 2
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/templates/EncodingTemplateResponseListQueryParams.d.ts",
+							"line": 14
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EncodingTemplateResponseListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/templates/EncodingTemplateResponseListQueryParams.d.ts",
+							"line": 8
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "EncodingTemplateResponseListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "type",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{ "kind": "string", "literal": "VOD" },
+								{ "kind": "string", "literal": "LIVE" }
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/templates/EncodingTemplateResponseListQueryParams.d.ts",
+							"line": 20
+						},
+						"documentation": "Filter the stored templates by type",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingTemplateType}" },
+							{
+								"name": "memberof",
+								"text": "EncodingTemplateResponseListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/Eac3AudioConfiguration.d.ts#Eac3AudioConfiguration",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/Eac3AudioConfiguration.d.ts",
+					"line": 8
+				},
+				"properties": [
+					{
+						"name": "bitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/AudioConfiguration.d.ts",
+							"line": 12
+						},
+						"documentation": "Target bitrate for the encoded audio in bps (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "AudioConfiguration" }
+						]
+					},
+					{
+						"name": "channelLayout",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/Ac3ChannelLayout.d.ts#Ac3ChannelLayout" },
+						"sdkEvidence": {
+							"file": "models/Eac3AudioConfiguration.d.ts",
+							"line": 20
+						},
+						"documentation": "Channel layout of the audio codec configuration",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Ac3ChannelLayout}" },
+							{ "name": "memberof", "text": "Eac3AudioConfiguration" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "cutoffFrequency",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Eac3AudioConfiguration.d.ts",
+							"line": 26
+						},
+						"documentation": "The highest frequency that will pass the audio encoder. This value is optional.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Eac3AudioConfiguration" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "rate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/AudioConfiguration.d.ts",
+							"line": 18
+						},
+						"documentation": "Audio sampling rate in Hz",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "AudioConfiguration" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CodecConfigType.d.ts#CodecConfigType" },
+						"sdkEvidence": {
+							"file": "models/Eac3AudioConfiguration.d.ts",
+							"line": 14
+						},
+						"documentation": "Discriminator property for CodecConfiguration",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Eac3AudioConfiguration" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/EbuR128SinglePassFilter.d.ts#EbuR128SinglePassFilter",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/EbuR128SinglePassFilter.d.ts",
+					"line": 7
+				},
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "integratedLoudness",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/EbuR128SinglePassFilter.d.ts",
+							"line": 19
+						},
+						"documentation": "Set the targeted integrated loudness value. Range is from '-70.0' to '-5.0'. Default value is '-24.0'. Value is measured in LUFS (Loudness Units, referenced to Full Scale)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EbuR128SinglePassFilter" }
+						]
+					},
+					{
+						"name": "loudnessRange",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/EbuR128SinglePassFilter.d.ts",
+							"line": 25
+						},
+						"documentation": "Set the targeted loudness range target. Range is from '1.0' to '20.0'. Default value is '7.0'. Loudness range measures the variation of loudness on a macroscopic time-scale in units of LU (Loudness Units). For programmes shorter than 1 minute, the use of the measure Loudness Range is not recommended due to too few data points (Loudness Range is based on the Short-term-Loudness values (3-seconds-window)).",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EbuR128SinglePassFilter" }
+						]
+					},
+					{
+						"name": "maximumTruePeakLevel",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/EbuR128SinglePassFilter.d.ts",
+							"line": 31
+						},
+						"documentation": "Set maximum true peak. Range is from '-9.0' to '0.0'. Default value is '-2.0'. Values are measured in dBTP (db True Peak)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EbuR128SinglePassFilter" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/FilterType.d.ts#FilterType" },
+						"sdkEvidence": {
+							"file": "models/EbuR128SinglePassFilter.d.ts",
+							"line": 13
+						},
+						"documentation": "Discriminator property for Filter",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EbuR128SinglePassFilter" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/Encoding.d.ts#Encoding",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 12 },
+				"properties": [
+					{
+						"name": "cloudRegion",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CloudRegion.d.ts#CloudRegion" },
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 59 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CloudRegion}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "encoderVersion",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 71 },
+						"documentation": "Version of the encoder",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "errorAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 48 },
+						"documentation": "Timestamp when the encoding status changed to 'ERROR', returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ  Note that this timestamp is deprecated and is equivalent to finishedAt in case of an 'ERROR'.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "fallbackCloudRegions",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/CloudRegion.d.ts#CloudRegion" }
+						},
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 65 },
+						"documentation": "Specify a list of regions which are used in case the preferred region is down. Currently there are several restrictions. - The region has to be specific or AUTO - The region has to be for the same cloud provider as the default one - You can only configure at most 3 fallback regions",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CloudRegion[]}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "finishedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 42 },
+						"documentation": "Timestamp when the encoding status changed to 'FINISHED', 'ERROR', 'CANCELED', or 'TRANSFER_ERROR', returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ  Note that this timestamp might be inaccurate for encodings which ran prior to the [1.50.0 REST API release](https://bitmovin.com/docs/encoding/changelogs/rest).",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "infrastructure",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/InfrastructureSettings.d.ts#InfrastructureSettings"
+						},
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 76 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{InfrastructureSettings}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "labels",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "array", "items": { "kind": "string" } },
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 118 },
+						"documentation": "You may pass a list of groups associated with this encoding. This will enable you to group results in the statistics resource",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string[]}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "liveOptionsType",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string", "literal": "HD" },
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 124 },
+						"documentation": "The chosen live option type of the live encoding",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{LiveOptionsType}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "progress",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 54 },
+						"documentation": "Progress of the encoding in percent",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "queuedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 30 },
+						"documentation": "Timestamp when the encoding status changed to \\\"QUEUED\\\", returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "runningAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 36 },
+						"documentation": "Timestamp when the encoding status changed to \\\"RUNNING\\\", returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "selectedCloudRegion",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CloudRegion.d.ts#CloudRegion" },
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 100 },
+						"documentation": "After the encoding has been started, this will contain the cloud region that was actually used. This will differ from cloudRegion if cloudRegion was set to an unspecific region (e.g. 'AUTO')",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CloudRegion}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "selectedEncoderVersion",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 88 },
+						"documentation": "After the encoding has been started, this will contain the encoder version that was actually used. Especially useful when starting an encoding with a version tag like STABLE or BETA.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "selectedEncodingMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/EncodingMode.d.ts#EncodingMode" },
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 94 },
+						"documentation": "After the encoding has been started, this will contain the encoding mode that was actually used. Especially useful when `encodingMode` was not set explicitly or set to STANDARD (which translates to one of the other possible values on encoding start).",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingMode}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "selectedFallbackCloudRegions",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/CloudRegion.d.ts#CloudRegion" }
+						},
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 106 },
+						"documentation": "After the encoding has been started, this will contain the fallback cloud regions that were actually used. This will differ from fallbackCloudRegions if any of the fallbackCloudRegions were set to an unspecific region (e.g. 'AUTO')",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CloudRegion[]}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "startedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 24 },
+						"documentation": "Timestamp when the encoding was started, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "staticIpId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 82 },
+						"documentation": "Specify an ID of a Static IP infrastructure resource this encoding should use. A Static IP cannot be used by multiple encodings at once. The encoding will go to an error state if the Static IP is already in use. This is currently only supported for live encodings.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "status",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/Status.d.ts#Status" },
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 112 },
+						"documentation": "The current status of the encoding.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Status}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/EncodingType.d.ts#EncodingType" },
+						"sdkEvidence": { "file": "models/Encoding.d.ts", "line": 18 },
+						"documentation": "Type of the encoding",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingType}" },
+							{ "name": "memberof", "text": "Encoding" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/EncodingMode.d.ts#EncodingMode",
+			{
+				"kind": "enum",
+				"values": [
+					"STANDARD",
+					"SINGLE_PASS",
+					"TWO_PASS",
+					"THREE_PASS",
+					"SMART_PASS"
+				],
+				"sdkEvidence": { "file": "models/EncodingMode.d.ts", "line": 5 }
+			}
+		],
+		[
+			"models/EncodingOutput.d.ts#EncodingOutput",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/EncodingOutput.d.ts", "line": 6 },
+				"properties": [
+					{
+						"name": "acl",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/AclEntry.d.ts#AclEntry" }
+						},
+						"sdkEvidence": { "file": "models/EncodingOutput.d.ts", "line": 24 },
+						"documentation": "Determines accessibility of files written to this output. Only applies to output types that support ACLs. Defaults to PUBLIC_READ if the list is empty. The destination (e.g. cloud storage bucket) needs to allow the configured ACL",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{AclEntry[]}" },
+							{ "name": "memberof", "text": "EncodingOutput" }
+						]
+					},
+					{
+						"name": "outputId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/EncodingOutput.d.ts", "line": 12 },
+						"documentation": "Id of the corresponding output (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EncodingOutput" }
+						]
+					},
+					{
+						"name": "outputPath",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/EncodingOutput.d.ts", "line": 18 },
+						"documentation": "Subdirectory where to save the files to (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EncodingOutput" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/EncodingStreamInputDetails.d.ts#anonymous:1093",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/EncodingStreamInputDetails.d.ts",
+					"line": 45
+				},
+				"properties": [],
+				"additionalProperties": [
+					{
+						"key": { "kind": "string" },
+						"value": {
+							"kind": "opaque",
+							"type": "any",
+							"reason": "SDK any; acceptance unconfirmed"
+						},
+						"sdkReadonly": false
+					}
+				]
+			}
+		],
+		[
+			"models/EncodingStreamInputDetails.d.ts#EncodingStreamInputDetails",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/EncodingStreamInputDetails.d.ts",
+					"line": 9
+				},
+				"properties": [
+					{
+						"name": "audioStreams",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/AudioStream.d.ts#AudioStream" }
+						},
+						"sdkEvidence": {
+							"file": "models/EncodingStreamInputDetails.d.ts",
+							"line": 59
+						},
+						"documentation": "Audio stream in the input file",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{AudioStream[]}" },
+							{ "name": "memberof", "text": "EncodingStreamInputDetails" }
+						]
+					},
+					{
+						"name": "bitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/EncodingStreamInputDetails.d.ts",
+							"line": 39
+						},
+						"documentation": "Bitrate in bps",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EncodingStreamInputDetails" }
+						]
+					},
+					{
+						"name": "duration",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/EncodingStreamInputDetails.d.ts",
+							"line": 27
+						},
+						"documentation": "Duration in seconds",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EncodingStreamInputDetails" }
+						]
+					},
+					{
+						"name": "formatName",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/EncodingStreamInputDetails.d.ts",
+							"line": 15
+						},
+						"documentation": "Format name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EncodingStreamInputDetails" }
+						]
+					},
+					{
+						"name": "metaStreams",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/MediaStream.d.ts#MediaStream" }
+						},
+						"sdkEvidence": {
+							"file": "models/EncodingStreamInputDetails.d.ts",
+							"line": 65
+						},
+						"documentation": "Meta data streams in the input file",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{MediaStream[]}" },
+							{ "name": "memberof", "text": "EncodingStreamInputDetails" }
+						]
+					},
+					{
+						"name": "size",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/EncodingStreamInputDetails.d.ts",
+							"line": 33
+						},
+						"documentation": "Input file size in bytes",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EncodingStreamInputDetails" }
+						]
+					},
+					{
+						"name": "startTime",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/EncodingStreamInputDetails.d.ts",
+							"line": 21
+						},
+						"documentation": "The start time in seconds",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EncodingStreamInputDetails" }
+						]
+					},
+					{
+						"name": "subtitleStreams",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/SubtitleStream.d.ts#SubtitleStream" }
+						},
+						"sdkEvidence": {
+							"file": "models/EncodingStreamInputDetails.d.ts",
+							"line": 71
+						},
+						"documentation": "Subtitle streams in the input file",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{SubtitleStream[]}" },
+							{ "name": "memberof", "text": "EncodingStreamInputDetails" }
+						]
+					},
+					{
+						"name": "tags",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/EncodingStreamInputDetails.d.ts#anonymous:1093"
+						},
+						"sdkEvidence": {
+							"file": "models/EncodingStreamInputDetails.d.ts",
+							"line": 45
+						},
+						"documentation": "Additional metadata saved in the input file",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "EncodingStreamInputDetails" }
+						]
+					},
+					{
+						"name": "videoStreams",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/VideoStream.d.ts#VideoStream" }
+						},
+						"sdkEvidence": {
+							"file": "models/EncodingStreamInputDetails.d.ts",
+							"line": 53
+						},
+						"documentation": "Video streams in the input file",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{VideoStream[]}" },
+							{ "name": "memberof", "text": "EncodingStreamInputDetails" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/EncodingType.d.ts#EncodingType",
+			{
+				"kind": "enum",
+				"values": ["LIVE", "VOD", "NONE"],
+				"sdkEvidence": { "file": "models/EncodingType.d.ts", "line": 5 }
+			}
+		],
+		[
+			"models/EncryptionMode.d.ts#EncryptionMode",
+			{
+				"kind": "enum",
+				"values": ["CTR", "CBC"],
+				"sdkEvidence": { "file": "models/EncryptionMode.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/EnhancedDeinterlaceAutoEnable.d.ts#EnhancedDeinterlaceAutoEnable",
+			{
+				"kind": "enum",
+				"values": ["ALWAYS_ON", "META_DATA_BASED"],
+				"sdkEvidence": {
+					"file": "models/EnhancedDeinterlaceAutoEnable.d.ts",
+					"line": 6
+				}
+			}
+		],
+		[
+			"models/EnhancedDeinterlaceFilter.d.ts#EnhancedDeinterlaceFilter",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/EnhancedDeinterlaceFilter.d.ts",
+					"line": 10
+				},
+				"properties": [
+					{
+						"name": "autoEnable",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/EnhancedDeinterlaceAutoEnable.d.ts#EnhancedDeinterlaceAutoEnable"
+						},
+						"sdkEvidence": {
+							"file": "models/EnhancedDeinterlaceFilter.d.ts",
+							"line": 31
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EnhancedDeinterlaceAutoEnable}" },
+							{ "name": "memberof", "text": "EnhancedDeinterlaceFilter" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "mode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/EnhancedDeinterlaceMode.d.ts#EnhancedDeinterlaceMode"
+						},
+						"sdkEvidence": {
+							"file": "models/EnhancedDeinterlaceFilter.d.ts",
+							"line": 26
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EnhancedDeinterlaceMode}" },
+							{ "name": "memberof", "text": "EnhancedDeinterlaceFilter" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "parity",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/EnhancedDeinterlaceParity.d.ts#EnhancedDeinterlaceParity"
+						},
+						"sdkEvidence": {
+							"file": "models/EnhancedDeinterlaceFilter.d.ts",
+							"line": 21
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EnhancedDeinterlaceParity}" },
+							{ "name": "memberof", "text": "EnhancedDeinterlaceFilter" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/FilterType.d.ts#FilterType" },
+						"sdkEvidence": {
+							"file": "models/EnhancedDeinterlaceFilter.d.ts",
+							"line": 16
+						},
+						"documentation": "Discriminator property for Filter",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EnhancedDeinterlaceFilter" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/EnhancedDeinterlaceMode.d.ts#EnhancedDeinterlaceMode",
+			{
+				"kind": "enum",
+				"values": ["FRAME", "FIELD"],
+				"sdkEvidence": {
+					"file": "models/EnhancedDeinterlaceMode.d.ts",
+					"line": 6
+				}
+			}
+		],
+		[
+			"models/EnhancedDeinterlaceParity.d.ts#EnhancedDeinterlaceParity",
+			{
+				"kind": "enum",
+				"values": ["TOP_FIELD_FIRST", "BOTTOM_FIELD_FIRST"],
+				"sdkEvidence": {
+					"file": "models/EnhancedDeinterlaceParity.d.ts",
+					"line": 6
+				}
+			}
+		],
+		[
+			"models/EnhancedWatermarkFilter.d.ts#EnhancedWatermarkFilter",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/EnhancedWatermarkFilter.d.ts",
+					"line": 8
+				},
+				"properties": [
+					{
+						"name": "bottom",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/EnhancedWatermarkFilter.d.ts",
+							"line": 44
+						},
+						"documentation": "Distance from the bottom edge of the input video to the bottom edge of the watermark image. May not be set if 'top' is set.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EnhancedWatermarkFilter" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "height",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/EnhancedWatermarkFilter.d.ts",
+							"line": 67
+						},
+						"documentation": "Desired height of the watermark image, the unit of the parameter is specified separately by the parameter 'unit'. If both width and height are set the watermark size is fixed. If only one is set the aspect ratio of the image will be used to rescale it",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EnhancedWatermarkFilter" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "image",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/EnhancedWatermarkFilter.d.ts",
+							"line": 20
+						},
+						"documentation": "URL of the file to be used as watermark image. Supported image formats: PNG, JPEG, BMP, GIF (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EnhancedWatermarkFilter" }
+						]
+					},
+					{
+						"name": "left",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/EnhancedWatermarkFilter.d.ts",
+							"line": 26
+						},
+						"documentation": "Distance from the left edge of the input video to the left edge of the watermark image. May not be set if 'right' is set.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EnhancedWatermarkFilter" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "opacity",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/EnhancedWatermarkFilter.d.ts",
+							"line": 55
+						},
+						"documentation": "Opacity to apply on the watermark image. Valid values are from 0.0 (completely transparent) to 1.0 (not transparent at all)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EnhancedWatermarkFilter" }
+						]
+					},
+					{
+						"name": "right",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/EnhancedWatermarkFilter.d.ts",
+							"line": 32
+						},
+						"documentation": "Distance from the right edge of the input video to the right edge of the watermark image . May not be set if 'left' is set.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EnhancedWatermarkFilter" }
+						]
+					},
+					{
+						"name": "top",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/EnhancedWatermarkFilter.d.ts",
+							"line": 38
+						},
+						"documentation": "Distance from the top edge of the input video to the top edge of the watermark image. May not be set if 'bottom' is set.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EnhancedWatermarkFilter" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/FilterType.d.ts#FilterType" },
+						"sdkEvidence": {
+							"file": "models/EnhancedWatermarkFilter.d.ts",
+							"line": 14
+						},
+						"documentation": "Discriminator property for Filter",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EnhancedWatermarkFilter" }
+						]
+					},
+					{
+						"name": "unit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/PositionUnit.d.ts#PositionUnit" },
+						"sdkEvidence": {
+							"file": "models/EnhancedWatermarkFilter.d.ts",
+							"line": 49
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{PositionUnit}" },
+							{ "name": "memberof", "text": "EnhancedWatermarkFilter" }
+						]
+					},
+					{
+						"name": "width",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/EnhancedWatermarkFilter.d.ts",
+							"line": 61
+						},
+						"documentation": "Desired width of the watermark image, the unit of the parameter is specified separately by the parameter 'unit'. If both width and height are set the watermark size is fixed. If only one is set the aspect ratio of the image will be used to rescale it",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EnhancedWatermarkFilter" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/EsamMediaPoint.d.ts#EsamMediaPoint",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/EsamMediaPoint.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "matchTime",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": { "file": "models/EsamMediaPoint.d.ts", "line": 13 },
+						"documentation": "ISO 8601 date-time specifying when the signal should be matched and inserted into the live stream",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "EsamMediaPoint" }
+						]
+					},
+					{
+						"name": "signals",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/EsamSignal.d.ts#EsamSignal" }
+						},
+						"sdkEvidence": { "file": "models/EsamMediaPoint.d.ts", "line": 19 },
+						"documentation": "Array of ESAM signals containing SCTE-35 binary data. At least one signal is required (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EsamSignal[]}" },
+							{ "name": "memberof", "text": "EsamMediaPoint" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/EsamSettings.d.ts#EsamSettings",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/EsamSettings.d.ts", "line": 6 },
+				"properties": [
+					{
+						"name": "acquisitionPointIdentity",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/EsamSettings.d.ts", "line": 18 },
+						"documentation": "A unique identifier representing the `Acquisition Point Identity` defined in the ESAM specification.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EsamSettings" }
+						]
+					},
+					{
+						"name": "adAvailOffset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/EsamSettings.d.ts", "line": 30 },
+						"documentation": "Defines an offset (in milliseconds) to be applied to the stream event timestamp. This offset adjusts the `StreamTime` values (such as PTS) associated with ad opportunities or content insertions. It is used to fine-tune timing for embedded SCTE-104/35 messages to ensure precise frame alignment in the transport stream.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "EsamSettings" }
+						]
+					},
+					{
+						"name": "poisEndpoint",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/EsamSettings.d.ts", "line": 12 },
+						"documentation": "The URL of the Placement Opportunity Information System (POIS) signal processing endpoint. The encoder transmits SignalProcessingEvents to this endpoint whenever SCTE-35 messages are detected.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EsamSettings" }
+						]
+					},
+					{
+						"name": "poisEndpointCredentials",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/PoisEndpointCredentials.d.ts#PoisEndpointCredentials"
+						},
+						"sdkEvidence": { "file": "models/EsamSettings.d.ts", "line": 36 },
+						"documentation": "If authentication is required to access the POIS endpoint, credentials must be provided.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{PoisEndpointCredentials}" },
+							{ "name": "memberof", "text": "EsamSettings" }
+						]
+					},
+					{
+						"name": "zoneIdentity",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/EsamSettings.d.ts", "line": 24 },
+						"documentation": "Specifies the `Zone Identity` defined in the ESAM specification.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EsamSettings" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/EsamSignal.d.ts#EsamSignal",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/EsamSignal.d.ts", "line": 6 },
+				"properties": [
+					{
+						"name": "binary",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/EsamSignal.d.ts", "line": 18 },
+						"documentation": "Base64-encoded SCTE-35 binary data to be inserted into the stream (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EsamSignal" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/EsamSignal.d.ts", "line": 12 },
+						"documentation": "The offset from the matched signal in ISO 8601 duration format, accurate to milliseconds",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "EsamSignal" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/ExternalIdMode.d.ts#ExternalIdMode",
+			{
+				"kind": "enum",
+				"values": ["CUSTOM", "GLOBAL", "GENERATED"],
+				"sdkEvidence": { "file": "models/ExternalIdMode.d.ts", "line": 5 }
+			}
+		]
+	]
+}

@@ -1,0 +1,1766 @@
+{
+	"schemaVersion": 1,
+	"kind": "operations",
+	"items": [
+		{
+			"sdkMethod": "encoding.infrastructure.akamai.create",
+			"path": "/encoding/infrastructure/akamai",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "akamaiAccount",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/AkamaiAccount.d.ts#AkamaiAccount" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/akamai/AkamaiApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/akamai/AkamaiApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.akamai.delete",
+			"path": "/encoding/infrastructure/akamai/{infrastructure_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/akamai/AkamaiApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/akamai/AkamaiApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.akamai.get",
+			"path": "/encoding/infrastructure/akamai/{infrastructure_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/akamai/AkamaiApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/akamai/AkamaiApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.akamai.list",
+			"path": "/encoding/infrastructure/akamai",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/infrastructure/akamai/AkamaiAccountListQueryParams.d.ts#AkamaiAccountListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AkamaiAccountListQueryParamsBuilder) => AkamaiAccountListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/akamai/AkamaiApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/akamai/AkamaiApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.akamai.regions.create",
+			"path": "/encoding/infrastructure/akamai/{infrastructure_id}/regions/{region}",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/akamai/regions/RegionsApi.d.ts",
+						"line": 23
+					}
+				},
+				{
+					"name": "region",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "region",
+					"optional": false,
+					"type": { "ref": "models/AkamaiCloudRegion.d.ts#AkamaiCloudRegion" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/akamai/regions/RegionsApi.d.ts",
+						"line": 23
+					}
+				},
+				{
+					"name": "akamaiAccountRegionSettings",
+					"parameterIndex": 2,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/AkamaiAccountRegionSettings.d.ts#AkamaiAccountRegionSettings"
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/akamai/regions/RegionsApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/akamai/regions/RegionsApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.akamai.regions.delete",
+			"path": "/encoding/infrastructure/akamai/{infrastructure_id}/regions/{region}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/akamai/regions/RegionsApi.d.ts",
+						"line": 31
+					}
+				},
+				{
+					"name": "region",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "region",
+					"optional": false,
+					"type": { "ref": "models/AkamaiCloudRegion.d.ts#AkamaiCloudRegion" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/akamai/regions/RegionsApi.d.ts",
+						"line": 31
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/akamai/regions/RegionsApi.d.ts",
+				"line": 31
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.akamai.regions.get",
+			"path": "/encoding/infrastructure/akamai/{infrastructure_id}/regions/{region}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/akamai/regions/RegionsApi.d.ts",
+						"line": 39
+					}
+				},
+				{
+					"name": "region",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "region",
+					"optional": false,
+					"type": { "ref": "models/AkamaiCloudRegion.d.ts#AkamaiCloudRegion" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/akamai/regions/RegionsApi.d.ts",
+						"line": 39
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/akamai/regions/RegionsApi.d.ts",
+				"line": 39
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.akamai.regions.list",
+			"path": "/encoding/infrastructure/akamai/{infrastructure_id}/regions",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/akamai/regions/RegionsApi.d.ts",
+						"line": 47
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 1,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/infrastructure/akamai/regions/AkamaiAccountRegionSettingsListQueryParams.d.ts#AkamaiAccountRegionSettingsListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AkamaiAccountRegionSettingsListQueryParamsBuilder) => AkamaiAccountRegionSettingsListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/akamai/regions/RegionsApi.d.ts",
+						"line": 47
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/akamai/regions/RegionsApi.d.ts",
+				"line": 47
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.aws.create",
+			"path": "/encoding/infrastructure/aws",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "awsAccount",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/AwsAccount.d.ts#AwsAccount" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/aws/AwsApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/aws/AwsApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.aws.delete",
+			"path": "/encoding/infrastructure/aws/{infrastructure_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/aws/AwsApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/aws/AwsApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.aws.get",
+			"path": "/encoding/infrastructure/aws/{infrastructure_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/aws/AwsApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/aws/AwsApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.aws.list",
+			"path": "/encoding/infrastructure/aws",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/infrastructure/aws/AwsAccountListQueryParams.d.ts#AwsAccountListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AwsAccountListQueryParamsBuilder) => AwsAccountListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/aws/AwsApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/aws/AwsApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.aws.regions.create",
+			"path": "/encoding/infrastructure/aws/{infrastructure_id}/regions/{region}",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/aws/regions/RegionsApi.d.ts",
+						"line": 23
+					}
+				},
+				{
+					"name": "region",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "region",
+					"optional": false,
+					"type": { "ref": "models/AwsCloudRegion.d.ts#AwsCloudRegion" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/aws/regions/RegionsApi.d.ts",
+						"line": 23
+					}
+				},
+				{
+					"name": "awsAccountRegionSettings",
+					"parameterIndex": 2,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/AwsAccountRegionSettings.d.ts#AwsAccountRegionSettings"
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/aws/regions/RegionsApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/aws/regions/RegionsApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.aws.regions.delete",
+			"path": "/encoding/infrastructure/aws/{infrastructure_id}/regions/{region}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/aws/regions/RegionsApi.d.ts",
+						"line": 31
+					}
+				},
+				{
+					"name": "region",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "region",
+					"optional": false,
+					"type": { "ref": "models/AwsCloudRegion.d.ts#AwsCloudRegion" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/aws/regions/RegionsApi.d.ts",
+						"line": 31
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/aws/regions/RegionsApi.d.ts",
+				"line": 31
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.aws.regions.get",
+			"path": "/encoding/infrastructure/aws/{infrastructure_id}/regions/{region}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/aws/regions/RegionsApi.d.ts",
+						"line": 39
+					}
+				},
+				{
+					"name": "region",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "region",
+					"optional": false,
+					"type": { "ref": "models/AwsCloudRegion.d.ts#AwsCloudRegion" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/aws/regions/RegionsApi.d.ts",
+						"line": 39
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/aws/regions/RegionsApi.d.ts",
+				"line": 39
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.aws.regions.list",
+			"path": "/encoding/infrastructure/aws/{infrastructure_id}/regions",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/aws/regions/RegionsApi.d.ts",
+						"line": 47
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 1,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/infrastructure/aws/regions/AwsAccountRegionSettingsListQueryParams.d.ts#AwsAccountRegionSettingsListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AwsAccountRegionSettingsListQueryParamsBuilder) => AwsAccountRegionSettingsListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/aws/regions/RegionsApi.d.ts",
+						"line": 47
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/aws/regions/RegionsApi.d.ts",
+				"line": 47
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.azure.create",
+			"path": "/encoding/infrastructure/azure",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "azureAccount",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/AzureAccount.d.ts#AzureAccount" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/azure/AzureApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/azure/AzureApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.azure.delete",
+			"path": "/encoding/infrastructure/azure/{infrastructure_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/azure/AzureApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/azure/AzureApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.azure.get",
+			"path": "/encoding/infrastructure/azure/{infrastructure_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/azure/AzureApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/azure/AzureApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.azure.list",
+			"path": "/encoding/infrastructure/azure",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/infrastructure/azure/AzureAccountListQueryParams.d.ts#AzureAccountListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AzureAccountListQueryParamsBuilder) => AzureAccountListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/azure/AzureApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/azure/AzureApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.azure.regions.create",
+			"path": "/encoding/infrastructure/azure/{infrastructure_id}/regions/{region}",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/azure/regions/RegionsApi.d.ts",
+						"line": 23
+					}
+				},
+				{
+					"name": "region",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "region",
+					"optional": false,
+					"type": { "ref": "models/AzureCloudRegion.d.ts#AzureCloudRegion" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/azure/regions/RegionsApi.d.ts",
+						"line": 23
+					}
+				},
+				{
+					"name": "azureAccountRegionSettings",
+					"parameterIndex": 2,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/AzureAccountRegionSettings.d.ts#AzureAccountRegionSettings"
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/azure/regions/RegionsApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/azure/regions/RegionsApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.azure.regions.delete",
+			"path": "/encoding/infrastructure/azure/{infrastructure_id}/regions/{region}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/azure/regions/RegionsApi.d.ts",
+						"line": 31
+					}
+				},
+				{
+					"name": "region",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "region",
+					"optional": false,
+					"type": { "ref": "models/AzureCloudRegion.d.ts#AzureCloudRegion" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/azure/regions/RegionsApi.d.ts",
+						"line": 31
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/azure/regions/RegionsApi.d.ts",
+				"line": 31
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.azure.regions.get",
+			"path": "/encoding/infrastructure/azure/{infrastructure_id}/regions/{region}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/azure/regions/RegionsApi.d.ts",
+						"line": 39
+					}
+				},
+				{
+					"name": "region",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "region",
+					"optional": false,
+					"type": { "ref": "models/AzureCloudRegion.d.ts#AzureCloudRegion" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/azure/regions/RegionsApi.d.ts",
+						"line": 39
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/azure/regions/RegionsApi.d.ts",
+				"line": 39
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.azure.regions.list",
+			"path": "/encoding/infrastructure/azure/{infrastructure_id}/regions",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/azure/regions/RegionsApi.d.ts",
+						"line": 47
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 1,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/infrastructure/azure/regions/AzureAccountRegionSettingsListQueryParams.d.ts#AzureAccountRegionSettingsListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AzureAccountRegionSettingsListQueryParamsBuilder) => AzureAccountRegionSettingsListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/azure/regions/RegionsApi.d.ts",
+						"line": 47
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/azure/regions/RegionsApi.d.ts",
+				"line": 47
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.gce.create",
+			"path": "/encoding/infrastructure/gce",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "gceAccount",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/GceAccount.d.ts#GceAccount" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/gce/GceApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/gce/GceApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.gce.delete",
+			"path": "/encoding/infrastructure/gce/{infrastructure_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/gce/GceApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/gce/GceApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.gce.get",
+			"path": "/encoding/infrastructure/gce/{infrastructure_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/gce/GceApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/gce/GceApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.gce.list",
+			"path": "/encoding/infrastructure/gce",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/infrastructure/gce/GceAccountListQueryParams.d.ts#GceAccountListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: GceAccountListQueryParamsBuilder) => GceAccountListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/gce/GceApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/gce/GceApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.gce.regions.create",
+			"path": "/encoding/infrastructure/gce/{infrastructure_id}/regions/{region}",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/gce/regions/RegionsApi.d.ts",
+						"line": 23
+					}
+				},
+				{
+					"name": "region",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "region",
+					"optional": false,
+					"type": { "ref": "models/GoogleCloudRegion.d.ts#GoogleCloudRegion" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/gce/regions/RegionsApi.d.ts",
+						"line": 23
+					}
+				},
+				{
+					"name": "gceAccountRegionSettings",
+					"parameterIndex": 2,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/GceAccountRegionSettings.d.ts#GceAccountRegionSettings"
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/gce/regions/RegionsApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/gce/regions/RegionsApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.gce.regions.delete",
+			"path": "/encoding/infrastructure/gce/{infrastructure_id}/regions/{region}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/gce/regions/RegionsApi.d.ts",
+						"line": 31
+					}
+				},
+				{
+					"name": "region",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "region",
+					"optional": false,
+					"type": { "ref": "models/GoogleCloudRegion.d.ts#GoogleCloudRegion" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/gce/regions/RegionsApi.d.ts",
+						"line": 31
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/gce/regions/RegionsApi.d.ts",
+				"line": 31
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.gce.regions.get",
+			"path": "/encoding/infrastructure/gce/{infrastructure_id}/regions/{region}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/gce/regions/RegionsApi.d.ts",
+						"line": 39
+					}
+				},
+				{
+					"name": "region",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "region",
+					"optional": false,
+					"type": { "ref": "models/GoogleCloudRegion.d.ts#GoogleCloudRegion" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/gce/regions/RegionsApi.d.ts",
+						"line": 39
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/gce/regions/RegionsApi.d.ts",
+				"line": 39
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.gce.regions.list",
+			"path": "/encoding/infrastructure/gce/{infrastructure_id}/regions",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/gce/regions/RegionsApi.d.ts",
+						"line": 47
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 1,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/infrastructure/gce/regions/GceAccountRegionSettingsListQueryParams.d.ts#GceAccountRegionSettingsListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: GceAccountRegionSettingsListQueryParamsBuilder) => GceAccountRegionSettingsListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/gce/regions/RegionsApi.d.ts",
+						"line": 47
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/gce/regions/RegionsApi.d.ts",
+				"line": 47
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.oci.create",
+			"path": "/encoding/infrastructure/oci",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "ociAccount",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/OciAccount.d.ts#OciAccount" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/oci/OciApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/oci/OciApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.oci.delete",
+			"path": "/encoding/infrastructure/oci/{infrastructure_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/oci/OciApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/oci/OciApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.oci.get",
+			"path": "/encoding/infrastructure/oci/{infrastructure_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/oci/OciApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/oci/OciApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.oci.list",
+			"path": "/encoding/infrastructure/oci",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/infrastructure/oci/OciAccountListQueryParams.d.ts#OciAccountListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: OciAccountListQueryParamsBuilder) => OciAccountListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/oci/OciApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/oci/OciApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.oci.regions.create",
+			"path": "/encoding/infrastructure/oci/{infrastructure_id}/regions/{region}",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/oci/regions/RegionsApi.d.ts",
+						"line": 23
+					}
+				},
+				{
+					"name": "region",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "region",
+					"optional": false,
+					"type": { "ref": "models/OciCloudRegion.d.ts#OciCloudRegion" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/oci/regions/RegionsApi.d.ts",
+						"line": 23
+					}
+				},
+				{
+					"name": "ociAccountRegionSettings",
+					"parameterIndex": 2,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/OciAccountRegionSettings.d.ts#OciAccountRegionSettings"
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/oci/regions/RegionsApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/oci/regions/RegionsApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.oci.regions.delete",
+			"path": "/encoding/infrastructure/oci/{infrastructure_id}/regions/{region}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/oci/regions/RegionsApi.d.ts",
+						"line": 31
+					}
+				},
+				{
+					"name": "region",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "region",
+					"optional": false,
+					"type": { "ref": "models/OciCloudRegion.d.ts#OciCloudRegion" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/oci/regions/RegionsApi.d.ts",
+						"line": 31
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/oci/regions/RegionsApi.d.ts",
+				"line": 31
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.oci.regions.get",
+			"path": "/encoding/infrastructure/oci/{infrastructure_id}/regions/{region}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/oci/regions/RegionsApi.d.ts",
+						"line": 39
+					}
+				},
+				{
+					"name": "region",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "region",
+					"optional": false,
+					"type": { "ref": "models/OciCloudRegion.d.ts#OciCloudRegion" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/oci/regions/RegionsApi.d.ts",
+						"line": 39
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/oci/regions/RegionsApi.d.ts",
+				"line": 39
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.oci.regions.list",
+			"path": "/encoding/infrastructure/oci/{infrastructure_id}/regions",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "infrastructureId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "infrastructure_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/oci/regions/RegionsApi.d.ts",
+						"line": 47
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 1,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/infrastructure/oci/regions/OciAccountRegionSettingsListQueryParams.d.ts#OciAccountRegionSettingsListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: OciAccountRegionSettingsListQueryParamsBuilder) => OciAccountRegionSettingsListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/oci/regions/RegionsApi.d.ts",
+						"line": 47
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/oci/regions/RegionsApi.d.ts",
+				"line": 47
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.prewarmedEncoderPools.create",
+			"path": "/encoding/infrastructure/prewarmed-encoder-pools",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "prewarmedEncoderPool",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/PrewarmedEncoderPool.d.ts#PrewarmedEncoderPool"
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/prewarmedEncoderPools/PrewarmedEncoderPoolsApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/prewarmedEncoderPools/PrewarmedEncoderPoolsApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.prewarmedEncoderPools.delete",
+			"path": "/encoding/infrastructure/prewarmed-encoder-pools/{pool_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/prewarmedEncoderPools/PrewarmedEncoderPoolsApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/prewarmedEncoderPools/PrewarmedEncoderPoolsApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.prewarmedEncoderPools.get",
+			"path": "/encoding/infrastructure/prewarmed-encoder-pools/{pool_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/prewarmedEncoderPools/PrewarmedEncoderPoolsApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/prewarmedEncoderPools/PrewarmedEncoderPoolsApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.prewarmedEncoderPools.list",
+			"path": "/encoding/infrastructure/prewarmed-encoder-pools",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/infrastructure/prewarmedEncoderPools/PrewarmedEncoderPoolListQueryParams.d.ts#PrewarmedEncoderPoolListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: PrewarmedEncoderPoolListQueryParamsBuilder) => PrewarmedEncoderPoolListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/prewarmedEncoderPools/PrewarmedEncoderPoolsApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/prewarmedEncoderPools/PrewarmedEncoderPoolsApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.prewarmedEncoderPools.start",
+			"path": "/encoding/infrastructure/prewarmed-encoder-pools/{pool_id}/start",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/prewarmedEncoderPools/PrewarmedEncoderPoolsApi.d.ts",
+						"line": 51
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/prewarmedEncoderPools/PrewarmedEncoderPoolsApi.d.ts",
+				"line": 51
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.prewarmedEncoderPools.stop",
+			"path": "/encoding/infrastructure/prewarmed-encoder-pools/{pool_id}/stop",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/prewarmedEncoderPools/PrewarmedEncoderPoolsApi.d.ts",
+						"line": 58
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/prewarmedEncoderPools/PrewarmedEncoderPoolsApi.d.ts",
+				"line": 58
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.prewarmedEncoderPools.schedules.create",
+			"path": "/encoding/infrastructure/prewarmed-encoder-pools/{pool_id}/schedules",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/prewarmedEncoderPools/schedules/SchedulesApi.d.ts",
+						"line": 22
+					}
+				},
+				{
+					"name": "prewarmedEncoderPoolSchedule",
+					"parameterIndex": 1,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/PrewarmedEncoderPoolSchedule.d.ts#PrewarmedEncoderPoolSchedule"
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/prewarmedEncoderPools/schedules/SchedulesApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/prewarmedEncoderPools/schedules/SchedulesApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.prewarmedEncoderPools.schedules.delete",
+			"path": "/encoding/infrastructure/prewarmed-encoder-pools/{pool_id}/schedules/{schedule_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/prewarmedEncoderPools/schedules/SchedulesApi.d.ts",
+						"line": 30
+					}
+				},
+				{
+					"name": "scheduleId",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "schedule_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/prewarmedEncoderPools/schedules/SchedulesApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/prewarmedEncoderPools/schedules/SchedulesApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.prewarmedEncoderPools.schedules.get",
+			"path": "/encoding/infrastructure/prewarmed-encoder-pools/{pool_id}/schedules/{schedule_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/prewarmedEncoderPools/schedules/SchedulesApi.d.ts",
+						"line": 38
+					}
+				},
+				{
+					"name": "scheduleId",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "schedule_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/prewarmedEncoderPools/schedules/SchedulesApi.d.ts",
+						"line": 38
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/prewarmedEncoderPools/schedules/SchedulesApi.d.ts",
+				"line": 38
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.prewarmedEncoderPools.schedules.list",
+			"path": "/encoding/infrastructure/prewarmed-encoder-pools/{pool_id}/schedules",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "poolId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "pool_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/prewarmedEncoderPools/schedules/SchedulesApi.d.ts",
+						"line": 46
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 1,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/infrastructure/prewarmedEncoderPools/schedules/PrewarmedEncoderPoolScheduleListQueryParams.d.ts#PrewarmedEncoderPoolScheduleListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: PrewarmedEncoderPoolScheduleListQueryParamsBuilder) => PrewarmedEncoderPoolScheduleListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/prewarmedEncoderPools/schedules/SchedulesApi.d.ts",
+						"line": 46
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/prewarmedEncoderPools/schedules/SchedulesApi.d.ts",
+				"line": 46
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.staticIps.create",
+			"path": "/encoding/infrastructure/static-ips",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "staticIp",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/StaticIp.d.ts#StaticIp" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/staticIps/StaticIpsApi.d.ts",
+						"line": 21
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/staticIps/StaticIpsApi.d.ts",
+				"line": 21
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.staticIps.delete",
+			"path": "/encoding/infrastructure/static-ips/{id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "id",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/staticIps/StaticIpsApi.d.ts",
+						"line": 28
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/staticIps/StaticIpsApi.d.ts",
+				"line": 28
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.staticIps.get",
+			"path": "/encoding/infrastructure/static-ips/{id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "id",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/staticIps/StaticIpsApi.d.ts",
+						"line": 35
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/staticIps/StaticIpsApi.d.ts",
+				"line": 35
+			}
+		},
+		{
+			"sdkMethod": "encoding.infrastructure.staticIps.list",
+			"path": "/encoding/infrastructure/static-ips",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/infrastructure/staticIps/StaticIpListQueryParams.d.ts#StaticIpListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: StaticIpListQueryParamsBuilder) => StaticIpListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/infrastructure/staticIps/StaticIpsApi.d.ts",
+						"line": 42
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/infrastructure/staticIps/StaticIpsApi.d.ts",
+				"line": 42
+			}
+		}
+	]
+}

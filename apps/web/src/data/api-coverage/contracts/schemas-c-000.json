@@ -1,0 +1,5554 @@
+{
+	"schemaVersion": 1,
+	"kind": "schemas",
+	"items": [
+		[
+			"encoding/configurations/CodecConfigurationListQueryParams.d.ts#CodecConfigurationListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/configurations/CodecConfigurationListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/CodecConfigurationListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "CodecConfigurationListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/CodecConfigurationListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter configuration by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "CodecConfigurationListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/CodecConfigurationListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "CodecConfigurationListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "sort",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/CodecConfigurationListQueryParams.d.ts",
+							"line": 25
+						},
+						"documentation": "Order list result according to a filter resource attribute. The fields that can be used for sorting are: + `id` + `createdAt` + `modifiedAt` + `type` + `name`",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "CodecConfigurationListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/captions/scc/ConvertSccCaptionListQueryParams.d.ts#ConvertSccCaptionListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/captions/scc/ConvertSccCaptionListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/captions/scc/ConvertSccCaptionListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ConvertSccCaptionListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/captions/scc/ConvertSccCaptionListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ConvertSccCaptionListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/inputStreams/captions/cea608/Cea608CaptionInputStreamListQueryParams.d.ts#Cea608CaptionInputStreamListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/inputStreams/captions/cea608/Cea608CaptionInputStreamListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/inputStreams/captions/cea608/Cea608CaptionInputStreamListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "Cea608CaptionInputStreamListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/inputStreams/captions/cea608/Cea608CaptionInputStreamListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "Cea608CaptionInputStreamListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/inputStreams/captions/cea708/Cea708CaptionInputStreamListQueryParams.d.ts#Cea708CaptionInputStreamListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/inputStreams/captions/cea708/Cea708CaptionInputStreamListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/inputStreams/captions/cea708/Cea708CaptionInputStreamListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "Cea708CaptionInputStreamListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/inputStreams/captions/cea708/Cea708CaptionInputStreamListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "Cea708CaptionInputStreamListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/inputStreams/concatenation/ConcatenationInputStreamListQueryParams.d.ts#ConcatenationInputStreamListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/inputStreams/concatenation/ConcatenationInputStreamListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/inputStreams/concatenation/ConcatenationInputStreamListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "ConcatenationInputStreamListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/inputStreams/concatenation/ConcatenationInputStreamListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "ConcatenationInputStreamListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/muxings/chunkedText/ChunkedTextMuxingListQueryParams.d.ts#ChunkedTextMuxingListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/muxings/chunkedText/ChunkedTextMuxingListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/chunkedText/ChunkedTextMuxingListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ChunkedTextMuxingListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/chunkedText/ChunkedTextMuxingListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ChunkedTextMuxingListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/muxings/cmaf/CmafMuxingListQueryParams.d.ts#CmafMuxingListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/muxings/cmaf/CmafMuxingListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/cmaf/CmafMuxingListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CmafMuxingListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/cmaf/CmafMuxingListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CmafMuxingListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/muxings/fmp4/drm/cenc/CencDrmListQueryParams.d.ts#CencDrmListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/muxings/fmp4/drm/cenc/CencDrmListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/fmp4/drm/cenc/CencDrmListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CencDrmListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/fmp4/drm/cenc/CencDrmListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CencDrmListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/muxings/fmp4/drm/clearkey/ClearKeyDrmListQueryParams.d.ts#ClearKeyDrmListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/muxings/fmp4/drm/clearkey/ClearKeyDrmListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/fmp4/drm/clearkey/ClearKeyDrmListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ClearKeyDrmListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/fmp4/drm/clearkey/ClearKeyDrmListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ClearKeyDrmListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/muxings/mp4/drm/cenc/CencDrmListQueryParams.d.ts#CencDrmListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/muxings/mp4/drm/cenc/CencDrmListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/mp4/drm/cenc/CencDrmListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CencDrmListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/mp4/drm/cenc/CencDrmListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CencDrmListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/muxings/mp4/drm/clearkey/ClearKeyDrmListQueryParams.d.ts#ClearKeyDrmListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/muxings/mp4/drm/clearkey/ClearKeyDrmListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/mp4/drm/clearkey/ClearKeyDrmListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ClearKeyDrmListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/mp4/drm/clearkey/ClearKeyDrmListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ClearKeyDrmListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/muxings/progressiveWebm/drm/cenc/CencDrmListQueryParams.d.ts#CencDrmListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/muxings/progressiveWebm/drm/cenc/CencDrmListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/progressiveWebm/drm/cenc/CencDrmListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CencDrmListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/progressiveWebm/drm/cenc/CencDrmListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CencDrmListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/muxings/webm/drm/cenc/CencDrmListQueryParams.d.ts#CencDrmListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/muxings/webm/drm/cenc/CencDrmListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/webm/drm/cenc/CencDrmListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CencDrmListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/webm/drm/cenc/CencDrmListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CencDrmListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/filters/conform/ConformFilterListQueryParams.d.ts#ConformFilterListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/filters/conform/ConformFilterListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/conform/ConformFilterListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ConformFilterListQueryParams" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/conform/ConformFilterListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter filters by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "ConformFilterListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/conform/ConformFilterListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ConformFilterListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/filters/crop/CropFilterListQueryParams.d.ts#CropFilterListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/filters/crop/CropFilterListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/crop/CropFilterListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CropFilterListQueryParams" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/crop/CropFilterListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter filters by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CropFilterListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/filters/crop/CropFilterListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CropFilterListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/manifests/dash/periods/adaptationsets/contentprotection/ContentProtectionListQueryParams.d.ts#ContentProtectionListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/manifests/dash/periods/adaptationsets/contentprotection/ContentProtectionListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/dash/periods/adaptationsets/contentprotection/ContentProtectionListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ContentProtectionListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/dash/periods/adaptationsets/contentprotection/ContentProtectionListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ContentProtectionListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/manifests/dash/periods/adaptationsets/representations/cmaf/contentprotection/ContentProtectionListQueryParams.d.ts#ContentProtectionListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/manifests/dash/periods/adaptationsets/representations/cmaf/contentprotection/ContentProtectionListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/dash/periods/adaptationsets/representations/cmaf/contentprotection/ContentProtectionListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ContentProtectionListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/dash/periods/adaptationsets/representations/cmaf/contentprotection/ContentProtectionListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ContentProtectionListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/manifests/dash/periods/adaptationsets/representations/fmp4/contentprotection/ContentProtectionListQueryParams.d.ts#ContentProtectionListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/manifests/dash/periods/adaptationsets/representations/fmp4/contentprotection/ContentProtectionListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/dash/periods/adaptationsets/representations/fmp4/contentprotection/ContentProtectionListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ContentProtectionListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/dash/periods/adaptationsets/representations/fmp4/contentprotection/ContentProtectionListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ContentProtectionListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/manifests/dash/periods/adaptationsets/representations/fmp4/drm/contentprotection/ContentProtectionListQueryParams.d.ts#ContentProtectionListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/manifests/dash/periods/adaptationsets/representations/fmp4/drm/contentprotection/ContentProtectionListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/dash/periods/adaptationsets/representations/fmp4/drm/contentprotection/ContentProtectionListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ContentProtectionListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/dash/periods/adaptationsets/representations/fmp4/drm/contentprotection/ContentProtectionListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ContentProtectionListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/manifests/dash/periods/adaptationsets/representations/webm/contentprotection/ContentProtectionListQueryParams.d.ts#ContentProtectionListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/manifests/dash/periods/adaptationsets/representations/webm/contentprotection/ContentProtectionListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/dash/periods/adaptationsets/representations/webm/contentprotection/ContentProtectionListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ContentProtectionListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/dash/periods/adaptationsets/representations/webm/contentprotection/ContentProtectionListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ContentProtectionListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/manifests/dash/periods/customXmlElements/CustomXmlElementListQueryParams.d.ts#CustomXmlElementListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/manifests/dash/periods/customXmlElements/CustomXmlElementListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/dash/periods/customXmlElements/CustomXmlElementListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CustomXmlElementListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/dash/periods/customXmlElements/CustomXmlElementListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CustomXmlElementListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/manifests/hls/media/closedCaptions/ClosedCaptionsMediaInfoListQueryParams.d.ts#ClosedCaptionsMediaInfoListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/manifests/hls/media/closedCaptions/ClosedCaptionsMediaInfoListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/hls/media/closedCaptions/ClosedCaptionsMediaInfoListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "ClosedCaptionsMediaInfoListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/hls/media/closedCaptions/ClosedCaptionsMediaInfoListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "ClosedCaptionsMediaInfoListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/manifests/hls/media/customTags/CustomTagListQueryParams.d.ts#CustomTagListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/manifests/hls/media/customTags/CustomTagListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/hls/media/customTags/CustomTagListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CustomTagListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/hls/media/customTags/CustomTagListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CustomTagListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/manifests/hls/streams/customTags/CustomTagListQueryParams.d.ts#CustomTagListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/manifests/hls/streams/customTags/CustomTagListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/hls/streams/customTags/CustomTagListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CustomTagListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/hls/streams/customTags/CustomTagListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CustomTagListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/outputs/cdn/CdnOutputListQueryParams.d.ts#CdnOutputListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/outputs/cdn/CdnOutputListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/outputs/cdn/CdnOutputListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CdnOutputListQueryParams" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/outputs/cdn/CdnOutputListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter output by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CdnOutputListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/outputs/cdn/CdnOutputListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CdnOutputListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/statistics/cdn/usage/CdnUsageStatisticsGetQueryParams.d.ts#CdnUsageStatisticsGetQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/statistics/cdn/usage/CdnUsageStatisticsGetQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "from",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{
+									"kind": "builtin",
+									"type": "Date",
+									"scope": "TypeScript builtin; wire representation unconfirmed"
+								}
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/cdn/usage/CdnUsageStatisticsGetQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Start date. Accepted formats: yyyy-MM-ddThh:mm:ssZ or yyyy-MM-dd",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "CdnUsageStatisticsGetQueryParams" }
+						]
+					},
+					{
+						"name": "to",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{
+									"kind": "builtin",
+									"type": "Date",
+									"scope": "TypeScript builtin; wire representation unconfirmed"
+								}
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/cdn/usage/CdnUsageStatisticsGetQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "End date. Accepted formats: yyyy-MM-ddThh:mm:ssZ or yyyy-MM-dd",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "CdnUsageStatisticsGetQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/CacheControl.d.ts#CacheControl",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/CacheControl.d.ts", "line": 5 },
+				"properties": [
+					{
+						"name": "cacheControl",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/CacheControl.d.ts", "line": 11 },
+						"documentation": "Cache control for storing data on CDN. Example \\\"public, max-age=0, no-cache\\\". Cache control is supported on S3, GCS and Azure output storage providers.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CacheControl" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/CacheControlSettings.d.ts#CacheControlSettings",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/CacheControlSettings.d.ts",
+					"line": 8
+				},
+				"properties": [
+					{
+						"name": "dash",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/CacheControlSettingsDash.d.ts#CacheControlSettingsDash"
+						},
+						"sdkEvidence": {
+							"file": "models/CacheControlSettings.d.ts",
+							"line": 20
+						},
+						"documentation": "Cache control settings for DASH manifest.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CacheControlSettingsDash}" },
+							{ "name": "memberof", "text": "CacheControlSettings" }
+						]
+					},
+					{
+						"name": "hls",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/CacheControlSettingsHls.d.ts#CacheControlSettingsHls"
+						},
+						"sdkEvidence": {
+							"file": "models/CacheControlSettings.d.ts",
+							"line": 14
+						},
+						"documentation": "Cache control settings for HLS manifest.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CacheControlSettingsHls}" },
+							{ "name": "memberof", "text": "CacheControlSettings" }
+						]
+					},
+					{
+						"name": "segments",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/CacheControlSettingsSegments.d.ts#CacheControlSettingsSegments"
+						},
+						"sdkEvidence": {
+							"file": "models/CacheControlSettings.d.ts",
+							"line": 26
+						},
+						"documentation": "Cache control settings for segments.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CacheControlSettingsSegments}" },
+							{ "name": "memberof", "text": "CacheControlSettings" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/CacheControlSettingsDash.d.ts#CacheControlSettingsDash",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/CacheControlSettingsDash.d.ts",
+					"line": 6
+				},
+				"properties": [
+					{
+						"name": "templateManifest",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CacheControl.d.ts#CacheControl" },
+						"sdkEvidence": {
+							"file": "models/CacheControlSettingsDash.d.ts",
+							"line": 18
+						},
+						"documentation": "Cache control settings for DASH Template manifest.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CacheControl}" },
+							{ "name": "memberof", "text": "CacheControlSettingsDash" }
+						]
+					},
+					{
+						"name": "timelineManifest",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CacheControl.d.ts#CacheControl" },
+						"sdkEvidence": {
+							"file": "models/CacheControlSettingsDash.d.ts",
+							"line": 12
+						},
+						"documentation": "Cache control settings for DASH Timeline manifest.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CacheControl}" },
+							{ "name": "memberof", "text": "CacheControlSettingsDash" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/CacheControlSettingsHls.d.ts#CacheControlSettingsHls",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/CacheControlSettingsHls.d.ts",
+					"line": 6
+				},
+				"properties": [
+					{
+						"name": "multiVariantPlaylist",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CacheControl.d.ts#CacheControl" },
+						"sdkEvidence": {
+							"file": "models/CacheControlSettingsHls.d.ts",
+							"line": 12
+						},
+						"documentation": "Cache control settings for HLS Multivariant playlist.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CacheControl}" },
+							{ "name": "memberof", "text": "CacheControlSettingsHls" }
+						]
+					},
+					{
+						"name": "variantPlaylist",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CacheControl.d.ts#CacheControl" },
+						"sdkEvidence": {
+							"file": "models/CacheControlSettingsHls.d.ts",
+							"line": 18
+						},
+						"documentation": "Cache control settings for HLS Media playlist.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CacheControl}" },
+							{ "name": "memberof", "text": "CacheControlSettingsHls" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/CacheControlSettingsSegments.d.ts#CacheControlSettingsSegments",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/CacheControlSettingsSegments.d.ts",
+					"line": 6
+				},
+				"properties": [
+					{
+						"name": "initSegment",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CacheControl.d.ts#CacheControl" },
+						"sdkEvidence": {
+							"file": "models/CacheControlSettingsSegments.d.ts",
+							"line": 12
+						},
+						"documentation": "Cache control settings for init segment.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CacheControl}" },
+							{ "name": "memberof", "text": "CacheControlSettingsSegments" }
+						]
+					},
+					{
+						"name": "mediaSegment",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CacheControl.d.ts#CacheControl" },
+						"sdkEvidence": {
+							"file": "models/CacheControlSettingsSegments.d.ts",
+							"line": 18
+						},
+						"documentation": "Cache control settings for media segment.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CacheControl}" },
+							{ "name": "memberof", "text": "CacheControlSettingsSegments" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/CaptionCharacterEncoding.d.ts#CaptionCharacterEncoding",
+			{
+				"kind": "enum",
+				"values": [
+					"ANSI_X3.4-1968",
+					"ANSI_X3.4-1986",
+					"ARABIC",
+					"ARMSCII-8",
+					"ASCII",
+					"ASMO-708",
+					"BIG-5",
+					"BIG-FIVE",
+					"BIG5",
+					"BIG5-HKSCS",
+					"BIG5-HKSCS:1999",
+					"BIG5-HKSCS:2001",
+					"BIG5-HKSCS:2004",
+					"BIG5-HKSCS:2008",
+					"BIG5HKSCS",
+					"BIGFIVE",
+					"C99",
+					"CHAR",
+					"CHINESE",
+					"CN",
+					"CN-BIG5",
+					"CN-GB",
+					"CN-GB-ISOIR165",
+					"CP1131",
+					"CP1133",
+					"CP1250",
+					"CP1251",
+					"CP1252",
+					"CP1253",
+					"CP1254",
+					"CP1255",
+					"CP1256",
+					"CP1257",
+					"CP1258",
+					"CP1361",
+					"CP154",
+					"CP367",
+					"CP819",
+					"CP850",
+					"CP862",
+					"CP866",
+					"CP874",
+					"CP932",
+					"CP936",
+					"CP949",
+					"CP950",
+					"CSASCII",
+					"CSBIG5",
+					"CSEUCKR",
+					"CSEUCPKDFMTJAPANESE",
+					"CSEUCTW",
+					"CSGB2312",
+					"CSHALFWIDTHKATAKANA",
+					"CSHPROMAN8",
+					"CSIBM866",
+					"CSISO14JISC6220RO",
+					"CSISO159JISX02121990",
+					"CSISO2022CN",
+					"CSISO2022JP",
+					"CSISO2022JP2",
+					"CSISO2022KR",
+					"CSISO57GB1988",
+					"CSISO58GB231280",
+					"CSISO87JISX0208",
+					"CSISOLATIN1",
+					"CSISOLATIN2",
+					"CSISOLATIN3",
+					"CSISOLATIN4",
+					"CSISOLATIN5",
+					"CSISOLATIN6",
+					"CSISOLATINARABIC",
+					"CSISOLATINCYRILLIC",
+					"CSISOLATINGREEK",
+					"CSISOLATINHEBREW",
+					"CSKOI8R",
+					"CSKSC56011987",
+					"CSKZ1048",
+					"CSMACINTOSH",
+					"CSPC850MULTILINGUAL",
+					"CSPC862LATINHEBREW",
+					"CSPTCP154",
+					"CSSHIFTJIS",
+					"CSUCS4",
+					"CSUNICODE",
+					"CSUNICODE11",
+					"CSUNICODE11UTF7",
+					"CSVISCII",
+					"CYRILLIC",
+					"CYRILLIC-ASIAN",
+					"ECMA-114",
+					"ECMA-118",
+					"ELOT_928",
+					"EUC-CN",
+					"EUC-JP",
+					"EUC-KR",
+					"EUC-TW",
+					"EUCCN",
+					"EUCJP",
+					"EUCKR",
+					"EUCTW",
+					"EXTENDED_UNIX_CODE_PACKED_FORMAT_FOR_JAPANESE",
+					"GB_1988-80",
+					"GB_2312-80",
+					"GB18030",
+					"GB2312",
+					"GBK",
+					"GEORGIAN-ACADEMY",
+					"GEORGIAN-PS",
+					"GREEK",
+					"GREEK8",
+					"HEBREW",
+					"HP-ROMAN8",
+					"HZ",
+					"HZ-GB-2312",
+					"IBM-CP1133",
+					"IBM367",
+					"IBM819",
+					"IBM850",
+					"IBM862",
+					"IBM866",
+					"ISO-10646-UCS-2",
+					"ISO-10646-UCS-4",
+					"ISO-2022-CN",
+					"ISO-2022-CN-EXT",
+					"ISO-2022-JP",
+					"ISO-2022-JP-1",
+					"ISO-2022-JP-2",
+					"ISO-2022-KR",
+					"ISO-8859-1",
+					"ISO-8859-10",
+					"ISO-8859-11",
+					"ISO-8859-13",
+					"ISO-8859-14",
+					"ISO-8859-15",
+					"ISO-8859-16",
+					"ISO-8859-2",
+					"ISO-8859-3",
+					"ISO-8859-4",
+					"ISO-8859-5",
+					"ISO-8859-6",
+					"ISO-8859-7",
+					"ISO-8859-8",
+					"ISO-8859-9",
+					"ISO-CELTIC",
+					"ISO-IR-100",
+					"ISO-IR-101",
+					"ISO-IR-109",
+					"ISO-IR-110",
+					"ISO-IR-126",
+					"ISO-IR-127",
+					"ISO-IR-138",
+					"ISO-IR-14",
+					"ISO-IR-144",
+					"ISO-IR-148",
+					"ISO-IR-149",
+					"ISO-IR-157",
+					"ISO-IR-159",
+					"ISO-IR-165",
+					"ISO-IR-166",
+					"ISO-IR-179",
+					"ISO-IR-199",
+					"ISO-IR-203",
+					"ISO-IR-226",
+					"ISO-IR-57",
+					"ISO-IR-58",
+					"ISO-IR-6",
+					"ISO-IR-87",
+					"ISO_646.IRV:1991",
+					"ISO_8859-1:1987",
+					"ISO_8859-10:1992",
+					"ISO_8859-14:1998",
+					"ISO_8859-15:1998",
+					"ISO_8859-16:2001",
+					"ISO_8859-2:1987",
+					"ISO_8859-3:1988",
+					"ISO_8859-4:1988",
+					"ISO_8859-5:1988",
+					"ISO_8859-6:1987",
+					"ISO_8859-7:1987",
+					"ISO_8859-7:2003",
+					"ISO_8859-8:1988",
+					"ISO_8859-9:1989",
+					"ISO646-CN",
+					"ISO646-JP",
+					"ISO646-US",
+					"ISO8859-1",
+					"ISO8859-10",
+					"ISO8859-11",
+					"ISO8859-13",
+					"ISO8859-14",
+					"ISO8859-15",
+					"ISO8859-16",
+					"ISO8859-2",
+					"ISO8859-3",
+					"ISO8859-4",
+					"ISO8859-5",
+					"ISO8859-6",
+					"ISO8859-7",
+					"ISO8859-8",
+					"ISO8859-9",
+					"JAVA",
+					"JIS_C6220-1969-RO",
+					"JIS_C6226-1983",
+					"JIS_X0201",
+					"JIS_X0208",
+					"JIS_X0208-1983",
+					"JIS_X0208-1990",
+					"JIS_X0212",
+					"JIS_X0212-1990",
+					"JIS_X0212.1990-0",
+					"JIS0208",
+					"JISX0201-1976",
+					"JOHAB",
+					"JP",
+					"KOI8-R",
+					"KOI8-RU",
+					"KOI8-T",
+					"KOI8-U",
+					"KOREAN",
+					"KS_C_5601-1987",
+					"KS_C_5601-1989",
+					"KSC_5601",
+					"KZ-1048",
+					"L1",
+					"L10",
+					"L2",
+					"L3",
+					"L4",
+					"L5",
+					"L6",
+					"L7",
+					"L8",
+					"LATIN-9",
+					"LATIN1",
+					"LATIN10",
+					"LATIN2",
+					"LATIN3",
+					"LATIN4",
+					"LATIN5",
+					"LATIN6",
+					"LATIN7",
+					"LATIN8",
+					"MAC",
+					"MACARABIC",
+					"MACCENTRALEUROPE",
+					"MACCROATIAN",
+					"MACCYRILLIC",
+					"MACGREEK",
+					"MACHEBREW",
+					"MACICELAND",
+					"MACINTOSH",
+					"MACROMAN",
+					"MACROMANIA",
+					"MACTHAI",
+					"MACTURKISH",
+					"MACUKRAINE",
+					"MS-ANSI",
+					"MS-ARAB",
+					"MS-CYRL",
+					"MS-EE",
+					"MS-GREEK",
+					"MS-HEBR",
+					"MS-TURK",
+					"MS_KANJI",
+					"MS936",
+					"MULELAO-1",
+					"NEXTSTEP",
+					"PT154",
+					"PTCP154",
+					"R8",
+					"RK1048",
+					"ROMAN8",
+					"SHIFT-JIS",
+					"SJIS",
+					"STRK1048-2002",
+					"TCVN",
+					"TCVN-5712",
+					"TCVN5712-1",
+					"TCVN5712-1:1993",
+					"TIS-620",
+					"TIS620",
+					"TIS620-0",
+					"TIS620.2529-1",
+					"TIS620.2533-0",
+					"TIS620.2533-1",
+					"UCS-2",
+					"UCS-2-INTERNAL",
+					"UCS-2-SWAPPED",
+					"UCS-2BE",
+					"UCS-2LE",
+					"UCS-4",
+					"UCS-4-INTERNAL",
+					"UCS-4-SWAPPED",
+					"UCS-4BE",
+					"UCS-4LE",
+					"UHC",
+					"UNICODE-1-1",
+					"UNICODE-1-1-UTF-7",
+					"UNICODEBIG",
+					"UNICODELITTLE",
+					"US",
+					"US-ASCII",
+					"UTF-16",
+					"UTF-16BE",
+					"UTF-16LE",
+					"UTF-32",
+					"UTF-32BE",
+					"UTF-32LE",
+					"UTF-7",
+					"UTF-8",
+					"VISCII",
+					"VISCII1.1-1",
+					"WCHAR_T",
+					"WINBALTRIM",
+					"WINDOWS-1250",
+					"WINDOWS-1251",
+					"WINDOWS-1252",
+					"WINDOWS-1253",
+					"WINDOWS-1254",
+					"WINDOWS-1255",
+					"WINDOWS-1256",
+					"WINDOWS-1257",
+					"WINDOWS-1258",
+					"WINDOWS-874",
+					"WINDOWS-936",
+					"X0201",
+					"X0208",
+					"X0212"
+				],
+				"sdkEvidence": {
+					"file": "models/CaptionCharacterEncoding.d.ts",
+					"line": 6
+				}
+			}
+		],
+		[
+			"models/Cea608708SubtitleConfiguration.d.ts#Cea608708SubtitleConfiguration",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/Cea608708SubtitleConfiguration.d.ts",
+					"line": 6
+				},
+				"properties": [
+					{
+						"name": "passthroughActivated",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/Cea608708SubtitleConfiguration.d.ts",
+							"line": 12
+						},
+						"documentation": "If enabled, CEA 608 an CEA 708 subtitles will be copied from the input video stream to the output video stream. Note: This does not work, if the output framerate is different than the input framerate (except doubling the framerate with deinterlacing per field)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "Cea608708SubtitleConfiguration" }
+						]
+					},
+					{
+						"name": "passthroughMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/PassthroughMode.d.ts#PassthroughMode" },
+						"sdkEvidence": {
+							"file": "models/Cea608708SubtitleConfiguration.d.ts",
+							"line": 17
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{PassthroughMode}" },
+							{ "name": "memberof", "text": "Cea608708SubtitleConfiguration" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/Cea608CaptionInputStream.d.ts#Cea608CaptionInputStream",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/Cea608CaptionInputStream.d.ts",
+					"line": 8
+				},
+				"properties": [
+					{
+						"name": "channel",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/Cea608ChannelType.d.ts#Cea608ChannelType"
+						},
+						"sdkEvidence": {
+							"file": "models/Cea608CaptionInputStream.d.ts",
+							"line": 32
+						},
+						"documentation": "The CEA-608 caption channel to extract, as defined in ANSI/CTA-608-E. Only the primary channel of each field is selectable: CC1 on field 1 and CC3 on field 2. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Cea608ChannelType}" },
+							{ "name": "memberof", "text": "Cea608CaptionInputStream" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "inputId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/Cea608CaptionInputStream.d.ts",
+							"line": 20
+						},
+						"documentation": "Id of the Input (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Cea608CaptionInputStream" }
+						]
+					},
+					{
+						"name": "inputPath",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/Cea608CaptionInputStream.d.ts",
+							"line": 26
+						},
+						"documentation": "Path to media file (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Cea608CaptionInputStream" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/InputStreamType.d.ts#InputStreamType" },
+						"sdkEvidence": {
+							"file": "models/Cea608CaptionInputStream.d.ts",
+							"line": 14
+						},
+						"documentation": "Discriminator property for InputStream",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Cea608CaptionInputStream" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/Cea608ChannelType.d.ts#Cea608ChannelType",
+			{
+				"kind": "enum",
+				"values": ["CC1", "CC3"],
+				"sdkEvidence": { "file": "models/Cea608ChannelType.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/Cea708CaptionInputStream.d.ts#Cea708CaptionInputStream",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/Cea708CaptionInputStream.d.ts",
+					"line": 7
+				},
+				"properties": [
+					{
+						"name": "channel",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Cea708CaptionInputStream.d.ts",
+							"line": 31
+						},
+						"documentation": "The CEA-708 caption service to extract, as defined in ANSI/CTA-708-E. Service 1 is the primary caption service and is used when this value is not set. Which services a stream carries depends on the source, so check it before selecting anything other than service 1.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Cea708CaptionInputStream" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "inputId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/Cea708CaptionInputStream.d.ts",
+							"line": 19
+						},
+						"documentation": "Id of the Input (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Cea708CaptionInputStream" }
+						]
+					},
+					{
+						"name": "inputPath",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/Cea708CaptionInputStream.d.ts",
+							"line": 25
+						},
+						"documentation": "Path to media file (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Cea708CaptionInputStream" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/InputStreamType.d.ts#InputStreamType" },
+						"sdkEvidence": {
+							"file": "models/Cea708CaptionInputStream.d.ts",
+							"line": 13
+						},
+						"documentation": "Discriminator property for InputStream",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Cea708CaptionInputStream" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/CencDrm.d.ts#CencDrm",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/CencDrm.d.ts", "line": 13 },
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "enablePiffCompatibility",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": { "file": "models/CencDrm.d.ts", "line": 49 },
+						"documentation": "Enables compatibility with the Protected Interoperable File Format (PIFF) specification",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "CencDrm" }
+						]
+					},
+					{
+						"name": "encryptionMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/EncryptionMode.d.ts#EncryptionMode" },
+						"sdkEvidence": { "file": "models/CencDrm.d.ts", "line": 37 },
+						"documentation": "The encryption method to use. Default is `CTR` (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncryptionMode}" },
+							{ "name": "memberof", "text": "CencDrm" }
+						]
+					},
+					{
+						"name": "fairPlay",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CencFairPlay.d.ts#CencFairPlay" },
+						"sdkEvidence": { "file": "models/CencDrm.d.ts", "line": 73 },
+						"documentation": "Configuration for FairPlay DRM",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CencFairPlay}" },
+							{ "name": "memberof", "text": "CencDrm" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "ivSize",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/IvSize.d.ts#IvSize" },
+						"sdkEvidence": { "file": "models/CencDrm.d.ts", "line": 43 },
+						"documentation": "Size of the initialization vector",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{IvSize}" },
+							{ "name": "memberof", "text": "CencDrm" }
+						]
+					},
+					{
+						"name": "key",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/CencDrm.d.ts", "line": 25 },
+						"documentation": "16 byte encryption key, 32 hexadecimal characters (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CencDrm" }
+						]
+					},
+					{
+						"name": "kid",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/CencDrm.d.ts", "line": 31 },
+						"documentation": "16 byte encryption key id. Required for any other DRM but FairPlay",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CencDrm" }
+						]
+					},
+					{
+						"name": "marlin",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CencMarlin.d.ts#CencMarlin" },
+						"sdkEvidence": { "file": "models/CencDrm.d.ts", "line": 67 },
+						"documentation": "Configuration for Marlin DRM",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CencMarlin}" },
+							{ "name": "memberof", "text": "CencDrm" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "outputs",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/EncodingOutput.d.ts#EncodingOutput" }
+						},
+						"sdkEvidence": { "file": "models/Drm.d.ts", "line": 26 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingOutput[]}" },
+							{ "name": "memberof", "text": "Drm" }
+						]
+					},
+					{
+						"name": "playReady",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CencPlayReady.d.ts#CencPlayReady" },
+						"sdkEvidence": { "file": "models/CencDrm.d.ts", "line": 61 },
+						"documentation": "Configuration for PlayReady DRM",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CencPlayReady}" },
+							{ "name": "memberof", "text": "CencDrm" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/DrmType.d.ts#DrmType" },
+						"sdkEvidence": { "file": "models/CencDrm.d.ts", "line": 19 },
+						"documentation": "Discriminator property for Drm",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CencDrm" }
+						]
+					},
+					{
+						"name": "widevine",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CencWidevine.d.ts#CencWidevine" },
+						"sdkEvidence": { "file": "models/CencDrm.d.ts", "line": 55 },
+						"documentation": "Configuration for Widevine DRM",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CencWidevine}" },
+							{ "name": "memberof", "text": "CencDrm" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/CencFairPlay.d.ts#CencFairPlay",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/CencFairPlay.d.ts", "line": 5 },
+				"properties": [
+					{
+						"name": "iv",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/CencFairPlay.d.ts", "line": 11 },
+						"documentation": "Initialization vector as hexadecimal string",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CencFairPlay" }
+						]
+					},
+					{
+						"name": "uri",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/CencFairPlay.d.ts", "line": 17 },
+						"documentation": "URL of the licensing server. Typically starts with a skd://. Please check with your DRM provider on their required format.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CencFairPlay" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/CencMarlin.d.ts#CencMarlin",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/CencMarlin.d.ts", "line": 5 },
+				"properties": []
+			}
+		],
+		[
+			"models/CencPlayReady.d.ts#CencPlayReady",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/CencPlayReady.d.ts", "line": 6 },
+				"properties": [
+					{
+						"name": "additionalInformation",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/PlayReadyAdditionalInformation.d.ts#PlayReadyAdditionalInformation"
+						},
+						"sdkEvidence": { "file": "models/CencPlayReady.d.ts", "line": 23 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{PlayReadyAdditionalInformation}" },
+							{ "name": "memberof", "text": "CencPlayReady" }
+						]
+					},
+					{
+						"name": "laUrl",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/CencPlayReady.d.ts", "line": 12 },
+						"documentation": "Url of the license server. Either the laUrl or the pssh needs to be provided.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CencPlayReady" }
+						]
+					},
+					{
+						"name": "pssh",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/CencPlayReady.d.ts", "line": 18 },
+						"documentation": "Base64 encoded pssh payload.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CencPlayReady" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/CencWidevine.d.ts#CencWidevine",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/CencWidevine.d.ts", "line": 5 },
+				"properties": [
+					{
+						"name": "pssh",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/CencWidevine.d.ts", "line": 11 },
+						"documentation": "Base64 encoded pssh payload (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CencWidevine" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/ChannelLayout.d.ts#ChannelLayout",
+			{
+				"kind": "enum",
+				"values": ["NONE", "MONO", "STEREO"],
+				"sdkEvidence": { "file": "models/ChannelLayout.d.ts", "line": 5 }
+			}
+		],
+		[
+			"models/ChannelsAttributeForAudio.d.ts#ChannelsAttributeForAudio",
+			{
+				"kind": "enum",
+				"values": ["ALWAYS", "STANDARD_CONFORM", "LEGACY"],
+				"sdkEvidence": {
+					"file": "models/ChannelsAttributeForAudio.d.ts",
+					"line": 5
+				}
+			}
+		],
+		[
+			"models/CheckOutputPermissionsRequest.d.ts#CheckOutputPermissionsRequest",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/CheckOutputPermissionsRequest.d.ts",
+					"line": 5
+				},
+				"properties": [
+					{
+						"name": "path",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/CheckOutputPermissionsRequest.d.ts",
+							"line": 11
+						},
+						"documentation": "The path on the storage for which permissions should be checked. In AWS S3 terminology, this corresponds to a \\\"prefix\\\". To perform the check, an empty test file (WritePermissionTestFile.txt) will be created in this location. Defaults to an empty string, which corresponds to the root directory.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CheckOutputPermissionsRequest" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/ChromaLocation.d.ts#ChromaLocation",
+			{
+				"kind": "enum",
+				"values": [
+					"UNSPECIFIED",
+					"LEFT",
+					"CENTER",
+					"TOPLEFT",
+					"TOP",
+					"BOTTOMLEFT",
+					"BOTTOM"
+				],
+				"sdkEvidence": { "file": "models/ChromaLocation.d.ts", "line": 5 }
+			}
+		],
+		[
+			"models/ChunkedTextMuxing.d.ts#ChunkedTextMuxing",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/ChunkedTextMuxing.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "avgBitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 47 },
+						"documentation": "Average bitrate. Available after encoding finishes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "ignoredBy",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/Ignoring.d.ts#Ignoring" }
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 65 },
+						"documentation": "This read-only property is set during the analysis step of the encoding. If it contains items, the Muxing has been ignored during the encoding process according to its 'streamConditionsMode'",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Ignoring[]}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "maxBitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 59 },
+						"documentation": "Max bitrate. Available after encoding finishes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "minBitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 53 },
+						"documentation": "Min bitrate. Available after encoding finishes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "outputs",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/EncodingOutput.d.ts#EncodingOutput" }
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 41 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingOutput[]}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "segmentLength",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/ChunkedTextMuxing.d.ts",
+							"line": 19
+						},
+						"documentation": "Length of the segments in seconds (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ChunkedTextMuxing" }
+						]
+					},
+					{
+						"name": "segmentNaming",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/ChunkedTextMuxing.d.ts",
+							"line": 25
+						},
+						"documentation": "Segment naming policy",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "ChunkedTextMuxing" }
+						]
+					},
+					{
+						"name": "segmentNamingTemplate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/ChunkedTextMuxing.d.ts",
+							"line": 31
+						},
+						"documentation": "Segment naming policy containing one or both of the following placeholders: - '{rand_chars:x}', which will be replaced by a random alphanumeric string of length x (default 32)   on each (re)start of the encoding. The resulting string will be copied to the segmentNaming property.   Intended to avoid re-use of segment names after restarting a live encoding. - '{segment_rand_chars:x}', which will be replaced by a random alphanumeric string of length x (default 32)   for each different segment. This is intended to avoid guessing segment URLs by replacing segment numbers.  If segmentNamingTemplate is set, segmentNaming must not be set.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "ChunkedTextMuxing" }
+						]
+					},
+					{
+						"name": "segmentsMuxed",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/ChunkedTextMuxing.d.ts",
+							"line": 43
+						},
+						"documentation": "Number of segments which have been encoded",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ChunkedTextMuxing" }
+						]
+					},
+					{
+						"name": "startOffset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/ChunkedTextMuxing.d.ts",
+							"line": 37
+						},
+						"documentation": "Offset of MPEG-TS timestamps in seconds. This only affects streams with [WebVttConfiguration](#/Encoding/PostEncodingConfigurationsSubtitlesWebVtt). If set, the X-TIMESTAMP-MAP will be added as described in the [HLS specification](https://datatracker.ietf.org/doc/html/rfc8216#section-3.5). For example, if set to 10 seconds, *X-TIMESTAMP-MAP=MPEGTS:900000,LOCAL:00:00:00.000* will be added after each *WEBVTT* header. The default for ChunkedTextMuxing is that the X-TIMESTAMP-MAP will not be written. Important to note is that the default for `startOffset` for [TsMuxings](#/Encoding/PostEncodingEncodingsMuxingsTsByEncodingId) and [ProgressiveTsMuxings](#/Encoding/PostEncodingEncodingsMuxingsProgressiveTsByEncodingId) is 10 seconds. If the output of this muxing is used for HLS together with video/audio streams using TsMuxings and ProgressiveTsMuxings, this value should be set to the same `startOffset`.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ChunkedTextMuxing" }
+						]
+					},
+					{
+						"name": "streamConditionsMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/StreamConditionsMode.d.ts#StreamConditionsMode"
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 71 },
+						"documentation": "Specifies how to proceed with the Muxing when some of its Streams are ignored (see 'condition' property of the Stream resource). The settings only make a difference for Muxings with more than one Stream. When retrieving the resource after the analysis step of the encoding has finished, 'ignoredBy' will indicate if and why it has been ignored.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{StreamConditionsMode}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "streams",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/MuxingStream.d.ts#MuxingStream" }
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 36 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{MuxingStream[]}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/MuxingType.d.ts#MuxingType" },
+						"sdkEvidence": {
+							"file": "models/ChunkedTextMuxing.d.ts",
+							"line": 13
+						},
+						"documentation": "Discriminator property for Muxing",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "ChunkedTextMuxing" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/ClearKeyDrm.d.ts#ClearKeyDrm",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/ClearKeyDrm.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "key",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/ClearKeyDrm.d.ts", "line": 19 },
+						"documentation": "16 byte encryption key, 32 hexadecimal characters (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "ClearKeyDrm" }
+						]
+					},
+					{
+						"name": "kid",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/ClearKeyDrm.d.ts", "line": 25 },
+						"documentation": "16 byte key id (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "ClearKeyDrm" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "outputs",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/EncodingOutput.d.ts#EncodingOutput" }
+						},
+						"sdkEvidence": { "file": "models/Drm.d.ts", "line": 26 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingOutput[]}" },
+							{ "name": "memberof", "text": "Drm" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/DrmType.d.ts#DrmType" },
+						"sdkEvidence": { "file": "models/ClearKeyDrm.d.ts", "line": 13 },
+						"documentation": "Discriminator property for Drm",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "ClearKeyDrm" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/ClockSynchronizationMode.d.ts#ClockSynchronizationMode",
+			{
+				"kind": "enum",
+				"values": ["SYSTEM_CLOCK", "EMBEDDED"],
+				"sdkEvidence": {
+					"file": "models/ClockSynchronizationMode.d.ts",
+					"line": 6
+				}
+			}
+		],
+		[
+			"models/ClosedCaptionsMediaInfo.d.ts#ClosedCaptionsMediaInfo",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/ClosedCaptionsMediaInfo.d.ts",
+					"line": 6
+				},
+				"properties": [
+					{
+						"name": "assocLanguage",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 24 },
+						"documentation": "Identifies a language that is associated with the Rendition.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "autoselect",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 42 },
+						"documentation": "If set to true, the client MAY choose to play this Rendition in the absence of explicit user preference.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "characteristics",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "array", "items": { "kind": "string" } },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 48 },
+						"documentation": "Contains Uniform Type Identifiers",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string[]}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "drmId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/SegmentsMediaInfo.d.ts",
+							"line": 36
+						},
+						"documentation": "Id of the DRM.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "SegmentsMediaInfo" }
+						]
+					},
+					{
+						"name": "encodingId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/SegmentsMediaInfo.d.ts",
+							"line": 18
+						},
+						"documentation": "Id of the encoding. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "SegmentsMediaInfo" }
+						]
+					},
+					{
+						"name": "endSegmentNumber",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/SegmentsMediaInfo.d.ts",
+							"line": 48
+						},
+						"documentation": "Number of the last segment. Default is the last one that was encoded.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "SegmentsMediaInfo" }
+						]
+					},
+					{
+						"name": "forced",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/ClosedCaptionsMediaInfo.d.ts",
+							"line": 18
+						},
+						"documentation": "A value of true indicates that the Rendition contains content which is considered essential to play.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "ClosedCaptionsMediaInfo" }
+						]
+					},
+					{
+						"name": "groupId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 12 },
+						"documentation": "The value is a quoted-string which specifies the group to which the Rendition belongs. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "instreamId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/ClosedCaptionsMediaInfo.d.ts",
+							"line": 12
+						},
+						"documentation": "Specifies a Rendition within the segments in the Media Playlist. (See HLS spec 4.3.4.1. EXT-X-MEDIA INSTREAM-ID) (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "ClosedCaptionsMediaInfo" }
+						]
+					},
+					{
+						"name": "isDefault",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 36 },
+						"documentation": "If set to true, the client SHOULD play this Rendition of the content in the absence of information from the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "language",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 18 },
+						"documentation": "Primary language in the rendition.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "muxingId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/SegmentsMediaInfo.d.ts",
+							"line": 30
+						},
+						"documentation": "Id of the muxing. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "SegmentsMediaInfo" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 30 },
+						"documentation": "Human readable description of the rendition. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "segmentPath",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/SegmentsMediaInfo.d.ts",
+							"line": 12
+						},
+						"documentation": "Path to segments. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "SegmentsMediaInfo" }
+						]
+					},
+					{
+						"name": "startSegmentNumber",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/SegmentsMediaInfo.d.ts",
+							"line": 42
+						},
+						"documentation": "Number of the first segment. Default is 0.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "SegmentsMediaInfo" }
+						]
+					},
+					{
+						"name": "streamId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/SegmentsMediaInfo.d.ts",
+							"line": 24
+						},
+						"documentation": "Id of the stream. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "SegmentsMediaInfo" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/CloudRegion.d.ts#CloudRegion",
+			{
+				"kind": "enum",
+				"values": [
+					"AWS_US_EAST_1",
+					"AWS_US_EAST_2",
+					"AWS_US_WEST_1",
+					"AWS_US_WEST_2",
+					"AWS_EU_WEST_1",
+					"AWS_EU_CENTRAL_1",
+					"AWS_AP_SOUTHEAST_1",
+					"AWS_AP_SOUTHEAST_2",
+					"AWS_AP_NORTHEAST_1",
+					"AWS_AP_NORTHEAST_2",
+					"AWS_AP_SOUTH_1",
+					"AWS_SA_EAST_1",
+					"AWS_EU_WEST_2",
+					"AWS_EU_WEST_3",
+					"AWS_CA_CENTRAL_1",
+					"AWS_EU_NORTH_1",
+					"GOOGLE_US_CENTRAL_1",
+					"GOOGLE_US_EAST_1",
+					"GOOGLE_ASIA_EAST_1",
+					"GOOGLE_EUROPE_WEST_1",
+					"GOOGLE_US_WEST_1",
+					"GOOGLE_ASIA_EAST_2",
+					"GOOGLE_ASIA_NORTHEAST_1",
+					"GOOGLE_ASIA_SOUTH_1",
+					"GOOGLE_ASIA_SOUTHEAST_1",
+					"GOOGLE_AUSTRALIA_SOUTHEAST_1",
+					"GOOGLE_EUROPE_NORTH_1",
+					"GOOGLE_EUROPE_WEST_2",
+					"GOOGLE_EUROPE_WEST_3",
+					"GOOGLE_EUROPE_WEST_4",
+					"GOOGLE_NORTHAMERICA_NORTHEAST_1",
+					"GOOGLE_SOUTHAMERICA_EAST_1",
+					"GOOGLE_US_EAST_4",
+					"GOOGLE_US_WEST_2",
+					"GOOGLE_ME_CENTRAL_2",
+					"AZURE_ASIA_EAST",
+					"AZURE_ASIA_SOUTHEAST",
+					"AZURE_AUSTRALIA_EAST",
+					"AZURE_AUSTRALIA_SOUTHEAST",
+					"AZURE_BRAZIL_SOUTH",
+					"AZURE_CANADA_CENTRAL",
+					"AZURE_EUROPE_NORTH",
+					"AZURE_EUROPE_WEST",
+					"AZURE_FRANCE_CENTRAL",
+					"AZURE_GERMANY_WESTCENTRAL",
+					"AZURE_INDIA_CENTRAL",
+					"AZURE_INDIA_SOUTH",
+					"AZURE_JAPAN_EAST",
+					"AZURE_JAPAN_WEST",
+					"AZURE_KOREA_CENTRAL",
+					"AZURE_UAE_NORTH",
+					"AZURE_US_CENTRAL",
+					"AZURE_US_EAST",
+					"AZURE_US_EAST2",
+					"AZURE_US_WEST",
+					"AZURE_US_WEST2",
+					"AZURE_US_SOUTH_CENTRAL",
+					"AZURE_US_NORTH_CENTRAL",
+					"AZURE_UK_SOUTH",
+					"AKAMAI_AU_MEL",
+					"AKAMAI_BR_GRU",
+					"AKAMAI_ES_MAD",
+					"AKAMAI_FR_PAR",
+					"AKAMAI_ID_CGK",
+					"AKAMAI_IN_MAA",
+					"AKAMAI_IT_MIL",
+					"AKAMAI_JP_OSA",
+					"AKAMAI_NL_AMS",
+					"AKAMAI_SE_STO",
+					"AKAMAI_US_LAX",
+					"AKAMAI_US_MIA",
+					"AKAMAI_US_ORD",
+					"AKAMAI_US_SEA",
+					"OCI_EU_FRANKFURT_1",
+					"OCI_US_ASHBURN_1",
+					"NORTH_AMERICA",
+					"SOUTH_AMERICA",
+					"EUROPE",
+					"AFRICA",
+					"ASIA",
+					"AUSTRALIA",
+					"AWS",
+					"GOOGLE",
+					"EXTERNAL",
+					"AUTO"
+				],
+				"sdkEvidence": { "file": "models/CloudRegion.d.ts", "line": 5 }
+			}
+		],
+		[
+			"models/CmafMuxing.d.ts#CmafMuxing",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/CmafMuxing.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "avgBitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 47 },
+						"documentation": "Average bitrate. Available after encoding finishes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "framesPerCmafChunk",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/CmafMuxing.d.ts", "line": 55 },
+						"documentation": "Number of media frames per CMAF chunk. Defaults to: Length of a segment in frames. Minimum: 1. Maximum: Length of a segment in frames.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CmafMuxing" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "ignoredBy",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/Ignoring.d.ts#Ignoring" }
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 65 },
+						"documentation": "This read-only property is set during the analysis step of the encoding. If it contains items, the Muxing has been ignored during the encoding process according to its 'streamConditionsMode'",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Ignoring[]}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "initSegmentName",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/CmafMuxing.d.ts", "line": 37 },
+						"documentation": "Init segment name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CmafMuxing" }
+						]
+					},
+					{
+						"name": "initSegmentNameTemplate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/CmafMuxing.d.ts", "line": 43 },
+						"documentation": "Segment naming policy containing a placeholder of the format '{rand_chars:x}', which will be replaced by a random alphanumeric string of length x (default 32) on each (re)start of the encoding. The resulting string will be copied to the initSegmentName property. Intended to avoid re-use of segment names after restarting a live encoding. If initSegmentNameTemplate is set, initSegmentName must not be set.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CmafMuxing" }
+						]
+					},
+					{
+						"name": "maxBitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 59 },
+						"documentation": "Max bitrate. Available after encoding finishes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "minBitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 53 },
+						"documentation": "Min bitrate. Available after encoding finishes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "outputs",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/EncodingOutput.d.ts#EncodingOutput" }
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 41 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingOutput[]}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "segmentLength",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/CmafMuxing.d.ts", "line": 19 },
+						"documentation": "Length of the fragments in seconds (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CmafMuxing" }
+						]
+					},
+					{
+						"name": "segmentNaming",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/CmafMuxing.d.ts", "line": 25 },
+						"documentation": "Segment naming policy",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CmafMuxing" }
+						]
+					},
+					{
+						"name": "segmentNamingTemplate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/CmafMuxing.d.ts", "line": 31 },
+						"documentation": "Segment naming policy containing one or both of the following placeholders: - '{rand_chars:x}', which will be replaced by a random alphanumeric string of length x (default 32)   on each (re)start of the encoding. The resulting string will be copied to the segmentNaming property.   Intended to avoid re-use of segment names after restarting a live encoding. - '{segment_rand_chars:x}', which will be replaced by a random alphanumeric string of length x (default 32)   for each different segment. This is intended to avoid guessing segment URLs by replacing segment numbers.  If segmentNamingTemplate is set, segmentNaming must not be set.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CmafMuxing" }
+						]
+					},
+					{
+						"name": "segmentsMuxed",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/CmafMuxing.d.ts", "line": 49 },
+						"documentation": "Number of segments which have been encoded",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CmafMuxing" }
+						]
+					},
+					{
+						"name": "streamConditionsMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/StreamConditionsMode.d.ts#StreamConditionsMode"
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 71 },
+						"documentation": "Specifies how to proceed with the Muxing when some of its Streams are ignored (see 'condition' property of the Stream resource). The settings only make a difference for Muxings with more than one Stream. When retrieving the resource after the analysis step of the encoding has finished, 'ignoredBy' will indicate if and why it has been ignored.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{StreamConditionsMode}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "streams",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/MuxingStream.d.ts#MuxingStream" }
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 36 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{MuxingStream[]}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/MuxingType.d.ts#MuxingType" },
+						"sdkEvidence": { "file": "models/CmafMuxing.d.ts", "line": 13 },
+						"documentation": "Discriminator property for Muxing",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CmafMuxing" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/CodecConfigType.d.ts#CodecConfigType",
+			{
+				"kind": "enum",
+				"values": [
+					"AAC",
+					"DTS",
+					"DTSX",
+					"DTS_PASSTHROUGH",
+					"AUDIO_PASSTHROUGH",
+					"HE_AAC_V1",
+					"HE_AAC_V2",
+					"H264",
+					"H265",
+					"VP9",
+					"VP8",
+					"MP2",
+					"MP3",
+					"AC3",
+					"EAC3",
+					"DD",
+					"DDPLUS",
+					"OPUS",
+					"VORBIS",
+					"MJPEG",
+					"AV1",
+					"DOLBY_ATMOS",
+					"H262",
+					"PCM",
+					"WEBVTT",
+					"IMSC",
+					"DVB_SUBTITLE",
+					"H265V2"
+				],
+				"sdkEvidence": { "file": "models/CodecConfigType.d.ts", "line": 5 }
+			}
+		],
+		[
+			"models/ColorConfig.d.ts#ColorConfig",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/ColorConfig.d.ts", "line": 14 },
+				"properties": [
+					{
+						"name": "chromaLocation",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/ChromaLocation.d.ts#ChromaLocation" },
+						"sdkEvidence": { "file": "models/ColorConfig.d.ts", "line": 50 },
+						"documentation": "The chroma location to be applied",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{ChromaLocation}" },
+							{ "name": "memberof", "text": "ColorConfig" }
+						]
+					},
+					{
+						"name": "colorPrimaries",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/ColorPrimaries.d.ts#ColorPrimaries" },
+						"sdkEvidence": { "file": "models/ColorConfig.d.ts", "line": 62 },
+						"documentation": "The color primaries to be applied.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{ColorPrimaries}" },
+							{ "name": "memberof", "text": "ColorConfig" }
+						]
+					},
+					{
+						"name": "colorRange",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/ColorRange.d.ts#ColorRange" },
+						"sdkEvidence": { "file": "models/ColorConfig.d.ts", "line": 68 },
+						"documentation": "The color range to be applied.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{ColorRange}" },
+							{ "name": "memberof", "text": "ColorConfig" }
+						]
+					},
+					{
+						"name": "colorSpace",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/ColorSpace.d.ts#ColorSpace" },
+						"sdkEvidence": { "file": "models/ColorConfig.d.ts", "line": 56 },
+						"documentation": "The color space to be applied.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{ColorSpace}" },
+							{ "name": "memberof", "text": "ColorConfig" }
+						]
+					},
+					{
+						"name": "colorTransfer",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/ColorTransfer.d.ts#ColorTransfer" },
+						"sdkEvidence": { "file": "models/ColorConfig.d.ts", "line": 74 },
+						"documentation": "The color transfer to be applied.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{ColorTransfer}" },
+							{ "name": "memberof", "text": "ColorConfig" }
+						]
+					},
+					{
+						"name": "copyChromaLocationFlag",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": { "file": "models/ColorConfig.d.ts", "line": 20 },
+						"documentation": "Copy the chroma location setting from the input source",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "ColorConfig" }
+						]
+					},
+					{
+						"name": "copyColorPrimariesFlag",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": { "file": "models/ColorConfig.d.ts", "line": 32 },
+						"documentation": "Copy the color primaries setting from the input source",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "ColorConfig" }
+						]
+					},
+					{
+						"name": "copyColorRangeFlag",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": { "file": "models/ColorConfig.d.ts", "line": 38 },
+						"documentation": "Copy the color range setting from the input source",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "ColorConfig" }
+						]
+					},
+					{
+						"name": "copyColorSpaceFlag",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": { "file": "models/ColorConfig.d.ts", "line": 26 },
+						"documentation": "Copy the color space setting from the input source",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "ColorConfig" }
+						]
+					},
+					{
+						"name": "copyColorTransferFlag",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": { "file": "models/ColorConfig.d.ts", "line": 44 },
+						"documentation": "Copy the color transfer setting from the input source",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "ColorConfig" }
+						]
+					},
+					{
+						"name": "inputColorPrimaries",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/InputColorPrimaries.d.ts#InputColorPrimaries"
+						},
+						"sdkEvidence": { "file": "models/ColorConfig.d.ts", "line": 92 },
+						"documentation": "Override the color primaries detected in the input file. If not set the input color primaries will be automatically detected if possible.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{InputColorPrimaries}" },
+							{ "name": "memberof", "text": "ColorConfig" }
+						]
+					},
+					{
+						"name": "inputColorRange",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/InputColorRange.d.ts#InputColorRange" },
+						"sdkEvidence": { "file": "models/ColorConfig.d.ts", "line": 86 },
+						"documentation": "Override the color range detected in the input file. If not set the input color range will be automatically detected if possible.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{InputColorRange}" },
+							{ "name": "memberof", "text": "ColorConfig" }
+						]
+					},
+					{
+						"name": "inputColorSpace",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/InputColorSpace.d.ts#InputColorSpace" },
+						"sdkEvidence": { "file": "models/ColorConfig.d.ts", "line": 80 },
+						"documentation": "Override the color space detected in the input file. If not set the input color space will be automatically detected if possible.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{InputColorSpace}" },
+							{ "name": "memberof", "text": "ColorConfig" }
+						]
+					},
+					{
+						"name": "inputColorTransfer",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/InputColorTransfer.d.ts#InputColorTransfer"
+						},
+						"sdkEvidence": { "file": "models/ColorConfig.d.ts", "line": 98 },
+						"documentation": "Override the color transfer detected in the input file. If not set the input color transfer will be automatically detected if possible.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{InputColorTransfer}" },
+							{ "name": "memberof", "text": "ColorConfig" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/ColorPrimaries.d.ts#ColorPrimaries",
+			{
+				"kind": "enum",
+				"values": [
+					"UNSPECIFIED",
+					"BT709",
+					"BT470M",
+					"BT470BG",
+					"SMPTE170M",
+					"SMPTE240M",
+					"FILM",
+					"BT2020",
+					"SMPTE428",
+					"SMPTEST428_1",
+					"SMPTE431",
+					"SMPTE432",
+					"JEDEC_P22"
+				],
+				"sdkEvidence": { "file": "models/ColorPrimaries.d.ts", "line": 5 }
+			}
+		],
+		[
+			"models/ColorRange.d.ts#ColorRange",
+			{
+				"kind": "enum",
+				"values": ["UNSPECIFIED", "MPEG", "JPEG"],
+				"sdkEvidence": { "file": "models/ColorRange.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/ColorSpace.d.ts#ColorSpace",
+			{
+				"kind": "enum",
+				"values": [
+					"UNSPECIFIED",
+					"RGB",
+					"BT709",
+					"FCC",
+					"BT470BG",
+					"SMPTE170M",
+					"SMPTE240M",
+					"YCGCO",
+					"YCOCG",
+					"BT2020_NCL",
+					"BT2020_CL",
+					"SMPTE2085"
+				],
+				"sdkEvidence": { "file": "models/ColorSpace.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/ColorTransfer.d.ts#ColorTransfer",
+			{
+				"kind": "enum",
+				"values": [
+					"UNSPECIFIED",
+					"BT709",
+					"GAMMA22",
+					"GAMMA28",
+					"SMPTE170M",
+					"SMPTE240M",
+					"LINEAR",
+					"LOG",
+					"LOG_SQRT",
+					"IEC61966_2_4",
+					"BT1361_ECG",
+					"IEC61966_2_1",
+					"BT2020_10",
+					"BT2020_12",
+					"SMPTE2084",
+					"SMPTE428",
+					"ARIB_STD_B67"
+				],
+				"sdkEvidence": { "file": "models/ColorTransfer.d.ts", "line": 5 }
+			}
+		],
+		[
+			"models/ConcatenationInputConfiguration.d.ts#ConcatenationInputConfiguration",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/ConcatenationInputConfiguration.d.ts",
+					"line": 7
+				},
+				"properties": [
+					{
+						"name": "aspectMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/AspectMode.d.ts#AspectMode" },
+						"sdkEvidence": {
+							"file": "models/ConcatenationInputConfiguration.d.ts",
+							"line": 43
+						},
+						"documentation": "Specifies the aspect mode that is used when adapting to the main input stream's aspect ratio",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{AspectMode}" },
+							{ "name": "memberof", "text": "ConcatenationInputConfiguration" }
+						]
+					},
+					{
+						"name": "inputStreamId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/ConcatenationInputConfiguration.d.ts",
+							"line": 13
+						},
+						"documentation": "The ID of the input stream to be concatenated. This can be an ingest input stream or a trimming input stream (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "ConcatenationInputConfiguration" }
+						]
+					},
+					{
+						"name": "isMain",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/ConcatenationInputConfiguration.d.ts",
+							"line": 19
+						},
+						"documentation": "Exactly one input stream of a concatenation must have this set to true, which will be used as reference for scaling, aspect ratio, FPS, sample rate, etc.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "ConcatenationInputConfiguration" }
+						]
+					},
+					{
+						"name": "paddingAfter",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/PaddingSequence.d.ts#PaddingSequence" },
+						"sdkEvidence": {
+							"file": "models/ConcatenationInputConfiguration.d.ts",
+							"line": 37
+						},
+						"documentation": "Inserts a padding sequence (black frames and/or silent audio) after the input stream.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{PaddingSequence}" },
+							{ "name": "memberof", "text": "ConcatenationInputConfiguration" }
+						]
+					},
+					{
+						"name": "paddingBefore",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/PaddingSequence.d.ts#PaddingSequence" },
+						"sdkEvidence": {
+							"file": "models/ConcatenationInputConfiguration.d.ts",
+							"line": 31
+						},
+						"documentation": "Inserts a padding sequence (black frames and/or silent audio) before the input stream.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{PaddingSequence}" },
+							{ "name": "memberof", "text": "ConcatenationInputConfiguration" }
+						]
+					},
+					{
+						"name": "position",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/ConcatenationInputConfiguration.d.ts",
+							"line": 25
+						},
+						"documentation": "A unique integer value that determines concatenation order (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ConcatenationInputConfiguration" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/ConcatenationInputStream.d.ts#ConcatenationInputStream",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/ConcatenationInputStream.d.ts",
+					"line": 8
+				},
+				"properties": [
+					{
+						"name": "concatenation",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": {
+								"ref": "models/ConcatenationInputConfiguration.d.ts#ConcatenationInputConfiguration"
+							}
+						},
+						"sdkEvidence": {
+							"file": "models/ConcatenationInputStream.d.ts",
+							"line": 20
+						},
+						"documentation": "Concatenation configuration for the output of this stream",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{ConcatenationInputConfiguration[]}" },
+							{ "name": "memberof", "text": "ConcatenationInputStream" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/InputStreamType.d.ts#InputStreamType" },
+						"sdkEvidence": {
+							"file": "models/ConcatenationInputStream.d.ts",
+							"line": 14
+						},
+						"documentation": "Discriminator property for InputStream",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "ConcatenationInputStream" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/ConformFilter.d.ts#ConformFilter",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/ConformFilter.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "targetFps",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/ConformFilter.d.ts", "line": 19 },
+						"documentation": "The FPS the input should be changed to.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "ConformFilter" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/FilterType.d.ts#FilterType" },
+						"sdkEvidence": { "file": "models/ConformFilter.d.ts", "line": 13 },
+						"documentation": "Discriminator property for Filter",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "ConformFilter" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/ContentProtection.d.ts#ContentProtection",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/ContentProtection.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "dependencyId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/DashMuxingRepresentation.d.ts",
+							"line": 24
+						},
+						"documentation": "Used to signal a dependency with another representation. The representation may belong to a different adaptation set",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "DashMuxingRepresentation" }
+						]
+					},
+					{
+						"name": "drmId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/ContentProtection.d.ts",
+							"line": 19
+						},
+						"documentation": "DRM Id (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "ContentProtection" }
+						]
+					},
+					{
+						"name": "encodingId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/DashMuxingRepresentation.d.ts",
+							"line": 12
+						},
+						"documentation": "UUID of an encoding (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "DashMuxingRepresentation" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "muxingId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/DashMuxingRepresentation.d.ts",
+							"line": 18
+						},
+						"documentation": "UUID of a muxing (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "DashMuxingRepresentation" }
+						]
+					},
+					{
+						"name": "typeDiscriminator",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/DashRepresentationTypeDiscriminator.d.ts#DashRepresentationTypeDiscriminator"
+						},
+						"sdkEvidence": {
+							"file": "models/ContentProtection.d.ts",
+							"line": 13
+						},
+						"documentation": "Discriminator property for DashRepresentation",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "ContentProtection" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/ConvertSccCaption.d.ts#ConvertSccCaption",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/ConvertSccCaption.d.ts", "line": 10 },
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "fileName",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/ConvertSccCaption.d.ts",
+							"line": 27
+						},
+						"documentation": "Name of the captions file (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "ConvertSccCaption" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "input",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/InputPath.d.ts#InputPath" },
+						"sdkEvidence": {
+							"file": "models/ConvertSccCaption.d.ts",
+							"line": 16
+						},
+						"documentation": "The input location to get the scc file from (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{InputPath}" },
+							{ "name": "memberof", "text": "ConvertSccCaption" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "outputFormat",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string", "literal": "WEBVTT" },
+						"sdkEvidence": {
+							"file": "models/ConvertSccCaption.d.ts",
+							"line": 32
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{StreamCaptionOutputFormat}" },
+							{ "name": "memberof", "text": "ConvertSccCaption" }
+						]
+					},
+					{
+						"name": "outputs",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/EncodingOutput.d.ts#EncodingOutput" }
+						},
+						"sdkEvidence": {
+							"file": "models/ConvertSccCaption.d.ts",
+							"line": 21
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingOutput[]}" },
+							{ "name": "memberof", "text": "ConvertSccCaption" }
+						]
+					},
+					{
+						"name": "webVttSettings",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/ConvertSccCaptionWebVttSettings.d.ts#ConvertSccCaptionWebVttSettings"
+						},
+						"sdkEvidence": {
+							"file": "models/ConvertSccCaption.d.ts",
+							"line": 38
+						},
+						"documentation": "Optional settings when converting SCC to WebVTT",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{ConvertSccCaptionWebVttSettings}" },
+							{ "name": "memberof", "text": "ConvertSccCaption" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/ConvertSccCaptionWebVttSettings.d.ts#ConvertSccCaptionWebVttSettings",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/ConvertSccCaptionWebVttSettings.d.ts",
+					"line": 6
+				},
+				"properties": [
+					{
+						"name": "positionMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/ConvertSccPositionMode.d.ts#ConvertSccPositionMode"
+						},
+						"sdkEvidence": {
+							"file": "models/ConvertSccCaptionWebVttSettings.d.ts",
+							"line": 11
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{ConvertSccPositionMode}" },
+							{ "name": "memberof", "text": "ConvertSccCaptionWebVttSettings" }
+						]
+					},
+					{
+						"name": "removeColor",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/ConvertSccCaptionWebVttSettings.d.ts",
+							"line": 23
+						},
+						"documentation": "Remove color information when converting SCC to WebVTT",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "ConvertSccCaptionWebVttSettings" }
+						]
+					},
+					{
+						"name": "removeFlash",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/ConvertSccCaptionWebVttSettings.d.ts",
+							"line": 17
+						},
+						"documentation": "Remove flash (blinking) information when converting SCC to WebVTT",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "ConvertSccCaptionWebVttSettings" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/ConvertSccPositionMode.d.ts#ConvertSccPositionMode",
+			{
+				"kind": "enum",
+				"values": ["FULL", "SIMPLE", "NONE"],
+				"sdkEvidence": {
+					"file": "models/ConvertSccPositionMode.d.ts",
+					"line": 5
+				}
+			}
+		],
+		[
+			"models/CropFilter.d.ts#CropFilter",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/CropFilter.d.ts", "line": 8 },
+				"properties": [
+					{
+						"name": "bottom",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/CropFilter.d.ts", "line": 38 },
+						"documentation": "Amount of pixels that will be cropped of the input video from the bottom. Must be zero or a positive value.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CropFilter" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "left",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/CropFilter.d.ts", "line": 20 },
+						"documentation": "Amount of pixels that will be cropped of the input video from the left side. Must be zero or a positive value.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CropFilter" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "right",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/CropFilter.d.ts", "line": 26 },
+						"documentation": "Amount of pixels that will be cropped of the input video from the right side. Must be zero or a positive value.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CropFilter" }
+						]
+					},
+					{
+						"name": "top",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/CropFilter.d.ts", "line": 32 },
+						"documentation": "Amount of pixels that will be cropped of the input video from the top. Must be zero or a positive value.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CropFilter" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/FilterType.d.ts#FilterType" },
+						"sdkEvidence": { "file": "models/CropFilter.d.ts", "line": 14 },
+						"documentation": "Discriminator property for Filter",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CropFilter" }
+						]
+					},
+					{
+						"name": "unit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/PositionUnit.d.ts#PositionUnit" },
+						"sdkEvidence": { "file": "models/CropFilter.d.ts", "line": 43 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{PositionUnit}" },
+							{ "name": "memberof", "text": "CropFilter" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/CustomAttribute.d.ts#CustomAttribute",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/CustomAttribute.d.ts", "line": 5 },
+				"properties": [
+					{
+						"name": "key",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/CustomAttribute.d.ts",
+							"line": 11
+						},
+						"documentation": "unique string identifier for the custom attribute (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CustomAttribute" }
+						]
+					},
+					{
+						"name": "value",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/CustomAttribute.d.ts",
+							"line": 17
+						},
+						"documentation": "value of the custom attribute",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CustomAttribute" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/CustomTag.d.ts#CustomTag",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/CustomTag.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "data",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/CustomTag.d.ts", "line": 37 },
+						"documentation": "The data to be contained in the custom tag. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CustomTag" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "keyframeId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/CustomTag.d.ts", "line": 19 },
+						"documentation": "Id of keyframe where the custom tag should be inserted. Required, when KEYFRAME is selected as position mode.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CustomTag" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "positionMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/PositionMode.d.ts#PositionMode" },
+						"sdkEvidence": { "file": "models/CustomTag.d.ts", "line": 13 },
+						"documentation": "The positioning mode that should be used when inserting the placement opportunity (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{PositionMode}" },
+							{ "name": "memberof", "text": "CustomTag" }
+						]
+					},
+					{
+						"name": "segment",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/CustomTag.d.ts", "line": 31 },
+						"documentation": "The custom tag will be inserted before the specified segment. Required, when SEGMENT is selected as position mode.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CustomTag" }
+						]
+					},
+					{
+						"name": "time",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/CustomTag.d.ts", "line": 25 },
+						"documentation": "Time in seconds where the custom tag should be inserted. Required, when TIME is selected as position mode.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "CustomTag" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/CustomXmlElement.d.ts#CustomXmlElement",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/CustomXmlElement.d.ts", "line": 6 },
+				"properties": [
+					{
+						"name": "data",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/CustomXmlElement.d.ts",
+							"line": 12
+						},
+						"documentation": "String representation of the XML element (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "CustomXmlElement" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					}
+				]
+			}
+		]
+	]
+}

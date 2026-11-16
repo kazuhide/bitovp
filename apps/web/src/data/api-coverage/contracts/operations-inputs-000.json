@@ -1,0 +1,2270 @@
+{
+	"schemaVersion": 1,
+	"kind": "operations",
+	"items": [
+		{
+			"sdkMethod": "encoding.inputs.get",
+			"path": "/encoding/inputs/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/InputsApi.d.ts",
+						"line": 60
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/InputsApi.d.ts", "line": 60 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.list",
+			"path": "/encoding/inputs",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/InputListQueryParams.d.ts#InputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: InputListQueryParamsBuilder) => InputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/InputsApi.d.ts",
+						"line": 67
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/InputsApi.d.ts", "line": 67 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.akamaiNetstorage.create",
+			"path": "/encoding/inputs/akamai-netstorage",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "akamaiNetStorageInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/AkamaiNetStorageInput.d.ts#AkamaiNetStorageInput"
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.akamaiNetstorage.delete",
+			"path": "/encoding/inputs/akamai-netstorage/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.akamaiNetstorage.get",
+			"path": "/encoding/inputs/akamai-netstorage/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.akamaiNetstorage.list",
+			"path": "/encoding/inputs/akamai-netstorage",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/akamaiNetstorage/AkamaiNetStorageInputListQueryParams.d.ts#AkamaiNetStorageInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AkamaiNetStorageInputListQueryParamsBuilder) => AkamaiNetStorageInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/akamaiNetstorage/AkamaiNetstorageApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.akamaiNetstorage.customdata.get",
+			"path": "/encoding/inputs/akamai-netstorage/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/akamaiNetstorage/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/akamaiNetstorage/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.aspera.create",
+			"path": "/encoding/inputs/aspera",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "asperaInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/AsperaInput.d.ts#AsperaInput" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/aspera/AsperaApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/aspera/AsperaApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.aspera.delete",
+			"path": "/encoding/inputs/aspera/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/aspera/AsperaApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/aspera/AsperaApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.aspera.get",
+			"path": "/encoding/inputs/aspera/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/aspera/AsperaApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/aspera/AsperaApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.aspera.list",
+			"path": "/encoding/inputs/aspera",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/aspera/AsperaInputListQueryParams.d.ts#AsperaInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AsperaInputListQueryParamsBuilder) => AsperaInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/aspera/AsperaApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/aspera/AsperaApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.aspera.customdata.get",
+			"path": "/encoding/inputs/aspera/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/aspera/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/aspera/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.azure.create",
+			"path": "/encoding/inputs/azure",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "azureInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/AzureInput.d.ts#AzureInput" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/azure/AzureApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/azure/AzureApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.azure.delete",
+			"path": "/encoding/inputs/azure/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/azure/AzureApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/azure/AzureApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.azure.get",
+			"path": "/encoding/inputs/azure/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/azure/AzureApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/azure/AzureApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.azure.list",
+			"path": "/encoding/inputs/azure",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/azure/AzureInputListQueryParams.d.ts#AzureInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AzureInputListQueryParamsBuilder) => AzureInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/azure/AzureApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/azure/AzureApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.azure.customdata.get",
+			"path": "/encoding/inputs/azure/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/azure/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/azure/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.directFileUpload.create",
+			"path": "/encoding/inputs/direct-file-upload",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "directFileUploadInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/DirectFileUploadInput.d.ts#DirectFileUploadInput"
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/directFileUpload/DirectFileUploadApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/directFileUpload/DirectFileUploadApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.directFileUpload.delete",
+			"path": "/encoding/inputs/direct-file-upload/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/directFileUpload/DirectFileUploadApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/directFileUpload/DirectFileUploadApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.directFileUpload.get",
+			"path": "/encoding/inputs/direct-file-upload/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/directFileUpload/DirectFileUploadApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/directFileUpload/DirectFileUploadApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.directFileUpload.list",
+			"path": "/encoding/inputs/direct-file-upload",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/directFileUpload/DirectFileUploadInputListQueryParams.d.ts#DirectFileUploadInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DirectFileUploadInputListQueryParamsBuilder) => DirectFileUploadInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/directFileUpload/DirectFileUploadApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/directFileUpload/DirectFileUploadApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.directFileUpload.customdata.get",
+			"path": "/encoding/inputs/direct-file-upload/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/directFileUpload/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/directFileUpload/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.ftp.create",
+			"path": "/encoding/inputs/ftp",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "ftpInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/FtpInput.d.ts#FtpInput" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/ftp/FtpApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/ftp/FtpApi.d.ts", "line": 22 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.ftp.delete",
+			"path": "/encoding/inputs/ftp/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/ftp/FtpApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/ftp/FtpApi.d.ts", "line": 29 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.ftp.get",
+			"path": "/encoding/inputs/ftp/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/ftp/FtpApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/ftp/FtpApi.d.ts", "line": 36 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.ftp.list",
+			"path": "/encoding/inputs/ftp",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/ftp/FtpInputListQueryParams.d.ts#FtpInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: FtpInputListQueryParamsBuilder) => FtpInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/ftp/FtpApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/ftp/FtpApi.d.ts", "line": 43 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.ftp.customdata.get",
+			"path": "/encoding/inputs/ftp/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/ftp/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/ftp/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcs.create",
+			"path": "/encoding/inputs/gcs",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "gcsInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/GcsInput.d.ts#GcsInput" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/gcs/GcsApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/gcs/GcsApi.d.ts", "line": 22 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcs.delete",
+			"path": "/encoding/inputs/gcs/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/gcs/GcsApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/gcs/GcsApi.d.ts", "line": 29 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcs.get",
+			"path": "/encoding/inputs/gcs/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/gcs/GcsApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/gcs/GcsApi.d.ts", "line": 36 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcs.list",
+			"path": "/encoding/inputs/gcs",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/gcs/GcsInputListQueryParams.d.ts#GcsInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: GcsInputListQueryParamsBuilder) => GcsInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/gcs/GcsApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/gcs/GcsApi.d.ts", "line": 43 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcs.customdata.get",
+			"path": "/encoding/inputs/gcs/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/gcs/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/gcs/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcsServiceAccount.create",
+			"path": "/encoding/inputs/gcs-service-account",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "gcsServiceAccountInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/GcsServiceAccountInput.d.ts#GcsServiceAccountInput"
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcsServiceAccount.delete",
+			"path": "/encoding/inputs/gcs-service-account/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcsServiceAccount.get",
+			"path": "/encoding/inputs/gcs-service-account/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcsServiceAccount.list",
+			"path": "/encoding/inputs/gcs-service-account",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/gcsServiceAccount/GcsServiceAccountInputListQueryParams.d.ts#GcsServiceAccountInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: GcsServiceAccountInputListQueryParamsBuilder) => GcsServiceAccountInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/gcsServiceAccount/GcsServiceAccountApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcsServiceAccount.customdata.get",
+			"path": "/encoding/inputs/gcs-service-account/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/gcsServiceAccount/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/gcsServiceAccount/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.genericS3.create",
+			"path": "/encoding/inputs/generic-s3",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "genericS3Input",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/GenericS3Input.d.ts#GenericS3Input" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/genericS3/GenericS3Api.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/genericS3/GenericS3Api.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.genericS3.delete",
+			"path": "/encoding/inputs/generic-s3/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/genericS3/GenericS3Api.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/genericS3/GenericS3Api.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.genericS3.get",
+			"path": "/encoding/inputs/generic-s3/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/genericS3/GenericS3Api.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/genericS3/GenericS3Api.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.genericS3.list",
+			"path": "/encoding/inputs/generic-s3",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/genericS3/GenericS3InputListQueryParams.d.ts#GenericS3InputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: GenericS3InputListQueryParamsBuilder) => GenericS3InputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/genericS3/GenericS3Api.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/genericS3/GenericS3Api.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.genericS3.customdata.get",
+			"path": "/encoding/inputs/generic-s3/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/genericS3/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/genericS3/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.hls.create",
+			"path": "/encoding/inputs/hls",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "hlsInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/HlsInput.d.ts#HlsInput" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/hls/HlsApi.d.ts",
+						"line": 20
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/hls/HlsApi.d.ts", "line": 20 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.hls.delete",
+			"path": "/encoding/inputs/hls/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/hls/HlsApi.d.ts",
+						"line": 27
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/hls/HlsApi.d.ts", "line": 27 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.hls.get",
+			"path": "/encoding/inputs/hls/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/hls/HlsApi.d.ts",
+						"line": 34
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/hls/HlsApi.d.ts", "line": 34 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.hls.list",
+			"path": "/encoding/inputs/hls",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/hls/HlsInputListQueryParams.d.ts#HlsInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: HlsInputListQueryParamsBuilder) => HlsInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/hls/HlsApi.d.ts",
+						"line": 41
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/hls/HlsApi.d.ts", "line": 41 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.http.create",
+			"path": "/encoding/inputs/http",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "httpInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/HttpInput.d.ts#HttpInput" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/http/HttpApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/http/HttpApi.d.ts", "line": 22 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.http.delete",
+			"path": "/encoding/inputs/http/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/http/HttpApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/http/HttpApi.d.ts", "line": 29 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.http.get",
+			"path": "/encoding/inputs/http/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/http/HttpApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/http/HttpApi.d.ts", "line": 36 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.http.list",
+			"path": "/encoding/inputs/http",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/http/HttpInputListQueryParams.d.ts#HttpInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: HttpInputListQueryParamsBuilder) => HttpInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/http/HttpApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/http/HttpApi.d.ts", "line": 43 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.http.customdata.get",
+			"path": "/encoding/inputs/http/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/http/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/http/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.https.create",
+			"path": "/encoding/inputs/https",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "httpsInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/HttpsInput.d.ts#HttpsInput" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/https/HttpsApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/https/HttpsApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.https.delete",
+			"path": "/encoding/inputs/https/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/https/HttpsApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/https/HttpsApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.https.get",
+			"path": "/encoding/inputs/https/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/https/HttpsApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/https/HttpsApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.https.list",
+			"path": "/encoding/inputs/https",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/https/HttpsInputListQueryParams.d.ts#HttpsInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: HttpsInputListQueryParamsBuilder) => HttpsInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/https/HttpsApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/https/HttpsApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.https.customdata.get",
+			"path": "/encoding/inputs/https/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/https/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/https/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.local.create",
+			"path": "/encoding/inputs/local",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "localInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/LocalInput.d.ts#LocalInput" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/local/LocalApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/local/LocalApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.local.delete",
+			"path": "/encoding/inputs/local/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/local/LocalApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/local/LocalApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.local.get",
+			"path": "/encoding/inputs/local/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/local/LocalApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/local/LocalApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.local.list",
+			"path": "/encoding/inputs/local",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/local/LocalInputListQueryParams.d.ts#LocalInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: LocalInputListQueryParamsBuilder) => LocalInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/local/LocalApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/local/LocalApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.local.customdata.get",
+			"path": "/encoding/inputs/local/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/local/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/local/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.redundantRtmp.create",
+			"path": "/encoding/inputs/redundant-rtmp",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "redundantRtmpInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/RedundantRtmpInput.d.ts#RedundantRtmpInput"
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/redundantRtmp/RedundantRtmpApi.d.ts",
+						"line": 21
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/redundantRtmp/RedundantRtmpApi.d.ts",
+				"line": 21
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.redundantRtmp.delete",
+			"path": "/encoding/inputs/redundant-rtmp/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/redundantRtmp/RedundantRtmpApi.d.ts",
+						"line": 28
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/redundantRtmp/RedundantRtmpApi.d.ts",
+				"line": 28
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.redundantRtmp.get",
+			"path": "/encoding/inputs/redundant-rtmp/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/redundantRtmp/RedundantRtmpApi.d.ts",
+						"line": 35
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/redundantRtmp/RedundantRtmpApi.d.ts",
+				"line": 35
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.redundantRtmp.list",
+			"path": "/encoding/inputs/redundant-rtmp",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/redundantRtmp/RedundantRtmpInputListQueryParams.d.ts#RedundantRtmpInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: RedundantRtmpInputListQueryParamsBuilder) => RedundantRtmpInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/redundantRtmp/RedundantRtmpApi.d.ts",
+						"line": 42
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/redundantRtmp/RedundantRtmpApi.d.ts",
+				"line": 42
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.rtmp.get",
+			"path": "/encoding/inputs/rtmp/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/rtmp/RtmpApi.d.ts",
+						"line": 20
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/rtmp/RtmpApi.d.ts", "line": 20 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.rtmp.list",
+			"path": "/encoding/inputs/rtmp",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/rtmp/RtmpInputListQueryParams.d.ts#RtmpInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: RtmpInputListQueryParamsBuilder) => RtmpInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/rtmp/RtmpApi.d.ts",
+						"line": 27
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/rtmp/RtmpApi.d.ts", "line": 27 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3.create",
+			"path": "/encoding/inputs/s3",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "s3Input",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/S3Input.d.ts#S3Input" },
+					"sdkEvidence": { "file": "encoding/inputs/s3/S3Api.d.ts", "line": 23 }
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/s3/S3Api.d.ts", "line": 23 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3.delete",
+			"path": "/encoding/inputs/s3/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": { "file": "encoding/inputs/s3/S3Api.d.ts", "line": 30 }
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/s3/S3Api.d.ts", "line": 30 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3.get",
+			"path": "/encoding/inputs/s3/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": { "file": "encoding/inputs/s3/S3Api.d.ts", "line": 37 }
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/s3/S3Api.d.ts", "line": 37 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3.list",
+			"path": "/encoding/inputs/s3",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/s3/S3InputListQueryParams.d.ts#S3InputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: S3InputListQueryParamsBuilder) => S3InputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": { "file": "encoding/inputs/s3/S3Api.d.ts", "line": 44 }
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/s3/S3Api.d.ts", "line": 44 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3.customdata.get",
+			"path": "/encoding/inputs/s3/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/s3/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/s3/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3RoleBased.create",
+			"path": "/encoding/inputs/s3-role-based",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "s3RoleBasedInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/S3RoleBasedInput.d.ts#S3RoleBasedInput" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/s3RoleBased/S3RoleBasedApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/s3RoleBased/S3RoleBasedApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3RoleBased.delete",
+			"path": "/encoding/inputs/s3-role-based/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/s3RoleBased/S3RoleBasedApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/s3RoleBased/S3RoleBasedApi.d.ts",
+				"line": 29
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3RoleBased.get",
+			"path": "/encoding/inputs/s3-role-based/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/s3RoleBased/S3RoleBasedApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/s3RoleBased/S3RoleBasedApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3RoleBased.list",
+			"path": "/encoding/inputs/s3-role-based",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/s3RoleBased/S3RoleBasedInputListQueryParams.d.ts#S3RoleBasedInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: S3RoleBasedInputListQueryParamsBuilder) => S3RoleBasedInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/s3RoleBased/S3RoleBasedApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/s3RoleBased/S3RoleBasedApi.d.ts",
+				"line": 43
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3RoleBased.customdata.get",
+			"path": "/encoding/inputs/s3-role-based/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/s3RoleBased/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/s3RoleBased/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.sftp.create",
+			"path": "/encoding/inputs/sftp",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "sftpInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/SftpInput.d.ts#SftpInput" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/sftp/SftpApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/sftp/SftpApi.d.ts", "line": 22 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.sftp.delete",
+			"path": "/encoding/inputs/sftp/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/sftp/SftpApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/sftp/SftpApi.d.ts", "line": 29 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.sftp.get",
+			"path": "/encoding/inputs/sftp/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/sftp/SftpApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/sftp/SftpApi.d.ts", "line": 36 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.sftp.list",
+			"path": "/encoding/inputs/sftp",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/sftp/SftpInputListQueryParams.d.ts#SftpInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: SftpInputListQueryParamsBuilder) => SftpInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/sftp/SftpApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/sftp/SftpApi.d.ts", "line": 43 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.sftp.customdata.get",
+			"path": "/encoding/inputs/sftp/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/sftp/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/sftp/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.srt.create",
+			"path": "/encoding/inputs/srt",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "srtInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/SrtInput.d.ts#SrtInput" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/srt/SrtApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/srt/SrtApi.d.ts", "line": 22 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.srt.delete",
+			"path": "/encoding/inputs/srt/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/srt/SrtApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/srt/SrtApi.d.ts", "line": 29 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.srt.get",
+			"path": "/encoding/inputs/srt/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/srt/SrtApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/srt/SrtApi.d.ts", "line": 36 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.srt.list",
+			"path": "/encoding/inputs/srt",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/srt/SrtInputListQueryParams.d.ts#SrtInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: SrtInputListQueryParamsBuilder) => SrtInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/srt/SrtApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/srt/SrtApi.d.ts", "line": 43 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.srt.customdata.get",
+			"path": "/encoding/inputs/srt/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/srt/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/srt/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.inputs.type.get",
+			"path": "/encoding/inputs/{input_id}/type",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/type/TypeApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/type/TypeApi.d.ts", "line": 18 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.zixi.create",
+			"path": "/encoding/inputs/zixi",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "zixiInput",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/ZixiInput.d.ts#ZixiInput" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/zixi/ZixiApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/zixi/ZixiApi.d.ts", "line": 22 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.zixi.delete",
+			"path": "/encoding/inputs/zixi/{input_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/zixi/ZixiApi.d.ts",
+						"line": 29
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/zixi/ZixiApi.d.ts", "line": 29 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.zixi.get",
+			"path": "/encoding/inputs/zixi/{input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/zixi/ZixiApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/zixi/ZixiApi.d.ts", "line": 36 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.zixi.list",
+			"path": "/encoding/inputs/zixi",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/inputs/zixi/ZixiInputListQueryParams.d.ts#ZixiInputListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: ZixiInputListQueryParamsBuilder) => ZixiInputListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/inputs/zixi/ZixiApi.d.ts",
+						"line": 43
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/inputs/zixi/ZixiApi.d.ts", "line": 43 }
+		},
+		{
+			"sdkMethod": "encoding.inputs.zixi.customdata.get",
+			"path": "/encoding/inputs/zixi/{input_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "inputId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/inputs/zixi/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/inputs/zixi/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		}
+	]
+}

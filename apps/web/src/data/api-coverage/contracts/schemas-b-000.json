@@ -1,0 +1,1959 @@
+{
+	"schemaVersion": 1,
+	"kind": "schemas",
+	"items": [
+		[
+			"encoding/encodings/muxings/broadcastTs/BroadcastTsMuxingListQueryParams.d.ts#BroadcastTsMuxingListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/muxings/broadcastTs/BroadcastTsMuxingListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/broadcastTs/BroadcastTsMuxingListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "BroadcastTsMuxingListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/muxings/broadcastTs/BroadcastTsMuxingListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "BroadcastTsMuxingListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/streams/bifs/BifListQueryParams.d.ts#BifListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/streams/bifs/BifListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/streams/bifs/BifListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "BifListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/streams/bifs/BifListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "BifListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/streams/burnInSubtitles/assa/BurnInSubtitleAssaListQueryParams.d.ts#BurnInSubtitleAssaListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/streams/burnInSubtitles/assa/BurnInSubtitleAssaListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/streams/burnInSubtitles/assa/BurnInSubtitleAssaListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "BurnInSubtitleAssaListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/streams/burnInSubtitles/assa/BurnInSubtitleAssaListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "BurnInSubtitleAssaListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/streams/burnInSubtitles/dvbsub/BurnInSubtitleDvbSubListQueryParams.d.ts#BurnInSubtitleDvbSubListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/streams/burnInSubtitles/dvbsub/BurnInSubtitleDvbSubListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/streams/burnInSubtitles/dvbsub/BurnInSubtitleDvbSubListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "BurnInSubtitleDvbSubListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/streams/burnInSubtitles/dvbsub/BurnInSubtitleDvbSubListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "BurnInSubtitleDvbSubListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/encodings/streams/burnInSubtitles/srt/BurnInSubtitleSrtListQueryParams.d.ts#BurnInSubtitleSrtListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/streams/burnInSubtitles/srt/BurnInSubtitleSrtListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/streams/burnInSubtitles/srt/BurnInSubtitleSrtListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "BurnInSubtitleSrtListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/streams/burnInSubtitles/srt/BurnInSubtitleSrtListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "BurnInSubtitleSrtListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/BackupSrtInputs.d.ts#BackupSrtInputs",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/BackupSrtInputs.d.ts", "line": 6 },
+				"properties": [
+					{
+						"name": "delayThreshold",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/BackupSrtInputs.d.ts",
+							"line": 12
+						},
+						"documentation": "When there is no input signal present for this number of seconds, the encoder will switch to the next input",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "BackupSrtInputs" }
+						]
+					},
+					{
+						"name": "srtInputs",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/SrtInput.d.ts#SrtInput" }
+						},
+						"sdkEvidence": {
+							"file": "models/BackupSrtInputs.d.ts",
+							"line": 17
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{SrtInput[]}" },
+							{ "name": "memberof", "text": "BackupSrtInputs" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/BAdapt.d.ts#BAdapt",
+			{
+				"kind": "enum",
+				"values": ["NONE", "FAST", "FULL"],
+				"sdkEvidence": { "file": "models/BAdapt.d.ts", "line": 5 }
+			}
+		],
+		[
+			"models/Bif.d.ts#Bif",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/Bif.d.ts", "line": 9 },
+				"properties": [
+					{
+						"name": "aspectMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/ThumbnailAspectMode.d.ts#ThumbnailAspectMode"
+						},
+						"sdkEvidence": { "file": "models/Bif.d.ts", "line": 44 },
+						"documentation": "Specifies the aspect mode that is used when both height and width are specified Only supported starting with encoder version `2.85.0`.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{ThumbnailAspectMode}" },
+							{ "name": "memberof", "text": "Bif" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "distance",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Bif.d.ts", "line": 27 },
+						"documentation": "Distance in seconds between a screenshot (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Bif" }
+						]
+					},
+					{
+						"name": "filename",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/Bif.d.ts", "line": 33 },
+						"documentation": "Filename of the Bif image. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Bif" }
+						]
+					},
+					{
+						"name": "height",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Bif.d.ts", "line": 15 },
+						"documentation": "Height of one thumbnail",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Bif" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "outputs",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/EncodingOutput.d.ts#EncodingOutput" }
+						},
+						"sdkEvidence": { "file": "models/Bif.d.ts", "line": 38 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingOutput[]}" },
+							{ "name": "memberof", "text": "Bif" }
+						]
+					},
+					{
+						"name": "width",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Bif.d.ts", "line": 21 },
+						"documentation": "Width of one thumbnail. Roku recommends a width of 240 for SD and 320 for HD.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Bif" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/BitmovinResource.d.ts#anonymous:1019",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/BitmovinResource.d.ts", "line": 36 },
+				"properties": [],
+				"additionalProperties": [
+					{
+						"key": { "kind": "string" },
+						"value": {
+							"kind": "opaque",
+							"type": "any",
+							"reason": "SDK any; acceptance unconfirmed"
+						},
+						"sdkReadonly": false
+					}
+				]
+			}
+		],
+		[
+			"models/BitrateSelectionMode.d.ts#BitrateSelectionMode",
+			{
+				"kind": "enum",
+				"values": ["OPTIMIZED", "COMPLEXITY_RANGE"],
+				"sdkEvidence": { "file": "models/BitrateSelectionMode.d.ts", "line": 5 }
+			}
+		],
+		[
+			"models/BroadcastTsAudioInputStreamConfiguration.d.ts#BroadcastTsAudioInputStreamConfiguration",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/BroadcastTsAudioInputStreamConfiguration.d.ts",
+					"line": 6
+				},
+				"properties": [
+					{
+						"name": "alignPes",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsInputStreamConfiguration.d.ts",
+							"line": 30
+						},
+						"documentation": "Align access units to PES packets. If true, align access units to PES packet headers. Uses adaptation field stuffing to position an access unit at the beginning of each PES packet.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsInputStreamConfiguration"
+							}
+						]
+					},
+					{
+						"name": "language",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsAudioInputStreamConfiguration.d.ts",
+							"line": 18
+						},
+						"documentation": "Language of the audio stream. Specified according to the ISO 639-2 alpha code for the language descriptor.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsAudioInputStreamConfiguration"
+							}
+						]
+					},
+					{
+						"name": "packetIdentifier",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsInputStreamConfiguration.d.ts",
+							"line": 18
+						},
+						"documentation": "An integer value. Packet Identifier (PID) for this stream.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsInputStreamConfiguration"
+							}
+						]
+					},
+					{
+						"name": "setRaiOnAu",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/RaiUnit.d.ts#RaiUnit" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsInputStreamConfiguration.d.ts",
+							"line": 35
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{RaiUnit}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsInputStreamConfiguration"
+							}
+						]
+					},
+					{
+						"name": "startWithDiscontinuityIndicator",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsInputStreamConfiguration.d.ts",
+							"line": 24
+						},
+						"documentation": "Start stream with initial discontinuity indicator set to one. If true, set the discontinuity indicator in the first packet for this PID.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsInputStreamConfiguration"
+							}
+						]
+					},
+					{
+						"name": "streamId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsInputStreamConfiguration.d.ts",
+							"line": 12
+						},
+						"documentation": "The UUID of the stream to which this configuration belongs to. This has to be a ID of a stream that has been added to the current muxing.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsInputStreamConfiguration"
+							}
+						]
+					},
+					{
+						"name": "useATSCBufferModel",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsAudioInputStreamConfiguration.d.ts",
+							"line": 12
+						},
+						"documentation": "Use ATSC buffer model for AC-3. If true, use the ATSC version of the T-STD buffer model is used. This parameter applies to AC-3 streams only.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsAudioInputStreamConfiguration"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/BroadcastTsMuxing.d.ts#BroadcastTsMuxing",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/BroadcastTsMuxing.d.ts", "line": 8 },
+				"properties": [
+					{
+						"name": "avgBitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 47 },
+						"documentation": "Average bitrate. Available after encoding finishes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "configuration",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/BroadcastTsMuxingConfiguration.d.ts#BroadcastTsMuxingConfiguration"
+						},
+						"sdkEvidence": {
+							"file": "models/BroadcastTsMuxing.d.ts",
+							"line": 31
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{BroadcastTsMuxingConfiguration}" },
+							{ "name": "memberof", "text": "BroadcastTsMuxing" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "filename",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsMuxing.d.ts",
+							"line": 26
+						},
+						"documentation": "Name of the output file",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BroadcastTsMuxing" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "ignoredBy",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/Ignoring.d.ts#Ignoring" }
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 65 },
+						"documentation": "This read-only property is set during the analysis step of the encoding. If it contains items, the Muxing has been ignored during the encoding process according to its 'streamConditionsMode'",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Ignoring[]}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "maxBitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 59 },
+						"documentation": "Max bitrate. Available after encoding finishes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "minBitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 53 },
+						"documentation": "Min bitrate. Available after encoding finishes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "outputs",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/EncodingOutput.d.ts#EncodingOutput" }
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 41 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingOutput[]}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "segmentLength",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsMuxing.d.ts",
+							"line": 20
+						},
+						"documentation": "Length of the segments in seconds.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "BroadcastTsMuxing" }
+						]
+					},
+					{
+						"name": "streamConditionsMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/StreamConditionsMode.d.ts#StreamConditionsMode"
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 71 },
+						"documentation": "Specifies how to proceed with the Muxing when some of its Streams are ignored (see 'condition' property of the Stream resource). The settings only make a difference for Muxings with more than one Stream. When retrieving the resource after the analysis step of the encoding has finished, 'ignoredBy' will indicate if and why it has been ignored.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{StreamConditionsMode}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "streams",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/MuxingStream.d.ts#MuxingStream" }
+						},
+						"sdkEvidence": { "file": "models/Muxing.d.ts", "line": 36 },
+						"sdkDocTags": [
+							{ "name": "type", "text": "{MuxingStream[]}" },
+							{ "name": "memberof", "text": "Muxing" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/MuxingType.d.ts#MuxingType" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsMuxing.d.ts",
+							"line": 14
+						},
+						"documentation": "Discriminator property for Muxing",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BroadcastTsMuxing" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/BroadcastTsMuxingConfiguration.d.ts#BroadcastTsMuxingConfiguration",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/BroadcastTsMuxingConfiguration.d.ts",
+					"line": 10
+				},
+				"properties": [
+					{
+						"name": "audioStreams",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": {
+								"ref": "models/BroadcastTsAudioInputStreamConfiguration.d.ts#BroadcastTsAudioInputStreamConfiguration"
+							}
+						},
+						"sdkEvidence": {
+							"file": "models/BroadcastTsMuxingConfiguration.d.ts",
+							"line": 32
+						},
+						"sdkDocTags": [
+							{
+								"name": "type",
+								"text": "{BroadcastTsAudioInputStreamConfiguration[]}"
+							},
+							{ "name": "memberof", "text": "BroadcastTsMuxingConfiguration" }
+						]
+					},
+					{
+						"name": "program",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/BroadcastTsProgramConfiguration.d.ts#BroadcastTsProgramConfiguration"
+						},
+						"sdkEvidence": {
+							"file": "models/BroadcastTsMuxingConfiguration.d.ts",
+							"line": 22
+						},
+						"documentation": "Program configuration details for the Broadcast TS muxing.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{BroadcastTsProgramConfiguration}" },
+							{ "name": "memberof", "text": "BroadcastTsMuxingConfiguration" }
+						]
+					},
+					{
+						"name": "subtitleStreams",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": {
+								"ref": "models/BroadcastTsSubtitleInputStreamConfiguration.d.ts#BroadcastTsSubtitleInputStreamConfiguration"
+							}
+						},
+						"sdkEvidence": {
+							"file": "models/BroadcastTsMuxingConfiguration.d.ts",
+							"line": 37
+						},
+						"sdkDocTags": [
+							{
+								"name": "type",
+								"text": "{BroadcastTsSubtitleInputStreamConfiguration[]}"
+							},
+							{ "name": "memberof", "text": "BroadcastTsMuxingConfiguration" }
+						]
+					},
+					{
+						"name": "transport",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/BroadcastTsTransportConfiguration.d.ts#BroadcastTsTransportConfiguration"
+						},
+						"sdkEvidence": {
+							"file": "models/BroadcastTsMuxingConfiguration.d.ts",
+							"line": 16
+						},
+						"documentation": "Transport configuration details for the Broadcast TS muxing.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{BroadcastTsTransportConfiguration}" },
+							{ "name": "memberof", "text": "BroadcastTsMuxingConfiguration" }
+						]
+					},
+					{
+						"name": "videoStreams",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": {
+								"ref": "models/BroadcastTsVideoInputStreamConfiguration.d.ts#BroadcastTsVideoInputStreamConfiguration"
+							}
+						},
+						"sdkEvidence": {
+							"file": "models/BroadcastTsMuxingConfiguration.d.ts",
+							"line": 27
+						},
+						"sdkDocTags": [
+							{
+								"name": "type",
+								"text": "{BroadcastTsVideoInputStreamConfiguration[]}"
+							},
+							{ "name": "memberof", "text": "BroadcastTsMuxingConfiguration" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/BroadcastTsProgramConfiguration.d.ts#BroadcastTsProgramConfiguration",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/BroadcastTsProgramConfiguration.d.ts",
+					"line": 5
+				},
+				"properties": [
+					{
+						"name": "insertProgramClockRefOnPes",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsProgramConfiguration.d.ts",
+							"line": 23
+						},
+						"documentation": "Insert Program Clock References (PCRs) on all packetized elemementary stream packets. When false, indicates that PCRs should be inserted on every PES header. This parameter is effective only when the PCR packet identifier is the same as a video or audio elementary stream.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "BroadcastTsProgramConfiguration" }
+						]
+					},
+					{
+						"name": "pidForPMT",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsProgramConfiguration.d.ts",
+							"line": 17
+						},
+						"documentation": "An integer value. Packet identifier (PID) to use for Program Map Table (PMT). Recommended value is 2 x programNumber.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "BroadcastTsProgramConfiguration" }
+						]
+					},
+					{
+						"name": "programClockRefInterval",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsProgramConfiguration.d.ts",
+							"line": 29
+						},
+						"documentation": "Interval between Program Clock References (PCRs) in milliseconds. Defines the period between PCR fields inserted in the stream. The default value is 90ms.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "BroadcastTsProgramConfiguration" }
+						]
+					},
+					{
+						"name": "programNumber",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsProgramConfiguration.d.ts",
+							"line": 11
+						},
+						"documentation": "An integer value. Value for program_number field in Program Map Table (PMT). The value zero is reserved for the NIT PID entry in the PAT.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "BroadcastTsProgramConfiguration" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/BroadcastTsSubtitleInputStreamConfiguration.d.ts#BroadcastTsSubtitleInputStreamConfiguration",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/BroadcastTsSubtitleInputStreamConfiguration.d.ts",
+					"line": 5
+				},
+				"properties": [
+					{
+						"name": "packetIdentifier",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsSubtitleInputStreamConfiguration.d.ts",
+							"line": 17
+						},
+						"documentation": "An integer value. Packet Identifier (PID) for this stream.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsSubtitleInputStreamConfiguration"
+							}
+						]
+					},
+					{
+						"name": "rate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsSubtitleInputStreamConfiguration.d.ts",
+							"line": 23
+						},
+						"documentation": "The rate parameter determines the maximum rate in bits per second that should be used for the subtitle stream. The valid range is `100` to `60 000 000` bps or `0`. If the value is set to 0, we will examine the first 100 packets of subtitle packet data and use the highest rate that was computed. If the value is set too low, not enough to accommodate the subtitle bit-rate, then some PES packets corresponding to DVB subtitle stream will be dropped. This parameter is optional and the default value is 0.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsSubtitleInputStreamConfiguration"
+							}
+						]
+					},
+					{
+						"name": "streamId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsSubtitleInputStreamConfiguration.d.ts",
+							"line": 11
+						},
+						"documentation": "The UUID of the subtitle stream to which this configuration belongs to. This has to be an ID of an subtitle stream that has been added to the current muxing.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsSubtitleInputStreamConfiguration"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/BroadcastTsTransportConfiguration.d.ts#BroadcastTsTransportConfiguration",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/BroadcastTsTransportConfiguration.d.ts",
+					"line": 5
+				},
+				"properties": [
+					{
+						"name": "initialPresentationTimeStamp",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsTransportConfiguration.d.ts",
+							"line": 47
+						},
+						"documentation": "Presentation time stamp value for the first video frame. The timestamp is specified in the timescale of 90000",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsTransportConfiguration"
+							}
+						]
+					},
+					{
+						"name": "initialProgramClockReference",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsTransportConfiguration.d.ts",
+							"line": 53
+						},
+						"documentation": "Program Clock Reference value at the beginning of the first packet for the transport stream. The PCR is specified in the timescale of 90000",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsTransportConfiguration"
+							}
+						]
+					},
+					{
+						"name": "muxrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsTransportConfiguration.d.ts",
+							"line": 11
+						},
+						"documentation": "Output rate in bps. The value zero implies to use minimal rate. The minimal rate leaves approximately 15kbps of null packets in the stream.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsTransportConfiguration"
+							}
+						]
+					},
+					{
+						"name": "patRepetitionRatePerSec",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsTransportConfiguration.d.ts",
+							"line": 29
+						},
+						"documentation": "Program Association Table (PAT) repetition rate per second. Number of PATs per second.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsTransportConfiguration"
+							}
+						]
+					},
+					{
+						"name": "pmtRepetitionRatePerSec",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsTransportConfiguration.d.ts",
+							"line": 35
+						},
+						"documentation": "Program Map Table (PMT) repetition rate per second. Number of PMTs for each program per second.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsTransportConfiguration"
+							}
+						]
+					},
+					{
+						"name": "preventEmptyAdaptionFieldsInVideo",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsTransportConfiguration.d.ts",
+							"line": 23
+						},
+						"documentation": "If true, prevents adaptation fields with length field equal to zero in video, i.e., zero-length AF. Please note that this condition can only occur when pesAlign for the input stream is set to true.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsTransportConfiguration"
+							}
+						]
+					},
+					{
+						"name": "stopOnError",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsTransportConfiguration.d.ts",
+							"line": 17
+						},
+						"documentation": "Stop mux on errors. If true, implies halt multiplexing when any error is encountered. If false, errors are ignored and multiplexing continues. Note that the recovery from an error will usually result in an illegal transport stream and artifacts on a decoder.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsTransportConfiguration"
+							}
+						]
+					},
+					{
+						"name": "variableMuxRate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsTransportConfiguration.d.ts",
+							"line": 41
+						},
+						"documentation": "When false, the output stream is created at a constant bit rate. When true, the output rate is allowed to vary from a maximum rate set by the muxrate parameter down to the minimum required to carry the stream.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsTransportConfiguration"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/BroadcastTsVideoInputStreamConfiguration.d.ts#BroadcastTsVideoInputStreamConfiguration",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/BroadcastTsVideoInputStreamConfiguration.d.ts",
+					"line": 6
+				},
+				"properties": [
+					{
+						"name": "alignPes",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsInputStreamConfiguration.d.ts",
+							"line": 30
+						},
+						"documentation": "Align access units to PES packets. If true, align access units to PES packet headers. Uses adaptation field stuffing to position an access unit at the beginning of each PES packet.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsInputStreamConfiguration"
+							}
+						]
+					},
+					{
+						"name": "insertAccessUnitDelimiterInAvc",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsVideoInputStreamConfiguration.d.ts",
+							"line": 12
+						},
+						"documentation": "If true, add access unit delimiters (AUD) to AVC stream if AUD is missing from input elementary stream.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsVideoInputStreamConfiguration"
+							}
+						]
+					},
+					{
+						"name": "maxDecodeDelay",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsVideoInputStreamConfiguration.d.ts",
+							"line": 18
+						},
+						"documentation": "Maximum Decoder Delay in 90 KHz cycles. When non-zero, the difference between the PCR and the DTS for each picture as it is inserted into the output transport stream is limited to this number of 90 KHz cycles. Values below 1000 are treated as 0 and ignored. Valid Range [0, 1000-900000]",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsVideoInputStreamConfiguration"
+							}
+						]
+					},
+					{
+						"name": "packetIdentifier",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsInputStreamConfiguration.d.ts",
+							"line": 18
+						},
+						"documentation": "An integer value. Packet Identifier (PID) for this stream.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsInputStreamConfiguration"
+							}
+						]
+					},
+					{
+						"name": "setRaiOnAu",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/RaiUnit.d.ts#RaiUnit" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsInputStreamConfiguration.d.ts",
+							"line": 35
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{RaiUnit}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsInputStreamConfiguration"
+							}
+						]
+					},
+					{
+						"name": "startWithDiscontinuityIndicator",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsInputStreamConfiguration.d.ts",
+							"line": 24
+						},
+						"documentation": "Start stream with initial discontinuity indicator set to one. If true, set the discontinuity indicator in the first packet for this PID.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsInputStreamConfiguration"
+							}
+						]
+					},
+					{
+						"name": "streamId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BroadcastTsInputStreamConfiguration.d.ts",
+							"line": 12
+						},
+						"documentation": "The UUID of the stream to which this configuration belongs to. This has to be a ID of a stream that has been added to the current muxing.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "BroadcastTsInputStreamConfiguration"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/BurnInSubtitleAssa.d.ts#BurnInSubtitleAssa",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/BurnInSubtitleAssa.d.ts", "line": 8 },
+				"properties": [
+					{
+						"name": "characterEncoding",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/CaptionCharacterEncoding.d.ts#CaptionCharacterEncoding"
+						},
+						"sdkEvidence": {
+							"file": "models/BurnInSubtitleAssa.d.ts",
+							"line": 14
+						},
+						"documentation": "Character encoding of the ASSA file (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CaptionCharacterEncoding}" },
+							{ "name": "memberof", "text": "BurnInSubtitleAssa" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "input",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/InputPath.d.ts#InputPath" },
+						"sdkEvidence": {
+							"file": "models/BurnInSubtitleAssa.d.ts",
+							"line": 20
+						},
+						"documentation": "The input location to get the ASSA file from (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{InputPath}" },
+							{ "name": "memberof", "text": "BurnInSubtitleAssa" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/BurnInSubtitleDvbSub.d.ts#BurnInSubtitleDvbSub",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/BurnInSubtitleDvbSub.d.ts",
+					"line": 6
+				},
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "inputStreamId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BurnInSubtitleDvbSub.d.ts",
+							"line": 12
+						},
+						"documentation": "Id of an IngestInputStream which specifies the stream of the DVB-SUB subtitles (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BurnInSubtitleDvbSub" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/BurnInSubtitleSrt.d.ts#BurnInSubtitleSrt",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/BurnInSubtitleSrt.d.ts", "line": 8 },
+				"properties": [
+					{
+						"name": "characterEncoding",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/CaptionCharacterEncoding.d.ts#CaptionCharacterEncoding"
+						},
+						"sdkEvidence": {
+							"file": "models/BurnInSubtitleSrt.d.ts",
+							"line": 14
+						},
+						"documentation": "Character encoding of the SRT file (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CaptionCharacterEncoding}" },
+							{ "name": "memberof", "text": "BurnInSubtitleSrt" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "input",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/InputPath.d.ts#InputPath" },
+						"sdkEvidence": {
+							"file": "models/BurnInSubtitleSrt.d.ts",
+							"line": 20
+						},
+						"documentation": "The input location to get the SRT file from (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{InputPath}" },
+							{ "name": "memberof", "text": "BurnInSubtitleSrt" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					}
+				]
+			}
+		]
+	]
+}

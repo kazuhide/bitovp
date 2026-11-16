@@ -15,34 +15,18 @@ import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { enumerateBodyParameters, createRequestFieldAudit } from "./api-coverage-fields.mjs";
+import { canonicalSdkMethods } from "./api-coverage-sdk-methods.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(join(root, "apps/web/package.json"));
 const ts = require("typescript");
-const VERBS = new Set(["get", "post", "put", "patch", "delete"]);
 const slash = (value) => value.replaceAll("\\", "/");
 const excluded = (file) => /(?:^|\/)(?:__tests__|__fixtures__|__mocks__|test|tests|test-fixtures|generated)(?:\/)|\.(?:test|spec)\.[^.]+$|\.d\.ts$|\/(?:fake-sdk|test-helpers|test-support|schema-fixtures)\.[^.]+$/.test(slash(file));
 
 export function enumerateOperations(file, source) {
-	const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-	if (ast.parseDiagnostics.length) throw new Error(`Cannot parse SDK source: ${file}`);
-	const rows = [];
-	function visit(node, method) {
-		if (ts.isMethodDeclaration(node)) method = node.name.getText(ast);
-		if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-			const access = node.expression;
-			if (access.expression.getText(ast) === "this.restClient" && VERBS.has(access.name.text)) {
-				const path = node.arguments[0];
-				if (!method || !path || !ts.isStringLiteralLike(path)) throw new Error(`Non-literal SDK transport: ${file}`);
-				if (!path.text.startsWith("/encoding/")) throw new Error(`Unexpected Encoding path: ${file}`);
-				const dir = slash(dirname(file));
-				rows.push({ identity: `${file.replace(/\.js$/, ".d.ts")}#${method}`, path: path.text, httpVerb: access.name.text.toUpperCase(), operation: method, sdkMethod: `${dir.replaceAll("/", ".")}.${method}`, family: dir.split("/")[1] });
-			}
-		}
-		ts.forEachChild(node, (child) => visit(child, method));
-	}
-	visit(ast);
-	return rows;
+ const {methods}=canonicalSdkMethods(file,source);
+ const dir=slash(dirname(file));
+ return methods.map(({method,call,verb})=>({identity:`${file.replace(/\.js$/,".d.ts")}#${method.name.text}`,path:call.arguments[0].text,httpVerb:verb.toUpperCase(),operation:method.name.text,sdkMethod:`${dir.replaceAll("/",".")}.${method.name.text}`,family:dir.split("/")[1]}));
 }
 
 export function collectEvidence({ root, sdkRoot, files, operations, options, onProgram, onCall }) {
@@ -125,7 +109,7 @@ export function generateCensus() {
 	const creates = endpoints.filter((row) => row.operation === "create");
 	return {
 		schemaVersion: 1,
-		provenance: { generatedAt: new Date().toISOString(), sourceCommit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(), sourceFingerprint: hashFiles([...files, ...configs, join(root, "tsconfig.base.json"), join(root, "pnpm-lock.yaml"), fileURLToPath(import.meta.url), join(root, "scripts/api-coverage-fields.mjs")], root), sdkVersion, typescriptVersion: ts.version, sdkFingerprint: hashFiles([...sdkFiles.flatMap((file) => [file, file.replace(/\.js$/, ".d.ts")]), ...modelDeclarations], sdkRoot), method: "typescript-resolved-sdk-signatures-v1", scope: "encoding" },
+		provenance: { generatedAt: new Date().toISOString(), sourceCommit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(), sourceFingerprint: hashFiles([...files, ...configs, join(root, "tsconfig.base.json"), join(root, "pnpm-lock.yaml"), fileURLToPath(import.meta.url), join(root, "scripts/api-coverage-fields.mjs"), join(root, "scripts/api-coverage-sdk-methods.mjs")], root), sdkVersion, typescriptVersion: ts.version, sdkFingerprint: hashFiles([...sdkFiles.flatMap((file) => [file, file.replace(/\.js$/, ".d.ts")]), ...modelDeclarations], sdkRoot), method: "typescript-resolved-sdk-signatures-v1", scope: "encoding" },
 		summary: { ...tally(endpoints), createTotal: creates.length, createSourceConfirmed: tally(creates).sourceConfirmed },
 		families: [...new Set(endpoints.map((r) => r.family))].sort().map((family) => { const t = tally(endpoints.filter((r) => r.family === family)); return { family, total: t.totalOperations, sourceConfirmed: t.sourceConfirmed, unconfirmed: t.unconfirmed }; }),
 		endpoints,

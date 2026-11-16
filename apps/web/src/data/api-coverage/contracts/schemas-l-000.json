@@ -1,0 +1,1869 @@
+{
+	"schemaVersion": 1,
+	"kind": "schemas",
+	"items": [
+		[
+			"encoding/inputs/local/LocalInputListQueryParams.d.ts#LocalInputListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/inputs/local/LocalInputListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/inputs/local/LocalInputListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LocalInputListQueryParams" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/inputs/local/LocalInputListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter inputs by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "LocalInputListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/inputs/local/LocalInputListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LocalInputListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/live/standbyPools/encodings/LiveStandbyPoolEncodingListQueryParams.d.ts#LiveStandbyPoolEncodingListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/live/standbyPools/encodings/LiveStandbyPoolEncodingListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/live/standbyPools/encodings/LiveStandbyPoolEncodingListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "LiveStandbyPoolEncodingListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/live/standbyPools/encodings/LiveStandbyPoolEncodingListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "LiveStandbyPoolEncodingListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "sort",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/live/standbyPools/encodings/LiveStandbyPoolEncodingListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Order list result according a stream key attribute.  The fields that can be used for sorting are: + `createdAt` + `name` + `status`",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "LiveStandbyPoolEncodingListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "status",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/live/standbyPools/encodings/LiveStandbyPoolEncodingListQueryParams.d.ts",
+							"line": 25
+						},
+						"documentation": "Filter standby encodings by status",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "LiveStandbyPoolEncodingListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/live/standbyPools/logs/LiveStandbyPoolEventLogListQueryParams.d.ts#LiveStandbyPoolEventLogListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/live/standbyPools/logs/LiveStandbyPoolEventLogListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "eventType",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/live/standbyPools/logs/LiveStandbyPoolEventLogListQueryParams.d.ts",
+							"line": 25
+						},
+						"documentation": "Filter event logs by log type. Allowed values are: + `INFO` + `WARN` + `ERROR`",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "LiveStandbyPoolEventLogListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/live/standbyPools/logs/LiveStandbyPoolEventLogListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "LiveStandbyPoolEventLogListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/live/standbyPools/logs/LiveStandbyPoolEventLogListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "LiveStandbyPoolEventLogListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "sort",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/live/standbyPools/logs/LiveStandbyPoolEventLogListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Order list result according a event log attribute.  The fields that can be used for sorting are: + `createdAt` + `eventType` + `standByPoolId`",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "LiveStandbyPoolEventLogListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/outputs/liveMediaIngest/LiveMediaIngestOutputListQueryParams.d.ts#LiveMediaIngestOutputListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/outputs/liveMediaIngest/LiveMediaIngestOutputListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/outputs/liveMediaIngest/LiveMediaIngestOutputListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "LiveMediaIngestOutputListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/outputs/liveMediaIngest/LiveMediaIngestOutputListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter output by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "LiveMediaIngestOutputListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/outputs/liveMediaIngest/LiveMediaIngestOutputListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "LiveMediaIngestOutputListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/outputs/local/LocalOutputListQueryParams.d.ts#LocalOutputListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/outputs/local/LocalOutputListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/outputs/local/LocalOutputListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LocalOutputListQueryParams" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/outputs/local/LocalOutputListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter output by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "LocalOutputListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/outputs/local/LocalOutputListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LocalOutputListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/statistics/encodings/live/options/LiveOptionsStatisticsListByDateRangeQueryParams.d.ts#LiveOptionsStatisticsListByDateRangeQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/statistics/encodings/live/options/LiveOptionsStatisticsListByDateRangeQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "from",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{
+									"kind": "builtin",
+									"type": "Date",
+									"scope": "TypeScript builtin; wire representation unconfirmed"
+								}
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/encodings/live/options/LiveOptionsStatisticsListByDateRangeQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Start date, format: yyyy-MM-dd",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{
+								"name": "memberof",
+								"text": "LiveOptionsStatisticsListByDateRangeQueryParams"
+							}
+						]
+					},
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/encodings/live/options/LiveOptionsStatisticsListByDateRangeQueryParams.d.ts",
+							"line": 25
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "LiveOptionsStatisticsListByDateRangeQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/encodings/live/options/LiveOptionsStatisticsListByDateRangeQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "LiveOptionsStatisticsListByDateRangeQueryParams"
+							}
+						]
+					},
+					{
+						"name": "to",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{
+									"kind": "builtin",
+									"type": "Date",
+									"scope": "TypeScript builtin; wire representation unconfirmed"
+								}
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/encodings/live/options/LiveOptionsStatisticsListByDateRangeQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "End date, format: yyyy-MM-dd",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{
+								"name": "memberof",
+								"text": "LiveOptionsStatisticsListByDateRangeQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/statistics/encodings/liveStatistics/events/LiveEncodingStatsEventListQueryParams.d.ts#LiveEncodingStatsEventListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/statistics/encodings/liveStatistics/events/LiveEncodingStatsEventListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/encodings/liveStatistics/events/LiveEncodingStatsEventListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "LiveEncodingStatsEventListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/encodings/liveStatistics/events/LiveEncodingStatsEventListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "LiveEncodingStatsEventListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "sortByTime",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [
+								{ "kind": "undefined" },
+								{ "kind": "boolean", "literal": false },
+								{ "kind": "boolean", "literal": true }
+							]
+						},
+						"sdkEvidence": {
+							"file": "encoding/statistics/encodings/liveStatistics/events/LiveEncodingStatsEventListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Sort events by time in DESC order",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{
+								"name": "memberof",
+								"text": "LiveEncodingStatsEventListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/Label.d.ts#Label",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/Label.d.ts", "line": 5 },
+				"properties": [
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/Label.d.ts", "line": 11 },
+						"documentation": "Identifier of the label.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Label" }
+						]
+					},
+					{
+						"name": "lang",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/Label.d.ts", "line": 17 },
+						"documentation": "Specifies the language of the label.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Label" }
+						]
+					},
+					{
+						"name": "value",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/Label.d.ts", "line": 23 },
+						"documentation": "Content of the label. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Label" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/LevelAv1.d.ts#LevelAv1",
+			{
+				"kind": "enum",
+				"values": [
+					"2.0",
+					"2.1",
+					"3.0",
+					"3.1",
+					"4.0",
+					"4.1",
+					"5.0",
+					"5.1",
+					"5.2",
+					"5.3",
+					"6.0",
+					"6.1",
+					"6.2",
+					"6.3"
+				],
+				"sdkEvidence": { "file": "models/LevelAv1.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/LevelH262.d.ts#LevelH262",
+			{
+				"kind": "enum",
+				"values": ["MAIN", "HIGH"],
+				"sdkEvidence": { "file": "models/LevelH262.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/LevelH264.d.ts#LevelH264",
+			{
+				"kind": "enum",
+				"values": [
+					"1",
+					"1b",
+					"1.1",
+					"1.2",
+					"1.3",
+					"2",
+					"2.1",
+					"2.2",
+					"3",
+					"3.1",
+					"3.2",
+					"4",
+					"4.1",
+					"4.2",
+					"5",
+					"5.1",
+					"5.2"
+				],
+				"sdkEvidence": { "file": "models/LevelH264.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/LevelH265.d.ts#LevelH265",
+			{
+				"kind": "enum",
+				"values": [
+					"1",
+					"2",
+					"2.1",
+					"3",
+					"3.1",
+					"4",
+					"4.1",
+					"5",
+					"5.1",
+					"5.2",
+					"6",
+					"6.1",
+					"6.2"
+				],
+				"sdkEvidence": { "file": "models/LevelH265.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/LimitReferences.d.ts#LimitReferences",
+			{
+				"kind": "enum",
+				"values": ["DISABLED", "DEPTH", "CU", "DEPTH_AND_CU"],
+				"sdkEvidence": { "file": "models/LimitReferences.d.ts", "line": 5 }
+			}
+		],
+		[
+			"models/LimitTransformUnitDepthRecursionMode.d.ts#LimitTransformUnitDepthRecursionMode",
+			{
+				"kind": "enum",
+				"values": ["DISABLED", "LEVEL_1", "LEVEL_2", "LEVEL_3", "LEVEL_4"],
+				"sdkEvidence": {
+					"file": "models/LimitTransformUnitDepthRecursionMode.d.ts",
+					"line": 6
+				}
+			}
+		],
+		[
+			"models/LiveAutoShutdownConfiguration.d.ts#LiveAutoShutdownConfiguration",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/LiveAutoShutdownConfiguration.d.ts",
+					"line": 5
+				},
+				"properties": [
+					{
+						"name": "bytesReadTimeoutSeconds",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/LiveAutoShutdownConfiguration.d.ts",
+							"line": 11
+						},
+						"documentation": "Automatically shutdown the live stream if there is no input anymore for a predefined number of seconds.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LiveAutoShutdownConfiguration" }
+						]
+					},
+					{
+						"name": "streamTimeoutMinutes",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/LiveAutoShutdownConfiguration.d.ts",
+							"line": 17
+						},
+						"documentation": "Automatically shutdown the live stream after a predefined runtime in minutes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LiveAutoShutdownConfiguration" }
+						]
+					},
+					{
+						"name": "waitingForFirstConnectTimeoutMinutes",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/LiveAutoShutdownConfiguration.d.ts",
+							"line": 23
+						},
+						"documentation": "Automatically shutdown the live stream if input is never connected for a predefined number of minutes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LiveAutoShutdownConfiguration" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/LiveAutoShutdownConfigurationUpdateRequest.d.ts#LiveAutoShutdownConfigurationUpdateRequest",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/LiveAutoShutdownConfigurationUpdateRequest.d.ts",
+					"line": 7
+				},
+				"properties": [
+					{
+						"name": "bytesReadTimeoutSeconds",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/LiveAutoShutdownConfiguration.d.ts",
+							"line": 11
+						},
+						"documentation": "Automatically shutdown the live stream if there is no input anymore for a predefined number of seconds.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LiveAutoShutdownConfiguration" }
+						]
+					},
+					{
+						"name": "streamTimeoutMinutes",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/LiveAutoShutdownConfiguration.d.ts",
+							"line": 17
+						},
+						"documentation": "Automatically shutdown the live stream after a predefined runtime in minutes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LiveAutoShutdownConfiguration" }
+						]
+					},
+					{
+						"name": "waitingForFirstConnectTimeoutMinutes",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/LiveAutoShutdownConfiguration.d.ts",
+							"line": 23
+						},
+						"documentation": "Automatically shutdown the live stream if input is never connected for a predefined number of minutes.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LiveAutoShutdownConfiguration" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/LiveDashManifest.d.ts#LiveDashManifest",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/LiveDashManifest.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "adMarkerSettings",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/DashManifestAdMarkerSettings.d.ts#DashManifestAdMarkerSettings"
+						},
+						"sdkEvidence": {
+							"file": "models/LiveDashManifest.d.ts",
+							"line": 48
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{DashManifestAdMarkerSettings}" },
+							{ "name": "memberof", "text": "LiveDashManifest" }
+						]
+					},
+					{
+						"name": "availabilityStartTimeMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/AvailabilityStartTimeMode.d.ts#AvailabilityStartTimeMode"
+						},
+						"sdkEvidence": {
+							"file": "models/LiveDashManifest.d.ts",
+							"line": 43
+						},
+						"documentation": "The mode to trigger the availabilityStartTime initialization.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{AvailabilityStartTimeMode}" },
+							{ "name": "memberof", "text": "LiveDashManifest" }
+						]
+					},
+					{
+						"name": "liveEdgeOffset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/LiveDashManifest.d.ts",
+							"line": 25
+						},
+						"documentation": "Live edge offset in seconds. How it is applied depends on the type of the segmented representations in the manifest. For `TIMELINE` representations, new segments are held back for this duration (rounded up to whole segments) before they are added to the SegmentTimeline, and are always added in order. This adds the same amount of latency, but a segment that arrives late by up to this duration does not interrupt the manifest. A segment that arrives later than that stops the SegmentTimeline from updating until it arrives. If it does not arrive at all, a placeholder segment is added in its place once a few newer segments are available. If set to 0, segments are added as soon as they are available, still in order. For `TEMPLATE` representations, the `availabilityStartTime` is set this many seconds later, so players request each segment this much later. Late segments do not change the manifest; a player that requests a segment before it is uploaded gets an error. Segments are also kept in the manifest for this duration on top of the timeshift. We recommend a value of at least 2 segment durations.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LiveDashManifest" }
+						]
+					},
+					{
+						"name": "manifestId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/LiveDashManifest.d.ts",
+							"line": 13
+						},
+						"documentation": "Dash manifest id (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "LiveDashManifest" }
+						]
+					},
+					{
+						"name": "minimumUpdatePeriod",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/LiveDashManifest.d.ts",
+							"line": 37
+						},
+						"documentation": "The minimumUpdatePeriod to be set in the DASH manifest. If nothing is set, the segment duration will be set.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LiveDashManifest" }
+						]
+					},
+					{
+						"name": "suggestedPresentationDelay",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/LiveDashManifest.d.ts",
+							"line": 31
+						},
+						"documentation": "The suggestedPresentationDelay to be set in the DASH manifest. If nothing is set, no value will be set.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LiveDashManifest" }
+						]
+					},
+					{
+						"name": "timeshift",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/LiveDashManifest.d.ts",
+							"line": 19
+						},
+						"documentation": "Timeshift in seconds",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LiveDashManifest" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/LiveHlsManifest.d.ts#LiveHlsManifest",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/LiveHlsManifest.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "adMarkerSettings",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/HlsManifestAdMarkerSettings.d.ts#HlsManifestAdMarkerSettings"
+						},
+						"sdkEvidence": {
+							"file": "models/LiveHlsManifest.d.ts",
+							"line": 43
+						},
+						"documentation": "Configuration for tags related to ad markers (e.g. Scte35)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{HlsManifestAdMarkerSettings}" },
+							{ "name": "memberof", "text": "LiveHlsManifest" }
+						]
+					},
+					{
+						"name": "insertProgramDateTime",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/LiveHlsManifest.d.ts",
+							"line": 31
+						},
+						"documentation": "Specifies if the EXT-X-PROGRAM-DATETIME tag will be included",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "LiveHlsManifest" }
+						]
+					},
+					{
+						"name": "liveEdgeOffset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/LiveHlsManifest.d.ts",
+							"line": 25
+						},
+						"documentation": "Live edge offset in seconds. New segments are held back for this duration (rounded up to whole segments) before they are added to the HLS playlist, and are always added in order. This adds the same amount of latency, but a segment that arrives late by up to this duration does not interrupt the playlist. A segment that arrives later than that stops the playlist from updating until it arrives. If it does not arrive at all, a placeholder segment is added in its place once a few newer segments are available. If set to 0, segments are added as soon as they are available. A late segment is then skipped and inserted into the playlist later, which can make players skip or repeat content. We recommend a value of at least 2 segment durations.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LiveHlsManifest" }
+						]
+					},
+					{
+						"name": "manifestId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/LiveHlsManifest.d.ts",
+							"line": 13
+						},
+						"documentation": "HLS manifest id (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "LiveHlsManifest" }
+						]
+					},
+					{
+						"name": "programDateTimeSettings",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/ProgramDateTimeSettings.d.ts#ProgramDateTimeSettings"
+						},
+						"sdkEvidence": {
+							"file": "models/LiveHlsManifest.d.ts",
+							"line": 37
+						},
+						"documentation": "Configuration for the EXT-X-PROGRAM-DATETIME tag",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{ProgramDateTimeSettings}" },
+							{ "name": "memberof", "text": "LiveHlsManifest" }
+						]
+					},
+					{
+						"name": "timeshift",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/LiveHlsManifest.d.ts",
+							"line": 19
+						},
+						"documentation": "Timeshift in seconds. We recommend to use a timeshift value not greater than 3 hours (10800.0 seconds). Longer values could negatively impact the manifest update frequency.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LiveHlsManifest" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/LiveMediaIngestOutput.d.ts#LiveMediaIngestOutput",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/LiveMediaIngestOutput.d.ts",
+					"line": 8
+				},
+				"properties": [
+					{
+						"name": "acl",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/AclEntry.d.ts#AclEntry" }
+						},
+						"sdkEvidence": { "file": "models/Output.d.ts", "line": 32 },
+						"documentation": "Deprecation notice: This property does not have any effect and will not be returned by GET endpoints",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{AclEntry[]}" },
+							{ "name": "memberof", "text": "Output" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "publishingPoint",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/LiveMediaIngestOutput.d.ts",
+							"line": 20
+						},
+						"documentation": "URL specifying the publishing point for the output. Can use either http or https. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "LiveMediaIngestOutput" }
+						]
+					},
+					{
+						"name": "scte35Passthrough",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/LiveMediaIngestOutput.d.ts",
+							"line": 26
+						},
+						"documentation": "Enable passthrough of SCTE-35 messages from input to output. Default is false.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "LiveMediaIngestOutput" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/OutputType.d.ts#OutputType" },
+						"sdkEvidence": {
+							"file": "models/LiveMediaIngestOutput.d.ts",
+							"line": 14
+						},
+						"documentation": "Discriminator property for Output",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "LiveMediaIngestOutput" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/LiveStandbyPoolAcquireEncoding.d.ts#LiveStandbyPoolAcquireEncoding",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/LiveStandbyPoolAcquireEncoding.d.ts",
+					"line": 6
+				},
+				"properties": [
+					{
+						"name": "ingestPoints",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": {
+								"ref": "models/LiveStandbyPoolEncodingIngestPoint.d.ts#LiveStandbyPoolEncodingIngestPoint"
+							}
+						},
+						"sdkEvidence": {
+							"file": "models/LiveStandbyPoolAcquireEncoding.d.ts",
+							"line": 12
+						},
+						"documentation": "Note: This is not implemented yet and will be ignored if provided. List of ingest points to be used for the acquired encoding. The DNS hostname and RTMPs application name and streamKey will be assigned to the encoding.",
+						"sdkDocTags": [
+							{
+								"name": "type",
+								"text": "{LiveStandbyPoolEncodingIngestPoint[]}"
+							},
+							{ "name": "memberof", "text": "LiveStandbyPoolAcquireEncoding" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/LiveStandbyPoolEncodingIngestPoint.d.ts#LiveStandbyPoolEncodingIngestPoint",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/LiveStandbyPoolEncodingIngestPoint.d.ts",
+					"line": 5
+				},
+				"properties": [
+					{
+						"name": "streamBaseUrl",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/LiveStandbyPoolEncodingIngestPoint.d.ts",
+							"line": 11
+						},
+						"documentation": "URL to the RTMP/RTMPS endpoint for this live encoding",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "LiveStandbyPoolEncodingIngestPoint"
+							}
+						]
+					},
+					{
+						"name": "streamKey",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/LiveStandbyPoolEncodingIngestPoint.d.ts",
+							"line": 17
+						},
+						"documentation": "Stream key value of this live encoding",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "LiveStandbyPoolEncodingIngestPoint"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/LiveStandbyPoolRequest.d.ts#LiveStandbyPoolRequest",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/LiveStandbyPoolRequest.d.ts",
+					"line": 6
+				},
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "encodingTemplate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/LiveStandbyPoolRequest.d.ts",
+							"line": 18
+						},
+						"documentation": "Base64 encoded template used to start the encodings in the pool (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "LiveStandbyPoolRequest" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "targetPoolSize",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/LiveStandbyPoolRequest.d.ts",
+							"line": 12
+						},
+						"documentation": "Number of instances to keep ready for streaming while the pool is running (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LiveStandbyPoolRequest" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/LiveStandbyPoolUpdate.d.ts#LiveStandbyPoolUpdate",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/LiveStandbyPoolUpdate.d.ts",
+					"line": 5
+				},
+				"properties": [
+					{
+						"name": "encodingTemplate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/LiveStandbyPoolUpdate.d.ts",
+							"line": 17
+						},
+						"documentation": "Base64 encoded template used to start the encodings in the pool",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "LiveStandbyPoolUpdate" }
+						]
+					},
+					{
+						"name": "targetPoolSize",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/LiveStandbyPoolUpdate.d.ts",
+							"line": 11
+						},
+						"documentation": "Number of instances to keep ready for streaming while the pool is running",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "LiveStandbyPoolUpdate" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/LocalInput.d.ts#LocalInput",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/LocalInput.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "path",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/LocalInput.d.ts", "line": 19 },
+						"documentation": "Path to your local storage (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "LocalInput" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/InputType.d.ts#InputType" },
+						"sdkEvidence": { "file": "models/LocalInput.d.ts", "line": 13 },
+						"documentation": "Discriminator property for Input",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "LocalInput" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/LocalOutput.d.ts#LocalOutput",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/LocalOutput.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "acl",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/AclEntry.d.ts#AclEntry" }
+						},
+						"sdkEvidence": { "file": "models/Output.d.ts", "line": 32 },
+						"documentation": "Deprecation notice: This property does not have any effect and will not be returned by GET endpoints",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{AclEntry[]}" },
+							{ "name": "memberof", "text": "Output" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "path",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/LocalOutput.d.ts", "line": 19 },
+						"documentation": "Path to your local storage (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "LocalOutput" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/OutputType.d.ts#OutputType" },
+						"sdkEvidence": { "file": "models/LocalOutput.d.ts", "line": 13 },
+						"documentation": "Discriminator property for Output",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "LocalOutput" }
+						]
+					}
+				]
+			}
+		]
+	]
+}

@@ -1,0 +1,2252 @@
+{
+	"schemaVersion": 1,
+	"kind": "operations",
+	"items": [
+		{
+			"sdkMethod": "encoding.filters.get",
+			"path": "/encoding/filters/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/FiltersApi.d.ts",
+						"line": 56
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/filters/FiltersApi.d.ts", "line": 56 }
+		},
+		{
+			"sdkMethod": "encoding.filters.list",
+			"path": "/encoding/filters",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/FilterListQueryParams.d.ts#FilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: FilterListQueryParamsBuilder) => FilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/FiltersApi.d.ts",
+						"line": 63
+					}
+				}
+			],
+			"sdkEvidence": { "file": "encoding/filters/FiltersApi.d.ts", "line": 63 }
+		},
+		{
+			"sdkMethod": "encoding.filters.audioMix.create",
+			"path": "/encoding/filters/audio-mix",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "audioMixFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/AudioMixFilter.d.ts#AudioMixFilter" },
+					"sdkEvidence": {
+						"file": "encoding/filters/audioMix/AudioMixApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/audioMix/AudioMixApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.audioMix.delete",
+			"path": "/encoding/filters/audio-mix/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/audioMix/AudioMixApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/audioMix/AudioMixApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.audioMix.get",
+			"path": "/encoding/filters/audio-mix/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/audioMix/AudioMixApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/audioMix/AudioMixApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.audioMix.list",
+			"path": "/encoding/filters/audio-mix",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/audioMix/AudioMixFilterListQueryParams.d.ts#AudioMixFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AudioMixFilterListQueryParamsBuilder) => AudioMixFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/audioMix/AudioMixApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/audioMix/AudioMixApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.audioMix.customdata.get",
+			"path": "/encoding/filters/audio-mix/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/audioMix/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/audioMix/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.audioVolume.create",
+			"path": "/encoding/filters/audio-volume",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "audioVolumeFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/AudioVolumeFilter.d.ts#AudioVolumeFilter" },
+					"sdkEvidence": {
+						"file": "encoding/filters/audioVolume/AudioVolumeApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/audioVolume/AudioVolumeApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.audioVolume.delete",
+			"path": "/encoding/filters/audio-volume/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/audioVolume/AudioVolumeApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/audioVolume/AudioVolumeApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.audioVolume.get",
+			"path": "/encoding/filters/audio-volume/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/audioVolume/AudioVolumeApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/audioVolume/AudioVolumeApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.audioVolume.list",
+			"path": "/encoding/filters/audio-volume",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/audioVolume/AudioVolumeFilterListQueryParams.d.ts#AudioVolumeFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AudioVolumeFilterListQueryParamsBuilder) => AudioVolumeFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/audioVolume/AudioVolumeApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/audioVolume/AudioVolumeApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.audioVolume.customdata.get",
+			"path": "/encoding/filters/audio-volume/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/audioVolume/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/audioVolume/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.azureSpeechToCaptions.create",
+			"path": "/encoding/filters/azure-speech-to-captions",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "azureSpeechToCaptionsFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/AzureSpeechToCaptionsFilter.d.ts#AzureSpeechToCaptionsFilter"
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/azureSpeechToCaptions/AzureSpeechToCaptionsApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/azureSpeechToCaptions/AzureSpeechToCaptionsApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.azureSpeechToCaptions.delete",
+			"path": "/encoding/filters/azure-speech-to-captions/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/azureSpeechToCaptions/AzureSpeechToCaptionsApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/azureSpeechToCaptions/AzureSpeechToCaptionsApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.azureSpeechToCaptions.get",
+			"path": "/encoding/filters/azure-speech-to-captions/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/azureSpeechToCaptions/AzureSpeechToCaptionsApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/azureSpeechToCaptions/AzureSpeechToCaptionsApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.azureSpeechToCaptions.list",
+			"path": "/encoding/filters/azure-speech-to-captions",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/azureSpeechToCaptions/AzureSpeechToCaptionsFilterListQueryParams.d.ts#AzureSpeechToCaptionsFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: AzureSpeechToCaptionsFilterListQueryParamsBuilder) => AzureSpeechToCaptionsFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/azureSpeechToCaptions/AzureSpeechToCaptionsApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/azureSpeechToCaptions/AzureSpeechToCaptionsApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.azureSpeechToCaptions.customdata.get",
+			"path": "/encoding/filters/azure-speech-to-captions/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/azureSpeechToCaptions/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/azureSpeechToCaptions/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.conform.create",
+			"path": "/encoding/filters/conform",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "conformFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/ConformFilter.d.ts#ConformFilter" },
+					"sdkEvidence": {
+						"file": "encoding/filters/conform/ConformApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/conform/ConformApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.conform.delete",
+			"path": "/encoding/filters/conform/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/conform/ConformApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/conform/ConformApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.conform.get",
+			"path": "/encoding/filters/conform/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/conform/ConformApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/conform/ConformApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.conform.list",
+			"path": "/encoding/filters/conform",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/conform/ConformFilterListQueryParams.d.ts#ConformFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: ConformFilterListQueryParamsBuilder) => ConformFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/conform/ConformApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/conform/ConformApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.conform.customdata.get",
+			"path": "/encoding/filters/conform/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/conform/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/conform/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.crop.create",
+			"path": "/encoding/filters/crop",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "cropFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/CropFilter.d.ts#CropFilter" },
+					"sdkEvidence": {
+						"file": "encoding/filters/crop/CropApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/crop/CropApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.crop.delete",
+			"path": "/encoding/filters/crop/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/crop/CropApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/crop/CropApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.crop.get",
+			"path": "/encoding/filters/crop/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/crop/CropApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/crop/CropApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.crop.list",
+			"path": "/encoding/filters/crop",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/crop/CropFilterListQueryParams.d.ts#CropFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: CropFilterListQueryParamsBuilder) => CropFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/crop/CropApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/crop/CropApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.crop.customdata.get",
+			"path": "/encoding/filters/crop/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/crop/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/crop/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.deinterlace.create",
+			"path": "/encoding/filters/deinterlace",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "deinterlaceFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/DeinterlaceFilter.d.ts#DeinterlaceFilter" },
+					"sdkEvidence": {
+						"file": "encoding/filters/deinterlace/DeinterlaceApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/deinterlace/DeinterlaceApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.deinterlace.delete",
+			"path": "/encoding/filters/deinterlace/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/deinterlace/DeinterlaceApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/deinterlace/DeinterlaceApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.deinterlace.get",
+			"path": "/encoding/filters/deinterlace/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/deinterlace/DeinterlaceApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/deinterlace/DeinterlaceApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.deinterlace.list",
+			"path": "/encoding/filters/deinterlace",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/deinterlace/DeinterlaceFilterListQueryParams.d.ts#DeinterlaceFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DeinterlaceFilterListQueryParamsBuilder) => DeinterlaceFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/deinterlace/DeinterlaceApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/deinterlace/DeinterlaceApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.deinterlace.customdata.get",
+			"path": "/encoding/filters/deinterlace/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/deinterlace/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/deinterlace/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.denoiseHqdn3d.create",
+			"path": "/encoding/filters/denoise-hqdn3d",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "denoiseHqdn3dFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/DenoiseHqdn3dFilter.d.ts#DenoiseHqdn3dFilter"
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/denoiseHqdn3d/DenoiseHqdn3dApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/denoiseHqdn3d/DenoiseHqdn3dApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.denoiseHqdn3d.delete",
+			"path": "/encoding/filters/denoise-hqdn3d/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/denoiseHqdn3d/DenoiseHqdn3dApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/denoiseHqdn3d/DenoiseHqdn3dApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.denoiseHqdn3d.get",
+			"path": "/encoding/filters/denoise-hqdn3d/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/denoiseHqdn3d/DenoiseHqdn3dApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/denoiseHqdn3d/DenoiseHqdn3dApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.denoiseHqdn3d.list",
+			"path": "/encoding/filters/denoise-hqdn3d",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/denoiseHqdn3d/DenoiseHqdn3dFilterListQueryParams.d.ts#DenoiseHqdn3dFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DenoiseHqdn3dFilterListQueryParamsBuilder) => DenoiseHqdn3dFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/denoiseHqdn3d/DenoiseHqdn3dApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/denoiseHqdn3d/DenoiseHqdn3dApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.denoiseHqdn3d.customdata.get",
+			"path": "/encoding/filters/denoise-hqdn3d/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/denoiseHqdn3d/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/denoiseHqdn3d/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.dolbyLoudness.create",
+			"path": "/encoding/filters/dolby-loudness",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "dolbyLoudnessFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/DolbyLoudnessFilter.d.ts#DolbyLoudnessFilter"
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/dolbyLoudness/DolbyLoudnessApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/dolbyLoudness/DolbyLoudnessApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.dolbyLoudness.delete",
+			"path": "/encoding/filters/dolby-loudness/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/dolbyLoudness/DolbyLoudnessApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/dolbyLoudness/DolbyLoudnessApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.dolbyLoudness.get",
+			"path": "/encoding/filters/dolby-loudness/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/dolbyLoudness/DolbyLoudnessApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/dolbyLoudness/DolbyLoudnessApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.dolbyLoudness.list",
+			"path": "/encoding/filters/dolby-loudness",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/dolbyLoudness/DolbyLoudnessFilterListQueryParams.d.ts#DolbyLoudnessFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DolbyLoudnessFilterListQueryParamsBuilder) => DolbyLoudnessFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/dolbyLoudness/DolbyLoudnessApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/dolbyLoudness/DolbyLoudnessApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.dolbyLoudness.customdata.get",
+			"path": "/encoding/filters/dolby-loudness/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/dolbyLoudness/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/dolbyLoudness/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.ebuR128SinglePass.create",
+			"path": "/encoding/filters/ebu-r128-single-pass",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "ebuR128SinglePassFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/EbuR128SinglePassFilter.d.ts#EbuR128SinglePassFilter"
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/ebuR128SinglePass/EbuR128SinglePassApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/ebuR128SinglePass/EbuR128SinglePassApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.ebuR128SinglePass.delete",
+			"path": "/encoding/filters/ebu-r128-single-pass/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/ebuR128SinglePass/EbuR128SinglePassApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/ebuR128SinglePass/EbuR128SinglePassApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.ebuR128SinglePass.get",
+			"path": "/encoding/filters/ebu-r128-single-pass/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/ebuR128SinglePass/EbuR128SinglePassApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/ebuR128SinglePass/EbuR128SinglePassApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.ebuR128SinglePass.list",
+			"path": "/encoding/filters/ebu-r128-single-pass",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/ebuR128SinglePass/EbuR128SinglePassFilterListQueryParams.d.ts#EbuR128SinglePassFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: EbuR128SinglePassFilterListQueryParamsBuilder) => EbuR128SinglePassFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/ebuR128SinglePass/EbuR128SinglePassApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/ebuR128SinglePass/EbuR128SinglePassApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.ebuR128SinglePass.customdata.get",
+			"path": "/encoding/filters/ebu-r128-single-pass/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/ebuR128SinglePass/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/ebuR128SinglePass/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedDeinterlace.create",
+			"path": "/encoding/filters/enhanced-deinterlace",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "enhancedDeinterlaceFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/EnhancedDeinterlaceFilter.d.ts#EnhancedDeinterlaceFilter"
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/enhancedDeinterlace/EnhancedDeinterlaceApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/enhancedDeinterlace/EnhancedDeinterlaceApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedDeinterlace.delete",
+			"path": "/encoding/filters/enhanced-deinterlace/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/enhancedDeinterlace/EnhancedDeinterlaceApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/enhancedDeinterlace/EnhancedDeinterlaceApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedDeinterlace.get",
+			"path": "/encoding/filters/enhanced-deinterlace/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/enhancedDeinterlace/EnhancedDeinterlaceApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/enhancedDeinterlace/EnhancedDeinterlaceApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedDeinterlace.list",
+			"path": "/encoding/filters/enhanced-deinterlace",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/enhancedDeinterlace/EnhancedDeinterlaceFilterListQueryParams.d.ts#EnhancedDeinterlaceFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: EnhancedDeinterlaceFilterListQueryParamsBuilder) => EnhancedDeinterlaceFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/enhancedDeinterlace/EnhancedDeinterlaceApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/enhancedDeinterlace/EnhancedDeinterlaceApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedDeinterlace.customdata.get",
+			"path": "/encoding/filters/enhanced-deinterlace/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/enhancedDeinterlace/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/enhancedDeinterlace/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedWatermark.create",
+			"path": "/encoding/filters/enhanced-watermark",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "enhancedWatermarkFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/EnhancedWatermarkFilter.d.ts#EnhancedWatermarkFilter"
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/enhancedWatermark/EnhancedWatermarkApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/enhancedWatermark/EnhancedWatermarkApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedWatermark.delete",
+			"path": "/encoding/filters/enhanced-watermark/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/enhancedWatermark/EnhancedWatermarkApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/enhancedWatermark/EnhancedWatermarkApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedWatermark.get",
+			"path": "/encoding/filters/enhanced-watermark/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/enhancedWatermark/EnhancedWatermarkApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/enhancedWatermark/EnhancedWatermarkApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedWatermark.list",
+			"path": "/encoding/filters/enhanced-watermark",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/enhancedWatermark/EnhancedWatermarkFilterListQueryParams.d.ts#EnhancedWatermarkFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: EnhancedWatermarkFilterListQueryParamsBuilder) => EnhancedWatermarkFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/enhancedWatermark/EnhancedWatermarkApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/enhancedWatermark/EnhancedWatermarkApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedWatermark.customdata.get",
+			"path": "/encoding/filters/enhanced-watermark/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/enhancedWatermark/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/enhancedWatermark/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.interlace.create",
+			"path": "/encoding/filters/interlace",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "interlaceFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/InterlaceFilter.d.ts#InterlaceFilter" },
+					"sdkEvidence": {
+						"file": "encoding/filters/interlace/InterlaceApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/interlace/InterlaceApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.interlace.delete",
+			"path": "/encoding/filters/interlace/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/interlace/InterlaceApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/interlace/InterlaceApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.interlace.get",
+			"path": "/encoding/filters/interlace/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/interlace/InterlaceApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/interlace/InterlaceApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.interlace.list",
+			"path": "/encoding/filters/interlace",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/interlace/InterlaceFilterListQueryParams.d.ts#InterlaceFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: InterlaceFilterListQueryParamsBuilder) => InterlaceFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/interlace/InterlaceApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/interlace/InterlaceApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.interlace.customdata.get",
+			"path": "/encoding/filters/interlace/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/interlace/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/interlace/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.rotate.create",
+			"path": "/encoding/filters/rotate",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "rotateFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/RotateFilter.d.ts#RotateFilter" },
+					"sdkEvidence": {
+						"file": "encoding/filters/rotate/RotateApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/rotate/RotateApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.rotate.delete",
+			"path": "/encoding/filters/rotate/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/rotate/RotateApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/rotate/RotateApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.rotate.get",
+			"path": "/encoding/filters/rotate/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/rotate/RotateApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/rotate/RotateApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.rotate.list",
+			"path": "/encoding/filters/rotate",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/rotate/RotateFilterListQueryParams.d.ts#RotateFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: RotateFilterListQueryParamsBuilder) => RotateFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/rotate/RotateApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/rotate/RotateApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.rotate.customdata.get",
+			"path": "/encoding/filters/rotate/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/rotate/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/rotate/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.scale.create",
+			"path": "/encoding/filters/scale",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "scaleFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/ScaleFilter.d.ts#ScaleFilter" },
+					"sdkEvidence": {
+						"file": "encoding/filters/scale/ScaleApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/scale/ScaleApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.scale.delete",
+			"path": "/encoding/filters/scale/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/scale/ScaleApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/scale/ScaleApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.scale.get",
+			"path": "/encoding/filters/scale/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/scale/ScaleApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/scale/ScaleApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.scale.list",
+			"path": "/encoding/filters/scale",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/scale/ScaleFilterListQueryParams.d.ts#ScaleFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: ScaleFilterListQueryParamsBuilder) => ScaleFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/scale/ScaleApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/scale/ScaleApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.scale.customdata.get",
+			"path": "/encoding/filters/scale/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/scale/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/scale/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.text.create",
+			"path": "/encoding/filters/text",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "textFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/TextFilter.d.ts#TextFilter" },
+					"sdkEvidence": {
+						"file": "encoding/filters/text/TextApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/text/TextApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.text.delete",
+			"path": "/encoding/filters/text/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/text/TextApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/text/TextApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.text.get",
+			"path": "/encoding/filters/text/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/text/TextApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/text/TextApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.text.list",
+			"path": "/encoding/filters/text",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/text/TextFilterListQueryParams.d.ts#TextFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: TextFilterListQueryParamsBuilder) => TextFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/text/TextApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/text/TextApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.text.customdata.get",
+			"path": "/encoding/filters/text/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/text/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/text/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.type.get",
+			"path": "/encoding/filters/{filter_id}/type",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/type/TypeApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/type/TypeApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.unsharp.create",
+			"path": "/encoding/filters/unsharp",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "unsharpFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/UnsharpFilter.d.ts#UnsharpFilter" },
+					"sdkEvidence": {
+						"file": "encoding/filters/unsharp/UnsharpApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/unsharp/UnsharpApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.unsharp.delete",
+			"path": "/encoding/filters/unsharp/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/unsharp/UnsharpApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/unsharp/UnsharpApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.unsharp.get",
+			"path": "/encoding/filters/unsharp/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/unsharp/UnsharpApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/unsharp/UnsharpApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.unsharp.list",
+			"path": "/encoding/filters/unsharp",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/unsharp/UnsharpFilterListQueryParams.d.ts#UnsharpFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: UnsharpFilterListQueryParamsBuilder) => UnsharpFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/unsharp/UnsharpApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/unsharp/UnsharpApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.unsharp.customdata.get",
+			"path": "/encoding/filters/unsharp/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/unsharp/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/unsharp/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.watermark.create",
+			"path": "/encoding/filters/watermark",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "watermarkFilter",
+					"parameterIndex": 0,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": { "ref": "models/WatermarkFilter.d.ts#WatermarkFilter" },
+					"sdkEvidence": {
+						"file": "encoding/filters/watermark/WatermarkApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/watermark/WatermarkApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.watermark.delete",
+			"path": "/encoding/filters/watermark/{filter_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/watermark/WatermarkApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/watermark/WatermarkApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.watermark.get",
+			"path": "/encoding/filters/watermark/{filter_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/watermark/WatermarkApi.d.ts",
+						"line": 37
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/watermark/WatermarkApi.d.ts",
+				"line": 37
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.watermark.list",
+			"path": "/encoding/filters/watermark",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/filters/watermark/WatermarkFilterListQueryParams.d.ts#WatermarkFilterListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: WatermarkFilterListQueryParamsBuilder) => WatermarkFilterListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/filters/watermark/WatermarkApi.d.ts",
+						"line": 44
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/watermark/WatermarkApi.d.ts",
+				"line": 44
+			}
+		},
+		{
+			"sdkMethod": "encoding.filters.watermark.customdata.get",
+			"path": "/encoding/filters/watermark/{filter_id}/customData",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "filterId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "filter_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/filters/watermark/customdata/CustomdataApi.d.ts",
+						"line": 18
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/filters/watermark/customdata/CustomdataApi.d.ts",
+				"line": 18
+			}
+		}
+	]
+}

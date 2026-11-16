@@ -1,2 +1,5 @@
 *.pdf binary
 SOURCE_REVISION export-subst
+
+apps/web/src/data/api-coverage/contracts.json linguist-generated=true
+apps/web/src/data/api-coverage/contracts/*.json linguist-generated=true

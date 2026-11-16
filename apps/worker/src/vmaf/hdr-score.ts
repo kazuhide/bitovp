@@ -57,6 +57,15 @@ export function validateHdrFrameTimeline(
 		throw new Error("HDR_FRAME_TIMING_REQUIRED");
 	const floorDuration = stepNumerator / stepDenominator;
 	const ceilDuration = (stepNumerator + stepDenominator - 1n) / stepDenominator;
+	const declaredRgbReference =
+		input.attributeSource === "P3_D65_PQ_RGB_FULL" &&
+		["rgb48le", "gbrp12le", "gbrp16le"].includes(input.pixelFormat) &&
+		input.primaries === "smpte432" &&
+		input.transfer === "smpte2084" &&
+		input.range === "full" &&
+		input.matrix === "gbr";
+	const colorMatches = (actual: unknown, expected: string) =>
+		actual === expected || (declaredRgbReference && actual === undefined);
 	let origin: number | undefined;
 	let previousPts: number | undefined;
 	for (const [index, value] of frames.entries()) {
@@ -91,12 +100,12 @@ export function validateHdrFrameTimeline(
 			f?.height !== input.height ||
 			f?.pix_fmt !== input.pixelFormat ||
 			f?.sample_aspect_ratio !== "1:1" ||
-			f?.color_primaries !== input.primaries ||
-			f?.color_transfer !== input.transfer ||
+			!colorMatches(f?.color_primaries, input.primaries) ||
+			!colorMatches(f?.color_transfer, input.transfer) ||
 			(f.color_range !== undefined &&
 				f.color_range !== (input.range === "limited" ? "tv" : "pc")) ||
 			(f.color_space !== undefined && f.color_space !== input.matrix) ||
-			(input.attributeSource === "STREAM_METADATA" &&
+			(!declaredRgbReference &&
 				(f.color_range === undefined || f.color_space === undefined)) ||
 			["crop_top", "crop_bottom", "crop_left", "crop_right"].some(
 				(key) => f?.[key] !== undefined && f[key] !== 0,

@@ -67,8 +67,8 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
 		? (value as Record<string, unknown>)
 		: undefined;
 
-/** The explicit RGB declaration is needed for IMF descriptors whose decoded
- * stream does not carry range/matrix tags. It never overrides contrary tags. */
+/** The explicit RGB declaration supplies missing IMF color attributes.
+ * It never overrides contrary tags or supplies a presentation clock. */
 export function hdrInputFromProbe(
 	text: string,
 	role: "reference" | "distorted",
@@ -130,42 +130,41 @@ export function hdrInputFromProbe(
 				? "full"
 				: undefined;
 	let matrix = video.color_space;
+	let primaries = video.color_primaries;
+	let transfer = video.color_transfer;
 	if (declared) {
 		if (
 			role !== "reference" ||
 			!rgb ||
-			video.color_primaries !== "smpte432" ||
-			video.color_transfer !== "smpte2084" ||
-			(range !== undefined && range !== "full") ||
+			(primaries !== undefined && primaries !== "smpte432") ||
+			(transfer !== undefined && transfer !== "smpte2084") ||
+			(video.color_range !== undefined && range !== "full") ||
 			(matrix !== undefined && matrix !== "gbr" && matrix !== "rgb")
 		)
 			throw new Error("HDR_REFERENCE_DECLARATION_MISMATCH");
 		range = "full";
 		matrix = "gbr";
+		primaries = "smpte432";
+		transfer = "smpte2084";
 	}
-	if (!range || !matrix || !video.color_primaries || !video.color_transfer)
+	if (!range || !matrix || !primaries || !transfer)
 		throw new Error("HDR_COLOR_ATTRIBUTES_REQUIRED");
-	if (!["smpte2084", "arib-std-b67"].includes(String(video.color_transfer)))
+	if (!["smpte2084", "arib-std-b67"].includes(String(transfer)))
 		throw new Error("HDR_TRANSFER_UNSUPPORTED");
-	if (
-		video.color_transfer === "arib-std-b67" &&
-		(rgb || video.color_primaries !== "bt2020")
-	)
+	if (transfer === "arib-std-b67" && (rgb || primaries !== "bt2020"))
 		throw new Error("HDR_HLG_COLOR_SPACE_UNSUPPORTED");
 	if (
 		role === "distorted" &&
 		(video.pix_fmt !== "yuv420p10le" ||
 			range !== "limited" ||
-			video.color_primaries !== "bt2020" ||
+			primaries !== "bt2020" ||
 			matrix !== "bt2020nc")
 	)
 		throw new Error("HDR_ENCODED_FORMAT_UNSUPPORTED");
 	if (
 		rgb
 			? range !== "full" || matrix !== "gbr"
-			: range !== "limited" ||
-				matrix !== "bt2020nc" ||
-				video.color_primaries !== "bt2020"
+			: range !== "limited" || matrix !== "bt2020nc" || primaries !== "bt2020"
 	)
 		throw new Error("HDR_COLOR_SPACE_UNSUPPORTED");
 	const frameRate = String(video.avg_frame_rate);
@@ -193,8 +192,8 @@ export function hdrInputFromProbe(
 		bitDepth: depth,
 		range,
 		matrix,
-		primaries: video.color_primaries,
-		transfer: video.color_transfer,
+		primaries,
+		transfer,
 		frameRate,
 		attributeSource: declared ?? "STREAM_METADATA",
 		...(dovi.length

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import meridianHeader from "./__fixtures__/meridian-imf-rgb-header.json";
 import {
 	buildHdrVmafCommand,
 	HDR_VMAF_MODELS,
@@ -143,6 +144,62 @@ describe("native HDR QC protocol", () => {
 			bitDepth: 12,
 			attributeSource: "P3_D65_PQ_RGB_FULL",
 		});
+	});
+	it("accepts explicitly declared P3/PQ RGB with missing color attributes and a complete clock", () => {
+		// Original MXF header metadata: f67979a1935ba52a16b941f5ac9ba058a663aa2f72521f70eb0770ea89e0516f.
+		// The partial header has avg_frame_rate=0/0; this positive fixture supplies
+		// a complete clock separately, without claiming the header proves it.
+		const source = {
+			...meridianHeader.streams[0],
+			avg_frame_rate: "60000/1001",
+		};
+		expect(
+			hdrInputFromProbe(probe(source), "reference", "P3_D65_PQ_RGB_FULL"),
+		).toMatchObject({
+			pixelFormat: "rgb48le",
+			bitDepth: 12,
+			primaries: "smpte432",
+			transfer: "smpte2084",
+			matrix: "gbr",
+			range: "full",
+			frameRate: "60000/1001",
+			attributeSource: "P3_D65_PQ_RGB_FULL",
+		});
+		expect(() => hdrInputFromProbe(probe(source), "reference")).toThrow(
+			"HDR_COLOR_ATTRIBUTES_REQUIRED",
+		);
+		expect(() =>
+			hdrInputFromProbe(probe(source), "distorted", "P3_D65_PQ_RGB_FULL"),
+		).toThrow("HDR_REFERENCE_DECLARATION_MISMATCH");
+	});
+	it("keeps the original partial MXF header's unknown average frame rate rejected", () => {
+		expect(() =>
+			hdrInputFromProbe(
+				JSON.stringify(meridianHeader),
+				"reference",
+				"P3_D65_PQ_RGB_FULL",
+			),
+		).toThrow("HDR_FRAME_RATE_UNSUPPORTED");
+	});
+	it.each([
+		{ color_primaries: "bt2020" },
+		{ color_transfer: "arib-std-b67" },
+		{ color_range: "tv" },
+		{ color_space: "bt2020nc" },
+		{ color_range: "unknown" },
+		{ color_primaries: null },
+	])("rejects a declared RGB reference with contradictory or malformed color metadata: %j", (tags) => {
+		expect(() =>
+			hdrInputFromProbe(
+				probe({
+					...meridianHeader.streams[0],
+					avg_frame_rate: "60000/1001",
+					...tags,
+				}),
+				"reference",
+				"P3_D65_PQ_RGB_FULL",
+			),
+		).toThrow("HDR_REFERENCE_DECLARATION_MISMATCH");
 	});
 	it("does not let the RGB declaration override contradictory tags or YUV input", () => {
 		for (const video of [

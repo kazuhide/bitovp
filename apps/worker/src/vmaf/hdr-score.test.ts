@@ -1,5 +1,6 @@
 import { hdrInputFromProbe } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
+import meridianHeader from "../../../../packages/core/src/vmaf/__fixtures__/meridian-imf-rgb-header.json";
 import { validateHdrFrameTimeline, validateHdrVmafLog } from "./hdr-score";
 
 const video = {
@@ -29,7 +30,97 @@ const frame = (n: number) => ({
 const timeline = (frames: unknown[]) =>
 	JSON.stringify({ streams: [{ time_base: "1/24000" }], frames });
 
+// Saved original MXF stream shape; a complete 60000/1001 clock is an explicit
+// fixture input, not inferred from the partial header's avg_frame_rate=0/0.
+const meridianVideo = {
+	...meridianHeader.streams[0],
+	avg_frame_rate: "60000/1001",
+};
+const declaredReference = hdrInputFromProbe(
+	JSON.stringify({
+		streams: [
+			{
+				...meridianVideo,
+				color_primaries: "smpte432",
+				color_transfer: "smpte2084",
+			},
+		],
+	}),
+	"reference",
+	"P3_D65_PQ_RGB_FULL",
+);
+const meridianFrame = (n: number) => ({
+	width: 3840,
+	height: 2160,
+	pix_fmt: "rgb48le",
+	sample_aspect_ratio: "1:1",
+	best_effort_timestamp: n,
+	duration: 1,
+});
+const meridianTimeline = (frames: unknown[]) =>
+	JSON.stringify({ streams: [{ time_base: "1001/60000" }], frames });
+
 describe("full-frame HDR measurement", () => {
+	it("accepts missing frame color attributes only for the explicitly declared P3/PQ RGB reference", () => {
+		const completeFrames = [
+			meridianFrame(0),
+			{
+				...meridianFrame(1),
+				color_primaries: "smpte432",
+				color_transfer: "smpte2084",
+				color_range: "pc",
+				color_space: "gbr",
+			},
+			meridianFrame(2),
+		];
+		expect(
+			validateHdrFrameTimeline(
+				meridianTimeline(completeFrames),
+				declaredReference,
+			),
+		).toBe(3);
+		expect(() =>
+			validateHdrFrameTimeline(meridianTimeline(completeFrames), {
+				...declaredReference,
+				attributeSource: "STREAM_METADATA",
+			}),
+		).toThrow("HDR_FRAME_FORMAT_CHANGED");
+		expect(() =>
+			validateHdrFrameTimeline(
+				meridianTimeline([meridianFrame(0), meridianFrame(2)]),
+				declaredReference,
+			),
+		).toThrow("HDR_FRAME_CADENCE");
+	});
+	it.each([
+		{ color_primaries: "bt2020" },
+		{ color_transfer: "bt709" },
+		{ color_range: "tv" },
+		{ color_space: "bt2020nc" },
+		{ color_primaries: null },
+	])("rejects contradictory frame attributes in a declared RGB reference: %j", (tags) => {
+		expect(() =>
+			validateHdrFrameTimeline(
+				meridianTimeline([meridianFrame(0), { ...meridianFrame(1), ...tags }]),
+				declaredReference,
+			),
+		).toThrow("HDR_FRAME_FORMAT_CHANGED");
+	});
+	it("does not relax encoded YUV frame metadata for a forged declaration marker", () => {
+		const missing = {
+			...frame(0),
+			color_primaries: undefined,
+			color_transfer: undefined,
+			color_range: undefined,
+			color_space: undefined,
+		};
+		expect(() =>
+			validateHdrFrameTimeline(timeline([missing]), {
+				...input,
+				attributeSource: "P3_D65_PQ_RGB_FULL",
+			}),
+		).toThrow("HDR_FRAME_FORMAT_CHANGED");
+	});
 	it.each([
 		"24000/1001",
 		"60000/1001",

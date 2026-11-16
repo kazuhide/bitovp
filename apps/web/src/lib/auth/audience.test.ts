@@ -186,6 +186,12 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 		method: "GET",
 	},
 	{
+		page: "/settings/error-definitions",
+		floor: "VIEWER",
+		api: "/api/encoding-error-definitions",
+		method: "GET",
+	},
+	{
 		page: "/settings/features",
 		floor: "VIEWER",
 		api: "/api/settings/features",
@@ -443,6 +449,7 @@ describe("pageAccess", () => {
 		["/verification", "customer", "VIEWER"],
 		["/verification/run-123", "customer", "VIEWER"],
 		["/settings/api-coverage", "operator", "VIEWER"],
+		["/settings/error-definitions", "operator", "VIEWER"],
 		["/settings/users", "operator", "ADMIN"],
 		["/settings/tokens", "operator", "ADMIN"],
 		["/settings/reset", "operator", "ADMIN"],
@@ -511,6 +518,7 @@ describe("page floors agree with the API floors the pages read — the audit's c
 		["/settings/reset", "/api/admin/reset", "POST"],
 		["/settings/features", "/api/settings/features", "GET"],
 		["/settings/bitmovin", "/api/bitmovin-accounts", "GET"],
+		["/settings/error-definitions", "/api/encoding-error-definitions", "GET"],
 		["/vod/jobs", "/api/encoding-jobs", "GET"],
 		["/live", "/api/live-channels", "GET"],
 		["/qc", "/api/vmaf-jobs", "GET"],

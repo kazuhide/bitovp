@@ -27,7 +27,7 @@ families below. Neither table is a full-field GUI coverage percentage.
 | Subtitle configurations | 3 | 2 | DVB subtitle |
 | Input streams | 13 | 10 | CEA608, CEA708 and DVB subtitle extraction |
 | Filters | 17 | 10 | AudioMix, AzureSpeechToCaptions, Conform, DolbyLoudness, EnhancedDeinterlace, EnhancedWatermark, Interlace |
-| Muxings, excluding DRM children | 16 | 10 | Broadcast TS, MP3, MXF, Packed Audio, Progressive WAV, Segmented Raw |
+| Direct muxing types, excluding DRM/ID3 children | 16 | 10 | Broadcast TS, MP3, MXF, Packed Audio, Progressive WAV, Segmented Raw |
 
 The five video paths include account-restricted HEVCv2. Existing audio paths
 are AAC, AC3, EAC3, Opus, Dolby Atmos, Dolby Digital Plus and Dolby Digital.
@@ -36,8 +36,10 @@ already uses AudioMixInputStream. Adding a second mixing mechanism is not a
 priority.
 
 The compared SDK operations are reproducible from
-`apps/web/src/data/api-coverage/current.json`, selecting each family's `create`
-methods. Closed discriminated unions in `packages/core/src/plan/schema.ts`,
+`apps/web/src/data/api-coverage/current.json`, selecting each family's direct
+resource-type `create` methods. For muxings, use
+`encoding.encodings.muxings.<type>.create`; nested DRM and ID3 frame creation
+methods are excluded. Closed discriminated unions in `packages/core/src/plan/schema.ts`,
 `packages/core/src/plan/media-filters.ts` and Worker dispatch in
 `apps/worker/src/orchestrator/ops/{configs,media,media-filters}.ts` establish the
 application paths. SDK model declarations are available in the

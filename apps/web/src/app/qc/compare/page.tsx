@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { localizedTitle } from "@/lib/i18n/metadata";
 import { readFeatureFlags } from "@/lib/server/feature-flags";
+import { readPlayerClientConfig } from "@/lib/server/player-config";
 import { CompareClient } from "./compare-client";
 
 export const generateMetadata = localizedTitle("pageTitles.compareVmafReports");
@@ -20,9 +21,10 @@ export default async function CompareVmafPage() {
 	if (!(await readFeatureFlags()).qcVmaf) {
 		notFound();
 	}
+	const player = await readPlayerClientConfig();
 	return (
 		<Suspense fallback={null}>
-			<CompareClient />
+			<CompareClient player={player} />
 		</Suspense>
 	);
 }

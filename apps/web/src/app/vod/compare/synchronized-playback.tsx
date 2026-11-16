@@ -1,25 +1,24 @@
 "use client";
 
 import type { PlayerClientConfig } from "@bitovp/core";
-import {
-	type ReactNode,
-	useCallback,
-	useEffect,
-	useRef,
-	useState,
-} from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/context";
 import type { PlaybackControl } from "../jobs/[id]/playback-control";
 import { PlaybackSurface } from "../jobs/[id]/playback-surface";
-import type { OutputLink } from "./output-selection";
+import { type OutputLink, outputSides } from "./output-selection";
 import {
 	type AudioSide,
+	type PlaybackOutputs,
 	type SynchronizedState,
 	synchronizePlayback,
 } from "./synchronize-playback";
 
-type Output = { jobId: string; heading: ReactNode; link: OutputLink };
+export type ComparisonOutput = {
+	jobId: string;
+	heading: ReactNode;
+	link: OutputLink;
+};
 const waiting: SynchronizedState = {
 	time: 0,
 	duration: 0,
@@ -33,22 +32,27 @@ export function SynchronizedPlayback({
 	outputs,
 	player,
 }: {
-	outputs: readonly [Output, Output];
+	outputs: PlaybackOutputs<ComparisonOutput>;
 	player?: PlayerClientConfig;
 }) {
 	const { t } = useT();
-	const [controls, setControls] = useState<
-		readonly [PlaybackControl | null, PlaybackControl | null]
-	>([null, null]);
-	const leftControl = useCallback(
-		(value: PlaybackControl | null) =>
-			setControls((old) => (old[0] === value ? old : [value, old[1]])),
-		[],
-	);
-	const rightControl = useCallback(
-		(value: PlaybackControl | null) =>
-			setControls((old) => (old[1] === value ? old : [old[0], value])),
-		[],
+	const count = outputs.length;
+	const sides = outputSides(count);
+	const [controls, setControls] = useState<(PlaybackControl | null)[]>([]);
+	const controlCallbacks = useMemo(
+		() =>
+			Array.from(
+				{ length: count },
+				(_, index) => (value: PlaybackControl | null) =>
+					setControls((old) =>
+						old[index] === value
+							? old
+							: Array.from({ length: count }, (_, slot) =>
+									slot === index ? value : (old[slot] ?? null),
+								),
+					),
+			),
+		[count],
 	);
 	const [state, setState] = useState(waiting);
 	const [audio, setAudio] = useState<AudioSide>("left");
@@ -56,14 +60,15 @@ export function SynchronizedPlayback({
 	const connection = useRef<ReturnType<typeof synchronizePlayback> | null>(
 		null,
 	);
-	const [left, right] = controls;
 	useEffect(() => {
-		if (!left || !right) {
+		const [first, second, third] = controls;
+		if (!first || !second || (count === 3 && !third)) {
 			setState(waiting);
 			return;
 		}
-		const sync = synchronizePlayback([left, right], () =>
-			setState(connection.current?.read() ?? waiting),
+		const sync = synchronizePlayback(
+			count === 3 && third ? [first, second, third] : [first, second],
+			() => setState(connection.current?.read() ?? waiting),
 		);
 		connection.current = sync;
 		sync.audio(audioRef.current);
@@ -72,17 +77,19 @@ export function SynchronizedPlayback({
 			connection.current = null;
 			sync.dispose();
 		};
-	}, [left, right]);
+	}, [controls, count]);
 	useEffect(() => {
 		audioRef.current = audio;
 		connection.current?.audio(audio);
 	}, [audio]);
 	return (
 		<div data-testid="synchronized-outputs" className="mt-4 space-y-3">
-			<div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
+			<div
+				className={`grid min-w-0 grid-cols-1 gap-4 ${count === 3 ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}
+			>
 				{outputs.map((output, index) => {
 					const control = controls[index];
-					const side = index === 0 ? "left" : "right";
+					const side = sides[index] ?? "right";
 					const qualities = control?.qualities() ?? [];
 					return (
 						<section
@@ -96,7 +103,7 @@ export function SynchronizedPlayback({
 								kind={output.link.kind}
 								player={player}
 								controls={false}
-								onControl={index === 0 ? leftControl : rightControl}
+								onControl={controlCallbacks[index]}
 								diagnose={{
 									scope: "vod",
 									id: output.jobId,
@@ -139,7 +146,15 @@ export function SynchronizedPlayback({
 						else void connection.current?.play();
 					}}
 				>
-					{t(state.intent ? "outputCompare.pause" : "outputCompare.play")}
+					{t(
+						state.intent
+							? count === 3
+								? "outputCompare.pauseAll"
+								: "outputCompare.pause"
+							: count === 3
+								? "outputCompare.playAll"
+								: "outputCompare.play",
+					)}
 				</Button>
 				<input
 					type="range"
@@ -163,7 +178,7 @@ export function SynchronizedPlayback({
 						value={audio}
 						onChange={(event) => setAudio(event.target.value as AudioSide)}
 					>
-						{(["left", "right", "muted"] as const).map((side) => (
+						{([...sides, "muted"] as const).map((side) => (
 							<option key={side} value={side}>
 								{t(`outputCompare.${side}`)}
 							</option>
@@ -174,7 +189,11 @@ export function SynchronizedPlayback({
 					role={state.status === "failed" ? "alert" : "status"}
 					className={`text-xs ${state.status === "failed" ? "text-amber-400" : "text-zinc-400"}`}
 				>
-					{t(`outputCompare.${state.status}`)}
+					{t(
+						state.status === "waiting" && count === 3
+							? "outputCompare.waitingAll"
+							: `outputCompare.${state.status}`,
+					)}
 				</p>
 			</div>
 			<p className="text-xs text-zinc-500">{t("outputCompare.syncNotice")}</p>

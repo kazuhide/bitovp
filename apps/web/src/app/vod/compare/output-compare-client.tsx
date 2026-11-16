@@ -11,6 +11,7 @@ import {
 	type OutputJob,
 	outputFormats,
 	outputLinks,
+	outputSides,
 	parseOutputJobIds,
 } from "./output-selection";
 import { SynchronizedPlayback } from "./synchronized-playback";
@@ -22,8 +23,43 @@ export function OutputCompareClient({
 }) {
 	const { t } = useT();
 	const params = useSearchParams();
+	return (
+		<section>
+			<header className="flex flex-wrap items-center gap-3">
+				<Link
+					href="/vod/jobs"
+					className="text-sm text-zinc-400 hover:text-emerald-400"
+				>
+					{t("pageTitles.vodJobs")}
+				</Link>
+				<h1 className="font-semibold text-xl text-zinc-50">
+					{t("outputCompare.title")}
+				</h1>
+			</header>
+			<OutputComparison
+				jobIds={parseOutputJobIds(params.get("jobs"))}
+				player={player}
+			/>
+		</section>
+	);
+}
+
+/** Shared delivery-output playback for the VOD page and VMAF Lab. */
+export function OutputComparison({
+	jobIds,
+	player,
+	path = "/vod/compare",
+}: {
+	jobIds: readonly string[];
+	player?: PlayerClientConfig;
+	path?: "/vod/compare" | "/qc/compare";
+}) {
+	const { t } = useT();
+	const params = useSearchParams();
 	const router = useRouter();
-	const ids = parseOutputJobIds(params.get("jobs"));
+	const ids = parseOutputJobIds(jobIds.join(","));
+	const sides = outputSides(ids.length);
+	const gridClass = `mt-4 grid grid-cols-1 gap-4 ${ids.length === 3 ? "lg:grid-cols-3" : "lg:grid-cols-2"}`;
 	const queries = useQueries({
 		queries: ids.map((id) => ({
 			queryKey: ["encoding-job", id],
@@ -34,7 +70,8 @@ export function OutputCompareClient({
 	const rows = queries.map((query, index) => {
 		const job = query.isError ? undefined : query.data;
 		const links = outputLinks(job);
-		const key = params.get(index === 0 ? "left" : "right");
+		const side = sides[index] ?? "right";
+		const key = params.get(side);
 		const selected =
 			key === null ? links[0] : links.find((link) => link.key === key);
 		const format = outputFormats(job?.plan);
@@ -56,14 +93,14 @@ export function OutputCompareClient({
 				<label className="flex min-w-0 items-center gap-2 text-xs text-zinc-400">
 					{t("outputCompare.output")}
 					<select
-						aria-label={`${t("outputCompare.output")} ${t(index === 0 ? "outputCompare.left" : "outputCompare.right")}`}
+						aria-label={`${t("outputCompare.output")} ${t(`outputCompare.${side}`)}`}
 						value={selected?.key ?? key ?? ""}
 						disabled={links.length === 0}
 						className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 focus-visible:outline-2 focus-visible:outline-emerald-500"
 						onChange={(event) => {
 							const next = new URLSearchParams(params.toString());
-							next.set(index === 0 ? "left" : "right", event.target.value);
-							router.replace(`/vod/compare?${next.toString()}`);
+							next.set(side, event.target.value);
+							router.replace(`${path}?${next.toString()}`);
 						}}
 					>
 						{!selected ? (
@@ -81,35 +118,27 @@ export function OutputCompareClient({
 		);
 		return { query, job, links, selected, format, heading };
 	});
+	const selectedOutputs = rows.flatMap((row, index) =>
+		row.selected
+			? [
+					{
+						jobId: ids[index] as string,
+						heading: row.heading,
+						link: row.selected,
+					},
+				]
+			: [],
+	);
+	const [first, second, third] = selectedOutputs;
 	const outputs =
-		rows[0]?.selected && rows[1]?.selected
-			? ([
-					{
-						jobId: ids[0] as string,
-						heading: rows[0].heading,
-						link: rows[0].selected,
-					},
-					{
-						jobId: ids[1] as string,
-						heading: rows[1].heading,
-						link: rows[1].selected,
-					},
-				] as const)
+		selectedOutputs.length === ids.length && first && second
+			? third
+				? ([first, second, third] as const)
+				: ([first, second] as const)
 			: null;
 	return (
-		<section>
-			<header className="flex flex-wrap items-center gap-3">
-				<Link
-					href="/vod/jobs"
-					className="text-sm text-zinc-400 hover:text-emerald-400"
-				>
-					{t("pageTitles.vodJobs")}
-				</Link>
-				<h1 className="font-semibold text-xl text-zinc-50">
-					{t("outputCompare.title")}
-				</h1>
-			</header>
-			{ids.length !== 2 ? (
+		<div>
+			{ids.length < 2 ? (
 				<p className="mt-6 text-sm text-zinc-400">
 					{t("outputCompare.pickTwo")}
 				</p>
@@ -117,7 +146,7 @@ export function OutputCompareClient({
 				<div
 					role="status"
 					aria-label={t("outputCompare.loading")}
-					className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"
+					className={gridClass}
 				>
 					{ids.map((id) => (
 						<div
@@ -139,7 +168,7 @@ export function OutputCompareClient({
 					player={player}
 				/>
 			) : (
-				<div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+				<div className={gridClass}>
 					{rows.map((row, index) => (
 						<section key={ids[index]} className="min-w-0 space-y-3">
 							{row.heading}
@@ -173,6 +202,6 @@ export function OutputCompareClient({
 					{t("outputCompare.displayNotice")}
 				</p>
 			) : null}
-		</section>
+		</div>
 	);
 }

@@ -1,6 +1,7 @@
 import type { PlaybackControl } from "../jobs/[id]/playback-control";
 
-export type AudioSide = "left" | "right" | "muted";
+export type AudioSide = "left" | "center" | "right" | "muted";
+export type PlaybackOutputs<T> = readonly [T, T] | readonly [T, T, T];
 export type SynchronizedState = {
 	time: number;
 	duration: number;
@@ -8,9 +9,9 @@ export type SynchronizedState = {
 	status: "ready" | "playing" | "waiting" | "failed";
 };
 
-/** One playback intent, with the left output's media clock driving the follower. */
+/** One playback intent, with the left output's media clock driving each follower. */
 export function synchronizePlayback(
-	outputs: readonly [PlaybackControl, PlaybackControl],
+	outputs: PlaybackOutputs<PlaybackControl>,
 	onChange: () => void,
 ) {
 	let intent = false;
@@ -20,7 +21,7 @@ export function synchronizePlayback(
 	let reconciling = false;
 	let pending: Promise<void> | null = null;
 	const defaultQuality = new Set<PlaybackControl>();
-	const pauseBoth = () => {
+	const pauseAll = () => {
 		for (const output of outputs) {
 			try {
 				output.pause();
@@ -38,13 +39,16 @@ export function synchronizePlayback(
 		failed = true;
 		intent = false;
 		epoch += 1;
-		pauseBoth();
+		pauseAll();
 	};
 	const audio = (side: AudioSide) => {
-		// Mute both before making the selected side audible.
+		// Mute every output before making the selected side audible.
 		try {
 			for (const output of outputs) output.mute(true);
-			if (side !== "muted") outputs[side === "left" ? 0 : 1].mute(false);
+			if (side !== "muted")
+				outputs[
+					side === "left" ? 0 : side === "center" ? 1 : outputs.length - 1
+				]?.mute(false);
 		} catch {
 			fail();
 		}
@@ -129,18 +133,25 @@ export function synchronizePlayback(
 			if (!intent || states.some((state) => !state.ready)) {
 				if (states.some((state) => !state.paused)) {
 					epoch += 1;
-					pauseBoth();
+					pauseAll();
 				}
 			} else if (!pending && states.some((state) => state.paused)) {
 				void start();
-			} else if (
-				!pending &&
-				Math.abs((states[0]?.time ?? 0) - (states[1]?.time ?? 0)) > 0.15
-			) {
-				outputs[1].seek(states[0]?.time ?? 0);
-				if (!outputs[1].read().ready) {
-					epoch += 1;
-					pauseBoth();
+			} else if (!pending) {
+				for (let index = 1; index < outputs.length; index += 1) {
+					const follower = outputs[index];
+					if (
+						!follower ||
+						Math.abs((states[0]?.time ?? 0) - (states[index]?.time ?? 0)) <=
+							0.15
+					)
+						continue;
+					follower.seek(states[0]?.time ?? 0);
+					if (!follower.read().ready) {
+						epoch += 1;
+						pauseAll();
+						break;
+					}
 				}
 			}
 			onChange();
@@ -185,7 +196,7 @@ export function synchronizePlayback(
 		pause: () => {
 			intent = false;
 			epoch += 1;
-			pauseBoth();
+			pauseAll();
 			reconcile();
 		},
 		seek: (seconds: number) => {
@@ -194,7 +205,7 @@ export function synchronizePlayback(
 			epoch += 1;
 			reconciling = true;
 			try {
-				pauseBoth();
+				pauseAll();
 				const target = Math.max(
 					0,
 					Math.min(seconds, Math.max(0, duration - 0.001)),
@@ -214,7 +225,7 @@ export function synchronizePlayback(
 			epoch += 1;
 			clearInterval(interval);
 			for (const release of unsubscribe) release();
-			pauseBoth();
+			pauseAll();
 		},
 	};
 }

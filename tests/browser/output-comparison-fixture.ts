@@ -12,7 +12,9 @@ import {
 const JOBS = [
 	"55555555-5555-4555-8555-555555555501",
 	"55555555-5555-4555-8555-555555555502",
+	"55555555-5555-4555-8555-555555555503",
 ] as const;
+const REPORTS = JOBS.map((id) => id.replace("55555555", "77777777"));
 const PREFIX = "/api/qc-browser-fixture/output-comparison";
 const FILES = {
 	"index.m3u8": {
@@ -92,7 +94,7 @@ export async function verifyOutputComparisonBrowser(
 			unexpected.push("Unexpected output comparison job request");
 			return route.abort();
 		}
-		const side = id === JOBS[0] ? "left" : "right";
+		const side = id === JOBS[0] ? "left" : id === JOBS[1] ? "right" : "center";
 		fetched.add(id);
 		return route.fulfill({
 			json: {
@@ -113,11 +115,51 @@ export async function verifyOutputComparisonBrowser(
 			},
 		});
 	};
+	const reportsPattern = new RegExp(`/api/vmaf-jobs/(${REPORTS.join("|")})$`);
+	const reportsHandler = async (route: Route) => {
+		const url = new URL(route.request().url());
+		const index = REPORTS.findIndex(
+			(id) => url.pathname === `/api/vmaf-jobs/${id}`,
+		);
+		if (
+			url.origin !== baseURL ||
+			route.request().method() !== "GET" ||
+			index < 0
+		)
+			throw new Error("Unexpected three-way Lab report request");
+		const score = [93, 100.171922, 97.363122][index] ?? 0;
+		return route.fulfill({
+			json: {
+				id: REPORTS[index],
+				encodingJobId: JOBS[index],
+				encodingName: `SYNTHETIC LAB ${index + 1}`,
+				mode: "VOD",
+				status: "FINISHED",
+				model:
+					index === 0 ? "hdr_vmaf_v1.1.8_3d0h_2160" : "vmaf_v1.0.16_3d0h_2160",
+				scoringVersion: 14,
+				subsample: null,
+				reference: { fps: 30, width: 160, height: 90 },
+				results: [
+					{
+						id: "primary",
+						renditionRef: { label: "90p", height: 90, bitrate: 300_000 },
+						pooled: { mean: score },
+						frames: [
+							{ frameNum: 0, vmaf: score },
+							{ frameNum: 1, vmaf: score },
+						],
+						frameCount: 2,
+					},
+				],
+			},
+		});
+	};
 	const mediaHandler = async (route: Route) => {
 		const request = route.request();
 		const url = new URL(request.url());
 		const match =
-			/^\/api\/qc-browser-fixture\/output-comparison\/(left|right)\/([^/]+)$/.exec(
+			/^\/api\/qc-browser-fixture\/output-comparison\/(left|center|right)\/([^/]+)$/.exec(
 				url.pathname,
 			);
 		const file = match?.[2] ? files.get(match[2]) : undefined;
@@ -169,12 +211,13 @@ export async function verifyOutputComparisonBrowser(
 	};
 	await context.route(jobsPattern, jobsHandler);
 	await context.route(mediaPattern, mediaHandler);
+	await context.route(reportsPattern, reportsHandler);
 	try {
 		await context.addCookies([
 			{ name: "ovp-locale", value: "en", url: baseURL },
 		]);
 		await page.setViewportSize({ width: 1440, height: 1000 });
-		await page.goto(`/vod/compare?jobs=${JOBS.join(",")}`);
+		await page.goto(`/vod/compare?jobs=${JOBS.slice(0, 2).join(",")}`);
 		const comparison = page.getByTestId("synchronized-outputs");
 		const videos = comparison.locator("video");
 		await expect(videos).toHaveCount(2);
@@ -185,7 +228,7 @@ export async function verifyOutputComparisonBrowser(
 				),
 			)
 			.toBe(true);
-		expect([...fetched].sort()).toEqual([...JOBS].sort());
+		expect([...fetched].sort()).toEqual([...JOBS.slice(0, 2)].sort());
 		for (const side of ["left", "right"])
 			for (const name of Object.keys(FILES))
 				expect(received.has(`${side}/${name}`)).toBe(true);
@@ -304,6 +347,91 @@ export async function verifyOutputComparisonBrowser(
 				});
 			}
 		}
+
+		await page.goto(`/qc/compare?jobs=${REPORTS.join(",")}`);
+		await expect(videos).toHaveCount(3);
+		await expect
+			.poll(async () =>
+				(await mediaState(videos)).every(
+					(v) => v.ready >= 3 && v.width === 160,
+				),
+			)
+			.toBe(true);
+		expect([...fetched].sort()).toEqual([...JOBS].sort());
+		await expect(
+			page.getByRole("region", {
+				name: /SYNTHETIC LAB 1.*unverified measurement/,
+			}),
+		).toBeVisible();
+		await expect(
+			page.getByRole("region", { name: /SYNTHETIC LAB 2.*SDR/ }),
+		).toBeVisible();
+		await expect(
+			page.getByRole("region", { name: /SYNTHETIC LAB 3.*SDR/ }),
+		).toBeVisible();
+		await audio.selectOption({ label: "Center" });
+		await expect
+			.poll(async () => (await mediaState(videos)).map((v) => v.muted))
+			.toEqual([true, false, true]);
+		await comparison
+			.getByRole("button", { name: "Play together", exact: true })
+			.click();
+		await expect
+			.poll(async () =>
+				(await mediaState(videos)).every(
+					(v) => !v.paused && v.time > 0.2 && v.decoded > 0,
+				),
+			)
+			.toBe(true);
+		await videos.nth(2).evaluate((element) => {
+			(element as HTMLVideoElement).currentTime += 0.75;
+		});
+		await expect
+			.poll(async () => {
+				const states = await mediaState(videos);
+				return states.every(
+					(v) =>
+						!v.paused && Math.abs(v.time - (states[0]?.time ?? -1)) <= 0.25,
+				);
+			})
+			.toBe(true);
+		await comparison
+			.getByRole("button", { name: "Pause together", exact: true })
+			.click();
+		await expect
+			.poll(async () => (await mediaState(videos)).every((v) => v.paused))
+			.toBe(true);
+		for (const width of [320, 768, 1024, 1440]) {
+			await page.setViewportSize({ width, height: 1000 });
+			await expect
+				.poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+				.toBeLessThanOrEqual(width);
+			const boxes = await Promise.all(
+				["left", "center", "right"].map((side) =>
+					page.getByTestId(`output-${side}`).boundingBox(),
+				),
+			);
+			if (boxes.some((box) => !box))
+				throw new Error("Three-way Lab panes missing");
+			const [left, center, right] = boxes;
+			if (!left || !center || !right)
+				throw new Error("Three-way Lab panes missing");
+			if (width === 320)
+				expect(center.y).toBeGreaterThan(left.y + left.height - 1);
+			if (width === 1440) {
+				expect(center.x).toBeGreaterThan(left.x + left.width - 1);
+				expect(right.x).toBeGreaterThan(center.x + center.width - 1);
+				expect(Math.abs(right.y - left.y)).toBeLessThanOrEqual(2);
+			}
+			if (width === 320 || width === 1440) {
+				const path = info.outputPath(`lab-three-way-${width}.png`);
+				await page.screenshot({ path, fullPage: true });
+				await info.attach(`lab-three-way-${width}`, {
+					path,
+					contentType: "image/png",
+				});
+			}
+		}
 		expect(unexpected).toEqual([]);
 		await info.attach("synchronized-output-state", {
 			body: Buffer.from(
@@ -331,6 +459,7 @@ export async function verifyOutputComparisonBrowser(
 		} finally {
 			await context.unroute(jobsPattern, jobsHandler);
 			await context.unroute(mediaPattern, mediaHandler);
+			await context.unroute(reportsPattern, reportsHandler);
 		}
 	}
 }

@@ -29,6 +29,11 @@ let searchParams = new URLSearchParams();
 vi.mock("next/navigation", () => ({
 	useSearchParams: () => searchParams,
 }));
+vi.mock("../../vod/compare/output-compare-client", () => ({
+	OutputComparison: ({ jobIds }: { jobIds: string[] }) => (
+		<div data-testid="lab-output-comparison" data-jobs={jobIds.join(",")} />
+	),
+}));
 
 // Fixed-size ResponsiveContainer so the overlay charts mount under jsdom
 // (jsdom reports 0×0) — same workaround as the other qc chart tests.
@@ -184,6 +189,60 @@ afterEach(() => {
 });
 
 describe("CompareClient", () => {
+	it("embeds three source outputs while keeping HDR and SDR score panels separate", async () => {
+		const reports = [
+			{
+				...hdrJob(JOB_A),
+				encodingJobId: "11111111-1111-4111-8111-111111111111",
+			},
+			{ ...JOB_B, encodingJobId: "22222222-2222-4222-8222-222222222222" },
+			{
+				...JOB_B,
+				id: "cccccccc-0000-4000-8000-000000000003",
+				encodingJobId: "33333333-3333-4333-8333-333333333333",
+				encodingName: "clip-h264",
+			},
+		];
+		searchParams = new URLSearchParams({
+			jobs: reports.map((report) => report.id).join(","),
+		});
+		serve(reports);
+		wrap(<CompareClient />);
+		expect(await screen.findByTestId("lab-output-comparison")).toHaveAttribute(
+			"data-jobs",
+			reports.map((report) => report.encodingJobId).join(","),
+		);
+		expect(
+			screen.getByRole("region", { name: /clip-low.*HDR PQ/ }),
+		).toBeVisible();
+		expect(
+			screen.getByRole("region", { name: /clip-high.*SDR/ }),
+		).toBeVisible();
+		expect(
+			screen.getByRole("region", { name: /clip-h264.*SDR/ }),
+		).toBeVisible();
+	});
+	it("does not silently omit a live report from source-output playback", async () => {
+		const reports = [
+			{ ...JOB_A, encodingJobId: "11111111-1111-4111-8111-111111111111" },
+			{ ...JOB_B, encodingJobId: "22222222-2222-4222-8222-222222222222" },
+			{
+				...JOB_B,
+				id: "live-report",
+				mode: "LIVE" as const,
+				encodingJobId: null,
+			},
+		];
+		searchParams = new URLSearchParams({
+			jobs: reports.map((report) => report.id).join(","),
+		});
+		serve(reports);
+		wrap(<CompareClient />);
+		await screen.findByTestId("compare-counts");
+		expect(
+			screen.queryByTestId("lab-output-comparison"),
+		).not.toBeInTheDocument();
+	});
 	it.each([
 		false,
 		true,

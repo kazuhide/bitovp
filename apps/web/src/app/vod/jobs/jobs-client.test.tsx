@@ -92,6 +92,26 @@ afterEach(() => {
 });
 
 describe("JobsClient", () => {
+	it("offers output comparison for three finished jobs", async () => {
+		const jobs = [1, 2, 3].map((n) =>
+			job({
+				id: `${n}1111111-1111-4111-8111-111111111111`,
+				name: `Compare ${n}`,
+				status: "FINISHED",
+			}),
+		);
+		mockList(jobs);
+		wrap(<JobsClient />);
+		await screen.findByText("Compare 1");
+		const user = userEvent.setup();
+		await user.click(screen.getByLabelText("Select all loaded jobs"));
+		expect(
+			screen.getByRole("link", { name: "Compare outputs" }),
+		).toHaveAttribute(
+			"href",
+			`/vod/compare?jobs=${jobs.map((job) => job.id).join(",")}`,
+		);
+	});
 	it.each([
 		"FINISHED",
 		"RUNNING",

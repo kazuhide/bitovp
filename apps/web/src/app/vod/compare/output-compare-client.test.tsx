@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
-import { OutputCompareClient } from "./output-compare-client";
+import { OutputCompareClient, OutputComparison } from "./output-compare-client";
 import { outputFormats, parseOutputJobIds } from "./output-selection";
 
 const apiFetch = vi.fn();
@@ -23,6 +23,7 @@ vi.mock("../jobs/[id]/playback-surface", () => ({
 }));
 const left = "11111111-1111-4111-8111-111111111111";
 const right = "22222222-2222-4222-8222-222222222222";
+const third = "33333333-3333-4333-8333-333333333333";
 const link = (key: string, kind = "HLS") => ({
 	key,
 	kind,
@@ -64,16 +65,47 @@ it("loads the two existing authenticated job details and honors output keys in t
 	).toHaveLength(2);
 });
 
+it("loads three distinct outputs and preserves a separate center selection", async () => {
+	search = new URLSearchParams({
+		jobs: `${left},${right},${third}`,
+		center: "dash",
+	});
+	renderWithQuery(<OutputCompareClient />);
+	await waitFor(() =>
+		expect(screen.getAllByTestId("output-surface")).toHaveLength(3),
+	);
+	expect(screen.getByLabelText("Output Center")).toHaveValue("dash");
+	expect(screen.getByLabelText("Output Right")).toHaveValue("hls");
+	expect(apiFetch).toHaveBeenCalledWith(`/api/encoding-jobs/${third}`);
+});
+
+it("keeps report IDs and the Lab route when an embedded output selection changes", async () => {
+	search = new URLSearchParams({ jobs: "qc-a,qc-b,qc-c" });
+	renderWithQuery(
+		<OutputComparison jobIds={[left, right, third]} path="/qc/compare" />,
+	);
+	await waitFor(() =>
+		expect(screen.getAllByTestId("output-surface")).toHaveLength(3),
+	);
+	fireEvent.change(screen.getByLabelText("Output Center"), {
+		target: { value: "dash" },
+	});
+	expect(replace).toHaveBeenCalledWith(
+		"/qc/compare?jobs=qc-a%2Cqc-b%2Cqc-c&center=dash",
+	);
+});
+
 it.each([
 	"",
 	left,
 	`${left},${left}`,
 	`${left},invalid`,
 	`${left},${right},${left}`,
+	`${left},${right},${third},44444444-4444-4444-8444-444444444444`,
 ])("rejects ambiguous two-job URL state without fetching: %s", (raw) => {
 	search = new URLSearchParams({ jobs: raw });
 	renderWithQuery(<OutputCompareClient />);
-	expect(screen.getByText(/Select two finished jobs/)).toBeVisible();
+	expect(screen.getByText(/Select two or three finished jobs/)).toBeVisible();
 	expect(apiFetch).not.toHaveBeenCalled();
 });
 

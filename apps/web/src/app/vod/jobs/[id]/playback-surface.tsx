@@ -503,7 +503,8 @@ function PlaybackAttempt({
 							},
 							pause: () => instance.pause(),
 							seek: (seconds) => {
-								instance.seek(seconds);
+								if (!instance.seek(seconds))
+									throw new Error("Playback seek refused");
 							},
 							mute: (muted) => {
 								if (muted) instance.mute();

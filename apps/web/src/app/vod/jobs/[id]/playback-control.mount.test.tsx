@@ -1,13 +1,15 @@
 import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
-import type { PlaybackControl } from "./playback-control";
+import { synchronizePlayback } from "../../compare/synchronize-playback";
+import { type PlaybackControl, videoPlaybackControl } from "./playback-control";
 import { PlaybackSurface } from "./playback-surface";
 
 let hlsLevel = -1;
 const shakaConfigure = vi.fn();
 const shakaSelect = vi.fn();
 const bitmovinQuality = vi.fn();
+const refusedSeeks = new Set<HTMLVideoElement>();
 let bitmovinError: (() => void) | undefined;
 const qualities = [
 	{ id: "hd", height: 1080, bitrate: 2_000_000 },
@@ -85,6 +87,7 @@ vi.mock("bitmovin-player", () => ({
 			this.video.pause();
 		}
 		seek(seconds: number) {
+			if (refusedSeeks.has(this.video)) return false;
 			this.video.currentTime = seconds;
 			return true;
 		}
@@ -107,6 +110,7 @@ vi.mock("bitmovin-player", () => ({
 beforeEach(() => {
 	vi.clearAllMocks();
 	bitmovinError = undefined;
+	refusedSeeks.clear();
 	vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
 	vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
 	vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
@@ -114,6 +118,50 @@ beforeEach(() => {
 afterEach(() => {
 	cleanup();
 	vi.restoreAllMocks();
+});
+
+it("contains a refused Bitmovin seek before a paused comparison can claim ready", async () => {
+	const left = vi.fn<(control: PlaybackControl | null) => void>();
+	const player = { provider: "bitmovin" as const, playerLicenseKey: "fixture" };
+	const view = renderLocalized(
+		<PlaybackSurface
+			url="https://media.example.test/left.m3u8"
+			kind="HLS"
+			controls={false}
+			onControl={left}
+			player={player}
+		/>,
+	);
+	await waitFor(() => {
+		expect(left.mock.calls.some(([value]) => value !== null)).toBe(true);
+	});
+	const a = left.mock.calls.find(([value]) => value !== null)?.[0];
+	const first = view.container.querySelector("video");
+	if (!a || !first) throw new Error("Missing comparison player");
+	const peer = document.createElement("video");
+	const videos = [first, peer];
+	for (const video of videos) {
+		Object.defineProperties(video, {
+			readyState: { configurable: true, value: 4 },
+			duration: { configurable: true, value: 60 },
+		});
+		fireEvent.canPlay(video);
+	}
+	const b = videoPlaybackControl(peer);
+	refusedSeeks.add(first);
+	const sync = synchronizePlayback([a, b], vi.fn());
+	try {
+		sync.seek(20);
+		expect({
+			status: sync.read().status,
+			paused: videos.map((video) => video.paused),
+			positions: videos.map((video) => video.currentTime),
+		}).toEqual({ status: "failed", paused: [true, true], positions: [0, 0] });
+	} finally {
+		sync.dispose();
+		b.release();
+		view.unmount();
+	}
 });
 
 it("exposes the actual playback element's controls and releases them on source removal", async () => {

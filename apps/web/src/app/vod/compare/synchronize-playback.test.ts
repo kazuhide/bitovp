@@ -64,6 +64,70 @@ function output(time = 0, duration = 120) {
 afterEach(() => vi.useRealTimers());
 
 describe("synchronized output playback", () => {
+	it("ignores an interrupted stale play rejection after a common pause", async () => {
+		const left = output();
+		const right = output();
+		let reject = (_error: unknown) => {};
+		vi.mocked(left.control.play).mockImplementationOnce(
+			() =>
+				new Promise<void>((_resolve, fail) => {
+					reject = fail;
+				}),
+		);
+		const sync = synchronizePlayback([left.control, right.control], vi.fn());
+		const playing = sync.play();
+		sync.pause();
+		reject(new DOMException("play interrupted by pause", "AbortError"));
+		await playing;
+		expect(sync.read()).toMatchObject({ intent: false, status: "ready" });
+		expect(left.state.paused && right.state.paused).toBe(true);
+		sync.dispose();
+	});
+	it("keeps a newer play intent when the previous interrupted play rejects", async () => {
+		const left = output();
+		const right = output();
+		let reject = (_error: unknown) => {};
+		vi.mocked(left.control.play).mockImplementationOnce(
+			() =>
+				new Promise<void>((_resolve, fail) => {
+					reject = fail;
+				}),
+		);
+		const sync = synchronizePlayback([left.control, right.control], vi.fn());
+		const first = sync.play();
+		sync.pause();
+		const second = sync.play();
+		reject(new DOMException("previous play interrupted", "AbortError"));
+		await Promise.all([first, second]);
+		try {
+			await vi.waitFor(() =>
+				expect(sync.read()).toMatchObject({ intent: true, status: "playing" }),
+			);
+			expect(left.state.paused || right.state.paused).toBe(false);
+		} finally {
+			sync.dispose();
+		}
+	});
+	it("ignores a pending play rejection after the comparison is disposed", async () => {
+		const left = output();
+		const right = output();
+		let reject = (_error: unknown) => {};
+		vi.mocked(left.control.play).mockImplementationOnce(
+			() =>
+				new Promise<void>((_resolve, fail) => {
+					reject = fail;
+				}),
+		);
+		const changed = vi.fn();
+		const sync = synchronizePlayback([left.control, right.control], changed);
+		const playing = sync.play();
+		sync.dispose();
+		changed.mockClear();
+		reject(new DOMException("source removed", "AbortError"));
+		await playing;
+		expect(sync.read().status).not.toBe("failed");
+		expect(changed).not.toHaveBeenCalled();
+	});
 	it("prefers advertised 2160p over larger adaptive renditions", () => {
 		const left = output();
 		const right = output();

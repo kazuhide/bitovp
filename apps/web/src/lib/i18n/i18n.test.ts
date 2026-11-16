@@ -119,11 +119,11 @@ describe("catalogue parity", () => {
 			expect(actual).toBe(expected);
 		};
 		/* Assert the measured number of unique long Japanese strings. Update the count only after inspecting the catalog change that crosses the length threshold. */
-		// Runtime measurement includes Error Definitions help and unavailable-account copy.
-		pinWithDriftAid(long.length, 1655, "long");
+		// Runtime measurement includes synchronized-output and separated-QC guidance.
+		pinWithDriftAid(long.length, 1661, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		// Runtime measurement includes the Error Definitions labels (deduplicated).
-		pinWithDriftAid(short.size, 3256, "short");
+		// Runtime measurement includes synchronized-output labels (deduplicated).
+		pinWithDriftAid(short.size, 3274, "short");
 	});
 
 	/**
@@ -284,6 +284,9 @@ describe("catalogue parity", () => {
 		"usage.vod",
 		"usage.liveUnits", // Bitmovin billing unit name, not a translated minute count.
 		"qc.measurePsnr", // Standard metric acronym.
+		// Standard transfer-domain abbreviations, rather than untranslated prose.
+		"qc.measurementSdr",
+		"qc.measurementHdrPq",
 	]);
 
 	it("translates every string that is not exempt", () => {

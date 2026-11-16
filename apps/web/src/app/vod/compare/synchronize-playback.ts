@@ -69,44 +69,36 @@ export function synchronizePlayback(
 	function start(): Promise<void> {
 		if (pending) return pending;
 		const request = ++epoch;
+		const current = () => !disposed && intent && request === epoch;
 		const plays = outputs.map((output) => {
+			if (!current()) return Promise.resolve();
 			let playing: Promise<void>;
 			try {
 				playing = output.play();
 			} catch {
-				fail();
+				if (current()) fail();
 				return Promise.resolve();
 			}
 			return playing.then(
 				() => {
 					// Fence each completion: its peer may still have a pending play promise.
-					if (disposed || request !== epoch || !intent) {
+					if (!current()) {
 						try {
 							output.pause();
 						} catch {
-							if (!disposed) fail();
+							// Cleanup of an older request cannot fail a newer playback intent.
 						}
 					}
 				},
 				() => {
-					fail();
+					if (current()) fail();
 				},
 			);
 		});
-		pending = Promise.allSettled(plays)
-			.then((results) => {
-				if (disposed || request !== epoch || !intent) {
-					pauseBoth();
-				} else if (results.some((result) => result.status === "rejected")) {
-					failed = true;
-					intent = false;
-					pauseBoth();
-				}
-			})
-			.finally(() => {
-				pending = null;
-				reconcile();
-			});
+		pending = Promise.allSettled(plays).then(() => {
+			pending = null;
+			reconcile();
+		});
 		return pending;
 	}
 	function reconcile() {

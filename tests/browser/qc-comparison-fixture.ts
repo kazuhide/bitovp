@@ -8,6 +8,7 @@ import {
 	type Page,
 	type TestInfo,
 } from "@playwright/test";
+import { verifyOutputComparisonBrowser } from "./output-comparison-fixture";
 import {
 	syntheticCombinedReports,
 	verifyCombinedQcBrowser,
@@ -1162,6 +1163,7 @@ export async function verifyQcComparisonBrowser(
 		}
 		await verifyCambiComparisonBrowser(page, context, info);
 		await verifyCombinedQcBrowser(page, context, info, combinedReports);
+		await verifyOutputComparisonBrowser(page, context, info, baseURL);
 		await verifyHdrQcBrowser(
 			browser,
 			baseURL,

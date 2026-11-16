@@ -638,26 +638,33 @@ export function mixesSubsampling(
 
 /** HDR and SDR models, and HLG's explicit reference-display normalization,
  * describe different measurement conditions even when their model agrees. */
+export type HdrMeasurementContext =
+	| "SDR"
+	| "HDR_PQ"
+	| "HDR_HLG_PQ_1000"
+	| "HDR_UNVERIFIED";
+
+export function hdrMeasurementContext(
+	job: { model?: string | null },
+	result: { hdrMeasurement?: HdrMeasurement } = {},
+): HdrMeasurementContext {
+	const evidence = hdrMeasurementOf(result);
+	if (evidence)
+		return evidence.hlgReferenceDisplay ? "HDR_HLG_PQ_1000" : "HDR_PQ";
+	return isHdrVmafModel(job.model ?? "") ? "HDR_UNVERIFIED" : "SDR";
+}
+
 export function mixesHdrMeasurementContexts(
 	jobs: readonly {
 		model?: string | null;
 		results?: readonly { hdrMeasurement?: HdrMeasurement }[];
 	}[],
 ): boolean {
-	const domains = new Set<string>();
+	const domains = new Set<HdrMeasurementContext>();
 	for (const job of jobs) {
 		const results = job.results?.length ? job.results : [{}];
 		for (const result of results) {
-			const evidence = hdrMeasurementOf(result);
-			domains.add(
-				evidence
-					? evidence.hlgReferenceDisplay
-						? "HDR_HLG_PQ_1000"
-						: "HDR_PQ"
-					: isHdrVmafModel(job.model ?? "")
-						? "HDR_UNVERIFIED"
-						: "SDR",
-			);
+			domains.add(hdrMeasurementContext(job, result));
 		}
 	}
 	return domains.size > 1;

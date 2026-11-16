@@ -1,0 +1,336 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import {
+	type BrowserContext,
+	expect,
+	type Locator,
+	type Page,
+	type Route,
+	type TestInfo,
+} from "@playwright/test";
+
+const JOBS = [
+	"55555555-5555-4555-8555-555555555501",
+	"55555555-5555-4555-8555-555555555502",
+] as const;
+const PREFIX = "/api/qc-browser-fixture/output-comparison";
+const FILES = {
+	"index.m3u8": {
+		type: "application/vnd.apple.mpegurl",
+		sha256: "fe0d1507b7af8d2f3509e0bc05c502fe3676e743ab845d4c913a18a2bfec88fc",
+	},
+	"init.mp4": {
+		type: "video/mp4",
+		sha256: "f7cf88238eecfbc2ad051fc3b0cd38a19ebbae40d9d8d906eb2cdd3c2e3a2bbd",
+	},
+	"segment-000.m4s": {
+		type: "video/mp4",
+		sha256: "997a6cf8c515b54e8e8f1dee5cadb4ba720c32be1c161b63ad50975bf1550d99",
+	},
+} as const;
+
+async function mediaState(videos: Locator) {
+	return videos.evaluateAll((elements) =>
+		elements.map((element) => {
+			const video = element as HTMLVideoElement;
+			return {
+				time: video.currentTime,
+				paused: video.paused,
+				muted: video.muted,
+				seeking: video.seeking,
+				ready: video.readyState,
+				width: video.videoWidth,
+				decoded: video.getVideoPlaybackQuality().totalVideoFrames,
+			};
+		}),
+	);
+}
+
+/** Actual HLS decoding in mandatory case twelve, with synthetic video only.
+ * Source: qc-comparison-synthetic.mp4, SHA256
+ * 8f6d6e262b56e40348b9a5ea6f9266bacdb95ed97fe2b5212422921d24dda13e.
+ * FFmpeg 9.0.2 remuxed three copies, without re-encoding, into 9 s / 270 frames.
+ * The fixture is 160x90 H.264 with no audio; audio selection verifies mute state.
+ * It supplies no encoding-quality, HDR or Dolby Vision display evidence. */
+export async function verifyOutputComparisonBrowser(
+	page: Page,
+	context: BrowserContext,
+	info: TestInfo,
+	baseURL: string,
+) {
+	const files = new Map(
+		Object.entries(FILES).map(([name, metadata]) => {
+			const bytes = readFileSync(
+				new URL(`./fixtures/output-comparison/${name}`, import.meta.url),
+			);
+			expect(bytes.length).toBeLessThanOrEqual(100_000);
+			expect(createHash("sha256").update(bytes).digest("hex")).toBe(
+				metadata.sha256,
+			);
+			return [name, { ...metadata, bytes }] as const;
+		}),
+	);
+	const priorUrl = page.url();
+	const priorViewport = page.viewportSize();
+	const priorLocale =
+		(await page.locator("html").getAttribute("lang")) === "ja" ? "ja" : "en";
+	const received = new Set<string>();
+	const fetched = new Set<string>();
+	const unexpected: string[] = [];
+	const jobsPattern = "**/api/encoding-jobs/**";
+	const mediaPattern = `**${PREFIX}/**`;
+	const jobsHandler = async (route: Route) => {
+		const request = route.request();
+		const url = new URL(request.url());
+		const id = JOBS.find((id) => url.pathname === `/api/encoding-jobs/${id}`);
+		if (
+			url.origin !== baseURL ||
+			request.method() !== "GET" ||
+			url.search ||
+			!id
+		) {
+			unexpected.push("Unexpected output comparison job request");
+			return route.abort();
+		}
+		const side = id === JOBS[0] ? "left" : "right";
+		fetched.add(id);
+		return route.fulfill({
+			json: {
+				id,
+				name: `SYNTHETIC synchronized ${side} output`,
+				status: "FINISHED",
+				plan: {},
+				playbackLinks: [
+					{
+						key: "hls",
+						kind: "HLS",
+						label: "Synthetic HLS",
+						url: `${baseURL}${PREFIX}/${side}/index.m3u8`,
+						path: "index.m3u8",
+						via: "publicBaseUrls",
+					},
+				],
+			},
+		});
+	};
+	const mediaHandler = async (route: Route) => {
+		const request = route.request();
+		const url = new URL(request.url());
+		const match =
+			/^\/api\/qc-browser-fixture\/output-comparison\/(left|right)\/([^/]+)$/.exec(
+				url.pathname,
+			);
+		const file = match?.[2] ? files.get(match[2]) : undefined;
+		if (
+			url.origin !== baseURL ||
+			!["GET", "HEAD"].includes(request.method()) ||
+			url.search ||
+			!match ||
+			!file
+		) {
+			unexpected.push("Unexpected output comparison media request");
+			return route.abort();
+		}
+		const range = request.headers().range;
+		const requested =
+			range === undefined ? null : /^bytes=(\d+)-(\d*)$/.exec(range);
+		const start = requested ? Number(requested[1]) : 0;
+		const end = requested?.[2]
+			? Math.min(Number(requested[2]), file.bytes.length - 1)
+			: file.bytes.length - 1;
+		if (
+			(range !== undefined && !requested) ||
+			start > end ||
+			start >= file.bytes.length
+		) {
+			unexpected.push("Unexpected output comparison Range request");
+			return route.fulfill({
+				status: 416,
+				headers: { "content-range": `bytes */${file.bytes.length}` },
+			});
+		}
+		received.add(`${match[1]}/${match[2]}`);
+		return route.fulfill({
+			status: range === undefined ? 200 : 206,
+			contentType: file.type,
+			headers: {
+				"cache-control": "no-store",
+				"accept-ranges": "bytes",
+				"content-length": String(end - start + 1),
+				...(range === undefined
+					? {}
+					: { "content-range": `bytes ${start}-${end}/${file.bytes.length}` }),
+			},
+			body:
+				request.method() === "HEAD"
+					? Buffer.alloc(0)
+					: file.bytes.subarray(start, end + 1),
+		});
+	};
+	await context.route(jobsPattern, jobsHandler);
+	await context.route(mediaPattern, mediaHandler);
+	try {
+		await context.addCookies([
+			{ name: "ovp-locale", value: "en", url: baseURL },
+		]);
+		await page.setViewportSize({ width: 1440, height: 1000 });
+		await page.goto(`/vod/compare?jobs=${JOBS.join(",")}`);
+		const comparison = page.getByTestId("synchronized-outputs");
+		const videos = comparison.locator("video");
+		await expect(videos).toHaveCount(2);
+		await expect
+			.poll(async () =>
+				(await mediaState(videos)).every(
+					(v) => v.ready >= 3 && v.width === 160,
+				),
+			)
+			.toBe(true);
+		expect([...fetched].sort()).toEqual([...JOBS].sort());
+		for (const side of ["left", "right"])
+			for (const name of Object.keys(FILES))
+				expect(received.has(`${side}/${name}`)).toBe(true);
+
+		const audio = comparison.getByRole("combobox", {
+			name: "Audio",
+			exact: true,
+		});
+		await expect
+			.poll(async () => (await mediaState(videos)).map((v) => v.muted))
+			.toEqual([false, true]);
+		await audio.selectOption({ label: "Right" });
+		await expect
+			.poll(async () => (await mediaState(videos)).map((v) => v.muted))
+			.toEqual([true, false]);
+		await audio.selectOption({ label: "Muted" });
+		await expect
+			.poll(async () => (await mediaState(videos)).map((v) => v.muted))
+			.toEqual([true, true]);
+		await audio.selectOption({ label: "Left" });
+
+		await comparison
+			.getByRole("button", { name: "Play both", exact: true })
+			.click();
+		await expect
+			.poll(async () =>
+				(await mediaState(videos)).every(
+					(v) => !v.paused && v.time > 0.2 && v.decoded > 0,
+				),
+			)
+			.toBe(true);
+		await comparison
+			.getByRole("button", { name: "Pause both", exact: true })
+			.click();
+		await expect
+			.poll(async () => (await mediaState(videos)).every((v) => v.paused))
+			.toBe(true);
+		const paused = await mediaState(videos);
+		await page.waitForTimeout(150);
+		const stopped = await mediaState(videos);
+		stopped.forEach((v, index) => {
+			expect(
+				Math.abs(v.time - (paused[index]?.time ?? -1)),
+			).toBeLessThanOrEqual(0.03);
+		});
+
+		await comparison
+			.getByRole("slider", { name: "Playback position (seconds)", exact: true })
+			.evaluate((element) => {
+				const input = element as HTMLInputElement;
+				const setter = Object.getOwnPropertyDescriptor(
+					HTMLInputElement.prototype,
+					"value",
+				)?.set;
+				if (!setter) throw new Error("Native range setter unavailable");
+				setter.call(input, "1");
+				input.dispatchEvent(new Event("input", { bubbles: true }));
+				input.dispatchEvent(new Event("change", { bubbles: true }));
+			});
+		await expect
+			.poll(async () =>
+				(await mediaState(videos)).every(
+					(v) => v.paused && !v.seeking && Math.abs(v.time - 1) <= 0.15,
+				),
+			)
+			.toBe(true);
+		await comparison
+			.getByRole("button", { name: "Play both", exact: true })
+			.click();
+		await expect
+			.poll(async () =>
+				(await mediaState(videos)).every((v) => !v.paused && v.time > 1.2),
+			)
+			.toBe(true);
+		await videos.nth(1).evaluate((element) => {
+			(element as HTMLVideoElement).currentTime += 0.75;
+		});
+		await expect
+			.poll(async () => {
+				const [left, right] = await mediaState(videos);
+				return (
+					!!left &&
+					!!right &&
+					!left.paused &&
+					!right.paused &&
+					left.time > 1.2 &&
+					Math.abs(left.time - right.time) <= 0.25
+				);
+			})
+			.toBe(true);
+		const synchronized = await mediaState(videos);
+		await comparison
+			.getByRole("button", { name: "Pause both", exact: true })
+			.click();
+
+		for (const width of [320, 768, 1024, 1440]) {
+			await page.setViewportSize({ width, height: 1000 });
+			await expect
+				.poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+				.toBeLessThanOrEqual(width);
+			const left = await page.getByTestId("output-left").boundingBox();
+			const right = await page.getByTestId("output-right").boundingBox();
+			if (!left || !right) throw new Error("Output comparison panes missing");
+			if (width === 320)
+				expect(right.y).toBeGreaterThan(left.y + left.height - 1);
+			if (width === 1440) {
+				expect(right.x).toBeGreaterThan(left.x + left.width - 1);
+				expect(Math.abs(right.y - left.y)).toBeLessThanOrEqual(2);
+			}
+			if (width === 320 || width === 1440) {
+				const path = info.outputPath(`output-comparison-${width}.png`);
+				await page.screenshot({ path, fullPage: true });
+				await info.attach(`output-comparison-${width}`, {
+					path,
+					contentType: "image/png",
+				});
+			}
+		}
+		expect(unexpected).toEqual([]);
+		await info.attach("synchronized-output-state", {
+			body: Buffer.from(
+				JSON.stringify(
+					{
+						media: FILES,
+						received: [...received],
+						synchronized,
+						evidenceScope:
+							"Synthetic H.264 video-only HLS decode and UI synchronization; mute state only; no provider, QC, HDR or DV display proof",
+					},
+					null,
+					2,
+				),
+			),
+			contentType: "application/json",
+		});
+	} finally {
+		try {
+			await context.addCookies([
+				{ name: "ovp-locale", value: priorLocale, url: baseURL },
+			]);
+			await page.goto(priorUrl);
+			if (priorViewport) await page.setViewportSize(priorViewport);
+		} finally {
+			await context.unroute(jobsPattern, jobsHandler);
+			await context.unroute(mediaPattern, mediaHandler);
+		}
+	}
+}

@@ -27,6 +27,37 @@ const PROVISIONS_AT_CREATE =
 	"The channel begins starting up as soon as it is created, and charges may accrue before the planned feed time, depending on your Live Encoding pricing plan";
 
 export const en = {
+	outputCompare: {
+		title: "Compare outputs",
+		pickTwo:
+			"Select two finished jobs from the VOD list to compare their outputs.",
+		loading: "Loading outputs",
+		unavailable:
+			"This output is unavailable. Open the job to check its status and playback links.",
+		missing: "Unavailable output",
+		loadFailed: "Could not load this job.",
+		output: "Output",
+		quality: "Video quality",
+		auto: "Auto (adaptive)",
+		fixed: "{height}p · fixed",
+		audio: "Audio",
+		left: "Left",
+		right: "Right",
+		muted: "Muted",
+		play: "Play both",
+		pause: "Pause both",
+		seek: "Playback position (seconds)",
+		waiting: "Waiting for both outputs",
+		ready: "Ready",
+		playing: "Playing together",
+		failed: "Playback stopped. Retry the failed output before playing both.",
+		format: "Output settings: {format}",
+		formatUnknown: "Format not specified",
+		displayNotice:
+			"HDR / Dolby Vision output settings do not verify the display mode. Playback depends on this browser and display.",
+		syncNotice:
+			"Playback time is synchronized. Use outputs with the same content timeline.",
+	},
 	vodTimeline: {
 		singleTs: "TS (single file)",
 		singleMov: "MOV (single file)",
@@ -2464,6 +2495,12 @@ export const en = {
 		hdrBaseLayerScope: "HDR base layer · RPU display mapping not measured",
 		mixedHdrContexts:
 			"HDR/SDR or HLG normalization differs. These scores have different measurement conditions.",
+		separateHdrContexts:
+			"HDR/SDR or HLG measurement conditions differ. Scores and charts are shown separately.",
+		measurementSdr: "SDR",
+		measurementHdrPq: "HDR PQ",
+		measurementHdrHlg: "HDR HLG → PQ (1000 nit)",
+		measurementHdrUnverified: "HDR · unverified measurement",
 		measureSourceHint: "The selected job must have the chosen output type.",
 		measurePsnr: "PSNR",
 		measurePsnrInherit: "Use the job setting",

@@ -16,6 +16,7 @@ import {
 	playbackCorsMessage,
 } from "@/lib/playback-cors-message";
 import { libraryFilePlaybackError } from "@/lib/playback-mp4-status";
+import { type PlaybackControl, videoPlaybackControl } from "./playback-control";
 import { SubjectOverlay } from "./subject-overlay";
 
 /**
@@ -105,6 +106,9 @@ export type PlaybackSurfaceProps = {
 	sceneAnalysis?: SceneAnalysisDocument;
 	/** Actual media clock; null while unavailable or playback has failed. */
 	onTimeChange?: (time: number | null) => void;
+	/** Optional shared controls; decoding and cleanup remain owned by this surface. */
+	onControl?: (control: PlaybackControl | null) => void;
+	controls?: boolean;
 	/**
 	 * Treat an early manifest failure as "not yet" rather than an error.
 	 *
@@ -154,6 +158,8 @@ function PlaybackAttempt({
 	seekRequest,
 	sceneAnalysis,
 	onTimeChange,
+	onControl,
+	controls = true,
 	onRetry,
 }: PlaybackSurfaceProps & { onRetry: () => void }) {
 	const { t } = useT();
@@ -173,6 +179,12 @@ function PlaybackAttempt({
 	/** Bitmovin Player renders its OWN video element into this container. */
 	const [container, setContainer] = useState<HTMLDivElement | null>(null);
 	const [playbackError, setPlaybackError] = useState<string | null>(null);
+	const controlPort = useRef<ReturnType<typeof videoPlaybackControl> | null>(
+		null,
+	);
+	useEffect(() => {
+		if (playbackError) controlPort.current?.fail();
+	}, [playbackError]);
 	const [mediaTime, setMediaTime] = useState<number | null>(null);
 	const [showScenes, setShowScenes] = useState(true);
 	const [showSubjects, setShowSubjects] = useState(false);
@@ -432,7 +444,7 @@ function PlaybackAttempt({
 				diagnoseNow();
 			};
 			instance.on(PlayerEvent.Error, onError as never);
-			const ui = UIFactory.buildUI(instance);
+			const ui = controls ? UIFactory.buildUI(instance) : null;
 			let loaded = false;
 			try {
 				await instance.load(
@@ -468,7 +480,7 @@ function PlaybackAttempt({
 			// guard as the one before construction, at the other await.
 			if (cancelled) {
 				instance.off(PlayerEvent.Error, onError as never);
-				ui.release();
+				ui?.release();
 				void instance.destroy();
 				return;
 			}
@@ -483,11 +495,48 @@ function PlaybackAttempt({
 					setMediaTime(Number.isFinite(time) ? time : null);
 			};
 			if (loaded) instance.on(PlayerEvent.TimeChanged, onTimeChanged);
+			const port =
+				loaded && onControl
+					? videoPlaybackControl(instance.getVideoElement(), {
+							play: async () => {
+								await instance.play();
+							},
+							pause: () => instance.pause(),
+							seek: (seconds) => {
+								instance.seek(seconds);
+							},
+							mute: (muted) => {
+								if (muted) instance.mute();
+								else instance.unmute();
+							},
+						})
+					: null;
+			if (port) {
+				port.setQuality({
+					list: () =>
+						instance.getAvailableVideoQualities().map((quality) => ({
+							id: quality.id,
+							height: quality.height,
+							bitrate: quality.bitrate,
+						})),
+					select: (id) => {
+						instance.setVideoQuality(id || "auto");
+						return true;
+					},
+				});
+				controlPort.current = port;
+				onControl?.(port);
+			}
 			cleanup = () => {
+				if (port) {
+					onControl?.(null);
+					port.release();
+					if (controlPort.current === port) controlPort.current = null;
+				}
 				unbindSeek();
 				instance.off(PlayerEvent.TimeChanged, onTimeChanged);
 				instance.off(PlayerEvent.Error, onError as never);
-				ui.release();
+				ui?.release();
 				void instance.destroy();
 			};
 		})().catch((err) => {
@@ -515,6 +564,8 @@ function PlaybackAttempt({
 		analyticsJobId,
 		clearDiagnosis,
 		bindSeek,
+		onControl,
+		controls,
 	]);
 
 	useEffect(() => {
@@ -533,6 +584,11 @@ function PlaybackAttempt({
 		let cleanup = () => {};
 		let cancelled = false;
 		let sourceAttached = false;
+		const port = onControl ? videoPlaybackControl(video) : null;
+		if (port) {
+			controlPort.current = port;
+			onControl?.(port);
+		}
 		const unbindSeek = bindSeek((seconds) => {
 			if (cancelled || !sourceAttached || video.readyState < 1) return false;
 			video.currentTime = Number.isFinite(video.duration)
@@ -610,6 +666,26 @@ function PlaybackAttempt({
 					return;
 				}
 				const hls = new Hls();
+				port?.setQuality({
+					list: () =>
+						hls.levels.map((level, index) => ({
+							id: String(index),
+							height: level.height,
+							bitrate: level.bitrate,
+						})),
+					select: (id) => {
+						const index = id === "" ? -1 : Number(id);
+						if (
+							!Number.isInteger(index) ||
+							index < -1 ||
+							index >= hls.levels.length
+						)
+							return false;
+						hls.currentLevel = index;
+						return true;
+					},
+				});
+				if (port) hls.on(Hls.Events.MANIFEST_PARSED, () => port.refresh());
 				// startLoad cannot reload a failed initial master: hls.js's
 				// PlaylistLoader.startLoad is a no-op until loadSource dispatches it.
 				// One independent deadline also bounds a retry that never responds.
@@ -706,6 +782,27 @@ function PlaybackAttempt({
 				}
 
 				const shakaPlayer = new shaka.Player();
+				port?.setQuality({
+					list: () =>
+						shakaPlayer.getVariantTracks().map((track) => ({
+							id: String(track.id),
+							height: track.height ?? 0,
+							bitrate: track.bandwidth,
+						})),
+					select: (id) => {
+						if (id === "") {
+							shakaPlayer.configure({ abr: { enabled: true } });
+							return true;
+						}
+						const track = shakaPlayer
+							.getVariantTracks()
+							.find((item) => String(item.id) === id && (item.height ?? 0) > 0);
+						if (!track) return false;
+						shakaPlayer.configure({ abr: { enabled: false } });
+						shakaPlayer.selectVariantTrack(track, true);
+						return true;
+					},
+				});
 				let attempts = 0;
 				let destroyed = false;
 				let errorSurfaced = false;
@@ -925,6 +1022,7 @@ function PlaybackAttempt({
 						if (!cancelled) {
 							sourceAttached = true;
 							onMetadata();
+							port?.refresh();
 							clearRecovery();
 							setWaiting(null);
 						}
@@ -971,6 +1069,11 @@ function PlaybackAttempt({
 
 		return () => {
 			cancelled = true;
+			if (port) {
+				onControl?.(null);
+				port.release();
+				if (controlPort.current === port) controlPort.current = null;
+			}
 			unbindSeek();
 			video.removeEventListener("loadedmetadata", onMetadata);
 			cleanup();
@@ -987,6 +1090,7 @@ function PlaybackAttempt({
 		waitForFirstSegment,
 		useBitmovin,
 		bindSeek,
+		onControl,
 	]);
 
 	const diagnosis =
@@ -1093,7 +1197,7 @@ function PlaybackAttempt({
 						onLoadedData={(event) => updateMediaTime(event.currentTarget)}
 						onSeeked={(event) => updateMediaTime(event.currentTarget)}
 						onEmptied={() => setMediaTime(null)}
-						controls
+						controls={controls}
 						{...(autoPlay ? { autoPlay: true } : {})}
 						muted
 						playsInline

@@ -5,6 +5,36 @@ const PROVISIONS_AT_CREATE =
 	"チャンネルは作成後すぐに起動準備を始めます。Live Encoding の料金プランによっては、入力送出予定時刻より前にも料金が発生する場合があります";
 
 export const ja = {
+	outputCompare: {
+		title: "出力を比較",
+		pickTwo: "VOD 一覧で完了したジョブを二つ選び、出力を比較できます。",
+		loading: "出力を読み込み中",
+		unavailable:
+			"この出力は利用できません。ジョブの状態と再生リンクを確認してください。",
+		missing: "利用できない出力",
+		loadFailed: "ジョブを取得できませんでした。",
+		output: "出力",
+		quality: "画質",
+		auto: "自動（可変画質）",
+		fixed: "{height}p・固定",
+		audio: "音声",
+		left: "左",
+		right: "右",
+		muted: "消音",
+		play: "同時に再生",
+		pause: "同時に停止",
+		seek: "再生位置（秒）",
+		waiting: "両方の出力を待機中",
+		ready: "再生準備完了",
+		playing: "同期再生中",
+		failed: "再生を停止しました。失敗した出力を再試行してください。",
+		format: "出力設定: {format}",
+		formatUnknown: "形式の指定なし",
+		displayNotice:
+			"HDR / Dolby Vision の出力設定は、端末での表示モードの確認結果ではありません。再生はブラウザーとディスプレイに依存します。",
+		syncNotice:
+			"再生時刻を同期します。同じ内容・開始点の出力を選んでください。",
+	},
 	vodTimeline: {
 		singleTs: "TS（単一ファイル）",
 		singleMov: "MOV（単一ファイル）",
@@ -2420,6 +2450,12 @@ export const ja = {
 		hdrBaseLayerScope: "HDRベース映像・RPUによる表示処理は評価対象外",
 		mixedHdrContexts:
 			"測定条件（HDR/SDR・HLG正規化）が異なるため、スコアを直接比較できません。",
+		separateHdrContexts:
+			"HDR/SDR または HLG の測定条件が異なるため、数値とグラフを分けて表示します。",
+		measurementSdr: "SDR",
+		measurementHdrPq: "HDR PQ",
+		measurementHdrHlg: "HDR HLG → PQ（1000 nit）",
+		measurementHdrUnverified: "HDR・測定条件未確認",
 		measureSourceHint: "選択したジョブに対象の出力が必要です。",
 		measurePsnr: "PSNR",
 		measurePsnrInherit: "ジョブ設定に従う",

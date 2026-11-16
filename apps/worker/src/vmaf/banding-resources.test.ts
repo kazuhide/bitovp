@@ -31,6 +31,7 @@ describe("banding resource admission", () => {
 			exclusive: true,
 			concurrency: 1,
 			threads: 1,
+			decoderThreads: 1,
 			frameCount: 100,
 			basis: "CAMBI_NR_FULL_FRAMES_V1",
 		});
@@ -110,6 +111,7 @@ describe("banding resource admission", () => {
 			signal: new AbortController().signal,
 			basePlan: {
 				threads: 2,
+				decoderThreads: 2,
 				estimatedBytes: 128 * 1024 ** 2,
 				concurrency: 2,
 				exclusive: false,
@@ -120,6 +122,7 @@ describe("banding resource admission", () => {
 		expect(first).toMatchObject({
 			exclusive: true,
 			concurrency: 1,
+			decoderThreads: 1,
 			nativeDevice: 0,
 			nativeInflightFrames: 1,
 			gpu: { computeCredits: VMAF_GPU_COMPUTE_CREDITS },

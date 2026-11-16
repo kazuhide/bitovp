@@ -1,0 +1,17 @@
+{
+	"streams": [
+		{
+			"codec_name": "jpeg2000",
+			"codec_type": "video",
+			"width": 3840,
+			"height": 2160,
+			"sample_aspect_ratio": "1:1",
+			"pix_fmt": "rgb48le",
+			"field_order": "progressive",
+			"r_frame_rate": "60000/1001",
+			"avg_frame_rate": "0/0",
+			"time_base": "1001/60000",
+			"bits_per_raw_sample": "12"
+		}
+	]
+}

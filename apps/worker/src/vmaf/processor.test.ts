@@ -28,6 +28,7 @@ import { labManualTriggerPrefix } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProcessRunner } from "../feeder/supervisor";
 import type { ResolvedCredential } from "../orchestrator/executor";
+import { createBandingResourcePlanner } from "./banding-resources";
 import * as bandingScoring from "./banding-score";
 import type { VmafDownload } from "./download";
 import * as hdrScoring from "./hdr-score";
@@ -692,11 +693,19 @@ describe("HDR QC execution policy", () => {
 		{ transfer: "arib-std-b67", banding: true, externalPlanner: false },
 		{ transfer: "smpte2084", banding: true, externalPlanner: true },
 		{ transfer: "arib-std-b67", banding: true, externalPlanner: true },
+		{
+			transfer: "smpte2084",
+			banding: false,
+			externalPlanner: false,
+			referenceMxf: true,
+		},
 	])("retains full-frame HDR/HLS and CAMBI evidence ($transfer, banding=$banding, externalPlanner=$externalPlanner)", async ({
 		transfer,
 		banding,
 		externalPlanner,
+		...extra
 	}) => {
+		const referenceMxf = "referenceMxf" in extra && extra.referenceMxf;
 		const plan = qcPlan();
 		delete plan.qc;
 		plan.generation = { timing: "POST_ENCODING" };
@@ -748,6 +757,27 @@ describe("HDR QC execution policy", () => {
 		};
 		const probe = JSON.stringify({ streams: [video] });
 		const input = hdrInputFromProbe(probe, "distorted");
+		const referenceProbe = referenceMxf
+			? JSON.stringify({
+					streams: [
+						{
+							...video,
+							codec_name: "jpeg2000",
+							pix_fmt: "rgb48le",
+							bits_per_raw_sample: "12",
+							field_order: "progressive",
+							color_primaries: undefined,
+							color_transfer: undefined,
+							color_range: undefined,
+							color_space: undefined,
+						},
+					],
+					format: { format_name: "mxf" },
+				})
+			: probe;
+		const referenceInput = referenceMxf
+			? hdrInputFromProbe(referenceProbe, "reference", "P3_D65_PQ_RGB_FULL")
+			: input;
 		const readResources = () => ({
 			cpuCapacity: 4,
 			memoryLimitBytes: 9 * 1024 ** 3,
@@ -763,13 +793,50 @@ describe("HDR QC execution policy", () => {
 			plan,
 			job: {
 				...hdrRequest,
-				params: { ...hdrRequest.params, banding, subsample: 8 },
+				params: {
+					...hdrRequest.params,
+					banding,
+					subsample: 8,
+					...(referenceMxf ? { hdrReferenceColor: "P3_D65_PQ_RGB_FULL" } : {}),
+				},
 			},
 			subsample: 4,
 			probeJson: probe,
 			resolveModelPath: () => "/models/hdr.json",
 			localResources: resources,
+			...(referenceMxf
+				? {
+						download: async (args: Parameters<VmafDownload>[0]) => {
+							await writeFile(
+								args.destPath,
+								Buffer.from("060e2b34020501010d01020101020400", "hex"),
+							);
+							return {
+								bucket: args.bucket,
+								key: args.key,
+								pinned: true,
+								sha256: "a".repeat(64),
+								bytes: 16,
+							};
+						},
+					}
+				: {}),
 		});
+		if (referenceMxf) {
+			const run = vi.mocked(t.runner.run);
+			const original = run.getMockImplementation();
+			run.mockImplementation(async (command, args, options) => {
+				if (
+					args.includes("-show_streams") &&
+					args.at(-1)?.endsWith("ref-0.mp4")
+				)
+					return command === "ffprobe-hdr" && args.includes("-seekable")
+						? { code: 0, stderr: "", stdout: referenceProbe }
+						: { code: 1, stderr: "MXF footer seek is unsupported", stdout: "" };
+				if (!original) throw new Error("Missing fixture runner");
+				return original(command, args, options);
+			});
+		}
 		Object.assign(t.deps, {
 			hdrFfmpegPath: "ffmpeg-hdr",
 			hdrFfprobePath: "ffprobe-hdr",
@@ -783,11 +850,15 @@ describe("HDR QC execution policy", () => {
 					request.pairCount,
 				),
 			);
-			t.deps.resolveBandingResources = vi.fn(async (request) => {
-				if (!request.basePlan)
-					throw new Error("HDR combined base allocation missing");
-				return request.basePlan;
-			});
+			t.deps.resolveBandingResources = vi.fn(
+				createBandingResourcePlanner({
+					runner: t.deps.runner,
+					nativePath: "/native-unused-for-cpu",
+					hostKey: async () => "d".repeat(64),
+					shared: {} as never,
+					readResources,
+				}),
+			);
 		}
 		const [target] = enumerateExistingHlsQcTargets(
 			encodingPlanSchema.parse(plan),
@@ -857,7 +928,7 @@ describe("HDR QC execution policy", () => {
 			libvmafRevision: HDR_LIBVMAF_REVISION,
 			normalization: "ZIMG_BT2020_PQ_YUV444_16",
 			comparison: "LIMITED_BT2020_PQ_ICTCP420_16_DISPLAY2160",
-			reference: input,
+			reference: referenceInput,
 			distorted: input,
 			frameCount: 1,
 			...(transfer === "arib-std-b67"
@@ -915,9 +986,13 @@ describe("HDR QC execution policy", () => {
 			});
 			expect(t.encodingJobWrites).toHaveLength(0);
 			expect(score).toHaveBeenCalledOnce();
+			expect(score.mock.calls[0]?.[1]).toMatchObject({
+				decoderThreads: 2,
+			});
 			expect(t.job.params).toMatchObject({ subsample: 1 });
 			if (banding) {
 				expect(cambi).toHaveBeenCalledOnce();
+				expect(cambi.mock.calls[0]?.[4]).toBe(1);
 				expect(t.results[0]?.pooled).toMatchObject({
 					banding: { max: 12, frameCount: 1 },
 				});

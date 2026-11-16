@@ -11,6 +11,7 @@ import {
 	type LocalVmafExecution,
 } from "@bitovp/core";
 import type { ProcessRunner } from "../feeder/supervisor";
+import { hdrReferenceInputOptions } from "./hdr-reference-input";
 
 const object = (value: unknown): Record<string, unknown> | undefined =>
 	value !== null && typeof value === "object" && !Array.isArray(value)
@@ -57,6 +58,15 @@ export function validateHdrFrameTimeline(
 		throw new Error("HDR_FRAME_TIMING_REQUIRED");
 	const floorDuration = stepNumerator / stepDenominator;
 	const ceilDuration = (stepNumerator + stepDenominator - 1n) / stepDenominator;
+	const declaredRgbReference =
+		input.attributeSource === "P3_D65_PQ_RGB_FULL" &&
+		["rgb48le", "gbrp12le", "gbrp16le"].includes(input.pixelFormat) &&
+		input.primaries === "smpte432" &&
+		input.transfer === "smpte2084" &&
+		input.range === "full" &&
+		input.matrix === "gbr";
+	const colorMatches = (actual: unknown, expected: string) =>
+		actual === expected || (declaredRgbReference && actual === undefined);
 	let origin: number | undefined;
 	let previousPts: number | undefined;
 	for (const [index, value] of frames.entries()) {
@@ -91,12 +101,12 @@ export function validateHdrFrameTimeline(
 			f?.height !== input.height ||
 			f?.pix_fmt !== input.pixelFormat ||
 			f?.sample_aspect_ratio !== "1:1" ||
-			f?.color_primaries !== input.primaries ||
-			f?.color_transfer !== input.transfer ||
+			!colorMatches(f?.color_primaries, input.primaries) ||
+			!colorMatches(f?.color_transfer, input.transfer) ||
 			(f.color_range !== undefined &&
 				f.color_range !== (input.range === "limited" ? "tv" : "pc")) ||
 			(f.color_space !== undefined && f.color_space !== input.matrix) ||
-			(input.attributeSource === "STREAM_METADATA" &&
+			(!declaredRgbReference &&
 				(f.color_range === undefined || f.color_space === undefined)) ||
 			["crop_top", "crop_bottom", "crop_left", "crop_right"].some(
 				(key) => f?.[key] !== undefined && f[key] !== 0,
@@ -159,6 +169,28 @@ export async function runHdrVmafScore(
 		request.referenceColor,
 	);
 	const distorted = hdrInputFromProbe(request.distortedProbe, "distorted");
+	const referenceInputOptions = await hdrReferenceInputOptions(
+		request.referencePath,
+		request.referenceColor,
+		signal,
+	);
+	const referenceMetadata = object(JSON.parse(request.referenceProbe));
+	const referenceStreams = referenceMetadata?.streams;
+	const referenceStream = Array.isArray(referenceStreams)
+		? referenceStreams
+				.map(object)
+				.find((stream) => stream?.codec_type === "video")
+		: undefined;
+	const nominalMxfClock =
+		reference.attributeSource === "P3_D65_PQ_RGB_FULL" &&
+		object(referenceMetadata?.format)?.format_name === "mxf" &&
+		referenceStream?.avg_frame_rate === "0/0";
+	if (nominalMxfClock && referenceInputOptions.length === 0)
+		throw new Error("HDR_REFERENCE_CONTAINER_MISMATCH");
+	if (referenceInputOptions.length)
+		console.info(
+			`[worker:vmaf] HDR sequential MXF reference; ${nominalMxfClock ? "nominal" : "reported"} clock ${reference.frameRate} requires complete frame validation`,
+		);
 	const model = HDR_VMAF_MODELS.find((entry) => entry.id === request.model);
 	if (!model) throw new Error("HDR_MODEL_UNSUPPORTED");
 	const file = await readFile(request.modelPath, { signal });
@@ -167,7 +199,11 @@ export async function runHdrVmafScore(
 		createHash("sha256").update(file).digest("hex") !== model.sha256
 	)
 		throw new Error("HDR_MODEL_HASH_MISMATCH");
-	const probe = async (path: string, input: HdrInput) => {
+	const probe = async (
+		path: string,
+		input: HdrInput,
+		inputOptions: string[] = [],
+	) => {
 		signal.throwIfAborted();
 		const run = await deps.runner.run(
 			deps.ffprobePath,
@@ -186,6 +222,7 @@ export async function runHdrVmafScore(
 				"stream=time_base:frame=best_effort_timestamp,duration,pkt_duration,width,height,pix_fmt,sample_aspect_ratio,color_range,color_space,color_primaries,color_transfer,crop_top,crop_bottom,crop_left,crop_right:frame_side_data=side_data_type,rotation",
 				"-of",
 				"json",
+				...inputOptions,
 				path,
 			],
 			{ signal, abortKillAfterMs: 250 },
@@ -196,10 +233,29 @@ export async function runHdrVmafScore(
 		return validateHdrFrameTimeline(run.stdout, input);
 	};
 	// Keep admission held; probes and scorer are sequential and abortable.
-	const frameCount = await probe(request.referencePath, reference);
+	const frameCount = await probe(
+		request.referencePath,
+		reference,
+		referenceInputOptions,
+	);
+	if (nominalMxfClock && frameCount !== referenceStream?.duration_ts)
+		throw new Error("HDR_REFERENCE_FRAME_COVERAGE");
+	if (nominalMxfClock)
+		console.info(
+			`[worker:vmaf] HDR nominal MXF clock verified over all ${frameCount} reference frames at ${reference.frameRate}`,
+		);
 	if ((await probe(request.distortedPath, distorted)) !== frameCount)
 		throw new Error("HDR_INPUT_FRAME_COUNT_MISMATCH");
 	const args = buildHdrVmafCommand({ ...request, reference, distorted });
+	if (referenceInputOptions.length) {
+		const referenceIndex = args.lastIndexOf("-i");
+		if (
+			referenceIndex < 0 ||
+			args[referenceIndex + 1] !== request.referencePath
+		)
+			throw new Error("HDR_MEASUREMENT_CONTRACT_INVALID");
+		args.splice(referenceIndex, 0, ...referenceInputOptions);
+	}
 	await rm(request.logPath, { force: true });
 	const run = await deps.runner.run(deps.ffmpegPath, args, {
 		signal,

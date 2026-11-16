@@ -1548,14 +1548,20 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 									banding.selection.backend === "cpu"
 										? undefined
 										: banding.selection;
-								if (deps.resolveBandingResources)
-									return deps.resolveBandingResources({
+								if (deps.resolveBandingResources) {
+									const combined = await deps.resolveBandingResources({
 										video,
 										pairCount,
 										signal,
 										selected,
 										basePlan: base,
 									});
+									// CAMBI's single decoder must not replace the admitted HDR
+									// VMAF decoder allocation in this shared reservation.
+									return hdrRequest
+										? { ...combined, decoderThreads: base.decoderThreads }
+										: combined;
+								}
 								if (selected) throw new Error("BANDING_GPU_ADMISSION_REQUIRED");
 								const detector = resourceSession.plan(
 									bandingResourcePair(video),
@@ -1564,6 +1570,9 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 								return {
 									...base,
 									...detector,
+									...(hdrRequest
+										? { decoderThreads: base.decoderThreads }
+										: {}),
 									estimatedBytes: base.estimatedBytes + detector.estimatedBytes,
 									threads: Math.min(base.threads, detector.threads),
 									...(base.gpu ? { nativeInflightFrames: 1 as const } : {}),

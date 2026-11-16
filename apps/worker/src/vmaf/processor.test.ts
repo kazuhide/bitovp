@@ -28,6 +28,7 @@ import { labManualTriggerPrefix } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProcessRunner } from "../feeder/supervisor";
 import type { ResolvedCredential } from "../orchestrator/executor";
+import { createBandingResourcePlanner } from "./banding-resources";
 import * as bandingScoring from "./banding-score";
 import type { VmafDownload } from "./download";
 import * as hdrScoring from "./hdr-score";
@@ -783,11 +784,15 @@ describe("HDR QC execution policy", () => {
 					request.pairCount,
 				),
 			);
-			t.deps.resolveBandingResources = vi.fn(async (request) => {
-				if (!request.basePlan)
-					throw new Error("HDR combined base allocation missing");
-				return request.basePlan;
-			});
+			t.deps.resolveBandingResources = vi.fn(
+				createBandingResourcePlanner({
+					runner: t.deps.runner,
+					nativePath: "/native-unused-for-cpu",
+					hostKey: async () => "d".repeat(64),
+					shared: {} as never,
+					readResources,
+				}),
+			);
 		}
 		const [target] = enumerateExistingHlsQcTargets(
 			encodingPlanSchema.parse(plan),
@@ -915,9 +920,13 @@ describe("HDR QC execution policy", () => {
 			});
 			expect(t.encodingJobWrites).toHaveLength(0);
 			expect(score).toHaveBeenCalledOnce();
+			expect(score.mock.calls[0]?.[1]).toMatchObject({
+				decoderThreads: 2,
+			});
 			expect(t.job.params).toMatchObject({ subsample: 1 });
 			if (banding) {
 				expect(cambi).toHaveBeenCalledOnce();
+				expect(cambi.mock.calls[0]?.[4]).toBe(1);
 				expect(t.results[0]?.pooled).toMatchObject({
 					banding: { max: 12, frameCount: 1 },
 				});

@@ -80,8 +80,22 @@ describe("standalone HDR banding", () => {
 					rendition: "video",
 					signal: new AbortController().signal,
 					hdrMethod,
+					allocation: {
+						threads: 8,
+						decoderThreads: 2,
+						concurrency: 1,
+						estimatedBytes: 1024 ** 3,
+						exclusive: false,
+						manualFallback: false,
+					},
 				},
 			);
+			expect(score.mock.calls[0]?.slice(4)).toEqual([
+				8,
+				expect.any(String),
+				hdrMethod,
+				2,
+			]);
 			expect(measured.pooled.max).toBe(12);
 			expect(measured.assessment).not.toHaveProperty("failureThreshold");
 			expect(measured.assessment).not.toHaveProperty("warningThreshold");

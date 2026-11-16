@@ -305,7 +305,13 @@ export async function runNativeBandingScore(
 ) {
 	try {
 		assertBandingGeometry(expected);
-		const timing = await probeBandingTiming(deps, input, signal, expected);
+		const timing = await probeBandingTiming(
+			deps,
+			input,
+			signal,
+			expected,
+			expected.decodeThreads ?? 1,
+		);
 		if ((await hashNativeFile(input, signal)) !== expected.inputSha256)
 			throw new Error("BANDING_INPUT_CHANGED");
 		if (!(await bandingNativeAvailable(deps, expected.selected, signal)))

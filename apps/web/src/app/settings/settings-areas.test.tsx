@@ -53,6 +53,7 @@ describe("SettingsAreas — role-aware ADMIN cards", () => {
 		await waitFor(() => expect(screen.getByText("Users")).toBeInTheDocument());
 		expect(areaHrefs()).toEqual(expect.arrayContaining([...ADMIN_AREA_HREFS]));
 		expect(areaHrefs()).toContain(COVERAGE_HREF);
+		expect(areaHrefs()).toContain("/settings/error-definitions");
 		expect(areaHrefs()).not.toContain("/verification");
 	});
 
@@ -242,7 +243,14 @@ describe("SettingsAreas — category panels", () => {
 					"/settings/access-audit",
 				],
 			],
-			["詳細・診断", ["/settings/clip-editing", "/settings/api-coverage"]],
+			[
+				"詳細・診断",
+				[
+					"/settings/error-definitions",
+					"/settings/clip-editing",
+					"/settings/api-coverage",
+				],
+			],
 		];
 		for (const [name, hrefs] of groups) {
 			const panel = screen.getByRole("region", { name });

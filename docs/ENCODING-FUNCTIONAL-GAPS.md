@@ -1,0 +1,165 @@
+# Encoding functionality gaps
+
+Audit date: 2026-11-16. Baseline: `32910bd11f0221ad09288c0051ec8810bf7bd3b7`;
+Bitmovin JavaScript SDK: **1.288.0**. This is a bounded source audit of encoding
+creation and configuration, following the Error Definitions integration.
+No paid encoding was started for this audit.
+
+## How to read the results
+
+The audit follows **form → validated plan → compiled operation → Worker → SDK**.
+A missing direct SDK reference alone does not establish a missing feature.
+Wrappers, alternate APIs and automatically generated settings can serve the same
+purpose. GUI controls, valid expert JSON, generated settings and provider-tested
+execution are different kinds of evidence.
+
+The preceding operation census reported 1,094 Encoding operations, with 283
+source-confirmed and 811 unconfirmed. Those 811 are **not** a missing-feature
+count. Error Definitions adds a read operation; it does not change the creation
+families below. Neither table is a full-field GUI coverage percentage.
+
+## Creation families checked
+
+| SDK create family | SDK types | Existing creation paths | Gaps checked against the plan and Worker |
+|---|---:|---:|---|
+| Video configurations | 8 | 5 | H.262, MJPEG, VP8 |
+| Audio configurations | 17 | 7 | HE-AAC v1/v2, PCM, passthrough, MP2, MP3, Vorbis, DTS, DTS passthrough, DTS:X |
+| Subtitle configurations | 3 | 2 | DVB subtitle |
+| Input streams | 13 | 10 | CEA608, CEA708 and DVB subtitle extraction |
+| Filters | 17 | 10 | AudioMix, AzureSpeechToCaptions, Conform, DolbyLoudness, EnhancedDeinterlace, EnhancedWatermark, Interlace |
+| Muxings, excluding DRM children | 16 | 10 | Broadcast TS, MP3, MXF, Packed Audio, Progressive WAV, Segmented Raw |
+
+The five video paths include account-restricted HEVCv2. Existing audio paths
+are AAC, AC3, EAC3, Opus, Dolby Atmos, Dolby Digital Plus and Dolby Digital.
+An absent AudioMix **filter** API is not a missing mixing capability: the app
+already uses AudioMixInputStream. Adding a second mixing mechanism is not a
+priority.
+
+The compared SDK operations are reproducible from
+`apps/web/src/data/api-coverage/current.json`, selecting each family's `create`
+methods. Closed discriminated unions in `packages/core/src/plan/schema.ts`,
+`packages/core/src/plan/media-filters.ts` and Worker dispatch in
+`apps/worker/src/orchestrator/ops/{configs,media,media-filters}.ts` establish the
+application paths. SDK model declarations are available in the
+[fixed official SDK tag](https://github.com/bitmovin/bitmovin-api-sdk-javascript/tree/v1.288.0/src).
+
+## Existing capabilities to retain
+
+- H.264/H.265/VP9/AV1, account-gated HEVCv2, codec detail controls including
+  H.264 `autoLevelSetup`, AV1 `maxLevel` and `detailPreservationMode`.
+- Four-codec VOD Per-Title, result capture and manifests; no Live Per-Title claim.
+- Trimming, concatenation, audio mixing and independent video/audio timeline
+  editing. Provider qualification guards still apply to independent programmes.
+- WebVTT/TTML/IMSC sidecars, SRT burn-in and CEA subtitle passthrough. Extraction
+  into a separate subtitle track is a different capability.
+- HDR/Dolby configuration, fMP4/CMAF/TS/MP4/WebM/text and progressive file outputs,
+  HLS/DASH/Smooth, CENC/FairPlay/SPEKE under their existing restrictions.
+- Live RTMP/redundant RTMP/SRT/Zixi/HLS ingest, pools, stream keys, DNS, stop
+  timers, slate, ad markers/insertion, Live-to-VOD, archives and AISA for Live.
+
+These are source paths, not a claim that every setting, account, encoder version
+or delivery combination has been exercised. Existing warnings for unmeasured
+containers and unsupported combinations continue to matter.
+
+## Recommended implementation order
+
+### E01 · P1 · HE-AAC v1 and v2
+
+The current AAC plan and form do not expose a HE-AAC profile. Worker
+`orchestrator/ops/configs.ts` constructs only `AacAudioConfiguration` for AAC;
+the SDK has separate `heAacV1.create` and `heAacV2.create` operations and models.
+Earlier comments suggesting AAC profile support were inaccurate and have been
+corrected. This is a relatively narrow addition with direct low-bitrate value.
+
+Acceptance must cover the codec discriminants, official bitrate/sample-rate/
+channel restrictions, compiled wire payloads, HLS CODECS/audio groups and
+import/export preservation. Establish Live applicability separately.
+
+### E02 · P1 · Stream Conditions authoring and AND/OR
+
+`streamConditionSchema` accepts a single comparison. Expert JSON can supply it;
+the GUI currently generates only `audioGuard` (`AUDIOSTREAMCOUNT > 0`). Recursive
+Stream AND/OR has no plan or Worker conversion path. **Manifest** AND/OR already
+exists in `plan/manifest-options.ts` and its period editor.
+
+Add bounded condition groups, a compact rendition editor, backward-compatible
+single comparisons and explicit Live/VOD attribute restrictions. Test
+form/JSON round trips and SDK `AbstractCondition`, `AndConjunction` and
+`OrConjunction` serialization. This enables conditional ladders for varying
+input dimensions or missing audio. See the
+[official Stream Conditions guide](https://developer.bitmovin.com/encoding/docs/stream-conditions).
+
+### E03 · P1 · PCM/WAV, then bounded audio passthrough
+
+PCM configuration, audio passthrough and Progressive WAV are absent from the
+plan, forms and Worker. Existing MOV output does not supply these audio paths.
+They directly extend mezzanine and editing deliverables.
+
+Start with PCM/WAV, then permit passthrough only for documented combinations.
+Cover sample formats, channels, rates, container compatibility, multiple audio
+tracks, trimming/concatenation and filter/mix conflicts. Do not assume arbitrary
+HLS/DASH audio copying is valid. The
+[official audio guide](https://developer.bitmovin.com/encoding/docs/separating-and-combining-audio-streams)
+describes mixing and passthrough constraints.
+
+### E04 · P1 · Embedded caption extraction
+
+CEA608/708 passthrough is present in video configuration. The separate
+`Cea608CaptionInputStream`, `Cea708CaptionInputStream` and
+`DvbSubtitleInputStream` creation paths, plus the DVB subtitle configuration,
+are absent. Start with CEA608/708 extraction and treat DVB and Live subtitles
+as separate additions.
+
+Acceptance includes channel/service selection, missing captions, PTS/time
+mapping across trimming and concatenation, HLS/DASH language/accessibility
+attributes and playback. Live currently permits video/audio renditions, so
+subtitle extraction requires changes beyond the VOD input-stream union.
+
+### E05–E07 · P2 · Purpose-specific extensions
+
+- **Filters:** prioritize EnhancedWatermark for logo size/opacity, then qualify
+  EnhancedDeinterlace and Conform with suitable sources. Existing Watermark,
+  ordinary deinterlace and frame-rate settings are not equivalent mechanisms.
+  Live validation explicitly rejects filters today; investigate provider
+  support before enabling individual filters there.
+- **Broadcast delivery:** Broadcast TS/MXF with H.262/MP2/PCM, driven by a
+  specific delivery specification. Progressive TS does not expose the same
+  PCR/PID/PAT/PMT controls. MJPEG, VP8, MP3, Vorbis and DTS need an identified
+  use case, entitlement and playback target.
+- **Encryption/delivery:** AES-128/ClearKey are absent choices; CENC already
+  serves Widevine/PlayReady use cases. SPEKE currently accepts only fMP4 in
+  Worker dispatch. Live MSL/SFTP mirrors are valid expert-JSON paths with a
+  missing GUI authoring path; primary MSL is already supported.
+
+### E08 · P3 · Other inputs and management
+
+VOD input plans currently support S3, HTTPS, Akamai NetStorage, Azure,
+GenericS3 and the two GCS credential variants. FTP/SFTP/Aspera/direct-upload/
+local/S3-role-based inputs need their own end-to-end audit, including stored
+credentials, browser access and output inspection. Output support for a
+protocol does not imply input support. MoQ output remains Beta/account-gated
+and is not an available plan destination merely because the SDK was upgraded.
+
+Native Templates, Native Watch Folders and resource CRUD/custom-data/query
+controls belong to a separate management lane. Existing app presets and watch
+rules do not implement their native provider counterparts.
+
+## Evidence limits and future verification
+
+No current claim is made about all SDK fields' server writeability,
+conditionally required fields, full GUI coverage, all Live/VOD support
+conditions, new output quality or processing time. Those require additional
+documentation and authorized executions.
+
+Live subtitle translation has a documented Syncwords integration; its exact
+current entitlement/API conditions remain unqualified here. Do not generalize
+the app's missing Live subtitle path into a claim that the provider lacks it,
+or introduce an external translation service as a replacement for the local
+model policy. See the
+[official Live translation article](https://bitmovin.com/blog/live-translation-live-encoder/).
+
+For each addition, keep form/JSON → plan → compiled operation → actual SDK wire
+tests. When paid verification is authorized, separately record provider
+resource readback, output stream structure, manifest references and playback
+under the tracked job. Source confirmation, provider acceptance and verified
+deliverables must remain distinct evidence states.

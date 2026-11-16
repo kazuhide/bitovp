@@ -25,6 +25,7 @@ import { isActiveVmafStatus, VMAF_STATUS_TONE } from "@/app/qc/vmaf-shared";
 import type { JobListItem } from "@/app/vod/jobs/jobs-client";
 import { isActiveJobStatus, STATUS_TONE } from "@/app/vod/jobs/jobs-client";
 import { DeleteResourceButton } from "@/components/delete-resource-button";
+import { EncodingErrorDefinitionsLink } from "@/components/encoding-error-definitions-link";
 import { SaveAsTemplateButton } from "@/components/save-as-template";
 import { StepTimeline } from "@/components/step-timeline";
 import { Badge } from "@/components/ui/badge";
@@ -468,9 +469,14 @@ export function JobDetail({
 			</header>
 
 			{row.error ? (
-				<p role="alert" className="mt-2 text-red-400 text-sm">
-					{row.error}
-				</p>
+				<div className="mt-2">
+					<p role="alert" className="text-red-400 text-sm">
+						{row.error}
+					</p>
+					<EncodingErrorDefinitionsLink
+						bitmovinAccountId={row.bitmovinAccountId}
+					/>
+				</div>
 			) : null}
 
 			{/* Cancel outcome. A 409 (the route's "not cancelable") means the job

@@ -34,6 +34,7 @@ import {
 	playableLinks,
 } from "@/app/vod/jobs/[id]/player-preview";
 import { CopyButton } from "@/components/copy-button";
+import { EncodingErrorDefinitionsLink } from "@/components/encoding-error-definitions-link";
 import { ManifestList } from "@/components/manifest-list";
 import { SaveAsTemplateButton } from "@/components/save-as-template";
 import { StepTimeline } from "@/components/step-timeline";
@@ -1746,9 +1747,14 @@ function ChannelConsole({
 					/>
 				) : null}
 				{row.error ? (
-					<p role="alert" className="text-red-400 text-sm">
-						{t("live.recordedFailure")}
-					</p>
+					<div>
+						<p role="alert" className="text-red-400 text-sm">
+							{t("live.recordedFailure")}
+						</p>
+						<EncodingErrorDefinitionsLink
+							bitmovinAccountId={row.bitmovinAccountId}
+						/>
+					</div>
 				) : null}
 				{row.bitmovinEncodingId ? (
 					<p className="font-mono text-xs text-zinc-500">

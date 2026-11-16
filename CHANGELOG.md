@@ -8,6 +8,8 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- Search the provider's Encoding Error Definitions by code, category or description from Settings and VOD/Live failure details. The account-scoped, read-only catalogue shows retry guidance without restarting jobs; incomplete or failed catalogue reads remain explicit failures.
+- Reconcile codec, input-stream, filter and muxing creation paths against SDK 1.288.0, with a prioritized functional gap report separating GUI support, JSON-only controls and unqualified provider execution.
 - Inventory Encoding API request contracts, including nested models, enums and path/query/body parameters, separately from source-call evidence. Bounded GUI-to-payload audits now distinguish reviewed fields from unconfirmed operations and provider execution.
 - Measure retained clear fMP4 HLS outputs with native HDR VMAF and PQ CAMBI in QC Lab. Local CPU measurements support HDR10, AV1 Dolby Vision Profile 10.1's HDR10-compatible base layer, and HLG converted to PQ under a recorded 1000-nit display condition. Reports retain the exact measured fragments, color conversion, model identity and full-frame coverage; SDR measurements keep their existing runtime.
 - Prepare independent VOD video/audio timeline edits as one full-resolution shared cloud input before starting an encoding job. The explicit preparation action keeps the primary source FPS, supports measured 8-bit BT.709 SDR video, uses H.264 CRF12 / AAC 320kbps, and verifies the uploaded object against its SHA-256 and source versions. Preparation is bounded to one hour / 4GiB; changing an edit invalidates readiness. This is a high-quality re-encode, not a lossless intermediate.

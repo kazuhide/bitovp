@@ -115,6 +115,11 @@ const ACCESS: readonly Area[] = [
 
 const DIAGNOSTICS: readonly Area[] = [
 	{
+		titleKey: "pageTitles.errorDefinitions",
+		href: "/settings/error-definitions",
+		captionKey: "errorDefinitions.caption",
+	},
+	{
 		titleKey: "clipDiagnostics.title",
 		href: "/settings/clip-editing",
 		captionKey: "clipDiagnostics.caption",

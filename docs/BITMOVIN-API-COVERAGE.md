@@ -88,7 +88,7 @@ plan is rejected or a result is unclear.
 | C2 | Start-request trimming cannot be combined with InputStream resources. Use the input-stream trimming controls rather than adding trimming to an imported start request. |
 | C3 | Plans use Manifest Generator V2. Live-to-VOD uses `LEGACY` because V2 cannot enumerate live muxings. Choose a supported recording container for Live-to-VOD. |
 | C4 | Per-Title creates multiple results, so paths must include `{uuid}` or `{bitrate}` and use a supported output: S3, GenericS3, Google Cloud Storage, Akamai NetStorage, or Azure. `{width}`, `{height}`, or a unique literal path alone is not enough. |
-| C5 | High-Efficiency AAC (HE-AAC) v1 is limited to 128 kbps and v2 to 64 kbps. Lower the bitrate or change audio profile. |
+| C5 | HE-AAC v1/v2 are not currently selectable in plans or forms. The existing AAC configuration does not expose a HE-AAC profile; dedicated provider configurations require a future implementation. |
 | C9 | Common Encryption (CENC) counter mode (CTR) needs an 8-byte initialization vector (IV); cipher block chaining (CBC) needs 16 bytes. Standalone FairPlay uses AES-CBC with an IV and key URI. Match encryption mode and container. |
 | C17 | Audio/video synchronization adjustments conflict with Dolby audio. Preview manifests are just-in-time (JIT), generated during encoding; preview-only manifests are not finalized. Smooth has no preview list. Use final manifests for completed delivery. |
 | C21 | Kantar watermarking is one encoding-wide setting and requires audio. A new configuration replaces the previous value rather than adding another. |
@@ -197,20 +197,21 @@ the top-level direct-property ratio as though they had been audited.
 
 ## Next coverage work
 
-These are separate API or GUI gaps, rather than a claim that every unconfirmed
-operation is missing:
+**Error Definitions** is now available in Settings and from VOD/Live failure
+details. It searches the selected account's generic error catalogue; it is not
+a failure-history viewer and never restarts a job.
 
-1. **Error Definitions lookup**: connect the provider's read-only error catalogue
-   to job failures; it currently has no native integration.
-2. **Native Encoding Templates**: browse/import, manage, and start provider
-   templates through tracked jobs. Presets and YAML export are separate features.
-3. **Live mirrors**: expose MSL and SFTP mirrors in forms while preserving valid
-   expert-JSON plans. Primary MSL output already has a supported authoring path.
-4. **Native Watch Folders**: add create/get/list/delete/start/stop. Current
-   **Watch folders** settings use application watch rules and a storage sweep,
-   not the provider's native API. Distinguish them to prevent duplicate starts.
-5. **Resource management**: trace unconfirmed read/list/delete, custom-data, and
-   query controls through wrappers before declaring the next implementation gap.
+The [functional gap audit](ENCODING-FUNCTIONAL-GAPS.md) prioritizes actual encoding
+capabilities: HE-AAC, Stream Conditions authoring and conjunctions, PCM/WAV and
+bounded audio passthrough, followed by embedded-caption extraction. It traces
+closed plan unions and execution paths instead of treating unconfirmed SDK
+calls as missing features. Source support is not provider qualification.
+
+Native Templates, Native Watch Folders and resource CRUD remain a separate
+management lane. Current Watch folders use application watch rules and a storage
+sweep; they do not implement the provider's native Watch Folders API. Live MSL
+and SFTP mirror authoring remains a GUI gap; primary MSL already has a path and
+valid expert-JSON mirror plans are preserved.
 
 The SDK 1.288.0 MOQ output API is a newly declared operation family to assess;
 upgrading the SDK does not make MOQ an available application destination.

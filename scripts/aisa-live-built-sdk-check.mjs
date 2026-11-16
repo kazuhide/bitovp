@@ -98,7 +98,7 @@ globalThis.fetch = async (url, init) => {
 	const headers = new Headers(init.headers);
 	assert.equal(headers.get("X-Api-Key"), "synthetic-key");
 	assert.equal(headers.get("X-Tenant-Org-Id"), "synthetic-tenant");
-	assert.equal(headers.get("X-Api-Client-Version"), "1.288.0-develop.02b690c6");
+	assert.equal(headers.get("X-Api-Client-Version"), "1.289.0-develop.4d2bbf1d");
 	transportRequests.push(parsed.pathname);
 	const path = "/v1/ai-scene-analysis/live-analyses";
 	if (parsed.pathname === path) {

@@ -38,7 +38,7 @@ server設定 `BITOVP_AISA_LIVE_PREVIEW=true` と `BITOVP_AISA_LIVE_PREVIEW_USER_
 - キャッシュされた ADMIN の診断を表示する際も、現在のセッションが非 impersonation の OPERATOR 以上であることを確認する。閲覧代理中に対象の会員 role が ADMIN でも、raw 診断の表示を許可しない。
 - 標準 Live の回帰テスト、AISA 有効時の監視テスト、権限テスト、型検査、build、実ブラウザ確認を行う。保存済みの実 heartbeat と解析結果を優先し、画面修正のための新しい課金配信は起動しない。
 
-dev SDK `1.288.0-develop.02b690c6` には `StartLiveEncodingRequest.aiSceneAnalysisLive` が存在する。値は boolean ではなく `AiSceneAnalysisLive` の `{ analysisId, outputs }` で、両フィールドは SDK のコメント上 required。serializer と `encoding.encodings.live.start` はこの設定を `/encoding/encodings/{id}/live/start` の body へ送る。通常の Encoding 開始に AISA を設定する SDK 契約があることと、現在のデモ・bitovp が使う経路を区別する。
+dev SDK `1.289.0-develop.4d2bbf1d` には `StartLiveEncodingRequest.aiSceneAnalysisLive` が存在する。値は boolean ではなく `AiSceneAnalysisLive` の `{ analysisId, outputs }` で、両フィールドは SDK のコメント上 required。serializer と `encoding.encodings.live.start` はこの設定を `/encoding/encodings/{id}/live/start` の body へ送る。通常の Encoding 開始に AISA を設定する SDK 契約があることと、現在のデモ・bitovp が使う経路を区別する。
 
 現在のデモと bitovp は Analysis が backing Encoding を管理する専用 create/start API を使う。この実装経路では対応する配信構成に限定しており、任意ラダー・DRM・ESAM 等を送信前とサーバー側で拒否する。これは現実装の範囲であり、上記 SDK 開始オプションの不存在や Bitmovin 全体の制限を意味しない。通常の Encoding と組み合わせる別経路の Analysis ID 作成・関連付け・停止の実動作は未検証。通常の設定を受理して裏で捨てる実装はしない。
 
@@ -46,8 +46,8 @@ dev SDK `1.288.0-develop.02b690c6` には `StartLiveEncodingRequest.aiSceneAnaly
 
 ## 実装方針
 
-- 本流は公開 `@bitmovin/api-sdk@1.287.0` を維持する。
-- Preview は `@bitmovin-internal/api-sdk@1.288.0-develop.02b690c6` の専用クライアントを使う。private registry 依存を通常 install に追加せず、管理者が別途インストールしたパッケージを server の `BITOVP_AISA_LIVE_SDK_PATH` で指定する。未指定時は通常の Node 解決を試す。版の不一致または未インストールは明示的な 503 とする。
+- 本流は公開 `@bitmovin/api-sdk@1.288.0` を維持する。
+- Preview は `@bitmovin-internal/api-sdk@1.289.0-develop.4d2bbf1d` の専用クライアントを使う。private registry 依存を通常 install に追加せず、管理者が別途インストールしたパッケージを server の `BITOVP_AISA_LIVE_SDK_PATH` で指定する。未指定時は通常の Node 解決を試す。版の不一致または未インストールは明示的な 503 とする。
 - `BITOVP_AISA_LIVE_PREVIEW=true` のときだけ UI/API を公開する。既定は無効。API 側でも gate を評価する。
 - AICA の organization-scoped Analysis resource と provider の Encoding 状態を読み、bitovp の LiveChannel/LiveChannelRun に実行単位の Analysis identity・最終状態・最後の有効 snapshot を関連付ける。再放送で結果を混ぜない。API key は server の account store からだけ取得する。
 - AISA専用のGET/create/start/stop/ingestはすべて設定された本人ADMINに限定する。list/detail/resultsはingestと任意のupstream fieldを返さない。
@@ -160,11 +160,22 @@ SDK adapter は `apps/web/src/lib/server/aisa-live-sdk.ts`。`aisaLivePreviewEna
 
 ## ローカルでの起動
 
-管理者の認証済み npm 設定を使い、dev SDK を bitovp 本体とは別の場所へインストールする。`@bitmovin-internal:registry=https://bitmovin.jfrog.io/artifactory/api/npm/npm-local/` を scope 設定に使い、公開の依存パッケージは通常の registry から取得する。private registry の認証は `JFROG_NPM_TOKEN` の環境変数参照を持つ npm 設定で行い、token 値をコマンドやリポジトリへ保存しない。例えば次のように専用 prefix を指定する。
+未配布の最新版は `bitmovin-openapi-clients` の `typescript-internal` からビルドし、生成したパッケージを bitovp 本体とは別の場所へインストールする。ビルドしたソースのリビジョンと tarball の digest を記録し、SDK の版が上記の固定版と一致することを確認する。
+
+```sh
+cd /path/to/bitmovin-openapi-clients/typescript-internal
+npm install --ignore-scripts
+npm run build
+npm pack --ignore-scripts --pack-destination /path/to/sdk-artifacts
+npm install --prefix /path/to/aisa-preview --ignore-scripts \
+  /path/to/sdk-artifacts/bitmovin-internal-api-sdk-1.289.0-develop.4d2bbf1d.tgz
+```
+
+同じ固定版が private registry に配布済みの場合は、管理者の認証済み npm 設定で取得してもよい。`@bitmovin-internal:registry=https://bitmovin.jfrog.io/artifactory/api/npm/npm-local/` を scope 設定に使い、公開の依存パッケージは通常の registry から取得する。private registry の認証は `JFROG_NPM_TOKEN` の環境変数参照を持つ npm 設定で行い、token 値をコマンドやリポジトリへ保存しない。例えば次のように専用 prefix を指定する。
 
 ```sh
 npm install --prefix /path/to/aisa-preview --ignore-scripts \
-  @bitmovin-internal/api-sdk@1.288.0-develop.02b690c6
+  @bitmovin-internal/api-sdk@1.289.0-develop.4d2bbf1d
 ```
 
 bitovp の server 環境（または repo root のローカル `.env`）で指定する:
@@ -184,6 +195,6 @@ BITOVP_AISA_LIVE_SDK_PATH=/path/to/aisa-preview/node_modules/@bitmovin-internal/
   node scripts/aisa-live-sdk-contract.mjs
 ```
 
-このスクリプトは合成応答の fake transport を使い、cloud Analysis を開始しない。SDK 共存、3 input 形式、非公開 ACL、bodyless start/stop、override の分離、最新結果と pending code を確認する。
+このスクリプトは合成応答の fake transport を使い、cloud Analysis を開始しない。SDK 共存、3 input 形式、非公開 ACL、bodyless start/stop、override の分離、最新結果と pending code を確認する。新版の feature 設定、要求した時計と実効時計の区別、警告・source gap、および認証付き media descriptor API の送受信契約も検証する。これらの追加 SDK 機能を bitovp の UI/API へ公開する変更は含まない。
 
 本番 build 後は、同じ SDK の環境変数を指定して `node scripts/aisa-live-built-sdk-check.mjs` を実行できる。実際の生成 route を Turbopack runtime と依存で実行し、account store と HTTP だけを合成置換して native SDK の読み込みと SDK 不在時の 503 を確認する。通常の source 単体テストだけでは検出できない bundler の読み込み変更を検出する。

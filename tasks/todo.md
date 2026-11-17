@@ -9,7 +9,7 @@
 - [x] B: 中止競合・期限・partial result・gate復帰を検証
 - [x] B: 2系統レビューと必須CI15項目を通し、PR152をmainへmerge
 - [x] CIの実測とAstro設計レビュー、Web全件分割・HDR build再利用を実装
-- [ ] 同一sourceの局所検証時間とsemantic negativeを確認
+- [x] 同一sourceの局所検証時間とsemantic negativeを確認（18 sample、中央値0.956〜3.635秒、既知不具合2件を検出）
 - [ ] 実CIのcold/warm時間・全件coverage・全proofを照合
 - [ ] 2系統の独立レビューのRequired/Criticalを解消
 - [ ] 両PRの必須CIを通しmainへmerge

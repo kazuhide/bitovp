@@ -12,7 +12,9 @@ describe("isolated HDR QC runtime source contract", () => {
 		expect(dockerfile).toContain(
 			'ARG LIBVMAF_COMMIT="f712fa7564fe49b12991d83920b83573af2ae063"',
 		);
-		expect(dockerfile).toContain("FROM ffmpeg-build AS ffmpeg-hdr-build");
+		expect(dockerfile).toContain("FROM ffmpeg-source AS ffmpeg-build");
+		expect(dockerfile).toContain("FROM ffmpeg-source AS ffmpeg-hdr-build");
+		expect(dockerfile).not.toContain("FROM ffmpeg-build AS ffmpeg-hdr-build");
 		expect(dockerfile).toContain("FROM scratch AS ffmpeg-hdr");
 		expect(dockerfile).toContain("/bin/ffmpeg-hdr /bin/ffprobe-hdr");
 		expect(dockerfile).toContain(

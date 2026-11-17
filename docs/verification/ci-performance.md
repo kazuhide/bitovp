@@ -16,10 +16,14 @@ GitHub runners; a small single-run improvement is insufficient evidence.
 ## Complete Web suite in four parts
 
 Each shard runs the full configured discovery and checks it against the tracked
-source inventory before running one quarter with two Vitest workers. The current
-Vitest version, configuration policy and full-suite command are explicit. A
-configuration change requires reviewing that policy rather than silently losing
-new test paths.
+source inventory before running one quarter. Within the same allocated runner,
+one available CPU uses one Vitest worker, two or three available CPUs use two,
+and four or more use three. This caps workers at three and leaves capacity for
+the parent on larger runners. The budget uses `os.availableParallelism()`;
+logical CPU count and sanitized CPU models are logged only as diagnostic context.
+The current Vitest version, configuration policy and full-suite command are
+explicit. A configuration change requires reviewing that policy rather than
+silently losing new test paths.
 
 Only sanitized file/status/count receipts are uploaded. The required `tests (web)`
 check always runs, requires every shard job to succeed, and checks exactly four
@@ -34,6 +38,16 @@ through the aggregator finishing, and at most 1,251 runner-seconds in total for
 those jobs. Record queue delay separately. These targets are acceptance criteria;
 the workflow still reports actual test success independently of a noisy timing
 sample.
+
+The first four-shard, two-worker sample
+([44094835403](https://github.com/kazuhide/bitovp/actions/runs/44094835403)) measured
+447 seconds and 1,477 runner-seconds and failed an outdated HDR source-contract
+expectation. After correcting that expectation, the same worker limits
+([44098516198](https://github.com/kazuhide/bitovp/actions/runs/44098516198)) measured
+497 seconds and 1,403 runner-seconds; all 872 files, 13,167 cases and the complete
+110-skip audit passed. Both samples exceed the performance criteria and remain
+part of the evidence. The bounded worker adjustment above needs new CI
+measurements before claiming those criteria are met.
 
 ## Verified native HDR build reuse
 

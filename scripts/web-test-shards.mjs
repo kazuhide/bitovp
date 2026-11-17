@@ -15,7 +15,7 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { availableParallelism, cpus, tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isEntryPoint } from "./gate-report.mjs";
 import { skipProblems } from "./gated-tests.mjs";
@@ -61,6 +61,30 @@ const positiveId = (value) =>
 		typeof value === "string" && /^[1-9][0-9]*$/.test(value),
 		"Invalid workflow run identity",
 	);
+export function webTestResources(parallelism, processors) {
+	assert(
+		Number.isSafeInteger(parallelism) && parallelism > 0,
+		"Invalid available parallelism",
+	);
+	assert(Array.isArray(processors), "Invalid CPU observations");
+	return {
+		availableParallelism: parallelism,
+		logicalCpuCount: processors.length,
+		cpuModels: [
+			...new Set(
+				processors.map((cpu) =>
+					(typeof cpu?.model === "string" ? cpu.model : "unknown")
+						.replace(/[^\x20-\x7e]/g, "?")
+						.slice(0, 160),
+				),
+			),
+		]
+			.sort()
+			.slice(0, 8),
+		// Keep one CPU available for the parent on four-core and larger runners.
+		chosenWorkers: parallelism >= 4 ? 3 : Math.min(2, parallelism),
+	};
+}
 function validateIdentity(identity) {
 	exactKeys(identity, ["sha", "tree", "runId", "runAttempt"]);
 	for (const key of ["sha", "tree"])
@@ -435,10 +459,17 @@ export async function runShard({
 	env = process.env,
 	execute = executeCommand,
 	source = sourceIdentity,
+	system = { availableParallelism, cpus },
+	log = console.log,
 }) {
 	shardIndex(index);
 	assert(isAbsolute(directory), "Receipt output must be absolute");
 	const current = source(root, env);
+	const resources = webTestResources(
+		system.availableParallelism(),
+		system.cpus(),
+	);
+	log(`Web test resources: ${JSON.stringify(resources)}`);
 	mkdirSync(directory); // Never reuse a receipt directory from another attempt.
 	const scratch = mkdtempSync(join(tmpdir(), "bitovp-web-tests-"));
 	try {
@@ -465,7 +496,7 @@ export async function runShard({
 				"--filter",
 				WORKSPACE,
 				"test",
-				"--maxWorkers=2",
+				`--maxWorkers=${resources.chosenWorkers}`,
 				"--reporter=default",
 				"--reporter=github-actions",
 				"--reporter=json",
@@ -490,7 +521,7 @@ export async function runShard({
 			`${JSON.stringify(receipt)}\n`,
 			{ flag: "wx" },
 		);
-		console.log(
+		log(
 			`Web shard ${index}/${SHARD_COUNT}: ${receipt.report.testResults.length} files, ${receipt.report.numTotalTests} tests, ${receipt.report.numPendingTests} skipped`,
 		);
 	} finally {

@@ -25,6 +25,7 @@ import {
 	runShard,
 	SHARD_COUNT,
 	sourceIdentity,
+	webTestResources,
 } from "./web-test-shards.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -94,6 +95,90 @@ function temporary(t) {
 	t.after(() => rmSync(directory, { recursive: true, force: true }));
 	return directory;
 }
+
+test("worker budget follows available parallelism and reserves parent capacity on larger runners", () => {
+	const processors = Array.from({ length: 64 }, () => ({
+		model: "Fixture CPU",
+	}));
+	for (const [parallelism, workers] of [
+		[1, 1],
+		[2, 2],
+		[3, 2],
+		[4, 3],
+		[8, 3],
+		[64, 3],
+	]) {
+		const resources = webTestResources(parallelism, processors);
+		assert.equal(resources.availableParallelism, parallelism);
+		assert.equal(resources.logicalCpuCount, 64);
+		assert.equal(resources.chosenWorkers, workers);
+		assert(resources.chosenWorkers <= parallelism);
+	}
+});
+
+test("invalid available parallelism prevents launching a shard", async (t) => {
+	for (const parallelism of [
+		0,
+		-1,
+		1.5,
+		Number.NaN,
+		Infinity,
+		Number.MAX_SAFE_INTEGER + 1,
+		"4",
+		null,
+		undefined,
+	]) {
+		assert.throws(
+			() => webTestResources(parallelism, []),
+			/Invalid available parallelism/,
+		);
+		let commands = 0;
+		await assert.rejects(
+			runShard({
+				index: 1,
+				directory: join(temporary(t), "output"),
+				root,
+				source: () => ({ identity, inventory }),
+				system: { availableParallelism: () => parallelism, cpus: () => [] },
+				execute: async () => {
+					commands += 1;
+				},
+				log: () => {},
+			}),
+			/Invalid available parallelism/,
+		);
+		assert.equal(commands, 0);
+	}
+});
+
+test("resource metadata contains only bounded sanitized CPU observations and the worker budget", () => {
+	const resources = webTestResources(2, [
+		{ model: "AMD\nEPYC", token: "private-token-marker", times: { user: 123 } },
+		{ model: "AMD\nEPYC", hostname: "private-host-marker" },
+		{ model: "x".repeat(200) },
+		{ model: { secret: "private-token-marker" } },
+	]);
+	assert.deepEqual(resources, {
+		availableParallelism: 2,
+		logicalCpuCount: 4,
+		cpuModels: ["AMD?EPYC", "unknown", "x".repeat(160)],
+		chosenWorkers: 2,
+	});
+	assert.doesNotMatch(
+		JSON.stringify(resources),
+		/private-token-marker|private-host-marker|times|hostname/,
+	);
+	const bounded = webTestResources(
+		4,
+		Array.from({ length: 20 }, (_, i) => ({ model: `CPU\u001b\u2028-${i}` })),
+	);
+	assert.equal(bounded.cpuModels.length, 8);
+	assert(
+		bounded.cpuModels.every((model) => /^[\x20-\x7e]{1,160}$/.test(model)),
+	);
+	assert.deepEqual(webTestResources(4, []).cpuModels, []);
+	assert.throws(() => webTestResources(4, null), /Invalid CPU observations/);
+});
 
 test("four complete shards preserve all 110 skipped tests and the full source inventory", () => {
 	assert.equal(SHARD_COUNT, 4);
@@ -384,60 +469,86 @@ test("a failed child cannot produce a successful receipt even after writing a gr
 	assert.throws(() => readFileSync(join(directory, "receipt.json")));
 });
 
-test("runner uses full discovery and the original test command plus only the fixed shard selection", async (t) => {
-	const directory = join(temporary(t), "output");
-	const calls = [];
-	const execute = async (binary, args) => {
-		calls.push([binary, args]);
-		const list = args.find((arg) => arg.startsWith("--json="));
-		if (list)
-			writeFileSync(
-				list.slice(7),
-				JSON.stringify(
-					inventory.map((file) => ({ file: resolve(root, file) })),
-				),
-			);
-		else {
-			const output = args
-				.find((arg) => arg.startsWith("--outputFile.json="))
-				.slice("--outputFile.json=".length);
-			writeFileSync(output, JSON.stringify(report(files)));
-		}
-	};
-	await runShard({
-		index: 1,
-		directory,
-		root,
-		execute,
-		source: () => ({ identity, inventory }),
-	});
-	assert.equal(calls.length, 2);
-	assert.deepEqual(calls[0][1].slice(0, 6), [
-		"--filter",
-		"@bitovp/web",
-		"exec",
-		"vitest",
-		"list",
-		"--filesOnly",
-	]);
-	assert.deepEqual(
-		calls[1][1].filter((arg) => !arg.startsWith("--outputFile.json=")),
-		[
+test("runner preserves full discovery, fixed shard selection and reporters with the bounded worker budget", async (t) => {
+	for (const [parallelism, workers] of [
+		[2, 2],
+		[4, 3],
+	]) {
+		const directory = join(temporary(t), "output");
+		const calls = [];
+		const logs = [];
+		const execute = async (binary, args) => {
+			calls.push([binary, args]);
+			const list = args.find((arg) => arg.startsWith("--json="));
+			if (list)
+				writeFileSync(
+					list.slice(7),
+					JSON.stringify(
+						inventory.map((file) => ({ file: resolve(root, file) })),
+					),
+				);
+			else {
+				const output = args
+					.find((arg) => arg.startsWith("--outputFile.json="))
+					.slice("--outputFile.json=".length);
+				writeFileSync(output, JSON.stringify(report(files)));
+			}
+		};
+		await runShard({
+			index: 1,
+			directory,
+			root,
+			execute,
+			source: () => ({ identity, inventory }),
+			system: {
+				availableParallelism: () => parallelism,
+				cpus: () =>
+					Array.from({ length: 64 }, () => ({ model: "Fixture CPU" })),
+			},
+			log: (message) => logs.push(message),
+		});
+		assert.equal(calls.length, 2);
+		assert.deepEqual(
+			calls.map(([binary]) => binary),
+			["pnpm", "pnpm"],
+		);
+		assert.deepEqual(calls[0][1].slice(0, 6), [
 			"--filter",
 			"@bitovp/web",
-			"test",
-			"--maxWorkers=2",
-			"--reporter=default",
-			"--reporter=github-actions",
-			"--reporter=json",
-			"--shard=1/4",
-		],
-	);
-	assert.equal(
-		JSON.parse(readFileSync(join(directory, "receipt.json"), "utf8"))
-			.inventoryDigest,
-		inventoryDigest(inventory),
-	);
+			"exec",
+			"vitest",
+			"list",
+			"--filesOnly",
+		]);
+		assert.deepEqual(
+			calls[1][1].filter((arg) => !arg.startsWith("--outputFile.json=")),
+			[
+				"--filter",
+				"@bitovp/web",
+				"test",
+				`--maxWorkers=${workers}`,
+				"--reporter=default",
+				"--reporter=github-actions",
+				"--reporter=json",
+				"--shard=1/4",
+			],
+		);
+		assert.equal(
+			JSON.parse(readFileSync(join(directory, "receipt.json"), "utf8"))
+				.inventoryDigest,
+			inventoryDigest(inventory),
+		);
+		assert.deepEqual(JSON.parse(logs[0].slice("Web test resources: ".length)), {
+			availableParallelism: parallelism,
+			logicalCpuCount: 64,
+			cpuModels: ["Fixture CPU"],
+			chosenWorkers: workers,
+		});
+		assert.equal(
+			logs.filter((line) => line.startsWith("Web test resources: ")).length,
+			1,
+		);
+	}
 });
 
 test("CLI rejects unknown modes, invalid shard selection and non-success upstream before invoking tools", () => {

@@ -104,4 +104,39 @@ describe("MoQ relay credentials", () => {
 			authTokenType: 1,
 		});
 	});
+
+	it("keeps an independent subscribe-only playback URL in the encrypted secret", () => {
+		const playbackUrl =
+			"https://subscribe.example/moq/subscribe-only?token=private";
+		const input = {
+			...credential,
+			secret: { ...credential.secret, playbackUrl },
+		};
+		expect(createCredentialSchema.parse(input)).toEqual(input);
+		expect(
+			updateCredentialSchema("MOQ").parse({ secret: input.secret }),
+		).toEqual({
+			secret: input.secret,
+		});
+		expect(redactSecrets({ playbackUrl })).toEqual({
+			playbackUrl: "[REDACTED]",
+		});
+	});
+
+	it.each([
+		"http://subscribe.example/moq",
+		"moqt://subscribe.example/moq",
+		"https://user:password@subscribe.example/moq",
+		"https://subscribe.example/moq#private",
+		"https://subscribe.example/moq#",
+		" https://subscribe.example/moq",
+		"https://subscribe.example/moq\n",
+	])("rejects an invalid playback URL: %s", (playbackUrl) => {
+		expect(
+			createCredentialSchema.safeParse({
+				...credential,
+				secret: { ...credential.secret, playbackUrl },
+			}).success,
+		).toBe(false);
+	});
 });

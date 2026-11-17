@@ -169,6 +169,28 @@ export function createCredentialStore(
 			return cipher.decrypt(row.encryptedSecret, aadFor(id, row.provider));
 		},
 
+		/** Server-side only. Version and secret belong to one selected snapshot. */
+		async revealVersioned(id: string) {
+			const row = await prisma.credential.findUniqueOrThrow({
+				where: { id },
+				select: {
+					id: true,
+					provider: true,
+					updatedAt: true,
+					encryptedSecret: true,
+				},
+			});
+			return {
+				id: row.id,
+				provider: row.provider,
+				updatedAt: row.updatedAt,
+				secret: await cipher.decrypt(
+					row.encryptedSecret,
+					aadFor(row.id, row.provider),
+				),
+			};
+		},
+
 		/**
 		 * Which `AKAMAI_MSL` credentials carry a COMPLETE MSL5 Digest pair —
 		 * , rail 3b's server-side input.

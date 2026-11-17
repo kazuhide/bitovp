@@ -76,6 +76,7 @@ import { LifecycleStrip } from "./lifecycle-strip";
 import { LiveAnnouncer, StatusAnnouncer } from "./live-announcer";
 import { deliveryDiagnosis, selectLiveTelemetry } from "./live-telemetry";
 import { LiveToVodPanel } from "./live-to-vod-panel";
+import { MoqPlayerPreview } from "./moq-player-preview";
 import { NextActionPanel } from "./next-action-panel";
 import { type AisaRunSelection, RunsPanel } from "./runs-panel";
 import { RuntimeCapPanel } from "./runtime-cap-panel";
@@ -462,6 +463,9 @@ function ChannelConsole({
 		(l) => l.reason?.code === "MSL_EDGE_URL_NOT_CONFIGURED",
 	);
 	const stepEntries = entries.success ? entries.data : [];
+	const moqPlayback = stepEntries.some(
+		(entry) => entry.kind === "CREATE_OUTPUT_MOQ",
+	);
 	// Runtime records (cues, ESAM points) are appended to the same log but are
 	// not provisioning steps — counting them made a 31-step channel read
 	// "34/34 steps" after three insertions (review catch).
@@ -919,9 +923,11 @@ function ChannelConsole({
 				summary={
 					linksUnavailable
 						? t("status.summaryUnavailable")
-						: t("status.summaryLinks", {
-								count: visiblePlaybackLinks.length,
-							})
+						: moqPlayback
+							? t("moqPlayback.title")
+							: t("status.summaryLinks", {
+									count: visiblePlaybackLinks.length,
+								})
 				}
 				tone={playable.length > 0 ? "ok" : "neutral"}
 			>
@@ -936,21 +942,37 @@ function ChannelConsole({
 				{/*  (owner): the VOD rail's width, and no playback until
 				    the output is confirmed while RUNNING. */}
 				<div className="max-w-sm">
-					<PlayerPreview
-						// A new airing is gated again (review-539 R1).
-						key={run?.id ?? "no-run"}
-						player={player}
-						analyticsMeta={{
-							videoId: run?.bitmovinEncodingId ?? row.id,
-							title: row.name,
-							customData5: row.id,
-						}}
-						jobId={id}
-						scope="live"
-						links={playable}
-						live={row.status === "RUNNING"}
-						autoPlay={outputConfirmed}
-					/>
+					{moqPlayback ? (
+						<RoleAccess control="live.channel.heartbeat-log">
+							{run ? (
+								<MoqPlayerPreview
+									channelId={id}
+									runId={run.id}
+									active={row.status === "RUNNING" && run.status === "RUNNING"}
+								/>
+							) : (
+								<p role="status" className="text-xs text-zinc-400">
+									{t("moqPlayback.unavailable")}
+								</p>
+							)}
+						</RoleAccess>
+					) : (
+						<PlayerPreview
+							// A new airing is gated again (review-539 R1).
+							key={run?.id ?? "no-run"}
+							player={player}
+							analyticsMeta={{
+								videoId: run?.bitmovinEncodingId ?? row.id,
+								title: row.name,
+								customData5: row.id,
+							}}
+							jobId={id}
+							scope="live"
+							links={playable}
+							live={row.status === "RUNNING"}
+							autoPlay={outputConfirmed}
+						/>
+					)}
 				</div>
 				{/* The full URL list, one disclosure back (§5.7 keeps "manifest
 				 * summary" in the open state and "every URL" behind it). Without

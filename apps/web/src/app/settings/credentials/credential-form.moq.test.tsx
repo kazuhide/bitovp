@@ -23,6 +23,11 @@ describe("MoQ credential form", () => {
 			expect(token).toHaveAttribute("type", "password");
 			await user.type(token, "publish-secret");
 			await user.type(screen.getByLabelText("Token type (optional)"), "0");
+			const playback = screen.getByLabelText(
+				"Playback URL (subscribe-only, optional)",
+			);
+			expect(playback).toHaveAttribute("type", "password");
+			await user.type(playback, "https://relay.example.com/subscribe-only");
 		}
 		await user.click(screen.getByRole("button", { name: "Create credential" }));
 		await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
@@ -32,7 +37,13 @@ describe("MoQ credential form", () => {
 			config: {},
 			secret: {
 				relayUrl: "moqt://relay.example.com:443",
-				...(withToken ? { authToken: "publish-secret", authTokenType: 0 } : {}),
+				...(withToken
+					? {
+							authToken: "publish-secret",
+							authTokenType: 0,
+							playbackUrl: "https://relay.example.com/subscribe-only",
+						}
+					: {}),
 			},
 		});
 	});

@@ -261,6 +261,20 @@ describe("the §4 decisions", () => {
 		}
 	});
 
+	it("MoQ playback descriptors and fixed player assets require OPERATOR for GET and HEAD", () => {
+		const paths = [
+			"/api/live-channels/channel/runs/run/moq-playback",
+			"/api/player-assets/moq",
+		];
+		for (const path of paths) {
+			for (const method of ["GET", "HEAD"]) {
+				expect(evaluateRole("VIEWER", path, method).allowed).toBe(false);
+				expect(evaluateRole("OPERATOR", path, method).allowed).toBe(true);
+				expect(evaluateRole("ADMIN", path, method).allowed).toBe(true);
+			}
+		}
+	});
+
 	it("REVEAL class: storage browse is credential USE, not a read", () => {
 		expect(
 			evaluateRole("VIEWER", "/api/credentials/abc/storage/objects", "GET")
@@ -500,7 +514,8 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 		expect(
 			evaluateRole("VIEWER", "/api/encoding-error-definitions", "GET").allowed,
 		).toBe(true);
-		expect(guarded.length).toBe(194);
-		expect(methods.length).toBe(272);
+		// MoQ playback descriptor and the pinned Player asset add two GET routes.
+		expect(guarded.length).toBe(196);
+		expect(methods.length).toBe(274);
 	});
 });

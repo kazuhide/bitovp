@@ -260,6 +260,12 @@ export const PROVIDER_FIELDS: Record<
 				type: "number",
 				optional: true,
 			},
+			{
+				name: "playbackUrl",
+				labelKey: "fields.moqPlaybackUrl",
+				type: "password",
+				optional: true,
+			},
 		],
 	},
 	AKAMAI_MSL: {

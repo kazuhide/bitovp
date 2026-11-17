@@ -8,6 +8,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 const relayUrl = "moqt://relay.example:443/moq";
 const authToken = "private-publish-token";
+const playbackUrl =
+	"https://subscribe.example.com/moq/subscribe-only-token?auth=subscribe-secret";
 const namespace = ["bitovp", "protocol-test"];
 
 function mockProvider() {
@@ -156,6 +158,94 @@ describe("MoQ compiled operation execution", () => {
 		expect(result.resourceId).toBeTruthy();
 		expect(JSON.stringify(result)).not.toContain(relayUrl);
 		expect(JSON.stringify(result)).not.toContain(authToken);
+	});
+	it("keeps the subscribe-only playback URL out of Encoder arguments, wire and audit snapshots", async () => {
+		const fetch = mockProvider();
+		const record = vi.fn(async () => {});
+		const ctx = context();
+		ctx.sdk = createBitmovinSdkOps({ apiKey: "test-key" }, record);
+		const createOutput = vi.spyOn(ctx.sdk, "createMoqOutput");
+		ctx.resolveCredential = vi.fn(async () => ({
+			provider: "MOQ",
+			config: {},
+			// This is the credential store's JSON round trip, including a numeric type.
+			secret: JSON.parse(
+				JSON.stringify({ relayUrl, authToken, authTokenType: 0, playbackUrl }),
+			),
+		}));
+
+		const result = await executeStep(operation, ctx);
+
+		expect(createOutput).toHaveBeenCalledWith({
+			name: "MoQ",
+			relayUrl,
+			authToken,
+			authTokenType: 0,
+			trackNamespace: namespace,
+			draftVersion: "DRAFT_18",
+		});
+		const body = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body));
+		expect(body).toMatchObject({
+			relayUrl,
+			authToken,
+			authTokenType: 0,
+			trackNamespace: namespace,
+			draftVersion: "DRAFT_18",
+		});
+		expect(body).not.toHaveProperty("playbackUrl");
+		expect(
+			JSON.stringify([
+				createOutput.mock.calls,
+				body,
+				record.mock.calls,
+				result,
+			]),
+		).not.toContain(playbackUrl);
+		expect(JSON.stringify([record.mock.calls, result])).not.toContain(
+			authToken,
+		);
+	});
+	it("withholds the playback capability from Encoder failure records and errors", async () => {
+		const fetch = mockProvider();
+		fetch.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					status: "ERROR",
+					data: {
+						code: 1001,
+						message: `Failed ${playbackUrl} ${relayUrl} ${authToken}`,
+					},
+				}),
+				{ status: 400, headers: { "content-type": "application/json" } },
+			),
+		);
+		const record = vi.fn(async () => {});
+		const ctx = context();
+		ctx.sdk = createBitmovinSdkOps({ apiKey: "test-key" }, record);
+		const createOutput = vi.spyOn(ctx.sdk, "createMoqOutput");
+		ctx.resolveCredential = vi.fn(async () => ({
+			provider: "MOQ",
+			config: {},
+			secret: { relayUrl, authToken, playbackUrl },
+		}));
+
+		const failure = await executeStep(operation, ctx).catch((error) => error);
+
+		expect(failure).toBeInstanceOf(Error);
+		expect(failure.message).toContain("MoQ output creation failed");
+		expect(createOutput.mock.calls[0]?.[0]).not.toHaveProperty("playbackUrl");
+		const body = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body));
+		expect(body).not.toHaveProperty("playbackUrl");
+		expect(
+			JSON.stringify([
+				createOutput.mock.calls,
+				body,
+				record.mock.calls,
+				{ message: failure.message, stack: failure.stack },
+			]),
+		).not.toContain(playbackUrl);
+		expect(JSON.stringify(record.mock.calls)).not.toContain(authToken);
+		expect(JSON.stringify(record.mock.calls)).not.toContain(relayUrl);
 	});
 	it("rejects a different credential provider before any MoQ call", async () => {
 		const ctx = context("AWS_S3");

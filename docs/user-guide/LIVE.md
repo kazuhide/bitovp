@@ -74,10 +74,36 @@ expert mode so conversion to the ordinary wizard cannot discard MoQ settings.
 
 This uses Custom Live and requires Bitmovin's account-level MoQ Beta access.
 Relay interoperability and Player Web X playback need independent verification;
-the existing Player 8 preview does not play MoQ. Requested and actual Encoder
+the MoQ preview uses a separate Player Web X build. Requested and actual Encoder
 versions can be compared in the run's `kind=summary` diagnostics when the
 provider returns them. A selected version is never inferred from `BETA` or
 `STABLE`.
+
+For MoQ preview, set the credential's optional **Playback URL** to a separate
+HTTPS subscribe-only URL before starting the channel. Configure an own Bitmovin
+Player license in Player settings. The preview uses that key independently of
+the ordinary HLS/DASH engine choice. The current MoQ Player build is separate
+from the public npm SDK: an operator supplies a licensed local bundle with
+`BITOVP_MOQ_PLAYER_BUNDLE_PATH` and its digest in
+`BITOVP_MOQ_PLAYER_BUNDLE_SHA256`. The asset route verifies the file before serving
+it; the repository does not include this proprietary bundle.
+
+Use **Play** in the Live playback panel to start muted MoQ playback, and **Stop**
+to release the player. Frame progress indicates received video; a successful
+start request alone does not. Preview supports one namespace component and
+draft16/18. Missing configuration, a changed credential, or unavailable video
+remains explicit. Publisher tokens are never used as browser playback tokens.
+
+**Open player** opens the same preview at `/live/[id]/runs/[runId]/moq` for an
+OPERATOR. Both views show configured namespace/draft/catalog, received quality
+metadata, measured video FPS, resolution, frames, startup time and buffer level.
+The 2-second target buffer is a setting. **Video latency (barcode)** is the
+Player's timestamp-in-image estimate, requiring compatible live timestamp bars
+and synchronized source/client clocks; it is not RTT or a guaranteed compositor
+display measurement. Missing or stale values remain unmeasured. Configured
+Cloudflare Relay ID/expiry/permissions come from unverified subscriber-token
+claims, not server telemetry. Relay bytes/objects/RTT counters are not exposed
+by the Player API used here.
 
 The same API accepts `kind=task` for fresh provider task status and metadata
 from at most 100 messages. It reports truncation and positive message counts.

@@ -102,6 +102,13 @@ export const PAGE_ACCESS_RULES: readonly PageAccessRule[] = [
 			"the Live wizard exists to POST /api/live-channels; a VIEWER is kept on the readable channel list instead of being refused only after completing the form",
 	},
 	{
+		prefix: "/live/[id]/runs/[runId]/moq",
+		audience: "customer",
+		minRole: "OPERATOR",
+		reason:
+			"the standalone MoQ player obtains a run-bound subscribe capability from GET /api/live-channels/[id]/runs/[runId]/moq-playback at the OPERATOR floor; the server page and API enforce the same role independently",
+	},
+	{
 		prefix: "/storage",
 		audience: "customer",
 		minRole: "OPERATOR",

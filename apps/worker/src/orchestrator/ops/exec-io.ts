@@ -321,7 +321,13 @@ export async function executeIoStep(
 				name: str(p.name),
 				trackNamespace: moqTrackNamespaceSchema.parse(p.trackNamespace),
 				draftVersion: moqDraftVersionSchema.parse(p.draftVersion),
-				...secret,
+				relayUrl: secret.relayUrl,
+				...(secret.authToken !== undefined
+					? { authToken: secret.authToken }
+					: {}),
+				...(secret.authTokenType !== undefined
+					? { authTokenType: secret.authTokenType }
+					: {}),
 			});
 			return { resourceId, request, response: { id: resourceId } };
 		}

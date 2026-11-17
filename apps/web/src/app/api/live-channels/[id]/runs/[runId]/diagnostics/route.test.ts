@@ -428,6 +428,39 @@ describe("run-bound provider diagnostics", () => {
 		expect(response.status).toBe(200);
 		expect((await response.json()).data).toEqual({ status: "CONNECTED" });
 	});
+	it("keeps requested and selected cloud regions as separate provider evidence", async () => {
+		mocks.encoding.mockResolvedValue({
+			cloudRegion: "AUTO",
+			selectedCloudRegion: "AWS_AP_NORTHEAST_1",
+			secret: "do-not-copy",
+		});
+		const response = await GET(request(), context());
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toEqual({
+			status: "CONNECTED",
+			cloudRegion: "AUTO",
+			selectedCloudRegion: "AWS_AP_NORTHEAST_1",
+		});
+		expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain("do-not-copy");
+	});
+	it.each([
+		undefined,
+		"AUTO",
+		"AWS",
+		"https://secret-region",
+		"AWS_AP_NORTHEAST_1/private",
+	])("does not substitute the request for invalid selected region %s", async (selectedCloudRegion) => {
+		mocks.encoding.mockResolvedValue({
+			cloudRegion: "AWS_AP_NORTHEAST_1",
+			selectedCloudRegion,
+		});
+		const response = await GET(request(), context());
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toEqual({
+			status: "CONNECTED",
+			cloudRegion: "AWS_AP_NORTHEAST_1",
+		});
+	});
 	it("reads an AISA run through the original account proven by its exact Analysis and Encoding pair", async () => {
 		mocks.run.mockResolvedValue({
 			id: RUN,

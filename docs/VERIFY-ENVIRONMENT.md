@@ -13,6 +13,7 @@ can create billable resources; use dedicated inputs/outputs and bounded runs.
 | AKAMAI | Akamai/Linode Object Storage credential used through GenericS3 | provider kind, endpoint validation, list/read probe |
 | AKAMAI_MSL | Akamai-provisioned stream identity (`streamId` and `eventName`); the credential's optional `edgeBaseUrl` is the default edge base for the delivery-edge closure (`--live-msl-edge-base-url` overrides; a value off the delivery-host allowlist is INVALID before spend unless `VERIFY_LIVE_MSL_EDGE_ALLOWED_HOSTS` names it) | decryptable `AKAMAI_MSL` credential with complete provisioning fields |
 | LIVE_MEDIA_INGEST | Live Media and Metadata Ingest compatible Origin | receiver acceptance is outside the storage harness; no automatic runnable claim |
+| MOQ | Account-enabled Live MoQ, an encrypted `MOQ` relay credential, a relay supporting the configured draft, and subscribe-only access when testing playback | relay/session/catalog/playback acceptance is outside the storage harness; capability remains unevidenced and unsatisfied |
 | AKAMAI_NETSTORAGE | NetStorage upload account (host, username, password) | complete provider credential; read-back remains a separate observer limit |
 | GCS | GCS HMAC interoperability credential | credential decrypt plus applicable list/read probe |
 | GCS_SERVICE_ACCOUNT | GCS service-account JSON credential | provider-specific credential validation and probe |

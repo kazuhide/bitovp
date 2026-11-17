@@ -532,6 +532,31 @@ export const moqRelayUrlSchema = z
 const moqSecret = z
 	.strictObject({
 		relayUrl: moqRelayUrlSchema,
+		/** Independent subscribe-only capability; never sent to the Encoder. */
+		playbackUrl: z
+			.string()
+			.min(1)
+			.max(16_384)
+			.refine((value) => {
+				try {
+					const url = new URL(value);
+					return (
+						url.protocol === "https:" &&
+						url.hostname.length > 0 &&
+						!url.username &&
+						!url.password &&
+						!value.includes("#") &&
+						value === value.trim() &&
+						[...value].every((character) => {
+							const code = character.charCodeAt(0);
+							return code >= 32 && code !== 127;
+						})
+					);
+				} catch {
+					return false;
+				}
+			}, "Playback URL must be HTTPS without user credentials or fragment")
+			.optional(),
 		authToken: z.string().min(1).optional(),
 		authTokenType: z
 			.number()

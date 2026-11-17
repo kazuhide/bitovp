@@ -1,3 +1,4 @@
+import { AGGREGATE_CLOUD_REGIONS, BITMOVIN_CLOUD_REGIONS } from "@bitovp/core";
 import { z } from "zod";
 
 const integer = z
@@ -45,6 +46,15 @@ export const diagnosticsEncodingVersionsSchema = z.object({
 		.optional()
 		.catch(undefined),
 	selectedEncoderVersion: resolvedEncoderVersion.optional().catch(undefined),
+	cloudRegion: z.enum(BITMOVIN_CLOUD_REGIONS).optional().catch(undefined),
+	selectedCloudRegion: z
+		.enum(BITMOVIN_CLOUD_REGIONS)
+		.refine(
+			(value) =>
+				!(AGGREGATE_CLOUD_REGIONS as readonly string[]).includes(value),
+		)
+		.optional()
+		.catch(undefined),
 });
 export const diagnosticsSummarySchema = z.object({
 	...diagnosticsEncodingVersionsSchema.shape,

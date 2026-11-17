@@ -68,6 +68,7 @@ import { EsamPanel } from "./esam-panel";
 import { FeederPanel } from "./feeder-panel";
 import { FlatSection } from "./flat-section";
 import { DeepLinkFocus, RevealFocus } from "./focus-handoff";
+import type { HeartbeatCorrelation } from "./heartbeat-correlation";
 import { HeartbeatLogPanel } from "./heartbeat-log-panel";
 import { ingestCoordinates } from "./ingest-coordinates";
 import { InsertedContentStopPanel } from "./insertion-stop-panel";
@@ -122,6 +123,7 @@ type ChannelDetailProps = {
 	id: string;
 	player?: PlayerClientConfig;
 	initialAisaRun?: AisaSelectedRun;
+	initialHeartbeatCorrelation?: HeartbeatCorrelation;
 	aisaFeatureUserId?: string;
 };
 
@@ -138,6 +140,7 @@ function ChannelConsole({
 	id,
 	player,
 	initialAisaRun,
+	initialHeartbeatCorrelation,
 	aisaFeatureUserId,
 }: ChannelDetailProps) {
 	const { t } = useT();
@@ -1347,8 +1350,9 @@ function ChannelConsole({
 				{/* Push receipts first; separately retained Poll history / ADMIN export. */}
 				{!aisaRow || aisaOperatorAllowed ? (
 					<HeartbeatLogPanel
-						key={id}
+						key={`${id}:${JSON.stringify(initialHeartbeatCorrelation ?? { kind: "none" })}`}
 						channelId={id}
+						initialCorrelation={initialHeartbeatCorrelation}
 						currentRunId={run?.id ?? null}
 						currentRunStatus={run?.status}
 						currentRunActive={run?.status === "RUNNING"}

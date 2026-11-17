@@ -90,6 +90,11 @@ Canvas capture の録画は受信した映像のみで、別の WebAudio 出力�
 設定 namespace／draft／catalog／Relay と補助指標は折り畳む。終了後は録画と実測点のある遅延グラフ1つを
 基本表示とし、観測点がなければ空グラフを作らない。Encoder 指標は既存の Push／Heartbeat 表示を利用し、
 MoQ 領域へ重複して描画しない。選択した観測 session の run と UTC 時間帯を、既存 Heartbeat 欄への参照に付ける。
+参照先は専用の heartbeatRunId／heartbeatFrom／heartbeatTo を検証し、認可済みの配信回一覧と
+正規 UUID・UTC・最大10分の期間が一致した場合だけ、その配信回と時間帯を既存表示へ適用する。
+過去の配信回が見つからない場合や参照が不正な場合に、現在の別配信回へ置き換えない。
+AISA 用の runId query とは独立させ、参照なしの通常表示と手動の配信回選択を維持する。
+時間帯の絞り込みは既存 Push／Poll の読み込み済み行へ適用し、未読のページや欠測を0件の証明と扱わない。
 
 変更前に failing tests を置き、secret validation／redaction、tenant・run・account の照合、
 publish token 非返却、asset hash 不一致、loader failure、teardown と run 変更を検証する。

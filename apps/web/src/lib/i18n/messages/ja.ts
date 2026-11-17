@@ -962,6 +962,11 @@ export const ja = {
 		moreMeasurements: "その他の計測値",
 		moreObservations: "その他の観測情報",
 		encoderCorrelation: "Encoder の Push / Heartbeat",
+		correlationUnavailable: "指定された実行または UTC 範囲を確認できません。",
+		correlationWindow:
+			"UTC 範囲 · Push 受信時刻／Poll 観測時刻（読み込み済みの行）",
+		correlationEmpty: "この UTC 範囲に読み込み済みのサンプルはありません。",
+		correlationExport: "実行全体の JSON を保存",
 		fps: "映像FPS",
 		renderingSource: "描画元",
 		renderingVideo: "video 要素",

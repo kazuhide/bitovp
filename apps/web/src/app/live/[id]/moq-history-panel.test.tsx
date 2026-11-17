@@ -76,7 +76,17 @@ describe("saved MoQ history and received video", () => {
 		const rendered = renderWithQuery(view());
 		await screen.findByText("Video latency (barcode) (ms · UTC)");
 		const link = screen.getByRole("link", { name: "Encoder Push / Heartbeat" });
-		expect(link).toHaveAttribute("href", `/live/${CHANNEL}#sec-heartbeat-log`);
+		const destination = new URL(
+			link.getAttribute("href") ?? "",
+			"http://localhost",
+		);
+		expect(destination.pathname).toBe(`/live/${CHANNEL}`);
+		expect(destination.hash).toBe("#sec-heartbeat-log");
+		expect(destination.searchParams.get("heartbeatRunId")).toBe(RUN);
+		expect(destination.searchParams.get("heartbeatFrom")).toBe(at);
+		expect(destination.searchParams.get("heartbeatTo")).toBe(
+			"2026-11-18T00:01:00.000Z",
+		);
 		expect(link).toHaveAttribute("data-moq-correlate-run", RUN);
 		expect(link).toHaveAttribute("data-moq-correlate-start", at);
 		expect(

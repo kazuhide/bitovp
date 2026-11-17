@@ -8,6 +8,10 @@ import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
 import type { HeartbeatReceiptPage } from "@/lib/server/heartbeat-receipt-value";
 import { incomingMbps } from "./heartbeat";
+import {
+	type HeartbeatWindow,
+	heartbeatWindowContains,
+} from "./heartbeat-correlation";
 
 const RECEIPTS_API = "/api/live-channels/[id]/runs/[runId]/heartbeat-receipts";
 const ended = (status: string | undefined) =>
@@ -21,6 +25,7 @@ export function PushHeartbeatLog({
 	currentRunActive,
 	currentRunStatus,
 	open,
+	timeWindow,
 }: {
 	channelId: string;
 	runId: string;
@@ -28,6 +33,7 @@ export function PushHeartbeatLog({
 	currentRunActive: boolean;
 	currentRunStatus?: LiveChannelStatus;
 	open: boolean;
+	timeWindow?: HeartbeatWindow;
 }) {
 	const { t } = useT();
 	const [cursor, setCursor] = useState<string>();
@@ -45,7 +51,12 @@ export function PushHeartbeatLog({
 		return () => document.removeEventListener("visibilitychange", update);
 	}, []);
 	const eligible =
-		open && visible && !cursor && currentRunActive && runId === currentRunId;
+		!timeWindow &&
+		open &&
+		visible &&
+		!cursor &&
+		currentRunActive &&
+		runId === currentRunId;
 	const log = useQuery({
 		queryKey: [
 			"live-run-heartbeat-receipts",
@@ -64,19 +75,27 @@ export function PushHeartbeatLog({
 		refetchIntervalInBackground: false,
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
-		queryFn: () => {
+		queryFn: async () => {
 			const path = RECEIPTS_API.replace("[id]", channelId).replace(
 				"[runId]",
 				runId,
 			);
 			const query = new URLSearchParams({ limit: "100" });
 			if (cursor) query.set("cursor", cursor);
-			return apiFetch<HeartbeatReceiptPage>(`${path}?${query}`);
+			const value = await apiFetch<HeartbeatReceiptPage>(`${path}?${query}`);
+			if (timeWindow && value.run?.id !== runId)
+				throw new Error("Heartbeat correlation unavailable");
+			return value;
 		},
 	});
 	// Receipt order, not provider sample order; never force the reader's scroll.
 	// Freeze inspection even if a read already in flight completes after opening.
-	const rows = inspectionRows ?? log.data?.rows ?? [];
+	const loadedRows = inspectionRows ?? log.data?.rows ?? [];
+	const rows = timeWindow
+		? loadedRows.filter((row) =>
+				heartbeatWindowContains(timeWindow, row.receivedAt),
+			)
+		: loadedRows;
 	const canResume = eligible && !ended(log.data?.run.status);
 	return (
 		<section className="space-y-2" aria-label={t("pushLog.title")}>
@@ -107,7 +126,9 @@ export function PushHeartbeatLog({
 						? null
 						: log.isPending
 							? t("heartbeatLog.loading")
-							: t("pushLog.empty")}
+							: t(
+									timeWindow ? "moqPlayback.correlationEmpty" : "pushLog.empty",
+								)}
 				</p>
 			) : (
 				<div className="max-h-96 overflow-auto rounded-md border border-zinc-800">

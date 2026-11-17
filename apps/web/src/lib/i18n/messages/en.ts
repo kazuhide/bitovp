@@ -987,6 +987,11 @@ export const en = {
 		moreMeasurements: "More measurements",
 		moreObservations: "More observations",
 		encoderCorrelation: "Encoder Push / Heartbeat",
+		correlationUnavailable: "Requested run or UTC window is unavailable.",
+		correlationWindow:
+			"UTC window · Push received time / Poll observed time · loaded rows only",
+		correlationEmpty: "No loaded samples in this UTC window.",
+		correlationExport: "Export full run JSON",
 		fps: "Video FPS",
 		renderingSource: "Rendering source",
 		renderingVideo: "Video element",

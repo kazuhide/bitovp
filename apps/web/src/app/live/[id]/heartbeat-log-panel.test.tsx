@@ -156,6 +156,137 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("HeartbeatLogPanel", () => {
+	it("selects linked historical run A after reair B and filters Poll and Push by the requested UTC window", async () => {
+		mockApi("OPERATOR");
+		const original = apiFetch.getMockImplementation();
+		apiFetch.mockImplementation(async (url: string) => {
+			if (url.includes(`/runs/${OLDER_RUN_ID}/heartbeats?`))
+				return {
+					...PAGE_ONE,
+					run: { ...PAGE_ONE.run, id: OLDER_RUN_ID },
+					nextCursor: null,
+				};
+			if (url.includes(`/runs/${OLDER_RUN_ID}/heartbeat-receipts?`))
+				return {
+					run: { id: OLDER_RUN_ID, status: "STOPPED" },
+					rows: [
+						{
+							id: "inside-push",
+							receivedAt: new Date(T0 + 30_000).toISOString(),
+							sampledAt: null,
+							value: { ingest: { status: "INSIDE_PUSH" } },
+						},
+						{
+							id: "outside-push",
+							receivedAt: new Date(T0 + 70_000).toISOString(),
+							sampledAt: null,
+							value: { ingest: { status: "OUTSIDE_PUSH" } },
+						},
+					],
+				};
+			return original?.(url);
+		});
+		const from = new Date(T0 + 25_000).toISOString(),
+			to = new Date(T0 + 35_000).toISOString();
+		const rendered = renderWithQuery(
+			<HeartbeatLogPanel
+				channelId={CHANNEL_ID}
+				currentRunId={RUN_ID}
+				open
+				initialCorrelation={{
+					kind: "requested",
+					runId: OLDER_RUN_ID,
+					from,
+					to,
+				}}
+			/>,
+		);
+		await screen.findByText("INSIDE_PUSH");
+		expect(screen.queryByText("OUTSIDE_PUSH")).toBeNull();
+		expect(screen.getByRole("combobox")).toHaveValue(OLDER_RUN_ID);
+		expect(
+			rendered.container.querySelectorAll("[data-heartbeat-row]"),
+		).toHaveLength(1);
+		expect(
+			rendered.container.querySelector("[data-heartbeat-row]"),
+		).toHaveAttribute("data-heartbeat-row", row(1, []).id);
+		const filteredRow = rendered.container.querySelector(
+			"[data-heartbeat-row]",
+		) as HTMLElement;
+		await userEvent.click(within(filteredRow).getByText("JSON"));
+		await waitFor(() =>
+			expect(filteredRow.querySelector("pre")).not.toBeNull(),
+		);
+		expect(
+			JSON.parse(filteredRow.querySelector("pre")?.textContent ?? "{}").at,
+		).toBe(row(1, []).at);
+		expect(
+			rendered.container.querySelector("[data-heartbeat-correlated-run]"),
+		).toHaveAttribute("data-heartbeat-correlated-run", OLDER_RUN_ID);
+		expect(
+			apiFetch.mock.calls.some(
+				([url]) =>
+					String(url).includes(`/runs/${RUN_ID}/heartbeats?`) ||
+					String(url).includes(`/runs/${RUN_ID}/heartbeat-receipts?`),
+			),
+		).toBe(false);
+	});
+	it.each([
+		"invalid",
+		"missing",
+	])("never falls back to current B for an unavailable correlation: %s", async (kind) => {
+		mockApi("OPERATOR");
+		const requested =
+			kind === "invalid"
+				? { kind: "invalid" as const }
+				: {
+						kind: "requested" as const,
+						runId: CHANNEL_ID,
+						from: new Date(T0).toISOString(),
+						to: new Date(T0 + 1000).toISOString(),
+					};
+		const rendered = renderWithQuery(
+			<HeartbeatLogPanel
+				channelId={CHANNEL_ID}
+				currentRunId={RUN_ID}
+				open
+				initialCorrelation={requested}
+			/>,
+		);
+		expect(
+			await screen.findByText("Requested run or UTC window is unavailable."),
+		).toBeInTheDocument();
+		expect(
+			rendered.container.querySelector("[data-heartbeat-correlated-run]"),
+		).toBeNull();
+		expect(
+			apiFetch.mock.calls.some(([url]) =>
+				/\/(?:heartbeats|heartbeat-receipts)\?/.test(String(url)),
+			),
+		).toBe(false);
+	});
+	it("reports an empty loaded window without falling back to another run or treating it as healthy", async () => {
+		mockApi("OPERATOR");
+		const from = new Date(T0 + 500_000).toISOString(),
+			to = new Date(T0 + 501_000).toISOString();
+		const rendered = renderWithQuery(
+			<HeartbeatLogPanel
+				channelId={CHANNEL_ID}
+				currentRunId={RUN_ID}
+				initialCorrelation={{
+					kind: "requested",
+					runId: OLDER_RUN_ID,
+					from,
+					to,
+				}}
+			/>,
+		);
+		expect(
+			await screen.findByText("No loaded samples in this UTC window."),
+		).toBeInTheDocument();
+		expect(rendered.container.querySelector("[data-heartbeat-row]")).toBeNull();
+		expect(screen.queryByText("Healthy")).toBeNull();
+	});
 	it.each([
 		["ja", "定期取得の要約: 17 サンプル", "Push受信は別表示"],
 		[

@@ -124,13 +124,15 @@ describe("catalogue parity", () => {
 		// MoQ recording, Analytics and heartbeat history guidance (runtime measured).
 		// Canvas provenance adds one long value (catalog instrument: 1672).
 		// Compact MoQ correlation label adds one long value (instrument: 1673).
-		pinWithDriftAid(long.length, 1673, "long");
+		// Bounded heartbeat correlation adds three long values (instrument: 1676).
+		pinWithDriftAid(long.length, 1676, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Runtime measurement includes three-way output labels (deduplicated).
 		// The two MoQ authorization labels add two unique short Japanese values.
 		// Canvas provenance adds five unique short values (instrument: 3361).
 		// Two compact disclosure labels are new; 設定 already exists (instrument: 3363).
-		pinWithDriftAid(short.size, 3363, "short");
+		// Whole-run export adds one short value (instrument: 3364).
+		pinWithDriftAid(short.size, 3364, "short");
 	});
 
 	/**

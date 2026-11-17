@@ -19,6 +19,7 @@ import { moqObservationPath } from "@/lib/moq-player/history-client";
 import { moqHistorySeries } from "@/lib/moq-player/history-series";
 import { moqObservationHistorySchema } from "@/lib/moq-player/observations";
 import { bindPassiveRequestUrl } from "@/lib/passive-request";
+import { buildHeartbeatCorrelationUrl } from "./heartbeat-correlation";
 import { MoqAnalyticsHistory } from "./moq-analytics-history";
 
 const clock = (value: number) =>
@@ -77,6 +78,26 @@ export function MoqHistoryPanel({
 		/* Never emit a bare native URL without its document binding. */
 	}
 	const analyticsEncodingId = session?.analyticsVideoId?.split(":")[1];
+	const correlationTo = session
+		? (session.endedAt ??
+			new Date(
+				Date.parse(session.startedAt) +
+					Math.max(
+						0,
+						...session.samples.map((sample) => sample.elapsedMs),
+						...session.events.map((event) => event.elapsedMs),
+					),
+			).toISOString())
+		: undefined;
+	const correlationUrl =
+		session && correlationTo
+			? buildHeartbeatCorrelationUrl(
+					channelId,
+					runId,
+					session.startedAt,
+					correlationTo,
+				)
+			: null;
 	const chart = (
 		field: "latencyMs" | "fps" | "bufferSeconds",
 		label: string,
@@ -151,17 +172,19 @@ export function MoqHistoryPanel({
 				<h3 className="font-medium text-sm text-zinc-200">
 					{t("moqPlayback.savedHistory")}
 				</h3>
-				<Link
-					data-moq-encoder-correlation
-					data-moq-correlate-run={runId}
-					data-moq-correlate-start={session?.startedAt}
-					data-moq-correlate-end={session?.endedAt ?? undefined}
-					href={`/live/${channelId}#sec-heartbeat-log`}
-					title={runId}
-					className="text-xs text-zinc-400 underline underline-offset-2"
-				>
-					{t("moqPlayback.encoderCorrelation")}
-				</Link>
+				{correlationUrl ? (
+					<Link
+						data-moq-encoder-correlation
+						data-moq-correlate-run={runId}
+						data-moq-correlate-start={session?.startedAt}
+						data-moq-correlate-end={correlationTo}
+						href={correlationUrl}
+						title={runId}
+						className="text-xs text-zinc-400 underline underline-offset-2"
+					>
+						{t("moqPlayback.encoderCorrelation")}
+					</Link>
+				) : null}
 			</div>
 			{history.isPending ? (
 				<p className="text-xs text-zinc-500">{t("moqPlayback.loading")}</p>

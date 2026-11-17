@@ -84,8 +84,15 @@ document-wide label associations. The test now uses named role queries scoped to
 the same mounted file groups and reuses control handles until the step unmounts.
 It reacquires them after returning from Review. User interactions, validation
 assertions, case counts, the timeout, and full-suite coverage are preserved.
-The corrected source needs complete CI validation. Acceptance remains 420 seconds
-and 1,251 runner-seconds; prior samples do not establish a stable guarantee.
+The first correction at `44365877` measured
+[325 seconds / 1,034 runner-seconds](https://github.com/kazuhide/bitovp/actions/runs/44125253939).
+It remains a failed sample: two older tests still selected obsolete internal
+option values, and typechecking rejected possibly undefined test-array entries.
+The next correction selects the visible options, preserves the copied-height
+assertion, and declares the fixed pair of controls as tuples. Product code and
+the worker policy are unchanged by that test correction. Complete CI still has
+to pass. Acceptance remains 420 seconds and 1,251 runner-seconds; prior samples
+do not establish a stable guarantee.
 
 ## Verified native HDR build reuse
 

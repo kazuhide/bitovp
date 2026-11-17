@@ -427,10 +427,11 @@ describe("VodWizard — the file-output flow", () => {
 				within(screen.getByRole("group", { name: `File ${n}` }));
 			// Resolve named controls once per mounted Format step. Repeated label
 			// queries scan every descendant and recompute document-wide associations.
-			const files = [file(1), file(2)];
-			const bitrates = files.map((group) =>
-				group.getByRole("spinbutton", { name: "Bitrate (bps)" }),
-			);
+			const files = [file(1), file(2)] as const;
+			const bitrates = [
+				files[0].getByRole("spinbutton", { name: "Bitrate (bps)" }),
+				files[1].getByRole("spinbutton", { name: "Bitrate (bps)" }),
+			] as const;
 			const height = files[1].getByRole("spinbutton", { name: "Height (p)" });
 			const name = files[1].getByRole("textbox", { name: "File name" });
 			const told =
@@ -475,9 +476,10 @@ describe("VodWizard — the file-output flow", () => {
 
 			// One kilobit apart is two streams.
 			await user.click(navigation.getByRole("button", { name: "3. Format" }));
-			const returnedBitrates = [file(1), file(2)].map((group) =>
-				group.getByRole("spinbutton", { name: "Bitrate (bps)" }),
-			);
+			const returnedBitrates = [
+				file(1).getByRole("spinbutton", { name: "Bitrate (bps)" }),
+				file(2).getByRole("spinbutton", { name: "Bitrate (bps)" }),
+			] as const;
 			fireEvent.change(returnedBitrates[1], { target: { value: "7999000" } });
 			for (const bitrate of returnedBitrates)
 				expect(bitrate).not.toHaveAccessibleDescription();

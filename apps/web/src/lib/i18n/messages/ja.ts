@@ -946,7 +946,10 @@ export const ja = {
 		failed: "RTMP 更新を登録できませんでした",
 	},
 	moqPlayback: {
-		contentTime: "映像内時刻",
+		clientPlaybackTime: "クライアント再生時刻",
+		archivedClientPlaybackTime: "クライアント再生時刻（当時・推定）",
+		archiveClockBasis:
+			"最初のフレームのクライアント観測時刻を基準に録画の再生位置へ換算。録画開始のずれと時計のずれを含む推定値。",
 		title: "MoQ再生",
 		play: "再生",
 		stop: "停止",

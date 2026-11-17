@@ -971,7 +971,10 @@ export const en = {
 		failed: "Could not queue the RTMP update",
 	},
 	moqPlayback: {
-		contentTime: "Content time",
+		clientPlaybackTime: "Client playback time",
+		archivedClientPlaybackTime: "Client playback time (original, estimated)",
+		archiveClockBasis:
+			"First-frame client observation plus recording position. The estimate includes recording-start offset and clock skew.",
 		title: "MoQ playback",
 		play: "Play",
 		stop: "Stop",

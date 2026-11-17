@@ -15,13 +15,14 @@ import {
 import { useDocumentOrganization } from "@/components/providers";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
+import { moqArchiveClientOrigin } from "@/lib/moq-player/client-playback-time";
 import { moqObservationPath } from "@/lib/moq-player/history-client";
 import { moqHistorySeries } from "@/lib/moq-player/history-series";
 import { moqObservationHistorySchema } from "@/lib/moq-player/observations";
 import { bindPassiveRequestUrl } from "@/lib/passive-request";
 import { buildHeartbeatCorrelationUrl } from "./heartbeat-correlation";
 import { MoqAnalyticsHistory } from "./moq-analytics-history";
-import { MoqContentTime } from "./moq-content-time";
+import { MoqClientPlaybackClock } from "./moq-client-playback-clock";
 
 const clock = (value: number) =>
 	Number.isFinite(value) ? new Date(value).toISOString().slice(11, 19) : "—";
@@ -245,7 +246,12 @@ export function MoqHistoryPanel({
 								aria-label={t("moqPlayback.receivedVideo")}
 								className="aspect-video w-full rounded border border-zinc-800 bg-black"
 							/>
-							<MoqContentTime mediaRef={archiveVideo} />
+							<MoqClientPlaybackClock
+								mode="archive"
+								mediaRef={archiveVideo}
+								originUtcMs={moqArchiveClientOrigin(session)}
+								durationMs={session.archive.durationMs}
+							/>
 							<a
 								href={archiveUrl}
 								download={`moq-${session.id}.webm`}

@@ -1,14 +1,11 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentOrganizationContext } from "@/components/providers";
 import { renderWithQuery } from "@/test/render";
 import { MoqHistoryPanel } from "./moq-history-panel";
 
-const mocks = vi.hoisted(() => ({ api: vi.fn(), observe: vi.fn() }));
+const mocks = vi.hoisted(() => ({ api: vi.fn() }));
 vi.mock("@/lib/api", () => ({ apiFetch: mocks.api }));
-vi.mock("@/lib/moq-player/content-time", () => ({
-	observeMoqContentTime: mocks.observe,
-}));
 vi.mock("recharts", () => ({
 	ResponsiveContainer: ({ children }: { children: React.ReactNode }) =>
 		children,
@@ -35,7 +32,10 @@ function session(id: string, startedAt: string) {
 		createdAt: startedAt,
 		updatedAt: startedAt,
 		samples: [],
-		events: [{ elapsedMs: 0, type: "started" }],
+		events: [
+			{ elapsedMs: 0, type: "started" },
+			{ elapsedMs: 1000, type: "first-frame" },
+		],
 		archive: {
 			contentType: "video/webm",
 			bytes: 500,
@@ -59,13 +59,14 @@ beforeEach(() => {
 			truncated: false,
 		},
 	});
-	mocks.observe.mockImplementation((video: HTMLVideoElement, onTime) => {
-		onTime(
-			Date.parse(video.dataset.moqArchive === OLDER ? olderTime : newerTime),
-		);
-		return vi.fn();
-	});
+	vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockReturnValue(2);
+	vi.spyOn(HTMLMediaElement.prototype, "currentTime", "get").mockImplementation(
+		function (this: HTMLVideoElement) {
+			return this.dataset.moqArchive === OLDER ? 0.111 : 0.222;
+		},
+	);
 });
+afterEach(() => vi.restoreAllMocks());
 
 describe("received recording selection", () => {
 	it("replaces the old video and clock together across repeated session changes", async () => {
@@ -89,10 +90,14 @@ describe("received recording selection", () => {
 				expect(videos).toHaveLength(1);
 				expect(videos[0]).toHaveAttribute("data-moq-archive", id);
 				expect(
-					rendered.container.querySelectorAll("[data-moq-content-clock]"),
+					rendered.container.querySelectorAll(
+						"[data-moq-client-playback-clock]",
+					),
 				).toHaveLength(1);
 				expect(
-					rendered.container.querySelector("time[data-moq-content-time]"),
+					rendered.container.querySelector(
+						"time[data-moq-client-playback-time]",
+					),
 				).toHaveAttribute("dateTime", id === OLDER ? olderTime : newerTime);
 			});
 			for (const video of previousVideos) expect(video.isConnected).toBe(false);

@@ -390,3 +390,30 @@ describe("local VMAF-only retry", () => {
 		);
 	});
 });
+
+it("refuses to silently extend an expired absolute deadline", async () => {
+	findUnique.mockResolvedValue(
+		row({
+			params: {
+				execution: { backend: "LOCAL", deadlineAt: "2020-01-01T00:00:00Z" },
+			},
+		}),
+	);
+	const response = await post();
+	expect(response.status).toBe(409);
+	expect(await response.text()).toContain("deadline");
+	expect(create).not.toHaveBeenCalled();
+	expect(add).not.toHaveBeenCalled();
+});
+it("retains a future absolute deadline across retry", async () => {
+	const execution = { backend: "LOCAL", deadlineAt: "2099-01-01T00:00:00Z" };
+	findUnique.mockResolvedValue(row({ params: { execution } }));
+	expect((await post()).status).toBe(201);
+	expect(create).toHaveBeenCalledWith(
+		expect.objectContaining({
+			data: expect.objectContaining({
+				params: expect.objectContaining({ execution }),
+			}),
+		}),
+	);
+});

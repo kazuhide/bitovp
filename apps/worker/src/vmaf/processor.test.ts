@@ -311,7 +311,12 @@ function setup(
 		),
 		updateMany: vi.fn(async ({ where, data }: { where: Row; data: Row }) => {
 			const statusOk =
-				where.status === undefined || where.status === job.status;
+				where.status === undefined ||
+				where.status === job.status ||
+				(typeof where.status === "object" &&
+					where.status !== null &&
+					"in" in where.status &&
+					(where.status.in as unknown[]).includes(job.status));
 			if (where.id === job.id && statusOk) {
 				Object.assign(job, data);
 				return { count: 1 };
@@ -3475,9 +3480,9 @@ it("a late cloud result cannot overwrite user cancellation with FINISHED", async
 		t.job.status = "ERROR";
 		t.job.error = "Canceled";
 	};
-	await expect(t.processor.process({ vmafJobId: VMAF_JOB_ID })).rejects.toThrow(
-		"terminal status changed",
-	);
+	await expect(
+		t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+	).resolves.toMatchObject({ status: "ERROR", results: 2 });
 	expect(t.job).toMatchObject({ status: "ERROR", error: "Canceled" });
 	expect(t.emitted.some((e) => e.kind === "VMAF_FINISHED")).toBe(false);
 });
@@ -6817,4 +6822,334 @@ describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
 		).rejects.toThrow("cannot score 4:2:0 pictures of 200x200");
 		expect(cloudScore).not.toHaveBeenCalled();
 	});
+});
+
+describe("local cancellation and absolute deadlines", () => {
+	it("expires queued local work without downloads or subprocesses and wakes its blocking gate", async () => {
+		const plan = qcPlan();
+		plan.qc = {
+			vmaf: true,
+			gate: {
+				onFail: "BLOCK_MANIFESTS",
+				rules: [{ metric: "VMAF_MEAN", scope: "OVERALL", gte: 80 }],
+			},
+		};
+		const t = setup({
+			plan,
+			job: {
+				params: {
+					execution: { backend: "LOCAL", deadlineAt: "2020-01-01T00:00:00Z" },
+				},
+			},
+		});
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "ERROR", results: 0 },
+		);
+		expect(t.job.error).toContain("deadline");
+		expect(t.runner.run).not.toHaveBeenCalled();
+		expect(t.downloaded).toHaveLength(0);
+		expect(t.queueAdds).toHaveLength(1);
+	});
+	it.each([
+		"cancel",
+		"deadline",
+	] as const)("drains active local work before releasing its lease after %s and retains partial results", async (reason) => {
+		vi.useFakeTimers();
+		const started = resourceDeferred(),
+			close = resourceDeferred();
+		let aborted = false,
+			released = false;
+		const resources = createLocalVmafResources({
+			concurrency: 1,
+			readResources: () => ({
+				cpuCapacity: 8,
+				budgetBytes: 8 * 1024 ** 3,
+				reserveBytes: 0,
+			}),
+			execute: async (_plan, signal, work) => {
+				try {
+					return await work(signal, async () => {});
+				} finally {
+					released = true;
+				}
+			},
+		});
+		const plan = qcPlan();
+		plan.qc = {
+			vmaf: true,
+			gate: {
+				onFail: "BLOCK_MANIFESTS",
+				rules: [{ metric: "VMAF_MEAN", scope: "OVERALL", gte: 80 }],
+			},
+		};
+		const t = setup({
+			plan,
+			localResources: resources,
+			probeJson: RESOURCE_PROBE_JSON,
+			concurrency: 1,
+			job: {
+				params: {
+					execution: {
+						backend: "LOCAL",
+						...(reason === "deadline"
+							? { deadlineAt: new Date(Date.now() + 1000).toISOString() }
+							: {}),
+					},
+				},
+			},
+		});
+		const original = vi.mocked(t.runner.run).getMockImplementation();
+		if (!original) throw new Error("Missing fixture implementation");
+		let scores = 0;
+		vi.mocked(t.runner.run).mockImplementation(async (bin, argv, options) => {
+			if (!argv.includes("-filter_complex") || ++scores === 1)
+				return original(bin, argv, options);
+			released = false;
+			options?.signal?.addEventListener(
+				"abort",
+				() => {
+					aborted = true;
+				},
+				{ once: true },
+			);
+			started.resolve();
+			await close.promise;
+			return { code: null, stdout: "", stderr: "stopped" };
+		});
+		const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		pending.catch(() => {});
+		try {
+			await started.promise;
+			expect(t.results).toHaveLength(1);
+			if (reason === "cancel") {
+				t.job.status = "ERROR";
+				t.job.error = "Cancellation requested";
+			}
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(aborted).toBe(true);
+			expect(released).toBe(false);
+			close.resolve();
+			expect(await pending).toMatchObject({ status: "ERROR", results: 1 });
+			expect(released).toBe(true);
+			expect(t.results).toHaveLength(1);
+			expect(t.queueAdds).toHaveLength(1);
+			expect(t.emitted.some((event) => event.kind === "VMAF_FINISHED")).toBe(
+				false,
+			);
+		} finally {
+			t.vmafJob.findUnique.mockResolvedValue(null);
+			close.resolve();
+			await vi.advanceTimersByTimeAsync(2000);
+			await pending.catch(() => {});
+			vi.useRealTimers();
+		}
+	});
+	it("does not overwrite a local cancellation that wins just before terminal persistence", async () => {
+		const t = setup();
+		const original = t.vmafJob.update.getMockImplementation();
+		if (!original) throw new Error("Missing fixture implementation");
+		t.vmafJob.update.mockImplementation(async (args) => {
+			if (args.data.status === "FINISHED") {
+				t.job.status = "ERROR";
+				t.job.error = "Cancellation requested";
+			}
+			return original(args);
+		});
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "ERROR", results: 2 },
+		);
+		expect(t.job).toMatchObject({
+			status: "ERROR",
+			error: "Cancellation requested",
+		});
+		expect(t.emitted.some((event) => event.kind === "VMAF_FINISHED")).toBe(
+			false,
+		);
+	});
+});
+
+it.each([
+	"cancel",
+	"deadline",
+] as const)("stops a local preparation waiting for capacity after %s without media I/O", async (reason) => {
+	vi.useFakeTimers();
+	const resources = sharedTestResources(),
+		entered = resourceDeferred(),
+		release = resourceDeferred();
+	const holder = resources.begin(new AbortController().signal);
+	const holding = holder.prepared("occupied", async () => {
+		entered.resolve();
+		await release.promise;
+	});
+	await entered.promise;
+	const t = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+		job: {
+			params: {
+				execution: {
+					backend: "LOCAL",
+					...(reason === "deadline"
+						? { deadlineAt: new Date(Date.now() + 1000).toISOString() }
+						: {}),
+				},
+			},
+		},
+	});
+	const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+	pending.catch(() => {});
+	try {
+		// Let the async setup enter the existing admission queue.
+		await vi.waitFor(() => expect(holder.report().queued).toBeGreaterThan(0));
+		if (reason === "cancel") {
+			t.job.status = "ERROR";
+			t.job.error = "Cancellation requested";
+		}
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(await pending).toMatchObject({ status: "ERROR", results: 0 });
+		expect(t.runner.run).not.toHaveBeenCalled();
+		expect(t.downloaded).toHaveLength(0);
+		expect(holder.report().queued).toBe(0);
+	} finally {
+		t.vmafJob.findUnique.mockResolvedValue(null);
+		release.resolve();
+		await holding;
+		await vi.advanceTimersByTimeAsync(1000);
+		await pending.catch(() => {});
+		vi.useRealTimers();
+	}
+});
+it("does not start a pending job whose cancellation won the atomic claim", async () => {
+	const t = setup();
+	const original = t.vmafJob.updateMany.getMockImplementation();
+	if (!original) throw new Error("Missing fixture implementation");
+	t.vmafJob.updateMany.mockImplementation(async (args) => {
+		if (args.data.status === "RUNNING") {
+			t.job.status = "ERROR";
+			t.job.error = "Cancellation requested";
+		}
+		return original(args);
+	});
+	expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject({
+		status: "ERROR",
+	});
+	expect(t.runner.run).not.toHaveBeenCalled();
+	expect(t.downloaded).toHaveLength(0);
+});
+
+it("checks the absolute deadline again before FINISHED even when the timer has not run", async () => {
+	vi.useFakeTimers();
+	const deadline = Date.now() + 1000;
+	const t = setup({
+		job: {
+			params: {
+				execution: {
+					backend: "LOCAL",
+					deadlineAt: new Date(deadline).toISOString(),
+				},
+			},
+		},
+	});
+	const original = t.vmafResult.create.getMockImplementation();
+	if (!original) throw new Error("Missing fixture");
+	t.vmafResult.create.mockImplementation(async (args) => {
+		const result = await original(args);
+		if (t.results.length === 2) vi.setSystemTime(deadline + 1);
+		return result;
+	});
+	try {
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "ERROR", results: 2 },
+		);
+		expect(t.job.error).toContain("deadline");
+		expect(t.emitted.some((event) => event.kind === "VMAF_FINISHED")).toBe(
+			false,
+		);
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
+it("reconciles a cancellation winning the error write and wakes its blocking gate", async () => {
+	const plan = qcPlan();
+	plan.qc = {
+		vmaf: true,
+		gate: {
+			onFail: "BLOCK_MANIFESTS",
+			rules: [{ metric: "VMAF_MEAN", scope: "OVERALL", gte: 80 }],
+		},
+	};
+	const t = setup({ plan, ffmpegExit: 1 });
+	const original = t.vmafJob.update.getMockImplementation();
+	if (!original) throw new Error("Missing fixture");
+	t.vmafJob.update.mockImplementation(async (args) => {
+		if (args.data.status === "ERROR") {
+			t.job.status = "ERROR";
+			t.job.error = "Cancellation requested";
+		}
+		return original(args);
+	});
+	expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject({
+		status: "ERROR",
+	});
+	expect(t.job.error).toBe("Cancellation requested");
+	expect(t.queueAdds).toHaveLength(1);
+});
+
+it.each([
+	"deadline",
+	"cancel",
+] as const)("does not publish a passing gate when %s is observed during its result read", async (reason) => {
+	vi.useFakeTimers();
+	const deadlineAt = new Date(Date.now() + 1000).toISOString();
+	const plan = qcPlan();
+	plan.qc = {
+		vmaf: true,
+		gate: {
+			onFail: "BLOCK_MANIFESTS",
+			rules: [{ metric: "VMAF_MEAN", scope: "OVERALL", gte: 80 }],
+		},
+	};
+	const t = setup({
+		plan,
+		job: { params: { execution: { backend: "LOCAL", deadlineAt } } },
+	});
+	const entered = resourceDeferred(),
+		release = resourceDeferred();
+	const original = t.vmafResult.findMany.getMockImplementation();
+	if (!original) throw new Error("Missing fixture");
+	let reads = 0;
+	t.vmafResult.findMany.mockImplementation(async () => {
+		const rows = await original();
+		if (++reads === 1) {
+			entered.resolve();
+			await release.promise;
+		}
+		return rows;
+	});
+	const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+	pending.catch(() => {});
+	try {
+		await entered.promise;
+		expect(t.results).toHaveLength(2);
+		if (reason === "cancel") {
+			t.job.status = "ERROR";
+			t.job.error = "Cancellation requested";
+		}
+		await vi.advanceTimersByTimeAsync(reason === "deadline" ? 1000 : 100);
+		release.resolve();
+		expect(await pending).toMatchObject({ status: "ERROR", results: 2 });
+		expect(t.job.status).toBe("ERROR");
+		expect(t.job.gateVerdict).toBeUndefined();
+		expect(t.encodingJobWrites).toEqual([]);
+		expect(t.emitted.some((event) => event.kind === "VMAF_FINISHED")).toBe(
+			false,
+		);
+		expect(t.queueAdds).toHaveLength(1);
+	} finally {
+		release.resolve();
+		await vi.advanceTimersByTimeAsync(2000);
+		await pending.catch(() => {});
+		vi.useRealTimers();
+	}
 });

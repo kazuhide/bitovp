@@ -154,44 +154,114 @@ describe("VmafReport", () => {
 		).toBeInTheDocument();
 	});
 
-	it("confirms stopping only the selected cloud measurement", async () => {
+	it.each([
+		{ backend: "LOCAL" as const },
+		undefined,
+		{ backend: "CLOUD" as const, profileId: "aws-test", budgetUsd: 12 },
+	])("requests cancellation of the selected VOD measurement with %j execution", async (execution) => {
 		const job = detail({
 			status: "RUNNING",
-			execution: { backend: "CLOUD", profileId: "aws-test", budgetUsd: 12 },
+			execution,
 		});
 		apiFetch.mockImplementation(
 			async (_url: string, options?: { method?: string }) =>
 				options?.method === "POST"
-					? { id: job.id, cancelRequested: true }
+					? { id: job.id, cancelRequested: true, stopped: false }
 					: job,
 		);
 		wrap(<VmafReport id={job.id} />);
 		const user = userEvent.setup();
 		await user.click(
-			await screen.findByRole("button", { name: "Stop cloud measurement" }),
+			await screen.findByRole("button", { name: "Request cancellation" }),
 		);
 		expect(
 			apiFetch.mock.calls.some(([, options]) => options?.method === "POST"),
 		).toBe(false);
 		const dialog = screen.getByRole("dialog");
-		expect(
-			within(dialog).getByText(/charges may continue until cleanup completes/),
-		).toBeInTheDocument();
+		expect(within(dialog).getByText(/bbb-pte-crf-17/)).toBeInTheDocument();
+		if (execution?.backend === "CLOUD") {
+			expect(
+				within(dialog).getByText(
+					/charges may continue until cleanup completes/,
+				),
+			).toBeInTheDocument();
+		} else {
+			expect(
+				within(dialog).getByText(/Measured results are retained/),
+			).toBeInTheDocument();
+			expect(within(dialog).queryByText(/charges/)).not.toBeInTheDocument();
+		}
 		await user.click(
-			within(dialog).getByRole("button", { name: "Stop cloud measurement" }),
+			within(dialog).getByRole("button", { name: "Request cancellation" }),
 		);
 		await waitFor(() =>
 			expect(apiFetch).toHaveBeenCalledWith(`/api/vmaf-jobs/${job.id}/cancel`, {
 				method: "POST",
 			}),
 		);
+		expect(
+			await screen.findByText(
+				"Cancellation requested. Stopping is not yet confirmed.",
+			),
+		).toBeInTheDocument();
+		expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+		expect(screen.getByText("RUNNING")).toBeInTheDocument();
 	});
+
+	it.each([
+		{ backend: "LOCAL" as const },
+		undefined,
+		{ backend: "CLOUD" as const, profileId: "aws-test", budgetUsd: 12 },
+	])("offers cancellation while the VOD measurement is pending with %j execution", async (execution) => {
+		const job = detail({ status: "PENDING", execution });
+		apiFetch.mockResolvedValue(job);
+		wrap(<VmafReport id={job.id} />);
+		expect(
+			await screen.findByRole("button", { name: "Request cancellation" }),
+		).toBeEnabled();
+	});
+
+	it("refreshes a completed report without claiming that cancellation was accepted", async () => {
+		const job = detail({ status: "RUNNING", execution: { backend: "LOCAL" } });
+		let completed = false;
+		apiFetch.mockImplementation(
+			async (_url: string, options?: { method?: string }) => {
+				if (options?.method === "POST") {
+					completed = true;
+					return { id: job.id, cancelRequested: false, stopped: false };
+				}
+				return completed ? { ...job, status: "FINISHED" } : job;
+			},
+		);
+		wrap(<VmafReport id={job.id} />);
+		const user = userEvent.setup();
+		await user.click(
+			await screen.findByRole("button", { name: "Request cancellation" }),
+		);
+		await user.click(
+			within(screen.getByRole("dialog")).getByRole("button", {
+				name: "Request cancellation",
+			}),
+		);
+		expect(await screen.findByText("FINISHED")).toBeInTheDocument();
+		expect(
+			screen.queryByText(/Cancellation requested/),
+		).not.toBeInTheDocument();
+	});
+
 	it.each([
 		{
-			status: "RUNNING" as const,
+			status: "FINISHED" as const,
 			mode: "VOD" as const,
 			execution: { backend: "LOCAL" as const },
 		},
+		{
+			status: "ERROR" as const,
+			mode: "VOD" as const,
+			execution: { backend: "LOCAL" as const },
+		},
+		{ status: "FINISHED" as const, mode: "VOD" as const },
+		{ status: "ERROR" as const, mode: "VOD" as const },
 		{
 			status: "FINISHED" as const,
 			mode: "VOD" as const,
@@ -202,6 +272,21 @@ describe("VmafReport", () => {
 			},
 		},
 		{
+			status: "ERROR" as const,
+			mode: "VOD" as const,
+			execution: {
+				backend: "CLOUD" as const,
+				profileId: "aws-test",
+				budgetUsd: 12,
+			},
+		},
+		{
+			status: "RUNNING" as const,
+			mode: "LIVE" as const,
+			execution: { backend: "LOCAL" as const },
+		},
+		{ status: "PENDING" as const, mode: "LIVE" as const },
+		{
 			status: "RUNNING" as const,
 			mode: "LIVE" as const,
 			execution: {
@@ -210,12 +295,12 @@ describe("VmafReport", () => {
 				budgetUsd: 12,
 			},
 		},
-	])("does not offer cloud cancellation for unsupported or terminal jobs", async (job) => {
+	])("does not offer VOD cancellation for LIVE or terminal jobs: %j", async (job) => {
 		apiFetch.mockResolvedValue(detail(job));
 		wrap(<VmafReport id="job-1" />);
 		await screen.findByText("bbb-pte-crf-17");
 		expect(
-			screen.queryByRole("button", { name: "Stop cloud measurement" }),
+			screen.queryByRole("button", { name: "Request cancellation" }),
 		).not.toBeInTheDocument();
 	});
 

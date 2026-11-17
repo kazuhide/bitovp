@@ -74,7 +74,10 @@ export function VmafReport({ id }: { id: string }) {
 	const [cancelOpen, setCancelOpen] = useState(false);
 	const cancel = useMutation({
 		mutationFn: () =>
-			apiFetch(`/api/vmaf-jobs/${id}/cancel`, { method: "POST" }),
+			apiFetch<{ id: string; cancelRequested: boolean; stopped: false }>(
+				`/api/vmaf-jobs/${id}/cancel`,
+				{ method: "POST" },
+			),
 		onSuccess: () => {
 			setCancelOpen(false);
 			queryClient.invalidateQueries({ queryKey: ["vmaf-job", id] });
@@ -241,7 +244,6 @@ export function VmafReport({ id }: { id: string }) {
 					</span>
 				) : null}
 				{job.mode === "VOD" &&
-				job.execution?.backend === "CLOUD" &&
 				(job.status === "PENDING" || job.status === "RUNNING") ? (
 					<RoleAccess control="qc.jobs">
 						<Button
@@ -250,13 +252,18 @@ export function VmafReport({ id }: { id: string }) {
 							disabled={cancel.isPending}
 							onClick={() => setCancelOpen(true)}
 						>
-							{t("qc.cancelCloud")}
+							{t("qc.cancelMeasurement")}
 						</Button>
 						<Dialog
 							open={cancelOpen}
 							onOpenChange={setCancelOpen}
-							title={t("qc.cancelCloudTitle")}
-							description={t("qc.cancelCloudConfirm", { name: title })}
+							title={t("qc.cancelMeasurementTitle")}
+							description={t(
+								job.execution?.backend === "CLOUD"
+									? "qc.cancelCloudConfirm"
+									: "qc.cancelLocalConfirm",
+								{ name: title },
+							)}
 						>
 							<div className="flex justify-end gap-2">
 								<Button
@@ -273,14 +280,14 @@ export function VmafReport({ id }: { id: string }) {
 									disabled={cancel.isPending}
 									onClick={() => cancel.mutate()}
 								>
-									{t("qc.cancelCloud")}
+									{t("qc.cancelMeasurement")}
 								</Button>
 							</div>
 							{cancel.isError ? (
 								<p role="alert" className="mt-2 text-xs text-red-400">
 									{cancel.error instanceof ApiError
 										? cancel.error.message
-										: t("qc.cancelCloudFailed")}
+										: t("qc.cancelFailed")}
 								</p>
 							) : null}
 						</Dialog>
@@ -288,6 +295,11 @@ export function VmafReport({ id }: { id: string }) {
 				) : null}
 				<div className="ml-auto">{deleteAction}</div>
 			</header>
+			{cancel.data?.id === id && cancel.data.cancelRequested ? (
+				<p role="status" className="mt-2 text-xs text-zinc-400">
+					{t("qc.cancelRequested")}
+				</p>
+			) : null}
 			{job.execution ? (
 				<p className="mt-1 text-xs text-zinc-500">
 					{t("qc.executionTarget")}:{" "}

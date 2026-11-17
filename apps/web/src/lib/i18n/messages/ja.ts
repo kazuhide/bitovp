@@ -2508,11 +2508,14 @@ export const ja = {
 		measureJob: "完了済みジョブ",
 		measureModel: "モデル",
 		measureRun: "計測",
-		cancelCloud: "クラウド計測を停止",
-		cancelCloudTitle: "このクラウド計測を停止しますか？",
+		cancelMeasurement: "中止を要求",
+		cancelMeasurementTitle: "この計測の中止を要求しますか？",
+		cancelLocalConfirm:
+			"「{name}」の中止を要求します。計測済みの結果は保持され、停止には時間がかかる場合があります。",
 		cancelCloudConfirm:
-			"「{name}」を停止します。レポートは保持されます。停止後もリソースのクリーンアップが続き、完了までは課金が続く場合があります。",
-		cancelCloudFailed: "クラウド計測を停止できませんでした。",
+			"「{name}」の中止を要求します。レポートは保持されます。中止後もリソースのクリーンアップが続き、完了までは課金が続く場合があります。",
+		cancelFailed: "中止を要求できませんでした。",
+		cancelRequested: "中止要求を受け付けました。停止はまだ確認されていません。",
 		computeTasks: "クラウド処理の状態",
 		computeScoringFrames: "計測フレーム {done}/{total}（{percent}%）",
 		computeStandard: "通常VM",

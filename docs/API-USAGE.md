@@ -600,12 +600,27 @@ their meaning; removals or renames are breaking changes.
   otherwise the same-model CPU path. Reports include the actual method and
   selection reason. Delivery gates retain CPU scoring.
 - `{"backend":"LOCAL"}` retains the historical worker-environment policy.
+- LOCAL execution may additionally set `deadlineAt` to an ISO 8601 timestamp
+  with an explicit timezone. The absolute deadline includes queue and resource
+  waiting; it is not extended by retry. An expired retry returns 409. Omit the
+  field to retain the existing behavior. A worker must be serving the queue to
+  record expiry; no completion-time guarantee is implied.
 - `{"backend":"CLOUD","profileId":"<id>","budgetUsd":5}` selects a configured
   cloud profile; `localMode` is not accepted for cloud execution.
 
 No binary path or GPU index is accepted from these requests. Remeasure retains
 the requested local mode and selects a new backend snapshot for the new report.
 See [local GPU setup and limits](user-guide/GPU-QUALITY.md#choose-local-processing).
+
+`POST /api/vmaf-jobs/<id>/cancel` accepts local and cloud VOD measurements,
+including historical local jobs without an execution object. It conditionally
+changes PENDING/RUNNING to ERROR and preserves measured results. The response
+is `{id,cancelRequested,stopped:false}`: `cancelRequested` is true only when
+this request recorded cancellation, and false for an already-terminal job or
+a completion that won the race. Acceptance does not confirm process exit or
+cloud resource cleanup. LIVE uses its existing lifecycle controls. The Worker
+honors cancellation after observing it and prevents completion from overwriting
+the recorded error.
 
 Manual `POST /api/vmaf-jobs` additionally accepts
 `referencePreparation:"LOSSLESS_DISPLAY_SCALE_REMUX"` with explicit

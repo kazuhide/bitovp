@@ -865,10 +865,18 @@ export async function verifyQcComparisonBrowser(
 		syntheticReports(),
 		syntheticBandingReports(),
 	);
+	const cancellationReports = syntheticReports().map((report, index) => ({
+		...report,
+		id: `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa${index + 1}`,
+		execution: index === 0 ? undefined : report.execution,
+		status: index === 0 ? "PENDING" : "RUNNING",
+		results: [],
+	}));
 	const reports = [
 		...syntheticReports(),
 		...syntheticBandingReports(),
 		...combinedReports,
+		...cancellationReports,
 	];
 	const mediaPaths = new Map(
 		reports.flatMap((report) =>
@@ -893,10 +901,25 @@ export async function verifyQcComparisonBrowser(
 	});
 	const unexpected: string[] = [];
 	const receivedMedia = new Set<string>();
+	const cancellationRequests: string[] = [];
 	await context.addCookies([{ name: "ovp-locale", value: "en", url: baseURL }]);
 	await context.route("**/*", async (route) => {
 		const request = route.request();
 		const url = new URL(request.url());
+		const cancellation = cancellationReports.find(
+			(row) => url.pathname === `/api/vmaf-jobs/${row.id}/cancel`,
+		);
+		if (
+			url.origin === baseURL &&
+			!url.search &&
+			request.method() === "POST" &&
+			cancellation
+		) {
+			cancellationRequests.push(cancellation.id);
+			return route.fulfill({
+				json: { id: cancellation.id, cancelRequested: true, stopped: false },
+			});
+		}
 		if (url.origin !== baseURL || !["GET", "HEAD"].includes(request.method())) {
 			unexpected.push("Unexpected browser mutation or external request");
 			return route.abort();
@@ -972,8 +995,33 @@ export async function verifyQcComparisonBrowser(
 		info.annotations.push({
 			type: "evidence-scope",
 			description:
-				"Synthetic report scores and generated local media; no provider encoding or VMAF measurement",
+				"Synthetic report scores, cancellation responses and generated local media; no provider encoding, VMAF measurement or worker-exit evidence",
 		});
+		for (const [index, report] of cancellationReports.entries()) {
+			await page.goto(`/qc/${report.id}`);
+			await page
+				.getByRole("button", { name: "Request cancellation", exact: true })
+				.click();
+			const dialog = page.getByRole("dialog");
+			await expect(dialog).toContainText(report.encodingName);
+			expect(cancellationRequests).toHaveLength(index);
+			await dialog
+				.getByRole("button", { name: "Request cancellation", exact: true })
+				.click();
+			await expect(dialog).toHaveCount(0);
+			await expect(
+				page.getByRole("status").filter({
+					hasText: "Cancellation requested. Stopping is not yet confirmed.",
+				}),
+			).toBeVisible();
+			expect(cancellationRequests).toEqual(
+				cancellationReports.slice(0, index + 1).map((row) => row.id),
+			);
+			// Request acceptance must not fabricate a terminal or stopped state.
+			await expect(
+				page.getByText(report.status, { exact: true }),
+			).toBeVisible();
+		}
 		const comparePath = `/qc/compare?jobs=${JOBS.join(",")}`;
 		await page.goto(comparePath);
 		const figure = page.getByRole("figure", {

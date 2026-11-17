@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-18",
+  "sourceCommit": "964fd0e7b85cc6732cdb3ae3e61cad8231fdd9e2",
+  "channelId": "3da2621f-352f-48ec-be56-bd070e7a2843",
+  "runId": "5f5f467a-2917-4e15-8253-ba9c5379a9bb",
+  "encodingId": "4315da20-47d7-4fc9-be35-51c1b345ca02",
+  "requestedEncoderVersion": "BETA",
+  "actualSelectedEncoderVersion": "2.293.0",
+  "requestedCloudRegion": "AWS_AP_NORTHEAST_1",
+  "actualSelectedCloudRegion": "AWS_AP_NORTHEAST_1",
+  "configuredDraft": "DRAFT_18",
+  "negotiatedDraft": null,
+  "configuredRelayOrigin": "moqt://draft-18.cloudflare.mediaoverquic.com:443",
+  "namespace": "bitovp-moq-0941830e-dce",
+  "createdThrough": "BitOVP normal authenticated Live API and Worker",
+  "events": [
+    {
+      "at": "2026-11-17T16:10:31.230Z",
+      "event": "paid-live-created-through-bitovp",
+      "channelId": "3da2621f-352f-48ec-be56-bd070e7a2843",
+      "requestedRegion": "AWS_AP_NORTHEAST_1"
+    },
+    {
+      "at": "2026-11-17T16:10:31.260Z",
+      "event": "live-state",
+      "status": "PROVISIONING",
+      "runId": null,
+      "encodingId": null
+    },
+    {
+      "at": "2026-11-17T16:14:57.188Z",
+      "event": "live-state",
+      "status": "RUNNING",
+      "runId": "5f5f467a-2917-4e15-8253-ba9c5379a9bb",
+      "encodingId": "4315da20-47d7-4fc9-be35-51c1b345ca02"
+    },
+    {
+      "at": "2026-11-17T16:14:57.578Z",
+      "event": "timestamp-rtmp-source-started",
+      "encoderVersion": "2.293.0",
+      "selectedRegion": "AWS_AP_NORTHEAST_1"
+    },
+    {
+      "at": "2026-11-17T16:15:34.027Z",
+      "event": "live-state",
+      "status": "ERROR",
+      "runId": "5f5f467a-2917-4e15-8253-ba9c5379a9bb",
+      "encodingId": "4315da20-47d7-4fc9-be35-51c1b345ca02"
+    },
+    {
+      "at": "2026-11-17T16:15:34.027Z",
+      "event": "trial-failed",
+      "message": "Provider run ended before playback verification"
+    },
+    {
+      "at": "2026-11-17T16:15:34.199Z",
+      "event": "stop-requested-through-bitovp",
+      "action": "stop"
+    },
+    {
+      "at": "2026-11-17T16:15:34.560Z",
+      "event": "fresh-provider-terminal-confirmed",
+      "providerStatus": "ERROR"
+    },
+    {
+      "at": "2026-11-17T16:15:34.560Z",
+      "event": "trial-finished",
+      "success": false,
+      "cleanupConfirmed": true
+    }
+  ],
+  "contribution": {
+    "synthetic": true,
+    "framesGenerated": 905,
+    "ffmpegExitCode": 0,
+    "providerInputConnectionVerified": false
+  },
+  "finalHeartbeat": {
+    "timestamp": "2026-11-17T16:15:14Z",
+    "ingestStatus": "WAITING_FOR_FIRST_CONNECT",
+    "ingestHealthy": false
+  },
+  "task": {
+    "status": "ERROR",
+    "totalMessageCount": 9,
+    "errorClassification": "GENERIC_ENCODING_FAILED"
+  },
+  "endToEndVerified": false,
+  "cleanupConfirmed": true,
+  "limits": [
+    "The generic provider error does not identify the failure cause.",
+    "No browser playback or negotiated MoQT draft was established.",
+    "FFmpeg exit0 and generated frames do not prove provider ingestion or Relay reception."
+  ]
+}

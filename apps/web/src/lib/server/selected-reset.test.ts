@@ -16,6 +16,11 @@ import {
 } from "./selected-reset";
 
 const state = vi.hoisted(() => ({ active: false }));
+const moqCleanup = vi.hoisted(() => ({ snapshot: vi.fn(), cleanup: vi.fn() }));
+vi.mock("./moq-archive-cleanup", () => ({
+	snapshotMoqArchiveCleanup: moqCleanup.snapshot,
+	cleanupDeletedMoqArchives: moqCleanup.cleanup,
+}));
 const editingModels = [
 	"libraryAnalysisBinding",
 	"libraryMediaVersion",
@@ -96,9 +101,36 @@ function fixture() {
 
 beforeEach(() => {
 	state.active = false;
+	moqCleanup.snapshot.mockReset().mockResolvedValue([]);
+	moqCleanup.cleanup.mockReset();
 });
 
 describe("selected reset", () => {
+	it("cleans only selected Live archives after a committed deletion and preserves files after a failed transaction", async () => {
+		const f = fixture(),
+			proof = [{ runId: "owned-run" }];
+		moqCleanup.snapshot.mockResolvedValue(proof);
+		moqCleanup.cleanup.mockImplementationOnce(async () => {
+			expect(f.events).toContain("delete:liveChannelRun");
+		});
+		await deleteSelectedData(
+			f.client,
+			requiredResetCategories(["liveChannels"]),
+			new AesGcmCipher(randomBytes(32)),
+		);
+		expect(moqCleanup.cleanup).toHaveBeenCalledWith(proof);
+		moqCleanup.cleanup.mockClear();
+		const failed = fixture();
+		failed.transaction.mockRejectedValueOnce(new Error("DB deletion failed"));
+		await expect(
+			deleteSelectedData(
+				failed.client,
+				requiredResetCategories(["liveChannels"]),
+				new AesGcmCipher(randomBytes(32)),
+			),
+		).rejects.toThrow("DB deletion failed");
+		expect(moqCleanup.cleanup).not.toHaveBeenCalled();
+	});
 	it.each(
 		editingModels,
 	)("protects %s before any deletion or cleanup handoff", async (model) => {

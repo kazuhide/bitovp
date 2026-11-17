@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
 import { MoqStandalone } from "./moq-standalone";
@@ -22,9 +22,11 @@ describe("standalone shared MoQ player", () => {
 			currentRun: { id: RUN, status: "RUNNING" },
 		});
 		renderWithQuery(<MoqStandalone channelId={CHANNEL} runId={RUN} />);
-		expect(await screen.findByTestId("shared-moq")).toHaveAttribute(
-			"data-active",
-			"true",
+		await waitFor(() =>
+			expect(screen.getByTestId("shared-moq")).toHaveAttribute(
+				"data-active",
+				"true",
+			),
 		);
 		expect(
 			screen.getByRole("link", { name: "Back to Live channel" }),

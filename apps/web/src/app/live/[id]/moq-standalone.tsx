@@ -50,14 +50,13 @@ export function MoqStandalone({
 				<p role="alert" className="text-sm text-zinc-400">
 					{t("moqPlayback.unavailable")}
 				</p>
-			) : (
-				<MoqPlayerPreview
-					channelId={channelId}
-					runId={runId}
-					active={active.data}
-					standalone
-				/>
-			)}
+			) : null}
+			<MoqPlayerPreview
+				channelId={channelId}
+				runId={runId}
+				active={active.data === true}
+				standalone
+			/>
 		</section>
 	);
 }

@@ -110,7 +110,7 @@ services:
       AUTH_SESSION_SECRET: ${CUSTOMER_AUTH_SESSION_SECRET:?required}
       ALLOWED_ORIGIN_HOSTS: web,localhost,127.0.0.1
       VOD_INPUT_PREVIEW_DIR: /vod-input-previews
-    volumes: [input-previews:/vod-input-previews:ro]
+    volumes: [input-previews:/vod-input-previews:ro, moq-archives:/moq-archives]
     ports: ["127.0.0.1:${CUSTOMER_HTTP_PORT:?required}:3100"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -124,3 +124,4 @@ volumes:
   redisdata:
   reports:
   input-previews:
+  moq-archives:

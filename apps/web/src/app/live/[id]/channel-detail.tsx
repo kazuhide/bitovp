@@ -919,7 +919,7 @@ function ChannelConsole({
 				id="sec-manifests"
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-manifests"])}
-				defaultOpen={sectionOpen("sec-manifests")}
+				defaultOpen={moqPlayback || sectionOpen("sec-manifests")}
 				summary={
 					linksUnavailable
 						? t("status.summaryUnavailable")

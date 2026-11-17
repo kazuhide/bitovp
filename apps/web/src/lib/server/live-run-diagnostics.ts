@@ -215,11 +215,25 @@ async function handleDiagnostics(
 				);
 				result = { ...envelope, data };
 			} else if (query.kind === "task") {
+				const task = await api.encoding.encodings.status(encodingId);
+				const safe = diagnosticsTaskSchema.parse(task);
 				result = {
 					...envelope,
-					data: diagnosticsTaskSchema.parse(
-						await api.encoding.encodings.status(encodingId),
-					),
+					data: query.download
+						? {
+								...safe,
+								messages: safe.messages.map((metadata, index) => {
+									const text = task.messages?.[index]?.text;
+									return typeof text === "string"
+										? {
+												...metadata,
+												text: text.slice(0, 16384),
+												textTruncated: text.length > 16384,
+											}
+										: metadata;
+								}),
+							}
+						: safe,
 				};
 			} else if (query.kind === "hd-start") {
 				result = {
@@ -284,12 +298,22 @@ async function handleDiagnostics(
 					durationMs: Date.now() - started,
 					request: { liveChannelId: id, runId, ...(final ? {} : query) },
 					// Download URLs are bearer capabilities, never durable audit data.
-					response: final ? { ...envelope, data: { available: true } } : result,
+					response:
+						final || query.download
+							? { ...envelope, data: { available: true } }
+							: result,
 				},
 				req,
 			);
 			return NextResponse.json(result, {
-				headers: { "Cache-Control": "private, no-store" },
+				headers: {
+					"Cache-Control": "private, no-store",
+					...(query.download
+						? {
+								"Content-Disposition": `attachment; filename="live-task-${runId}.json"`,
+							}
+						: {}),
+				},
 			});
 		} catch (err) {
 			const upstream = (err as { httpStatusCode?: unknown } | null)

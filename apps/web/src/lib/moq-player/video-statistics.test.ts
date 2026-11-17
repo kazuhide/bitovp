@@ -29,6 +29,27 @@ function fixture() {
 	};
 }
 describe("measured MoQ video statistics", () => {
+	it("requires rendered frames for fallback startup and latency freshness", () => {
+		const f = fixture();
+		const stats = createVideoStatistics(
+			0,
+			() => ({ getLatency: () => 0.4 }),
+			f.now,
+		);
+		stats.setVideo(f.video);
+		f.advance(100, 3, 3);
+		expect(stats.frame()).toBe(false);
+		expect(stats.snapshot()).toMatchObject({
+			startupMs: null,
+			latencySeconds: null,
+		});
+		f.advance(100, 4, 3);
+		expect(stats.frame()).toBe(true);
+		expect(stats.snapshot().latencySeconds).toBe(0.4);
+		f.advance(1001, 6, 5);
+		expect(stats.frame()).toBe(false);
+		expect(stats.snapshot().latencySeconds).toBeNull();
+	});
 	it("measures frame rate from counter deltas and wall time, plus first observed frame startup", () => {
 		const f = fixture();
 		const stats = createVideoStatistics(0, () => undefined, f.now);

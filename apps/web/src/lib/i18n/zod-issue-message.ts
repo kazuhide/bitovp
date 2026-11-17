@@ -59,6 +59,10 @@ export const SENTENCE_TO_KEY: ReadonlyMap<string, MessageKey> = new Map<
 		"zerr.diagnosticsSrtInputOnly",
 	],
 	[
+		"Task text download requires task diagnostics",
+		"zerr.diagnosticsTaskDownload",
+	],
+	[
 		"Expected an HTTPS download URL without credentials",
 		"zerr.diagnosticsHttpsDownload",
 	],

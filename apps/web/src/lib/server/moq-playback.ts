@@ -194,7 +194,7 @@ export async function getMoqPlaybackDescriptor(
 			credential.id !== stored.data.credentialId ||
 			credential.provider !== "MOQ" ||
 			!Number.isFinite(updatedAt) ||
-			updatedAt > Math.min(startedAt, createdOutput.at.getTime())
+			updatedAt >= Math.min(startedAt, createdOutput.at.getTime())
 		)
 			return finish(409, "MOQ_PLAYBACK_CREDENTIAL_CHANGED");
 		const secret = CREDENTIAL_PROVIDER_SHAPES.MOQ.secret.safeParse(
@@ -231,6 +231,16 @@ export async function getMoqPlaybackDescriptor(
 				},
 			},
 			playerLicenseKey: settings.playerLicenseKey,
+			...(settings.analyticsLicenseKey
+				? {
+						analytics: {
+							licenseKey: settings.analyticsLicenseKey,
+							videoId: `bitovp-moq:${encodingId}:${runId}`,
+							collectorVersion: "2.62.0",
+							latencyField: "customData1",
+						},
+					}
+				: {}),
 			...(relayMetadata.kind === "cloudflare"
 				? { relay: relayMetadata.relay }
 				: {}),

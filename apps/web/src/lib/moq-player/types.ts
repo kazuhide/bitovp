@@ -1,49 +1,68 @@
 import { z } from "zod";
 
-const descriptorSchema = z.strictObject({
-	runId: z.uuid(),
-	encodingId: z.uuid(),
-	relay: z
-		.strictObject({
-			provider: z.literal("cloudflare"),
-			endpointOrigin: z.enum([
-				"https://draft-16.cloudflare.mediaoverquic.com",
-				"https://draft-18.cloudflare.mediaoverquic.com",
-			]),
-			configuredRelayId: z.string().regex(/^[a-f0-9]{32}$/),
-			tokenExpiresAt: z.iso.datetime(),
-			tokenOperations: z.tuple([z.literal("subscribe")]),
-			metadataSource: z.literal("unverified-token-claims"),
-		})
-		.optional(),
-	playerLicenseKey: z.string().min(1).max(200),
-	resource: z.strictObject({
-		type: z.literal("moq"),
-		url: z
-			.string()
-			.max(8192)
-			.refine((value) => {
-				try {
-					const url = new URL(value);
-					return (
-						url.protocol === "https:" &&
-						!url.username &&
-						!url.password &&
-						!url.search &&
-						!url.hash
-					);
-				} catch {
-					return false;
-				}
+const descriptorSchema = z
+	.strictObject({
+		runId: z.uuid(),
+		encodingId: z.uuid(),
+		relay: z
+			.strictObject({
+				provider: z.literal("cloudflare"),
+				endpointOrigin: z.enum([
+					"https://draft-16.cloudflare.mediaoverquic.com",
+					"https://draft-18.cloudflare.mediaoverquic.com",
+				]),
+				configuredRelayId: z.string().regex(/^[a-f0-9]{32}$/),
+				tokenExpiresAt: z.iso.datetime(),
+				tokenOperations: z.tuple([z.literal("subscribe")]),
+				metadataSource: z.literal("unverified-token-claims"),
+			})
+			.optional(),
+		playerLicenseKey: z.string().min(1).max(200),
+		analytics: z
+			.strictObject({
+				licenseKey: z.string().min(1).max(200),
+				videoId: z.string().max(200),
+				collectorVersion: z.literal("2.62.0"),
+				latencyField: z.literal("customData1"),
+			})
+			.optional(),
+		resource: z.strictObject({
+			type: z.literal("moq"),
+			url: z
+				.string()
+				.max(8192)
+				.refine((value) => {
+					try {
+						const url = new URL(value);
+						return (
+							value === value.trim() &&
+							!Array.from(value).some(
+								(char) =>
+									char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 127,
+							) &&
+							url.protocol === "https:" &&
+							!url.username &&
+							!url.password &&
+							!url.hash
+						);
+					} catch {
+						return false;
+					}
+				}),
+			metadata: z.strictObject({
+				namespace: z.string().min(1).max(1024),
+				catalogTrackName: z.literal("catalog"),
+				draftVersion: z.union([z.literal(16), z.literal(18)]),
+				mediaTypes: z.tuple([z.literal("audio"), z.literal("video")]),
 			}),
-		metadata: z.strictObject({
-			namespace: z.string().min(1).max(1024),
-			catalogTrackName: z.literal("catalog"),
-			draftVersion: z.union([z.literal(16), z.literal(18)]),
-			mediaTypes: z.tuple([z.literal("audio"), z.literal("video")]),
 		}),
-	}),
-});
+	})
+	.refine(
+		(value) =>
+			!value.analytics ||
+			value.analytics.videoId ===
+				`bitovp-moq:${value.encodingId}:${value.runId}`,
+	);
 export type MoqPlaybackDescriptor = z.infer<typeof descriptorSchema>;
 export function parseMoqPlaybackDescriptor(
 	value: unknown,

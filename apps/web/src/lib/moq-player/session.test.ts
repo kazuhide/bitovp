@@ -33,6 +33,64 @@ function fixture() {
 	return { source, player, host };
 }
 describe("owned MoQ source lifecycle", () => {
+	it("still tears down the source when recording finalization exceeds its budget", async () => {
+		vi.useFakeTimers();
+		const { player, host } = fixture();
+		try {
+			const session = createMoqPlayback(
+				() => player,
+				descriptor,
+				host,
+				vi.fn(),
+				vi.fn(),
+				{
+					startedAt: performance.now(),
+					onStatistics: vi.fn(),
+					beforeDispose: () => new Promise<void>(() => {}),
+				},
+			);
+			await session.ready;
+			const done = session.dispose();
+			const rejected = expect(done).rejects.toThrow(
+				/^MoQ playback cleanup failed$/,
+			);
+			await vi.advanceTimersByTimeAsync(5501);
+			await rejected;
+			expect(player.sources.remove).toHaveBeenCalledOnce();
+			expect(player.dispose).toHaveBeenCalledOnce();
+		} finally {
+			host.remove();
+			vi.useRealTimers();
+		}
+	});
+	it("waits for recording finalization and still disposes its source when finalization rejects", async () => {
+		const { player, host } = fixture();
+		let reject!: (error: Error) => void;
+		const beforeDispose = vi.fn(
+			() =>
+				new Promise<void>((_resolve, fail) => {
+					reject = fail;
+				}),
+		);
+		const session = createMoqPlayback(
+			() => player,
+			descriptor,
+			host,
+			vi.fn(),
+			vi.fn(),
+			{ startedAt: performance.now(), onStatistics: vi.fn(), beforeDispose },
+		);
+		await session.ready;
+		const done = session.dispose();
+		await Promise.resolve();
+		expect(beforeDispose).toHaveBeenCalledOnce();
+		expect(player.sources.remove).not.toHaveBeenCalled();
+		reject(new Error("private-recording-error"));
+		await expect(done).rejects.toThrow(/^MoQ playback cleanup failed$/);
+		expect(player.sources.remove).toHaveBeenCalledOnce();
+		expect(player.dispose).toHaveBeenCalledOnce();
+		host.remove();
+	});
 	it("starts one muted source with the exact descriptor, then removes and disposes it once", async () => {
 		const { source, player, host } = fixture();
 		const factory = vi.fn(() => player);
@@ -140,14 +198,17 @@ describe("owned MoQ source lifecycle", () => {
 			videoWidth: { value: 640 },
 			videoHeight: { value: 360 },
 		});
-		const quality = vi.fn(() => ({ totalVideoFrames: 0 }));
+		const quality = vi.fn(() => ({
+			totalVideoFrames: 0,
+			droppedVideoFrames: 0,
+		}));
 		Object.assign(video, { getVideoPlaybackQuality: quality });
 		host.firstElementChild?.append(video);
 		await vi.waitFor(() => expect(video.muted).toBe(true));
 		video.currentTime = 1;
 		video.dispatchEvent(new Event("timeupdate"));
 		expect(frame).not.toHaveBeenCalled();
-		quality.mockReturnValue({ totalVideoFrames: 2 });
+		quality.mockReturnValue({ totalVideoFrames: 2, droppedVideoFrames: 0 });
 		video.currentTime = 2;
 		video.dispatchEvent(new Event("timeupdate"));
 		expect(frame).toHaveBeenCalledOnce();

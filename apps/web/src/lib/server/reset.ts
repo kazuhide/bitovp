@@ -9,6 +9,11 @@ import {
 	assertNoJobEvidenceReferences,
 	isForeignKeyViolation,
 } from "./job-evidence-retention";
+import {
+	cleanupDeletedMoqArchives,
+	type MoqArchiveCleanupSnapshot,
+	snapshotMoqArchiveCleanup,
+} from "./moq-archive-cleanup";
 
 /**
  *  — "reset the data and start over".
@@ -1158,7 +1163,8 @@ export async function deleteOperationalData(
 	prisma: AppPrismaClient,
 ): Promise<ResetOutcome> {
 	await assertNoJobEvidenceReferences(prisma);
-	return prisma
+	let moqArchives: MoqArchiveCleanupSnapshot[] = [];
+	const outcome = await prisma
 		.$transaction(
 			async (tx) => {
 				// Lock in stable order, matching capture's job lock; reject before mutations.
@@ -1184,6 +1190,7 @@ export async function deleteOperationalData(
 				const encoders = await collectEncoderPointers(
 					tx as unknown as AppPrismaClient,
 				);
+				moqArchives = await snapshotMoqArchiveCleanup(tx);
 				const counts = {} as ResetCounts;
 				// 130-B1: the scoped half of a KEPT table, deleted explicitly so
 				// the number in the audit row is one this code produced rather than
@@ -1278,4 +1285,6 @@ export async function deleteOperationalData(
 				await assertNoJobEvidenceReferences(prisma);
 			throw error;
 		});
+	await cleanupDeletedMoqArchives(moqArchives);
+	return outcome;
 }

@@ -20,7 +20,7 @@ type Telemetry = {
 /** Frame bookkeeping is internal; React receives at most one snapshot per second. */
 export function observeMoqVideo(
 	host: HTMLElement,
-	progress: () => void,
+	progress: (video: HTMLVideoElement) => void,
 	failure: () => void,
 	telemetry?: Telemetry,
 ) {
@@ -32,7 +32,8 @@ export function observeMoqVideo(
 		() => telemetry?.source(),
 	);
 	function sample(presented?: number, mediaTime?: number) {
-		if (!stopped && statistics.frame(presented, mediaTime)) progress();
+		if (!stopped && video && statistics.frame(presented, mediaTime))
+			progress(video);
 	}
 	function onTime() {
 		if (!video?.requestVideoFrameCallback) sample();

@@ -170,6 +170,12 @@ describe("run-bound MoQ playback descriptor", () => {
 				},
 			},
 			playerLicenseKey: "tenant-player-key",
+			analytics: {
+				licenseKey: "analytics-secret",
+				videoId: `bitovp-moq:${ENCODING}:${RUN}`,
+				collectorVersion: "2.62.0",
+				latencyField: "customData1",
+			},
 		});
 		expect(mocks.run).toHaveBeenCalledWith(
 			expect.objectContaining({ where: { id: RUN, liveChannelId: CHANNEL } }),
@@ -320,12 +326,15 @@ describe("run-bound MoQ playback descriptor", () => {
 
 	it.each([
 		"changed",
+		"same-boundary",
 		"wrong-provider",
 		"wrong-id",
 	])("refuses a credential that no longer binds the output: %s", async (kind) => {
 		const value = credential();
 		if (kind === "changed")
 			value.updatedAt = new Date("2026-11-17T00:00:03.000Z");
+		if (kind === "same-boundary")
+			value.updatedAt = new Date("2026-11-17T00:00:02.000Z");
 		if (kind === "wrong-provider") value.provider = "AWS_S3";
 		if (kind === "wrong-id") value.id = OTHER;
 		mocks.credential.mockResolvedValue(value);

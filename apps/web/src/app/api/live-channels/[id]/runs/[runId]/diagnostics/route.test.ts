@@ -94,6 +94,39 @@ beforeEach(() => {
 });
 
 describe("run-bound task diagnostics", () => {
+	it("offers bounded task text only as an explicit private download and never in audits", async () => {
+		mocks.task.mockResolvedValue({
+			status: "ERROR",
+			messages: [
+				{
+					type: "ERROR",
+					text: "private-task-message".repeat(1000),
+					token: "discard-extra-secret",
+				},
+			],
+		});
+		const response = await GET(request("?kind=task&download=task"), context());
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-disposition")).toContain(
+			"attachment;",
+		);
+		expect(response.headers.get("cache-control")).toBe("private, no-store");
+		const result = await response.json();
+		expect(result.data.messages[0].text).toHaveLength(16384);
+		expect(result.data.messages[0].textTruncated).toBe(true);
+		expect(JSON.stringify(result)).not.toContain("discard-extra-secret");
+		expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain(
+			"private-task-message",
+		);
+	});
+	it.each([
+		"?kind=summary&download=task",
+		"?download=task",
+		"?kind=task&download=anything",
+	])("rejects invalid task download scope %s", async (query) => {
+		expect((await GET(request(query), context())).status).toBe(400);
+		expect(mocks.task).not.toHaveBeenCalled();
+	});
 	it("reads the immutable run through its original account and audits only task metadata", async () => {
 		mocks.task.mockResolvedValue({
 			status: "ERROR",

@@ -14,10 +14,15 @@ export const liveDiagnosticsQuerySchema = z
 		offset: integer.default(0),
 		limit: integer.pipe(z.number().min(1).max(100)).default(25),
 		srtInputId: z.uuid().optional(),
+		download: z.literal("task").optional(),
 	})
 	.refine((q) => q.srtInputId === undefined || q.kind === "srt", {
 		message: "srtInputId is only supported for SRT diagnostics",
 		path: ["srtInputId"],
+	})
+	.refine((q) => q.download === undefined || q.kind === "task", {
+		message: "Task text download requires task diagnostics",
+		path: ["download"],
 	});
 
 const number = z.number().finite().optional().catch(undefined);

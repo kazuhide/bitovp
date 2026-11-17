@@ -17,6 +17,11 @@ import {
 	countJobEvidenceReferences,
 	isForeignKeyViolation,
 } from "./job-evidence-retention";
+import {
+	cleanupDeletedMoqArchives,
+	type MoqArchiveCleanupSnapshot,
+	snapshotMoqArchiveCleanup,
+} from "./moq-archive-cleanup";
 import { collectEncoderPointers, type ResetOutcome } from "./reset";
 import { snapshotResetCleanup } from "./reset-cleanup-snapshot";
 
@@ -123,8 +128,9 @@ export async function deleteSelectedData(
 	}
 	if (selected.has("vodJobs")) await assertNoJobEvidenceReferences(prisma);
 	for (let attempt = 0; ; attempt++) {
+		let moqArchives: MoqArchiveCleanupSnapshot[] = [];
 		try {
-			return await prisma.$transaction(
+			const outcome = await prisma.$transaction(
 				async (tx) => {
 					const clearsUsage =
 						selected.has("usageStatistics") ||
@@ -171,6 +177,8 @@ export async function deleteSelectedData(
 							liveChannels: selected.has("liveChannels"),
 						},
 					);
+					if (selected.has("liveChannels"))
+						moqArchives = await snapshotMoqArchiveCleanup(tx);
 					if (selected.has("contentLibrary") && !selected.has("vodJobs")) {
 						await tx.encodingJob.updateMany({
 							where: {},
@@ -240,11 +248,13 @@ export async function deleteSelectedData(
 						disarmed,
 						encoders,
 						deletedCounts,
-						requiresSetup: false,
+						requiresSetup: false as const,
 					};
 				},
 				{ isolationLevel: "Serializable", timeout: 120_000, maxWait: 10_000 },
 			);
+			await cleanupDeletedMoqArchives(moqArchives);
+			return outcome;
 		} catch (error) {
 			if (selected.has("vodJobs") && isForeignKeyViolation(error))
 				await assertNoJobEvidenceReferences(prisma);

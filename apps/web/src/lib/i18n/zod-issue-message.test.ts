@@ -259,7 +259,8 @@ describe("totality — the pins that license the sentence→key deviation", () =
 		// Live diagnostics adds SRT-only filtering and credential-free HTTPS.
 		// SPEKE DRM adds five distinct object-form schema refusals, measured here.
 		// MoQ adds the token-type/auth-token dependency, via message-property.
-		expect(messageProp.size).toBe(38);
+		// Explicit task-text download adds one measured message-property refusal.
+		expect(messageProp.size).toBe(39);
 		// 62→63 (review-226 I3): the feeder manual-arm refusal. Measured.
 		// 63→64 : the same one sentence — the totals move together
 		// because it is a validator arg, which is what makes the two pins a
@@ -278,7 +279,7 @@ describe("totality — the pins that license the sentence→key deviation", () =
 		// route; both totals move together, as designed.
 		// merge of origin/main into this branch (2026-09-03): both deltas above landed
 		// together; the number is the instrument's received value on the merged tree.
-		expect(authored.size).toBe(86);
+		expect(authored.size).toBe(87);
 		const missing = [...authored].filter((s) => !SENTENCE_TO_KEY.has(s));
 		expect(missing).toEqual([]);
 	});

@@ -121,11 +121,12 @@ describe("catalogue parity", () => {
 		/* Assert the measured number of unique long Japanese strings. Update the count only after inspecting the catalog change that crosses the length threshold. */
 		// Runtime measurement includes synchronized-output and separated-QC guidance.
 		// MoQ adds Custom Live output guidance and two credential refusals (measured).
-		pinWithDriftAid(long.length, 1664, "long");
+		// MoQ recording, Analytics and heartbeat history guidance (runtime measured).
+		pinWithDriftAid(long.length, 1671, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Runtime measurement includes three-way output labels (deduplicated).
 		// The two MoQ authorization labels add two unique short Japanese values.
-		pinWithDriftAid(short.size, 3313, "short");
+		pinWithDriftAid(short.size, 3356, "short");
 	});
 
 	/**

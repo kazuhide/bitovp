@@ -111,7 +111,14 @@ export function createVideoStatistics(
 	function frame(presentedFrames?: number, mediaTime?: number): boolean {
 		if (!video) return false;
 		const explicit = finite(presentedFrames);
-		const count = explicit ?? quality(video).total;
+		const counters = quality(video);
+		const rendered =
+			counters.total !== null &&
+			counters.dropped !== null &&
+			counters.total >= counters.dropped
+				? counters.total - counters.dropped
+				: null;
+		const count = explicit ?? rendered;
 		const time = finite(mediaTime ?? video.currentTime);
 		if (count === null || time === null) return false;
 		const advanced =

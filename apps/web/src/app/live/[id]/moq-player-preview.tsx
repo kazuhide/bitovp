@@ -1,11 +1,15 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
+import type { MoqHistorySaveState } from "@/lib/moq-player/history-client";
 import { loadMoqPlayer } from "@/lib/moq-player/loader";
+import { createMoqPreviewArchive } from "@/lib/moq-player/preview-archive";
+import type { MoqRecordingState } from "@/lib/moq-player/recording";
 import { createMoqPlayback } from "@/lib/moq-player/session";
 import {
 	type MoqPlaybackDescriptor,
@@ -15,6 +19,7 @@ import {
 	EMPTY_MOQ_VIDEO_STATISTICS,
 	type MoqVideoStatistics,
 } from "@/lib/moq-player/video-statistics";
+import { MoqHistoryPanel } from "./moq-history-panel";
 import { MoqPlayerStatistics } from "./moq-player-statistics";
 
 type Props = {
@@ -26,6 +31,7 @@ type Props = {
 type Phase =
 	| "idle"
 	| "loading"
+	| "stopping"
 	| "waiting"
 	| "frames"
 	| "stopped"
@@ -34,6 +40,8 @@ type Phase =
 type Attempt = {
 	abort: AbortController;
 	session?: ReturnType<typeof createMoqPlayback>;
+	archive?: ReturnType<typeof createMoqPreviewArchive>;
+	reason: "stopped" | "failed" | "ended";
 };
 
 export function MoqPlayerPreview(props: Props) {
@@ -48,9 +56,22 @@ function MoqPlaybackAttempt({
 	standalone = false,
 }: Props) {
 	const { t } = useT();
+	const queryClient = useQueryClient();
 	const host = useRef<HTMLElement>(null);
 	const current = useRef<Attempt | undefined>(undefined);
 	const generation = useRef(0);
+	const intent = useRef(0);
+	const closing = useRef<Promise<void> | undefined>(undefined);
+	const archiveGeneration = useRef(0);
+	const mounted = useRef(true);
+	const [recordingState, setRecordingState] =
+		useState<MoqRecordingState>("idle");
+	const [historyState, setHistoryState] = useState<
+		MoqHistorySaveState | "idle"
+	>("idle");
+	const [analyticsState, setAnalyticsState] = useState<
+		"ready" | "unavailable" | "not-configured"
+	>("not-configured");
 	const [phase, setPhase] = useState<Phase>("idle");
 	const [statistics, setStatistics] = useState<MoqVideoStatistics>(
 		EMPTY_MOQ_VIDEO_STATISTICS,
@@ -60,14 +81,33 @@ function MoqPlaybackAttempt({
 	>(null);
 	const [relay, setRelay] = useState<MoqPlaybackDescriptor["relay"]>();
 	const close = useCallback(() => {
+		if (closing.current) return closing.current;
 		generation.current++;
 		const attempt = current.current;
 		current.current = undefined;
 		attempt?.abort.abort();
-		return attempt?.session?.dispose() ?? Promise.resolve();
+		const disposal =
+			attempt?.session?.dispose() ??
+			attempt?.archive?.finish(attempt.reason) ??
+			Promise.resolve();
+		closing.current = disposal;
+		const clear = () => {
+			if (closing.current === disposal) closing.current = undefined;
+		};
+		void disposal.then(clear, clear);
+		return disposal;
+	}, []);
+	useEffect(() => {
+		mounted.current = true;
+		return () => {
+			mounted.current = false;
+			archiveGeneration.current++;
+			intent.current++;
+		};
 	}, []);
 	useEffect(() => {
 		if (!active) {
+			intent.current++;
 			void close().catch(() => {});
 			setPhase("stopped");
 			setStatistics(EMPTY_MOQ_VIDEO_STATISTICS);
@@ -79,15 +119,25 @@ function MoqPlaybackAttempt({
 	async function play() {
 		if (!active || !host.current) return;
 		const startedAt = performance.now();
-		void close().catch(() => {});
+		const startedWall = new Date().toISOString();
+		const ownIntent = ++intent.current;
+		setPhase("loading");
+		await close().catch(() => {});
+		if (ownIntent !== intent.current || !mounted.current || !host.current)
+			return;
+		const archiveEpoch = ++archiveGeneration.current;
+		const visibleArchive = () =>
+			mounted.current && archiveGeneration.current === archiveEpoch;
 		setStatistics(EMPTY_MOQ_VIDEO_STATISTICS);
 		setConfiguration(null);
 		setRelay(undefined);
+		setRecordingState("idle");
+		setHistoryState("idle");
 		if (typeof Reflect.get(window, "WebTransport") !== "function") {
 			setPhase("unavailable");
 			return;
 		}
-		const attempt: Attempt = { abort: new AbortController() };
+		const attempt: Attempt = { abort: new AbortController(), reason: "ended" };
 		current.current = attempt;
 		const owned = () =>
 			current.current === attempt && !attempt.abort.signal.aborted;
@@ -101,6 +151,29 @@ function MoqPlaybackAttempt({
 			const descriptor = parseMoqPlaybackDescriptor(raw, runId);
 			setConfiguration(descriptor.resource.metadata);
 			setRelay(descriptor.relay);
+			attempt.archive = createMoqPreviewArchive({
+				channelId,
+				runId,
+				descriptor,
+				startedAt: startedWall,
+				startedMonotonicMs: startedAt,
+				onRecordingState: (value) => {
+					if (visibleArchive()) setRecordingState(value);
+				},
+				onHistoryState: (value) => {
+					if (visibleArchive()) setHistoryState(value);
+				},
+				onAnalyticsState: (value) => {
+					if (visibleArchive()) setAnalyticsState(value);
+				},
+				onPersisted: () => {
+					void queryClient.invalidateQueries({
+						queryKey: ["moq-observations", channelId, runId],
+					});
+				},
+			});
+			await attempt.archive.ready;
+			if (!owned()) return;
 			const factory = await loadMoqPlayer();
 			if (!owned() || !host.current) return;
 			attempt.session = createMoqPlayback(
@@ -112,14 +185,21 @@ function MoqPlaybackAttempt({
 				},
 				() => {
 					if (owned()) {
+						attempt.reason = "failed";
 						setPhase("failed");
 						setStatistics(EMPTY_MOQ_VIDEO_STATISTICS);
 					}
 				},
 				{
 					startedAt,
+					onVideo: (video) => attempt.archive?.video(video),
+					beforeDispose: () =>
+						attempt.archive?.finish(attempt.reason) ?? Promise.resolve(),
 					onStatistics: (value) => {
-						if (owned()) setStatistics(value);
+						if (owned()) {
+							setStatistics(value);
+							attempt.archive?.statistics(value);
+						}
 					},
 				},
 			);
@@ -130,6 +210,7 @@ function MoqPlaybackAttempt({
 				);
 		} catch (error) {
 			if (!owned()) return;
+			attempt.reason = "failed";
 			void close().catch(() => {});
 			setStatistics(EMPTY_MOQ_VIDEO_STATISTICS);
 			setPhase(
@@ -143,10 +224,13 @@ function MoqPlaybackAttempt({
 		}
 	}
 	async function stop() {
+		if (phase === "stopping") return;
+		intent.current++;
+		if (current.current) current.current.reason = "stopped";
 		const disposal = close();
 		setStatistics(EMPTY_MOQ_VIDEO_STATISTICS);
 		const ownGeneration = generation.current;
-		setPhase("loading");
+		setPhase("stopping");
 		try {
 			await disposal;
 			if (generation.current === ownGeneration) setPhase("stopped");
@@ -154,7 +238,11 @@ function MoqPlaybackAttempt({
 			if (generation.current === ownGeneration) setPhase("failed");
 		}
 	}
-	const busy = phase === "loading" || phase === "waiting" || phase === "frames";
+	const busy =
+		phase === "loading" ||
+		phase === "stopping" ||
+		phase === "waiting" ||
+		phase === "frames";
 	return (
 		<div className="space-y-2" data-moq-preview={runId}>
 			<div className="flex flex-wrap items-center gap-2">
@@ -171,7 +259,7 @@ function MoqPlaybackAttempt({
 				<Button
 					size="sm"
 					variant="secondary"
-					disabled={!busy}
+					disabled={!busy || phase === "stopping"}
 					onClick={() => void stop()}
 				>
 					{t("moqPlayback.stop")}
@@ -198,6 +286,7 @@ function MoqPlaybackAttempt({
 			</div>
 			<section
 				ref={host}
+				data-moq-live-host={runId}
 				aria-label={t("moqPlayback.title")}
 				className="aspect-video w-full overflow-hidden rounded-md border border-zinc-800 bg-black [&_video]:h-full [&_video]:w-full [&_video]:object-contain"
 			/>
@@ -206,6 +295,16 @@ function MoqPlaybackAttempt({
 				configuration={configuration}
 				relay={relay}
 			/>
+			<div className="space-y-1 text-xs text-zinc-500">
+				<p aria-live="polite" data-moq-recording={recordingState}>
+					{t(`moqPlayback.recording.${recordingState}`)}
+				</p>
+				<p data-moq-history-save={historyState}>
+					{t(`moqPlayback.historySave.${historyState}`)}
+				</p>
+				<p>{t(`moqPlayback.analyticsState.${analyticsState}`)}</p>
+			</div>
+			<MoqHistoryPanel channelId={channelId} runId={runId} active={active} />
 		</div>
 	);
 }

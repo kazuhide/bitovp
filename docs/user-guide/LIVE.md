@@ -105,6 +105,31 @@ Cloudflare Relay ID/expiry/permissions come from unverified subscriber-token
 claims, not server telemetry. Relay bytes/objects/RTT counters are not exposed
 by the Player API used here.
 
+Both pages retain observations after the run ends. A playback session saves
+Player latency, FPS, buffer source and frame counters on a UTC timeline, with
+missing measurements left as gaps. The received preview is recorded for up to
+90 seconds/16MiB and saved as a seekable WebM. Play or download it from
+**Saved MoQ observations** after stopping. Recording covers the preview's
+received interval; its state shows recording, saving, saved, unsupported or
+failure. Each run keeps up to five observation sessions. Saved data remains
+available when the live player is inactive.
+
+Configure the tenant's Analytics key in Player settings to collect the same
+barcode latency through Collector 2.62.0's public HTML5 adapter. **Bitmovin
+Analytics** reads back `customData1` milliseconds for the saved impression and
+run, alongside the browser measurements and persisted Encoder heartbeat
+metrics. This is collection of the Player's measurement, rather than an
+independent latency clock or the native Analytics `LATENCY` field. Use
+**Refresh** after ending if ingestion is still pending. Input bitrate/FPS,
+cumulative packet anomalies and segment processing time retain their own units;
+segment processing time does not measure end-to-end video delay.
+
+Set `BITOVP_MOQ_ARCHIVE_DIR` to persistent local storage. The Web image includes
+FFprobe/FFmpeg for bounded validation and stream-copy remuxing; the Compose
+deployments mount `/moq-archives` as a persistent volume. Channel deletion or
+reset removes only the corresponding owned recordings after the database
+commit and required provider-stop checks succeed.
+
 The same API accepts `kind=task` for fresh provider task status and metadata
 from at most 100 messages. It reports truncation and positive message counts.
 The SDK maps an absent list to an empty array, so missing or empty mapped lists

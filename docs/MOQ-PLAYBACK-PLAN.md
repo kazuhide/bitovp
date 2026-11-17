@@ -9,6 +9,8 @@ BitOVP から Live を開始し、Cloudflare Relay を経て、同じ BitOVP の
 Player Web X で自作映像・音声を再生する。Encoder の `RUNNING`、入力受信、catalog 取得、
 動画の進行・復号フレームを分けて記録する。成功扱いには同一 run・専用 namespace の実映像が必要。
 試験終了時には BitOVP の stop と fresh task 診断で provider の終端を確認する。
+失敗時には明示的な `kind=task&download=task` で上限付きの task text を private attachment として
+取得できるようにし、通常表示と監査には自由文を含めない。公開記録には token／入力情報を持ち込まない。
 
 ## 構成
 
@@ -79,6 +81,69 @@ publish token 非返却、asset hash 不一致、loader failure、teardown と r
 decoded／presented frames、映像寸法と画面を記録する。停止後の provider task 終端まで確認する。
 最後に同じ cmux workspace 内で Rescue の foreground review と独立 Codex review を並行して行う。
 main への merge／release は行わず、ブランチと日本語の Obsidian 記録を残す。
+
+## 終了後のデモ表示（2026-11-18 追加要件）
+
+終了後も同じジョブページ・単独ページで、受信動画と統計の推移を振り返れるようにする。
+MoQ を受信した preview の `captureStream`／MediaRecorder により最大90秒・16MiBの WebM を保存する。
+これは preview で実際に受信した範囲の録画であり、視聴していない時間までの連続収録とは表示しない。
+未対応・失敗・録画なしを明示し、入力映像を受信録画の代用品にはしない。
+
+同一 run に最大5件の観測 session を保存し、各 session は最大600点、1秒以上間隔、10分以内。
+ブラウザーで測定した時刻・latency・FPS・buffer・frame counters、接続／初回フレーム／停止／失敗イベントを
+上限付き schema で受け付ける。未知値は null を保持する。5秒ごとと停止時に保存する。
+session は server が認証済み actor と run に結び、別の actor による上書きを拒否する。
+6件目の session 作成は拒否し、保存済み5件を自動で消さない。UUID は小文字の正規形に統一し、
+大文字・小文字の別 session が同じファイルへ写像されることを防ぐ。
+最大5件は退避・上書きせず、新規 session の作成だけを拒否する。Live 再生は継続できる。
+開始は稼働中の同じ run に限り、終了後の flush は既存 session だけ短時間許可する。
+GET は OPERATOR に限定し、tenant／channel／run の照合を行う。応答は private/no-store。
+購読 URL・token・Player key・自由文 SDK エラーは保存しない。
+
+API 契約は `GET /api/live-channels/[id]/runs/[runId]/moq-observations` と
+`PUT /api/live-channels/[id]/runs/[runId]/moq-observations/[sessionId]`。
+session 更新 DTO は `{startedAt, endedAt, samples, events}`。sample は
+`{elapsedMs, latencyMs, fps, bufferSeconds, droppedFrames, decodedFrames, presentedFrames, totalFrames, resolution}`。
+event は `{elapsedMs,type}`、type は `started|first-frame|stopped|failed|ended`。
+sample の optional `bufferSource` は `player|video|null` の固定値で、出所がない過去データは不明と扱う。
+optional `analyticsImpressionId` は UUID のみ受け付け、video ID はサーバーが元の encoding／run から
+`bitovp-moq:<encodingId>:<runId>` に固定する。保存済み impression の差し替えは拒否する。
+Analytics license は最初の impression 保存時に SHA256 だけを固定し、readback 時に現在の設定と
+一致する場合だけ照会する。生の key は観測データに保存しない。
+archive は同じ session 配下の `/archive` に `PUT video/webm`、`GET` は Range 対応で配信する。
+固定ローカル artifact root の UUID 導出 path に保存し、サイズ制限、署名チェック、hash、原子的置換、
+権限、同一 session 所有者を検査する。任意 path や外部 URL を受け取らない。
+Web tier に含める FFprobe／FFmpeg で長さ・映像を上限付きで検査し、stream copy で Duration／Cues を
+付けて seek 可能な WebM にする。保存済み動画を別の入力で上書きしない。アップロードは body を読む前に
+process 全体で最大2件・同一 session で1件へ制限し、読取にも期限を置く。
+channel 削除／reset の DB commit が成功した後だけ、対応する保存動画を確認して削除する。
+provider 停止が不確かな場合や DB rollback 時には動画を保持する。
+生 WebM は `X-BitOVP-Moq-Duration-Ms` でブラウザーの記録時間も伝えるが、保存可否は
+上限付き ffprobe による動画 track と実 packet 時刻で判定する。ffmpeg の copy-remux 後に
+再検査し、Duration／Cues を持つ seek 可能な WebM を原子的に確定する。
+upload はプロセスごと最大2件、同一 tenant／run／session は同時1件に制限し、body 読み込み前に
+判定する。body は全体で10秒の deadline を持ち、cancel の未完了で slot を占有し続けない。
+filesystem の UUID path と JSON の所有者判定を一致させるため、この API の route ID は
+小文字の canonical UUID だけを受け付ける。大文字 alias は検索・保存前に拒否する。
+channel 削除と全体／選択 reset は、同じ transaction の channel／run lock 下で保存先 UUID と
+メタデータを取得し、provider の終了が不確かな場合は拒否する。DB commit 成功後だけ、
+専用 root 内で検証できた該当 archive とアプリ作成の UUID 一時ファイルを削除する。
+DB の拒否・rollback では録画を残し、未知の隣接ファイルや共有 artifact は削除しない。
+
+Bitmovin Analytics の対応を一次資料とこの専用ビルドで確認し、取得可能な latency を併記する。
+SDK が返した値・映像内時刻からの値・設定値を混同しない。Analytics が未設定／未対応なら明示する。
+公開 Collector 2.62.0 の HTMLVideoElementAdapter と setCustomDataOnce を用い、
+この専用 MoQ build の barcode latency を customData1 の ms 値として収集する。
+これは native LATENCY 項目の対応確認でも独立した時計の測定でもない。
+videoId、runId、encodingId、impressionId と license key の SHA256 を元の run に結び、
+同じ条件の Analytics Count query から時刻と遅延だけ読み戻す。key 自体は履歴に保存しない。
+Collector の unload lifetime は専用の same-origin iframe が所有し、private な SDK cleanup は呼ばない。
+同一 run の保存済み Live Encoder heartbeat の観測時刻・入力／出力の利用可能な指標を時間軸で照合する。
+欠落や異なる時計・計測区間を成功値や0に置き換えない。
+Player、Analytics、heartbeat の時刻は UTC で照合し、各 source と計測区間を残す。
+Player グラフはブラウザーの開始 UTC 時刻＋単調時計の経過時間で表示し、tooltip に経過秒も残す。
+初回 session 作成の応答前に停止しても、応答後に終了時刻を flush し、周期保存の timer を残さない。
+最終成果はブランチのまま Docker で起動し、終了済みでも動画と統計が残る MoQ Live ジョブページを提示する。
 
 ## 一次資料
 

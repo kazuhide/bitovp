@@ -265,6 +265,9 @@ describe("the §4 decisions", () => {
 		const paths = [
 			"/api/live-channels/channel/runs/run/moq-playback",
 			"/api/player-assets/moq",
+			"/api/live-channels/channel/runs/run/moq-observations",
+			"/api/live-channels/channel/runs/run/moq-observations/session/archive",
+			"/api/live-channels/channel/runs/run/moq-analytics",
 		];
 		for (const path of paths) {
 			for (const method of ["GET", "HEAD"]) {
@@ -515,7 +518,8 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 			evaluateRole("VIEWER", "/api/encoding-error-definitions", "GET").allowed,
 		).toBe(true);
 		// MoQ playback descriptor and the pinned Player asset add two GET routes.
-		expect(guarded.length).toBe(196);
-		expect(methods.length).toBe(274);
+		// MoQ observations, session updates, archives and Analytics add four routes.
+		expect(guarded.length).toBe(200);
+		expect(methods.length).toBe(279);
 	});
 });

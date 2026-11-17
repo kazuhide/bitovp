@@ -9,7 +9,34 @@ import { renderWithQuery } from "@/test/render";
 import { MoqPlayerPreview } from "./moq-player-preview";
 
 const mocks = vi.hoisted(() => ({ api: vi.fn(), load: vi.fn() }));
-vi.mock("@/lib/api", () => ({ apiFetch: mocks.api }));
+vi.mock("@/lib/api", () => ({
+	apiFetch: (path: string, init?: RequestInit) => {
+		if (!path.includes("/moq-observations")) return mocks.api(path, init);
+		const runId = path.split("/runs/")[1]?.split("/")[0];
+		if (init?.method === "PUT") {
+			const value = JSON.parse(String(init.body));
+			return Promise.resolve({
+				runId,
+				session: {
+					...value,
+					id: path.split("/").at(-1),
+					createdAt: value.startedAt,
+					updatedAt: value.startedAt,
+					archive: null,
+				},
+			});
+		}
+		return Promise.resolve({
+			runId,
+			sessions: [],
+			heartbeat: {
+				source: "live-encoder-heartbeat",
+				points: [],
+				truncated: false,
+			},
+		});
+	},
+}));
 vi.mock("@/lib/moq-player/loader", () => ({ loadMoqPlayer: mocks.load }));
 const CHANNEL = "00000000-0000-4000-8000-000000000001";
 const RUN = "00000000-0000-4000-8000-000000000002";
@@ -62,7 +89,10 @@ beforeEach(() => {
 			videoHeight: { value: 360 },
 		});
 		Object.assign(video, {
-			getVideoPlaybackQuality: () => ({ totalVideoFrames: frames }),
+			getVideoPlaybackQuality: () => ({
+				totalVideoFrames: frames,
+				droppedVideoFrames: 0,
+			}),
 		});
 		defaultContainer.append(video);
 		return player;
@@ -146,6 +176,12 @@ describe("explicit MoQ preview", () => {
 		expect(screen.getByRole("status")).toHaveTextContent("Waiting for video");
 		expect(document.body.innerHTML).not.toContain("SYNTHETIC_");
 		await waitFor(() => expect(video.muted).toBe(true));
+		const capture = vi.fn(() => {
+			throw new Error(descriptor.resource.url);
+		});
+		Object.assign(video, { captureStream: capture });
+		vi.stubGlobal("MediaRecorder", class {});
+		expect(capture).not.toHaveBeenCalled();
 		act(() => {
 			frames = 3;
 			video.currentTime = 1;
@@ -154,6 +190,7 @@ describe("explicit MoQ preview", () => {
 		expect(screen.getByRole("status")).toHaveTextContent(
 			"Video frames received",
 		);
+		expect(capture).toHaveBeenCalledOnce();
 		await userEvent.click(screen.getByRole("button", { name: "Stop" }));
 		await waitFor(() => expect(player.dispose).toHaveBeenCalledOnce());
 		expect(player.sources.remove).toHaveBeenCalledExactlyOnceWith(source);
@@ -248,5 +285,27 @@ describe("explicit MoQ preview", () => {
 			"MoQ playback failed",
 		);
 		expect(document.body.innerHTML).not.toContain("SYNTHETIC_");
+	});
+	it("keeps Stop disabled while its owned disposal is pending and preserves a deferred failure", async () => {
+		let reject!: (error: Error) => void;
+		player.dispose.mockReturnValue(
+			new Promise<void>((_resolve, fail) => {
+				reject = fail;
+			}),
+		);
+		renderWithQuery(view());
+		await userEvent.click(screen.getByRole("button", { name: "Play" }));
+		await waitFor(() => expect(source.play).toHaveBeenCalledOnce());
+		await userEvent.click(screen.getByRole("button", { name: "Stop" }));
+		expect(screen.getByRole("button", { name: "Stop" })).toBeDisabled();
+		await userEvent.click(screen.getByRole("button", { name: "Stop" }));
+		expect(screen.getByRole("status")).not.toHaveTextContent("Stopped");
+		await act(async () => {
+			reject(new Error(descriptor.resource.url));
+		});
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"MoQ playback failed",
+		);
+		expect(player.dispose).toHaveBeenCalledOnce();
 	});
 });

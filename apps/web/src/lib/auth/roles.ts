@@ -202,6 +202,19 @@ export const ROUTE_RULES: readonly RouteRule[] = [
 		reason: "Fixed operator-configured MoQ preview player build",
 	},
 	{
+		prefix: "/api/live-channels/[id]/runs/[runId]/moq-observations",
+		methods: ["GET", "HEAD", "PUT"],
+		minRole: "OPERATOR",
+		reason:
+			"Run-bound playback observations and private received-preview recordings",
+	},
+	{
+		prefix: "/api/live-channels/[id]/runs/[runId]/moq-analytics",
+		methods: ["GET", "HEAD"],
+		minRole: "OPERATOR",
+		reason: "Exact run and impression-bound Analytics readback",
+	},
+	{
 		prefix: "/api/live-channels/[id]/runs/[runId]/final-heartbeat",
 		methods: ["GET", "HEAD"],
 		minRole: "ADMIN",

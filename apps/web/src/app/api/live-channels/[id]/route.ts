@@ -39,6 +39,15 @@ import {
 	liveToVodFamiliesForRole,
 	liveToVodForRole,
 } from "@/lib/server/live-to-vod-view";
+import {
+	cleanupDeletedMoqArchives,
+	type MoqArchiveCleanupSnapshot,
+	snapshotMoqArchiveCleanup,
+} from "@/lib/server/moq-archive-cleanup";
+import {
+	MoqObservationError,
+	moqHistoryError,
+} from "@/lib/server/moq-observations";
 import { playbackLinksForLivePlan } from "@/lib/server/playback-links";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -311,6 +320,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 				}),
 			);
 		}
+		let moqArchives: MoqArchiveCleanupSnapshot[] = [];
 		const deletedVmafJobs = await ctx.prisma.$transaction(async (tx) => {
 			// Match Start/provision lock order. The outer read cannot authorize
 			// deletion of a later run or an Analysis created before Encoding binding.
@@ -377,6 +387,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 			if (stillScoring > 0) {
 				throw new VmafStillScoring();
 			}
+			moqArchives = await snapshotMoqArchiveCleanup(tx, id);
 			// Status-guarded, matching the assertion above, so the two cannot drift.
 			const vmafJobs = await tx.vmafJob.deleteMany({
 				where: {
@@ -395,6 +406,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 			}
 			return vmafJobs.count;
 		});
+		await cleanupDeletedMoqArchives(moqArchives);
 		await writeAuditLog(
 			ctx,
 			{
@@ -408,6 +420,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 		);
 		return NextResponse.json({ id, deleted: true });
 	} catch (err) {
+		if (err instanceof MoqObservationError) return moqHistoryError(err);
 		if (err instanceof AisaFinalizationNotConfirmed) {
 			return jsonError(
 				409,

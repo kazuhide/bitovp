@@ -33,7 +33,21 @@ const numeric = <T extends string>(keys: readonly T[]) =>
 			typeof number
 		>,
 	);
+
+const resolvedEncoderVersion = z
+	.string()
+	.max(64)
+	.regex(/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/);
+/** Request tags and concrete provider selections remain separate evidence. */
+export const diagnosticsEncodingVersionsSchema = z.object({
+	encoderVersion: z
+		.union([z.enum(["STABLE", "BETA", "LATEST"]), resolvedEncoderVersion])
+		.optional()
+		.catch(undefined),
+	selectedEncoderVersion: resolvedEncoderVersion.optional().catch(undefined),
+});
 export const diagnosticsSummarySchema = z.object({
+	...diagnosticsEncodingVersionsSchema.shape,
 	status: z
 		.enum([
 			"CONNECTED",

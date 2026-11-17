@@ -156,9 +156,10 @@ SETUP 成功だけでは再生成功としない。遅延値を報告する場�
 [Web の依存](../apps/web/package.json) は `bitmovin-player` 8系。
 SDK の型があることと BitOVP のフォーム・plan・Worker・Player が対応することは別である。
 
-このブランチは調査と設定例に限定する。相互接続が確認できた後、credential 管理、
-Live 専用 validation、output/muxing のコンパイルと Worker 実行、Player Web X の
-限定プレビューを別の変更として設計する。現段階で既存 Live の出力・再生経路を変更しない。
+初回調査後、実際の Encoder の挙動を確認するため、[実装計画](MOQ-LIVE-ENCODER-TEST-PLAN.md)
+に沿って credential 管理、Live 専用 validation、コンパイルと Worker 実行を追加した。
+実 Encoder を使った試験結果は別途記録する。上記 ALPN 試験をその代わりにはしない。
+Player Web X の限定プレビューは、接続が成立した後の段階として扱う。
 
 ## 確認結果と限界
 

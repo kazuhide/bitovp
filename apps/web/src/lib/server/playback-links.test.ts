@@ -122,6 +122,33 @@ describe("playbackLinksForPlan", () => {
 	});
 });
 
+it("does not offer a legacy Player manifest link for a MoQ-only Live plan", async () => {
+	const raw = JSON.parse(
+		readFileSync(
+			join(
+				__dirname,
+				"../../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+			),
+			"utf8",
+		),
+	);
+	raw.outputs = [
+		{
+			key: "origin",
+			kind: "MOQ",
+			credentialId: OUT_CRED,
+			trackNamespace: ["interop", "event"],
+			draftVersion: "DRAFT_18",
+		},
+	];
+	raw.liveManifests = [];
+	const links = await playbackLinksForLivePlan(
+		ctxFor([{ id: OUT_CRED, provider: "MOQ", config: {} }]),
+		raw,
+	);
+	expect(links).toEqual([]);
+});
+
 /**
  * The Akamai MSL channel (2026-09-02). Measured on channel 0645c2f1 before
  * this: `{ url: null, via: "none", reason: NO_PATTERN/OTHER }` for every

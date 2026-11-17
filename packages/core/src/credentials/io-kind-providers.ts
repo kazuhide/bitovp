@@ -29,6 +29,7 @@ export const PROVIDERS_FOR_IO_KIND: Readonly<
 	AKAMAI_NETSTORAGE: ["AKAMAI_NETSTORAGE"],
 	AKAMAI_MSL: ["AKAMAI_MSL"],
 	LIVE_MEDIA_INGEST: ["LIVE_MEDIA_INGEST"],
+	MOQ: ["MOQ"],
 	/** Public host, no credential — present so the kind is CLASSIFIED, not missing. */
 	HTTPS: [],
 };

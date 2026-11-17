@@ -54,6 +54,7 @@ const EXPECTED: Record<CredentialProvider, Capability | undefined> = {
 	// 2026-08-23: MSL evidence became the provisioning-config arm (decrypt +
 	// streamId/eventName) — the capability maps so the arm can run.
 	LIVE_MEDIA_INGEST: undefined,
+	MOQ: undefined,
 	AKAMAI_MSL: "AKAMAI_MSL",
 	DRM_CENC: undefined,
 	DRM_SPEKE: undefined,

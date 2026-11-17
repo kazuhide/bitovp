@@ -29,7 +29,7 @@ const SENSITIVE_SUFFIX =
 // template exporter emits a placeholder. If SFTP config is ever added to an
 // audit snapshot, expect the username to read [REDACTED] there.
 const SENSITIVE_EXACT =
-	/^(ask|serviceaccountjson|username|login|publishingpoint)$/i;
+	/^(ask|serviceaccountjson|username|login|publishingpoint|relayurl)$/i;
 
 /** Masks the password of URL userinfo: `scheme://user:pass@host`. */
 const URL_USERINFO = /(\/\/[^/\s:@]+:)[^@/\s]+@/g;

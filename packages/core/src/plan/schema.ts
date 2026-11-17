@@ -228,7 +228,21 @@ export const AKAMAI_MSL_VERSIONS = ["MSL4", "MSL5"] as const;
 export const akamaiMslVersionSchema = z.enum(AKAMAI_MSL_VERSIONS);
 export type AkamaiMslVersion = z.infer<typeof akamaiMslVersionSchema>;
 
+export const moqDraftVersionSchema = z.enum(["DRAFT_16", "DRAFT_18"]);
+export const moqTrackNamespaceSchema = z
+	.array(z.string().min(1))
+	.min(1)
+	.max(32);
+
 export const planOutputSchema = z.discriminatedUnion("kind", [
+	z.strictObject({
+		key: refKey,
+		kind: z.literal("MOQ"),
+		credentialId: z.uuid(),
+		trackNamespace: moqTrackNamespaceSchema,
+		draftVersion: moqDraftVersionSchema,
+		name: z.string().min(1).default("MoQ Relay Output"),
+	}),
 	z.strictObject({
 		key: refKey,
 		kind: z.literal("LIVE_MEDIA_INGEST"),

@@ -85,7 +85,12 @@ const prismaMock = {
 	preset: { findFirst: presetFindFirst },
 	liveSchedule: { createMany: scheduleCreateMany, findMany: scheduleFindMany },
 	alertEvent: { groupBy: alertGroupBy },
-	credential: { findUnique: credFindUnique, findMany: vi.fn(async () => []) },
+	credential: {
+		findUnique: credFindUnique,
+		findMany: vi.fn(
+			async (): Promise<{ id: string; provider: string }[]> => [],
+		),
+	},
 	$transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
 		fn(prismaMock),
 	),
@@ -150,6 +155,38 @@ function withAccount(base: Record<string, unknown> = plan) {
 		...base,
 		bitmovin: { ...(base.bitmovin as object), accountId: ACCOUNT_ID },
 	};
+}
+
+function moqPlan(): Record<string, unknown> {
+	const raw = JSON.parse(
+		readFileSync(
+			join(
+				__dirname,
+				"../../../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+			),
+			"utf8",
+		),
+	);
+	return withAccount({
+		...raw,
+		outputs: [
+			{
+				key: "relay",
+				kind: "MOQ",
+				credentialId: "00000000-0000-4000-8000-000000000002",
+				name: "MoQ relay",
+				trackNamespace: ["interop", "event-20261117"],
+				draftVersion: "DRAFT_18",
+			},
+		],
+		liveManifests: [],
+		start: { ...raw.start, encodingOption: "CUSTOM" },
+		muxings: raw.muxings.map((muxing: { destination: object }) => ({
+			...muxing,
+			segmentLength: 1,
+			destination: { ...muxing.destination, outputKey: "relay" },
+		})),
+	});
 }
 
 function managedAisaPlan() {
@@ -220,6 +257,61 @@ afterEach(() => {
 });
 
 describe("POST /api/live-channels", () => {
+	it("persists and enqueues an MoQ-only expert plan with vault references", async () => {
+		prismaMock.credential.findMany.mockResolvedValueOnce([
+			{
+				id: "00000000-0000-4000-8000-000000000002",
+				provider: "MOQ",
+			},
+		]);
+		const candidate = moqPlan();
+		const response = await POST(postRequest({ plan: candidate }));
+		expect(response.status).toBe(201);
+		const data = create.mock.calls[0]?.[0].data;
+		expect(data.plan.outputs).toEqual(candidate.outputs);
+		expect(data.plan.liveManifests).toEqual([]);
+		expect(
+			data.stepLog.find(
+				(step: { kind: string }) => step.kind === "CREATE_OUTPUT_MOQ",
+			),
+		).toMatchObject({
+			kind: "CREATE_OUTPUT_MOQ",
+			payload: {
+				credentialId: "00000000-0000-4000-8000-000000000002",
+				trackNamespace: ["interop", "event-20261117"],
+				draftVersion: "DRAFT_18",
+			},
+		});
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		"missing",
+		"AWS_S3",
+	])("rejects an MoQ credential unavailable as MOQ in this tenant (%s) before provisioning", async (provider) => {
+		prismaMock.credential.findMany.mockResolvedValueOnce(
+			provider === "missing"
+				? []
+				: [
+						{
+							id: "00000000-0000-4000-8000-000000000002",
+							provider,
+						},
+					],
+		);
+		const response = await POST(postRequest({ plan: moqPlan() }));
+		expect(response.status).toBe(400);
+		expect(await response.json()).toMatchObject({
+			details: {
+				issues: expect.arrayContaining([
+					expect.objectContaining({ code: "LIVE_MOQ_CREDENTIAL_PROVIDER" }),
+				]),
+			},
+		});
+		expect(create).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
 	it("persists the managed analysis lifecycle in the standard creation endpoint", async () => {
 		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
 		const candidate = managedAisaPlan();

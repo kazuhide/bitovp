@@ -20,6 +20,7 @@ export function planOutputBucket(output: PlanOutput): string | null {
 		case "AZURE":
 			return output.container;
 		case "SFTP":
+		case "MOQ":
 		case "LIVE_MEDIA_INGEST":
 			return null;
 		case "AKAMAI_MSL":

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
 	account: vi.fn(),
 	audit: vi.fn(),
 	summary: vi.fn(),
+	encoding: vi.fn(),
 	events: vi.fn(),
 	streams: vi.fn(),
 	srt: vi.fn(),
@@ -66,6 +67,7 @@ beforeEach(() => {
 				},
 			},
 			encodings: {
+				get: mocks.encoding,
 				live: {
 					heartbeatFinal: { get: mocks.final },
 					hd: { getStartRequest: mocks.hdStart },
@@ -79,6 +81,7 @@ beforeEach(() => {
 		statistics: [{ password: "secret" }],
 		orgId: "private",
 	});
+	mocks.encoding.mockResolvedValue({});
 	for (const list of [mocks.events, mocks.streams, mocks.srt, mocks.srtInput])
 		list.mockResolvedValue({ items: [], totalCount: 0 });
 	mocks.final.mockResolvedValue({
@@ -87,6 +90,69 @@ beforeEach(() => {
 });
 
 describe("run-bound provider diagnostics", () => {
+	it("distinguishes the requested encoder tag from the provider-selected version", async () => {
+		mocks.encoding.mockResolvedValue({
+			encoderVersion: "BETA",
+			selectedEncoderVersion: "2.299.0",
+			name: "secret-name",
+			customData: { url: "https://secret" },
+		});
+		const response = await GET(request(), context());
+		expect(response.status).toBe(200);
+		expect(mocks.encoding).toHaveBeenCalledWith(ENCODING);
+		const result = await response.json();
+		expect(result.data).toEqual({
+			status: "CONNECTED",
+			encoderVersion: "BETA",
+			selectedEncoderVersion: "2.299.0",
+		});
+		expect(mocks.audit).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({
+				path: `/encoding/encodings/${ENCODING}`,
+				bitmovinAccountId: ACCOUNT,
+				response: { encoderVersion: "BETA", selectedEncoderVersion: "2.299.0" },
+			}),
+			expect.any(Request),
+		);
+		expect(JSON.stringify([result, mocks.audit.mock.calls])).not.toContain(
+			"secret",
+		);
+	});
+	it.each([
+		undefined,
+		"BETA",
+		"https://secret",
+		"2.299.0/private",
+	])("does not turn unavailable or invalid selected version %s into the requested tag", async (selectedEncoderVersion) => {
+		mocks.encoding.mockResolvedValue({
+			encoderVersion: "BETA",
+			selectedEncoderVersion,
+		});
+		const response = await GET(request(), context());
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toEqual({
+			status: "CONNECTED",
+			encoderVersion: "BETA",
+		});
+	});
+	it("reports a failed Encoding read without leaking its provider error", async () => {
+		mocks.encoding.mockRejectedValue(new Error("https://secret-token"));
+		const response = await GET(request(), context());
+		expect(response.status).toBe(502);
+		expect(
+			JSON.stringify([await response.json(), mocks.audit.mock.calls]),
+		).not.toContain("secret-token");
+	});
+	it("does not take selected version evidence from the statistics response", async () => {
+		mocks.summary.mockResolvedValue({
+			status: "CONNECTED",
+			selectedEncoderVersion: "2.299.0",
+		});
+		const response = await GET(request(), context());
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toEqual({ status: "CONNECTED" });
+	});
 	it("reads an AISA run through the original account proven by its exact Analysis and Encoding pair", async () => {
 		mocks.run.mockResolvedValue({
 			id: RUN,

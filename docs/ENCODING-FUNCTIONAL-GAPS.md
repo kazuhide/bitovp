@@ -139,8 +139,10 @@ VOD input plans currently support S3, HTTPS, Akamai NetStorage, Azure,
 GenericS3 and the two GCS credential variants. FTP/SFTP/Aspera/direct-upload/
 local/S3-role-based inputs need their own end-to-end audit, including stored
 credentials, browser access and output inspection. Output support for a
-protocol does not imply input support. MoQ output remains Beta/account-gated
-and is not an available plan destination merely because the SDK was upgraded.
+protocol does not imply input support. MoQ output remains Beta/account-gated;
+an experimental Live expert-JSON path now resolves encrypted relay credentials
+and creates the output through the Worker. This addition is independent of the
+SDK upgrade and does not qualify a relay or Player Web X playback.
 
 Native Templates, Native Watch Folders and resource CRUD/custom-data/query
 controls belong to a separate management lane. Existing app presets and watch

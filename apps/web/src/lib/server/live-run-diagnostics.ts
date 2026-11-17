@@ -2,6 +2,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
+	diagnosticsEncodingVersionsSchema,
 	diagnosticsEventSchema,
 	diagnosticsHdStartSchema,
 	diagnosticsSrtSchema,
@@ -12,7 +13,7 @@ import {
 } from "@/lib/live-diagnostics/schemas";
 import { writeAuditLog } from "./audit";
 import { bitmovinClientForAccount } from "./bitmovin";
-import { getServerContext } from "./context";
+import { getServerContext, type ServerContext } from "./context";
 import {
 	invalidIdResponse,
 	jsonError,
@@ -25,6 +26,59 @@ const providerPageSchema = z.object({
 	items: z.array(z.unknown()).max(100),
 	totalCount: z.number().int().nonnegative(),
 });
+
+/** This metadata read uses the same immutable run/account binding as statistics. */
+async function encodingVersions(
+	ctx: ServerContext,
+	api: NonNullable<Awaited<ReturnType<typeof bitmovinClientForAccount>>>,
+	accountId: string,
+	encodingId: string,
+	req: Request,
+) {
+	const path = `/encoding/encodings/${encodingId}`;
+	const started = Date.now();
+	try {
+		const versions = diagnosticsEncodingVersionsSchema.parse(
+			await api.encoding.encodings.get(encodingId),
+		);
+		await writeAuditLog(
+			ctx,
+			{
+				method: "GET",
+				path,
+				bitmovinAccountId: accountId,
+				statusCode: 200,
+				durationMs: Date.now() - started,
+				response: versions,
+			},
+			req,
+		);
+		return versions;
+	} catch (err) {
+		const upstream = (err as { httpStatusCode?: unknown } | null)
+			?.httpStatusCode;
+		const statusCode =
+			typeof upstream === "number" &&
+			Number.isInteger(upstream) &&
+			upstream >= 400 &&
+			upstream <= 599
+				? upstream
+				: 502;
+		await writeAuditLog(
+			ctx,
+			{
+				method: "GET",
+				path,
+				bitmovinAccountId: accountId,
+				statusCode,
+				durationMs: Date.now() - started,
+				response: { error: "Unable to retrieve encoder version metadata" },
+			},
+			req,
+		);
+		throw err;
+	}
+}
 
 /** Reads are bound to the run's immutable encoding and original provider audit
  * account. Channel settings can be edited after a broadcast, so they are never
@@ -165,9 +219,16 @@ async function handleDiagnostics(
 					),
 				};
 			} else if (query.kind === "summary") {
+				const [summary, versions] = await Promise.all([
+					stats.get(encodingId),
+					encodingVersions(ctx, api, accountId, encodingId, req),
+				]);
 				result = {
 					...envelope,
-					data: diagnosticsSummarySchema.parse(await stats.get(encodingId)),
+					data: {
+						...diagnosticsSummarySchema.pick({ status: true }).parse(summary),
+						...versions,
+					},
 				};
 			} else {
 				const raw =

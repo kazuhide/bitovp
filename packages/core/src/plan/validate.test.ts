@@ -3321,21 +3321,29 @@ describe("deliveryMirrors (ledger #115)", () => {
 function perTitlePlanWithOutputKind(kind: string) {
 	const cred = "00000000-0000-4000-8000-000000000002";
 	const output: Record<string, unknown> =
-		kind === "AKAMAI_MSL"
+		kind === "MOQ"
 			? {
 					key: "out",
 					kind,
-					credentialId: "00000000-0000-4000-8000-000000000003",
-					streamFormat: "HLS",
-					mslVersion: "MSL4",
+					credentialId: cred,
+					trackNamespace: ["per-title-must-refuse"],
+					draftVersion: "DRAFT_18",
 				}
-			: kind === "SFTP" ||
-					kind === "AKAMAI_NETSTORAGE" ||
-					kind === "LIVE_MEDIA_INGEST"
-				? { key: "out", kind, credentialId: cred }
-				: kind === "AZURE"
-					? { key: "out", kind, credentialId: cred, container: "c" }
-					: { key: "out", kind, credentialId: cred, bucket: "b" };
+			: kind === "AKAMAI_MSL"
+				? {
+						key: "out",
+						kind,
+						credentialId: "00000000-0000-4000-8000-000000000003",
+						streamFormat: "HLS",
+						mslVersion: "MSL4",
+					}
+				: kind === "SFTP" ||
+						kind === "AKAMAI_NETSTORAGE" ||
+						kind === "LIVE_MEDIA_INGEST"
+					? { key: "out", kind, credentialId: cred }
+					: kind === "AZURE"
+						? { key: "out", kind, credentialId: cred, container: "c" }
+						: { key: "out", kind, credentialId: cred, bucket: "b" };
 	return encodingPlanSchema.parse({
 		planVersion: 1,
 		name: "per-title",
@@ -3409,7 +3417,7 @@ describe("C4's per-title allowlist, pinned PER KIND against the schema (ledger #
 	 *  - SFTP: no object placeholders — per-title paths need {uuid}/{bitrate}.
 	 *  - AKAMAI_MSL: a live ingest target with no path at all .
 	 */
-	const REFUSED = new Set(["SFTP", "AKAMAI_MSL", "LIVE_MEDIA_INGEST"]);
+	const REFUSED = new Set(["SFTP", "AKAMAI_MSL", "LIVE_MEDIA_INGEST", "MOQ"]);
 
 	it("found the schema's output kinds", () => {
 		expect(outputKinds.length).toBeGreaterThan(6);

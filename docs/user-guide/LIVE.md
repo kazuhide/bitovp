@@ -57,6 +57,28 @@ DASH suggested presentation delay and minimum update period use milliseconds in
 the form and are converted to API seconds. DVR retains a playback window; its
 manifest-element budget is checked rather than silently clamped.
 
+## Experimental MoQ delivery
+
+MoQ relay output is available through an imported expert JSON Live plan. Create a
+**MoQ relay (live delivery)** credential first. Its encrypted secret holds a
+`moqt://host[:port][/path]` relay URL and an optional authorization token/type;
+userinfo, query strings, and fragments are rejected. Keep the token out of the
+plan. `authTokenType` requires a token.
+
+Use one `MOQ` output referencing that credential, `trackNamespace` as a tuple of
+1–32 nonempty strings, and `draftVersion` as `DRAFT_16` or `DRAFT_18`. Each H264
+video or AAC audio rendition needs its own FMP4 muxing directed to that output.
+Set `liveManifests` to an empty array. Storage outputs/mirrors, DRM, SCTE-35,
+and ad insertion are not supported in this evaluation path. The plan is kept in
+expert mode so conversion to the ordinary wizard cannot discard MoQ settings.
+
+This uses Custom Live and requires Bitmovin's account-level MoQ Beta access.
+Relay interoperability and Player Web X playback need independent verification;
+the existing Player 8 preview does not play MoQ. Requested and actual Encoder
+versions can be compared in the run's `kind=summary` diagnostics when the
+provider returns them. A selected version is never inferred from `BETA` or
+`STABLE`.
+
 ## Encrypted outputs and fallback regions
 
 In **Packaging → Encryption**, add CENC, FairPlay, or SPEKE to an fMP4 track,

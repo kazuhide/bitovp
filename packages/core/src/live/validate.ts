@@ -162,12 +162,99 @@ function secretEgressSites(plan: LiveChannelPlan): EgressSite[] {
 	return sites;
 }
 
+function moqOutputIssues(
+	plan: LiveChannelPlan,
+	options: PlanValidationOptions,
+): PlanIssue[] {
+	const outputs = plan.outputs.filter((output) => output.kind === "MOQ");
+	if (outputs.length === 0) return [];
+	const issues: PlanIssue[] = [];
+	const reject = (code: string, path: string, message: string) =>
+		issues.push({ code, level: "error", path, message });
+	if (options.credentialProviders)
+		for (const [index, output] of plan.outputs.entries())
+			if (
+				output.kind === "MOQ" &&
+				options.credentialProviders.get(output.credentialId) !== "MOQ"
+			)
+				reject(
+					"LIVE_MOQ_CREDENTIAL_PROVIDER",
+					`outputs.${index}.credentialId`,
+					"MoQ output requires an available MoQ relay credential",
+				);
+	if (outputs.length !== 1 || plan.outputs.length !== 1)
+		reject(
+			"LIVE_MOQ_EXCLUSIVE_OUTPUT",
+			"outputs",
+			"MoQ evaluation requires one dedicated MoQ output without other output types",
+		);
+	if (plan.deliveryMirrors?.length)
+		reject(
+			"LIVE_MOQ_MIRRORS_UNSUPPORTED",
+			"deliveryMirrors",
+			"MoQ delivery cannot use delivery mirrors",
+		);
+	if (plan.liveManifests.length)
+		reject(
+			"LIVE_MOQ_MANIFESTS_UNSUPPORTED",
+			"liveManifests",
+			"MoQ publishes its own catalog; omit HLS and DASH manifests",
+		);
+	if (plan.drm?.length)
+		reject(
+			"LIVE_MOQ_DRM_UNSUPPORTED",
+			"drm",
+			"MoQ output does not support DRM",
+		);
+	if (plan.adMarkers?.scte35 || plan.start.adInsertion || plan.start.esam)
+		reject(
+			"LIVE_MOQ_ADS_UNSUPPORTED",
+			"start",
+			"MoQ output does not support SCTE-35 or ad insertion",
+		);
+	for (const [index, rendition] of plan.renditions.entries()) {
+		if (rendition.codec !== "H264" && rendition.codec !== "AAC")
+			reject(
+				"LIVE_MOQ_CODEC_UNSUPPORTED",
+				`renditions.${index}.codec`,
+				"MoQ output supports H264 video and AAC audio only",
+			);
+		if (
+			plan.muxings.filter(
+				(muxing) =>
+					muxing.kind === "FMP4" && muxing.streamKey === rendition.key,
+			).length !== 1
+		)
+			reject(
+				"LIVE_MOQ_RENDITION_MUXING",
+				`renditions.${index}`,
+				`MoQ rendition "${rendition.key}" requires exactly one FMP4 muxing`,
+			);
+	}
+	for (const [index, muxing] of plan.muxings.entries()) {
+		if (muxing.kind !== "FMP4")
+			reject(
+				"LIVE_MOQ_FMP4_ONLY",
+				`muxings.${index}.kind`,
+				"MoQ output requires a separate FMP4 muxing per rendition",
+			);
+		if (!outputs.some((output) => output.key === muxing.destination?.outputKey))
+			reject(
+				"LIVE_MOQ_DESTINATION",
+				`muxings.${index}.destination`,
+				"Every MoQ muxing must write directly to the MoQ output",
+			);
+	}
+	return issues;
+}
+
 export function validateLiveChannel(
 	plan: LiveChannelPlan,
 	options: PlanValidationOptions = {},
 ): PlanIssue[] {
 	if (isAisaManagedLivePlan(plan)) return validateAisaManagedLivePlan(plan);
 	const issues: PlanIssue[] = [
+		...moqOutputIssues(plan, options),
 		...liveManifestPathIssues(plan),
 		...liveManifestDetailIssues(plan),
 		...liveDrmIssues(plan, options),
@@ -917,6 +1004,12 @@ export function validateLiveChannel(
 		if (
 			muxing.kind === "MP4" ||
 			referenced.has(muxing.key) ||
+			(muxing.kind === "FMP4" &&
+				plan.outputs.some(
+					(output) =>
+						output.kind === "MOQ" &&
+						output.key === muxing.destination?.outputKey,
+				)) ||
 			((muxing.kind === "FMP4" || muxing.kind === "CMAF") &&
 				[
 					muxing.destination?.outputKey,

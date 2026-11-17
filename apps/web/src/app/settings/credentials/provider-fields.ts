@@ -239,6 +239,29 @@ export const PROVIDER_FIELDS: Record<
 			},
 		],
 	},
+	MOQ: {
+		config: [],
+		secret: [
+			{
+				name: "relayUrl",
+				labelKey: "fields.moqRelayUrl",
+				type: "password",
+				placeholder: "moqt://relay.example.com:443",
+			},
+			{
+				name: "authToken",
+				labelKey: "fields.moqAuthToken",
+				type: "password",
+				optional: true,
+			},
+			{
+				name: "authTokenType",
+				labelKey: "fields.moqAuthTokenType",
+				type: "number",
+				optional: true,
+			},
+		],
+	},
 	AKAMAI_MSL: {
 		config: [
 			{
@@ -468,6 +491,7 @@ export const PROVIDER_CONFIG_SUMMARY: Record<
 	// address; the delivery root follows when the row declares one, so the
 	// list shows which MSL credentials can hand out a playback link.
 	LIVE_MEDIA_INGEST: () => "Live Media Ingest",
+	MOQ: () => "MoQ relay",
 	AKAMAI_MSL: (c) =>
 		`${c.eventName ?? ""} (stream ${c.streamId ?? ""})${
 			typeof c.edgeBaseUrl === "string" && c.edgeBaseUrl !== ""

@@ -1890,6 +1890,7 @@ export const ja = {
 		customLegacy: "保存済みプランの従来のCustom Live起動方式を維持します。",
 		customRequested: "読み込んだプランでCustom Liveが明示指定されています。",
 		customCodec: "コーデック {actual} はLive HD（H264 / AAC）の範囲外です。",
+		customOutputProtocol: "選択した出力プロトコルはCustom Liveを使用します。",
 		customInputProtocol:
 			"{actual}入力のLive HD対応は未確認です。対応を確認できる入力はRTMP・冗長RTMP・SRTです。",
 		customInput:
@@ -4629,6 +4630,9 @@ export const ja = {
 		lmiScte35Help:
 			"SCTE-35を受信Originへ渡します。再生用マニフェストはOrigin側で生成します。",
 		lmiPublishingPoint: "公開先URL",
+		moqRelayUrl: "MoQ Relay URL",
+		moqAuthToken: "認証トークン（任意）",
+		moqAuthTokenType: "トークン種別（任意）",
 		lmiPublishingPointHelp:
 			"Originの公開先URL（例：https://origin.example/live/channel.isml）。暗号化して保存します。",
 		lmiScte35Passthrough: "SCTE-35を引き継ぐ",
@@ -7357,6 +7361,9 @@ export const ja = {
 		confirmDelete: "ルールと履歴を削除しますか?",
 	},
 	zerr: {
+		credMoqRelayUrl:
+			"Relay URL は moqt://host[:port][/path] 形式で入力してください。認証情報・クエリ・フラグメントは含められません。",
+		credMoqTokenType: "トークン種別を指定する場合は認証トークンが必要です。",
 		spekeBasicPair: "Basic認証のユーザー名とパスワードを両方指定してください",
 		spekeGatewayRegion: "roleArnにはGatewayリージョンが必要です",
 		spekeRoleArn: "AWSロール設定にはroleArnが必要です",

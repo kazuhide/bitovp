@@ -213,8 +213,8 @@ sweep; they do not implement the provider's native Watch Folders API. Live MSL
 and SFTP mirror authoring remains a GUI gap; primary MSL already has a path and
 valid expert-JSON mirror plans are preserved.
 
-The SDK 1.288.0 MOQ output API is a newly declared operation family to assess;
-upgrading the SDK does not make MOQ an available application destination.
+MoQ now has a Live expert-JSON/Worker path with encrypted credentials.
+Relay and Player Web X interoperability remain unverified.
 AV1 Per-Title `targetQualityCrf` is an existing field whose upstream documentation
 changed, not an operation or field newly implemented by this upgrade.
 

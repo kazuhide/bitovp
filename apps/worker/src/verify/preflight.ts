@@ -995,6 +995,7 @@ export function capabilityOfProvider(
 		case "DRM_CENC":
 		case "DRM_SPEKE":
 		case "LIVE_MEDIA_INGEST":
+		case "MOQ":
 		case "NEXGUARD":
 		case "SRT_PASSPHRASE":
 		case "ZIXI":

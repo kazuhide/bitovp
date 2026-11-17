@@ -951,6 +951,8 @@ export {
 	imscRenditionSchema,
 	ingestStreamSchema,
 	LIBVMAF_BUILTIN_MODELS,
+	moqDraftVersionSchema,
+	moqTrackNamespaceSchema,
 	OPUS_CHANNEL_LAYOUTS,
 	opusRenditionSchema,
 	PER_TITLE_MIN_BITRATE,

@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createCredentialSchema } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 import { messagesFor, translate } from ".";
 import type { Translator } from "./context";
@@ -25,6 +26,28 @@ const tFor = (locale: "en" | "ja"): Translator => {
 };
 
 describe("zodIssueMessage — the FORM-layer choke point", () => {
+	it.each([
+		[
+			{ relayUrl: "https://relay.example.com" },
+			"Relay URL は moqt://host[:port][/path] 形式で入力してください。認証情報・クエリ・フラグメントは含められません。",
+		],
+		[
+			{ relayUrl: "moqt://relay.example.com", authTokenType: 1 },
+			"トークン種別を指定する場合は認証トークンが必要です。",
+		],
+	])("translates the actual MoQ credential refusal for %j", (secret, expected) => {
+		const parsed = createCredentialSchema.safeParse({
+			provider: "MOQ",
+			label: "MoQ",
+			secret,
+		});
+		expect(parsed.success).toBe(false);
+		if (parsed.success) return;
+		const issue = parsed.error.issues[0];
+		expect(issue).toBeDefined();
+		if (!issue) return;
+		expect(zodIssueMessage(issue, tFor("ja"))).toBe(expected);
+	});
 	it("maps an authored sentence to its ja catalogue entry", () => {
 		const ja = zodIssueMessage(
 			{ message: "A manual stream key must be at least 8 characters" },
@@ -235,7 +258,8 @@ describe("totality — the pins that license the sentence→key deviation", () =
 		// together; the number is the instrument's received value on the merged tree.
 		// Live diagnostics adds SRT-only filtering and credential-free HTTPS.
 		// SPEKE DRM adds five distinct object-form schema refusals, measured here.
-		expect(messageProp.size).toBe(37);
+		// MoQ adds the token-type/auth-token dependency, via message-property.
+		expect(messageProp.size).toBe(38);
 		// 62→63 (review-226 I3): the feeder manual-arm refusal. Measured.
 		// 63→64 : the same one sentence — the totals move together
 		// because it is a validator arg, which is what makes the two pins a
@@ -254,7 +278,7 @@ describe("totality — the pins that license the sentence→key deviation", () =
 		// route; both totals move together, as designed.
 		// merge of origin/main into this branch (2026-09-03): both deltas above landed
 		// together; the number is the instrument's received value on the merged tree.
-		expect(authored.size).toBe(85);
+		expect(authored.size).toBe(86);
 		const missing = [...authored].filter((s) => !SENTENCE_TO_KEY.has(s));
 		expect(missing).toEqual([]);
 	});

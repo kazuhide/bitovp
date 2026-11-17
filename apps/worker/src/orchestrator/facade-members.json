@@ -73,6 +73,7 @@
 	"createLiveInsertableContent",
 	"createLiveMediaIngestOutput",
 	"createMediaFilter",
+	"createMoqOutput",
 	"createMp4Muxing",
 	"createNexGuardFileMarker",
 	"createOpusConfig",

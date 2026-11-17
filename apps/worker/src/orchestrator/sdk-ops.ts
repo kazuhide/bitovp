@@ -676,6 +676,14 @@ export type SdkOps = {
 		publishingPoint: string;
 		scte35Passthrough?: boolean;
 	}): Promise<string>;
+	createMoqOutput(p: {
+		name: string;
+		relayUrl: string;
+		trackNamespace: string[];
+		draftVersion: string;
+		authToken?: string;
+		authTokenType?: number;
+	}): Promise<string>;
 	createAkamaiMslOutput(p: {
 		name: string;
 		streamId: number;

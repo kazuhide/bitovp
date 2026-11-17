@@ -1,0 +1,167 @@
+import type { CompiledOperation } from "@bitovp/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { type ExecutorContext, executeStep } from "./executor";
+import { fakeSdk } from "./fake-sdk";
+import { createBitmovinSdkOps } from "./sdk-ops";
+
+afterEach(() => vi.unstubAllGlobals());
+
+const relayUrl = "moqt://relay.example:443/moq";
+const authToken = "private-publish-token";
+const namespace = ["bitovp", "protocol-test"];
+
+function mockProvider() {
+	const fetch = vi.fn(
+		async (_url: string | URL, _init?: RequestInit) =>
+			new Response(
+				JSON.stringify({
+					status: "SUCCESS",
+					data: { result: { id: "moq-output-id" } },
+				}),
+				{
+					status: 201,
+					headers: { "content-type": "application/json" },
+				},
+			),
+	);
+	vi.stubGlobal("fetch", fetch);
+	return fetch;
+}
+
+describe("MoQ output SDK boundary", () => {
+	it("sends MoQ fields to the provider and keeps relay credentials out of the audit trail", async () => {
+		const fetch = mockProvider();
+		const record = vi.fn(async () => {});
+		const sdk = createBitmovinSdkOps({ apiKey: "test-key" }, record);
+		expect(
+			await sdk.createMoqOutput({
+				name: "MoQ",
+				relayUrl,
+				trackNamespace: namespace,
+				draftVersion: "DRAFT_18",
+				authToken,
+				authTokenType: 1,
+			}),
+		).toBe("moq-output-id");
+		expect(String(fetch.mock.calls[0]?.[0])).toMatch(
+			/\/encoding\/outputs\/moq$/,
+		);
+		expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+			type: "MOQ",
+			name: "MoQ",
+			relayUrl,
+			trackNamespace: namespace,
+			draftVersion: "DRAFT_18",
+			authToken,
+			authTokenType: 1,
+		});
+		expect(JSON.stringify(record.mock.calls)).not.toContain(authToken);
+		expect(JSON.stringify(record.mock.calls)).not.toContain(relayUrl);
+		expect(JSON.stringify(record.mock.calls)).toContain("DRAFT_18");
+	});
+
+	it("omits authorization fields for a relay protocol probe without a token", async () => {
+		const fetch = mockProvider();
+		const sdk = createBitmovinSdkOps({ apiKey: "test-key" }, async () => {});
+		await sdk.createMoqOutput({
+			name: "Probe",
+			relayUrl,
+			trackNamespace: namespace,
+			draftVersion: "DRAFT_16",
+		});
+		const body = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body));
+		expect(body.draftVersion).toBe("DRAFT_16");
+		expect(body).not.toHaveProperty("authToken");
+		expect(body).not.toHaveProperty("authTokenType");
+	});
+
+	it("withholds secret-bearing provider error prose from thrown errors and audit records", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							status: "ERROR",
+							data: { code: 1001, message: `Failed ${relayUrl} ${authToken}` },
+						}),
+						{ status: 400, headers: { "content-type": "application/json" } },
+					),
+			),
+		);
+		const record = vi.fn(async () => {});
+		const sdk = createBitmovinSdkOps({ apiKey: "test-key" }, record);
+		await expect(
+			sdk.createMoqOutput({
+				name: "MoQ",
+				relayUrl,
+				trackNamespace: namespace,
+				draftVersion: "DRAFT_18",
+				authToken,
+			}),
+		).rejects.toThrow("MoQ output creation failed");
+		expect(JSON.stringify(record.mock.calls)).not.toContain(authToken);
+		expect(JSON.stringify(record.mock.calls)).not.toContain(relayUrl);
+	});
+
+	it("does not send an unknown SDK draft version", async () => {
+		const fetch = mockProvider();
+		const sdk = createBitmovinSdkOps({ apiKey: "test-key" }, async () => {});
+		await expect(
+			sdk.createMoqOutput({
+				name: "MoQ",
+				relayUrl,
+				trackNamespace: namespace,
+				draftVersion: "DRAFT_23",
+			}),
+		).rejects.toThrow();
+		expect(fetch).not.toHaveBeenCalled();
+	});
+});
+
+describe("MoQ compiled operation execution", () => {
+	const operation: CompiledOperation = {
+		step: "output:moq",
+		kind: "CREATE_OUTPUT_MOQ",
+		refs: {},
+		payload: {
+			name: "MoQ",
+			credentialId: "credential-id",
+			trackNamespace: namespace,
+			draftVersion: "DRAFT_18",
+		},
+	};
+	function context(provider = "MOQ"): ExecutorContext {
+		return {
+			sdk: fakeSdk(),
+			ids: new Map(),
+			resolveCredential: vi.fn(async () => ({
+				provider,
+				config: {},
+				secret: { relayUrl, authToken },
+			})),
+			poll: { intervalMs: 1, timeoutMs: 10, sleep: async () => {} },
+		};
+	}
+	it("resolves the vaulted relay and token only at execution", async () => {
+		const ctx = context();
+		const result = await executeStep(operation, ctx);
+		expect(ctx.sdk.createMoqOutput).toHaveBeenCalledWith({
+			name: "MoQ",
+			relayUrl,
+			authToken,
+			trackNamespace: namespace,
+			draftVersion: "DRAFT_18",
+		});
+		expect(result.resourceId).toBeTruthy();
+		expect(JSON.stringify(result)).not.toContain(relayUrl);
+		expect(JSON.stringify(result)).not.toContain(authToken);
+	});
+	it("rejects a different credential provider before any MoQ call", async () => {
+		const ctx = context("AWS_S3");
+		await expect(executeStep(operation, ctx)).rejects.toThrow(
+			"needs a MOQ credential",
+		);
+		expect(ctx.sdk.createMoqOutput).not.toHaveBeenCalled();
+	});
+});

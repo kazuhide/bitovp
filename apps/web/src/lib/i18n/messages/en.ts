@@ -1926,6 +1926,7 @@ export const en = {
 			"This saved plan retains its original Custom Live start method.",
 		customRequested: "The imported plan explicitly selects Custom Live.",
 		customCodec: "Codec {actual} is outside Live HD (H264 / AAC).",
+		customOutputProtocol: "The selected output protocol uses Custom Live.",
 		customInputProtocol:
 			"Live HD support is not confirmed for {actual}; supported inputs are RTMP, redundant RTMP and SRT.",
 		customInput:
@@ -4690,6 +4691,9 @@ export const en = {
 		lmiScte35Help:
 			"Pass SCTE-35 messages to the receiving Origin. The Origin generates playback manifests.",
 		lmiPublishingPoint: "Publishing point",
+		moqRelayUrl: "MoQ relay URL",
+		moqAuthToken: "Authorization token (optional)",
+		moqAuthTokenType: "Token type (optional)",
 		lmiPublishingPointHelp:
 			"Origin publishing URL, for example https://origin.example/live/channel.isml. Stored encrypted.",
 		lmiScte35Passthrough: "SCTE-35 passthrough",
@@ -7408,6 +7412,10 @@ export const en = {
 		confirmDelete: "Delete rule + history?",
 	},
 	zerr: {
+		credMoqRelayUrl:
+			"Relay URL must be moqt://host[:port][/path] without user credentials, query or fragment",
+		credMoqTokenType:
+			"Authorization token type requires an authorization token",
 		spekeBasicPair: "Provide both Basic authentication username and password",
 		spekeGatewayRegion: "Gateway region is required with roleArn",
 		spekeRoleArn: "AWS role settings require roleArn",

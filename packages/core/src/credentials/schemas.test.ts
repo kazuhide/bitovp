@@ -771,6 +771,7 @@ describe("every provider is classified by PURPOSE (ledger #141)", () => {
 			[
 				"AKAMAI_MSL",
 				"LIVE_MEDIA_INGEST",
+				"MOQ",
 				"AKAMAI_NETSTORAGE",
 				"AKAMAI_OBJECT_STORAGE",
 				"AWS_S3",

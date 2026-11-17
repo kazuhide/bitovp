@@ -194,6 +194,7 @@ describe("bucketAddressing", () => {
 			"DRM_CENC",
 			"DRM_SPEKE",
 			"LIVE_MEDIA_INGEST",
+			"MOQ",
 			"NEXGUARD",
 			"SRT_PASSPHRASE",
 			"ZIXI",
@@ -232,8 +233,8 @@ describe("bucketAddressing", () => {
 		// 9 -> 10: AKAMAI_MSL . Storage in
 		// the sense that bytes land there, and bucketless like NetStorage — it
 		// addresses a provisioned STREAM, so there is no container to name.
-		// SPEKE and Media Ingest have no storage bucket.
-		expect(answered.length + 12).toBe(CREDENTIAL_PROVIDERS.length);
+		// SPEKE, Media Ingest and MoQ have no storage bucket.
+		expect(answered.length + 13).toBe(CREDENTIAL_PROVIDERS.length);
 	});
 });
 

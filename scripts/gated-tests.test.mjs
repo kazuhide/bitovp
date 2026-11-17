@@ -186,8 +186,8 @@ test("a plain run may skip the tests that another job runs", () => {
 		["@bitovp/db", 70],
 		["@bitovp/worker", 68],
 		// Includes six favorite-registry, two still-image, two archive/restore and
-		// one WebM recovery case in the PostgreSQL job.
-		["@bitovp/web", 110],
+		// one WebM recovery case, plus three LOCAL QC cancellation cases.
+		["@bitovp/web", 113],
 	])
 		assert.deepEqual(skipProblems(plainRun(workspace), workspace, root), {
 			problems: [],
@@ -4849,6 +4849,72 @@ const HDR_SCREENSHOT_UPLOAD =
 const FORBIDDEN =
 	/\bsecrets\s*(\.|\[|\))|secrets:\s*inherit|id-token|pull_request_target|workflow_run|issue_comment|upload-artifact|docker (push|login)|gh release/;
 
+const INSTALLED_BOMBADIL_UPLOAD = [
+	"      - name: Save bounded installed Bombadil evidence without browser profiles or screenshots",
+	"        if: always() && env.BITOVP_ARCHIVE_DIR != ''",
+	"        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2",
+	"        with:",
+	`          name: installed-bombadil-\${{ github.run_id }}-\${{ github.run_attempt }}`,
+	"          path: |",
+	`            \${{ runner.temp }}/bitovp-installed-bombadil/summary.json`,
+	`            \${{ runner.temp }}/bitovp-installed-bombadil/*/summary.json`,
+	`            \${{ runner.temp }}/bitovp-installed-bombadil/*/specification.ts`,
+	`            \${{ runner.temp }}/bitovp-installed-bombadil/*/installed-wizard-model.ts`,
+	`            \${{ runner.temp }}/bitovp-installed-bombadil/*/trace/trace.jsonl`,
+	"          retention-days: 7",
+	"          if-no-files-found: warn",
+	"",
+].join("\n");
+function withoutInstalledBombadilUpload(name, text) {
+	if (name !== "installed-gui.yml") return text;
+	assert.equal(
+		text.split(INSTALLED_BOMBADIL_UPLOAD).length - 1,
+		1,
+		"Installed GUI must retain exactly the bounded Bombadil trace files",
+	);
+	return text.replace(INSTALLED_BOMBADIL_UPLOAD, "");
+}
+
+test("installed Bombadil evidence allows only the exact synthetic trace files in its own workflow", () => {
+	assert.equal(
+		withoutInstalledBombadilUpload(
+			"installed-gui.yml",
+			INSTALLED_BOMBADIL_UPLOAD,
+		),
+		"",
+	);
+	for (const block of [
+		"",
+		INSTALLED_BOMBADIL_UPLOAD.repeat(2),
+		INSTALLED_BOMBADIL_UPLOAD.replace("*/trace/trace.jsonl", "**"),
+		INSTALLED_BOMBADIL_UPLOAD.replace("*/summary.json", "*/browser.json"),
+		INSTALLED_BOMBADIL_UPLOAD.replace(
+			"*/specification.ts",
+			"*/trace/screenshots/**",
+		),
+		INSTALLED_BOMBADIL_UPLOAD.replace("always()", "success()"),
+		INSTALLED_BOMBADIL_UPLOAD.replace(
+			"cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+			"v7",
+		),
+	])
+		assert.throws(() =>
+			withoutInstalledBombadilUpload("installed-gui.yml", block),
+		);
+	for (const name of ["ci.yml", "offline-media.yml", "installed-gui-copy.yml"])
+		assert.match(
+			withoutInstalledBombadilUpload(name, INSTALLED_BOMBADIL_UPLOAD),
+			FORBIDDEN,
+		);
+	assert.match(
+		withoutInstalledBombadilUpload(
+			"installed-gui.yml",
+			`${INSTALLED_BOMBADIL_UPLOAD}      - uses: actions/upload-artifact@v7\n`,
+		),
+		FORBIDDEN,
+	);
+});
+
 function withoutInstalledGuiHdrUpload(name, text) {
 	if (name !== "installed-gui.yml") return text;
 	assert.equal(
@@ -5204,7 +5270,10 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 			name,
 			withoutDependencyAuditUpload(
 				name,
-				withoutInstalledGuiHdrUpload(name, workflow(name)),
+				withoutInstalledGuiHdrUpload(
+					name,
+					withoutInstalledBombadilUpload(name, workflow(name)),
+				),
 			),
 		);
 		const holder = jobOf(text, job);

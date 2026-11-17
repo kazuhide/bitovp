@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { setTimeout as pause } from "node:timers/promises";
 import {
+	acceptNegativeTrace,
 	acceptPositiveTrace,
 	childEnvironment,
 	fixtureSandboxArgs,
@@ -34,6 +35,71 @@ test("only actual trace violations qualify; snapshot property names do not", () 
 			},
 		]).violationNames,
 		["defaultCopySourceIsLast"],
+	);
+});
+
+test("trace summaries retain unknown violations so a replay cannot silently drop them", () => {
+	const entry = (names) => [
+		{
+			action: { Custom: {} },
+			violations: names.map((name) => ({ name })),
+		},
+	];
+	const historical = summarizeTrace(
+		entry(["defaultCopySourceIsLast", "unrelated"]),
+	);
+	const replay = summarizeTrace(entry(["defaultCopySourceIsLast"]));
+	assert.deepEqual(historical.violationNames, [
+		"defaultCopySourceIsLast",
+		"unrelated",
+	]);
+	assert.notDeepEqual(historical.violationNames, replay.violationNames);
+});
+
+test("the actual negative-control gate rejects missing, mixed and malformed violations", () => {
+	const entries = (violations, action = { Custom: {} }) => [
+		{ action, violations },
+	];
+	for (const names of [
+		[],
+		["unrelated"],
+		["defaultCopySourceIsLast", "unrelated"],
+		["defaultCopySourceIsLast", "eachAddHasOneReceipt"],
+	])
+		assert.throws(
+			() => acceptNegativeTrace(entries(names.map((name) => ({ name })))),
+			/unintended reason/,
+		);
+	for (const violations of [{}, [null], [{}], [{ name: "" }], [{ name: 1 }]])
+		assert.throws(
+			() => acceptNegativeTrace(entries(violations)),
+			/Invalid trace/,
+		);
+	assert.throws(
+		() =>
+			acceptNegativeTrace(entries([{ name: "defaultCopySourceIsLast" }], null)),
+		/no generated action/,
+	);
+});
+
+test("replay requires the same complete violation set, independent of ordering and duplication", () => {
+	const entries = (names) => [
+		{ action: { Custom: {} }, violations: names.map((name) => ({ name })) },
+	];
+	const names = acceptNegativeTrace(
+		entries(["defaultCopySourceIsLast", "explicitSelectionIsNotRedirected"]),
+	).violationNames;
+	acceptNegativeTrace(
+		entries([
+			"explicitSelectionIsNotRedirected",
+			"defaultCopySourceIsLast",
+			"defaultCopySourceIsLast",
+		]),
+		names,
+	);
+	assert.throws(
+		() => acceptNegativeTrace(entries(["defaultCopySourceIsLast"]), names),
+		/different violation set/,
 	);
 });
 
@@ -111,9 +177,12 @@ function adequateTrace() {
 		ready: true,
 		collision,
 		pristine,
+		selected: "Rendition 2",
+		rows: [{ label: "Rendition 1" }, { label: "Rendition 2" }],
 		intent: { label: "Rendition 2" },
 		counts: { select: 1, collision: 1, reorder, add, reset: 1 },
-		receipts: [{}],
+		addClicks: 1,
+		receipts: [{ valid: true, actual: "Rendition 2", expected: "Rendition 2" }],
 	});
 	const models = [
 		state(true, 0, 0),
@@ -147,6 +216,43 @@ test("positive acceptance allows an initial unready prefix and requires real cov
 			{ ...entries.at(-1), violations: [{ name: "defaultCopySourceIsLast" }] },
 		]),
 	);
+});
+
+test("observed violations fail even when the tool omits a property notification", () => {
+	for (const [name, change] of [
+		[
+			"defaultCopySourceIsLast",
+			(state) => {
+				state.pristine = true;
+				state.rows.at(-1).label = "Wrong row";
+			},
+		],
+		[
+			"explicitSelectionIsNotRedirected",
+			(state) => {
+				state.intent.label = "Wrong selection";
+			},
+		],
+		[
+			"copiedSourceMatchesVisibleChoice",
+			(state) => {
+				state.receipts[0].actual = "Wrong copy";
+			},
+		],
+		[
+			"eachAddHasOneReceipt",
+			(state) => {
+				state.addClicks = 2;
+			},
+		],
+	]) {
+		const entries = structuredClone(adequateTrace());
+		change(entries[0].snapshots[0].value);
+		assert.throws(
+			() => acceptPositiveTrace(entries),
+			new RegExp(`Observed ${name} violation`),
+		);
+	}
 });
 
 for (const [name, snapshots] of Object.entries({
@@ -237,4 +343,16 @@ test("cleanup signals owned descendants after their detached group leader exits"
 test("only the dedicated Linux fixture browser disables its unsupported sandbox", () => {
 	assert.deepEqual(fixtureSandboxArgs("linux"), ["--no-sandbox"]);
 	assert.deepEqual(fixtureSandboxArgs("darwin"), []);
+});
+
+test("a symlinked Bombadil entry point must execute validation instead of exiting successfully", async (t) => {
+	const directory = await mkdtemp(join(tmpdir(), "bombadil-entrypoint-"));
+	t.after(() => rm(directory, { recursive: true, force: true }));
+	const alias = join(directory, "run.mjs");
+	await symlink(join(import.meta.dirname, "bombadil-component.mjs"), alias);
+	const result = spawnSync(process.execPath, [alias, "--unknown"], {
+		encoding: "utf8",
+	});
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /Unknown argument/);
 });

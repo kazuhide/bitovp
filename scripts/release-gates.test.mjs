@@ -108,7 +108,7 @@ test("fixed local gates include API freshness and the runner tests, never deploy
 	);
 	assert.equal(
 		pkg.scripts.test,
-		"turbo run test && pnpm test:api-coverage && pnpm test:release-gates && pnpm test:postgres-runner && pnpm test:editing-preview && pnpm test:feature-verification",
+		"turbo run test && pnpm test:api-coverage && pnpm test:release-gates && pnpm test:postgres-runner && pnpm test:editing-preview && pnpm test:feature-verification && pnpm test:change-verification && pnpm test:semantic-controls",
 	);
 	assert.equal(
 		pkg.scripts["test:editing-preview"],

@@ -6,14 +6,28 @@ import test from "node:test";
 import { doctor, runFeature } from "./feature-verification.mjs";
 import { FEATURES, feature } from "./feature-verification-registry.mjs";
 
-test("registry exposes exactly three bounded unit contracts and rejects arbitrary selection", () => {
+test("registry exposes eight bounded unit contracts and rejects arbitrary selection", () => {
 	assert.deepEqual(
 		FEATURES.map((f) => f.id),
-		["qc-resource-allocation", "qc-measurement-validity", "qc-runtime-safety"],
+		[
+			"qc-resource-allocation",
+			"qc-measurement-validity",
+			"qc-runtime-safety",
+			"access-isolation",
+			"submission-idempotency",
+			"vod-timeline",
+			"live-lifecycle",
+			"library-render-recovery",
+		],
 	);
 	for (const f of FEATURES) {
 		assert.equal(f.scope, "unit-contract");
 		assert.equal(f.timeoutMs, 120000);
+		assert.equal(f.requiresDatabaseClient, f.workspace !== "@bitovp/core");
+		assert.equal(
+			f.prerequisites.includes("generated Prisma client"),
+			f.requiresDatabaseClient,
+		);
 		assert(Object.values(f.files).every((n) => Number.isInteger(n) && n > 0));
 	}
 	for (const id of [

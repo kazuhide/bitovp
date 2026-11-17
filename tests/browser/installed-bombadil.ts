@@ -1,0 +1,301 @@
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { isAbsolute, join, resolve } from "node:path";
+import {
+	type BrowserContext,
+	chromium,
+	expect,
+	type Page,
+	type TestInfo,
+} from "@playwright/test";
+import {
+	type InstalledWizardOracle,
+	installedRows,
+} from "../bombadil/installed-wizard-model";
+import { nonpaidVodPlan } from "./nonpaid-submit";
+
+const account = "33333333-3333-4333-8333-333333333333";
+const credential = "44444444-4444-4444-8444-444444444444";
+const root = resolve(import.meta.dirname, "../..");
+const digest = (bytes: Uint8Array) =>
+	createHash("sha256").update(bytes).digest("hex");
+
+async function prepareWizard(page: Page, fault: boolean, tripwire: string) {
+	await page.goto("/vod/new");
+	await page.getByRole("button", { name: /Import plan JSON/ }).click();
+	await page
+		.getByRole("textbox", { name: /Import plan JSON/ })
+		.fill(JSON.stringify(nonpaidVodPlan(account, credential)));
+	await page.getByRole("button", { name: /Validate.*load/i }).click();
+	await expect(page.locator("#wz-name")).toHaveValue("Nonpaid VOD import");
+	await page
+		.getByRole("navigation", { name: "Wizard steps" })
+		.getByRole("button", { name: /^3\. Ladder$/ })
+		.click();
+	await expect(page.locator("#wz-v-0-height")).toBeVisible();
+	for (let index = 1; index < installedRows.length; index++)
+		await page.getByRole("button", { name: "Add video", exact: true }).click();
+	for (const [index, row] of installedRows.entries()) {
+		await page.locator(`#wz-v-${index}-height`).fill(String(row.height));
+		await page.locator(`#wz-v-${index}-bitrate`).fill(String(row.bitrate));
+	}
+	await page.getByRole("button", { name: "Plan JSON", exact: true }).click();
+	await expect(page.getByTestId("plan-json")).toContainText('"renditions"');
+	await page.evaluate(
+		({ rows, fault, tripwire }) => {
+			(
+				window as typeof window & { __bitovpWizard: InstalledWizardOracle }
+			).__bitovpWizard = {
+				rows,
+				fault,
+				tripwire,
+				faults: 0,
+				selected: null,
+				guarded: null,
+				counts: { edit: 0, select: 0, add: 0, remove: 0, revisit: 0 },
+			};
+		},
+		{ rows: installedRows, fault, tripwire },
+	);
+}
+
+async function executeDriver(
+	args: string[],
+	output: string,
+	temporary: string,
+) {
+	const child = spawn(
+		process.execPath,
+		[join(root, "scripts/bombadil-installed.mjs"), ...args],
+		{
+			cwd: root,
+			env: {
+				PATH: process.env.PATH,
+				LANG: "en_US.UTF-8",
+				TMPDIR: temporary,
+				NO_COLOR: "1",
+			},
+			detached: true,
+			stdio: ["ignore", "pipe", "pipe"],
+		},
+	);
+	let log = "";
+	let expired = false;
+	child.stdout.on("data", (chunk) => {
+		log += chunk;
+	});
+	child.stderr.on("data", (chunk) => {
+		log += chunk;
+	});
+	const kill = () => {
+		if (!child.pid) return;
+		try {
+			process.kill(-child.pid, "SIGKILL");
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+		}
+	};
+	const timer = setTimeout(() => {
+		expired = true;
+		kill();
+	}, 55_000);
+	try {
+		await new Promise((done, reject) => {
+			child.once("exit", done);
+			child.once("error", reject);
+		});
+	} finally {
+		clearTimeout(timer);
+		kill();
+		await writeFile(join(output, "runner.log"), log, { mode: 0o600 });
+	}
+	expect(expired, "Installed Bombadil wrapper timeout").toBe(false);
+	expect(
+		child.exitCode,
+		"Installed Bombadil trace validation failed; see private runner.log",
+	).toBe(0);
+}
+
+export async function verifyInstalledBombadil(
+	baseURL: string,
+	storageState: Awaited<ReturnType<BrowserContext["storageState"]>>,
+	info: TestInfo,
+	directory: string,
+) {
+	const binary = process.env.BITOVP_BOMBADIL_BINARY;
+	const output = process.env.BITOVP_BOMBADIL_OUTPUT;
+	if (!binary || !output || !isAbsolute(binary) || !isAbsolute(output))
+		throw new Error(
+			"Installed Bombadil requires explicit verified binary and evidence paths",
+		);
+	await mkdir(output, { mode: 0o700 });
+	let tripwireRequests = 0;
+	const tripwire = createServer((_request, response) => {
+		tripwireRequests++;
+		response.writeHead(599).end();
+	});
+	await new Promise<void>((done) => tripwire.listen(0, "127.0.0.1", done));
+	const address = tripwire.address();
+	if (!address || typeof address === "string")
+		throw new Error("Owned tripwire missing");
+	const tripwireURL = `http://127.0.0.1:${address.port}/provider-tripwire`;
+	const results = [];
+	try {
+		for (const stage of ["current", "negative", "replay"] as const) {
+			const profile = await mkdtemp(join(directory, "bombadil-profile-"));
+			let context: BrowserContext | undefined;
+			const counts = { blockedMutation: 0, blockedOtherOrigin: 0 };
+			const unexpected: string[] = [];
+			try {
+				context = await chromium.launchPersistentContext(profile, {
+					channel: "chromium",
+					headless: true,
+					baseURL,
+					viewport: { width: 1440, height: 1000 },
+					locale: "en-US",
+					serviceWorkers: "block",
+					args: [
+						"--remote-debugging-port=0",
+						"--remote-debugging-address=127.0.0.1",
+					],
+					env: {
+						PATH: process.env.PATH ?? "/usr/bin:/bin",
+						LANG: "en_US.UTF-8",
+						TMPDIR: profile,
+						NO_COLOR: "1",
+					},
+				});
+				await context.route("**/*", async (route) => {
+					const request = route.request();
+					const url = new URL(request.url());
+					if (url.origin !== baseURL) {
+						counts.blockedOtherOrigin++;
+						if (url.href !== tripwireURL || request.method() !== "POST")
+							unexpected.push("Unexpected external request");
+						return route.abort();
+					}
+					if (!["GET", "HEAD"].includes(request.method())) {
+						counts.blockedMutation++;
+						if (
+							url.pathname !== "/api/bombadil-guard" ||
+							request.method() !== "POST"
+						)
+							unexpected.push("Unexpected installed mutation");
+						return route.abort();
+					}
+					if (url.pathname === "/api/bitmovin-accounts")
+						return route.fulfill({
+							json: [{ id: account, label: "Synthetic account" }],
+						});
+					if (url.pathname === "/api/credentials")
+						return route.fulfill({
+							json: [
+								{
+									id: credential,
+									label: "Synthetic storage",
+									provider: "AWS_S3",
+								},
+							],
+						});
+					if (["/api/presets", "/api/delivery-presets"].includes(url.pathname))
+						return route.fulfill({ json: [] });
+					if (
+						!url.pathname.startsWith("/api/") ||
+						[
+							"/api/auth/session",
+							"/api/settings/features",
+							"/api/settings/branding",
+						].includes(url.pathname)
+					)
+						return route.continue();
+					unexpected.push(`Unexpected installed read: ${url.pathname}`);
+					return route.abort();
+				});
+				await context.addCookies(storageState.cookies);
+				await context.addCookies([
+					{ name: "ovp-locale", value: "en", url: baseURL },
+				]);
+				expect(context.pages()).toHaveLength(1);
+				const page = context.pages()[0];
+				if (!page) throw new Error("Dedicated browser page missing");
+				context.on("page", (other) => {
+					unexpected.push("Unexpected page target");
+					void other.close();
+				});
+				page.on("pageerror", () => unexpected.push("Installed page exception"));
+				await prepareWizard(page, stage !== "current", tripwireURL);
+				const port = Number(
+					(await readFile(join(profile, "DevToolsActivePort"), "utf8")).split(
+						"\n",
+					)[0],
+				);
+				expect(port).toBeGreaterThan(0);
+				const version = await context.newCDPSession(page);
+				const browserVersion = (await version.send("Browser.getVersion"))
+					.product;
+				await version.detach();
+				const stageOutput = join(output, stage);
+				await executeDriver(
+					[
+						`--binary=${binary}`,
+						`--endpoint=http://127.0.0.1:${port}`,
+						`--origin=${baseURL}/vod/new`,
+						`--output=${stageOutput}`,
+						`--stage=${stage}`,
+						...(stage === "replay"
+							? [`--reproduce=${join(output, "negative/trace")}`]
+							: []),
+					],
+					output,
+					profile,
+				);
+				const result = JSON.parse(
+					await readFile(join(stageOutput, "summary.json"), "utf8"),
+				);
+				expect(counts.blockedMutation).toBeGreaterThan(0);
+				expect(counts.blockedOtherOrigin).toBeGreaterThan(0);
+				expect(tripwireRequests).toBe(0);
+				expect(unexpected).toEqual([]);
+				expect(context.pages()).toHaveLength(1);
+				results.push({
+					...result,
+					browserVersion,
+					network: { ...counts, tripwireRequests },
+				});
+			} finally {
+				try {
+					await context?.close();
+				} finally {
+					await rm(profile, { recursive: true, force: true });
+				}
+			}
+		}
+		expect(results[2].violationNames).toEqual(results[1].violationNames);
+		const summary = {
+			status: "passed",
+			tool: "Bombadil 0.7.10",
+			source: "installed distributed archive",
+			scope:
+				"Authenticated installed VOD wizard; generated editing, selection, copying, removal and step navigation; independent visible and serialized values; injected action-routing fault and actual replay; no provider execution",
+			browserSha256: digest(await readFile(chromium.executablePath())),
+			modelSha256: digest(
+				await readFile(join(root, "tests/bombadil/installed-wizard-model.ts")),
+			),
+			results,
+		};
+		await writeFile(
+			join(output, "summary.json"),
+			`${JSON.stringify(summary, null, 2)}\n`,
+			{ mode: 0o600, flag: "wx" },
+		);
+		info.annotations.push({
+			type: "evidence-scope",
+			description: summary.scope,
+		});
+	} finally {
+		tripwire.closeAllConnections();
+		await new Promise<void>((done) => tripwire.close(() => done()));
+	}
+}

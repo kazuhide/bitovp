@@ -1,10 +1,13 @@
-# Temporary picomatch mitigation
+# Picomatch supported syntax and mitigation
 
 The dependency gate detected
 [GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf)
 in picomatch 4.0.7. At adoption, the advisory lists no patched release. The
 registry package remains version 4.0.7, so native software-composition analysis
 continues to report the finding. It is not reported as an audit-clean dependency.
+The restriction below is the supported dependency contract until a verified
+replacement meets the removal conditions. Harness completion does not depend on
+an unpublished upstream repair, and does not imply full picomatch compatibility.
 
 ## Supported syntax and boundary
 
@@ -77,13 +80,54 @@ not adopted because investigation found remaining timeout cases or changed
 matching/capture semantics. The chosen guard changes only recognition of the
 explicitly unsupported syntax.
 
+The 2026-11-18 check of the [official advisory](https://github.com/advisories/GHSA-fc5q-39xc-vjpf)
+and [published releases](https://github.com/micromatch/picomatch/releases) still
+found no patched release. The new, unmerged
+[PR254](https://github.com/micromatch/picomatch/pull/254), at
+`c63a5bf4e61dbdb81bc41e97dc2616c30acce337`, completed bounded checks for
+`+(*a)`, `+(*)c`, `+(a*)c` and `+(*[ab])c`. However, the separate multi-branch
+`+(ab|abab)` case still exceeded the one-second child deadline, and
+`capture: true` changed the inner capture for `+(*a)` matching `aba` from `b`
+to `ab`. These observations do not replace the upstream suite or establish a
+compatible replacement for the current rejection boundary.
+
+## Next image configuration boundary
+
+Next includes a separate, unpatched picomatch implementation. The official
+[Next 16.4.5 package source](https://github.com/vercel/next.js/blob/v16.4.5/packages/next/package.json)
+declares picomatch 4.0.1 for its build. The
+[16.4.6 compiled copy](https://github.com/vercel/next.js/blob/v16.4.6/packages/next/src/compiled/picomatch/index.js)
+was byte-identical when checked on 2026-11-18: 23,909 bytes, SHA-256
+`607dc79784c1161c33076903769dba23e63d9d9ccfe3c4695a32ebe3a5ab892d`.
+This identity check is not a claim that the vendored implementation is fixed.
+
+BitOVP currently uses the default image pattern configuration. Before exporting
+the application configuration, `apps/web/next.config.ts` calls
+`assertSupportedImagePatterns`. Omitted or empty `images.remotePatterns` and
+`images.localPatterns` are supported; an empty local list denies local images.
+Non-empty lists, including URL-form remote patterns, throw `TypeError` with code
+`ERR_UNSUPPORTED_NEXT_IMAGE_PATTERNS`. `unoptimized: true` does not bypass this
+policy. This deliberately rejects ordinary custom patterns as well as repeated
+extglobs, without trying to classify or rewrite their syntax.
+
+The helper tests use supplied configuration objects and do not import the
+application configuration or load its `.env` file. This boundary covers custom
+image patterns only. Next's build tracing, middleware and other compiled callers
+remain separate scopes; the pnpm audit contract does not certify them. Adding
+custom image patterns requires a matcher review and a corresponding policy change.
+
+## Removal conditions
+
 Regression tests cover changed or missing patch bytes, unpatched or additional
 installed copies, missing and external dependency resolutions, changed lock
 state, additional findings, malformed audit output and execution failure. The
 existing test budgets and required inventories are retained.
 
-When a trustworthy official release fixes the advisory while preserving required
-semantics, update the version and remove this patch, its dedicated finding
-classification and probe together. Restore an ordinary native audit gate.
+When a trustworthy official release fixes the advisory, verify its published
+bytes with bounded hostile cases, the required matching and capture semantics,
+and actual consumer discovery, tests and builds. Then update the version and
+remove this patch, its dedicated finding classification and probe together.
+Restore an ordinary native audit gate. Reassess Next's separate image policy
+against its actual vendored matcher before relaxing that boundary.
 Changing the advisory's patched-version information deliberately requires a
 review of this temporary mitigation.

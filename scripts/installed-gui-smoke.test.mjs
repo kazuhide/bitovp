@@ -674,12 +674,16 @@ test("a run that refuses the FFmpeg directory it is given ends before it makes o
 		rmSync(directory, { recursive: true, force: true });
 	}
 });
-test("requires decoded QC comparison and violin coverage as the twelfth browser case", () => {
-	assert.equal(CASES.length, 12);
+test("retains decoded QC coverage and requires installed Bombadil and durable cancellation", () => {
+	assert.equal(CASES.length, 14);
 	assert.equal(
-		CASES.at(-1),
+		CASES[11],
 		"decode and seek QC comparison previews and inspect violin distributions",
 	);
+	assert.deepEqual(CASES.slice(12), [
+		"explore installed VOD configuration with Bombadil and replay a fault",
+		"cancel LOCAL QC and retain its result after reload",
+	]);
 });
 
 test("requires every named browser case to run and pass once without skipping or retrying", () => {
@@ -722,6 +726,8 @@ test("failure summaries expose only known case names and safe statuses", () => {
 		`Browser case: ${CASES[9]}; status=passed`,
 		`Browser case: ${CASES[10]}; status=passed`,
 		`Browser case: ${CASES[11]}; status=passed`,
+		`Browser case: ${CASES[12]}; status=passed`,
+		`Browser case: ${CASES[13]}; status=passed`,
 	]);
 	assert(!summary.join("\n").includes("private"));
 });

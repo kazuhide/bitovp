@@ -57,6 +57,8 @@ export const CASES = [
 	"Live account defaults and manual overrides survive step navigation",
 	"remove and restore Library registration through the authenticated API",
 	"decode and seek QC comparison previews and inspect violin distributions",
+	"explore installed VOD configuration with Bombadil and replay a fault",
+	"cancel LOCAL QC and retain its result after reload",
 ];
 const QUEUES = [
 	"usageStatistics",
@@ -92,6 +94,8 @@ export function childEnvironment(env) {
 		"PLAYWRIGHT_BROWSERS_PATH",
 		"GITHUB_ACTIONS",
 		"RUNNER_ENVIRONMENT",
+		"BITOVP_BOMBADIL_BINARY",
+		"BITOVP_BOMBADIL_OUTPUT",
 	])
 		if (env[key]) clean[key] = env[key];
 	return {

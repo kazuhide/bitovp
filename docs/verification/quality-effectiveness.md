@@ -4,6 +4,14 @@ Faster feedback is useful only when defects still stop delivery. Test counts and
 green builds alone do not establish stronger detection. This evaluation separates
 historical product fixes, newly added detection, and untested behavior.
 
+The [completion contract](./completion-contract.md) connects change-based check
+selection, eight fixed fast profiles, mandatory semantic fault controls,
+installed-wizard exploration, authenticated cancellation and a real-PostgreSQL
+competing write. It records naturally discovered evidence and process-cleanup
+defects separately from intentional faults. The controls continuously test
+specific detection capabilities; they do not count as newly discovered bugs or
+as a general mutation score.
+
 ## Generated state sequences
 
 The worker directly pins `fast-check` 3.23.2. Six properties run as part of both

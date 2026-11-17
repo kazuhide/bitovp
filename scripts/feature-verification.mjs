@@ -36,7 +36,7 @@ export async function doctor(selected, { root = ROOT } = {}) {
 			id: `suite:${file}`,
 			ok: existsSync(resolve(root, selected.directory, file)),
 		});
-	if (selected.id === "qc-resource-allocation")
+	if (selected.requiresDatabaseClient)
 		checks.push({
 			id: "generated-db-client",
 			ok: existsSync(resolve(root, "packages/db/generated/client/index.js")),

@@ -6,7 +6,9 @@ import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { renditionInvariants } from "../tests/bombadil/rendition-model.ts";
+import { isEntryPoint } from "./gate-report.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const component = "apps/web/src/app/vod/new/rendition-add-controls.tsx";
@@ -14,6 +16,7 @@ const component = "apps/web/src/app/vod/new/rendition-add-controls.tsx";
 const historical = "8c8642a0332585e934461302df4ac91a55f9bb9e";
 const fixture = join(root, "tests/bombadil/rendition-fixture.tsx");
 const specification = join(root, "tests/bombadil/rendition.spec.ts");
+const model = join(root, "tests/bombadil/rendition-model.ts");
 export const properties = [
 	"defaultCopySourceIsLast",
 	"explicitSelectionIsNotRedirected",
@@ -44,16 +47,46 @@ export function childEnvironment(temporary) {
 }
 export function summarizeTrace(entries) {
 	assert(entries.length > 0, "Bombadil did not capture a state");
-	const violations = entries.flatMap((entry) => entry.violations ?? []);
-	const names = properties.filter((name) =>
-		violations.some((violation) => violation.name === name),
-	);
+	const violations = entries.flatMap((entry) => {
+		assert(entry && typeof entry === "object", "Invalid trace entry");
+		const values = entry.violations ?? [];
+		assert(Array.isArray(values), "Invalid trace violations");
+		for (const violation of values)
+			assert(
+				typeof violation?.name === "string" && violation.name.length > 0,
+				"Invalid trace violation name",
+			);
+		return values;
+	});
+	// Keep the complete observed set. Filtering to known names can turn a
+	// different failure during replay into an apparently matching reproduction.
+	const names = [
+		...new Set(violations.map((violation) => violation.name)),
+	].sort();
 	return {
 		states: entries.length,
 		actions: entries.filter((entry) => entry.action != null).length,
 		violationNames: names,
 		violations,
 	};
+}
+export function acceptNegativeTrace(entries, reproducedNames) {
+	const trace = summarizeTrace(entries);
+	assert(trace.actions > 0, "Negative control performed no generated action");
+	assert(
+		trace.violationNames.length > 0 &&
+			trace.violationNames.every((name) =>
+				properties.slice(0, 3).includes(name),
+			),
+		"Negative control failed for an unintended reason",
+	);
+	if (reproducedNames !== undefined)
+		assert.deepEqual(
+			trace.violationNames,
+			reproducedNames,
+			"Replay reported a different violation set",
+		);
+	return trace;
 }
 export function transitionCoverage(models) {
 	const counts = {
@@ -118,6 +151,11 @@ export function acceptPositiveTrace(entries) {
 			states.length === 1 && states[0].value?.ready === true,
 			`Fixture readiness lost or ambiguous at observation ${index}`,
 		);
+		for (const name of properties)
+			assert(
+				renditionInvariants[name](states[0].value),
+				`Observed ${name} violation at observation ${index}`,
+			);
 		evidence.push(states[0].value);
 	}
 	const transitions = transitionCoverage(evidence);
@@ -219,6 +257,7 @@ async function main() {
 		historicalComponentSha256: digest(oldSource),
 		fixtureSha256: digest(await readFile(fixture)),
 		specificationSha256: digest(await readFile(specification)),
+		modelSha256: digest(await readFile(model)),
 		toolVersion: version.stdout.trim(),
 		toolSha256: digest(binaryBytes),
 		browserVersion: browserVersion.stdout.trim(),
@@ -265,6 +304,14 @@ async function main() {
 			flag: "wx",
 			mode: 0o600,
 		});
+		await writeFile(
+			join(options.output, "rendition-model.ts"),
+			await readFile(model),
+			{
+				flag: "wx",
+				mode: 0o600,
+			},
+		);
 		await writeFile(
 			join(options.output, "fixture.tsx"),
 			await readFile(fixture),
@@ -485,20 +532,13 @@ async function main() {
 					2,
 					`${stage} did not report a Bombadil property violation`,
 				);
-				assert(
-					trace.actions > 0,
-					"Negative control performed no generated action",
-				);
-				assert(
-					trace.violationNames.some((name) =>
-						properties.slice(0, 3).includes(name),
-					),
-					"Negative control failed for an unintended reason",
+				acceptNegativeTrace(
+					entries,
+					stage === "replay" ? results[1].violationNames : undefined,
 				);
 			}
 			if (stage === "replay") {
 				assert.match(log, /Reproduction finished/);
-				assert.deepEqual(result.violationNames, results[1].violationNames);
 			}
 		}
 		await writeJson(join(options.output, "summary.json"), {
@@ -520,8 +560,4 @@ async function main() {
 	}
 }
 
-if (
-	process.argv[1] &&
-	import.meta.url === pathToFileURL(resolve(process.argv[1])).href
-)
-	await main();
+if (isEntryPoint(import.meta.url)) await main();

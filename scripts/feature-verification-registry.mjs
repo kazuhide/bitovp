@@ -34,16 +34,72 @@ export const FEATURES = Object.freeze(
 				"src/vmaf/deadline.property.test.ts": 2,
 			},
 		},
+		{
+			id: "access-isolation",
+			workspace: "@bitovp/web",
+			directory: "apps/web",
+			description: "Role enforcement and authenticated tenant context",
+			files: {
+				"src/proxy.roles.test.ts": 95,
+				"src/lib/auth/tenancy.test.ts": 14,
+			},
+		},
+		{
+			id: "submission-idempotency",
+			workspace: "@bitovp/web",
+			directory: "apps/web",
+			description: "VOD and Live creation routes and request identity",
+			files: {
+				"src/lib/server/create-request.test.ts": 11,
+				"src/app/api/encoding-jobs/route.test.ts": 71,
+				"src/app/api/live-channels/route.test.ts": 88,
+			},
+		},
+		{
+			id: "vod-timeline",
+			workspace: "@bitovp/web",
+			directory: "apps/web",
+			description: "Independent track edits, snapping and packaging output",
+			files: {
+				"src/app/vod/new/input-timeline-output.test.ts": 4,
+				"src/app/vod/new/input-timeline/av-overwrite-editor.test.tsx": 8,
+				"src/app/vod/new/input-timeline/timeline-snapping.test.ts": 43,
+			},
+		},
+		{
+			id: "live-lifecycle",
+			workspace: "@bitovp/worker",
+			directory: "apps/worker",
+			description:
+				"Live run ownership, provider observations and startup cancellation",
+			files: {
+				"src/live/startup-cancel.test.ts": 2,
+				"src/live/provider-lifecycle.test.ts": 50,
+			},
+		},
+		{
+			id: "library-render-recovery",
+			workspace: "@bitovp/worker",
+			directory: "apps/worker",
+			description:
+				"Library composition, derivative ownership and render recovery",
+			files: {
+				"src/library-editing/sweep-composition.test.ts": 18,
+				"src/library-editing/derivatives.test.ts": 5,
+			},
+		},
 	].map((f) =>
 		Object.freeze({
 			...f,
 			files: Object.freeze(f.files),
+			requiresDatabaseClient: f.workspace !== "@bitovp/core",
 			scope: "unit-contract",
 			timeoutMs: 120000,
 			prerequisites: [
 				"Node >=24",
 				"pinned pnpm installed",
 				"workspace dependencies installed",
+				...(f.workspace !== "@bitovp/core" ? ["generated Prisma client"] : []),
 			],
 			effects:
 				"Runs fixed local tests; writes only test scratch and the requested evidence directory. No application launch or provider verification.",

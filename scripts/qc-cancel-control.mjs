@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { isEntryPoint } from "./gate-report.mjs";
 import {
-	reportProblems,
 	runFixture,
 	stopCommands,
 	testEnvironment,
 } from "./postgres-integration.mjs";
-import { qualifyMutation } from "./semantic-controls.mjs";
+import {
+	assess as assessSemanticControl,
+	digest,
+	qualifyMutation,
+} from "./semantic-controls.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const group = {
@@ -27,7 +29,17 @@ const titles = [
 	"accepts legacy LOCAL cancellation once and keeps partial results on retry",
 	"hides a running foreign job from the tenant requesting cancellation",
 ];
-const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const cases = titles.map(
+	(title) => `LOCAL QC cancellation through the route and PostgreSQL ${title}`,
+);
+const control = {
+	...group,
+	cases,
+	failures: {
+		[cases[0]]:
+			"AssertionError: Cancellation overwrote a committed completion: expected 'ERROR' to be 'FINISHED' // Object.is equality",
+	},
+};
 
 export function mutate(source) {
 	const predicate = 'status: { in: ["PENDING", "RUNNING"] },';
@@ -42,42 +54,8 @@ export function mutate(source) {
 	);
 }
 
-export function assess(report, code, stage, checkout) {
-	const mutant = stage === "mutant";
-	assert.equal(code, mutant ? "1" : "0", "Unexpected test command exit");
-	assert.equal(report.testResults.length, 1);
-	const [suite] = report.testResults;
-	assert.equal(suite.name, join(checkout, group.directory, file));
-	const cases = suite.assertionResults;
-	assert.deepEqual(cases.map((a) => a.title).sort(), [...titles].sort());
-	if (!mutant) {
-		assert.equal(
-			reportProblems(report, group, checkout).length,
-			0,
-			"Required PostgreSQL cases did not all pass",
-		);
-		return;
-	}
-	assert.equal(report.success, false);
-	assert.equal(suite.status, "failed");
-	assert.equal(suite.message, "", "Unexpected suite setup or cleanup failure");
-	assert.equal(report.numTotalTests, 3);
-	assert.equal(report.numPassedTests, 2);
-	assert.equal(report.numFailedTests, 1);
-	assert.equal(report.numPendingTests, 0);
-	assert.equal(report.numTodoTests, 0);
-	assert.equal(report.numPendingTestSuites, 0);
-	assert(report.numFailedTestSuites > 0);
-	for (const entry of cases) {
-		assert.equal(entry.status, entry.title === titles[0] ? "failed" : "passed");
-		if (entry.status === "failed") {
-			assert.equal(entry.failureMessages.length, 1);
-			assert.match(
-				entry.failureMessages[0].split("\n")[0],
-				/^AssertionError: Cancellation overwrote a committed completion: expected 'ERROR' to be 'FINISHED' \/\/ Object\.is equality$/,
-			);
-		}
-	}
+export function assess(report, code, stage, checkout, meta) {
+	assessSemanticControl(control, report, code, stage, checkout, meta);
 }
 
 export async function qualify(checkout, run, signal) {
@@ -87,7 +65,7 @@ export async function qualify(checkout, run, signal) {
 		mutate,
 		run,
 		assess: (result, stage) =>
-			assess(result.report, result.code, stage, checkout),
+			assess(result.report, result.code, stage, checkout, result.meta),
 		signal,
 	});
 	return { ...result, testSha256: result.testSha256[0], detectedBy: titles[0] };
@@ -144,7 +122,8 @@ async function main(signal) {
 				async (name) => {
 					console.log(`Checking LOCAL QC cancel ${name}`);
 					const path = join(directory, `${name}.json`);
-					assert(!existsSync(path));
+					const metaPath = `${path}.meta`;
+					assert(!existsSync(path) && !existsSync(metaPath));
 					// Keep raw Vitest output private; the shared command enforces the process
 					// group deadline. The shell returns the actual child status as stdout.
 					const code = await execute(
@@ -162,12 +141,30 @@ async function main(signal) {
 							file,
 							"--allowOnly=false",
 							"--reporter=json",
+							`--reporter=${join(root, "scripts/semantic-controls.mjs")}`,
 							`--outputFile=${path}`,
 						],
-						{ cwd: root, env: testEnvironment(env), timeout: 60_000 },
+						{
+							cwd: root,
+							env: {
+								...testEnvironment(env),
+								BITOVP_SEMANTIC_REPORT: metaPath,
+							},
+							timeout: 60_000,
+						},
 					);
+					assert(
+						existsSync(path) && existsSync(metaPath),
+						"Required Vitest reports missing",
+					);
+					assert.match(code, /^[01]$/, "Unexpected test command exit");
 					const bytes = readFileSync(path);
-					return { report: JSON.parse(bytes), code, reportSha256: hash(bytes) };
+					return {
+						report: JSON.parse(bytes),
+						code: Number(code),
+						reportSha256: digest(bytes),
+						meta: JSON.parse(readFileSync(metaPath, "utf8")),
+					};
 				},
 				signal,
 			);

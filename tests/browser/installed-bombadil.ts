@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { isAbsolute, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
 	type BrowserContext,
 	chromium,
@@ -61,63 +61,6 @@ async function prepareWizard(page: Page, fault: boolean, tripwire: string) {
 	);
 }
 
-async function executeDriver(
-	args: string[],
-	output: string,
-	temporary: string,
-) {
-	const child = spawn(
-		process.execPath,
-		[join(root, "scripts/bombadil-installed.mjs"), ...args],
-		{
-			cwd: root,
-			env: {
-				PATH: process.env.PATH,
-				LANG: "en_US.UTF-8",
-				TMPDIR: temporary,
-				NO_COLOR: "1",
-			},
-			detached: true,
-			stdio: ["ignore", "pipe", "pipe"],
-		},
-	);
-	let log = "";
-	let expired = false;
-	child.stdout.on("data", (chunk) => {
-		log += chunk;
-	});
-	child.stderr.on("data", (chunk) => {
-		log += chunk;
-	});
-	const kill = () => {
-		if (!child.pid) return;
-		try {
-			process.kill(-child.pid, "SIGKILL");
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-		}
-	};
-	const timer = setTimeout(() => {
-		expired = true;
-		kill();
-	}, 55_000);
-	try {
-		await new Promise((done, reject) => {
-			child.once("exit", done);
-			child.once("error", reject);
-		});
-	} finally {
-		clearTimeout(timer);
-		kill();
-		await writeFile(join(output, "runner.log"), log, { mode: 0o600 });
-	}
-	expect(expired, "Installed Bombadil wrapper timeout").toBe(false);
-	expect(
-		child.exitCode,
-		"Installed Bombadil trace validation failed; see private runner.log",
-	).toBe(0);
-}
-
 export async function verifyInstalledBombadil(
 	baseURL: string,
 	storageState: Awaited<ReturnType<BrowserContext["storageState"]>>,
@@ -146,6 +89,7 @@ export async function verifyInstalledBombadil(
 		for (const stage of ["current", "negative", "replay"] as const) {
 			const profile = await mkdtemp(join(directory, "bombadil-profile-"));
 			let context: BrowserContext | undefined;
+			let driverCleanupConfirmed = true;
 			const counts = { blockedMutation: 0, blockedOtherOrigin: 0 };
 			const unexpected: string[] = [];
 			try {
@@ -237,20 +181,31 @@ export async function verifyInstalledBombadil(
 					.product;
 				await version.detach();
 				const stageOutput = join(output, stage);
-				await executeDriver(
-					[
-						`--binary=${binary}`,
-						`--endpoint=http://127.0.0.1:${port}`,
-						`--origin=${baseURL}/vod/new`,
-						`--output=${stageOutput}`,
-						`--stage=${stage}`,
-						...(stage === "replay"
-							? [`--reproduce=${join(output, "negative/trace")}`]
-							: []),
-					],
-					output,
-					profile,
+				const { executeInstalledDriver } = await import(
+					pathToFileURL(join(root, "scripts/bombadil-installed.mjs")).href
 				);
+				driverCleanupConfirmed = false;
+				try {
+					await executeInstalledDriver(
+						[
+							`--binary=${binary}`,
+							`--endpoint=http://127.0.0.1:${port}`,
+							`--origin=${baseURL}/vod/new`,
+							`--output=${stageOutput}`,
+							`--stage=${stage}`,
+							...(stage === "replay"
+								? [`--reproduce=${join(output, "negative/trace")}`]
+								: []),
+						],
+						output,
+						profile,
+					);
+					driverCleanupConfirmed = true;
+				} catch (error) {
+					driverCleanupConfirmed =
+						(error as { cleanupConfirmed?: boolean }).cleanupConfirmed === true;
+					throw error;
+				}
 				const result = JSON.parse(
 					await readFile(join(stageOutput, "summary.json"), "utf8"),
 				);
@@ -268,7 +223,8 @@ export async function verifyInstalledBombadil(
 				try {
 					await context?.close();
 				} finally {
-					await rm(profile, { recursive: true, force: true });
+					if (driverCleanupConfirmed)
+						await rm(profile, { recursive: true, force: true });
 				}
 			}
 		}

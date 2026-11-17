@@ -25,6 +25,7 @@ import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
+import { parse as parseYaml } from "yaml";
 import { atStep, failureLines, GateFailure } from "./gate-report.mjs";
 import {
 	auditSkips,
@@ -4460,6 +4461,50 @@ test("the installer keeps a build that passed the proof under a key of what it i
 			}
 		},
 	);
+});
+
+test("CI validates workflow semantics with a pinned tool before application checks", () => {
+	const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+	assert.equal(
+		pkg.scripts.check,
+		"biome check --error-on-warnings . && pnpm check:workflows",
+	);
+	assert.equal(
+		pkg.scripts["check:workflows"],
+		"node scripts/workflow-lint.mjs",
+	);
+	assert.equal(
+		pkg.scripts["test:gated-runner"],
+		"node --test scripts/gated-tests.test.mjs scripts/native-hdr-tools.test.mjs scripts/workflow-lint.test.mjs",
+	);
+	const quality = parseYaml(
+		readFileSync(join(root, ".github/workflows/ci.yml"), "utf8"),
+	).jobs.quality;
+	assert.equal(quality.if, undefined);
+	assert.equal(quality["continue-on-error"], undefined);
+	const index = quality.steps.findIndex(
+		(step) => step.name === "Install verified actionlint 1.7.12",
+	);
+	assert(index >= 0);
+	const step = quality.steps[index];
+	assert.equal(step.if, undefined);
+	assert.equal(step["continue-on-error"], undefined);
+	assert(
+		step.run.includes(
+			"https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz",
+		),
+	);
+	assert(
+		step.run.includes(
+			"8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+		),
+	);
+	assert(step.run.includes("sha256sum --check --status"));
+	assert(step.run.includes('"$GITHUB_PATH"'));
+	const check = quality.steps.findIndex((item) => item.run === "pnpm check");
+	assert(check > index);
+	assert.equal(quality.steps[check].if, undefined);
+	assert.equal(quality.steps[check]["continue-on-error"], undefined);
 });
 
 test("CI audits every package's skipped tests and runs the native media and Redis tests with the pinned tools", () => {

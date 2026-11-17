@@ -54,6 +54,7 @@
 			"scripts/gated-tests*.mjs",
 			"scripts/feature-verification*.mjs",
 			"scripts/change-verification*.mjs",
+			"scripts/workflow-lint*.mjs",
 			"scripts/semantic-controls*.mjs",
 			"scripts/qc-cancel-control*.mjs",
 			"scripts/postgres-integration*.mjs",

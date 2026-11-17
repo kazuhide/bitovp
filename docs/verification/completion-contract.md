@@ -51,6 +51,13 @@ possible action in a domain has been exercised.
 
 ## Detection is itself a required CI contract
 
+`pnpm check` runs Biome and actionlint against every workflow. The mandatory
+quality job installs checksum-pinned actionlint 1.7.12 before this check. It
+validates workflow syntax, expressions and available contexts; the optional
+ShellCheck/Pyflakes integrations are separate from this workflow-specific gate.
+An invalid job-level `runner` context found during initial integration is retained
+as the reason to require this semantic check before pushing future candidates.
+
 The `semantic-controls` job applies four fixed faults in its own clean hosted
 checkout. Every control runs the identical complete selected test files in
 three phases: original source, one precisely anchored mutation, and byte-for-byte

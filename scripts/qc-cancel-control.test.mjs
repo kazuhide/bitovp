@@ -14,12 +14,22 @@ import { assess, mutate, qualify } from "./qc-cancel-control.mjs";
 const route = "apps/web/src/app/api/vmaf-jobs/[id]/cancel/route.ts";
 const file = "apps/web/src/lib/server/qc-cancel.integration.test.ts";
 const source = 'where: { id, status: { in: ["PENDING", "RUNNING"] }, mode },';
+const metadata = (mutant) => ({
+	reason: mutant ? "failed" : "passed",
+	unhandled: 0,
+	collectionErrors: 0,
+});
 function report(root, mutant) {
 	const cases = [
 		"preserves the committed completion when cancellation already read RUNNING",
 		"accepts legacy LOCAL cancellation once and keeps partial results on retry",
 		"hides a running foreign job from the tenant requesting cancellation",
-	].map((title) => ({ title, status: "passed", failureMessages: [] }));
+	].map((title) => ({
+		title,
+		fullName: `LOCAL QC cancellation through the route and PostgreSQL ${title}`,
+		status: "passed",
+		failureMessages: [],
+	}));
 	if (mutant) {
 		cases[0].status = "failed";
 		cases[0].failureMessages.push(
@@ -49,7 +59,7 @@ function report(root, mutant) {
 test("accepts only the observed behavior failure and matching command result", () => {
 	const root = "/git";
 	const fresh = () => report(root, true);
-	assess(fresh(), "1", "mutant", root);
+	assess(fresh(), 1, "mutant", root, metadata(true));
 	for (const change of [
 		(r) => {
 			r.testResults[0].assertionResults[0].failureMessages = [
@@ -57,7 +67,7 @@ test("accepts only the observed behavior failure and matching command result", (
 			];
 		},
 		(r) => {
-			r.testResults[0].assertionResults[0].title = "another test";
+			r.testResults[0].assertionResults[0].fullName = "another test";
 		},
 		(r) => {
 			r.testResults[0].assertionResults[1].status = "skipped";
@@ -80,11 +90,38 @@ test("accepts only the observed behavior failure and matching command result", (
 	]) {
 		const altered = fresh();
 		change(altered);
-		assert.throws(() => assess(altered, "1", "mutant", root));
+		assert.throws(() => assess(altered, 1, "mutant", root, metadata(true)));
 	}
-	for (const code of ["0", "2", "124", "137"])
-		assert.throws(() => assess(fresh(), code, "mutant", root));
-	assert.throws(() => assess(fresh(), "0", "baseline", root));
+	for (const code of [0, 2, 124, 137])
+		assert.throws(() => assess(fresh(), code, "mutant", root, metadata(true)));
+	assert.throws(() => assess(fresh(), 0, "baseline", root, metadata(false)));
+});
+
+test("rejects a matching mutant failure when independent reporter evidence is absent or unhealthy", () => {
+	for (const meta of [
+		undefined,
+		{ reason: "failed", unhandled: 1, collectionErrors: 0 },
+		{ reason: "failed", unhandled: 0, collectionErrors: 1 },
+		{ reason: "interrupted", unhandled: 0, collectionErrors: 0 },
+	])
+		assert.throws(() =>
+			assess(report("/git", true), 1, "mutant", "/git", meta),
+		);
+});
+
+test("requires a healthy reporter on both positive stages", () => {
+	for (const stage of ["baseline", "restored"]) {
+		assess(report("/git", false), 0, stage, "/git", metadata(false));
+		for (const meta of [
+			undefined,
+			metadata(true),
+			{ ...metadata(false), unhandled: 1 },
+			{ ...metadata(false), collectionErrors: 1 },
+		])
+			assert.throws(() =>
+				assess(report("/git", false), 0, stage, "/git", meta),
+			);
+	}
 });
 
 test("requires the unique status predicate and retains it for CLOUD", () => {
@@ -117,7 +154,8 @@ test("restores the exact source after a rejected command, source drift, or accep
 					writeFileSync(join(root, file), "changed assertions");
 				return {
 					report: report(root, mutant),
-					code: mutant ? "1" : "0",
+					code: mutant ? 1 : 0,
+					meta: metadata(mutant),
 					reportSha256: "test",
 				};
 			});

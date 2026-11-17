@@ -1,11 +1,28 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { execFileSync, spawn } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
+import {
+	existsSync,
+	lstatSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	renameSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { binaryHashes, childEnvironment } from "./bombadil-component.mjs";
 import { isEntryPoint } from "./gate-report.mjs";
+import {
+	groupExists,
+	guardedCommand,
+	OWNER_GUARD,
+} from "./semantic-controls.mjs";
 import { sourceRevision } from "./source-revision.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -23,6 +40,350 @@ export function launchInstalledTool(binary, args, env) {
 		detached: false,
 		stdio: ["ignore", "pipe", "pipe"],
 	});
+}
+
+const stages = ["current", "negative", "replay"];
+const registrationCode = `
+import {spawn} from 'node:child_process';
+import {registerInstalledGroup} from ${JSON.stringify(pathToFileURL(join(root, "scripts/bombadil-installed.mjs")).href)};
+registerInstalledGroup(JSON.parse(process.argv[2]), process.ppid);
+const child=spawn(process.execPath,process.argv.slice(4),{stdio:'inherit',detached:false});
+child.once('error',()=>{process.exitCode=1;});
+child.once('close',(code,signal)=>{if(signal)process.kill(process.pid,signal);else process.exitCode=code??1;});
+`;
+const pause = (ms) => new Promise((done) => setTimeout(done, ms));
+
+function privateFile(path) {
+	const stat = lstatSync(path);
+	assert(
+		stat.isFile() &&
+			stat.nlink === 1 &&
+			!(stat.mode & 0o077) &&
+			stat.size <= 4096,
+		"Invalid private driver receipt",
+	);
+	return readFileSync(path, "utf8");
+}
+function registrations(state, create = false) {
+	assert(
+		/^[a-f0-9]{32}$/.test(state.id) &&
+			basename(state.directory).startsWith("bitovp-gui-"),
+	);
+	const stat = lstatSync(state.directory);
+	assert(
+		stat.isDirectory() &&
+			!(stat.mode & 0o077) &&
+			realpathSync(state.directory) === state.directory,
+		"Invalid installed fixture directory",
+	);
+	assert.equal(
+		privateFile(join(state.directory, ".owner")),
+		state.id,
+		"Installed fixture ownership differs",
+	);
+	const directory = join(state.directory, "bombadil-drivers");
+	if (create && !existsSync(directory)) mkdirSync(directory, { mode: 0o700 });
+	if (existsSync(directory)) {
+		const value = lstatSync(directory);
+		assert(
+			value.isDirectory() &&
+				!(value.mode & 0o077) &&
+				realpathSync(directory) === directory,
+			"Invalid driver registration directory",
+		);
+	}
+	return directory;
+}
+
+/** Inspect one known PID only. Linux receipts bind boot identity, start ticks and PGID. */
+export function installedProcessIdentity(pid) {
+	assert(Number.isSafeInteger(pid) && pid > 1);
+	try {
+		if (process.platform === "linux") {
+			const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+			const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+			if (fields[0] === "Z") return null;
+			return {
+				group: Number(fields[2]),
+				start: `${readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim()}:${fields[19]}`,
+				command: readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0"),
+			};
+		}
+		// The hosted fixture is Linux-only. This bounded PID-specific branch lets
+		// the same real-process ownership regressions run on a developer's Mac.
+		const text = execFileSync(
+			"ps",
+			[
+				"-ww",
+				"-p",
+				String(pid),
+				"-o",
+				"pgid=",
+				"-o",
+				"lstart=",
+				"-o",
+				"command=",
+			],
+			{ encoding: "utf8", timeout: 1000 },
+		);
+		const match = /^\s*(\d+)\s+(.{24})\s+([\s\S]*)$/.exec(text);
+		assert(match, "Owned process identity unavailable");
+		return {
+			group: Number(match[1]),
+			start: match[2],
+			command: match[3].replace(/\\([0-7]{3})/g, (_match, digits) =>
+				String.fromCharCode(Number.parseInt(digits, 8)),
+			),
+		};
+	} catch (error) {
+		if (
+			error.code === "ENOENT" ||
+			(process.platform !== "linux" && error.status === 1)
+		)
+			return null;
+		throw error;
+	}
+}
+const contains = (identity, value) => identity.command.includes(value);
+
+export function registerInstalledGroup(state, pid) {
+	const directory = registrations(state);
+	assert(stages.includes(state.stage));
+	const receipt = join(directory, `${state.stage}.json`);
+	assert.equal(
+		JSON.parse(privateFile(receipt)).marker,
+		state.marker,
+		"Installed launch registration changed",
+	);
+	const identity = installedProcessIdentity(pid);
+	assert(
+		identity?.group === pid &&
+			contains(identity, state.marker) &&
+			contains(identity, OWNER_GUARD) &&
+			contains(identity, registrationCode),
+		"Foreign installed driver group",
+	);
+	writeFileSync(
+		join(directory, `${state.stage}.next`),
+		JSON.stringify({
+			id: state.id,
+			stage: state.stage,
+			marker: state.marker,
+			pid,
+			start: identity.start,
+		}),
+		{ mode: 0o600, flag: "wx" },
+	);
+	renameSync(join(directory, `${state.stage}.next`), receipt);
+	// If cleanup won before or during publication, never start the real driver.
+	assert(
+		!existsSync(join(directory, ".closed")),
+		"Installed fixture cleanup has started",
+	);
+}
+
+/** Runs before the outer fixture can remove profiles, even after a worker was killed. */
+export async function cleanupInstalledDrivers(state) {
+	const directory = registrations(state);
+	if (!existsSync(directory)) return;
+	const closed = join(directory, ".closed");
+	if (!existsSync(closed))
+		writeFileSync(closed, state.id, { mode: 0o600, flag: "wx" });
+	assert.equal(
+		privateFile(closed),
+		state.id,
+		"Driver cleanup ownership differs",
+	);
+	const files = readdirSync(directory).filter((name) => name !== ".closed");
+	assert(
+		files.length <= 6 &&
+			files.every((name) =>
+				stages.some(
+					(stage) => name === `${stage}.json` || name === `${stage}.next`,
+				),
+			),
+		"Unexpected installed driver receipt",
+	);
+	for (const name of files.filter((name) => name.endsWith(".next"))) {
+		privateFile(join(directory, name));
+		assert(
+			files.includes(name.replace(/\.next$/, ".json")),
+			"Unbound driver publication",
+		);
+	}
+	const names = files.filter((name) => name.endsWith(".json"));
+	const records = [];
+	for (const name of names) {
+		const path = join(directory, name);
+		const deadline = Date.now() + 3000;
+		let record;
+		for (;;) {
+			if (!existsSync(path)) break;
+			record = JSON.parse(privateFile(path));
+			if (record.pid !== null) break;
+			assert(
+				Date.now() < deadline,
+				"Installed driver registration unconfirmed; retaining private fixture",
+			);
+			await pause(20);
+		}
+		if (!record || !existsSync(path)) continue;
+		assert(
+			record.id === state.id &&
+				name === `${record.stage}.json` &&
+				stages.includes(record.stage),
+			"Foreign installed driver receipt",
+		);
+		assert(
+			new RegExp(
+				`^--bitovp-installed-owner=${state.id}:${record.stage}:[a-f0-9]{32}$`,
+			).test(record.marker),
+			"Invalid installed driver marker",
+		);
+		assert(
+			Number.isSafeInteger(record.pid) &&
+				record.pid > 1 &&
+				typeof record.start === "string" &&
+				record.start.length > 0,
+			"Invalid installed driver identity",
+		);
+		const identity = installedProcessIdentity(record.pid);
+		if (identity)
+			assert(
+				identity.start === record.start &&
+					identity.group === record.pid &&
+					contains(identity, record.marker) &&
+					contains(identity, OWNER_GUARD) &&
+					contains(identity, registrationCode),
+				"Stale or foreign installed driver identity",
+			);
+		records.push(record);
+	}
+	for (const record of records) {
+		const identity = installedProcessIdentity(record.pid);
+		if (identity) {
+			assert(
+				identity.start === record.start &&
+					identity.group === record.pid &&
+					contains(identity, record.marker),
+				"Installed driver identity changed before cleanup",
+			);
+			try {
+				process.kill(-record.pid, "SIGKILL");
+			} catch (error) {
+				if (error.code !== "ESRCH") throw error;
+			}
+		}
+		const deadline = Date.now() + 3000;
+		while (groupExists(record.pid) && Date.now() < deadline) await pause(20);
+		assert(
+			!groupExists(record.pid),
+			"Installed driver termination remains unconfirmed; retaining private fixture",
+		);
+	}
+}
+
+export async function executeInstalledDriver(
+	args,
+	output,
+	temporary,
+	options = {},
+) {
+	const directory = dirname(temporary);
+	const state = {
+		directory,
+		id: privateFile(join(directory, ".owner")),
+		stage: args.find((arg) => arg.startsWith("--stage="))?.slice(8),
+	};
+	assert(
+		stages.includes(state.stage) &&
+			basename(temporary).startsWith("bombadil-profile-") &&
+			realpathSync(temporary) === temporary,
+	);
+	const records = registrations(state, true);
+	assert(
+		!existsSync(join(records, ".closed")),
+		"Installed fixture cleanup has started",
+	);
+	const marker = `--bitovp-installed-owner=${state.id}:${state.stage}:${randomBytes(16).toString("hex")}`;
+	const scratch = await mkdtemp(join(output, ".driver-"));
+	// Publish intent before spawn: cleanup cannot miss a group born while its
+	// parent is being killed. An unresolved publication fails closed.
+	writeFileSync(
+		join(records, `${state.stage}.json`),
+		JSON.stringify({
+			id: state.id,
+			stage: state.stage,
+			marker,
+			pid: null,
+			start: null,
+		}),
+		{ mode: 0o600, flag: "wx" },
+	);
+	let log = "",
+		group,
+		problem;
+	try {
+		const code = await guardedCommand(
+			process.execPath,
+			[
+				"--input-type=module",
+				"-e",
+				registrationCode,
+				process.execPath,
+				JSON.stringify({ ...state, marker }),
+				marker,
+				options.script ?? join(root, "scripts/bombadil-installed.mjs"),
+				...args,
+			],
+			{
+				cwd: root,
+				env: {
+					PATH: process.env.PATH,
+					LANG: "en_US.UTF-8",
+					TMPDIR: temporary,
+					NO_COLOR: "1",
+				},
+				exitPath: join(scratch, "exit.json"),
+				timeout: options.timeout ?? 55_000,
+				diagnostics: (text) => {
+					log = (log + text).slice(-65536);
+				},
+				onSpawn: (pid) => {
+					group = pid;
+					options.onSpawn?.(pid);
+				},
+			},
+		);
+		assert.equal(
+			code,
+			0,
+			"Installed Bombadil trace validation failed; see private runner.log",
+		);
+	} catch (error) {
+		problem = error;
+	}
+	const cleanupConfirmed = !group || !groupExists(group);
+	try {
+		if (cleanupConfirmed) {
+			const receipt = join(records, `${state.stage}.json`);
+			if (existsSync(receipt)) {
+				assert.equal(
+					JSON.parse(privateFile(receipt)).marker,
+					marker,
+					"Installed driver receipt changed",
+				);
+				unlinkSync(receipt);
+			}
+			await rm(scratch, { recursive: true, force: true });
+		}
+		await writeFile(join(output, "runner.log"), log, { mode: 0o600 });
+	} catch (error) {
+		problem ??= error;
+	}
+	if (!cleanupConfirmed)
+		problem = new Error("Installed driver termination remains unconfirmed");
+	if (problem) throw Object.assign(problem, { cleanupConfirmed });
 }
 
 export function acceptInstalledTrace(entries, negative = false) {
@@ -216,6 +577,7 @@ async function main() {
 		args,
 		childEnvironment(options.output),
 	);
+	const closed = new Promise((done) => child.once("close", done));
 	let log = "";
 	let timedOut = false;
 	let interrupted = false;
@@ -238,7 +600,7 @@ async function main() {
 	}, 45_000);
 	try {
 		await new Promise((done, reject) => {
-			child.once("exit", done);
+			child.once("close", done);
 			child.once("error", reject);
 		});
 	} finally {
@@ -246,6 +608,7 @@ async function main() {
 		process.off("SIGINT", interrupt);
 		process.off("SIGTERM", interrupt);
 		child.kill("SIGKILL");
+		await closed;
 		await writeFile(join(options.output, "bombadil.log"), log, { mode: 0o600 });
 	}
 	assert(

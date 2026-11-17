@@ -8,6 +8,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- Validate all GitHub Actions workflows with actionlint as part of `pnpm check`, using a checksum-pinned tool in CI to reject invalid expressions and unavailable contexts before application qualification.
 - Select fast verification contracts from an explicit Git change base, including staged, working-tree and untracked changes. Eight fixed profiles cover QC, authentication and tenant isolation, VOD/Live submission, timeline edits, Live lifecycle and Library recovery. Shared or unclassified changes select all profiles; receipts keep pending integration checks explicit.
 - Require CI to demonstrate that fixed faults in tenant dispatch, non-idempotent start retries, HDR report grouping and child-process ownership fail their intended assertions, with the same complete suites passing before mutation and after source restoration.
 - Explore the installed VOD wizard with bounded Bombadil action sequences and a replayed control fault. Verify local QC cancellation through the authenticated screen and real PostgreSQL, including competing completion, repeated requests and retained partial results; an intentionally broken status guard must fail the same database regression.

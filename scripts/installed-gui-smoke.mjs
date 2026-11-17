@@ -26,6 +26,7 @@ import { pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
 
 import { selectGuiStates } from "../tests/browser/diagnostics.ts";
+import { cleanupInstalledDrivers } from "./bombadil-installed.mjs";
 import { proveDatabaseRestore } from "./database-restore-proof.mjs";
 import {
 	assertPendingSubmissions,
@@ -929,6 +930,16 @@ export async function cleanupFixture(
 	env = process.env,
 ) {
 	privateDirectory(state);
+	if (existsSync(state.directory)) {
+		try {
+			await cleanupInstalledDrivers(state);
+		} catch (error) {
+			console.error(
+				"Installed Bombadil cleanup could not be confirmed; private fixture retained",
+			);
+			throw error;
+		}
+	}
 	if (state.secondary) await cleanupFixture(state.secondary, execute, env);
 	for (const [kind, list, remove] of [
 		["container", ["ps", "--all", "--quiet"], ["rm", "--force", "--volumes"]],

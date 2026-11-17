@@ -22,12 +22,14 @@ jobs:
       CI: "1"
       NEXT_TELEMETRY_DISABLED: "1"
       TURBO_TELEMETRY_DISABLED: "1"
-      BITOVP_BOMBADIL_BINARY: ${{ runner.temp }}/bombadil
-      BITOVP_BOMBADIL_OUTPUT: ${{ runner.temp }}/bitovp-installed-bombadil
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Set owned Bombadil paths after runner allocation
+        run: |
+          printf 'BITOVP_BOMBADIL_BINARY=%s/bombadil\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'BITOVP_BOMBADIL_OUTPUT=%s/bitovp-installed-bombadil\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Prepare Ubuntu mirrors for browser dependencies
         timeout-minutes: 5
         run: |

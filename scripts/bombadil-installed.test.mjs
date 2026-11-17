@@ -1,13 +1,227 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readFile,
+	realpath,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { setTimeout as pause } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import { acceptInstalledTrace } from "./bombadil-installed.mjs";
+import {
+	acceptInstalledTrace,
+	cleanupInstalledDrivers,
+	executeInstalledDriver,
+	installedProcessIdentity,
+} from "./bombadil-installed.mjs";
+import { cleanupFixture } from "./installed-gui-smoke.mjs";
+
+async function running(pid) {
+	try {
+		process.kill(pid, 0);
+		if (process.platform === "linux") {
+			const stat = await readFile(`/proc/${pid}/stat`, "utf8");
+			return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[0] !== "Z";
+		}
+		return true;
+	} catch (error) {
+		if (["ESRCH", "ENOENT"].includes(error.code)) return false;
+		throw error;
+	}
+}
+
+for (const signal of ["SIGTERM", "SIGKILL", null])
+	test(`outer fixture cleanup waits for installed driver and tool after ${signal ?? "a live wrapper"}`, {
+		timeout: 10000,
+	}, async () => {
+		const directory = await realpath(
+			await mkdtemp(join(tmpdir(), "bitovp-gui-")),
+		);
+		await writeFile(join(directory, ".owner"), "a".repeat(32), { mode: 0o600 });
+		const profile = await mkdtemp(join(directory, "bombadil-profile-"));
+		const output = join(directory, "output");
+		await mkdir(output);
+		const module = pathToFileURL(
+			join(import.meta.dirname, "bombadil-installed.mjs"),
+		).href;
+		const leafPath = join(directory, "leaf.pid"),
+			driverPath = join(directory, "driver.pid"),
+			groupPath = join(directory, "group.pid");
+		const script = join(directory, "fixture.mjs");
+		await writeFile(
+			script,
+			`import {writeFileSync} from 'node:fs'; import {launchInstalledTool} from ${JSON.stringify(module)}; writeFileSync(${JSON.stringify(driverPath)},String(process.pid)); launchInstalledTool(process.execPath,['-e',${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(leafPath)},String(process.pid));setInterval(()=>{},1000);`)}],process.env);`,
+		);
+		const source = `import {executeInstalledDriver} from ${JSON.stringify(module)};import {writeFileSync} from 'node:fs';await executeInstalledDriver(['--stage=current'],${JSON.stringify(output)},${JSON.stringify(profile)},{script:${JSON.stringify(script)},onSpawn:pid=>writeFileSync(${JSON.stringify(groupPath)},String(pid))});`;
+		const owner = spawn(
+			process.execPath,
+			["--input-type=module", "-e", source],
+			{ stdio: "ignore" },
+		);
+		const closed = once(owner, "close");
+		let driver, leaf, group;
+		try {
+			for (let count = 0; count < 100; count++) {
+				try {
+					[driver, leaf, group] = await Promise.all(
+						[driverPath, leafPath, groupPath].map(async (path) =>
+							Number(await readFile(path, "utf8")),
+						),
+					);
+					break;
+				} catch (error) {
+					if (error.code !== "ENOENT") throw error;
+				}
+				await pause(20);
+			}
+			assert(
+				driver && leaf && group,
+				`Synthetic installed driver/tool did not start: ${await readFile(join(output, "runner.log"), "utf8").catch(() => "log unavailable")}`,
+			);
+			if (signal) {
+				owner.kill(signal);
+				await closed;
+			}
+			let cleanupObserved = false;
+			await cleanupFixture(
+				{ id: "a".repeat(32), directory },
+				async () => {
+					assert.equal(
+						await running(driver),
+						false,
+						"Outer cleanup touched files before driver termination",
+					);
+					assert.equal(
+						await running(leaf),
+						false,
+						"Outer cleanup touched files before tool termination",
+					);
+					assert.equal(await realpath(profile), profile);
+					cleanupObserved = true;
+					return "";
+				},
+				{},
+			);
+			assert(cleanupObserved);
+			await closed;
+			assert.equal(
+				await running(driver),
+				false,
+				"Installed driver survived its wrapper parent",
+			);
+			assert.equal(
+				await running(leaf),
+				false,
+				"Bombadil child survived its wrapper parent",
+			);
+			await assert.rejects(realpath(profile), { code: "ENOENT" });
+		} finally {
+			owner.kill("SIGKILL");
+			for (const pid of [group && -group, driver, leaf].filter(Boolean)) {
+				try {
+					process.kill(pid, "SIGKILL");
+				} catch (error) {
+					assert.equal(error.code, "ESRCH");
+				}
+			}
+			await closed;
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+test("installed driver normal exit and timeout settle before private profile cleanup", {
+	timeout: 10000,
+}, async () => {
+	for (const mode of ["normal", "timeout"]) {
+		const directory = await realpath(
+			await mkdtemp(join(tmpdir(), "bitovp-gui-")),
+		);
+		await writeFile(join(directory, ".owner"), "a".repeat(32), { mode: 0o600 });
+		const profile = await mkdtemp(join(directory, "bombadil-profile-"));
+		const output = join(directory, "output");
+		await mkdir(output);
+		const pidPath = join(directory, "pid");
+		const script = join(directory, "driver.mjs");
+		await writeFile(
+			script,
+			`import {writeFileSync} from 'node:fs';writeFileSync(${JSON.stringify(pidPath)},String(process.pid));${mode === "timeout" ? "setInterval(()=>{},1000)" : "process.exit(0)"}`,
+		);
+		try {
+			const result = executeInstalledDriver(
+				["--stage=current"],
+				output,
+				profile,
+				{ script, timeout: mode === "timeout" ? 500 : 3000 },
+			);
+			if (mode === "timeout")
+				await assert.rejects(
+					result,
+					(error) =>
+						error.cleanupConfirmed === true && error.code === "COMMAND_TIMEOUT",
+				);
+			else await result;
+			assert.equal(
+				await running(Number(await readFile(pidPath, "utf8"))),
+				false,
+			);
+			await rm(profile, { recursive: true });
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	}
+});
+
+test("outer driver cleanup rejects foreign, stale and symlink receipts before signalling or removing files", async () => {
+	for (const fault of [
+		"foreign",
+		"stale",
+		"symlink",
+		"unexpected",
+		"pending",
+	]) {
+		const directory = await realpath(
+			await mkdtemp(join(tmpdir(), "bitovp-gui-")),
+		);
+		const id = "a".repeat(32);
+		await writeFile(join(directory, ".owner"), id, { mode: 0o600 });
+		const records = join(directory, "bombadil-drivers");
+		await mkdir(records, { mode: 0o700 });
+		const receipt = {
+			id: fault === "foreign" ? "b".repeat(32) : id,
+			stage: "current",
+			marker: `--bitovp-installed-owner=${id}:current:${"c".repeat(32)}`,
+			pid: process.pid,
+			start: `${installedProcessIdentity(process.pid).start}-stale`,
+		};
+		if (fault === "pending") {
+			receipt.pid = null;
+			receipt.start = null;
+		}
+		const path = join(
+			records,
+			fault === "unexpected" ? "fourth.json" : "current.json",
+		);
+		if (fault === "symlink") {
+			await writeFile(join(directory, "foreign"), JSON.stringify(receipt), {
+				mode: 0o600,
+			});
+			await symlink(join(directory, "foreign"), path);
+		} else await writeFile(path, JSON.stringify(receipt), { mode: 0o600 });
+		try {
+			await assert.rejects(cleanupInstalledDrivers({ id, directory }));
+			assert.equal(await readFile(join(directory, ".owner"), "utf8"), id);
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	}
+});
 
 test("an installed tool remains in its driver's cleanup group after the driver exits", async () => {
 	const directory = await mkdtemp(join(tmpdir(), "installed-bombadil-group-"));

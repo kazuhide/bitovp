@@ -2,7 +2,7 @@
 type: plan
 project: BitOVP
 created: 2026-11-18
-status: implementing
+status: implemented
 tags: [bitovp, harness, property-testing, quality]
 ---
 
@@ -43,5 +43,5 @@ tags: [bitovp, harness, property-testing, quality]
 - [x] 実画面の生成操作と対照・再現を実装（インストール済みアプリの実行は統合CIで確認）
 - [x] 実DB取消競合と意味上の変異対照を実装（実DB実行は統合CIで確認）
 - [x] 依存修正案の互換性・計算量・実体監査（上流未修正を明記し、許容する構文と設定を制限）
-- [ ] 確定HEADの二系統レビュー、全CI、時間・検出力照合
-- [ ] main統合・証跡読戻し・Obsidian保存・所有パネルcleanup
+
+確定HEADの二系統レビュー、全CI、時間・検出力の照合、mainのtree照合は、[PR #155](https://github.com/kazuhide/bitovp/pull/155)とObsidianの同名ノートに実行結果として記録する。この計画の実装済み表示は、レビュー・CIの合格やmainへの統合を意味しない。

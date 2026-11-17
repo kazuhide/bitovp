@@ -1,6 +1,6 @@
 # Bombadilの適用と実測
 
-2026-11-18。公式Bombadil **0.7.10の実binary**を使い、実Reactコンポーネントの操作生成・property検査・旧実装での違反検出・trace再生を実行した。対象を `RenditionAddControls` に限定して採用する。アプリ全体の探索やInstalled GUIの代替ではない。
+2026-11-18。公式Bombadil **0.7.10の実binary**を使い、実Reactコンポーネントの操作生成・property検査・旧実装での違反検出・trace再生を実行した。最初の対象は `RenditionAddControls`。後述する実インストールへの拡張ではVOD wizardも検査するが、アプリ全体の探索やInstalled GUIの代替ではない。
 
 ## 対象と独立した検査条件
 
@@ -54,7 +54,7 @@ node scripts/bombadil-component.mjs --binary=/absolute/path/to/bombadil --output
 
 ## CIへの接続と限界
 
-`.github/workflows/bombadil.yml` を独立した並列workflowとして追加した。既存CIやInstalled GUIを短縮・置換しない。既存quality jobには軽量なrunner契約テスト12件だけを追加する。
+`.github/workflows/bombadil.yml` を独立した並列workflowとして追加した。既存CIやInstalled GUIを短縮・置換しない。既存quality jobでは、ブラウザー探索とは別にrunnerの契約テストを実行する。
 
 新workflowは固定Action、固定Linux CLI checksum、lockで固定されたPlaywright browserを使い、同じ3stageを実行する。アプリ全体のbuildは行わない。job上限8分、artifact保持7日。正の探索の大量screenshotsはCI artifactから除き、全trace・provenance・失敗/再生の合成screenshotsは残す。macOS最終試行の全証跡は約260MB規模で、主に毎stateのscreenshotsである。Linux workflowの所要時間・成功は、実CI完了をもって別途確認する。
 

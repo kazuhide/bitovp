@@ -38,6 +38,7 @@ export const installedDiagnosticSteps = [
 	"configuration",
 	"browser-launch",
 	"network-guard",
+	"socket-negative",
 	"navigate",
 	"import-plan",
 	"ladder",
@@ -61,6 +62,7 @@ export const installedDiagnosticCategories = [
 	"assertion",
 	"browser-launch",
 	"module-loading",
+	"socket-path",
 	"filesystem",
 	"connection",
 	"driver-exit",
@@ -72,6 +74,11 @@ export function installedFailureCategory(error) {
 	try {
 		const message =
 			typeof error?.message === "string" ? error.message.slice(0, 4000) : "";
+		if (
+			error?.code === "INSTALLED_SOCKET_PATH_TOO_LONG" ||
+			/Socket path too long:/.test(message)
+		)
+			return "socket-path";
 		if (
 			error?.code === "COMMAND_TIMEOUT" ||
 			error?.name === "TimeoutError" ||
@@ -125,13 +132,13 @@ export function installedDriverDiagnostic(log) {
 	return last;
 }
 
-/** Both the pre-image qualification and installed case use these exact options. */
-export function launchInstalledBrowser(profile, baseURL, browserType) {
-	const browser =
-		browserType ??
-		createRequire(join(root, "apps/web/package.json"))("@playwright/test")
-			.chromium;
-	return browser.launchPersistentContext(profile, {
+export const linuxSocketPathBytes = (temporary) =>
+	Buffer.byteLength(
+		join(temporary, "org.chromium.Chromium.XXXXXX", "SingletonSocket"),
+	);
+
+function installedBrowserOptions(baseURL, temporary) {
+	return {
 		channel: "chromium",
 		headless: true,
 		baseURL,
@@ -143,10 +150,38 @@ export function launchInstalledBrowser(profile, baseURL, browserType) {
 		env: {
 			PATH: process.env.PATH ?? "/usr/bin:/bin",
 			LANG: "en_US.UTF-8",
-			TMPDIR: profile,
+			TMPDIR: temporary,
 			NO_COLOR: "1",
 		},
-	});
+	};
+}
+
+/** Both the pre-image qualification and installed case use these exact options. */
+export function launchInstalledBrowser(profile, baseURL, browserType) {
+	const directory = dirname(profile);
+	registrations({ directory, id: privateFile(join(directory, ".owner")) });
+	assert(
+		basename(profile).startsWith("bombadil-profile-") &&
+			realpathSync(profile) === profile &&
+			lstatSync(profile).isDirectory(),
+		"Invalid owned browser profile",
+	);
+	// Chromium's Linux singleton socket adds 45 bytes below TMPDIR. The hosted
+	// nested profile produces 110 bytes (sun_path[108]); its private parent
+	// produces 86 bytes. Both directories remain under the same cleanup owner.
+	if (process.platform === "linux" && linuxSocketPathBytes(directory) >= 108)
+		throw Object.assign(
+			new Error("Owned browser temporary path exceeds Linux socket limit"),
+			{ code: "INSTALLED_SOCKET_PATH_TOO_LONG" },
+		);
+	const browser =
+		browserType ??
+		createRequire(join(root, "apps/web/package.json"))("@playwright/test")
+			.chromium;
+	return browser.launchPersistentContext(
+		profile,
+		installedBrowserOptions(baseURL, directory),
+	);
 }
 
 export async function installedBrowserConnection(context, profile, origin) {
@@ -181,7 +216,14 @@ export async function installedBrowserConnection(context, profile, origin) {
 
 /** Fixed, synthetic, no-auth qualification before building the installed images. */
 export async function preflightInstalledBrowser() {
-	const profile = await mkdtemp(join(tmpdir(), "bitovp-bombadil-preflight-"));
+	const directory = realpathSync(
+		await mkdtemp(join(process.env.RUNNER_TEMP ?? tmpdir(), "bitovp-gui-")),
+	);
+	await writeFile(join(directory, ".owner"), randomBytes(16).toString("hex"), {
+		mode: 0o600,
+		flag: "wx",
+	});
+	const profile = await mkdtemp(join(directory, "bombadil-profile-"));
 	let context,
 		step = "browser-launch",
 		originRequests = 0;
@@ -196,6 +238,37 @@ export async function preflightInstalledBrowser() {
 		});
 		const baseURL = `http://localhost:${server.address().port}`;
 		const origin = `${baseURL}/vod/new`;
+		if (process.platform === "linux") {
+			step = "socket-negative";
+			const negative = await mkdtemp(join(directory, "bombadil-profile-"));
+			// RUNNER_TEMP gives the exact hosted failure shape. A shorter local
+			// root is extended inside this owned fixture to hit the same boundary.
+			const deep =
+				linuxSocketPathBytes(negative) >= 108
+					? negative
+					: join(negative, "socket-path-negative".repeat(3));
+			await mkdir(deep, { recursive: true, mode: 0o700 });
+			let refused;
+			try {
+				const browser = createRequire(join(root, "apps/web/package.json"))(
+					"@playwright/test",
+				).chromium;
+				await assert.rejects(
+					async () => {
+						refused = await browser.launchPersistentContext(
+							negative,
+							installedBrowserOptions(baseURL, deep),
+						);
+					},
+					(error) => /Socket path too long:/.test(error.message),
+					"Expected Chromium's exact Linux socket-path refusal",
+				);
+			} finally {
+				await refused?.close();
+				await rm(negative, { recursive: true, force: true });
+			}
+		}
+		step = "browser-launch";
 		context = await launchInstalledBrowser(profile, baseURL);
 		step = "network-guard";
 		let blocked = 0;
@@ -231,6 +304,8 @@ export async function preflightInstalledBrowser() {
 			pageTargets: 1,
 			originRequests: 0,
 			cdpVerified: true,
+			socketPathNegative:
+				process.platform === "linux" ? "rejected" : "not-applicable",
 		};
 	} catch (error) {
 		throw Object.assign(new Error("Installed browser preflight failed"), {
@@ -242,7 +317,7 @@ export async function preflightInstalledBrowser() {
 		} finally {
 			server.closeAllConnections();
 			await new Promise((done) => server.close(done));
-			await rm(profile, { recursive: true, force: true });
+			await rm(directory, { recursive: true, force: true });
 		}
 	}
 }

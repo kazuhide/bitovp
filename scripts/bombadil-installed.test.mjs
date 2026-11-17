@@ -25,62 +25,80 @@ import {
 	installedFailureCategory,
 	installedProcessIdentity,
 	launchInstalledBrowser,
+	linuxSocketPathBytes,
 } from "./bombadil-installed.mjs";
 import { cleanupFixture } from "./installed-gui-smoke.mjs";
 
 test("installed browser qualification and actual adapter share the bounded launcher before image build", async () => {
 	let observed;
 	const expectedContext = {};
-	assert.equal(
-		await launchInstalledBrowser("/owned/profile", "http://localhost:1234", {
-			launchPersistentContext: async (profile, options) => {
-				observed = { profile, options };
-				return expectedContext;
-			},
-		}),
-		expectedContext,
+	const directory = await realpath(
+		await mkdtemp(join(tmpdir(), "bitovp-gui-")),
 	);
-	assert.equal(observed.profile, "/owned/profile");
-	assert.equal(observed.options.channel, "chromium");
-	assert.equal(observed.options.headless, true);
-	assert.equal(observed.options.serviceWorkers, "block");
-	assert.equal(observed.options.timeout, 15000);
-	assert.deepEqual(observed.options.args, [
-		"--remote-debugging-port=0",
-		"--remote-debugging-address=127.0.0.1",
-	]);
-	assert.deepEqual(Object.keys(observed.options.env).sort(), [
-		"LANG",
-		"NO_COLOR",
-		"PATH",
-		"TMPDIR",
-	]);
-	assert.equal(observed.options.env.TMPDIR, "/owned/profile");
-	const adapter = await readFile(
-		join(import.meta.dirname, "../tests/browser/installed-bombadil.ts"),
-		"utf8",
-	);
-	assert.match(
-		adapter,
-		/launchInstalledBrowser\(\s*profile,\s*baseURL,\s*chromium/,
-	);
-	assert.doesNotMatch(adapter, /launchPersistentContext\(/);
-	assert.match(adapter, /installedBrowserConnection\(/);
-	const workflow = await readFile(
-		join(import.meta.dirname, "../.github/workflows/installed-gui.yml"),
-		"utf8",
-	);
-	const qualified = workflow.indexOf(
-		"run: node scripts/bombadil-installed.mjs --preflight",
-	);
-	assert(
-		qualified > workflow.indexOf("playwright install --with-deps chromium"),
-	);
-	assert(qualified < workflow.indexOf("run: sh scripts/native-media-tools.sh"));
-	assert(
-		qualified <
-			workflow.indexOf("run: node scripts/installed-gui-smoke.mjs --ffmpeg"),
-	);
+	await writeFile(join(directory, ".owner"), "a".repeat(32), { mode: 0o600 });
+	const profile = await mkdtemp(join(directory, "bombadil-profile-"));
+	try {
+		assert.equal(
+			await launchInstalledBrowser(profile, "http://localhost:1234", {
+				launchPersistentContext: async (profile, options) => {
+					observed = { profile, options };
+					return expectedContext;
+				},
+			}),
+			expectedContext,
+		);
+		assert.equal(observed.profile, profile);
+		assert.equal(observed.options.channel, "chromium");
+		assert.equal(observed.options.headless, true);
+		assert.equal(observed.options.serviceWorkers, "block");
+		assert.equal(observed.options.timeout, 15000);
+		assert.deepEqual(observed.options.args, [
+			"--remote-debugging-port=0",
+			"--remote-debugging-address=127.0.0.1",
+		]);
+		assert.deepEqual(Object.keys(observed.options.env).sort(), [
+			"LANG",
+			"NO_COLOR",
+			"PATH",
+			"TMPDIR",
+		]);
+		assert.equal(observed.options.env.TMPDIR, directory);
+		const hosted = "/home/runner/work/_temp/bitovp-gui-XXXXXX";
+		assert.equal(
+			linuxSocketPathBytes(join(hosted, "bombadil-profile-XXXXXX")),
+			110,
+		);
+		assert.equal(linuxSocketPathBytes(hosted), 86);
+		const adapter = await readFile(
+			join(import.meta.dirname, "../tests/browser/installed-bombadil.ts"),
+			"utf8",
+		);
+		assert.match(
+			adapter,
+			/launchInstalledBrowser\(\s*profile,\s*baseURL,\s*chromium/,
+		);
+		assert.doesNotMatch(adapter, /launchPersistentContext\(/);
+		assert.match(adapter, /installedBrowserConnection\(/);
+		const workflow = await readFile(
+			join(import.meta.dirname, "../.github/workflows/installed-gui.yml"),
+			"utf8",
+		);
+		const qualified = workflow.indexOf(
+			"run: node scripts/bombadil-installed.mjs --preflight",
+		);
+		assert(
+			qualified > workflow.indexOf("playwright install --with-deps chromium"),
+		);
+		assert(
+			qualified < workflow.indexOf("run: sh scripts/native-media-tools.sh"),
+		);
+		assert(
+			qualified <
+				workflow.indexOf("run: node scripts/installed-gui-smoke.mjs --ffmpeg"),
+		);
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
 });
 
 test("shared CDP qualification rejects wrong or additional page targets and detaches its session", async () => {
@@ -137,6 +155,13 @@ test("shared CDP qualification rejects wrong or additional page targets and deta
 
 test("installed failure diagnostics project private errors to fixed labels and reject injected records", () => {
 	for (const [error, category] of [
+		[
+			{
+				message:
+					"browserType.launchPersistentContext: Socket path too long: private-profile",
+			},
+			"socket-path",
+		],
 		[
 			{
 				message: "browserType.launchPersistentContext: private cookie profile",

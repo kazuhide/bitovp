@@ -99,6 +99,12 @@ raw violation sets are acceptance requirements. A trace is not successful merely
 because it lacks a violation notification: retained observations must satisfy
 the same predicates as the component's actual properties.
 
+Before image builds, the installed launcher must qualify the same private
+fixture-directory layout and owned CDP connection used by the browser suite.
+Linux qualification includes Chromium's singleton-socket path limit; the
+launcher keeps temporary sockets within the existing owned fixture. Passing
+this startup check does not qualify the application flows that follow it.
+
 The installed QC case uses an inert, synthetic LOCAL report with the Worker
 stopped. It exercises authenticated cancellation, actual API/database readback,
 reload, repeat cancellation and retained partial results; an unauthenticated

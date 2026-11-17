@@ -19,6 +19,7 @@ export const moqObservationSampleSchema = z.strictObject({
 	fps: z.number().min(0).max(1_000).nullable(),
 	bufferSeconds: z.number().min(0).max(600).nullable(),
 	bufferSource: z.enum(["player", "video"]).nullable().optional(),
+	renderingSource: z.enum(["video", "canvas"]).nullable().optional(),
 	droppedFrames: count,
 	decodedFrames: count,
 	presentedFrames: count,

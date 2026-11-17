@@ -26,6 +26,34 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 describe("owned MoQ observation writer", () => {
+	it("persists canvas provenance with visual update rate and unavailable original decoder counters", async () => {
+		let now = 0;
+		const writer = createMoqObservationWriter({
+			channelId: CHANNEL,
+			runId: RUN,
+			sessionId: SESSION,
+			now: () => now,
+			onState: vi.fn(),
+		});
+		await writer.ready;
+		now = 1000;
+		writer.sample({
+			...EMPTY_MOQ_VIDEO_STATISTICS,
+			renderingSource: "canvas",
+			fps: 2,
+		});
+		await writer.finish("stopped");
+		expect(
+			JSON.parse(mocks.api.mock.calls.at(-1)?.[1].body).samples[0],
+		).toMatchObject({
+			renderingSource: "canvas",
+			fps: 2,
+			decodedFrames: null,
+			droppedFrames: null,
+			totalFrames: null,
+			presentedFrames: null,
+		});
+	});
 	it("keeps the descriptor digest paired with the first collector impression across later flushes", async () => {
 		const digest = "a".repeat(64);
 		const initial = {

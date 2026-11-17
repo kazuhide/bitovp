@@ -959,6 +959,13 @@ export const ja = {
 		stopping: "停止処理中",
 		statistics: "映像統計",
 		fps: "映像FPS",
+		renderingSource: "描画元",
+		renderingVideo: "video 要素",
+		renderingCanvas: "Canvas（映像のみのキャプチャー）",
+		canvasUpdates: "Canvas 描画更新",
+		canvasMeasurement:
+			"画素が変化した描画回数/秒。送信元の FPS とデコーダーのカウンターは未取得です。",
+		frameHistory: "フレーム観測値（出所の混在または不明）",
 		resolution: "解像度",
 		dropped: "ドロップフレーム",
 		buffer: "バッファ",

@@ -984,6 +984,13 @@ export const en = {
 		stopping: "Stopping",
 		statistics: "Video statistics",
 		fps: "Video FPS",
+		renderingSource: "Rendering source",
+		renderingVideo: "Video element",
+		renderingCanvas: "Canvas (video-only capture)",
+		canvasUpdates: "Canvas image updates",
+		canvasMeasurement:
+			"Distinct image updates per second. Source FPS and decoder counters are unavailable.",
+		frameHistory: "Frame observations (mixed or unknown source)",
 		resolution: "Resolution",
 		dropped: "Dropped frames",
 		buffer: "Buffer",

@@ -72,6 +72,18 @@ beforeEach(() => {
 	});
 });
 describe("saved MoQ history and received video", () => {
+	it("names saved canvas pixel updates without presenting them as source FPS", async () => {
+		const response = await mocks.api();
+		response.sessions[0].samples[0].renderingSource = "canvas";
+		response.sessions[0].samples[0].fps = 2;
+		mocks.api.mockResolvedValue(response);
+		renderWithQuery(view());
+		expect(
+			await screen.findByText("Canvas image updates (/s · UTC)"),
+		).toBeInTheDocument();
+		expect(screen.getByText("Canvas (video-only capture)")).toBeInTheDocument();
+		expect(screen.queryByText("Video FPS (fps · UTC)")).toBeNull();
+	});
 	it("keeps an ended run's graphs and seekable received archive available on the same authenticated endpoint", async () => {
 		const rendered = renderWithQuery(view());
 		expect(

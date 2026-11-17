@@ -48,7 +48,7 @@ export function createMoqPlayback(
 	);
 	function dispose(): Promise<void> {
 		closed = true;
-		stopObserving();
+		stopObserving.stop();
 		if (!finalization) {
 			finalization = (async () => {
 				let timer: ReturnType<typeof setTimeout> | undefined;
@@ -69,6 +69,7 @@ export function createMoqPlayback(
 		}
 		if (!player)
 			return finalization.then((failed) => {
+				stopObserving.disposeSurface();
 				host.remove();
 				if (failed) throw new Error("MoQ playback cleanup failed");
 			});
@@ -76,6 +77,11 @@ export function createMoqPlayback(
 			const owned = player;
 			disposal = Promise.resolve().then(async () => {
 				let failed = await finalization;
+				try {
+					stopObserving.disposeSurface();
+				} catch {
+					failed = true;
+				}
 				host.remove();
 				for (const remove of listeners.splice(0)) {
 					try {

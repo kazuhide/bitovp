@@ -48,8 +48,23 @@ export function MoqPlayerStatistics({
 				{row(t("moqPlayback.draft"), configuration?.draftVersion ?? "—")}
 				{row(t("moqPlayback.catalog"), configuration?.catalogTrackName ?? "—")}
 				{row(t("moqPlayback.targetBuffer"), "2.00 s")}
+				{row(
+					t("moqPlayback.renderingSource"),
+					s.renderingSource === "canvas"
+						? t("moqPlayback.renderingCanvas")
+						: s.renderingSource === "video"
+							? t("moqPlayback.renderingVideo")
+							: "—",
+				)}
 				{row(t("moqPlayback.resolution"), s.resolution ?? "—")}
-				{row(t("moqPlayback.fps"), format(s.fps, 1, " fps"))}
+				{row(
+					t(
+						s.renderingSource === "canvas"
+							? "moqPlayback.canvasUpdates"
+							: "moqPlayback.fps",
+					),
+					format(s.fps, 1, s.renderingSource === "canvas" ? " /s" : " fps"),
+				)}
 				{row(t("moqPlayback.dropped"), format(s.droppedFrames, 0))}
 				{row(t("moqPlayback.startup"), format(s.startupMs, 0, " ms"))}
 				{row(
@@ -82,6 +97,9 @@ export function MoqPlayerStatistics({
 				)}
 			</dl>
 			<p className="text-zinc-500">{t("moqPlayback.latencyMethod")}</p>
+			{s.renderingSource === "canvas" ? (
+				<p className="text-zinc-500">{t("moqPlayback.canvasMeasurement")}</p>
+			) : null}
 			{relay ? (
 				<details className="border-t border-zinc-800 pt-2">
 					<summary className="cursor-pointer text-zinc-300">

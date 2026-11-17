@@ -29,6 +29,53 @@ function fixture() {
 	};
 }
 describe("measured MoQ video statistics", () => {
+	it("counts accepted canvas image changes without publishing mirror decoder or source frame counters", () => {
+		const f = fixture();
+		const stats = createVideoStatistics(
+			0,
+			() => ({ getLatency: () => 0.4, getBufferLevel: () => 1.5 }),
+			f.now,
+		);
+		stats.setVideo(f.video, "canvas");
+		f.advance(100, 1000, 2);
+		expect(stats.frame(1000, 0)).toBe(true);
+		expect(stats.snapshot()).toMatchObject({
+			renderingSource: "canvas",
+			fps: null,
+			resolution: "640×360",
+			latencySeconds: 0.4,
+			bufferSeconds: 1.5,
+			bufferSource: "player",
+			decodedFrames: null,
+			droppedFrames: null,
+			presentedFrames: null,
+			totalFrames: null,
+		});
+		f.advance(1000, 9000, 3);
+		expect(stats.frame(9000, 1)).toBe(false);
+		expect(stats.snapshot()).toMatchObject({
+			renderingSource: "canvas",
+			fps: 1,
+			decodedFrames: null,
+			droppedFrames: null,
+			presentedFrames: null,
+			totalFrames: null,
+		});
+		f.advance(1001, 9000, 3);
+		expect(stats.snapshot()).toMatchObject({ latencySeconds: null, fps: null });
+	});
+	it("never substitutes the canvas capture mirror's buffered range for the MoQ source buffer", () => {
+		const f = fixture();
+		Object.defineProperty(f.video, "buffered", {
+			value: { length: 1, start: () => 0, end: () => 100 },
+		});
+		const stats = createVideoStatistics(0, () => undefined, f.now);
+		stats.setVideo(f.video, "canvas");
+		expect(stats.snapshot()).toMatchObject({
+			bufferSeconds: null,
+			bufferSource: null,
+		});
+	});
 	it("requires rendered frames for fallback startup and latency freshness", () => {
 		const f = fixture();
 		const stats = createVideoStatistics(
@@ -135,6 +182,7 @@ describe("measured MoQ video statistics", () => {
 		);
 		stats.setVideo(video);
 		expect(stats.snapshot()).toEqual({
+			renderingSource: "video",
 			fps: null,
 			resolution: null,
 			droppedFrames: null,

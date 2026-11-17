@@ -58,6 +58,14 @@ export function MoqHistoryPanel({
 		session?.samples ?? [],
 		session?.startedAt ?? "",
 	);
+	const canvasRates = Boolean(
+		session?.samples.length &&
+			session.samples.every((sample) => sample.renderingSource === "canvas"),
+	);
+	const videoRates = Boolean(
+		session?.samples.length &&
+			session.samples.every((sample) => sample.renderingSource === "video"),
+	);
 	let archiveUrl: string | null = null;
 	try {
 		if (session && organizationId)
@@ -157,6 +165,18 @@ export function MoqHistoryPanel({
 						{t("moqPlayback.browserSource")}
 					</p>
 					<p className="text-xs text-zinc-500">
+						{canvasRates
+							? t("moqPlayback.renderingCanvas")
+							: videoRates
+								? t("moqPlayback.renderingVideo")
+								: t("moqPlayback.frameHistory")}
+					</p>
+					{canvasRates ? (
+						<p className="text-xs text-zinc-500">
+							{t("moqPlayback.canvasMeasurement")}
+						</p>
+					) : null}
+					<p className="text-xs text-zinc-500">
 						{t("moqPlayback.historyClock")}
 					</p>
 					{series.length ? (
@@ -168,7 +188,17 @@ export function MoqHistoryPanel({
 										label: t("moqPlayback.latency"),
 										unit: "ms",
 									},
-									{ field: "fps", label: t("moqPlayback.fps"), unit: "fps" },
+									{
+										field: "fps",
+										label: t(
+											canvasRates
+												? "moqPlayback.canvasUpdates"
+												: videoRates
+													? "moqPlayback.fps"
+													: "moqPlayback.frameHistory",
+										),
+										unit: videoRates ? "fps" : "/s",
+									},
 									{
 										field: "bufferSeconds",
 										label: t("moqPlayback.bufferHistory"),

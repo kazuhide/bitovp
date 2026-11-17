@@ -77,6 +77,15 @@ screen reader から利用可能にする。短い文言で、資格情報や実
 `getBufferLevel()`（秒）を優先し、未対応時は video buffered の計測と出所を区別する。
 通常の合成映像の時刻表示から latency を推測しない。
 
+実際の専用 MoQ build は受信映像を Canvas 2D に描画するため、native video 要素の経路に加えて
+Canvas の観測経路を用意する。実 canvas の native captureStream を、アプリが所有する muted video
+で観測・録画・Analytics adapter に接続する。フレームレートを指定して映像を合成しない。
+96×54に縮小した画素の変更を観測し、同じ画像の再描画・空画像・読取不能を新しい映像と扱わない。
+Canvas の更新頻度は画素変化の観測下限として表示し、元の映像 FPS、復号・drop・総フレーム等の
+公開されていない counter を補完しない。設定／保存データには任意の renderingSource を残す。
+Canvas capture の録画は受信した映像のみで、別の WebAudio 出力は収録しない。
+停止時は観測 callback を止め、録画・Analytics の finalization 後に所有する capture track と video を解放する。
+
 変更前に failing tests を置き、secret validation／redaction、tenant・run・account の照合、
 publish token 非返却、asset hash 不一致、loader failure、teardown と run 変更を検証する。
 関連 tests、typecheck、production build、必要な i18n／API contract checks を通す。

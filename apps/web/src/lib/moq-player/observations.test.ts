@@ -23,6 +23,23 @@ describe("bounded browser MoQ observations", () => {
 	it("preserves unknown measurements as null", () => {
 		expect(moqObservationUpdateSchema.parse(update())).toEqual(update());
 	});
+	it("persists bounded rendering provenance while older histories keep it absent", () => {
+		expect(
+			moqObservationUpdateSchema.safeParse({
+				...update(),
+				samples: [{ ...sample(), renderingSource: "canvas" }],
+			}).success,
+		).toBe(true);
+		expect(
+			moqObservationUpdateSchema.safeParse({
+				...update(),
+				samples: [{ ...sample(), renderingSource: "https://relay/private" }],
+			}).success,
+		).toBe(false);
+		expect(
+			moqObservationUpdateSchema.parse(update()).samples[0],
+		).not.toHaveProperty("renderingSource");
+	});
 	it("retains the measured buffer source without accepting free text", () => {
 		expect(
 			moqObservationUpdateSchema.safeParse({

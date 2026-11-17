@@ -6,6 +6,7 @@ export type MoqVideoQuality = {
 	height: number | null;
 };
 export type MoqVideoStatistics = {
+	renderingSource: "video" | "canvas" | null;
 	fps: number | null;
 	resolution: string | null;
 	droppedFrames: number | null;
@@ -20,6 +21,7 @@ export type MoqVideoStatistics = {
 	availableQualities: MoqVideoQuality[] | null;
 };
 export const EMPTY_MOQ_VIDEO_STATISTICS: MoqVideoStatistics = Object.freeze({
+	renderingSource: null,
 	fps: null,
 	resolution: null,
 	droppedFrames: null,
@@ -93,15 +95,22 @@ export function createVideoStatistics(
 	now: () => number = () => performance.now(),
 ) {
 	let video: HTMLVideoElement | null = null;
+	let renderingSource: "video" | "canvas" = "video";
+	let visualUpdates = 0;
 	let presented: number | null = null;
 	let firstFrame: number | null = null;
 	let lastFrame: number | null = null;
 	let previousFrames = 0;
 	let previousTime = 0;
 	let baseline: { at: number; count: number; kind: string } | null = null;
-	function setVideo(value: HTMLVideoElement | null) {
-		if (value === video) return;
+	function setVideo(
+		value: HTMLVideoElement | null,
+		rendering: "video" | "canvas" = "video",
+	) {
+		if (value === video && renderingSource === rendering) return;
 		video = value;
+		renderingSource = rendering;
+		visualUpdates = 0;
 		presented = null;
 		lastFrame = null;
 		previousFrames = 0;
@@ -110,6 +119,18 @@ export function createVideoStatistics(
 	}
 	function frame(presentedFrames?: number, mediaTime?: number): boolean {
 		if (!video) return false;
+		// Canvas callers have already verified a distinct readable image. Mirror
+		// decoder/presentation counters are never the original source's counters.
+		if (renderingSource === "canvas") {
+			const at = finite(now());
+			if (at === null || video.videoWidth <= 0 || video.videoHeight <= 0)
+				return false;
+			visualUpdates++;
+			lastFrame = at;
+			if (firstFrame !== null) return false;
+			firstFrame = at;
+			return true;
+		}
 		const explicit = finite(presentedFrames);
 		const counters = quality(video);
 		const rendered =
@@ -146,8 +167,18 @@ export function createVideoStatistics(
 			counters.total >= counters.dropped
 				? counters.total - counters.dropped
 				: null;
-		const counter = presented ?? rendered;
-		const kind = presented !== null ? "presented" : "quality";
+		const canvas = renderingSource === "canvas";
+		const freshFrame =
+			at !== null &&
+			lastFrame !== null &&
+			at >= lastFrame &&
+			at - lastFrame < 1000;
+		const counter = canvas ? visualUpdates : (presented ?? rendered);
+		const kind = canvas
+			? "canvas-images"
+			: presented !== null
+				? "presented"
+				: "quality";
 		let fps: number | null = null;
 		if (at !== null && counter !== null) {
 			if (
@@ -159,6 +190,7 @@ export function createVideoStatistics(
 				fps = finite(((counter - baseline.count) * 1000) / (at - baseline.at));
 			baseline = { at, count: counter, kind };
 		}
+		if (canvas && !freshFrame) fps = null;
 		let latency: number | null = null;
 		let buffer: number | null = null;
 		try {
@@ -172,14 +204,15 @@ export function createVideoStatistics(
 			/* Use video ranges if observable. */
 		}
 		const fromPlayer = buffer !== null;
-		buffer ??= videoBuffer(video);
+		if (!canvas) buffer ??= videoBuffer(video);
 		const width = finite(video.videoWidth);
 		const height = finite(video.videoHeight);
 		let currentQuality: MoqVideoQuality | null = null;
 		let availableQualities: MoqVideoQuality[] | null = null;
 		let decoded: number | null = null;
 		try {
-			decoded = finite(Reflect.get(video, "webkitDecodedFrameCount"));
+			if (!canvas)
+				decoded = finite(Reflect.get(video, "webkitDecodedFrameCount"));
 		} catch {
 			/* Unsupported getter. */
 		}
@@ -199,22 +232,17 @@ export function createVideoStatistics(
 			/* Unavailable. */
 		}
 		return {
+			renderingSource,
 			fps,
 			resolution: width && height ? `${width}×${height}` : null,
-			droppedFrames: counters.dropped,
+			droppedFrames: canvas ? null : counters.dropped,
 			bufferSeconds: buffer,
 			bufferSource: buffer === null ? null : fromPlayer ? "player" : "video",
 			startupMs: firstFrame === null ? null : finite(firstFrame - startedAt),
 			decodedFrames: decoded,
-			presentedFrames: presented,
-			totalFrames: counters.total,
-			latencySeconds:
-				at !== null &&
-				lastFrame !== null &&
-				at >= lastFrame &&
-				at - lastFrame < 1000
-					? latency
-					: null,
+			presentedFrames: canvas ? null : presented,
+			totalFrames: canvas ? null : counters.total,
+			latencySeconds: freshFrame ? latency : null,
 			currentQuality,
 			availableQualities,
 		};

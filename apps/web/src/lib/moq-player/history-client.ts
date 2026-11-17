@@ -146,6 +146,7 @@ export function createMoqObservationWriter(options: Options) {
 			fps: metric(value.fps, 1000),
 			bufferSeconds: metric(value.bufferSeconds, 600),
 			bufferSource: value.bufferSource,
+			renderingSource: value.renderingSource,
 			droppedFrames: count(value.droppedFrames),
 			decodedFrames: count(value.decodedFrames),
 			presentedFrames: count(value.presentedFrames),

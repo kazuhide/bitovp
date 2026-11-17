@@ -283,7 +283,7 @@ export async function assertMoqObservationWritable(
 export async function readMoqBoundedBody(
 	req: Request,
 	limit: number,
-	timeoutMs = 10_000,
+	timeoutMs = MOQ_ARCHIVE_BODY_TIMEOUT_MS,
 ): Promise<Buffer> {
 	const length = req.headers.get("content-length");
 	if (
@@ -314,6 +314,8 @@ export async function readMoqBoundedBody(
 				throw new MoqObservationError(408, "MOQ_HISTORY_BODY_TIMEOUT");
 			if (result.done) {
 				complete = true;
+				if (length !== null && size !== Number(length))
+					throw new MoqObservationError(400, "MOQ_HISTORY_INVALID_REQUEST");
 				break;
 			}
 			size += result.value.byteLength;
@@ -445,6 +447,18 @@ export async function putMoqObservation(
 			await assertMoqObservationWritable(ctx, params, run, previous, tx);
 			if (
 				input.analyticsImpressionId &&
+				store.sessions.some(
+					(session) =>
+						session.id !== params.sessionId &&
+						session.analyticsImpressionId === input.analyticsImpressionId,
+				)
+			)
+				throw new MoqObservationError(
+					409,
+					"MOQ_HISTORY_ANALYTICS_IMPRESSION_CONFLICT",
+				);
+			if (
+				input.analyticsImpressionId &&
 				(previous?.analyticsImpressionId
 					? !previous.analyticsLicenseKeySha256 ||
 						previous.analyticsLicenseKeySha256 !== submittedDigest
@@ -522,3 +536,5 @@ export async function putMoqObservation(
 		return moqHistoryError(error);
 	}
 }
+
+import { MOQ_ARCHIVE_BODY_TIMEOUT_MS } from "../../../config/moq-policy";

@@ -1,3 +1,7 @@
+import {
+	MOQ_PLAYBACK_NAMESPACE_MAX_LENGTH,
+	moqPlaybackUrlSchema,
+} from "@bitovp/core";
 import { z } from "zod";
 
 const descriptorSchema = z
@@ -29,29 +33,9 @@ const descriptorSchema = z
 			.optional(),
 		resource: z.strictObject({
 			type: z.literal("moq"),
-			url: z
-				.string()
-				.max(8192)
-				.refine((value) => {
-					try {
-						const url = new URL(value);
-						return (
-							value === value.trim() &&
-							!Array.from(value).some(
-								(char) =>
-									char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 127,
-							) &&
-							url.protocol === "https:" &&
-							!url.username &&
-							!url.password &&
-							!url.hash
-						);
-					} catch {
-						return false;
-					}
-				}),
+			url: moqPlaybackUrlSchema,
 			metadata: z.strictObject({
-				namespace: z.string().min(1).max(1024),
+				namespace: z.string().min(1).max(MOQ_PLAYBACK_NAMESPACE_MAX_LENGTH),
 				catalogTrackName: z.literal("catalog"),
 				draftVersion: z.union([z.literal(16), z.literal(18)]),
 				mediaTypes: z.tuple([z.literal("audio"), z.literal("video")]),

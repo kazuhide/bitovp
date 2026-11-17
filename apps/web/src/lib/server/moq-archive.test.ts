@@ -178,6 +178,33 @@ afterEach(async () => {
 });
 
 describe("private received-preview WebM archives", () => {
+	it("refuses a valid-looking WebM prefix when the declared body is longer", async () => {
+		const short = request(bytes, {
+			"Content-Length": String(bytes.length + 1),
+		});
+		const result = await putMoqArchive(short, params);
+		expect(result.status).toBe(400);
+		expect(mocks.normalize).not.toHaveBeenCalled();
+		expect(mocks.execute).not.toHaveBeenCalled();
+	});
+	it("bounds admitted archive reads until their response is consumed or cancelled", async () => {
+		expect((await putMoqArchive(request(), params)).status).toBe(200);
+		const read = (method = "GET") =>
+			getMoqArchive(new Request("http://test/archive", { method }), params);
+		const first = await read();
+		const second = await read();
+		try {
+			expect(first.status).toBe(200);
+			expect(second.status).toBe(200);
+			expect((await read("HEAD")).status).toBe(429);
+			await first.body?.cancel();
+			expect((await read("HEAD")).status).toBe(200);
+			expect(Buffer.from(await second.arrayBuffer())).toEqual(bytes);
+		} finally {
+			if (!first.bodyUsed) await first.body?.cancel();
+			if (!second.bodyUsed) await second.body?.cancel();
+		}
+	});
 	it.each([
 		"ADMIN",
 		"OPERATOR",
@@ -256,14 +283,14 @@ describe("private received-preview WebM archives", () => {
 		await putMoqArchive(request(), params);
 		const path = `http://test/api/live-channels/${CHANNEL}/runs/${RUN}/moq-observations/${SESSION}/archive`;
 		for (const method of ["GET", "HEAD"]) {
-			expect(
-				(
-					await getMoqArchive(
-						new Request(`${path}?expectedOrganizationId=${ORG}`, { method }),
-						params,
-					)
-				).status,
-			).toBe(200);
+			const response = await getMoqArchive(
+				new Request(`${path}?expectedOrganizationId=${ORG}`, { method }),
+				params,
+			);
+			expect(response.status).toBe(200);
+			expect(Buffer.from(await response.arrayBuffer())).toEqual(
+				method === "GET" ? bytes : Buffer.alloc(0),
+			);
 		}
 		const partial = await getMoqArchive(
 			new Request(`${path}?expectedOrganizationId=${ORG}`, {
@@ -417,14 +444,12 @@ describe("private received-preview WebM archives", () => {
 			).status,
 		).toBe(400);
 		ctx.tenant.actor = "user:owner";
-		expect(
-			(
-				await getMoqArchive(new Request("http://test/archive"), {
-					...params,
-					sessionId: lower,
-				})
-			).status,
-		).toBe(200);
+		const readBack = await getMoqArchive(new Request("http://test/archive"), {
+			...params,
+			sessionId: lower,
+		});
+		expect(readBack.status).toBe(200);
+		expect(Buffer.from(await readBack.arrayBuffer())).toEqual(bytes);
 	});
 	it("cleans only owned archive and UUID temporary files after deletion, retaining unknown neighbors", async () => {
 		const response = await putMoqArchive(request(), params),
@@ -478,9 +503,12 @@ describe("private received-preview WebM archives", () => {
 				sha256: "0".repeat(64),
 			}),
 		).rejects.toThrow();
-		expect(
-			(await getMoqArchive(new Request("http://test/archive"), params)).status,
-		).toBe(200);
+		const readBack = await getMoqArchive(
+			new Request("http://test/archive"),
+			params,
+		);
+		expect(readBack.status).toBe(200);
+		expect(Buffer.from(await readBack.arrayBuffer())).toEqual(bytes);
 	});
 	it.each([
 		"bytes=3-1",

@@ -1,6 +1,11 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { CREDENTIAL_PROVIDER_SHAPES, stepLogSchema } from "@bitovp/core";
+import {
+	CREDENTIAL_PROVIDER_SHAPES,
+	MOQ_PLAYBACK_NAMESPACE_MAX_LENGTH,
+	moqRunNamespaceSuffix,
+	stepLogSchema,
+} from "@bitovp/core";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { publicContextError } from "@/lib/auth/public-context-error";
@@ -13,7 +18,9 @@ import { readPlayerSettings } from "./player-config";
 
 const storedOutputSchema = z.object({
 	credentialId: z.uuid(),
-	trackNamespace: z.tuple([z.string().min(1)]),
+	trackNamespace: z.tuple([
+		z.string().min(1).max(MOQ_PLAYBACK_NAMESPACE_MAX_LENGTH),
+	]),
 	draftVersion: z.enum(["DRAFT_16", "DRAFT_18"]),
 });
 const createAuditSchema = z.object({
@@ -91,11 +98,15 @@ export async function getMoqPlaybackDescriptor(
 		)
 			return finish(403, "MOQ_PLAYBACK_FORBIDDEN");
 		const run = await ctx.prisma.liveChannelRun.findFirst({
-			where: { id: runId, liveChannelId: id },
+			where: { liveChannelId: id },
+			orderBy: { seq: "desc" },
 			select: {
 				id: true,
 				liveChannelId: true,
 				organizationId: true,
+				status: true,
+				endedAt: true,
+				cancelRequested: true,
 				bitmovinEncodingId: true,
 				stepLog: true,
 			},
@@ -107,6 +118,8 @@ export async function getMoqPlaybackDescriptor(
 			run.organizationId !== ctx.tenant.organizationId
 		)
 			return finish(404, "MOQ_PLAYBACK_RUN_NOT_FOUND");
+		if (run.status !== "RUNNING" || run.endedAt || run.cancelRequested)
+			return finish(409, "MOQ_PLAYBACK_RUN_UNBOUND");
 		const parsedEncodingId = z.uuid().safeParse(run.bitmovinEncodingId);
 		if (!parsedEncodingId.success)
 			return finish(409, "MOQ_PLAYBACK_RUN_UNBOUND");
@@ -142,6 +155,8 @@ export async function getMoqPlaybackDescriptor(
 		);
 		if (!stored.success || !Number.isFinite(startedAt) || !linkedMuxing)
 			return finish(409, "MOQ_PLAYBACK_DELIVERY_UNSUPPORTED");
+		if (!stored.data.trackNamespace[0].endsWith(moqRunNamespaceSuffix(runId)))
+			return finish(409, "MOQ_PLAYBACK_RUN_UNBOUND");
 		const select = {
 			organizationId: true,
 			bitmovinAccountId: true,

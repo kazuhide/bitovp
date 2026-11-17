@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type { NextConfig } from "next";
 import { assertSupportedImagePatterns } from "./config/image-pattern-policy";
+import { MOQ_ARCHIVE_MAX_BYTES } from "./config/moq-policy";
 
 // Next only loads .env from the app directory; this monorepo keeps ONE
 // .env at the repo root (README quickstart). Pull it in at server boot —
@@ -33,6 +34,8 @@ if (rootEnvFile) {
 const nextConfig: NextConfig = {
 	// Do not generate framework-specific agent instruction files.
 	agentRules: false,
+	// The ingress admits bounded archive PUTs before Next clones their bodies.
+	experimental: { proxyClientMaxBodySize: MOQ_ARCHIVE_MAX_BYTES },
 	transpilePackages: ["@bitovp/core", "@bitovp/db", "@bitovp/storage"],
 	/**
 	 * `@bitmovin/api-sdk` must NOT be bundled into server output .

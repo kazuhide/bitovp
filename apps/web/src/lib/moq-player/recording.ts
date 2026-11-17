@@ -1,4 +1,11 @@
+import { MOQ_ARCHIVE_SAVE_TIMEOUT_MS } from "../../../config/moq-policy";
 import { MOQ_OBSERVATION_LIMITS as LIMITS } from "./observations";
+
+export class MoqArchiveSaveUnconfirmed extends Error {
+	constructor() {
+		super("MoQ recording save could not be confirmed");
+	}
+}
 
 export type MoqRecordingState =
 	| "idle"
@@ -8,6 +15,7 @@ export type MoqRecordingState =
 	| "unsupported"
 	| "empty"
 	| "failed"
+	| "unconfirmed"
 	| "unavailable";
 type Options = {
 	upload(blob: Blob, durationMs: number, signal: AbortSignal): Promise<void>;
@@ -53,6 +61,7 @@ export function createMoqRecording(video: HTMLVideoElement, options: Options) {
 	let failed = false;
 	let settled = false;
 	let finalizing = false;
+	let uploading = false;
 	let durationMs: number | undefined;
 	let deadline: number | undefined;
 	let resolve!: () => void;
@@ -77,17 +86,24 @@ export function createMoqRecording(video: HTMLVideoElement, options: Options) {
 		}
 		chunks = [];
 	}
-	function completeFailure() {
+	function completeFailure(unconfirmed = false) {
 		if (settled) return;
 		settled = true;
 		abort.abort();
 		cleanup();
-		options.onState("failed");
-		reject(new Error("MoQ recording failed"));
+		options.onState(unconfirmed ? "unconfirmed" : "failed");
+		reject(
+			unconfirmed
+				? new MoqArchiveSaveUnconfirmed()
+				: new Error("MoQ recording failed"),
+		);
 	}
 	function ensureDeadline() {
 		if (deadline === undefined)
-			deadline = window.setTimeout(completeFailure, 5000);
+			deadline = window.setTimeout(
+				() => completeFailure(uploading),
+				MOQ_ARCHIVE_SAVE_TIMEOUT_MS,
+			);
 	}
 	async function finalize() {
 		if (finalizing || settled) return;
@@ -106,6 +122,7 @@ export function createMoqRecording(video: HTMLVideoElement, options: Options) {
 		}
 		try {
 			options.onState("saving");
+			uploading = true;
 			await options.upload(
 				new Blob(chunks, { type: "video/webm" }),
 				durationMs ??
@@ -123,8 +140,8 @@ export function createMoqRecording(video: HTMLVideoElement, options: Options) {
 			cleanup();
 			options.onState("saved");
 			resolve();
-		} catch {
-			completeFailure();
+		} catch (error) {
+			completeFailure(error instanceof MoqArchiveSaveUnconfirmed);
 		}
 	}
 	function finish(): Promise<void> {

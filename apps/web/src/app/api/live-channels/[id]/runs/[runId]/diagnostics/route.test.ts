@@ -488,13 +488,32 @@ describe("run-bound provider diagnostics", () => {
 			encoderVersion: "BETA",
 		});
 	});
-	it("reports a failed Encoding read without leaking its provider error", async () => {
-		mocks.encoding.mockRejectedValue(new Error("https://secret-token"));
-		const response = await GET(request(), context());
-		expect(response.status).toBe(502);
-		expect(
-			JSON.stringify([await response.json(), mocks.audit.mock.calls]),
-		).not.toContain("secret-token");
+	it.each([
+		404,
+		500,
+		undefined,
+	])("retains genuine summary status when optional Encoding metadata fails (%s)", async (httpStatusCode) => {
+		mocks.encoding.mockRejectedValue(
+			Object.assign(new Error("https://secret-token"), { httpStatusCode }),
+		);
+		const req = request();
+		const response = await GET(req, context());
+		expect(response.status).toBe(200);
+		const result = await response.json();
+		expect(result.data).toEqual({ status: "CONNECTED" });
+		expect(mocks.audit).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({
+				path: `/encoding/encodings/${ENCODING}`,
+				bitmovinAccountId: ACCOUNT,
+				statusCode: httpStatusCode ?? 502,
+				response: { error: "Unable to retrieve encoder version metadata" },
+			}),
+			req,
+		);
+		expect(JSON.stringify([result, mocks.audit.mock.calls])).not.toContain(
+			"secret-token",
+		);
 	});
 	it("does not take selected version evidence from the statistics response", async () => {
 		mocks.summary.mockResolvedValue({

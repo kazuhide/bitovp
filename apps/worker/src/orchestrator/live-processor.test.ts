@@ -11996,6 +11996,26 @@ describe("MoQ publisher Task privacy", () => {
 		expect(entry?.response).toMatchObject({ status: "RUNNING", progress: 0 });
 		expectPrivate(h, outcome);
 	});
+
+	it("writes the effective MoQ namespace to the run before dispatching its output CREATE", async () => {
+		const h = moqHarness(async () => ({ status: "RUNNING" }));
+		vi.mocked(h.sdk.createMoqOutput).mockImplementation(async (body) => {
+			const run = h.runRows[0];
+			if (!run) throw new Error("Missing run fixture");
+			const output = (run.stepLog as StepLogEntry[]).find(
+				(entry) => entry.kind === "CREATE_OUTPUT_MOQ",
+			);
+			expect(body.trackNamespace).toEqual([`privacy-bitovp-${run.id}`]);
+			expect(output).toMatchObject({
+				status: "RUNNING",
+				payload: { trackNamespace: body.trackNamespace },
+			});
+			return "bound-moq-output";
+		});
+		await h.process({ liveChannelId: CHANNEL_ID });
+		expect(h.sdk.createMoqOutput).toHaveBeenCalledTimes(1);
+		expect(h.row.status).toBe("RUNNING");
+	});
 	it.each([
 		"ERROR",
 		"CANCELED",

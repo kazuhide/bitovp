@@ -9,6 +9,7 @@ import {
 	moqObservationSampleSchema,
 	moqObservationUpdateSchema,
 } from "./observations";
+import { MoqArchiveSaveUnconfirmed } from "./recording";
 import type { MoqVideoStatistics } from "./video-statistics";
 
 export type MoqHistorySaveState = "saving" | "saved" | "failed" | "limit";
@@ -22,7 +23,21 @@ type Options = {
 	now?: () => number;
 	onState(state: MoqHistorySaveState): void;
 	onPersisted?(): void;
+	onAnalyticsUnavailable?(): void;
 };
+function withoutAnalytics({
+	analyticsImpressionId: _id,
+	analyticsLicenseKeySha256: _digest,
+	...observations
+}: MoqObservationUpdate): MoqObservationUpdate {
+	return observations;
+}
+function errorCode(error: unknown) {
+	const details = (error as { details?: unknown } | null)?.details;
+	return typeof details === "object" && details
+		? Reflect.get(details, "code")
+		: undefined;
+}
 export function moqObservationPath(channelId: string, runId: string) {
 	return `/api/live-channels/${encodeURIComponent(channelId)}/runs/${encodeURIComponent(runId)}/moq-observations`;
 }
@@ -51,6 +66,8 @@ export function createMoqObservationWriter(options: Options) {
 	let finished = false;
 	let final: Promise<void> | undefined;
 	let analyticsImpressionId: string | undefined;
+	let analyticsBound = false;
+	let analyticsUnavailable = false;
 	const elapsed = () =>
 		Math.max(0, Math.min(LIMITS.durationMs, Math.round(now() - origin)));
 	const snapshot = (): MoqObservationUpdate => ({
@@ -67,13 +84,36 @@ export function createMoqObservationWriter(options: Options) {
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		options.onState("saving");
 		try {
-			const receipt = await Promise.race([
+			const put = (input: MoqObservationUpdate) =>
 				apiFetch(path, {
 					method: "PUT",
 					cache: "no-store",
 					signal: abort.signal,
-					body: JSON.stringify(moqObservationUpdateSchema.parse(value)),
-				}),
+					body: JSON.stringify(moqObservationUpdateSchema.parse(input)),
+				});
+			const persist = async () => {
+				const payload = analyticsUnavailable ? withoutAnalytics(value) : value;
+				try {
+					return await put(payload);
+				} catch (error) {
+					const code = errorCode(error);
+					if (
+						analyticsBound ||
+						!payload.analyticsImpressionId ||
+						(error as { status?: number } | null)?.status !== 409 ||
+						(code !== "MOQ_HISTORY_ANALYTICS_LICENSE_CHANGED" &&
+							code !== "MOQ_HISTORY_ANALYTICS_IMPRESSION_CONFLICT")
+					)
+						throw error;
+					analyticsUnavailable = true;
+					analyticsImpressionId = undefined;
+					options.onAnalyticsUnavailable?.();
+					abort.signal.throwIfAborted();
+					return put(withoutAnalytics(payload));
+				}
+			};
+			const receipt = await Promise.race([
+				persist(),
 				new Promise<never>((_resolve, reject) => {
 					timer = setTimeout(() => {
 						abort.abort();
@@ -94,35 +134,41 @@ export function createMoqObservationWriter(options: Options) {
 				Reflect.get(session, "id") !== id
 			)
 				throw new Error();
+			if (
+				analyticsImpressionId &&
+				Reflect.get(session, "analyticsImpressionId") === analyticsImpressionId
+			)
+				analyticsBound = true;
 			options.onState("saved");
 			options.onPersisted?.();
 		} catch (error) {
-			const details =
-				typeof error === "object" && error
-					? Reflect.get(error, "details")
-					: null;
 			options.onState(
-				typeof details === "object" &&
-					details &&
-					Reflect.get(details, "code") === "MOQ_HISTORY_SESSION_LIMIT"
-					? "limit"
-					: "failed",
+				errorCode(error) === "MOQ_HISTORY_SESSION_LIMIT" ? "limit" : "failed",
 			);
 			throw new Error("MoQ observations could not be saved");
 		} finally {
 			if (timer) clearTimeout(timer);
 		}
 	}
-	let queue = send(snapshot());
+	let requestOutstanding = true;
+	function track(request: Promise<void>) {
+		const complete = () => {
+			if (queue === request) requestOutstanding = false;
+		};
+		void request.then(complete, complete);
+		return request;
+	}
+	let queue = track(send(snapshot()));
 	const ready = queue;
 	void ready.catch(() => {});
 	function flush() {
 		const value = snapshot();
-		queue = queue.catch(() => {}).then(() => send(value));
+		requestOutstanding = true;
+		queue = track(queue.catch(() => {}).then(() => send(value)));
 		return queue;
 	}
 	const interval = setInterval(() => {
-		if (!finished) void flush().catch(() => {});
+		if (!finished && !requestOutstanding) void flush().catch(() => {});
 	}, 5000);
 	const maximum = setTimeout(() => {
 		void finish("ended").catch(() => {});
@@ -189,38 +235,40 @@ export function createMoqObservationWriter(options: Options) {
 		return final;
 	}
 	async function archive(blob: Blob, durationMs: number, signal: AbortSignal) {
-		try {
-			await ready;
-			await queue;
-			const response = await fetch(`${path}/archive`, {
-				method: "PUT",
-				cache: "no-store",
-				signal,
-				headers: {
-					"Content-Type": "video/webm",
-					"X-BitOVP-Moq-Duration-Ms": String(durationMs),
-				},
-				body: blob,
-			});
-			if (!response.ok) throw new Error();
-			const value: unknown = await response.json();
-			if (
-				typeof value !== "object" ||
-				!value ||
-				Reflect.get(value, "runId") !== options.runId ||
-				Reflect.get(value, "sessionId") !== id ||
-				!moqArchiveMetadataSchema.safeParse(Reflect.get(value, "archive"))
-					.success
-			)
-				throw new Error();
-			options.onPersisted?.();
-		} catch {
+		await ready;
+		await queue;
+		signal.throwIfAborted();
+		const response = await fetch(`${path}/archive`, {
+			method: "PUT",
+			cache: "no-store",
+			signal,
+			headers: {
+				"Content-Type": "video/webm",
+				"X-BitOVP-Moq-Duration-Ms": String(durationMs),
+			},
+			body: blob,
+		}).catch(() => {
+			throw new MoqArchiveSaveUnconfirmed();
+		});
+		if (!response.ok) {
+			if (response.status >= 500) throw new MoqArchiveSaveUnconfirmed();
 			throw new Error("MoQ recording could not be saved");
 		}
+		const value: unknown = await response.json().catch(() => null);
+		if (
+			typeof value !== "object" ||
+			!value ||
+			Reflect.get(value, "runId") !== options.runId ||
+			Reflect.get(value, "sessionId") !== id ||
+			!moqArchiveMetadataSchema.safeParse(Reflect.get(value, "archive")).success
+		)
+			throw new MoqArchiveSaveUnconfirmed();
+		options.onPersisted?.();
 	}
 	function setAnalyticsImpressionId(value: string | null) {
 		if (
 			analyticsLicenseKeySha256 &&
+			!analyticsUnavailable &&
 			!analyticsImpressionId &&
 			z.uuid().safeParse(value).success
 		)

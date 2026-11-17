@@ -20,6 +20,10 @@ import {
 	EXPECTED_ORGANIZATION_QUERY,
 	passiveOrganizationBinding,
 } from "@/lib/passive-request";
+import {
+	MOQ_ARCHIVE_MAX_READS,
+	MOQ_ARCHIVE_MAX_UPLOADS,
+} from "../../../config/moq-policy";
 import { hasWebmHeader, normalizeMoqArchive } from "./moq-archive-media";
 import { writeMoqObservationStore } from "./moq-observation-store";
 import {
@@ -36,6 +40,7 @@ import {
 
 // Admission is per server process: at most two bodies/remuxes, one per scoped session.
 const archiveUploads = new Set<string>();
+let archiveReads = 0;
 
 /** Exact metadata proof from a committed run deletion, never a caller-selected path. */
 export async function removeMoqArchiveFile(
@@ -174,7 +179,7 @@ export async function putMoqArchive(
 		const key = `${ctx.tenant.organizationId}:${run.id}:${previous.id}`;
 		if (archiveUploads.has(key))
 			throw new MoqObservationError(409, "MOQ_ARCHIVE_SESSION_BUSY");
-		if (archiveUploads.size >= 2)
+		if (archiveUploads.size >= MOQ_ARCHIVE_MAX_UPLOADS)
 			throw new MoqObservationError(429, "MOQ_ARCHIVE_UPLOAD_BUSY");
 		archiveUploads.add(key);
 		uploadKey = key;
@@ -352,6 +357,13 @@ export async function getMoqArchive(
 	req: Request,
 	params: MoqObservationParams,
 ) {
+	let admitted = false;
+	let streaming = false;
+	const release = () => {
+		if (!admitted) return;
+		admitted = false;
+		archiveReads--;
+	};
 	try {
 		const url = new URL(req.url),
 			binding = passiveOrganizationBinding(url, req.method);
@@ -376,6 +388,10 @@ export async function getMoqArchive(
 		);
 		if (!session?.archive || !ctx.tenant)
 			throw new MoqObservationError(404, "MOQ_ARCHIVE_NOT_FOUND");
+		if (archiveReads >= MOQ_ARCHIVE_MAX_READS)
+			throw new MoqObservationError(429, "MOQ_ARCHIVE_READ_BUSY");
+		archiveReads++;
+		admitted = true;
 		let bytes: Buffer;
 		try {
 			const directory = await archiveDirectory(
@@ -424,25 +440,70 @@ export async function getMoqArchive(
 				return invalidRange();
 		}
 		await auditMoqHistory(ctx, req, params, range ? 206 : 200);
-		return new Response(
+		const body =
 			req.method === "HEAD"
 				? null
-				: Uint8Array.from(bytes.subarray(start, end + 1)),
-			{
-				status: range ? 206 : 200,
-				headers: {
-					"Content-Type": "video/webm",
-					"Content-Length": String(end - start + 1),
-					"Cache-Control": "private, no-store",
-					"X-Content-Type-Options": "nosniff",
-					"Accept-Ranges": "bytes",
-					...(range
-						? { "Content-Range": `bytes ${start}-${end}/${size}` }
-						: {}),
-				},
+				: streamArchive(bytes.subarray(start, end + 1), req.signal, release);
+		const response = new Response(body, {
+			status: range ? 206 : 200,
+			headers: {
+				"Content-Type": "video/webm",
+				"Content-Length": String(end - start + 1),
+				"Cache-Control": "private, no-store",
+				"X-Content-Type-Options": "nosniff",
+				"Accept-Ranges": "bytes",
+				...(range ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}),
 			},
-		);
+		});
+		streaming = body !== null;
+		return response;
 	} catch (error) {
 		return moqHistoryError(error);
+	} finally {
+		if (!streaming) release();
 	}
+}
+
+/** Keep the verified allocation admitted while the HTTP consumer drains it. */
+function streamArchive(
+	bytes: Buffer,
+	signal: AbortSignal,
+	release: () => void,
+) {
+	let remaining: Buffer | undefined = bytes;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let refuse: (() => void) | undefined;
+	const finish = () => {
+		remaining = undefined;
+		clearTimeout(timer);
+		if (refuse) signal.removeEventListener("abort", refuse);
+		release();
+	};
+	return new ReadableStream<Uint8Array>(
+		{
+			start(controller) {
+				refuse = () => {
+					finish();
+					controller.error(new Error("MoQ archive response was interrupted"));
+				};
+				if (signal.aborted) refuse();
+				else {
+					signal.addEventListener("abort", refuse, { once: true });
+					timer = setTimeout(refuse, 60_000);
+					timer.unref();
+				}
+			},
+			pull(controller) {
+				if (!remaining) return;
+				controller.enqueue(Uint8Array.from(remaining.subarray(0, 64 * 1024)));
+				remaining = remaining.subarray(64 * 1024);
+				if (!remaining.length) {
+					finish();
+					controller.close();
+				}
+			},
+			cancel: finish,
+		},
+		{ highWaterMark: 0 },
+	);
 }

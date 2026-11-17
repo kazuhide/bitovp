@@ -14,7 +14,19 @@ export function declaredBodyTooLarge(
 	);
 }
 
-function policyForPath(path: string) {
+type BodyPolicy = { limit: number; error: string; archive?: true };
+
+function policyForPath(path: string, method: string): BodyPolicy | null {
+	if (method === "PUT")
+		return /^\/api\/live-channels\/[^/]+\/runs\/[^/]+\/moq-observations\/[^/]+\/archive$/.test(
+			path,
+		)
+			? {
+					limit: MOQ_ARCHIVE_MAX_BYTES,
+					error: "MoQ archive is too large",
+					archive: true,
+				}
+			: null;
 	if (path === "/api/auth/login") {
 		return { limit: MAX_LOGIN_BODY_BYTES, error: "Request body is too large" };
 	}
@@ -27,12 +39,12 @@ function policyForPath(path: string) {
 	return null;
 }
 
-/** Match the three public POST routes, including Next's decoded path lookup. */
+/** Match the bounded POST routes and the archive PUT through Next's path lookup. */
 export function publicRequestBodyPolicy(
 	method: string | undefined,
 	target: string | undefined,
 ) {
-	if (method !== "POST" || !target) return null;
+	if ((method !== "POST" && method !== "PUT") || !target) return null;
 	let pathname: string;
 	try {
 		const url = /^https?:\/\//i.test(target)
@@ -59,11 +71,16 @@ export function publicRequestBodyPolicy(
 			pathname = pathname.slice(6);
 		}
 	}
-	const direct = policyForPath(pathname);
+	const direct = policyForPath(pathname, method);
 	if (direct) return direct;
 	try {
-		return policyForPath(decodeURIComponent(pathname).replace(/\/$/, ""));
+		return policyForPath(
+			decodeURIComponent(pathname).replace(/\/$/, ""),
+			method,
+		);
 	} catch {
 		return null;
 	}
 }
+
+import { MOQ_ARCHIVE_MAX_BYTES } from "../../../config/moq-policy";

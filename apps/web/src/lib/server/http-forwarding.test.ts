@@ -1,6 +1,6 @@
 import { createServer, request, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { forwardHttpRequest } from "../../../runtime/http-forwarding";
 
 const servers: Server[] = [];
@@ -62,12 +62,13 @@ function client(
 	port: number,
 	path: string,
 	headers: Record<string, string> = {},
+	method = "POST",
 ) {
 	const connection = request({
 		hostname: "127.0.0.1",
 		port,
 		path,
-		method: "POST",
+		method,
 		headers,
 	});
 	const result = new Promise<{ status: number; body: Buffer }>(
@@ -95,6 +96,93 @@ function client(
 }
 
 describe("HTTP ingress body limits with a loopback upstream", () => {
+	const archivePath =
+		"/api/live-channels/00000000-0000-4000-8000-000000000001/runs/00000000-0000-4000-8000-000000000002/moq-observations/00000000-0000-4000-8000-000000000003/archive";
+	it("refuses an oversized archive before buffering or contacting Next", async () => {
+		const { port, received } = await fixture();
+		const upload = client(
+			port,
+			archivePath,
+			{
+				"content-length": String(16 * 1024 * 1024 + 1),
+			},
+			"PUT",
+		);
+		try {
+			upload.connection.flushHeaders();
+			expect((await upload.result).status).toBe(413);
+			expect(received.requests).toBe(0);
+		} finally {
+			upload.connection.destroy();
+		}
+	}, 7000);
+	it("limits concurrent archive bodies before contacting Next and frees aborted uploads", async () => {
+		const { port, received, forwarded } = await fixture();
+		const open = () => {
+			const upload = client(
+				port,
+				archivePath,
+				{ "transfer-encoding": "chunked" },
+				"PUT",
+			);
+			void upload.result.catch(() => {});
+			return upload;
+		};
+		const first = open(),
+			second = open(),
+			third = open();
+		try {
+			first.connection.write("first");
+			second.connection.write("second");
+			await forwarded;
+			await vi.waitFor(() => expect(received.requests).toBe(2));
+			third.connection.end("third");
+			expect((await third.result).status).toBe(429);
+			first.connection.destroy();
+			second.connection.end();
+			expect((await second.result).status).toBe(200);
+			const fourth = open();
+			fourth.connection.end("fourth");
+			expect((await fourth.result).status).toBe(200);
+			expect(received.requests).toBe(3);
+		} finally {
+			for (const upload of [first, second, third]) upload.connection.destroy();
+		}
+	});
+	it("enforces a whole-body deadline while Next is still waiting for an archive", async () => {
+		const { port, received, forwarded } = await fixture();
+		const upload = client(
+			port,
+			archivePath,
+			{ "transfer-encoding": "chunked" },
+			"PUT",
+		);
+		void upload.result.catch(() => {});
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		try {
+			upload.connection.write("partial");
+			await forwarded;
+			await vi.advanceTimersByTimeAsync(10_001);
+			vi.useRealTimers();
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			try {
+				expect(
+					await Promise.race([
+						upload.result.then((response) => response.status),
+						new Promise<number>((resolve) => {
+							timer = setTimeout(() => resolve(0), 500);
+						}),
+					]),
+				).toBe(408);
+			} finally {
+				clearTimeout(timer);
+			}
+			expect(received.bodies).toEqual([]);
+		} finally {
+			upload.connection.destroy();
+			vi.useRealTimers();
+		}
+	});
 	it.each([
 		"(.)",
 		"(..)",

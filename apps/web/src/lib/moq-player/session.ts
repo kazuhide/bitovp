@@ -1,3 +1,7 @@
+import {
+	MOQ_ARCHIVE_SAVE_TIMEOUT_MS,
+	MOQ_PLAYER_DISPOSE_TIMEOUT_MS,
+} from "../../../config/moq-policy";
 import type {
 	MoqPlaybackDescriptor,
 	MoqPlayer,
@@ -25,10 +29,15 @@ export function createMoqPlayback(
 	host.className = "h-full w-full";
 	container.append(host);
 	let closed = false;
+	let constructing = true;
 	let player: MoqPlayer | undefined;
 	let source: MoqSource | undefined;
 	let disposal: Promise<void> | undefined;
 	let finalization: Promise<boolean> | undefined;
+	let confirmRelease!: () => void;
+	const released = new Promise<void>((resolve) => {
+		confirmRelease = resolve;
+	});
 	const listeners: (() => void)[] = [];
 	const fail = () => {
 		if (closed) return;
@@ -56,7 +65,10 @@ export function createMoqPlayback(
 					await Promise.race([
 						Promise.resolve().then(() => telemetry?.beforeDispose?.()),
 						new Promise<never>((_resolve, reject) => {
-							timer = setTimeout(() => reject(new Error()), 5500);
+							timer = setTimeout(
+								() => reject(new Error()),
+								MOQ_ARCHIVE_SAVE_TIMEOUT_MS + 2000,
+							);
 						}),
 					]);
 					return false;
@@ -69,8 +81,12 @@ export function createMoqPlayback(
 		}
 		if (!player)
 			return finalization.then((failed) => {
-				stopObserving.disposeSurface();
-				host.remove();
+				try {
+					stopObserving.disposeSurface();
+				} finally {
+					host.remove();
+					if (!constructing) confirmRelease();
+				}
 				if (failed) throw new Error("MoQ playback cleanup failed");
 			});
 		if (!disposal) {
@@ -95,10 +111,23 @@ export function createMoqPlayback(
 				} catch {
 					failed = true;
 				}
+				let timer: ReturnType<typeof setTimeout> | undefined;
 				try {
-					await owned.dispose();
+					await Promise.race([
+						Promise.resolve()
+							.then(() => owned.dispose())
+							.then(confirmRelease),
+						new Promise<never>((_resolve, reject) => {
+							timer = setTimeout(
+								() => reject(new Error()),
+								MOQ_PLAYER_DISPOSE_TIMEOUT_MS,
+							);
+						}),
+					]);
 				} catch {
 					failed = true;
+				} finally {
+					clearTimeout(timer);
 				}
 				if (failed) throw new Error("MoQ playback cleanup failed");
 			});
@@ -107,13 +136,17 @@ export function createMoqPlayback(
 	}
 	const ready = (async () => {
 		try {
-			player = await factory({
-				key: descriptor.playerLicenseKey,
-				defaultContainer: host,
-				defaultLogLevel: 0,
-				playback: { autoplay: false, muted: true },
-				volume: 0,
-			});
+			try {
+				player = await factory({
+					key: descriptor.playerLicenseKey,
+					defaultContainer: host,
+					defaultLogLevel: 0,
+					playback: { autoplay: false, muted: true },
+					volume: 0,
+				});
+			} finally {
+				constructing = false;
+			}
 			if (closed) {
 				await dispose();
 				return;
@@ -140,5 +173,5 @@ export function createMoqPlayback(
 			throw new Error("MoQ playback failed");
 		}
 	})();
-	return { ready, dispose };
+	return { ready, dispose, released };
 }

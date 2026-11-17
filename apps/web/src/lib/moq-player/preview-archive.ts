@@ -31,6 +31,7 @@ export function createMoqPreviewArchive(options: Options) {
 		analyticsLicenseKeySha256: configuredAnalytics?.licenseKeySha256,
 		onState: options.onHistoryState,
 		onPersisted: options.onPersisted,
+		onAnalyticsUnavailable: () => options.onAnalyticsState("unavailable"),
 	});
 	let analytics:
 		| Awaited<ReturnType<typeof createMoqAnalyticsBridge>>
@@ -81,7 +82,10 @@ export function createMoqPreviewArchive(options: Options) {
 		if (owned)
 			recording = createMoqRecording(element, {
 				upload: writer.archive,
-				onState: options.onRecordingState,
+				onState: (state) => {
+					options.onRecordingState(state);
+					if (state === "unconfirmed") options.onPersisted();
+				},
 			});
 	}
 	function statistics(value: MoqVideoStatistics) {
@@ -97,7 +101,6 @@ export function createMoqPreviewArchive(options: Options) {
 	function finish(reason: "stopped" | "failed" | "ended") {
 		if (final) return final;
 		closed = true;
-		const media = recording?.finish() ?? Promise.resolve();
 		// Stop its timers immediately, even when the initial ownership receipt is pending.
 		// A rejected create has no owned session to finalize; a rejected final flush does.
 		const observations = writer.finish(reason).catch(async () => {
@@ -108,6 +111,7 @@ export function createMoqPreviewArchive(options: Options) {
 			if (acknowledged)
 				throw new Error("MoQ observations could not be finalized");
 		});
+		const media = recording?.finish() ?? Promise.resolve();
 		final = (async () => {
 			const results = await Promise.allSettled([media, observations]);
 			let failed = results.some((value) => value.status === "rejected");

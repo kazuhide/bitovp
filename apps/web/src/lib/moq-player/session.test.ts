@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import {
+	MOQ_ARCHIVE_SAVE_TIMEOUT_MS,
+	MOQ_PLAYER_DISPOSE_TIMEOUT_MS,
+} from "../../../config/moq-policy";
 import { createMoqPlayback } from "./session";
 import type { MoqPlaybackDescriptor, MoqPlayer } from "./types";
 
@@ -54,11 +58,53 @@ describe("owned MoQ source lifecycle", () => {
 			const rejected = expect(done).rejects.toThrow(
 				/^MoQ playback cleanup failed$/,
 			);
-			await vi.advanceTimersByTimeAsync(5501);
+			await vi.advanceTimersByTimeAsync(MOQ_ARCHIVE_SAVE_TIMEOUT_MS + 2001);
 			await rejected;
 			expect(player.sources.remove).toHaveBeenCalledOnce();
 			expect(player.dispose).toHaveBeenCalledOnce();
 		} finally {
+			host.remove();
+			vi.useRealTimers();
+		}
+	});
+	it("settles Stop while keeping ownership until a delayed SDK disposal succeeds", async () => {
+		vi.useFakeTimers();
+		const { player, host } = fixture();
+		let release = () => {};
+		player.dispose.mockReturnValue(
+			new Promise<void>((resolve) => {
+				release = resolve;
+			}),
+		);
+		try {
+			const session = createMoqPlayback(
+				() => player,
+				descriptor,
+				host,
+				vi.fn(),
+				vi.fn(),
+			);
+			await session.ready;
+			const outcome = vi.fn();
+			void session.dispose().then(
+				() => outcome("stopped"),
+				(error: Error) => outcome(error.message),
+			);
+			await vi.advanceTimersByTimeAsync(MOQ_PLAYER_DISPOSE_TIMEOUT_MS + 1);
+			expect(outcome).toHaveBeenCalledExactlyOnceWith(
+				"MoQ playback cleanup failed",
+			);
+			expect(host.children).toHaveLength(0);
+			const confirmed = vi.fn();
+			void session.released.then(confirmed);
+			await Promise.resolve();
+			expect(confirmed).not.toHaveBeenCalled();
+			release();
+			await session.released;
+			expect(confirmed).toHaveBeenCalledOnce();
+			expect(player.dispose).toHaveBeenCalledOnce();
+		} finally {
+			release();
 			host.remove();
 			vi.useRealTimers();
 		}

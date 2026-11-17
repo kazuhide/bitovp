@@ -5,6 +5,10 @@ import { encodingPlanSchema, planOutputSchema } from "../plan/schema";
 import { validatePlan } from "../plan/validate";
 import { compileLiveChannel } from "./compiler";
 import { resolveLiveEncodingOption } from "./encoding-option";
+import {
+	bindMoqPlaybackNamespace,
+	MOQ_PLAYBACK_NAMESPACE_MAX_LENGTH,
+} from "./moq-run-namespace";
 import { liveChannelPlanSchema } from "./schema";
 import { validateLiveChannel } from "./validate";
 
@@ -37,6 +41,18 @@ function moqPlan() {
 }
 
 describe("MoQ Live output", () => {
+	it("derives distinct bounded single-field namespaces and keeps retries stable", () => {
+		const first = "00000000-0000-4000-8000-000000000001";
+		const second = "00000000-0000-4000-8000-000000000002";
+		const base = [`a${"🎥".repeat(MOQ_PLAYBACK_NAMESPACE_MAX_LENGTH)}`];
+		const bound = bindMoqPlaybackNamespace(base, first);
+		expect(bound).toEqual([`a${"🎥".repeat(489)}-bitovp-${first}`]);
+		expect(bindMoqPlaybackNamespace(bound, first)).toEqual(bound);
+		expect(bindMoqPlaybackNamespace(base, second)).not.toEqual(bound);
+		const tuple = ["prefix", "configured"];
+		expect(bindMoqPlaybackNamespace(tuple, first)).toEqual(tuple);
+	});
+
 	it.each([
 		"DRAFT_16",
 		"DRAFT_18",

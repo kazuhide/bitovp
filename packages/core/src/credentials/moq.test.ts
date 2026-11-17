@@ -17,6 +17,22 @@ const credential = {
 };
 
 describe("MoQ relay credentials", () => {
+	it.each([
+		[8192, true],
+		[8193, false],
+		[16384, false],
+	])("keeps subscriber URL length %i consistent with the Player boundary", (length, accepted) => {
+		const prefix = "https://subscribe.example/moq?token=";
+		const playbackUrl = prefix + "s".repeat(Number(length) - prefix.length);
+		const input = {
+			...credential,
+			secret: { ...credential.secret, playbackUrl },
+		};
+		expect(createCredentialSchema.safeParse(input).success).toBe(accepted);
+		expect(
+			updateCredentialSchema("MOQ").safeParse({ secret: input.secret }).success,
+		).toBe(accepted);
+	});
 	it("accepts a relay without authentication and preserves optional token settings", () => {
 		expect(createCredentialSchema.parse(credential)).toEqual(credential);
 		const authenticated = {
@@ -131,6 +147,7 @@ describe("MoQ relay credentials", () => {
 		"https://subscribe.example/moq#",
 		" https://subscribe.example/moq",
 		"https://subscribe.example/moq\n",
+		"https://subscribe.example/moq?token=unescaped space",
 	])("rejects an invalid playback URL: %s", (playbackUrl) => {
 		expect(
 			createCredentialSchema.safeParse({

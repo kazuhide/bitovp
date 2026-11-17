@@ -134,7 +134,9 @@ beforeEach(() => {
 		prisma,
 		credentials: { revealVersioned: mocks.credential },
 	});
-	mocks.run.mockImplementation(({ orderBy }) => (orderBy ? { id: RUN } : row));
+	mocks.run.mockImplementation(({ orderBy, select }) =>
+		orderBy && !select?.stepLog ? { id: RUN } : row,
+	);
 	mocks.channel.mockResolvedValue({
 		id: CHANNEL,
 		organizationId: ORG,
@@ -318,6 +320,23 @@ describe("run-bound MoQ observation persistence", () => {
 		expect(mocks.credential).not.toHaveBeenCalled();
 	});
 	it("binds the first impression to the actual descriptor license and rejects intervening key rotation", async () => {
+		const namespace = `run-namespace-bitovp-${RUN}`;
+		const output = row.stepLog.find(
+			(entry) => entry.kind === "CREATE_OUTPUT_MOQ",
+		);
+		if (!output) throw new Error("Missing output fixture");
+		output.payload.trackNamespace = [namespace];
+		mocks.provenance.mockImplementation(({ where }) => [
+			{
+				organizationId: ORG,
+				bitmovinAccountId: SESSION,
+				at: new Date("2026-11-17T00:00:04.000Z"),
+				request: { trackNamespace: [namespace], draftVersion: "DRAFT_18" },
+				response: {
+					id: where.path === "/encoding/encodings" ? ENCODING : OUTPUT,
+				},
+			},
+		]);
 		const descriptor = await getMoqPlaybackDescriptor(
 			new Request("http://test/moq-playback"),
 			params,
@@ -521,6 +540,39 @@ describe("run-bound MoQ observation persistence", () => {
 				)
 			).status,
 		).toBe(409);
+	});
+	it("reserves an impression for one session within the run", async () => {
+		const binding = {
+			analyticsImpressionId: SESSION,
+			analyticsLicenseKeySha256: createHash("sha256")
+				.update("public-analytics-license")
+				.digest("hex"),
+		};
+		expect(
+			(await putMoqObservation(req({ ...payload(), ...binding }), params))
+				.status,
+		).toBe(200);
+		const second = { ...params, sessionId: OUTPUT };
+		const duplicate = await putMoqObservation(
+			req({ ...payload(), ...binding }),
+			second,
+		);
+		expect(duplicate.status).toBe(409);
+		expect(await duplicate.json()).toMatchObject({
+			details: { code: "MOQ_HISTORY_ANALYTICS_IMPRESSION_CONFLICT" },
+		});
+		expect((await putMoqObservation(req(payload()), second)).status).toBe(200);
+		const history = await getMoqObservations(
+			new Request("http://test/history"),
+			params,
+		);
+		const data = await history.json();
+		expect(
+			data.sessions.filter(
+				(session: { analyticsImpressionId?: string }) =>
+					session.analyticsImpressionId === SESSION,
+			),
+		).toHaveLength(1);
 	});
 	it("refuses conflicting original provider account provenance", async () => {
 		mocks.provenance.mockImplementation(({ where }) => [

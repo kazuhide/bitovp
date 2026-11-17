@@ -6,6 +6,10 @@ import {
 } from "node:http";
 import { Transform } from "node:stream";
 import {
+	MOQ_ARCHIVE_BODY_TIMEOUT_MS,
+	MOQ_ARCHIVE_MAX_UPLOADS,
+} from "../config/moq-policy";
+import {
 	declaredBodyTooLarge,
 	publicRequestBodyPolicy,
 } from "../src/lib/server/request-body-limits";
@@ -14,10 +18,11 @@ function rejectBody(
 	incoming: IncomingMessage,
 	outgoing: ServerResponse,
 	error: string,
+	status = 413,
 ) {
 	incoming.pause();
 	const body = JSON.stringify({ error });
-	outgoing.writeHead(413, {
+	outgoing.writeHead(status, {
 		"content-type": "application/json; charset=utf-8",
 		"content-length": Buffer.byteLength(body),
 		connection: "close",
@@ -25,6 +30,8 @@ function rejectBody(
 	// Destroying IncomingMessage sooner also destroys the response's socket.
 	outgoing.end(body, () => incoming.destroy());
 }
+
+let archiveUploads = 0;
 
 export function forwardHttpRequest(
 	incoming: IncomingMessage,
@@ -40,9 +47,27 @@ export function forwardHttpRequest(
 		rejectBody(incoming, outgoing, policy.error);
 		return;
 	}
+	if (policy?.archive && archiveUploads >= MOQ_ARCHIVE_MAX_UPLOADS) {
+		rejectBody(incoming, outgoing, "MoQ archive upload is busy", 429);
+		return;
+	}
+	let bodyDeadline: ReturnType<typeof setTimeout> | undefined;
+	if (policy?.archive) {
+		archiveUploads++;
+		let held = true;
+		const release = () => {
+			if (!held) return;
+			held = false;
+			clearTimeout(bodyDeadline);
+			archiveUploads--;
+		};
+		outgoing.once("finish", release);
+		outgoing.once("close", release);
+	}
 	let rejected = false;
 	let counter: Transform | undefined;
 	const upstream = connect(options, (response) => {
+		clearTimeout(bodyDeadline);
 		if (rejected) {
 			response.resume();
 			return;
@@ -63,6 +88,7 @@ export function forwardHttpRequest(
 		response.on("error", () => outgoing.destroy());
 	});
 	upstream.on("error", () => {
+		clearTimeout(bodyDeadline);
 		if (rejected || outgoing.writableEnded) return;
 		if (outgoing.headersSent) {
 			outgoing.destroy();
@@ -72,10 +98,12 @@ export function forwardHttpRequest(
 		outgoing.end("Application is starting or unavailable");
 	});
 	incoming.on("aborted", () => {
+		clearTimeout(bodyDeadline);
 		counter?.destroy();
 		upstream.destroy();
 	});
 	outgoing.on("close", () => {
+		clearTimeout(bodyDeadline);
 		if (!outgoing.writableFinished) {
 			counter?.destroy();
 			upstream.destroy();
@@ -103,5 +131,17 @@ export function forwardHttpRequest(
 		},
 	});
 	counter.on("error", () => {});
+	if (policy.archive) {
+		bodyDeadline = setTimeout(() => {
+			if (rejected || outgoing.writableEnded || outgoing.headersSent) return;
+			rejected = true;
+			incoming.unpipe(counter);
+			counter?.destroy();
+			upstream.destroy();
+			rejectBody(incoming, outgoing, "MoQ archive body timed out", 408);
+		}, MOQ_ARCHIVE_BODY_TIMEOUT_MS);
+		bodyDeadline.unref();
+		upstream.once("finish", () => clearTimeout(bodyDeadline));
+	}
 	incoming.pipe(counter).pipe(upstream);
 }

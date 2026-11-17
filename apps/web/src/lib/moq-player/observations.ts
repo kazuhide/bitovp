@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MOQ_ARCHIVE_MAX_BYTES } from "../../../config/moq-policy";
 import { moqHeartbeatHistorySchema } from "./heartbeat";
 
 export const MOQ_OBSERVATION_LIMITS = {
@@ -7,7 +8,7 @@ export const MOQ_OBSERVATION_LIMITS = {
 	events: 32,
 	durationMs: 600_000,
 	sampleIntervalMs: 1_000,
-	archiveBytes: 16 * 1024 * 1024,
+	archiveBytes: MOQ_ARCHIVE_MAX_BYTES,
 	archiveDurationMs: 90_000,
 	flushMs: 600_000,
 } as const;

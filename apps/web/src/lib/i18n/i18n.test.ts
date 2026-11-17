@@ -137,7 +137,8 @@ describe("catalogue parity", () => {
 		// Whole-run export adds one short value (instrument: 3364).
 		// Live and estimated historical client-clock labels add two short values (instrument: 3366).
 		// Integrated navigation resize and restore labels (runtime measured: 3368).
-		pinWithDriftAid(short.size, 3368, "short");
+		// MoQ cleanup and unconfirmed recording states (runtime measured: 3370).
+		pinWithDriftAid(short.size, 3370, "short");
 	});
 
 	/**

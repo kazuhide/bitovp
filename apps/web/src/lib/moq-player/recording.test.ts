@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MOQ_ARCHIVE_SAVE_TIMEOUT_MS } from "../../../config/moq-policy";
 import { createMoqRecording } from "./recording";
 
 let recorder: FakeRecorder;
@@ -111,10 +112,26 @@ describe("received MoQ video recording", () => {
 		const state = vi.fn();
 		const recording = createMoqRecording(f.video, { upload, onState: state });
 		const done = recording.finish();
-		vi.advanceTimersByTime(5001);
-		await expect(done).rejects.toThrow(/^MoQ recording failed$/);
+		vi.advanceTimersByTime(MOQ_ARCHIVE_SAVE_TIMEOUT_MS + 1);
+		await expect(done).rejects.toThrow(
+			/^MoQ recording save could not be confirmed$/,
+		);
 		expect(upload.mock.calls[0]?.[2].aborted).toBe(true);
 		expect(f.stop).toHaveBeenCalledOnce();
-		expect(state).toHaveBeenLastCalledWith("failed");
+		expect(state).toHaveBeenLastCalledWith("unconfirmed");
+	});
+	it("waits for a valid save receipt arriving after the old five-second deadline", async () => {
+		const f = videoFixture();
+		const state = vi.fn();
+		const upload = vi.fn(
+			() => new Promise<void>((resolve) => setTimeout(resolve, 6000)),
+		);
+		const recording = createMoqRecording(f.video, { upload, onState: state });
+		const done = recording.finish();
+		await vi.advanceTimersByTimeAsync(5500);
+		expect(state).toHaveBeenLastCalledWith("saving");
+		await vi.advanceTimersByTimeAsync(500);
+		await done;
+		expect(state).toHaveBeenLastCalledWith("saved");
 	});
 });

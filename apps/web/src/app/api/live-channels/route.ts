@@ -460,13 +460,16 @@ async function verificationKeyReplay(
 	});
 	const verdict = verificationReplay(existing, requestSha256);
 	if (verdict.kind === "replay") {
-		const schedules = await prisma.liveSchedule.findMany({
-			where: { liveChannelId: verdict.row.id },
-			orderBy: { fireAt: "asc" },
-		});
+		const [schedules, publicRows] = await Promise.all([
+			prisma.liveSchedule.findMany({
+				where: { liveChannelId: verdict.row.id },
+				orderBy: { fireAt: "asc" },
+			}),
+			publicMoqListErrors(prisma, "channel", [verdict.row]),
+		]);
 		// 200, not 201: nothing was created by THIS request.
 		return NextResponse.json(
-			{ ...verdict.row, issues: [], schedules, replayed: true },
+			{ ...publicRows[0], issues: [], schedules, replayed: true },
 			{ status: 200 },
 		);
 	}
@@ -493,12 +496,15 @@ async function ordinaryCreateReplay(
 		select: CREATE_SELECT,
 	});
 	if (!row) return createRequestGoneResponse();
-	const schedules = await prisma.liveSchedule.findMany({
-		where: { liveChannelId: row.id },
-		orderBy: { fireAt: "asc" },
-	});
+	const [schedules, publicRows] = await Promise.all([
+		prisma.liveSchedule.findMany({
+			where: { liveChannelId: row.id },
+			orderBy: { fireAt: "asc" },
+		}),
+		publicMoqListErrors(prisma, "channel", [row]),
+	]);
 	return NextResponse.json(
-		{ ...row, issues: [], schedules, replayed: true },
+		{ ...publicRows[0], issues: [], schedules, replayed: true },
 		{ status: 200 },
 	);
 }

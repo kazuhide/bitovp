@@ -91,6 +91,57 @@ describe("owned MoQ observation writer", () => {
 		expect(value).not.toHaveProperty("analyticsImpressionId");
 		expect(value).not.toHaveProperty("analyticsLicenseKeySha256");
 	});
+	it.each([
+		"MOQ_HISTORY_ANALYTICS_LICENSE_CHANGED",
+		"MOQ_HISTORY_ANALYTICS_IMPRESSION_CONFLICT",
+	])("saves observations and the archive when the first Analytics binding fails with %s", async (code) => {
+		let now = 0;
+		const unavailable = vi.fn();
+		const writer = createMoqObservationWriter({
+			channelId: CHANNEL,
+			runId: RUN,
+			sessionId: SESSION,
+			analyticsLicenseKeySha256: "a".repeat(64),
+			now: () => now,
+			onState: vi.fn(),
+			onAnalyticsUnavailable: unavailable,
+		});
+		await writer.ready;
+		now = 1000;
+		writer.sample({ ...EMPTY_MOQ_VIDEO_STATISTICS, latencySeconds: 2 });
+		writer.setAnalyticsImpressionId(CHANNEL);
+		mocks.api.mockRejectedValueOnce({ status: 409, details: { code } });
+		const upload = vi.fn(async () =>
+			Response.json({
+				runId: RUN,
+				sessionId: SESSION,
+				archive: {
+					contentType: "video/webm",
+					bytes: 5,
+					sha256: "b".repeat(64),
+					durationMs: 1000,
+					recordedAt: "2026-11-18T00:00:01.000Z",
+				},
+			}),
+		);
+		vi.stubGlobal("fetch", upload);
+		const final = writer.finish("stopped");
+		await writer.archive(
+			new Blob(["webm!"]),
+			1000,
+			new AbortController().signal,
+		);
+		await final;
+		const first = JSON.parse(mocks.api.mock.calls[1]?.[1].body);
+		const retry = JSON.parse(mocks.api.mock.calls[2]?.[1].body);
+		expect(first.analyticsImpressionId).toBe(CHANNEL);
+		expect(retry.analyticsImpressionId).toBeUndefined();
+		expect(retry.analyticsLicenseKeySha256).toBeUndefined();
+		expect(retry.samples).toEqual(first.samples);
+		expect(retry.events).toEqual(first.events);
+		expect(upload).toHaveBeenCalledOnce();
+		expect(unavailable).toHaveBeenCalledOnce();
+	});
 	it("rejects a saved-session receipt for another run", async () => {
 		mocks.api.mockResolvedValue({ runId: CHANNEL, session: { id: SESSION } });
 		const writer = createMoqObservationWriter({

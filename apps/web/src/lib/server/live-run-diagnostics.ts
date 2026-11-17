@@ -253,7 +253,9 @@ async function handleDiagnostics(
 			} else if (query.kind === "summary") {
 				const [summary, versions] = await Promise.all([
 					stats.get(encodingId),
-					encodingVersions(ctx, api, accountId, encodingId, req),
+					encodingVersions(ctx, api, accountId, encodingId, req).catch(
+						() => ({}),
+					),
 				]);
 				result = {
 					...envelope,

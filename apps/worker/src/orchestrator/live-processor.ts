@@ -5,6 +5,7 @@ import {
 	aisaLiveFinalization,
 	aisaLiveNeverStarted,
 	aisaStartNotDispatched,
+	bindMoqPlaybackNamespace,
 	classifyProviderLifecycle,
 	deriveFeederRtmpTarget,
 	deriveLiveToVodStatus,
@@ -52,6 +53,7 @@ import {
 	liveToVodManifestsOf,
 	liveToVodParamsSchema,
 	MIN_SLATE_FIRE_SECONDS,
+	moqTrackNamespaceSchema,
 	normalizeLiveToVodRecord,
 	PROVIDER_UNKNOWN_GRACE_MS,
 	type ProviderLifecycle,
@@ -6060,6 +6062,22 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				// status before re-starting (same wedge prevention as VOD).
 				const wasRunning = entry.status === "RUNNING";
 				const hadStartAttempt = entry.startedAt !== undefined;
+				if (
+					entry.kind === "CREATE_OUTPUT_MOQ" &&
+					entry.status === "PENDING" &&
+					!hadStartAttempt &&
+					entry.finishedAt === undefined
+				) {
+					const namespace = moqTrackNamespaceSchema.safeParse(
+						entry.payload.trackNamespace,
+					);
+					if (namespace.success) {
+						entry.payload.trackNamespace = bindMoqPlaybackNamespace(
+							namespace.data,
+							currentRunId,
+						);
+					}
+				}
 				const wasVerificationCreateAttempt =
 					isVerificationRun &&
 					entry.kind === "CREATE_ENCODING" &&

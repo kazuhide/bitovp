@@ -2,6 +2,7 @@
 
 2026-11-17。対象ブランチは `feat/live-moq-output`。ユーザー指定により Cloudflare MoQ を使う。
 有料 Encoder 起動・合成映像送信は許可済み。必要な出力・再生機能を BitOVP に実装してから試験する。
+main への統合時は Unreleased の 1.4.0 対象とする。1.3.1 は MoQ 統合前のソースから作成する。
 
 ## 目的と判定
 
@@ -29,8 +30,12 @@ Player Web X で自作映像・音声を再生する。Encoder の `RUNNING`、�
 1. MOQ secret に optional `playbackUrl` を追加。HTTPS の subscribe URL を publish 用
    `relayUrl`／`authToken` と分離する。資格情報フォーム・redaction・型・回帰テストを更新する。
 2. OPERATOR の `GET /api/live-channels/[id]/runs/[runId]/moq-playback`。
-   run と channel、元の Encoding／MOQ output 作成記録に照合し、保存済み step から namespace／draft／
+   最新の RUNNING run と channel、元の Encoding／MOQ output 作成記録に照合し、保存済み step から namespace／draft／
    credential reference を得る。最新 channel plan や query の任意 URL は使わない。
+   単一要素の `trackNamespace` は設定値をベースに `-bitovp-<runId>` を付ける。Player が受理する
+   1,024 UTF-16 コード単位に収まるようベースを調整し、Worker が output 作成を送る前に実際の値を保存する。
+   Relay の権限はこの実際の値に対して必要。複数要素の tuple は外部の購読用に設定値を使う。
+   終了済みまたは過去の run と、run ID を含まない旧 namespace はライブ購読の対象外。保存済み観測と録画は閲覧できる。
    credential が出力作成後に変更されていれば保守的に拒否する。publish secret は返さない。
    その判定は `CredentialStore.revealVersioned` の1回の scoped read で取得した version と secret を用い、
    別々の metadata／secret read による更新競合を避ける。
@@ -220,6 +225,13 @@ MoQ の provider Task は relay URL や認証情報を自由文へ含め得る�
 判定元は編集可能な現在の channel plan ではなく、保存済み CREATE_OUTPUT_MOQ の実行グラフとする。
 通常の Live／VOD の診断は維持し、生 Task 本文は実際の ADMIN による明示的な取得に限定する。
 回帰テストで問題を先に再現し、最終ソースの CI と独立した 2 系統のレビューを通してからマージする。
+
+録画 PUT は公開 Node ingress で 16 MiB・全受信10秒・同時2件を適用してから、既存の Next 認証経路へ渡す。
+Next の body clone 上限も同じ容量にそろえ、route は Content-Length と受信 byte 数の不一致を拒否する。
+録画の読込・ハッシュ検証も同時2件に制限し、終了・失敗・切断で自分の枠だけを解放する。
+ブラウザーの保存待ちは queue・受信・media 検証の合計を覆う75秒とし、確認できない保存を成功と表示しない。
+SDK dispose は別の2秒上限を持たせ、未完了の第三者リソースを解放済みと偽って再利用しない。
+Analytics の未確立の紐付けが鍵変更で拒否された場合も、実測点と動画の保存は継続できるようにする。
 
 ## 一次資料
 

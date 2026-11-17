@@ -18,6 +18,7 @@ Python の ALPN 試験を実 Encoder の接続試験の代わりにはしない�
 - URL は `moqt://`、userinfo・query・fragment を禁止する。秘密は plan／audit／エラーに出さない。
 - plan output は `kind: MOQ`、既存の `credentialId`、`trackNamespace`（1〜32要素）、
   `draftVersion: DRAFT_16 | DRAFT_18`、name を持つ。SDK 型外の draft を型偽装して送らない。
+  単一要素はプレビューを同じ配信回に紐付けるためのベースとし、Worker が配信回 ID を付けて送る。
 - MoQ は Live 専用、専用出力、H.264／AAC、rendition ごとの FMP4 のみ。
   storage mirror、DRM、SCTE-35、通常の manifest は受け付けない。
 - 既存の compile → operation → Worker SDK → audit の経路に

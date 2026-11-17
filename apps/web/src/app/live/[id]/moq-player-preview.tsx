@@ -76,6 +76,7 @@ function MoqPlaybackAttempt({
 		"ready" | "unavailable" | "not-configured"
 	>("not-configured");
 	const [phase, setPhase] = useState<Phase>("idle");
+	const [cleanupPending, setCleanupPending] = useState(false);
 	const [statistics, setStatistics] = useState<MoqVideoStatistics>(
 		EMPTY_MOQ_VIDEO_STATISTICS,
 	);
@@ -87,17 +88,20 @@ function MoqPlaybackAttempt({
 		if (closing.current) return closing.current;
 		generation.current++;
 		const attempt = current.current;
+		if (!attempt) return Promise.resolve();
 		current.current = undefined;
-		attempt?.abort.abort();
+		attempt.abort.abort();
 		const disposal =
-			attempt?.session?.dispose() ??
-			attempt?.archive?.finish(attempt.reason) ??
+			attempt.session?.dispose() ??
+			attempt.archive?.finish(attempt.reason) ??
 			Promise.resolve();
 		closing.current = disposal;
-		const clear = () => {
-			if (closing.current === disposal) closing.current = undefined;
-		};
-		void disposal.then(clear, clear);
+		if (mounted.current) setCleanupPending(true);
+		void Promise.allSettled([disposal, attempt.session?.released]).then(() => {
+			if (closing.current !== disposal) return;
+			closing.current = undefined;
+			if (mounted.current) setCleanupPending(false);
+		});
 		return disposal;
 	}, []);
 	useEffect(() => {
@@ -120,7 +124,7 @@ function MoqPlaybackAttempt({
 		};
 	}, [active, close]);
 	async function play() {
-		if (!active || !host.current) return;
+		if (!active || !host.current || closing.current) return;
 		const startedAt = performance.now();
 		const startedWall = new Date().toISOString();
 		const ownIntent = ++intent.current;
@@ -128,6 +132,10 @@ function MoqPlaybackAttempt({
 		await close().catch(() => {});
 		if (ownIntent !== intent.current || !mounted.current || !host.current)
 			return;
+		if (closing.current) {
+			setPhase("failed");
+			return;
+		}
 		const archiveEpoch = ++archiveGeneration.current;
 		const visibleArchive = () =>
 			mounted.current && archiveGeneration.current === archiveEpoch;
@@ -281,7 +289,7 @@ function MoqPlaybackAttempt({
 					</span>
 					<Button
 						size="sm"
-						disabled={!active || busy}
+						disabled={!active || busy || cleanupPending}
 						onClick={() => void play()}
 					>
 						{t("moqPlayback.play")}
@@ -305,6 +313,11 @@ function MoqPlaybackAttempt({
 					>
 						{t(`moqPlayback.${phase}`)}
 					</span>
+					{cleanupPending && !busy ? (
+						<span className="text-xs text-zinc-400">
+							{t("moqPlayback.cleanupPending")}
+						</span>
+					) : null}
 					{!standalone ? (
 						<Link
 							href={`/live/${channelId}/runs/${runId}/moq`}

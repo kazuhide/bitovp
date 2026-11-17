@@ -1,3 +1,4 @@
+import { CREDENTIAL_PROVIDER_SHAPES } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 import { parseMoqPlaybackDescriptor } from "./types";
 
@@ -19,6 +20,25 @@ const descriptor = (url: string) => ({
 });
 
 describe("MoQ descriptor URL contract", () => {
+	it.each([
+		8192, 8193,
+	])("agrees with credential admission at subscriber URL length %i", (length) => {
+		const prefix = "https://subscriber.example/moq?token=";
+		const url = prefix + "s".repeat(length - prefix.length);
+		const admitted = CREDENTIAL_PROVIDER_SHAPES.MOQ.secret.safeParse({
+			relayUrl: "moqt://publisher.example/moq",
+			playbackUrl: url,
+		});
+		expect(admitted.success).toBe(length <= 8192);
+		if (admitted.success)
+			expect(
+				parseMoqPlaybackDescriptor(descriptor(url), runId).resource.url,
+			).toBe(url);
+		else
+			expect(() =>
+				parseMoqPlaybackDescriptor(descriptor(url), runId),
+			).toThrow();
+	});
 	it("accepts only the Analytics video identity derived from this exact encoding and run", () => {
 		const value = descriptor("https://subscriber.example/moq");
 		const analytics = {

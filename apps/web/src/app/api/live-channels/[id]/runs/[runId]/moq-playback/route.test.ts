@@ -26,6 +26,7 @@ const OUTPUT = "00000000-0000-4000-8000-000000000005";
 const CREDENTIAL = "00000000-0000-4000-8000-000000000006";
 const ACCOUNT = "00000000-0000-4000-8000-000000000007";
 const OTHER = "00000000-0000-4000-8000-000000000008";
+const RUN_NAMESPACE = `run-namespace-bitovp-${RUN}`;
 const playbackUrl =
 	"https://subscribe.example/moq/subscriber-token?auth=subscribe-secret";
 const cloudflareUrl = (operations: string[]) => {
@@ -49,7 +50,7 @@ const cloudflareUrl = (operations: string[]) => {
 const outputPayload = () => ({
 	credentialId: CREDENTIAL,
 	name: "output",
-	trackNamespace: ["run-namespace"],
+	trackNamespace: [RUN_NAMESPACE],
 	draftVersion: "DRAFT_18",
 });
 const outputStep = (): StepLogEntry => ({
@@ -85,6 +86,9 @@ const run = () => ({
 	id: RUN,
 	liveChannelId: CHANNEL,
 	organizationId: ORG,
+	status: "RUNNING",
+	endedAt: null,
+	cancelRequested: false,
 	bitmovinEncodingId: ENCODING,
 	stepLog: log(),
 });
@@ -113,7 +117,7 @@ const outputAudit = () => ({
 	at: new Date("2026-11-17T00:00:04.000Z"),
 	request: {
 		name: "output",
-		trackNamespace: ["run-namespace"],
+		trackNamespace: [RUN_NAMESPACE],
 		draftVersion: "DRAFT_18",
 		authTokenProvided: true,
 	},
@@ -164,7 +168,7 @@ describe("run-bound MoQ playback descriptor", () => {
 				type: "moq",
 				url: playbackUrl,
 				metadata: {
-					namespace: "run-namespace",
+					namespace: RUN_NAMESPACE,
 					catalogTrackName: "catalog",
 					draftVersion: 18,
 					mediaTypes: ["audio", "video"],
@@ -182,7 +186,10 @@ describe("run-bound MoQ playback descriptor", () => {
 			},
 		});
 		expect(mocks.run).toHaveBeenCalledWith(
-			expect.objectContaining({ where: { id: RUN, liveChannelId: CHANNEL } }),
+			expect.objectContaining({
+				where: { liveChannelId: CHANNEL },
+				orderBy: { seq: "desc" },
+			}),
 		);
 		expect(mocks.credential).toHaveBeenCalledExactlyOnceWith(CREDENTIAL);
 		expect(mocks.settings).toHaveBeenCalledWith(
@@ -280,6 +287,43 @@ describe("run-bound MoQ playback descriptor", () => {
 
 	it("refuses an encoding pointer that conflicts with the stored create step", async () => {
 		mocks.run.mockResolvedValue({ ...run(), bitmovinEncodingId: OTHER });
+		expect((await GET(request(), params())).status).toBe(409);
+		expect(mocks.credential).not.toHaveBeenCalled();
+	});
+
+	it("looks up the latest airing before revealing the previous run's capability", async () => {
+		mocks.run.mockImplementation(({ orderBy }) =>
+			orderBy ? { ...run(), id: OTHER } : run(),
+		);
+		expect((await GET(request(), params())).status).toBe(404);
+		expect(mocks.provenance).not.toHaveBeenCalled();
+		expect(mocks.credential).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{ status: "STOPPED", endedAt: new Date() },
+		{ status: "RUNNING", endedAt: new Date() },
+		{ status: "STOPPING" },
+		{ cancelRequested: true },
+	])("refuses an inactive or cancelling airing before reading credentials (%j)", async (patch) => {
+		mocks.run.mockResolvedValue({ ...run(), ...patch });
+		expect((await GET(request(), params())).status).toBe(409);
+		expect(mocks.provenance).not.toHaveBeenCalled();
+		expect(mocks.credential).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"legacy-namespace",
+		`run-namespace-bitovp-${OTHER}`,
+	])("refuses a namespace without this airing's binding even with matching CREATE evidence (%s)", async (namespace) => {
+		const value = run();
+		const output = value.stepLog[0];
+		if (!output) throw new Error("Missing output step fixture");
+		output.payload = { ...outputPayload(), trackNamespace: [namespace] };
+		mocks.run.mockResolvedValue(value);
+		const audit = outputAudit();
+		audit.request.trackNamespace = [namespace];
+		outputAudits = [audit];
 		expect((await GET(request(), params())).status).toBe(409);
 		expect(mocks.credential).not.toHaveBeenCalled();
 	});

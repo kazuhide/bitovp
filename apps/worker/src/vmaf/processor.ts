@@ -578,6 +578,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 	}
 
 	async function markTerminal(
+		control: { signal: AbortSignal; execution?: VmafExecution },
 		vmafJobId: string,
 		status: "FINISHED" | "ERROR",
 		resultCount: number,
@@ -633,6 +634,11 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			// list's qcVerdict must never disagree with the row it mirrors.
 			// This is qcVerdict's ONE writer (schema contract); the job row's
 			// status stays the orchestrator's.
+			// The result read above may have outlived cancellation or the deadline.
+			// Check before opening the transaction; an already committed write wins.
+			if (control.execution)
+				assertExecutionActive(control.signal, control.execution);
+			else control.signal.throwIfAborted();
 			await deps.prisma.$transaction([
 				deps.prisma.vmafJob.update({
 					where: {
@@ -679,6 +685,11 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				await enqueueContinuation(gateCtx.encodingJobId, vmafJobId);
 			}
 		} else {
+			if (status === "FINISHED") {
+				if (control.execution)
+					assertExecutionActive(control.signal, control.execution);
+				else control.signal.throwIfAborted();
+			}
 			await deps.prisma.vmafJob.update({
 				where: {
 					id: vmafJobId,
@@ -2122,6 +2133,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				// with zero results is correct, not an error.
 				assertExecutionActive(signal, execution);
 				return await markTerminal(
+					{ signal, execution },
 					vmafJobId,
 					"FINISHED",
 					0,
@@ -2823,6 +2835,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 
 			assertExecutionActive(signal, execution);
 			return await markTerminal(
+				{ signal, execution },
 				vmafJobId,
 				"FINISHED",
 				resultCount,
@@ -2845,6 +2858,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			// Partial results already persisted stay (real measurements); the job
 			// status reflects the failure so the run never reads as complete.
 			await markTerminal(
+				{ signal },
 				vmafJobId,
 				"ERROR",
 				resultCount,

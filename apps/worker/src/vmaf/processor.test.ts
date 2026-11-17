@@ -7095,3 +7095,61 @@ it("reconciles a cancellation winning the error write and wakes its blocking gat
 	expect(t.job.error).toBe("Cancellation requested");
 	expect(t.queueAdds).toHaveLength(1);
 });
+
+it.each([
+	"deadline",
+	"cancel",
+] as const)("does not publish a passing gate when %s is observed during its result read", async (reason) => {
+	vi.useFakeTimers();
+	const deadlineAt = new Date(Date.now() + 1000).toISOString();
+	const plan = qcPlan();
+	plan.qc = {
+		vmaf: true,
+		gate: {
+			onFail: "BLOCK_MANIFESTS",
+			rules: [{ metric: "VMAF_MEAN", scope: "OVERALL", gte: 80 }],
+		},
+	};
+	const t = setup({
+		plan,
+		job: { params: { execution: { backend: "LOCAL", deadlineAt } } },
+	});
+	const entered = resourceDeferred(),
+		release = resourceDeferred();
+	const original = t.vmafResult.findMany.getMockImplementation();
+	if (!original) throw new Error("Missing fixture");
+	let reads = 0;
+	t.vmafResult.findMany.mockImplementation(async () => {
+		const rows = await original();
+		if (++reads === 1) {
+			entered.resolve();
+			await release.promise;
+		}
+		return rows;
+	});
+	const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+	pending.catch(() => {});
+	try {
+		await entered.promise;
+		expect(t.results).toHaveLength(2);
+		if (reason === "cancel") {
+			t.job.status = "ERROR";
+			t.job.error = "Cancellation requested";
+		}
+		await vi.advanceTimersByTimeAsync(reason === "deadline" ? 1000 : 100);
+		release.resolve();
+		expect(await pending).toMatchObject({ status: "ERROR", results: 2 });
+		expect(t.job.status).toBe("ERROR");
+		expect(t.job.gateVerdict).toBeUndefined();
+		expect(t.encodingJobWrites).toEqual([]);
+		expect(t.emitted.some((event) => event.kind === "VMAF_FINISHED")).toBe(
+			false,
+		);
+		expect(t.queueAdds).toHaveLength(1);
+	} finally {
+		release.resolve();
+		await vi.advanceTimersByTimeAsync(2000);
+		await pending.catch(() => {});
+		vi.useRealTimers();
+	}
+});

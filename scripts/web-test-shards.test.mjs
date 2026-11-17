@@ -150,7 +150,7 @@ test("the actual Vitest sequencer moves only the measured heavy file and preserv
 	}
 });
 
-test("worker budget follows available parallelism and reserves parent capacity on larger runners", () => {
+test("worker budget follows available parallelism and caps at four workers", () => {
 	const processors = Array.from({ length: 64 }, () => ({
 		model: "Fixture CPU",
 	}));
@@ -158,9 +158,10 @@ test("worker budget follows available parallelism and reserves parent capacity o
 		[1, 1],
 		[2, 2],
 		[3, 2],
-		[4, 3],
-		[8, 3],
-		[64, 3],
+		[4, 4],
+		[5, 4],
+		[8, 4],
+		[64, 4],
 	]) {
 		const resources = webTestResources(parallelism, processors);
 		assert.equal(resources.availableParallelism, parallelism);
@@ -526,8 +527,11 @@ test("a failed child cannot produce a successful receipt even after writing a gr
 
 test("runner preserves full discovery, fixed shard selection and reporters with the bounded worker budget", async (t) => {
 	for (const [parallelism, workers] of [
+		[1, 1],
 		[2, 2],
-		[4, 3],
+		[3, 2],
+		[4, 4],
+		[8, 4],
 	]) {
 		const directory = join(temporary(t), "output");
 		const calls = [];

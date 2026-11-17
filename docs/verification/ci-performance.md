@@ -18,8 +18,8 @@ GitHub runners; a small single-run improvement is insufficient evidence.
 Each shard runs the full configured discovery and checks it against the tracked
 source inventory before running its assigned portion. Within the same allocated runner,
 one available CPU uses one Vitest worker, two or three available CPUs use two,
-and four or more use three. This caps workers at three and leaves capacity for
-the parent on larger runners. The budget uses `os.availableParallelism()`;
+and four or more use four. This caps workers at four within the same allocated
+runner capacity, without adding shard jobs. The budget uses `os.availableParallelism()`;
 logical CPU count and sanitized CPU models are logged only as diagnostic context.
 The current Vitest version, configuration policy and full-suite command are
 explicit. A configuration change requires reviewing that policy rather than
@@ -59,9 +59,22 @@ part of the evidence. With three workers, later runs measured
 [419 seconds / 1,192 runner-seconds](https://github.com/kazuhide/bitovp/actions/runs/44101340969)
 and [436 seconds / 1,179 runner-seconds](https://github.com/kazuhide/bitovp/actions/runs/44106606835).
 The first passed with only one second of elapsed margin; the second missed that
-limit. Both passed the complete inventory and skip audit. The single-file
-redistribution above still needs new CI measurement; prior samples do not
-establish a stable latency guarantee.
+limit. Both passed the complete inventory and skip audit.
+
+After the single-file redistribution, the same source `2ca1bdd9` measured
+[381 seconds / 1,259 runner-seconds](https://github.com/kazuhide/bitovp/actions/runs/44110924255/attempts/1)
+and, on one complete confirmation rerun,
+[369 seconds / 1,260 runner-seconds](https://github.com/kazuhide/bitovp/actions/runs/44110924255/attempts/2).
+Both passed all 872 files, 13,167 cases and the full 110-skip audit, with only the
+intended file moved. Both meet the elapsed limit and miss the runner budget by
+eight and nine seconds. Per-shard host speeds varied substantially, while total
+Vitest wall time was nearly unchanged. These failed cost measurements remain
+part of the evidence; no further unchanged rerun is used to seek a passing sample.
+
+The current four-worker cap uses the fourth CPU already allocated to each runner.
+Its performance is unmeasured until the next complete CI run. The acceptance
+criteria remain 420 seconds and 1,251 runner-seconds; prior samples do not
+establish a stable latency or cost guarantee.
 
 ## Verified native HDR build reuse
 

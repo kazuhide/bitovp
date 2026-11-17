@@ -81,8 +81,8 @@ export function webTestResources(parallelism, processors) {
 		]
 			.sort()
 			.slice(0, 8),
-		// Keep one CPU available for the parent on four-core and larger runners.
-		chosenWorkers: parallelism >= 4 ? 3 : Math.min(2, parallelism),
+		// Use the allocated fourth CPU while keeping the worker count capped.
+		chosenWorkers: parallelism >= 4 ? 4 : Math.min(2, parallelism),
 	};
 }
 function validateIdentity(identity) {

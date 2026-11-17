@@ -20,7 +20,7 @@ credentials and use a fixed test list, two Vitest workers, and a 120-second limi
 |---|---|---|---|
 | `qc-resource-allocation` | Choose LOCAL QC and its CPU/banding options, then submit | Resource planning, detector reservations, and processor command composition | Actual throughput, GPU capacity, completion ETA |
 | `qc-measurement-validity` | Select reference/distorted content and inspect the QC comparison | HDR compatibility and synthetic frame alignment | Measured video quality, display fidelity, real-media coverage |
-| `qc-runtime-safety` | QC waits for capacity, reaches an absolute deadline, or its running process is interrupted | Admission cancellation, deadline handling and process/supervisor adapter contracts | HTTP cancel acceptance, physical stop of a production job, UI behavior |
+| `qc-runtime-safety` | QC waits for capacity, reaches an absolute deadline, or its running process is interrupted | Admission cancellation, generated reservation/deadline action sequences, and process/supervisor adapter contracts | HTTP cancel acceptance, physical stop of a production job, UI behavior |
 
 All three have `scope: unit-contract`. Their fixtures include synthetic/mocked
 inputs. The receipt never converts them into UI, real GPU, provider, or deployment
@@ -58,6 +58,14 @@ the patch where relevant. Low-impact edits do not require two complete applicati
 runs. The inexpensive harness contract suite covers report faults, CLI rejection,
 real child timeout/cancellation, and residual-group rejection. These checks cannot
 prove that a feature map or assertion describes the right product behavior.
+
+The runtime profile contains 44 tests, including six generated properties. Each
+property requires 100 traces with no skips and asserts that its important actions
+were reached. Two pinned seeds exercise both reservation accounting modes and
+deadline/settlement order. The usual feature command does not inherit the local
+replay override. See [quality effectiveness](./quality-effectiveness.md) for the
+old/new defect replays, the fault missed by the previous tests, and the limits of
+the measured detection gain. Faster execution alone is not a quality result.
 
 ## Development feedback acceptance
 

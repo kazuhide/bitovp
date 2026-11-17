@@ -345,7 +345,11 @@ export function HeartbeatLogPanel({
 					<p className="mt-1 text-xs text-zinc-500">
 						{log.isPending
 							? t("heartbeatLog.loading")
-							: t("heartbeatLog.noEvents")}
+							: t(
+									timeWindow
+										? "moqPlayback.correlationNoMatchedEvents"
+										: "heartbeatLog.noEvents",
+								)}
 					</p>
 				)}
 			</div>

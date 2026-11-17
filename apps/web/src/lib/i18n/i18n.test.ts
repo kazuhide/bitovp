@@ -125,7 +125,8 @@ describe("catalogue parity", () => {
 		// Canvas provenance adds one long value (catalog instrument: 1672).
 		// Compact MoQ correlation label adds one long value (instrument: 1673).
 		// Bounded heartbeat correlation adds three long values (instrument: 1676).
-		pinWithDriftAid(long.length, 1676, "long");
+		// Window-scoped event absence adds one long value (instrument: 1677).
+		pinWithDriftAid(long.length, 1677, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Runtime measurement includes three-way output labels (deduplicated).
 		// The two MoQ authorization labels add two unique short Japanese values.

@@ -991,6 +991,8 @@ export const en = {
 		correlationWindow:
 			"UTC window · Push received time / Poll observed time · loaded rows only",
 		correlationEmpty: "No loaded samples in this UTC window.",
+		correlationNoMatchedEvents:
+			"No loaded events can be matched to this UTC window.",
 		correlationExport: "Export full run JSON",
 		fps: "Video FPS",
 		renderingSource: "Rendering source",

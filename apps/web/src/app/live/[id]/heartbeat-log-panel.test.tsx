@@ -156,6 +156,48 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("HeartbeatLogPanel", () => {
+	it("does not claim the whole run has no events when loaded events are outside the window or have unknown times", async () => {
+		mockApi("OPERATOR");
+		const original = apiFetch.getMockImplementation();
+		apiFetch.mockImplementation(async (url: string) => {
+			if (url.includes(`/runs/${OLDER_RUN_ID}/heartbeats?`))
+				return {
+					...PAGE_ONE,
+					run: { ...PAGE_ONE.run, id: OLDER_RUN_ID },
+					rows: [],
+					latestEvents: [
+						{
+							time: new Date(T0 + 70_000).toISOString(),
+							eventType: "WARNING",
+							message: null,
+							key: "outside",
+						},
+						{ time: null, eventType: "WARNING", message: null, key: "unknown" },
+					],
+				};
+			return original?.(url);
+		});
+		renderWithQuery(
+			<HeartbeatLogPanel
+				channelId={CHANNEL_ID}
+				currentRunId={RUN_ID}
+				initialCorrelation={{
+					kind: "requested",
+					runId: OLDER_RUN_ID,
+					from: new Date(T0 + 25_000).toISOString(),
+					to: new Date(T0 + 35_000).toISOString(),
+				}}
+			/>,
+		);
+		expect(
+			await screen.findByText(
+				"No loaded events can be matched to this UTC window.",
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText("The encoder has reported no events for this run."),
+		).toBeNull();
+	});
 	it("selects linked historical run A after reair B and filters Poll and Push by the requested UTC window", async () => {
 		mockApi("OPERATOR");
 		const original = apiFetch.getMockImplementation();

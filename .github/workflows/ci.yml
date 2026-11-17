@@ -99,6 +99,13 @@ jobs:
       # Also here: this job always runs, and the suite checks that the jobs
       # which run the gated tests are still in this file.
       - run: pnpm test:gated-runner
+      - run: pnpm test:feature-verification
+      - run: pnpm --filter @bitovp/db build
+      - name: Run every registered QC contract feature
+        run: |
+          pnpm verify:feature run qc-resource-allocation --output "$RUNNER_TEMP/feature-qc-resource-allocation"
+          pnpm verify:feature run qc-measurement-validity --output "$RUNNER_TEMP/feature-qc-measurement-validity"
+          pnpm verify:feature run qc-runtime-safety --output "$RUNNER_TEMP/feature-qc-runtime-safety"
       - run: pnpm --filter @bitovp/worker smoke
 
   tests:

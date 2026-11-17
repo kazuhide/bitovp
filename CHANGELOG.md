@@ -9,6 +9,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ### Added
 
 - Request cancellation of pending or running local VOD QC measurements and optionally set an absolute LOCAL execution deadline. Partial results are retained, expired retries are refused, and request acceptance remains distinct from confirmed process shutdown.
+- Run named QC contract checks through a bounded feature-verification CLI, with read-only readiness checks, strict test-result coverage and retained execution receipts. Focused checks state their scope separately from installed-application and provider validation.
 - Compare two or three VOD delivery outputs directly in VMAF Lab report comparisons, with synchronized playback, seeking, per-output quality selection and one audible output. HDR and SDR measurement charts retain their separate evaluation contexts.
 - Search the provider's Encoding Error Definitions by code, category or description from Settings and VOD/Live failure details. The account-scoped, read-only catalogue shows retry guidance without restarting jobs; incomplete or failed catalogue reads remain explicit failures.
 - Reconcile codec, input-stream, filter and muxing creation paths against SDK 1.288.0, with a prioritized functional gap report separating GUI support, JSON-only controls and unqualified provider execution.

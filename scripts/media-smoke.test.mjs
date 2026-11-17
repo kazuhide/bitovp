@@ -1504,3 +1504,26 @@ test("a download is refused for a failure status with a body and for an archive 
 		rmSync(directory, { recursive: true, force: true });
 	}
 });
+
+test("ownership observer sees a real child and observer failure cannot orphan it", async () => {
+	for (const observerFails of [false, true]) {
+		let pid;
+		const run = command(
+			process.execPath,
+			["-e", observerFails ? "setInterval(()=>{},1000)" : "process.exit(0)"],
+			{
+				env: {},
+				timeout: 1000,
+				onSpawn(value) {
+					pid = value;
+					if (observerFails) throw new Error("observer rejected");
+				},
+			},
+		);
+		if (observerFails)
+			await assert.rejects(run, /Media validation command failed/);
+		else await run;
+		assert(Number.isInteger(pid));
+		assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+	}
+});

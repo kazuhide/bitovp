@@ -160,6 +160,14 @@ export async function command(binary, args, options = {}) {
 		};
 		child.once("error", () => finish(-1));
 		child.once("close", finish);
+		// Ownership observers run only after termination and error handlers exist.
+		if (child.pid) {
+			try {
+				options.onSpawn?.(child.pid);
+			} catch {
+				stop("ownership observer failed");
+			}
+		}
 	});
 }
 

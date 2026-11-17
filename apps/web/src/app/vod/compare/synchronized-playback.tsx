@@ -3,6 +3,7 @@
 import type { PlayerClientConfig } from "@bitovp/core";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { InfoHint } from "@/components/ui/info-hint";
 import { useT } from "@/lib/i18n/context";
 import type { PlaybackControl } from "../jobs/[id]/playback-control";
 import { PlaybackSurface } from "../jobs/[id]/playback-surface";
@@ -195,8 +196,11 @@ export function SynchronizedPlayback({
 							: `outputCompare.${state.status}`,
 					)}
 				</p>
+				<InfoHint
+					text={t("outputCompare.syncNotice")}
+					labelFor={t("outputCompare.title")}
+				/>
 			</div>
-			<p className="text-xs text-zinc-500">{t("outputCompare.syncNotice")}</p>
 		</div>
 	);
 }

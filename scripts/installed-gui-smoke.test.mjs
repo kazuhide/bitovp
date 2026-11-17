@@ -397,8 +397,56 @@ test("only the builds of the Worker's Dockerfile take a directory of built FFmpe
 		new URL("./installed-gui-smoke.mjs", import.meta.url),
 		"utf8",
 	);
-	assert(source.includes("composeOverride({ ...state, imageId, ffmpeg })"));
+	assert(
+		source.includes(
+			"composeOverride({ ...state, imageId, ffmpeg, ffmpegHdr })",
+		),
+	);
 	assert.equal(source.match(/^\t+ffmpeg: prebuilt,$/gm)?.length, 2);
+});
+test("HDR native output replaces only the worker HDR stage alongside or without SDR", () => {
+	const id = "a".repeat(32);
+	for (const ffmpeg of [undefined, "/private/sdr"]) {
+		const text = composeOverride({
+			id,
+			directory: "/private/smoke",
+			ffmpeg,
+			ffmpegHdr: "/private/hdr",
+		});
+		assert.equal(text.match(/ffmpeg-hdr: "\/private\/hdr"/g)?.length, 2);
+		assert(
+			!text
+				.slice(text.indexOf("  web:"), text.indexOf("  gateway:"))
+				.includes("additional_contexts"),
+		);
+	}
+	for (const ffmpegHdr of ["relative", "/private/a$b", "/private/a\nb"])
+		assert.throws(() =>
+			composeOverride({ id, directory: "/private/smoke", ffmpegHdr }),
+		);
+	const directory = realpathSync(mkdtempSync(join(tmpdir(), "gui-hdr-test-")));
+	try {
+		mkdirSync(join(directory, "bin"));
+		for (const name of ["ffmpeg-hdr", "ffprobe-hdr"])
+			writeFileSync(join(directory, "bin", name), "", { mode: 0o755 });
+		assert.equal(verifyFfmpeg(directory, true), directory);
+		rmSync(join(directory, "bin/ffprobe-hdr"));
+		assert.throws(() => verifyFfmpeg(directory, true), /ffprobe-hdr/);
+		const result = spawnSync(
+			process.execPath,
+			[
+				join(import.meta.dirname, "installed-gui-smoke.mjs"),
+				"--cleanup",
+				"--ffmpeg-hdr",
+				directory,
+			],
+			{ encoding: "utf8" },
+		);
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /Cleanup builds no image/);
+	} finally {
+		rmSync(directory, { recursive: true });
+	}
 });
 test("a directory of built FFmpeg is taken only whole and from outside the checkout, and the command says why it refuses one", () => {
 	const directory = realpathSync(
@@ -626,12 +674,16 @@ test("a run that refuses the FFmpeg directory it is given ends before it makes o
 		rmSync(directory, { recursive: true, force: true });
 	}
 });
-test("requires decoded QC comparison and violin coverage as the twelfth browser case", () => {
-	assert.equal(CASES.length, 12);
+test("retains decoded QC coverage and requires installed Bombadil and durable cancellation", () => {
+	assert.equal(CASES.length, 14);
 	assert.equal(
-		CASES.at(-1),
+		CASES[11],
 		"decode and seek QC comparison previews and inspect violin distributions",
 	);
+	assert.deepEqual(CASES.slice(12), [
+		"explore installed VOD configuration with Bombadil and replay a fault",
+		"cancel LOCAL QC and retain its result after reload",
+	]);
 });
 
 test("requires every named browser case to run and pass once without skipping or retrying", () => {
@@ -674,6 +726,8 @@ test("failure summaries expose only known case names and safe statuses", () => {
 		`Browser case: ${CASES[9]}; status=passed`,
 		`Browser case: ${CASES[10]}; status=passed`,
 		`Browser case: ${CASES[11]}; status=passed`,
+		`Browser case: ${CASES[12]}; status=passed`,
+		`Browser case: ${CASES[13]}; status=passed`,
 	]);
 	assert(!summary.join("\n").includes("private"));
 });
@@ -2173,6 +2227,61 @@ test("cleanup checks directory and Docker labels before removing anything", asyn
 	} finally {
 		rmSync(directory, { recursive: true });
 	}
+});
+
+test("Bombadil failure summaries retain only fixed stages, categories and known helper lines", () => {
+	const changed = report();
+	const spec = changed.suites[0].specs.find(
+		(entry) => entry.title === CASES[12],
+	);
+	spec.tests[0].annotations = [
+		{ type: "bombadil-stage", description: "current:browser-launch" },
+		{ type: "bombadil-stage", description: "current:driver-target" },
+		{ type: "bombadil-category", description: "assertion" },
+		{ type: "bombadil-stage", description: "private URL cookie credential" },
+		{ type: "bombadil-category", description: "private-token" },
+	];
+	spec.tests[0].results[0] = {
+		status: "failed",
+		error: {
+			location: { file: "/private/installed-bombadil.ts", line: 179 },
+			stack:
+				"private credential\n at /private/installed-bombadil.ts:208:3\n at /private/installed-gui.test.ts:1270:3",
+		},
+	};
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[12],
+		`Browser case: ${CASES[12]}; status=failed; lines=1270; bombadil-lines=179,208; bombadil-stage=current:driver-target; bombadil-category=assertion`,
+	);
+	spec.tests[0].results[0].status = "passed";
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[12],
+		`Browser case: ${CASES[12]}; status=passed`,
+	);
+});
+
+test("Bombadil diagnostics reject injected stages, categories, filenames and unbounded lines", () => {
+	const changed = report();
+	const spec = changed.suites[0].specs.find(
+		(entry) => entry.title === CASES[12],
+	);
+	spec.tests[0].annotations = [
+		{ type: "bombadil-stage", description: "current:driver-target:private" },
+		{ type: "bombadil-stage", description: "unknown:browser-launch" },
+		{ type: "bombadil-category", description: "timeout private" },
+	];
+	spec.tests[0].results[0] = {
+		status: "failed",
+		error: {
+			location: { file: "/private/installed-bombadil.ts", line: 10001 },
+			stack:
+				"private credential\n at /private/other-installed-bombadil.ts:208:3\n at /private/installed-bombadil.ts:0:3",
+		},
+	};
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[12],
+		`Browser case: ${CASES[12]}; status=failed`,
+	);
 });
 
 test("cleanup removes both independent installations and their child temporary files", async () => {

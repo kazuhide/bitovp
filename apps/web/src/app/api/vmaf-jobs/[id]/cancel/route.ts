@@ -25,27 +25,34 @@ export async function POST(_req: Request, { params }: RouteParams) {
 				job.params !== null &&
 				"execution" in job.params
 				? job.params.execution
-				: null,
+				: { backend: "LOCAL" },
 		).data;
-		if (job.mode !== "VOD" || execution?.backend !== "CLOUD")
-			return jsonError(409, "Only cloud VOD measurements can be canceled");
+		if (job.mode !== "VOD" || !execution)
+			return jsonError(409, "Only supported VOD measurements can be canceled");
+		let cancelRequested = false;
 		if (job.status === "PENDING" || job.status === "RUNNING") {
 			// Recheck eligibility atomically. A concurrent completion must never be overwritten.
-			await prisma.vmafJob.updateMany({
+			const updated = await prisma.vmafJob.updateMany({
 				where: {
 					id,
 					mode: "VOD",
 					status: { in: ["PENDING", "RUNNING"] },
-					params: { path: ["execution", "backend"], equals: "CLOUD" },
+					...(execution.backend === "CLOUD"
+						? { params: { path: ["execution", "backend"], equals: "CLOUD" } }
+						: {}),
 				},
 				data: {
 					status: "ERROR",
-					error: "Cloud measurement canceled; cleanup continues",
+					error:
+						execution.backend === "CLOUD"
+							? "Cloud measurement canceled; cleanup continues"
+							: "Local measurement cancellation requested; cleanup continues",
 				},
 			});
+			cancelRequested = updated.count === 1;
 		}
 		// Terminal jobs (including a completion racing this request) are idempotent.
-		return NextResponse.json({ id, cancelRequested: true });
+		return NextResponse.json({ id, cancelRequested, stopped: false });
 	} catch (error) {
 		return routeError(error);
 	}

@@ -922,6 +922,10 @@ export const en = {
 	},
 	shell: {
 		skipToContent: "Skip to content",
+		resizeNavigation: "Resize navigation",
+		resizeNavigationHint:
+			"Drag left to hide the menu. Use Left/Right arrows or Enter with the keyboard.",
+		showNavigation: "Show navigation",
 	},
 	autoShutdownUpdate: {
 		title: "Encoder automatic stop",
@@ -2690,11 +2694,14 @@ export const en = {
 		measureJob: "Finished job",
 		measureModel: "Model",
 		measureRun: "Measure",
-		cancelCloud: "Stop cloud measurement",
-		cancelCloudTitle: "Stop this cloud measurement?",
+		cancelMeasurement: "Request cancellation",
+		cancelMeasurementTitle: "Request cancellation of this measurement?",
+		cancelLocalConfirm:
+			"Request cancellation of “{name}”? Measured results are retained. Stopping may take a moment.",
 		cancelCloudConfirm:
-			"Stop “{name}”? The report is retained. Resource cleanup continues after cancellation; charges may continue until cleanup completes.",
-		cancelCloudFailed: "Could not stop the cloud measurement.",
+			"Request cancellation of “{name}”? The report is retained. Resource cleanup continues after cancellation; charges may continue until cleanup completes.",
+		cancelFailed: "Could not request cancellation.",
+		cancelRequested: "Cancellation requested. Stopping is not yet confirmed.",
 		computeTasks: "Cloud task status",
 		computeScoringFrames: "Frames {done}/{total} ({percent}%)",
 		computeStandard: "Standard VM",

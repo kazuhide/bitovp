@@ -67,6 +67,15 @@ export function createNodeProcessRunner(): ProcessRunner {
 
 		run(bin, argv, options) {
 			return new Promise((resolve) => {
+				// Node otherwise spawns first and only then delivers the preexisting abort.
+				if (options?.signal?.aborted) {
+					resolve({
+						code: null,
+						stdout: "",
+						stderr: "The operation was aborted before launch",
+					});
+					return;
+				}
 				const abortKillAfterMs = options?.abortKillAfterMs;
 				const heartbeat = options?.heartbeat;
 				if (

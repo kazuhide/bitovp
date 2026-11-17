@@ -26,6 +26,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Set owned Bombadil paths after runner allocation
+        run: |
+          printf 'BITOVP_BOMBADIL_BINARY=%s/bombadil\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'BITOVP_BOMBADIL_OUTPUT=%s/bitovp-installed-bombadil\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Prepare Ubuntu mirrors for browser dependencies
         timeout-minutes: 5
         run: |
@@ -59,8 +63,19 @@ jobs:
         working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
       - run: pnpm --filter @bitovp/web exec tsc --project ../../tests/browser/tsconfig.json
         working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
-      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - run: pnpm exec playwright install --with-deps chromium
         working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
+      - name: Verify the official Bombadil binary for installed application exploration
+        run: |
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            https://github.com/antithesishq/bombadil/releases/download/v0.7.10/bombadil-x86_64-linux \
+            --output "$BITOVP_BOMBADIL_BINARY"
+          printf '%s  %s\n' 6f2664ca7d4067017b4efb26db5c29d6dcfecdc78131f96989d336f12420cc1b "$BITOVP_BOMBADIL_BINARY" | sha256sum --check --strict
+          chmod 700 "$BITOVP_BOMBADIL_BINARY"
+      - name: Qualify the installed browser launcher and owned CDP target
+        timeout-minutes: 1
+        working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
+        run: node scripts/bombadil-installed.mjs --preflight
       - name: Reuse an earlier build of the same FFmpeg sources
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -69,7 +84,15 @@ jobs:
       - name: Get the worker image's FFmpeg and the VMAF models that it pins
         working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
         run: sh scripts/native-media-tools.sh --cache "$RUNNER_TEMP/ffmpeg-build" "$RUNNER_TEMP/native-media"
-      - run: node scripts/installed-gui-smoke.mjs --ffmpeg "$RUNNER_TEMP/native-media" --state-file "$RUNNER_TEMP/bitovp-gui-state.json"
+      - name: Reuse the HDR build for these exact native sources
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ffmpeg-hdr-build
+          key: ffmpeg-hdr-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Dockerfile', '.dockerignore', 'docker/ffmpeg-hdr-wrap.patch', 'docker/ffmpeg-hdr-colorimetry.patch', 'docker/hdr-ffmpeg-patches.sha256', 'docker/hdr-vmaf-models.sha256', 'docker/hdr-build-proof.sh', 'docker/hdr-build-proof.py', 'scripts/native-hdr-tools.mjs') }}
+      - name: Verify HDR binaries and rerun the current HDR proof
+        working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
+        run: node scripts/native-hdr-tools.mjs --cache "$RUNNER_TEMP/ffmpeg-hdr-build" "$RUNNER_TEMP/native-hdr"
+      - run: node scripts/installed-gui-smoke.mjs --ffmpeg "$RUNNER_TEMP/native-media" --ffmpeg-hdr "$RUNNER_TEMP/native-hdr" --state-file "$RUNNER_TEMP/bitovp-gui-state.json"
         working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
       - name: Save synthetic HDR UI screenshots
         if: always() && env.BITOVP_ARCHIVE_DIR != ''
@@ -77,6 +100,19 @@ jobs:
         with:
           name: hdr-ui-synthetic-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/bitovp-gui-state.json.hdr-screenshots/*.png
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Save bounded installed Bombadil evidence without browser profiles or screenshots
+        if: always() && env.BITOVP_ARCHIVE_DIR != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installed-bombadil-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/bitovp-installed-bombadil/summary.json
+            ${{ runner.temp }}/bitovp-installed-bombadil/*/summary.json
+            ${{ runner.temp }}/bitovp-installed-bombadil/*/specification.ts
+            ${{ runner.temp }}/bitovp-installed-bombadil/*/installed-wizard-model.ts
+            ${{ runner.temp }}/bitovp-installed-bombadil/*/trace/trace.jsonl
           retention-days: 7
           if-no-files-found: warn
       - name: Remove only this job's owned test resources

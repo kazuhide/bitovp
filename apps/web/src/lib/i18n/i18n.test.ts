@@ -127,7 +127,8 @@ describe("catalogue parity", () => {
 		// Bounded heartbeat correlation adds three long values (instrument: 1676).
 		// Window-scoped event absence adds one long value (instrument: 1677).
 		// Historical client-clock reconstruction adds one long explanation (instrument: 1678).
-		pinWithDriftAid(long.length, 1678, "long");
+		// Integrated QC deadline and desktop navigation guidance (runtime measured: 1681).
+		pinWithDriftAid(long.length, 1681, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Runtime measurement includes three-way output labels (deduplicated).
 		// The two MoQ authorization labels add two unique short Japanese values.
@@ -135,7 +136,8 @@ describe("catalogue parity", () => {
 		// Two compact disclosure labels are new; 設定 already exists (instrument: 3363).
 		// Whole-run export adds one short value (instrument: 3364).
 		// Live and estimated historical client-clock labels add two short values (instrument: 3366).
-		pinWithDriftAid(short.size, 3366, "short");
+		// Integrated navigation resize and restore labels (runtime measured: 3368).
+		pinWithDriftAid(short.size, 3368, "short");
 	});
 
 	/**

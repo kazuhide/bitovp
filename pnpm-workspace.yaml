@@ -46,3 +46,5 @@ minimumReleaseAgeExclude:
 # Preserve supplementary characters in the SDK's numeric XML references.
 patchedDependencies:
   '@aws-sdk/xml-builder@3.972.42': patches/@aws-sdk__xml-builder@3.972.42.patch
+  # Temporarily reject repeated extglobs; see docs/verification/picomatch-mitigation.md.
+  'picomatch@4.0.7': patches/picomatch@4.0.7.patch

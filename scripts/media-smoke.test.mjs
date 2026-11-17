@@ -1043,6 +1043,7 @@ async function mediaRun({
 	owner = (id) => id,
 	removal = () => {},
 	ffmpeg,
+	ffmpegHdr,
 } = {}) {
 	const directory = mkdtempSync(join(tmpdir(), "media-run-test-"));
 	const statePath = join(directory, "state.json");
@@ -1086,6 +1087,7 @@ async function mediaRun({
 			{
 				source: join(directory, "source.mp4"),
 				ffmpeg,
+				ffmpegHdr,
 				statePath,
 				env: {},
 				notify: (note) => notes.push(note),
@@ -1124,6 +1126,7 @@ test("the image build takes an FFmpeg that is already built in place of the Dock
 			return path;
 		};
 		const built = holding("native-media");
+		const hdr = holding("native-hdr", ["ffmpeg-hdr", "ffprobe-hdr"]);
 		// The image build of a run, with the run's own identity left out.
 		const build = (run) =>
 			run.builds.map((args) =>
@@ -1156,13 +1159,37 @@ test("the image build takes an FFmpeg that is already built in place of the Dock
 		assert.deepEqual(build(given), [
 			BUILD(["--build-context", `ffmpeg=${built}`]),
 		]);
+		for (const ffmpeg of [undefined, built]) {
+			const withHdr = await mediaRun({ ffmpeg, ffmpegHdr: hdr });
+			assert.equal(withHdr.lines, undefined);
+			assert.deepEqual(build(withHdr), [
+				BUILD([
+					...(ffmpeg ? ["--build-context", `ffmpeg=${built}`] : []),
+					"--build-context",
+					`ffmpeg-hdr=${hdr}`,
+				]),
+			]);
+		}
+		const absentHdr = await mediaRun({ ffmpegHdr: built });
+		assert.equal(absentHdr.commands, 0);
+		assert(absentHdr.lines);
 		assert.equal(
 			given.notes[1],
 			`${ANNOUNCED} with the FFmpeg that is already built`,
 		);
 		assert.deepEqual(
-			given.notes.filter((_, index) => index !== 1),
-			plain.notes.filter((_, index) => index !== 1),
+			given.notes.filter(
+				(line, index) =>
+					index !== 1 && !line.startsWith("Offline media image build:"),
+			),
+			plain.notes.filter(
+				(line, index) =>
+					index !== 1 && !line.startsWith("Offline media image build:"),
+			),
+		);
+		assert.match(
+			given.notes.find((line) => line.startsWith("Offline media image build:")),
+			/^Offline media image build: elapsedMs=[0-9]+$/,
 		);
 		assert.deepEqual(given.removed, plain.removed);
 		assert.equal(given.commands, plain.commands);
@@ -1502,5 +1529,28 @@ test("a download is refused for a failure status with a body and for an archive 
 			);
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test("ownership observer sees a real child and observer failure cannot orphan it", async () => {
+	for (const observerFails of [false, true]) {
+		let pid;
+		const run = command(
+			process.execPath,
+			["-e", observerFails ? "setInterval(()=>{},1000)" : "process.exit(0)"],
+			{
+				env: {},
+				timeout: 1000,
+				onSpawn(value) {
+					pid = value;
+					if (observerFails) throw new Error("observer rejected");
+				},
+			},
+		);
+		if (observerFails)
+			await assert.rejects(run, /Media validation command failed/);
+		else await run;
+		assert(Number.isInteger(pid));
+		assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
 	}
 });

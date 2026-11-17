@@ -1,10 +1,12 @@
 import path from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
+import WebTestSequencer from "./vitest-sequencer.mjs";
 
 export default defineConfig({
 	plugins: [react()],
 	test: {
+		sequence: { sequencer: WebTestSequencer },
 		environment: "jsdom",
 		// Node 26's experimental global localStorage shadows jsdom's Storage and
 		// bypasses Storage.prototype spies. Let the browser test realm own it.

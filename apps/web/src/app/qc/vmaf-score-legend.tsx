@@ -1,5 +1,6 @@
 "use client";
 
+import { InfoHint } from "@/components/ui/info-hint";
 import { useT } from "@/lib/i18n/context";
 
 /** Subjective-scale anchors are not universal pass/fail or interval boundaries. */
@@ -7,8 +8,10 @@ export function VmafScoreLegend({ className = "" }: { className?: string }) {
 	const { t } = useT();
 	return (
 		<div className={`space-y-0.5 text-[11px] text-zinc-400 ${className}`}>
-			<p>{t("qc.scoreLegend")}</p>
-			<p>{t("qc.scoreLegendDisclaimer")}</p>
+			<p className="flex items-center gap-1.5">
+				{t("qc.scoreLegend")}
+				<InfoHint text={t("qc.scoreLegendDisclaimer")} labelFor="VMAF" />
+			</p>
 			<p>
 				<a
 					className="underline hover:text-zinc-200"

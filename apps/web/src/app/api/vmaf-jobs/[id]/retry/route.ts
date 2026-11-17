@@ -67,6 +67,13 @@ export async function POST(_req: Request, { params }: RouteParams) {
 					throw new RetryConflict(
 						"Retry cloud measurements from VMAF Lab with an explicit compute budget",
 					);
+				if (
+					execution.data.deadlineAt &&
+					Date.parse(execution.data.deadlineAt) <= Date.now()
+				)
+					throw new RetryConflict(
+						"The measurement deadline has expired; submit a new measurement with an explicit deadline",
+					);
 				const automatic = row.triggerKey === autoTriggerKey(encodingJobId);
 				const referencePreparation = stored.referencePreparation;
 				if (

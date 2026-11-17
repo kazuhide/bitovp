@@ -48,6 +48,87 @@ async function mediaState(videos: Locator) {
 	);
 }
 
+/** Help is available on demand without taking space away from the players. */
+async function verifyCompactHelp(page: Page, trigger: Locator, text: RegExp) {
+	const tooltipId = await trigger.getAttribute("aria-describedby");
+	if (!tooltipId) throw new Error("Help description missing");
+	const tooltip = page.locator(
+		`[role="tooltip"][id=${JSON.stringify(tooltipId)}]`,
+	);
+	for (const description of await page.getByText(text).all())
+		await expect(description).toBeHidden();
+	await expect(tooltip).toBeHidden();
+	const comparison = page.getByTestId("synchronized-outputs");
+	const before = await comparison.boundingBox();
+	await trigger.click();
+	await expect(tooltip).toBeVisible();
+	await expect(tooltip).toContainText(text);
+	const after = await comparison.boundingBox();
+	if (!before || !after) throw new Error("Output comparison bounds missing");
+	expect(after.height).toBeCloseTo(before.height, 1);
+	await page.keyboard.press("Escape");
+	await expect(tooltip).toBeHidden();
+}
+
+async function verifyDemoNavigation(page: Page, info: TestInfo) {
+	const comparison = page.getByTestId("synchronized-outputs");
+	const videos = comparison.locator("video");
+	const originals = await videos.elementHandles();
+	const paused = await mediaState(videos);
+	const expanded = await comparison.boundingBox();
+	const boundary = page.getByRole("separator", {
+		name: "Resize navigation",
+		exact: true,
+	});
+	const box = await boundary.boundingBox();
+	if (!expanded || !box) throw new Error("Navigation drag boundary missing");
+	try {
+		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+		await page.mouse.down();
+		await page.mouse.move(10, box.y + box.height / 2, { steps: 3 });
+		await page.mouse.up();
+		await expect(boundary).toHaveAttribute("aria-valuenow", "0");
+		await expect
+			.poll(async () => (await comparison.boundingBox())?.width ?? 0)
+			.toBeGreaterThanOrEqual(expanded.width + 200);
+		const restore = page.getByRole("button", {
+			name: "Show navigation",
+			exact: true,
+		});
+		await expect(restore).toBeVisible();
+		const path = info.outputPath("lab-navigation-collapsed-1440.png");
+		await page.screenshot({ path, fullPage: true });
+		await info.attach("lab-navigation-collapsed-1440", {
+			path,
+			contentType: "image/png",
+		});
+		await restore.click();
+		await expect(boundary).toHaveAttribute("aria-valuenow", "240");
+		await boundary.focus();
+		await boundary.press("ArrowLeft");
+		await expect(boundary).toHaveAttribute("aria-valuenow", "0");
+		await boundary.press("ArrowRight");
+		await expect(boundary).toHaveAttribute("aria-valuenow", "240");
+		await expect(videos).toHaveCount(originals.length);
+		for (const [index, original] of originals.entries())
+			expect(
+				await videos
+					.nth(index)
+					.evaluate((node, prior) => node === prior, original),
+			).toBe(true);
+		const restored = await mediaState(videos);
+		restored.forEach((state, index) => {
+			expect(state.paused).toBe(true);
+			expect(
+				Math.abs(state.time - (paused[index]?.time ?? -1)),
+			).toBeLessThanOrEqual(0.03);
+		});
+	} finally {
+		await page.mouse.up();
+		await Promise.all(originals.map((original) => original.dispose()));
+	}
+}
+
 /** Actual HLS decoding in mandatory case twelve, with synthetic video only.
  * Source: qc-comparison-synthetic.mp4, SHA256
  * 8f6d6e262b56e40348b9a5ea6f9266bacdb95ed97fe2b5212422921d24dda13e.
@@ -60,6 +141,21 @@ export async function verifyOutputComparisonBrowser(
 	info: TestInfo,
 	baseURL: string,
 ) {
+	// Requested format metadata exercises the disclosure only. The media below
+	// remains the same tiny SDR H.264 fixture, never claimed to prove DV playback.
+	const hdrPlan = JSON.parse(
+		readFileSync(
+			new URL(
+				"../../packages/core/src/plan/__fixtures__/av1-fmp4-dash-hls.plan.json",
+				import.meta.url,
+			),
+			"utf8",
+		),
+	);
+	for (const rendition of hdrPlan.renditions) {
+		if (rendition.codec === "AV1")
+			rendition.dynamicRangeFormat = "DOLBY_VISION_PROFILE_10_1";
+	}
 	const files = new Map(
 		Object.entries(FILES).map(([name, metadata]) => {
 			const bytes = readFileSync(
@@ -101,7 +197,7 @@ export async function verifyOutputComparisonBrowser(
 				id,
 				name: `SYNTHETIC synchronized ${side} output`,
 				status: "FINISHED",
-				plan: {},
+				plan: id === JOBS[0] ? hdrPlan : {},
 				playbackLinks: [
 					{
 						key: "hls",
@@ -232,6 +328,22 @@ export async function verifyOutputComparisonBrowser(
 		for (const side of ["left", "right"])
 			for (const name of Object.keys(FILES))
 				expect(received.has(`${side}/${name}`)).toBe(true);
+		await verifyCompactHelp(
+			page,
+			comparison.getByRole("button", {
+				name: "Compare outputs — more information",
+				exact: true,
+			}),
+			/Playback time is synchronized/,
+		);
+		await verifyCompactHelp(
+			page,
+			comparison.getByRole("button", {
+				name: "Output settings: AV1 · Dolby Vision 10.1 — more information",
+				exact: true,
+			}),
+			/HDR \/ Dolby Vision output settings do not verify the display mode/,
+		);
 
 		const audio = comparison.getByRole("combobox", {
 			name: "Audio",
@@ -359,6 +471,22 @@ export async function verifyOutputComparisonBrowser(
 			.toBe(true);
 		expect([...fetched].sort()).toEqual([...JOBS].sort());
 		await expect(
+			page.getByRole("heading", { name: "Compare outputs", exact: true }),
+		).toHaveCount(0);
+		await verifyCompactHelp(
+			page,
+			page.getByRole("button", {
+				name: "Compare reports — more information",
+				exact: true,
+			}),
+			/measurement conditions differ/,
+		);
+		await verifyCompactHelp(
+			page,
+			page.getByRole("button", { name: "VMAF — more information" }).first(),
+			/approximate anchors on a continuous scale/,
+		);
+		await expect(
 			page.getByRole("region", {
 				name: /SYNTHETIC LAB 1.*unverified measurement/,
 			}),
@@ -401,6 +529,7 @@ export async function verifyOutputComparisonBrowser(
 		await expect
 			.poll(async () => (await mediaState(videos)).every((v) => v.paused))
 			.toBe(true);
+		await verifyDemoNavigation(page, info);
 		for (const width of [320, 768, 1024, 1440]) {
 			await page.setViewportSize({ width, height: 1000 });
 			await expect

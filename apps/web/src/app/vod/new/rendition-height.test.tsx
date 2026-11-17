@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
 import { renderWithQuery } from "@/test/render";
@@ -59,12 +59,13 @@ describe("copied video keys follow height in the ladder", () => {
 		const initial = initialState();
 		initial.videos.push({ height: 900, bitrate: 3_000_000 });
 		renderWithQuery(<Harness initial={initial} />);
-		fireEvent.change(
-			screen.getByRole("combobox", { name: "Video settings to reuse" }),
-			{
-				target: { value: "v1080" },
-			},
-		);
+		const source = screen.getByRole("combobox", {
+			name: "Video settings to reuse",
+		});
+		const first = within(source).getByRole("option", {
+			name: /^1\./,
+		}) as HTMLOptionElement;
+		fireEvent.change(source, { target: { value: first.value } });
 		fireEvent.click(screen.getByRole("button", { name: "Add video" }));
 		await waitFor(() =>
 			expect(screen.getByTestId("keys").textContent).toBe(

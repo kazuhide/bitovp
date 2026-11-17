@@ -1068,7 +1068,9 @@ Remeasurements from job details and reports created in the lab do not change the
 
 For cloud execution, select the administrator's profile and specify a USD budget greater than 0 for 1 measurement run. The budget covers measurement across all outputs and is used to decide whether new tasks can start. It does not guarantee the final bill, including transfer, startup and interruption costs. Ask an administrator if you do not know an appropriate amount. Chapter 15 covers the configuration.
 
-Cloud execution shows progress for video retrieval, corresponding-frame checks, scoring, result storage and other stages. Resource cleanup can continue after you select “Stop cloud measurement”. Confirm “Cleaned up”, and do not delete required credentials while confirmation is pending.
+Pending and running VOD VMAF measurements, whether local or cloud, offer “Request cancellation”. Measured results are retained. Request acceptance does not confirm that processing has stopped.
+
+Cloud execution shows progress for video retrieval, corresponding-frame checks, scoring, result storage and other stages. Resource cleanup can continue after cancellation is requested. Confirm “Cleaned up”, and do not delete required credentials while confirmation is pending.
 
 The “Frame index · BT.709 · 10-bit” option under “Measurement method” appears when cloud execution and “Existing MP4 outputs” are selected in the lab. It pairs frames by index and compares them under common BT.709, 10-bit conditions. It requires correspondence between the entire original video and the output, and cannot be used with trimming, concatenation or filters. It uses a different scoring generation from the standard method, so do not interpret the numerical change after switching methods as a quality difference. It is not a general-purpose method that automatically detects HDR or other color conditions.
 

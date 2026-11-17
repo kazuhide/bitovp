@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type { NextConfig } from "next";
+import { assertSupportedImagePatterns } from "./config/image-pattern-policy";
 
 // Next only loads .env from the app directory; this monorepo keeps ONE
 // .env at the repo root (README quickstart). Pull it in at server boot —
@@ -79,5 +80,7 @@ const nextConfig: NextConfig = {
 		];
 	},
 };
+
+assertSupportedImagePatterns(nextConfig);
 
 export default nextConfig;

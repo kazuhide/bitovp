@@ -75,6 +75,7 @@ import {
 import { bandingInputFromProbe } from "./banding-score";
 import type { CloudScoreRequest } from "./cloud/controller";
 import { signGcsVmafInput } from "./cloud/remote-input";
+import { VmafDeadlineExceeded, withVmafDeadline } from "./deadline";
 import {
 	type DownloadProvenance,
 	defaultVmafDownload,
@@ -244,7 +245,17 @@ export type VmafProcessorDeps = {
 	resolveModelPath?: (model: string) => string | undefined;
 };
 
-class CloudVmafStopped extends Error {}
+class VmafStopped extends Error {}
+
+function assertExecutionActive(signal: AbortSignal, execution: VmafExecution) {
+	signal.throwIfAborted();
+	if (
+		execution.backend === "LOCAL" &&
+		execution.deadlineAt &&
+		Date.parse(execution.deadlineAt) <= Date.now()
+	)
+		throw new VmafDeadlineExceeded();
+}
 
 export type VmafResult = {
 	acknowledged: true;
@@ -567,6 +578,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 	}
 
 	async function markTerminal(
+		control: { signal: AbortSignal; execution?: VmafExecution },
 		vmafJobId: string,
 		status: "FINISHED" | "ERROR",
 		resultCount: number,
@@ -578,7 +590,6 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		finalUnits?: number,
 		// Only the encoding's AUTO measurement may judge its configured gate.
 		gateCtx?: GateContext,
-		runningOnly = false,
 	): Promise<VmafResult> {
 		// Both terminal writes below spell `status,` first IN PLACE — the
 		// emit-sites pin counts writes by that shape, and hoisting the object
@@ -623,11 +634,16 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			// list's qcVerdict must never disagree with the row it mirrors.
 			// This is qcVerdict's ONE writer (schema contract); the job row's
 			// status stays the orchestrator's.
+			// The result read above may have outlived cancellation or the deadline.
+			// Check before opening the transaction; an already committed write wins.
+			if (control.execution)
+				assertExecutionActive(control.signal, control.execution);
+			else control.signal.throwIfAborted();
 			await deps.prisma.$transaction([
 				deps.prisma.vmafJob.update({
 					where: {
 						id: vmafJobId,
-						...(runningOnly ? { status: "RUNNING" as const } : {}),
+						status: "RUNNING",
 					},
 					data: {
 						status,
@@ -669,10 +685,15 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				await enqueueContinuation(gateCtx.encodingJobId, vmafJobId);
 			}
 		} else {
+			if (status === "FINISHED") {
+				if (control.execution)
+					assertExecutionActive(control.signal, control.execution);
+				else control.signal.throwIfAborted();
+			}
 			await deps.prisma.vmafJob.update({
 				where: {
 					id: vmafJobId,
-					...(runningOnly ? { status: "RUNNING" as const } : {}),
+					status: "RUNNING",
 				},
 				data: {
 					status,
@@ -1757,6 +1778,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			const execution = vmafExecutionSchema.parse(
 				paramsAcc.execution ?? { backend: "LOCAL" },
 			);
+			assertExecutionActive(signal, execution);
 			const hdr = isHdrVmafModel(row.model);
 			if (hdr !== (row.scoringVersion === HDR_VMAF_SCORING_VERSION))
 				throw new Error("HDR_SCORING_VERSION_MISMATCH");
@@ -2109,14 +2131,15 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				// A qc job with no targets means the plan was not qc-enabled (or
 				// every rendition's mirror/source was unresolvable) — finishing
 				// with zero results is correct, not an error.
+				assertExecutionActive(signal, execution);
 				return await markTerminal(
+					{ signal, execution },
 					vmafJobId,
 					"FINISHED",
 					0,
 					undefined,
 					undefined,
 					gateCtx,
-					isCloud,
 				);
 			}
 
@@ -2810,41 +2833,97 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					? `${unmeasured.length} of ${expectedUnits} rung(s) unmeasured — this report is PARTIAL. ${describeUnmeasured(unmeasured)}`
 					: undefined;
 
+			assertExecutionActive(signal, execution);
 			return await markTerminal(
+				{ signal, execution },
 				vmafJobId,
 				"FINISHED",
 				resultCount,
 				shortfall,
 				work.length,
 				gateCtx,
-				isCloud,
 			);
 		} catch (err) {
 			if (signal.aborted) throw signal.reason;
-			if (
-				!(await deps.prisma.vmafJob.findUnique({
-					where: { id: vmafJobId },
-					select: { id: true },
-				}))
-			)
-				throw new ResetRowDeleted();
+			const current = await deps.prisma.vmafJob.findUnique({
+				where: { id: vmafJobId },
+				select: { id: true, status: true },
+			});
+			if (!current) throw new ResetRowDeleted();
+			// A cancellation can win the conditional terminal update before the
+			// periodic observer sees it. Never replace its authoritative ERROR.
+			if (current.status === "ERROR")
+				throw new VmafStopped("Measurement stopped");
 			const message = err instanceof Error ? err.message : "vmaf failed";
 			// Partial results already persisted stay (real measurements); the job
 			// status reflects the failure so the run never reads as complete.
 			await markTerminal(
+				{ signal },
 				vmafJobId,
 				"ERROR",
 				resultCount,
 				message,
 				undefined,
 				gateCtx,
-				isCloud,
-			);
+			).catch(async (writeError) => {
+				const latest = await deps.prisma.vmafJob.findUnique({
+					where: { id: vmafJobId },
+					select: { status: true },
+				});
+				if (latest?.status === "ERROR")
+					throw new VmafStopped("Measurement stopped");
+				throw writeError;
+			});
 			throw err;
 		} finally {
 			// Remove the whole per-job scratch dir (reference + any stragglers).
 			await rm(jobDir, { recursive: true, force: true }).catch(() => {});
 		}
+	}
+
+	async function stoppedResult(
+		vmafJobId: string,
+		reason: Error,
+	): Promise<VmafResult> {
+		if (reason instanceof VmafDeadlineExceeded) {
+			await deps.prisma.vmafJob.updateMany({
+				where: { id: vmafJobId, status: { in: ["PENDING", "RUNNING"] } },
+				data: { status: "ERROR", error: reason.message },
+			});
+		}
+		const row = await deps.prisma.vmafJob.findUnique({
+			where: { id: vmafJobId },
+			include: { encodingJob: true },
+		});
+		if (!row)
+			return { acknowledged: true, vmafJobId, status: "MISSING", results: 0 };
+		if (row.status !== "ERROR" && row.status !== "FINISHED") throw reason;
+		// ERROR was persisted by cancel or expiry. Wake a parked encoding only
+		// after work has drained; its existing continuation treats ERROR as failure.
+		const plan = encodingPlanSchema.safeParse(row.encodingJob?.plan);
+		if (
+			row.status === "ERROR" &&
+			row.encodingJobId &&
+			row.triggerKey === autoTriggerKey(row.encodingJobId) &&
+			plan.success &&
+			plan.data.qc?.gate?.onFail === "BLOCK_MANIFESTS"
+		) {
+			const existing = await deps.orchestratorQueue
+				?.getJob(qcContinuationJobId(row.encodingJobId, vmafJobId))
+				.catch(() => undefined);
+			if (existing == null)
+				await enqueueContinuation(row.encodingJobId, vmafJobId);
+		}
+		const results = await deps.prisma.vmafResult.findMany({
+			where: { vmafJobId },
+			select: { id: true },
+		});
+		return {
+			acknowledged: true,
+			vmafJobId,
+			status: row.status,
+			results: results.length,
+		};
 	}
 
 	return {
@@ -2853,9 +2932,10 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 			// Terminal redelivery must enter run's failed-claim self-heal to wake
 			// a blocking gate after a crash between ERROR persistence and enqueue.
 			// The PENDING claim prevents restarting compute; later liveness checks
-			// still abort a cloud run when the operator stops it.
+			// abort either backend after observing a persisted stop request.
 			let initialRead = true;
 			let cloudExecution = false;
+			let deadlineAt: string | undefined;
 			try {
 				return await whileRowExists(
 					async () => {
@@ -2868,17 +2948,34 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 						} | null;
 						cloudExecution = params?.execution?.backend === "CLOUD";
 						const startup = initialRead;
+						if (startup) {
+							const execution = vmafExecutionSchema.safeParse(
+								params?.execution,
+							);
+							if (
+								execution.success &&
+								execution.data.backend === "LOCAL" &&
+								(row?.status === "PENDING" || row?.status === "RUNNING")
+							)
+								deadlineAt = execution.data.deadlineAt;
+						}
 						initialRead = false;
-						if (!startup && cloudExecution && row?.status === "ERROR")
-							throw new CloudVmafStopped("Cloud measurement stopped");
+						if (!startup && row?.status === "ERROR")
+							throw new VmafStopped("Measurement stopped");
 						return Boolean(row);
 					},
-					(signal) => run(vmafJobId, signal),
+					(signal) =>
+						withVmafDeadline(signal, deadlineAt, (runSignal) =>
+							run(vmafJobId, runSignal),
+						),
 					() => (cloudExecution ? 1_000 : 100),
 				);
 			} catch (error) {
-				if (error instanceof CloudVmafStopped)
-					return { acknowledged: true, vmafJobId, status: "ERROR", results: 0 };
+				if (
+					error instanceof VmafStopped ||
+					error instanceof VmafDeadlineExceeded
+				)
+					return stoppedResult(vmafJobId, error);
 				if (error instanceof ResetRowDeleted)
 					return {
 						acknowledged: true,

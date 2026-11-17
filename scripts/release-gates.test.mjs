@@ -103,12 +103,12 @@ test("fixed local gates include API freshness and the runner tests, never deploy
 	);
 	assert(COMMANDS.some((c) => c.join(" ") === "pnpm test"));
 	assert.deepEqual(
-		COMMANDS.find((command) => command[1] === "audit"),
-		["pnpm", "audit", "--audit-level", "low"],
+		COMMANDS.find((command) => command[1] === "scripts/dependency-audit.mjs"),
+		["node", "scripts/dependency-audit.mjs"],
 	);
 	assert.equal(
 		pkg.scripts.test,
-		"turbo run test && pnpm test:api-coverage && pnpm test:release-gates && pnpm test:postgres-runner && pnpm test:editing-preview",
+		"turbo run test && pnpm test:api-coverage && pnpm test:release-gates && pnpm test:postgres-runner && pnpm test:editing-preview && pnpm test:feature-verification && pnpm test:change-verification && pnpm test:semantic-controls",
 	);
 	assert.equal(
 		pkg.scripts["test:editing-preview"],

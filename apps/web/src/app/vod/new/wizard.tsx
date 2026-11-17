@@ -1916,8 +1916,8 @@ export function VodWizard({
 										</p>
 									) : null}
 									<ul className="mt-1 space-y-1 break-all font-mono text-xs text-zinc-300">
-										{fileJobWrites(evaluation.plan).map((item) => (
-											<li key={item.key}>
+										{fileJobWrites(evaluation.plan).map((item, index) => (
+											<li key={`${item.key}:${index}`}>
 												{item.path}
 												{item.kind === "file" ? null : (
 													<span className="ml-2 font-sans text-zinc-500">

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { liveChannelPlanSchema } from "@bitovp/core";
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { renderLocalized as render } from "@/test/render";
 import { buildLiveChannelPlan } from "./build-live-plan";
@@ -34,11 +34,16 @@ describe("Live video playlist URI form", () => {
 		other.extras = { ...other.extras, hlsVariantUri: "video-v1.m3u8" };
 		const onPatch = vi.fn();
 		render(<LiveLadderSection state={value} onPatch={onPatch} />);
-		fireEvent.change(screen.getByLabelText("Video settings to reuse"), {
-			target: { value: "v1080" },
+		const source = screen.getByRole("combobox", {
+			name: "Video settings to reuse",
 		});
+		const first = within(source).getByRole("option", {
+			name: /^1\./,
+		}) as HTMLOptionElement;
+		fireEvent.change(source, { target: { value: first.value } });
 		fireEvent.click(screen.getByRole("button", { name: /Add video/ }));
 		const videos = onPatch.mock.lastCall?.[0].videos;
+		expect(videos[3].height).toBe(value.videos[0]?.height);
 		expect(videos[0].extras.hlsVariantUri).toBe("live-main.m3u8");
 		expect(videos[3].extras.hlsVariantUri).not.toBe("live-main.m3u8");
 		expect(videos[3].extras.hlsVariantUri).not.toBe("video-v1.m3u8");
@@ -59,11 +64,16 @@ describe("Live video playlist URI form", () => {
 		];
 		const onPatch = vi.fn();
 		render(<LiveLadderSection state={value} onPatch={onPatch} />);
-		fireEvent.change(screen.getByLabelText("Video settings to reuse"), {
-			target: { value: "v1080" },
+		const source = screen.getByRole("combobox", {
+			name: "Video settings to reuse",
 		});
+		const first = within(source).getByRole("option", {
+			name: /^1\./,
+		}) as HTMLOptionElement;
+		fireEvent.change(source, { target: { value: first.value } });
 		fireEvent.click(screen.getByRole("button", { name: /Add video/ }));
 		const videos = onPatch.mock.lastCall?.[0].videos;
+		expect(videos[3].height).toBe(value.videos[0]?.height);
 		expect(videos[0].extras.hlsVariantUri).toBe("live-main.m3u8");
 		expect(videos[3].extras.hlsVariantUri).not.toBe("video-v1.m3u8");
 		expect(videos[3].extras.hlsVariantUri).toBe("video-v1-2.m3u8");

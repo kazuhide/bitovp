@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { InfoHint } from "@/components/ui/info-hint";
 import { SelectNative } from "@/components/ui/input";
@@ -18,10 +18,81 @@ export function RenditionAddControls({
 	onAdd: (sourceIndex: number | undefined) => void;
 }) {
 	const { t } = useT();
-	const [selected, setSelected] = useState<string | null>(null);
-	const source = choices.find((choice) => choice.key === selected);
-	const value =
-		selected === "" ? "" : (source?.key ?? choices.at(-1)?.key ?? "");
+	const [selected, setSelected] = useState<
+		| {
+				key: string;
+				index: number;
+				count: number;
+				byPosition?: boolean;
+		  }
+		| ""
+		| null
+	>(null);
+	const options = choices.map((choice) => ({
+		...choice,
+		value: JSON.stringify([choice.key, choice.index]),
+	}));
+	const matches = selected
+		? options.filter((choice) => choice.key === selected.key)
+		: [];
+	const position =
+		selected && selected.count === choices.length
+			? options.find((choice) => choice.index === selected.index)
+			: undefined;
+	// Derived keys can change on every row entering a collision. Observe the
+	// selected position too, so resolving that collision cannot pick its sibling.
+	const collision =
+		matches.length > 1 ||
+		(matches.length === 0 &&
+			position !== undefined &&
+			options.filter((choice) => choice.key === position.key).length > 1);
+	const matchedIndex = matches[0]?.index;
+	const positionKey = position?.key;
+	const positionIsUnique =
+		position !== undefined &&
+		options.filter((choice) => choice.key === position.key).length === 1;
+	const selectedSource =
+		(selected !== "" && selected?.byPosition) || collision
+			? position
+			: matches[0];
+	const source =
+		selected === "" ? undefined : (selectedSource ?? options.at(-1));
+	const value = source?.value ?? "";
+	useEffect(() => {
+		if (!selected) return;
+		if (selected.byPosition || collision) {
+			// A colliding row has only its position as UI identity. If rows were
+			// added/removed, return to the last-row default instead of guessing.
+			if (selected.count !== choices.length) setSelected(null);
+			else if (
+				selected.byPosition &&
+				positionIsUnique &&
+				positionKey !== undefined
+			) {
+				// The repaired key is unambiguous again, so subsequent reordering
+				// must follow that key instead of the old collision position.
+				setSelected({
+					key: positionKey,
+					index: selected.index,
+					count: choices.length,
+				});
+			} else if (!selected.byPosition)
+				setSelected({ ...selected, byPosition: true });
+		} else if (
+			matchedIndex !== undefined &&
+			(matchedIndex !== selected.index || selected.count !== choices.length)
+		) {
+			// Unique domain keys still follow their row through reordering.
+			setSelected({ ...selected, index: matchedIndex, count: choices.length });
+		}
+	}, [
+		selected,
+		collision,
+		choices.length,
+		matchedIndex,
+		positionKey,
+		positionIsUnique,
+	]);
 	const sourceLabel = t(
 		kind === "video" ? "ladder.videoCopySource" : "ladder.audioCopySource",
 	);
@@ -33,11 +104,24 @@ export function RenditionAddControls({
 						aria-label={sourceLabel}
 						className="h-8 w-44 min-w-0 flex-1 py-1 text-xs sm:flex-initial"
 						value={value}
-						onChange={(event) => setSelected(event.target.value)}
+						onChange={(event) => {
+							const choice = options.find(
+								(option) => option.value === event.target.value,
+							);
+							setSelected(
+								choice
+									? {
+											key: choice.key,
+											index: choice.index,
+											count: choices.length,
+										}
+									: "",
+							);
+						}}
 					>
 						<option value="">{t("ladder.defaultSettings")}</option>
-						{choices.map((choice) => (
-							<option key={choice.key} value={choice.key}>
+						{options.map((choice) => (
+							<option key={choice.value} value={choice.value}>
 								{choice.label}
 							</option>
 						))}
@@ -49,9 +133,7 @@ export function RenditionAddControls({
 				variant="secondary"
 				size="sm"
 				className="shrink-0"
-				onClick={() =>
-					onAdd(choices.find((choice) => choice.key === value)?.index)
-				}
+				onClick={() => onAdd(source?.index)}
 			>
 				{label}
 			</Button>

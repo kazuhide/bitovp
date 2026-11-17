@@ -104,13 +104,13 @@ export function childEnvironment(env) {
 
 // A directory that holds an FFmpeg which is already built from the
 // Dockerfile's sources, as scripts/native-media-tools.sh leaves it. The Worker
-// image's build takes it in place of the "ffmpeg" stage and compiles nothing.
+// image's build takes it in place of the corresponding SDR or HDR native stage.
 // The programs are not compared with the sources here. The installer that
 // left the directory ran the image's VMAF proof with them; of a build that it
 // had kept, it checked no more than that and the build's own list of
 // checksums. A directory in the checkout would also be a part of what the
 // image is built from.
-export function verifyFfmpeg(path) {
+export function verifyFfmpeg(path, hdr = false) {
 	assert(
 		typeof path === "string" && isAbsolute(path),
 		"FFmpeg directory must be an absolute path",
@@ -125,7 +125,9 @@ export function verifyFfmpeg(path) {
 	// Compose reads a dollar sign in the override as the start of a variable:
 	// the image's build would get another directory than the one checked here.
 	assert(!/[$\r\n]/.test(canonical), "Unsupported FFmpeg directory path");
-	for (const program of ["ffmpeg", "ffprobe"]) {
+	for (const program of hdr
+		? ["ffmpeg-hdr", "ffprobe-hdr"]
+		: ["ffmpeg", "ffprobe"]) {
 		const file = join(canonical, "bin", program);
 		assert(
 			existsSync(file) && lstatSync(file).isFile(),
@@ -135,7 +137,13 @@ export function verifyFfmpeg(path) {
 	return canonical;
 }
 
-export function composeOverride({ id, directory, imageId = id, ffmpeg }) {
+export function composeOverride({
+	id,
+	directory,
+	imageId = id,
+	ffmpeg,
+	ffmpegHdr,
+}) {
 	assert(/^[a-f0-9]{32}$/.test(id), "Invalid smoke test identity");
 	assert(/^[a-f0-9]{32}$/.test(imageId), "Invalid smoke image identity");
 	// Compose would look for any other path in the checkout, and would read a
@@ -144,15 +152,20 @@ export function composeOverride({ id, directory, imageId = id, ffmpeg }) {
 		ffmpeg === undefined || (isAbsolute(ffmpeg) && !/[$\r\n]/.test(ffmpeg)),
 		"Invalid FFmpeg directory",
 	);
+	assert(
+		ffmpegHdr === undefined ||
+			(isAbsolute(ffmpegHdr) && !/[$\r\n]/.test(ffmpegHdr)),
+		"Invalid HDR FFmpeg directory",
+	);
 	const env = (file) =>
 		`env_file: !override\n      - path: ${JSON.stringify(join(directory, file))}\n        required: true\n        format: raw`;
 	const owned = `labels:\n      ${LABEL}: ${id}`;
-	// Each build of the Worker's Dockerfile takes the directory under the name
-	// of the "ffmpeg" stage, which is then not built. Dockerfile.web has no
-	// such stage.
-	const prebuilt = ffmpeg
-		? `\n      additional_contexts:\n        ffmpeg: ${JSON.stringify(ffmpeg)}`
-		: "";
+	// Each build of the Worker's Dockerfile takes the checked native directories
+	// in place of their stages. Dockerfile.web has neither native stage.
+	const prebuilt =
+		ffmpeg || ffmpegHdr
+			? `\n      additional_contexts:${ffmpeg ? `\n        ffmpeg: ${JSON.stringify(ffmpeg)}` : ""}${ffmpegHdr ? `\n        ffmpeg-hdr: ${JSON.stringify(ffmpegHdr)}` : ""}`
+			: "";
 	const build = (dockerfile) =>
 		`build:\n      context: ${JSON.stringify(ROOT)}\n      dockerfile: ${dockerfile}${dockerfile === "Dockerfile" ? prebuilt : ""}\n      labels:\n        ${LABEL}: ${id}`;
 	// Only this fixed-target relay and PostgreSQL can use the host-access network.
@@ -1031,6 +1044,7 @@ async function install(
 		revision,
 		worker,
 		ffmpeg,
+		ffmpegHdr,
 		signal,
 		stage,
 		notify,
@@ -1060,10 +1074,14 @@ async function install(
 		`MASTER_KEY=${randomBytes(32).toString("base64")}\nAUTH_SESSION_SECRET=${randomBytes(48).toString("base64")}\nAUTH_MODE=users\nAUTH_ALLOW_INSECURE_HTTP=true\nPUBLIC_BASE_URL=http://${hostname}\nINGRESS_MODE=none\nCOMPOSE_PROFILES=\n`,
 		{ mode: 0o600, flag: "wx" },
 	);
-	writeFileSync(override, composeOverride({ ...state, imageId, ffmpeg }), {
-		mode: 0o600,
-		flag: "wx",
-	});
+	writeFileSync(
+		override,
+		composeOverride({ ...state, imageId, ffmpeg, ffmpegHdr }),
+		{
+			mode: 0o600,
+			flag: "wx",
+		},
+	);
 	const composeArgs = [
 		"compose",
 		"--project-name",
@@ -1114,6 +1132,9 @@ async function install(
 		notify("Building the current source into separate Web and Worker images");
 		if (ffmpeg)
 			notify("The Worker image takes the FFmpeg that is already built");
+		if (ffmpegHdr)
+			notify("The Worker image takes the HDR FFmpeg verified in this run");
+		const buildStarted = performance.now();
 		await compose(
 			[
 				"build",
@@ -1126,6 +1147,9 @@ async function install(
 			{ timeout: 1_800_000 },
 		);
 		notify("Web and Worker Docker builds passed");
+		notify(
+			`Installed GUI image build: elapsedMs=${Math.round(performance.now() - buildStarted)}`,
+		);
 	}
 	stage("migration and application startup");
 	await compose([
@@ -1233,6 +1257,7 @@ function failureDiagnostics(state) {
 export async function runFixture({
 	statePath,
 	ffmpeg,
+	ffmpegHdr,
 	env = process.env,
 	signal,
 	runtimeOnly = false,
@@ -1249,6 +1274,8 @@ export async function runFixture({
 		);
 	// Before anything is created: a refused directory leaves nothing to remove.
 	const prebuilt = ffmpeg === undefined ? undefined : verifyFfmpeg(ffmpeg);
+	const prebuiltHdr =
+		ffmpegHdr === undefined ? undefined : verifyFfmpeg(ffmpegHdr, true);
 	const parent = realpathSync(statePath ? dirname(statePath) : tmpdir());
 	assert(
 		!inside(realpathSync(ROOT), parent),
@@ -1282,6 +1309,7 @@ export async function runFixture({
 			revision,
 			worker: true,
 			ffmpeg: prebuilt,
+			ffmpegHdr: prebuiltHdr,
 			signal,
 			notify,
 			hostname: "localhost",
@@ -1300,6 +1328,7 @@ export async function runFixture({
 				revision,
 				worker: false,
 				ffmpeg: prebuilt,
+				ffmpegHdr: prebuiltHdr,
 				signal,
 				notify,
 				hostname: "127.0.0.1",
@@ -1464,11 +1493,11 @@ if (
 		!(runtimeOnly && cleanup),
 		"Cleanup and runtime-only options cannot be combined",
 	);
-	// Each of the two options at most once, with its value.
+	// Each option at most once, with its value.
 	const options = {};
 	for (let index = 0; index < args.length; index += 2) {
 		assert(
-			["--ffmpeg", "--state-file"].includes(args[index]) &&
+			["--ffmpeg", "--ffmpeg-hdr", "--state-file"].includes(args[index]) &&
 				args[index + 1] !== undefined &&
 				!Object.hasOwn(options, args[index]),
 			"Unknown installed GUI smoke option",
@@ -1477,13 +1506,20 @@ if (
 	}
 	const statePath = options["--state-file"];
 	assert(
-		!(cleanup && Object.hasOwn(options, "--ffmpeg")),
+		!(
+			cleanup &&
+			(Object.hasOwn(options, "--ffmpeg") ||
+				Object.hasOwn(options, "--ffmpeg-hdr"))
+		),
 		"Cleanup builds no image and takes no FFmpeg directory",
 	);
 	// Checked here, where a refusal prints its reason: a run that fails later
 	// reports no more than the step it failed in.
 	const ffmpeg = Object.hasOwn(options, "--ffmpeg")
 		? verifyFfmpeg(options["--ffmpeg"])
+		: undefined;
+	const ffmpegHdr = Object.hasOwn(options, "--ffmpeg-hdr")
+		? verifyFfmpeg(options["--ffmpeg-hdr"], true)
 		: undefined;
 	const controller = new AbortController();
 	for (const signal of ["SIGINT", "SIGTERM"])
@@ -1503,6 +1539,7 @@ if (
 			return runFixture({
 				statePath,
 				ffmpeg,
+				ffmpegHdr,
 				runtimeOnly,
 				signal: controller.signal,
 			});

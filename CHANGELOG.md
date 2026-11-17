@@ -9,6 +9,8 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ### Added
 
 - Request cancellation of pending or running local VOD QC measurements and optionally set an absolute LOCAL execution deadline. Partial results are retained, expired retries are refused, and request acceptance remains distinct from confirmed process shutdown.
+- Run named QC contract checks through a bounded feature-verification CLI, with read-only readiness checks, strict test-result coverage and retained execution receipts. Focused checks state their scope separately from installed-application and provider validation.
+- Exercise local QC reservations and deadlines with reproducible generated action sequences, covering cancellation order, exclusive work, memory headroom and permit cleanup. The quality report separates added defect detection from historical regression replay and execution speed.
 - Compare two or three VOD delivery outputs directly in VMAF Lab report comparisons, with synchronized playback, seeking, per-output quality selection and one audible output. HDR and SDR measurement charts retain their separate evaluation contexts.
 - Search the provider's Encoding Error Definitions by code, category or description from Settings and VOD/Live failure details. The account-scoped, read-only catalogue shows retry guidance without restarting jobs; incomplete or failed catalogue reads remain explicit failures.
 - Reconcile codec, input-stream, filter and muxing creation paths against SDK 1.288.0, with a prioritized functional gap report separating GUI support, JSON-only controls and unqualified provider execution.
@@ -18,10 +20,14 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Changed
 
+- Run the complete Web test suite across four audited shards and reuse verified HDR native build outputs in the installed-application and offline-media checks. Cached native outputs still run the current HDR proof before use, and required coverage and source-build checks remain enforced.
 - Update the Bitmovin API SDK to 1.288.0 and refresh the Encoding API census, including the new MoQ output operations. Existing runtime capabilities retain their current support boundaries.
 
 ### Fixed
 
+- Keep each output file's Review row distinct while a draft temporarily contains duplicate video-stream keys. Preserve both destinations and the validation that prevents submitting duplicate streams.
+- Copy the selected rendition's settings when generated stream keys temporarily overlap during editing, including the default last-row choice, without confusing UI selection with encoding identity.
+- Keep local QC cancellation from being overwritten during terminal persistence, and recheck cancellation and the absolute deadline after reading gate results before publishing a passing encoding verdict. Retain completed measurement results without emitting a successful completion event.
 - Read explicitly declared P3 D65/PQ RGB MXF references without footer seeking, accept their missing color tags, and require complete frame timing before HDR VMAF scoring. Preserve the admitted HDR decoder allocation when CAMBI is also enabled.
 - Avoid periodically waking local GPUs during clip-readiness checks. Background checks use runtime and device-access metadata; new inference jobs and their execution each require fresh native GPU discovery. Missing devices or permissions keep clip editing unavailable.
 - Keep clip projects editable when a subtitle paragraph has no measured timing anchor or its words fall wholly outside observed speech in a fully inspected audio range. Only that paragraph is omitted, with source context available in the editor; verified subtitles and the selected story remain intact. Missing observation coverage stays unknown and never becomes a silence claim.

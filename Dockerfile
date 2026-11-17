@@ -180,10 +180,9 @@ RUN --network=none mkdir dav1d && tar xzf dav1d.tar.gz -C dav1d --strip-componen
 	&& ninja -C build install \
 	&& install -D -m 0644 -t /opt/ffbuild/share/licenses/dav1d COPYING doc/PATENTS
 
-FROM ffmpeg-toolchain AS ffmpeg-build
+FROM ffmpeg-toolchain AS ffmpeg-source
 COPY --from=ffmpeg-tls /opt/ffbuild/ /opt/ffbuild/
 COPY --from=ffmpeg-text /opt/ffbuild/ /opt/ffbuild/
-COPY --from=ffmpeg-vmaf /opt/ffbuild/ /opt/ffbuild/
 COPY --from=ffmpeg-codecs /opt/ffbuild/ /opt/ffbuild/
 # Headers for NVIDIA decoding and encoding; the driver's libraries are loaded at run time.
 # The repository has no licence file: each header starts with its own notice.
@@ -201,7 +200,13 @@ ARG FFMPEG_VER="n8.1.3-34-ga35157abb9"
 ARG FFMPEG_COMMIT="a35157abb96167fd7308edc92b55408d5bb084b0"
 ADD --checksum=sha256:0dd30eb8eca5370dc2dad5f9958d9d7221fa4e8a1d407fd06fbc305c15c9314e https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/${FFMPEG_COMMIT} ffmpeg.tar.gz
 RUN --network=none mkdir ffmpeg && tar xzf ffmpeg.tar.gz -C ffmpeg --strip-components=1 && cd ffmpeg \
-	&& case "$FFMPEG_VER" in *-g"$(printf '%.10s' "$FFMPEG_COMMIT")") ;; *) echo "FFMPEG_VER does not end with the revision of FFMPEG_COMMIT" >&2; exit 1 ;; esac \
+	&& case "$FFMPEG_VER" in *-g"$(printf '%.10s' "$FFMPEG_COMMIT")") ;; *) echo "FFMPEG_VER does not end with the revision of FFMPEG_COMMIT" >&2; exit 1 ;; esac
+
+# SDR and HDR compile independently from the same pristine source and common
+# libraries. Building HDR alone never compiles and then discards SDR FFmpeg.
+FROM ffmpeg-source AS ffmpeg-build
+COPY --from=ffmpeg-vmaf /opt/ffbuild/ /opt/ffbuild/
+RUN --network=none cd ffmpeg \
 	&& printf '%s\n' "$FFMPEG_VER" > VERSION \
 	&& ./configure --prefix=/opt/ffmpeg --pkg-config-flags=--static \
 		--extra-ldflags="-static-libgcc" --extra-ldexeflags=-pie \
@@ -247,7 +252,7 @@ RUN --network=none mkdir hdr-vmaf && tar xzf hdr-vmaf.tar.gz -C hdr-vmaf --strip
 	&& sed -i 's/Libs.private:/Libs.private: -l:libstdc++.a/; t; $ a Libs.private: -l:libstdc++.a' /opt/ffbuild/lib/pkgconfig/libvmaf.pc \
 	&& install -D -m 0644 LICENSE /opt/ffbuild/share/licenses/libvmaf/LICENSE
 
-FROM ffmpeg-build AS ffmpeg-hdr-build
+FROM ffmpeg-source AS ffmpeg-hdr-build
 COPY --from=ffmpeg-hdr-vmaf /opt/ffbuild/ /opt/ffbuild/
 # These two official FFmpeg changes pass complete AVFrame colorimetry to the
 # HDR library. They are applied only to this copy of the pinned release source.
@@ -256,7 +261,7 @@ COPY docker/ffmpeg-hdr-colorimetry.patch /tmp/ffmpeg-hdr-colorimetry.patch
 COPY docker/hdr-ffmpeg-patches.sha256 /tmp/hdr-ffmpeg-patches.sha256
 RUN apt-get update && apt-get install -y --no-install-recommends patch && rm -rf /var/lib/apt/lists/*
 RUN --network=none cd /tmp && sha256sum -c --strict hdr-ffmpeg-patches.sha256 \
-	&& cd /src/ffmpeg && make distclean \
+	&& cd /src/ffmpeg \
 	&& patch --batch --forward -p1 --fuzz=0 < /tmp/ffmpeg-hdr-wrap.patch \
 	&& patch --batch --forward -p1 --fuzz=0 < /tmp/ffmpeg-hdr-colorimetry.patch \
 	&& printf '%s-hdr1\n' "$FFMPEG_VER" > VERSION \

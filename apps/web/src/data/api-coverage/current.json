@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-17T13:22:11.089Z",
-		"sourceCommit": "72eb017beafb06be3b0456904d6f47a400d162cd",
-		"sourceFingerprint": "a99a143e45068681fd90af1ccf88fd4a5c601b7a339b5f0c78595efec82895de",
+		"generatedAt": "2026-11-17T14:16:34.795Z",
+		"sourceCommit": "730566f980db26b472cd578e9e2bc161184981fb",
+		"sourceFingerprint": "72e87de4623de98535ccb093d60b7a0870a7d109aa7ecbceca1846d58c29cef3",
 		"sdkVersion": "1.288.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "062c5c8a30072d4d3330028f0cab877d9f7183138b08fa4a7de22f4b69853f04",
@@ -1507,7 +1507,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 42
+					"line": 43
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
@@ -1615,6 +1615,10 @@
 				{
 					"file": "apps/web/src/lib/server/aisa-live-import.ts",
 					"line": 87
+				},
+				{
+					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
+					"line": 221
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
@@ -2452,7 +2456,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 218
+					"line": 228
 				}
 			]
 		},
@@ -2494,7 +2498,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 211
+					"line": 214
 				}
 			]
 		},
@@ -11338,7 +11342,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 223
+					"line": 233
 				}
 			]
 		},
@@ -11352,7 +11356,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 236
+					"line": 246
 				}
 			]
 		},
@@ -11366,7 +11370,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 245
+					"line": 255
 				}
 			]
 		},
@@ -11380,7 +11384,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 240
+					"line": 250
 				}
 			]
 		},
@@ -11394,7 +11398,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 238
+					"line": 248
 				}
 			]
 		},

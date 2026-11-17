@@ -8,6 +8,7 @@ import {
 	diagnosticsSrtSchema,
 	diagnosticsStreamSchema,
 	diagnosticsSummarySchema,
+	diagnosticsTaskSchema,
 	finalHeartbeatSchema,
 	liveDiagnosticsQuerySchema,
 } from "@/lib/live-diagnostics/schemas";
@@ -192,9 +193,11 @@ async function handleDiagnostics(
 		const basePath = `/encoding/statistics/encodings/${encodingId}/live-statistics`;
 		const path = final
 			? `/encoding/encodings/${encodingId}/live/heartbeat-final`
-			: query.kind === "hd-start"
-				? `/encoding/encodings/${encodingId}/live/hd/start`
-				: `${basePath}${query.kind === "summary" ? "" : `/${query.kind}`}${query.srtInputId ? `/${query.srtInputId}` : ""}`;
+			: query.kind === "task"
+				? `/encoding/encodings/${encodingId}/status`
+				: query.kind === "hd-start"
+					? `/encoding/encodings/${encodingId}/live/hd/start`
+					: `${basePath}${query.kind === "summary" ? "" : `/${query.kind}`}${query.srtInputId ? `/${query.srtInputId}` : ""}`;
 		const started = Date.now();
 		try {
 			const stats = api.encoding.statistics.encodings.liveStatistics;
@@ -211,6 +214,13 @@ async function handleDiagnostics(
 					await api.encoding.encodings.live.heartbeatFinal.get(encodingId),
 				);
 				result = { ...envelope, data };
+			} else if (query.kind === "task") {
+				result = {
+					...envelope,
+					data: diagnosticsTaskSchema.parse(
+						await api.encoding.encodings.status(encodingId),
+					),
+				};
 			} else if (query.kind === "hd-start") {
 				result = {
 					...envelope,

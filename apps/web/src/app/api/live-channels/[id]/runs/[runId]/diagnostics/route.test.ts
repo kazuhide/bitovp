@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
 	audit: vi.fn(),
 	summary: vi.fn(),
 	encoding: vi.fn(),
+	task: vi.fn(),
 	events: vi.fn(),
 	streams: vi.fn(),
 	srt: vi.fn(),
@@ -68,6 +69,7 @@ beforeEach(() => {
 			},
 			encodings: {
 				get: mocks.encoding,
+				status: mocks.task,
 				live: {
 					heartbeatFinal: { get: mocks.final },
 					hd: { getStartRequest: mocks.hdStart },
@@ -82,10 +84,236 @@ beforeEach(() => {
 		orgId: "private",
 	});
 	mocks.encoding.mockResolvedValue({});
+	mocks.task.mockResolvedValue({ status: "RUNNING", messages: [] });
 	for (const list of [mocks.events, mocks.streams, mocks.srt, mocks.srtInput])
 		list.mockResolvedValue({ items: [], totalCount: 0 });
 	mocks.final.mockResolvedValue({
 		url: "https://provider.example/heartbeat?signature=secret",
+	});
+});
+
+describe("run-bound task diagnostics", () => {
+	it("reads the immutable run through its original account and audits only task metadata", async () => {
+		mocks.task.mockResolvedValue({
+			status: "ERROR",
+			progress: 42,
+			messages: [
+				{
+					type: "ERROR",
+					date: new Date(time),
+					text: "password=task-secret https://task-secret.example/ no_application_protocol; moqt-18",
+					field: "task-secret",
+					more: { code: 123, token: "task-secret" },
+					links: [{ href: "https://task-secret.example/" }],
+					code: 999,
+				},
+			],
+			error: { message: "task-secret", code: 123 },
+			subtasks: [{ name: "task-secret" }],
+		});
+		const req = request("?kind=task");
+		const response = await GET(req, context());
+		expect(response.status).toBe(200);
+		expect(response.headers.get("cache-control")).toBe("private, no-store");
+		const result = await response.json();
+		expect(result).toMatchObject({
+			kind: "task",
+			runId: RUN,
+			encodingId: ENCODING,
+			data: {
+				status: "ERROR",
+				progress: 42,
+				totalMessageCount: 1,
+				messagesTruncated: false,
+				messages: [
+					{
+						type: "ERROR",
+						date: time,
+						protocolMentions: [
+							{ source: "task-message", value: "moqt-18" },
+							{ source: "task-message", value: "no_application_protocol" },
+						],
+					},
+				],
+			},
+		});
+		expect(mocks.task).toHaveBeenCalledWith(ENCODING);
+		expect(mocks.run).toHaveBeenCalledWith(
+			expect.objectContaining({ where: { id: RUN, liveChannelId: CHANNEL } }),
+		);
+		expect(mocks.account).toHaveBeenCalledWith(expect.anything(), ACCOUNT);
+		expect(mocks.audit).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({
+				method: "GET",
+				path: `/encoding/encodings/${ENCODING}/status`,
+				bitmovinAccountId: ACCOUNT,
+				request: expect.objectContaining({
+					liveChannelId: CHANNEL,
+					runId: RUN,
+				}),
+				response: result,
+			}),
+			req,
+		);
+		const saved = JSON.stringify([result, mocks.audit.mock.calls]);
+		expect(saved).not.toContain("task-secret");
+		expect(saved).not.toMatch(
+			/"(?:text|field|more|links|code|error|subtasks)":/,
+		);
+		expect(mocks.summary).not.toHaveBeenCalled();
+		expect(mocks.encoding).not.toHaveBeenCalled();
+	});
+	it("reports protocol mentions only, deduplicated from exact literal boundaries", async () => {
+		mocks.task.mockResolvedValue({
+			status: "RUNNING",
+			messages: [
+				{ text: "moqt-16, moqt-18; moqt-23 (no_application_protocol) moqt-18" },
+				{
+					text: "xmoqt-16 moqt-180 moqt-23.example moqt-16_suffix MOQT-18 no_application_protocol_extra",
+				},
+			],
+		});
+		const response = await GET(request("?kind=task"), context());
+		expect(response.status).toBe(200);
+		const { data } = await response.json();
+		expect(data.messages).toEqual([
+			{
+				protocolMentions: [
+					{ source: "task-message", value: "moqt-16" },
+					{ source: "task-message", value: "moqt-18" },
+					{ source: "task-message", value: "moqt-23" },
+					{ source: "task-message", value: "no_application_protocol" },
+				],
+			},
+			{ protocolMentions: [] },
+		]);
+		expect(JSON.stringify(data)).not.toMatch(
+			/negotiated|connected|healthy|success/i,
+		);
+	});
+	it("bounds message output at 100 and reports the provider's full returned count", async () => {
+		mocks.task.mockResolvedValue({
+			status: "QUEUED",
+			messages: [
+				...Array.from({ length: 100 }, () => ({ type: "INFO" })),
+				{ type: "ERROR", text: "moqt-23 secret" },
+			],
+		});
+		const response = await GET(request("?kind=task"), context());
+		expect(response.status).toBe(200);
+		const { data } = await response.json();
+		expect(data).toMatchObject({
+			status: "QUEUED",
+			totalMessageCount: 101,
+			messagesTruncated: true,
+		});
+		expect(data.messages).toHaveLength(100);
+		expect(JSON.stringify([data, mocks.audit.mock.calls])).not.toContain(
+			"moqt-23",
+		);
+	});
+	it.each([
+		{ messages: undefined, expectedCount: null },
+		{ messages: [], expectedCount: 0 },
+	])("distinguishes unavailable messages from an explicitly empty list: $expectedCount", async ({
+		messages,
+		expectedCount,
+	}) => {
+		mocks.task.mockResolvedValue({ status: "RUNNING", messages });
+		const response = await GET(request("?kind=task"), context());
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toEqual({
+			status: "RUNNING",
+			totalMessageCount: expectedCount,
+			messages: [],
+			messagesTruncated: false,
+		});
+	});
+	it.each([
+		"CREATED",
+		"QUEUED",
+		"RUNNING",
+		"FINISHED",
+		"ERROR",
+		"CANCELED",
+		"TRANSFER_ERROR",
+	])("preserves the SDK task status %s without inferring delivery health", async (status) => {
+		mocks.task.mockResolvedValue({ status, messages: [] });
+		const response = await GET(request("?kind=task"), context());
+		expect(response.status).toBe(200);
+		expect((await response.json()).data.status).toBe(status);
+	});
+	it("omits invalid optional metrics and message metadata rather than forwarding arbitrary strings", async () => {
+		mocks.task.mockResolvedValue({
+			status: "ERROR",
+			progress: Number.POSITIVE_INFINITY,
+			messages: [{ type: "secret-level", date: "secret-date", text: "secret" }],
+		});
+		const response = await GET(request("?kind=task"), context());
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toEqual({
+			status: "ERROR",
+			totalMessageCount: 1,
+			messagesTruncated: false,
+			messages: [{ protocolMentions: [] }],
+		});
+		expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain("secret");
+	});
+	it.each([
+		undefined,
+		"CONNECTED",
+		"secret-status",
+	])("fails closed when provider task status is missing or outside the SDK enum: %s", async (status) => {
+		mocks.task.mockResolvedValue({ status, messages: [] });
+		const response = await GET(request("?kind=task"), context());
+		expect(response.status).toBe(502);
+		expect(
+			JSON.stringify([await response.json(), mocks.audit.mock.calls]),
+		).not.toContain("secret-status");
+	});
+	it("retains the run and original-account guards for task reads", async () => {
+		mocks.run.mockResolvedValueOnce(null);
+		expect((await GET(request("?kind=task"), context())).status).toBe(404);
+		expect(mocks.task).not.toHaveBeenCalled();
+		mocks.provenance.mockResolvedValue([
+			{ bitmovinAccountId: ACCOUNT },
+			{ bitmovinAccountId: INPUT },
+		]);
+		expect((await GET(request("?kind=task"), context())).status).toBe(409);
+		expect(mocks.account).not.toHaveBeenCalled();
+		expect(mocks.task).not.toHaveBeenCalled();
+	});
+	it("rejects account overrides for task reads before DB or provider access", async () => {
+		const response = await GET(
+			request(`?kind=task&bitmovinAccountId=${INPUT}`),
+			context(),
+		);
+		expect(response.status).toBe(400);
+		expect(mocks.run).not.toHaveBeenCalled();
+		expect(mocks.task).not.toHaveBeenCalled();
+	});
+	it("reports task read failures safely at the distinct status audit path", async () => {
+		mocks.task.mockRejectedValue({
+			httpStatusCode: 500,
+			message: "https://task-secret.example/?token=task-secret",
+			shortMessage: "task-secret",
+		});
+		const response = await GET(request("?kind=task"), context());
+		expect(response.status).toBe(502);
+		expect(mocks.audit).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({
+				method: "GET",
+				path: `/encoding/encodings/${ENCODING}/status`,
+				bitmovinAccountId: ACCOUNT,
+				statusCode: 502,
+			}),
+			expect.any(Request),
+		);
+		expect(
+			JSON.stringify([await response.json(), mocks.audit.mock.calls]),
+		).not.toContain("task-secret");
 	});
 });
 

@@ -61,6 +61,16 @@ rtk proxy pnpm --filter @bitovp/web build
 変更した schema／資格情報／Live compiler の既存回帰試験も実行する。
 プロトコルの実測結果は研究ノートと Obsidian に日本語で追記する。
 
+## Task 状態の安全な取得
+
+既存の run 診断 API に `kind=task` を追加し、当該 run と元の account に限定して
+`GET /encoding/encodings/{id}/status` を取得・監査する。状態、有限の進捗値、
+メッセージの severity／日時のみを返し、本文・URL・追加エラー情報は保存しない。
+SDK の Message 型に公開 code フィールドはないため、code は返さない。
+メッセージ総数と先頭100件への切り詰めを明示し、本文中の `moqt-16`／`moqt-18`／
+`moqt-23`／`no_application_protocol` は固定値の「言及」としてのみ記録する。
+言及は ALPN の選択結果や接続・再生成功を示さない。認可・秘匿・上限の回帰試験を先に追加する。
+
 ## 実行記録
 
 実装・回帰試験・build・独立レビューは実施済み。

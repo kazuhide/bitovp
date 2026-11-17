@@ -8,7 +8,7 @@ const integer = z
 export const liveDiagnosticsQuerySchema = z
 	.strictObject({
 		kind: z
-			.enum(["summary", "events", "streams", "srt", "hd-start"])
+			.enum(["summary", "events", "streams", "srt", "hd-start", "task"])
 			.default("summary"),
 		offset: integer.default(0),
 		limit: integer.pipe(z.number().min(1).max(100)).default(25),
@@ -60,6 +60,68 @@ export const diagnosticsSummarySchema = z.object({
 		.optional()
 		.catch(undefined),
 });
+
+// Installed SDK Task/Message/Status/MessageType models define these fields.
+// Message has no public code field. Text is inspected only for fixed mentions,
+// never returned or audited; a mention does not establish negotiated ALPN.
+const taskProtocolMentions = [
+	{
+		value: "moqt-16",
+		pattern: /(?:^|[^A-Za-z0-9_.-])moqt-16(?=$|[^A-Za-z0-9_.-])/,
+	},
+	{
+		value: "moqt-18",
+		pattern: /(?:^|[^A-Za-z0-9_.-])moqt-18(?=$|[^A-Za-z0-9_.-])/,
+	},
+	{
+		value: "moqt-23",
+		pattern: /(?:^|[^A-Za-z0-9_.-])moqt-23(?=$|[^A-Za-z0-9_.-])/,
+	},
+	{
+		value: "no_application_protocol",
+		pattern:
+			/(?:^|[^A-Za-z0-9_.-])no_application_protocol(?=$|[^A-Za-z0-9_.-])/,
+	},
+] as const;
+const taskMessageSchema = z
+	.object({
+		type: z
+			.enum(["ERROR", "WARNING", "INFO", "DEBUG", "TRACE"])
+			.optional()
+			.catch(undefined),
+		date,
+		text: z.string().optional().catch(undefined),
+	})
+	.transform(({ text, ...metadata }) => ({
+		...metadata,
+		protocolMentions: taskProtocolMentions
+			.filter(({ pattern }) => typeof text === "string" && pattern.test(text))
+			.map(({ value }) => ({ source: "task-message" as const, value })),
+	}));
+export const diagnosticsTaskSchema = z
+	.object({
+		status: z.enum([
+			"CREATED",
+			"QUEUED",
+			"RUNNING",
+			"FINISHED",
+			"ERROR",
+			"CANCELED",
+			"TRANSFER_ERROR",
+		]),
+		progress: number,
+		messages: z.array(z.unknown()).optional(),
+	})
+	.transform(({ messages, ...task }) => ({
+		...task,
+		// An omitted provider list is unknown, not evidence of zero messages.
+		totalMessageCount: messages?.length ?? null,
+		messagesTruncated: (messages?.length ?? 0) > 100,
+		messages: (messages ?? [])
+			.slice(0, 100)
+			.map((message) => taskMessageSchema.parse(message)),
+	}));
+
 const manifest = numeric([
 	"timeshift",
 	"liveEdgeOffset",

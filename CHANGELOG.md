@@ -8,7 +8,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
-- Configure experimental MoQ-only Live delivery through encrypted relay credentials and expert JSON plans, with H.264/AAC fMP4 validation and audited Worker execution. Run diagnostics distinguish the requested Encoder version from the actual selected version; relay interoperability and Player Web X playback require separate verification.
+- Configure experimental MoQ-only Live delivery through encrypted relay credentials and expert JSON plans, with H.264/AAC fMP4 validation and audited Worker execution. Run diagnostics distinguish the requested Encoder version from the actual selected version and provide bounded task status/message metadata; relay interoperability and Player Web X playback require separate verification.
 - Compare two or three VOD delivery outputs directly in VMAF Lab report comparisons, with synchronized playback, seeking, per-output quality selection and one audible output. HDR and SDR measurement charts retain their separate evaluation contexts.
 - Search the provider's Encoding Error Definitions by code, category or description from Settings and VOD/Live failure details. The account-scoped, read-only catalogue shows retry guidance without restarting jobs; incomplete or failed catalogue reads remain explicit failures.
 - Reconcile codec, input-stream, filter and muxing creation paths against SDK 1.288.0, with a prioritized functional gap report separating GUI support, JSON-only controls and unqualified provider execution.

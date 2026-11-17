@@ -9,7 +9,7 @@ export const FEATURES = Object.freeze(
 			files: {
 				"src/vmaf/resource-plan.test.ts": 12,
 				"src/vmaf/banding-resources.test.ts": 2,
-				"src/vmaf/processor.test.ts": 243,
+				"src/vmaf/processor.test.ts": 254,
 			},
 		},
 		{
@@ -23,11 +23,12 @@ export const FEATURES = Object.freeze(
 			id: "qc-runtime-safety",
 			workspace: "@bitovp/worker",
 			directory: "apps/worker",
-			description: "Admission cancellation and supervisor adapter contracts",
+			description: "Admission cancellation, absolute deadlines and process lifetime",
 			files: {
 				"src/vmaf/resource-admission.test.ts": 10,
 				"src/vmaf/supervised-runner.test.ts": 4,
-				"src/feeder/process-runner-abort.test.ts": 18,
+				"src/feeder/process-runner-abort.test.ts": 19,
+				"src/vmaf/deadline.test.ts": 5,
 			},
 		},
 	].map((f) =>

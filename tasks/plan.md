@@ -80,6 +80,16 @@ Lauren Tan の講演と pstack の設計を参考に、既存検査を毎回探�
 
 ## 実装順とレビュー
 
+### 追加の受入条件：品質を保った高速な開発サイクル
+
+ユーザーの追加指定により、局所検査とPR全体の両方を改善対象とする。ツールの設置だけでは完了にしない。
+
+- 局所検査は同じsource/環境/suite/件数/2workersで直接実行とハーネスを各3回交互に測る。依存導入済み開発Macで各feature中央値10秒以下、追加overhead中央値1秒以下を初期基準とする。件数・assertionを削って達成しない。実際のdecoder割当を誤動作へ戻すsemantic negativeを既存2回帰で検出する。
+- main `da31b866` のWeb CIは907秒、Installed GUIは1292秒。後者の1085秒はDockerビルドで、実ブラウザー12ケースは約63秒だった。並列jobの時間は加算しない。CIの待ち時間も今回改善し、残課題として繰り延べない。
+- Web全件の分割実行は、全shardの成功だけでなく全ファイルの重複・欠落のない合流と既存skip監査を必須にする。必須context名は維持し、shard欠落・失敗・cancelを合格にしない。
+- HDR用FFmpegはsource-buildの重複とキャッシュ対象漏れを修正する。source/model/patchの対応、キャッシュ内容の完全性、毎回の実行検証を守り、古い検証receiptを成功証拠として使わない。cold/warmを区別して測り、既存の完全source-build検査を維持する。
+- 具体的なCI変更は内訳計測と独立Astro設計レビューを経て実装する。変更前後の実GitHub CI時間・件数を照合し、改善を確認したものだけをmainへマージする。
+
 AとBは別worktree/branchで並列実装し、各々テスト→PR→foreground codex-rescueと独立Codex agent review→修正→CI green→squash merge。二つのPRを合流後、final mainのtreeと対象checksを読み戻す。既存PR148/149のrestackや本番deployを暗黙に追加しない。
 
 局所の変更では対象テストを使い、PRでは既存必須CIを満たす。毎編集で全release gateや高負荷media suiteを繰り返さない。作業Macで全尺QCやエンコードは行わない。

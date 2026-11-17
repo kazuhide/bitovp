@@ -20,7 +20,7 @@ credentials and use a fixed test list, two Vitest workers, and a 120-second limi
 |---|---|---|---|
 | `qc-resource-allocation` | Choose LOCAL QC and its CPU/banding options, then submit | Resource planning, detector reservations, and processor command composition | Actual throughput, GPU capacity, completion ETA |
 | `qc-measurement-validity` | Select reference/distorted content and inspect the QC comparison | HDR compatibility and synthetic frame alignment | Measured video quality, display fidelity, real-media coverage |
-| `qc-runtime-safety` | QC waits for capacity or its running process is interrupted | Admission cancellation and process/supervisor adapter contracts | HTTP cancel acceptance, physical stop of a production job, UI behavior |
+| `qc-runtime-safety` | QC waits for capacity, reaches an absolute deadline, or its running process is interrupted | Admission cancellation, deadline handling and process/supervisor adapter contracts | HTTP cancel acceptance, physical stop of a production job, UI behavior |
 
 All three have `scope: unit-contract`. Their fixtures include synthetic/mocked
 inputs. The receipt never converts them into UI, real GPU, provider, or deployment
@@ -58,3 +58,21 @@ the patch where relevant. Low-impact edits do not require two complete applicati
 runs. The inexpensive harness contract suite covers report faults, CLI rejection,
 real child timeout/cancellation, and residual-group rejection. These checks cannot
 prove that a feature map or assertion describes the right product behavior.
+
+## Development feedback acceptance
+
+Judge the harness by useful feedback time while preserving defect detection. On
+the dependency-ready development machine, measure three alternating pairs of the
+same fixed Vitest command and the harness CLI for each feature. Use the same
+source, environment allowlist, files, counts and two-worker limit; retain each
+sample and compare medians. The initial local targets are at most ten seconds per
+feature and at most one second of added median harness overhead. These are local
+acceptance targets, not guarantees for every host or a cold installation.
+
+Speed passes only when all registered assertions still pass, failure/skip/missing
+coverage remains non-success, and a semantic negative control is detected by the
+existing regression assertions. Keep the required whole-application CI checks.
+Measure their critical path separately: short contract feedback alone does not
+establish a shorter PR-to-merge cycle. Changes to CI parallelism or build reuse
+must preserve complete test coverage, skip audits, source identity and fresh
+validation, and show a measured improvement over the recorded baseline.

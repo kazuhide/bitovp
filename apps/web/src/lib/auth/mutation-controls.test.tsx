@@ -124,7 +124,13 @@ type ParsedSource = {
 	readonly declarations: ReadonlyMap<string, readonly ts.VariableDeclaration[]>;
 };
 
+// These inspectors only read ASTs. Keep one version per source in this test
+// module, and compare the full text so same-name adversarial fixtures stay fresh.
+const parsedSources = new Map<string, ParsedSource>();
+
 function parseSourceText(source: string, text: string): ParsedSource {
+	const cached = parsedSources.get(source);
+	if (cached?.file.text === text) return cached;
 	const file = ts.createSourceFile(
 		source,
 		text,
@@ -142,7 +148,9 @@ function parseSourceText(source: string, text: string): ParsedSource {
 		ts.forEachChild(node, visit);
 	};
 	visit(file);
-	return { file, declarations };
+	const parsed = { file, declarations };
+	parsedSources.set(source, parsed);
+	return parsed;
 }
 
 function parseSource(source: string): ParsedSource {
@@ -1103,6 +1111,46 @@ function users(role: UserRole): SessionDto {
 }
 
 describe("mixed-page mutation control contract", () => {
+	it("reuses the read-only AST for identical source text", () => {
+		const source = "adversarial-cache-reuse.tsx";
+		const text = "const endpoint = '/api/vmaf-jobs';";
+		const parsed = parseSourceText(source, text);
+		expect(parseSourceText(source, text) === parsed).toBe(true);
+		const otherSource = parseSourceText("other-cache-fixture.tsx", text);
+		expect(otherSource.file.fileName).toBe("other-cache-fixture.tsx");
+		expect(otherSource === parsed).toBe(false);
+	});
+
+	it("invalidates reused security proofs for changed text at the same source name", () => {
+		const source = "adversarial-cache-change.tsx";
+		const guarded = `
+			function Fixture() {
+				const canWrite = useMutationAccess("qc.jobs");
+				const save = useMutation({
+					mutationFn: () => apiFetch("/api/vmaf-jobs", { method: "POST" }),
+				});
+				return canWrite && <button onClick={() => save.mutate()} />;
+			}
+		`;
+		const unguarded = guarded.replace("canWrite &&", "canWrite ||");
+		expect(unguarded).toHaveLength(guarded.length);
+		const original = parseSourceText(source, guarded);
+		expect(mutationTriggerProofsFromParsed(original)).toMatchObject([
+			{ control: "qc.jobs", writes: ["POST /api/vmaf-jobs"] },
+		]);
+		const changed = parseSourceText(source, unguarded);
+		expect(mutationTriggerProofsFromParsed(changed)).toMatchObject([
+			{ control: null, writes: ["POST /api/vmaf-jobs"] },
+		]);
+		// Replacing a cached version must not mutate an earlier caller's AST.
+		expect(mutationTriggerProofsFromParsed(original)).toMatchObject([
+			{ control: "qc.jobs", writes: ["POST /api/vmaf-jobs"] },
+		]);
+		expect(
+			mutationTriggerProofsFromParsed(parseSourceText(source, guarded)),
+		).toMatchObject([{ control: "qc.jobs", writes: ["POST /api/vmaf-jobs"] }]);
+	});
+
 	it("keeps every production factory import and reexport owned by the identity-bound hook", () => {
 		const hits = productionTsFiles(SRC_DIR).flatMap((path) => {
 			const source = relative(SRC_DIR, path);

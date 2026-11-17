@@ -1,0 +1,52 @@
+name: Bombadil component properties
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rendition-copy-properties:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The negative control loads the real immutable pre-fix component.
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Install the pinned package manager
+        run: |
+          COREPACK_HOME="$(mktemp -d "$RUNNER_TEMP/corepack-bitovp.XXXXXX")"
+          export COREPACK_HOME
+          printf 'COREPACK_HOME=%s\n' "$COREPACK_HOME" >> "$GITHUB_ENV"
+          corepack enable
+          corepack install
+      - run: pnpm install --frozen-lockfile
+      - run: node --test scripts/bombadil-*.test.mjs
+      - name: Install the Chromium version pinned by Playwright
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Verify the official Bombadil 0.7.10 binary
+        run: |
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            https://github.com/antithesishq/bombadil/releases/download/v0.7.10/bombadil-x86_64-linux \
+            --output "$RUNNER_TEMP/bombadil"
+          printf '%s  %s\n' 6f2664ca7d4067017b4efb26db5c29d6dcfecdc78131f96989d336f12420cc1b "$RUNNER_TEMP/bombadil" | sha256sum --check --strict
+          chmod 700 "$RUNNER_TEMP/bombadil"
+      - name: Explore the real component, detect the old bug and replay its trace
+        run: node scripts/bombadil-component.mjs --binary="$RUNNER_TEMP/bombadil" --output="$RUNNER_TEMP/bombadil-evidence"
+      - name: Preserve traces, provenance and synthetic failure screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bombadil-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/bombadil-evidence/**
+            !${{ runner.temp }}/bombadil-evidence/current/screenshots/**

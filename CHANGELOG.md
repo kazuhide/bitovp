@@ -8,6 +8,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- Explore rendition-copy selection with Bombadil browser property tests, including duplicate-key and reorder sequences, a real historical bug control, and trace replay. Bounded component checks run alongside the existing installed-application tests.
 - Request cancellation of pending or running local VOD QC measurements and optionally set an absolute LOCAL execution deadline. Partial results are retained, expired retries are refused, and request acceptance remains distinct from confirmed process shutdown.
 - Run named QC contract checks through a bounded feature-verification CLI, with read-only readiness checks, strict test-result coverage and retained execution receipts. Focused checks state their scope separately from installed-application and provider validation.
 - Exercise local QC reservations and deadlines with reproducible generated action sequences, covering cancellation order, exclusive work, memory headroom and permit cleanup. The quality report separates added defect detection from historical regression replay and execution speed.
@@ -20,10 +21,14 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Changed
 
+- Avoid redundant parsing and broad DOM label scans in existing Web tests while retaining their assertions, complete source inventory and time limits.
+
 - Run the complete Web test suite across four audited shards and reuse verified HDR native build outputs in the installed-application and offline-media checks. Cached native outputs still run the current HDR proof before use, and required coverage and source-build checks remain enforced.
 - Update the Bitmovin API SDK to 1.288.0 and refresh the Encoding API census, including the new MoQ output operations. Existing runtime capabilities retain their current support boundaries.
 
 ### Fixed
+
+- Block repeated extglob compilation in the build/test dependency picomatch while an official fix for GHSA-fc5q-39xc-vjpf is unavailable. Dependency audits retain the native finding and verify the exact patch, every installed copy and bounded regression checks before classifying it as locally mitigated; repeated extglob syntax is temporarily unsupported.
 
 - Keep each output file's Review row distinct while a draft temporarily contains duplicate video-stream keys. Preserve both destinations and the validation that prevents submitting duplicate streams.
 - Copy the selected rendition's settings when generated stream keys temporarily overlap during editing, including the default last-row choice, without confusing UI selection with encoding identity.

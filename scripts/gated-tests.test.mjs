@@ -4757,6 +4757,86 @@ test("CI permits only its exact sanitized receipt upload and keeps every other f
 		assert.throws(() => policy(name, WEB_REPORT_UPLOAD));
 });
 
+// Only these four files, created by the dependency gate in its fresh directory,
+// may leave the runner. Do not exempt the job or other artifact uploads.
+const DEPENDENCY_AUDIT_UPLOAD = [
+	"      - name: Retain raw dependency audit and mitigation proof",
+	"        if: always()",
+	"        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2",
+	"        with:",
+	"          name: dependency-audit",
+	"          path: |",
+	`            \${{ runner.temp }}/dependency-audit/audit.stdout.json`,
+	`            \${{ runner.temp }}/dependency-audit/audit.stderr.txt`,
+	`            \${{ runner.temp }}/dependency-audit/audit-exit.json`,
+	`            \${{ runner.temp }}/dependency-audit/verified.json`,
+	"          if-no-files-found: error",
+	"          retention-days: 7",
+	"",
+].join("\n");
+
+function withoutDependencyAuditUpload(name, text) {
+	if (name !== "ci.yml" && name !== "security-audit.yml") return text;
+	assert.equal(
+		text.split(DEPENDENCY_AUDIT_UPLOAD).length - 1,
+		1,
+		"Dependency audit must retain exactly its four receipt files once",
+	);
+	return text.replace(DEPENDENCY_AUDIT_UPLOAD, "");
+}
+
+test("dependency audit uploads only its exact four receipt files and keeps other forbidden bytes forbidden", () => {
+	const policy = (name, text) =>
+		assert.doesNotMatch(withoutDependencyAuditUpload(name, text), FORBIDDEN);
+	for (const name of ["ci.yml", "security-audit.yml"]) {
+		const actual = readFileSync(
+			resolve(root, ".github/workflows", name),
+			"utf8",
+		);
+		assert.equal(actual.split(DEPENDENCY_AUDIT_UPLOAD).length - 1, 1);
+		assert.doesNotThrow(() => policy(name, DEPENDENCY_AUDIT_UPLOAD));
+		for (const [before, after] of [
+			["cf430e030ddbb5b0abf93d22962f4752f3646cd9", "0".repeat(40)],
+			["actions/upload-artifact@", "example/upload-artifact@"],
+			["if: always()", "if: success()"],
+			["name: dependency-audit", "name: private-state"],
+			["audit.stdout.json", "*"],
+			["audit.stderr.txt", "../secrets.txt"],
+			["audit-exit.json", "unverified.json"],
+			["verified.json", "**/*"],
+			["if-no-files-found: error", "if-no-files-found: ignore"],
+			["retention-days: 7", "retention-days: 90"],
+			[
+				"        with:\n",
+				"        with:\n          include-hidden-files: true\n",
+			],
+		])
+			assert.throws(
+				() => policy(name, DEPENDENCY_AUDIT_UPLOAD.replace(before, after)),
+				assert.AssertionError,
+				before,
+			);
+		for (const extra of [
+			DEPENDENCY_AUDIT_UPLOAD,
+			"      - uses: actions/upload-artifact@v7\n",
+			`\${{ secrets.VALUE }}`,
+			"docker push image",
+		])
+			assert.throws(() => policy(name, DEPENDENCY_AUDIT_UPLOAD + extra));
+	}
+	for (const name of [
+		"installed-gui.yml",
+		"offline-media.yml",
+		"ffmpeg-source-build.yml",
+	]) {
+		assert.equal(
+			withoutDependencyAuditUpload(name, "ordinary steps"),
+			"ordinary steps",
+		);
+		assert.throws(() => policy(name, DEPENDENCY_AUDIT_UPLOAD));
+	}
+});
+
 const HDR_SCREENSHOT_UPLOAD =
 	"      - name: Save synthetic HDR UI screenshots\n" +
 	"        if: always() && env.BITOVP_ARCHIVE_DIR != ''\n" +
@@ -5118,11 +5198,14 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 	// workflow here could plausibly gain, and is no proof that nothing is
 	// published.
 	for (const [name, [job, steps]] of Object.entries(jobs)) {
-		// Validate the sole PNG upload in full before applying every original
-		// golden adjacency, condition and forbidden-byte assertion to the rest.
+		// Validate each explicitly permitted receipt/screenshot upload before
+		// applying every original adjacency, condition and forbidden-byte assertion.
 		const text = withoutCiWebReceiptUpload(
 			name,
-			withoutInstalledGuiHdrUpload(name, workflow(name)),
+			withoutDependencyAuditUpload(
+				name,
+				withoutInstalledGuiHdrUpload(name, workflow(name)),
+			),
 		);
 		const holder = jobOf(text, job);
 		assert(holder.includes(steps), name);
@@ -5263,6 +5346,7 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 		)
 		.sort();
 	assert.deepEqual(others, [
+		"bombadil.yml",
 		"hierarchical-flow.yml",
 		"native-vmaf.yml",
 		"pages.yml",

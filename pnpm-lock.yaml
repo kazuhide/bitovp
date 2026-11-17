@@ -52,6 +52,7 @@ overrides:
 
 patchedDependencies:
   '@aws-sdk/xml-builder@3.972.42': 8a751b45833248706d788c0318de950367f7987cfd7099e14de8eaa70b1d3405
+  picomatch@4.0.7: a2b6a6ddd143c9b315be925d1cb737f94338b02729afba274fb8798057088e7f
 
 importers:
 
@@ -69,6 +70,9 @@ importers:
       turbo:
         specifier: ^2.5.8
         version: 2.9.18
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
 
   apps/site:
     dependencies:
@@ -6483,9 +6487,9 @@ snapshots:
       strnum: 2.5.1
       xml-naming: 0.3.0
 
-  fdir@6.5.0(picomatch@4.0.7):
+  fdir@6.5.0(picomatch@4.0.7(patch_hash=a2b6a6ddd143c9b315be925d1cb737f94338b02729afba274fb8798057088e7f)):
     optionalDependencies:
-      picomatch: 4.0.7
+      picomatch: 4.0.7(patch_hash=a2b6a6ddd143c9b315be925d1cb737f94338b02729afba274fb8798057088e7f)
 
   fetch-blob@3.2.0:
     dependencies:
@@ -7030,7 +7034,7 @@ snapshots:
 
   picocolors@1.1.1: {}
 
-  picomatch@4.0.7: {}
+  picomatch@4.0.7(patch_hash=a2b6a6ddd143c9b315be925d1cb737f94338b02729afba274fb8798057088e7f): {}
 
   pkg-types@2.3.1:
     dependencies:
@@ -7404,8 +7408,8 @@ snapshots:
 
   tinyglobby@0.2.17:
     dependencies:
-      fdir: 6.5.0(picomatch@4.0.7)
-      picomatch: 4.0.7
+      fdir: 6.5.0(picomatch@4.0.7(patch_hash=a2b6a6ddd143c9b315be925d1cb737f94338b02729afba274fb8798057088e7f))
+      picomatch: 4.0.7(patch_hash=a2b6a6ddd143c9b315be925d1cb737f94338b02729afba274fb8798057088e7f)
 
   tinyrainbow@3.1.0: {}
 
@@ -7501,7 +7505,7 @@ snapshots:
   vite@8.1.6(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.22.5)(yaml@2.9.1):
     dependencies:
       lightningcss: 1.32.0
-      picomatch: 4.0.7
+      picomatch: 4.0.7(patch_hash=a2b6a6ddd143c9b315be925d1cb737f94338b02729afba274fb8798057088e7f)
       postcss: 8.5.31
       rolldown: 1.1.5
       tinyglobby: 0.2.17
@@ -7527,7 +7531,7 @@ snapshots:
       magic-string: 0.30.21
       obug: 2.1.2
       pathe: 2.0.3
-      picomatch: 4.0.7
+      picomatch: 4.0.7(patch_hash=a2b6a6ddd143c9b315be925d1cb737f94338b02729afba274fb8798057088e7f)
       std-env: 4.1.0
       tinybench: 2.9.0
       tinyexec: 1.2.4

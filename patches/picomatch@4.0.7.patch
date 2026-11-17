@@ -1,0 +1,15 @@
+--- a/lib/parse.js
++++ b/lib/parse.js
+@@ -521,6 +521,12 @@
+   };
+ 
+   const extglobOpen = (type, value) => {
++    if (type === 'plus' || type === 'star') {
++      const error = new SyntaxError('Repeated extglobs +(...) and *(...) are temporarily unsupported');
++      error.code = 'ERR_PICOMATCH_REPEATED_EXTGLOB';
++      throw error;
++    }
++
+     const token = { ...EXTGLOB_CHARS[value], conditions: 1, inner: '' };
+ 
+     token.prev = prev;

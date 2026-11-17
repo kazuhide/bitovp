@@ -25,6 +25,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Changed
 
+- Keep comparison playback compact by moving explanatory notes into information popovers and removing its duplicate heading. Drag the desktop navigation boundary left to hide the menu and widen the players without restarting playback; use the edge button or keyboard to restore it.
 - Avoid redundant parsing and broad DOM label scans in existing Web tests while retaining their assertions, complete source inventory and time limits.
 
 - Run the complete Web test suite across four audited shards and reuse verified HDR native build outputs in the installed-application and offline-media checks. Cached native outputs still run the current HDR proof before use, and required coverage and source-build checks remain enforced.

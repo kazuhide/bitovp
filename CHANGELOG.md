@@ -8,6 +8,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- Explore rendition-copy selection with Bombadil browser property tests, including duplicate-key and reorder sequences, a real historical bug control, and trace replay. Bounded component checks run alongside the existing installed-application tests.
 - Request cancellation of pending or running local VOD QC measurements and optionally set an absolute LOCAL execution deadline. Partial results are retained, expired retries are refused, and request acceptance remains distinct from confirmed process shutdown.
 - Run named QC contract checks through a bounded feature-verification CLI, with read-only readiness checks, strict test-result coverage and retained execution receipts. Focused checks state their scope separately from installed-application and provider validation.
 - Exercise local QC reservations and deadlines with reproducible generated action sequences, covering cancellation order, exclusive work, memory headroom and permit cleanup. The quality report separates added defect detection from historical regression replay and execution speed.

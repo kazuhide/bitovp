@@ -41,6 +41,8 @@
 			"apps/**",
 			"packages/**",
 			"tests/browser/**",
+			"tests/bombadil/**",
+			"scripts/bombadil-*.mjs",
 			"scripts/installed-gui-smoke*.mjs",
 			"scripts/nonpaid-submit-proof*.mjs",
 			"scripts/database-restore-proof*.mjs",

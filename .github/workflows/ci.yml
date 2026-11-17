@@ -108,6 +108,7 @@ jobs:
           pnpm verify:feature run qc-runtime-safety --output "$RUNNER_TEMP/feature-qc-runtime-safety"
       - run: pnpm --filter @bitovp/worker smoke
       - run: node --test scripts/web-test-shards.test.mjs
+      - run: node --test scripts/bombadil-*.test.mjs
 
   tests:
     runs-on: ubuntu-latest

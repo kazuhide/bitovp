@@ -1,54 +1,68 @@
-# Bombadilの適用判断
+# Bombadilの適用と実測
 
-2026-11-17。公式Manual 0.7.10、公式GitHub Action、BitOVPの既存browser fixtureを静的に確認した。今回は適用設計まで。Bombadilによる実アプリ探索・再生・縮小は未実行で、常時必須CIへ導入済みとは扱わない。
+2026-11-18。公式Bombadil **0.7.10の実binary**を使い、実Reactコンポーネントの操作生成・property検査・旧実装での違反検出・trace再生を実行した。対象を `RenditionAddControls` に限定して採用する。アプリ全体の探索やInstalled GUIの代替ではない。
 
-## 採用候補と検査対象
+## 対象と独立した検査条件
 
-Bombadilは実DOMの状態を取り出し、操作を生成しながらpropertyを検査する。固定手順のPlaywrightが既知の不具合を再現する役割に加え、操作順序で現れる不具合の探索に使う。
+`tests/bombadil/rendition-fixture.tsx` は製品の `RenditionAddControls`、実LocaleProvider、実Select/Button等をそのままbundleする。合成renditionの選択・キー重複・並べ替え・追加・リセットだけを提供し、ログイン、DB、worker、実利用者データ、providerを使わない。
 
-初期候補は3本の出力比較プレーヤー。`tests/browser/output-comparison-fixture.ts` は既に3本の合成HLSと実プレーヤーを使い、private/user dataを含まない。音声の素材自体は無音なので、可聴音ではなくmute選択状態の検査である。
+`rendition.spec.ts` の公式custom action generatorをBombadil自身が実行する。実selectにchangeを送信し、実DOMのbuttonをclickする。独自乱数ループやPlaywright操作列でBombadilを代用していない。最初の5操作は各操作種への到達を保証する短いprefixで、その後はBombadilが操作順を生成する。
 
-| Property | 操作候補 | 合否の境界 |
-|---|---|---|
-| 同時に非mutedとなる比較videoは最大1つ | 音声選択、再生/停止、品質切替、同一画面の再読込 | `video.muted`を実DOMから取得。ボタン選択表示だけで推測しない |
-| 試験対象の比較画面と3本のvideoが観測される | 準備完了後の比較操作 | 未ロード/未ログイン/0 actionsを合格にしない。ready確認・実action数・到達状態を別のcoverage条件にする |
-| 比較条件の異なるHDR/SDRを同一品質順位と誤表示しない | レポート選択・表示切替 | 既存measurement contextと表示を照合。AV1が必ずH.264より高得点というpropertyは設定しない |
+| Property | 独立した期待値 |
+|---|---|
+| `defaultCopySourceIsLast` | 未選択時はfixture入力の最後のrow。旧実装でDOM自体が最初のrowへ変わる不具合も検出する |
+| `explicitSelectionIsNotRedirected` | change captureで記録した利用者の選択。unique keyの並べ替えと、衝突解消後の並べ替えでも保持する |
+| `copiedSourceMatchesVisibleChoice` | Add click直前の実DOM optionラベルと、実onAdd callback indexで選ばれた合成rowの対応 |
+| `eachAddHasOneReceipt` | DOM Add click数と、実onAdd callback receipt数の一致 |
 
-中止/再試行のUIも候補だが、画面にERRORが見えただけではworker停止を証明できない。attempt identityを固定してAPI/workerの証跡と組み合わせる必要がある。lease更新、停止後の容量再割当などは既存の制御可能なworker/Redisテストを主に使う。
+キーが重複している間はpositionだけをidentityとして扱う。重複中の件数変更では最後のrowへ戻す既存仕様を検査し、曖昧なキーにも永続row identityがあるという契約を発明しない。component内部stateやuseEffectをoracleから読み取らない。
 
-## 既存ハーネスとの接続
+## 実測結果
 
-現fixtureはPlaywrightのroute interceptionで合成API/mediaを提供するため、別の新規ブラウザーでURLを開くだけでは同じfixtureにならない。
+macOS arm64 / Bombadil0.7.10 / Playwright1.64.1のChromium（Google Chrome for Testing156.0.8078.4）で実行した。時間はbrowser起動・bundle後のCLI stageの実測で、CI全job時間ではない。
 
-PoCは既存fixtureが所有する専用ChromiumのCDPへ `browser test-external --remote-debugger` で接続する案を優先する。同じpage/contextを指定でき、interceptionとログイン状態が維持されることを最初に実証する。この間の操作主体はBombadil一つにし、Playwrightは準備と検証・後片付けを担当する。もし同じtargetへの接続を保証できなければ、その時点でPoCをblockedとして記録する。
+| Stage | CLI exit | 実測 | 実trace操作数 | 結果 |
+|---|---:|---:|---:|---|
+| 修正後component | 0 | 30.056秒 | 1734 | property違反0 |
+| 旧8d34064a component | 2 | 0.453秒 | 1 | `defaultCopySourceIsLast` 違反 |
+| 同じ旧bundleで `--reproduce` | 2 | 0.509秒 | 1 | 同じproperty違反を実再現。分岐エラーなし |
 
-origin/allow-urlは専用loopbackの対象画面だけ。既定の全ページ探索をそのまま輸入せず、比較操作だけを生成する。ネットワークは既存の非課金fixture境界で制限する。`allow-url`はnavigation境界であり、外部通信や課金防止そのものの保証として使わない。
+正の実行ではselect963、collision191、rotate183、Add200、reset197を観測した。traceのDOM snapshotから、unique keyの選択を保持した並べ替え55回、collision解消後の選択を保持した並べ替え4回、曖昧な選択から件数変更後にdefaultへ戻る遷移49回も確認した。ready、20以上の実trace操作、各操作種・各遷移の非ゼロ件数、実onAdd到達をrunnerが必須にする。未ロードや0操作のexit0は合格にならない。
 
-## 小さなPoCの合格条件
+負の対照はGitの実在する旧componentを一時bundleへ読み込む。ローカル実測のcommit `8d34064a343337090118f5196d81c8349318b0f8`、component SHA256 `5a4eaf947b6d789a5132a85a93afe6e5c8474ac6841fc3e4b41f10ee42b42d69` を検証し、製品sourceを変更しない。継続CIでは、squash後もmain履歴に残る `8c8642a0332585e934461302df4ac91a55f9bb9e` を参照する。両commitのcomponent bytesと上記SHA256が一致することを確認済みで、削除可能な作業branchへの依存を避ける。重複キーへ変える1操作で「最後のコピー元」を「最初のコピー元」にしてしまう既知不具合を検出した。これは既知不具合に対する追加検出力の証拠であり、Bombadilが未知の製品不具合を新発見したとは扱わない。縮小コマンドは実行していない。
 
-1. 固定バージョンと専用ブラウザーで、対象画面のready、実action数、property評価、trace保存を確認する。観測が0件なら不合格。
-2. 一時fixtureで2本を非mutedにする違反を注入し、意図したproperty名で違反を検出する。起動失敗や汎用console errorで代用しない。元のfixtureへ戻したrunも確認する。
-3. 同じアプリrevision、初期データ、spec、viewport、tool/browser版でtraceを再生する。再現が分岐したらinconclusive/errorとして残す。
-4. 所有するbrowser/server/fixtureを終了し、trace/必要な合成画面だけを保存する。実ユーザーのcookie、画面、署名URLをartifactへ入れない。
+初回のoracleは重複中のAdd後にも選択保持を要求し、既存のdefault復帰仕様を誤って違反にした。実callbackは正しいrowを選んでいた。初回traceを保存して契約を修正し、このoracle不具合を製品バグに数えなかった。その後の30秒試行でも1704操作・旧実装検出・実再生が成立し、最終版で上表の実測を得た。検出できるまで同じ試験を無制限に反復する運用ではない。
 
-PoCの探索は30〜60秒の固定予算から始め、別の外側timeoutとcleanup予算を持つ。これは性能保証ではなく実験上限。再現・縮小は別予算にし、同じ失敗を無制限に繰り返さない。導入判断は実測の時間、再現率、偽陽性、追加の検出例を見て行う。
+## 再実行と証跡
 
-## バージョン・CI・再現性
+既存依存関係が入ったcheckoutで、公式releaseの0.7.10 binaryを取得して次を実行する。runnerは実行前にbinary SHA256を検証する。
 
-- Manual確認版は0.7.10。Action v3は0.7.x向けだがdefaultは0.7.3と記載されている。採用時はCLIのversionとAction commitを固定する。Manualの導入例にあるv2をそのままコピーしない。
-- CLIは時間上限付きtestと `--reproduce` を同時指定できない。reproduceには外側のtimeoutを使う。
-- exit 0は探索範囲で違反を観測しなかったという意味。exit 2はproperty違反、その他は実行エラー。未観測の性質や全入力の正しさを証明しない。
-- reproduceはbest effortで、分岐するとエラーになる。shrinkもexperimentalであり最小反例を常に得られるとは限らない。
-- 発見した不具合は可能な限り小さい固定Playwright/worker回帰テストへ移す。ランダム探索をPRの唯一の合否基準にしない。
-- 初期PoCは現在の必須CIを置き換えない。安定した時間・証跡・再現経路が成立してから対象を限定したCIへ接続する。
-- heap増加の閾値はGCで揺れるため、根拠なく5MB等をコピーしない。リーク検査は必要な場合にDOM/listenerのbaselineを計測してから追加する。
+```sh
+node --test scripts/bombadil-component.test.mjs
+node scripts/bombadil-component.mjs --binary=/absolute/path/to/bombadil --output=/absolute/path/to/new-evidence-directory
+```
+
+別checkoutの既存node_modulesを読み取り専用で使う場合だけ `--dependencies=/absolute/path/to/checkout` を付ける。package/lock更新は不要。runnerは既存Vitest→Vite/esbuildからbundleし、既存Playwrightが指定する専用Chromium binaryを使う。
+
+- macOS arm64 binary SHA256: `3d7866e2e8356390a0f2560853e3c775839f8c8ff648c9552c0105f7f78d1d72`
+- Linux x86_64 binary SHA256: `6f2664ca7d4067017b4efb26db5c29d6dcfecdc78131f96989d336f12420cc1b`
+- 修正後componentの実測SHA256: `a8d014e15b8d3817e014f9b3759fe847c966a2a66922bdf8f0d80be685d95f99`
+
+出力先は新規directoryのみ。version、tool/browser/component/spec/fixture/lock/bundleのhash、実際のコマンド、終了理由、trace、callbackの観測値、再生結果を保存する。specとfixtureのsnapshotも保存し、3stageは同じspec、origin、viewport、browserで実行する。reproduceとtime-limit/exit-on-violationを同時指定せず、再生には独立した外側60秒timeoutを付ける。生成は各30秒、各CLI stageの外側上限は60秒。
+
+各stageのChromiumは所有する一時profile・CDP・process groupで起動し、Bombadilは `browser test-external --create-target` で接続する。実利用者のbrowser/contextへ接続しない。子process環境はPATH/LANG/TMPDIR/NO_COLORだけを許可し、provider資格情報を引き継がない。serverはloopbackだけ、配信は合成HTML/bundleだけ、CSPで外部通信を許可しない。正常終了・失敗・signal中断とも所有process/server/tempだけをfinallyで終了・削除する。
+
+## CIへの接続と限界
+
+`.github/workflows/bombadil.yml` を独立した並列workflowとして追加した。既存CIやInstalled GUIを短縮・置換しない。既存quality jobには軽量なrunner契約テスト4件だけを追加する。
+
+新workflowは固定Action、固定Linux CLI checksum、lockで固定されたPlaywright browserを使い、同じ3stageを実行する。アプリ全体のbuildは行わない。job上限8分、artifact保持7日。正の探索の大量screenshotsはCI artifactから除き、全trace・provenance・失敗/再生の合成screenshotsは残す。macOS最終試行の全証跡は約260MB規模で、主に毎stateのscreenshotsである。Linux workflowの所要時間・成功は、実CI完了をもって別途確認する。
+
+30秒の有限探索は全入力や実アプリnavigationの正しさを証明しない。replayは公式にもbest effortとされるため、分岐・起動失敗・generic errorを指定propertyの検出成功に代用しない。このfixtureが検査するのはcomponentの選択とcallbackであり、VOD全体のconfig生成・submitやprovider処理ではない。3動画のmute排他を調べる既存Installed GUI案は、route interceptionを維持できる接続が別途必要なので今回の実行対象に含めなかった。
 
 ## 一次資料
 
-- [公式リポジトリ](https://github.com/antithesishq/bombadil)
-- [仕組み](https://antithesishq.github.io/bombadil/browser/1.2-how-it-works.html)
-- [Extractors](https://antithesishq.github.io/bombadil/browser/3.4.2-extractors.html)
-- [Action generators](https://antithesishq.github.io/bombadil/browser/3.4.4-action-generators.html)
-- [外部ブラウザー接続](https://antithesishq.github.io/bombadil/browser/5.1.2-bombadil-browser-test-external.html)
-- [再現](https://antithesishq.github.io/bombadil/browser/4.1-reproducing-violations.html)・[縮小](https://antithesishq.github.io/bombadil/browser/4.2-shrinking-violations.html)
-- [公式Action](https://github.com/antithesishq/bombadil-action)
+- [公式0.7.10 release](https://github.com/antithesishq/bombadil/releases/tag/v0.7.10)
+- [Extractors](https://antithesishq.github.io/bombadil/browser/3.4.2-extractors.html) / [action generators](https://antithesishq.github.io/bombadil/browser/3.4.4-action-generators.html) / [custom actions](https://antithesishq.github.io/bombadil/browser/3.5-custom-actions.html)
+- [外部browser接続](https://antithesishq.github.io/bombadil/browser/5.1.2-bombadil-browser-test-external.html) / [再生](https://antithesishq.github.io/bombadil/browser/4.1-reproducing-violations.html)
+- [公式Chromium起動・cleanup実装](https://github.com/antithesishq/bombadil/blob/v0.7.10/lib/bombadil-browser/src/chromium.rs)

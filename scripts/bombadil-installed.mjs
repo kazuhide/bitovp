@@ -386,20 +386,54 @@ function registrations(state, create = false) {
 	return directory;
 }
 
-/** Inspect one known PID only. Linux receipts bind boot identity, start ticks and PGID. */
+/** Inspect one known Linux PID with the same birth identity on both sides of cmdline. */
+export function linuxInstalledProcessIdentity(pid, read = readFileSync) {
+	assert(Number.isSafeInteger(pid) && pid > 1);
+	const readStat = () => {
+		const stat = read(`/proc/${pid}/stat`, "utf8");
+		const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+		const group = Number(fields[2]);
+		const ticks = fields[19];
+		assert(
+			stat.startsWith(`${pid} (`) &&
+				Number.isSafeInteger(group) &&
+				group > 0 &&
+				typeof ticks === "string" &&
+				/^\d+$/.test(ticks),
+			"Invalid Linux process identity",
+		);
+		return { state: fields[0], group, ticks };
+	};
+	const dead = ({ state }) => state === "Z" || state === "X";
+	let after, command;
+	try {
+		const before = readStat();
+		if (dead(before)) return null;
+		command = read(`/proc/${pid}/cmdline`, "utf8");
+		after = readStat();
+		assert(
+			before.ticks === after.ticks && before.group === after.group,
+			"Process identity changed while reading cmdline",
+		);
+		if (dead(after)) return null;
+	} catch (error) {
+		if (error.code === "ENOENT") return null;
+		throw error;
+	}
+	const boot = read("/proc/sys/kernel/random/boot_id", "utf8").trim();
+	assert(boot, "Linux boot identity unavailable");
+	return {
+		group: after.group,
+		start: `${boot}:${after.ticks}`,
+		command: command ? command.split("\0") : [],
+	};
+}
+
+/** Inspect one known PID only. */
 export function installedProcessIdentity(pid) {
 	assert(Number.isSafeInteger(pid) && pid > 1);
+	if (process.platform === "linux") return linuxInstalledProcessIdentity(pid);
 	try {
-		if (process.platform === "linux") {
-			const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-			const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-			if (fields[0] === "Z") return null;
-			return {
-				group: Number(fields[2]),
-				start: `${readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim()}:${fields[19]}`,
-				command: readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0"),
-			};
-		}
 		// The hosted fixture is Linux-only. This bounded PID-specific branch lets
 		// the same real-process ownership regressions run on a developer's Mac.
 		const text = execFileSync(
@@ -427,15 +461,42 @@ export function installedProcessIdentity(pid) {
 			),
 		};
 	} catch (error) {
-		if (
-			error.code === "ENOENT" ||
-			(process.platform !== "linux" && error.status === 1)
-		)
-			return null;
+		if (error.code === "ENOENT" || error.status === 1) return null;
 		throw error;
 	}
 }
 const contains = (identity, value) => identity.command.includes(value);
+
+export async function installedCleanupIdentity(
+	record,
+	inspect = installedProcessIdentity,
+) {
+	const deadline = performance.now() + 3000;
+	for (;;) {
+		const identity = inspect(record.pid);
+		if (!identity) return null;
+		assert(
+			identity.start === record.start && identity.group === record.pid,
+			"Stale or foreign installed driver identity",
+		);
+		if (!Array.isArray(identity.command) || identity.command.length > 0) {
+			assert(
+				contains(identity, record.marker) &&
+					contains(identity, OWNER_GUARD) &&
+					contains(identity, registrationCode),
+				"Stale or foreign installed driver identity",
+			);
+			return identity;
+		}
+		// Linux can clear the command line before publishing zombie state.
+		// A matching start and group identify a candidate, not permission to signal.
+		assert(
+			performance.now() < deadline,
+			"Installed driver identity unavailable; retaining private fixture",
+		);
+		await pause(20);
+	}
+}
 
 export function registerInstalledGroup(state, pid) {
 	const directory = registrations(state);
@@ -538,27 +599,12 @@ export async function cleanupInstalledDrivers(state) {
 				record.start.length > 0,
 			"Invalid installed driver identity",
 		);
-		const identity = installedProcessIdentity(record.pid);
-		if (identity)
-			assert(
-				identity.start === record.start &&
-					identity.group === record.pid &&
-					contains(identity, record.marker) &&
-					contains(identity, OWNER_GUARD) &&
-					contains(identity, registrationCode),
-				"Stale or foreign installed driver identity",
-			);
+		await installedCleanupIdentity(record);
 		records.push(record);
 	}
 	for (const record of records) {
-		const identity = installedProcessIdentity(record.pid);
+		const identity = await installedCleanupIdentity(record);
 		if (identity) {
-			assert(
-				identity.start === record.start &&
-					identity.group === record.pid &&
-					contains(identity, record.marker),
-				"Installed driver identity changed before cleanup",
-			);
 			try {
 				process.kill(-record.pid, "SIGKILL");
 			} catch (error) {

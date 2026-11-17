@@ -21,10 +21,12 @@ import {
 	cleanupInstalledDrivers,
 	executeInstalledDriver,
 	installedBrowserConnection,
+	installedCleanupIdentity,
 	installedDriverDiagnostic,
 	installedFailureCategory,
 	installedProcessIdentity,
 	launchInstalledBrowser,
+	linuxInstalledProcessIdentity,
 	linuxSocketPathBytes,
 } from "./bombadil-installed.mjs";
 import { cleanupFixture } from "./installed-gui-smoke.mjs";
@@ -214,6 +216,43 @@ async function running(pid) {
 		throw error;
 	}
 }
+
+test("Linux process snapshot rejects a replacement during cmdline collection", () => {
+	const pid = 12345;
+	const stat = (start) =>
+		`${pid} (test with ) inside) S 1 ${pid} ${"0 ".repeat(16)}${start} 0`;
+	const reads = [stat(100), "foreign\0", stat(200)];
+	assert.throws(
+		() => linuxInstalledProcessIdentity(pid, () => reads.shift()),
+		/Process identity changed while reading cmdline/,
+	);
+	assert.deepEqual(reads, []);
+});
+
+test("cleanup observes an exiting Linux driver to death without accepting a replacement", async () => {
+	const record = { pid: 12345, start: "boot:100" };
+	const exiting = { group: record.pid, start: record.start, command: [] };
+	const sequences = [
+		{
+			rejected: false,
+			reads: [exiting, null],
+		},
+		{
+			rejected: true,
+			reads: [exiting, { ...exiting, start: "boot:200" }],
+		},
+	];
+	for (const { rejected, reads } of sequences) {
+		const observe = () => installedCleanupIdentity(record, () => reads.shift());
+		if (rejected)
+			await assert.rejects(
+				observe,
+				/Stale or foreign installed driver identity/,
+			);
+		else assert.equal(await observe(), null);
+		assert.deepEqual(reads, []);
+	}
+});
 
 for (const signal of ["SIGTERM", "SIGKILL", null])
 	test(`outer fixture cleanup waits for installed driver and tool after ${signal ?? "a live wrapper"}`, {

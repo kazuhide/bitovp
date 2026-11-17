@@ -3,6 +3,10 @@
 調査日: 2026-11-17。公開仕様・公開ソース・SDK 型の確認と、公開接続先への TLS/ALPN 試験。
 BitOVP 調査基点: `da31b866166763fda126dcc1cd6ec858d3ab42ce`。
 
+追記: BitOVP に MoQ 出力を実装し、`BETA` Encoder の Live 開始を試した結果は
+[実 Encoder 試験結果](MOQ-LIVE-ENCODER-TEST-RESULTS.md)に記録した。
+アカウントの MoQ 未有効化で開始が拒否され、実 Encoder の送信 draft は未確認である。
+
 ## 判断
 
 **試験した時雨堂の公開 native QUIC 接続先とは、Bitmovin の公開対応 draft では接続できなかった。**

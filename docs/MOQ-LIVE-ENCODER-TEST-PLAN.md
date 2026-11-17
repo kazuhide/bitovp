@@ -60,3 +60,9 @@ rtk proxy pnpm --filter @bitovp/web build
 
 変更した schema／資格情報／Live compiler の既存回帰試験も実行する。
 プロトコルの実測結果は研究ノートと Obsidian に日本語で追記する。
+
+## 実行記録
+
+実装・回帰試験・build・独立レビューは実施済み。
+[実 Encoder 試験](MOQ-LIVE-ENCODER-TEST-RESULTS.md)はアプリ経由で開始要求まで進んだが、
+使用した organization の MoQ 機能制限で拒否された。Relay 接続と再生の検証は未完了。

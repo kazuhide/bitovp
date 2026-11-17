@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 export const COMMANDS = Object.freeze(
 	[
 		["pnpm", "install", "--frozen-lockfile"],
-		["pnpm", "audit", "--audit-level", "low"],
+		["node", "scripts/dependency-audit.mjs"],
 		["pnpm", "typecheck"],
 		["pnpm", "check"],
 		["pnpm", "test"],

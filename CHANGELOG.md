@@ -21,10 +21,14 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Changed
 
+- Avoid redundant parsing and broad DOM label scans in existing Web tests while retaining their assertions, complete source inventory and time limits.
+
 - Run the complete Web test suite across four audited shards and reuse verified HDR native build outputs in the installed-application and offline-media checks. Cached native outputs still run the current HDR proof before use, and required coverage and source-build checks remain enforced.
 - Update the Bitmovin API SDK to 1.288.0 and refresh the Encoding API census, including the new MoQ output operations. Existing runtime capabilities retain their current support boundaries.
 
 ### Fixed
+
+- Block repeated extglob compilation in the build/test dependency picomatch while an official fix for GHSA-fc5q-39xc-vjpf is unavailable. Dependency audits retain the native finding and verify the exact patch, every installed copy and bounded regression checks before classifying it as locally mitigated; repeated extglob syntax is temporarily unsupported.
 
 - Keep each output file's Review row distinct while a draft temporarily contains duplicate video-stream keys. Preserve both destinations and the validation that prevents submitting duplicate streams.
 - Copy the selected rendition's settings when generated stream keys temporarily overlap during editing, including the default last-row choice, without confusing UI selection with encoding identity.

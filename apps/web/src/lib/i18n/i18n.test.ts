@@ -122,11 +122,13 @@ describe("catalogue parity", () => {
 		// Runtime measurement includes synchronized-output and separated-QC guidance.
 		// MoQ adds Custom Live output guidance and two credential refusals (measured).
 		// MoQ recording, Analytics and heartbeat history guidance (runtime measured).
-		pinWithDriftAid(long.length, 1671, "long");
+		// Canvas provenance adds one long value (catalog instrument: 1672).
+		pinWithDriftAid(long.length, 1672, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Runtime measurement includes three-way output labels (deduplicated).
 		// The two MoQ authorization labels add two unique short Japanese values.
-		pinWithDriftAid(short.size, 3356, "short");
+		// Canvas provenance adds five unique short values (instrument: 3361).
+		pinWithDriftAid(short.size, 3361, "short");
 	});
 
 	/**

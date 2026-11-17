@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentOrganizationContext } from "@/components/providers";
 import { renderWithQuery } from "@/test/render";
@@ -72,6 +72,41 @@ beforeEach(() => {
 	});
 });
 describe("saved MoQ history and received video", () => {
+	it("correlates with existing Push/Heartbeat and keeps secondary measurements collapsed", async () => {
+		const rendered = renderWithQuery(view());
+		await screen.findByText("Video latency (barcode) (ms · UTC)");
+		const link = screen.getByRole("link", { name: "Encoder Push / Heartbeat" });
+		expect(link).toHaveAttribute("href", `/live/${CHANNEL}#sec-heartbeat-log`);
+		expect(link).toHaveAttribute("data-moq-correlate-run", RUN);
+		expect(link).toHaveAttribute("data-moq-correlate-start", at);
+		expect(
+			rendered.container.querySelector("[data-moq-encoder-history]"),
+		).toBeNull();
+		expect(
+			rendered.container.querySelector('[data-moq-chart="latencyMs"]'),
+		).toBeVisible();
+		expect(
+			rendered.container.querySelector('[data-moq-chart="fps"]'),
+		).not.toBeVisible();
+		expect(
+			rendered.container.querySelector('[data-moq-chart="bufferSeconds"]'),
+		).not.toBeVisible();
+		fireEvent.click(screen.getByText("More observations"));
+		for (const plot of rendered.container.querySelectorAll("[data-moq-chart]"))
+			expect(plot).toBeVisible();
+	});
+	it("renders zero-sample history compactly without empty plots or a duplicate encoder dashboard", async () => {
+		const response = await mocks.api();
+		response.sessions[0].samples = [];
+		mocks.api.mockResolvedValue(response);
+		const rendered = renderWithQuery(view());
+		expect(await screen.findByText("No saved samples")).toBeVisible();
+		expect(rendered.container.querySelector("figure")).toBeNull();
+		expect(
+			rendered.container.querySelector("[data-moq-encoder-history]"),
+		).toBeNull();
+		expect(rendered.container.querySelector("video")).not.toBeNull();
+	});
 	it("names saved canvas pixel updates without presenting them as source FPS", async () => {
 		const response = await mocks.api();
 		response.sessions[0].samples[0].renderingSource = "canvas";
@@ -80,7 +115,9 @@ describe("saved MoQ history and received video", () => {
 		renderWithQuery(view());
 		expect(
 			await screen.findByText("Canvas image updates (/s · UTC)"),
-		).toBeInTheDocument();
+		).not.toBeVisible();
+		fireEvent.click(screen.getByText("More observations"));
+		expect(screen.getByText("Canvas image updates (/s · UTC)")).toBeVisible();
 		expect(screen.getByText("Canvas (video-only capture)")).toBeInTheDocument();
 		expect(screen.queryByText("Video FPS (fps · UTC)")).toBeNull();
 	});
@@ -135,7 +172,9 @@ describe("saved MoQ history and received video", () => {
 		};
 		mocks.api.mockResolvedValue(response);
 		renderWithQuery(view());
-		expect(await screen.findByText("Configured namespace")).toBeInTheDocument();
+		expect(await screen.findByText("Configured namespace")).not.toBeVisible();
+		fireEvent.click(screen.getByText("Configuration"));
+		expect(screen.getByText("Configured namespace")).toBeVisible();
 		expect(
 			screen.getByText("Configured namespace").nextElementSibling,
 		).toHaveTextContent("original-run");
@@ -166,6 +205,7 @@ describe("saved MoQ history and received video", () => {
 			<MoqHistoryPanel channelId={CHANNEL} runId={RUN} active={false} />,
 		);
 		expect(await screen.findByText("Unmeasured")).toBeInTheDocument();
-		expect(screen.getByText(/Browser clock UTC/)).toBeInTheDocument();
+		expect(screen.queryByText("Video latency (barcode) (ms · UTC)")).toBeNull();
+		expect(screen.getByText(/Browser clock UTC/)).not.toBeVisible();
 	});
 });

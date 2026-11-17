@@ -110,6 +110,15 @@ afterEach(() => {
 });
 
 describe("explicit MoQ preview", () => {
+	it("keeps idle capture bookkeeping out of the primary player view", () => {
+		renderWithQuery(view());
+		expect(
+			screen.getByText("Recording waits for received video"),
+		).not.toBeVisible();
+		expect(screen.getByText("Observations have not started")).not.toBeVisible();
+		expect(screen.getByText("Analytics not configured")).not.toBeVisible();
+		expect(screen.queryByText("Decoded frames")).toBeNull();
+	});
 	it("passes the document organization to the native asset loader and exposes a safe initialization phase", async () => {
 		const rendered = renderWithQuery(view());
 		await userEvent.click(screen.getByRole("button", { name: "Play" }));
@@ -188,9 +197,7 @@ describe("explicit MoQ preview", () => {
 		await act(async () => {
 			fireEvent.click(screen.getByRole("button", { name: "Stop" }));
 		});
-		expect(screen.getByText("Resolution").nextElementSibling).toHaveTextContent(
-			"—",
-		);
+		expect(screen.queryByText("Resolution")).toBeNull();
 		expect(
 			screen.getByText("Video latency (barcode)").nextElementSibling,
 		).toHaveTextContent("Unmeasured");

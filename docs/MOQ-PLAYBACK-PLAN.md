@@ -86,6 +86,11 @@ Canvas の更新頻度は画素変化の観測下限として表示し、元の�
 Canvas capture の録画は受信した映像のみで、別の WebAudio 出力は収録しない。
 停止時は観測 callback を止め、録画・Analytics の finalization 後に所有する capture track と video を解放する。
 
+基本表示は映像、実測の遅延・バッファ・解像度・Canvas 更新率に絞り、未取得の counter 行を並べない。
+設定 namespace／draft／catalog／Relay と補助指標は折り畳む。終了後は録画と実測点のある遅延グラフ1つを
+基本表示とし、観測点がなければ空グラフを作らない。Encoder 指標は既存の Push／Heartbeat 表示を利用し、
+MoQ 領域へ重複して描画しない。選択した観測 session の run と UTC 時間帯を、既存 Heartbeat 欄への参照に付ける。
+
 変更前に failing tests を置き、secret validation／redaction、tenant・run・account の照合、
 publish token 非返却、asset hash 不一致、loader failure、teardown と run 変更を検証する。
 関連 tests、typecheck、production build、必要な i18n／API contract checks を通す。

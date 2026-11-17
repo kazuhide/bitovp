@@ -123,12 +123,14 @@ describe("catalogue parity", () => {
 		// MoQ adds Custom Live output guidance and two credential refusals (measured).
 		// MoQ recording, Analytics and heartbeat history guidance (runtime measured).
 		// Canvas provenance adds one long value (catalog instrument: 1672).
-		pinWithDriftAid(long.length, 1672, "long");
+		// Compact MoQ correlation label adds one long value (instrument: 1673).
+		pinWithDriftAid(long.length, 1673, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Runtime measurement includes three-way output labels (deduplicated).
 		// The two MoQ authorization labels add two unique short Japanese values.
 		// Canvas provenance adds five unique short values (instrument: 3361).
-		pinWithDriftAid(short.size, 3361, "short");
+		// Two compact disclosure labels are new; 設定 already exists (instrument: 3363).
+		pinWithDriftAid(short.size, 3363, "short");
 	});
 
 	/**

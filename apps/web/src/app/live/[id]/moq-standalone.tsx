@@ -30,7 +30,7 @@ export function MoqStandalone({
 		},
 	});
 	return (
-		<section className="mx-auto max-w-5xl space-y-4">
+		<section className="mx-auto max-w-3xl space-y-3">
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<h1 className="font-semibold text-xl text-zinc-100">
 					{t("moqPlayback.title")}

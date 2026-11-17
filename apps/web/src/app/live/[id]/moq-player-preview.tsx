@@ -317,21 +317,30 @@ function MoqPlaybackAttempt({
 					ref={host}
 					data-moq-live-host={runId}
 					aria-label={t("moqPlayback.title")}
-					className="aspect-video w-full overflow-hidden rounded-md border border-zinc-800 bg-black [&_video]:h-full [&_video]:w-full [&_video]:object-contain"
+					className="relative aspect-video w-full max-w-2xl overflow-hidden rounded-md border border-zinc-800 bg-black [&_canvas]:h-full [&_canvas]:w-full [&_canvas]:object-contain [&_video]:h-full [&_video]:w-full [&_video]:object-contain"
 				/>
 				<MoqPlayerStatistics
 					statistics={statistics}
 					configuration={configuration}
 					relay={relay}
 				/>
-				<div className="space-y-1 text-xs text-zinc-500">
-					<p aria-live="polite" data-moq-recording={recordingState}>
+				<div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500">
+					<p
+						aria-live="polite"
+						data-moq-recording={recordingState}
+						hidden={recordingState === "idle"}
+					>
 						{t(`moqPlayback.recording.${recordingState}`)}
 					</p>
-					<p data-moq-history-save={historyState}>
+					<p
+						data-moq-history-save={historyState}
+						hidden={historyState !== "failed" && historyState !== "limit"}
+					>
 						{t(`moqPlayback.historySave.${historyState}`)}
 					</p>
-					<p>{t(`moqPlayback.analyticsState.${analyticsState}`)}</p>
+					<p hidden={analyticsState !== "unavailable"}>
+						{t(`moqPlayback.analyticsState.${analyticsState}`)}
+					</p>
 				</div>
 			</details>
 			{active ? (

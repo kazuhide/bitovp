@@ -1,4 +1,4 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderLocalized as render, renderWithQuery } from "@/test/render";
@@ -8,6 +8,31 @@ import {
 	type WizardState,
 } from "./build-plan";
 import { EncodingOptionsSection, LadderSection } from "./wizard-sections";
+
+// Locate only matching labels before computing accessible names. Global label
+// and role queries ask jsdom to resolve labels for hundreds of unrelated fields.
+function selectsNamed(name: string) {
+	return screen
+		.getAllByText<HTMLLabelElement>(name, { selector: "label" })
+		.map((label) => {
+			const control = label.control;
+			if (!control?.parentElement)
+				throw new Error(`Missing labeled control: ${name}`);
+			const select = within(control.parentElement).getByRole("combobox", {
+				name,
+			});
+			expect(select).toBe(control);
+			return select;
+		});
+}
+
+function selectNamed(name: string) {
+	const controls = selectsNamed(name);
+	expect(controls).toHaveLength(1);
+	const control = controls[0];
+	if (!control) throw new Error(`Missing select: ${name}`);
+	return control;
+}
 
 /**
  * : (a) the ladder-level stream-mode control writes EVERY video
@@ -104,7 +129,7 @@ describe("ladder stream-mode control (ledger #119a)", () => {
 				onPatch={onPatch}
 			/>,
 		);
-		fireEvent.change(screen.getByLabelText("Stream mode"), {
+		fireEvent.change(selectNamed("Stream mode"), {
 			target: { value: "PER_TITLE_TEMPLATE" },
 		});
 		const patch = onPatch.mock.lastCall?.[0];
@@ -221,7 +246,7 @@ describe("account-gated HEVCv2 ladder", () => {
 				onPatch={onPatch}
 			/>,
 		);
-		const [codec] = screen.getAllByLabelText("Codec");
+		const [codec] = selectsNamed("Codec");
 		if (!codec) throw new Error("codec control");
 		fireEvent.change(codec, { target: { value: "H265V2" } });
 		expect(onPatch.mock.lastCall?.[0].videos).toEqual([
@@ -248,8 +273,10 @@ describe("account-gated HEVCv2 ladder", () => {
 			/>,
 		);
 		fireEvent.click(screen.getByText("Advanced HEVCv2"));
-		expect(screen.getByLabelText("Frame rate (fps)")).toBeInTheDocument();
-		expect(screen.getByLabelText("Pixel format")).toBeInTheDocument();
+		expect(
+			screen.getByRole("spinbutton", { name: "Frame rate (fps)" }),
+		).toBeInTheDocument();
+		expect(selectNamed("Pixel format")).toBeInTheDocument();
 		expect(screen.queryByLabelText("Profile")).toBeNull();
 		expect(screen.queryByText("HDR10")).toBeNull();
 		expect(screen.getByRole("radio", { name: "Per-Title" })).toBeEnabled();
@@ -280,7 +307,7 @@ it("switching Per-Title H265 to HEVCv2 preserves stream mode and fixed bitrate b
 			onPatch={onPatch}
 		/>,
 	);
-	const [codec] = screen.getAllByLabelText("Codec");
+	const [codec] = selectsNamed("Codec");
 	if (!codec) throw new Error("codec control");
 	fireEvent.change(codec, { target: { value: "H265V2" } });
 	const patch = onPatch.mock.lastCall?.[0];
@@ -324,7 +351,7 @@ it("selects encoding mode per rendition and clears/disables job mode", () => {
 		);
 	}
 	renderWithQuery(<Harness />);
-	const selects = screen.getAllByLabelText("Encoding mode");
+	const selects = selectsNamed("Encoding mode");
 	expect(selects).toHaveLength(2);
 	const [rung, global] = selects;
 	if (!rung || !global) throw new Error("mode controls");
@@ -349,7 +376,7 @@ it("shows HEVCv2 SMART_PASS only on its codec and leaves the job mode blank", ()
 			<EncodingOptionsSection state={state} onPatch={vi.fn()} />
 		</>,
 	);
-	const [rung, global] = screen.getAllByLabelText("Encoding mode");
+	const [rung, global] = selectsNamed("Encoding mode");
 	expect(rung).toHaveValue("SMART_PASS");
 	expect(global).toBeDisabled();
 	expect(global).toHaveValue("");
@@ -358,9 +385,9 @@ it("disables job mode for the default H264 codec preset", () => {
 	renderWithQuery(
 		<EncodingOptionsSection state={DEFAULT_WIZARD_STATE} onPatch={vi.fn()} />,
 	);
-	expect(screen.getByLabelText("Encoding mode")).toBeDisabled();
-	expect(screen.getByLabelText("Encoding mode")).toHaveValue("");
-	expect(screen.getByLabelText("Encoding mode")).toHaveDisplayValue(
+	expect(selectNamed("Encoding mode")).toBeDisabled();
+	expect(selectNamed("Encoding mode")).toHaveValue("");
+	expect(selectNamed("Encoding mode")).toHaveDisplayValue(
 		"Use ladder encoding modes / presets",
 	);
 });
@@ -384,10 +411,10 @@ it("removing the H264 preset enables a job mode without adding a codec mode", ()
 	}
 	renderWithQuery(<Harness />);
 	fireEvent.click(screen.getByText("Advanced (H264)"));
-	fireEvent.change(screen.getByLabelText("Preset configuration"), {
+	fireEvent.change(selectNamed("Preset configuration"), {
 		target: { value: "" },
 	});
-	const global = screen.getAllByLabelText("Encoding mode")[1];
+	const global = selectsNamed("Encoding mode")[1];
 	if (!global) throw new Error("job mode");
 	expect(global).toBeEnabled();
 	fireEvent.change(global, { target: { value: "TWO_PASS" } });
@@ -395,7 +422,7 @@ it("removing the H264 preset enables a job mode without adding a codec mode", ()
 	expect(plan.generation.encodingMode).toBe("TWO_PASS");
 	expect(plan.renditions[0].presetConfiguration).toBeNull();
 	expect(plan.renditions[0].encodingMode).toBeUndefined();
-	fireEvent.change(screen.getByLabelText("Preset configuration"), {
+	fireEvent.change(selectNamed("Preset configuration"), {
 		target: { value: "VOD_STANDARD" },
 	});
 	expect(global).toBeDisabled();

@@ -10,6 +10,7 @@ import {
 	symlink,
 	writeFile,
 } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -19,9 +20,161 @@ import {
 	acceptInstalledTrace,
 	cleanupInstalledDrivers,
 	executeInstalledDriver,
+	installedBrowserConnection,
+	installedDriverDiagnostic,
+	installedFailureCategory,
 	installedProcessIdentity,
+	launchInstalledBrowser,
 } from "./bombadil-installed.mjs";
 import { cleanupFixture } from "./installed-gui-smoke.mjs";
+
+test("installed browser qualification and actual adapter share the bounded launcher before image build", async () => {
+	let observed;
+	const expectedContext = {};
+	assert.equal(
+		await launchInstalledBrowser("/owned/profile", "http://localhost:1234", {
+			launchPersistentContext: async (profile, options) => {
+				observed = { profile, options };
+				return expectedContext;
+			},
+		}),
+		expectedContext,
+	);
+	assert.equal(observed.profile, "/owned/profile");
+	assert.equal(observed.options.channel, "chromium");
+	assert.equal(observed.options.headless, true);
+	assert.equal(observed.options.serviceWorkers, "block");
+	assert.equal(observed.options.timeout, 15000);
+	assert.deepEqual(observed.options.args, [
+		"--remote-debugging-port=0",
+		"--remote-debugging-address=127.0.0.1",
+	]);
+	assert.deepEqual(Object.keys(observed.options.env).sort(), [
+		"LANG",
+		"NO_COLOR",
+		"PATH",
+		"TMPDIR",
+	]);
+	assert.equal(observed.options.env.TMPDIR, "/owned/profile");
+	const adapter = await readFile(
+		join(import.meta.dirname, "../tests/browser/installed-bombadil.ts"),
+		"utf8",
+	);
+	assert.match(
+		adapter,
+		/launchInstalledBrowser\(\s*profile,\s*baseURL,\s*chromium/,
+	);
+	assert.doesNotMatch(adapter, /launchPersistentContext\(/);
+	assert.match(adapter, /installedBrowserConnection\(/);
+	const workflow = await readFile(
+		join(import.meta.dirname, "../.github/workflows/installed-gui.yml"),
+		"utf8",
+	);
+	const qualified = workflow.indexOf(
+		"run: node scripts/bombadil-installed.mjs --preflight",
+	);
+	assert(
+		qualified > workflow.indexOf("playwright install --with-deps chromium"),
+	);
+	assert(qualified < workflow.indexOf("run: sh scripts/native-media-tools.sh"));
+	assert(
+		qualified <
+			workflow.indexOf("run: node scripts/installed-gui-smoke.mjs --ffmpeg"),
+	);
+});
+
+test("shared CDP qualification rejects wrong or additional page targets and detaches its session", async () => {
+	const profile = await mkdtemp(join(tmpdir(), "bitovp-cdp-contract-"));
+	const origin = "http://localhost:1234/vod/new";
+	let targets = [{ type: "page", id: "owned", url: origin }],
+		detached = 0;
+	const server = createServer((_request, response) =>
+		response.end(JSON.stringify(targets)),
+	);
+	await new Promise((done) => server.listen(0, "127.0.0.1", done));
+	const port = server.address().port;
+	await writeFile(
+		join(profile, "DevToolsActivePort"),
+		`${port}\n/private-browser-id\n`,
+	);
+	const context = {
+		pages: () => [{}],
+		newCDPSession: async () => ({
+			send: async () => ({ product: "Chrome/150.0.1.2" }),
+			detach: async () => {
+				detached++;
+			},
+		}),
+	};
+	try {
+		assert.deepEqual(
+			await installedBrowserConnection(context, profile, origin),
+			{
+				endpoint: `http://127.0.0.1:${port}`,
+				browserVersion: "Chrome/150.0.1.2",
+			},
+		);
+		assert.equal(detached, 1);
+		targets[0].url = "http://localhost:1234/login";
+		await assert.rejects(
+			installedBrowserConnection(context, profile, origin),
+			/not the prepared installed wizard/,
+		);
+		targets = [
+			{ type: "page", id: "owned", url: origin },
+			{ type: "page", id: "extra", url: origin },
+		];
+		await assert.rejects(
+			installedBrowserConnection(context, profile, origin),
+			/exactly one owned page target/,
+		);
+	} finally {
+		server.closeAllConnections();
+		await new Promise((done) => server.close(done));
+		await rm(profile, { recursive: true, force: true });
+	}
+});
+
+test("installed failure diagnostics project private errors to fixed labels and reject injected records", () => {
+	for (const [error, category] of [
+		[
+			{
+				message: "browserType.launchPersistentContext: private cookie profile",
+				name: "Error",
+			},
+			"browser-launch",
+		],
+		[{ name: "TimeoutError", message: "private URL" }, "timeout"],
+		[{ code: "ENOENT", message: "private credential path" }, "filesystem"],
+		[{ code: "ERR_ASSERTION", message: "private value" }, "assertion"],
+		[{ message: "private cookie" }, "unknown"],
+	])
+		assert.equal(installedFailureCategory(error), category);
+	assert.deepEqual(
+		installedDriverDiagnostic(
+			'private logs\nBITOVP_INSTALLED_DIAGNOSTIC {"step":"driver-target","category":"assertion","private":"cookie"}\nBITOVP_INSTALLED_DIAGNOSTIC {"step":"private-path","category":"timeout"}\n',
+		),
+		{ step: "driver-target", category: "assertion" },
+	);
+	assert.equal(
+		installedDriverDiagnostic(
+			'BITOVP_INSTALLED_DIAGNOSTIC {"step":"driver-target","category":"private-secret"}',
+		),
+		undefined,
+	);
+	const script = join(import.meta.dirname, "bombadil-installed.mjs");
+	const child = spawnSync(
+		process.execPath,
+		[script, "--preflight", "private-secret"],
+		{ encoding: "utf8", timeout: 3000 },
+	);
+	assert.equal(child.status, 1);
+	assert.equal(
+		child.stderr.trim(),
+		"Installed Bombadil preflight: stage=configuration; category=assertion",
+	);
+	assert.doesNotMatch(child.stdout + child.stderr, /private-secret/);
+});
 
 async function running(pid) {
 	try {

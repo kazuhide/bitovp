@@ -26,7 +26,11 @@ import { pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
 
 import { selectGuiStates } from "../tests/browser/diagnostics.ts";
-import { cleanupInstalledDrivers } from "./bombadil-installed.mjs";
+import {
+	cleanupInstalledDrivers,
+	installedDiagnosticCategories,
+	installedDiagnosticSteps,
+} from "./bombadil-installed.mjs";
 import { proveDatabaseRestore } from "./database-restore-proof.mjs";
 import {
 	assertPendingSubmissions,
@@ -299,6 +303,9 @@ export function failureSummary(raw) {
 	const locations = new Map();
 	const qcLocations = new Map();
 	const combinedLocations = new Map();
+	const bombadilLocations = new Map();
+	const bombadilStages = new Map();
+	const bombadilCategories = new Map();
 	const stages = new Map();
 	const observations = new Map();
 	const pending = [...report.suites];
@@ -330,6 +337,23 @@ export function failureSummary(raw) {
 					if (values.length) observations.set(spec.title, values);
 					for (const annotation of annotations) {
 						if (
+							annotation?.type === "bombadil-stage" &&
+							typeof annotation.description === "string"
+						) {
+							const parts = annotation.description.split(":");
+							if (
+								parts.length === 2 &&
+								["current", "negative", "replay"].includes(parts[0]) &&
+								installedDiagnosticSteps.includes(parts[1])
+							)
+								bombadilStages.set(spec.title, annotation.description);
+						}
+						if (
+							annotation?.type === "bombadil-category" &&
+							installedDiagnosticCategories.includes(annotation.description)
+						)
+							bombadilCategories.set(spec.title, annotation.description);
+						if (
 							annotation?.type === "smoke-stage" &&
 							[
 								"submit-clicked",
@@ -344,6 +368,7 @@ export function failureSummary(raw) {
 					const lines = new Set();
 					const qcLines = new Set();
 					const combinedLines = new Set();
+					const bombadilLines = new Set();
 					const add = (line, target = lines) => {
 						if (
 							Number.isInteger(line) &&
@@ -369,11 +394,13 @@ export function failureSummary(raw) {
 							add(error.location.line, qcLines);
 						else if (filename === "qc-combined-fixture.ts")
 							add(error.location.line, combinedLines);
+						else if (filename === "installed-bombadil.ts")
+							add(error.location.line, bombadilLines);
 						if (typeof error?.stack === "string")
 							for (const match of error.stack
 								.slice(0, 10_000)
 								.matchAll(
-									/(?:^|[/\\])(installed-gui\.test|qc-comparison-fixture|qc-combined-fixture)\.ts:([1-9]\d{0,3}):[1-9]\d{0,3}\b/g,
+									/(?:^|[/\\])(installed-gui\.test|qc-comparison-fixture|qc-combined-fixture|installed-bombadil)\.ts:([1-9]\d{0,3}):[1-9]\d{0,3}\b/g,
 								))
 								add(
 									Number(match[2]),
@@ -381,13 +408,17 @@ export function failureSummary(raw) {
 										? lines
 										: match[1] === "qc-comparison-fixture"
 											? qcLines
-											: combinedLines,
+											: match[1] === "installed-bombadil"
+												? bombadilLines
+												: combinedLines,
 								);
 					}
 					if (lines.size) locations.set(spec.title, [...lines].join(","));
 					if (qcLines.size) qcLocations.set(spec.title, [...qcLines].join(","));
 					if (combinedLines.size)
 						combinedLocations.set(spec.title, [...combinedLines].join(","));
+					if (bombadilLines.size)
+						bombadilLocations.set(spec.title, [...bombadilLines].join(","));
 				}
 				statuses.set(
 					spec.title,
@@ -444,7 +475,7 @@ export function failureSummary(raw) {
 		...categories,
 		...CASES.map(
 			(title) =>
-				`Browser case: ${title}; status=${statuses.get(title) ?? "not-run"}${locations.has(title) ? `; lines=${locations.get(title)}` : ""}${qcLocations.has(title) ? `; qc-lines=${qcLocations.get(title)}` : ""}${combinedLocations.has(title) ? `; combined-lines=${combinedLocations.get(title)}` : ""}${stages.has(title) ? `; stage=${stages.get(title)}` : ""}${observations.has(title) ? `; state=${observations.get(title).join(",")}` : ""}`,
+				`Browser case: ${title}; status=${statuses.get(title) ?? "not-run"}${locations.has(title) ? `; lines=${locations.get(title)}` : ""}${qcLocations.has(title) ? `; qc-lines=${qcLocations.get(title)}` : ""}${combinedLocations.has(title) ? `; combined-lines=${combinedLocations.get(title)}` : ""}${bombadilLocations.has(title) ? `; bombadil-lines=${bombadilLocations.get(title)}` : ""}${bombadilStages.has(title) ? `; bombadil-stage=${bombadilStages.get(title)}` : ""}${bombadilCategories.has(title) ? `; bombadil-category=${bombadilCategories.get(title)}` : ""}${stages.has(title) ? `; stage=${stages.get(title)}` : ""}${observations.has(title) ? `; state=${observations.get(title).join(",")}` : ""}`,
 		),
 	];
 }

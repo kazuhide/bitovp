@@ -72,6 +72,10 @@ jobs:
             --output "$BITOVP_BOMBADIL_BINARY"
           printf '%s  %s\n' 6f2664ca7d4067017b4efb26db5c29d6dcfecdc78131f96989d336f12420cc1b "$BITOVP_BOMBADIL_BINARY" | sha256sum --check --strict
           chmod 700 "$BITOVP_BOMBADIL_BINARY"
+      - name: Qualify the installed browser launcher and owned CDP target
+        timeout-minutes: 1
+        working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
+        run: node scripts/bombadil-installed.mjs --preflight
       - name: Reuse an earlier build of the same FFmpeg sources
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

@@ -4473,10 +4473,6 @@ test("CI validates workflow semantics with a pinned tool before application chec
 		pkg.scripts["check:workflows"],
 		"node scripts/workflow-lint.mjs",
 	);
-	assert.equal(
-		pkg.scripts["test:gated-runner"],
-		"node --test scripts/gated-tests.test.mjs scripts/native-hdr-tools.test.mjs scripts/workflow-lint.test.mjs",
-	);
 	const quality = parseYaml(
 		readFileSync(join(root, ".github/workflows/ci.yml"), "utf8"),
 	).jobs.quality;
@@ -4607,7 +4603,7 @@ test("CI audits every package's skipped tests and runs the native media and Redi
 	);
 	assert.equal(
 		pkg.scripts["test:gated-runner"],
-		"node --test scripts/gated-tests.test.mjs scripts/native-hdr-tools.test.mjs",
+		"node --test scripts/gated-tests.test.mjs scripts/native-hdr-tools.test.mjs scripts/workflow-lint.test.mjs",
 	);
 });
 

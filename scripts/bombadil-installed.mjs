@@ -13,6 +13,9 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
@@ -30,6 +33,219 @@ const specification = join(root, "tests/bombadil/installed-wizard.spec.ts");
 const actionClasses = ["edit", "select", "add", "remove", "revisit"];
 const negativeProperty = "configuredRenditionsMatchIntent";
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+export const installedDiagnosticSteps = [
+	"configuration",
+	"browser-launch",
+	"network-guard",
+	"navigate",
+	"import-plan",
+	"ladder",
+	"seed-rows",
+	"plan-json",
+	"oracle",
+	"cdp",
+	"driver",
+	"driver-arguments",
+	"driver-binary",
+	"driver-target",
+	"driver-specification",
+	"driver-execution",
+	"driver-trace",
+	"driver-summary",
+	"network-check",
+	"summary",
+];
+export const installedDiagnosticCategories = [
+	"timeout",
+	"assertion",
+	"browser-launch",
+	"module-loading",
+	"filesystem",
+	"connection",
+	"driver-exit",
+	"unknown",
+];
+
+/** Return fixed labels only. Original error messages and paths stay private. */
+export function installedFailureCategory(error) {
+	try {
+		const message =
+			typeof error?.message === "string" ? error.message.slice(0, 4000) : "";
+		if (
+			error?.code === "COMMAND_TIMEOUT" ||
+			error?.name === "TimeoutError" ||
+			/\bTimeout \d+ms exceeded\b/.test(message)
+		)
+			return "timeout";
+		if (
+			/browserType\.launch|Executable doesn't exist|chrome_crashpad_handler|Host system is missing dependencies/.test(
+				message,
+			)
+		)
+			return "browser-launch";
+		if (
+			["ERR_MODULE_NOT_FOUND", "ERR_UNKNOWN_FILE_EXTENSION"].includes(
+				error?.code,
+			) ||
+			error?.name === "SyntaxError"
+		)
+			return "module-loading";
+		if (["ENOENT", "EACCES", "EEXIST", "ENOTDIR"].includes(error?.code))
+			return "filesystem";
+		if (
+			["ECONNREFUSED", "ECONNRESET"].includes(error?.code) ||
+			message === "fetch failed"
+		)
+			return "connection";
+		if (
+			error?.code === "ERR_ASSERTION" ||
+			error?.name === "AssertionError" ||
+			error?.matcherResult
+		)
+			return "assertion";
+	} catch {}
+	return "unknown";
+}
+
+const diagnosticPrefix = "BITOVP_INSTALLED_DIAGNOSTIC ";
+export function installedDriverDiagnostic(log) {
+	let last;
+	for (const line of String(log).slice(-65536).split("\n")) {
+		if (!line.startsWith(diagnosticPrefix) || line.length > 256) continue;
+		try {
+			const value = JSON.parse(line.slice(diagnosticPrefix.length));
+			if (
+				installedDiagnosticSteps.includes(value?.step) &&
+				installedDiagnosticCategories.includes(value?.category)
+			)
+				last = { step: value.step, category: value.category };
+		} catch {}
+	}
+	return last;
+}
+
+/** Both the pre-image qualification and installed case use these exact options. */
+export function launchInstalledBrowser(profile, baseURL, browserType) {
+	const browser =
+		browserType ??
+		createRequire(join(root, "apps/web/package.json"))("@playwright/test")
+			.chromium;
+	return browser.launchPersistentContext(profile, {
+		channel: "chromium",
+		headless: true,
+		baseURL,
+		viewport: { width: 1440, height: 1000 },
+		locale: "en-US",
+		serviceWorkers: "block",
+		timeout: 15_000,
+		args: ["--remote-debugging-port=0", "--remote-debugging-address=127.0.0.1"],
+		env: {
+			PATH: process.env.PATH ?? "/usr/bin:/bin",
+			LANG: "en_US.UTF-8",
+			TMPDIR: profile,
+			NO_COLOR: "1",
+		},
+	});
+}
+
+export async function installedBrowserConnection(context, profile, origin) {
+	assert.equal(
+		context.pages().length,
+		1,
+		"Dedicated browser page census changed",
+	);
+	const port = Number(
+		(await readFile(join(profile, "DevToolsActivePort"), "utf8")).split(
+			"\n",
+		)[0],
+	);
+	assert(
+		Number.isSafeInteger(port) && port > 0 && port <= 65535,
+		"Owned CDP port missing",
+	);
+	const endpoint = `http://127.0.0.1:${port}`;
+	await oneTarget(endpoint, origin);
+	const session = await context.newCDPSession(context.pages()[0]);
+	try {
+		const browserVersion = (await session.send("Browser.getVersion")).product;
+		assert(
+			/^Chrom(?:e|ium)\/\d+(?:\.\d+){1,3}$/.test(browserVersion),
+			"Unexpected browser version",
+		);
+		return { endpoint, browserVersion };
+	} finally {
+		await session.detach();
+	}
+}
+
+/** Fixed, synthetic, no-auth qualification before building the installed images. */
+export async function preflightInstalledBrowser() {
+	const profile = await mkdtemp(join(tmpdir(), "bitovp-bombadil-preflight-"));
+	let context,
+		step = "browser-launch",
+		originRequests = 0;
+	const server = createServer((_request, response) => {
+		originRequests++;
+		response.writeHead(599).end();
+	});
+	try {
+		await new Promise((done, reject) => {
+			server.once("error", reject);
+			server.listen(0, "127.0.0.1", done);
+		});
+		const baseURL = `http://localhost:${server.address().port}`;
+		const origin = `${baseURL}/vod/new`;
+		context = await launchInstalledBrowser(profile, baseURL);
+		step = "network-guard";
+		let blocked = 0;
+		await context.route("**/*", (route) => {
+			if (
+				route.request().url() !== origin ||
+				route.request().method() !== "GET"
+			) {
+				blocked++;
+				return route.abort();
+			}
+			return route.fulfill({
+				contentType: "text/html",
+				body: '<!doctype html><title>Owned preflight</title><link rel="icon" href="data:,"><p data-testid="owned">ready</p>',
+			});
+		});
+		assert.equal(context.pages().length, 1);
+		step = "navigate";
+		await context.pages()[0].goto(origin, { timeout: 10_000 });
+		assert.equal(
+			await context
+				.pages()[0]
+				.getByTestId("owned")
+				.textContent({ timeout: 5000 }),
+			"ready",
+		);
+		step = "cdp";
+		await installedBrowserConnection(context, profile, origin);
+		assert.equal(originRequests, 0);
+		assert.equal(blocked, 0);
+		return {
+			status: "passed",
+			pageTargets: 1,
+			originRequests: 0,
+			cdpVerified: true,
+		};
+	} catch (error) {
+		throw Object.assign(new Error("Installed browser preflight failed"), {
+			installedDiagnostic: { step, category: installedFailureCategory(error) },
+		});
+	} finally {
+		try {
+			await context?.close();
+		} finally {
+			server.closeAllConnections();
+			await new Promise((done) => server.close(done));
+			await rm(profile, { recursive: true, force: true });
+		}
+	}
+}
 
 export function launchInstalledTool(binary, args, env) {
 	return spawn(binary, args, {
@@ -383,7 +599,11 @@ export async function executeInstalledDriver(
 	}
 	if (!cleanupConfirmed)
 		problem = new Error("Installed driver termination remains unconfirmed");
-	if (problem) throw Object.assign(problem, { cleanupConfirmed });
+	if (problem)
+		throw Object.assign(problem, {
+			cleanupConfirmed,
+			installedDiagnostic: installedDriverDiagnostic(log),
+		});
 }
 
 export function acceptInstalledTrace(entries, negative = false) {
@@ -521,6 +741,7 @@ async function oneTarget(endpoint, origin) {
 	return targets[0].id;
 }
 
+let driverStep = "driver-arguments";
 async function main() {
 	process.umask(0o077);
 	const options = Object.fromEntries(
@@ -535,13 +756,16 @@ async function main() {
 	assert(/^http:\/\/127\.0\.0\.1:[1-9]\d*$/.test(options.endpoint));
 	assert(/^http:\/\/localhost:[1-9]\d*\/vod\/new$/.test(options.origin));
 	assert(options.binary && options.output);
+	driverStep = "driver-binary";
 	const toolSha256 = digest(await readFile(options.binary));
 	assert.equal(
 		toolSha256,
 		binaryHashes[`${process.platform}-${process.arch}`],
 		"Unexpected Bombadil binary hash",
 	);
+	driverStep = "driver-target";
 	const before = await oneTarget(options.endpoint, options.origin);
+	driverStep = "driver-specification";
 	await mkdir(options.output, { mode: 0o700 });
 	const pinnedSpec = join(options.output, "specification.ts");
 	const specBytes = await readFile(specification);
@@ -572,6 +796,7 @@ async function main() {
 		options.stage !== "replay" || options.reproduce,
 		"Replay trace is required",
 	);
+	driverStep = "driver-execution";
 	const child = launchInstalledTool(
 		options.binary,
 		args,
@@ -615,11 +840,13 @@ async function main() {
 		!timedOut && !interrupted,
 		"Installed Bombadil did not complete within its budget",
 	);
+	driverStep = "driver-target";
 	assert.equal(
 		await oneTarget(options.endpoint, options.origin),
 		before,
 		"Bombadil changed its owned target",
 	);
+	driverStep = "driver-trace";
 	const traceBytes = await readFile(join(options.output, "trace/trace.jsonl"));
 	const entries = traceBytes
 		.toString()
@@ -637,6 +864,7 @@ async function main() {
 		elapsedMs: Math.round(performance.now() - started),
 		...acceptInstalledTrace(entries, options.stage !== "current"),
 	};
+	driverStep = "driver-summary";
 	await writeFile(
 		join(options.output, "summary.json"),
 		`${JSON.stringify(result, null, 2)}\n`,
@@ -651,4 +879,37 @@ async function main() {
 	console.log(JSON.stringify({ ...result, last: undefined }));
 }
 
-if (isEntryPoint(import.meta.url)) await main();
+if (isEntryPoint(import.meta.url)) {
+	if (process.argv[2] === "--preflight") {
+		try {
+			assert.equal(
+				process.argv.length,
+				3,
+				"Unknown installed preflight argument",
+			);
+			console.log(JSON.stringify(await preflightInstalledBrowser()));
+		} catch (error) {
+			const diagnostic = error.installedDiagnostic ?? {
+				step: "configuration",
+				category: installedFailureCategory(error),
+			};
+			console.error(
+				`Installed Bombadil preflight: stage=${diagnostic.step}; category=${diagnostic.category}`,
+			);
+			process.exitCode = 1;
+		}
+	} else {
+		try {
+			await main();
+		} catch (error) {
+			console.error(
+				diagnosticPrefix +
+					JSON.stringify({
+						step: driverStep,
+						category: installedFailureCategory(error),
+					}),
+			);
+			throw error;
+		}
+	}
+}

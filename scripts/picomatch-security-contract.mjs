@@ -4,8 +4,9 @@ import { createHash } from "node:crypto";
 import { lstat, readdir, readFile, realpath } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { isEntryPoint } from "./gate-report.mjs";
 
 const execute = promisify(execFile);
 const script = fileURLToPath(import.meta.url);
@@ -319,10 +320,7 @@ export async function verifyInstalledPicomatch(
 	return results;
 }
 
-if (
-	process.argv[1] &&
-	import.meta.url === pathToFileURL(resolve(process.argv[1])).href
-) {
+if (isEntryPoint(import.meta.url)) {
 	if (process.argv[2] === "--child") {
 		assert.equal(process.argv.length, 4);
 		const root = await realpath(resolve(process.argv[3]));

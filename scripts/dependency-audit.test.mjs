@@ -604,6 +604,35 @@ for (const [name, result, expected] of [
 	});
 }
 
+for (const [script, args, error] of [
+	["dependency-audit.mjs", ["--invalid"], /Dependency audit failed/],
+	[
+		"picomatch-security-contract.mjs",
+		[],
+		/No installed picomatch roots supplied/,
+	],
+]) {
+	test(`${script} validates arguments through file and directory symlinks`, (t) => {
+		const f = fixture(t);
+		const actual = join(repository, "scripts", script);
+		const fileLink = join(f.base, "linked-script.mjs");
+		const directoryLink = join(f.base, "linked-scripts");
+		symlinkSync(actual, fileLink);
+		symlinkSync(join(repository, "scripts"), directoryLink, "dir");
+		for (const entry of [actual, fileLink, join(directoryLink, script)]) {
+			const child = spawnSync(process.execPath, [entry, ...args], {
+				cwd: f.root,
+				encoding: "utf8",
+				timeout: 3000,
+				env: { LANG: "C", NO_COLOR: "1" },
+			});
+			assert.equal(child.status, 1, `${entry}: ${child.stderr}`);
+			assert.match(child.stderr, error);
+			assert.equal(child.stdout, "");
+		}
+	});
+}
+
 test("keeps the low-severity native audit command in every audited entrypoint", () => {
 	assert.deepEqual(AUDIT_COMMAND, ["audit", "--audit-level", "low", "--json"]);
 	assert(

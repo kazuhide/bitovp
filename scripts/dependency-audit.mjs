@@ -13,8 +13,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
+import { isEntryPoint } from "./gate-report.mjs";
 import {
 	PICOMATCH_INTEGRITY,
 	PICOMATCH_PATCH_SHA256,
@@ -366,10 +366,7 @@ export async function runDependencyAudit(
 	return { ...report, output };
 }
 
-if (
-	process.argv[1] &&
-	resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+if (isEntryPoint(import.meta.url)) {
 	try {
 		const args = process.argv.slice(2);
 		assert(args.length === 0 || (args.length === 2 && args[0] === "--output"));

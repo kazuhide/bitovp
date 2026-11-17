@@ -393,9 +393,16 @@ describe("the contextual lead follows the airing's life (ledger #126)", () => {
 
 describe("ChannelDetail — live playback preview", () => {
 	it("offers the dedicated MoQ player for the current run without requiring HLS output evidence", async () => {
+		const at = new Date().toISOString();
 		mockChannel({
 			currentRun: {
 				...confirmedRun("RUNNING"),
+				lastHeartbeat: {
+					at,
+					raw: { ingest: { status: "CONNECTED", healthy: true } },
+					deltas: {},
+				},
+				lastHeartbeatAt: at,
 				stepLog: [
 					{
 						step: "output:moq",
@@ -432,6 +439,12 @@ describe("ChannelDetail — live playback preview", () => {
 			within(preview as HTMLElement).getByRole("button", { name: "Play" }),
 		).toBeEnabled();
 		expect(loaded).toHaveLength(0);
+		expect(screen.queryByText("Waiting for the first segments")).toBeNull();
+		expect(
+			within(
+				screen.getByRole("region", { name: "Channel status" }),
+			).queryByText("Playable"),
+		).toBeNull();
 		expect(
 			apiFetch.mock.calls.some(([url]) =>
 				String(url).endsWith("/moq-playback"),

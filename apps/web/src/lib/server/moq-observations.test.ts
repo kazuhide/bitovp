@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { StepLogEntry } from "@bitovp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	getMoqObservations,
@@ -59,7 +60,17 @@ const req = (body: unknown = payload()) =>
 			body: JSON.stringify(body),
 		},
 	);
-const run = () => ({
+const run = (): {
+	id: string;
+	organizationId: string;
+	liveChannelId: string;
+	status: string;
+	bitmovinEncodingId: string;
+	endedAt: Date | null;
+	updatedAt: Date;
+	moqObservations: unknown;
+	stepLog: StepLogEntry[];
+} => ({
 	id: RUN,
 	organizationId: ORG,
 	liveChannelId: CHANNEL,
@@ -165,6 +176,84 @@ beforeEach(() => {
 });
 
 describe("run-bound MoQ observation persistence", () => {
+	it("retains a configured draft16 namespace tuple proven by the original output CREATE", async () => {
+		row.stepLog = row.stepLog.map((entry) =>
+			entry.kind === "CREATE_OUTPUT_MOQ"
+				? {
+						...entry,
+						payload: {
+							credentialId: "00000000-0000-4000-8000-000000000009",
+							trackNamespace: ["parent", "broadcast"],
+							draftVersion: "DRAFT_16",
+						},
+					}
+				: entry,
+		);
+		mocks.provenance.mockImplementation(({ where }) => [
+			{
+				organizationId: ORG,
+				bitmovinAccountId: SESSION,
+				response: {
+					id: where.path === "/encoding/encodings" ? ENCODING : OUTPUT,
+				},
+				request: {
+					trackNamespace: ["parent", "broadcast"],
+					draftVersion: "DRAFT_16",
+					relayUrl: "private-publisher-url",
+					authToken: "private-publisher-token",
+				},
+			},
+		]);
+		const response = await getMoqObservations(
+				new Request("http://test/history"),
+				params,
+			),
+			body = await response.json();
+		expect(response.status).toBe(200);
+		expect(body.configuration).toEqual({
+			namespace: ["parent", "broadcast"],
+			draftVersion: 16,
+			catalogTrackName: "catalog",
+		});
+		expect(JSON.stringify(body)).not.toContain("private-publisher");
+		expect(mocks.credential).not.toHaveBeenCalled();
+	});
+	it("returns historical configured namespace/draft/catalog from matching immutable output proof without credentials", async () => {
+		row.status = "STOPPED";
+		const response = await getMoqObservations(
+			new Request("http://test/history"),
+			params,
+		);
+		expect(response.status).toBe(200);
+		expect((await response.json()).configuration).toEqual({
+			namespace: ["run-namespace"],
+			draftVersion: 18,
+			catalogTrackName: "catalog",
+		});
+		expect(mocks.credential).not.toHaveBeenCalled();
+	});
+	it("omits unproven historical configuration without substituting current channel settings", async () => {
+		mocks.provenance.mockImplementation(({ where }) => [
+			{
+				organizationId: ORG,
+				bitmovinAccountId: SESSION,
+				response: {
+					id: where.path === "/encoding/encodings" ? ENCODING : OUTPUT,
+				},
+				request: {
+					trackNamespace: ["changed-namespace"],
+					draftVersion: "DRAFT_18",
+				},
+			},
+		]);
+		const response = await getMoqObservations(
+			new Request("http://test/history"),
+			params,
+		);
+		expect(response.status).toBe(200);
+		expect((await response.json()).configuration).toBeUndefined();
+		expect(mocks.credential).not.toHaveBeenCalled();
+	});
 	it("binds the first impression to the actual descriptor license and rejects intervening key rotation", async () => {
 		const descriptor = await getMoqPlaybackDescriptor(
 			new Request("http://test/moq-playback"),

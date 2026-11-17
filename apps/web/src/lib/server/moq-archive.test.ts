@@ -163,6 +163,46 @@ afterEach(async () => {
 });
 
 describe("private received-preview WebM archives", () => {
+	it("permits only a single matching document binding on the native archive URL", async () => {
+		await putMoqArchive(request(), params);
+		const path = `http://test/api/live-channels/${CHANNEL}/runs/${RUN}/moq-observations/${SESSION}/archive`;
+		for (const method of ["GET", "HEAD"]) {
+			expect(
+				(
+					await getMoqArchive(
+						new Request(`${path}?expectedOrganizationId=${ORG}`, { method }),
+						params,
+					)
+				).status,
+			).toBe(200);
+		}
+		const partial = await getMoqArchive(
+			new Request(`${path}?expectedOrganizationId=${ORG}`, {
+				headers: { Range: "bytes=0-3" },
+			}),
+			params,
+		);
+		expect(partial.status).toBe(206);
+		expect(Buffer.from(await partial.arrayBuffer())).toEqual(
+			bytes.subarray(0, 4),
+		);
+		expect(
+			(
+				await getMoqArchive(
+					new Request(`${path}?expectedOrganizationId=${SESSION}`),
+					params,
+				)
+			).status,
+		).toBe(409);
+		for (const query of [
+			`?expectedOrganizationId=${ORG}&expectedOrganizationId=${ORG}`,
+			"?expectedOrganizationId=invalid",
+			`?expectedOrganizationId=${ORG}&path=/tmp/private`,
+		])
+			expect(
+				(await getMoqArchive(new Request(`${path}${query}`), params)).status,
+			).toBe(400);
+	});
 	it("releases the session admission after an aggregate upload deadline even if cancellation hangs", async () => {
 		vi.useFakeTimers();
 		try {

@@ -113,6 +113,13 @@ export const moqObservationSessionSchema =
 	});
 export const moqObservationHistorySchema = z.strictObject({
 	runId: z.uuid(),
+	configuration: z
+		.strictObject({
+			namespace: z.array(z.string().min(1).max(1_024)).min(1).max(32),
+			draftVersion: z.union([z.literal(16), z.literal(18)]),
+			catalogTrackName: z.literal("catalog"),
+		})
+		.optional(),
 	sessions: z
 		.array(moqObservationSessionSchema)
 		.max(MOQ_OBSERVATION_LIMITS.sessions),

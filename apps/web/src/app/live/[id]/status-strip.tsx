@@ -24,6 +24,7 @@ import type { LiveJumpEvent } from "./section-focus";
 export function StatusStrip({
 	openAlerts,
 	playableCount,
+	showPlayable = true,
 	feederCount,
 	nextEvent,
 	runStartedAt,
@@ -42,6 +43,8 @@ export function StatusStrip({
 	 */
 	openAlerts: number | "unknown";
 	playableCount: number | "unknown";
+	/** A MoQ-only output has no manifest playback count. */
+	showPlayable?: boolean;
 	/** Failed reads, including stale-data refetch failures, are not zero. */
 	feederCount: number | "unknown";
 	/**
@@ -259,30 +262,32 @@ export function StatusStrip({
 			aria-label={t("status.regionLabel")}
 			className="flex flex-wrap gap-x-6 gap-y-2 rounded-md border border-zinc-800 bg-zinc-900/40 px-4 py-2.5"
 		>
-			{cells.map((cell) => (
-				<div key={cell.key} className="flex items-baseline gap-1.5">
-					<span className="text-xs text-zinc-500">{cell.label}</span>
-					{cell.href ? (
-						<a
-							href={cell.href}
-							onClick={(event) =>
-								onJump?.(event, (cell.href as string).replace(/^#/, ""))
-							}
-							data-status-cell={cell.key}
-							className={`font-medium text-sm underline decoration-zinc-700 underline-offset-4 hover:decoration-zinc-400 ${toneClass[cell.tone]}`}
-						>
-							{cell.value}
-						</a>
-					) : (
-						<span
-							data-status-cell={cell.key}
-							className={`font-medium text-sm ${toneClass[cell.tone]}`}
-						>
-							{cell.value}
-						</span>
-					)}
-				</div>
-			))}
+			{cells
+				.filter((cell) => showPlayable || cell.key !== "playable")
+				.map((cell) => (
+					<div key={cell.key} className="flex items-baseline gap-1.5">
+						<span className="text-xs text-zinc-500">{cell.label}</span>
+						{cell.href ? (
+							<a
+								href={cell.href}
+								onClick={(event) =>
+									onJump?.(event, (cell.href as string).replace(/^#/, ""))
+								}
+								data-status-cell={cell.key}
+								className={`font-medium text-sm underline decoration-zinc-700 underline-offset-4 hover:decoration-zinc-400 ${toneClass[cell.tone]}`}
+							>
+								{cell.value}
+							</a>
+						) : (
+							<span
+								data-status-cell={cell.key}
+								className={`font-medium text-sm ${toneClass[cell.tone]}`}
+							>
+								{cell.value}
+							</span>
+						)}
+					</div>
+				))}
 		</section>
 	);
 }

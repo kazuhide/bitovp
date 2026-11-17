@@ -1,3 +1,4 @@
+import { bindPassiveRequestUrl } from "@/lib/passive-request";
 import type { MoqPlayerFactory } from "./types";
 
 let loading: Promise<MoqPlayerFactory> | undefined;
@@ -14,11 +15,20 @@ function globalFactory(): MoqPlayerFactory | undefined {
 	}
 }
 /** Load only the fixed, authenticated, digest-checked local asset route. */
-export function loadMoqPlayer(): Promise<MoqPlayerFactory> {
+export function loadMoqPlayer(
+	organizationId?: string,
+): Promise<MoqPlayerFactory> {
+	let assetUrl: string;
+	try {
+		if (!organizationId) throw new Error();
+		assetUrl = bindPassiveRequestUrl("/api/player-assets/moq", organizationId);
+	} catch {
+		return Promise.reject(new Error("MoQ player unavailable"));
+	}
 	if (loading) return loading;
 	const previousFactory = globalFactory();
 	const script = document.createElement("script");
-	script.src = "/api/player-assets/moq";
+	script.src = assetUrl;
 	script.async = true;
 	script.dataset.bitovpMoq = "true";
 	const promise = new Promise<MoqPlayerFactory>((resolve, reject) => {

@@ -1,5 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DocumentOrganizationContext } from "@/components/providers";
 import { renderWithQuery } from "@/test/render";
 import { MoqHistoryPanel } from "./moq-history-panel";
 
@@ -22,7 +23,13 @@ vi.mock("recharts", () => ({
 const CHANNEL = "00000000-0000-4000-8000-000000000001";
 const RUN = "00000000-0000-4000-8000-000000000002";
 const SESSION = "00000000-0000-4000-8000-000000000003";
+const ORG = "00000000-0000-4000-8000-000000000010";
 const at = "2026-11-18T00:00:00.000Z";
+const view = (organizationId: string | undefined = ORG) => (
+	<DocumentOrganizationContext.Provider value={organizationId}>
+		<MoqHistoryPanel channelId={CHANNEL} runId={RUN} active={false} />
+	</DocumentOrganizationContext.Provider>
+);
 beforeEach(() => {
 	vi.resetAllMocks();
 	mocks.api.mockResolvedValue({
@@ -66,9 +73,7 @@ beforeEach(() => {
 });
 describe("saved MoQ history and received video", () => {
 	it("keeps an ended run's graphs and seekable received archive available on the same authenticated endpoint", async () => {
-		const rendered = renderWithQuery(
-			<MoqHistoryPanel channelId={CHANNEL} runId={RUN} active={false} />,
-		);
+		const rendered = renderWithQuery(view());
 		expect(
 			await screen.findByText("Saved MoQ observations"),
 		).toBeInTheDocument();
@@ -84,15 +89,50 @@ describe("saved MoQ history and received video", () => {
 		);
 		expect(video).not.toBeNull();
 		expect(video?.getAttribute("src")).toBe(
-			`/api/live-channels/${CHANNEL}/runs/${RUN}/moq-observations/${SESSION}/archive`,
+			`/api/live-channels/${CHANNEL}/runs/${RUN}/moq-observations/${SESSION}/archive?expectedOrganizationId=${ORG}`,
 		);
 		expect(video?.controls).toBe(true);
+		expect(
+			video?.compareDocumentPosition(
+				screen.getByText("Video latency (barcode) (ms · UTC)"),
+			),
+		).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 		expect(
 			screen.getByRole("link", { name: "Download received video" }),
 		).toHaveAttribute("href", video?.getAttribute("src"));
 		expect(
 			rendered.container.querySelector(`[data-moq-history="${RUN}"]`),
 		).toBeInTheDocument();
+	});
+	it("does not emit a native archive URL without a valid document organization", async () => {
+		const rendered = renderWithQuery(view("invalid"));
+		expect(
+			await screen.findByText("MoQ playback unavailable"),
+		).toBeInTheDocument();
+		expect(rendered.container.querySelector("video")).toBeNull();
+		expect(
+			screen.queryByRole("link", { name: "Download received video" }),
+		).toBeNull();
+	});
+	it("shows immutable configured namespace, draft and catalog after playback has ended", async () => {
+		const response = await mocks.api();
+		response.configuration = {
+			namespace: ["original-run"],
+			draftVersion: 16,
+			catalogTrackName: "catalog",
+		};
+		mocks.api.mockResolvedValue(response);
+		renderWithQuery(view());
+		expect(await screen.findByText("Configured namespace")).toBeInTheDocument();
+		expect(
+			screen.getByText("Configured namespace").nextElementSibling,
+		).toHaveTextContent("original-run");
+		expect(
+			screen.getByText("Configured draft").nextElementSibling,
+		).toHaveTextContent("16");
+		expect(
+			screen.getByText("Catalog track").nextElementSibling,
+		).toHaveTextContent("catalog");
 	});
 	it("does not substitute another input video or claim an archive when recording is absent", async () => {
 		const response = await mocks.api();

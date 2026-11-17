@@ -17,6 +17,10 @@ import {
 	MOQ_OBSERVATION_LIMITS,
 	type MoqArchiveMetadata,
 } from "@/lib/moq-player/observations";
+import {
+	EXPECTED_ORGANIZATION_QUERY,
+	passiveOrganizationBinding,
+} from "@/lib/passive-request";
 import { hasWebmHeader, normalizeMoqArchive } from "./moq-archive-media";
 import {
 	assertMoqObservationWritable,
@@ -348,7 +352,21 @@ export async function getMoqArchive(
 	params: MoqObservationParams,
 ) {
 	try {
-		const ctx = await moqObservationContext(req, params);
+		const url = new URL(req.url),
+			binding = passiveOrganizationBinding(url, req.method);
+		if (
+			binding.kind === "invalid" ||
+			(url.searchParams.size > 0 && binding.kind !== "bound")
+		)
+			throw new MoqObservationError(400, "MOQ_HISTORY_INVALID_REQUEST");
+		const ctx = await moqObservationContext(req, params, false, [
+			EXPECTED_ORGANIZATION_QUERY,
+		]);
+		if (
+			binding.kind === "bound" &&
+			binding.organizationId !== ctx.tenant?.organizationId
+		)
+			throw new MoqObservationError(409, "MOQ_HISTORY_ORGANIZATION_CHANGED");
 		const run = await readMoqObservationRun(ctx, params);
 		const session = parseMoqObservationStore(run.moqObservations).sessions.find(
 			(entry) => entry.id === params.sessionId,

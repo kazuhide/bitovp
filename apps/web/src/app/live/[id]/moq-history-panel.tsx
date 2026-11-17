@@ -11,11 +11,13 @@ import {
 	XAxis,
 	YAxis,
 } from "recharts";
+import { useDocumentOrganization } from "@/components/providers";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
 import { moqObservationPath } from "@/lib/moq-player/history-client";
 import { moqHistorySeries } from "@/lib/moq-player/history-series";
 import { moqObservationHistorySchema } from "@/lib/moq-player/observations";
+import { bindPassiveRequestUrl } from "@/lib/passive-request";
 import { MoqAnalyticsHistory } from "./moq-analytics-history";
 import { MoqEncoderHistory } from "./moq-encoder-history";
 
@@ -32,6 +34,7 @@ export function MoqHistoryPanel({
 	active: boolean;
 }) {
 	const { t } = useT();
+	const organizationId = useDocumentOrganization();
 	const [selected, select] = useState("");
 	const history = useQuery({
 		queryKey: ["moq-observations", channelId, runId],
@@ -55,9 +58,16 @@ export function MoqHistoryPanel({
 		session?.samples ?? [],
 		session?.startedAt ?? "",
 	);
-	const archiveUrl = session
-		? `${moqObservationPath(channelId, runId)}/${session.id}/archive`
-		: null;
+	let archiveUrl: string | null = null;
+	try {
+		if (session && organizationId)
+			archiveUrl = bindPassiveRequestUrl(
+				`${moqObservationPath(channelId, runId)}/${session.id}/archive`,
+				organizationId,
+			);
+	} catch {
+		/* A missing document binding never becomes a bare native URL. */
+	}
 	const analyticsEncodingId = session?.analyticsVideoId?.split(":")[1];
 	return (
 		<section
@@ -67,6 +77,28 @@ export function MoqHistoryPanel({
 			<h3 className="font-medium text-sm text-zinc-200">
 				{t("moqPlayback.savedHistory")}
 			</h3>
+			{history.data?.configuration ? (
+				<dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+					<div className="min-w-0">
+						<dt className="text-zinc-500">{t("moqPlayback.namespace")}</dt>
+						<dd className="break-words text-zinc-200">
+							{history.data.configuration.namespace.join("/")}
+						</dd>
+					</div>
+					<div>
+						<dt className="text-zinc-500">{t("moqPlayback.draft")}</dt>
+						<dd className="text-zinc-200">
+							{history.data.configuration.draftVersion}
+						</dd>
+					</div>
+					<div>
+						<dt className="text-zinc-500">{t("moqPlayback.catalog")}</dt>
+						<dd className="text-zinc-200">
+							{history.data.configuration.catalogTrackName}
+						</dd>
+					</div>
+				</dl>
+			) : null}
 			{history.isPending ? (
 				<p className="text-xs text-zinc-500">{t("moqPlayback.loading")}</p>
 			) : history.isError ? (
@@ -89,6 +121,38 @@ export function MoqHistoryPanel({
 							))}
 						</select>
 					</label>
+					<p className="text-xs text-zinc-500">
+						{t("moqPlayback.recordedScope")}
+					</p>
+					{session.archive && archiveUrl ? (
+						<div className="space-y-2">
+							<video
+								data-moq-archive={session.id}
+								src={archiveUrl}
+								controls
+								muted
+								playsInline
+								preload="metadata"
+								aria-label={t("moqPlayback.receivedVideo")}
+								className="aspect-video w-full rounded border border-zinc-800 bg-black"
+							/>
+							<a
+								href={archiveUrl}
+								download={`moq-${session.id}.webm`}
+								className="text-xs text-zinc-300 underline underline-offset-2"
+							>
+								{t("moqPlayback.downloadRecording")}
+							</a>
+						</div>
+					) : (
+						<p className="text-xs text-zinc-500">
+							{t(
+								session.archive
+									? "moqPlayback.unavailable"
+									: "moqPlayback.noRecording",
+							)}
+						</p>
+					)}
 					<p className="text-xs text-zinc-500">
 						{t("moqPlayback.browserSource")}
 					</p>
@@ -168,34 +232,6 @@ export function MoqHistoryPanel({
 					) : (
 						<p className="text-xs text-zinc-500">
 							{t("moqPlayback.noSamples")}
-						</p>
-					)}
-					<p className="text-xs text-zinc-500">
-						{t("moqPlayback.recordedScope")}
-					</p>
-					{session.archive && archiveUrl ? (
-						<div className="space-y-2">
-							<video
-								data-moq-archive={session.id}
-								src={archiveUrl}
-								controls
-								muted
-								playsInline
-								preload="metadata"
-								aria-label={t("moqPlayback.receivedVideo")}
-								className="aspect-video w-full rounded border border-zinc-800 bg-black"
-							/>
-							<a
-								href={archiveUrl}
-								download={`moq-${session.id}.webm`}
-								className="text-xs text-zinc-300 underline underline-offset-2"
-							>
-								{t("moqPlayback.downloadRecording")}
-							</a>
-						</div>
-					) : (
-						<p className="text-xs text-zinc-500">
-							{t("moqPlayback.noRecording")}
 						</p>
 					)}
 					{session.events.length ? (

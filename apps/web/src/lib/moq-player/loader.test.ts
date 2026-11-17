@@ -7,12 +7,30 @@ afterEach(() => {
 	Reflect.deleteProperty(window, "bitmovin");
 	vi.resetModules();
 });
+const ORG = "00000000-0000-4000-8000-000000000010";
 describe("fixed local MoQ player loader", () => {
+	it.each([
+		undefined,
+		"",
+		"not-an-organization",
+	])("refuses an absent or invalid document organization before adding a native script: %s", async (organizationId) => {
+		vi.useFakeTimers();
+		try {
+			const { loadMoqPlayer } = await import("./loader");
+			const loaded = loadMoqPlayer(organizationId);
+			void loaded.catch(() => {});
+			expect(document.querySelector("script[data-bitovp-moq]")).toBeNull();
+			await expect(loaded).rejects.toThrow(/^MoQ player unavailable$/);
+		} finally {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+		}
+	});
 	it("loads the authenticated local route once, then shares the verified factory", async () => {
 		const { loadMoqPlayer } = await import("./loader");
 		const factory = vi.fn();
-		const first = loadMoqPlayer();
-		const second = loadMoqPlayer();
+		const first = loadMoqPlayer(ORG);
+		const second = loadMoqPlayer(ORG);
 		expect(second).toBe(first);
 		const scripts = document.querySelectorAll<HTMLScriptElement>(
 			"script[data-bitovp-moq]",
@@ -20,21 +38,23 @@ describe("fixed local MoQ player loader", () => {
 		expect(scripts).toHaveLength(1);
 		const script = scripts.item(0);
 		if (!script) throw new Error("expected one player script");
-		expect(script.getAttribute("src")).toBe("/api/player-assets/moq");
+		expect(script.getAttribute("src")).toBe(
+			`/api/player-assets/moq?expectedOrganizationId=${ORG}`,
+		);
 		Object.assign(window, { bitmovin: { playerx: { Player: factory } } });
 		script.dispatchEvent(new Event("load"));
 		expect(await first).toBe(factory);
-		expect(await loadMoqPlayer()).toBe(factory);
+		expect(await loadMoqPlayer(ORG)).toBe(factory);
 	});
 	it("retries a failed asset load and never adopts a preexisting unverified global", async () => {
 		Object.assign(window, { bitmovin: { playerx: { Player: vi.fn() } } });
 		const { loadMoqPlayer } = await import("./loader");
-		const first = loadMoqPlayer();
+		const first = loadMoqPlayer(ORG);
 		document
 			.querySelector("script[data-bitovp-moq]")
 			?.dispatchEvent(new Event("error"));
 		await expect(first).rejects.toThrow(/^MoQ player unavailable$/);
-		const second = loadMoqPlayer();
+		const second = loadMoqPlayer(ORG);
 		expect(second).not.toBe(first);
 		expect(document.querySelectorAll("script[data-bitovp-moq]")).toHaveLength(
 			1,
@@ -49,7 +69,7 @@ describe("fixed local MoQ player loader", () => {
 	it("rejects an asset that leaves an unrelated preexisting Player factory unchanged", async () => {
 		Object.assign(window, { bitmovin: { playerx: { Player: vi.fn() } } });
 		const { loadMoqPlayer } = await import("./loader");
-		const loaded = loadMoqPlayer();
+		const loaded = loadMoqPlayer(ORG);
 		document
 			.querySelector("script[data-bitovp-moq]")
 			?.dispatchEvent(new Event("load"));
@@ -57,7 +77,7 @@ describe("fixed local MoQ player loader", () => {
 	});
 	it("rejects a loaded asset without a Player factory using a fixed safe error", async () => {
 		const { loadMoqPlayer } = await import("./loader");
-		const loaded = loadMoqPlayer();
+		const loaded = loadMoqPlayer(ORG);
 		document
 			.querySelector("script[data-bitovp-moq]")
 			?.dispatchEvent(new Event("load"));

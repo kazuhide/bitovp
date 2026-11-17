@@ -1,3 +1,4 @@
+import { passiveOrganizationBinding } from "@/lib/passive-request";
 import { readMoqPlayerBundle } from "@/lib/server/moq-player-asset";
 
 export const runtime = "nodejs";
@@ -6,7 +7,12 @@ const headers = { "Cache-Control": "private, no-store" };
 
 /** The auth proxy requires OPERATOR; the caller never selects a file or URL. */
 export async function GET(req: Request) {
-	if (new URL(req.url).search) {
+	const url = new URL(req.url),
+		binding = passiveOrganizationBinding(url, req.method);
+	if (
+		binding.kind === "invalid" ||
+		(url.searchParams.size > 0 && binding.kind !== "bound")
+	) {
 		return Response.json(
 			{ error: "Asset parameters are not supported" },
 			{ status: 400, headers },

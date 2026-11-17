@@ -3,6 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useDocumentOrganization } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
@@ -56,6 +57,7 @@ function MoqPlaybackAttempt({
 	standalone = false,
 }: Props) {
 	const { t } = useT();
+	const organizationId = useDocumentOrganization();
 	const queryClient = useQueryClient();
 	const host = useRef<HTMLElement>(null);
 	const current = useRef<Attempt | undefined>(undefined);
@@ -174,7 +176,7 @@ function MoqPlaybackAttempt({
 			});
 			await attempt.archive.ready;
 			if (!owned()) return;
-			const factory = await loadMoqPlayer();
+			const factory = await loadMoqPlayer(organizationId);
 			if (!owned() || !host.current) return;
 			attempt.session = createMoqPlayback(
 				factory,
@@ -244,67 +246,102 @@ function MoqPlaybackAttempt({
 		phase === "waiting" ||
 		phase === "frames";
 	return (
-		<div className="space-y-2" data-moq-preview={runId}>
-			<div className="flex flex-wrap items-center gap-2">
-				<span className="rounded border border-zinc-700 px-2 py-1 font-medium text-xs text-zinc-200">
-					MoQ / Web X
-				</span>
-				<Button
-					size="sm"
-					disabled={!active || busy}
-					onClick={() => void play()}
+		<div
+			id="moq-preview"
+			className="space-y-2 scroll-mt-4"
+			data-moq-preview={runId}
+			data-moq-phase={phase}
+		>
+			{!active ? (
+				<MoqHistoryPanel
+					key="history-ended"
+					channelId={channelId}
+					runId={runId}
+					active={false}
+				/>
+			) : null}
+			{!active && !standalone ? (
+				<Link
+					href={`/live/${channelId}/runs/${runId}/moq#moq-preview`}
+					className="inline-block text-xs text-zinc-300 underline underline-offset-2"
 				>
-					{t("moqPlayback.play")}
-				</Button>
-				<Button
-					size="sm"
-					variant="secondary"
-					disabled={!busy || phase === "stopping"}
-					onClick={() => void stop()}
+					{t("moqPlayback.openPlayer")}
+				</Link>
+			) : null}
+			<details key="live" open={active} className="space-y-2">
+				<summary
+					className={active ? "hidden" : "cursor-pointer text-xs text-zinc-400"}
 				>
-					{t("moqPlayback.stop")}
-				</Button>
-				<span
-					role={phase === "failed" ? "alert" : "status"}
-					aria-live="polite"
-					className={
-						phase === "failed"
-							? "text-xs text-red-300"
-							: "text-xs text-zinc-400"
-					}
-				>
-					{t(`moqPlayback.${phase}`)}
-				</span>
-				{!standalone ? (
-					<Link
-						href={`/live/${channelId}/runs/${runId}/moq`}
-						className="text-xs text-zinc-300 underline underline-offset-2"
+					MoQ / Web X · {t("moqPlayback.stopped")}
+				</summary>
+				<div className="flex flex-wrap items-center gap-2">
+					<span className="rounded border border-zinc-700 px-2 py-1 font-medium text-xs text-zinc-200">
+						MoQ / Web X
+					</span>
+					<Button
+						size="sm"
+						disabled={!active || busy}
+						onClick={() => void play()}
 					>
-						{t("moqPlayback.openPlayer")}
-					</Link>
-				) : null}
-			</div>
-			<section
-				ref={host}
-				data-moq-live-host={runId}
-				aria-label={t("moqPlayback.title")}
-				className="aspect-video w-full overflow-hidden rounded-md border border-zinc-800 bg-black [&_video]:h-full [&_video]:w-full [&_video]:object-contain"
-			/>
-			<MoqPlayerStatistics
-				statistics={statistics}
-				configuration={configuration}
-				relay={relay}
-			/>
-			<div className="space-y-1 text-xs text-zinc-500">
-				<p aria-live="polite" data-moq-recording={recordingState}>
-					{t(`moqPlayback.recording.${recordingState}`)}
-				</p>
-				<p data-moq-history-save={historyState}>
-					{t(`moqPlayback.historySave.${historyState}`)}
-				</p>
-				<p>{t(`moqPlayback.analyticsState.${analyticsState}`)}</p>
-			</div>
-			<MoqHistoryPanel channelId={channelId} runId={runId} active={active} />
+						{t("moqPlayback.play")}
+					</Button>
+					<Button
+						size="sm"
+						variant="secondary"
+						disabled={!busy || phase === "stopping"}
+						onClick={() => void stop()}
+					>
+						{t("moqPlayback.stop")}
+					</Button>
+					<span
+						role={phase === "failed" ? "alert" : "status"}
+						aria-live="polite"
+						className={
+							phase === "failed"
+								? "text-xs text-red-300"
+								: "text-xs text-zinc-400"
+						}
+					>
+						{t(`moqPlayback.${phase}`)}
+					</span>
+					{!standalone ? (
+						<Link
+							href={`/live/${channelId}/runs/${runId}/moq`}
+							className="text-xs text-zinc-300 underline underline-offset-2"
+						>
+							{t("moqPlayback.openPlayer")}
+						</Link>
+					) : null}
+				</div>
+				<section
+					ref={host}
+					data-moq-live-host={runId}
+					aria-label={t("moqPlayback.title")}
+					className="aspect-video w-full overflow-hidden rounded-md border border-zinc-800 bg-black [&_video]:h-full [&_video]:w-full [&_video]:object-contain"
+				/>
+				<MoqPlayerStatistics
+					statistics={statistics}
+					configuration={configuration}
+					relay={relay}
+				/>
+				<div className="space-y-1 text-xs text-zinc-500">
+					<p aria-live="polite" data-moq-recording={recordingState}>
+						{t(`moqPlayback.recording.${recordingState}`)}
+					</p>
+					<p data-moq-history-save={historyState}>
+						{t(`moqPlayback.historySave.${historyState}`)}
+					</p>
+					<p>{t(`moqPlayback.analyticsState.${analyticsState}`)}</p>
+				</div>
+			</details>
+			{active ? (
+				<MoqHistoryPanel
+					key="history-active"
+					channelId={channelId}
+					runId={runId}
+					active
+				/>
+			) : null}
 		</div>
 	);
 }

@@ -9,6 +9,20 @@ import { GET } from "./route";
 
 beforeEach(() => vi.resetAllMocks());
 describe("fixed MoQ player asset route", () => {
+	it("accepts the one document organization binding needed by a native script request", async () => {
+		mocks.bundle.mockResolvedValue(
+			new TextEncoder().encode("/* verified bytes */").buffer,
+		);
+		const response = await GET(
+			new Request(
+				"http://test/api/player-assets/moq?expectedOrganizationId=00000000-0000-4000-8000-000000000001",
+			),
+		);
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toBe(
+			"application/javascript; charset=utf-8",
+		);
+	});
 	it("serves the validated local asset privately without accepting a source parameter", async () => {
 		mocks.bundle.mockResolvedValue(
 			new TextEncoder().encode("/* verified bytes */").buffer,
@@ -29,6 +43,9 @@ describe("fixed MoQ player asset route", () => {
 		"?path=/tmp/private",
 		"?url=https://private.example/",
 		"?sha256=anything",
+		"?expectedOrganizationId=invalid",
+		"?expectedOrganizationId=00000000-0000-4000-8000-000000000001&expectedOrganizationId=00000000-0000-4000-8000-000000000001",
+		"?expectedOrganizationId=00000000-0000-4000-8000-000000000001&url=https://private.example/",
 	])("rejects request-controlled asset selection %s before reading a file", async (query) => {
 		expect(
 			(await GET(new Request(`http://test/api/player-assets/moq${query}`)))

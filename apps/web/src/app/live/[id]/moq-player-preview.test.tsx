@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DocumentOrganizationContext } from "@/components/providers";
 import type {
 	MoqPlaybackDescriptor,
 	MoqPlayerFactory,
@@ -41,6 +42,7 @@ vi.mock("@/lib/moq-player/loader", () => ({ loadMoqPlayer: mocks.load }));
 const CHANNEL = "00000000-0000-4000-8000-000000000001";
 const RUN = "00000000-0000-4000-8000-000000000002";
 const NEXT = "00000000-0000-4000-8000-000000000003";
+const ORG = "00000000-0000-4000-8000-000000000010";
 const descriptor: MoqPlaybackDescriptor = {
 	runId: RUN,
 	encodingId: "00000000-0000-4000-8000-000000000004",
@@ -66,7 +68,9 @@ const source = {
 };
 const player = { sources: { add: vi.fn(), remove: vi.fn() }, dispose: vi.fn() };
 const view = (runId = RUN, active = true) => (
-	<MoqPlayerPreview channelId={CHANNEL} runId={runId} active={active} />
+	<DocumentOrganizationContext.Provider value={ORG}>
+		<MoqPlayerPreview channelId={CHANNEL} runId={runId} active={active} />
+	</DocumentOrganizationContext.Provider>
 );
 beforeEach(() => {
 	vi.resetAllMocks();
@@ -106,6 +110,37 @@ afterEach(() => {
 });
 
 describe("explicit MoQ preview", () => {
+	it("passes the document organization to the native asset loader and exposes a safe initialization phase", async () => {
+		const rendered = renderWithQuery(view());
+		await userEvent.click(screen.getByRole("button", { name: "Play" }));
+		await waitFor(() => expect(source.play).toHaveBeenCalledOnce());
+		expect(mocks.load).toHaveBeenCalledWith(ORG);
+		expect(rendered.container.querySelector("#moq-preview")).toHaveAttribute(
+			"data-moq-phase",
+			"waiting",
+		);
+	});
+	it("prioritizes saved history on an ended run and collapses the empty live player without detaching its host", async () => {
+		const rendered = renderWithQuery(view());
+		await userEvent.click(screen.getByRole("button", { name: "Play" }));
+		await waitFor(() => expect(source.play).toHaveBeenCalledOnce());
+		const liveHost = rendered.container.querySelector(
+			`[data-moq-live-host="${RUN}"]`,
+		);
+		rendered.rerender(view(RUN, false));
+		const saved = rendered.container.querySelector(
+			`[data-moq-history="${RUN}"]`,
+		);
+		expect(saved).toBeVisible();
+		expect(
+			rendered.container.querySelector(`[data-moq-live-host="${RUN}"]`),
+		).toBe(liveHost);
+		expect(liveHost).not.toBeVisible();
+		expect(liveHost?.closest("details")).not.toHaveAttribute("open");
+		expect(saved?.compareDocumentPosition(liveHost as Node)).toBe(
+			Node.DOCUMENT_POSITION_FOLLOWING,
+		);
+	});
 	it("shows configured MoQ metadata and measured video statistics, then resets measurements on Stop", async () => {
 		vi.useFakeTimers();
 		Object.assign(source, {

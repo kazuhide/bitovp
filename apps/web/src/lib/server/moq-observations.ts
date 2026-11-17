@@ -152,6 +152,7 @@ export async function readMoqObservationRun(
 	const auditSelect = {
 		organizationId: true,
 		bitmovinAccountId: true,
+		request: true,
 		response: true,
 	} as const;
 	const [encodingAudits, outputAudits] = await Promise.all([
@@ -180,6 +181,7 @@ export async function readMoqObservationRun(
 		z.object({
 			organizationId: z.uuid(),
 			bitmovinAccountId: z.uuid(),
+			request: z.unknown().optional(),
 			response: z.object({ id: z.uuid() }),
 		}),
 	]);
@@ -196,8 +198,33 @@ export async function readMoqObservationRun(
 			outputProof.data[0].bitmovinAccountId
 	)
 		throw new MoqObservationError(409, "MOQ_HISTORY_PROVENANCE_UNAVAILABLE");
+	const outputConfiguration = z.object({
+		trackNamespace: z.array(z.string().min(1).max(1_024)).min(1).max(32),
+		draftVersion: z.enum(["DRAFT_16", "DRAFT_18"]),
+	});
+	const storedConfiguration = outputConfiguration.safeParse(output.payload),
+		originalConfiguration = outputConfiguration.safeParse(
+			outputProof.data[0].request,
+		);
+	const configuration =
+		storedConfiguration.success &&
+		originalConfiguration.success &&
+		storedConfiguration.data.draftVersion ===
+			originalConfiguration.data.draftVersion &&
+		JSON.stringify(storedConfiguration.data.trackNamespace) ===
+			JSON.stringify(originalConfiguration.data.trackNamespace)
+			? {
+					namespace: originalConfiguration.data.trackNamespace,
+					draftVersion:
+						originalConfiguration.data.draftVersion === "DRAFT_18"
+							? (18 as const)
+							: (16 as const),
+					catalogTrackName: "catalog" as const,
+				}
+			: undefined;
 	return {
 		...run,
+		...(configuration ? { configuration } : {}),
 		bitmovinEncodingId: encodingId.data,
 		originalBitmovinAccountId: encodingProof.data[0].bitmovinAccountId,
 	};
@@ -368,6 +395,7 @@ export async function getMoqObservations(
 		return Response.json(
 			{
 				runId: run.id,
+				...(run.configuration ? { configuration: run.configuration } : {}),
 				sessions: store.sessions.map(publicMoqSession),
 				heartbeat,
 			},

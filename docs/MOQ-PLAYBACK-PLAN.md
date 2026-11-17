@@ -48,6 +48,9 @@ Player Web X で自作映像・音声を再生する。Encoder の `RUNNING`、�
 3. OPERATOR の固定 player asset route。`BITOVP_MOQ_PLAYER_BUNDLE_PATH` と
    `BITOVP_MOQ_PLAYER_BUNDLE_SHA256` を使用し、ファイル種別・サイズ・digest を検査する。
    任意のリクエスト URL／path を fetch・read しない。未設定や不一致時に既存 Player へ fallback しない。
+   native script／video／download の GET／HEAD は、固定 asset と正規 UUID の録画 path に限り
+   document の `expectedOrganizationId` を URL に付ける。既存の組織照合を通し、tenant を選択する値には
+   使わない。MoQ の URL では未知・重複 query を拒否し、汎用 proxy の制約は変更しない。
 4. Live の既存 playback slot に専用 MoQ preview を追加。Player 8／manifest preview は維持する。
    明示 Play、muted 開始、Stop、状態表示。HLS output confirmation を MoQ の再生条件に使わない。
    source を追加し target buffer を2秒に設定、unmount／run 変更時には source を除去し player を dispose。
@@ -85,6 +88,8 @@ main への merge／release は行わず、ブランチと日本語の Obsidian 
 ## 終了後のデモ表示（2026-11-18 追加要件）
 
 終了後も同じジョブページ・単独ページで、受信動画と統計の推移を振り返れるようにする。
+終了時は保存動画・観測履歴を先に置き、空の Live preview は折り畳む。元の作成監査と一致した
+設定 namespace／draft／catalog を、資格情報を復号せず履歴へ表示する。`#moq-preview` で直接開ける。
 MoQ を受信した preview の `captureStream`／MediaRecorder により最大90秒・16MiBの WebM を保存する。
 これは preview で実際に受信した範囲の録画であり、視聴していない時間までの連続収録とは表示しない。
 未対応・失敗・録画なしを明示し、入力映像を受信録画の代用品にはしない。
@@ -99,6 +104,12 @@ session は server が認証済み actor と run に結び、別の actor によ
 開始は稼働中の同じ run に限り、終了後の flush は既存 session だけ短時間許可する。
 GET は OPERATOR に限定し、tenant／channel／run の照合を行う。応答は private/no-store。
 購読 URL・token・Player key・自由文 SDK エラーは保存しない。
+固定 Player asset と UUID で一意に決まる archive の GET／HEAD だけを、既存の
+`expectedOrganizationId` passive request binding に登録する。native script／video／download は
+現在の document organization を URL に付け、proxy の same-origin・認証・role・tenant 一致の
+検査を維持する。追加 query・重複・不正な binding は拒否する。
+終了済み画面の設定表示は、保存済み output payload と元の CREATE 監査が一致した場合だけ、
+optional `configuration` に namespace tuple、設定 draft、catalog を返す。資格情報は復号しない。
 
 API 契約は `GET /api/live-channels/[id]/runs/[runId]/moq-observations` と
 `PUT /api/live-channels/[id]/runs/[runId]/moq-observations/[sessionId]`。

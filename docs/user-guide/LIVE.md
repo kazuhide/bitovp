@@ -113,6 +113,11 @@ missing measurements left as gaps. The received preview is recorded for up to
 received interval; its state shows recording, saving, saved, unsupported or
 failure. Each run keeps up to five observation sessions. Saved data remains
 available when the live player is inactive.
+After ending, saved video and observations appear before the collapsed live
+preview. Historical namespace/draft/catalog come from the original output proof.
+Use `#moq-preview` on either page to open this section directly. Browser-native
+bundle and recording requests carry the document's organization assertion;
+switching organizations requires reloading the page.
 
 Configure the tenant's Analytics key in Player settings to collect the same
 barcode latency through Collector 2.62.0's public HTML5 adapter. **Bitmovin

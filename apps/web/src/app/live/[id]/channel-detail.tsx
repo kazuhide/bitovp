@@ -1640,20 +1640,23 @@ function ChannelConsole({
 				{/*  layer 1: the one thing to do next. : taking
 				 * it hands focus to the target's heading, so a keyboard operator
 			    lands where the panel just sent the page (audit §5.6). */}
-				<NextActionPanel
-					action={nextAction}
-					readOnly={imported}
-					inputUnconfirmed={
-						displayedInputConnection === null &&
-						nextAction.code === "CONNECT_INPUT"
-					}
-					onJump={jumpToLiveSection}
-				/>
+				{!(moqPlayback && nextAction.code === "WAIT_FOR_OUTPUT") ? (
+					<NextActionPanel
+						action={nextAction}
+						readOnly={imported}
+						inputUnconfirmed={
+							displayedInputConnection === null &&
+							nextAction.code === "CONNECT_INPUT"
+						}
+						onJump={jumpToLiveSection}
+					/>
+				) : null}
 
 				{/* Layer 2: the monitoring line. */}
 				<StatusStrip
 					openAlerts={openAlerts}
 					playableCount={playableCount}
+					showPlayable={!moqPlayback}
 					feederCount={runningFeeders}
 					// : the next armed row, as a countdown, in the header —
 					// a healthy RUNNING channel's next action is ON_AIR, so nothing

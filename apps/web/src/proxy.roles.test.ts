@@ -793,6 +793,72 @@ describe("organization-bound VOD input preview native reads", () => {
 	});
 });
 
+describe("organization-bound native MoQ asset and archived video reads", () => {
+	const paths = [
+		"/api/player-assets/moq",
+		`/api/live-channels/${MEDIA_RESOURCE}/runs/${MEDIA_RESOURCE}/moq-observations/${MEDIA_RESOURCE}/archive`,
+	];
+	it.each(
+		paths,
+	)("allows matching native GET/HEAD only for the authenticated document organization: %s", async (path) => {
+		for (const method of ["GET", "HEAD"]) {
+			const response = await proxy(
+				nativeRequest(`${path}?expectedOrganizationId=${MEDIA_ORG}`, method, {
+					"sec-fetch-dest": path.includes("player-assets") ? "script" : "video",
+				}),
+			);
+			expect(response.status).toBe(200);
+			expect(
+				response.headers.get("x-middleware-request-x-bitovp-expected-org"),
+			).toBe(MEDIA_ORG);
+		}
+	});
+	it.each(
+		paths,
+	)("refuses stale, missing, duplicate, malformed or arbitrary native MoQ query data: %s", async (path) => {
+		for (const query of [
+			"",
+			`?expectedOrganizationId=${OTHER_MEDIA_ORG}`,
+			"?expectedOrganizationId=invalid",
+			`?expectedOrganizationId=${MEDIA_ORG}&expectedOrganizationId=${MEDIA_ORG}`,
+			`?expectedOrganizationId=${MEDIA_ORG}&url=https://attacker.example`,
+		]) {
+			for (const method of ["GET", "HEAD"])
+				expect(
+					(await proxy(nativeRequest(`${path}${query}`, method))).status,
+				).toBe(409);
+		}
+		expect(
+			(
+				await proxy(
+					nativeRequest(
+						`${path}?expectedOrganizationId=${MEDIA_ORG}&path=/tmp/private`,
+						"GET",
+						{ "x-bitovp-expected-org": MEDIA_ORG },
+					),
+				)
+			).status,
+		).toBe(409);
+	});
+	it.each(
+		paths,
+	)("preserves same-origin and OPERATOR authorization for MoQ: %s", async (path) => {
+		const bound = `${path}?expectedOrganizationId=${MEDIA_ORG}`;
+		expect(
+			(await proxy(nativeRequest(bound, "GET", { cookie: "" }))).status,
+		).toBe(401);
+		expect(
+			(
+				await proxy(
+					nativeRequest(bound, "GET", { "sec-fetch-site": "cross-site" }),
+				)
+			).status,
+		).toBe(403);
+		resolveUserById.mockResolvedValue(user({ role: "VIEWER" }));
+		expect((await proxy(nativeRequest(bound))).status).toBe(403);
+	});
+});
+
 describe("organization-bound native media and report requests", () => {
 	it("reproduces the native video refusal when its URL has no organization binding", async () => {
 		const res = await proxy(nativeRequest(PASSIVE_ROUTES[0]));

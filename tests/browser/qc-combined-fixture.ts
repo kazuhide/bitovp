@@ -671,6 +671,7 @@ export async function verifyHdrQcBrowser(
 			scope: "HDR base layer · RPU display mapping not measured",
 			mixed:
 				"HDR/SDR or HLG measurement conditions differ. Scores and charts are shown separately.",
+			compareHelp: "Compare reports — more information",
 			violin: "VMAF distribution",
 		},
 		ja: {
@@ -683,6 +684,7 @@ export async function verifyHdrQcBrowser(
 			scope: "HDRベース映像・RPUによる表示処理は評価対象外",
 			mixed:
 				"HDR/SDR または HLG の測定条件が異なるため、数値とグラフを分けて表示します。",
+			compareHelp: "「レポートを比較」の説明",
 			violin: "VMAF 分布",
 		},
 	};
@@ -793,20 +795,34 @@ export async function verifyHdrQcBrowser(
 				await expect(figures).toHaveCount(comparison.mixed ? 2 : 1);
 				for (let i = 0; i < (await figures.count()); i++)
 					await expect(figures.nth(i)).toBeVisible();
-				const warning = page.getByRole("alert").filter({ hasText: name.mixed });
+				const help = page.getByRole("button", {
+					name: name.compareHelp,
+					exact: true,
+				});
+				const explanation = page
+					.getByRole("tooltip", { includeHidden: true })
+					.filter({ hasText: name.mixed });
 				const groups = page.locator(
 					'section[aria-labelledby^="measurement-context-"]',
 				);
 				await expect(groups).toHaveCount(comparison.mixed ? 2 : 0);
 				if (comparison.mixed) {
-					await expect(warning).toBeVisible();
+					await expect(help).toBeVisible();
+					await expect(explanation).toBeHidden();
+					await help.click();
+					await expect(explanation).toBeVisible();
+					await page.keyboard.press("Escape");
+					await expect(explanation).toBeHidden();
 					for (let i = 0; i < (await groups.count()); i++)
 						await expect(
 							groups
 								.nth(i)
 								.getByRole("figure", { name: name.violin, exact: true }),
 						).toHaveCount(1);
-				} else await expect(warning).toHaveCount(0);
+				} else {
+					await expect(help).toHaveCount(0);
+					await expect(explanation).toHaveCount(0);
+				}
 				await captureHdrUi(
 					page,
 					info,

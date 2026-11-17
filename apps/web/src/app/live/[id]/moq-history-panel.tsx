@@ -233,9 +233,8 @@ export function MoqHistoryPanel({
 						UTC
 					</p>
 					{session.archive && archiveUrl ? (
-						<div className="max-w-2xl space-y-1">
+						<div key={session.id} className="max-w-2xl space-y-1">
 							<video
-								key={session.id}
 								ref={archiveVideo}
 								data-moq-archive={session.id}
 								src={archiveUrl}
@@ -246,7 +245,7 @@ export function MoqHistoryPanel({
 								aria-label={t("moqPlayback.receivedVideo")}
 								className="aspect-video w-full rounded border border-zinc-800 bg-black"
 							/>
-							<MoqContentTime key={session.id} mediaRef={archiveVideo} />
+							<MoqContentTime mediaRef={archiveVideo} />
 							<a
 								href={archiveUrl}
 								download={`moq-${session.id}.webm`}

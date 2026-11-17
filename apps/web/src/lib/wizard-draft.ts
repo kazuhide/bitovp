@@ -404,6 +404,12 @@ const vod = fields(
 						"kind key inputFile inputFormat videoInputFile metadataInputFile encodingKey",
 					),
 				),
+				hdr10PlusStreams: rows(
+					fields(
+						"key videoInputFile metadataInputPath selectionMode encodingKey",
+						"position",
+					),
+				),
 				trimmingStreams: rows(
 					fields(
 						"kind key sourceKey encodingKey startTimeCode endTimeCode startPicTiming endPicTiming",
@@ -908,6 +914,12 @@ export function mergeWizardDraft<T>(
 		"sources.tracks.*": ["key", "inputFile", "selectionMode", "position"],
 		"sources.fileStreams.*": ["key", "inputFile"],
 		"sources.dolbyStreams.*": ["kind", "key"],
+		"sources.hdr10PlusStreams.*": [
+			"key",
+			"videoInputFile",
+			"metadataInputPath",
+			"selectionMode",
+		],
 		"sources.trimmingStreams.*": ["kind", "key", "sourceKey"],
 		"sources.concatenationStreams.*": ["key", "sources"],
 		"sources.concatenationStreams.*.sources.*": ["sourceKey"],

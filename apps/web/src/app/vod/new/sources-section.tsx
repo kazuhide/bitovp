@@ -153,6 +153,7 @@ function nextSharedKey(sources: WizardSources, prefix: string): string {
 		...(sources.tracks ?? []).map((t) => t.key),
 		...(sources.fileStreams ?? []).map((s) => s.key),
 		...(sources.dolbyStreams ?? []).map((s) => s.key),
+		...(sources.hdr10PlusStreams ?? []).map((s) => s.key),
 		...(sources.trimmingStreams ?? []).map((s) => s.key),
 		...(sources.audioMixStreams ?? []).map((s) => s.key),
 		...(sources.concatenationStreams ?? []).map((s) => s.key),
@@ -391,6 +392,7 @@ function StreamRow({
 	onChange,
 	onConvert,
 	onRemove,
+	onBrowseMetadata,
 }: {
 	row: UnifiedStream;
 	idBase: string;
@@ -399,6 +401,7 @@ function StreamRow({
 	onChange: (next: UnifiedStream) => void;
 	onConvert: (type: UnifiedStream["type"]) => void;
 	onRemove: () => void;
+	onBrowseMetadata?: () => void;
 }) {
 	const { t } = useT();
 	const fileSelect = (
@@ -467,6 +470,29 @@ function StreamRow({
 						(next) => onChange({ ...row, metadataInputFile: next }),
 					)
 				: null}
+			{row.type === "HDR10_PLUS" ? (
+				<Field
+					label={t("wizard.hdr10PlusMetadataPath")}
+					htmlFor={`${idBase}-hdr10plus-metadata`}
+					help={t("wizard.hdr10PlusMetadataHelp")}
+					trailing={
+						onBrowseMetadata ? (
+							<Button variant="secondary" size="sm" onClick={onBrowseMetadata}>
+								{t("wizard.browseStorage")}
+							</Button>
+						) : undefined
+					}
+				>
+					<Input
+						id={`${idBase}-hdr10plus-metadata`}
+						value={row.metadataInputPath ?? ""}
+						placeholder="metadata/hdr10plus.json"
+						onChange={(event) =>
+							onChange({ ...row, metadataInputPath: event.target.value })
+						}
+					/>
+				</Field>
+			) : null}
 
 			<Collapsible summary={t("wizard.advanced")}>
 				{row.type === "ATMOS" ? (
@@ -487,7 +513,7 @@ function StreamRow({
 						</SelectNative>
 					</Field>
 				) : null}
-				{row.type === "INGEST" ? (
+				{row.type === "INGEST" || row.type === "HDR10_PLUS" ? (
 					<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 						<Field label={t("wizard.selectionMode")} htmlFor={`${idBase}-mode`}>
 							<SelectNative
@@ -497,32 +523,47 @@ function StreamRow({
 									onChange({
 										...row,
 										selectionMode: e.target.value as WizardStreamSelectionMode,
+										...(row.type === "HDR10_PLUS" && e.target.value === "AUTO"
+											? { position: undefined }
+											: {}),
 									})
 								}
 							>
-								{SELECTION_MODES.map((mode) => (
+								{SELECTION_MODES.filter(
+									(mode) =>
+										row.type !== "HDR10_PLUS" || mode !== "AUDIO_RELATIVE",
+								).map((mode) => (
 									<option key={mode} value={mode}>
 										{mode}
 									</option>
 								))}
 							</SelectNative>
 						</Field>
-						<Field label={t("wizard.position")} htmlFor={`${idBase}-pos`}>
-							<Input
-								id={`${idBase}-pos`}
-								type="number"
-								value={row.position ?? 0}
-								onChange={(e) =>
-									onChange({
-										...row,
-										position: Math.max(
-											0,
-											Math.round(Number(e.target.value) || 0),
-										),
-									})
-								}
-							/>
-						</Field>
+						{row.type !== "HDR10_PLUS" ||
+						row.selectionMode !== "AUTO" ||
+						row.position !== undefined ? (
+							<Field label={t("wizard.position")} htmlFor={`${idBase}-pos`}>
+								<Input
+									id={`${idBase}-pos`}
+									type="number"
+									value={row.position ?? (row.type === "HDR10_PLUS" ? "" : 0)}
+									onChange={(e) =>
+										onChange({
+											...row,
+											position:
+												row.type === "HDR10_PLUS"
+													? e.target.value === ""
+														? undefined
+														: Number(e.target.value)
+													: Math.max(
+															0,
+															Math.round(Number(e.target.value) || 0),
+														),
+										})
+									}
+								/>
+							</Field>
+						) : null}
 					</div>
 				) : null}
 				{encodingKeys.length > 0 ? (
@@ -533,7 +574,9 @@ function StreamRow({
 						onChange={(encodingKey) => onChange({ ...row, encodingKey })}
 					/>
 				) : null}
-				{row.type !== "INGEST" && row.type !== "ATMOS" ? (
+				{row.type !== "INGEST" &&
+				row.type !== "ATMOS" &&
+				row.type !== "HDR10_PLUS" ? (
 					<p className="text-xs text-zinc-600">
 						{t("wizardX.noExtraOptionsFor", {
 							label: streamTypeLabel(row.type),
@@ -560,12 +603,14 @@ type SourcesSectionProps = {
 	 * neither step, so a row added here could only be refused.
 	 */
 	fileView?: boolean;
+	onBrowseHdr10PlusMetadata?: (key: string) => void;
 };
 
 export function SourcesSection({
 	state,
 	onPatch,
 	fileView = false,
+	onBrowseHdr10PlusMetadata,
 }: SourcesSectionProps) {
 	const { t } = useT();
 	const sources = state.sources ?? {};
@@ -711,6 +756,16 @@ export function SourcesSection({
 
 				{streams.map((row) => {
 					const idBase = `wz-stream-${row.origin}-${row.index}`;
+					const videoFile = state.inputFiles.find(
+						(file) => file.key === row.inputFile,
+					);
+					const canBrowseMetadata =
+						row.type === "HDR10_PLUS" &&
+						!!videoFile?.credentialId &&
+						!!videoFile.bucket &&
+						["S3", "GENERIC_S3", "GCS", "GCS_SERVICE_ACCOUNT"].includes(
+							videoFile.kind,
+						);
 					return (
 						<StreamRow
 							// The React key intentionally carries row.key so the row
@@ -741,11 +796,27 @@ export function SourcesSection({
 								}
 							}}
 							onRemove={() => patchSources(removeStream(sources, row))}
+							onBrowseMetadata={
+								canBrowseMetadata && onBrowseHdr10PlusMetadata
+									? () => onBrowseHdr10PlusMetadata(row.key)
+									: undefined
+							}
 						/>
 					);
 				})}
 
 				<div className="flex flex-wrap items-center gap-2">
+					<Button
+						variant="secondary"
+						size="sm"
+						onClick={() =>
+							patchSources(
+								blankStream(sources, "HDR10_PLUS", state.inputFiles[0]?.key),
+							)
+						}
+					>
+						{t("wizard.addHdr10PlusStream")}
+					</Button>
 					<Button
 						variant="secondary"
 						size="sm"

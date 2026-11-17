@@ -80,6 +80,7 @@ const GROUP_OF_KIND: Record<OperationKind, ResourceGroupId> = {
 	CREATE_FILE_INPUT_STREAM: "inputStreams",
 	CREATE_DOLBY_ATMOS_INPUT_STREAM: "inputStreams",
 	CREATE_DOLBY_VISION_INPUT_STREAM: "inputStreams",
+	CREATE_HDR10_PLUS_INPUT_STREAM: "inputStreams",
 	CREATE_DOLBY_VISION_METADATA_INPUT_STREAM: "inputStreams",
 	CREATE_TRIMMING_TIME_BASED: "inputStreams",
 	CREATE_TRIMMING_TIMECODE_TRACK: "inputStreams",

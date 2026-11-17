@@ -423,6 +423,32 @@ export const dolbyStreamSchema = z.discriminatedUnion("kind", [
 	}),
 ]);
 
+/** VOD HDR10+ video and JSON metadata share one input storage resource. */
+export const hdr10PlusStreamSchema = z
+	.strictObject({
+		key: refKey,
+		inputKey: refKey,
+		videoInputPath: z.string().min(1),
+		metadataInputPath: z.string().min(1),
+		selectionMode: z
+			.enum(["AUTO", "POSITION_ABSOLUTE", "VIDEO_RELATIVE"])
+			.default("AUTO"),
+		// The provider defaults non-AUTO positions to zero. Do not materialize
+		// that default here: AUTO explicitly forbids sending a position.
+		position: z.number().int().min(0).max(2_147_483_647).optional(),
+		encodingKey: refKey.optional(),
+	})
+	.superRefine((stream, ctx) => {
+		if (stream.selectionMode === "AUTO" && stream.position !== undefined) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["position"],
+				message: "HDR10+ selectionMode AUTO must not set position",
+			});
+		}
+	});
+export type Hdr10PlusStream = z.infer<typeof hdr10PlusStreamSchema>;
+
 /**
  * Input-stream TRIMMING (the modern, resource-based path — independent of
  * the start-request `trimming` field and constraint C2, which governs
@@ -1935,6 +1961,7 @@ export const encodingPlanSchema = z.strictObject({
 	ingest: z.array(ingestStreamSchema).default([]),
 	fileStreams: z.array(fileStreamSchema).default([]),
 	dolbyStreams: z.array(dolbyStreamSchema).default([]),
+	hdr10PlusStreams: z.array(hdr10PlusStreamSchema).default([]),
 	/**
 	 * Input-stream trimming/concatenation (the modern path). Both `.default([])`
 	 * so plans without them parse to the same shape as before — the 56 goldens

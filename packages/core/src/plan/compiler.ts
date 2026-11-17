@@ -81,6 +81,7 @@ export type OperationKind =
 	| "CREATE_FILE_INPUT_STREAM"
 	| "CREATE_DOLBY_ATMOS_INPUT_STREAM"
 	| "CREATE_DOLBY_VISION_INPUT_STREAM"
+	| "CREATE_HDR10_PLUS_INPUT_STREAM"
 	| "CREATE_DOLBY_VISION_METADATA_INPUT_STREAM"
 	| "CREATE_TRIMMING_TIME_BASED"
 	| "CREATE_TRIMMING_TIMECODE_TRACK"
@@ -244,6 +245,7 @@ function inputStreamStep(
 	sets: {
 		fileKeys: ReadonlySet<string>;
 		dolbyKeys: ReadonlySet<string>;
+		hdr10PlusKeys: ReadonlySet<string>;
 		trimmingKeys: ReadonlySet<string>;
 		concatKeys: ReadonlySet<string>;
 		mixKeys: ReadonlySet<string>;
@@ -255,6 +257,7 @@ function inputStreamStep(
 	if (sets.dolbyKeys.has(key)) {
 		return `dolby:${key}`;
 	}
+	if (sets.hdr10PlusKeys.has(key)) return `hdr10-plus:${key}`;
 	if (sets.trimmingKeys.has(key)) {
 		return `trim:${key}`;
 	}
@@ -950,6 +953,24 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 			}
 		}
 
+		const hdr10PlusKeys = new Set(plan.hdr10PlusStreams.map((s) => s.key));
+		for (const stream of plan.hdr10PlusStreams) {
+			if (encOf(stream.encodingKey).step !== enc.step) continue;
+			ops.push({
+				step: `hdr10-plus:${stream.key}`,
+				kind: "CREATE_HDR10_PLUS_INPUT_STREAM",
+				payload: {
+					videoInputPath: stream.videoInputPath,
+					metadataInputPath: stream.metadataInputPath,
+					selectionMode: stream.selectionMode,
+					...(stream.position !== undefined
+						? { position: stream.position }
+						: {}),
+				},
+				refs: { encodingId: enc.step, inputId: `input:${stream.inputKey}` },
+			});
+		}
+
 		// Trimming + concatenation input streams (the modern path). They wrap
 		// ingest/file/dolby (or each other) by sourceKey, so they MUST be emitted
 		// after those streams and before CREATE_STREAM (backward-refs invariant).
@@ -960,6 +981,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 		const streamSets = {
 			fileKeys,
 			dolbyKeys,
+			hdr10PlusKeys,
 			trimmingKeys,
 			concatKeys,
 			mixKeys,

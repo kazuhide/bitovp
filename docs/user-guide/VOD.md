@@ -12,6 +12,9 @@ Open `/vod/jobs`, choose the create action, and follow `/vod/new`:
 
 New configurations start with region `AUTO`, which lets Bitmovin select a
 region. Review the selected account and any saved or copied region settings.
+The new VOD wizard defaults to Encoder `2.294.0` (Beta). Saved account defaults,
+drafts, and imported plans retain their selected version; use `STABLE` if you
+need the current stable encoder instead.
 
 1. **Basics:** name, Bitmovin account, region, encoder version, and encoding mode.
 2. **Sources:** choose stored media and identify the video, audio, and subtitle tracks.
@@ -69,6 +72,27 @@ independent AV inputs without concatenation and single-track outputs are unaffec
 Drafts are saved in this browser for seven days, separately by user, organization,
 and creation source. Secret values, URLs, DRM settings, filters, and imported JSON
 are excluded. Review omitted settings and output destinations after restoring.
+
+## HDR10+ input for HEVC
+
+HDR10+ is a VOD HEVC (H.265) feature introduced in Encoder `2.294.0` (Beta) and
+[REST API `1.289.0`](https://developer.bitmovin.com/encoding/docs/rest-api-services-12500-12990#12890).
+Execution requires Encoder `2.294.0` or later and public API SDK `1.289.0` or
+later, which exposes the HDR10+ input-stream API.
+
+1. In **Sources**, select the HDR10 video file and choose **Add HDR10+ video**.
+2. Set **HDR10+ metadata JSON path** to the matching JSON file on the video's
+   same input storage and bucket. Use the metadata field or its browser; do not
+   add the JSON as another video input file.
+3. In **Ladder**, select the resulting HDR10+ stream as the source of an H.265
+   rendition. Keep `AUTO` for automatic video-track selection, or choose an
+   explicit supported selection mode and position.
+
+The input timeline cannot currently be combined with HDR10+ in this application;
+use the video source directly. This is an application limitation, not a general
+Bitmovin restriction. HDR10+ is not a Live input option or an H.265 dynamic-range
+dropdown value. See the [input-stream reference](https://developer.bitmovin.com/encoding/reference/postencodingencodingsinputstreamshdr10plusbyencodingid)
+and [Encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
 
 ## Fixed ladders and Per-Title
 

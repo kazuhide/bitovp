@@ -364,6 +364,43 @@ describe("the measured 2026-09-02 failure (WP-0 A/B, four arms)", () => {
  * was measured on. These are the reviewer's probes, on the REAL sample shape.
  */
 describe("a heartbeat-derived reference (rev406 R1)", () => {
+	it.each([
+		{ numberOfAudioChannels: 2 },
+		{ numberOfAudioChannels: null, audioChannelFormat: "stereo" },
+	])("compares channel counts when the initial-connection heartbeat metadata is populated: %j", (metadata) => {
+		const reference = heartbeatIngestMedia({
+			raw: {
+				ingest: {
+					streams: [
+						{
+							mediaType: "video",
+							codec: "h264",
+							width: 1280,
+							height: 720,
+							rate: 30,
+						},
+						{ mediaType: "audio", codec: "aac", rate: 48000, ...metadata },
+					],
+				},
+			},
+		});
+		const result = compareSlateCompatibility(
+			reference,
+			withAudio({ channels: 6 }),
+		);
+		expect(result.ok).toBe(false);
+		expect(result.differences).toEqual([
+			{
+				attribute: MEDIA_ATTRIBUTE.audioChannels,
+				reference: "2",
+				candidate: "6",
+				blocking: true,
+			},
+		]);
+		expect(result.compared).toContain(MEDIA_ATTRIBUTE.audioChannels);
+		expect(result.notComparable).not.toContain(MEDIA_ATTRIBUTE.audioChannels);
+	});
+
 	const heartbeat = heartbeatIngestMedia({
 		at: "2026-09-02T13:40:00.000Z",
 		raw: {

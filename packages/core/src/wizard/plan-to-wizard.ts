@@ -29,6 +29,7 @@ import {
 	type WizardEncodingRow,
 	type WizardExtraManifest,
 	type WizardFileStream,
+	type WizardHdr10PlusStream,
 	type WizardHlsOptions,
 	type WizardIngestTrack,
 	type WizardInputFile,
@@ -1681,6 +1682,7 @@ function collectInputFiles(
 	ingest: Record<string, unknown>[],
 	fileStreams: Record<string, unknown>[],
 	dolbyStreams: Record<string, unknown>[],
+	hdr10PlusStreams: Record<string, unknown>[],
 ): { inputFiles: WizardInputFile[]; fileKeyFor: FileKeyFor } {
 	// Canonical (inputKey, path) order: implicit video, implicit audio, other
 	// ingest, fileStreams, dolby (vision: video then metadata).
@@ -1711,6 +1713,10 @@ function collectInputFiles(
 		} else {
 			push(ik, asString(d.inputPath));
 		}
+	}
+	for (const stream of hdr10PlusStreams) {
+		// JSON metadata is a same-input path, never a media source in the timeline.
+		push(asString(stream.inputKey), asString(stream.videoInputPath));
 	}
 
 	const inputFiles: WizardInputFile[] = [];
@@ -1842,6 +1848,7 @@ export function planToWizardState(
 	// Split inputs[] + every stream's (inputKey, path) into one input FILE per
 	// object; streams reference files by key, the object path lives on the file.
 	const dolbyStreamsRaw = asArray(raw.dolbyStreams).filter(isRecord);
+	const hdr10PlusStreamsRaw = asArray(raw.hdr10PlusStreams).filter(isRecord);
 	const { inputFiles, fileKeyFor } = collectInputFiles(
 		inputs,
 		ingest,
@@ -1852,6 +1859,7 @@ export function planToWizardState(
 			),
 		],
 		dolbyStreamsRaw,
+		hdr10PlusStreamsRaw,
 	);
 	// Separate A/V: the implicit audio reads a different input file than the
 	// video (inputFiles[0]); absent = the same object.
@@ -2265,6 +2273,26 @@ export function planToWizardState(
 	}
 	if (dolbyStreams.length > 0) {
 		sourceAdditions.dolbyStreams = dolbyStreams;
+	}
+	if (hdr10PlusStreamsRaw.length > 0) {
+		sourceAdditions.hdr10PlusStreams = hdr10PlusStreamsRaw.map(
+			(stream): WizardHdr10PlusStream => ({
+				key: asString(stream.key) ?? "",
+				videoInputFile: fileKeyFor(
+					asString(stream.inputKey),
+					asString(stream.videoInputPath) ?? "",
+				),
+				metadataInputPath: asString(stream.metadataInputPath) ?? "",
+				selectionMode: (asString(stream.selectionMode) ??
+					"AUTO") as WizardHdr10PlusStream["selectionMode"],
+				...(asNumber(stream.position) !== undefined
+					? { position: asNumber(stream.position) }
+					: {}),
+				...(asString(stream.encodingKey) !== undefined
+					? { encodingKey: asString(stream.encodingKey) }
+					: {}),
+			}),
+		);
 	}
 	if (trimmingStreams.length > 0) {
 		sourceAdditions.trimmingStreams = trimmingStreams;

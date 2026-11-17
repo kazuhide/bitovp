@@ -35,6 +35,7 @@ import {
 	Fmp4Muxing,
 	FragmentedMp4MuxingManifestType,
 	H264PictureTimingTrimmingInputStream,
+	Hdr10PlusInputStream,
 	IngestInputStream,
 	InputPath,
 	Keyframe,
@@ -83,6 +84,7 @@ export function createMediaOps(
 	| "createFileInputStream"
 	| "createDolbyAtmosInputStream"
 	| "createDolbyVisionInputStream"
+	| "createHdr10PlusInputStream"
 	| "createDolbyVisionMetadataInputStream"
 	| "createTimeBasedTrimmingInputStream"
 	| "createTimecodeTrackTrimmingInputStream"
@@ -215,6 +217,35 @@ export function createMediaOps(
 							inputId: p.inputId,
 							videoInputPath: p.videoInputPath,
 							metadataInputPath: p.metadataInputPath,
+						}),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+
+		createHdr10PlusInputStream: (encodingId, p) =>
+			audited(
+				"POST",
+				`/encoding/encodings/${encodingId}/input-streams/hdr10-plus`,
+				{
+					videoInputPath: p.videoInputPath,
+					metadataInputPath: p.metadataInputPath,
+					selectionMode: p.selectionMode,
+				},
+				() =>
+					api.encoding.encodings.inputStreams.hdr10Plus.create(
+						encodingId,
+						new Hdr10PlusInputStream({
+							inputId: p.inputId,
+							videoInputPath: p.videoInputPath,
+							metadataInputPath: p.metadataInputPath,
+							selectionMode: sdkEnumValue(
+								StreamSelectionMode,
+								p.selectionMode,
+								"StreamSelectionMode",
+							),
+							...(p.selectionMode !== "AUTO" && p.position !== undefined
+								? { position: p.position }
+								: {}),
 						}),
 					),
 				(r) => ({ id: r.id }),

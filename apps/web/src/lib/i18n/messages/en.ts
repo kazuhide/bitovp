@@ -2482,6 +2482,9 @@ export const en = {
 		chainIngest: "ingest {mode} pos {position}",
 		chainFile: "file {type}",
 		chainDolby: "Dolby {kind} {detail}",
+		chainHdr10PlusVideoAuto: "HDR10+ video (AUTO)",
+		chainHdr10PlusVideo: "HDR10+ video ({mode} pos {position})",
+		chainHdr10PlusMetadata: "HDR10+ JSON metadata",
 		chainTrim: "clip {kind}",
 		chainConcat: "concat pos {position}",
 		chainConcatMain: "concat pos {position} (main)",
@@ -3685,6 +3688,11 @@ export const en = {
 	},
 	heartbeat: {
 		stream: "Stream",
+		aspectRatio: "Aspect ratio",
+		audioChannels: "Audio channels",
+		audioChannelFormat: "Channel layout",
+		initialMetadata:
+			"Aspect ratio and audio channel metadata are captured at first connection.",
 		type: "Type",
 		codec: "Codec",
 		resolution: "Resolution",
@@ -5317,8 +5325,14 @@ export const en = {
 			"AUTO and ON require Encoder 2.291.0 or later. Select a supported encoder version or leave detail preservation OFF.",
 		av1DetailPreservationVersionUnresolved:
 			"AUTO and ON require Encoder 2.291.0 or later. This version alias has not been resolved; pin a supported numeric version to confirm compatibility.",
-		encoderVersion2292Help:
-			"Encoder 2.292.0 is a Beta release. Select STABLE to use the current stable release.",
+		encoderVersion2294Help:
+			"Encoder 2.294.0 is a Beta release. Select STABLE to use the current stable release.",
+		addHdr10PlusStream: "Add HDR10+ video",
+		hdr10PlusMetadataPath: "HDR10+ metadata JSON path",
+		hdr10PlusMetadataHelp:
+			"Choose the HDR10+ JSON sidecar on the same input storage and bucket as the video. Use this stream as the source of an H.265 rendition.",
+		hdr10PlusTimelineConflict:
+			"HDR10+ uses its video source directly. This app cannot combine it with an input timeline yet; switch to ordinary sources or remove the HDR10+ stream.",
 		av1DetailPreservationOff: "OFF — Standard encoding",
 		av1DetailPreservationAuto: "AUTO — Apply by resolution",
 		av1DetailPreservationOn: "ON — Apply to all renditions",

@@ -2437,6 +2437,9 @@ export const ja = {
 		chainIngest: "Ingest {mode} 位置 {position}",
 		chainFile: "ファイル {type}",
 		chainDolby: "Dolby {kind} {detail}",
+		chainHdr10PlusVideoAuto: "HDR10+ 動画 (AUTO)",
+		chainHdr10PlusVideo: "HDR10+ 動画 ({mode} 位置 {position})",
+		chainHdr10PlusMetadata: "HDR10+ JSON メタデータ",
 		chainTrim: "入力クリップ {kind}",
 		chainConcat: "連結 位置 {position}",
 		chainConcatMain: "連結 位置 {position}(メイン)",
@@ -3625,6 +3628,10 @@ export const ja = {
 	},
 	heartbeat: {
 		stream: "ストリーム",
+		aspectRatio: "アスペクト比",
+		audioChannels: "音声チャンネル数",
+		audioChannelFormat: "チャンネル構成",
+		initialMetadata: "アスペクト比と音声チャンネル情報は初回接続時の値です。",
 		type: "種類",
 		codec: "コーデック",
 		resolution: "解像度",
@@ -5250,8 +5257,14 @@ export const ja = {
 			"AUTO・ON には Encoder 2.291.0 以降が必要です。対応するバージョンを指定するか、細部の保持を OFF にしてください。",
 		av1DetailPreservationVersionUnresolved:
 			"AUTO・ON には Encoder 2.291.0 以降が必要です。別名から対応バージョンを特定できないため、対応する数値バージョンを指定してください。",
-		encoderVersion2292Help:
-			"Encoder 2.292.0 は Beta 版です。安定版を使う場合は STABLE を選択してください。",
+		encoderVersion2294Help:
+			"Encoder 2.294.0 は Beta 版です。安定版を使う場合は STABLE を選択してください。",
+		addHdr10PlusStream: "HDR10+ 動画を追加",
+		hdr10PlusMetadataPath: "HDR10+ メタデータ JSON パス",
+		hdr10PlusMetadataHelp:
+			"動画と同じ入力ストレージ・バケットにある HDR10+ JSON サイドカーを選択し、このストリームを H.265 レンディションの入力に指定します。",
+		hdr10PlusTimelineConflict:
+			"HDR10+ は動画ソースを直接使用します。このアプリでは入力タイムラインとの併用にまだ対応していません。通常の入力へ切り替えるか、HDR10+ ストリームを削除してください。",
 		av1DetailPreservationOff: "OFF — 通常のエンコード",
 		av1DetailPreservationAuto: "AUTO — 解像度に応じて適用",
 		av1DetailPreservationOn: "ON — 全レンディションに適用",

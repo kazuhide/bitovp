@@ -76,11 +76,15 @@ function safeRaw(value: unknown): HeartbeatReceiptValue | null {
 		Object.values(value).some((value) => typeof value === "number");
 	// Invalid known fields are dropped by the shared schema. If nothing known
 	// remains, do not turn an arbitrary object into a fresh/healthy heartbeat.
+	// Initial-connection channel counts alone are not periodic measurements.
 	return raw.timestamp !== undefined ||
 		ingest?.status !== undefined ||
 		ingest?.healthy !== undefined ||
 		hasMetrics(ingest) ||
-		ingest?.streams?.some((stream) => hasMetrics(stream)) ||
+		ingest?.streams?.some(
+			({ numberOfAudioChannels: _initialChannels, ...stream }) =>
+				hasMetrics(stream),
+		) ||
 		observedHls(raw) ||
 		hasMetrics(raw.output?.segments?.totalProcessingStatsMs)
 		? raw

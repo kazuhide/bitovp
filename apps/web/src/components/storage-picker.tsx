@@ -40,6 +40,8 @@ type StoragePickerProps = {
 	 *  picker straight at its bucket instead of a blank credential step. */
 	initialCredentialId?: string;
 	initialBucket?: string;
+	/** Metadata must remain on the same input storage as its video. */
+	fixedLocation?: Pick<StoragePickerSelection, "credentialId" | "bucket">;
 	onClose: () => void;
 	onSelect: (selection: StoragePickerSelection) => void;
 };
@@ -57,6 +59,7 @@ export function StoragePicker({
 	providers,
 	initialCredentialId,
 	initialBucket,
+	fixedLocation,
 	onClose,
 	onSelect,
 }: StoragePickerProps) {
@@ -76,9 +79,15 @@ export function StoragePicker({
 	// navigation is never reset even if the seed props change mid-browse.
 	const wasOpen = useRef(false);
 	useEffect(() => {
-		if (open && !wasOpen.current) {
-			setCredentialId(initialCredentialId ?? "");
-			setBucket(initialBucket ?? "");
+		if (
+			open &&
+			(!wasOpen.current ||
+				(fixedLocation &&
+					(credentialId !== fixedLocation.credentialId ||
+						bucket !== fixedLocation.bucket)))
+		) {
+			setCredentialId(fixedLocation?.credentialId ?? initialCredentialId ?? "");
+			setBucket(fixedLocation?.bucket ?? initialBucket ?? "");
 			setBucketInput("");
 			setPrefix("");
 			// Review of PR #175, I1: without this, reopening the picker
@@ -88,7 +97,14 @@ export function StoragePicker({
 			setInspecting(null);
 		}
 		wasOpen.current = open;
-	}, [open, initialCredentialId, initialBucket]);
+	}, [
+		open,
+		initialCredentialId,
+		initialBucket,
+		fixedLocation,
+		credentialId,
+		bucket,
+	]);
 
 	const credentials = useQuery({
 		queryKey: ["credentials"],
@@ -105,7 +121,7 @@ export function StoragePicker({
 			apiFetch<{ buckets: string[] }>(
 				`/api/credentials/${credentialId}/storage/buckets`,
 			),
-		enabled: open && credentialId !== "",
+		enabled: open && credentialId !== "" && !fixedLocation,
 		retry: false,
 		staleTime: 60_000,
 	});
@@ -144,6 +160,12 @@ export function StoragePicker({
 	const crumbs = prefixCrumbs(prefix);
 
 	function finish(selection: StoragePickerSelection) {
+		if (
+			fixedLocation &&
+			(selection.credentialId !== fixedLocation.credentialId ||
+				selection.bucket !== fixedLocation.bucket)
+		)
+			return;
 		onSelect(selection);
 		onClose();
 	}
@@ -185,6 +207,7 @@ export function StoragePicker({
 						<SelectNative
 							id="picker-credential"
 							value={credentialId}
+							disabled={!!fixedLocation}
 							onChange={(e) => {
 								setCredentialId(e.target.value);
 								setBucket("");
@@ -198,7 +221,7 @@ export function StoragePicker({
 								</option>
 							))}
 						</SelectNative>
-						<NewCredentialLink />
+						{fixedLocation ? null : <NewCredentialLink />}
 					</Field>
 					{/*
 					 * : `{buckets: []}` is a SUCCESS, and it used to render
@@ -213,7 +236,7 @@ export function StoragePicker({
 					<Field
 						label={t("ui.bucket")}
 						htmlFor="picker-bucket"
-						{...(buckets.isError
+						{...(!fixedLocation && buckets.isError
 							? {
 									/**
 									 * The reason PLUS what to do about it — 's
@@ -235,65 +258,70 @@ export function StoragePicker({
 										"list",
 									)} ${t("uiX.enterTheBucketName")}`,
 								}
-							: buckets.data?.buckets.length === 0
+							: !fixedLocation && buckets.data?.buckets.length === 0
 								? { hint: t("ui.noBucketsListedTypeBelow") }
 								: {})}
 					>
-						<div className="flex gap-2">
-							{buckets.isError || buckets.data?.buckets.length === 0 ? null : (
-								<SelectNative
-									id="picker-bucket"
-									className="min-w-0"
-									value={bucket}
-									disabled={!credentialId || !buckets.data}
-									onChange={(e) => {
-										setBucket(e.target.value);
-										setPrefix("");
-									}}
-								>
-									<option value="">{t("ui.selectBucket")}</option>
-									{(buckets.data?.buckets ?? []).map((name) => (
-										<option key={name} value={name}>
-											{name}
-										</option>
-									))}
-								</SelectNative>
-							)}
-							<form
-								className={
-									buckets.isError || buckets.data?.buckets.length === 0
-										? "flex flex-1 gap-1"
-										: "flex gap-1"
-								}
-								onSubmit={(e) => {
-									e.preventDefault();
-									if (bucketInput.trim()) {
-										setBucket(bucketInput.trim());
-										setPrefix("");
-									}
-								}}
-							>
-								<Input
-									id={
-										buckets.isError || buckets.data?.buckets.length === 0
-											? "picker-bucket"
-											: undefined
-									}
-									aria-label={t("ui.bucketNameManual")}
+						{fixedLocation ? (
+							<Input id="picker-bucket" value={fixedLocation.bucket} readOnly />
+						) : (
+							<div className="flex gap-2">
+								{buckets.isError ||
+								buckets.data?.buckets.length === 0 ? null : (
+									<SelectNative
+										id="picker-bucket"
+										className="min-w-0"
+										value={bucket}
+										disabled={!credentialId || !buckets.data}
+										onChange={(e) => {
+											setBucket(e.target.value);
+											setPrefix("");
+										}}
+									>
+										<option value="">{t("ui.selectBucket")}</option>
+										{(buckets.data?.buckets ?? []).map((name) => (
+											<option key={name} value={name}>
+												{name}
+											</option>
+										))}
+									</SelectNative>
+								)}
+								<form
 									className={
 										buckets.isError || buckets.data?.buckets.length === 0
-											? "h-9 flex-1 text-xs"
-											: "h-9 w-36 text-xs"
+											? "flex flex-1 gap-1"
+											: "flex gap-1"
 									}
-									placeholder={t("ui.orTypeBucket")}
-									value={bucketInput}
-									onChange={(e) => setBucketInput(e.target.value)}
-								/>
-								<Button type="submit" variant="secondary" size="sm">
-									{t("ui.open")}
-								</Button>
-							</form>
-						</div>
+									onSubmit={(e) => {
+										e.preventDefault();
+										if (bucketInput.trim()) {
+											setBucket(bucketInput.trim());
+											setPrefix("");
+										}
+									}}
+								>
+									<Input
+										id={
+											buckets.isError || buckets.data?.buckets.length === 0
+												? "picker-bucket"
+												: undefined
+										}
+										aria-label={t("ui.bucketNameManual")}
+										className={
+											buckets.isError || buckets.data?.buckets.length === 0
+												? "h-9 flex-1 text-xs"
+												: "h-9 w-36 text-xs"
+										}
+										placeholder={t("ui.orTypeBucket")}
+										value={bucketInput}
+										onChange={(e) => setBucketInput(e.target.value)}
+									/>
+									<Button type="submit" variant="secondary" size="sm">
+										{t("ui.open")}
+									</Button>
+								</form>
+							</div>
+						)}
 					</Field>
 				</div>
 

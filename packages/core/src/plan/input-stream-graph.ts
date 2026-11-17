@@ -21,9 +21,12 @@ export function inputStreamAncestry(
 ): string[] | undefined {
 	if (seen.has(key)) return undefined;
 	if (
-		[...plan.ingest, ...plan.fileStreams, ...plan.dolbyStreams].some(
-			(s) => s.key === key,
-		)
+		[
+			...plan.ingest,
+			...plan.fileStreams,
+			...plan.dolbyStreams,
+			...plan.hdr10PlusStreams,
+		].some((s) => s.key === key)
 	)
 		return [key];
 	const parents = inputStreamDependencies(plan, key);
@@ -43,9 +46,12 @@ export function inputStreamLeaves(
 	key: string,
 ): string[] | undefined {
 	const leaves = new Set(
-		[...plan.ingest, ...plan.fileStreams, ...plan.dolbyStreams].map(
-			(s) => s.key,
-		),
+		[
+			...plan.ingest,
+			...plan.fileStreams,
+			...plan.dolbyStreams,
+			...plan.hdr10PlusStreams,
+		].map((s) => s.key),
 	);
 	return inputStreamAncestry(plan, key)?.filter((k) => leaves.has(k));
 }

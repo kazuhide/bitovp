@@ -78,6 +78,35 @@ function renderPicker(
 }
 
 describe("StoragePicker — seed on open", () => {
+	it("locks metadata browsing to the video's existing input location", async () => {
+		const onSelect = vi.fn();
+		const { apiFetch } = await import("@/lib/api");
+		vi.mocked(apiFetch).mockClear();
+		renderPicker({
+			fixedLocation: { credentialId: "s3-1", bucket: "my-bucket" },
+			initialCredentialId: "other-credential",
+			initialBucket: "other-bucket",
+			onSelect,
+		});
+		await screen.findByText("movie.mp4");
+		expect(screen.getByLabelText("Credential")).toBeDisabled();
+		expect(screen.getByLabelText("Credential")).toHaveValue("s3-1");
+		expect(screen.getByLabelText("Bucket")).toHaveValue("my-bucket");
+		expect(screen.getByLabelText("Bucket")).toHaveAttribute("readonly");
+		expect(screen.queryByLabelText("Bucket name (manual)")).toBeNull();
+		await userEvent.click(screen.getByRole("button", { name: "Use as input" }));
+		expect(onSelect).toHaveBeenCalledWith({
+			credentialId: "s3-1",
+			bucket: "my-bucket",
+			path: "masters/movie.mp4",
+		});
+		expect(
+			vi
+				.mocked(apiFetch)
+				.mock.calls.some(([url]) => String(url).includes("/storage/buckets")),
+		).toBe(false);
+	});
+
 	it("opens pre-scoped to the given credential and bucket (never re-asks)", async () => {
 		renderPicker({ initialCredentialId: "s3-1", initialBucket: "my-bucket" });
 		// Credentials load → the seeded credential option exists and is selected.

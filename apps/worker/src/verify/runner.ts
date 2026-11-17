@@ -2914,6 +2914,12 @@ export function rewriteForRun(
 		(stream as { inputPath?: unknown }).inputPath = resolved;
 	}
 	const dolbyStreams = (next.dolbyStreams ?? []) as unknown[];
+	const hdr10PlusStreams = (next.hdr10PlusStreams ?? []) as unknown[];
+	if (hdr10PlusStreams.length > 0) {
+		throw new Error(
+			"refusing to rewrite: HDR10+ requires its declared HDR10 video and matching JSON metadata (needs HDR10_ASSET and TYPED_SOURCE_ASSETS)",
+		);
+	}
 	if (dolbyStreams.length > 0) {
 		throw new Error(
 			`refusing to rewrite: the plan has ${dolbyStreams.length} dolbyStream(s), whose masters and sidecars ${options.sourceObject} cannot stand in for — this scenario needs DOLBY_ASSETS`,

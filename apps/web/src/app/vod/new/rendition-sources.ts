@@ -13,6 +13,9 @@ export function renditionSourceOptions(
 	t: Translator,
 ): { video: SourceOption[]; audio: SourceOption[] } {
 	const sources = state.sources ?? {};
+	const hdr10PlusKeys = new Set(
+		(sources.hdr10PlusStreams ?? []).map((stream) => stream.key),
+	);
 	const named: SourceOption[] = [
 		// WEBVTT streams feed subtitles only.
 		...flattenStreams(sources)
@@ -46,7 +49,7 @@ export function renditionSourceOptions(
 				label: `${t("audioMix.title")} · ${mix.key}`,
 			})),
 			{ value: "", label: t("wizard.inputAudioTrackImplicit") },
-			...named,
+			...named.filter((option) => !hdr10PlusKeys.has(option.value)),
 		],
 	};
 }

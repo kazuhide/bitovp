@@ -83,6 +83,7 @@ export function createEncodingInputCapture(deps: {
 			plan.concatenationStreams.length ||
 			plan.audioMixStreams.length ||
 			plan.dolbyStreams.length ||
+			plan.hdr10PlusStreams.length ||
 			plan.fileStreams.length ||
 			plan.filters.length
 		)

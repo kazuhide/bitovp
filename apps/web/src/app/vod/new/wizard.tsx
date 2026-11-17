@@ -172,6 +172,7 @@ type PickerTarget =
 	| { file: number }
 	| { mirror: number }
 	| { timelineAdd: true }
+	| { hdr10PlusMetadata: string }
 	| null;
 
 export function VodWizard({
@@ -211,6 +212,9 @@ export function VodWizard({
 	const fresh = fileFlow ? FILE_OUTPUT_DEFAULT_STATE : DEFAULT_WIZARD_STATE;
 	const [step, setStep] = useState(0);
 	const [state, setState] = useState<WizardState>(fresh);
+	const hdr10PlusTimelineConflict = Boolean(
+		state.sources?.hdr10PlusStreams?.length,
+	);
 	const timelineSourcesSignature = JSON.stringify(
 		state.inputFiles
 			.filter((file) => file.purpose !== "FILTER_IMAGE")
@@ -264,7 +268,7 @@ export function VodWizard({
 			? timelinePreparation.task
 			: null;
 	const submissionState =
-		prepared && state.inputTimeline
+		prepared && state.inputTimeline && !hdr10PlusTimelineConflict
 			? applyPreparedVodInputTimeline(state, prepared)
 			: state;
 	const timelineBlocked = Boolean(
@@ -782,7 +786,15 @@ export function VodWizard({
 					? state.additionalOutputs[picker.mirror]
 					: "file" in picker
 						? state.inputFiles[picker.file]
-						: state.inputFiles.at(-1);
+						: "hdr10PlusMetadata" in picker
+							? state.inputFiles.find(
+									(file) =>
+										file.key ===
+										state.sources?.hdr10PlusStreams?.find(
+											(stream) => stream.key === picker.hdr10PlusMetadata,
+										)?.videoInputFile,
+								)
+							: state.inputFiles.at(-1);
 
 	const allCredentials = credentials.data ?? [];
 	const outputSelectable = (provider: string) =>
@@ -1365,8 +1377,8 @@ export function VodWizard({
 									label={t("wizard.encoderVersion")}
 									htmlFor="wz-version"
 									help={
-										state.encoderVersion === "2.292.0"
-											? t("wizard.encoderVersion2292Help")
+										state.encoderVersion === "2.294.0"
+											? t("wizard.encoderVersion2294Help")
 											: pinnedVersion
 												? t("wizard.pinnedVersionEG22660")
 												: undefined
@@ -1490,7 +1502,8 @@ export function VodWizard({
 									size="sm"
 									disabled={
 										!state.inputTimeline &&
-										(state.sources?.encodings?.length ?? 0) > 0
+										((state.sources?.encodings?.length ?? 0) > 0 ||
+											hdr10PlusTimelineConflict)
 									}
 									onClick={() =>
 										patch(
@@ -1516,7 +1529,15 @@ export function VodWizard({
 									)}
 								</Button>
 							</div>
-							{state.inputTimeline ? (
+							{hdr10PlusTimelineConflict ? (
+								<p
+									className="text-xs text-amber-300"
+									role={state.inputTimeline ? "alert" : undefined}
+								>
+									{t("wizard.hdr10PlusTimelineConflict")}
+								</p>
+							) : null}
+							{state.inputTimeline && !hdr10PlusTimelineConflict ? (
 								<>
 									<VodInputTimelineEditor
 										document={state.inputTimeline}
@@ -1594,6 +1615,9 @@ export function VodWizard({
 										state={state}
 										onPatch={patch}
 										fileView={simple}
+										onBrowseHdr10PlusMetadata={(key) =>
+											setPicker({ hdr10PlusMetadata: key })
+										}
 									/>
 								</>
 							)}
@@ -2052,7 +2076,9 @@ export function VodWizard({
 				</div>
 			</div>
 
-			{state.inputTimeline && step === 1 ? null : (
+			{state.inputTimeline &&
+			step === 1 &&
+			!hdr10PlusTimelineConflict ? null : (
 				<PlanPreview evaluation={evaluation} />
 			)}
 
@@ -2070,6 +2096,17 @@ export function VodWizard({
 				providers={[...BROWSABLE_STORAGE_PROVIDERS]}
 				initialCredentialId={pickerSeed?.credentialId}
 				initialBucket={pickerSeed?.bucket}
+				fixedLocation={
+					picker !== null &&
+					typeof picker === "object" &&
+					"hdr10PlusMetadata" in picker &&
+					pickerSeed
+						? {
+								credentialId: pickerSeed.credentialId,
+								bucket: pickerSeed.bucket,
+							}
+						: undefined
+				}
 				onClose={() => setPicker(null)}
 				onSelect={({ credentialId, bucket, path }) => {
 					// Derive the storage kind from the SELECTED credential's provider —
@@ -2123,6 +2160,34 @@ export function VodWizard({
 								bucket,
 							};
 							return { ...prev, additionalOutputs: mirrors };
+						});
+					} else if (picker !== null && "hdr10PlusMetadata" in picker) {
+						setState((prev) => {
+							const stream = prev.sources?.hdr10PlusStreams?.find(
+								(row) => row.key === picker.hdr10PlusMetadata,
+							);
+							const video = prev.inputFiles.find(
+								(file) => file.key === stream?.videoInputFile,
+							);
+							if (
+								!stream ||
+								!video ||
+								video.credentialId !== credentialId ||
+								video.bucket !== bucket
+							)
+								return prev;
+							return {
+								...prev,
+								sources: {
+									...prev.sources,
+									hdr10PlusStreams: prev.sources?.hdr10PlusStreams?.map(
+										(row) =>
+											row.key === stream.key
+												? { ...row, metadataInputPath: path }
+												: row,
+									),
+								},
+							};
 						});
 					} else if (picker !== null && "timelineAdd" in picker) {
 						const kind = inputKindForProvider(provider);

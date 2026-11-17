@@ -121,6 +121,17 @@ export type WizardFileStream = {
 	encodingKey?: string;
 };
 
+/** HDR10 video and its JSON metadata share one Bitmovin Input location. */
+export type WizardHdr10PlusStream = {
+	key: string;
+	videoInputFile: string;
+	/** Object path on the video's input; this is not an audio/video source file. */
+	metadataInputPath: string;
+	selectionMode: "AUTO" | "POSITION_ABSOLUTE" | "VIDEO_RELATIVE";
+	position?: number;
+	encodingKey?: string;
+};
+
 export type WizardDolbyStream =
 	| {
 			kind: "ATMOS";
@@ -260,6 +271,7 @@ export type WizardSources = {
 	tracks?: WizardIngestTrack[];
 	fileStreams?: WizardFileStream[];
 	dolbyStreams?: WizardDolbyStream[];
+	hdr10PlusStreams?: WizardHdr10PlusStream[];
 	/** Trimming/concatenation input streams (the modern path). */
 	trimmingStreams?: WizardTrimmingStream[];
 	concatenationStreams?: WizardConcatenationStream[];
@@ -1111,7 +1123,7 @@ export const DEFAULT_WIZARD_STATE: WizardState = {
 	name: "",
 	accountId: "",
 	cloudRegion: "AUTO",
-	encoderVersion: "2.292.0",
+	encoderVersion: "2.294.0",
 	inputFiles: [
 		{
 			key: "main",
@@ -2542,6 +2554,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	const keyframes = sources.keyframes ?? [];
 	const fileStreams = sources.fileStreams ?? [];
 	const dolbyStreams = sources.dolbyStreams ?? [];
+	const hdr10PlusStreams = sources.hdr10PlusStreams ?? [];
 	const trimmingStreams = sources.trimmingStreams ?? [];
 	const concatenationStreams = sources.concatenationStreams ?? [];
 	const filters = state.filters ?? [];
@@ -2591,6 +2604,23 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				}
 			: {}),
 		ingest,
+		...(hdr10PlusStreams.length > 0
+			? {
+					hdr10PlusStreams: hdr10PlusStreams.map((stream) => {
+						// A removed input stays invalid; never retarget metadata to the primary file.
+						const video = fileByKey.get(stream.videoInputFile);
+						return prune({
+							key: stream.key,
+							inputKey: video?.inputKey ?? stream.videoInputFile,
+							videoInputPath: video?.path ?? "",
+							metadataInputPath: stream.metadataInputPath,
+							selectionMode: stream.selectionMode,
+							position: stream.position,
+							encodingKey: str(stream.encodingKey),
+						});
+					}),
+				}
+			: {}),
 		...(fileStreams.length > 0
 			? {
 					fileStreams: fileStreams.map((stream) => {
@@ -2996,6 +3026,11 @@ export function remapInputKeyRefs(
 			tracks: sources.tracks?.map(mapFile),
 			fileStreams: sources.fileStreams?.map(mapFile),
 			dolbyStreams: sources.dolbyStreams?.map(mapDolby),
+			hdr10PlusStreams: sources.hdr10PlusStreams?.map((stream) =>
+				stream.videoInputFile === from
+					? { ...stream, videoInputFile: to }
+					: stream,
+			),
 		};
 	}
 	return patch;
@@ -3054,6 +3089,11 @@ export function remapEncodingKeyRefs(
 								: stream,
 						),
 						dolbyStreams: sources.dolbyStreams?.map((stream) =>
+							stream.encodingKey === from
+								? { ...stream, encodingKey: to }
+								: stream,
+						),
+						hdr10PlusStreams: sources.hdr10PlusStreams?.map((stream) =>
 							stream.encodingKey === from
 								? { ...stream, encodingKey: to }
 								: stream,

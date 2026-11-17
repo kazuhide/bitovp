@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+	heartbeatAspectRatio,
+	heartbeatAudioChannelFormat,
+	heartbeatAudioChannels,
+} from "../live-heartbeat-metadata";
 
 // An allowlist, not recursive key-name redaction: even signed provider strings
 // can contain credentials. Unknown fields and malformed known fields disappear.
@@ -22,6 +27,15 @@ const stream = z.object({
 	bitrate: number,
 	width: number,
 	height: number,
+	aspectRatio: z.unknown().transform(heartbeatAspectRatio).optional(),
+	numberOfAudioChannels: z
+		.unknown()
+		.transform(heartbeatAudioChannels)
+		.optional(),
+	audioChannelFormat: z
+		.unknown()
+		.transform(heartbeatAudioChannelFormat)
+		.optional(),
 	sampleRate: number,
 	keyFrameIntervalAvg: number,
 	keyFrameIntervalMax: number,

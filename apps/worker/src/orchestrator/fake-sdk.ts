@@ -52,6 +52,7 @@ export function fakeSdk(overrides: Partial<SdkOps> = {}): SdkOps {
 		createFileInputStream: vi.fn(nextId),
 		createDolbyAtmosInputStream: vi.fn(nextId),
 		createDolbyVisionInputStream: vi.fn(nextId),
+		createHdr10PlusInputStream: vi.fn(nextId),
 		createDolbyVisionMetadataInputStream: vi.fn(nextId),
 		createTimeBasedTrimmingInputStream: vi.fn(nextId),
 		createTimecodeTrackTrimmingInputStream: vi.fn(nextId),

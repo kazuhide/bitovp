@@ -156,6 +156,65 @@ describe("heartbeatLogView — one log-table row from a persisted sample", () =>
 });
 
 describe("parseHeartbeat ({ at, raw, deltas } persisted shape)", () => {
+	it("shows reported first-connection metadata without deriving missing values", () => {
+		const view = parseHeartbeat({
+			raw: {
+				ingest: {
+					streams: [
+						{ mediaType: "video", aspectRatio: "16:9" },
+						{
+							mediaType: "audio",
+							numberOfAudioChannels: 2,
+							audioChannelFormat: "stereo",
+						},
+						{
+							mediaType: "video",
+							width: 1920,
+							height: 1080,
+							aspectRatio: null,
+						},
+						{ mediaType: "audio", audioChannelFormat: "5.1(side)" },
+					],
+				},
+			},
+		});
+		expect(
+			view?.streams.map(
+				({ aspectRatio, audioChannels, audioChannelFormat }) => ({
+					aspectRatio,
+					audioChannels,
+					audioChannelFormat,
+				}),
+			),
+		).toEqual([
+			{ aspectRatio: "16:9", audioChannels: "—", audioChannelFormat: "—" },
+			{ aspectRatio: "—", audioChannels: "2", audioChannelFormat: "stereo" },
+			{ aspectRatio: "—", audioChannels: "—", audioChannelFormat: "—" },
+			{ aspectRatio: "—", audioChannels: "—", audioChannelFormat: "5.1(side)" },
+		]);
+	});
+
+	it("keeps malformed metadata unavailable even when an operator reads unprojected raw samples", () => {
+		const view = parseHeartbeat({
+			raw: {
+				ingest: {
+					streams: [
+						{
+							aspectRatio: "16:9\n",
+							numberOfAudioChannels: -2,
+							audioChannelFormat: "private-token",
+						},
+					],
+				},
+			},
+		});
+		expect(view?.streams[0]).toMatchObject({
+			aspectRatio: "—",
+			audioChannels: "—",
+			audioChannelFormat: "—",
+		});
+	});
+
 	it("returns null when the channel has never been polled", () => {
 		expect(parseHeartbeat(null)).toBeNull();
 		expect(parseHeartbeat(undefined)).toBeNull();
@@ -241,6 +300,9 @@ describe("parseHeartbeat ({ at, raw, deltas } persisted shape)", () => {
 			mediaType: "video",
 			codec: "h264",
 			resolution: "1280×720",
+			aspectRatio: "—",
+			audioChannels: "—",
+			audioChannelFormat: "—",
 			rate: "30",
 			bitrate: "6144000",
 			incomingBitrate: 754_499.55,

@@ -50,7 +50,12 @@ export function evaluateWizardState(
 			return {
 				ok: false,
 				zodMessage: translate
-					? translate("vodTimeline.invalid")
+					? translate(
+							error.code === "TIMELINE_GRAPH_CONFLICT" &&
+								state.sources?.hdr10PlusStreams?.length
+								? "wizard.hdr10PlusTimelineConflict"
+								: "vodTimeline.invalid",
+						)
 					: error.message,
 			};
 		if (error instanceof WizardCodecError)

@@ -24,6 +24,7 @@ import {
 	type EgressSite,
 	type SecretEgressAllowlist,
 } from "./egress";
+import { checkHdr10PlusPlan } from "./hdr10-plus";
 import { hlsLegSelected, hlsVersionForLegs } from "./hls-legs";
 import {
 	hlsAudioMediaDefaults,
@@ -439,6 +440,7 @@ export function validatePlan(
 			...plan.ingest,
 			...plan.fileStreams,
 			...plan.dolbyStreams,
+			...plan.hdr10PlusStreams,
 			...plan.trimmingStreams,
 			...plan.concatenationStreams,
 			...plan.audioMixStreams,
@@ -545,6 +547,7 @@ export function validatePlan(
 	}
 	const fileByKey = new Map(plan.fileStreams.map((f) => [f.key, f]));
 	const dolbyByKey = new Map(plan.dolbyStreams.map((d) => [d.key, d]));
+	const hdr10PlusByKey = new Map(plan.hdr10PlusStreams.map((s) => [s.key, s]));
 	const trimmingKeys = new Set(plan.trimmingStreams.map((t) => t.key));
 	const concatKeys = new Set(plan.concatenationStreams.map((c) => c.key));
 	// Every key a rendition's ingestKey OR a trim/concat sourceKey may resolve
@@ -553,6 +556,7 @@ export function validatePlan(
 		...ingestKeys,
 		...fileKeys,
 		...dolbyByKey.keys(),
+		...hdr10PlusByKey.keys(),
 		...trimmingKeys,
 		...concatKeys,
 		...plan.audioMixStreams.map((s) => s.key),
@@ -583,13 +587,16 @@ export function validatePlan(
 	}
 
 	if (
-		plan.ingest.length + plan.fileStreams.length + plan.dolbyStreams.length ===
+		plan.ingest.length +
+			plan.fileStreams.length +
+			plan.dolbyStreams.length +
+			plan.hdr10PlusStreams.length ===
 		0
 	) {
 		issues.push({
 			code: "PLAN_NO_INPUT_STREAMS",
 			level: "error",
-			message: "the plan defines no input streams (ingest/file/dolby)",
+			message: "the plan defines no input streams (ingest/file/dolby/HDR10+)",
 			path: "ingest",
 		});
 	}
@@ -603,6 +610,17 @@ export function validatePlan(
 			});
 		}
 	}
+	for (const [index, stream] of plan.hdr10PlusStreams.entries()) {
+		if (!inputKeys.has(stream.inputKey)) {
+			issues.push({
+				code: "PLAN_UNRESOLVED_REF",
+				level: "error",
+				message: `HDR10+ stream "${stream.key}" references unknown input "${stream.inputKey}"`,
+				path: `hdr10PlusStreams[${index}].inputKey`,
+			});
+		}
+	}
+	issues.push(...checkHdr10PlusPlan(plan));
 
 	// Trimming input streams wrap another declared input stream by sourceKey.
 	for (const [index, trim] of plan.trimmingStreams.entries()) {
@@ -715,6 +733,7 @@ export function validatePlan(
 		...plan.ingest,
 		...plan.fileStreams,
 		...plan.dolbyStreams,
+		...plan.hdr10PlusStreams,
 		...plan.trimmingStreams,
 		...plan.concatenationStreams,
 		...plan.audioMixStreams,
@@ -741,6 +760,7 @@ export function validatePlan(
 				inputStreamAncestry(plan, channel.sourceKey)?.some(
 					(key) =>
 						fileByKey.has(key) ||
+						hdr10PlusByKey.has(key) ||
 						ingestByKey.get(key)?.selectionMode === "VIDEO_RELATIVE" ||
 						(dolbyByKey.has(key) && dolbyByKey.get(key)?.kind !== "ATMOS"),
 				)
@@ -833,6 +853,13 @@ export function validatePlan(
 			`dolbyStream "${s.key}"`,
 			s.encodingKey,
 			`dolbyStreams[${i}].encodingKey`,
+		);
+	});
+	plan.hdr10PlusStreams.forEach((s, i) => {
+		checkEncodingKey(
+			`HDR10+ stream "${s.key}"`,
+			s.encodingKey,
+			`hdr10PlusStreams[${i}].encodingKey`,
 		);
 	});
 	plan.trimmingStreams.forEach((s, i) => {

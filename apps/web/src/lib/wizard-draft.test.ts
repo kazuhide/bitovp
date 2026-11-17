@@ -128,7 +128,7 @@ it("keeps a sparse legacy VOD draft on its implicit STABLE version", () => {
 		mergeWizardDraft(DEFAULT_WIZARD_STATE, { name: "Legacy draft" }, "vod")
 			.encoderVersion,
 	).toBe("STABLE");
-	expect(DEFAULT_WIZARD_STATE.encoderVersion).toBe("2.292.0");
+	expect(DEFAULT_WIZARD_STATE.encoderVersion).toBe("2.294.0");
 	expect(
 		mergeWizardDraft(DEFAULT_LIVE_WIZARD_STATE, { name: "Live draft" }, "live")
 			.encoderVersion,
@@ -140,6 +140,7 @@ it.each([
 	"BETA",
 	"2.287.0",
 	"2.291.0",
+	"2.292.0",
 	"custom-version",
 ])("retains explicit saved VOD encoder %s and per-encoding overrides", (encoderVersion) => {
 	const state = structuredClone(DEFAULT_WIZARD_STATE);

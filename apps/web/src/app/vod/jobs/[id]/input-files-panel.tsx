@@ -60,6 +60,15 @@ function formatSegment(
 				kind: segment.dolbyKind,
 				detail: segment.detail ?? "",
 			});
+		case "hdr10-plus":
+			return segment.detail === "metadata"
+				? t("jobDetail.chainHdr10PlusMetadata")
+				: segment.selectionMode === "AUTO"
+					? t("jobDetail.chainHdr10PlusVideoAuto")
+					: t("jobDetail.chainHdr10PlusVideo", {
+							mode: segment.selectionMode,
+							position: segment.position ?? 0,
+						});
 		case "trim":
 			return t("jobDetail.chainTrim", { kind: segment.trimKind });
 		case "concat":

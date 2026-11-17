@@ -401,6 +401,9 @@ export function enumerateExistingHlsQcTargets(
 	const vision = plan.dolbyStreams.find(
 		(item) => item.key === rendition.ingestKey && item.kind === "VISION",
 	);
+	const hdr10Plus = plan.hdr10PlusStreams.find(
+		(item) => item.key === rendition.ingestKey,
+	);
 	const reference =
 		ingest &&
 		ingest.position === 0 &&
@@ -408,7 +411,14 @@ export function enumerateExistingHlsQcTargets(
 			? { inputKey: ingest.inputKey, inputPath: ingest.inputPath }
 			: vision?.kind === "VISION"
 				? { inputKey: vision.inputKey, inputPath: vision.videoInputPath }
-				: undefined;
+				: hdr10Plus &&
+						(hdr10Plus.position ?? 0) === 0 &&
+						["AUTO", "VIDEO_RELATIVE"].includes(hdr10Plus.selectionMode)
+					? {
+							inputKey: hdr10Plus.inputKey,
+							inputPath: hdr10Plus.videoInputPath,
+						}
+					: undefined;
 	if (!reference) return [];
 	const muxings = plan.muxings.filter(
 		(item) => item.streamKey === rendition.key,

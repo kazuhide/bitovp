@@ -105,6 +105,30 @@ export async function executeMediaStep(
 			return { resourceId, request, response: { id: resourceId } };
 		}
 
+		case "CREATE_HDR10_PLUS_INPUT_STREAM": {
+			const selectionMode = str(p.selectionMode);
+			if (
+				selectionMode !== "AUTO" &&
+				selectionMode !== "POSITION_ABSOLUTE" &&
+				selectionMode !== "VIDEO_RELATIVE"
+			) {
+				throw new Error(`Invalid HDR10+ selection mode: ${selectionMode}`);
+			}
+			const resourceId = await ctx.sdk.createHdr10PlusInputStream(
+				refId(op, ctx, "encodingId"),
+				{
+					inputId: refId(op, ctx, "inputId"),
+					videoInputPath: str(p.videoInputPath),
+					metadataInputPath: str(p.metadataInputPath),
+					selectionMode,
+					...(selectionMode !== "AUTO" && p.position !== undefined
+						? { position: num(p.position, 0) }
+						: {}),
+				},
+			);
+			return { resourceId, request, response: { id: resourceId } };
+		}
+
 		case "CREATE_DOLBY_VISION_METADATA_INPUT_STREAM": {
 			const resourceId = await ctx.sdk.createDolbyVisionMetadataInputStream(
 				refId(op, ctx, "encodingId"),

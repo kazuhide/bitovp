@@ -8,10 +8,17 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- Prepare VOD HEVC/HDR10+ source configuration with a video and metadata JSON path on the same input storage, source selection and saved-plan round trips. The input timeline remains unavailable for HDR10+ in this application. Execution requires Encoder 2.294.0 or later and public API SDK 1.289.0 or later.
+- Show Live input aspect ratio, audio channel count and channel layout supplied by Encoder 2.294.0 as first-connection metadata. Missing or malformed values remain unavailable and do not become fresh health evidence.
 - Run repeatable local x264, x265, VP9/libvpx and SVT-AV1 training encodes through the experiment CLI and authenticated API, with per-worker parameter discovery, CPU VMAF and measured bitrate exports.
 - Show instance-wide Redis memory usage and the configured Redis limit to platform owners in Settings.
 - Optionally score an NVENC experiment with BitOVP CUDA VMAF v1.0.16 alongside v0.6.1, export both measurements, and choose a scoring model for Lean selection.
 - Change the target buffer, volume, and available video quality in the MoQ player while watching a live stream.
+
+### Changed
+
+- Default new VOD wizard configurations to Encoder 2.294.0 (Beta), preserving saved account defaults, drafts and imported version choices.
+- Document the Encoder 2.294.0 Live HLS `BANDWIDTH` / `AVERAGE-BANDWIDTH` correction: produced bitrate with a configured-bitrate floor. The provider supplies this behavior; bitovp does not rewrite these values, and VOD manifests are unchanged. See the [official release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
 
 ### Fixed
 

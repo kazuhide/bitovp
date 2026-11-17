@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { inputStreamAncestry } from "./input-stream-graph";
 import type { EncodingPlan } from "./schema";
 import type { PlanIssue } from "./validate";
 
@@ -105,12 +106,24 @@ export function checkInternalHevcV2Plan(plan: EncodingPlan): PlanIssue[] {
 	);
 	if (!video.length)
 		issue("renditions", "Internal HEVC v2 requires an H265 video rendition");
+	const hdr10PlusKeys = new Set(
+		plan.hdr10PlusStreams.map((stream) => stream.key),
+	);
 	for (const r of video) {
 		const path = `renditions.${plan.renditions.indexOf(r)}`;
 		if (r.codec !== "H265") {
 			issue(path, "Internal HEVC v2 requires all video renditions to use H265");
 			continue;
 		}
+		if (
+			inputStreamAncestry(plan, r.ingestKey)?.some((key) =>
+				hdr10PlusKeys.has(key),
+			)
+		)
+			issue(
+				`${path}.ingestKey`,
+				"The app's internal HEVC v2 profile supports SDR testing only; use ordinary H265 for HDR10+ inputs",
+			);
 		if (r.mode === "STANDARD" && (!r.height || !r.bitrate))
 			issue(
 				path,

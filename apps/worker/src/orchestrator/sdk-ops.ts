@@ -754,6 +754,16 @@ export type SdkOps = {
 			metadataInputPath?: string;
 		},
 	): Promise<string>;
+	createHdr10PlusInputStream(
+		encodingId: string,
+		p: {
+			inputId: string;
+			videoInputPath: string;
+			metadataInputPath: string;
+			selectionMode: "AUTO" | "POSITION_ABSOLUTE" | "VIDEO_RELATIVE";
+			position?: number;
+		},
+	): Promise<string>;
 	createDolbyVisionMetadataInputStream(
 		encodingId: string,
 		p: { inputId: string; inputPath: string },

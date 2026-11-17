@@ -148,6 +148,12 @@ export type ChainSegment =
 	| { kind: "ingest"; selectionMode: string; position: number }
 	| { kind: "file"; type: string }
 	| { kind: "dolby"; dolbyKind: string; detail?: string }
+	| {
+			kind: "hdr10-plus";
+			detail: "video" | "metadata";
+			selectionMode: string;
+			position?: number;
+	  }
 	| { kind: "trim"; trimKind: string }
 	| { kind: "concat"; position: number; isMain: boolean };
 
@@ -443,6 +449,26 @@ function resolveSources(
 			},
 		];
 	}
+	const hdr10Plus = plan.hdr10PlusStreams.find((stream) => stream.key === key);
+	if (hdr10Plus) {
+		return (["video", "metadata"] as const).map((detail) => ({
+			inputKey: hdr10Plus.inputKey,
+			inputPath:
+				detail === "video"
+					? hdr10Plus.videoInputPath
+					: hdr10Plus.metadataInputPath,
+			chain: [
+				{
+					kind: "hdr10-plus",
+					detail,
+					selectionMode: hdr10Plus.selectionMode,
+					...(hdr10Plus.position !== undefined
+						? { position: hdr10Plus.position }
+						: {}),
+				},
+			],
+		}));
+	}
 	const dolby = plan.dolbyStreams.find((d) => d.key === key);
 	if (dolby) {
 		/**
@@ -555,6 +581,7 @@ function declaredReads(
 		...plan.ingest,
 		...plan.fileStreams,
 		...plan.dolbyStreams,
+		...plan.hdr10PlusStreams,
 	]) {
 		out.push(...resolveSources(plan, stream.key));
 	}
@@ -651,7 +678,7 @@ export function inputFileSummaries(plan: EncodingPlan): InputFileSummary[] {
 						const pos = (chain: ChainSegment[]) => {
 							const head = chain[0];
 							return head && "position" in head
-								? head.position
+								? (head.position ?? Number.POSITIVE_INFINITY)
 								: Number.POSITIVE_INFINITY;
 						};
 						return (

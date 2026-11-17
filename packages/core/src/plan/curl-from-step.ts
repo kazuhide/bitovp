@@ -127,6 +127,10 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 		method: "POST",
 		template: "/encoding/encodings/:encodingId/input-streams/dolby-vision",
 	},
+	CREATE_HDR10_PLUS_INPUT_STREAM: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/input-streams/hdr10-plus",
+	},
 	CREATE_DOLBY_VISION_METADATA_INPUT_STREAM: {
 		method: "POST",
 		template:

@@ -55,6 +55,7 @@
 	"createH264Config",
 	"createH264PictureTimingTrimmingInputStream",
 	"createH265Config",
+	"createHdr10PlusInputStream",
 	"createHlsAudioMedia",
 	"createHlsClosedCaptionsMedia",
 	"createHlsCustomTag",

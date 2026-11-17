@@ -10,6 +10,7 @@ import {
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
 import { hlsChildEntries, hlsSubtitleGroups } from "./hls-media-defaults";
 import { checkHlsVideoUris } from "./hls-video-uri-validation";
+import { inputStreamAncestry } from "./input-stream-graph";
 import { FILTER_ENDPOINTS, filterParameters } from "./media-filters";
 import { isFileOnlyMuxingKind, muxingStreamKeys } from "./muxing-streams";
 import { streamPerTitleSettings } from "./per-title-settings";
@@ -837,6 +838,22 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	const ingestByKey = new Map(plan.ingest.map((s) => [s.key, s]));
 	const fileByKey = new Map(plan.fileStreams.map((f) => [f.key, f]));
 	const dolbyByKey = new Map(plan.dolbyStreams.map((d) => [d.key, d]));
+	const hdr10PlusKeys = new Set(plan.hdr10PlusStreams.map((s) => s.key));
+	const hdr10PlusByEnc = new Map<string, Tree>();
+	for (const stream of plan.hdr10PlusStreams) {
+		const owner = plan.encodings?.length
+			? (stream.encodingKey ?? encNames[0] ?? ENCODING_NAME)
+			: ENCODING_NAME;
+		perEnc(hdr10PlusByEnc, owner)[stream.key] = {
+			properties: dense({
+				inputId: inputRef.get(stream.inputKey),
+				videoInputPath: stream.videoInputPath,
+				metadataInputPath: stream.metadataInputPath,
+				selectionMode: stream.selectionMode,
+				position: stream.position,
+			}),
+		};
+	}
 
 	// FileInputStreams are named template resources (the typed entry keeps
 	// fileType); streams reference them via $/ refs.
@@ -901,9 +918,11 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	}
 
 	const mixResources = new Map<string, Tree>();
-	const required = new Set<string>();
+	const required = new Set<string>(hdr10PlusKeys);
 	const streamRef = (owner: string, key: string): string => {
 		if (dolbyByKey.has(key)) return dolbyStreamRef(owner, key);
+		if (hdr10PlusKeys.has(key))
+			return `$/encodings/${owner}/inputStreams/hdr10Plus/${key}`;
 		const trim = plan.trimmingStreams.find((s) => s.key === key);
 		const section = trim
 			? `trimming/${trim.kind === "TIME_BASED" ? "timeBased" : trim.kind === "TIMECODE_TRACK" ? "timecodeTrack" : "h264PictureTiming"}`
@@ -983,6 +1002,20 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			});
 	};
 	for (const mix of plan.audioMixStreams) requireStream(mix.key);
+	// HDR10+ may be reached through a trim or concatenation. Preserve that
+	// source graph, including its video/JSON leaf, in the exported template.
+	for (const stream of [
+		...plan.trimmingStreams,
+		...plan.concatenationStreams,
+	]) {
+		if (
+			inputStreamAncestry(plan, stream.key)?.some((key) =>
+				hdr10PlusKeys.has(key),
+			)
+		) {
+			requireStream(stream.key);
+		}
+	}
 	const streamsByEnc = new Map<string, Tree>();
 	for (const rendition of plan.renditions) {
 		const streams = perEnc(streamsByEnc, encName(rendition.key));
@@ -2074,9 +2107,13 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				const fileEntries = fileInputStreamsByEnc.get(name) ?? {};
 				const atmosEntries = dolbyAtmosByEnc.get(name) ?? {};
 				const visionEntries = dolbyVisionByEnc.get(name) ?? {};
+				const hdr10PlusEntries = hdr10PlusByEnc.get(name) ?? {};
 				const sidecarEntries = dolbySidecarByEnc.get(name) ?? {};
 				const inputStreamsNode = {
 					...(mixResources.get(name) ?? {}),
+					...(Object.keys(hdr10PlusEntries).length > 0
+						? { hdr10Plus: hdr10PlusEntries }
+						: {}),
 					...(Object.keys(fileEntries).length > 0 ? { file: fileEntries } : {}),
 					...(Object.keys(atmosEntries).length > 0
 						? { dolbyAtmos: atmosEntries }

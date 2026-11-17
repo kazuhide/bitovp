@@ -319,7 +319,7 @@ Jobs started from a preset, a saved template, or a copied job open the 8-step sc
 
 ### Basic settings and input files
 
-Choose a name that identifies the job. New configurations start with region `AUTO`, which lets Bitmovin select a region. Select a specific region when required, and check any saved account or copied settings. New VOD jobs start with Encoder `2.292.0` (Beta). Saved and imported version choices are retained. The `STABLE` and `BETA` aliases follow Bitmovin releases; pin an explicit version when reproducing a run or using a version-specific feature.
+Choose a name that identifies the job. New configurations start with region `AUTO`, which lets Bitmovin select a region. Select a specific region when required, and check any saved account or copied settings. New VOD jobs start with Encoder `2.294.0` (Beta). Saved account defaults, drafts and imported version choices are retained. The `STABLE` and `BETA` aliases follow Bitmovin releases; pin an explicit version when reproducing a run or using a version-specific feature.
 
 In "Sources", specify the input file's credentials, bucket, and path. For supported destinations, use "Browse storage…" to select from a list. Enter paths directly for destinations that do not support browsing. For HTTPS inputs, provide a URL from which the source can be retrieved.
 
@@ -370,6 +370,10 @@ Use "Add input clip" to encode only part of an input. Trimming methods include t
 4. If you use multiple encodings, also check the encoding assigned to each rendition.
 
 Check the concatenation order, the units for padding before and after each source, and the correspondence between video and audio. Dolby Vision and Dolby Atmos inputs require their metadata or dedicated streams in addition to the video or audio media itself.
+
+**HDR10+ for VOD HEVC:** In Sources, select the HDR10 video file and choose **Add HDR10+ video**. Enter the matching **HDR10+ metadata JSON path** on the video's same input storage and bucket. The JSON belongs in that field, not as a second video input. In Ladder, select the new HDR10+ stream as the source of an H.265 rendition. The application's input timeline cannot currently be combined with this source; use the video directly. HDR10+ is not a Live input option or a dynamic-range dropdown value.
+
+HDR10+ requires Encoder `2.294.0` (Beta) or later and public API SDK `1.289.0` or later for the [REST API `1.289.0` input-stream feature](https://developer.bitmovin.com/encoding/docs/rest-api-services-12500-12990#12890). See the [input-stream reference](https://developer.bitmovin.com/encoding/reference/postencodingencodingsinputstreamshdr10plusbyencodingid) and [Encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
 
 ### Video codecs and quality settings
 
@@ -880,6 +884,8 @@ Figure 8-1. Live monitoring in the demo. The states and charts use sample data, 
 
 HLS output monitoring is separate from channel state and input heartbeat observations. Do not apply the HLS observation indicator to a DASH-only output. Generated Akamai links also require a separate delivery check.
 
+Encoder `2.294.0` and later calculate Live HLS `BANDWIDTH` and `AVERAGE-BANDWIDTH` from produced bitrate, with a floor at the configured bitrate. This is encoder behavior; bitovp does not rewrite the playlist values. VOD manifests are unchanged. See the [Encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
+
 To preview `PRIVATE` S3 output in Live, you need a delivery URL the browser can play. In the storage credential's **Public base URLs (optional)**, an administrator maps each bucket to an existing delivery service's base URL (for example, a CDN), one `bucket = base URL` entry per line, and configures delivery authentication and CORS for browser access. Open **Show every manifest URL** to check each link or the reason a URL is unavailable. HLS output monitoring uses saved storage credentials, while the preview loads the delivery URL directly; verify output updates and actual playback separately.
 
 ### Heartbeat and history
@@ -887,6 +893,8 @@ To preview `PRIVATE` S3 output in Live, you need a delivery URL the browser can 
 Heartbeat information provides periodic checks of input and encoding activity. On supported versions, the application registers signed Push notifications and prefers them while they are fresh. Otherwise, it uses fresh information retrieved from the provider. Missing Push notifications alone do not establish input loss.
 
 The administrator-configured default Push interval is 20 seconds; zero disables registration. The interval is fixed for each broadcast run. The screen shows the last receipt time, provider sample time, receive rate, frame rate and events. Do not mistake delayed information or a duplicate delivery for a new input sample.
+
+The stream table also shows aspect ratio, audio channel count and channel layout when populated by Encoder `2.294.0` or later. These values describe the **first input connection**, not continuously remeasured input properties. Missing, malformed or unrecognized values remain `—`; these fields alone do not establish input health.
 
 Detailed history separates receipt time from sample time. Polling history is retained for 7 days while polling continues, and ended broadcast runs retain a summary. Stale data is not evidence that the encoder has stopped. `HEARTBEAT_STALE` is an alert about missing monitoring information.
 

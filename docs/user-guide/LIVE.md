@@ -57,6 +57,11 @@ DASH suggested presentation delay and minimum update period use milliseconds in
 the form and are converted to API seconds. DVR retains a playback window; its
 manifest-element budget is checked rather than silently clamped.
 
+With Encoder `2.294.0` or later, Live HLS multivariant playlists derive
+`BANDWIDTH` and `AVERAGE-BANDWIDTH` from produced bitrate, with the configured
+bitrate as a floor. The encoder supplies this correction; bitovp does not rewrite
+the values. VOD manifests are unchanged. See the [Encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
+
 ## Experimental MoQ delivery
 
 Create a **MoQ relay (live delivery)** credential first. In the Live wizard,
@@ -251,6 +256,12 @@ input diagnostics. Open the detailed history to distinguish receipt time from
 provider sample time; delayed or duplicate delivery is not a new input sample.
 Polling history is kept for seven days while a channel is polled; ended runs
 retain a summary. See [Operations](../OPERATIONS.md#heartbeat-history).
+
+Encoder `2.294.0` (Beta) adds populated input aspect ratio, audio channel count,
+and channel layout to the stream table. These describe the **first input
+connection**, not a new measurement at every heartbeat. Missing, malformed, or
+unrecognized values remain unavailable (`—`); a displayed format does not
+establish current input health. See the [Encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
 
 If provider monitoring stops responding, a configured `HEARTBEAT_STALE` rule
 opens once after its freshness grace and resolves when fresh polling recovers.

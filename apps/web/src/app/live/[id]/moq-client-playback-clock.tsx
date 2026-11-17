@@ -42,28 +42,30 @@ export function MoqClientPlaybackClock(props: Props) {
 			);
 		}
 		function onMedia(event: Event) {
-			if (["error", "emptied", "loadstart"].includes(event.type))
+			if (["error", "emptied", "loadstart", "seeking"].includes(event.type)) {
 				blocked = true;
+				setEpoch(null);
+			}
 			if (["loadeddata", "seeked"].includes(event.type)) blocked = false;
-			update();
 		}
 		const events = [
 			"loadeddata",
 			"seeking",
 			"seeked",
-			"timeupdate",
-			"ratechange",
-			"pause",
-			"ended",
 			"emptied",
 			"error",
 			"loadstart",
 		];
 		for (const event of events) video?.addEventListener(event, onMedia);
 		update();
-		const timer = window.setInterval(update, 100);
+		let timer: number;
+		function tick() {
+			update();
+			timer = window.setTimeout(tick, 100);
+		}
+		timer = window.setTimeout(tick, 100);
 		return () => {
-			window.clearInterval(timer);
+			window.clearTimeout(timer);
 			for (const event of events) video?.removeEventListener(event, onMedia);
 		};
 	}, [active, duration, live, mediaRef, origin]);

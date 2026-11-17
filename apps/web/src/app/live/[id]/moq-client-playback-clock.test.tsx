@@ -73,9 +73,11 @@ describe("independent client playback clock", () => {
 		expect(screen.getByText("2026-11-17 20:37:56.158 UTC")).toBeVisible();
 		f.position(12);
 		fireEvent.seeked(f.ref.current);
+		act(() => vi.advanceTimersByTime(100));
 		expect(screen.getByText("2026-11-17 20:38:03.158 UTC")).toBeVisible();
 		f.position(0);
 		fireEvent.seeked(f.ref.current);
+		act(() => vi.advanceTimersByTime(100));
 		expect(screen.getByText("2026-11-17 20:37:51.158 UTC")).toBeVisible();
 	});
 	it("does not retain a previous position while a seek is pending", () => {
@@ -92,6 +94,26 @@ describe("independent client playback clock", () => {
 		fireEvent.seeking(f.ref.current);
 		expect(screen.queryByText("2026-11-17 20:37:56.158 UTC")).toBeNull();
 		expect(screen.getByText("—")).toBeVisible();
+	});
+	it("coalesces frequent media events into one advancing update per 100ms", () => {
+		const f = media();
+		render(
+			<MoqClientPlaybackClock
+				mode="archive"
+				mediaRef={f.ref}
+				originUtcMs={ORIGIN}
+				durationMs={21_073}
+			/>,
+		);
+		act(() => vi.advanceTimersByTime(50));
+		f.position(5.05);
+		fireEvent.timeUpdate(f.ref.current);
+		expect(screen.getByText("2026-11-17 20:37:56.158 UTC")).toBeVisible();
+		f.position(5.06);
+		fireEvent.rateChange(f.ref.current);
+		expect(screen.getByText("2026-11-17 20:37:56.158 UTC")).toBeVisible();
+		act(() => vi.advanceTimersByTime(50));
+		expect(screen.getByText("2026-11-17 20:37:56.218 UTC")).toBeVisible();
 	});
 	it("never falls back to the current clock for legacy recordings without an origin", () => {
 		const f = media();

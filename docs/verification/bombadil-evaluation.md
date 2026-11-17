@@ -54,7 +54,7 @@ node scripts/bombadil-component.mjs --binary=/absolute/path/to/bombadil --output
 
 ## CIへの接続と限界
 
-`.github/workflows/bombadil.yml` を独立した並列workflowとして追加した。既存CIやInstalled GUIを短縮・置換しない。既存quality jobには軽量なrunner契約テスト4件だけを追加する。
+`.github/workflows/bombadil.yml` を独立した並列workflowとして追加した。既存CIやInstalled GUIを短縮・置換しない。既存quality jobには軽量なrunner契約テスト12件だけを追加する。
 
 新workflowは固定Action、固定Linux CLI checksum、lockで固定されたPlaywright browserを使い、同じ3stageを実行する。アプリ全体のbuildは行わない。job上限8分、artifact保持7日。正の探索の大量screenshotsはCI artifactから除き、全trace・provenance・失敗/再生の合成screenshotsは残す。macOS最終試行の全証跡は約260MB規模で、主に毎stateのscreenshotsである。Linux workflowの所要時間・成功は、実CI完了をもって別途確認する。
 
@@ -66,3 +66,7 @@ node scripts/bombadil-component.mjs --binary=/absolute/path/to/bombadil --output
 - [Extractors](https://antithesishq.github.io/bombadil/browser/3.4.2-extractors.html) / [action generators](https://antithesishq.github.io/bombadil/browser/3.4.4-action-generators.html) / [custom actions](https://antithesishq.github.io/bombadil/browser/3.5-custom-actions.html)
 - [外部browser接続](https://antithesishq.github.io/bombadil/browser/5.1.2-bombadil-browser-test-external.html) / [再生](https://antithesishq.github.io/bombadil/browser/4.1-reproducing-violations.html)
 - [公式Chromium起動・cleanup実装](https://github.com/antithesishq/bombadil/blob/v0.7.10/lib/bombadil-browser/src/chromium.rs)
+
+レビュー後のrunner補強では、readyを一度観測した後は、終端を含む全snapshotにreadyなstateがちょうど1個あることを必須にした。初期ロード前のprefixだけを許容し、途中で消失してから復帰したtraceも拒否する。十分な操作数を持つtraceで5種類の消失・重複条件を旧判定が見逃すREDを保存し、修正後のGREENと既存1734操作traceの再判定を確認した。これはrunnerの検出漏れ修正であり、製品の新規不具合とは数えない。
+
+LinuxではUbuntu AppArmorによる起動失敗を避けるため、専用の合成loopback fixture browserだけに `--no-sandbox` を付ける。macOSには付けない。Linuxの実browser動作はCIで別途確認する。終了処理はleaderの終了状態に関係なく所有process groupへsignalを送り、leader終了後も残る子processを実際に起動した回帰テストで検査する。各stageのCLI終了時にもgroupを回収する。

@@ -103,14 +103,43 @@ export function requireCoverage(evidence, trace) {
 		assert(evidence.counts[key] > 0, `Unreached action: ${key}`);
 	assert(evidence.receipts.length > 0, "No actual onAdd callback observed");
 }
-function terminate(child, signal = "SIGKILL") {
-	if (!child?.pid || child.exitCode !== null || child.signalCode !== null)
-		return;
+export function acceptPositiveTrace(entries) {
+	const trace = summarizeTrace(entries);
+	const evidence = [];
+	let readyObserved = false;
+	for (const [index, entry] of entries.entries()) {
+		const states = (entry.snapshots ?? []).filter(
+			(snapshot) => snapshot.name === "state",
+		);
+		if (states.some((snapshot) => snapshot.value?.ready === true))
+			readyObserved = true;
+		if (!readyObserved) continue;
+		assert(
+			states.length === 1 && states[0].value?.ready === true,
+			`Fixture readiness lost or ambiguous at observation ${index}`,
+		);
+		evidence.push(states[0].value);
+	}
+	const transitions = transitionCoverage(evidence);
+	assert.equal(trace.violations.length, 0);
+	requireCoverage(evidence.at(-1), trace);
+	for (const [name, count] of Object.entries(transitions))
+		assert(count > 0, `Unreached transition: ${name}`);
+	return { trace, evidence, transitions };
+}
+export function terminate(child, signal = "SIGKILL") {
+	// A detached leader can exit while its owned process group still has helpers.
+	if (!child?.pid) return;
 	try {
 		process.kill(-child.pid, signal);
 	} catch (error) {
 		if (error.code !== "ESRCH") throw error;
 	}
+}
+export function fixtureSandboxArgs(platform = process.platform) {
+	// Only our synthetic loopback fixture runs in this dedicated browser. Ubuntu
+	// AppArmor can prevent the downloaded Chromium from creating its sandbox.
+	return platform === "linux" ? ["--no-sandbox"] : [];
 }
 async function waitForExit(child) {
 	if (child.exitCode !== null || child.signalCode !== null) return;
@@ -300,6 +329,7 @@ async function main() {
 			await mkdir(profile);
 			const chromeArgs = [
 				"--headless",
+				...fixtureSandboxArgs(),
 				`--user-data-dir=${profile}`,
 				"--remote-debugging-port=0",
 				"--remote-debugging-address=127.0.0.1",
@@ -381,6 +411,7 @@ async function main() {
 				await waitForExit(bombadil);
 			} finally {
 				clearTimeout(timeout);
+				terminate(bombadil);
 			}
 			terminate(browser);
 			await waitForExit(browser);
@@ -402,15 +433,20 @@ async function main() {
 				.map((line) => JSON.parse(line));
 			const trace = summarizeTrace(entries);
 			const evidence = entries.flatMap((entry) =>
-				entry.snapshots
+				(entry.snapshots ?? [])
 					.filter(
 						(snapshot) => snapshot.name === "state" && snapshot.value?.ready,
 					)
 					.map((snapshot) => snapshot.value),
 			);
 			const transitions = transitionCoverage(evidence);
+			const terminalStates = (entries.at(-1).snapshots ?? []).filter(
+				(snapshot) => snapshot.name === "state",
+			);
+			const terminalState =
+				terminalStates.length === 1 ? terminalStates[0].value : null;
 			await writeJson(join(options.output, `${stage}-coverage.json`), {
-				lastObservedState: evidence.at(-1),
+				lastObservedState: terminalState,
 				transitions,
 			});
 			const result = {
@@ -422,7 +458,7 @@ async function main() {
 				elapsedMs: Math.round(performance.now() - started),
 				traceSha256: digest(traceBytes),
 				...trace,
-				coverage: evidence.at(-1)?.counts ?? null,
+				coverage: terminalState?.counts ?? null,
 				transitions,
 			};
 			await writeJson(join(options.output, `${stage}-result.json`), result);
@@ -442,10 +478,7 @@ async function main() {
 					0,
 					"Corrected component run did not pass",
 				);
-				assert.equal(trace.violations.length, 0);
-				requireCoverage(evidence.at(-1), trace);
-				for (const [name, count] of Object.entries(transitions))
-					assert(count > 0, `Unreached transition: ${name}`);
+				acceptPositiveTrace(entries);
 			} else {
 				assert.equal(
 					result.exitCode,

@@ -42,6 +42,8 @@ jobs:
       - run: pnpm --filter @bitovp/db build
       - name: Run mandatory PostgreSQL integration tests
         run: pnpm test:postgres --state-file "$RUNNER_TEMP/bitovp-postgres-state.json"
+      - name: Prove the LOCAL cancellation race regression detects a broken status guard
+        run: node scripts/qc-cancel-control.mjs --output "$RUNNER_TEMP/qc-cancel-control.json"
       - name: Remove owned PostgreSQL fixture after success, failure or cancellation
         if: always()
         run: node scripts/postgres-integration.mjs --cleanup --state-file "$RUNNER_TEMP/bitovp-postgres-state.json"
@@ -73,6 +75,19 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Install verified actionlint 1.7.12
+        run: |
+          actionlint_dir=$(mktemp -d "$RUNNER_TEMP/actionlint.XXXXXX")
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            --output "$actionlint_dir/actionlint.tar.gz"
+          printf '%s  %s\n' 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8 "$actionlint_dir/actionlint.tar.gz" | sha256sum --check --status
+          tar -xzf "$actionlint_dir/actionlint.tar.gz" -C "$actionlint_dir" actionlint
+          rm "$actionlint_dir/actionlint.tar.gz"
+          printf '%s\n' "$actionlint_dir" >> "$GITHUB_PATH"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -100,12 +115,20 @@ jobs:
       # which run the gated tests are still in this file.
       - run: pnpm test:gated-runner
       - run: pnpm test:feature-verification
+      - run: pnpm test:change-verification
+      - name: Show the change plan and pending integration checks
+        run: node scripts/change-verification.mjs plan --base HEAD^
       - run: pnpm --filter @bitovp/db build
-      - name: Run every registered QC contract feature
+      - name: Run every registered feature contract
         run: |
           pnpm verify:feature run qc-resource-allocation --output "$RUNNER_TEMP/feature-qc-resource-allocation"
           pnpm verify:feature run qc-measurement-validity --output "$RUNNER_TEMP/feature-qc-measurement-validity"
           pnpm verify:feature run qc-runtime-safety --output "$RUNNER_TEMP/feature-qc-runtime-safety"
+          pnpm verify:feature run access-isolation --output "$RUNNER_TEMP/feature-access-isolation"
+          pnpm verify:feature run submission-idempotency --output "$RUNNER_TEMP/feature-submission-idempotency"
+          pnpm verify:feature run vod-timeline --output "$RUNNER_TEMP/feature-vod-timeline"
+          pnpm verify:feature run live-lifecycle --output "$RUNNER_TEMP/feature-live-lifecycle"
+          pnpm verify:feature run library-render-recovery --output "$RUNNER_TEMP/feature-library-render-recovery"
       - run: pnpm --filter @bitovp/worker smoke
       - run: node --test scripts/web-test-shards.test.mjs
       - run: node --test scripts/bombadil-*.test.mjs
@@ -282,6 +305,30 @@ jobs:
           corepack install
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+
+  semantic-controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          check-latest: true
+      - name: Install the pinned package manager
+        run: |
+          COREPACK_HOME="$(mktemp -d "$RUNNER_TEMP/corepack-bitovp.XXXXXX")"
+          export COREPACK_HOME
+          printf 'COREPACK_HOME=%s\n' "$COREPACK_HOME" >> "$GITHUB_ENV"
+          corepack enable
+          corepack install
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:semantic-controls
+      - run: pnpm --filter @bitovp/db build
+      - name: Require each fixed semantic fault to fail its intended assertions
+        run: node scripts/semantic-controls.mjs --output "$RUNNER_TEMP/semantic-controls"
 
   dependency-audit:
     runs-on: ubuntu-latest

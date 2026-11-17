@@ -84,6 +84,19 @@ Starting an encoding or creating a live channel can incur provider charges.
 For service administration, read [Operations](./docs/OPERATIONS.md).
 For automation alongside the GUI, read [API usage](./docs/API-USAGE.md).
 
+## Development checks
+
+Install [actionlint 1.7.12](https://github.com/rhysd/actionlint/releases/tag/v1.7.12)
+for local development checks. `pnpm check` runs Biome and validates every GitHub
+Actions workflow, including expression contexts. CI installs a checksum-pinned
+copy of the same tool.
+
+Use `pnpm verify:change plan --base <local-base-revision>` to select the fixed
+contracts affected by a change and show integration checks that remain pending.
+The [change workflow](./docs/verification/change-workflow.md) explains running
+them and reading their receipts. The [verification foundation contract](./docs/verification/completion-contract.md)
+defines the required CI, defect-detection controls and speed measurements.
+
 ## License
 
 [MIT](./LICENSE).

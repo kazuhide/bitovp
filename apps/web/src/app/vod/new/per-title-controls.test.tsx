@@ -1,5 +1,5 @@
 import { compilePlan, encodingPlanSchema } from "@bitovp/core";
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
 import { renderWithQuery } from "@/test/render";
@@ -53,6 +53,16 @@ function renderedPlan() {
 	return JSON.parse(screen.getByTestId("plan").textContent ?? "{}");
 }
 
+// Label queries walk every descendant. Restrict edits to the real disclosure
+// the user opened while retaining the mounted ladder and plan compiler.
+function openSettings(summary: string, queries = within(document.body)) {
+	const heading = queries.getByText(summary, { selector: "summary" });
+	fireEvent.click(heading);
+	const panel = heading.closest("details");
+	if (!panel) throw new Error(`Missing settings panel for ${summary}`);
+	return within(panel);
+}
+
 describe("Per-Title authoring through the VOD wizard", () => {
 	it.each([
 		"h264",
@@ -80,9 +90,11 @@ describe("Per-Title authoring through the VOD wizard", () => {
 				}}
 			/>,
 		);
-		fireEvent.click(screen.getByText("Per-Title configuration"));
-		fireEvent.click(screen.getByText(`${codec}Configuration (on)`));
-		const minimum = screen.getByLabelText("Min bitrate step size");
+		const settings = openSettings(
+			`${codec}Configuration (on)`,
+			openSettings("Per-Title configuration"),
+		);
+		const minimum = settings.getByLabelText("Min bitrate step size");
 		expect(minimum).toHaveValue(null);
 		fireEvent.change(minimum, { target: { value: "1.5" } });
 		expect(minimum).toHaveValue(1.5);
@@ -174,16 +186,21 @@ describe("Per-Title authoring through the VOD wizard", () => {
 				}}
 			/>,
 		);
-		fireEvent.click(screen.getByText("Per-Title configuration"));
-		fireEvent.click(screen.getByText(`${codec}Configuration (on)`));
-		fireEvent.click(screen.getByText("fixedResolutionAndBitrateConfiguration"));
-		fireEvent.change(screen.getByLabelText("Forced rendition above highest"), {
+		const settings = openSettings(
+			`${codec}Configuration (on)`,
+			openSettings("Per-Title configuration"),
+		);
+		const fixed = openSettings(
+			"fixedResolutionAndBitrateConfiguration",
+			settings,
+		);
+		fireEvent.change(fixed.getByLabelText("Forced rendition above highest"), {
 			target: { value: "0" },
 		});
-		fireEvent.change(screen.getByLabelText("Forced rendition factor"), {
+		fireEvent.change(fixed.getByLabelText("Forced rendition factor"), {
 			target: { value: "1.5" },
 		});
-		const mode = screen.getByLabelText("Forced rendition mode");
+		const mode = fixed.getByLabelText("Forced rendition mode");
 		expect(
 			Array.from((mode as HTMLSelectElement).options, (option) => option.value),
 		).toEqual(["", "LAST_CALCULATED_BITRATE", "MINIMUM", "MAXIMUM", "AVERAGE"]);
@@ -241,11 +258,13 @@ it("authors native HEVCv2 target QP and compiles all template settings after imp
 	);
 	expect(screen.getByRole("radio", { name: "Per-Title" })).toBeEnabled();
 	expect(screen.getByLabelText("Stream mode")).toBeEnabled();
-	fireEvent.click(screen.getByText("Per-Title configuration"));
-	fireEvent.click(screen.getByText("h265V2Configuration (on)"));
+	const settings = openSettings(
+		"h265V2Configuration (on)",
+		openSettings("Per-Title configuration"),
+	);
 	expect(screen.queryByLabelText("Target quality CRF")).toBeNull();
 	expect(screen.queryByLabelText("Codec bufsize factor")).toBeNull();
-	fireEvent.change(screen.getByLabelText("Target quality QP"), {
+	fireEvent.change(settings.getByLabelText("Target quality QP"), {
 		target: { value: "20" },
 	});
 	const ops = compilePlan(encodingPlanSchema.parse(renderedPlan()));

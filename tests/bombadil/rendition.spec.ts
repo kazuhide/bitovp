@@ -4,6 +4,7 @@ import {
 	extract,
 	registerCustomAction,
 } from "@antithesishq/bombadil/browser";
+import { renditionInvariants } from "./rendition-model.ts";
 
 const state = extract(({ document }) => {
 	const text = document.querySelector("#oracle")?.textContent;
@@ -22,30 +23,17 @@ const state = extract(({ document }) => {
 
 // Expected labels come from fixture inputs and captured DOM intent, never from
 // the component's key lookup or the value returned through onAdd.
-export const defaultCopySourceIsLast = always(
-	() =>
-		!state.current?.pristine ||
-		state.current.selected === state.current.rows.at(-1).label,
+export const defaultCopySourceIsLast = always(() =>
+	renditionInvariants.defaultCopySourceIsLast(state.current),
 );
-export const explicitSelectionIsNotRedirected = always(
-	() =>
-		!state.current?.intent ||
-		state.current.selected === state.current.intent.label,
+export const explicitSelectionIsNotRedirected = always(() =>
+	renditionInvariants.explicitSelectionIsNotRedirected(state.current),
 );
-export const copiedSourceMatchesVisibleChoice = always(
-	() =>
-		!state.current ||
-		state.current.receipts.every(
-			(receipt: {
-				valid: boolean;
-				actual: string | null;
-				expected: string | null;
-			}) => receipt.valid && receipt.actual === receipt.expected,
-		),
+export const copiedSourceMatchesVisibleChoice = always(() =>
+	renditionInvariants.copiedSourceMatchesVisibleChoice(state.current),
 );
-export const eachAddHasOneReceipt = always(
-	() =>
-		!state.current || state.current.receipts.length === state.current.addClicks,
+export const eachAddHasOneReceipt = always(() =>
+	renditionInvariants.eachAddHasOneReceipt(state.current),
 );
 
 const selectSource = registerCustomAction(

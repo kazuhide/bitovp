@@ -25,6 +25,7 @@ import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
+import { parse as parseYaml } from "yaml";
 import { atStep, failureLines, GateFailure } from "./gate-report.mjs";
 import {
 	auditSkips,
@@ -186,8 +187,8 @@ test("a plain run may skip the tests that another job runs", () => {
 		["@bitovp/db", 70],
 		["@bitovp/worker", 68],
 		// Includes six favorite-registry, two still-image, two archive/restore and
-		// one WebM recovery case in the PostgreSQL job.
-		["@bitovp/web", 110],
+		// one WebM recovery case, plus three LOCAL QC cancellation cases.
+		["@bitovp/web", 113],
 	])
 		assert.deepEqual(skipProblems(plainRun(workspace), workspace, root), {
 			problems: [],
@@ -4462,6 +4463,46 @@ test("the installer keeps a build that passed the proof under a key of what it i
 	);
 });
 
+test("CI validates workflow semantics with a pinned tool before application checks", () => {
+	const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+	assert.equal(
+		pkg.scripts.check,
+		"biome check --error-on-warnings . && pnpm check:workflows",
+	);
+	assert.equal(
+		pkg.scripts["check:workflows"],
+		"node scripts/workflow-lint.mjs",
+	);
+	const quality = parseYaml(
+		readFileSync(join(root, ".github/workflows/ci.yml"), "utf8"),
+	).jobs.quality;
+	assert.equal(quality.if, undefined);
+	assert.equal(quality["continue-on-error"], undefined);
+	const index = quality.steps.findIndex(
+		(step) => step.name === "Install verified actionlint 1.7.12",
+	);
+	assert(index >= 0);
+	const step = quality.steps[index];
+	assert.equal(step.if, undefined);
+	assert.equal(step["continue-on-error"], undefined);
+	assert(
+		step.run.includes(
+			"https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz",
+		),
+	);
+	assert(
+		step.run.includes(
+			"8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+		),
+	);
+	assert(step.run.includes("sha256sum --check --status"));
+	assert(step.run.includes('"$GITHUB_PATH"'));
+	const check = quality.steps.findIndex((item) => item.run === "pnpm check");
+	assert(check > index);
+	assert.equal(quality.steps[check].if, undefined);
+	assert.equal(quality.steps[check]["continue-on-error"], undefined);
+});
+
 test("CI audits every package's skipped tests and runs the native media and Redis tests with the pinned tools", () => {
 	const ci = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8");
 	const job = (name) => {
@@ -4562,7 +4603,7 @@ test("CI audits every package's skipped tests and runs the native media and Redi
 	);
 	assert.equal(
 		pkg.scripts["test:gated-runner"],
-		"node --test scripts/gated-tests.test.mjs scripts/native-hdr-tools.test.mjs",
+		"node --test scripts/gated-tests.test.mjs scripts/native-hdr-tools.test.mjs scripts/workflow-lint.test.mjs",
 	);
 });
 
@@ -4848,6 +4889,72 @@ const HDR_SCREENSHOT_UPLOAD =
 	"          if-no-files-found: warn\n";
 const FORBIDDEN =
 	/\bsecrets\s*(\.|\[|\))|secrets:\s*inherit|id-token|pull_request_target|workflow_run|issue_comment|upload-artifact|docker (push|login)|gh release/;
+
+const INSTALLED_BOMBADIL_UPLOAD = [
+	"      - name: Save bounded installed Bombadil evidence without browser profiles or screenshots",
+	"        if: always() && env.BITOVP_ARCHIVE_DIR != ''",
+	"        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2",
+	"        with:",
+	`          name: installed-bombadil-\${{ github.run_id }}-\${{ github.run_attempt }}`,
+	"          path: |",
+	`            \${{ runner.temp }}/bitovp-installed-bombadil/summary.json`,
+	`            \${{ runner.temp }}/bitovp-installed-bombadil/*/summary.json`,
+	`            \${{ runner.temp }}/bitovp-installed-bombadil/*/specification.ts`,
+	`            \${{ runner.temp }}/bitovp-installed-bombadil/*/installed-wizard-model.ts`,
+	`            \${{ runner.temp }}/bitovp-installed-bombadil/*/trace/trace.jsonl`,
+	"          retention-days: 7",
+	"          if-no-files-found: warn",
+	"",
+].join("\n");
+function withoutInstalledBombadilUpload(name, text) {
+	if (name !== "installed-gui.yml") return text;
+	assert.equal(
+		text.split(INSTALLED_BOMBADIL_UPLOAD).length - 1,
+		1,
+		"Installed GUI must retain exactly the bounded Bombadil trace files",
+	);
+	return text.replace(INSTALLED_BOMBADIL_UPLOAD, "");
+}
+
+test("installed Bombadil evidence allows only the exact synthetic trace files in its own workflow", () => {
+	assert.equal(
+		withoutInstalledBombadilUpload(
+			"installed-gui.yml",
+			INSTALLED_BOMBADIL_UPLOAD,
+		),
+		"",
+	);
+	for (const block of [
+		"",
+		INSTALLED_BOMBADIL_UPLOAD.repeat(2),
+		INSTALLED_BOMBADIL_UPLOAD.replace("*/trace/trace.jsonl", "**"),
+		INSTALLED_BOMBADIL_UPLOAD.replace("*/summary.json", "*/browser.json"),
+		INSTALLED_BOMBADIL_UPLOAD.replace(
+			"*/specification.ts",
+			"*/trace/screenshots/**",
+		),
+		INSTALLED_BOMBADIL_UPLOAD.replace("always()", "success()"),
+		INSTALLED_BOMBADIL_UPLOAD.replace(
+			"cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+			"v7",
+		),
+	])
+		assert.throws(() =>
+			withoutInstalledBombadilUpload("installed-gui.yml", block),
+		);
+	for (const name of ["ci.yml", "offline-media.yml", "installed-gui-copy.yml"])
+		assert.match(
+			withoutInstalledBombadilUpload(name, INSTALLED_BOMBADIL_UPLOAD),
+			FORBIDDEN,
+		);
+	assert.match(
+		withoutInstalledBombadilUpload(
+			"installed-gui.yml",
+			`${INSTALLED_BOMBADIL_UPLOAD}      - uses: actions/upload-artifact@v7\n`,
+		),
+		FORBIDDEN,
+	);
+});
 
 function withoutInstalledGuiHdrUpload(name, text) {
 	if (name !== "installed-gui.yml") return text;
@@ -5204,7 +5311,10 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 			name,
 			withoutDependencyAuditUpload(
 				name,
-				withoutInstalledGuiHdrUpload(name, workflow(name)),
+				withoutInstalledGuiHdrUpload(
+					name,
+					withoutInstalledBombadilUpload(name, workflow(name)),
+				),
 			),
 		);
 		const holder = jobOf(text, job);

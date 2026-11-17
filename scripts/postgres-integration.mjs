@@ -53,6 +53,7 @@ export const GROUPS = [
 			"src/lib/server/vod-input-previews.integration.test.ts": 11,
 			"src/lib/server/vod-input-favorites.integration.test.ts": 6,
 			"src/lib/server/latest-runs.integration.test.ts": 3,
+			"src/lib/server/qc-cancel.integration.test.ts": 3,
 			"src/lib/server/reset-live-probe.integration.test.ts": 3,
 			"src/lib/server/reset-live-transition-locking.integration.test.ts": 3,
 			"src/lib/server/library-catalog.integration.test.ts": 18,
@@ -543,6 +544,7 @@ const mask = (env, values) => {
 	// A line break inside a value would end the mask command early and let the
 	// rest of the value start a line of its own.
 	assert(
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: reject controls before emitting CI secret masks
 		fresh.every((value) => !/[\u0000-\u001f\u007f-\u009f]/.test(value)),
 		"Fixture credentials must not contain control characters",
 	);

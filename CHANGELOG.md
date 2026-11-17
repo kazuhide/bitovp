@@ -8,6 +8,10 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- Validate all GitHub Actions workflows with actionlint as part of `pnpm check`, using a checksum-pinned tool in CI to reject invalid expressions and unavailable contexts before application qualification.
+- Select fast verification contracts from an explicit Git change base, including staged, working-tree and untracked changes. Eight fixed profiles cover QC, authentication and tenant isolation, VOD/Live submission, timeline edits, Live lifecycle and Library recovery. Shared or unclassified changes select all profiles; receipts keep pending integration checks explicit.
+- Require CI to demonstrate that fixed faults in tenant dispatch, non-idempotent start retries, HDR report grouping and child-process ownership fail their intended assertions, with the same complete suites passing before mutation and after source restoration.
+- Explore the installed VOD wizard with bounded Bombadil action sequences and a replayed control fault. Verify local QC cancellation through the authenticated screen and real PostgreSQL, including competing completion, repeated requests and retained partial results; an intentionally broken status guard must fail the same database regression.
 - Explore rendition-copy selection with Bombadil browser property tests, including duplicate-key and reorder sequences, a real historical bug control, and trace replay. Bounded component checks run alongside the existing installed-application tests.
 - Request cancellation of pending or running local VOD QC measurements and optionally set an absolute LOCAL execution deadline. Partial results are retained, expired retries are refused, and request acceptance remains distinct from confirmed process shutdown.
 - Run named QC contract checks through a bounded feature-verification CLI, with read-only readiness checks, strict test-result coverage and retained execution receipts. Focused checks state their scope separately from installed-application and provider validation.
@@ -28,6 +32,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- Reject unrelated or changed Bombadil violation sets during negative-control replay, validate retained observations with the actual component predicates, and execute validation through symbolic-link entry points. Keep installed browser tools within the wrapper's owned process group so interruption cleans them up. Keep custom Next.js image patterns disabled while its separate vendored matcher remains unpatched.
 - Block repeated extglob compilation in the build/test dependency picomatch while an official fix for GHSA-fc5q-39xc-vjpf is unavailable. Dependency audits retain the native finding and verify the exact patch, every installed copy and bounded regression checks before classifying it as locally mitigated; repeated extglob syntax is temporarily unsupported.
 
 - Keep each output file's Review row distinct while a draft temporarily contains duplicate video-stream keys. Preserve both destinations and the validation that prevents submitting duplicate streams.

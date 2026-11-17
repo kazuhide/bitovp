@@ -1,6 +1,10 @@
 # Feature verification
 
-Use `pnpm verify:feature list` to discover the three fixed checks. The registry in
+For an ordinary change, start with the [change workflow](./change-workflow.md),
+which selects and combines these profiles from an explicit Git base. Direct
+profile commands remain useful while working on a known behavior.
+
+Use `pnpm verify:feature list` to discover eight fixed checks. The registry in
 `scripts/feature-verification-registry.mjs` is the executable source of truth.
 
 ```sh
@@ -9,8 +13,8 @@ pnpm verify:feature run qc-resource-allocation --output /absolute/new/evidence-d
 ```
 
 The output directory must be new and outside the checkout. Prepare dependencies
-with the repository's normal installation instructions first; resource allocation
-also needs `pnpm --filter @bitovp/db build`. Doctor is read-only and reports missing
+with the repository's normal installation instructions first. Web and worker profiles
+require `pnpm --filter @bitovp/db build`. Doctor is read-only and reports missing
 prerequisites; it does not install, start an app, or call worker verify operations.
 Existing `worker verify preflight` is a capability report and its exit code is not
 used as readiness. Feature runs inherit an environment allowlist without provider
@@ -18,11 +22,16 @@ credentials and use a fixed test list, two Vitest workers, and a 120-second limi
 
 | Feature | User path represented | Contract checked | Not established |
 |---|---|---|---|
+| `access-isolation` | Submit a protected request as a user or token | Role admission and authenticated tenant context | Live cookies, PostgreSQL row-level security |
+| `submission-idempotency` | Submit or repeat a VOD or Live creation request | Request identity, route validation and persistence-adapter behavior | Concurrent database writes, actual encoding |
+| `vod-timeline` | Overwrite an audio or video track, snap an edit and retain packaging | Independent tracks, snapping and HLS/DASH plan compilation | Browser pointer fidelity, actual media playback |
+| `live-lifecycle` | Start, cancel, poll or re-air a Live channel | Run ownership, stale provider observations and cancellation recovery | Actual provider state or billing, PostgreSQL locking |
+| `library-render-recovery` | Resume a composition or derivative after cancellation or lease loss | Source identity, render ownership and adoption of recovered output | Real storage, render fidelity, PostgreSQL locking |
 | `qc-resource-allocation` | Choose LOCAL QC and its CPU/banding options, then submit | Resource planning, detector reservations, and processor command composition | Actual throughput, GPU capacity, completion ETA |
 | `qc-measurement-validity` | Select reference/distorted content and inspect the QC comparison | HDR compatibility and synthetic frame alignment | Measured video quality, display fidelity, real-media coverage |
 | `qc-runtime-safety` | QC waits for capacity, reaches an absolute deadline, or its running process is interrupted | Admission cancellation, generated reservation/deadline action sequences, and process/supervisor adapter contracts | HTTP cancel acceptance, physical stop of a production job, UI behavior |
 
-All three have `scope: unit-contract`. Their fixtures include synthetic/mocked
+All eight have `scope: unit-contract`. Their fixtures include synthetic/mocked
 inputs. The receipt never converts them into UI, real GPU, provider, or deployment
 proof. Real UI navigation and screenshots belong to the existing **Installed GUI**
 workflow (`.github/workflows/installed-gui.yml`), which uses its isolated installation

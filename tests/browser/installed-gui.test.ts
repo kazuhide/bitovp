@@ -20,6 +20,7 @@ import {
 	recordConsoleError,
 	selectGuiStates,
 } from "./diagnostics";
+import { verifyInstalledBombadil } from "./installed-bombadil";
 import {
 	LIBRARY_CONTENT,
 	LIBRARY_TITLE,
@@ -30,6 +31,7 @@ import {
 	nonpaidVodPlan,
 	writeNonpaidSubmission,
 } from "./nonpaid-submit";
+import { verifyQcCancelBrowser } from "./qc-cancel-fixture";
 import { verifyQcComparisonBrowser } from "./qc-comparison-fixture";
 
 const fixture = JSON.parse(
@@ -1255,5 +1257,30 @@ test("decode and seek QC comparison previews and inspect violin distributions", 
 		fixture.baseURL,
 		authenticated,
 		info,
+	);
+});
+
+test("explore installed VOD configuration with Bombadil and replay a fault", async ({
+	browserName,
+}, info) => {
+	test.setTimeout(240_000);
+	expect(browserName).toBe("chromium");
+	await verifyInstalledBombadil(
+		fixture.baseURL,
+		authenticated,
+		info,
+		fixture.directory,
+	);
+});
+
+test("cancel LOCAL QC and retain its result after reload", async ({
+	browser,
+}, info) => {
+	await verifyQcCancelBrowser(
+		browser,
+		fixture.baseURL,
+		authenticated,
+		info,
+		fixture,
 	);
 });

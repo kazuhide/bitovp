@@ -121,15 +121,14 @@ test("accepts exactly the required files and all passed assertions", () => {
 	for (const group of GROUPS) {
 		assert.doesNotThrow(() => validateReport(report(group), group, root));
 	}
-	// VOD fixed sources add six persistence/concurrency assertions; Library
-	// archive/restore and WebM recovery add three more PostgreSQL cases.
-	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 35);
+	// Includes the three LOCAL QC cancellation cases.
+	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 36);
 	assert.equal(
 		GROUPS.flatMap((group) => Object.values(group.files)).reduce(
 			(a, b) => a + b,
 			0,
 		),
-		229,
+		232,
 	);
 });
 
@@ -499,6 +498,10 @@ test("CI requires the fixture runner and an unconditional fallback cleanup step"
 	);
 	assert.match(
 		job,
+		/run: node scripts\/qc-cancel-control.mjs --output "\$RUNNER_TEMP\/qc-cancel-control.json"/,
+	);
+	assert.match(
+		job,
 		/if: always\(\)\n\s+run: node scripts\/postgres-integration.mjs --cleanup --state-file "\$RUNNER_TEMP\/bitovp-postgres-state.json"/,
 	);
 	assert.equal((job.match(/\n\s+if:/g) ?? []).length, 1);
@@ -508,6 +511,11 @@ test("CI requires the fixture runner and an unconditional fallback cleanup step"
 		"node scripts/postgres-integration.mjs",
 	);
 	assert(scripts.test.includes("pnpm test:postgres-runner"));
+	assert(
+		scripts["test:postgres-runner"].includes(
+			"scripts/qc-cancel-control.test.mjs",
+		),
+	);
 });
 
 for (const cancellation of [false, true])

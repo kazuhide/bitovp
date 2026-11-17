@@ -1,6 +1,6 @@
 # Bombadilの適用と実測
 
-2026-11-18。公式Bombadil **0.7.10の実binary**を使い、実Reactコンポーネントの操作生成・property検査・旧実装での違反検出・trace再生を実行した。対象を `RenditionAddControls` に限定して採用する。アプリ全体の探索やInstalled GUIの代替ではない。
+2026-11-18。公式Bombadil **0.7.10の実binary**を使い、実Reactコンポーネントの操作生成・property検査・旧実装での違反検出・trace再生を実行した。最初の対象は `RenditionAddControls`。後述する実インストールへの拡張ではVOD wizardも検査するが、アプリ全体の探索やInstalled GUIの代替ではない。
 
 ## 対象と独立した検査条件
 
@@ -54,11 +54,19 @@ node scripts/bombadil-component.mjs --binary=/absolute/path/to/bombadil --output
 
 ## CIへの接続と限界
 
-`.github/workflows/bombadil.yml` を独立した並列workflowとして追加した。既存CIやInstalled GUIを短縮・置換しない。既存quality jobには軽量なrunner契約テスト12件だけを追加する。
+`.github/workflows/bombadil.yml` を独立した並列workflowとして追加した。既存CIやInstalled GUIを短縮・置換しない。既存quality jobでは、ブラウザー探索とは別にrunnerの契約テストを実行する。
 
 新workflowは固定Action、固定Linux CLI checksum、lockで固定されたPlaywright browserを使い、同じ3stageを実行する。アプリ全体のbuildは行わない。job上限8分、artifact保持7日。正の探索の大量screenshotsはCI artifactから除き、全trace・provenance・失敗/再生の合成screenshotsは残す。macOS最終試行の全証跡は約260MB規模で、主に毎stateのscreenshotsである。Linux workflowの所要時間・成功は、実CI完了をもって別途確認する。
 
-30秒の有限探索は全入力や実アプリnavigationの正しさを証明しない。replayは公式にもbest effortとされるため、分岐・起動失敗・generic errorを指定propertyの検出成功に代用しない。このfixtureが検査するのはcomponentの選択とcallbackであり、VOD全体のconfig生成・submitやprovider処理ではない。3動画のmute排他を調べる既存Installed GUI案は、route interceptionを維持できる接続が別途必要なので今回の実行対象に含めなかった。
+30秒の有限探索は全入力や実アプリnavigationの正しさを証明しない。replayは公式にもbest effortとされるため、分岐・起動失敗・generic errorを指定propertyの検出成功に代用しない。このfixtureが検査するのはcomponentの選択とcallbackであり、VOD全体のconfig生成・submitやprovider処理ではない。3動画のmute排他は既存の確定的Installed GUI検査で確認する。
+
+## 実インストールへの拡張
+
+後続の[完了契約](./completion-contract.md)では、専用Chromiumに準備した1ページを `--create-target` なしで再利用し、認証済みcontextの通信制限を保つ。事前の合成実験では実Bombadil 0.7.10で231操作を実行し、同一originの禁止POSTと別originのPOSTを各231件遮断、各受信側への到達0件、対象page ID不変を確認した。これは接続方法の証拠であり、アプリ動作の合格ではない。
+
+Installed GUIの必須ケースに、VODの編集、コピー元選択、コピー追加、削除、画面往復を生成する探索を追加した。意図した可視値と実画面・Plan JSONを照合し、操作の未到達を拒否する。意図的な操作先変更を同じ性質で検出して再生する対照は、過去の自然発生不具合を用いる部品検査とは別に記録する。実行時間・合否は確定したsourceのCI結果で判断する。
+
+対照・再生の受理は生の違反名集合を比較する。未知名や、この対照で想定しない既知名の混在を捨てて合格にはしない。シンボリックリンク経由の起動でもCLI検証を必ず実行する。
 
 ## 一次資料
 

@@ -42,6 +42,7 @@ import { NativePairRefusal } from "./native-score";
 import { createVmafProcessor, type VmafProcessorDeps } from "./processor";
 import * as referencePreparation from "./reference-preparation";
 import type { VmafResourceLeaseRequest } from "./resource-leases";
+import type { LocalResourcePlan } from "./resource-plan";
 import { planLocalResources } from "./resource-plan";
 import { createSharedVmafExecution } from "./shared-execution";
 
@@ -5336,6 +5337,74 @@ describe("banding measurement integration", () => {
 			),
 		).toBe(true);
 		expect(t.encodingJobWrites).toHaveLength(0);
+	});
+
+	it.each([
+		2, 4,
+	])("retains %s admitted VMAF decoder threads in the SDR CPU CAMBI fallback", async (decoderThreads) => {
+		const host = {
+			cpuCapacity: 32,
+			reserveBytes: 0,
+			budgetBytes: 80 * 1024 ** 3,
+		};
+		const basePlans: LocalResourcePlan[] = [];
+		const admitted: LocalResourcePlan[] = [];
+		const localResources = createLocalVmafResources({
+			threads: 20,
+			concurrency: 1,
+			readResources: () => host,
+			execute: async (plan, signal, work) => {
+				admitted.push(plan);
+				return work(signal, async () => {});
+			},
+		});
+		const plan = qcPlan();
+		plan.qc = { vmaf: true, banding: true, model: "vmaf_v0.6.1" };
+		const t = setup({
+			plan,
+			frameScores: [95, 96],
+			bandingScores: [0, 6],
+			localResources,
+			resolveLocalResources: async ({ pair }) => {
+				const base = {
+					...planLocalResources(host, pair, { threads: 20, concurrency: 1 }, 1),
+					decoderThreads,
+					cpuChargePerComparison: 20 + 2 * decoderThreads + 1,
+				};
+				basePlans.push(base);
+				return base;
+			},
+			job: { params: { banding: true } },
+		});
+		expect(t.deps.resolveBandingResources).toBeUndefined();
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).resolves.toMatchObject({ status: "FINISHED", results: 2 });
+		expect(admitted).toHaveLength(2);
+		for (const [index, allocation] of admitted.entries()) {
+			expect(allocation.decoderThreads).toBe(decoderThreads);
+			expect(allocation.cpuChargePerComparison).toBe(
+				20 + 2 * decoderThreads + 1,
+			);
+			expect(allocation.estimatedBytes).toBeGreaterThan(
+				basePlans[index]?.estimatedBytes ?? 0,
+			);
+			expect(allocation.exclusive).toBe(true);
+		}
+		const scoring = vi.mocked(t.runner.run).mock.calls.filter(([, argv]) => {
+			const graph = argv[argv.indexOf("-filter_complex") + 1] ?? "";
+			return graph.includes("libvmaf=") && !graph.includes("model=:");
+		});
+		expect(scoring).toHaveLength(2);
+		for (const [, argv] of scoring) {
+			expect(
+				argv.flatMap((value, i) => (value === "-threads" ? [argv[i + 1]] : [])),
+			).toEqual([String(decoderThreads), String(decoderThreads)]);
+			expect(argv[argv.indexOf("-filter_complex") + 1]).toContain(
+				"n_threads=20",
+			);
+		}
+		expect(t.results).toHaveLength(2);
 	});
 
 	it("keeps full timing decode, persistence and private cleanup within one composite lease", async () => {

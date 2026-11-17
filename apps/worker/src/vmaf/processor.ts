@@ -1571,9 +1571,12 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 								return {
 									...base,
 									...detector,
-									...(hdrRequest
-										? { decoderThreads: base.decoderThreads }
-										: {}),
+									// CAMBI's single decoder must not replace the VMAF
+									// allocation for either SDR or HDR scoring.
+									decoderThreads: Math.max(
+										base.decoderThreads ?? 1,
+										detector.decoderThreads ?? 1,
+									),
 									estimatedBytes: base.estimatedBytes + detector.estimatedBytes,
 									threads: Math.min(base.threads, detector.threads),
 									...(base.gpu ? { nativeInflightFrames: 1 as const } : {}),

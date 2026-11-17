@@ -91,4 +91,33 @@ transactions, GPU scoring or provider activity. Those evidence layers remain
 separate. Any newly found product defect must retain its counterexample, gain a
 regression test, and pass review and CI before an Unreleased fix is merged.
 
+## Product findings from the full-suite run
+
+The later complete Web run exposed a separate UI defect while inspecting a slow
+existing regression case. Two output files with temporarily identical video
+settings produced the same React row key in Review, even though their destination
+paths differed. This violates React's sibling identity requirement. The same
+warning appeared in earlier successful runs; it is not evidence that the key
+collision caused the test timeout.
+
+The regression now requires both destination paths, no duplicate-key error, the
+existing duplicate-stream validation, disabled submission, and recovery after
+editing the bitrate. The original code fails the new assertion; the corrected
+stateless rows include their position in the key and pass it. The Unreleased fix
+does not change encoding keys or relax plan validation. This is a naturally
+observed UI defect, separately counted from the generated properties' controlled
+fault and the two historical QC defects. It does not establish that a real user's
+output file was omitted or overwritten.
+
+The audio duplicate-key warning exposed a separate behavioral defect in
+`RenditionAddControls`: the select value and lookup both used the generated stream
+key. During a temporary collision, choosing the second rendition, or accepting
+the default last rendition, could copy the first rendition's configuration.
+The regression uses distinct configurations under equal keys and checks the
+actual copied settings, including a middle-row selection through collision and
+recovery. UI choice identity is now separate from the encoding key. Existing
+unique-key selection, default settings, and empty choices retain their behavior.
+These naturally observed product defects are distinct from test-driver latency
+and the deliberate reserved-headroom fault.
+
 Method reference: [fast-check model-based testing](https://fast-check.dev/docs/advanced/model-based-testing/).

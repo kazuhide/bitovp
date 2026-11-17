@@ -414,51 +414,77 @@ describe("VodWizard — the file-output flow", () => {
 	});
 
 	it("says on both files when they are one video stream twice, and refuses the job", async () => {
-		const user = userEvent.setup();
-		await restore(ready);
-		await user.click(screen.getByRole("button", { name: "3. Format" }));
-		await user.click(screen.getByRole("button", { name: "Add file" }));
-		const file = (n: number) =>
-			within(screen.getByRole("group", { name: `File ${n}` }));
-		const told =
-			/Another file has the same height and codec, and the same bitrate once both are rounded to kbps/;
-		expect(
-			file(1).getByLabelText("Bitrate (bps)"),
-		).not.toHaveAccessibleDescription();
+		const consoleError = vi.spyOn(console, "error");
+		try {
+			const user = userEvent.setup();
+			await restore(ready);
+			const navigation = within(
+				screen.getByRole("navigation", { name: "Wizard steps" }),
+			);
+			await user.click(navigation.getByRole("button", { name: "3. Format" }));
+			await user.click(screen.getByRole("button", { name: "Add file" }));
+			const file = (n: number) =>
+				within(screen.getByRole("group", { name: `File ${n}` }));
+			// Resolve named controls once per mounted Format step. Repeated label
+			// queries scan every descendant and recompute document-wide associations.
+			const files = [file(1), file(2)];
+			const bitrates = files.map((group) =>
+				group.getByRole("spinbutton", { name: "Bitrate (bps)" }),
+			);
+			const height = files[1].getByRole("spinbutton", { name: "Height (p)" });
+			const name = files[1].getByRole("textbox", { name: "File name" });
+			const told =
+				/Another file has the same height and codec, and the same bitrate once both are rounded to kbps/;
+			expect(bitrates[0]).not.toHaveAccessibleDescription();
 
-		// The first file once more, as QuickTime.
-		await user.selectOptions(
-			file(2).getByRole("combobox", { name: "Container" }),
-			"PROGRESSIVE_MOV",
-		);
-		// The values as a whole: what is under test is the two files being equal,
-		// not the keystrokes on the way there.
-		const set = (label: string, value: string) =>
-			fireEvent.change(file(2).getByLabelText(label), { target: { value } });
-		set("Height (p)", "1080");
-		// Under a kilobit from the first file's 8,000,000: the same bitrate in kbps.
-		set("Bitrate (bps)", "8000400");
-		expect(file(2).getByLabelText("File name")).toHaveValue("clip-1080p.mov");
-		for (const n of [1, 2])
+			// The first file once more, as QuickTime.
+			await user.selectOptions(
+				files[1].getByRole("combobox", { name: "Container" }),
+				"PROGRESSIVE_MOV",
+			);
+			// The values as a whole: what is under test is the two files being equal,
+			// not the keystrokes on the way there.
+			expect(height).toBeInTheDocument();
+			fireEvent.change(height, { target: { value: "1080" } });
+			// Under a kilobit from the first file's 8,000,000: the same bitrate in kbps.
+			fireEvent.change(bitrates[1], { target: { value: "8000400" } });
+			expect(name).toBeInTheDocument();
+			expect(name).toHaveValue("clip-1080p.mov");
+			for (const bitrate of bitrates) {
+				expect(bitrate).toBeInTheDocument();
+				expect(bitrate).toHaveAccessibleDescription(told);
+			}
 			expect(
-				file(n).getByLabelText("Bitrate (bps)"),
-			).toHaveAccessibleDescription(told);
-		expect(
-			screen.getAllByText(/\[PLAN_DUPLICATE_KEY\]/).length,
-		).toBeGreaterThan(0);
-		await user.click(screen.getByRole("button", { name: "6. Review" }));
-		expect(
-			screen.getByRole("button", { name: "Start encoding" }),
-		).toBeDisabled();
+				screen.getAllByText(/\[PLAN_DUPLICATE_KEY\]/).length,
+			).toBeGreaterThan(0);
+			await user.click(navigation.getByRole("button", { name: "6. Review" }));
+			expect(
+				screen.getByText("synthetic/exports/clip.mp4"),
+			).toBeInTheDocument();
+			expect(
+				screen.getByText("synthetic/exports/clip-1080p.mov"),
+			).toBeInTheDocument();
+			expect(
+				consoleError.mock.calls.some((args) =>
+					args.some((value) => String(value).includes("same key")),
+				),
+			).toBe(false);
+			expect(
+				screen.getByRole("button", { name: "Start encoding" }),
+			).toBeDisabled();
 
-		// One kilobit apart is two streams.
-		await user.click(screen.getByRole("button", { name: "3. Format" }));
-		set("Bitrate (bps)", "7999000");
-		for (const n of [1, 2])
-			expect(
-				file(n).getByLabelText("Bitrate (bps)"),
-			).not.toHaveAccessibleDescription();
-		expect(screen.queryByText(/\[PLAN_DUPLICATE_KEY\]/)).toBeNull();
+			// One kilobit apart is two streams.
+			await user.click(navigation.getByRole("button", { name: "3. Format" }));
+			const returnedBitrates = [file(1), file(2)].map((group) =>
+				group.getByRole("spinbutton", { name: "Bitrate (bps)" }),
+			);
+			fireEvent.change(returnedBitrates[1], { target: { value: "7999000" } });
+			for (const bitrate of returnedBitrates)
+				expect(bitrate).not.toHaveAccessibleDescription();
+			expect(screen.queryByText(/\[PLAN_DUPLICATE_KEY\]/)).toBeNull();
+		} finally {
+			consoleError.mockRestore();
+		}
 	});
 
 	it("starts a job that writes one file into the chosen folder, with no manifest", async () => {

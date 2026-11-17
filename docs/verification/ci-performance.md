@@ -72,9 +72,20 @@ Vitest wall time was nearly unchanged. These failed cost measurements remain
 part of the evidence; no further unchanged rerun is used to seek a passing sample.
 
 The current four-worker cap uses the fourth CPU already allocated to each runner.
-Its performance is unmeasured until the next complete CI run. The acceptance
-criteria remain 420 seconds and 1,251 runner-seconds; prior samples do not
-establish a stable latency or cost guarantee.
+Its first run at `8d34064a` measured
+[392 seconds / 1,197 runner-seconds](https://github.com/kazuhide/bitovp/actions/runs/44119190001),
+but one file-flow case exceeded its unchanged 20-second timeout. This is a failed
+sample, not a performance acceptance: the aggregate correctly refused an
+incomplete set of successful receipts. It was not rerun unchanged.
+
+A selected-case CPU profile attributed 3,122 ms of its 4,144-ms execution to
+repeated label queries: Testing Library scans descendants, and jsdom recomputes
+document-wide label associations. The test now uses named role queries scoped to
+the same mounted file groups and reuses control handles until the step unmounts.
+It reacquires them after returning from Review. User interactions, validation
+assertions, case counts, the timeout, and full-suite coverage are preserved.
+The corrected source needs complete CI validation. Acceptance remains 420 seconds
+and 1,251 runner-seconds; prior samples do not establish a stable guarantee.
 
 ## Verified native HDR build reuse
 

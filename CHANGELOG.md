@@ -25,6 +25,8 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- Keep each output file's Review row distinct while a draft temporarily contains duplicate video-stream keys. Preserve both destinations and the validation that prevents submitting duplicate streams.
+- Copy the selected rendition's settings when generated stream keys temporarily overlap during editing, including the default last-row choice, without confusing UI selection with encoding identity.
 - Keep local QC cancellation from being overwritten during terminal persistence, and recheck cancellation and the absolute deadline after reading gate results before publishing a passing encoding verdict. Retain completed measurement results without emitting a successful completion event.
 - Read explicitly declared P3 D65/PQ RGB MXF references without footer seeking, accept their missing color tags, and require complete frame timing before HDR VMAF scoring. Preserve the admitted HDR decoder allocation when CAMBI is also enabled.
 - Avoid periodically waking local GPUs during clip-readiness checks. Background checks use runtime and device-access metadata; new inference jobs and their execution each require fresh native GPU discovery. Missing devices or permissions keep clip editing unavailable.

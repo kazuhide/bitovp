@@ -80,7 +80,8 @@ left out. The commits and the build options follow the recipe of
 `github.com/BtbN/FFmpeg-Builds` at `c63bb308a1de`; the image downloaded a daily
 build of that project before.
 
-The build is eight stages of `Dockerfile`:
+The SDR build is nine stages of `Dockerfile`. Since 2026-11-17, the shared
+source stage lets HDR compile without first compiling and discarding SDR:
 
 | Stage | Starts from | What it adds |
 |---|---|---|
@@ -90,7 +91,8 @@ The build is eight stages of `Dockerfile`:
 | `ffmpeg-text` | `ffmpeg-zlib` | libxml2, FreeType, HarfBuzz, FriBidi, libunibreak, Fontconfig, libass |
 | `ffmpeg-vmaf` | `ffmpeg-toolchain` | libvmaf |
 | `ffmpeg-codecs` | `ffmpeg-toolchain` | x264, SVT-AV1, dav1d |
-| `ffmpeg-build` | `ffmpeg-toolchain` | `/opt/ffbuild` of the four stages above, the NVIDIA headers, FFmpeg itself, the checks |
+| `ffmpeg-source` | `ffmpeg-toolchain` | common libraries, NVIDIA headers and the pristine pinned FFmpeg source |
+| `ffmpeg-build` | `ffmpeg-source` | SDR libvmaf, FFmpeg configuration, compilation and checks |
 | `ffmpeg` | `scratch` | nothing: it holds only `/bin/ffmpeg`, `/bin/ffprobe` and `/share/licenses/` |
 
 Every library is installed as a static library under `/opt/ffbuild`, with its
@@ -1434,15 +1436,15 @@ headers in `include/dav1d`, `lib/pkgconfig/dav1d.pc`, and two texts in
 
 ### NVIDIA headers
 
-Stage `ffmpeg-build`; CI #65, arm64 #63.
+Stage `ffmpeg-source`; the historical logs below called it `ffmpeg-build`
+(CI #65, arm64 #63).
 
-The stage starts from `ffmpeg-toolchain` and copies `/opt/ffbuild` from the four
-library stages:
+The stage starts from `ffmpeg-toolchain` and copies `/opt/ffbuild` from the three
+common library stages. Each consumer adds its own libvmaf:
 
 ```dockerfile
 COPY --from=ffmpeg-tls /opt/ffbuild/ /opt/ffbuild/
 COPY --from=ffmpeg-text /opt/ffbuild/ /opt/ffbuild/
-COPY --from=ffmpeg-vmaf /opt/ffbuild/ /opt/ffbuild/
 COPY --from=ffmpeg-codecs /opt/ffbuild/ /opt/ffbuild/
 ```
 
@@ -1494,7 +1496,9 @@ fails, the step prints the last 60 lines of `ffbuild/config.log`.
 ARG FFMPEG_VER="n8.1.3-34-ga35157abb9"
 ARG FFMPEG_COMMIT="a35157abb96167fd7308edc92b55408d5bb084b0"
 RUN --network=none mkdir ffmpeg && tar xzf ffmpeg.tar.gz -C ffmpeg --strip-components=1 && cd ffmpeg \
-  && case "$FFMPEG_VER" in *-g"$(printf '%.10s' "$FFMPEG_COMMIT")") ;; *) echo "FFMPEG_VER does not end with the revision of FFMPEG_COMMIT" >&2; exit 1 ;; esac \
+  && case "$FFMPEG_VER" in *-g"$(printf '%.10s' "$FFMPEG_COMMIT")") ;; *) echo "FFMPEG_VER does not end with the revision of FFMPEG_COMMIT" >&2; exit 1 ;; esac
+COPY --from=ffmpeg-vmaf /opt/ffbuild/ /opt/ffbuild/
+RUN --network=none cd ffmpeg \
   && printf '%s\n' "$FFMPEG_VER" > VERSION \
   && ./configure --prefix=/opt/ffmpeg --pkg-config-flags=--static \
     --extra-ldflags="-static-libgcc" --extra-ldexeflags=-pie \
@@ -4963,6 +4967,24 @@ The `ffmpeg` export and its SDR libvmaf pin remain as recorded above. HDR uses
 separate `ffmpeg-hdr` and `ffprobe-hdr` programs, with the same FFmpeg decoder
 source revision and codec libraries, a separately pinned libvmaf, and zimg.
 
+Installed GUI and Offline media prepare this native export with
+`scripts/native-hdr-tools.mjs` and pass its directory as the `ffmpeg-hdr` build
+context. The helper keys its cache on the platform, architecture, Dockerfile,
+Docker ignore file, both patch files and their manifest, the model manifest,
+both proof scripts and the helper itself. Workflow tests require the identical
+file list in the GitHub cache key. No application image or fixture is cached.
+Every hit checks the complete file census and checksums, compares current model
+pins and binary versions, and reruns the current HDR proof in a new temporary
+directory. The build's stored receipt is provenance, not this run's validation.
+Damaged entries fail rather than silently rebuilding; successful new entries
+are published by an atomic rename. The weekly whole-image source build still
+uses neither native contexts nor caches.
+
+The common `ffmpeg-source` stage contains pristine sources and common libraries.
+SDR and HDR now configure and compile independently from it; HDR no longer
+compiles SDR FFmpeg merely to run `make distclean` before its own compilation.
+Historical timings elsewhere in this record precede that 2026-11-17 change.
+
 The additional source pins are:
 
 | Source | Commit | Archive SHA256 |
@@ -5003,7 +5025,7 @@ RUN --network=none mkdir hdr-vmaf && tar xzf hdr-vmaf.tar.gz -C hdr-vmaf --strip
   && sed -i 's/Libs.private:/Libs.private: -l:libstdc++.a/; t; $ a Libs.private: -l:libstdc++.a' /opt/ffbuild/lib/pkgconfig/libvmaf.pc \
   && install -D -m 0644 LICENSE /opt/ffbuild/share/licenses/libvmaf/LICENSE
 
-FROM ffmpeg-build AS ffmpeg-hdr-build
+FROM ffmpeg-source AS ffmpeg-hdr-build
 COPY --from=ffmpeg-hdr-vmaf /opt/ffbuild/ /opt/ffbuild/
 # These two official FFmpeg changes pass complete AVFrame colorimetry to the
 # HDR library. They are applied only to this copy of the pinned release source.
@@ -5012,7 +5034,7 @@ COPY docker/ffmpeg-hdr-colorimetry.patch /tmp/ffmpeg-hdr-colorimetry.patch
 COPY docker/hdr-ffmpeg-patches.sha256 /tmp/hdr-ffmpeg-patches.sha256
 RUN apt-get update && apt-get install -y --no-install-recommends patch && rm -rf /var/lib/apt/lists/*
 RUN --network=none cd /tmp && sha256sum -c --strict hdr-ffmpeg-patches.sha256 \
-  && cd /src/ffmpeg && make distclean \
+  && cd /src/ffmpeg \
   && patch --batch --forward -p1 --fuzz=0 < /tmp/ffmpeg-hdr-wrap.patch \
   && patch --batch --forward -p1 --fuzz=0 < /tmp/ffmpeg-hdr-colorimetry.patch \
   && printf '%s-hdr1\n' "$FFMPEG_VER" > VERSION \

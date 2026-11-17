@@ -37,6 +37,7 @@ import {
 	startRedis,
 	WORKER_SCRIPTS,
 } from "./gated-tests.mjs";
+import { HDR_CACHE_INPUTS } from "./native-hdr-tools.mjs";
 import { GROUPS } from "./postgres-integration.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -2222,7 +2223,7 @@ function isolatedHdrStages(dockerfile) {
 	const block = dockerfile.slice(first, last);
 	assert.deepEqual(block.match(/^FROM .*$/gm), [
 		"FROM ffmpeg-toolchain AS ffmpeg-hdr-vmaf",
-		"FROM ffmpeg-build AS ffmpeg-hdr-build",
+		"FROM ffmpeg-source AS ffmpeg-hdr-build",
 		"FROM scratch AS ffmpeg-hdr",
 	]);
 	return block;
@@ -2738,9 +2739,9 @@ test("the FFmpeg build record holds the stages, the sources and the commands of 
 			commands.push(plain(line));
 		}
 	}
-	// The loops below compare something: 8 stages, 18 sources, and more lines
+	// The loops below compare something: 9 stages, 18 sources, and more lines
 	// than a file that names only them would have.
-	assert.equal(stages.length, 8);
+	assert.equal(stages.length, 9);
 	assert.equal(sources.length, 18);
 	assert(commands.length > 100, `${commands.length} lines`);
 
@@ -4560,7 +4561,7 @@ test("CI audits every package's skipped tests and runs the native media and Redi
 	);
 	assert.equal(
 		pkg.scripts["test:gated-runner"],
-		"node --test scripts/gated-tests.test.mjs",
+		"node --test scripts/gated-tests.test.mjs scripts/native-hdr-tools.test.mjs",
 	);
 });
 
@@ -4998,6 +4999,26 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 		"      - name: Get the worker image's FFmpeg and the VMAF models that it pins\n";
 	const INSTALL =
 		'sh scripts/native-media-tools.sh --cache "$RUNNER_TEMP/ffmpeg-build" "$RUNNER_TEMP/native-media"';
+	assert.deepEqual(HDR_CACHE_INPUTS, [
+		"Dockerfile",
+		".dockerignore",
+		"docker/ffmpeg-hdr-wrap.patch",
+		"docker/ffmpeg-hdr-colorimetry.patch",
+		"docker/hdr-ffmpeg-patches.sha256",
+		"docker/hdr-vmaf-models.sha256",
+		"docker/hdr-build-proof.sh",
+		"docker/hdr-build-proof.py",
+		"scripts/native-hdr-tools.mjs",
+	]);
+	const HDR_REUSE =
+		"      - name: Reuse the HDR build for these exact native sources\n" +
+		"        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0\n" +
+		"        with:\n" +
+		`          path: ${expression("runner.temp")}/ffmpeg-hdr-build\n` +
+		`          key: ffmpeg-hdr-v1-${expression("runner.os")}-${expression("runner.arch")}-${expression(`hashFiles(${HDR_CACHE_INPUTS.map((file) => `'${file}'`).join(", ")})`)}\n` +
+		"      - name: Verify HDR binaries and rerun the current HDR proof\n";
+	const HDR_INSTALL =
+		'node scripts/native-hdr-tools.mjs --cache "$RUNNER_TEMP/ffmpeg-hdr-build" "$RUNNER_TEMP/native-hdr"';
 	const archive = `        working-directory: ${expression("env.BITOVP_ARCHIVE_DIR")}\n`;
 	// The last step of the media job, which removes what the job made.
 	const CLEANUP =
@@ -5018,15 +5039,17 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 		"offline-media.yml": [
 			"media-smoke",
 			`${REUSE}        run: ${INSTALL}\n` +
+				`${HDR_REUSE}        run: ${HDR_INSTALL}\n` +
 				"      - name: Validate the ten-second asset with the worker image\n" +
-				'        run: pnpm test:media --ffmpeg "$RUNNER_TEMP/native-media" --state-file "$RUNNER_TEMP/bitovp-media-state.json"\n' +
+				'        run: pnpm test:media --ffmpeg "$RUNNER_TEMP/native-media" --ffmpeg-hdr "$RUNNER_TEMP/native-hdr" --state-file "$RUNNER_TEMP/bitovp-media-state.json"\n' +
 				CLEANUP,
 		],
 		// The installer of the archive that is tested, not of the checkout.
 		"installed-gui.yml": [
 			"installed-gui",
 			`${REUSE}${archive}        run: ${INSTALL}\n` +
-				'      - run: node scripts/installed-gui-smoke.mjs --ffmpeg "$RUNNER_TEMP/native-media" --state-file "$RUNNER_TEMP/bitovp-gui-state.json"\n' +
+				`${HDR_REUSE}${archive}        run: ${HDR_INSTALL}\n` +
+				'      - run: node scripts/installed-gui-smoke.mjs --ffmpeg "$RUNNER_TEMP/native-media" --ffmpeg-hdr "$RUNNER_TEMP/native-hdr" --state-file "$RUNNER_TEMP/bitovp-gui-state.json"\n' +
 				archive +
 				"      - name: Remove only this job's owned test resources\n" +
 				"        if: always() && env.BITOVP_ARCHIVE_DIR != ''\n" +
@@ -5073,16 +5096,18 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 			name,
 		);
 		assert.doesNotMatch(text, /^defaults:/m, name);
-		// Once in the workflow: no second cache, and no run of the installer
+		// One SDR cache, plus exactly one HDR cache in the two image jobs. No run of the installer
 		// that passes the cache by. No key that only starts like this one is
 		// taken in its place: it names a build of other sources.
 		for (const [part, times] of [
-			["actions/cache", 1],
-			["hashFiles", 1],
+			["actions/cache", name === "ci.yml" ? 1 : 2],
+			["hashFiles", name === "ci.yml" ? 1 : 2],
 			["ffmpeg-build\n", 1],
 			["sh scripts/native-media-tools.sh", 1],
 			["restore-keys", 0],
 			["--ffmpeg ", name === "ci.yml" ? 0 : 1],
+			["--ffmpeg-hdr ", name === "ci.yml" ? 0 : 1],
+			["node scripts/native-hdr-tools.mjs --cache", name === "ci.yml" ? 0 : 1],
 		])
 			assert.equal(text.split(part).length - 1, times, `${name}: ${part}`);
 		// A kept build is checked against its own list, which finds damage

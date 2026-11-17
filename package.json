@@ -25,7 +25,7 @@
 		"test:media": "node scripts/media-smoke.mjs",
 		"test:editing-media": "sh scripts/editing-media.sh",
 		"test:media-runner": "node --test scripts/media-smoke.test.mjs scripts/gate-report.test.mjs",
-		"test:gated-runner": "node --test scripts/gated-tests.test.mjs",
+		"test:gated-runner": "node --test scripts/gated-tests.test.mjs scripts/native-hdr-tools.test.mjs",
 		"test:native-media": "node scripts/gated-tests.mjs --native-media",
 		"test:redis": "node scripts/gated-tests.mjs --redis",
 		"test:skip-audit": "node scripts/gated-tests.mjs --audit",

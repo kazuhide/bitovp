@@ -397,8 +397,56 @@ test("only the builds of the Worker's Dockerfile take a directory of built FFmpe
 		new URL("./installed-gui-smoke.mjs", import.meta.url),
 		"utf8",
 	);
-	assert(source.includes("composeOverride({ ...state, imageId, ffmpeg })"));
+	assert(
+		source.includes(
+			"composeOverride({ ...state, imageId, ffmpeg, ffmpegHdr })",
+		),
+	);
 	assert.equal(source.match(/^\t+ffmpeg: prebuilt,$/gm)?.length, 2);
+});
+test("HDR native output replaces only the worker HDR stage alongside or without SDR", () => {
+	const id = "a".repeat(32);
+	for (const ffmpeg of [undefined, "/private/sdr"]) {
+		const text = composeOverride({
+			id,
+			directory: "/private/smoke",
+			ffmpeg,
+			ffmpegHdr: "/private/hdr",
+		});
+		assert.equal(text.match(/ffmpeg-hdr: "\/private\/hdr"/g)?.length, 2);
+		assert(
+			!text
+				.slice(text.indexOf("  web:"), text.indexOf("  gateway:"))
+				.includes("additional_contexts"),
+		);
+	}
+	for (const ffmpegHdr of ["relative", "/private/a$b", "/private/a\nb"])
+		assert.throws(() =>
+			composeOverride({ id, directory: "/private/smoke", ffmpegHdr }),
+		);
+	const directory = realpathSync(mkdtempSync(join(tmpdir(), "gui-hdr-test-")));
+	try {
+		mkdirSync(join(directory, "bin"));
+		for (const name of ["ffmpeg-hdr", "ffprobe-hdr"])
+			writeFileSync(join(directory, "bin", name), "", { mode: 0o755 });
+		assert.equal(verifyFfmpeg(directory, true), directory);
+		rmSync(join(directory, "bin/ffprobe-hdr"));
+		assert.throws(() => verifyFfmpeg(directory, true), /ffprobe-hdr/);
+		const result = spawnSync(
+			process.execPath,
+			[
+				join(import.meta.dirname, "installed-gui-smoke.mjs"),
+				"--cleanup",
+				"--ffmpeg-hdr",
+				directory,
+			],
+			{ encoding: "utf8" },
+		);
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /Cleanup builds no image/);
+	} finally {
+		rmSync(directory, { recursive: true });
+	}
 });
 test("a directory of built FFmpeg is taken only whole and from outside the checkout, and the command says why it refuses one", () => {
 	const directory = realpathSync(

@@ -69,7 +69,15 @@ jobs:
       - name: Get the worker image's FFmpeg and the VMAF models that it pins
         working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
         run: sh scripts/native-media-tools.sh --cache "$RUNNER_TEMP/ffmpeg-build" "$RUNNER_TEMP/native-media"
-      - run: node scripts/installed-gui-smoke.mjs --ffmpeg "$RUNNER_TEMP/native-media" --state-file "$RUNNER_TEMP/bitovp-gui-state.json"
+      - name: Reuse the HDR build for these exact native sources
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ffmpeg-hdr-build
+          key: ffmpeg-hdr-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Dockerfile', '.dockerignore', 'docker/ffmpeg-hdr-wrap.patch', 'docker/ffmpeg-hdr-colorimetry.patch', 'docker/hdr-ffmpeg-patches.sha256', 'docker/hdr-vmaf-models.sha256', 'docker/hdr-build-proof.sh', 'docker/hdr-build-proof.py', 'scripts/native-hdr-tools.mjs') }}
+      - name: Verify HDR binaries and rerun the current HDR proof
+        working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
+        run: node scripts/native-hdr-tools.mjs --cache "$RUNNER_TEMP/ffmpeg-hdr-build" "$RUNNER_TEMP/native-hdr"
+      - run: node scripts/installed-gui-smoke.mjs --ffmpeg "$RUNNER_TEMP/native-media" --ffmpeg-hdr "$RUNNER_TEMP/native-hdr" --state-file "$RUNNER_TEMP/bitovp-gui-state.json"
         working-directory: ${{ env.BITOVP_ARCHIVE_DIR }}
       - name: Save synthetic HDR UI screenshots
         if: always() && env.BITOVP_ARCHIVE_DIR != ''

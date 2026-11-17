@@ -23,7 +23,8 @@ export const FEATURES = Object.freeze(
 			id: "qc-runtime-safety",
 			workspace: "@bitovp/worker",
 			directory: "apps/worker",
-			description: "Admission cancellation, absolute deadlines and process lifetime",
+			description:
+				"Admission cancellation, absolute deadlines and process lifetime",
 			files: {
 				"src/vmaf/resource-admission.test.ts": 10,
 				"src/vmaf/supervised-runner.test.ts": 4,

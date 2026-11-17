@@ -19,6 +19,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Changed
 
+- Run the complete Web test suite across four audited shards and reuse verified HDR native build outputs in the installed-application and offline-media checks. Cached native outputs still run the current HDR proof before use, and required coverage and source-build checks remain enforced.
 - Update the Bitmovin API SDK to 1.288.0 and refresh the Encoding API census, including the new MoQ output operations. Existing runtime capabilities retain their current support boundaries.
 
 ### Fixed

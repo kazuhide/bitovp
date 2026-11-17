@@ -69,3 +69,27 @@ Report the initial cold seed separately: Dockerfile changes also invalidate the
 SDR cache, and compilation time must not be hidden as a warm-cache result. Retain
 before/after timings and complete coverage evidence in the PR validation record.
 Do not claim these targets have been met from source inspection or unit fixtures.
+
+## Verified official media input
+
+Offline attempt 2 of
+[44101341010](https://github.com/kazuhide/bitovp/actions/runs/44101341010/attempts/2)
+failed before its image build when the official Blender download returned HTTP
+403. Its 41-second failed job is retained as a failed sample and provides no
+media coverage or successful warm-run evidence.
+
+Offline CI now caches only the complete original MP4, named and keyed by its
+existing SHA-256
+`f78f39603e6774907f2faafabf26a667f4a6fc31769ec304a8a8f7c62d280508`,
+under `RUNNER_TEMP/bitovp-media-source`. Every hit checks a regular file, the
+90-MiB size limit and the pinned byte digest before use. Corrupt entries fail
+without replacement. The media runner still performs its existing verification
+before and after all unchanged fixtures and proofs.
+
+A cache miss still needs one successful download from the original official
+URL. It extracts privately, verifies before atomic publication, verifies any
+concurrent winner, and removes only its own partial files. Preparation runs
+before native and image builds. There is no alternate origin, redirect, retry
+or bypass for HTTP 403. A verified cache hit avoids that origin dependency;
+the first successful seed remains an external dependency and must be reported
+separately from warm reuse.

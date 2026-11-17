@@ -35,6 +35,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:media-runner
       - run: pnpm --filter @bitovp/worker exec vitest run src/testing/media-smoke.test.ts
+      - name: Reuse the exact verified official media input
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/bitovp-media-source/f78f39603e6774907f2faafabf26a667f4a6fc31769ec304a8a8f7c62d280508.mp4
+          key: media-source-v1-f78f39603e6774907f2faafabf26a667f4a6fc31769ec304a8a8f7c62d280508
+      - name: Verify or prepare the pinned official media input
+        run: node scripts/media-source.mjs --cache "$RUNNER_TEMP/bitovp-media-source"
       - name: Reuse an earlier build of the same FFmpeg sources
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -50,7 +57,7 @@ jobs:
       - name: Verify HDR binaries and rerun the current HDR proof
         run: node scripts/native-hdr-tools.mjs --cache "$RUNNER_TEMP/ffmpeg-hdr-build" "$RUNNER_TEMP/native-hdr"
       - name: Validate the ten-second asset with the worker image
-        run: pnpm test:media --ffmpeg "$RUNNER_TEMP/native-media" --ffmpeg-hdr "$RUNNER_TEMP/native-hdr" --state-file "$RUNNER_TEMP/bitovp-media-state.json"
+        run: pnpm test:media --ffmpeg "$RUNNER_TEMP/native-media" --ffmpeg-hdr "$RUNNER_TEMP/native-hdr" --source "$RUNNER_TEMP/bitovp-media-source/f78f39603e6774907f2faafabf26a667f4a6fc31769ec304a8a8f7c62d280508.mp4" --state-file "$RUNNER_TEMP/bitovp-media-state.json"
       - name: Remove only this job's owned media resources
         if: always()
         run: node scripts/media-smoke.mjs --cleanup --state-file "$RUNNER_TEMP/bitovp-media-state.json"

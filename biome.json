@@ -45,6 +45,7 @@
 			"scripts/nonpaid-submit-proof*.mjs",
 			"scripts/database-restore-proof*.mjs",
 			"scripts/media-smoke*.mjs",
+			"scripts/media-source*.mjs",
 			"scripts/gate-report*.mjs",
 			"scripts/gated-tests*.mjs",
 			"scripts/feature-verification*.mjs",

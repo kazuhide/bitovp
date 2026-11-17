@@ -37,6 +37,7 @@ import {
 	startRedis,
 	WORKER_SCRIPTS,
 } from "./gated-tests.mjs";
+import { SOURCE_SHA } from "./media-smoke.mjs";
 import { HDR_CACHE_INPUTS } from "./native-hdr-tools.mjs";
 import { GROUPS } from "./postgres-integration.mjs";
 
@@ -4949,6 +4950,56 @@ test("the HDR screenshot contract preserves the forbidden policy for extra uploa
 		);
 });
 
+const MEDIA_SOURCE_CACHE =
+	"      - name: Reuse the exact verified official media input\n" +
+	"        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0\n" +
+	"        with:\n" +
+	`          path: \${{ runner.temp }}/bitovp-media-source/${SOURCE_SHA}.mp4\n` +
+	`          key: media-source-v1-${SOURCE_SHA}\n` +
+	"      - name: Verify or prepare the pinned official media input\n" +
+	'        run: node scripts/media-source.mjs --cache "$RUNNER_TEMP/bitovp-media-source"\n';
+const MEDIA_SOURCE_ARGUMENT = `--source "$RUNNER_TEMP/bitovp-media-source/${SOURCE_SHA}.mp4"`;
+function assertMediaSourceContract(text) {
+	assert.equal(text.split(MEDIA_SOURCE_CACHE).length - 1, 1);
+	assert.equal(text.split(MEDIA_SOURCE_ARGUMENT).length - 1, 1);
+	assert.equal(text.split("node scripts/media-source.mjs").length - 1, 1);
+	assert(
+		text.indexOf(MEDIA_SOURCE_CACHE) <
+			text.indexOf(
+				"      - name: Reuse an earlier build of the same FFmpeg sources",
+			),
+	);
+}
+test("Offline media always verifies the exact content-addressed source before native builds", () => {
+	const workflow = readFileSync(
+		join(root, ".github/workflows/offline-media.yml"),
+		"utf8",
+	);
+	assertMediaSourceContract(workflow);
+	const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+	assert.equal(
+		pkg.scripts["test:media-runner"],
+		"node --test scripts/media-smoke.test.mjs scripts/media-source.test.mjs scripts/gate-report.test.mjs",
+	);
+	for (const [before, after] of [
+		["media-source-v1-", "media-source-unpinned-"],
+		[SOURCE_SHA, "0".repeat(64)],
+		["55cc8345863c7cc4c66a329aec7e433d2d1c52a9", "0".repeat(40)],
+		[`/${SOURCE_SHA}.mp4\n`, "/*\n"],
+		[
+			'        run: node scripts/media-source.mjs --cache "$RUNNER_TEMP/bitovp-media-source"\n',
+			"        if: steps.source.outputs.cache-hit != 'true'\n        run: node scripts/media-source.mjs --cache \"$RUNNER_TEMP/bitovp-media-source\"\n",
+		],
+		[MEDIA_SOURCE_ARGUMENT, ""],
+		[MEDIA_SOURCE_CACHE, ""],
+	])
+		assert.throws(
+			() => assertMediaSourceContract(workflow.replace(before, after)),
+			assert.AssertionError,
+			before,
+		);
+});
+
 test("the three jobs that need the image's FFmpeg reuse a build only under the key of the installer's own inputs and hold nothing that a wrong build could reach, and two weekly jobs build from the sources", () => {
 	const directory = resolve(root, ".github/workflows");
 	const workflow = (name) => readFileSync(join(directory, name), "utf8");
@@ -5038,10 +5089,10 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 		],
 		"offline-media.yml": [
 			"media-smoke",
-			`${REUSE}        run: ${INSTALL}\n` +
+			`${MEDIA_SOURCE_CACHE}${REUSE}        run: ${INSTALL}\n` +
 				`${HDR_REUSE}        run: ${HDR_INSTALL}\n` +
 				"      - name: Validate the ten-second asset with the worker image\n" +
-				'        run: pnpm test:media --ffmpeg "$RUNNER_TEMP/native-media" --ffmpeg-hdr "$RUNNER_TEMP/native-hdr" --state-file "$RUNNER_TEMP/bitovp-media-state.json"\n' +
+				`        run: pnpm test:media --ffmpeg "$RUNNER_TEMP/native-media" --ffmpeg-hdr "$RUNNER_TEMP/native-hdr" ${MEDIA_SOURCE_ARGUMENT} --state-file "$RUNNER_TEMP/bitovp-media-state.json"\n` +
 				CLEANUP,
 		],
 		// The installer of the archive that is tested, not of the checkout.
@@ -5096,11 +5147,15 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 			name,
 		);
 		assert.doesNotMatch(text, /^defaults:/m, name);
-		// One SDR cache, plus exactly one HDR cache in the two image jobs. No run of the installer
+		// One SDR cache, one HDR cache in the two image jobs, and one pinned media
+		// input cache in Offline. No run of the installer
 		// that passes the cache by. No key that only starts like this one is
 		// taken in its place: it names a build of other sources.
 		for (const [part, times] of [
-			["actions/cache", name === "ci.yml" ? 1 : 2],
+			[
+				"actions/cache",
+				name === "ci.yml" ? 1 : name === "offline-media.yml" ? 3 : 2,
+			],
 			["hashFiles", name === "ci.yml" ? 1 : 2],
 			["ffmpeg-build\n", 1],
 			["sh scripts/native-media-tools.sh", 1],
@@ -5108,6 +5163,11 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 			["--ffmpeg ", name === "ci.yml" ? 0 : 1],
 			["--ffmpeg-hdr ", name === "ci.yml" ? 0 : 1],
 			["node scripts/native-hdr-tools.mjs --cache", name === "ci.yml" ? 0 : 1],
+			[
+				"node scripts/media-source.mjs --cache",
+				name === "offline-media.yml" ? 1 : 0,
+			],
+			["--source ", name === "offline-media.yml" ? 1 : 0],
 		])
 			assert.equal(text.split(part).length - 1, times, `${name}: ${part}`);
 		// A kept build is checked against its own list, which finds damage

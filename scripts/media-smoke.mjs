@@ -28,11 +28,11 @@ import {
 const ROOT = resolve(import.meta.dirname, "..");
 const SOCKET = "unix:///var/run/docker.sock";
 const LABEL = "io.bitovp.media-smoke";
-const SOURCE_SHA =
+export const SOURCE_SHA =
 	"f78f39603e6774907f2faafabf26a667f4a6fc31769ec304a8a8f7c62d280508";
 const SOURCE_URL =
 	"https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_320x180.mp4.zip";
-const MAX_BYTES = 90 * 1024 * 1024;
+export const MAX_BYTES = 90 * 1024 * 1024;
 // Required tests per fixture, subtests included, in execution order. A fixture
 // that is missing, repeated, skipped in part or short of its count fails the
 // media check; a deliberate change to a fixture's tests updates its count here.

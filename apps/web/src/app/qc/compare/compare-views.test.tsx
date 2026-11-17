@@ -252,9 +252,17 @@ describe("CompareClient", () => {
 		searchParams = new URLSearchParams({ jobs: `${first.id},${hdr.id}` });
 		serve([first, hdr]);
 		wrap(<CompareClient />);
-		expect(
-			await screen.findByText(/measurement conditions differ/),
-		).toBeVisible();
+		const user = userEvent.setup();
+		const explanation = await screen.findByRole("button", {
+			name: "Compare reports — more information",
+		});
+		expect(explanation).toHaveAccessibleDescription(
+			/measurement conditions differ/,
+		);
+		expect(screen.getByText(/measurement conditions differ/)).not.toBeVisible();
+		await user.click(explanation);
+		expect(screen.getByText(/measurement conditions differ/)).toBeVisible();
+		await user.keyboard("{Escape}");
 		const firstGroup = screen.getByRole("region", {
 			name: new RegExp(`clip-low.*${hlg ? "HDR PQ" : "SDR"}`),
 		});
@@ -279,7 +287,6 @@ describe("CompareClient", () => {
 				expect(new Set(strokes)).toEqual(new Set([color]));
 			});
 		}
-		const user = userEvent.setup();
 		await user.click(within(firstGroup).getByRole("button", { name: "None" }));
 		expect(within(firstGroup).getByRole("checkbox")).not.toBeChecked();
 		expect(within(hdrGroup).getByRole("checkbox")).toBeChecked();

@@ -897,6 +897,10 @@ export const ja = {
 	},
 	shell: {
 		skipToContent: "本文へ移動",
+		resizeNavigation: "メニューの表示幅を変更",
+		resizeNavigationHint:
+			"左にドラッグするとメニューを隠せます。キーボードでは左右キーまたは Enter で切り替えます。",
+		showNavigation: "メニューを表示",
 	},
 	autoShutdownUpdate: {
 		title: "エンコーダの自動停止",

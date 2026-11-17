@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FeatureFlagsProvider } from "@/lib/feature-flags/context";
@@ -123,6 +123,28 @@ describe("AppShell responsive shells", () => {
 		expect(classes).toContain("px-4");
 		expect(classes).toContain("md:px-8");
 		expect(classes).not.toContain("px-8");
+	});
+
+	it("keeps the page video mounted while hiding and restoring desktop navigation", async () => {
+		renderWithQuery(
+			<FeatureFlagsProvider flags={{ qcVmaf: true }}>
+				<AppShell>
+					<video data-testid="demo-video" muted />
+				</AppShell>
+			</FeatureFlagsProvider>,
+		);
+		const video = await screen.findByTestId("demo-video");
+		(video as HTMLVideoElement).currentTime = 12;
+		const handle = screen.getByRole("separator", { name: "Resize navigation" });
+		fireEvent.keyDown(handle, { key: "ArrowLeft" });
+		expect(desktopColumn()).toHaveStyle({ width: "0px" });
+		expect(screen.getByTestId("demo-video")).toBe(video);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Show navigation" }),
+		);
+		expect(screen.getByTestId("demo-video")).toBe(video);
+		expect((video as HTMLVideoElement).currentTime).toBe(12);
+		expect(desktopColumn()).toHaveStyle({ width: "240px" });
 	});
 
 	it.each([

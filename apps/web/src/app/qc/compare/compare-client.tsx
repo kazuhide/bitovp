@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { InfoHint } from "@/components/ui/info-hint";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
 import { OutputComparison } from "../../vod/compare/output-compare-client";
@@ -347,12 +348,10 @@ export function CompareClient({ player }: { player?: PlayerClientConfig }) {
 			<CompareHeader
 				jobCount={loadedReports.length}
 				seriesCount={comparisonSeriesCount}
+				separatedMeasurements={mixedHdrContexts}
 			/>
 			{outputJobIds.length >= 2 ? (
-				<section className="mt-5" aria-label={t("outputCompare.title")}>
-					<h2 className="font-medium text-sm text-zinc-200">
-						{t("outputCompare.title")}
-					</h2>
+				<section aria-label={t("outputCompare.title")}>
 					<OutputComparison
 						key={outputJobIds.join(",")}
 						jobIds={outputJobIds}
@@ -364,11 +363,6 @@ export function CompareClient({ player }: { player?: PlayerClientConfig }) {
 			{bandingJobs.length === 0 ? (
 				<>
 					{!mixedHdrContexts ? <VmafScoreLegend className="mt-3" /> : null}
-					{mixedHdrContexts ? (
-						<p role="alert" className="mt-3 text-amber-400 text-xs">
-							{t("qc.separateHdrContexts")}
-						</p>
-					) : null}
 					{!mixedHdrContexts && mixesReferenceCanvases(loadedJobs) ? (
 						<p role="alert" className="mt-3 text-amber-400 text-xs">
 							{t("qc.mixedReferenceCanvases")}
@@ -514,9 +508,11 @@ export function CompareClient({ player }: { player?: PlayerClientConfig }) {
 function CompareHeader({
 	jobCount,
 	seriesCount,
+	separatedMeasurements = false,
 }: {
 	jobCount: number;
 	seriesCount: number;
+	separatedMeasurements?: boolean;
 }) {
 	const { t } = useT();
 	return (
@@ -539,6 +535,12 @@ function CompareHeader({
 					</>
 				) : null}
 			</span>
+			{separatedMeasurements ? (
+				<InfoHint
+					text={t("qc.separateHdrContexts")}
+					labelFor={t("qc.compareReports")}
+				/>
+			) : null}
 		</header>
 	);
 }

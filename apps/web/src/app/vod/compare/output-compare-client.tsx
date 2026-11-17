@@ -5,6 +5,7 @@ import { useQueries } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { InfoHint } from "@/components/ui/info-hint";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
 import {
@@ -85,10 +86,16 @@ export function OutputComparison({
 						{job?.name ?? ids[index]}
 					</Link>
 				</h2>
-				<p className="text-xs text-zinc-400">
+				<p className="flex items-center gap-1.5 text-xs text-zinc-400">
 					{t("outputCompare.format", {
 						format: format || t("outputCompare.formatUnknown"),
 					})}
+					{/HDR|HLG|Dolby Vision/.test(format) ? (
+						<InfoHint
+							text={t("outputCompare.displayNotice")}
+							labelFor={t("outputCompare.format", { format })}
+						/>
+					) : null}
 				</p>
 				<label className="flex min-w-0 items-center gap-2 text-xs text-zinc-400">
 					{t("outputCompare.output")}
@@ -197,11 +204,6 @@ export function OutputComparison({
 					))}
 				</div>
 			)}
-			{rows.some((row) => /HDR|HLG|Dolby Vision/.test(row.format)) ? (
-				<p className="mt-3 text-xs text-amber-400">
-					{t("outputCompare.displayNotice")}
-				</p>
-			) : null}
 		</div>
 	);
 }

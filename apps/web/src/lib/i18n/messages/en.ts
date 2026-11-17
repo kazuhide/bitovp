@@ -922,6 +922,10 @@ export const en = {
 	},
 	shell: {
 		skipToContent: "Skip to content",
+		resizeNavigation: "Resize navigation",
+		resizeNavigationHint:
+			"Drag left to hide the menu. Use Left/Right arrows or Enter with the keyboard.",
+		showNavigation: "Show navigation",
 	},
 	autoShutdownUpdate: {
 		title: "Encoder automatic stop",

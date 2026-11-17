@@ -146,6 +146,18 @@ describe("manual HDR existing HLS QC", () => {
 			.mockReset()
 			.mockResolvedValue({ id: "00000000-0000-4000-8000-000000000005" });
 	});
+	it("persists an explicit absolute local deadline without replacing it with a duration", async () => {
+		const execution = {
+			backend: "LOCAL",
+			localMode: "CPU",
+			deadlineAt: "2099-01-01T10:00:00+09:00",
+		};
+		expect((await postHdr({ execution })).status).toBe(201);
+		expect(vmafCreate.mock.calls[0]?.[0].data.params.execution).toEqual(
+			execution,
+		);
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
 	it("persists explicit HDR source and color intent as a new manual report without changing the plan", async () => {
 		const saved = hdrHlsPlan(),
 			before = JSON.stringify(saved);

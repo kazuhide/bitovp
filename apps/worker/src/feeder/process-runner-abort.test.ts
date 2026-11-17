@@ -265,3 +265,18 @@ describe("one-shot abort grace ownership", () => {
 		}
 	});
 });
+
+it("does not spawn when cancellation was already observed at the launch boundary", async () => {
+	const t = fixture();
+	t.controller.abort();
+	const pending = t.run(250);
+	try {
+		expect(spawn).not.toHaveBeenCalled();
+	} finally {
+		t.child.emit("close", null, "SIGTERM");
+	}
+	expect(await pending).toMatchObject({
+		code: null,
+		stderr: expect.stringMatching(/abort/i),
+	});
+});

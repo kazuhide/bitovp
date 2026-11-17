@@ -161,6 +161,15 @@ export const vmafExecutionSchema = z.discriminatedUnion("backend", [
 			backend: z.literal("LOCAL"),
 			// Omission preserves historical worker-configured local execution.
 			localMode: z.enum(["CPU", "AUTO"]).optional(),
+			// Absolute: queue time and retries never extend this optional budget.
+			deadlineAt: z
+				.string()
+				.datetime({ offset: true })
+				.refine(
+					(value) => Number.isFinite(Date.parse(value)),
+					"Invalid deadline",
+				)
+				.optional(),
 		})
 		.strict(),
 	z

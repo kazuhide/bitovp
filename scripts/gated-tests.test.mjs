@@ -4469,7 +4469,8 @@ test("CI audits every package's skipped tests and runs the native media and Redi
 		return end === -1 ? ci.slice(start) : ci.slice(start, start + 1 + end);
 	};
 	const tests = job("tests");
-	assert.match(tests, /package: \[core, db, storage, worker, web\]/);
+	assert.match(tests, /package: \[core, db, storage, worker\]/);
+	assertWebShardJobs(ci);
 	const report = '"\\$RUNNER_TEMP/vitest-report.json"';
 	assert.match(
 		tests,
@@ -4479,19 +4480,21 @@ test("CI audits every package's skipped tests and runs the native media and Redi
 				`        run: pnpm test:skip-audit "@bitovp/\\$\\{\\{ matrix\\.package \\}\\}" ${report}\\n$`,
 		),
 	);
-	// Nothing may switch the job or a step off, or let a failure pass: the only
-	// condition is the one that prepares the web package.
+	// Nothing may switch the remaining package jobs or any of their steps off.
 	assert.match(
 		ci,
 		/\non:\n {2}pull_request:\n {2}push:\n {4}branches: \[main\]\n/,
 	);
 	assert.doesNotMatch(tests, /continue-on-error|needs:|exclude:|include:/);
-	assert.deepEqual(tests.match(/^\s*(?:- )?if:.*$/gm), [
-		"        if: matrix.package == 'web'",
-	]);
+	assert.deepEqual(tests.match(/^\s*(?:- )?if:.*$/gm), null);
 	// This suite also runs in a job that does not depend on the jobs it guards.
 	const quality = job("quality");
 	assert(quality.includes("\n      - run: pnpm test:gated-runner\n"));
+	assert(
+		quality.includes(
+			"\n      - run: node --test scripts/web-test-shards.test.mjs\n",
+		),
+	);
 	assert.doesNotMatch(quality, /continue-on-error|^\s*(?:- )?(?:if|needs):/m);
 	// A job that installs pinned tools and then runs gated tests: its commands in
 	// this order, each a whole line, and the test command last.
@@ -4559,6 +4562,197 @@ test("CI audits every package's skipped tests and runs the native media and Redi
 		pkg.scripts["test:gated-runner"],
 		"node --test scripts/gated-tests.test.mjs",
 	);
+});
+
+// These jobs are one mandatory four-part suite, followed by the old required name.
+const WEB_SHARD_JOBS = [
+	"  web-test-shards:",
+	`    name: tests (web shard \${{ matrix.shard }}/4)`,
+	"    runs-on: ubuntu-latest",
+	"    timeout-minutes: 30",
+	"    strategy:",
+	"      fail-fast: false",
+	"      max-parallel: 4",
+	"      matrix:",
+	"        shard: [1, 2, 3, 4]",
+	"    steps:",
+	"      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
+	"        with:",
+	"          persist-credentials: false",
+	"      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0",
+	"        with:",
+	'          node-version: "24"',
+	"          check-latest: true",
+	"      - name: Install the pinned package manager",
+	"        run: |",
+	'          COREPACK_HOME="$(mktemp -d "$RUNNER_TEMP/corepack-bitovp.XXXXXX")"',
+	"          export COREPACK_HOME",
+	'          printf \'COREPACK_HOME=%s\\n\' "$COREPACK_HOME" >> "$GITHUB_ENV"',
+	"          corepack enable",
+	"          corepack install",
+	"      - run: pnpm install --frozen-lockfile",
+	"      - run: pnpm --filter @bitovp/db build",
+	"      - run: touch .env.migrate",
+	"      - name: Run one quarter of the complete Web test inventory",
+	"        env:",
+	`          WEB_SHARD_INDEX: \${{ matrix.shard }}`,
+	'        run: node scripts/web-test-shards.mjs run "$WEB_SHARD_INDEX" "$RUNNER_TEMP/web-tests-$WEB_SHARD_INDEX"',
+	"      - name: Save only the sanitized Web test receipt",
+	"        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2",
+	"        with:",
+	`          name: web-tests-\${{ github.run_id }}-\${{ github.run_attempt }}-\${{ matrix.shard }}`,
+	`          path: \${{ runner.temp }}/web-tests-\${{ matrix.shard }}/receipt.json`,
+	"          retention-days: 1",
+	"          if-no-files-found: error",
+	"",
+	"  web-tests-complete:",
+	"    name: tests (web)",
+	"    needs: [web-test-shards]",
+	"    if: always()",
+	"    runs-on: ubuntu-latest",
+	"    timeout-minutes: 5",
+	"    env:",
+	`      WEB_SHARDS_RESULT: \${{ needs.web-test-shards.result }}`,
+	"    steps:",
+	"      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
+	"        with:",
+	"          persist-credentials: false",
+	"      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0",
+	"        with:",
+	'          node-version: "24"',
+	"          check-latest: true",
+	"      - name: Require every shard job to succeed",
+	"        run: node scripts/web-test-shards.mjs require-success",
+	"      - name: Download this run and attempt's Web receipts separately",
+	"        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2",
+	"        with:",
+	`          pattern: web-tests-\${{ github.run_id }}-\${{ github.run_attempt }}-*`,
+	`          path: \${{ runner.temp }}/web-test-receipts`,
+	"          merge-multiple: false",
+	"      - name: Require the complete Web inventory and audit all skipped tests",
+	'        run: node scripts/web-test-shards.mjs aggregate "$RUNNER_TEMP/web-test-receipts"',
+	"",
+	"",
+].join("\n");
+const WEB_REPORT_UPLOAD = [
+	"      - name: Save only the sanitized Web test receipt",
+	"        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2",
+	"        with:",
+	`          name: web-tests-\${{ github.run_id }}-\${{ github.run_attempt }}-\${{ matrix.shard }}`,
+	`          path: \${{ runner.temp }}/web-tests-\${{ matrix.shard }}/receipt.json`,
+	"          retention-days: 1",
+	"          if-no-files-found: error",
+	"",
+].join("\n");
+
+function assertWebShardJobs(ci) {
+	assert(
+		ci.includes(`\n${WEB_SHARD_JOBS}`),
+		"Web shard and aggregate jobs changed",
+	);
+	for (const marker of [
+		"\n  web-test-shards:\n",
+		"\n  web-tests-complete:\n",
+		"\n    name: tests (web)\n",
+	])
+		assert.equal(ci.split(marker).length - 1, 1, marker);
+}
+
+function withoutCiWebReceiptUpload(name, text) {
+	if (name !== "ci.yml") return text;
+	assert.equal(
+		text.split(WEB_REPORT_UPLOAD).length - 1,
+		1,
+		"CI must upload exactly the sanitized Web receipt step once",
+	);
+	return text.replace(WEB_REPORT_UPLOAD, "");
+}
+
+test("the Web shard contract rejects missing shards, skipped aggregation and success without proof", () => {
+	const ci = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8");
+	assertWebShardJobs(ci);
+	for (const [before, after] of [
+		["shard: [1, 2, 3, 4]", "shard: [1, 2, 3]"],
+		["shard: [1, 2, 3, 4]", "shard: [1, 2, 2, 4]"],
+		["max-parallel: 4", "max-parallel: 1"],
+		["name: tests (web)", "name: tests (web renamed)"],
+		["needs: [web-test-shards]", "needs: [tests]"],
+		["    if: always()", "    if: success()"],
+		[`\${{ needs.web-test-shards.result }}`, "success"],
+		["node scripts/web-test-shards.mjs require-success", "true"],
+		[
+			'node scripts/web-test-shards.mjs aggregate "$RUNNER_TEMP/web-test-receipts"',
+			"true",
+		],
+		["  web-test-shards:\n", "  web-test-shards:\n    if: false\n"],
+		[
+			"  web-test-shards:\n",
+			"  web-test-shards:\n    continue-on-error: true\n",
+		],
+		[
+			"  web-tests-complete:\n",
+			"  web-tests-complete:\n    continue-on-error: true\n",
+		],
+		["          merge-multiple: false", "          merge-multiple: true"],
+		[
+			"        shard: [1, 2, 3, 4]",
+			"        shard: [1, 2, 3, 4]\n        exclude: [{shard: 4}]",
+		],
+		["receipt.json", "vitest-report.json"],
+	])
+		assert.throws(
+			() =>
+				assertWebShardJobs(
+					ci.replace(WEB_SHARD_JOBS, WEB_SHARD_JOBS.replace(before, after)),
+				),
+			assert.AssertionError,
+			before,
+		);
+	assert.throws(() =>
+		assertWebShardJobs(
+			ci.replace(
+				WEB_SHARD_JOBS,
+				WEB_SHARD_JOBS.replace("fail-fast: false", "fail-fast: true"),
+			),
+		),
+	);
+});
+
+test("CI permits only its exact sanitized receipt upload and keeps every other forbidden byte forbidden", () => {
+	const policy = (name, text) =>
+		assert.doesNotMatch(withoutCiWebReceiptUpload(name, text), FORBIDDEN);
+	assert.doesNotThrow(() => policy("ci.yml", WEB_REPORT_UPLOAD));
+	for (const [before, after] of [
+		["cf430e030ddbb5b0abf93d22962f4752f3646cd9", "0".repeat(40)],
+		["actions/upload-artifact@", "example/upload-artifact@"],
+		["web-tests-", "private-state-"],
+		["receipt.json", "*"],
+		["receipt.json", "../vitest-report.json"],
+		["retention-days: 1", "retention-days: 90"],
+		["if-no-files-found: error", "if-no-files-found: ignore"],
+		[
+			"        with:\n",
+			"        with:\n          include-hidden-files: true\n",
+		],
+	])
+		assert.throws(
+			() => policy("ci.yml", WEB_REPORT_UPLOAD.replace(before, after)),
+			assert.AssertionError,
+			before,
+		);
+	for (const extra of [
+		WEB_REPORT_UPLOAD,
+		"      - uses: actions/upload-artifact@v7\n",
+		`\${{ secrets.VALUE }}`,
+		"docker push image",
+	])
+		assert.throws(() => policy("ci.yml", WEB_REPORT_UPLOAD + extra));
+	for (const name of [
+		"installed-gui.yml",
+		"offline-media.yml",
+		"ffmpeg-source-build.yml",
+	])
+		assert.throws(() => policy(name, WEB_REPORT_UPLOAD));
 });
 
 const HDR_SCREENSHOT_UPLOAD =
@@ -4852,7 +5046,10 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 	for (const [name, [job, steps]] of Object.entries(jobs)) {
 		// Validate the sole PNG upload in full before applying every original
 		// golden adjacency, condition and forbidden-byte assertion to the rest.
-		const text = withoutInstalledGuiHdrUpload(name, workflow(name));
+		const text = withoutCiWebReceiptUpload(
+			name,
+			withoutInstalledGuiHdrUpload(name, workflow(name)),
+		);
 		const holder = jobOf(text, job);
 		assert(holder.includes(steps), name);
 		// The three jobs are checks that a pull request must pass, and GitHub

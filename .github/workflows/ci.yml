@@ -107,6 +107,7 @@ jobs:
           pnpm verify:feature run qc-measurement-validity --output "$RUNNER_TEMP/feature-qc-measurement-validity"
           pnpm verify:feature run qc-runtime-safety --output "$RUNNER_TEMP/feature-qc-runtime-safety"
       - run: pnpm --filter @bitovp/worker smoke
+      - run: node --test scripts/web-test-shards.test.mjs
 
   tests:
     runs-on: ubuntu-latest
@@ -114,7 +115,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [core, db, storage, worker, web]
+        package: [core, db, storage, worker]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -130,12 +131,75 @@ jobs:
           corepack install
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @bitovp/db build
-      - name: Prepare empty migration environment for Compose inspection
-        if: matrix.package == 'web'
-        run: touch .env.migrate
       - run: pnpm --filter @bitovp/${{ matrix.package }} test --maxWorkers=2 --reporter=default --reporter=github-actions --reporter=json --outputFile.json="$RUNNER_TEMP/vitest-report.json"
       - name: Require every skipped test to run in another job
         run: pnpm test:skip-audit "@bitovp/${{ matrix.package }}" "$RUNNER_TEMP/vitest-report.json"
+
+  web-test-shards:
+    name: tests (web shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          check-latest: true
+      - name: Install the pinned package manager
+        run: |
+          COREPACK_HOME="$(mktemp -d "$RUNNER_TEMP/corepack-bitovp.XXXXXX")"
+          export COREPACK_HOME
+          printf 'COREPACK_HOME=%s\n' "$COREPACK_HOME" >> "$GITHUB_ENV"
+          corepack enable
+          corepack install
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @bitovp/db build
+      - run: touch .env.migrate
+      - name: Run one quarter of the complete Web test inventory
+        env:
+          WEB_SHARD_INDEX: ${{ matrix.shard }}
+        run: node scripts/web-test-shards.mjs run "$WEB_SHARD_INDEX" "$RUNNER_TEMP/web-tests-$WEB_SHARD_INDEX"
+      - name: Save only the sanitized Web test receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-tests-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/web-tests-${{ matrix.shard }}/receipt.json
+          retention-days: 1
+          if-no-files-found: error
+
+  web-tests-complete:
+    name: tests (web)
+    needs: [web-test-shards]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      WEB_SHARDS_RESULT: ${{ needs.web-test-shards.result }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          check-latest: true
+      - name: Require every shard job to succeed
+        run: node scripts/web-test-shards.mjs require-success
+      - name: Download this run and attempt's Web receipts separately
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: web-tests-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: ${{ runner.temp }}/web-test-receipts
+          merge-multiple: false
+      - name: Require the complete Web inventory and audit all skipped tests
+        run: node scripts/web-test-shards.mjs aggregate "$RUNNER_TEMP/web-test-receipts"
 
   native-media:
     runs-on: ubuntu-latest

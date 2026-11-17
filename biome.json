@@ -48,6 +48,7 @@
 			"scripts/gate-report*.mjs",
 			"scripts/gated-tests*.mjs",
 			"scripts/feature-verification*.mjs",
+			"scripts/web-test-shards*.mjs",
 			"scripts/editing-preview*.mjs",
 			"scripts/site-smoke.mjs",
 			"scripts/guide-smoke.mjs",

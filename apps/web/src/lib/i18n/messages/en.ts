@@ -971,6 +971,7 @@ export const en = {
 		failed: "Could not queue the RTMP update",
 	},
 	moqPlayback: {
+		contentTime: "Content time",
 		title: "MoQ playback",
 		play: "Play",
 		stop: "Stop",

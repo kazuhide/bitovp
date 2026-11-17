@@ -20,6 +20,7 @@ import {
 	EMPTY_MOQ_VIDEO_STATISTICS,
 	type MoqVideoStatistics,
 } from "@/lib/moq-player/video-statistics";
+import { MoqContentTime } from "./moq-content-time";
 import { MoqHistoryPanel } from "./moq-history-panel";
 import { MoqPlayerStatistics } from "./moq-player-statistics";
 
@@ -319,6 +320,7 @@ function MoqPlaybackAttempt({
 					aria-label={t("moqPlayback.title")}
 					className="relative aspect-video w-full max-w-2xl overflow-hidden rounded-md border border-zinc-800 bg-black [&_canvas]:h-full [&_canvas]:w-full [&_canvas]:object-contain [&_video]:h-full [&_video]:w-full [&_video]:object-contain"
 				/>
+				<MoqContentTime mediaRef={host} />
 				<MoqPlayerStatistics
 					statistics={statistics}
 					configuration={configuration}

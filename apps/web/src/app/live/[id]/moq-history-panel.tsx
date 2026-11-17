@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
 	CartesianGrid,
 	Line,
@@ -21,6 +21,7 @@ import { moqObservationHistorySchema } from "@/lib/moq-player/observations";
 import { bindPassiveRequestUrl } from "@/lib/passive-request";
 import { buildHeartbeatCorrelationUrl } from "./heartbeat-correlation";
 import { MoqAnalyticsHistory } from "./moq-analytics-history";
+import { MoqContentTime } from "./moq-content-time";
 
 const clock = (value: number) =>
 	Number.isFinite(value) ? new Date(value).toISOString().slice(11, 19) : "—";
@@ -37,6 +38,7 @@ export function MoqHistoryPanel({
 	const { t } = useT();
 	const organizationId = useDocumentOrganization();
 	const [selected, select] = useState("");
+	const archiveVideo = useRef<HTMLVideoElement>(null);
 	const history = useQuery({
 		queryKey: ["moq-observations", channelId, runId],
 		queryFn: async () => {
@@ -233,6 +235,8 @@ export function MoqHistoryPanel({
 					{session.archive && archiveUrl ? (
 						<div className="max-w-2xl space-y-1">
 							<video
+								key={session.id}
+								ref={archiveVideo}
 								data-moq-archive={session.id}
 								src={archiveUrl}
 								controls
@@ -242,6 +246,7 @@ export function MoqHistoryPanel({
 								aria-label={t("moqPlayback.receivedVideo")}
 								className="aspect-video w-full rounded border border-zinc-800 bg-black"
 							/>
+							<MoqContentTime key={session.id} mediaRef={archiveVideo} />
 							<a
 								href={archiveUrl}
 								download={`moq-${session.id}.webm`}

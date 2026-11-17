@@ -181,12 +181,34 @@ Player グラフはブラウザーの開始 UTC 時刻＋単調時計の経過�
 初回 session 作成の応答前に停止しても、応答後に終了時刻を flush し、周期保存の timer を残さない。
 最終成果はブランチのまま Docker で起動し、終了済みでも動画と統計が残る MoQ Live ジョブページを提示する。
 
+## 映像内時刻と履歴の連続表示（2026-11-18 追記）
+
+ジョブと専用 Player の再生映像に、当時の映像内時刻を UTC の日付・時分秒・ミリ秒で表示する。
+受信映像へ埋め込まれた48-bitの時刻コードを読み取り、録画開始時刻に再生秒数を足した推測値は使わない。
+対象は既存デモの白黒ヘッダー・48 bit・黒い末尾を持つ形式で、2000年から2100年未満の epoch ms を検査する。
+任意の焼き込み文字を OCR する機能ではなく、時刻コードの真正性を保証するものでもない。
+既存の保存動画にも適用し、再生、一時停止、seek、速度変更、末尾、セッション切替に追従する。
+時刻コードがない・読み取れない映像は未取得とし、現在時刻への置換や時計だけの自走をしない。
+Live Canvas と保存 video の同じ小さな時刻表示を使い、元のプレイヤーや録画 stream の所有権は変えない。
+読み取りは最大10Hz・小さな画素領域に制限し、切替・終了・unmount 時に自分の callback と listener を解放する。
+
+履歴の保存間隔は少なくとも1秒であり、1秒周期 callback の微小なずれで約2秒間隔になる場合がある。
+グラフだけが1.5秒超を欠損と判定していたため、通常の間引きも線の切断になっていた。
+人工的な区切りは2.5秒超へ合わせ、既存の実測点をそのまま結ぶ。明示的な未計測値と長い欠測は区切ったままにする。
+保存データ、API の最小間隔、欠測値、測定時刻を補完・書換えしない。
+
+検証は時刻コードの既知値、壊れた／未対応の画像、旧履歴の約2秒間隔と実欠測の回帰を先に追加する。
+保存済みの実受信動画を Docker の両ページで再生し、映像の時刻と UI、一時停止、seek、再生速度、末尾、
+セッション切替、320px表示を実ブラウザーで確認する。既存動画を使い、有料 Encoder の再起動は必要としない。
+
 ## 一次資料
 
 - https://developers.cloudflare.com/moq/ と use-the-api／demo-streams
 - https://developer.bitmovin.com/encoding/docs/media-over-quic-moq-output
 - https://demo.bitmovin.com/public/pwx-moq/
 - https://developer.bitmovin.com/playback/docs/player-web-x-getting-started
+- [動画フレームの callback](https://developer.mozilla.org/en-US/docs/Web/API/HTMLVideoElement/requestVideoFrameCallback)
+- [video／canvas の画素読み取り](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/drawImage)
 
 確認した専用 bundle: `playerx-moq.js?v=20260912120554`、1,051,867 bytes、
 SHA256 `38c57dda461817fea186144468d70e9f1b9d2f642178cfece0cf8101bfc1a904`。

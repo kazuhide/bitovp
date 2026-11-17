@@ -133,7 +133,8 @@ describe("catalogue parity", () => {
 		// Canvas provenance adds five unique short values (instrument: 3361).
 		// Two compact disclosure labels are new; 設定 already exists (instrument: 3363).
 		// Whole-run export adds one short value (instrument: 3364).
-		pinWithDriftAid(short.size, 3364, "short");
+		// The content timestamp adds one short value (instrument: 3365).
+		pinWithDriftAid(short.size, 3365, "short");
 	});
 
 	/**

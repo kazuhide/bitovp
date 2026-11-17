@@ -946,6 +946,7 @@ export const ja = {
 		failed: "RTMP 更新を登録できませんでした",
 	},
 	moqPlayback: {
+		contentTime: "映像内時刻",
 		title: "MoQ再生",
 		play: "再生",
 		stop: "停止",

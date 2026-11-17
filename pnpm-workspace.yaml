@@ -14,7 +14,7 @@ allowBuilds:
 # Parent-qualified rules are used only where the patched version crosses the
 # dependency's declared version range.
 overrides:
-  "next@16.4.3>postcss": "8.5.31"
+  "next@16.4.5>postcss": "8.5.31"
   "sharp@": "0.35.5"
   "source-map-js@": "1.2.2"
   "postcss@": "8.5.31"

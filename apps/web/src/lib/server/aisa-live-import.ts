@@ -21,7 +21,7 @@ export class AisaImportVerificationError extends Error {
 		readonly code: string,
 	) {
 		super(
-			"AISA import requires the exact Analysis, final result and a confirmed FINISHED backing Encoding",
+			"AISA import requires the exact Analysis, final result and confirmed FINISHED or ERROR provider states",
 		);
 		this.name = "AisaImportVerificationError";
 	}
@@ -77,7 +77,10 @@ export async function importFinalAisaAnalysis(
 				"AISA_IMPORT_IDENTITY_MISMATCH",
 			);
 		const analysis = resource.data;
-		if (analysis.status !== "FINISHED" || !analysis.createdAt)
+		if (
+			(analysis.status !== "FINISHED" && analysis.status !== "ERROR") ||
+			!analysis.createdAt
+		)
 			throw new AisaImportVerificationError(409, "AISA_IMPORT_NOT_FINAL");
 		const [encodingRaw, statusRaw, snapshotRaw] = await Promise.all([
 			api.encoding.encodings.get(analysis.encodingId),
@@ -97,11 +100,16 @@ export async function importFinalAisaAnalysis(
 				502,
 				"AISA_IMPORT_IDENTITY_MISMATCH",
 			);
-		if (statusRaw.status !== "FINISHED" || !snapshot.data.isFinal)
+		const task = z
+			.object({ status: z.enum(["FINISHED", "ERROR"]) })
+			.safeParse(statusRaw);
+		if (!task.success || !snapshot.data.isFinal)
 			throw new AisaImportVerificationError(409, "AISA_IMPORT_NOT_FINAL");
 		proof = {
 			analysisId: analysis.analysisId,
 			encodingId: analysis.encodingId,
+			analysisStatus: analysis.status,
+			encodingStatus: task.data.status,
 			bitmovinAccountId: input.bitmovinAccountId,
 			name: analysis.name || `AISA Live ${analysis.analysisId}`,
 			createdAt: new Date(analysis.createdAt),

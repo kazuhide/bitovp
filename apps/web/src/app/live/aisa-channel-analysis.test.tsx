@@ -145,6 +145,31 @@ beforeEach(() => {
 	respond();
 });
 
+it("displays a final failed Analysis without discarding its key moment", async () => {
+	apiFetch.mockImplementation(async (url: string) => {
+		if (url.includes("/translations")) return response([]);
+		if (url.includes("/results?"))
+			return { availability: "available", snapshot };
+		return { analysisId, encodingId, status: "ERROR" };
+	});
+	renderWithQuery(
+		<AisaChannelAnalysisPanel
+			accountId={accountId}
+			analysisId={analysisId}
+			encodingId={encodingId}
+			status="ERROR"
+			initialSnapshot={snapshot}
+		/>,
+	);
+	await selectMoment();
+	expect(await selectedMoment().findByText(original)).toBeVisible();
+	expect(
+		apiFetch.mock.calls.some(
+			([, init]) => init?.method && init.method !== "GET",
+		),
+	).toBe(false);
+});
+
 describe("AISA results in a normal channel", () => {
 	it("embeds under the channel heading with one collapsed analysis disclosure", async () => {
 		const user = userEvent.setup();

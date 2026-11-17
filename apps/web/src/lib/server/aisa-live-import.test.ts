@@ -114,27 +114,88 @@ it("independently verifies Analysis, exact Encoding terminal status and final sn
 		analysisId,
 		encodingId,
 		bitmovinAccountId,
+		analysisStatus: "FINISHED",
+		encodingStatus: "FINISHED",
 		snapshot: { isFinal: true, keyMoments: [] },
 	});
 	expect(actor).toBe("user:fixture");
 	expect(JSON.stringify(proof)).not.toContain("SECRET");
 });
 it.each([
-	"RUNNING",
-	"ERROR",
-	"CANCELED",
-])("does not import an Analysis in %s", async (status) => {
-	mocks.get.mockResolvedValue({ analysisId, encodingId, status });
-	await expect(
-		importFinalAisaAnalysis(context() as never, {
-			bitmovinAccountId,
-			analysisId,
-		}),
-	).rejects.toMatchObject({ httpStatusCode: 409 });
-	expect(mocks.persist).not.toHaveBeenCalled();
+	["FINISHED", "FINISHED"],
+	["FINISHED", "ERROR"],
+	["ERROR", "FINISHED"],
+	["ERROR", "ERROR"],
+] as const)("passes independently verified terminal statuses %s/%s to persistence", async (analysisStatus, encodingStatus) => {
+	const finalSnapshot = {
+		...snapshot,
+		analyzedEndTimeSeconds: 300.033333,
+		observations: [
+			{
+				id: "observation-a",
+				text: "Synthetic event",
+				startTimeSeconds: 100,
+				endTimeSeconds: 120,
+			},
+		],
+		keyMoments: [
+			{
+				id: "moment-a",
+				lastUpdatedSequence: 2,
+				importanceLevel: 1,
+				startInSeconds: 100,
+				endInSeconds: 120,
+				anchorInSeconds: 110,
+				observations: ["observation-a"],
+				categories: ["sport/soccer", "future/unknown"],
+			},
+		],
+		sourceGaps: [
+			{
+				startTimeSeconds: 300,
+				endTimeSeconds: 300.033333,
+				reason: "FINALIZATION_BACKLOG",
+			},
+		],
+	};
+	mocks.get.mockResolvedValue({
+		analysisId,
+		encodingId,
+		status: analysisStatus,
+		name: "Verified terminal",
+		createdAt: "2026-11-07T07:00:00Z",
+		error: { message: "SECRET provider detail" },
+	});
+	mocks.status.mockResolvedValue({ status: encodingStatus });
+	mocks.latest.mockResolvedValue(finalSnapshot);
+	await importFinalAisaAnalysis(context() as never, {
+		bitmovinAccountId,
+		analysisId,
+	});
+	expect(mocks.get).toHaveBeenCalledWith(analysisId);
+	expect(mocks.latest).toHaveBeenCalledWith(analysisId);
+	expect(mocks.encoding).toHaveBeenCalledWith(encodingId);
+	expect(mocks.status).toHaveBeenCalledWith(encodingId);
+	expect(mocks.persist.mock.calls[0]?.[1]).toMatchObject({
+		analysisStatus,
+		encodingStatus,
+		snapshot: { ...finalSnapshot, producedAt: "2026-11-07T07:06:00.000Z" },
+	});
+	expect(JSON.stringify(mocks.persist.mock.calls)).not.toContain("SECRET");
 });
-it("does not equate an Analysis final result with a finished backing Encoding", async () => {
-	mocks.status.mockResolvedValue({ status: "RUNNING" });
+it.each([
+	"CREATED",
+	"QUEUED",
+	"RUNNING",
+	"CANCELED",
+	"TRANSFER_ERROR",
+])("does not import an Analysis in %s", async (status) => {
+	mocks.get.mockResolvedValue({
+		analysisId,
+		encodingId,
+		status,
+		createdAt: "2026-11-07T07:00:00Z",
+	});
 	await expect(
 		importFinalAisaAnalysis(context() as never, {
 			bitmovinAccountId,
@@ -144,7 +205,107 @@ it("does not equate an Analysis final result with a finished backing Encoding", 
 	expect(mocks.persist).not.toHaveBeenCalled();
 });
 it.each([
+	{
+		analysisId: encodingId,
+		encodingId,
+		status: "FINISHED",
+		createdAt: "2026-11-07T07:00:00Z",
+	},
+	{ analysisId, encodingId, status: "FINISHED" },
+	{
+		analysisId,
+		encodingId,
+		status: "UNKNOWN",
+		createdAt: "2026-11-07T07:00:00Z",
+	},
+	{ analysisId, encodingId, createdAt: "2026-11-07T07:00:00Z" },
+])("rejects foreign Analysis identity or missing provider proof", async (analysis) => {
+	mocks.get.mockResolvedValue(analysis);
+	await expect(
+		importFinalAisaAnalysis(context() as never, {
+			bitmovinAccountId,
+			analysisId,
+		}),
+	).rejects.toBeInstanceOf(Error);
+	expect(mocks.persist).not.toHaveBeenCalled();
+});
+it.each([
+	"CREATED",
+	"QUEUED",
+	"RUNNING",
+	"CANCELED",
+	"TRANSFER_ERROR",
+	"UNKNOWN",
+	undefined,
+])("does not equate final results with an eligible backing Encoding in %s", async (status) => {
+	mocks.status.mockResolvedValue({ status });
+	await expect(
+		importFinalAisaAnalysis(context() as never, {
+			bitmovinAccountId,
+			analysisId,
+		}),
+	).rejects.toMatchObject({ httpStatusCode: 409 });
+	expect(mocks.persist).not.toHaveBeenCalled();
+});
+it.each([
+	{
+		id: encodingId,
+		type: "NONE",
+		startedAt: new Date("2026-11-07T07:01:00Z"),
+		finishedAt: new Date("2026-11-07T07:05:00Z"),
+	},
+	{
+		id: encodingId,
+		type: "VOD",
+		startedAt: new Date("2026-11-07T07:01:00Z"),
+		finishedAt: new Date("2026-11-07T07:05:00Z"),
+	},
+	{
+		id: analysisId,
+		type: "LIVE",
+		startedAt: new Date("2026-11-07T07:01:00Z"),
+		finishedAt: new Date("2026-11-07T07:05:00Z"),
+	},
+	{
+		id: encodingId,
+		type: "LIVE",
+		finishedAt: new Date("2026-11-07T07:05:00Z"),
+	},
+	{ id: encodingId, type: "LIVE", startedAt: new Date("2026-11-07T07:01:00Z") },
+	{
+		id: encodingId,
+		type: "LIVE",
+		startedAt: new Date("2026-11-07T07:05:00Z"),
+		finishedAt: new Date("2026-11-07T07:01:00Z"),
+	},
+])("rejects foreign, unstarted or undated backing Encoding proof", async (encoding) => {
+	mocks.encoding.mockResolvedValue(encoding);
+	await expect(
+		importFinalAisaAnalysis(context() as never, {
+			bitmovinAccountId,
+			analysisId,
+		}),
+	).rejects.toMatchObject({ httpStatusCode: 502 });
+	expect(mocks.persist).not.toHaveBeenCalled();
+});
+it("rejects client-provided statuses before provider reads", async () => {
+	await expect(
+		importFinalAisaAnalysis(
+			context() as never,
+			{
+				bitmovinAccountId,
+				analysisId,
+				analysisStatus: "FINISHED",
+				encodingStatus: "FINISHED",
+			} as never,
+		),
+	).rejects.toMatchObject({ httpStatusCode: 400 });
+	expect(mocks.get).not.toHaveBeenCalled();
+	expect(mocks.persist).not.toHaveBeenCalled();
+});
+it.each([
 	{ ...snapshot, isFinal: false },
+	{ ...snapshot, analysisId: "dddddddd-dddd-4ddd-addd-dddddddddddd" },
 	{ ...snapshot, encodingId: "dddddddd-dddd-4ddd-addd-dddddddddddd" },
 ])("rejects a nonfinal or foreign result", async (value) => {
 	mocks.latest.mockResolvedValue(value);

@@ -219,7 +219,11 @@ function renderWithQuery(node: ReactNode, cachedSession?: unknown) {
 	return rendered;
 }
 
-function fixture(imported: boolean, status = "RUNNING") {
+function fixture(
+	imported: boolean,
+	status = "RUNNING",
+	error: string | null = null,
+) {
 	const plan = buildLiveChannelPlan({
 		...structuredClone(DEFAULT_LIVE_WIZARD_STATE),
 		name: "Court 1",
@@ -253,7 +257,7 @@ function fixture(imported: boolean, status = "RUNNING") {
 		endedAt: null,
 		programStartAt: null,
 		programEndAt: null,
-		error: null,
+		error,
 		lastHeartbeat: null,
 		lastHeartbeatAt: null,
 		stepLog: [] as unknown[],
@@ -267,7 +271,7 @@ function fixture(imported: boolean, status = "RUNNING") {
 		origin: imported ? "AISA_IMPORTED" : "MANAGED",
 		name: "Court 1",
 		status,
-		error: null,
+		error,
 		plan: imported ? { kind: "AISA_IMPORTED" } : plan,
 		bitmovinEncodingId: encodingId,
 		bitmovinAccountId: accountId,
@@ -371,6 +375,45 @@ it("shows an imported completed run in the normal detail route with read-only hi
 			`${oldAnalysis}:${oldEncoding}`,
 		),
 	);
+});
+
+it("keeps an imported failed final run read-only while retaining its bound result and recorded failure", async () => {
+	const originalRow = fixture(
+		true,
+		"ERROR",
+		"Imported AISA run ended with a provider error",
+	);
+	const snapshot = {
+		sequence: 20,
+		isFinal: true,
+		keyMoments: [{ id: "goal" }],
+	};
+	const run = {
+		...originalRow.currentRun,
+		liveChannelId: ID,
+		seq: 1,
+		aisaStatus: "ERROR",
+		providerStatus: "ERROR",
+		aisaSnapshot: snapshot,
+		error: "Imported AISA run ended with an error",
+	};
+	const row = { ...originalRow, error: run.error, currentRun: run };
+	respond(row);
+	renderWithQuery(<ChannelDetail id={ID} initialAisaRun={run} />);
+	expect(await screen.findByTestId("aisa-analysis")).toHaveTextContent(
+		`${analysisId}:${encodingId}`,
+	);
+	expect(seen.snapshots).toHaveBeenCalledWith(snapshot);
+	expect(screen.getByText(/Its settings cannot be changed/)).toBeVisible();
+	expect(
+		screen.queryByRole("button", { name: /Start a new broadcast/ }),
+	).toBeNull();
+	expect(screen.queryByRole("button", { name: "Stop channel" })).toBeNull();
+	expect(
+		apiFetch.mock.calls.some(
+			([, init]) => init?.method && init.method !== "GET",
+		),
+	).toBe(false);
 });
 
 it("keeps managed lifecycle controls and read-only operational sections", async () => {

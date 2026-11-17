@@ -6,6 +6,8 @@ import type { AppPrismaClient } from "./client";
 export type VerifiedFinalAisaImport = {
 	analysisId: string;
 	encodingId: string;
+	analysisStatus: "FINISHED" | "ERROR";
+	encodingStatus: "FINISHED" | "ERROR";
 	bitmovinAccountId: string;
 	name: string;
 	createdAt: Date;
@@ -35,6 +37,14 @@ export async function persistFinalAisaImport(
 	actor?: string | null,
 ): Promise<AisaLiveImportOutcome> {
 	if (
+		!["FINISHED", "ERROR"].includes(proof.analysisStatus) ||
+		!["FINISHED", "ERROR"].includes(proof.encodingStatus)
+	) {
+		throw new Error(
+			"Final AISA import proof requires confirmed FINISHED or ERROR provider statuses",
+		);
+	}
+	if (
 		proof.snapshot.analysisId !== proof.analysisId ||
 		proof.snapshot.encodingId !== proof.encodingId ||
 		proof.snapshot.isFinal !== true
@@ -43,6 +53,12 @@ export async function persistFinalAisaImport(
 			"Final AISA import proof has inconsistent identities or finality",
 		);
 	}
+	const failed =
+		proof.analysisStatus === "ERROR" || proof.encodingStatus === "ERROR";
+	const status = failed ? "ERROR" : "STOPPED";
+	const importError = failed
+		? "Imported AISA run ended with a provider error"
+		: null;
 	const where = {
 		OR: [
 			{ aisaAnalysisId: proof.analysisId },
@@ -79,7 +95,8 @@ export async function persistFinalAisaImport(
 					id: channelId,
 					name: proof.name,
 					origin: "AISA_IMPORTED",
-					status: "STOPPED",
+					status,
+					error: importError,
 					createdBy: actor ?? null,
 					bitmovinAccountId: proof.bitmovinAccountId,
 					bitmovinEncodingId: proof.encodingId,
@@ -101,16 +118,17 @@ export async function persistFinalAisaImport(
 					id: runId,
 					liveChannelId: channelId,
 					seq: 1,
-					status: "STOPPED",
+					status,
+					error: importError,
 					outputPrefix: "",
 					stepLog: [],
 					bitmovinEncodingId: proof.encodingId,
 					encoderStoppedConfirmedFor: proof.encodingId,
 					aisaAnalysisId: proof.analysisId,
-					aisaStatus: "FINISHED",
+					aisaStatus: proof.analysisStatus,
 					aisaSnapshot: proof.snapshot,
 					aisaObservedAt: proof.observedAt,
-					providerStatus: "FINISHED",
+					providerStatus: proof.encodingStatus,
 					providerStatusObservedAt: proof.observedAt,
 					providerTerminalAt: proof.observedAt,
 					providerFeederStopsEnqueuedAt: proof.observedAt,

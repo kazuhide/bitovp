@@ -67,7 +67,9 @@ rtk proxy pnpm --filter @bitovp/web build
 `GET /encoding/encodings/{id}/status` を取得・監査する。状態、有限の進捗値、
 メッセージの severity／日時のみを返し、本文・URL・追加エラー情報は保存しない。
 SDK の Message 型に公開 code フィールドはないため、code は返さない。
-メッセージ総数と先頭100件への切り詰めを明示し、本文中の `moqt-16`／`moqt-18`／
+SDK は省略されたメッセージ配列も空配列に変換するため、省略・空配列の件数は
+ともに不明（`totalMessageCount: null`）とし、1件以上の場合のみ総数を返す。
+先頭100件への切り詰めを明示し、本文中の `moqt-16`／`moqt-18`／
 `moqt-23`／`no_application_protocol` は固定値の「言及」としてのみ記録する。
 言及は ALPN の選択結果や接続・再生成功を示さない。認可・秘匿・上限の回帰試験を先に追加する。
 

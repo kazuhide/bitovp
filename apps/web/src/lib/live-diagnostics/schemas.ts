@@ -114,8 +114,8 @@ export const diagnosticsTaskSchema = z
 	})
 	.transform(({ messages, ...task }) => ({
 		...task,
-		// An omitted provider list is unknown, not evidence of zero messages.
-		totalMessageCount: messages?.length ?? null,
+		// The SDK maps omitted messages to []; neither empty shape proves zero.
+		totalMessageCount: messages?.length ? messages.length : null,
 		messagesTruncated: (messages?.length ?? 0) > 100,
 		messages: (messages ?? [])
 			.slice(0, 100)

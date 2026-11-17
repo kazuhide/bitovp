@@ -80,8 +80,9 @@ provider returns them. A selected version is never inferred from `BETA` or
 `STABLE`.
 
 The same API accepts `kind=task` for fresh provider task status and metadata
-from at most 100 messages. It reports the total count and truncation; an absent
-provider message list remains unknown. Free-form text is withheld. Fixed
+from at most 100 messages. It reports truncation and positive message counts.
+The SDK maps an absent list to an empty array, so missing or empty mapped lists
+have `totalMessageCount: null` (unknown). Free-form text is withheld. Fixed
 protocol mentions describe task messages, not negotiated ALPN or successful
 Relay delivery.
 

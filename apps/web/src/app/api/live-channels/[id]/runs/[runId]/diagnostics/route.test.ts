@@ -1,3 +1,4 @@
+import { MessageType, Status, Task } from "@bitmovin/api-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -215,8 +216,8 @@ describe("run-bound task diagnostics", () => {
 	});
 	it.each([
 		{ messages: undefined, expectedCount: null },
-		{ messages: [], expectedCount: 0 },
-	])("distinguishes unavailable messages from an explicitly empty list: $expectedCount", async ({
+		{ messages: [], expectedCount: null },
+	])("treats missing and empty mapped message lists as unknown: $messages", async ({
 		messages,
 		expectedCount,
 	}) => {
@@ -229,6 +230,52 @@ describe("run-bound task diagnostics", () => {
 			messages: [],
 			messagesTruncated: false,
 		});
+	});
+	it.each([
+		{
+			name: "omitted messages",
+			task: () => new Task({ status: Status.RUNNING }),
+			expectedCount: null,
+			expectedMessages: [],
+		},
+		{
+			name: "explicit empty messages",
+			task: () => new Task({ status: Status.RUNNING, messages: [] }),
+			expectedCount: null,
+			expectedMessages: [],
+		},
+		{
+			name: "positive messages",
+			task: () =>
+				new Task({
+					status: Status.RUNNING,
+					messages: [
+						{ type: MessageType.WARNING, date: new Date(time), text: "secret" },
+					],
+				}),
+			expectedCount: 1,
+			expectedMessages: [{ type: "WARNING", date: time, protocolMentions: [] }],
+		},
+	])("preserves uncertainty after the installed SDK Task maps $name", async ({
+		task,
+		expectedCount,
+		expectedMessages,
+	}) => {
+		mocks.task.mockResolvedValue(task());
+		const response = await GET(request("?kind=task"), context());
+		expect(response.status).toBe(200);
+		const result = await response.json();
+		expect(result.data).toEqual({
+			status: "RUNNING",
+			totalMessageCount: expectedCount,
+			messages: expectedMessages,
+			messagesTruncated: false,
+		});
+		expect(mocks.audit).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ response: result }),
+			expect.any(Request),
+		);
 	});
 	it.each([
 		"CREATED",

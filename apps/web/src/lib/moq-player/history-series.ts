@@ -1,4 +1,12 @@
-import type { MoqObservationSample } from "./observations";
+import {
+	MOQ_OBSERVATION_LIMITS,
+	type MoqObservationSample,
+} from "./observations";
+
+// The writer skips callbacks less than one second apart. Ordinary timer jitter
+// can therefore leave about two seconds between saved points. Break the chart
+// beyond that bounded cadence; explicit metric nulls remain gaps at any interval.
+const maxContinuousIntervalMs = MOQ_OBSERVATION_LIMITS.sampleIntervalMs * 2.5;
 
 type Point = {
 	timestamp: number;
@@ -16,10 +24,13 @@ export function moqHistorySeries(
 	const points: Point[] = [];
 	let previous: number | undefined;
 	for (const sample of samples) {
-		if (previous !== undefined && sample.elapsedMs - previous > 1500)
+		if (
+			previous !== undefined &&
+			sample.elapsedMs - previous > maxContinuousIntervalMs
+		)
 			points.push({
-				timestamp: origin + previous + 1000,
-				seconds: (previous + 1000) / 1000,
+				timestamp: origin + previous + MOQ_OBSERVATION_LIMITS.sampleIntervalMs,
+				seconds: (previous + MOQ_OBSERVATION_LIMITS.sampleIntervalMs) / 1000,
 				latencyMs: null,
 				fps: null,
 				bufferSeconds: null,

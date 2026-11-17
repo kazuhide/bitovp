@@ -84,6 +84,8 @@ export type Capability =
 	| "AKAMAI_MSL"
 	/** Origin receiver acceptance is not measured by the storage harness. */
 	| "LIVE_MEDIA_INGEST"
+	/** Relay and playback acceptance are not measured by the storage harness. */
+	| "MOQ"
 	/**
 	 * An Akamai NetStorage upload account: host + username + password (ledger
 	 * #138). A vault credential like SFTP's, and like SFTP nothing in this repo
@@ -301,6 +303,8 @@ export function capabilityOfIoKind(kind: string): Capability | undefined {
 			return "AKAMAI_MSL";
 		case "LIVE_MEDIA_INGEST":
 			return "LIVE_MEDIA_INGEST";
+		case "MOQ":
+			return "MOQ";
 		case "AKAMAI_NETSTORAGE":
 			return "AKAMAI_NETSTORAGE";
 		case "S3":
@@ -1179,6 +1183,7 @@ export async function preflight(
 		KANTAR: true,
 		AKAMAI_MSL: true,
 		LIVE_MEDIA_INGEST: true,
+		MOQ: true,
 		AKAMAI_NETSTORAGE: true,
 		ZIXI: true,
 		POIS: true,

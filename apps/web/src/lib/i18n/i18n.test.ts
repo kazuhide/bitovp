@@ -119,11 +119,11 @@ describe("catalogue parity", () => {
 			expect(actual).toBe(expected);
 		};
 		/* Assert the measured number of unique long Japanese strings. Update the count only after inspecting the catalog change that crosses the length threshold. */
-		// Runtime measurement includes LOCAL cancellation and request acknowledgement.
-		pinWithDriftAid(long.length, 1663, "long");
+		// Runtime measurement includes the desktop navigation drag/keyboard hint.
+		pinWithDriftAid(long.length, 1664, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		// Runtime measurement includes three-way output labels (deduplicated).
-		pinWithDriftAid(short.size, 3276, "short");
+		// Runtime measurement includes navigation resize and restore labels.
+		pinWithDriftAid(short.size, 3278, "short");
 	});
 
 	/**

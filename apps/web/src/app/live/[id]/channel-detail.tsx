@@ -648,6 +648,10 @@ function ChannelConsole({
 		(event) => event.rule.severity === "CRIT",
 	);
 	const hasFailedStep = stepEntries.some((entry) => entry.status === "FAILED");
+	const heartbeatCorrelationKey =
+		initialHeartbeatCorrelation?.kind === "requested"
+			? `requested:${initialHeartbeatCorrelation.runId}:${initialHeartbeatCorrelation.from}:${initialHeartbeatCorrelation.to}`
+			: (initialHeartbeatCorrelation?.kind ?? "none");
 	const sectionOpen = (section: LiveSectionId) =>
 		(aisaRow && section === "sec-runs") ||
 		(section === "sec-analysis" &&
@@ -1339,18 +1343,23 @@ function ChannelConsole({
 		"sec-heartbeat": null,
 		"sec-heartbeat-log": (
 			<SectionCard
-				key="sec-heartbeat-log"
+				// A new correlation opens only this disclosure, including when the
+				// console survives same-channel navigation. Equal windows retain
+				// the operator's manual collapse across background refreshes.
+				key={`sec-heartbeat-log:${heartbeatCorrelationKey}`}
 				id="sec-heartbeat-log"
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-heartbeat-log"])}
-				defaultOpen={sectionOpen("sec-heartbeat-log")}
+				defaultOpen={
+					heartbeatCorrelationKey !== "none" || sectionOpen("sec-heartbeat-log")
+				}
 				summary={t("heartbeatLog.summary")}
 				onOpenChange={setHeartbeatLogOpen}
 			>
 				{/* Push receipts first; separately retained Poll history / ADMIN export. */}
 				{!aisaRow || aisaOperatorAllowed ? (
 					<HeartbeatLogPanel
-						key={`${id}:${JSON.stringify(initialHeartbeatCorrelation ?? { kind: "none" })}`}
+						key={`${id}:${heartbeatCorrelationKey}`}
 						channelId={id}
 						initialCorrelation={initialHeartbeatCorrelation}
 						currentRunId={run?.id ?? null}

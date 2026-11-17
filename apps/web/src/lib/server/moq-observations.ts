@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { stepLogSchema } from "@bitovp/core";
-import type { AppPrismaClient, AppTransactionClient, Prisma } from "@bitovp/db";
+import type { AppPrismaClient, AppTransactionClient } from "@bitovp/db";
 import { z } from "zod";
 import { roleAtLeast } from "@/lib/auth/roles";
 import { AuthContextError } from "@/lib/auth/tenancy";
@@ -14,6 +14,7 @@ import {
 import { writeAuditLog } from "./audit";
 import { getServerContext, type ServerContext } from "./context";
 import { readMoqHeartbeatHistory } from "./moq-heartbeat";
+import { writeMoqObservationStore } from "./moq-observation-store";
 import { readPlayerSettings } from "./player-config";
 
 export class MoqObservationError extends Error {
@@ -505,10 +506,11 @@ export async function putMoqObservation(
 				...store.sessions.filter((entry) => entry.id !== session.id),
 				session,
 			];
-			await tx.liveChannelRun.update({
-				where: { id: run.id },
-				data: { moqObservations: store as Prisma.InputJsonValue },
-			});
+			await writeMoqObservationStore(
+				tx,
+				{ runId: run.id, organizationId: ctx.tenant?.organizationId },
+				store,
+			);
 			return publicMoqSession(session);
 		});
 		await auditMoqHistory(ctx, req, params, 200);

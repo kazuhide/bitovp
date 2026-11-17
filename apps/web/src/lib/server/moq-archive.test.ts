@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
 	context: vi.fn(),
 	run: vi.fn(),
 	update: vi.fn(),
+	execute: vi.fn(),
 	probe: vi.fn(),
 	normalize: vi.fn(),
 	provenance: vi.fn(),
@@ -123,6 +124,7 @@ beforeEach(async () => {
 		liveChannelRun: { findFirst: mocks.run, update: mocks.update },
 		auditLog: { findMany: mocks.provenance },
 		$queryRaw: mocks.lock,
+		$executeRaw: mocks.execute,
 	};
 	Object.assign(prisma, {
 		$transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
@@ -141,6 +143,19 @@ beforeEach(async () => {
 		row = { ...row, ...data };
 		return row;
 	});
+	mocks.execute.mockImplementation(
+		(
+			_query: TemplateStringsArray,
+			serialized: string,
+			updatedAt: Date,
+			runId: string,
+			organizationId: string,
+		) => {
+			if (runId !== row.id || organizationId !== row.organizationId) return 0;
+			row = { ...row, moqObservations: JSON.parse(serialized), updatedAt };
+			return 1;
+		},
+	);
 	mocks.probe.mockResolvedValue(10_000);
 	mocks.provenance.mockImplementation(({ where }) => [
 		{
@@ -163,6 +178,57 @@ afterEach(async () => {
 });
 
 describe("private received-preview WebM archives", () => {
+	it("retains exact prior observation numbers when attaching a verified archive", async () => {
+		const store = row.moqObservations as {
+				sessions: { samples: Record<string, unknown>[] }[];
+			},
+			session = store.sessions[0];
+		if (!session) throw new Error("Missing fixture session");
+		const sample = {
+			elapsedMs: 0,
+			latencyMs: null,
+			fps: 1.9994801351648572,
+			bufferSeconds: null,
+			droppedFrames: null,
+			decodedFrames: null,
+			presentedFrames: null,
+			totalFrames: null,
+			resolution: null,
+		};
+		session.samples = [{ ...sample }];
+		// Reproduce the measured Prisma JSON model transport rounding. A text
+		// parameter cast to jsonb must preserve the already-stored sample instead.
+		mocks.update.mockImplementationOnce(({ data }) => {
+			row = {
+				...row,
+				...data,
+				moqObservations: JSON.parse(
+					JSON.stringify(data.moqObservations, (_key, value) =>
+						typeof value === "number" && !Number.isInteger(value)
+							? Number(value.toPrecision(16))
+							: value,
+					),
+				),
+			};
+			return row;
+		});
+		expect((await putMoqArchive(request(), params)).status).toBe(200);
+		const saved = row.moqObservations as typeof store;
+		expect(saved.sessions[0]?.samples).toEqual([sample]);
+	});
+	it("returns a safe failure when the scoped archive metadata write updates no run", async () => {
+		mocks.execute.mockReturnValueOnce(0);
+		const response = await putMoqArchive(request(), params);
+		expect(response.status).toBe(503);
+		expect(await response.text()).not.toContain(root);
+		const saved = row.moqObservations as {
+			sessions: { archive: unknown }[];
+		};
+		expect(saved.sessions[0]?.archive).toBeNull();
+		expect(
+			(await getMoqArchive(new Request("http://test/archive"), params)).status,
+		).toBe(404);
+	});
 	it("permits only a single matching document binding on the native archive URL", async () => {
 		await putMoqArchive(request(), params);
 		const path = `http://test/api/live-channels/${CHANNEL}/runs/${RUN}/moq-observations/${SESSION}/archive`;
@@ -453,6 +519,7 @@ describe("private received-preview WebM archives", () => {
 		expect(response.status).toBe(400);
 		expect(await response.text()).not.toContain("private raw");
 		expect(mocks.update).not.toHaveBeenCalled();
+		expect(mocks.execute).not.toHaveBeenCalled();
 	});
 	it("refuses symlink roots/parents and tampered archive bytes", async () => {
 		const link = `${root}-symlink`;

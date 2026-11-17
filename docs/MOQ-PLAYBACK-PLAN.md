@@ -117,6 +117,9 @@ MoQ を受信した preview の `captureStream`／MediaRecorder により最大9
 ブラウザーで測定した時刻・latency・FPS・buffer・frame counters、接続／初回フレーム／停止／失敗イベントを
 上限付き schema で受け付ける。未知値は null を保持する。5秒ごとと停止時に保存する。
 session は server が認証済み actor と run に結び、別の actor による上書きを拒否する。
+保存済み prefix の小数値を Prisma の Json model input で丸めないため、履歴と録画メタデータは
+検証済み store を JSON 文字列のパラメーターとして jsonb へ保存する。既存の行ロック、
+run／organization の照合、更新1行の確認、updatedAt の更新を維持し、追記比較の許容誤差は追加しない。
 6件目の session 作成は拒否し、保存済み5件を自動で消さない。UUID は小文字の正規形に統一し、
 大文字・小文字の別 session が同じファイルへ写像されることを防ぐ。
 最大5件は退避・上書きせず、新規 session の作成だけを拒否する。Live 再生は継続できる。

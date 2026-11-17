@@ -119,6 +119,7 @@ beforeEach(() => {
 		liveChannel: { findUnique: mocks.channel },
 		auditLog: { findMany: mocks.provenance },
 		$queryRaw: mocks.lock,
+		$executeRaw: mocks.update,
 	};
 	Object.assign(prisma, {
 		$transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
@@ -140,7 +141,24 @@ beforeEach(() => {
 		status: "RUNNING",
 		bitmovinEncodingId: ENCODING,
 	});
-	mocks.update.mockImplementation(({ data }) => {
+	mocks.update.mockImplementation((command, ...values: unknown[]) => {
+		if (Array.isArray(command)) {
+			const [json, updatedAt, runId, organizationId] = values;
+			if (runId !== row.id || organizationId !== row.organizationId) return 0;
+			if (typeof json !== "string") throw new Error("Expected JSON text");
+			row = {
+				...row,
+				moqObservations: JSON.parse(json),
+				updatedAt: updatedAt as Date,
+			};
+			return 1;
+		}
+		// Measured with Prisma's real Json model-write path; TEXT::jsonb keeps it exact.
+		const data = JSON.parse(
+			JSON.stringify(command.data, (_key, value) =>
+				value === 1.9994801351648572 ? 1.999480135164857 : value,
+			),
+		);
 		row = { ...row, ...data };
 		return row;
 	});
@@ -176,6 +194,51 @@ beforeEach(() => {
 });
 
 describe("run-bound MoQ observation persistence", () => {
+	it("appends a legitimate cumulative float prefix without a storage-induced 409", async () => {
+		const input = {
+			...payload(),
+			samples: [{ ...sample(), fps: 1.9994801351648572 }],
+		};
+		expect((await putMoqObservation(req(input), params)).status).toBe(200);
+		const appended = await putMoqObservation(
+			req({ ...input, samples: [...input.samples, sample(1_000)] }),
+			params,
+		);
+		const body = await appended.json();
+		expect({ status: appended.status, code: body.details?.code }).toEqual({
+			status: 200,
+			code: undefined,
+		});
+		expect(body.session.samples[0].fps).toBe(1.9994801351648572);
+		expect(body.session.samples).toHaveLength(2);
+	});
+	it("keeps the immutable sample guard exact even for a one-ULP metric change", async () => {
+		const input = {
+			...payload(),
+			samples: [{ ...sample(), fps: 1.9994801351648572 }],
+		};
+		expect((await putMoqObservation(req(input), params)).status).toBe(200);
+		const rewritten = await putMoqObservation(
+			req({
+				...input,
+				samples: [{ ...input.samples[0], fps: 1.999480135164857 }],
+			}),
+			params,
+		);
+		expect(rewritten.status).toBe(409);
+		expect((await rewritten.json()).details.code).toBe(
+			"MOQ_HISTORY_SESSION_CONFLICT",
+		);
+	});
+	it("does not report a saved session when the scoped persistence matches zero rows", async () => {
+		mocks.update.mockResolvedValueOnce(0);
+		const response = await putMoqObservation(req(), params);
+		expect(response.status).toBe(503);
+		expect((await response.json()).details.code).toBe(
+			"MOQ_HISTORY_UNAVAILABLE",
+		);
+		expect(mocks.audit).not.toHaveBeenCalled();
+	});
 	it("retains a configured draft16 namespace tuple proven by the original output CREATE", async () => {
 		row.stepLog = row.stepLog.map((entry) =>
 			entry.kind === "CREATE_OUTPUT_MOQ"

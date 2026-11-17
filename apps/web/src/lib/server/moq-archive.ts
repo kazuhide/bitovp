@@ -12,7 +12,6 @@ import {
 	unlink,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import type { Prisma } from "@bitovp/db";
 import {
 	MOQ_OBSERVATION_LIMITS,
 	type MoqArchiveMetadata,
@@ -22,6 +21,7 @@ import {
 	passiveOrganizationBinding,
 } from "@/lib/passive-request";
 import { hasWebmHeader, normalizeMoqArchive } from "./moq-archive-media";
+import { writeMoqObservationStore } from "./moq-observation-store";
 import {
 	assertMoqObservationWritable,
 	auditMoqHistory,
@@ -282,10 +282,11 @@ export async function putMoqArchive(
 			session.archive = metadata;
 			session.archiveUploadSha256 = uploadSha256;
 			session.updatedAt = new Date().toISOString();
-			await tx.liveChannelRun.update({
-				where: { id: fresh.id },
-				data: { moqObservations: store as Prisma.InputJsonValue },
-			});
+			await writeMoqObservationStore(
+				tx,
+				{ runId: fresh.id, organizationId: ctx.tenant?.organizationId },
+				store,
+			);
 			return metadata;
 		});
 		await auditMoqHistory(ctx, req, params, 200);

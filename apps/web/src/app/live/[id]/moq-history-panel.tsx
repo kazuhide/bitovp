@@ -141,7 +141,11 @@ export function MoqHistoryPanel({
 								unit={` ${unit}`}
 								type="linear"
 								connectNulls={false}
-								dot={false}
+								dot={
+									series.filter((point) => point[field] !== null).length === 1
+										? { r: 3 }
+										: false
+								}
 								isAnimationActive={false}
 								stroke="var(--color-emerald-400)"
 							/>

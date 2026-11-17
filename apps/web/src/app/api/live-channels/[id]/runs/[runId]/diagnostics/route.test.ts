@@ -2,6 +2,7 @@ import { MessageType, Status, Task } from "@bitmovin/api-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+	role: "ADMIN" as "ADMIN" | "OPERATOR" | "VIEWER",
 	run: vi.fn(),
 	provenance: vi.fn(),
 	account: vi.fn(),
@@ -18,6 +19,10 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant: {
+			role: mocks.role,
+			organizationId: "00000000-0000-4000-8000-000000000001",
+		},
 		prisma: {
 			liveChannelRun: { findFirst: mocks.run },
 			auditLog: { findMany: mocks.provenance },
@@ -48,6 +53,7 @@ const request = (query = "") =>
 	);
 
 beforeEach(() => {
+	mocks.role = "ADMIN";
 	vi.resetAllMocks();
 	mocks.run.mockResolvedValue({
 		id: RUN,
@@ -94,6 +100,26 @@ beforeEach(() => {
 });
 
 describe("run-bound task diagnostics", () => {
+	it("denies raw task text to an operator before reading the run or provider", async () => {
+		mocks.role = "OPERATOR";
+		expect(
+			(await GET(request("?kind=task&download=task"), context())).status,
+		).toBe(403);
+		expect(mocks.run).not.toHaveBeenCalled();
+		expect(mocks.task).not.toHaveBeenCalled();
+	});
+	it("retains sanitized task metadata for operators without exposing provider text", async () => {
+		mocks.role = "OPERATOR";
+		mocks.task.mockResolvedValue({
+			status: "ERROR",
+			messages: [{ type: "ERROR", text: "password=publisher-secret" }],
+		});
+		const response = await GET(request("?kind=task"), context());
+		expect(response.status).toBe(200);
+		expect(
+			JSON.stringify([await response.json(), mocks.audit.mock.calls]),
+		).not.toContain("publisher-secret");
+	});
 	it("offers bounded task text only as an explicit private download and never in audits", async () => {
 		mocks.task.mockResolvedValue({
 			status: "ERROR",

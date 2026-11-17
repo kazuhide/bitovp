@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { CREDENTIAL_PROVIDER_SHAPES, stepLogSchema } from "@bitovp/core";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -215,6 +216,7 @@ export async function getMoqPlaybackDescriptor(
 				return finish(409, "MOQ_PLAYBACK_SUBSCRIBE_TOKEN_REQUIRED");
 		}
 		const settings = await readPlayerSettings(ctx.prisma);
+		const analyticsLicenseKey = settings.analyticsLicenseKey;
 		if (!settings.playerLicenseKey)
 			return finish(503, "MOQ_PLAYBACK_PLAYER_NOT_CONFIGURED");
 		return finish(200, "MOQ_PLAYBACK_AVAILABLE", {
@@ -231,10 +233,13 @@ export async function getMoqPlaybackDescriptor(
 				},
 			},
 			playerLicenseKey: settings.playerLicenseKey,
-			...(settings.analyticsLicenseKey
+			...(analyticsLicenseKey
 				? {
 						analytics: {
-							licenseKey: settings.analyticsLicenseKey,
+							licenseKey: analyticsLicenseKey,
+							licenseKeySha256: createHash("sha256")
+								.update(analyticsLicenseKey)
+								.digest("hex"),
 							videoId: `bitovp-moq:${encodingId}:${runId}`,
 							collectorVersion: "2.62.0",
 							latencyField: "customData1",

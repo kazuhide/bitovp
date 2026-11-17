@@ -26,6 +26,43 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 describe("owned MoQ observation writer", () => {
+	it("keeps the descriptor digest paired with the first collector impression across later flushes", async () => {
+		const digest = "a".repeat(64);
+		const initial = {
+			channelId: CHANNEL,
+			runId: RUN,
+			sessionId: SESSION,
+			analyticsLicenseKeySha256: digest,
+			onState: vi.fn(),
+		};
+		const writer = createMoqObservationWriter(initial);
+		await writer.ready;
+		writer.setAnalyticsImpressionId(CHANNEL);
+		initial.analyticsLicenseKeySha256 = "b".repeat(64);
+		writer.setAnalyticsImpressionId(RUN);
+		await writer.flush();
+		await writer.finish("ended");
+		for (const call of mocks.api.mock.calls.slice(1)) {
+			expect(JSON.parse(call[1].body)).toMatchObject({
+				analyticsImpressionId: CHANNEL,
+				analyticsLicenseKeySha256: digest,
+			});
+		}
+	});
+	it("does not submit an impression without its original descriptor digest", async () => {
+		const writer = createMoqObservationWriter({
+			channelId: CHANNEL,
+			runId: RUN,
+			sessionId: SESSION,
+			onState: vi.fn(),
+		});
+		await writer.ready;
+		writer.setAnalyticsImpressionId(CHANNEL);
+		await writer.finish("ended");
+		const value = JSON.parse(mocks.api.mock.calls.at(-1)?.[1].body);
+		expect(value).not.toHaveProperty("analyticsImpressionId");
+		expect(value).not.toHaveProperty("analyticsLicenseKeySha256");
+	});
 	it("rejects a saved-session receipt for another run", async () => {
 		mocks.api.mockResolvedValue({ runId: CHANNEL, session: { id: SESSION } });
 		const writer = createMoqObservationWriter({

@@ -18,6 +18,7 @@ type Options = {
 	sessionId?: string;
 	startedAt?: string;
 	startedMonotonicMs?: number;
+	analyticsLicenseKeySha256?: string;
 	now?: () => number;
 	onState(state: MoqHistorySaveState): void;
 	onPersisted?(): void;
@@ -37,6 +38,13 @@ export function createMoqObservationWriter(options: Options) {
 	const now = options.now ?? (() => performance.now());
 	const origin = options.startedMonotonicMs ?? now();
 	const startedAt = options.startedAt ?? new Date().toISOString();
+	const descriptorDigest = z
+		.string()
+		.regex(/^[0-9a-f]{64}$/)
+		.safeParse(options.analyticsLicenseKeySha256);
+	const analyticsLicenseKeySha256 = descriptorDigest.success
+		? descriptorDigest.data
+		: undefined;
 	let endedAt: string | null = null;
 	const samples: MoqObservationSample[] = [];
 	const events: MoqObservationEvent[] = [{ elapsedMs: 0, type: "started" }];
@@ -50,7 +58,9 @@ export function createMoqObservationWriter(options: Options) {
 		endedAt,
 		samples: samples.slice(),
 		events: events.slice(),
-		...(analyticsImpressionId ? { analyticsImpressionId } : {}),
+		...(analyticsImpressionId && analyticsLicenseKeySha256
+			? { analyticsImpressionId, analyticsLicenseKeySha256 }
+			: {}),
 	});
 	async function send(value: MoqObservationUpdate) {
 		const abort = new AbortController();
@@ -208,7 +218,11 @@ export function createMoqObservationWriter(options: Options) {
 		}
 	}
 	function setAnalyticsImpressionId(value: string | null) {
-		if (!analyticsImpressionId && z.uuid().safeParse(value).success)
+		if (
+			analyticsLicenseKeySha256 &&
+			!analyticsImpressionId &&
+			z.uuid().safeParse(value).success
+		)
 			analyticsImpressionId = value ?? undefined;
 	}
 	return {

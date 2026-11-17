@@ -43,7 +43,7 @@ const updateFields = {
 		.max(MOQ_OBSERVATION_LIMITS.samples),
 	events: z.array(moqObservationEventSchema).max(MOQ_OBSERVATION_LIMITS.events),
 };
-export const moqObservationUpdateSchema = z
+const moqObservationPublicUpdateSchema = z
 	.strictObject(updateFields)
 	.superRefine((value, ctx) => {
 		if (value.endedAt !== null) {
@@ -75,6 +75,24 @@ export const moqObservationUpdateSchema = z
 				ctx.addIssue({ code: "custom", message: "Events must be ordered" });
 		}
 	});
+export const moqObservationUpdateSchema = moqObservationPublicUpdateSchema
+	.safeExtend({
+		analyticsLicenseKeySha256: z
+			.string()
+			.regex(/^[0-9a-f]{64}$/)
+			.optional(),
+	})
+	.superRefine((value, ctx) => {
+		if (
+			Boolean(value.analyticsImpressionId) !==
+			Boolean(value.analyticsLicenseKeySha256)
+		)
+			ctx.addIssue({
+				code: "custom",
+				message:
+					"Analytics impression requires its descriptor license fingerprint",
+			});
+	});
 export const moqArchiveMetadataSchema = z.strictObject({
 	contentType: z.literal("video/webm"),
 	bytes: z.number().int().min(1).max(MOQ_OBSERVATION_LIMITS.archiveBytes),
@@ -83,7 +101,7 @@ export const moqArchiveMetadataSchema = z.strictObject({
 	recordedAt: z.iso.datetime(),
 });
 export const moqObservationSessionSchema =
-	moqObservationUpdateSchema.safeExtend({
+	moqObservationPublicUpdateSchema.safeExtend({
 		id: z.uuid(),
 		createdAt: z.iso.datetime(),
 		updatedAt: z.iso.datetime(),

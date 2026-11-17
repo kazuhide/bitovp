@@ -126,14 +126,16 @@ segment processing time does not measure end-to-end video delay.
 
 Set `BITOVP_MOQ_ARCHIVE_DIR` to persistent local storage. The Web image includes
 FFprobe/FFmpeg for bounded validation and stream-copy remuxing; the Compose
-deployments mount `/moq-archives` as a persistent volume. Channel deletion or
+deployments attach a dedicated persistent archive volume. Channel deletion or
 reset removes only the corresponding owned recordings after the database
 commit and required provider-stop checks succeed.
 
 The same API accepts `kind=task` for fresh provider task status and metadata
 from at most 100 messages. It reports truncation and positive message counts.
 The SDK maps an absent list to an empty array, so missing or empty mapped lists
-have `totalMessageCount: null` (unknown). Free-form text is withheld. Fixed
+have `totalMessageCount: null` (unknown). Free-form text is withheld by default.
+Administrators may request `kind=task&download=task` as a bounded private
+attachment; its text is never saved in audits. Fixed
 protocol mentions describe task messages, not negotiated ALPN or successful
 Relay delivery.
 

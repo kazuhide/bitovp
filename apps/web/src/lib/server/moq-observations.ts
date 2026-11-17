@@ -398,9 +398,14 @@ export async function putMoqObservation(
 		if (!parsed.success)
 			throw new MoqObservationError(400, "MOQ_HISTORY_INVALID_REQUEST");
 		const input = parsed.data;
+		const { analyticsLicenseKeySha256: submittedDigest, ...observation } =
+			input;
 		const analyticsKey = input.analyticsImpressionId
 			? (await readPlayerSettings(ctx.prisma)).analyticsLicenseKey
 			: "";
+		const currentAnalyticsDigest = analyticsKey
+			? createHash("sha256").update(analyticsKey).digest("hex")
+			: undefined;
 		const saved = await ctx.prisma.$transaction(async (tx) => {
 			await tx.$queryRaw`SELECT id FROM "LiveChannelRun" WHERE id = ${params.runId}::uuid FOR UPDATE`;
 			const run = await readMoqObservationRun(ctx, params, tx);
@@ -409,6 +414,18 @@ export async function putMoqObservation(
 				(session) => session.id === params.sessionId,
 			);
 			await assertMoqObservationWritable(ctx, params, run, previous, tx);
+			if (
+				input.analyticsImpressionId &&
+				(previous?.analyticsImpressionId
+					? !previous.analyticsLicenseKeySha256 ||
+						previous.analyticsLicenseKeySha256 !== submittedDigest
+					: !currentAnalyticsDigest ||
+						currentAnalyticsDigest !== submittedDigest)
+			)
+				throw new MoqObservationError(
+					409,
+					"MOQ_HISTORY_ANALYTICS_LICENSE_CHANGED",
+				);
 			if (
 				previous &&
 				(previous.startedAt !== input.startedAt ||
@@ -431,7 +448,7 @@ export async function putMoqObservation(
 			const analyticsImpressionId =
 				input.analyticsImpressionId ?? previous?.analyticsImpressionId ?? null;
 			const session: StoredMoqObservationSession = {
-				...input,
+				...observation,
 				id: params.sessionId as string,
 				actor: ctx.tenant?.actor as string,
 				createdAt: previous?.createdAt ?? now,
@@ -450,11 +467,9 @@ export async function putMoqObservation(
 					? { analyticsLicenseKeySha256: previous.analyticsLicenseKeySha256 }
 					: !previous?.analyticsImpressionId &&
 							analyticsImpressionId &&
-							analyticsKey
+							currentAnalyticsDigest
 						? {
-								analyticsLicenseKeySha256: createHash("sha256")
-									.update(analyticsKey)
-									.digest("hex"),
+								analyticsLicenseKeySha256: currentAnalyticsDigest,
 							}
 						: {}),
 			};

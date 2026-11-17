@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	getMoqObservations,
 	putMoqObservation,
 	readMoqBoundedBody,
 } from "./moq-observations";
+import { getMoqPlaybackDescriptor } from "./moq-playback";
 
 const mocks = vi.hoisted(() => ({
 	context: vi.fn(),
@@ -15,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 	audit: vi.fn(),
 	provenance: vi.fn(),
 	settings: vi.fn(),
+	credential: vi.fn(),
 	heartbeat: vi.fn(),
 }));
 vi.mock("./context", () => ({ getServerContext: mocks.context }));
@@ -78,9 +81,14 @@ const run = () => ({
 			step: "output",
 			kind: "CREATE_OUTPUT_MOQ",
 			status: "DONE",
-			payload: {},
+			payload: {
+				credentialId: "00000000-0000-4000-8000-000000000009",
+				trackNamespace: ["run-namespace"],
+				draftVersion: "DRAFT_18",
+			},
 			refs: {},
 			resourceId: OUTPUT,
+			startedAt: "2026-11-17T00:00:02.000Z",
 		},
 		{
 			step: "muxing",
@@ -112,6 +120,7 @@ beforeEach(() => {
 			isImpersonating: false,
 		},
 		prisma,
+		credentials: { revealVersioned: mocks.credential },
 	});
 	mocks.run.mockImplementation(({ orderBy }) => (orderBy ? { id: RUN } : row));
 	mocks.channel.mockResolvedValue({
@@ -130,12 +139,24 @@ beforeEach(() => {
 		truncated: false,
 	});
 	mocks.settings.mockResolvedValue({
+		playerLicenseKey: "tenant-player-key",
 		analyticsLicenseKey: "public-analytics-license",
+	});
+	mocks.credential.mockResolvedValue({
+		id: "00000000-0000-4000-8000-000000000009",
+		provider: "MOQ",
+		updatedAt: new Date("2026-11-17T00:00:00.000Z"),
+		secret: JSON.stringify({
+			relayUrl: "moqt://publisher.example",
+			playbackUrl: "https://subscriber.example/moq",
+		}),
 	});
 	mocks.provenance.mockImplementation(({ where }) => [
 		{
 			organizationId: ORG,
 			bitmovinAccountId: SESSION,
+			at: new Date("2026-11-17T00:00:04.000Z"),
+			request: { trackNamespace: ["run-namespace"], draftVersion: "DRAFT_18" },
 			response: {
 				id: where.path === "/encoding/encodings" ? ENCODING : OUTPUT,
 			},
@@ -144,6 +165,55 @@ beforeEach(() => {
 });
 
 describe("run-bound MoQ observation persistence", () => {
+	it("binds the first impression to the actual descriptor license and rejects intervening key rotation", async () => {
+		const descriptor = await getMoqPlaybackDescriptor(
+			new Request("http://test/moq-playback"),
+			params,
+		);
+		expect(descriptor.status).toBe(200);
+		const analytics = (await descriptor.json()).analytics;
+		const digestA = createHash("sha256")
+			.update("public-analytics-license")
+			.digest("hex");
+		expect(analytics.licenseKeySha256).toBe(digestA);
+		const input = {
+			...payload(),
+			analyticsImpressionId: SESSION,
+			analyticsLicenseKeySha256: analytics.licenseKeySha256,
+		};
+		mocks.settings.mockResolvedValue({
+			analyticsLicenseKey: "rotated-license-B",
+		});
+		expect((await putMoqObservation(req(input), params)).status).toBe(409);
+		expect(mocks.update).not.toHaveBeenCalled();
+		mocks.settings.mockResolvedValue({
+			analyticsLicenseKey: "public-analytics-license",
+		});
+		const saved = await putMoqObservation(req(input), params);
+		expect(saved.status).toBe(200);
+		expect((await saved.json()).session).not.toHaveProperty(
+			"analyticsLicenseKeySha256",
+		);
+		expect(JSON.stringify(mocks.update.mock.calls)).toContain(digestA);
+		mocks.settings.mockResolvedValue({
+			analyticsLicenseKey: "rotated-license-B",
+		});
+		const advanced = { ...input, samples: [...input.samples, sample(1_000)] };
+		expect((await putMoqObservation(req(advanced), params)).status).toBe(200);
+		const changed = await putMoqObservation(
+			req({
+				...advanced,
+				analyticsLicenseKeySha256: createHash("sha256")
+					.update("rotated-license-B")
+					.digest("hex"),
+			}),
+			params,
+		);
+		expect(changed.status).toBe(409);
+		expect((await changed.json()).details.code).toBe(
+			"MOQ_HISTORY_ANALYTICS_LICENSE_CHANGED",
+		);
+	});
 	it("rejects a different actor's mixed-case UUID alias before creating a second session", async () => {
 		const lower = "abcdefab-0000-4000-8000-000000000004";
 		expect(
@@ -276,7 +346,13 @@ describe("run-bound MoQ observation persistence", () => {
 		expect((await putMoqObservation(req(), params)).status).toBe(409);
 	});
 	it("binds optional Analytics IDs to this run and refuses replacing an impression", async () => {
-		const input = { ...payload(), analyticsImpressionId: SESSION };
+		const input = {
+			...payload(),
+			analyticsImpressionId: SESSION,
+			analyticsLicenseKeySha256: createHash("sha256")
+				.update("public-analytics-license")
+				.digest("hex"),
+		};
 		const response = await putMoqObservation(req(input), params);
 		expect(response.status).toBe(200);
 		expect((await response.json()).session.analyticsVideoId).toBe(

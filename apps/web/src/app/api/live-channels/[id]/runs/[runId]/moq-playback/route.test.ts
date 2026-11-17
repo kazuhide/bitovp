@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { StepLogEntry } from "@bitovp/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -172,6 +173,9 @@ describe("run-bound MoQ playback descriptor", () => {
 			playerLicenseKey: "tenant-player-key",
 			analytics: {
 				licenseKey: "analytics-secret",
+				licenseKeySha256: createHash("sha256")
+					.update("analytics-secret")
+					.digest("hex"),
 				videoId: `bitovp-moq:${ENCODING}:${RUN}`,
 				collectorVersion: "2.62.0",
 				latencyField: "customData1",

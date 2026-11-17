@@ -20,11 +20,15 @@ type Options = {
 };
 /** Session ownership is acknowledged before receiving/capturing media. */
 export function createMoqPreviewArchive(options: Options) {
+	const configuredAnalytics = options.descriptor.analytics
+		? { ...options.descriptor.analytics }
+		: undefined;
 	const writer = createMoqObservationWriter({
 		channelId: options.channelId,
 		runId: options.runId,
 		startedAt: options.startedAt,
 		startedMonotonicMs: options.startedMonotonicMs,
+		analyticsLicenseKeySha256: configuredAnalytics?.licenseKeySha256,
 		onState: options.onHistoryState,
 		onPersisted: options.onPersisted,
 	});
@@ -43,14 +47,14 @@ export function createMoqPreviewArchive(options: Options) {
 			options.onRecordingState("unavailable");
 		}
 		if (closed) return;
-		if (!options.descriptor.analytics) {
+		if (!configuredAnalytics) {
 			options.onAnalyticsState("not-configured");
 			return;
 		}
 		try {
 			const bridge = await createMoqAnalyticsBridge({
-				licenseKey: options.descriptor.analytics.licenseKey,
-				videoId: options.descriptor.analytics.videoId,
+				licenseKey: configuredAnalytics.licenseKey,
+				videoId: configuredAnalytics.videoId,
 				runId: options.runId,
 				encodingId: options.descriptor.encodingId,
 			});

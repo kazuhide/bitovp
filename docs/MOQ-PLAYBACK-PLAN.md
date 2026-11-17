@@ -9,7 +9,7 @@ BitOVP から Live を開始し、Cloudflare Relay を経て、同じ BitOVP の
 Player Web X で自作映像・音声を再生する。Encoder の `RUNNING`、入力受信、catalog 取得、
 動画の進行・復号フレームを分けて記録する。成功扱いには同一 run・専用 namespace の実映像が必要。
 試験終了時には BitOVP の stop と fresh task 診断で provider の終端を確認する。
-失敗時には明示的な `kind=task&download=task` で上限付きの task text を private attachment として
+失敗時には ADMIN が明示的な `kind=task&download=task` で上限付きの task text を private attachment として
 取得できるようにし、通常表示と監査には自由文を含めない。公開記録には token／入力情報を持ち込まない。
 
 ## 構成
@@ -110,6 +110,9 @@ optional `analyticsImpressionId` は UUID のみ受け付け、video ID はサ�
 `bitovp-moq:<encodingId>:<runId>` に固定する。保存済み impression の差し替えは拒否する。
 Analytics license は最初の impression 保存時に SHA256 だけを固定し、readback 時に現在の設定と
 一致する場合だけ照会する。生の key は観測データに保存しない。
+descriptor の Analytics key と同じ snapshot から `analytics.licenseKeySha256` を返し、client は
+その指紋を impression と組にして送る。初回保存時に設定が変わっていれば409で拒否し、
+別 license に誤って固定しない。保存済みの指紋・impression は以後の設定変更でも差し替えない。
 archive は同じ session 配下の `/archive` に `PUT video/webm`、`GET` は Range 対応で配信する。
 固定ローカル artifact root の UUID 導出 path に保存し、サイズ制限、署名チェック、hash、原子的置換、
 権限、同一 session 所有者を検査する。任意 path や外部 URL を受け取らない。

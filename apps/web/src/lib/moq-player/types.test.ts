@@ -23,6 +23,7 @@ describe("MoQ descriptor URL contract", () => {
 		const value = descriptor("https://subscriber.example/moq");
 		const analytics = {
 			licenseKey: "analytics-test-key",
+			licenseKeySha256: "a".repeat(64),
 			videoId: `bitovp-moq:${value.encodingId}:${runId}`,
 			collectorVersion: "2.62.0",
 			latencyField: "customData1",

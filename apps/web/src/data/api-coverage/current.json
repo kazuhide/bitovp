@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-17T17:08:12.362Z",
-		"sourceCommit": "964fd0e7b85cc6732cdb3ae3e61cad8231fdd9e2",
-		"sourceFingerprint": "ee0bf1eee275302b5bba5e46c65e956e81469ee82310cd428fc161339851269f",
+		"generatedAt": "2026-11-17T17:26:42.923Z",
+		"sourceCommit": "23ed20c71adfa64c06700fae9b0a17545e07bc57",
+		"sourceFingerprint": "8ed7d417e9b678e70c727e9b364e23603e634f5307017931a4ee59b89d2eee9b",
 		"sdkVersion": "1.288.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "062c5c8a30072d4d3330028f0cab877d9f7183138b08fa4a7de22f4b69853f04",
@@ -1618,7 +1618,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 218
+					"line": 223
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
@@ -2456,7 +2456,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 242
+					"line": 247
 				}
 			]
 		},
@@ -2498,7 +2498,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 214
+					"line": 219
 				}
 			]
 		},
@@ -11342,7 +11342,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 247
+					"line": 252
 				}
 			]
 		},
@@ -11356,7 +11356,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 260
+					"line": 265
 				}
 			]
 		},
@@ -11370,7 +11370,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 269
+					"line": 274
 				}
 			]
 		},
@@ -11384,7 +11384,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 264
+					"line": 269
 				}
 			]
 		},
@@ -11398,7 +11398,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
-					"line": 262
+					"line": 267
 				}
 			]
 		},

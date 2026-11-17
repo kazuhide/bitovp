@@ -21,6 +21,7 @@ const descriptorSchema = z
 		analytics: z
 			.strictObject({
 				licenseKey: z.string().min(1).max(200),
+				licenseKeySha256: z.string().regex(/^[0-9a-f]{64}$/),
 				videoId: z.string().max(200),
 				collectorVersion: z.literal("2.62.0"),
 				latencyField: z.literal("customData1"),

@@ -2,9 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMoqPreviewArchive } from "./preview-archive";
 import type { MoqPlaybackDescriptor } from "./types";
 
-const mocks = vi.hoisted(() => ({ api: vi.fn(), recording: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+	api: vi.fn(),
+	recording: vi.fn(),
+	bridge: vi.fn(),
+}));
 vi.mock("@/lib/api", () => ({ apiFetch: mocks.api }));
 vi.mock("./recording", () => ({ createMoqRecording: mocks.recording }));
+vi.mock("./analytics", () => ({ createMoqAnalyticsBridge: mocks.bridge }));
 const CHANNEL = "00000000-0000-4000-8000-000000000001";
 const RUN = "00000000-0000-4000-8000-000000000002";
 const descriptor: MoqPlaybackDescriptor = {
@@ -46,6 +51,49 @@ const receipt = (path: string) => ({
 	session: { id: path.split("/").at(-1) },
 });
 describe("owned preview finalization", () => {
+	it("forwards the same immutable descriptor key digest as the collector created before a settings change", async () => {
+		const digest = "a".repeat(64);
+		const bound: MoqPlaybackDescriptor = {
+			...descriptor,
+			analytics: {
+				licenseKey: "original-key",
+				licenseKeySha256: digest,
+				videoId: `bitovp-moq:${descriptor.encodingId}:${RUN}`,
+				collectorVersion: "2.62.0",
+				latencyField: "customData1",
+			},
+		};
+		const bridge = {
+			attach: vi.fn(),
+			getImpressionId: () => CHANNEL,
+			dispose: vi.fn().mockResolvedValue(undefined),
+		};
+		mocks.bridge.mockResolvedValue(bridge);
+		mocks.recording.mockReturnValue({ finish: () => Promise.resolve() });
+		mocks.api.mockImplementation(async (path: string) => receipt(path));
+		const archive = createMoqPreviewArchive({
+			...options(),
+			descriptor: bound,
+		});
+		if (bound.analytics) {
+			bound.analytics.licenseKey = "replacement-key";
+			bound.analytics.licenseKeySha256 = "b".repeat(64);
+		}
+		await archive.ready;
+		expect(mocks.bridge).toHaveBeenCalledWith(
+			expect.objectContaining({ licenseKey: "original-key" }),
+		);
+		archive.video(document.createElement("video"));
+		await archive.finish("stopped");
+		const saved = JSON.parse(mocks.api.mock.calls.at(-1)?.[1].body);
+		expect(saved).toMatchObject({
+			analyticsImpressionId: CHANNEL,
+			analyticsLicenseKeySha256: digest,
+		});
+		expect(JSON.stringify(saved)).not.toContain("original-key");
+		expect(JSON.stringify(saved)).not.toContain("replacement-key");
+		expect(bridge.dispose).toHaveBeenCalledOnce();
+	});
 	it("ends a session acknowledged after Stop and leaves no observation timers running", async () => {
 		let acknowledge!: (value: unknown) => void;
 		mocks.api.mockImplementationOnce(

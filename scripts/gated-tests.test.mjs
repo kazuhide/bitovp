@@ -5263,6 +5263,7 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 		)
 		.sort();
 	assert.deepEqual(others, [
+		"bombadil.yml",
 		"hierarchical-flow.yml",
 		"native-vmaf.yml",
 		"pages.yml",

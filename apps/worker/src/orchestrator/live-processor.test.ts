@@ -11936,3 +11936,124 @@ describe("reviewed startup cancellation race fences", () => {
 		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
 	});
 });
+
+describe("MoQ publisher Task privacy", () => {
+	const relayUrl = "moqt://relay.example/moq";
+	const authToken = "publisher-secret";
+	const taskText = `MoQ connect ${relayUrl} failed authToken=${authToken}`;
+	function moqHarness(read: SdkOps["getEncodingStatus"]) {
+		const plan = structuredClone(basePlan);
+		plan.bitmovin.accountId = ACCOUNT_ID;
+		plan.outputs = [
+			{
+				key: "origin",
+				kind: "MOQ",
+				credentialId: "00000000-0000-4000-8000-000000000001",
+				name: "MoQ output",
+				trackNamespace: ["privacy"],
+				draftVersion: "DRAFT_18",
+			},
+		];
+		plan.liveManifests = [];
+		plan.start.encodingOption = "CUSTOM";
+		const h = setup(
+			{ plan, stepLog: initStepLog(compileLiveChannel(plan)) },
+			{ getEncodingStatus: vi.fn(read) },
+		);
+		h.deps.resolveCredential = vi.fn(async () => ({
+			provider: "MOQ",
+			config: {},
+			secret: { relayUrl, authToken },
+		}));
+		const events = vi.fn(async () => {});
+		h.deps.emitEvent = events;
+		return { ...h, events };
+	}
+	function expectPrivate(h: ReturnType<typeof moqHarness>, outcome: unknown) {
+		const saved = JSON.stringify({
+			updates: h.updates,
+			channel: h.row,
+			runs: h.runRows,
+			events: h.events.mock.calls,
+			outcome: outcome instanceof Error ? outcome.message : outcome,
+		});
+		for (const value of [relayUrl, authToken, taskText])
+			expect(saved.includes(value), `persisted publisher value: ${value}`).toBe(
+				false,
+			);
+	}
+	it("keeps RUNNING Task text out of every channel and run snapshot", async () => {
+		const h = moqHarness(async () => ({
+			status: "RUNNING",
+			progress: 0,
+			messages: [taskText],
+		}));
+		const outcome = await h.process({ liveChannelId: CHANNEL_ID });
+		expect(h.row.status).toBe("RUNNING");
+		const entry = (h.row.stepLog as StepLogEntry[]).find(
+			(e) => e.kind === "AWAIT_LIVE_RUNNING",
+		);
+		expect(entry?.response).toMatchObject({ status: "RUNNING", progress: 0 });
+		expectPrivate(h, outcome);
+	});
+	it.each([
+		"ERROR",
+		"CANCELED",
+	])("keeps %s Task text out of errors, responses and emitted events", async (status) => {
+		const h = moqHarness(async () => ({ status, messages: [taskText] }));
+		const outcome = await h
+			.process({ liveChannelId: CHANNEL_ID })
+			.catch((error: unknown) => error);
+		expect(h.row.status).toBe(status === "CANCELED" ? "STOPPED" : "ERROR");
+		if (status === "ERROR") expect(outcome).toBeInstanceOf(Error);
+		expectPrivate(h, outcome);
+	});
+	it("withholds provider text when the MoQ status read rejects", async () => {
+		const h = moqHarness(async () => {
+			throw new Error(taskText);
+		});
+		const outcome = await h
+			.process({ liveChannelId: CHANNEL_ID })
+			.catch((error: unknown) => error);
+		expect(h.row.status).toBe("ERROR");
+		expect(outcome).toBeInstanceOf(Error);
+		expectPrivate(h, outcome);
+	});
+	it("keeps the status boundary when a resumed MoQ output is already DONE", async () => {
+		const h = moqHarness(async () => ({
+			status: "RUNNING",
+			messages: [taskText],
+		}));
+		const output = (h.row.stepLog as StepLogEntry[]).find(
+			(entry) => entry.kind === "CREATE_OUTPUT_MOQ",
+		);
+		if (!output) throw new Error("Missing MoQ output fixture");
+		Object.assign(output, { status: "DONE", resourceId: "existing-moq" });
+		const outcome = await h.process({ liveChannelId: CHANNEL_ID });
+		expect(h.sdk.createMoqOutput).not.toHaveBeenCalled();
+		expect(h.row.status).toBe("RUNNING");
+		expectPrivate(h, outcome);
+	});
+	it("projects an older DONE await response and error before resume persists it", async () => {
+		const h = moqHarness(async () => ({ status: "RUNNING", progress: 0 }));
+		await h.process({ liveChannelId: CHANNEL_ID });
+		h.updates.length = 0;
+		vi.mocked(h.sdk.startLiveEncoding).mockClear();
+		const entries = h.row.stepLog as StepLogEntry[];
+		const awaiting = entries.find(
+			(entry) => entry.kind === "AWAIT_LIVE_RUNNING",
+		);
+		if (!awaiting) throw new Error("Missing await fixture");
+		awaiting.response = {
+			status: "RUNNING",
+			progress: 0,
+			messages: [taskText],
+		};
+		awaiting.error = taskText;
+		h.row.status = "PROVISIONING";
+		const outcome = await h.process({ liveChannelId: CHANNEL_ID });
+		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+		expect(h.row.status).toBe("RUNNING");
+		expectPrivate(h, outcome);
+	});
+});

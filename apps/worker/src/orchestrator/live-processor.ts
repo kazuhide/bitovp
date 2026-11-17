@@ -56,6 +56,7 @@ import {
 	PROVIDER_UNKNOWN_GRACE_MS,
 	type ProviderLifecycle,
 	priorRollManifestFiles,
+	projectMoqTaskHistory,
 	providerUnknownPastGrace,
 	readLiveAutoShutdownUpdate,
 	redactSecrets,
@@ -98,6 +99,7 @@ import {
 	heartbeatSampleRef,
 	logHeartbeatStateChanges,
 } from "../live/heartbeat-state-log";
+import { withMoqTaskStatus } from "../live/moq-task-status";
 import {
 	createProviderLifecycleReconciler,
 	type RunLifecycleRow,
@@ -5323,7 +5325,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		let fallbackError: string | undefined;
 		try {
 			const plan = liveChannelPlanSchema.parse(row.plan);
-			entries = stepLogSchema.parse(row.stepLog);
+			const parsedEntries = stepLogSchema.parse(row.stepLog);
+			const taskHistory = projectMoqTaskHistory(parsedEntries, row.error);
+			entries = taskHistory.moq ? taskHistory.stepLog : parsedEntries;
 			resetOwner.entries = entries;
 			fallbackError = liveFallbackAdmissionError(plan, entries);
 			if (fallbackError && !cancelling) throw new Error(fallbackError);
@@ -5500,6 +5504,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						: {}),
 				},
 			});
+			if (taskHistory.moq) sdk = withMoqTaskStatus(sdk);
 			resetOwner.sdk = sdk;
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "setup failed";

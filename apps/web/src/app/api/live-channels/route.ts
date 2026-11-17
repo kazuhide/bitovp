@@ -51,6 +51,7 @@ import {
 	validationError,
 } from "@/lib/server/http";
 import { latestRunsFor } from "@/lib/server/latest-runs";
+import { publicMoqListErrors } from "@/lib/server/moq-public-history";
 import {
 	recordUnrestrictedEgress,
 	submitterValidationOptions,
@@ -352,18 +353,19 @@ export async function GET(req: Request) {
 		const page = rows.slice(0, limit);
 		const pageIds = page.map((row) => row.id);
 		/**
-		 * Two page-wide reads, both bounded, both issued at once: the grouped
-		 * alert counts and the newest run per channel (the nested
+		 * Three page-wide reads, all bounded and issued at once: the grouped
+		 * alert counts, MoQ error-row IDs and the newest run per channel (the nested
 		 * `runs: { take: 1 }` this replaces read every airing of every channel
 		 * on the page). Concurrent rather than sequential because neither
 		 * depends on the other, so the page still costs the operator one round
 		 * trip's worth of latency.
 		 */
-		const [openAlertsByChannel, latestRuns] = await Promise.all([
+		const [openAlertsByChannel, latestRuns, publicPage] = await Promise.all([
 			openAlertCounts(ctx.prisma, pageIds),
 			latestRunsFor(ctx.prisma, pageIds),
+			publicMoqListErrors(ctx.prisma, "channel", page),
 		]);
-		const items = page.map(
+		const items = publicPage.map(
 			({ schedules, feederSessions, runningSince, maxRunMinutes, ...item }) => {
 				/*
 				 * Run-first for the same reason every other reader is (#108

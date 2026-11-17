@@ -399,6 +399,12 @@ export {
 	sourceMediaAttributes,
 	type VideoAttributes,
 } from "./live/media-attributes";
+export type { MoqTaskStatus } from "./live/moq-task-status";
+export {
+	MOQ_TASK_HISTORY_ERROR,
+	projectMoqTaskHistory,
+	projectMoqTaskStatus,
+} from "./live/moq-task-status";
 export type {
 	LiveChannelStatus,
 	LiveNextAction,

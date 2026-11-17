@@ -207,6 +207,20 @@ first-frame の記録がない・曖昧な録画では未取得とし、今日�
 再生速度、末尾、セッション切替、320px表示を実ブラウザーで確認する。映像に印字された数字も別の方法で読み、
 二つの時計の差と記録済みの latency を比較する。既存動画を使い、有料 Encoder の再起動は必要としない。
 
+## main 統合時の履歴・資格情報境界（2026-11-18 追記）
+
+main には Unreleased として統合し、バージョン変更・リリースは行わない。
+代理閲覧はメタデータ参照に限定し、MoQ の subscriber URL、受信動画の GET／HEAD／Range、
+管理者向けの生 Task ダウンロードは、対象組織の権限が ADMIN でも取得させない。
+
+MoQ の provider Task は relay URL や認証情報を自由文へ含め得るため、通常の履歴には
+許可した status と有限の progress だけを保存する。ERROR、CANCELED、読込失敗、
+保存済み CREATE_OUTPUT_MOQ を再利用する resume でも同じ境界を適用する。
+過去に保存された MoQ の await 応答・エラーも、再保存時と公開読込時に同じ Core の純粋な射影で保護する。
+判定元は編集可能な現在の channel plan ではなく、保存済み CREATE_OUTPUT_MOQ の実行グラフとする。
+通常の Live／VOD の診断は維持し、生 Task 本文は実際の ADMIN による明示的な取得に限定する。
+回帰テストで問題を先に再現し、最終ソースの CI と独立した 2 系統のレビューを通してからマージする。
+
 ## 一次資料
 
 - https://developers.cloudflare.com/moq/ と use-the-api／demo-streams

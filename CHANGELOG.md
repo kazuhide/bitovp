@@ -35,6 +35,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- Keep MoQ subscriber capabilities, recordings and raw task downloads unavailable during owner view-as. Exclude provider Task text from ordinary MoQ histories and protect previously saved errors on reads; explicit administrator diagnostics remain available.
 - Reject unrelated or changed Bombadil violation sets during negative-control replay, validate retained observations with the actual component predicates, and execute validation through symbolic-link entry points. Keep installed browser tools within the wrapper's owned process group so interruption cleans them up. Keep custom Next.js image patterns disabled while its separate vendored matcher remains unpatched.
 - Block repeated extglob compilation in the build/test dependency picomatch while an official fix for GHSA-fc5q-39xc-vjpf is unavailable. Dependency audits retain the native finding and verify the exact patch, every installed copy and bounded regression checks before classifying it as locally mitigated; repeated extglob syntax is temporarily unsupported.
 

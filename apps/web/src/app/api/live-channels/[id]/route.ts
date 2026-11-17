@@ -48,6 +48,7 @@ import {
 	MoqObservationError,
 	moqHistoryError,
 } from "@/lib/server/moq-observations";
+import { publicMoqHistory } from "@/lib/server/moq-public-history";
 import { playbackLinksForLivePlan } from "@/lib/server/playback-links";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -162,7 +163,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 			(roleResolvedPrincipal && req.headers.get(ROLE_HEADER) === "ADMIN");
 		const currentRunView = currentRun
 			? {
-					...currentRun,
+					...publicMoqHistory(currentRun),
 					liveToVod: liveToVodForRole(
 						currentRun.liveToVod,
 						technicalDetailsAllowed,
@@ -194,7 +195,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 		// the credential's config never needs to cross .
 		return NextResponse.json(
 			{
-				...channel,
+				...publicMoqHistory(channel),
 				liveToVod: liveToVodForRole(channel.liveToVod, technicalDetailsAllowed),
 				liveToVodFamilies,
 				currentRun: currentRunView,

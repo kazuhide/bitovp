@@ -210,6 +210,26 @@ describe("run-bound MoQ playback descriptor", () => {
 		expect(mocks.credential).not.toHaveBeenCalled();
 	});
 
+	it.each([
+		"ADMIN",
+		"OPERATOR",
+	])("refuses subscriber capabilities during owner view-as even for target role %s", async (role) => {
+		const ctx = await mocks.context();
+		ctx.tenant = { ...ctx.tenant, role, isImpersonating: true };
+		for (const method of ["GET", "HEAD"]) {
+			const response = await GET(
+				new Request(request().url, { method }),
+				params(),
+			);
+			expect(response.status).toBe(403);
+			expect(await response.text()).not.toContain("subscribe-secret");
+		}
+		expect(mocks.run).not.toHaveBeenCalled();
+		expect(mocks.provenance).not.toHaveBeenCalled();
+		expect(mocks.credential).not.toHaveBeenCalled();
+		expect(mocks.settings).not.toHaveBeenCalled();
+	});
+
 	it("preserves a bound draft 16 source independently of the current channel plan", async () => {
 		const value = run();
 		value.stepLog = value.stepLog.map((entry) =>

@@ -84,7 +84,11 @@ export async function getMoqPlaybackDescriptor(
 		return finish(400, "MOQ_PLAYBACK_INVALID_REQUEST");
 	try {
 		ctx = await getServerContext();
-		if (!ctx.tenant || !roleAtLeast(ctx.tenant.role, "OPERATOR"))
+		if (
+			!ctx.tenant ||
+			ctx.tenant.isImpersonating ||
+			!roleAtLeast(ctx.tenant.role, "OPERATOR")
+		)
 			return finish(403, "MOQ_PLAYBACK_FORBIDDEN");
 		const run = await ctx.prisma.liveChannelRun.findFirst({
 			where: { id: runId, liveChannelId: id },

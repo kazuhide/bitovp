@@ -363,6 +363,8 @@ export async function getMoqArchive(
 		const ctx = await moqObservationContext(req, params, false, [
 			EXPECTED_ORGANIZATION_QUERY,
 		]);
+		if (ctx.tenant?.isImpersonating)
+			throw new MoqObservationError(403, "MOQ_HISTORY_FORBIDDEN");
 		if (
 			binding.kind === "bound" &&
 			binding.organizationId !== ctx.tenant?.organizationId

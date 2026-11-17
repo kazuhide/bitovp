@@ -113,7 +113,10 @@ async function handleDiagnostics(
 	const query = parsed.data;
 	try {
 		const ctx = await getServerContext();
-		if (query.download && ctx.tenant?.role !== "ADMIN")
+		if (
+			query.download &&
+			(ctx.tenant?.isImpersonating || ctx.tenant?.role !== "ADMIN")
+		)
 			return jsonError(
 				403,
 				"Administrator access is required for raw task diagnostics",

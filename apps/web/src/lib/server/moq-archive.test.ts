@@ -178,6 +178,29 @@ afterEach(async () => {
 });
 
 describe("private received-preview WebM archives", () => {
+	it.each([
+		"ADMIN",
+		"OPERATOR",
+	])("refuses GET, HEAD and Range archive reads during owner view-as for target role %s", async (role) => {
+		expect((await putMoqArchive(request(), params)).status).toBe(200);
+		const ctx = await mocks.context();
+		ctx.tenant = { ...ctx.tenant, role, isImpersonating: true };
+		mocks.run.mockClear();
+		mocks.provenance.mockClear();
+		const url = `http://test/api/live-channels/${CHANNEL}/runs/${RUN}/moq-observations/${SESSION}/archive?expectedOrganizationId=${ORG}`;
+		for (const init of [
+			{ method: "GET" },
+			{ method: "HEAD" },
+			{ method: "GET", headers: { Range: "bytes=0-3" } },
+		]) {
+			const response = await getMoqArchive(new Request(url, init), params);
+			expect(response.status).toBe(403);
+			expect(response.headers.get("content-type")).not.toBe("video/webm");
+			expect(response.headers.has("content-range")).toBe(false);
+		}
+		expect(mocks.run).not.toHaveBeenCalled();
+		expect(mocks.provenance).not.toHaveBeenCalled();
+	});
 	it("retains exact prior observation numbers when attaching a verified archive", async () => {
 		const store = row.moqObservations as {
 				sessions: { samples: Record<string, unknown>[] }[];

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	role: "ADMIN" as "ADMIN" | "OPERATOR" | "VIEWER",
+	isImpersonating: false,
 	run: vi.fn(),
 	provenance: vi.fn(),
 	account: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
 		tenant: {
 			role: mocks.role,
+			isImpersonating: mocks.isImpersonating,
 			organizationId: "00000000-0000-4000-8000-000000000001",
 		},
 		prisma: {
@@ -54,6 +56,7 @@ const request = (query = "") =>
 
 beforeEach(() => {
 	mocks.role = "ADMIN";
+	mocks.isImpersonating = false;
 	vi.resetAllMocks();
 	mocks.run.mockResolvedValue({
 		id: RUN,
@@ -100,6 +103,21 @@ beforeEach(() => {
 });
 
 describe("run-bound task diagnostics", () => {
+	it.each([
+		"GET",
+		"HEAD",
+	])("refuses raw task %s during owner view-as before reading the run or provider", async (method) => {
+		mocks.isImpersonating = true;
+		const response = await GET(
+			new Request(request("?kind=task&download=task").url, { method }),
+			context(),
+		);
+		expect(response.status).toBe(403);
+		expect(mocks.run).not.toHaveBeenCalled();
+		expect(mocks.provenance).not.toHaveBeenCalled();
+		expect(mocks.account).not.toHaveBeenCalled();
+		expect(mocks.task).not.toHaveBeenCalled();
+	});
 	it("denies raw task text to an operator before reading the run or provider", async () => {
 		mocks.role = "OPERATOR";
 		expect(

@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import {
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
@@ -10,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import WebTestSequencer from "../apps/web/vitest-sequencer.mjs";
 import { REDIS } from "./gated-tests.mjs";
 import { GROUPS } from "./postgres-integration.mjs";
 import {
@@ -95,6 +97,58 @@ function temporary(t) {
 	t.after(() => rmSync(directory, { recursive: true, force: true }));
 	return directory;
 }
+
+test("the actual Vitest sequencer moves only the measured heavy file and preserves complete discovery", async (t) => {
+	const webRoot = join(root, "apps/web");
+	const heavy = join(webRoot, "src/app/vod/new/file-flow.mount.test.tsx");
+	const specs = readdirSync(join(webRoot, "src"), {
+		recursive: true,
+		withFileTypes: true,
+	})
+		.filter((entry) => entry.isFile() && /\.test\.tsx?$/.test(entry.name))
+		.map((entry) => ({ moduleId: join(entry.parentPath, entry.name) }));
+	assert(specs.length > 0);
+	t.diagnostic(`Real Web inventory: ${specs.length} files`);
+	const BaseSequencer = Object.getPrototypeOf(WebTestSequencer);
+	assert.equal(BaseSequencer.name, "BaseSequencer");
+	assert.equal(WebTestSequencer.prototype.sort, BaseSequencer.prototype.sort);
+	const names = (items) => items.map((item) => item.moduleId).sort();
+	const scenarios = [
+		specs,
+		[...specs, { moduleId: join(webRoot, "src/future-added.test.ts") }],
+		specs.filter(
+			(item) =>
+				item !== specs.find((candidate) => candidate.moduleId !== heavy),
+		),
+		specs.filter((item) => item.moduleId !== heavy),
+	];
+	for (const files of scenarios) {
+		for (const count of [1, 2, 3, 4, 5]) {
+			const union = [];
+			for (let index = 1; index <= count; index += 1) {
+				const context = { config: { root: webRoot, shard: { count, index } } };
+				const original = await new BaseSequencer(context).shard(files);
+				const selected = await new WebTestSequencer(context).shard(files);
+				union.push(...selected);
+				if (count !== 4) assert.deepEqual(selected, original);
+				else {
+					assert.deepEqual(
+						names(selected.filter((item) => item.moduleId !== heavy)),
+						names(original.filter((item) => item.moduleId !== heavy)),
+					);
+					assert.equal(
+						selected.filter((item) => item.moduleId === heavy).length,
+						index === 1
+							? files.filter((item) => item.moduleId === heavy).length
+							: 0,
+					);
+				}
+			}
+			assert.deepEqual(names(union), names(files));
+			assert.equal(new Set(union).size, files.length);
+		}
+	}
+});
 
 test("worker budget follows available parallelism and reserves parent capacity on larger runners", () => {
 	const processors = Array.from({ length: 64 }, () => ({
@@ -403,6 +457,7 @@ test("source policy fails closed for unsupported config, test command and Vitest
 		config.replace("globals: true", 'exclude: ["src/app/**"], globals: true'),
 		config.replace("globals: true", "projects: [], globals: true"),
 		config.replace("globals: true", "passWithNoTests: true, globals: true"),
+		config.replace("sequencer: WebTestSequencer", "sequencer: undefined"),
 	])
 		assert.throws(() => assertSourcePolicy(changed, pkg, workspace));
 	assert.throws(() =>

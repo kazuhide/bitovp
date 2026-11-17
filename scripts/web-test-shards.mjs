@@ -26,7 +26,7 @@ const WORKSPACE = "@bitovp/web";
 // This version supports exactly the present include/default-exclude policy.
 // A config change requires a deliberate inventory-policy update and its tests.
 const CONFIG_SHA256 =
-	"4b273d907aa3357dee64bb09f612d697379dfcb7c52e4d36367f25da6598b55f";
+	"1d47a2b0859a133a4bbc54d2137b0a2415dc8c8da8e06888e1635eca25561e0f";
 const TOTALS = [
 	"numTotalTestSuites",
 	"numPassedTestSuites",

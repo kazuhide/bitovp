@@ -74,6 +74,7 @@ export async function prepareMediaSource(
 	} = {},
 ) {
 	const source = sourcePath(cache);
+	cache = resolve(cache);
 	signal.throwIfAborted();
 	try {
 		mkdirSync(cache, { mode: 0o700 });

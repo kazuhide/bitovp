@@ -111,10 +111,12 @@ test("cache directory links and relative paths are rejected before any acquisiti
 	mkdirSync(target);
 	const linked = join(parent, "linked");
 	symlinkSync(target, linked);
-	await assert.rejects(
-		prepareMediaSource(linked, fakeMiss()),
-		/regular directory/,
-	);
+	for (const spelling of [linked, `${linked}/`, `${linked}/.`]) {
+		await assert.rejects(
+			prepareMediaSource(spelling, fakeMiss({ download: neverDownload })),
+			/regular directory/,
+		);
+	}
 	await assert.rejects(prepareMediaSource("relative", fakeMiss()), /absolute/);
 	assert.deepEqual(readdirSync(target), []);
 });

@@ -16,7 +16,7 @@ GitHub runners; a small single-run improvement is insufficient evidence.
 ## Complete Web suite in four parts
 
 Each shard runs the full configured discovery and checks it against the tracked
-source inventory before running one quarter. Within the same allocated runner,
+source inventory before running its assigned portion. Within the same allocated runner,
 one available CPU uses one Vitest worker, two or three available CPUs use two,
 and four or more use three. This caps workers at three and leaves capacity for
 the parent on larger runners. The budget uses `os.availableParallelism()`;
@@ -24,6 +24,15 @@ logical CPU count and sanitized CPU models are logged only as diagnostic context
 The current Vitest version, configuration policy and full-suite command are
 explicit. A configuration change requires reviewing that policy rather than
 silently losing new test paths.
+
+Vitest's default file hashes put the 64-case `file-flow.mount.test.tsx` on shard
+3, which already had the largest measured workload. That file alone took
+151–161 seconds in the three-worker samples. For four shards, a small subclass
+of Vitest's `BaseSequencer` assigns only that exact file to shard 1. Every other
+file keeps its default assignment, including future additions; sorting is
+inherited unchanged. Other shard counts keep the default behavior, and removing
+the named file leaves no stale selection. Full discovery and the aggregate
+inventory check still cover every test file.
 
 Only sanitized file/status/count receipts are uploaded. The required `tests (web)`
 check always runs, requires every shard job to succeed, and checks exactly four
@@ -46,8 +55,13 @@ expectation. After correcting that expectation, the same worker limits
 ([44098516198](https://github.com/kazuhide/bitovp/actions/runs/44098516198)) measured
 497 seconds and 1,403 runner-seconds; all 872 files, 13,167 cases and the complete
 110-skip audit passed. Both samples exceed the performance criteria and remain
-part of the evidence. The bounded worker adjustment above needs new CI
-measurements before claiming those criteria are met.
+part of the evidence. With three workers, later runs measured
+[419 seconds / 1,192 runner-seconds](https://github.com/kazuhide/bitovp/actions/runs/44101340969)
+and [436 seconds / 1,179 runner-seconds](https://github.com/kazuhide/bitovp/actions/runs/44106606835).
+The first passed with only one second of elapsed margin; the second missed that
+limit. Both passed the complete inventory and skip audit. The single-file
+redistribution above still needs new CI measurement; prior samples do not
+establish a stable latency guarantee.
 
 ## Verified native HDR build reuse
 

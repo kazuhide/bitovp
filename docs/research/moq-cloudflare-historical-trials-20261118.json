@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "scope": "historical-cloudflare-trials-only",
+  "finalIntegratedE2E": "pending",
+  "inputConnectedNullMeans": "not-verified",
+  "transportProtocolScope": "browser-webtransport-observation-not-native-encoder-alpn",
+  "trials": [
+    {
+      "trialId": "0941830e-dce6-4a35-9b7f-8bd74f7eb4b6",
+      "startedAt": "2026-11-17T16:10:30.116Z",
+      "endedAt": "2026-11-17T16:15:34.560Z",
+      "configuredDraft": "DRAFT_18",
+      "sourceCommit": "964fd0e7b85cc6732cdb3ae3e61cad8231fdd9e2",
+      "channelId": "3da2621f-352f-48ec-be56-bd070e7a2843",
+      "runId": "5f5f467a-2917-4e15-8253-ba9c5379a9bb",
+      "encodingId": "4315da20-47d7-4fc9-be35-51c1b345ca02",
+      "requestedEncoderVersion": "BETA",
+      "actualEncoderVersion": "2.293.0",
+      "actualRegion": "AWS_AP_NORTHEAST_1",
+      "inputConnected": null,
+      "transportProtocol": {
+        "browserWebTransportEstablishedObserved": false,
+        "browserWebTransportClosedObserved": false,
+        "browserOfferedProtocols": null,
+        "browserNegotiatedProtocol": null,
+        "encoderNegotiatedAlpn": null
+      },
+      "renderEvidence": {
+        "status": "not-verified"
+      },
+      "classifiedFailure": "provider-error-before-verified-input",
+      "providerTerminal": "ERROR",
+      "cleanupConfirmed": true,
+      "integratedE2EAcceptance": "not-complete"
+    },
+    {
+      "trialId": "76decb2b-9d72-4b3d-a804-d342af3fa2d2",
+      "startedAt": "2026-11-17T17:34:27.462Z",
+      "endedAt": "2026-11-17T17:39:34.094Z",
+      "configuredDraft": "DRAFT_16",
+      "sourceCommit": "ee835cb3f6dcb24fc273a965cf94624560fe1118",
+      "channelId": "ec427b97-bdc2-4940-917a-b124d096f53e",
+      "runId": "144995a0-c3e1-45f1-bb10-7a91dd0705a4",
+      "encodingId": "3e56e019-e255-4e28-a428-91446f448c7b",
+      "requestedEncoderVersion": "BETA",
+      "actualEncoderVersion": "2.293.0",
+      "actualRegion": "AWS_AP_NORTHEAST_1",
+      "inputConnected": true,
+      "transportProtocol": {
+        "browserWebTransportEstablishedObserved": false,
+        "browserWebTransportClosedObserved": false,
+        "browserOfferedProtocols": null,
+        "browserNegotiatedProtocol": null,
+        "encoderNegotiatedAlpn": null
+      },
+      "renderEvidence": {
+        "status": "not-verified"
+      },
+      "classifiedFailure": "player-asset-organization-binding-409",
+      "providerTerminal": "FINISHED",
+      "cleanupConfirmed": true,
+      "integratedE2EAcceptance": "not-complete"
+    },
+    {
+      "trialId": "d453b290-1f00-46ac-98e0-d0dc62b8f695",
+      "startedAt": "2026-11-17T18:17:36.992Z",
+      "endedAt": "2026-11-17T18:22:27.721Z",
+      "configuredDraft": "DRAFT_16",
+      "sourceCommit": "1d7ce9fbbc180bcbaa66f09a60687764dd974c70",
+      "channelId": "9dbae60c-d479-4467-826c-3354d0ab145d",
+      "runId": "7d7bb77b-f1f2-4abd-bee4-11a11d285180",
+      "encodingId": "e0c871cb-a95c-47ca-959d-5fec6ef6eb95",
+      "requestedEncoderVersion": "BETA",
+      "actualEncoderVersion": "2.293.0",
+      "actualRegion": "AWS_AP_NORTHEAST_1",
+      "inputConnected": true,
+      "transportProtocol": {
+        "browserWebTransportEstablishedObserved": true,
+        "browserWebTransportClosedObserved": true,
+        "browserOfferedProtocols": null,
+        "browserNegotiatedProtocol": null,
+        "encoderNegotiatedAlpn": null
+      },
+      "renderEvidence": {
+        "status": "not-verified"
+      },
+      "classifiedFailure": "webtransport-closed-before-verified-render",
+      "providerTerminal": "FINISHED",
+      "cleanupConfirmed": true,
+      "integratedE2EAcceptance": "not-complete"
+    },
+    {
+      "trialId": "46bb5afe-c1be-4c6e-b68b-0b2ade111e6e",
+      "startedAt": "2026-11-17T18:28:45.987Z",
+      "endedAt": "2026-11-17T18:33:32.416Z",
+      "configuredDraft": "DRAFT_18",
+      "sourceCommit": "1d7ce9fbbc180bcbaa66f09a60687764dd974c70",
+      "channelId": "6ccfeba8-ebba-49c9-99db-b4505835d64f",
+      "runId": "4cc245b2-d9ab-491e-854b-479961cd2f8b",
+      "encodingId": "ddf308fe-acfa-493c-90f7-8373941d642f",
+      "requestedEncoderVersion": "BETA",
+      "actualEncoderVersion": "2.293.0",
+      "actualRegion": "AWS_AP_NORTHEAST_1",
+      "inputConnected": null,
+      "transportProtocol": {
+        "browserWebTransportEstablishedObserved": false,
+        "browserWebTransportClosedObserved": false,
+        "browserOfferedProtocols": null,
+        "browserNegotiatedProtocol": null,
+        "encoderNegotiatedAlpn": null
+      },
+      "renderEvidence": {
+        "status": "not-verified"
+      },
+      "classifiedFailure": "provider-error-before-verified-input",
+      "providerTerminal": "ERROR",
+      "cleanupConfirmed": true,
+      "integratedE2EAcceptance": "not-complete"
+    },
+    {
+      "trialId": "46295f07-7951-48a8-8d26-a9d7fdc2a2b5",
+      "startedAt": "2026-11-17T18:34:30.207Z",
+      "endedAt": "2026-11-17T18:36:25.185Z",
+      "configuredDraft": "DRAFT_16",
+      "sourceCommit": "1d7ce9fbbc180bcbaa66f09a60687764dd974c70",
+      "channelId": "332d6d2f-d8f7-4179-82cb-01a03afe8cde",
+      "runId": "1fdccb1c-6563-44c5-9094-43a30f61ef42",
+      "encodingId": "74096863-415a-447c-b5d8-52efd1f23f58",
+      "requestedEncoderVersion": "BETA",
+      "actualEncoderVersion": "2.293.0",
+      "actualRegion": "AWS_AP_NORTHEAST_1",
+      "inputConnected": true,
+      "transportProtocol": {
+        "browserWebTransportEstablishedObserved": true,
+        "browserWebTransportClosedObserved": false,
+        "browserOfferedProtocols": [
+          "moqt-16"
+        ],
+        "browserNegotiatedProtocol": null,
+        "encoderNegotiatedAlpn": null
+      },
+      "renderEvidence": {
+        "status": "visible-canvas-screenshot-and-cdp-decode",
+        "image": "colorbars-with-utc-clock",
+        "imageUtcClock": "18:36:10.583",
+        "screenshotSha256": "a1f69835848d6f69de3402dbb23c8d46fbc2cfac72467246fcab0a02526d9c15",
+        "videoCodec": "h264",
+        "width": 640,
+        "height": 360,
+        "videoDecoder": "VideoToolboxVideoDecoder",
+        "audioCodec": "aac",
+        "historicalObserver": "html-video-only-no-canvas-detection",
+        "historicalLiveVideoElementCount": 0,
+        "historicalRecordingState": "idle",
+        "historicalArchiveCount": 0
+      },
+      "classifiedFailure": "canvas-observer-did-not-detect-visible-render",
+      "providerTerminal": "FINISHED",
+      "cleanupConfirmed": true,
+      "integratedE2EAcceptance": "not-complete"
+    },
+    {
+      "trialId": "cc055d8d-2dad-4cf2-8b8b-72fc48a640d7",
+      "startedAt": "2026-11-17T19:57:12.693Z",
+      "endedAt": "2026-11-17T20:02:24.690Z",
+      "configuredDraft": "DRAFT_16",
+      "sourceCommit": "cfc2316239070f3fc53e2e7d1f4313f7c7cfff9e",
+      "channelId": "91b34a0f-12fa-4d25-8e0d-77610809a810",
+      "runId": "cfc65a21-973a-41fd-89a1-97878f93c662",
+      "encodingId": "3503e764-1e01-4e82-accd-3f69d9d658dc",
+      "requestedEncoderVersion": "BETA",
+      "actualEncoderVersion": "2.293.0",
+      "actualRegion": "AWS_AP_NORTHEAST_1",
+      "inputConnected": true,
+      "transportProtocol": {
+        "browserWebTransportEstablishedObserved": true,
+        "browserWebTransportClosedObserved": true,
+        "browserOfferedProtocols": [
+          "moqt-16"
+        ],
+        "browserNegotiatedProtocol": null,
+        "encoderNegotiatedAlpn": null
+      },
+      "renderEvidence": {
+        "status": "native-canvas-pixel-changes",
+        "image": "colorbars-with-utc-clock",
+        "screenshotSha256": "4ffce902a245b2f4a900516b90cbfa25fe25f6413cede195c1f9905e335c4f59",
+        "width": 640,
+        "height": 360,
+        "changedImages": 336,
+        "observationMs": 20209.6,
+        "sourceFps": null,
+        "sourceFrameCounters": null,
+        "latencyMs": 1915,
+        "latencySource": "player-web-x-embedded-image-timestamp",
+        "latencyScope": "observed-snapshot-not-rtt-or-native-analytics-latency",
+        "historyPutStatus": 409,
+        "savedSampleCount": 2,
+        "historicalArchiveCount": 0
+      },
+      "classifiedFailure": "history-prefix-conflict-after-json-float-rounding",
+      "providerTerminal": "FINISHED",
+      "cleanupConfirmed": true,
+      "integratedE2EAcceptance": "not-complete"
+    }
+  ]
+}

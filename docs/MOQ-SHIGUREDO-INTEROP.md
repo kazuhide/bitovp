@@ -3,14 +3,18 @@
 調査日: 2026-11-17。公開仕様・公開ソース・SDK 型の確認と、公開接続先への TLS/ALPN 試験。
 BitOVP 調査基点: `da31b866166763fda126dcc1cd6ec858d3ab42ce`。
 
-追記: BitOVP に MoQ 出力を実装し、`BETA` Encoder の Live 開始を試した結果は
-[実 Encoder 試験結果](MOQ-LIVE-ENCODER-TEST-RESULTS.md)に記録した。
-アカウントの MoQ 未有効化で開始が拒否され、実 Encoder の送信 draft は未確認である。
+追記（2026-11-18）: 初回の開始要求は MoQ アカウント機能制限で拒否されたが、
+解除後は BitOVP 経由で実 Encoder `2.293.0` の起動と入力受信を確認した。
+最終 Cloudflare 試験は実 Encoder `2.294.0` で受信・録画保存まで確認した。各回の失敗・到達段階は
+[実 Encoder 試験結果](MOQ-LIVE-ENCODER-TEST-RESULTS.md)に記録する。
+実 Encoder の交渉済み ALPN は取得できておらず、実送信 draft は未確定である。
 
 ## 判断
 
-**試験した時雨堂の公開 native QUIC 接続先とは、Bitmovin の公開対応 draft では接続できなかった。**
-最初に解消する条件は MoQT draft の一致である。Bitmovin Encoder の公開対応は
+**時雨堂の公開 native QUIC 接続先へ、Bitmovin の公開対応 draft の ALPN を提示した
+汎用 QUIC クライアントは接続できなかった。**
+本節は公開仕様と汎用クライアントの試験結果であり、実 Encoder の送出 protocol の観測とは分ける。
+Bitmovin Encoder の公開対応は
 16／18、Player Web X の公開 MoQ デモの選択肢は14／16／18。
 時雨堂の DevTools は23、Sora MoQ の公開説明は22で、共通対応は確認できない。
 実通信でも `sora-moq.sora-labo.shiguredo.app:443/UDP` は `moqt-23` を選択する一方、
@@ -58,9 +62,9 @@ MoQT SETUP、認証 token、PUBLISH、media object は送信していない。
 23の成功は MoQT SETUP や配信成功を意味せず、`h3` の成功も WebTransport CONNECT の
 成功ではない。この試験は実際の Bitmovin Encoder／Player での接続試験ではない。
 
-ユーザーから有料 Live 起動・映像送信も許可されたが、draft の不一致を先に確認したため
-現構成での有料試験には進めていない。将来の Encoder／映像試験は、必要な MoQ 機能を
-BitOVP に実装したうえで BitOVP 経由で行う。
+初回の ALPN 調査時点では有料 Live 試験を行っていない。その後、必要な MoQ 機能を
+BitOVP に実装し、ユーザーが許可した Live 起動・映像送信をアプリ経由で実施した。
+後続試験の結果を、この汎用クライアントの ALPN 観測と混同しない。
 
 | 確認点 | Bitmovin | 時雨堂 | 判断・必要な確認 |
 |---|---|---|---|
@@ -86,7 +90,8 @@ Sora Labo の[利用規約第3条](https://github.com/shiguredo/sora-labo-doc/bl
 [第9条](https://github.com/shiguredo/sora-labo-doc/blob/750fcf94b340f73f7440f56645adbc51322af7d3/TERMS.md#L87)
 には性能分析等の第三者への開示制限がある。アカウントを使った配信評価では適用と
 許諾範囲を時雨堂に確認し、相互接続用の評価接続先を用意してもらう進め方が適切。
-今回は登録・認証・配信していない。
+初回の ALPN 調査では Sora Labo への登録・token 発行は行っていない。後続の実 Encoder
+試験は token なしの設定で行い、Sora の認可済み配信・object 中継は確認できていない。
 
 時雨堂へ確認する項目:
 
@@ -95,9 +100,9 @@ Sora Labo の[利用規約第3条](https://github.com/shiguredo/sora-labo-doc/bl
 3. 任意の namespace と rendition track 名の許可。catalog と複数 video rendition、audio の scope。
 4. fMP4/CMAF object と Bitmovin catalog の透過中継可否、評価利用と結果共有の範囲。
 
-Bitmovin 側ではアカウントの MoQ Beta 有効化、Encoder `2.292.0` 以上、使用する
-Player Web X MoQ ビルドを確認する [B1]。このアカウントの有効化状態は未確認。
-時雨堂側の最新 draft に揃える場合は、両製品に対する対応可否を確認する。
+公開ガイドは MoQ Beta と Encoder `2.292.0` 以上を前提とする [B1]。後続試験では
+機能制限解除後の起動受理と実 Encoder `2.293.0` を確認し、Player は公式 MoQ 専用 bundle を固定した。
+時雨堂側の最新 draft との互換性は、この起動成功だけでは確定しない。
 
 ## 互換条件が揃った後の試験
 
@@ -107,7 +112,8 @@ SCTE-35 は公開ガイドの対象外 [B1]。既存の S3 出力に MoQ を追�
 
 まず以下の公式 Cloudflare draft 16 構成を比較用の候補にできる [B1]。
 **以下は API の形を示す設定例であり、時雨堂用の動作確認済み設定ではない。**
-Relay の利用条件・token・Bitmovin Beta の確認後に実行する。今回 API 送信はしていない。
+初回調査では API 送信をしていない。後続の Cloudflare 試験は、専用の資格情報を
+BitOVP に登録してアプリ経由で実行した。以下の例を時雨堂への配信成功例とは扱わない。
 
 `POST /v1/encoding/outputs/moq` の body:
 
@@ -137,8 +143,9 @@ Relay の利用条件・token・Bitmovin Beta の確認後に実行する。今�
 Sora の `#msf:...` URI を Encoder の `relayUrl` にコピーするだけでは token 設定にならない。
 秘密情報はリポジトリや試験ログに保存しない。
 
-再生は [Player Web X MoQ デモ](https://demo.bitmovin.com/public/pwx-moq/) の Relay、
-Namespace、Draft、Catalog に設定する。比較用 Cloudflare 構成では Relay が
+再生 resource の形式は [Player Web X MoQ デモ](https://demo.bitmovin.com/public/pwx-moq/) の
+Relay、Namespace、Draft、Catalog で確認した。後続の実試験は BitOVP の専用プレビューで行う。
+比較用 Cloudflare 構成では Relay が
 `https://draft-16.cloudflare.mediaoverquic.com/{{SUBSCRIBE_ONLY_TOKEN}}`、Draft が16、
 Catalog が `catalog`、Media types が `audio,video` [B1]。
 この path に token を置く方式を時雨堂の認証方式へ一般化しない。
@@ -162,8 +169,9 @@ SDK の型があることと BitOVP のフォーム・plan・Worker・Player が
 
 初回調査後、実際の Encoder の挙動を確認するため、[実装計画](MOQ-LIVE-ENCODER-TEST-PLAN.md)
 に沿って credential 管理、Live 専用 validation、コンパイルと Worker 実行を追加した。
-実 Encoder を使った試験結果は別途記録する。上記 ALPN 試験をその代わりにはしない。
-Player Web X の限定プレビューは、接続が成立した後の段階として扱う。
+後続では run に結び付いた Player Web X の専用プレビュー、観測グラフ、受信映像の保存も
+BitOVP に実装した。実 Encoder・Player の試験結果は別途記録し、上記 ALPN 試験や
+実装の単体テストを配信・再生成功の代わりにはしない。
 
 ## 確認結果と限界
 
@@ -177,9 +185,11 @@ Player デモ HTML では draft の選択と URL parameter の受付が14／16�
 SDK による空の `acl`／`ignoredBy` 配列の付加も期待値に含めて確認した。
 これは API の受理や wire 上の認証を証明しない。
 
-ブラウザ操作用ホストが利用できなかったため、画面操作・実再生の確認は行っていない。
-QUIC TLS 以降の MoQT SETUP、WebTransport CONNECT、token 発行、Live 起動・課金処理、
-性能測定も未実施。
+初回の調査範囲では、画面操作、実再生、QUIC TLS 以降の MoQT SETUP、
+WebTransport CONNECT、token 発行、Live 起動・課金処理、性能測定は未実施だった。
+後続ではブラウザー画面、有料 Live、Cloudflare token を使った WebTransport 接続まで試験した。
+その到達段階と未確認項目は実 Encoder 試験結果に集約し、本節の ALPN handshake 成功を
+SETUP・media object 受信・再生成功へ読み替えない。
 
 ## 一次資料
 

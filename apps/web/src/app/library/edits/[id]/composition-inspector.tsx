@@ -117,7 +117,8 @@ type Props = {
 	onChange: (document: CompositionDocument) => void;
 	onSelect: (id: string) => void;
 	onError: () => void;
-	onUpload: (file: File) => Promise<void>;
+	onUpload?: (file: File) => Promise<void>;
+	showCaptionTranslationHelp?: boolean;
 	candidateContext?: CropCandidateContext;
 	sourceFrameReader?: CompositionSourceFrameReader | null;
 	sourceFrameRevision?: number;
@@ -1107,6 +1108,7 @@ function CompositionTextInspector({
 	disabled,
 	onChange,
 	onUpload,
+	showCaptionTranslationHelp = true,
 	onError,
 	presentationDisabled,
 }: Props) {
@@ -1144,7 +1146,9 @@ function CompositionTextInspector({
 					help={
 						<EditingHelpText>
 							<p>{c.captionLanguageHelp}</p>
-							<p>{c.captionTranslationCreateHelp}</p>
+							{showCaptionTranslationHelp && (
+								<p>{c.captionTranslationCreateHelp}</p>
+							)}
 						</EditingHelpText>
 					}
 				>
@@ -1253,25 +1257,27 @@ function CompositionTextInspector({
 				(doc.captions?.length ?? 0) >= COMPOSITION_LIMITS.duckIntervals && (
 					<p className="text-xs text-zinc-500">{c.duckLimit}</p>
 				)}
-			<label className="block space-y-2 text-xs text-zinc-400">
-				{c.uploadImage}
-				<input
-					type="file"
-					accept="image/png"
-					disabled={
-						disabled ||
-						(doc.imageAssets?.length ?? 0) >= 16 ||
-						(doc.overlays?.length ?? 0) >= 32
-					}
-					onChange={(event) => {
-						const file = event.target.files?.[0];
-						if (file) void onUpload(file);
-						event.target.value = "";
-					}}
-					className="block max-w-full text-xs"
-				/>
-				<span className="block">{c.imageHelp}</span>
-			</label>
+			{onUpload && (
+				<label className="block space-y-2 text-xs text-zinc-400">
+					{c.uploadImage}
+					<input
+						type="file"
+						accept="image/png"
+						disabled={
+							disabled ||
+							(doc.imageAssets?.length ?? 0) >= 16 ||
+							(doc.overlays?.length ?? 0) >= 32
+						}
+						onChange={(event) => {
+							const file = event.target.files?.[0];
+							if (file) void onUpload(file);
+							event.target.value = "";
+						}}
+						className="block max-w-full text-xs"
+					/>
+					<span className="block">{c.imageHelp}</span>
+				</label>
+			)}
 			<fieldset disabled={disabled} className="grid min-w-0 grid-cols-2 gap-3">
 				<label htmlFor={`${controlId}-color`} className="text-xs text-zinc-400">
 					{c.color}

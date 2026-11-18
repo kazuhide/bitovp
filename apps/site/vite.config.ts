@@ -28,5 +28,16 @@ export default defineConfig({
 	},
 	css: { postcss: { plugins: [tailwindcss()] } },
 	server: { fs: { allow: [local("../..")] } },
-	build: { sourcemap: false },
+	build: {
+		sourcemap: false,
+		rolldownOptions: {
+			output: {
+				// Name the shared public link control separately from credential files.
+				chunkFileNames: (chunk) =>
+					chunk.name === "new-credential-link"
+						? "assets/storage-setup-link-[hash].js"
+						: "assets/[name]-[hash].js",
+			},
+		},
+	},
 });

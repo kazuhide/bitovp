@@ -34,6 +34,7 @@ export function useInputTimelineWorkbench({
 	onChange,
 	sources,
 	disabled = false,
+	previewNotice,
 	onReadinessChange,
 }: VodInputTimelineEditorProps) {
 	const document = useMemo(
@@ -67,6 +68,7 @@ export function useInputTimelineWorkbench({
 		anchorMs: mode === "source" ? sourceAnchor : sequenceAnchor,
 		whole,
 		disabled,
+		renderPreview: previewNotice === undefined,
 	});
 	const names = Object.fromEntries(
 		sources.map((source) => [

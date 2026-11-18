@@ -27,7 +27,7 @@ export type {
 } from "./types";
 
 export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
-	const { sources, onAddSource, disabled = false } = props;
+	const { sources, onAddSource, disabled = false, previewNotice } = props;
 	const w = useInputTimelineWorkbench(props);
 	const [image, setImage] = useState<{
 		favorite: VodInputFavoriteWire;
@@ -45,20 +45,22 @@ export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
 			className="min-w-0 space-y-3 rounded-md border border-zinc-800 p-3"
 			onKeyDown={w.onKeyDown}
 		>
-			<PrepareTimelineControl
-				document={document}
-				probeId={w.state.probeId}
-				output={props.imageOutput}
-				preparationKey={timelinePreparationKey(
-					document,
-					sources,
-					props.imageOutput ?? { credentialId: "", bucket: "", prefix: "" },
-					w.state.probeId,
-				)}
-				ready={w.state.ready}
-				disabled={disabled || w.dragging}
-				onChange={props.onPreparationChange}
-			/>
+			{previewNotice === undefined && (
+				<PrepareTimelineControl
+					document={document}
+					probeId={w.state.probeId}
+					output={props.imageOutput}
+					preparationKey={timelinePreparationKey(
+						document,
+						sources,
+						props.imageOutput ?? { credentialId: "", bucket: "", prefix: "" },
+						w.state.probeId,
+					)}
+					ready={w.state.ready}
+					disabled={disabled || w.dragging}
+					onChange={props.onPreparationChange}
+				/>
+			)}
 			<div className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(140px,0.8fr)_minmax(0,2fr)_minmax(110px,0.65fr)]">
 				<SourceBin
 					sources={sources}
@@ -83,23 +85,29 @@ export function VodInputTimelineEditor(props: VodInputTimelineEditorProps) {
 					}
 				/>
 				<div className="min-w-0">
-					<PreviewMonitor
-						task={w.state.preview.ready ?? w.state.preview.previous}
-						stale={w.state.preview.stale}
-						pending={w.state.probe.pending || w.state.preview.pending}
-						mode={w.mode}
-						positionMs={
-							w.mode === "source" ? w.sourcePosition : w.editor.positionMs
-						}
-						durationMs={w.previewDurationMs}
-						whole={w.whole}
-						fullAllowed={w.state.fullAllowed}
-						onWhole={w.setWhole}
-						onMode={w.setMode}
-						onPosition={w.onPlayback}
-						onSeek={w.sourceSeek}
-						onError={w.mediaError}
-					/>
+					{previewNotice === undefined ? (
+						<PreviewMonitor
+							task={w.state.preview.ready ?? w.state.preview.previous}
+							stale={w.state.preview.stale}
+							pending={w.state.probe.pending || w.state.preview.pending}
+							mode={w.mode}
+							positionMs={
+								w.mode === "source" ? w.sourcePosition : w.editor.positionMs
+							}
+							durationMs={w.previewDurationMs}
+							whole={w.whole}
+							fullAllowed={w.state.fullAllowed}
+							onWhole={w.setWhole}
+							onMode={w.setMode}
+							onPosition={w.onPlayback}
+							onSeek={w.sourceSeek}
+							onError={w.mediaError}
+						/>
+					) : (
+						<p className="rounded border border-zinc-800 p-3 text-sm text-zinc-400">
+							{previewNotice}
+						</p>
+					)}
 					{w.mode === "source" && w.selectedSource && (
 						<SourceInsertionControls
 							key={w.selectedSource.key}

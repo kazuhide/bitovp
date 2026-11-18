@@ -25,6 +25,7 @@ export type VodInputTimelineEditorProps = {
 	imageOutput?: ImageOutputLocation;
 	imageCredentials?: CredentialSummaryWire[];
 	onImportPreparedSource?: (source: WizardInputFile) => void;
+	previewNotice?: string;
 	disabled?: boolean;
 	onReadinessChange?: (state: InputTimelineReadiness) => void;
 	onPreparationChange?: (value: TimelinePreparation | null) => void;

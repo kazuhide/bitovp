@@ -21,6 +21,10 @@ import {
 	generationHistorySearch,
 	readGenerationHistoryFilters,
 } from "@/lib/library-generation-history";
+import {
+	browserLibraryBrowseLocation,
+	type LibraryBrowseLocation,
+} from "../library-view-preference";
 
 const labels = {
 	en: {
@@ -95,9 +99,11 @@ const linkClass =
 export function GenerationHistory({
 	initialFilters,
 	clipEditingAvailable,
+	browseLocation = browserLibraryBrowseLocation,
 }: {
 	initialFilters: GenerationHistoryFilters;
 	clipEditingAvailable: boolean;
+	browseLocation?: LibraryBrowseLocation;
 }) {
 	const { locale, t } = useT();
 	const organizationId = useDocumentOrganization();
@@ -115,8 +121,10 @@ export function GenerationHistory({
 	}, [filters.q]);
 	useEffect(() => {
 		const restore = () => {
+			const location = browseLocation();
+			if (!location) return;
 			const next = readGenerationHistoryFilters(
-				Object.fromEntries(new URLSearchParams(window.location.search)),
+				Object.fromEntries(new URLSearchParams(location.search)),
 			);
 			setFilters(next);
 			setDebouncedQ(next.q);
@@ -124,7 +132,7 @@ export function GenerationHistory({
 		restore();
 		window.addEventListener("popstate", restore);
 		return () => window.removeEventListener("popstate", restore);
-	}, []);
+	}, [browseLocation]);
 
 	const search = new URLSearchParams({ view: "history" });
 	for (const [key, value] of generationHistorySearch({
@@ -149,11 +157,13 @@ export function GenerationHistory({
 	const update = (patch: Partial<GenerationHistoryFilters>) => {
 		const next = { ...filters, offset: 0, ...patch };
 		const search = generationHistorySearch(next).toString();
-		const url = `${window.location.pathname}${search ? `?${search}` : ""}`;
+		const location = browseLocation();
+		if (!location) return;
+		const url = `${location.pathname}${search ? `?${search}` : ""}`;
 		// Update Next's canonical URL on filter changes. On remount the browser's
 		// history entry can be newer than the saved server component props.
-		if (url !== window.location.pathname + window.location.search)
-			window.history.replaceState(null, "", url);
+		if (url !== location.pathname + location.search)
+			location.replaceUrl(url, null);
 		setFilters(next);
 	};
 	return (

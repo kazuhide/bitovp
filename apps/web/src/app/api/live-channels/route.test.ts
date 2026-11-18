@@ -1033,7 +1033,9 @@ describe("GET /api/live-channels", () => {
 		expect(body.items[0]).not.toHaveProperty("schedules");
 		const args = findMany.mock.calls[0]?.[0] as {
 			select: Record<string, boolean>;
+			orderBy: unknown;
 		};
+		expect(args.orderBy).toEqual([{ createdAt: "desc" }, { id: "desc" }]);
 		expect(args.select).not.toHaveProperty("plan");
 		expect(args.select).not.toHaveProperty("stepLog");
 		expect(args.select).not.toHaveProperty("lastHeartbeat");

@@ -3352,8 +3352,6 @@ export const en = {
 			scopeNote:
 				"Filtering and sorting apply to the {count} channels loaded so far — load more to include the rest.",
 			matchNone: "No channel matches this filter.",
-			rowMenu: "Actions for {name}",
-			openChannel: "Open channel",
 			countdownDue: "due now",
 			countdownIn: "in {duration}",
 			elapsed: "{duration} elapsed",

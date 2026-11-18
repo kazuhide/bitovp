@@ -8,6 +8,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- Try sample VOD timeline edits, pseudo-live logs, and AISA-informed clip editing in the public browser demo.
 - Play clips, highlights and trailers directly from their cards on a content page and resize the clips panel on desktop. The catalog counts exported clips and links to the retained results.
 - Review a clip's saved editing settings on its export page and open a new editing timeline from that version. The original project and export are retained.
 - Find earlier clip generation jobs in the library by content name, status and update time, and reopen their progress or results.
@@ -18,6 +19,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- Show live channels newest first by default and open the deletion confirmation from the Actions column, matching the VOD jobs list.
 - Show confirmed Live encoder termination separately from the last run's errors and output evidence. Offer the action that matches the encoder state, keep terminal errors in run history, and explain Live-to-VOD eligibility in the relevant panel.
 - Shorten Live Heartbeat diagnostics with inline help, clear archived-run labels and separate encoder and input timing. Distinguish configured renditions from observed encoding statistics and retain an explicit unavailable state.
 - **Target 1.4.0.** Keep MoQ subscriber capabilities, recordings and raw task downloads unavailable during owner view-as. Exclude provider Task text from ordinary MoQ histories and protect previously saved errors on reads; explicit administrator diagnostics remain available.

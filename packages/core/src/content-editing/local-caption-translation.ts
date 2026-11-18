@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+	LOCAL_CAPTION_CONTEXT_POLICY_FINGERPRINT,
+	PLAMO_CAPTION_TEMPLATE,
+	PLAMO_CAPTION_TEMPLATE_HASH,
+	PLAMO_CAPTION_VALIDATION_POLICY_FINGERPRINT,
+} from "./caption-translation-policy";
 import { isSupportedCaptionText } from "./composition-caption-translation";
 import type {
 	CompositionCaption,
@@ -8,17 +14,15 @@ import { localStoryModelIdentitySchema } from "./local-story-contracts";
 import type { EditDocument } from "./schema";
 import { hashEditingEvidence } from "./verify-automatic-binding";
 
+export {
+	LOCAL_CAPTION_CONTEXT_POLICY_FINGERPRINT,
+	PLAMO_CAPTION_TEMPLATE,
+	PLAMO_CAPTION_TEMPLATE_HASH,
+	PLAMO_CAPTION_VALIDATION_POLICY_FINGERPRINT,
+} from "./caption-translation-policy";
+
 export const LOCAL_CAPTION_PROMPT_VERSION = "caption-ja-v1" as const;
 export const LOCAL_CAPTION_CONTEXT_PROMPT_VERSION = "caption-ja-v2" as const;
-export const LOCAL_CAPTION_CONTEXT_POLICY_FINGERPRINT = hashEditingEvidence({
-	version: "caption-scene-context-v1",
-	maxCueBytes: 2000,
-	maxContextBytes: 1400,
-	maxDataBytes: 4500,
-	selection: "CURRENT_SOURCE_SPANS_OR_ANCHOR_WHOLE_FIELDS",
-	consistency: "EXACT_SOURCE_SAME_BOUND_CONTEXT",
-	style: "CONCISE_FAITHFUL",
-});
 export const LOCAL_CAPTION_MAX_BATCH_BYTES = 2000;
 export const localCaptionModelIdentityV1Schema = localStoryModelIdentitySchema
 	.omit({ version: true, promptVersion: true })
@@ -251,24 +255,6 @@ export function normalizeManualCaptionTranslationEdits(
 	};
 }
 
-// Translation-only experimental identity; never part of the Story receipt union.
-export const PLAMO_CAPTION_TEMPLATE = {
-	version: "plamo-pfml3-caption-v1",
-	dataset: "<|plamo:tag|>dataset<|plamo:msg|>translation",
-	context: "<|plamo:tag|>context<|plamo:msg|>",
-	input: "<|plamo:tag|>input",
-	output: "<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>ja",
-	message: "<|plamo:msg|>",
-	language: "<|plamo:key|>lang<|plamo:val|>",
-	glossary: "<|plamo:tag|>glossary",
-	term: "<|plamo:index|>",
-	definition: "<|plamo:item|>",
-	style: "<|plamo:key|>form<|plamo:val|>plain",
-	stop: ["<|plamo:tag|>", "<|plamo:bos|>"],
-} as const;
-export const PLAMO_CAPTION_TEMPLATE_HASH = hashEditingEvidence(
-	PLAMO_CAPTION_TEMPLATE,
-);
 const plamoHash = z.string().regex(/^[a-f0-9]{64}$/);
 export const plamoCaptionModelIdentitySchema = z.strictObject({
 	version: z.literal("plamo-caption-model-v1"),
@@ -302,13 +288,6 @@ const plamoPlain = (maximum: number) =>
 export const localPlamoCaptionOutputSchema = z.strictObject({
 	id: z.string().regex(/^c\d{1,3}$/),
 	text: plamoPlain(1000),
-});
-export const PLAMO_CAPTION_VALIDATION_POLICY_FINGERPRINT = hashEditingEvidence({
-	version: "plamo-caption-validation-v1",
-	output: "PLAIN_EXACT_SOURCE_ID",
-	reservedTokens: "REJECT",
-	sourceClock: "IMMUTABLE",
-	maximumPromptBytes: 5632,
 });
 export const localCaptionModelIdentityV3Schema = plamoCaptionModelIdentitySchema
 	.omit({ version: true })

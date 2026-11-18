@@ -15,6 +15,8 @@ import type { LibrarySceneResults as SceneResults } from "@/lib/library-scenes";
 import { LibraryCatalogResults } from "./library-catalog-results";
 import { LibrarySceneResults } from "./library-scene-results";
 import {
+	browserLibraryBrowseLocation,
+	type LibraryBrowseLocation,
 	type LibraryBrowseState,
 	type LibraryView,
 	libraryBrowseSearch,
@@ -37,9 +39,11 @@ type Result = { scope: string; offset: number } & (
 export function LibraryClient({
 	initialQuery = readLibraryBrowseState({}),
 	clipEditingAvailable = false,
+	browseLocation = browserLibraryBrowseLocation,
 }: {
 	initialQuery?: LibraryBrowseState;
 	clipEditingAvailable?: boolean;
+	browseLocation?: LibraryBrowseLocation;
 }) {
 	const { locale: language, t } = useT();
 	const [state, setState] = useState(initialQuery);
@@ -62,23 +66,25 @@ export function LibraryClient({
 		return () => clearTimeout(timer);
 	}, [q]);
 	useEffect(() => {
-		window.history.replaceState(
-			window.history.state,
-			"",
-			`${window.location.pathname}${libraryBrowseSearch(state)}`,
-		);
-	}, [state]);
+		const location = browseLocation();
+		if (!location) return;
+		const url = location.pathname + libraryBrowseSearch(state);
+		if (url !== location.pathname + location.search)
+			location.replaceUrl(url, window.history.state);
+	}, [state, browseLocation]);
 	useEffect(() => {
 		const restore = () => {
+			const location = browseLocation();
+			if (!location) return;
 			const next = readLibraryBrowseState(
-				Object.fromEntries(new URLSearchParams(window.location.search)),
+				Object.fromEntries(new URLSearchParams(location.search)),
 			);
 			setState(next);
 			setDebouncedQ(next.q);
 		};
 		window.addEventListener("popstate", restore);
 		return () => window.removeEventListener("popstate", restore);
-	}, []);
+	}, [browseLocation]);
 	const search = new URLSearchParams({
 		q: debouncedQ,
 		archived: String(archived),

@@ -20,10 +20,18 @@ import { editingErrorMessage } from "../editing-errors";
 import { useCompositionCopy } from "./composition-copy";
 import { CompositionWorkbench } from "./composition-workbench";
 import { EditorClient, type LegacyEditingSession } from "./editor-client";
-export function EditorRouter({ id }: { id: string }) {
-	return <EditorRouterView key={id} id={id} />;
+
+type EditorRouterProps = {
+	id: string;
+	previewUnavailableMessage?: string;
+};
+export function EditorRouter(props: EditorRouterProps) {
+	return <EditorRouterView key={props.id} {...props} />;
 }
-function EditorRouterView({ id }: { id: string }) {
+function EditorRouterView({
+	id,
+	previewUnavailableMessage,
+}: EditorRouterProps) {
 	const organizationId = useDocumentOrganization();
 	const c = useCompositionCopy(),
 		{ t } = useT(),
@@ -129,6 +137,7 @@ function EditorRouterView({ id }: { id: string }) {
 					key={id}
 					project={{ ...query.data, draft: query.data.draft }}
 					initialUndoDraft={initialUndoDraft}
+					previewUnavailableMessage={previewUnavailableMessage}
 				/>
 			) : (
 				<>

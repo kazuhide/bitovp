@@ -553,7 +553,9 @@ describe("GET /api/encoding-jobs", () => {
 		const args = findMany.mock.calls[0]?.[0] as {
 			select: Record<string, boolean>;
 			where: Record<string, unknown>;
+			orderBy: unknown;
 		};
+		expect(args.orderBy).toEqual([{ createdAt: "desc" }, { id: "desc" }]);
 		// Still NEVER plan/stepLog/snapshots (perf contract).
 		expect(args.select).not.toHaveProperty("plan");
 		expect(args.select).not.toHaveProperty("stepLog");

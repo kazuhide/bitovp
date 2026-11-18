@@ -22,6 +22,7 @@ export const DEMO_STORAGE_ID = "de000000-0000-4000-8000-000000000401";
 export const DEMO_ORGANIZATION_ID = "00000000-0000-4000-8000-000000000501";
 export const DEMO_USER_ID = "00000000-0000-4000-8000-000000000601";
 export const DEMO_BUCKET = "demo-media";
+export const DEMO_VOD_SAMPLE_KEY = "samples/big-buck-bunny-10s.mp4";
 export const DEMO_VMAF_JOB_ID = "00000000-0000-4000-8000-000000000701";
 
 export type DemoRecord = Record<string, unknown>;
@@ -36,7 +37,7 @@ export const demoSession = {
 	effectiveUserId: DEMO_USER_ID,
 	actorUserId: DEMO_USER_ID,
 	displayName: "Demo user",
-	role: "OPERATOR",
+	role: "ADMIN",
 	platformOwner: false,
 	isImpersonating: false,
 	organizations: [
@@ -44,7 +45,7 @@ export const demoSession = {
 			id: DEMO_ORGANIZATION_ID,
 			name: "Demo workspace",
 			slug: "demo",
-			role: "OPERATOR",
+			role: "ADMIN",
 		},
 	],
 };
@@ -94,7 +95,7 @@ export function demoVodPlan() {
 					kind: "S3",
 					credentialId: DEMO_STORAGE_ID,
 					bucket: DEMO_BUCKET,
-					path: "samples/big-buck-bunny-10s.mp4",
+					path: DEMO_VOD_SAMPLE_KEY,
 					name: "Big Buck Bunny sample",
 				},
 			],

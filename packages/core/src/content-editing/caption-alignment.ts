@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
 	transcriptionRawSegmentSchema,
 	transcriptionSpeechIntervalSchema,
-} from "../content-production/transcription-quality";
+} from "../content-production/transcription-schema";
 import { captionOmissionsSchema } from "./caption-omissions";
 import type { CompositionSourceSegment } from "./composition-evidence";
 

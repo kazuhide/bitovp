@@ -102,6 +102,12 @@ export function createDemoFeederRoutes({
 }) {
 	const sessions = new Map<string, Session>();
 
+	function activeForChannel(id: string) {
+		return [...sessions.values()].find(
+			(row) => row.channelId === id && row.stoppedAt === null,
+		);
+	}
+
 	function reset() {
 		sessions.clear();
 		const channel = findChannel(DEMO_LIVE_CHANNEL_ID);
@@ -171,9 +177,7 @@ export function createDemoFeederRoutes({
 			return json({ error: "The demo channel was not found." }, 404);
 		if (channel.status !== "RUNNING" && channel.status !== "PROVISIONING")
 			return json({ error: "Start the demo channel before feeding it." }, 409);
-		const active = [...sessions.values()].find(
-			(row) => row.channelId === input.liveChannelId && row.stoppedAt === null,
-		);
+		const active = activeForChannel(input.liveChannelId);
 		if (Boolean(active) !== Boolean(input.switchFromActive))
 			return json(
 				{
@@ -254,11 +258,10 @@ export function createDemoFeederRoutes({
 			}
 			return undefined;
 		},
+		activeCount: (id: string) => (activeForChannel(id) ? 1 : 0),
 		stopChannel(id: string) {
-			for (const session of sessions.values()) {
-				if (session.channelId === id && session.stoppedAt === null)
-					session.stoppedAt = now();
-			}
+			const session = activeForChannel(id);
+			if (session) session.stoppedAt = now();
 		},
 		deleteChannel(id: string) {
 			for (const [key, session] of sessions) {

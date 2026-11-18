@@ -74,6 +74,15 @@ describe("simulated pseudo-live file input", () => {
 
 	it("simulates starting a sample and stopping or removing it in the browser", async () => {
 		const { transport, advance } = fixture();
+		async function listFeederCount() {
+			const { items } = (await (
+				await transport.fetch("/api/live-channels")
+			).json()) as {
+				items: { id: string; health: { activeFeeders: number } }[];
+			};
+			return items.find(({ id }) => id === DEMO_LIVE_CHANNEL_ID)?.health
+				.activeFeeders;
+		}
 		const response = await transport.fetch(sessions, post(sampleRequest));
 		expect(response.status).toBe(201);
 		const { id } = await response.json();
@@ -82,6 +91,7 @@ describe("simulated pseudo-live file input", () => {
 			status: "PUSHING",
 			stoppable: true,
 		});
+		expect(await listFeederCount()).toBe(1);
 		expect((await transport.fetch(selected, { method: "DELETE" })).status).toBe(
 			409,
 		);
@@ -95,6 +105,7 @@ describe("simulated pseudo-live file input", () => {
 			status: "STOPPED",
 			stoppable: false,
 		});
+		expect(await listFeederCount()).toBe(0);
 		const diagnostics = await (
 			await transport.fetch(`${selected}?diagnostics=1`)
 		).json();

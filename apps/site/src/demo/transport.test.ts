@@ -393,6 +393,40 @@ describe("isolated demo transport", () => {
 		expect(context.assetFetch).not.toHaveBeenCalled();
 	});
 
+	it("restarts a demo run without changing the channel's creation order", async () => {
+		const context = fixture();
+		const older = await (
+			await context.transport.fetch(
+				`/api/live-channels/${DEMO_LIVE_CHANNEL_ID}`,
+			)
+		).json();
+		const newer = await (
+			await context.transport.fetch(
+				"/api/live-channels",
+				post({ plan: demoLivePlan() }),
+			)
+		).json();
+		context.advance(10_000);
+		expect(
+			(
+				await context.transport.fetch(
+					`/api/live-channels/${older.id}/actions`,
+					post({ action: "restart" }),
+				)
+			).status,
+		).toBe(200);
+
+		const restored = createDemoTransport(context.options);
+		const { items } = await (await restored.fetch("/api/live-channels")).json();
+		expect(items[0]?.id).toBe(newer.id);
+		const restarted = items.find((row: { id: string }) => row.id === older.id);
+		expect(restarted).toBeDefined();
+		expect(restarted.createdAt).toBe(older.createdAt);
+		expect(Date.parse(restarted.currentRun.createdAt)).toBeGreaterThan(
+			Date.parse(older.currentRun.createdAt),
+		);
+	});
+
 	it("does not accept or persist credentials, malformed JSON, or oversized plans", async () => {
 		const { transport, storage } = fixture();
 		const attempts = [

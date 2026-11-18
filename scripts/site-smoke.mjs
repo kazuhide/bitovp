@@ -76,6 +76,8 @@ const locales = {
 		clipLength: "Length (s)",
 		saveDraft: "Save draft",
 		draftSaved: "Draft saved",
+		reviseProposal: "Revise this proposal",
+		captionsTab: "Captions & titles",
 		createVod: "Create demo job",
 		createLive: "Create demo channel",
 		reset: "Reset demo",
@@ -108,6 +110,8 @@ const locales = {
 		clipLength: "長さ（秒）",
 		saveDraft: "下書きを保存",
 		draftSaved: "保存済み",
+		reviseProposal: "編集案を作り直す",
+		captionsTab: "字幕・タイトル",
 		createVod: "デモジョブを作成",
 		createLive: "デモチャンネルを作成",
 		reset: "デモを初期状態に戻す",
@@ -233,6 +237,15 @@ async function tryLibraryDemo(page, locale, copy) {
 	await page.goBack();
 	await seeded.click();
 	await expect.poll(async () => Number(await length.inputValue())).toBe(4);
+	await expect(
+		page.getByRole("button", { name: copy.reviseProposal, exact: true }),
+	).toHaveCount(0);
+	await page
+		.getByRole("button", { name: copy.captionsTab, exact: true })
+		.click();
+	await expect(
+		page.locator('main input[type="file"][accept="image/png"]'),
+	).toHaveCount(0);
 	await expect(page.locator(".demo-notice")).toHaveCount(0);
 }
 

@@ -684,23 +684,25 @@ export function CompositionWorkbench({
 					</div>
 					{canMutate && (
 						<div className="flex flex-wrap items-center gap-2">
-							<ReproposalDialog
-								project={project}
-								document={draft}
-								actorIdentity={actorIdentity}
-								dirty={dirty}
-								disabled={
-									!canMutate ||
-									busy ||
-									remoteChanged ||
-									Boolean(pendingInputs.length)
-								}
-								onReframe={(mode) =>
-									change(reframeCurrentComposition(draft, mode))
-								}
-								beforeStart={saveBeforeReproposal}
-								onBusyChange={setProposing}
-							/>
+							{!previewUnavailableMessage && (
+								<ReproposalDialog
+									project={project}
+									document={draft}
+									actorIdentity={actorIdentity}
+									dirty={dirty}
+									disabled={
+										!canMutate ||
+										busy ||
+										remoteChanged ||
+										Boolean(pendingInputs.length)
+									}
+									onReframe={(mode) =>
+										change(reframeCurrentComposition(draft, mode))
+									}
+									beforeStart={saveBeforeReproposal}
+									onBusyChange={setProposing}
+								/>
+							)}
 							<Button
 								variant="ghost"
 								disabled={
@@ -928,7 +930,7 @@ export function CompositionWorkbench({
 							onChange={change}
 							onSelect={selectClip}
 							onError={() => setError(c.invalid)}
-							onUpload={upload}
+							onUpload={previewUnavailableMessage ? undefined : upload}
 						/>
 					) : (
 						<aside className="rounded-xl border border-zinc-800 p-4 text-zinc-400 text-sm">

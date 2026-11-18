@@ -54,6 +54,7 @@ const entrySchema = z.strictObject({
 	status: z.enum(["AUTO", "FINISHED", "CANCELED", "RUNNING", "STOPPED"]),
 	requestKey: z.string().min(1).max(200).optional(),
 	generation: z.number().int().nonnegative().max(1000).optional(),
+	runCreatedAt: z.number().finite().nonnegative().optional(),
 });
 const stateSchema = z.strictObject({
 	version: z.literal(2),
@@ -182,6 +183,7 @@ function restore(storage: Store | undefined, now: number): State {
 		for (const entry of state.entries) {
 			if (
 				entry.createdAt > now + 60_000 ||
+				(entry.runCreatedAt ?? entry.createdAt) > now + 60_000 ||
 				now - entry.createdAt > 7 * 86_400_000
 			)
 				throw new Error("Expired demo state");
@@ -198,7 +200,7 @@ function restore(storage: Store | undefined, now: number): State {
 	}
 }
 
-function record(entry: Entry, now: number): DemoRecord {
+function record(entry: Entry, now: number, activeFeeders = 0): DemoRecord {
 	const elapsed = now - entry.createdAt;
 	if (entry.kind === "vod") {
 		const status =
@@ -230,10 +232,13 @@ function record(entry: Entry, now: number): DemoRecord {
 	row.liveEffectFenceVersion = entry.generation ?? 0;
 	row.createdAt = new Date(entry.createdAt).toISOString();
 	const run = row.currentRun as DemoRecord;
-	run.createdAt = row.createdAt;
-	run.runningSince = new Date(entry.createdAt + 1_200).toISOString();
+	run.createdAt = new Date(entry.runCreatedAt ?? entry.createdAt).toISOString();
+	run.runningSince = new Date(
+		entry.runCreatedAt ?? entry.createdAt + 1_200,
+	).toISOString();
 	const health = row.health as DemoRecord;
 	health.runningSince = run.runningSince;
+	health.activeFeeders = activeFeeders;
 	return row;
 }
 
@@ -319,7 +324,7 @@ export function createDemoTransport(
 		if (!parsed.success) return error(400, "Invalid demo Heartbeat log query.");
 		const { from, to, cursor, limit } = parsed.data;
 		// A bounded snapshot keeps row IDs stable across pages and isolated between runs.
-		const identity = `${String(run.id)}:${entry.createdAt}:${entry.generation ?? 0}`;
+		const identity = `${String(run.id)}:${String(run.createdAt)}:${entry.generation ?? 0}`;
 		let snapshot = heartbeatSnapshots.get(entry.id);
 		if (snapshot?.identity !== identity) {
 			const start = Date.parse(String(run.createdAt));
@@ -694,7 +699,13 @@ export function createDemoTransport(
 				let items = state.entries
 					.filter((entry) => entry.kind === kind)
 					.sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
-					.map((entry) => record(entry, timestamp));
+					.map((entry) =>
+						record(
+							entry,
+							timestamp,
+							kind === "live" ? feeders.activeCount(entry.id) : 0,
+						),
+					);
 				const status = url.searchParams.get("status");
 				const query = url.searchParams.get("q")?.toLowerCase();
 				if (status) items = items.filter((item) => item.status === status);
@@ -726,7 +737,11 @@ export function createDemoTransport(
 			}
 			if (!id) return error(405);
 			const entry = find(id, kind);
-			const row = record(entry, timestamp);
+			const row = record(
+				entry,
+				timestamp,
+				kind === "live" ? feeders.activeCount(id) : 0,
+			);
 			if (!suffix && get) return json(row);
 			if (!suffix && method === "DELETE") {
 				if (
@@ -774,7 +789,7 @@ export function createDemoTransport(
 					} else if (input.action === "start" || input.action === "restart") {
 						feeders.stopChannel(id);
 						entry.status = "RUNNING";
-						entry.createdAt = timestamp - 1_200;
+						entry.runCreatedAt = timestamp;
 						entry.generation = Math.min(1000, (entry.generation ?? 0) + 1);
 					} else return error(501);
 					persist();

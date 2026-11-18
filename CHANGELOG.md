@@ -10,6 +10,15 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 - **Target 1.4.0.** Configure experimental MoQ-only Live delivery through encrypted relay credentials and expert JSON plans, with H.264/AAC fMP4 validation and audited Worker execution. A run-bound Player Web X preview uses separate subscriber credentials and an operator-supplied verified MoQ build. Diagnostics distinguish requested and selected Encoder versions/regions and provide bounded task metadata; each relay still needs interoperability verification.
 - **Target 1.4.0.** Retain MoQ preview statistics and received-video recordings after a Live run, with seekable playback, UTC charts, Encoder heartbeat correlation and exact-impression Analytics custom latency readback. Compact job and standalone players show saved observations and an independent client playback clock; historical times are explicitly estimated. Normal sampling intervals stay connected in latency charts while missing measurements remain gaps. Docker persists validated recordings in a dedicated volume.
+
+### Fixed
+
+- **Target 1.4.0.** Keep MoQ subscriber capabilities, recordings and raw task downloads unavailable during owner view-as. Exclude provider Task text from ordinary MoQ histories and protect previously saved errors on reads; explicit administrator diagnostics remain available.
+
+## [1.3.1] - 2026-11-18
+
+### Added
+
 - Validate all GitHub Actions workflows with actionlint as part of `pnpm check`, using a checksum-pinned tool in CI to reject invalid expressions and unavailable contexts before application qualification.
 - Select fast verification contracts from an explicit Git change base, including staged, working-tree and untracked changes. Eight fixed profiles cover QC, authentication and tenant isolation, VOD/Live submission, timeline edits, Live lifecycle and Library recovery. Shared or unclassified changes select all profiles; receipts keep pending integration checks explicit.
 - Require CI to demonstrate that fixed faults in tenant dispatch, non-idempotent start retries, HDR report grouping and child-process ownership fail their intended assertions, with the same complete suites passing before mutation and after source restoration.
@@ -35,7 +44,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
-- **Target 1.4.0.** Keep MoQ subscriber capabilities, recordings and raw task downloads unavailable during owner view-as. Exclude provider Task text from ordinary MoQ histories and protect previously saved errors on reads; explicit administrator diagnostics remain available.
+- Keep installed browser checks from rejecting a disappearing Linux test process during cleanup. Wait for the owned process group to exit before removing its fixture.
 - Reject unrelated or changed Bombadil violation sets during negative-control replay, validate retained observations with the actual component predicates, and execute validation through symbolic-link entry points. Keep installed browser tools within the wrapper's owned process group so interruption cleans them up. Keep custom Next.js image patterns disabled while its separate vendored matcher remains unpatched.
 - Block repeated extglob compilation in the build/test dependency picomatch while an official fix for GHSA-fc5q-39xc-vjpf is unavailable. Dependency audits retain the native finding and verify the exact patch, every installed copy and bounded regression checks before classifying it as locally mitigated; repeated extglob syntax is temporarily unsupported.
 
@@ -313,6 +322,7 @@ instructions.
 Record implemented changes under **Unreleased** until their tagged release is
 published.
 
+[1.3.1]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.1
 [1.3.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.0
 [1.2.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.2.0
 [1.1.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.1.0

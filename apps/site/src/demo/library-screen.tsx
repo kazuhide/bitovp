@@ -28,11 +28,11 @@ const EditorRouter = lazy(() =>
 function demoBrowseLocation(path: string) {
 	return () => {
 		const href = demoHref(path);
-		const { hash, pathname } = window.location;
+		const { hash, pathname, search } = window.location;
 		// A hash link can fire popstate before the previous screen unmounts.
 		if (hash !== href && !hash.startsWith(`${href}?`)) return null;
 		return {
-			pathname: pathname + href,
+			pathname: pathname + search + href,
 			search: hash.slice(href.length),
 			replaceUrl: replaceDemoBrowseUrl,
 		};

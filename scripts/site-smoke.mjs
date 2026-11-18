@@ -78,6 +78,8 @@ const locales = {
 		draftSaved: "Draft saved",
 		reviseProposal: "Revise this proposal",
 		captionsTab: "Captions & titles",
+		captionLanguage: "Caption display language",
+		captionLanguageHelp: /Switch between saved original captions/,
 		createVod: "Create demo job",
 		createLive: "Create demo channel",
 		reset: "Reset demo",
@@ -112,6 +114,8 @@ const locales = {
 		draftSaved: "保存済み",
 		reviseProposal: "編集案を作り直す",
 		captionsTab: "字幕・タイトル",
+		captionLanguage: "字幕の表示言語",
+		captionLanguageHelp: /保存済みの原語と日本語訳を切り替えます/,
 		createVod: "デモジョブを作成",
 		createLive: "デモチャンネルを作成",
 		reset: "デモを初期状態に戻す",
@@ -193,6 +197,11 @@ async function tryVodTimeline(page, copy) {
 }
 
 async function tryLibraryDemo(page, locale, copy) {
+	await page.evaluate(() => {
+		const url = new URL(window.location.href);
+		url.searchParams.set("source", "guide");
+		window.history.replaceState(window.history.state, "", url);
+	});
 	await page.locator('a[href="#/demo/library"]:visible').click();
 	const content = page.getByRole("heading", {
 		name: "Big Buck Bunny",
@@ -214,15 +223,14 @@ async function tryLibraryDemo(page, locale, copy) {
 	const other = locale === "en" ? "ja" : "en";
 	const languageLink = (value) =>
 		page.locator(`a[hreflang="${value}"]:visible`).first();
-	await expect(languageLink(other)).toHaveAttribute(
-		"href",
-		`/bitovp/${locales[other].path}${hash}`,
-	);
+	const localeUrl = (value) =>
+		`/bitovp/${locales[value].path}?source=guide${hash}`;
+	await expect(languageLink(other)).toHaveAttribute("href", localeUrl(other));
 	await languageLink(other).click();
-	await page.waitForURL(`**/bitovp/${locales[other].path}${hash}`);
+	await expect(page).toHaveURL(new URL(localeUrl(other), page.url()).href);
 	await expect(page.getByRole("searchbox")).toHaveValue("Big Buck Bunny");
 	await languageLink(locale).click();
-	await page.waitForURL(`**/bitovp/${copy.path}${hash}`);
+	await expect(page).toHaveURL(new URL(localeUrl(locale), page.url()).href);
 	await content.click();
 	await page
 		.getByRole("combobox", { name: copy.analysisLanguage })
@@ -258,6 +266,24 @@ async function tryLibraryDemo(page, locale, copy) {
 		.click();
 	await expect(
 		page.locator('main input[type="file"][accept="image/png"]'),
+	).toHaveCount(0);
+	await page.locator('a[href="#/demo/library"]:visible').click();
+	await page
+		.getByRole("heading", { name: "Studio Interview", exact: true })
+		.click();
+	await page.getByRole("link", { name: copy.editClips, exact: true }).click();
+	await page
+		.getByRole("link", { name: "Studio Interview · Sample cut", exact: true })
+		.click();
+	await page
+		.getByRole("button", { name: copy.captionsTab, exact: true })
+		.click();
+	await page
+		.getByRole("button", { name: new RegExp(copy.captionLanguage) })
+		.click();
+	await expect(page.getByText(copy.captionLanguageHelp)).toBeVisible();
+	await expect(
+		page.getByText(copy.reviseProposal, { exact: false }),
 	).toHaveCount(0);
 	await expect(page.locator(".demo-notice")).toHaveCount(0);
 }

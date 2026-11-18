@@ -455,7 +455,7 @@ export function createDemoLibraryRoutes({
 					updatedAt: new Date(now()).toISOString(),
 				};
 				projects.set(id, next);
-				return json(next);
+				return json(next, 201);
 			}
 		}
 

@@ -164,7 +164,7 @@ describe("demo content library", () => {
 			expectedRevision: 2,
 			confirmSuggestions: true,
 		});
-		expect(revision.status).toBe(200);
+		expect(revision.status).toBe(201);
 		const confirmed: AnyEditingProjectView = await revision.json();
 		expect(confirmed).toMatchObject({
 			draftRevision: 3,
@@ -190,7 +190,7 @@ describe("demo content library", () => {
 			expectedRevision: 3,
 			confirmSuggestions: false,
 		});
-		expect(repeated.status).toBe(200);
+		expect(repeated.status).toBe(201);
 		const next: AnyEditingProjectView = await repeated.json();
 		expect(next.draftRevision).toBe(4);
 		expect(next.currentRevisionId).not.toBe(confirmed.currentRevisionId);

@@ -931,6 +931,7 @@ export function CompositionWorkbench({
 							onSelect={selectClip}
 							onError={() => setError(c.invalid)}
 							onUpload={previewUnavailableMessage ? undefined : upload}
+							showCaptionTranslationHelp={!previewUnavailableMessage}
 						/>
 					) : (
 						<aside className="rounded-xl border border-zinc-800 p-4 text-zinc-400 text-sm">

@@ -118,6 +118,7 @@ type Props = {
 	onSelect: (id: string) => void;
 	onError: () => void;
 	onUpload?: (file: File) => Promise<void>;
+	showCaptionTranslationHelp?: boolean;
 	candidateContext?: CropCandidateContext;
 	sourceFrameReader?: CompositionSourceFrameReader | null;
 	sourceFrameRevision?: number;
@@ -1107,6 +1108,7 @@ function CompositionTextInspector({
 	disabled,
 	onChange,
 	onUpload,
+	showCaptionTranslationHelp = true,
 	onError,
 	presentationDisabled,
 }: Props) {
@@ -1144,7 +1146,9 @@ function CompositionTextInspector({
 					help={
 						<EditingHelpText>
 							<p>{c.captionLanguageHelp}</p>
-							<p>{c.captionTranslationCreateHelp}</p>
+							{showCaptionTranslationHelp && (
+								<p>{c.captionTranslationCreateHelp}</p>
+							)}
 						</EditingHelpText>
 					}
 				>

@@ -4,6 +4,12 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import { MOQ_OBSERVATION_LIMITS } from "@/lib/moq-player/observations";
 
+const archiveDurationMs = MOQ_OBSERVATION_LIMITS.archiveDurationMs;
+// A browser can keep recording while its stop callback is delayed. The saved clip
+// still uses the original 90-second cap and both paths share the same byte budget.
+const captureDurationMs = archiveDurationMs + 5_000;
+const muxTimestampMarginMs = 100;
+
 /** Validate the EBML header's actual DocType, not a magic substring in media. */
 export function hasWebmHeader(bytes: Uint8Array): boolean {
 	try {
@@ -73,8 +79,12 @@ const probeSchema = z.object({
 		.min(2)
 		.max(40_000),
 });
-export function validateMoqArchiveProbe(value: unknown): number {
+function inspectMoqArchiveProbe(value: unknown, kind?: "capture" | "saved") {
 	const probe = probeSchema.parse(value);
+	const reported = Number(probe.format.duration);
+	if (kind === "saved" && (!Number.isFinite(reported) || reported <= 0))
+		throw new Error("WebM archive duration is unavailable");
+
 	const videos = new Set(
 		probe.streams
 			.filter(
@@ -93,6 +103,7 @@ export function validateMoqArchiveProbe(value: unknown): number {
 		throw new Error("Invalid WebM archive");
 	let first = Infinity,
 		last = -Infinity,
+		longestPacket = 0,
 		videoPackets = 0;
 	for (const packet of probe.packets) {
 		const at = Number(packet.pts_time),
@@ -102,25 +113,53 @@ export function validateMoqArchiveProbe(value: unknown): number {
 			throw new Error("Invalid WebM archive");
 		first = Math.min(first, at);
 		last = Math.max(last, at + duration);
+		longestPacket = Math.max(longestPacket, duration);
 		if (videos.has(packet.stream_index)) videoPackets++;
 	}
-	const reported = Number(probe.format.duration);
 	const durationMs = Math.ceil(
 		Math.max(last - first, Number.isFinite(reported) ? reported : 0) * 1_000 -
 			0.000_001,
 	);
-	if (
-		videoPackets < 2 ||
-		durationMs < 1 ||
-		durationMs > MOQ_OBSERVATION_LIMITS.archiveDurationMs
-	)
+	const maxDurationMs =
+		kind === "capture" ? captureDurationMs : archiveDurationMs;
+	if (videoPackets < 2 || durationMs < 1 || durationMs > maxDurationMs)
 		throw new Error("Invalid WebM archive");
-	return durationMs;
+	if (
+		kind !== "capture" ||
+		durationMs <= archiveDurationMs - muxTimestampMarginMs
+	)
+		return { durationMs, expectedDurationMs: durationMs };
+
+	// Stream copy keeps whole packets starting before -t. Leave space for the
+	// final packet and for small timestamp shifts such as Opus codec delay.
+	const stopAtMs =
+		archiveDurationMs - Math.ceil(longestPacket * 1_000) - muxTimestampMarginMs;
+	if (stopAtMs < 1) throw new Error("Invalid WebM archive");
+
+	// A frame gap across the cut can shorten a valid clip. Require the packets
+	// clearly before the cut to survive, with tolerance for muxer retiming.
+	const cutoffWithMargin = first + (stopAtMs - muxTimestampMarginMs) / 1_000;
+	let expectedEnd = first;
+	for (const packet of probe.packets) {
+		const at = Number(packet.pts_time);
+		if (at < cutoffWithMargin)
+			expectedEnd = Math.max(
+				expectedEnd,
+				at + Number(packet.duration_time ?? 0),
+			);
+	}
+	return {
+		durationMs,
+		stopAtMs,
+		expectedDurationMs: (expectedEnd - first) * 1_000,
+	};
 }
-export async function probeMoqArchive(
-	path: string,
-	requireSeekableDuration = false,
-): Promise<number> {
+
+export function validateMoqArchiveProbe(value: unknown): number {
+	return inspectMoqArchiveProbe(value).durationMs;
+}
+
+async function probeMoqArchive(path: string, kind: "capture" | "saved") {
 	const result = await promisify(execFile)(
 		process.env.FFPROBE_PATH ?? "ffprobe",
 		[
@@ -154,16 +193,7 @@ export async function probeMoqArchive(
 			windowsHide: true,
 		},
 	);
-	const value: unknown = JSON.parse(result.stdout);
-	if (requireSeekableDuration) {
-		const parsed = probeSchema.parse(value);
-		if (
-			!Number.isFinite(Number(parsed.format.duration)) ||
-			Number(parsed.format.duration) <= 0
-		)
-			throw new Error("WebM archive duration is unavailable");
-	}
-	return validateMoqArchiveProbe(value);
+	return inspectMoqArchiveProbe(JSON.parse(result.stdout), kind);
 }
 
 /** Copy-remux a bounded browser WebM into a seekable local file with Duration/Cues. */
@@ -171,7 +201,7 @@ export async function normalizeMoqArchive(
 	source: string,
 	target: string,
 ): Promise<number> {
-	const originalDuration = await probeMoqArchive(source);
+	const capture = await probeMoqArchive(source, "capture");
 	await promisify(execFile)(
 		process.env.FFMPEG_PATH ?? "ffmpeg",
 		[
@@ -196,6 +226,9 @@ export async function normalizeMoqArchive(
 			"-1",
 			"-c",
 			"copy",
+			...(capture.stopAtMs === undefined
+				? []
+				: ["-t", (capture.stopAtMs / 1_000).toFixed(3)]),
 			"-fs",
 			String(MOQ_OBSERVATION_LIMITS.archiveBytes + 1),
 			"-f",
@@ -211,8 +244,8 @@ export async function normalizeMoqArchive(
 			windowsHide: true,
 		},
 	);
-	const normalizedDuration = await probeMoqArchive(target, true);
-	if (normalizedDuration < originalDuration - 100)
+	const saved = await probeMoqArchive(target, "saved");
+	if (saved.durationMs < capture.expectedDurationMs - muxTimestampMarginMs)
 		throw new Error("WebM archive was truncated");
-	return normalizedDuration;
+	return saved.durationMs;
 }

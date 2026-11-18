@@ -422,15 +422,47 @@ describe("run-bound MoQ playback descriptor", () => {
 		).not.toContain("publish-secret");
 	});
 
-	it("does not expose the publish token if it was pasted into the playback URL", async () => {
+	it.each([
+		"https://relay.example/publish-secret",
+		"https://relay.example/subscriber=preview;publisher=publish-secret",
+		"https://relay.example/preview?authorization=subscriber%253Bpublish%252Dsecret%253Blive",
+	])("withholds the playback capability and audit data when the URL includes publishing material (%#)", async (url) => {
+		mocks.credential.mockResolvedValue({
+			...credential(),
+			secret: JSON.stringify({ ...secret(), playbackUrl: url }),
+		});
+		const response = await GET(request(), params());
+		expect(response.status).toBe(409);
+		const body = await response.json();
+		expect(body.details).toEqual({
+			code: "MOQ_PLAYBACK_SUBSCRIBE_TOKEN_REQUIRED",
+		});
+		const exposed = JSON.stringify([body, mocks.audit.mock.calls]);
+		expect(exposed).not.toContain("publish-secret");
+		expect(exposed).not.toContain(url);
+	});
+
+	it("withholds a publishing credential recovered by form query decoding", async () => {
+		const publisher = "relay issuer+scope";
+		const url =
+			"https://relay.example/preview?capability=preview+relay+issuer%2Bscope";
 		mocks.credential.mockResolvedValue({
 			...credential(),
 			secret: JSON.stringify({
 				...secret(),
-				playbackUrl: "https://relay.example/publish-secret",
+				authToken: publisher,
+				playbackUrl: url,
 			}),
 		});
-		expect((await GET(request(), params())).status).toBe(409);
+		const response = await GET(request(), params());
+		expect(response.status).toBe(409);
+		const body = await response.json();
+		expect(body.details).toEqual({
+			code: "MOQ_PLAYBACK_SUBSCRIBE_TOKEN_REQUIRED",
+		});
+		const exposed = JSON.stringify([body, mocks.audit.mock.calls]);
+		expect(exposed).not.toContain(publisher);
+		expect(exposed).not.toContain(url);
 	});
 
 	it("includes only configured Cloudflare relay metadata from the bound subscribe token", async () => {

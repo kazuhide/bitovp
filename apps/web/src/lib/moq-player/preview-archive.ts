@@ -3,6 +3,7 @@ import {
 	createMoqObservationWriter,
 	type MoqHistorySaveState,
 } from "./history-client";
+import type { MoqObservationEvent } from "./observations";
 import { createMoqRecording, type MoqRecordingState } from "./recording";
 import type { MoqPlaybackDescriptor } from "./types";
 import type { MoqVideoStatistics } from "./video-statistics";
@@ -18,7 +19,7 @@ type Options = {
 	onAnalyticsState(state: "ready" | "unavailable" | "not-configured"): void;
 	onPersisted(): void;
 };
-/** Session ownership is acknowledged before receiving/capturing media. */
+/** Playback can begin immediately. Capture requires acknowledged session ownership. */
 export function createMoqPreviewArchive(options: Options) {
 	const configuredAnalytics = options.descriptor.analytics
 		? { ...options.descriptor.analytics }
@@ -36,61 +37,81 @@ export function createMoqPreviewArchive(options: Options) {
 	let analytics:
 		| Awaited<ReturnType<typeof createMoqAnalyticsBridge>>
 		| undefined;
+	let receivingVideo: HTMLVideoElement | undefined;
 	let recording: ReturnType<typeof createMoqRecording> | undefined;
 	let closed = false;
 	let owned = false;
 	let final: Promise<void> | undefined;
-	const ready = (async () => {
-		try {
-			await writer.ready;
+	const analyticsAbort = new AbortController();
+
+	function startRecording() {
+		if (closed || !owned || !receivingVideo || recording) return;
+		recording = createMoqRecording(receivingVideo, {
+			upload: writer.archive,
+			onState: (state) => {
+				if (state === "recording") writer.recordingStarted();
+				options.onRecordingState(state);
+				if (state === "unconfirmed") options.onPersisted();
+			},
+		});
+	}
+
+	void writer.ready.then(
+		() => {
 			owned = true;
+			startRecording();
+		},
+		() => {
+			if (!closed) options.onRecordingState("unavailable");
+		},
+	);
+
+	function attachAnalytics() {
+		if (!analytics || !receivingVideo) return;
+		try {
+			analytics.attach(receivingVideo);
+			writer.setAnalyticsImpressionId(analytics.getImpressionId());
 		} catch {
-			options.onRecordingState("unavailable");
+			options.onAnalyticsState("unavailable");
 		}
-		if (closed) return;
+	}
+	const analyticsReady = (async () => {
 		if (!configuredAnalytics) {
 			options.onAnalyticsState("not-configured");
 			return;
 		}
 		try {
-			const bridge = await createMoqAnalyticsBridge({
-				licenseKey: configuredAnalytics.licenseKey,
-				videoId: configuredAnalytics.videoId,
-				runId: options.runId,
-				encodingId: options.descriptor.encodingId,
-			});
+			const bridge = await createMoqAnalyticsBridge(
+				{
+					licenseKey: configuredAnalytics.licenseKey,
+					videoId: configuredAnalytics.videoId,
+					runId: options.runId,
+					encodingId: options.descriptor.encodingId,
+				},
+				analyticsAbort.signal,
+			);
 			if (closed) {
 				await bridge.dispose();
 				return;
 			}
 			analytics = bridge;
 			options.onAnalyticsState("ready");
+			attachAnalytics();
 		} catch {
-			options.onAnalyticsState("unavailable");
+			if (!closed) options.onAnalyticsState("unavailable");
 		}
 	})();
-	void ready.catch(() => {});
 	function video(element: HTMLVideoElement) {
-		if (closed || recording) return;
-		if (owned) writer.event("first-frame");
-		try {
-			analytics?.attach(element);
-			writer.setAnalyticsImpressionId(analytics?.getImpressionId() ?? null);
-		} catch {
-			options.onAnalyticsState("unavailable");
-		}
-		if (owned)
-			recording = createMoqRecording(element, {
-				upload: writer.archive,
-				onState: (state) => {
-					options.onRecordingState(state);
-					if (state === "unconfirmed") options.onPersisted();
-				},
-			});
+		if (closed || receivingVideo) return;
+		receivingVideo = element;
+		startRecording();
+		attachAnalytics();
 	}
 	function statistics(value: MoqVideoStatistics) {
 		if (closed) return;
-		if (owned) writer.sample(value);
+		// Pending ownership can retain these bounded samples in memory. The
+		// writer flushes them only after the server accepts this session.
+		writer.sample(value);
 		try {
 			analytics?.sample(value);
 			writer.setAnalyticsImpressionId(analytics?.getImpressionId() ?? null);
@@ -101,6 +122,8 @@ export function createMoqPreviewArchive(options: Options) {
 	function finish(reason: "stopped" | "failed" | "ended") {
 		if (final) return final;
 		closed = true;
+		receivingVideo = undefined;
+		analyticsAbort.abort();
 		// Stop its timers immediately, even when the initial ownership receipt is pending.
 		// A rejected create has no owned session to finalize; a rejected final flush does.
 		const observations = writer.finish(reason).catch(async () => {
@@ -113,7 +136,11 @@ export function createMoqPreviewArchive(options: Options) {
 		});
 		const media = recording?.finish() ?? Promise.resolve();
 		final = (async () => {
-			const results = await Promise.allSettled([media, observations]);
+			const results = await Promise.allSettled([
+				media,
+				observations,
+				analyticsReady,
+			]);
 			let failed = results.some((value) => value.status === "rejected");
 			try {
 				await analytics?.dispose();
@@ -125,5 +152,12 @@ export function createMoqPreviewArchive(options: Options) {
 		void final.catch(() => {});
 		return final;
 	}
-	return { id: writer.id, ready, video, statistics, finish };
+	return {
+		id: writer.id,
+		video,
+		event: (type: MoqObservationEvent["type"], elapsedMs: number) =>
+			writer.event(type, elapsedMs),
+		statistics,
+		finish,
+	};
 }

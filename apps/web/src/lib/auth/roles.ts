@@ -190,6 +190,12 @@ export const ROUTE_RULES: readonly RouteRule[] = [
 		reason: "Run-bound provider statistics, events and SRT diagnostics",
 	},
 	{
+		prefix: "/api/live-channels/moq-readiness",
+		methods: ["GET", "HEAD"],
+		minRole: "OPERATOR",
+		reason: "Checks tenant MoQ preview configuration before provisioning",
+	},
+	{
 		prefix: "/api/live-channels/[id]/runs/[runId]/moq-playback",
 		methods: ["GET", "HEAD"],
 		minRole: "OPERATOR",

@@ -39,10 +39,12 @@ export type MoqAnalyticsBridge = {
  */
 export async function createMoqAnalyticsBridge(
 	input: MoqAnalyticsConfiguration,
+	signal?: AbortSignal,
 ): Promise<MoqAnalyticsBridge> {
 	const parsed = configuration.safeParse(input);
 	if (
 		!parsed.success ||
+		signal?.aborted ||
 		parsed.data.videoId !==
 			`bitovp-moq:${parsed.data.encodingId}:${parsed.data.runId}`
 	)
@@ -70,9 +72,11 @@ export async function createMoqAnalyticsBridge(
 	let Adapter: CollectorConstructor;
 	try {
 		Adapter = await new Promise<CollectorConstructor>((resolve, reject) => {
-			const timeout = window.setTimeout(() => finish(), 15_000);
+			const cancel = () => finish();
+			const timeout = window.setTimeout(cancel, 15_000);
 			function finish(value?: CollectorConstructor) {
 				window.clearTimeout(timeout);
+				signal?.removeEventListener("abort", cancel);
 				script.onload = null;
 				script.onerror = null;
 				if (value) resolve(value);
@@ -82,8 +86,10 @@ export async function createMoqAnalyticsBridge(
 				const value = realm.bitmovin?.analytics?.HTMLVideoElementAdapter;
 				finish(typeof value === "function" ? value : undefined);
 			};
-			script.onerror = () => finish();
-			frameDocument.head.append(script);
+			script.onerror = cancel;
+			signal?.addEventListener("abort", cancel, { once: true });
+			if (signal?.aborted) cancel();
+			else frameDocument.head.append(script);
 		});
 	} catch {
 		frame.remove();

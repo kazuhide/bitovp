@@ -222,18 +222,12 @@ export async function getMoqPlaybackDescriptor(
 		);
 		if (!secret.success || !secret.data.playbackUrl)
 			return finish(503, "MOQ_PLAYBACK_NOT_CONFIGURED");
-		const relayMetadata = inspectMoqRelayMetadata(secret.data.playbackUrl);
+		const relayMetadata = inspectMoqRelayMetadata(
+			secret.data.playbackUrl,
+			secret.data.authToken,
+		);
 		if (relayMetadata.kind === "invalid")
 			return finish(409, "MOQ_PLAYBACK_SUBSCRIBE_TOKEN_REQUIRED");
-		if (secret.data.authToken) {
-			const url = new URL(secret.data.playbackUrl);
-			const tokens = [
-				...url.pathname.split("/").map(decodeURIComponent),
-				...url.searchParams.values(),
-			];
-			if (tokens.includes(secret.data.authToken))
-				return finish(409, "MOQ_PLAYBACK_SUBSCRIBE_TOKEN_REQUIRED");
-		}
 		const settings = await readPlayerSettings(ctx.prisma);
 		const analyticsLicenseKey = settings.analyticsLicenseKey;
 		if (!settings.playerLicenseKey)

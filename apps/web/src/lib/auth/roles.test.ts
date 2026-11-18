@@ -263,6 +263,7 @@ describe("the §4 decisions", () => {
 
 	it("MoQ playback descriptors and fixed player assets require OPERATOR for GET and HEAD", () => {
 		const paths = [
+			"/api/live-channels/moq-readiness",
 			"/api/live-channels/channel/runs/run/moq-playback",
 			"/api/player-assets/moq",
 			"/api/live-channels/channel/runs/run/moq-observations",
@@ -519,7 +520,8 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 		).toBe(true);
 		// MoQ playback descriptor and the pinned Player asset add two GET routes.
 		// MoQ observations, session updates, archives and Analytics add four routes.
-		expect(guarded.length).toBe(200);
-		expect(methods.length).toBe(279);
+		// Pre-start MoQ readiness adds one advisory OPERATOR GET route.
+		expect(guarded.length).toBe(201);
+		expect(methods.length).toBe(280);
 	});
 });

@@ -2,15 +2,25 @@ import {
 	createMoqCanvasSurface,
 	type MoqCanvasSurface,
 } from "./canvas-surface";
+import type { MoqPlaybackStage } from "./observations";
 import type { MoqSource } from "./types";
 import {
 	createVideoStatistics,
 	type MoqVideoStatistics,
 } from "./video-statistics";
 
+const FRAME_GAP_MS = 3000;
+const FRAME_OBSERVATION_BOUNDARIES = [
+	"pause",
+	"play",
+	"seeking",
+	"seeked",
+	"ended",
+] as const;
 type Telemetry = {
 	startedAt: number;
 	onStatistics(value: MoqVideoStatistics): void;
+	onStage?(type: MoqPlaybackStage): void;
 	source():
 		| Pick<
 				MoqSource,
@@ -33,15 +43,54 @@ export function observeMoqVideo(
 	let surface: MoqCanvasSurface | null = null;
 	let callback: number | undefined;
 	let stopped = false;
+	let hasFrameGap = false;
+	let observedSince = performance.now();
+	const ownerDocument = host.ownerDocument;
+	const onStage = telemetry?.onStage;
 	const statistics = createVideoStatistics(
 		telemetry?.startedAt ?? performance.now(),
 		() => telemetry?.source(),
 	);
+	function resetObservationWindow() {
+		observedSince = performance.now();
+	}
+	function canObserveFrames() {
+		return (
+			video &&
+			!video.paused &&
+			!video.seeking &&
+			!video.ended &&
+			ownerDocument.visibilityState === "visible"
+		);
+	}
+	function observeFrameGap() {
+		if (!onStage) return;
+		if (!canObserveFrames()) {
+			resetObservationWindow();
+			return;
+		}
+		const lastFrameAt = statistics.lastFrameAt();
+		if (
+			!hasFrameGap &&
+			lastFrameAt !== null &&
+			performance.now() - Math.max(lastFrameAt, observedSince) >= FRAME_GAP_MS
+		) {
+			hasFrameGap = true;
+			onStage(surface ? "canvas-unchanged" : "frame-gap");
+		}
+	}
 	function sample(presented?: number, mediaTime?: number) {
-		if (stopped) return;
-		if (surface && !surface.changed()) return;
-		if (!stopped && video && statistics.frame(presented, mediaTime))
-			progress(video);
+		if (stopped || !video || (surface && !surface.changed())) return;
+		const previous = hasFrameGap ? statistics.lastFrameAt() : null;
+		if (statistics.frame(presented, mediaTime)) progress(video);
+		if (
+			hasFrameGap &&
+			previous !== statistics.lastFrameAt() &&
+			canObserveFrames()
+		) {
+			hasFrameGap = false;
+			onStage?.(surface ? "canvas-updated" : "frame-resumed");
+		}
 	}
 	function onTime() {
 		if (!video?.requestVideoFrameCallback) sample();
@@ -52,6 +101,9 @@ export function observeMoqVideo(
 			callback = video.requestVideoFrameCallback(frame);
 	}
 	function detach() {
+		if (onStage)
+			for (const type of FRAME_OBSERVATION_BOUNDARIES)
+				video?.removeEventListener(type, resetObservationWindow);
 		video?.removeEventListener("timeupdate", onTime);
 		video?.removeEventListener("error", failure);
 		if (callback !== undefined) video?.cancelVideoFrameCallback?.(callback);
@@ -75,6 +127,7 @@ export function observeMoqVideo(
 		canvas = foundCanvas;
 		surface = canvas ? createMoqCanvasSurface(canvas, host) : null;
 		video = found ?? surface?.video ?? null;
+		resetObservationWindow();
 		statistics.setVideo(video, surface ? "canvas" : "video");
 		if (!video) return;
 		video.muted = true;
@@ -83,6 +136,9 @@ export function observeMoqVideo(
 		video.controls = !surface;
 		video.addEventListener("timeupdate", onTime);
 		video.addEventListener("error", failure);
+		if (onStage)
+			for (const type of FRAME_OBSERVATION_BOUNDARIES)
+				video.addEventListener(type, resetObservationWindow);
 		if (video.requestVideoFrameCallback)
 			callback = video.requestVideoFrameCallback(frame);
 		else sample();
@@ -90,14 +146,24 @@ export function observeMoqVideo(
 	const observer = new MutationObserver(findVideo);
 	observer.observe(host, { childList: true, subtree: true });
 	findVideo();
+	if (onStage)
+		ownerDocument.addEventListener("visibilitychange", resetObservationWindow);
 	const timer = telemetry
 		? window.setInterval(() => {
-				if (!stopped) telemetry.onStatistics(statistics.snapshot());
+				if (!stopped) {
+					observeFrameGap();
+					telemetry.onStatistics(statistics.snapshot());
+				}
 			}, 1000)
 		: undefined;
 	function stop() {
 		stopped = true;
 		observer.disconnect();
+		if (onStage)
+			ownerDocument.removeEventListener(
+				"visibilitychange",
+				resetObservationWindow,
+			);
 		if (timer !== undefined) window.clearInterval(timer);
 		detach();
 	}

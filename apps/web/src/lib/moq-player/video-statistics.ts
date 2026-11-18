@@ -247,5 +247,5 @@ export function createVideoStatistics(
 			availableQualities,
 		};
 	}
-	return { setVideo, frame, snapshot };
+	return { setVideo, frame, snapshot, lastFrameAt: () => lastFrame };
 }

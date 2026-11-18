@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { moqObservationUpdateSchema } from "./observations";
+import {
+	appendMoqObservationEvent,
+	MOQ_OBSERVATION_LIMITS,
+	type MoqObservationEvent,
+	moqObservationUpdateSchema,
+} from "./observations";
 
 const sample = (elapsedMs = 0) => ({
 	elapsedMs,
@@ -20,6 +25,42 @@ const update = () => ({
 });
 
 describe("bounded browser MoQ observations", () => {
+	it("keeps ordered playback stages and reserves space for the terminal event", () => {
+		let events: readonly MoqObservationEvent[] = [];
+		for (const [elapsedMs, type] of [
+			[0, "started"],
+			[1, "descriptor-ready"],
+			[2, "subscribe-requested"],
+			[3, "first-frame"],
+		] as const) {
+			events = appendMoqObservationEvent(events, { elapsedMs, type });
+		}
+		expect(
+			appendMoqObservationEvent(events, { elapsedMs: 4, type: "first-frame" }),
+		).toBe(events);
+		for (let i = 0; i < 100; i++) {
+			events = appendMoqObservationEvent(events, {
+				elapsedMs: 4 + i,
+				type: i % 2 ? "frame-resumed" : "frame-gap",
+			});
+		}
+		expect(events).toHaveLength(MOQ_OBSERVATION_LIMITS.events - 1);
+		expect(
+			events.filter((event) => event.type === "frame-gap").length,
+		).toBeGreaterThan(1);
+		const done = appendMoqObservationEvent(events, {
+			elapsedMs: 200,
+			type: "failed",
+		});
+		expect(done).toHaveLength(MOQ_OBSERVATION_LIMITS.events);
+		expect(done.at(-1)).toEqual({ elapsedMs: 200, type: "failed" });
+		expect(
+			appendMoqObservationEvent(done, { elapsedMs: 201, type: "stopped" }),
+		).toBe(done);
+		expect(
+			moqObservationUpdateSchema.parse({ ...update(), events: done }).events,
+		).toEqual(done);
+	});
 	it("preserves unknown measurements as null", () => {
 		expect(moqObservationUpdateSchema.parse(update())).toEqual(update());
 	});

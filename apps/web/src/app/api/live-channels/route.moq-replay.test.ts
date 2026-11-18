@@ -9,7 +9,7 @@ import { createRequestIdentity } from "@/lib/server/create-request";
 
 const mocks = vi.hoisted(() => ({
 	findUnique: vi.fn(),
-	findMany: vi.fn(),
+	errorSnapshots: vi.fn(),
 	create: vi.fn(),
 	receiptFind: vi.fn(),
 	receiptCreate: vi.fn(),
@@ -56,7 +56,6 @@ const retainedRow = {
 const prisma = {
 	liveChannel: {
 		findUnique: mocks.findUnique,
-		findMany: mocks.findMany,
 		create: mocks.create,
 	},
 	liveSchedule: { findMany: mocks.schedules },
@@ -67,7 +66,10 @@ const prisma = {
 	credential: {
 		findMany: async () => [{ id: CREDENTIAL, provider: "MOQ" }],
 	},
-	$queryRaw: mocks.queryRaw,
+	$queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) =>
+		strings.join("?").includes('FROM "LiveChannel" WHERE id = ANY(')
+			? mocks.errorSnapshots(strings, ...values)
+			: mocks.queryRaw(strings, ...values),
 	$transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma),
 };
 vi.mock("@/lib/server/context", () => ({
@@ -198,7 +200,9 @@ beforeEach(() => {
 	vi.resetAllMocks();
 	vi.stubEnv("MASTER_KEY", Buffer.alloc(32, 7).toString("base64"));
 	mocks.schedules.mockResolvedValue(schedules);
-	mocks.findMany.mockResolvedValue([{ id: CHANNEL }]);
+	mocks.errorSnapshots.mockResolvedValue([
+		{ id: CHANNEL, error: MOQ_TASK_HISTORY_ERROR },
+	]);
 	mocks.create.mockResolvedValue({ ...retainedRow, status: "CREATED" });
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -224,14 +228,11 @@ describe("POST live channel retained MoQ error privacy", () => {
 		expect(body).not.toHaveProperty("verificationRequestSha256");
 		expect(body).not.toHaveProperty("stepLog");
 		expect(body).not.toHaveProperty("plan");
-		expect(mocks.findMany).toHaveBeenCalledExactlyOnceWith({
-			where: {
-				id: { in: [CHANNEL] },
-				stepLog: { array_contains: [{ kind: "CREATE_OUTPUT_MOQ" }] },
-			},
-			select: { id: true },
-			take: 1,
-		});
+		expect(mocks.errorSnapshots).toHaveBeenCalledExactlyOnceWith(
+			expect.any(Array),
+			MOQ_TASK_HISTORY_ERROR,
+			[CHANNEL],
+		);
 		for (const [query] of mocks.findUnique.mock.calls) {
 			expect(query.select).not.toHaveProperty("stepLog");
 			expect(query.select).not.toHaveProperty("plan");
@@ -243,7 +244,9 @@ describe("POST live channel retained MoQ error privacy", () => {
 		"ordinary",
 		"verification",
 	] as const)("preserves normal Live prose in %s replay", async (mode) => {
-		mocks.findMany.mockResolvedValue([]);
+		mocks.errorSnapshots.mockResolvedValue([
+			{ id: CHANNEL, error: retainedError },
+		]);
 		const response = await POST(arrangeReplay(mode));
 		expect(response.status).toBe(200);
 		expect(await response.json()).toMatchObject({
@@ -257,8 +260,22 @@ describe("POST live channel retained MoQ error privacy", () => {
 	it.each([
 		"ordinary",
 		"verification",
+	] as const)("withholds a captured error when the %s replay row disappears", async (mode) => {
+		mocks.errorSnapshots.mockResolvedValue([]);
+		const response = await POST(arrangeReplay(mode));
+		expect(response.status).toBe(200);
+		const body = await response.json();
+		expect(body.error).toBe("Live encoding error details unavailable");
+		expect(JSON.stringify(body)).not.toContain("synthetic-retained-token");
+		expect(mocks.queue).not.toHaveBeenCalled();
+	});
+	it.each([
+		"ordinary",
+		"verification",
 	] as const)("does not expose an unclassified error if %s replay classification fails", async (mode) => {
-		mocks.findMany.mockRejectedValue(new Error("Metadata lookup unavailable"));
+		mocks.errorSnapshots.mockRejectedValue(
+			new Error("Metadata lookup unavailable"),
+		);
 		const response = await POST(arrangeReplay(mode));
 		expect(response.status).toBe(500);
 		expect(await response.text()).not.toContain("synthetic-retained-token");

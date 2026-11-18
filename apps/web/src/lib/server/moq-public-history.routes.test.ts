@@ -1,9 +1,11 @@
+import { MOQ_TASK_HISTORY_ERROR } from "@bitovp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	channel: vi.fn(),
 	channels: vi.fn(),
 	runs: vi.fn(),
+	errors: vi.fn(),
 	alerts: vi.fn(),
 }));
 vi.mock("@/lib/server/context", () => ({
@@ -17,6 +19,7 @@ vi.mock("@/lib/server/context", () => ({
 			liveChannel: { findUnique: mocks.channel, findMany: mocks.channels },
 			liveChannelRun: { findMany: mocks.runs },
 			alertEvent: { groupBy: mocks.alerts },
+			$queryRaw: mocks.errors,
 		},
 	}),
 }));
@@ -95,21 +98,32 @@ beforeEach(() => {
 	vi.resetAllMocks();
 	mocks.channel.mockResolvedValue(storedChannel());
 	mocks.alerts.mockResolvedValue([]);
-	mocks.channels.mockImplementation(({ where, select }) =>
-		where?.stepLog
-			? [{ id: CHANNEL }]
-			: [
-					storedChannel(),
-					{ ...storedChannel(), id: OTHER, error: ordinaryError, stepLog: [] },
-				].map((row) => selected(row, select)),
+	mocks.channels.mockImplementation(({ select }) =>
+		[
+			storedChannel(),
+			{ ...storedChannel(), id: OTHER, error: ordinaryError, stepLog: [] },
+		].map((row) => selected(row, select)),
 	);
-	mocks.runs.mockImplementation(({ where, select }) =>
-		where?.stepLog
-			? [{ id: RUN }]
-			: [
-					storedRun(),
-					{ ...storedRun(), id: OTHER, error: ordinaryError, stepLog: [] },
-				].map((row) => selected(row, select)),
+	mocks.runs.mockImplementation(({ select }) =>
+		[
+			storedRun(),
+			{ ...storedRun(), id: OTHER, error: ordinaryError, stepLog: [] },
+		].map((row) => selected(row, select)),
+	);
+	mocks.errors.mockImplementation(
+		(strings: TemplateStringsArray, summary: string, ids: string[]) => {
+			const sql = strings.join("?");
+			const id = sql.includes('FROM "LiveChannelRun"') ? RUN : CHANNEL;
+			expect(sql).toContain('WHEN "stepLog" @>');
+			expect(sql).toContain("ELSE error");
+			expect(sql).toContain("WHERE id = ANY(?::uuid[])");
+			expect(summary).toBe(MOQ_TASK_HISTORY_ERROR);
+			expect(ids).toEqual([id, OTHER]);
+			return [
+				{ id, error: summary },
+				{ id: OTHER, error: ordinaryError },
+			];
+		},
 	);
 });
 
@@ -177,5 +191,35 @@ describe("retained MoQ Task privacy on ordinary public reads", () => {
 		expect(data.runs[0].error).toBeTruthy();
 		expect(data.runs[1].error).toBe(ordinaryError);
 		expect(data.runs.every((row: object) => !("stepLog" in row))).toBe(true);
+	});
+
+	it.each([
+		"channel",
+		"run",
+	] as const)("withholds a captured %s error when the stored row disappears during the read", async (kind) => {
+		const channel = kind === "channel";
+		const read = channel ? mocks.channels : mocks.runs;
+		read.mockImplementationOnce(({ select }) => [
+			selected(channel ? storedChannel() : storedRun(), select),
+		]);
+		mocks.errors.mockResolvedValueOnce([]);
+		const response = channel
+			? await list(new Request("http://test/api/live-channels"))
+			: await history(new Request("http://test/history"), params());
+		expect(response.status).toBe(200);
+		const data = await response.json();
+		const [row] = channel ? data.items : data.runs;
+		expect(row.status).toBe("ERROR");
+		expect(row.error).toBe("Live encoding error details unavailable");
+		expect(JSON.stringify(data)).not.toContain("private-publisher-secret");
+	});
+
+	it("uses only the current row's public text when delivery changes after the page read", async () => {
+		mocks.errors.mockResolvedValueOnce([{ id: CHANNEL, error: ordinaryError }]);
+		const response = await list(new Request("http://test/api/live-channels"));
+		expect(response.status).toBe(200);
+		const data = await response.json();
+		expect(data.items[0].error).toBe(ordinaryError);
+		expect(JSON.stringify(data)).not.toContain("private-publisher-secret");
 	});
 });

@@ -354,7 +354,7 @@ export async function GET(req: Request) {
 		const pageIds = page.map((row) => row.id);
 		/**
 		 * Three page-wide reads, all bounded and issued at once: the grouped
-		 * alert counts, MoQ error-row IDs and the newest run per channel (the nested
+		 * alert counts, public error summaries and the newest run per channel (the nested
 		 * `runs: { take: 1 }` this replaces read every airing of every channel
 		 * on the page). Concurrent rather than sequential because neither
 		 * depends on the other, so the page still costs the operator one round

@@ -12,7 +12,7 @@ export function publicMoqHistory<
 		: row;
 }
 
-/** Keep lean lists lean: ask PostgreSQL only for the matching page-row IDs. */
+/** Project the text and its MoQ classification in the same database read. */
 export async function publicMoqListErrors<
 	T extends { id: string; error?: string | null },
 >(
@@ -30,20 +30,36 @@ export async function publicMoqListErrors<
 	if (ids.length === 0) return rows;
 	if (rows.length > 100)
 		throw new Error("MoQ history page exceeds its read budget");
-	const query = {
-		where: {
-			id: { in: ids },
-			stepLog: { array_contains: [{ kind: "CREATE_OUTPUT_MOQ" }] },
-		},
-		select: { id: true } as const,
-		take: ids.length,
-	};
+	type ErrorSnapshot = { id: string; error: string | null };
 	const matches =
 		model === "channel"
-			? await prisma.liveChannel.findMany(query)
-			: await prisma.liveChannelRun.findMany(query);
-	const moqIds = new Set(matches.map((row) => row.id));
-	return rows.map((row) =>
-		moqIds.has(row.id) ? { ...row, error: MOQ_TASK_HISTORY_ERROR } : row,
-	);
+			? await prisma.$queryRaw<ErrorSnapshot[]>`
+				SELECT id, CASE
+					WHEN jsonb_typeof("stepLog") IS DISTINCT FROM 'array' THEN NULL
+					WHEN "stepLog" @> '[{"kind":"CREATE_OUTPUT_MOQ"}]'::jsonb
+						THEN ${MOQ_TASK_HISTORY_ERROR}
+					ELSE error
+				END AS error
+				FROM "LiveChannel" WHERE id = ANY(${ids}::uuid[])
+			`
+			: await prisma.$queryRaw<ErrorSnapshot[]>`
+				SELECT id, CASE
+					WHEN jsonb_typeof("stepLog") IS DISTINCT FROM 'array' THEN NULL
+					WHEN "stepLog" @> '[{"kind":"CREATE_OUTPUT_MOQ"}]'::jsonb
+						THEN ${MOQ_TASK_HISTORY_ERROR}
+					ELSE error
+				END AS error
+				FROM "LiveChannelRun" WHERE id = ANY(${ids}::uuid[])
+			`;
+	const publicErrors = new Map(matches.map((row) => [row.id, row.error]));
+	return rows.map((row) => {
+		if (!row.error) return row;
+		// A delete, concurrent clear or malformed step log cannot re-expose
+		// text from the earlier page or replay read.
+		return {
+			...row,
+			error:
+				publicErrors.get(row.id) ?? "Live encoding error details unavailable",
+		};
+	});
 }

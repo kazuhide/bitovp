@@ -1,8 +1,8 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { focusManager, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
 	CartesianGrid,
 	Line,
@@ -27,9 +27,10 @@ import { MoqClientPlaybackClock } from "./moq-client-playback-clock";
 const clock = (value: number) =>
 	Number.isFinite(value) ? new Date(value).toISOString().slice(11, 19) : "—";
 
-export type MoqArchiveSave =
-	| { sessionId: string; state: "saving" }
-	| { sessionId: string; state: "unconfirmed"; confirmUntilMs: number };
+export type MoqArchiveSave = { sessionId: string; startedAt: string } & (
+	| { state: "saving" }
+	| { state: "unconfirmed"; confirmUntilMs: number }
+);
 
 export function MoqHistoryPanel({
 	channelId,
@@ -44,6 +45,7 @@ export function MoqHistoryPanel({
 }) {
 	const { t } = useT();
 	const organizationId = useDocumentOrganization();
+	const queryClient = useQueryClient();
 	const [selected, select] = useState("");
 	const archiveVideo = useRef<HTMLVideoElement>(null);
 	const history = useQuery({
@@ -58,30 +60,48 @@ export function MoqHistoryPanel({
 			if (value.runId !== runId) throw new Error();
 			return value;
 		},
-		refetchInterval: (query) => {
-			if (active) return 5000;
-			// A lost upload receipt can race an otherwise successful archive commit.
-			const pending = archiveSaves.some(
-				(save) =>
-					save.state === "unconfirmed" &&
-					performance.now() < save.confirmUntilMs &&
-					!query.state.data?.sessions.some(
-						(session) => session.id === save.sessionId && session.archive,
-					),
-			);
-			return pending ? 5000 : false;
-		},
+		refetchInterval: active ? 5000 : false,
 	});
 	const sessions = [...(history.data?.sessions ?? [])].sort(
 		(a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt),
 	);
 	const session =
 		sessions.find((value) => value.id === selected) ?? sessions[0];
-	const archiveSave = session?.archive
-		? undefined
-		: session
-			? archiveSaves.find((save) => save.sessionId === session.id)
-			: archiveSaves.at(-1);
+	const unresolvedSaves = archiveSaves.filter(
+		(save) =>
+			!sessions.some((entry) => entry.id === save.sessionId && entry.archive),
+	);
+	const reconcileUntil = Math.max(
+		0,
+		...unresolvedSaves.map((save) =>
+			save.state === "unconfirmed" ? save.confirmUntilMs : 0,
+		),
+	);
+	const { refetch } = history;
+	useEffect(() => {
+		const remaining = reconcileUntil - performance.now();
+		if (active || remaining <= 0) return;
+		// A read begun before the lost receipt can already be in flight.
+		// Join that read and cancel its query signal at the reconciliation cutoff.
+		const interval = window.setInterval(() => {
+			if (focusManager.isFocused() && performance.now() < reconcileUntil)
+				void refetch({ cancelRefetch: false });
+		}, 5000);
+		const deadline = window.setTimeout(() => {
+			window.clearInterval(interval);
+			void queryClient.cancelQueries({
+				queryKey: ["moq-observations", channelId, runId],
+				exact: true,
+			});
+		}, remaining);
+		return () => {
+			window.clearInterval(interval);
+			window.clearTimeout(deadline);
+		};
+	}, [active, channelId, queryClient, reconcileUntil, refetch, runId]);
+	const selectedArchiveUnresolved = unresolvedSaves.some(
+		(save) => save.sessionId === session?.id,
+	);
 	const series = moqHistorySeries(
 		session?.samples ?? [],
 		session?.startedAt ?? "",
@@ -217,18 +237,21 @@ export function MoqHistoryPanel({
 					</Link>
 				) : null}
 			</div>
-			{archiveSave ? (
+			{unresolvedSaves.map((save) => (
 				<p
+					key={save.sessionId}
 					role="status"
-					data-moq-recording={archiveSave.state}
+					data-moq-recording={save.state}
+					data-moq-recording-session={save.sessionId}
 					className="text-xs text-zinc-400"
 				>
-					{t(`moqPlayback.recording.${archiveSave.state}`)}
+					{t(`moqPlayback.recording.${save.state}`)} ·{" "}
+					<time dateTime={save.startedAt}>{save.startedAt}</time>
 				</p>
-			) : null}
-			{history.isPending ? (
+			))}
+			{history.isPending && history.fetchStatus !== "idle" ? (
 				<p className="text-xs text-zinc-500">{t("moqPlayback.loading")}</p>
-			) : history.isError ? (
+			) : history.isError || history.isPending ? (
 				<p className="text-xs text-red-300">{t("moqPlayback.historyFailed")}</p>
 			) : !session ? (
 				<p className="text-xs text-zinc-500">{t("moqPlayback.noHistory")}</p>
@@ -293,7 +316,7 @@ export function MoqHistoryPanel({
 								{t("moqPlayback.downloadRecording")}
 							</a>
 						</div>
-					) : archiveSave ? null : (
+					) : selectedArchiveUnresolved ? null : (
 						<p className="text-xs text-zinc-500">
 							{t(
 								session.archive

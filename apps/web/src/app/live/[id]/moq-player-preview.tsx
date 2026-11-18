@@ -179,12 +179,13 @@ function MoqPlaybackAttempt({
 						value === "unconfirmed"
 							? {
 									sessionId,
+									startedAt: startedWall,
 									state: value,
 									confirmUntilMs:
 										performance.now() + MOQ_ARCHIVE_SAVE_TIMEOUT_MS,
 								}
 							: value === "saving"
-								? { sessionId, state: value }
+								? { sessionId, startedAt: startedWall, state: value }
 								: undefined;
 					setArchiveSaves((saves) => {
 						const others = saves.filter((save) => save.sessionId !== sessionId);

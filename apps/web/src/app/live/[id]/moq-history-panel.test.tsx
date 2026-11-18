@@ -1,8 +1,9 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentOrganizationContext } from "@/components/providers";
 import { renderWithQuery } from "@/test/render";
-import { MoqHistoryPanel } from "./moq-history-panel";
+import { MOQ_ARCHIVE_SAVE_TIMEOUT_MS } from "../../../../config/moq-policy";
+import { type MoqArchiveSave, MoqHistoryPanel } from "./moq-history-panel";
 
 const mocks = vi.hoisted(() => ({ api: vi.fn() }));
 vi.mock("@/lib/api", () => ({ apiFetch: mocks.api }));
@@ -23,6 +24,7 @@ vi.mock("recharts", () => ({
 const CHANNEL = "00000000-0000-4000-8000-000000000001";
 const RUN = "00000000-0000-4000-8000-000000000002";
 const SESSION = "00000000-0000-4000-8000-000000000003";
+const NEWER = "00000000-0000-4000-8000-000000000004";
 const ORG = "00000000-0000-4000-8000-000000000010";
 const at = "2026-11-18T00:00:00.000Z";
 const view = (organizationId: string | undefined = ORG) => (
@@ -30,6 +32,14 @@ const view = (organizationId: string | undefined = ORG) => (
 		<MoqHistoryPanel channelId={CHANNEL} runId={RUN} active={false} />
 	</DocumentOrganizationContext.Provider>
 );
+function uncertainArchive(): MoqArchiveSave {
+	return {
+		sessionId: SESSION,
+		startedAt: at,
+		state: "unconfirmed",
+		confirmUntilMs: performance.now() + MOQ_ARCHIVE_SAVE_TIMEOUT_MS,
+	};
+}
 beforeEach(() => {
 	vi.resetAllMocks();
 	mocks.api.mockResolvedValue({
@@ -71,7 +81,116 @@ beforeEach(() => {
 		},
 	});
 });
+afterEach(() => {
+	vi.useRealTimers();
+});
 describe("saved MoQ history and received video", () => {
+	it("identifies an uncertain older recording while a newer session stays selected", async () => {
+		const response = await mocks.api();
+		const newerAt = "2026-11-18T00:02:00.000Z";
+		response.sessions[0].archive = null;
+		response.sessions.push({
+			...response.sessions[0],
+			id: NEWER,
+			startedAt: newerAt,
+			createdAt: newerAt,
+			updatedAt: newerAt,
+			endedAt: null,
+		});
+		mocks.api.mockResolvedValue(response);
+		const rendered = renderWithQuery(
+			<MoqHistoryPanel
+				channelId={CHANNEL}
+				runId={RUN}
+				active={false}
+				archiveSaves={[uncertainArchive()]}
+			/>,
+		);
+		expect(await screen.findByRole("combobox")).toHaveValue(NEWER);
+		const notice = rendered.container.querySelector(
+			`[data-moq-recording-session="${SESSION}"]`,
+		);
+		expect(notice).toBeVisible();
+		expect(notice).toHaveTextContent("Recording save could not be confirmed");
+		expect(notice?.querySelector("time")).toHaveAttribute("datetime", at);
+		fireEvent.change(screen.getByRole("combobox"), {
+			target: { value: SESSION },
+		});
+		expect(notice).toBeVisible();
+		expect(screen.queryByText("No received-video recording")).toBeNull();
+	});
+	it.each([
+		{
+			name: "stopped reconciliation",
+			active: false,
+			unresolved: true,
+			abort: true,
+		},
+		{ name: "active history", active: true, unresolved: true, abort: false },
+		{
+			name: "ordinary stopped history",
+			active: false,
+			unresolved: false,
+			abort: false,
+		},
+	])("bounds a stalled $name correctly", async ({
+		active,
+		unresolved,
+		abort,
+	}) => {
+		vi.useFakeTimers();
+		const aborted = vi.fn();
+		let requestSignal: AbortSignal | undefined;
+		mocks.api.mockImplementation((_path: string, init: RequestInit) => {
+			const { signal } = init;
+			requestSignal = signal ?? undefined;
+			return new Promise((_resolve, reject) => {
+				signal?.addEventListener(
+					"abort",
+					() => {
+						aborted();
+						reject(signal.reason);
+					},
+					{ once: true },
+				);
+			});
+		});
+		const panel = (archiveSaves: MoqArchiveSave[] = []) => (
+			<MoqHistoryPanel
+				channelId={CHANNEL}
+				runId={RUN}
+				active={active}
+				archiveSaves={archiveSaves}
+			/>
+		);
+		const rendered = renderWithQuery(panel());
+		expect(requestSignal).toBeDefined();
+		if (unresolved) rendered.rerender(panel([uncertainArchive()]));
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(MOQ_ARCHIVE_SAVE_TIMEOUT_MS - 1);
+		});
+		expect(aborted).not.toHaveBeenCalled();
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(1);
+		});
+		expect(requestSignal?.aborted).toBe(abort);
+		expect(aborted).toHaveBeenCalledTimes(abort ? 1 : 0);
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(MOQ_ARCHIVE_SAVE_TIMEOUT_MS);
+		});
+		expect(mocks.api).toHaveBeenCalledOnce();
+		if (abort) {
+			const queryKey = ["moq-observations", CHANNEL, RUN];
+			expect(rendered.client.getQueryState(queryKey)?.fetchStatus).toBe("idle");
+			const expiredSignal = requestSignal;
+			await act(async () => {
+				void rendered.client.invalidateQueries({ queryKey });
+			});
+			expect(mocks.api).toHaveBeenCalledTimes(2);
+			expect(requestSignal).not.toBe(expiredSignal);
+			expect(requestSignal?.aborted).toBe(false);
+		}
+	});
 	it("correlates with existing Push/Heartbeat and keeps secondary measurements collapsed", async () => {
 		const rendered = renderWithQuery(view());
 		await screen.findByText("Video latency (barcode) (ms · UTC)");

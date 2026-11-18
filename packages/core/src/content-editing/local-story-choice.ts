@@ -73,6 +73,8 @@ type BuildOptions = {
 	targetDurationFrames: number;
 	maxPlans?: number;
 	maxEvaluations?: number;
+	openingRole?: LocalStoryCorpus["events"][number]["role"];
+	exactDuration?: boolean;
 };
 type Candidate = Omit<FeasibleStoryPlan, "id"> & {
 	indices: number[];
@@ -255,6 +257,12 @@ export function buildFeasibleStoryChoices(
 			for (const parent of parents) {
 				const index = (parent.indices.at(-1) ?? -1) + offset;
 				if (index >= events.length) continue;
+				if (
+					depth === 1 &&
+					options.openingRole &&
+					events[index]?.role !== options.openingRole
+				)
+					continue;
 				if (evaluated >= levelLimit) {
 					truncated = true;
 					stopped = true;
@@ -342,7 +350,10 @@ export function buildFeasibleStoryChoices(
 		if (level.length > LOCAL_STORY_CHOICE_POLICY.beamWidth) truncated = true;
 		beam = diverse(level, LOCAL_STORY_CHOICE_POLICY.beamWidth, target);
 	}
-	const plans = diverse(pool, maxPlans, target).map((p, i) => ({
+	const fitting = options.exactDuration
+		? pool.filter((plan) => plan.actualDurationFrames === target)
+		: pool;
+	const plans = diverse(fitting, maxPlans, target).map((p, i) => ({
 		id: `p${i}`,
 		eventIds: p.eventIds,
 		blueprintSkeleton: p.blueprintSkeleton,

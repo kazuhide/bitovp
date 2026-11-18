@@ -28,7 +28,10 @@ import type { createLocalSemanticClient } from "./local-semantic-client";
 import type { LocalStoryArtifactStore } from "./local-story-artifacts";
 import * as asrQuoteRepair from "./local-story-asr-quote-repair";
 import * as blueprintPrompt from "./local-story-blueprint-prompt";
-import { createLocalStoryEngine } from "./local-story-engine";
+import {
+	createLocalStoryEngine,
+	localStoryArtifactHash,
+} from "./local-story-engine";
 import {
 	createLegacyLocalStoryLedgerCache,
 	createLegacyV2LocalStoryLedgerCache,
@@ -679,6 +682,77 @@ beforeEach(() => {
 });
 
 describe("local story engine with real evidence contracts and a fake local model", () => {
+	it("reuses the full source ledger for a trailer without asking the model to draft a conclusion", async () => {
+		const f = fixture({ choiceEnabled: true, shotPaddingRepeats: 80 });
+		const { storyMode: _storyMode, ...parameters } = f.context.parameters;
+		const trailer = {
+			durationMode: "EXACT",
+			disclosure: "SETUP_AND_QUESTION",
+		} as const;
+		const context = { ...f.context, parameters: { ...parameters, trailer } };
+		const result = await f.engine.plan(context);
+
+		expect(f.requests.length).toBeGreaterThan(0);
+		expect(f.requests.every(({ stage }) => stage === "LOCAL_LEDGER_V1")).toBe(
+			true,
+		);
+		expect(f.choiceProbe).not.toHaveBeenCalled();
+		expect(result.selection.actualDurationFrames).toBe(450);
+		expect(result.evidence.blueprint.beats.map(({ role }) => role)).toEqual([
+			"CONTEXT",
+			"ACTION",
+			"ACTION",
+		]);
+		expect(result.evidence.trailer).toEqual({
+			intent: trailer,
+			windows: result.selection.clips.map(({ sourceInUs, durationFrames }) => ({
+				sourceInUs,
+				durationFrames,
+			})),
+		});
+		expect(result.evidence.artifactHash).toBe(
+			localStoryArtifactHash(result.evidence),
+		);
+		expect(result.warnings).toContain("LOCAL_STORY_VISUAL_GROUNDING_PENDING");
+		const firstCalls = f.run.mock.calls.length;
+
+		// A new task may reuse the full-source ledger with a different disclosure policy.
+		const second = await f.engine.plan({
+			...context,
+			task: { ...context.task, id: randomUUID() },
+			parameters: {
+				...parameters,
+				trailer: { durationMode: "TARGET", disclosure: "SETUP_ONLY" },
+			},
+		});
+		expect(f.run).toHaveBeenCalledTimes(firstCalls);
+		expect(second.evidence.ledgerHash).toBe(result.evidence.ledgerHash);
+		expect(second.evidence.artifactHash).not.toBe(result.evidence.artifactHash);
+		expect(second.selection.actualDurationFrames).toBe(150);
+		expect(second.warnings).toContain(
+			"LOCAL_STORY_DURATION_LIMITED_BY_EVIDENCE",
+		);
+	});
+
+	it("does not fall back to scene metadata alone when full-source audio transcription is unavailable", async () => {
+		const f = fixture();
+		const { storyMode: _storyMode, ...parameters } = f.context.parameters;
+		mocks.prepareTranscript.mockResolvedValueOnce({
+			status: "UNAVAILABLE",
+			segments: [],
+		});
+		await expect(
+			f.engine.plan({
+				...f.context,
+				parameters: {
+					...parameters,
+					trailer: { durationMode: "TARGET", disclosure: "SETUP_ONLY" },
+				},
+			}),
+		).rejects.toMatchObject({ code: "LOCAL_STORY_TRANSCRIPT_REQUIRED" });
+		expect(f.run).not.toHaveBeenCalled();
+	});
+
 	it.each([
 		"QUOTE",
 		"ASR",

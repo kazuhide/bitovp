@@ -8,6 +8,9 @@ const apiFetch = vi.fn();
 vi.mock("@/lib/api", () => ({
 	apiFetch: (...args: unknown[]) => apiFetch(...args),
 }));
+vi.mock("@/lib/auth/use-role-access", () => ({
+	useMutationAccess: () => true,
+}));
 
 function project(id: string): EditingProjectSummary {
 	return {
@@ -65,7 +68,7 @@ it.each([
 	expect(apiFetch).not.toHaveBeenCalled();
 });
 
-it("shows one draft thumbnail and editor link per alternative without export controls or history", async () => {
+it("links directly to the last successful export when a new export fails", async () => {
 	const first = project("one");
 	first.latestExport = {
 		id: "failed-run",
@@ -115,17 +118,14 @@ it("shows one draft thumbnail and editor link per alternative without export con
 		within(section).getByRole("link", { name: "Alternative two" }),
 	).toHaveAttribute("href", "/library/edits/two");
 	expect(within(section).queryByText("Failed")).not.toBeInTheDocument();
+	expect(within(section).getByText("Earlier version")).toBeVisible();
 	expect(
-		within(section).queryByText("Earlier version"),
-	).not.toBeInTheDocument();
-	expect(
-		within(section).queryByRole("link", { name: "Watch export" }),
-	).not.toBeInTheDocument();
+		within(section).getByRole("link", { name: "Watch export" }),
+	).toHaveAttribute("href", "/library/edits/one/result?exportId=success-run");
 	expect(
 		within(section).queryByRole("link", { name: "Download MP4" }),
 	).not.toBeInTheDocument();
 	for (const row of within(section).getAllByRole("listitem")) {
-		expect(within(row).getAllByRole("link")).toHaveLength(1);
 		expect(row.querySelector("time")).toBeNull();
 		expect(row.querySelector("[data-clip-thumbnail]")).not.toBeNull();
 	}

@@ -17,6 +17,7 @@ import {
 	enrichLibraryPlayback,
 	needsLibraryPlaybackProjection,
 } from "./library-playback";
+import { retainedExportForProject } from "./library-retained-export";
 
 export const listQuery = z.object({
 	q: z.string().max(200).default(""),
@@ -278,22 +279,37 @@ export async function listContents(
 					items: (ContentView & {
 						analysisSummary: unknown;
 						clipProjectCount: number;
+						clipExportCount: number;
+						singleClipExport: LibraryCatalogItem["singleClipExport"];
 					})[];
 				}[]
 			>`
       WITH page AS (
-        SELECT c.id, c.title, c.description, c.tags, c.locale, c.revision, c.archived, c."updatedAt", a.summary AS "analysisSummary",
-          (SELECT count(*)::int FROM "EditProject" p WHERE p."contentId" = c.id
-            AND p."organizationId" = c."organizationId") AS "clipProjectCount"
+        SELECT c.id, c.title, c.description, c.tags, c.locale, c.revision, c.archived, c."updatedAt", a.summary AS "analysisSummary"
         FROM "Content" c LEFT JOIN "ContentRevision" r ON r."contentId" = c.id AND r.revision = c.revision
         LEFT JOIN LATERAL (
           SELECT jsonb_build_object('duration', document->'duration', 'sceneCount', jsonb_array_length(document->'scenes'), 'start', document->'scenes'->0->'startInSeconds', 'end', document->'scenes'->0->'endInSeconds') AS summary
           FROM "SceneAnalysisRevision" WHERE "sourceId" = r."sourceId" AND locale = c.locale
           ORDER BY "createdAt" DESC, id DESC LIMIT 1
         ) a ON true
-        WHERE c.id = ANY(${ids}::uuid[])
+        WHERE c.id = ANY(${ids}::uuid[]) AND c."organizationId" = ${organizationId}::uuid
+      ), clip_counts AS (
+        SELECT p."contentId", count(*)::int AS "clipProjectCount",
+          count(kept.id)::int AS "clipExportCount",
+          CASE WHEN count(kept.id) = 1 THEN jsonb_build_object(
+            'projectId', min(p.id::text) FILTER (WHERE kept.id IS NOT NULL),
+            'exportId', min(kept.id::text)
+          ) END AS "singleClipExport"
+        FROM "EditProject" p JOIN page ON page.id = p."contentId"
+        LEFT JOIN LATERAL (${retainedExportForProject()}) kept ON true
+        WHERE p."organizationId" = ${organizationId}::uuid
+        GROUP BY p."contentId"
+      ), items AS (
+        SELECT page.*, COALESCE(clip_counts."clipProjectCount", 0) AS "clipProjectCount",
+          COALESCE(clip_counts."clipExportCount", 0) AS "clipExportCount", clip_counts."singleClipExport"
+        FROM page LEFT JOIN clip_counts ON clip_counts."contentId" = page.id
       )
-      SELECT COALESCE(jsonb_agg(page ORDER BY "updatedAt" DESC, id DESC), '[]'::jsonb) AS items FROM page`;
+      SELECT COALESCE(jsonb_agg(items ORDER BY "updatedAt" DESC, id DESC), '[]'::jsonb) AS items FROM items`;
 			const items: LibraryCatalogItem[] = (rows[0]?.items ?? []).map(
 				({ analysisSummary, ...item }) => {
 					const playback = selected.get(item.id);

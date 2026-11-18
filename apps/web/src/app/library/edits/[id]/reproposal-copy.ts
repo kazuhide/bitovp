@@ -22,6 +22,7 @@ const en = {
 	loadFailed: "The editing source could not be checked.",
 	sourceUnavailable:
 		"The video or AISA metadata used by this edit is no longer available for a new proposal.",
+	trailerUnavailable: "A new trailer proposal requires local story analysis.",
 	retry: "Try again",
 };
 const ja: Record<keyof typeof en, string> = {
@@ -43,6 +44,8 @@ const ja: Record<keyof typeof en, string> = {
 	loadFailed: "編集元の映像を確認できませんでした。",
 	sourceUnavailable:
 		"この編集で使った映像またはAISAメタデータを、別案の作成に利用できません。",
+	trailerUnavailable:
+		"予告編の別案を作るには、ローカルストーリー解析が必要です。",
 	retry: "再試行",
 };
 export function useReproposalCopy() {

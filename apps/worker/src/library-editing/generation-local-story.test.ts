@@ -4,6 +4,7 @@ import {
 	CAPTION_ALIGNMENT_POLICY,
 	compositionDocumentSchema,
 	GENERATION_POLICY_FINGERPRINT,
+	type GenerationTaskParameters,
 	hashEditingEvidence,
 	LOCAL_TRACKING_ALGORITHM_VERSION,
 	LOCAL_TRACKING_FRAME_CLOCK_VERSION,
@@ -58,6 +59,7 @@ function fixture(
 	options: {
 		captions?: "AUTO" | "OFF" | "ORIGINAL" | "JAPANESE";
 		prepared?: boolean;
+		trailer?: GenerationTaskParameters["trailer"];
 		captionTranslator?: LocalCaptionTranslator;
 		captionAligner?: typeof alignSelectedCaptionSegments;
 		preflight?: Parameters<
@@ -75,6 +77,10 @@ function fixture(
 	});
 	delete f.task.parameters.input.parameters.trackingTaskId;
 	delete f.task.parameters.input.parameters.transcriptionTaskId;
+	if (options.trailer) {
+		delete f.task.parameters.input.parameters.storyMode;
+		f.task.parameters.input.parameters.trailer = options.trailer;
+	}
 	Object.assign(f.task.parameters.identity, { localStoryModel: identity });
 	if (options.captions === "JAPANESE")
 		Object.assign(f.task.parameters.identity, {
@@ -142,6 +148,11 @@ function fixture(
 		selectedEventIds: ["event0"],
 		reason: "COMPLETE_BEATS" as const,
 	};
+	const beatRole = options.trailer ? "CONTEXT" : "ACTION";
+	const windows = [0, 1].map((shotIndex) => ({
+		sourceInUs: shotIndex * 2_000_000,
+		durationFrames: 60,
+	}));
 	const ledger = {
 		version: "local-story-corpus-v1" as const,
 		summaries: ["Authored local story integration evidence"],
@@ -149,7 +160,7 @@ function fixture(
 			{
 				id: "event0",
 				label: "Authored scene",
-				role: "ACTION" as const,
+				role: beatRole,
 				refs: ["s0", "s1"],
 				quotes: [{ ref: "s0", quote: "Explicit authored test annotation" }],
 				subjects: [],
@@ -164,7 +175,7 @@ function fixture(
 		beats: [
 			{
 				id: "beat0",
-				role: "ACTION" as const,
+				role: beatRole,
 				eventIds: ["event0"],
 				requires: [],
 			},
@@ -179,6 +190,9 @@ function fixture(
 		}),
 		ledgerHash: hashEditingEvidence(ledger),
 		blueprintHash: hashEditingEvidence(blueprint),
+		...(options.trailer
+			? { trailer: { intent: options.trailer, windows } }
+			: {}),
 	};
 	const authored: LocalStoryGeneration = {
 		selection: {
@@ -187,11 +201,10 @@ function fixture(
 				: "aisa-local-story-window-v1",
 			requestedDurationFrames: 120,
 			actualDurationFrames: 120,
-			clips: [0, 1].map((shotIndex) => ({
+			clips: windows.map((window, shotIndex) => ({
 				sceneId: f.sceneIds[0] ?? "",
 				shotIndex,
-				sourceInUs: shotIndex * 2_000_000,
-				durationFrames: 60,
+				...window,
 			})),
 			reasonCodes: ["LOCAL_LLM_COMPLETE_BEATS"],
 			...(normalizationReceiptHash ? { normalizationReceiptHash } : {}),
@@ -268,6 +281,56 @@ function expectNoPublication(f: ReturnType<typeof fixture>) {
 }
 
 describe("local story project generation", () => {
+	it("publishes an editable trailer with matching original source windows and checks replay", async () => {
+		const trailer = {
+			durationMode: "EXACT",
+			disclosure: "SETUP_ONLY",
+		} as const;
+		const f = fixture({ trailer });
+		const result = await f.run();
+		expect(result.renderMode).toBe("DRAFT");
+		expect(result).toMatchObject({ requestedFrames: 120, actualFrames: 120 });
+		expect(f.projects[0]?.title).toContain("（予告編）");
+		const windows = f.authored.evidence.trailer?.windows;
+		expect(windows).toEqual([
+			{ sourceInUs: 0, durationFrames: 60 },
+			{ sourceInUs: 2_000_000, durationFrames: 60 },
+		]);
+		expect(document(f).autoGeneration).toMatchObject({
+			trailer,
+			localStoryEvidence: { trailer: { intent: trailer, windows } },
+		});
+		expect(f.revisions).toHaveLength(1);
+		expect(f.render).not.toHaveBeenCalled();
+		expect(f.derive).not.toHaveBeenCalled();
+		Object.assign(f.task, { state: "SUCCEEDED", result });
+		await expect(f.run()).resolves.toEqual(result);
+
+		const forged = structuredClone(result);
+		const evidence = fixtureItem(forged.localStoryEvidence);
+		fixtureItem(evidence.trailer).intent.disclosure = "SETUP_AND_QUESTION";
+		evidence.artifactHash = localStoryArtifactHash(evidence);
+		Object.assign(f.task, { result: forged });
+		await expect(f.run()).rejects.toMatchObject({
+			code: "TASK_RESULT_UNVERIFIED",
+		});
+	});
+
+	it("rejects trailer evidence windows that differ from the proposed timeline even with a matching hash", async () => {
+		const f = fixture({
+			trailer: { durationMode: "TARGET", disclosure: "SETUP_ONLY" },
+		});
+		const trailer = fixtureItem(f.authored.evidence.trailer);
+		fixtureItem(trailer.windows[1]).sourceInUs += 1_000_000;
+		f.authored.evidence.artifactHash = localStoryArtifactHash(
+			f.authored.evidence,
+		);
+		await expect(f.run()).rejects.toMatchObject({
+			code: "TASK_RESULT_UNVERIFIED",
+		});
+		expectNoPublication(f);
+	});
+
 	it.each([
 		"OFF",
 		"AUTO",

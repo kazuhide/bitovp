@@ -267,6 +267,7 @@ export async function createMediaTask(
 		requested.kind === "GENERATE" &&
 		requested.parameters.policy === "LOCAL_STORY" &&
 		requested.parameters.renderMode === "DRAFT" &&
+		requested.parameters.trailer === undefined &&
 		requested.parameters.storyWorkflowVersion === undefined;
 	const pinned = canPin
 		? mediaTaskCreateSchema.parse({

@@ -14,6 +14,7 @@ import {
 	localStoryEvidenceSchema,
 	localStoryModelIdentitySchema,
 	localStoryModeSchema,
+	localStoryTrailerIntentSchema,
 } from "../content-editing/local-story-contracts";
 import { localStoryFlowWorkflowIdentitySchema } from "../content-editing/local-story-flow-contracts";
 import {
@@ -70,6 +71,7 @@ export const generationTaskParametersSchema = z
 			.enum(["AUTO", "STORY", "LOCAL_STORY", "COHESION", "DURATION"])
 			.default("COHESION"),
 		storyMode: localStoryModeSchema.optional(),
+		trailer: localStoryTrailerIntentSchema.optional(),
 		storyPlanner: z.literal("FEASIBLE_CHOICE_V1").optional(),
 		storyWorkflowVersion: z
 			.literal(LOCAL_STORY_HIERARCHICAL_WORKFLOW_VERSION)
@@ -108,6 +110,16 @@ export const generationTaskParametersSchema = z
 	.refine(
 		(value) => value.storyMode === undefined || value.policy === "LOCAL_STORY",
 		"A local story mode requires the local story policy",
+	)
+	.refine(
+		(value) =>
+			value.trailer === undefined ||
+			(value.policy === "LOCAL_STORY" &&
+				value.renderMode === "DRAFT" &&
+				value.storyMode === undefined &&
+				value.storyPlanner === undefined &&
+				value.storyWorkflowVersion === undefined),
+		"A trailer requires a local-story DRAFT with its own editorial scope",
 	)
 	.refine(
 		(value) =>
@@ -472,6 +484,18 @@ export const generationTaskResultSchema = z
 			value.actualFrames <= value.requestedFrames,
 		"Generation result identity and duration must match",
 	)
+	.refine((value) => {
+		const trailer = value.localStoryEvidence?.trailer;
+		return (
+			!trailer ||
+			(trailer.windows.reduce(
+				(sum, window) => sum + window.durationFrames,
+				0,
+			) === value.actualFrames &&
+				(trailer.intent.durationMode !== "EXACT" ||
+					value.actualFrames === value.requestedFrames))
+		);
+	}, "Trailer duration must match its selected windows and requested exact duration")
 	.refine(
 		(value) =>
 			value.selectionEvidence?.reason !== "SPEECH_REVIEW_REQUIRED" ||

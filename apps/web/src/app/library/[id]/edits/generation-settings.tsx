@@ -1,5 +1,8 @@
 "use client";
-import type { GenerationTaskParameters } from "@bitovp/core";
+import type {
+	GenerationTaskParameters,
+	LocalStoryTrailerIntent,
+} from "@bitovp/core";
 import { useId } from "react";
 import { Field } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
@@ -19,6 +22,22 @@ export type GenerationSettingsValue = Omit<
 	| "renderMode"
 	| "draftPolicyVersion"
 >;
+export function withTrailerIntent(
+	settings: GenerationSettingsValue,
+	trailer?: LocalStoryTrailerIntent,
+): GenerationSettingsValue {
+	if (!trailer) return settings;
+	const effective: GenerationSettingsValue = {
+		...settings,
+		trailer,
+		policy: "LOCAL_STORY",
+	};
+	delete effective.storyMode;
+	delete effective.storyPlanner;
+	delete effective.storyWorkflowVersion;
+	delete effective.query;
+	return effective;
+}
 export function wholeFramesForDuration(value: string) {
 	const seconds = value.trim() ? Number(value) : Number.NaN;
 	const frames = seconds * 30;
@@ -37,6 +56,7 @@ export function GenerationSettings({
 	allowPresentation = false,
 	allowLocalStory = false,
 	allowJapaneseCaptions = false,
+	trailerMode = false,
 }: {
 	value: GenerationSettingsValue;
 	disabled: boolean;
@@ -45,6 +65,7 @@ export function GenerationSettings({
 	allowPresentation?: boolean;
 	allowLocalStory?: boolean;
 	allowJapaneseCaptions?: boolean;
+	trailerMode?: boolean;
 }) {
 	const c = useProductionCopy(),
 		id = useId(),
@@ -57,117 +78,123 @@ export function GenerationSettings({
 			value.presentation?.fallbackFraming === "AISA_STATIC_V1";
 	return (
 		<div className="space-y-4">
-			<Field
-				label={c.policy}
-				htmlFor={`${id}-policy`}
-				help={
-					<EditingHelpText>
-						{localStoryAllowed && <p>{c.policyLocalStoryHelp}</p>}
-						{allowPresentation && <p>{c.policyAutoHelp}</p>}
-						<p>{c.policyHelp}</p>
-					</EditingHelpText>
-				}
-			>
-				<SelectNative
-					id={`${id}-policy`}
-					value={value.policy}
-					disabled={disabled}
-					onChange={(e) => {
-						const policy =
-							e.target.value === "LOCAL_STORY" && localStoryAllowed
-								? "LOCAL_STORY"
-								: e.target.value === "AUTO" && allowPresentation
-									? "AUTO"
-									: e.target.value === "DURATION"
-										? "DURATION"
-										: "COHESION";
-						onChange({
-							...value,
-							policy,
-							query:
-								policy === "AUTO" || policy === "LOCAL_STORY"
-									? undefined
-									: value.query,
-							storyMode:
-								policy === "LOCAL_STORY"
-									? (value.storyMode ?? "AUTO")
-									: undefined,
-						});
-					}}
-				>
-					{localStoryAllowed && (
-						<option value="LOCAL_STORY">{c.localStorySelection}</option>
-					)}
-					{allowPresentation && (
-						<option value="AUTO">{c.automaticSelection}</option>
-					)}
-					<option value="COHESION">{c.cohesion}</option>
-					<option value="DURATION">{c.duration}</option>
-				</SelectNative>
-			</Field>
-			{localStoryAllowed && value.policy === "LOCAL_STORY" && (
-				<Field
-					label={c.storyMode}
-					htmlFor={`${id}-story-mode`}
-					help={
-						<EditingHelpText>
-							<p>{c.storyModeHelp}</p>
-						</EditingHelpText>
-					}
-				>
-					<SelectNative
-						id={`${id}-story-mode`}
-						value={value.storyMode ?? "AUTO"}
-						disabled={disabled}
-						onChange={(event) =>
-							onChange({
-								...value,
-								storyMode:
-									event.target.value === "FLOW"
-										? "FLOW"
-										: event.target.value === "THEME"
-											? "THEME"
-											: "AUTO",
-							})
+			{!(trailerMode || value.trailer) && (
+				<>
+					<Field
+						label={c.policy}
+						htmlFor={`${id}-policy`}
+						help={
+							<EditingHelpText>
+								{localStoryAllowed && <p>{c.policyLocalStoryHelp}</p>}
+								{allowPresentation && <p>{c.policyAutoHelp}</p>}
+								<p>{c.policyHelp}</p>
+							</EditingHelpText>
 						}
 					>
-						<option value="AUTO">{c.storyAuto}</option>
-						<option value="FLOW">{c.storyFlow}</option>
-						<option value="THEME">{c.storyTheme}</option>
-					</SelectNative>
-				</Field>
+						<SelectNative
+							id={`${id}-policy`}
+							value={value.policy}
+							disabled={disabled}
+							onChange={(e) => {
+								const policy =
+									e.target.value === "LOCAL_STORY" && localStoryAllowed
+										? "LOCAL_STORY"
+										: e.target.value === "AUTO" && allowPresentation
+											? "AUTO"
+											: e.target.value === "DURATION"
+												? "DURATION"
+												: "COHESION";
+								onChange({
+									...value,
+									policy,
+									query:
+										policy === "AUTO" || policy === "LOCAL_STORY"
+											? undefined
+											: value.query,
+									storyMode:
+										policy === "LOCAL_STORY"
+											? (value.storyMode ?? "AUTO")
+											: undefined,
+								});
+							}}
+						>
+							{localStoryAllowed && (
+								<option value="LOCAL_STORY">{c.localStorySelection}</option>
+							)}
+							{allowPresentation && (
+								<option value="AUTO">{c.automaticSelection}</option>
+							)}
+							<option value="COHESION">{c.cohesion}</option>
+							<option value="DURATION">{c.duration}</option>
+						</SelectNative>
+					</Field>
+					{localStoryAllowed && value.policy === "LOCAL_STORY" && (
+						<Field
+							label={c.storyMode}
+							htmlFor={`${id}-story-mode`}
+							help={
+								<EditingHelpText>
+									<p>{c.storyModeHelp}</p>
+								</EditingHelpText>
+							}
+						>
+							<SelectNative
+								id={`${id}-story-mode`}
+								value={value.storyMode ?? "AUTO"}
+								disabled={disabled}
+								onChange={(event) =>
+									onChange({
+										...value,
+										storyMode:
+											event.target.value === "FLOW"
+												? "FLOW"
+												: event.target.value === "THEME"
+													? "THEME"
+													: "AUTO",
+									})
+								}
+							>
+								<option value="AUTO">{c.storyAuto}</option>
+								<option value="FLOW">{c.storyFlow}</option>
+								<option value="THEME">{c.storyTheme}</option>
+							</SelectNative>
+						</Field>
+					)}
+					<EditingDetails summary={c.policyDetails}>
+						{localStoryAllowed && (
+							<section className="space-y-1">
+								<h3 className="font-medium text-zinc-300">
+									{c.localStorySelection}
+								</h3>
+								<p>{c.policyLocalStoryDetails}</p>
+							</section>
+						)}
+						{allowPresentation && (
+							<section className="space-y-1">
+								<h3 className="font-medium text-zinc-300">
+									{c.automaticSelection}
+								</h3>
+								<p>{c.policyAutoDetails}</p>
+							</section>
+						)}
+						<section className="space-y-1">
+							<h3 className="font-medium text-zinc-300">{c.cohesion}</h3>
+							<p>{c.policyCohesionDetails}</p>
+						</section>
+						<section className="space-y-1">
+							<h3 className="font-medium text-zinc-300">{c.duration}</h3>
+							<p>{c.policyDurationDetails}</p>
+						</section>
+						<section className="space-y-1">
+							<h3 className="font-medium text-zinc-300">
+								{c.policySharedTitle}
+							</h3>
+							<p>{c.policySharedDetails}</p>
+							<p>{c.policySpeechDetails}</p>
+						</section>
+					</EditingDetails>
+				</>
 			)}
-			<EditingDetails summary={c.policyDetails}>
-				{localStoryAllowed && (
-					<section className="space-y-1">
-						<h3 className="font-medium text-zinc-300">
-							{c.localStorySelection}
-						</h3>
-						<p>{c.policyLocalStoryDetails}</p>
-					</section>
-				)}
-				{allowPresentation && (
-					<section className="space-y-1">
-						<h3 className="font-medium text-zinc-300">
-							{c.automaticSelection}
-						</h3>
-						<p>{c.policyAutoDetails}</p>
-					</section>
-				)}
-				<section className="space-y-1">
-					<h3 className="font-medium text-zinc-300">{c.cohesion}</h3>
-					<p>{c.policyCohesionDetails}</p>
-				</section>
-				<section className="space-y-1">
-					<h3 className="font-medium text-zinc-300">{c.duration}</h3>
-					<p>{c.policyDurationDetails}</p>
-				</section>
-				<section className="space-y-1">
-					<h3 className="font-medium text-zinc-300">{c.policySharedTitle}</h3>
-					<p>{c.policySharedDetails}</p>
-					<p>{c.policySpeechDetails}</p>
-				</section>
-			</EditingDetails>
 			{allowPresentation && (
 				<div className="grid gap-4 sm:grid-cols-2">
 					<Field

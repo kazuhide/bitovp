@@ -178,6 +178,10 @@ export function ReproposalDialog({
 						<p role="status" className="text-sm text-zinc-400">
 							{c.loading}
 						</p>
+					) : defaults.settings.trailer &&
+						!eligible?.localStoryAvailable &&
+						!uncertain ? (
+						<p className="text-sm text-zinc-400">{c.trailerUnavailable}</p>
 					) : (
 						<GenerationControls
 							contentId={snapshot.project.contentId}

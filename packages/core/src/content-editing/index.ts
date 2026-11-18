@@ -65,6 +65,7 @@ export {
 	selectLocalStoryClips,
 } from "./local-story-planner";
 export * from "./local-story-subjects";
+export { selectLocalStoryTrailer } from "./local-story-trailer";
 export * from "./native-editing-preflight";
 export * from "./normalization-evidence";
 export * from "./prepared-shot-partition";

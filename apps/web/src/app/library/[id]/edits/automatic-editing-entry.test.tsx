@@ -248,6 +248,73 @@ it("has one project action and uses only the resolver's encoding, media and anal
 	});
 });
 it.each([
+	"READY",
+	"NEEDS_PREPARATION",
+] as const)("reviews a natural-language trailer before generating a %s draft", async (status) => {
+	const data = eligibility({
+		status,
+		preparation:
+			status === "NEEDS_PREPARATION"
+				? {
+						fileKey: "mp4:fixed",
+						output: {
+							credentialId: editingIds.source,
+							bucket: "editing",
+							prefix: "trailer/",
+						},
+					}
+				: null,
+	});
+	data.localStoryAvailable = true;
+	renderWithQuery(tree(data));
+	if (status === "READY")
+		fireEvent.click(
+			screen.getByRole("button", { name: "Association checked" }),
+		);
+	const create = () => screen.getByRole("button", { name: "Create project" });
+	fireEvent.click(screen.getByRole("button", { name: "Plan a trailer" }));
+	const instructions = screen.getByRole("textbox", {
+		name: "Trailer instructions",
+	});
+	fireEvent.change(instructions, {
+		target: { value: "Make a 30-second spoiler-free trailer." },
+	});
+	expect(create()).toBeDisabled();
+	fireEvent.click(
+		screen.getByRole("button", { name: "Review editing instructions" }),
+	);
+	expect(screen.getByRole("combobox", { name: "Disclosure" })).toHaveValue(
+		"SETUP_AND_QUESTION",
+	);
+	expect(posts()).toHaveLength(0);
+	fireEvent.change(instructions, {
+		target: { value: "Create a trailer exactly 30 seconds long, setup only." },
+	});
+	expect(create()).toBeDisabled();
+	fireEvent.click(
+		screen.getByRole("button", { name: "Review editing instructions" }),
+	);
+	expect(screen.getByRole("combobox", { name: "Disclosure" })).toHaveValue(
+		"SETUP_ONLY",
+	);
+	expect(create()).toBeEnabled();
+	fireEvent.click(create());
+	await waitFor(() =>
+		expect(mocks.push).toHaveBeenCalledWith(`/library/generations/${taskId}`),
+	);
+	const call = posts().find(([url]) => url === "/api/library/media-tasks");
+	const body = JSON.parse(String(call?.[1].body));
+	expect(body.parameters).toMatchObject({
+		policy: "LOCAL_STORY",
+		renderMode: "DRAFT",
+		targetDurationFrames: 900,
+		trailer: { durationMode: "EXACT", disclosure: "SETUP_ONLY" },
+	});
+	expect(body.parameters.storyMode).toBeUndefined();
+	expect(JSON.stringify(body)).not.toContain("Create a trailer exactly");
+	expect(posts().some(([url]) => String(url).includes("/renders"))).toBe(false);
+});
+it.each([
 	"UNAVAILABLE",
 	"ANALYSIS_PENDING",
 	"PREPARING",

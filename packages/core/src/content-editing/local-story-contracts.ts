@@ -10,6 +10,26 @@ export const LOCAL_STORY_MAX_CHUNK_BYTES = 4500;
 export const LOCAL_STORY_MAX_CHUNKS = 128;
 export const localStoryModeSchema = z.enum(["AUTO", "FLOW", "THEME"]);
 export type LocalStoryMode = z.infer<typeof localStoryModeSchema>;
+export const localStoryTrailerIntentSchema = z.strictObject({
+	durationMode: z.enum(["TARGET", "UP_TO", "EXACT"]),
+	disclosure: z.enum(["SETUP_ONLY", "SETUP_AND_QUESTION"]),
+});
+export type LocalStoryTrailerIntent = z.infer<
+	typeof localStoryTrailerIntentSchema
+>;
+
+const localStoryTrailerEvidenceSchema = z.strictObject({
+	intent: localStoryTrailerIntentSchema,
+	windows: z
+		.array(
+			z.strictObject({
+				sourceInUs: z.number().int().nonnegative(),
+				durationFrames: z.number().int().positive().max(5400),
+			}),
+		)
+		.min(1)
+		.max(20),
+});
 
 /** This identity cannot describe or reactivate a historical coding-agent receipt. */
 export const localStoryModelIdentitySchema = z.strictObject({
@@ -58,6 +78,17 @@ export const localStoryEventSchema = z.strictObject({
 	uncertainty: z.string().max(240),
 });
 export type LocalStoryEvent = z.infer<typeof localStoryEventSchema>;
+export function localStoryTrailerAllowsEvent(
+	event: LocalStoryEvent,
+	intent: LocalStoryTrailerIntent,
+) {
+	return (
+		event.uncertainty.trim() === "" &&
+		(event.role === "CONTEXT" ||
+			(intent.disclosure === "SETUP_AND_QUESTION" &&
+				(event.role === "ACTION" || event.role === "CHANGE")))
+	);
+}
 /** Model output for one complete input chunk. No scores, clock values or render commands. */
 export const localStoryLedgerSchema = z.strictObject({
 	summary: text(320),
@@ -177,6 +208,7 @@ export const localStoryEvidenceSchema = z
 		blueprint: localStoryBlueprintSchema,
 		selection: localStorySelectionSchema,
 		inputCoverage: localStoryInputCoverageSchema,
+		trailer: localStoryTrailerEvidenceSchema.optional(),
 	})
 	.superRefine((value, ctx) => {
 		const events = new Set(value.ledger.events.map((v) => v.id));
@@ -208,6 +240,36 @@ export const localStoryEvidenceSchema = z
 				message:
 					"Local story selection must fulfill its declared complete blueprint",
 			});
+		}
+		if (value.trailer) {
+			const intent = value.trailer.intent;
+			const blocked = new Set(
+				value.ledger.events
+					.filter((event) => !localStoryTrailerAllowsEvent(event, intent))
+					.flatMap((event) => event.refs),
+			);
+			const usableRoles = new Map(
+				value.ledger.events
+					.filter((event) => event.refs.every((ref) => !blocked.has(ref)))
+					.map((event) => [event.id, event.role]),
+			);
+			if (
+				value.blueprint.mode !== "FLOW" ||
+				value.blueprint.beats[0]?.role !== "CONTEXT" ||
+				value.blueprint.beats.some((beat) =>
+					beat.eventIds.some((id) => usableRoles.get(id) !== beat.role),
+				) ||
+				value.trailer.windows.some(
+					(window, index, windows) =>
+						index > 0 &&
+						window.sourceInUs <= (windows[index - 1]?.sourceInUs ?? -1),
+				)
+			)
+				ctx.addIssue({
+					code: "custom",
+					message:
+						"Trailer evidence requires a source-ordered opening and eligible references",
+				});
 		}
 	});
 export type LocalStoryEvidence = z.infer<typeof localStoryEvidenceSchema>;

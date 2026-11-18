@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
+import { useMutationAccess } from "@/lib/auth/use-role-access";
 import { useT } from "@/lib/i18n/context";
 import type {
 	EditingProjectPage,
@@ -43,6 +44,7 @@ function AvailableClipProjects({
 	canEdit: boolean;
 }) {
 	const { t } = useT();
+	const hasEditAccess = useMutationAccess("library.edits.edit");
 	const [offset, setOffset] = useState(0);
 	const query = useQuery({
 		queryKey: ["library-edit-projects", contentId, offset],
@@ -74,7 +76,7 @@ function AvailableClipProjects({
 							t("editing.clipDraftCount", { count: query.data.total })}
 					</span>
 				)}
-				{showCreate && canEdit && (
+				{showCreate && canEdit && hasEditAccess && (
 					<Link
 						href={`/library/${contentId}/edits`}
 						className={`${linkClass} text-sm`}
@@ -108,7 +110,11 @@ function AvailableClipProjects({
 					)}
 					<ul className="divide-y divide-zinc-800">
 						{query.data.items.map((project) => (
-							<ClipProjectRow key={project.id} project={project} />
+							<ClipProjectRow
+								key={project.id}
+								project={project}
+								canEdit={canEdit && hasEditAccess}
+							/>
 						))}
 					</ul>
 					{(query.data.total > 25 || offset > 0) && (
@@ -148,19 +154,28 @@ function AvailableClipProjects({
 	);
 }
 
-function ClipProjectRow({ project }: { project: EditingProjectSummary }) {
+function ClipProjectRow({
+	project,
+	canEdit,
+}: {
+	project: EditingProjectSummary;
+	canEdit: boolean;
+}) {
 	const { t } = useT();
 	const titleId = useId();
+	const editorLabelId = useId();
+	const exported = project.latestSuccessfulExport;
 	const seconds =
 		project.durationFrames !== null && project.fps
 			? (project.durationFrames * project.fps.den) / project.fps.num
 			: null;
 	return (
-		<li className="min-w-0 py-1">
+		<li className="flex min-w-0 flex-wrap items-center gap-2 py-1 sm:flex-nowrap">
 			<Link
 				href={`/library/edits/${project.id}`}
 				aria-labelledby={titleId}
-				className="flex min-w-0 items-center gap-3 rounded p-3 hover:bg-zinc-900/50 focus-visible:outline-2 focus-visible:outline-emerald-500"
+				aria-describedby={editorLabelId}
+				className="flex min-w-0 flex-1 items-center gap-3 rounded p-3 hover:bg-zinc-900/50 focus-visible:outline-2 focus-visible:outline-emerald-500"
 			>
 				<ClipThumbnail reference={project.thumbnail} />
 				<div className="min-w-0 flex-1 space-y-1">
@@ -182,8 +197,26 @@ function ClipProjectRow({ project }: { project: EditingProjectSummary }) {
 							<span className="tabular-nums">{seconds.toFixed(1)}s</span>
 						)}
 					</div>
+					<span id={editorLabelId} className="text-emerald-400 text-xs">
+						{t(canEdit ? "editing.open" : "editing.renders")}
+					</span>
 				</div>
 			</Link>
+			{exported && (
+				<div className="flex shrink-0 flex-col items-start gap-1 px-3 pb-2 text-xs sm:items-end sm:pb-0">
+					<Link
+						href={`/library/edits/${project.id}/result?exportId=${exported.id}`}
+						aria-describedby={titleId}
+						className={linkClass}
+					>
+						{t("editing.watchExport")}
+					</Link>
+					{(exported.id !== project.latestExport?.id ||
+						!exported.matchesCurrentDraft) && (
+						<span className="text-zinc-400">{t("editing.earlierExport")}</span>
+					)}
+				</div>
+			)}
 		</li>
 	);
 }

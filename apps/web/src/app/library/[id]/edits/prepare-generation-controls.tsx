@@ -2,6 +2,7 @@
 
 import {
 	cfrTimeMapSchema,
+	type LocalStoryTrailerIntent,
 	mediaTaskCreateSchema,
 	mediaTaskReceiptSchema,
 } from "@bitovp/core";
@@ -29,6 +30,7 @@ import { type EditingEligibility, MediaPreparation } from "./editing-forms";
 import {
 	GenerationSettings,
 	type GenerationSettingsValue,
+	withTrailerIntent,
 } from "./generation-settings";
 import { productionFailure, useProductionCopy } from "./production-copy";
 
@@ -118,6 +120,7 @@ export function PrepareGenerationControls({
 	onBusyChange,
 	onReturn,
 	renderMode,
+	trailer,
 	preparationTarget,
 	hasAudio,
 	children,
@@ -130,6 +133,7 @@ export function PrepareGenerationControls({
 	onBusyChange(busy: boolean): void;
 	onReturn(): void;
 	renderMode?: "DRAFT" | "EXPORT";
+	trailer?: LocalStoryTrailerIntent;
 	preparationTarget?: {
 		fileKey: string;
 		output: { credentialId: string; bucket: string; prefix: string };
@@ -227,6 +231,7 @@ export function PrepareGenerationControls({
 		organizationId,
 		actorIdentity,
 		renderMode,
+		trailer,
 		preparationTarget,
 		hasAudio,
 	});
@@ -482,7 +487,7 @@ export function PrepareGenerationControls({
 			analysisLabel: analysis.title,
 			frames: targetDurationFrames,
 			settings: structuredClone({
-				...settings,
+				...withTrailerIntent(settings, trailer),
 				...(hasAudio === false ? { captions: "OFF" as const } : {}),
 			}),
 			...(renderMode ? { renderMode } : {}),
@@ -685,6 +690,7 @@ export function PrepareGenerationControls({
 								</summary>
 								<GenerationSettings
 									allowPresentation={renderMode === "DRAFT"}
+									trailerMode={Boolean(trailer)}
 									allowLocalStory={eligibility.localStoryAvailable === true}
 									allowJapaneseCaptions={
 										eligibility.captionTranslationAvailable === true
@@ -732,6 +738,7 @@ export function PrepareGenerationControls({
 						>
 							<GenerationSettings
 								allowPresentation={renderMode === "DRAFT"}
+								trailerMode={Boolean(trailer)}
 								allowLocalStory={eligibility.localStoryAvailable === true}
 								allowJapaneseCaptions={
 									eligibility.captionTranslationAvailable === true
@@ -784,6 +791,7 @@ export function PrepareGenerationControls({
 						value={settings}
 						disabled
 						allowPresentation={renderMode === "DRAFT"}
+						trailerMode={Boolean(trailer)}
 						allowLocalStory={eligibility.localStoryAvailable === true}
 						allowJapaneseCaptions={
 							eligibility.captionTranslationAvailable === true

@@ -73,6 +73,7 @@ globalForPrisma.prismaModule = prismaModule;
  * copy's sentinel, and the client that receives it may belong to another.
  */
 export const DB_NULL = prismaModule.Prisma.DbNull;
+export const dbSql = prismaModule.Prisma.sql;
 
 /**
  * Ciphertext columns, kept out of every raw delegate read.

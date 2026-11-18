@@ -6,6 +6,7 @@ import {
 import type { QueryObserverOptions } from "@tanstack/react-query";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import { DocumentOrganizationContext } from "@/components/providers";
 import { en } from "@/lib/i18n/messages/en";
 import { renderLocalized, renderWithQuery } from "@/test/render";
 
@@ -667,6 +668,24 @@ it("keeps clip drafts out of the original analysis layout until requested", asyn
 	);
 	fireEvent.click(screen.getByRole("button", { name: "Close" }));
 	expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("shows the finished clips shelf on the original page with creation unavailable", async () => {
+	apiFetch.mockResolvedValue(pinnedContent);
+	renderWithQuery(
+		<DocumentOrganizationContext.Provider value="00000000-0000-4000-8000-000000000001">
+			<ContentDetailClient id="content" clipEditingAvailable={false} />
+		</DocumentOrganizationContext.Provider>,
+	);
+	expect(
+		await screen.findByRole("complementary", { name: "Finished clips" }),
+	).toHaveAttribute("id", "finished-clips");
+	expect(await screen.findByText("No finished clips yet.")).toBeVisible();
+	expect(screen.getByText("Player")).toBeVisible();
+	expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+	expect(
+		clipSummary.mock.calls.some(([url]) => url.includes("scope=exports")),
+	).toBe(true);
 });
 
 it.each([

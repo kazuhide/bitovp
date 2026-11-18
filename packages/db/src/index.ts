@@ -18,7 +18,7 @@ export type {
 } from "./bitmovin-accounts";
 export { createBitmovinAccountStore } from "./bitmovin-accounts";
 export type { AppPrismaClient, AppTransactionClient } from "./client";
-export { createPrismaClient, DB_NULL, getPrisma } from "./client";
+export { createPrismaClient, DB_NULL, dbSql, getPrisma } from "./client";
 export type {
 	CreateCredentialInput,
 	CredentialStore,

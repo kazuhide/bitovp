@@ -12016,6 +12016,43 @@ describe("MoQ publisher Task privacy", () => {
 		expect(h.sdk.createMoqOutput).toHaveBeenCalledTimes(1);
 		expect(h.row.status).toBe("RUNNING");
 	});
+
+	it("preserves a revived MoQ run's encoding and namespace after the account RTMP input changes", async () => {
+		const h = moqHarness(async () => ({ status: "RUNNING" }));
+		await h.process({ liveChannelId: CHANNEL_ID });
+		const [run] = h.runRows;
+		if (!run) throw new Error("Missing run fixture");
+		const originalEncoding = run.bitmovinEncodingId;
+		const originalOutput = structuredClone(
+			(run.stepLog as StepLogEntry[]).find(
+				(entry) => entry.kind === "CREATE_OUTPUT_MOQ",
+			),
+		);
+		h.row.status = "PROVISIONING";
+		run.status = "PROVISIONING";
+		vi.mocked(h.sdk.listRtmpInputs).mockResolvedValue([{ id: "new-rtmp" }]);
+		vi.mocked(h.sdk.createEncoding)
+			.mockClear()
+			.mockResolvedValue("replacement-encoding");
+		vi.mocked(h.sdk.createMoqOutput).mockClear();
+		vi.mocked(h.sdk.startLiveEncoding).mockClear();
+
+		await h.process({ liveChannelId: CHANNEL_ID });
+
+		expect(h.sdk.listRtmpInputs).toHaveBeenCalled();
+		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.createMoqOutput).not.toHaveBeenCalled();
+		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+		expect(h.runRows).toHaveLength(1);
+		expect(run.status).toBe("RUNNING");
+		expect(run.bitmovinEncodingId).toBe(originalEncoding);
+		expect(h.row.bitmovinEncodingId).toBe(originalEncoding);
+		expect(
+			(run.stepLog as StepLogEntry[]).find(
+				(entry) => entry.kind === "CREATE_OUTPUT_MOQ",
+			),
+		).toEqual(originalOutput);
+	});
 	it.each([
 		"ERROR",
 		"CANCELED",

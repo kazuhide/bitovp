@@ -5315,6 +5315,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		// Failures before the first step (corrupt plan, deleted account,
 		// MASTER_KEY problems) must not strand the row in CREATED.
 		let entries: StepLogEntry[];
+		let taskHistory: ReturnType<typeof projectMoqTaskHistory>;
 		let sdk: SdkOps;
 		let accountId: string;
 		// , live half: same lifecycle as the VOD processor's pair —
@@ -5328,7 +5329,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		try {
 			const plan = liveChannelPlanSchema.parse(row.plan);
 			const parsedEntries = stepLogSchema.parse(row.stepLog);
-			const taskHistory = projectMoqTaskHistory(parsedEntries, row.error);
+			taskHistory = projectMoqTaskHistory(parsedEntries, row.error);
 			entries = taskHistory.moq ? taskHistory.stepLog : parsedEntries;
 			resetOwner.entries = entries;
 			fallbackError = liveFallbackAdmissionError(plan, entries);
@@ -5698,7 +5699,14 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					err instanceof Error ? err.message : err,
 				);
 			}
-			if (freshRtmpId && freshRtmpId !== rtmpStep.resourceId) {
+			// A bound MoQ airing owns a namespace and its historical Analytics
+			// encoding ID. Keep that encoding on resume. The re-air path can
+			// take the new account input after the original airing ends.
+			if (
+				freshRtmpId &&
+				freshRtmpId !== rtmpStep.resourceId &&
+				!(taskHistory.moq && reviveEncodingId)
+			) {
 				const from = entries.indexOf(rtmpStep);
 				for (let i = from; i < entries.length; i += 1) {
 					const entry = entries[i];

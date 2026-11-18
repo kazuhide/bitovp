@@ -35,6 +35,7 @@ Player Web X で自作映像・音声を再生する。Encoder の `RUNNING`、�
    単一要素の `trackNamespace` は設定値をベースに `-bitovp-<runId>` を付ける。Player が受理する
    1,024 UTF-16 コード単位に収まるようベースを調整し、Worker が output 作成を送る前に実際の値を保存する。
    Relay の権限はこの実際の値に対して必要。複数要素の tuple は外部の購読用に設定値を使う。
+   既定 RTMP 入力が変更されても、再開する MoQ run は元の Encoding を維持する。新しい入力は次の配信回で使用する。
    終了済みまたは過去の run と、run ID を含まない旧 namespace はライブ購読の対象外。保存済み観測と録画は閲覧できる。
    credential が出力作成後に変更されていれば保守的に拒否する。publish secret は返さない。
    その判定は `CredentialStore.revealVersioned` の1回の scoped read で取得した version と secret を用い、

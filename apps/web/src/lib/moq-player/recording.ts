@@ -23,15 +23,25 @@ type Options = {
 };
 /** Capture only the supplied, owned received-video element. No input substitution. */
 export function createMoqRecording(video: HTMLVideoElement, options: Options) {
-	const capture = Reflect.get(video, "captureStream");
-	if (typeof capture !== "function" || typeof MediaRecorder !== "function") {
+	if (typeof MediaRecorder !== "function") {
 		options.onState("unsupported");
 		return { finish: () => Promise.resolve() };
 	}
 	let stream: MediaStream | undefined;
 	let recorder: MediaRecorder;
 	try {
-		stream = capture.call(video) as MediaStream;
+		if (video.dataset.bitovpMoqCanvasMirror === "true") {
+			const source = video.srcObject;
+			if (typeof MediaStream !== "function" || !(source instanceof MediaStream))
+				throw new Error();
+			// Chromium can share the mirror's track when capturing its video element.
+			// Clone the stream so archive cleanup leaves the live mirror running.
+			stream = source.clone();
+		} else {
+			const capture = Reflect.get(video, "captureStream");
+			if (typeof capture !== "function") throw new Error();
+			stream = capture.call(video) as MediaStream;
+		}
 		if (!stream.getVideoTracks().length) throw new Error();
 		const mimeType = ["video/webm;codecs=vp8,opus", "video/webm"].find((type) =>
 			MediaRecorder.isTypeSupported(type),

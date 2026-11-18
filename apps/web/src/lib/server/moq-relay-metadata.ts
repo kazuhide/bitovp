@@ -76,17 +76,23 @@ export function inspectMoqRelayMetadata(
 		if (publisherToken && playbackUrl.length > MAX_MOQ_URL_LENGTH)
 			return { kind: "invalid" };
 		const url = new URL(playbackUrl);
-		// The response can contain the original URL. Inspect it as well as the
-		// resolved URL because normalization can remove authored path segments.
-		if (
-			publisherToken &&
-			(mayContainPublisherToken(playbackUrl, publisherToken) ||
-				decodeURIComponent(url.pathname).includes(publisherToken) ||
-				(url.href !== playbackUrl &&
-					mayContainPublisherToken(url.href, publisherToken)) ||
-				mayContainPublisherToken(url.search, publisherToken, true))
-		)
-			return { kind: "invalid" };
+		if (publisherToken) {
+			// The descriptor can preserve authored path segments that parsing
+			// resolves away. Compare the resource components of both forms.
+			const authoredResource = playbackUrl
+				.replace(/^https:[/\\]*[^/\\?#]*/i, "")
+				.replace(/^[/\\]+/, "");
+			const path = url.pathname.slice(1);
+			const resolvedResource = path + url.search;
+			if (
+				mayContainPublisherToken(authoredResource, publisherToken) ||
+				decodeURIComponent(path).includes(publisherToken) ||
+				(resolvedResource !== authoredResource &&
+					mayContainPublisherToken(resolvedResource, publisherToken)) ||
+				mayContainPublisherToken(url.search.slice(1), publisherToken, true)
+			)
+				return { kind: "invalid" };
+		}
 		const endpointOrigin = CLOUDFLARE_ORIGINS.find(
 			(origin) => origin === url.origin,
 		);

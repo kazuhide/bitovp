@@ -29,9 +29,14 @@ export function moqArchiveClientOrigin(
 	const recordingStarts = session.events.filter(
 		(event) => event?.type === "recording-started",
 	);
-	const anchors = recordingStarts.length
-		? recordingStarts
-		: session.events.filter((event) => event?.type === "first-frame");
+	const usesCaptureClock = session.events.some(
+		(event) =>
+			event?.type === "descriptor-ready" || event?.type === "observation-limit",
+	);
+	const anchors =
+		recordingStarts.length || usesCaptureClock
+			? recordingStarts
+			: session.events.filter((event) => event?.type === "first-frame");
 	const anchor = anchors[0];
 	if (
 		startedAt === null ||

@@ -41,6 +41,17 @@ describe("historical client recording origin", () => {
 		);
 	});
 
+	it("keeps a current clip's origin unknown when capture starts after the observation limit", () => {
+		const value = session();
+		value.events = [
+			{ type: "started", elapsedMs: 0 },
+			{ type: "descriptor-ready", elapsedMs: 598800 },
+			{ type: "first-frame", elapsedMs: 599000 },
+			{ type: "observation-limit", elapsedMs: 600000 },
+		];
+		expect(moqArchiveClientOrigin(value)).toBeNull();
+	});
+
 	it("accepts zero elapsed and UTC epoch zero without a truthiness fallback", () => {
 		const value = session();
 		value.startedAt = "1970-01-01T00:00:00Z";

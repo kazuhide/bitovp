@@ -121,6 +121,20 @@ describe("publisher credentials in subscriber URLs", () => {
 		).toEqual({ kind: "other" });
 	});
 
+	it.each([
+		"h",
+		"https",
+		"test",
+		"443",
+	])("treats fixed HTTPS authority text as part of an independent endpoint (%s)", (publisherToken) => {
+		expect(
+			inspectMoqRelayMetadata(
+				"https://subscriber.example.test:443/preview",
+				publisherToken,
+			),
+		).toEqual({ kind: "other" });
+	});
+
 	it("preserves genuinely separate credentials and normal URL encoding", () => {
 		expect(
 			inspectMoqRelayMetadata(

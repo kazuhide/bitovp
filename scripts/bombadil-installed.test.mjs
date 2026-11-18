@@ -229,6 +229,18 @@ test("Linux process snapshot rejects a replacement during cmdline collection", (
 	assert.deepEqual(reads, []);
 });
 
+test("Linux process snapshot handles reaping during the second stat read", () => {
+	const pid = 12345;
+	const stat = `${pid} (test) S 1 ${pid} ${"0 ".repeat(16)}100 0`;
+	const reads = [stat, "guard\0"];
+	const result = linuxInstalledProcessIdentity(pid, (path) => {
+		if (reads.length) return reads.shift();
+		assert.equal(path, `/proc/${pid}/stat`);
+		throw Object.assign(new Error("task reaped after open"), { code: "ESRCH" });
+	});
+	assert.equal(result, null);
+});
+
 test("cleanup observes an exiting Linux driver to death without accepting a replacement", async () => {
 	const record = { pid: 12345, start: "boot:100" };
 	const exiting = { group: record.pid, start: record.start, command: [] };

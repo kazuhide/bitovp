@@ -417,7 +417,8 @@ export function linuxInstalledProcessIdentity(pid, read = readFileSync) {
 		);
 		if (dead(after)) return null;
 	} catch (error) {
-		if (error.code === "ENOENT") return null;
+		// procfs can return ESRCH when a task exits after its file was opened.
+		if (error.code === "ENOENT" || error.code === "ESRCH") return null;
 		throw error;
 	}
 	const boot = read("/proc/sys/kernel/random/boot_id", "utf8").trim();

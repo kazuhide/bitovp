@@ -316,7 +316,9 @@ export async function executeIoStep(
 				throw new Error(
 					`step "${op.step}" needs a MOQ credential but got provider "${cred.provider}"`,
 				);
-			const secret = CREDENTIAL_PROVIDER_SHAPES.MOQ.secret.parse(cred.secret);
+			// A stored subscriber URL may predate the current preview constraints.
+			const { playbackUrl: _playbackUrl, ...publisher } = cred.secret;
+			const secret = CREDENTIAL_PROVIDER_SHAPES.MOQ.secret.parse(publisher);
 			const resourceId = await ctx.sdk.createMoqOutput({
 				name: str(p.name),
 				trackNamespace: moqTrackNamespaceSchema.parse(p.trackNamespace),

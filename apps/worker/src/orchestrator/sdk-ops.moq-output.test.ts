@@ -10,6 +10,7 @@ const relayUrl = "moqt://relay.example:443/moq";
 const authToken = "private-publish-token";
 const playbackUrl =
 	"https://subscribe.example.com/moq/subscribe-only-token?auth=subscribe-secret";
+const legacyLongPlaybackUrl = `${playbackUrl}&legacy=${"a".repeat(8192)}`;
 const namespace = ["bitovp", "protocol-test"];
 
 function mockProvider() {
@@ -159,7 +160,13 @@ describe("MoQ compiled operation execution", () => {
 		expect(JSON.stringify(result)).not.toContain(relayUrl);
 		expect(JSON.stringify(result)).not.toContain(authToken);
 	});
-	it("keeps the subscribe-only playback URL out of Encoder arguments, wire and audit snapshots", async () => {
+	it.each([
+		{ label: "current", url: playbackUrl },
+		{ label: "legacy over-length", url: legacyLongPlaybackUrl },
+		{ label: "legacy unescaped space", url: `${playbackUrl} space` },
+	])("excludes the $label subscriber URL from Encoder arguments, wire and audit snapshots", async ({
+		url,
+	}) => {
 		const fetch = mockProvider();
 		const record = vi.fn(async () => {});
 		const ctx = context();
@@ -170,7 +177,12 @@ describe("MoQ compiled operation execution", () => {
 			config: {},
 			// This is the credential store's JSON round trip, including a numeric type.
 			secret: JSON.parse(
-				JSON.stringify({ relayUrl, authToken, authTokenType: 0, playbackUrl }),
+				JSON.stringify({
+					relayUrl,
+					authToken,
+					authTokenType: 0,
+					playbackUrl: url,
+				}),
 			),
 		}));
 
@@ -204,6 +216,54 @@ describe("MoQ compiled operation execution", () => {
 		expect(JSON.stringify([record.mock.calls, result])).not.toContain(
 			authToken,
 		);
+	});
+	it.each([
+		{
+			label: "an invalid publisher URL",
+			patch: { relayUrl: "https://relay.example" },
+			path: ["relayUrl"],
+		},
+		{
+			label: "an empty token",
+			patch: { authToken: "" },
+			path: ["authToken"],
+		},
+		{
+			label: "a token type without a token",
+			patch: { authToken: undefined, authTokenType: 0 },
+			path: ["authTokenType"],
+		},
+		{
+			label: "an invalid token type",
+			patch: { authTokenType: -1 },
+			path: ["authTokenType"],
+		},
+		{
+			label: "an unexpected field",
+			patch: { unexpected: true },
+			path: [],
+		},
+	])("rejects $label in a stored credential before any MoQ call", async ({
+		patch,
+		path,
+	}) => {
+		const ctx = context();
+		ctx.resolveCredential = vi.fn(async () => ({
+			provider: "MOQ",
+			config: {},
+			secret: JSON.parse(
+				JSON.stringify({
+					relayUrl,
+					authToken,
+					playbackUrl: legacyLongPlaybackUrl,
+					...patch,
+				}),
+			),
+		}));
+		await expect(executeStep(operation, ctx)).rejects.toMatchObject({
+			issues: expect.arrayContaining([expect.objectContaining({ path })]),
+		});
+		expect(ctx.sdk.createMoqOutput).not.toHaveBeenCalled();
 	});
 	it("withholds the playback capability from Encoder failure records and errors", async () => {
 		const fetch = mockProvider();

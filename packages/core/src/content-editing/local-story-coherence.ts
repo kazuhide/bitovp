@@ -1,6 +1,7 @@
 import {
 	type LocalStoryBlueprint,
 	type LocalStoryCorpus,
+	type LocalStoryEvent,
 	type LocalStoryInput,
 	localStoryBlueprintSchema,
 } from "./local-story-contracts";
@@ -94,6 +95,30 @@ export function localStorySelectedPlanIssues(options: {
 		)
 	)
 		return [{ code: "SELECTION_MISMATCH" }];
+	const issues = localStorySelectedQuoteIssues(input, events, spans);
+	const numbers = new Set(
+		localStoryNumericTokens(
+			events
+				.flatMap((event) => event.quotes.map((quote) => quote.quote))
+				.join("\n"),
+		),
+	);
+	if (
+		localStoryNumericTokens(blueprint.message).some(
+			(number) => !numbers.has(number),
+		)
+	)
+		issues.push({ code: "SELECTED_MESSAGE_NUMBER_UNSUPPORTED" });
+	return issues;
+}
+
+export function localStorySelectedQuoteIssues(
+	input: LocalStoryInput,
+	events: readonly LocalStoryEvent[],
+	spans: readonly { from: number; to: number }[],
+): LocalStoryPlanIssue[] {
+	const frame = (us: number, rounding: "FLOOR" | "CEIL") =>
+		Number(originalTimeToCfrFrame(us, input.timeMap.sourceStartUs, rounding));
 	const covered = (from: number, to: number) => {
 		let cursor = from;
 		for (const span of spans) {
@@ -126,19 +151,6 @@ export function localStorySelectedPlanIssues(options: {
 					ref: quote.ref,
 				});
 		}
-	const numbers = new Set(
-		localStoryNumericTokens(
-			events
-				.flatMap((event) => event.quotes.map((quote) => quote.quote))
-				.join("\n"),
-		),
-	);
-	if (
-		localStoryNumericTokens(blueprint.message).some(
-			(number) => !numbers.has(number),
-		)
-	)
-		issues.push({ code: "SELECTED_MESSAGE_NUMBER_UNSUPPORTED" });
 	return issues;
 }
 

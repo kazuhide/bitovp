@@ -454,6 +454,42 @@ describe("local semantic generation intake", () => {
 		);
 		expect(row.requestHash).toBe(mediaTaskIntentHash(envelope.input));
 	});
+	it("preserves an explicit trailer through intake and retry without pinning the ordinary Choice workflow", async () => {
+		configure();
+		vi.stubEnv("BITOVP_LOCAL_STORY_CHOICE_ENABLED", "1");
+		holder.choiceReady.mockResolvedValue(false);
+		const f = fixture();
+		const value = f.input();
+		const trailer = { durationMode: "EXACT", disclosure: "SETUP_AND_QUESTION" };
+		const input = {
+			...value,
+			parameters: {
+				...value.parameters,
+				policy: "LOCAL_STORY",
+				renderMode: "DRAFT",
+				trailer,
+			},
+		};
+		const created = await createMediaTask(input, null);
+		expect(holder.choiceReady).not.toHaveBeenCalled();
+		const first = fixtureItem(f.rows[0]);
+		expect(first).toMatchObject({
+			parameters: { input: { parameters: { trailer } } },
+		});
+		const request = mediaTaskCreateSchema.parse(input);
+		expect(first.requestHash).toBe(mediaTaskIntentHash(request));
+		expect(await createMediaTask(input, null)).toEqual(created);
+		first.state = "ERROR";
+		await retryMediaTask(
+			created.taskId,
+			{ requestKey: randomUUID() },
+			"fixture",
+		);
+		expect(f.rows[1]).toMatchObject({
+			parameters: { input: { parameters: { trailer } } },
+			parentTaskId: created.taskId,
+		});
+	});
 	it("does not create a Choice task when its new capability is missing", async () => {
 		configure();
 		vi.stubEnv("BITOVP_LOCAL_STORY_CHOICE_ENABLED", "1");

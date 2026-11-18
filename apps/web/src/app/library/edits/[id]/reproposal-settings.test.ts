@@ -139,6 +139,22 @@ it("uses a saved requested duration rather than silently keeping an under-length
 		if (expected === "COHESION") expect(settings.query).toBe("prosthetic arm");
 		else expect(settings.query).toBeUndefined();
 	}
+	document.autoGeneration.policyVersion = "aisa-local-story-window-v1";
+	document.autoGeneration.trailer = {
+		durationMode: "EXACT",
+		disclosure: "SETUP_ONLY",
+	};
+	delete document.autoGeneration.query;
+	const trailer = reproposalDefaults(document, {
+		localStory: false,
+		japanese: false,
+	});
+	expect(trailer.targetDurationFrames).toBe(960);
+	expect(trailer.settings).toMatchObject({
+		policy: "LOCAL_STORY",
+		trailer: { durationMode: "EXACT", disclosure: "SETUP_ONLY" },
+	});
+	expect(trailer.settings).not.toHaveProperty("storyMode");
 });
 
 it("preserves the selected canvas, presentation and caption language without changing the draft", () => {

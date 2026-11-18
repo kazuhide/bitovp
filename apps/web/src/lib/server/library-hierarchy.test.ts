@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { anyEditingDocumentSchema, toCompositionDocument } from "@bitovp/core";
 import { beforeEach, expect, it, vi } from "vitest";
+import { GET as GET_PROJECT } from "@/app/api/library/edits/[id]/route";
 import { GET } from "@/app/api/library/edits/route";
 import { enableClipEditingForTests } from "@/test/clip-editing-env";
 import type { ServerContext } from "./context";
@@ -51,6 +52,15 @@ function project(index = 0, document: unknown = draft) {
 let projects: ProjectRow[] = [];
 let latest: Record<string, unknown>[] = [],
 	successful: Record<string, unknown>[] = [];
+const findExport = vi.fn();
+type ProjectWhere = { renderRuns?: { some: object } };
+function visibleProjects(where?: ProjectWhere) {
+	return where?.renderRuns?.some
+		? projects.filter(({ id }) =>
+				successful.some((run) => run.projectId === id),
+			)
+		: projects;
+}
 function exported(projectId: string, state: string, revision = revisionId) {
 	return {
 		id: randomUUID(),
@@ -68,6 +78,7 @@ beforeEach(() => {
 	projects = [project()];
 	latest = [];
 	successful = [];
+	findExport.mockReset();
 	holder.context = {
 		tenant: { organizationId: org },
 		prisma: {
@@ -84,13 +95,15 @@ beforeEach(() => {
 						take = 25,
 						orderBy,
 						select,
+						where,
 					}: {
 						skip?: number;
 						take?: number;
 						orderBy: unknown;
 						select: Record<string, unknown>;
+						where?: ProjectWhere;
 					}) => {
-						const ordered = [...projects];
+						const ordered = [...visibleProjects(where)];
 						if (Array.isArray(orderBy))
 							ordered.sort((a, b) => b.id.localeCompare(a.id));
 						return ordered
@@ -102,8 +115,12 @@ beforeEach(() => {
 							);
 					},
 				),
-				count: vi.fn(async () => projects.length),
+				count: vi.fn(
+					async ({ where }: { where?: ProjectWhere }) =>
+						visibleProjects(where).length,
+				),
 			},
+			renderRun: { findFirst: findExport },
 			content: {
 				findUnique: async () => ({
 					id: contentId,
@@ -142,15 +159,125 @@ beforeEach(() => {
 		},
 	} as unknown as ServerContext;
 });
-async function page(offset = 0) {
+async function page(offset = 0, scope = "all") {
 	const response = await GET(
 		new Request(
-			`http://localhost/api/library/edits?contentId=${contentId}&offset=${offset}`,
+			`http://localhost/api/library/edits?contentId=${contentId}&offset=${offset}&scope=${scope}`,
 		),
 	);
 	expect(response.status).toBe(200);
 	return response.json();
 }
+function result(projectId: string, search: URLSearchParams) {
+	return GET_PROJECT(
+		new Request(`http://localhost/api/library/edits/${projectId}?${search}`),
+		{ params: Promise.resolve({ id: projectId }) },
+	);
+}
+
+it("filters to retained exports before paging and sends no draft thumbnail", async () => {
+	projects = Array.from({ length: 27 }, (_, index) => project(index));
+	const oldest = required(projects[0]);
+	successful = [exported(oldest.id, "SUCCEEDED")];
+	const result = await page(0, "exports");
+	expect(result).toMatchObject({
+		offset: 0,
+		total: 1,
+		items: [
+			{
+				id: oldest.id,
+				thumbnail: null,
+				latestSuccessfulExport: { purpose: "CLIP" },
+			},
+		],
+	});
+	expect(holder.context.prisma.editProject.findMany).toHaveBeenCalledWith(
+		expect.objectContaining({
+			where: {
+				contentId,
+				organizationId: org,
+				renderRuns: {
+					some: {
+						organizationId: org,
+						revision: { organizationId: org },
+						artifact: { is: { organizationId: org } },
+						state: "SUCCEEDED",
+						profile: { path: ["kind"], equals: "EXPORT" },
+						generation: { gt: 0 },
+					},
+				},
+			},
+		}),
+	);
+});
+
+it("opens a previous successful version by run id and returns only the retained media", async () => {
+	const savedProject = required(projects[0]);
+	const exportId = randomUUID();
+	const artifactId = randomUUID();
+	findExport
+		.mockResolvedValueOnce({
+			id: exportId,
+			revisionId,
+			generation: 3,
+			revision: { document: draft },
+			project: savedProject,
+			artifact: { id: artifactId, activeDerivations: [], storage: "private" },
+		})
+		.mockResolvedValueOnce({ id: randomUUID() });
+	const response = await result(
+		savedProject.id,
+		new URLSearchParams({ exportId }),
+	);
+	expect(response.status).toBe(200);
+	const value = await response.json();
+	expect(value).toMatchObject({
+		projectId: savedProject.id,
+		contentId,
+		title: savedProject.title,
+		earlierVersion: true,
+		purpose: "CLIP",
+		render: {
+			id: exportId,
+			revisionId,
+			generation: 3,
+			state: "SUCCEEDED",
+			kind: "EXPORT",
+			durationFrames: 180,
+			artifact: {
+				id: artifactId,
+				url: `/api/library/artifacts/${artifactId}/media?expectedOrganizationId=${org}`,
+			},
+		},
+	});
+	expect(JSON.stringify(value)).not.toMatch(/storage|draft/);
+	expect(findExport.mock.calls[0]?.[0].where).toEqual({
+		id: exportId,
+		projectId: savedProject.id,
+		organizationId: org,
+		project: { organizationId: org },
+		revision: { projectId: savedProject.id, organizationId: org },
+		artifact: { is: { organizationId: org } },
+		state: "SUCCEEDED",
+		generation: { gt: 0 },
+		profile: { path: ["kind"], equals: "EXPORT" },
+	});
+});
+
+it("rejects ambiguous, absent or ineligible export ids without substituting a newer result", async () => {
+	const savedProject = required(projects[0]);
+	const exportId = randomUUID();
+	const fields = new URLSearchParams({ exportId });
+	fields.append("exportId", randomUUID());
+	expect((await result(savedProject.id, fields)).status).toBe(400);
+	expect(findExport).not.toHaveBeenCalled();
+
+	findExport.mockResolvedValueOnce(null);
+	expect(
+		(await result(savedProject.id, new URLSearchParams({ exportId }))).status,
+	).toBe(404);
+	expect(findExport).toHaveBeenCalledTimes(1);
+});
 it("lists separate alternatives with the latest failure and retained successful EXPORT, without draft/storage bytes", async () => {
 	const row = required(projects[0]);
 	latest = [exported(row.id, "FAILED")];

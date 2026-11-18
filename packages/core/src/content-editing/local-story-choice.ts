@@ -73,6 +73,9 @@ type BuildOptions = {
 	targetDurationFrames: number;
 	maxPlans?: number;
 	maxEvaluations?: number;
+	maxBeats?: number;
+	openingRole?: LocalStoryCorpus["events"][number]["role"];
+	exactDuration?: boolean;
 };
 type Candidate = Omit<FeasibleStoryPlan, "id"> & {
 	indices: number[];
@@ -86,6 +89,14 @@ function invalid(): never {
 function bounded(value: number, maximum: number) {
 	if (!Number.isSafeInteger(value) || value < 1 || value > maximum) invalid();
 	return value;
+}
+function feasibleBeatLimit(target: number, maxBeats?: number) {
+	const { shortTargetFrames, shortMaxBeats, longMaxBeats } =
+		LOCAL_STORY_CHOICE_POLICY;
+	return bounded(
+		maxBeats ?? (target <= shortTargetFrames ? shortMaxBeats : longMaxBeats),
+		longMaxBeats,
+	);
 }
 function signed(
 	value: Omit<FeasibleStoryChoices, "hash">,
@@ -128,11 +139,12 @@ function checkedPlan(
 				targetDurationFrames: options.targetDurationFrames,
 			})
 		: selectLocalStoryClips({ ...options, blueprint: parsed });
-	if (
-		localStorySelectedPlanIssues({ ...options, blueprint: parsed, selection })
-			.length
-	)
-		invalid();
+	const issues = localStorySelectedPlanIssues({
+		...options,
+		blueprint: parsed,
+		selection,
+	});
+	if (issues.length) invalid();
 	return { blueprint: parsed, selection };
 }
 function ownedSkeleton(
@@ -152,12 +164,18 @@ function ownedSkeleton(
 }
 
 /** Compare complete, already validated stories. These signals never rank shots. */
-function diverse(candidates: Candidate[], limit: number, target: number) {
+function diverse(
+	candidates: Candidate[],
+	limit: number,
+	target: number,
+	preserveDurations = false,
+) {
 	const remaining = [...candidates],
 		result: Candidate[] = [];
 	const subjects = new Set<string>(),
 		bands = new Set<string>(),
-		modes = new Set<string>();
+		modes = new Set<string>(),
+		durations = new Set<number>();
 	const overlaps = new Map<Candidate, number>();
 	const preferred = (p: Candidate) =>
 		p.actualDurationFrames >= target * 0.8 ? 1 : 0;
@@ -166,7 +184,12 @@ function diverse(candidates: Candidate[], limit: number, target: number) {
 			bestValue = -Infinity,
 			bestTier = -1;
 		for (const [i, candidate] of remaining.entries()) {
-			const tier = preferred(candidate);
+			// Exact searches need different amounts of room for later beats.
+			const tier =
+				preferred(candidate) +
+				(preserveDurations && !durations.has(candidate.actualDurationFrames)
+					? 2
+					: 0);
 			const overlap = overlaps.get(candidate) ?? 0;
 			const value =
 				candidate.cohesion +
@@ -186,6 +209,7 @@ function diverse(candidates: Candidate[], limit: number, target: number) {
 		result.push(chosen);
 		bands.add(chosen.band);
 		modes.add(chosen.blueprintSkeleton.mode);
+		durations.add(chosen.actualDurationFrames);
 		for (const subject of chosen.subjects) subjects.add(subject);
 		for (const candidate of remaining) {
 			const overlap =
@@ -224,7 +248,7 @@ export function buildFeasibleStoryChoices(
 			(originalOrdinal.get(a.id) ?? 0) - (originalOrdinal.get(b.id) ?? 0),
 	);
 	const modes = mode === "AUTO" ? (["FLOW", "THEME"] as const) : [mode];
-	const maxBeats = target <= 900 ? 3 : 5;
+	const maxBeats = feasibleBeatLimit(target, options.maxBeats);
 	const perLevel = Math.max(1, Math.floor(maxEvaluations / maxBeats));
 	let evaluated = 0,
 		truncated = false;
@@ -255,6 +279,12 @@ export function buildFeasibleStoryChoices(
 			for (const parent of parents) {
 				const index = (parent.indices.at(-1) ?? -1) + offset;
 				if (index >= events.length) continue;
+				if (
+					depth === 1 &&
+					options.openingRole &&
+					events[index]?.role !== options.openingRole
+				)
+					continue;
 				if (evaluated >= levelLimit) {
 					truncated = true;
 					stopped = true;
@@ -340,9 +370,17 @@ export function buildFeasibleStoryChoices(
 		}
 		pool.push(...level);
 		if (level.length > LOCAL_STORY_CHOICE_POLICY.beamWidth) truncated = true;
-		beam = diverse(level, LOCAL_STORY_CHOICE_POLICY.beamWidth, target);
+		beam = diverse(
+			level,
+			LOCAL_STORY_CHOICE_POLICY.beamWidth,
+			target,
+			options.exactDuration,
+		);
 	}
-	const plans = diverse(pool, maxPlans, target).map((p, i) => ({
+	const fitting = options.exactDuration
+		? pool.filter((plan) => plan.actualDurationFrames === target)
+		: pool;
+	const plans = diverse(fitting, maxPlans, target).map((p, i) => ({
 		id: `p${i}`,
 		eventIds: p.eventIds,
 		blueprintSkeleton: p.blueprintSkeleton,
@@ -368,6 +406,7 @@ export function compileFeasibleStoryChoice(options: {
 	choices: FeasibleStoryChoices;
 	choice: unknown;
 	requestedMode: LocalStoryMode;
+	maxBeats?: number;
 }): { blueprint: LocalStoryBlueprint; selection: LocalStorySelectionResult } {
 	const { choices } = options;
 	verifyFrontier(choices);
@@ -384,7 +423,8 @@ export function compileFeasibleStoryChoice(options: {
 		(options.requestedMode !== "AUTO" &&
 			plan.blueprintSkeleton.mode !== options.requestedMode) ||
 		plan.eventIds.length < 1 ||
-		plan.eventIds.length > (choices.targetDurationFrames <= 900 ? 3 : 5) ||
+		plan.eventIds.length >
+			feasibleBeatLimit(choices.targetDurationFrames, options.maxBeats) ||
 		hashEditingEvidence(plan.eventIds) !==
 			hashEditingEvidence(
 				plan.blueprintSkeleton.beats.flatMap((b) => b.eventIds),

@@ -121,6 +121,14 @@ const en = {
 	cohesion: "Scene continuity",
 	duration: "Closest whole-shot duration",
 	query: "Context to include",
+	trailerNoPlan:
+		"There are not enough confirmed moments for this trailer. Try a shorter target or review the source analysis.",
+	trailerExactUnavailable:
+		"The eligible moments do not fit that exact duration. Choose a target or a maximum duration.",
+	trailerSearchLimit:
+		"The search reached its limit before finding an exact fit. Choose a target or maximum duration to review a candidate.",
+	trailerTranscriptRequired:
+		"Trailer planning requires a transcript for the full source. Check the transcription settings and try again.",
 	queryHelp:
 		"Describe the topic or scene. Selection uses the recorded scene descriptions.",
 	videoFit: "Video framing",
@@ -413,6 +421,14 @@ const ja: Record<keyof typeof en, string> = {
 	cohesion: "シーンのつながりを優先",
 	duration: "ショット単位で希望尺に近づける",
 	query: "含めたい内容",
+	trailerNoPlan:
+		"条件を満たす場面を十分に確認できませんでした。尺を短くするか、素材の解析結果を確認してください。",
+	trailerExactUnavailable:
+		"採用できる場面では指定秒数ちょうどに収まりませんでした。目標または上限として指定してください。",
+	trailerSearchLimit:
+		"指定尺ちょうどの候補を探す処理が上限に達しました。「目標」または「指定秒数以内」に変更して候補を確認できます。",
+	trailerTranscriptRequired:
+		"予告編の作成には、素材の全編の文字起こしが必要です。文字起こしの設定を確認してください。",
 	queryHelp: "話題や場面を入力します。記録済みのシーン説明をもとに選択します。",
 	videoFit: "映像の収め方",
 	videoPreserveAuto: "全体表示＋ぼかし背景",
@@ -654,6 +670,14 @@ export function productionFailure(
 		case "LOCAL_STORY_PLAN_UNAVAILABLE":
 		case "LOCAL_STORY_NO_FITTING_PLAN":
 			return c.localStoryPlanUnavailable;
+		case "LOCAL_TRAILER_NO_FITTING_PLAN":
+			return c.trailerNoPlan;
+		case "LOCAL_TRAILER_EXACT_DURATION_UNAVAILABLE":
+			return c.trailerExactUnavailable;
+		case "LOCAL_TRAILER_SEARCH_LIMIT":
+			return c.trailerSearchLimit;
+		case "LOCAL_STORY_TRANSCRIPT_REQUIRED":
+			return c.trailerTranscriptRequired;
 		case "LOCAL_STORY_BLUEPRINT_COHERENCE_INVALID":
 		case "LOCAL_STORY_SELECTION_COHERENCE_INVALID":
 			return c.localStoryCoherence;

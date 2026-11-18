@@ -9,7 +9,9 @@ import {
 	type Prisma,
 } from "@bitovp/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { generationHistoryFilters } from "@/lib/library-generation-history";
 import { listContents, listQuery } from "./library-catalog";
+import { listGenerationHistory } from "./library-generation-history";
 import {
 	enrichLibraryPlayback,
 	libraryFileOutputsForSource,
@@ -135,6 +137,12 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			try {
 				if (admin) {
 					const where = { organizationId: { in: organizations } };
+					await admin.libraryMediaTask.deleteMany({ where });
+					await admin.renderArtifact.deleteMany({ where });
+					await admin.renderRun.deleteMany({ where });
+					await admin.editRevision.deleteMany({ where });
+					await admin.editProject.deleteMany({ where });
+					await admin.libraryMediaVersion.deleteMany({ where });
 					await admin.sceneAnalysisRevision.deleteMany({ where });
 					await admin.contentRevision.deleteMany({ where });
 					await admin.content.deleteMany({ where });
@@ -158,6 +166,241 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			organizations.push(id);
 			return { db: createTenantPrismaClient(runtime, id), organizationId: id };
 		}
+
+		it("counts retrievable exports per clip and recovers only tenant-bound generation results", async () => {
+			const a = await tenant();
+			const b = await tenant();
+			const sha256 = "a".repeat(64);
+			const privateLocator = "generation-history-private-locator";
+			async function mediaFixture(db: AppPrismaClient) {
+				const { ids, sources } = await seed(db, 2);
+				const [contentId, otherContentId] = ids;
+				const [sourceId, otherSourceId] = sources;
+				if (!contentId || !otherContentId || !sourceId || !otherSourceId)
+					throw new Error("Missing seed content");
+				const { id: credentialId } = await db.credential.create({
+					data: {
+						label: "Generation history fixture",
+						provider: "AWS_S3",
+						config: {},
+						encryptedSecret: privateLocator,
+					},
+				});
+				const media = await db.libraryMediaVersion.create({
+					data: {
+						sourceId,
+						credentialId,
+						outputCredentialId: credentialId,
+						storage: { output: { credentialId } },
+					},
+				});
+				const otherMedia = await db.libraryMediaVersion.create({
+					data: {
+						sourceId: otherSourceId,
+						credentialId,
+						outputCredentialId: credentialId,
+						storage: { output: { credentialId } },
+					},
+				});
+				return {
+					contentId,
+					otherContentId,
+					mediaVersionId: media.id,
+					otherMediaVersionId: otherMedia.id,
+					credentialId,
+				};
+			}
+			async function project(
+				db: AppPrismaClient,
+				media: Awaited<ReturnType<typeof mediaFixture>>,
+				title: string,
+			) {
+				const { id: projectId } = await db.editProject.create({
+					data: {
+						contentId: media.contentId,
+						mediaVersionId: media.mediaVersionId,
+						title,
+						variant: "LANDSCAPE",
+						draft: {},
+					},
+				});
+				const { id: revisionId } = await db.editRevision.create({
+					data: { projectId, revision: 1, document: {} },
+				});
+				return {
+					projectId,
+					revisionId,
+					outputCredentialId: media.credentialId,
+				};
+			}
+			async function render(
+				input: Awaited<ReturnType<typeof project>>,
+				generation: number,
+				state: "SUCCEEDED" | "FAILED",
+				artifact: boolean,
+			) {
+				const run = await a.db.renderRun.create({
+					data: {
+						...input,
+						generation,
+						state,
+						profile: { kind: generation > 0 ? "EXPORT" : "PREVIEW" },
+						requestKey: randomUUID(),
+						requestHash: sha256,
+						outputBucket: privateLocator,
+						outputPrefix: "clips/",
+					},
+				});
+				if (artifact)
+					await a.db.renderArtifact.create({
+						data: { runId: run.id, sha256, size: 1n, storage: {}, probe: {} },
+					});
+				return run.id;
+			}
+			function generate(
+				mediaVersionId: string,
+				contentId: string,
+				updatedAt: Date,
+			) {
+				return {
+					id: randomUUID(),
+					mediaVersionId,
+					kind: "GENERATE",
+					updatedAt,
+					requestKey: randomUUID(),
+					requestHash: sha256,
+					cacheKey: sha256,
+					parameters: { input: { parameters: { contentId } }, privateLocator },
+				};
+			}
+
+			const media = await mediaFixture(a.db);
+			const foreignMedia = await mediaFixture(b.db);
+			const exported = await project(a.db, media, "Retained edit");
+			const draft = await project(a.db, media, "Draft edit");
+			const foreign = await project(b.db, foreignMedia, privateLocator);
+			await render(exported, 1, "SUCCEEDED", true);
+			const exportId = await render(exported, 2, "SUCCEEDED", true);
+			await render(exported, 3, "FAILED", false);
+			await render(draft, 0, "SUCCEEDED", true);
+			await render(draft, 1, "SUCCEEDED", false);
+
+			const now = new Date();
+			const older = new Date(now.getTime() - 2 * 86_400_000);
+			const succeeded = generate(media.mediaVersionId, media.contentId, older);
+			await a.db.libraryMediaTask.create({
+				data: {
+					...succeeded,
+					state: "SUCCEEDED",
+					finishedAt: older,
+					result: {
+						projectIds: [
+							exported.projectId,
+							draft.projectId,
+							foreign.projectId,
+						],
+						privateLocator,
+					},
+				},
+			});
+			await a.db.libraryMediaTask.createMany({
+				data: Array.from({ length: 26 }, () =>
+					generate(media.otherMediaVersionId, media.otherContentId, now),
+				),
+			});
+			const unbound = generate(
+				media.mediaVersionId,
+				foreignMedia.contentId,
+				now,
+			);
+			await a.db.libraryMediaTask.create({ data: unbound });
+			await b.db.libraryMediaTask.create({
+				data: generate(
+					foreignMedia.mediaVersionId,
+					foreignMedia.contentId,
+					now,
+				),
+			});
+
+			const catalog = await listContents(
+				a.db,
+				listQuery.parse({}),
+				a.organizationId,
+			);
+			expect(
+				catalog.items.find(({ id }) => id === media.contentId),
+			).toMatchObject({
+				clipProjectCount: 2,
+				clipExportCount: 1,
+				singleClipExport: { projectId: exported.projectId, exportId },
+			});
+			expect(
+				catalog.items.find(({ id }) => id === media.otherContentId),
+			).toMatchObject({
+				clipProjectCount: 0,
+				clipExportCount: 0,
+				singleClipExport: null,
+			});
+			expect(
+				catalog.items.some(({ id }) => id === foreignMedia.contentId),
+			).toBe(false);
+
+			const history = (input = {}) =>
+				listGenerationHistory(
+					a.db,
+					a.organizationId,
+					generationHistoryFilters.parse(input),
+				);
+			const firstPage = await history();
+			expect(firstPage.items).toHaveLength(25);
+			expect(firstPage.hasMore).toBe(true);
+			expect(
+				firstPage.items.some(({ taskId }) => taskId === succeeded.id),
+			).toBe(false);
+			expect(
+				(await history({ offset: 25 })).items.some(
+					({ taskId }) => taskId === succeeded.id,
+				),
+			).toBe(true);
+			const found = await history({ q: "Needle_%\\", state: "SUCCEEDED" });
+			expect(found).toEqual({
+				items: [
+					{
+						taskId: succeeded.id,
+						updatedAt: older.toISOString(),
+						contentTitle: "Needle_%\\",
+						state: "SUCCEEDED",
+						clips: [
+							{
+								projectId: exported.projectId,
+								title: "Retained edit",
+								exportId,
+							},
+							{
+								projectId: draft.projectId,
+								title: "Draft edit",
+								exportId: null,
+							},
+						],
+					},
+				],
+				hasMore: false,
+			});
+			expect(await history({ state: "SUCCEEDED", period: "day" })).toEqual({
+				items: [],
+				hasMore: false,
+			});
+			const all = [
+				...firstPage.items,
+				...(await history({ offset: 25 })).items,
+			];
+			expect(all).toHaveLength(28);
+			expect(all.find(({ taskId }) => taskId === unbound.id)).toMatchObject({
+				contentTitle: null,
+				clips: [],
+			});
+			expect(JSON.stringify(all)).not.toContain(privateLocator);
+		});
 		async function seed(
 			db: AppPrismaClient,
 			size: number,

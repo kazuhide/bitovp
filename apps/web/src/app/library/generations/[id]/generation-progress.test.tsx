@@ -7,13 +7,16 @@ import { GenerationProgress } from "./generation-progress";
 const mocks = vi.hoisted(() => ({
 	api: vi.fn(),
 	push: vi.fn(),
+	replace: vi.fn(),
 	permitted: true,
 }));
 vi.mock("@/lib/api", async (original) => ({
 	...(await original<object>()),
 	apiFetch: mocks.api,
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
+vi.mock("next/navigation", () => ({
+	useRouter: () => ({ push: mocks.push, replace: mocks.replace }),
+}));
 vi.mock("@/lib/auth/use-role-access", () => ({
 	useMutationAccess: () => mocks.permitted,
 }));
@@ -55,6 +58,7 @@ const result = () => ({
 beforeEach(() => {
 	mocks.api.mockReset();
 	mocks.push.mockReset();
+	mocks.replace.mockReset();
 	mocks.permitted = true;
 });
 it.each([
@@ -119,6 +123,19 @@ it("links every generated result without claiming that the MP4 render finished",
 	expect(screen.getByText(/when rendering finishes/)).toBeInTheDocument();
 	expect(screen.getByText("29.00s / 30.00s")).toBeInTheDocument();
 	expect(screen.getByText(/Fixture-authored metadata/)).toBeInTheDocument();
+});
+it("keeps completed draft duration and warnings visible when opened from history", async () => {
+	mocks.api.mockResolvedValue(
+		task("SUCCEEDED", { ...result(), renderMode: "DRAFT" }),
+	);
+	renderWithQuery(<GenerationProgress id={id} showJobDetails />);
+	expect(await screen.findByText("29.00s / 30.00s")).toBeInTheDocument();
+	expect(screen.getByText(/Fixture-authored metadata/)).toBeInTheDocument();
+	expect(screen.getByRole("link", { name: /Open editor/ })).toHaveAttribute(
+		"href",
+		`/library/edits/${projectId}`,
+	);
+	expect(mocks.replace).not.toHaveBeenCalled();
 });
 it("uses one fresh child request key across unknown retry responses", async () => {
 	mocks.api.mockImplementation(async (_url: string, init?: RequestInit) => {

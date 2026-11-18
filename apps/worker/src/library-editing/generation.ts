@@ -159,9 +159,7 @@ function matchesLocalStoryEvidence(
 }
 function resultForRenderMode(
 	value: unknown,
-	mode: "DRAFT" | "EXPORT" | undefined,
-	draftPolicyVersion?: GenerationTaskParameters["draftPolicyVersion"],
-	presentation?: GenerationTaskParameters["presentation"],
+	parameters: GenerationTaskParameters,
 	expectedAutomaticPolicyVersion?: GenerationTaskResult["policyVersion"],
 	expectedStoryModel?: StoryModelIdentity,
 	expectedLocalStoryModel?: LocalStoryModelIdentity,
@@ -174,8 +172,9 @@ function resultForRenderMode(
 		(expectedGenerationPolicyFingerprint !== undefined &&
 			parsed.data.generationPolicyFingerprint !==
 				expectedGenerationPolicyFingerprint) ||
-		(parsed.data.renderMode ?? "EXPORT") !== (mode ?? "EXPORT") ||
-		parsed.data.draftPolicyVersion !== draftPolicyVersion ||
+		(parsed.data.renderMode ?? "EXPORT") !==
+			(parameters.renderMode ?? "EXPORT") ||
+		parsed.data.draftPolicyVersion !== parameters.draftPolicyVersion ||
 		(expectedAutomaticPolicyVersion !== undefined &&
 			parsed.data.policyVersion !== expectedAutomaticPolicyVersion) ||
 		(expectedStoryModel !== undefined &&
@@ -185,12 +184,17 @@ function resultForRenderMode(
 				parsed.data.localStoryEvidence,
 				expectedLocalStoryModel,
 			)) ||
+		hashEditingEvidence(
+			parsed.data.localStoryEvidence?.trailer?.intent ?? null,
+		) !== hashEditingEvidence(parameters.trailer ?? null) ||
+		(parameters.trailer !== undefined &&
+			parsed.data.requestedFrames !== parameters.targetDurationFrames) ||
 		(expectedCaptionTranslationModel !== undefined &&
 			(!parsed.data.captionTranslation ||
 				hashEditingEvidence(parsed.data.captionTranslation.model) !==
 					hashEditingEvidence(expectedCaptionTranslationModel))) ||
 		hashEditingEvidence(parsed.data.presentation ?? null) !==
-			hashEditingEvidence(presentation ?? null)
+			hashEditingEvidence(parameters.presentation ?? null)
 	)
 		throw new MediaOperationError("TASK_RESULT_UNVERIFIED");
 	return parsed.data;
@@ -279,9 +283,7 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 		if (task.state === "SUCCEEDED")
 			return resultForRenderMode(
 				task.result,
-				parameters.renderMode,
-				parameters.draftPolicyVersion,
-				parameters.presentation,
+				parameters,
 				expectedAutomaticPolicyVersion,
 				expectedStoryModel,
 				expectedLocalStoryModel,
@@ -470,7 +472,19 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 				!matchesLocalStoryEvidence(evidence.data, expectedLocalStoryModel) ||
 				localStory.selection.policyVersion !== expectedAutomaticPolicyVersion ||
 				hashEditingEvidence(evidence.data.selection) !==
-					hashEditingEvidence(localStory.selection.localStorySelection)
+					hashEditingEvidence(localStory.selection.localStorySelection) ||
+				hashEditingEvidence(evidence.data.trailer?.intent ?? null) !==
+					hashEditingEvidence(parameters.trailer ?? null) ||
+				(evidence.data.trailer !== undefined &&
+					hashEditingEvidence(evidence.data.trailer.windows) !==
+						hashEditingEvidence(
+							localStory.selection.clips.map(
+								({ sourceInUs, durationFrames }) => ({
+									sourceInUs,
+									durationFrames,
+								}),
+							),
+						))
 			)
 				throw new MediaOperationError("TASK_RESULT_UNVERIFIED");
 			localStory.evidence = evidence.data;
@@ -836,6 +850,7 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 				...(semanticEvidence ? { semanticEvidence } : {}),
 				...(storyEvidence ? { storyEvidence } : {}),
 				...(localStoryEvidence ? { localStoryEvidence } : {}),
+				...(parameters.trailer ? { trailer: parameters.trailer } : {}),
 				binding,
 				...(preparedPartition
 					? {
@@ -1401,9 +1416,7 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 					if (current?.state === "SUCCEEDED")
 						return resultForRenderMode(
 							current.result,
-							parameters.renderMode,
-							parameters.draftPolicyVersion,
-							parameters.presentation,
+							parameters,
 							expectedAutomaticPolicyVersion,
 							expectedStoryModel,
 							expectedLocalStoryModel,
@@ -1423,6 +1436,10 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 					include: { content: true },
 				});
 				if (!linked) throw new MediaOperationError("CONTENT_MEDIA_MISMATCH");
+				const title = linked.content.title.slice(0, 420);
+				const projectTitle = parameters.trailer
+					? `${title}${binding.locale.split("-")[0] === "ja" ? "（予告編）" : " (Trailer)"}`
+					: title;
 				for (const variant of variants) {
 					if (
 						await tx.editProject.findUnique({
@@ -1442,7 +1459,7 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 							id: variant.projectId,
 							contentId: parameters.contentId,
 							mediaVersionId: verified.media.id,
-							title: `${linked.content.title.slice(0, 420)} (${variant.presetId})`,
+							title: `${projectTitle} (${variant.presetId})`,
 							variant: kind,
 							draft: json(variant.document),
 							createdBy: task.createdBy,

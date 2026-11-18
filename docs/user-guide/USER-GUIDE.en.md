@@ -1182,6 +1182,12 @@ To group a source under different content, use the source registration action an
 
 Archiving organizes the catalog; it does not delete output videos from storage, and archived entries can be restored. Check source imports for queued, running, ready, or error states. After an error, correct the permissions or destination before retrying. Imported QC information is a snapshot of the information available at that time, not a new quality measurement. See Chapter 11 for quality assessment and remeasurement.
 
+### Finished clips and trailer proposals
+
+- The catalog shows how many clips have a successful export. Open the count to view the export or the finished clips shelf. Select a clip on the shelf to preview it on the content page. In the clip list, “Watch export” opens the retained successful version, including after a newer export fails.
+- Open “Generation history” to find a job by content name, status or update period. Open its progress page or jump to the edit or export when available.
+- On the clip editing page for a source with AISA and local story analysis available, choose “Plan a trailer.” Enter “Make a 30-second trailer. Avoid spoilers.” Review the duration and disclosure before creating the project. The editor shows the selected original source ranges. Check the picture and audio, then adjust the edit before export. Audio sources require a full-source transcript.
+
 ### Scene search
 
 Scene search requires AI Scene Analysis results for the source. Use it to find scenes within a video that may be difficult to locate through title search alone.

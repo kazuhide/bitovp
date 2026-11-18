@@ -97,6 +97,12 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 		method: "GET",
 	},
 	{
+		page: "/library/generations",
+		floor: "VIEWER",
+		api: "/api/library/media-tasks",
+		method: "GET",
+	},
+	{
 		page: "/library/generations/[id]",
 		floor: "VIEWER",
 		api: "/api/library/media-tasks/task-1",

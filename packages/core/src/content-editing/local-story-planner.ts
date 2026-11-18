@@ -1,4 +1,5 @@
 import type { AutoPortraitClip } from "./auto-portrait";
+import { localStorySelectedQuoteIssues } from "./local-story-coherence";
 import {
 	type LocalStoryEvent,
 	type LocalStoryInput,
@@ -123,10 +124,14 @@ function speechSafe(input: LocalStoryInput, spans: readonly Span[]): Span[] {
 	// Exact 1/30-microsecond ticks keep adjacent original utterances half-open.
 	// Rounding every segment first would turn a shared 6.62s boundary into an
 	// overlap at frames 198/199 and transitively join unrelated utterances.
-	const utterances = input.segments.map((segment) => ({
-		from: (BigInt(segment.startUs) - sourceStart) * 30n,
-		to: (BigInt(segment.endUs) - sourceStart) * 30n,
-	}));
+	const toTicks = (interval: { startUs: number; endUs: number }) => ({
+		from: (BigInt(interval.startUs) - sourceStart) * 30n,
+		to: (BigInt(interval.endUs) - sourceStart) * 30n,
+	});
+	const utterances = input.segments.map(toTicks);
+	// Continuous VAD can be split exactly at a transcription window boundary.
+	if (input.speechIntervals?.length)
+		utterances.push(...merge(input.speechIntervals.map(toTicks)));
 	let result = merge(
 		spans.map((span) => ({
 			from: BigInt(span.from) * 1_000_000n,
@@ -135,7 +140,7 @@ function speechSafe(input: LocalStoryInput, spans: readonly Span[]): Span[] {
 	);
 	// Genuine source-time overlap can expose another utterance; converge before
 	// quantizing the final bounds, keeping the existing speech and footage guards.
-	for (let iteration = 0; iteration <= input.segments.length; iteration++) {
+	for (let iteration = 0; iteration <= utterances.length; iteration++) {
 		let changed = false;
 		result = merge(
 			result.map((span) => {
@@ -281,6 +286,21 @@ function checkedTarget(target: number) {
 	return target;
 }
 
+function startsInContext(
+	event: LocalStoryEvent,
+	firstFrame: number | undefined,
+	shotsByRef: ReadonlyMap<string, LocalStoryInput["shots"][number]>,
+) {
+	return (
+		event.role === "CONTEXT" &&
+		firstFrame !== undefined &&
+		event.refs.some((ref) => {
+			const shot = shotsByRef.get(ref);
+			return shot && shot.fromFrame <= firstFrame && shot.toFrame > firstFrame;
+		})
+	);
+}
+
 /** Fully validate each public selection, including callers outside feasible-choice search. */
 export function selectLocalStoryClips(options: {
 	input: LocalStoryInput;
@@ -312,6 +332,9 @@ export function createLocalStoryClipSelector(options: {
 		);
 	validateLocalStoryCorpusEvents(input, ledger.events);
 	const events = new Map(ledger.events.map((e) => [e.id, e]));
+	const openingShots = input.trailerSelection
+		? new Map(input.shots.map((shot) => [shot.ref, shot]))
+		: undefined;
 	const candidates = new Map<string, Span[][]>();
 	return (selection: {
 		blueprint: unknown;
@@ -327,11 +350,14 @@ export function createLocalStoryClipSelector(options: {
 		// a short plan needed by a later mandatory beat.
 		const maxStates = 32_768,
 			maxExpansions = 40_000;
+		const lastBeat = blueprint.beats.at(-1);
 		let beam: State[] = [
 				{ spans: [], selectedEventIds: [], selectedBeatIds: [] },
 			],
 			expansions = 0;
 		for (const beat of blueprint.beats) {
+			// A complete variant must cover its citations before duration ranking.
+			const verifyQuotes = input.trailerSelection && beat === lastBeat;
 			const next = new Map<string, State>();
 			for (const state of beam) {
 				if (!beat.requires.every((id) => state.selectedBeatIds.includes(id)))
@@ -349,6 +375,16 @@ export function createLocalStoryClipSelector(options: {
 					for (const candidate of alternatives) {
 						if (++expansions > maxExpansions)
 							throw new LocalStoryError("LOCAL_STORY_SEARCH_LIMIT");
+						if (
+							openingShots &&
+							state.selectedEventIds.length === 0 &&
+							!startsInContext(
+								required(events.get(eventId)),
+								candidate[0]?.from,
+								openingShots,
+							)
+						)
+							continue;
 						const spans = addForward(state.spans, candidate);
 						if (!spans || count(spans) > target || !clipsFor(input, spans))
 							continue;
@@ -357,6 +393,15 @@ export function createLocalStoryClipSelector(options: {
 							selectedEventIds: [...state.selectedEventIds, eventId],
 							selectedBeatIds: [...state.selectedBeatIds, beat.id],
 						};
+						if (
+							verifyQuotes &&
+							localStorySelectedQuoteIssues(
+								input,
+								value.selectedEventIds.map((id) => required(events.get(id))),
+								spans,
+							).length
+						)
+							continue;
 						next.set(signature(value), value);
 					}
 				}
@@ -387,7 +432,7 @@ export function createLocalStoryClipSelector(options: {
 				"LOCAL_LLM_COMPLETE_BEATS",
 				"SOURCE_PRESENTATION_ORDER",
 				"LOCAL_STORY_VISUAL_GROUNDING_PENDING",
-				...(input.segments.length
+				...(input.segments.length || input.speechIntervals?.length
 					? ["COMPLETE_UTTERANCE_BOUNDARIES"]
 					: ["TRANSCRIPT_UNAVAILABLE"]),
 				...(count(selected.spans) < target ? ["DURATION_UNDER_TARGET"] : []),

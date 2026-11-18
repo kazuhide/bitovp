@@ -6,6 +6,8 @@ export const MAX_LIBRARY_OFFSET = 100000;
 export type LibraryPlaybackFilter = "all" | "playback" | "metadata";
 export type LibraryCatalogItem = ContentView & {
 	clipProjectCount?: number;
+	clipExportCount?: number;
+	singleClipExport?: { projectId: string; exportId: string } | null;
 	catalogMetadata: {
 		formats: ("HLS" | "DASH" | LibraryFileKind)[];
 		duration?: number;

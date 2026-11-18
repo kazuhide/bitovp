@@ -8,6 +8,7 @@ import { useT } from "@/lib/i18n/context";
 import type { LibrarySceneSelection } from "@/lib/library-scenes";
 import { ContentClipPanel } from "../content-clip-panel";
 import { ContentRemovalAction } from "../content-removal-action";
+import { FinishedClips } from "../finished-clips";
 import { SourcePanel } from "../source-panel";
 import { sourcePollingInterval } from "../source-polling";
 
@@ -165,13 +166,18 @@ function ContentDetailView({
 								{t("library.sceneLinkChanged")}
 							</p>
 						)}
-					<SourcePanel
-						key={`${id}:${query.data.source.id}:${initialScene ? JSON.stringify(initialScene) : ""}`}
-						source={query.data.source}
-						initialLocale={query.data.locale}
-						initialScene={validSelection}
-						player={player}
-					/>
+					<div className="grid min-w-0 gap-5 xl:flex xl:items-start">
+						<div className="min-w-0 flex-1">
+							<SourcePanel
+								key={`${id}:${query.data.source.id}:${initialScene ? JSON.stringify(initialScene) : ""}`}
+								source={query.data.source}
+								initialLocale={query.data.locale}
+								initialScene={validSelection}
+								player={player}
+							/>
+						</div>
+						<FinishedClips contentId={id} />
+					</div>
 				</>
 			)}
 		</div>

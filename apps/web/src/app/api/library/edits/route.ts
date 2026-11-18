@@ -7,16 +7,18 @@ import { listEditingProjectSummaries } from "@/lib/server/library-hierarchy";
 export async function GET(req: Request) {
 	return editingRoute(
 		async () => {
-			const { contentId, offset } = z
+			const { contentId, offset, scope } = z
 				.strictObject({
 					contentId: z.uuid(),
 					offset: z.coerce.number().int().min(0).max(10000).default(0),
+					scope: z.enum(["all", "exports"]).default("all"),
 				})
 				.parse(Object.fromEntries(new URL(req.url).searchParams));
 			return listEditingProjectSummaries(
 				await getServerContext(),
 				contentId,
 				offset,
+				scope === "exports",
 			);
 		},
 		200,

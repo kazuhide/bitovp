@@ -16,6 +16,7 @@ import type {
 } from "./local-story-contracts";
 import { validateLocalStoryBlueprint } from "./local-story-input";
 import { selectLocalStoryClips } from "./local-story-planner";
+import { selectLocalStoryTrailer } from "./local-story-trailer";
 import { cfrTimeMapSchema } from "./schema";
 import { hashEditingEvidence } from "./verify-automatic-binding";
 
@@ -334,5 +335,135 @@ describe("feasible whole-story choices", () => {
 				storyPlanner: "FEASIBLE_CHOICE_V1",
 			}).success,
 		).toBe(false);
+	});
+});
+
+describe("exact trailer choices", () => {
+	const trailer = {
+		durationMode: "EXACT",
+		disclosure: "SETUP_AND_QUESTION",
+	} as const;
+
+	it("continues past an ASR quote outside the selectable shot frames", () => {
+		const f = fixture(5, 300);
+		f.input.shots.shift();
+		f.ledger.events.shift();
+		f.ledger.coveredRefs.shift();
+		const [firstCoverage] = f.input.coverage;
+		const [firstShot] = f.input.shots;
+		const [firstEvent, opening, action, change] = f.ledger.events;
+		if (
+			!firstCoverage ||
+			!firstShot ||
+			!firstEvent ||
+			!opening ||
+			!action ||
+			!change
+		)
+			throw new Error("fixture");
+		firstCoverage.status = "EXCLUDED";
+		firstShot.fromFrame = 301;
+		const text = "An utterance before the first selectable frame.";
+		const quote = { startUs: 10_020_000, endUs: 10_030_000, text };
+		f.input.segments.push(quote);
+		firstShot.fields.push({ ...quote, kind: "ASR", pointer: "/segments/0" });
+		firstEvent.label = text;
+		firstEvent.role = "CONTEXT";
+		firstEvent.quotes = [{ ref: firstShot.ref, quote: text }];
+		opening.role = "CONTEXT";
+		action.role = "ACTION";
+		change.role = "CHANGE";
+
+		const result = selectLocalStoryTrailer({ ...f, trailer });
+		expect(result.selection.actualDurationFrames).toBe(900);
+		expect(result.selection.localStorySelection.selectedEventIds).toEqual([
+			opening.id,
+			action.id,
+			change.id,
+		]);
+		expect(() => buildFeasibleStoryChoices(f)).toThrow(
+			"LOCAL_STORY_CHOICE_INVALID",
+		);
+		firstEvent.quotes = [
+			{ ref: firstShot.ref, quote: "A quote with no source evidence." },
+		];
+		expect(() => selectLocalStoryTrailer({ ...f, trailer })).toThrow(
+			"LOCAL_STORY_EVIDENCE_INVALID",
+		);
+	});
+
+	it("retains the only 20-second prefix among 96 longer openings", () => {
+		const f = fixture(98, 750);
+		for (const [index, event] of f.ledger.events.entries()) {
+			event.role = index < 97 ? "CONTEXT" : "ACTION";
+		}
+		const shorter = f.input.shots[96],
+			closing = f.input.shots[97];
+		if (!shorter || !closing) throw new Error("fixture");
+		shorter.toFrame = shorter.fromFrame + 600;
+		closing.toFrame = closing.fromFrame + 300;
+
+		const result = selectLocalStoryTrailer({ ...f, trailer });
+		expect(result.selection.actualDurationFrames).toBe(900);
+		expect(result.selection.localStorySelection.selectedEventIds).toEqual([
+			"l96_e0",
+			"l97_e0",
+		]);
+	});
+
+	it("keeps a short quote-supported variant when the longer variant omits it", () => {
+		const f = fixture(5, 600);
+		const [opening, bridge, action, closing, longHold] = f.input.shots;
+		const [openingEvent, bridgeEvent, actionEvent, closingEvent, holdEvent] =
+			f.ledger.events;
+		if (
+			!opening ||
+			!bridge ||
+			!action ||
+			!closing ||
+			!longHold ||
+			!openingEvent ||
+			!bridgeEvent ||
+			!actionEvent ||
+			!closingEvent ||
+			!holdEvent
+		)
+			throw new Error("fixture");
+		Object.assign(opening, { fromFrame: 0, toFrame: 300 });
+		Object.assign(bridge, { fromFrame: 882, toFrame: 901 });
+		Object.assign(action, { fromFrame: 901, toFrame: 1151 });
+		Object.assign(closing, { fromFrame: 1200, toFrame: 1778 });
+		Object.assign(longHold, { fromFrame: 1900, toFrame: 2900 });
+		// The bridge is supported but its complete event does not fit.
+		bridgeEvent.refs.push(longHold.ref);
+		bridgeEvent.quotes.push({ ref: longHold.ref, quote: longHold.text });
+		f.ledger.events.pop();
+		closingEvent.role = "CHANGE";
+
+		const text = "This quote ends before the first frame of the action shot.";
+		const segment = { startUs: 29_500_000, endUs: 30_030_000, text };
+		f.input.segments.push(segment);
+		action.fields.push({ ...segment, kind: "ASR", pointer: "/segments/0" });
+		actionEvent.label = text;
+		actionEvent.quotes = [{ ref: action.ref, quote: text }];
+
+		const result = selectLocalStoryTrailer({ ...f, trailer });
+		expect(result.selection.actualDurationFrames).toBe(900);
+		expect(result.selection.localStorySelection.selectedEventIds).toEqual([
+			openingEvent.id,
+			actionEvent.id,
+			closingEvent.id,
+		]);
+		expect(result.windows.map(({ durationFrames }) => durationFrames)).toEqual([
+			300, 19, 3, 578,
+		]);
+	});
+
+	it("distinguishes a truncated exact search from a proven lack of fitting footage", () => {
+		const f = fixture(97, 750);
+		for (const event of f.ledger.events) event.role = "CONTEXT";
+		expect(() => selectLocalStoryTrailer({ ...f, trailer })).toThrow(
+			"LOCAL_TRAILER_SEARCH_LIMIT",
+		);
 	});
 });

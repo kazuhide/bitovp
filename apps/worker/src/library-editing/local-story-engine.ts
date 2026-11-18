@@ -15,6 +15,7 @@ import {
 	type LocalStoryLedger,
 	type LocalStoryModelIdentity,
 	type LocalStorySelectionResult,
+	type LocalStoryTrailerIntent,
 	localSemanticJobRequestSchema,
 	localSemanticReceiptSchema,
 	localSemanticStageRegistry,
@@ -27,6 +28,7 @@ import {
 	type PreparedShotPartition,
 	type RevalidatedFlowLedgerRef,
 	selectLocalStoryClips,
+	selectLocalStoryTrailer,
 	TRANSCRIPTION_POLICY_FINGERPRINT,
 	usesGeneratedCaptions,
 	validateLocalStoryBlueprint,
@@ -158,7 +160,7 @@ export type PreparedLocalStoryFullSource = {
 export function localStoryArtifactHash(
 	evidence: Pick<
 		LocalStoryEvidence,
-		"model" | "inputHash" | "ledgerHash" | "blueprintHash"
+		"model" | "inputHash" | "ledgerHash" | "blueprintHash" | "trailer"
 	>,
 ) {
 	return hashEditingEvidence({
@@ -167,7 +169,83 @@ export function localStoryArtifactHash(
 		inputHash: evidence.inputHash,
 		ledgerHash: evidence.ledgerHash,
 		blueprintHash: evidence.blueprintHash,
+		...(evidence.trailer ? { trailer: evidence.trailer } : {}),
 	});
+}
+
+async function planLocalStoryTrailer(
+	context: LocalStoryPlanContext,
+	full: PreparedLocalStoryFullSource,
+	intent: LocalStoryTrailerIntent,
+): Promise<LocalStoryGeneration> {
+	const { ledger, chunks, counters, transcript } = full;
+	const { parameters, signal } = context;
+	const input = transcript.speechIntervals
+		? { ...full.input, speechIntervals: transcript.speechIntervals }
+		: full.input;
+	await context.onProgress("PLANNING_LOCAL_STORY", {
+		completedChunks: chunks.length,
+		totalChunks: chunks.length,
+		cachedStages: counters.cachedStages,
+		attempt: 0,
+	});
+	signal.throwIfAborted();
+	const { blueprint, selection, windows } = selectLocalStoryTrailer({
+		input,
+		ledger,
+		trailer: intent,
+		targetDurationFrames: parameters.targetDurationFrames,
+	});
+	signal.throwIfAborted();
+	const provenance = {
+		model: full.model,
+		inputHash:
+			input === full.input ? full.inputHash : hashEditingEvidence(input),
+		ledgerHash: full.ledgerHash,
+		blueprintHash: hashEditingEvidence(blueprint),
+		trailer: { intent, windows },
+	};
+	const evidence = localStoryEvidenceSchema.parse({
+		version: "local-story-evidence-v1",
+		method: "LOCAL_LLM_BEAT_PLAN",
+		...provenance,
+		artifactHash: localStoryArtifactHash(provenance),
+		ledger,
+		blueprint,
+		selection: selection.localStorySelection,
+		inputCoverage: {
+			totalShots: input.coverage.length,
+			eligibleShots: input.shots.length,
+			processedShots: ledger.coveredRefs.length,
+			excludedShots: input.coverage.length - input.shots.length,
+			truncated: false,
+		},
+	});
+	return {
+		selection,
+		evidence,
+		segments: transcript.segments,
+		transcriptLanguage: transcript.language,
+		transcriptLanguageWindows: transcript.languageWindows,
+		captionTimingEvidence: transcript.captionTimingEvidence,
+		speechIntervals: transcript.speechIntervals,
+		warnings: [
+			...transcript.warnings,
+			"LOCAL_STORY_VISUAL_GROUNDING_PENDING",
+			...(intent.durationMode === "TARGET" &&
+			selection.actualDurationFrames < parameters.targetDurationFrames
+				? ["LOCAL_STORY_DURATION_LIMITED_BY_EVIDENCE"]
+				: []),
+		],
+		metrics: {
+			...full.metrics,
+			localStoryChunks: chunks.length,
+			localStoryStagesExecuted: counters.executedStages,
+			localStoryStagesCached: counters.cachedStages,
+			localStorySourceShots: input.coverage.length,
+			localStoryProcessedShots: ledger.coveredRefs.length,
+		},
+	};
 }
 const object = (value: unknown): value is Record<string, unknown> =>
 	!!value && typeof value === "object" && !Array.isArray(value);
@@ -235,7 +313,7 @@ export function createLocalStoryEngine(options: {
 			onProgress: (progress) =>
 				context.onProgress("TRANSCRIBING_STORY", progress),
 		});
-		if (requireReadyTranscript) signal.throwIfAborted();
+		if (requireReadyTranscript || parameters.trailer) signal.throwIfAborted();
 		if (
 			verified.envelope.identity.transcriptionPolicyFingerprint !== undefined &&
 			transcript.qualityPolicyFingerprint !==
@@ -243,7 +321,7 @@ export function createLocalStoryEngine(options: {
 		)
 			throw new MediaOperationError("ASR_QUALITY_POLICY_CHANGED");
 		if (
-			requireReadyTranscript &&
+			(requireReadyTranscript || parameters.trailer !== undefined) &&
 			context.hasAudio &&
 			transcript.status !== "READY"
 		)
@@ -254,6 +332,7 @@ export function createLocalStoryEngine(options: {
 			timeMap: verified.map,
 			preparedPartition: context.preparedPartition,
 			segments: transcript.segments,
+			includeExcludedWindows: parameters.trailer !== undefined,
 		});
 		const chunks = buildLocalStoryChunks(input),
 			inputHash = hashEditingEvidence(input);
@@ -770,6 +849,8 @@ export function createLocalStoryEngine(options: {
 				context,
 				false,
 			);
+			if (context.parameters.trailer)
+				return planLocalStoryTrailer(context, full, context.parameters.trailer);
 			if (context.parameters.storyPlanner === "FEASIBLE_CHOICE_V1") {
 				try {
 					return await planLocalStoryChoice({

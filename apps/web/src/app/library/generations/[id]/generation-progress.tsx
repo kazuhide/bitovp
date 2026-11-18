@@ -65,24 +65,29 @@ function phaseSegmentCounts(task: MediaTaskView | undefined) {
 export function GenerationProgress({
 	id,
 	clipEditingAvailable = true,
+	showJobDetails = false,
 }: {
 	id: string;
 	clipEditingAvailable?: boolean;
+	showJobDetails?: boolean;
 }) {
 	return (
 		<GenerationProgressView
 			key={id}
 			id={id}
 			clipEditingAvailable={clipEditingAvailable}
+			showJobDetails={showJobDetails}
 		/>
 	);
 }
 function GenerationProgressView({
 	id,
 	clipEditingAvailable,
+	showJobDetails,
 }: {
 	id: string;
 	clipEditingAvailable: boolean;
+	showJobDetails: boolean;
 }) {
 	const c = useProductionCopy(),
 		router = useRouter(),
@@ -186,7 +191,9 @@ function GenerationProgressView({
 			);
 			if (response.taskId === id) throw new Error("TASK_RETRY_INVALID");
 			if (mounted.current) {
-				router.push(`/library/generations/${response.taskId}`);
+				router.push(
+					`/library/generations/${response.taskId}${showJobDetails ? "?view=details" : ""}`,
+				);
 				navigating = true;
 			}
 		} catch (failure) {
@@ -212,6 +219,7 @@ function GenerationProgressView({
 	const openedProject = useRef<string | null>(null);
 	useEffect(() => {
 		if (
+			showJobDetails ||
 			!clipEditingAvailable ||
 			!mounted.current ||
 			!result?.success ||
@@ -222,7 +230,7 @@ function GenerationProgressView({
 			return;
 		openedProject.current = result.data.projectId;
 		router.replace(`/library/edits/${result.data.projectId}`);
-	}, [result, router, clipEditingAvailable]);
+	}, [result, router, clipEditingAvailable, showJobDetails]);
 	const phase =
 		task?.state === "ERROR"
 			? draftMode

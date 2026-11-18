@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { LayoutGrid, List } from "lucide-react";
+import { History, LayoutGrid, List } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { InfoHint } from "@/components/ui/info-hint";
@@ -40,7 +41,7 @@ export function LibraryClient({
 	initialQuery?: LibraryBrowseState;
 	clipEditingAvailable?: boolean;
 }) {
-	const { t } = useT();
+	const { locale: language, t } = useT();
 	const [state, setState] = useState(initialQuery);
 	const {
 		q,
@@ -175,10 +176,19 @@ export function LibraryClient({
 		>
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<h1 className="font-semibold text-2xl">{t("library.title")}</h1>
-				<TabsList aria-label={t("library.title")}>
-					<TabsTrigger value="content">{t("library.contentTab")}</TabsTrigger>
-					<TabsTrigger value="scenes">{t("library.scenesTab")}</TabsTrigger>
-				</TabsList>
+				<div className="flex flex-wrap items-center gap-2">
+					<TabsList aria-label={t("library.title")}>
+						<TabsTrigger value="content">{t("library.contentTab")}</TabsTrigger>
+						<TabsTrigger value="scenes">{t("library.scenesTab")}</TabsTrigger>
+					</TabsList>
+					<Link
+						href="/library/generations"
+						className="inline-flex min-h-9 items-center gap-2 rounded-md border border-zinc-700 px-3 font-medium text-sm hover:bg-zinc-900 focus-visible:outline-2 focus-visible:outline-emerald-500 focus-visible:outline-offset-2"
+					>
+						<History aria-hidden="true" className="size-4" />
+						{language === "ja" ? "生成履歴" : "Generation history"}
+					</Link>
+				</div>
 			</div>
 			<TabsContent value={mode} className="mt-0 space-y-4">
 				{!clipEditingAvailable && (

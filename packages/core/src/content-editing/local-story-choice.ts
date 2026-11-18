@@ -73,6 +73,7 @@ type BuildOptions = {
 	targetDurationFrames: number;
 	maxPlans?: number;
 	maxEvaluations?: number;
+	maxBeats?: number;
 	openingRole?: LocalStoryCorpus["events"][number]["role"];
 	exactDuration?: boolean;
 };
@@ -88,6 +89,14 @@ function invalid(): never {
 function bounded(value: number, maximum: number) {
 	if (!Number.isSafeInteger(value) || value < 1 || value > maximum) invalid();
 	return value;
+}
+function feasibleBeatLimit(target: number, maxBeats?: number) {
+	const { shortTargetFrames, shortMaxBeats, longMaxBeats } =
+		LOCAL_STORY_CHOICE_POLICY;
+	return bounded(
+		maxBeats ?? (target <= shortTargetFrames ? shortMaxBeats : longMaxBeats),
+		longMaxBeats,
+	);
 }
 function signed(
 	value: Omit<FeasibleStoryChoices, "hash">,
@@ -226,7 +235,7 @@ export function buildFeasibleStoryChoices(
 			(originalOrdinal.get(a.id) ?? 0) - (originalOrdinal.get(b.id) ?? 0),
 	);
 	const modes = mode === "AUTO" ? (["FLOW", "THEME"] as const) : [mode];
-	const maxBeats = target <= 900 ? 3 : 5;
+	const maxBeats = feasibleBeatLimit(target, options.maxBeats);
 	const perLevel = Math.max(1, Math.floor(maxEvaluations / maxBeats));
 	let evaluated = 0,
 		truncated = false;
@@ -379,6 +388,7 @@ export function compileFeasibleStoryChoice(options: {
 	choices: FeasibleStoryChoices;
 	choice: unknown;
 	requestedMode: LocalStoryMode;
+	maxBeats?: number;
 }): { blueprint: LocalStoryBlueprint; selection: LocalStorySelectionResult } {
 	const { choices } = options;
 	verifyFrontier(choices);
@@ -395,7 +405,8 @@ export function compileFeasibleStoryChoice(options: {
 		(options.requestedMode !== "AUTO" &&
 			plan.blueprintSkeleton.mode !== options.requestedMode) ||
 		plan.eventIds.length < 1 ||
-		plan.eventIds.length > (choices.targetDurationFrames <= 900 ? 3 : 5) ||
+		plan.eventIds.length >
+			feasibleBeatLimit(choices.targetDurationFrames, options.maxBeats) ||
 		hashEditingEvidence(plan.eventIds) !==
 			hashEditingEvidence(
 				plan.blueprintSkeleton.beats.flatMap((b) => b.eventIds),

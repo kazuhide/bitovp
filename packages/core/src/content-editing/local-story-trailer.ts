@@ -1,6 +1,7 @@
 import {
 	buildFeasibleStoryChoices,
 	compileFeasibleStoryChoice,
+	LOCAL_STORY_CHOICE_POLICY,
 } from "./local-story-choice";
 import {
 	type LocalStoryCorpus,
@@ -64,10 +65,12 @@ export function selectLocalStoryTrailer(options: {
 	const scoped = scopeTrailer(input, ledger, intent);
 	const mode = "FLOW" as const;
 	const exact = intent.durationMode === "EXACT";
+	const maxBeats = LOCAL_STORY_CHOICE_POLICY.longMaxBeats;
 	const frontier = buildFeasibleStoryChoices({
 		...scoped,
 		mode,
 		targetDurationFrames,
+		maxBeats,
 		openingRole: "CONTEXT",
 		exactDuration: exact,
 	});
@@ -92,6 +95,7 @@ export function selectLocalStoryTrailer(options: {
 		...scoped,
 		choices: frontier,
 		requestedMode: mode,
+		maxBeats,
 		choice: {
 			planId: choice.id,
 			message: "Trailer from selected source passages.",

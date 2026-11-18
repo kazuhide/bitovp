@@ -55,7 +55,8 @@ function StoredClipResultView({
 	organizationId: string | undefined;
 }) {
 	const { t } = useT();
-	const canEdit = useMutationAccess("library.edits.edit") && clipEditingAvailable;
+	const canEdit =
+		useMutationAccess("library.edits.edit") && clipEditingAvailable;
 	const [videoAttempt, setVideoAttempt] = useState(0);
 	const query = useQuery({
 		queryKey: ["library-export", organizationId, id, exportId],

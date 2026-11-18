@@ -272,6 +272,16 @@ it.each([
 			screen.getByRole("button", { name: "Association checked" }),
 		);
 	const create = () => screen.getByRole("button", { name: "Create project" });
+	fireEvent.click(screen.getByText("Caption, framing and scene settings"));
+	fireEvent.change(screen.getByRole("combobox", { name: "Selection policy" }), {
+		target: { value: "COHESION" },
+	});
+	const contextQuery = screen.getByRole("textbox", {
+		name: "Context to include",
+	});
+	fireEvent.change(contextQuery, {
+		target: { value: "A previously selected topic" },
+	});
 	fireEvent.click(screen.getByRole("button", { name: "Plan a trailer" }));
 	const instructions = screen.getByRole("textbox", {
 		name: "Trailer instructions",
@@ -286,6 +296,9 @@ it.each([
 	expect(screen.getByRole("combobox", { name: "Disclosure" })).toHaveValue(
 		"SETUP_AND_QUESTION",
 	);
+	expect(
+		screen.queryByRole("textbox", { name: "Context to include" }),
+	).not.toBeInTheDocument();
 	expect(posts()).toHaveLength(0);
 	fireEvent.change(instructions, {
 		target: { value: "Create a trailer exactly 30 seconds long, setup only." },
@@ -311,6 +324,7 @@ it.each([
 		trailer: { durationMode: "EXACT", disclosure: "SETUP_ONLY" },
 	});
 	expect(body.parameters.storyMode).toBeUndefined();
+	expect(body.parameters.query).toBeUndefined();
 	expect(JSON.stringify(body)).not.toContain("Create a trailer exactly");
 	expect(posts().some(([url]) => String(url).includes("/renders"))).toBe(false);
 });

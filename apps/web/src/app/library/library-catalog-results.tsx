@@ -72,7 +72,7 @@ export function LibraryCatalogResults({
 						className={
 							grid
 								? "flex min-w-0 flex-col overflow-hidden rounded-lg border border-zinc-800"
-								: "flex min-w-0 items-start"
+								: "flex min-w-0 flex-col @min-[536px]:flex-row @min-[536px]:items-start"
 						}
 					>
 						<Link
@@ -149,7 +149,7 @@ export function LibraryCatalogResults({
 							</div>
 						</Link>
 						<div
-							className={`flex max-w-full flex-wrap items-center gap-2 px-3 py-2 text-xs text-zinc-400 ${grid ? "justify-between" : "justify-end"}`}
+							className={`flex max-w-full flex-wrap items-center gap-2 px-3 py-2 text-xs text-zinc-400 ${grid ? "justify-between" : "w-full @min-[536px]:w-auto @min-[536px]:justify-end"}`}
 						>
 							{clipExportCount !== undefined && clipExportCount > 0 ? (
 								<Link

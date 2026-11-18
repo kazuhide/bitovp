@@ -181,6 +181,7 @@ function fixture(
 		clauses?: string[];
 		shotPaddingRepeats?: number;
 		segments?: { startUs: number; endUs: number; text: string }[];
+		speechIntervals?: { startUs: number; endUs: number }[];
 		modelSha256?: string;
 		pinnedAsrModelSha256?: string | null;
 		changeLedger?(
@@ -303,8 +304,14 @@ function fixture(
 		qualityPolicyFingerprint: TRANSCRIPTION_POLICY_FINGERPRINT,
 		segments,
 		status: "READY",
-		fingerprint: hashEditingEvidence(segments),
-		warnings: [],
+		fingerprint: hashEditingEvidence(
+			options.speechIntervals
+				? { segments, speechIntervals: options.speechIntervals }
+				: segments,
+		),
+		speechIntervals: options.speechIntervals,
+		warnings:
+			options.speechIntervals && segments.length === 0 ? ["NO_SPEECH"] : [],
 		modelSha256: "b".repeat(64),
 		cached: true,
 	});
@@ -751,6 +758,54 @@ describe("local story engine with real evidence contracts and a fake local model
 			}),
 		).rejects.toMatchObject({ code: "LOCAL_STORY_TRANSCRIPT_REQUIRED" });
 		expect(f.run).not.toHaveBeenCalled();
+	});
+
+	it("rejects an exact trailer when untranscribed VAD crosses into an outcome, including cached ledger replay", async () => {
+		const f = fixture({
+			segments: [],
+			shotPaddingRepeats: 80,
+			speechIntervals: [{ startUs: 4_000_000, endUs: 6_000_000 }],
+			changeLedger(ledger, chunk) {
+				return chunk.refs.includes("s1")
+					? {
+							...ledger,
+							events: ledger.events.map((event) => ({
+								...event,
+								role: "OUTCOME",
+							})),
+						}
+					: ledger;
+			},
+		});
+		const { storyMode: _storyMode, ...parameters } = f.context.parameters;
+		const context = {
+			...f.context,
+			parameters: {
+				...parameters,
+				targetDurationFrames: 150,
+				trailer: {
+					durationMode: "EXACT",
+					disclosure: "SETUP_AND_QUESTION",
+				} as const,
+			},
+		};
+		for (let attempt = 0; attempt < 2; attempt++) {
+			await expect(
+				f.engine.plan({
+					...context,
+					task: { ...context.task, id: randomUUID() },
+				}),
+			).rejects.toMatchObject({
+				code: "LOCAL_TRAILER_EXACT_DURATION_UNAVAILABLE",
+			});
+		}
+		expect(f.requests).toHaveLength(f.chunks.length);
+		expect(f.requests.every(({ stage }) => stage === "LOCAL_LEDGER_V1")).toBe(
+			true,
+		);
+		expect(mocks.prepareTranscript).toHaveBeenCalledWith(
+			expect.objectContaining({ includeSpeechIntervals: true }),
+		);
 	});
 
 	it.each([

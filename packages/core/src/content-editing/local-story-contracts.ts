@@ -169,6 +169,8 @@ export type LocalStoryInput = {
 		status: "ELIGIBLE" | "EXCLUDED" | "OUTSIDE_MEDIA" | "UNREPRESENTABLE";
 	}[];
 	segments: { startUs: number; endUs: number; text: string }[];
+	/** Optional VAD bounds on the original presentation clock, separate from textual evidence. */
+	speechIntervals?: readonly { startUs: number; endUs: number }[];
 };
 export type LocalStoryChunk = {
 	id: string;

@@ -123,7 +123,10 @@ function speechSafe(input: LocalStoryInput, spans: readonly Span[]): Span[] {
 	// Exact 1/30-microsecond ticks keep adjacent original utterances half-open.
 	// Rounding every segment first would turn a shared 6.62s boundary into an
 	// overlap at frames 198/199 and transitively join unrelated utterances.
-	const utterances = input.segments.map((segment) => ({
+	const observedSpeech = input.speechIntervals?.length
+		? [...input.segments, ...input.speechIntervals]
+		: input.segments;
+	const utterances = observedSpeech.map((segment) => ({
 		from: (BigInt(segment.startUs) - sourceStart) * 30n,
 		to: (BigInt(segment.endUs) - sourceStart) * 30n,
 	}));
@@ -135,7 +138,7 @@ function speechSafe(input: LocalStoryInput, spans: readonly Span[]): Span[] {
 	);
 	// Genuine source-time overlap can expose another utterance; converge before
 	// quantizing the final bounds, keeping the existing speech and footage guards.
-	for (let iteration = 0; iteration <= input.segments.length; iteration++) {
+	for (let iteration = 0; iteration <= utterances.length; iteration++) {
 		let changed = false;
 		result = merge(
 			result.map((span) => {
@@ -387,7 +390,7 @@ export function createLocalStoryClipSelector(options: {
 				"LOCAL_LLM_COMPLETE_BEATS",
 				"SOURCE_PRESENTATION_ORDER",
 				"LOCAL_STORY_VISUAL_GROUNDING_PENDING",
-				...(input.segments.length
+				...(input.segments.length || input.speechIntervals?.length
 					? ["COMPLETE_UTTERANCE_BOUNDARIES"]
 					: ["TRANSCRIPT_UNAVAILABLE"]),
 				...(count(selected.spans) < target ? ["DURATION_UNDER_TARGET"] : []),

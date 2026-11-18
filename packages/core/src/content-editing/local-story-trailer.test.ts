@@ -20,16 +20,17 @@ function fixtureItem<T>(value: T | undefined): T {
 	return value;
 }
 
-function fixture(roles: Role[]) {
+function fixture(roles: Role[], shotFrames = 300) {
 	const origin = 5_000_001;
+	const shotDurationUs = (shotFrames * 1_000_000) / 30;
 	const timeMap = cfrTimeMapSchema.parse({
 		id: "11111111-1111-4111-8111-111111111111",
 		mediaVersionId: "22222222-2222-4222-8222-222222222222",
 		kind: "CFR",
 		sourceStartUs: origin,
-		sourceEndUs: origin + roles.length * 10_000_000,
+		sourceEndUs: origin + roles.length * shotDurationUs,
 		editingStartFrame: 0,
-		editingEndFrame: roles.length * 300,
+		editingEndFrame: roles.length * shotFrames,
 		fps: { num: 30, den: 1 },
 	});
 	const shots: LocalStoryInput["shots"] = roles.map((role, i) => {
@@ -37,8 +38,8 @@ function fixture(roles: Role[]) {
 		return {
 			ref: `s${i}`,
 			sceneId: `scene${i}`,
-			fromFrame: i * 300,
-			toFrame: (i + 1) * 300,
+			fromFrame: i * shotFrames,
+			toFrame: (i + 1) * shotFrames,
 			text: description,
 			fields: [{ pointer: `/shots/${i}`, kind: "AISA", text: description }],
 		};
@@ -127,6 +128,28 @@ describe("grounded trailer compilation", () => {
 		);
 	});
 
+	it.each([
+		"EXACT",
+		"TARGET",
+	] as const)("uses four 7.5-second beats for a 30-second %s request", (durationMode) => {
+		const f = fixture(
+			["CONTEXT", "ACTION", "ACTION", "CHANGE", "OUTCOME"],
+			225,
+		);
+		const result = selectLocalStoryTrailer({
+			...f,
+			trailer: { ...exact, durationMode },
+		});
+		expect(result.selection.actualDurationFrames).toBe(900);
+		expect(result.blueprint.beats).toHaveLength(4);
+		expect(result.windows).toEqual(
+			[0, 1, 2, 3].map((index) => ({
+				sourceInUs: f.origin + index * 7_500_000,
+				durationFrames: 225,
+			})),
+		);
+	});
+
 	it("excludes an entire disclosed reference also used by an action", () => {
 		const f = fixture(["CONTEXT", "ACTION", "CONTEXT", "CHANGE"]);
 		f.ledger.events.push({
@@ -177,6 +200,29 @@ describe("grounded trailer compilation", () => {
 		]);
 		expect(() => selectLocalStoryTrailer({ ...f, trailer: exact })).toThrow(
 			"LOCAL_TRAILER_EXACT_DURATION_UNAVAILABLE",
+		);
+	});
+
+	it("retains an untranscribed speech interval across contiguous allowed shots", () => {
+		const f = fixture(["CONTEXT", "ACTION", "OUTCOME"]);
+		const result = selectLocalStoryTrailer({
+			...f,
+			input: {
+				...f.input,
+				speechIntervals: [
+					{ startUs: f.origin + 9_000_000, endUs: f.origin + 11_000_000 },
+				],
+			},
+			trailer: exact,
+			targetDurationFrames: 330,
+		});
+		expect(result.selection.actualDurationFrames).toBe(330);
+		expect(result.windows).toEqual([
+			{ sourceInUs: f.origin, durationFrames: 300 },
+			{ sourceInUs: f.origin + 10_000_000, durationFrames: 30 },
+		]);
+		expect(result.selection.reasonCodes).toContain(
+			"COMPLETE_UTTERANCE_BOUNDARIES",
 		);
 	});
 

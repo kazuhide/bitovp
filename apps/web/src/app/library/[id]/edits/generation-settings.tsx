@@ -69,6 +69,7 @@ export function GenerationSettings({
 }) {
 	const c = useProductionCopy(),
 		id = useId(),
+		trailerActive = trailerMode || Boolean(value.trailer),
 		localStoryAllowed = allowPresentation && allowLocalStory,
 		autoFraming = value.presentation?.videoFit === "AUTO",
 		preserveSource =
@@ -78,7 +79,7 @@ export function GenerationSettings({
 			value.presentation?.fallbackFraming === "AISA_STATIC_V1";
 	return (
 		<div className="space-y-4">
-			{!(trailerMode || value.trailer) && (
+			{!trailerActive && (
 				<>
 					<Field
 						label={c.policy}
@@ -318,7 +319,8 @@ export function GenerationSettings({
 					</section>
 				</EditingDetails>
 			)}
-			{value.policy !== "AUTO" &&
+			{!trailerActive &&
+				value.policy !== "AUTO" &&
 				value.policy !== "STORY" &&
 				value.policy !== "LOCAL_STORY" && (
 					<Field

@@ -178,8 +178,11 @@ async function planLocalStoryTrailer(
 	full: PreparedLocalStoryFullSource,
 	intent: LocalStoryTrailerIntent,
 ): Promise<LocalStoryGeneration> {
-	const { input, ledger, chunks, counters, transcript } = full;
+	const { ledger, chunks, counters, transcript } = full;
 	const { parameters, signal } = context;
+	const input = transcript.speechIntervals
+		? { ...full.input, speechIntervals: transcript.speechIntervals }
+		: full.input;
 	await context.onProgress("PLANNING_LOCAL_STORY", {
 		completedChunks: chunks.length,
 		totalChunks: chunks.length,
@@ -196,7 +199,8 @@ async function planLocalStoryTrailer(
 	signal.throwIfAborted();
 	const provenance = {
 		model: full.model,
-		inputHash: full.inputHash,
+		inputHash:
+			input === full.input ? full.inputHash : hashEditingEvidence(input),
 		ledgerHash: full.ledgerHash,
 		blueprintHash: hashEditingEvidence(blueprint),
 		trailer: { intent, windows },

@@ -1184,7 +1184,7 @@ Archiving organizes the catalog; it does not delete output videos from storage, 
 
 ### Finished clips and trailer proposals
 
-- The catalog shows how many clips have a successful export. Open the count to view the export or the finished clips shelf. Select a clip on the shelf to preview it on the content page. In the clip list, “View export” opens the retained successful version, including after a newer export fails.
+- The catalog shows how many clips have a successful export. Open the count to view the export or the finished clips shelf. Select a clip on the shelf to preview it on the content page. In the clip list, “Watch export” opens the retained successful version, including after a newer export fails.
 - Open “Generation history” to find a job by content name, status or update period. Open its progress page or jump to the edit or export when available.
 - On the clip editing page for a source with AISA and local story analysis available, choose “Plan a trailer.” Enter “Make a 30-second trailer. Avoid spoilers.” Review the duration and disclosure before creating the project. The editor shows the selected original source ranges. Check the picture and audio, then adjust the edit before export. Audio sources require a full-source transcript.
 

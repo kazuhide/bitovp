@@ -187,8 +187,9 @@ test("a plain run may skip the tests that another job runs", () => {
 		["@bitovp/db", 70],
 		["@bitovp/worker", 68],
 		// Includes six favorite-registry, two still-image, two archive/restore and
-		// one WebM recovery case, plus three LOCAL QC cancellation cases.
-		["@bitovp/web", 113],
+		// one WebM recovery case, plus three LOCAL QC cancellation cases and the
+		// retained export and generation history case.
+		["@bitovp/web", 114],
 	])
 		assert.deepEqual(skipProblems(plainRun(workspace), workspace, root), {
 			problems: [],

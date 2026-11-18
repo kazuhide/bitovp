@@ -76,6 +76,7 @@ type BuildOptions = {
 	maxBeats?: number;
 	openingRole?: LocalStoryCorpus["events"][number]["role"];
 	exactDuration?: boolean;
+	skipUncoveredQuoteCandidates?: boolean;
 };
 type Candidate = Omit<FeasibleStoryPlan, "id"> & {
 	indices: number[];
@@ -124,7 +125,10 @@ export function sliceFeasibleStoryChoices(
 	return signed({ ...data, plans: data.plans.slice(0, count) });
 }
 function checkedPlan(
-	options: Pick<BuildOptions, "input" | "ledger" | "targetDurationFrames">,
+	options: Pick<
+		BuildOptions,
+		"input" | "ledger" | "targetDurationFrames" | "skipUncoveredQuoteCandidates"
+	>,
 	blueprint: LocalStoryBlueprint,
 	select?: ReturnType<typeof createLocalStoryClipSelector>,
 ) {
@@ -139,11 +143,19 @@ function checkedPlan(
 				targetDurationFrames: options.targetDurationFrames,
 			})
 		: selectLocalStoryClips({ ...options, blueprint: parsed });
-	if (
-		localStorySelectedPlanIssues({ ...options, blueprint: parsed, selection })
-			.length
-	)
+	const issues = localStorySelectedPlanIssues({
+		...options,
+		blueprint: parsed,
+		selection,
+	});
+	if (issues.length) {
+		if (
+			options.skipUncoveredQuoteCandidates &&
+			issues.every(({ code }) => code === "SELECTED_QUOTE_NOT_COVERED")
+		)
+			throw new LocalStoryError("LOCAL_STORY_NO_FITTING_PLAN");
 		invalid();
+	}
 	return { blueprint: parsed, selection };
 }
 function ownedSkeleton(
@@ -163,12 +175,18 @@ function ownedSkeleton(
 }
 
 /** Compare complete, already validated stories. These signals never rank shots. */
-function diverse(candidates: Candidate[], limit: number, target: number) {
+function diverse(
+	candidates: Candidate[],
+	limit: number,
+	target: number,
+	preserveDurations = false,
+) {
 	const remaining = [...candidates],
 		result: Candidate[] = [];
 	const subjects = new Set<string>(),
 		bands = new Set<string>(),
-		modes = new Set<string>();
+		modes = new Set<string>(),
+		durations = new Set<number>();
 	const overlaps = new Map<Candidate, number>();
 	const preferred = (p: Candidate) =>
 		p.actualDurationFrames >= target * 0.8 ? 1 : 0;
@@ -177,7 +195,12 @@ function diverse(candidates: Candidate[], limit: number, target: number) {
 			bestValue = -Infinity,
 			bestTier = -1;
 		for (const [i, candidate] of remaining.entries()) {
-			const tier = preferred(candidate);
+			// Exact searches need different amounts of room for later beats.
+			const tier =
+				preferred(candidate) +
+				(preserveDurations && !durations.has(candidate.actualDurationFrames)
+					? 2
+					: 0);
 			const overlap = overlaps.get(candidate) ?? 0;
 			const value =
 				candidate.cohesion +
@@ -197,6 +220,7 @@ function diverse(candidates: Candidate[], limit: number, target: number) {
 		result.push(chosen);
 		bands.add(chosen.band);
 		modes.add(chosen.blueprintSkeleton.mode);
+		durations.add(chosen.actualDurationFrames);
 		for (const subject of chosen.subjects) subjects.add(subject);
 		for (const candidate of remaining) {
 			const overlap =
@@ -357,7 +381,12 @@ export function buildFeasibleStoryChoices(
 		}
 		pool.push(...level);
 		if (level.length > LOCAL_STORY_CHOICE_POLICY.beamWidth) truncated = true;
-		beam = diverse(level, LOCAL_STORY_CHOICE_POLICY.beamWidth, target);
+		beam = diverse(
+			level,
+			LOCAL_STORY_CHOICE_POLICY.beamWidth,
+			target,
+			options.exactDuration,
+		);
 	}
 	const fitting = options.exactDuration
 		? pool.filter((plan) => plan.actualDurationFrames === target)

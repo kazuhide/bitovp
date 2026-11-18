@@ -164,6 +164,8 @@ export type LocalStoryInput = {
 	normalizationReceiptHash?: string;
 	scenes: { sceneId: string; text: string; fields: LocalStoryField[] }[];
 	shots: LocalStoryShot[];
+	excludedWindows?: readonly { fromFrame: number; toFrame: number }[];
+	requireOpeningContext?: true;
 	coverage: {
 		ref: string;
 		status: "ELIGIBLE" | "EXCLUDED" | "OUTSIDE_MEDIA" | "UNREPRESENTABLE";

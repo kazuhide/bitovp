@@ -101,6 +101,7 @@ export function buildLocalStoryInput(options: {
 	timeMap: unknown;
 	preparedPartition?: PreparedShotPartition;
 	segments?: readonly { startUs: number; endUs: number; text: string }[];
+	includeExcludedWindows?: boolean;
 }): LocalStoryInput {
 	if (options.analysis && typeof options.analysis === "object") {
 		const scenes = (options.analysis as { scenes?: unknown }).scenes;
@@ -145,6 +146,7 @@ export function buildLocalStoryInput(options: {
 		return { startUs: s.startUs, endUs: s.endUs, text: s.text };
 	});
 	assert(segments.length <= 20_000, "LOCAL_STORY_TRANSCRIPT_LIMIT");
+	const excludedWindows: { fromFrame: number; toFrame: number }[] = [];
 	const input: LocalStoryInput = {
 		version: "local-story-input-v1",
 		title: analysis.title,
@@ -154,11 +156,32 @@ export function buildLocalStoryInput(options: {
 		...(p ? { normalizationReceiptHash: p.normalizationReceiptHash } : {}),
 		scenes: [],
 		shots: [],
+		...(options.includeExcludedWindows ? { excludedWindows } : {}),
 		coverage: [],
 		segments,
 	};
 	let ordinal = 0;
 	analysis.scenes.forEach((scene, sceneIndex) => {
+		const excluded = EXCLUDED.has(scene.type.toUpperCase());
+		if (excluded && options.includeExcludedWindows) {
+			// Excluded shots can extend outside their scene. Every shot overlaps it,
+			// so the scene and shots together form one continuous forbidden window.
+			let start = scene.startInSeconds;
+			let end = scene.endInSeconds;
+			for (const shot of scene.shots) {
+				start = Math.min(start, shot.startInSeconds);
+				end = Math.max(end, shot.endInSeconds);
+			}
+			const fromFrame = Math.max(
+				0,
+				rawFrame(start, map.sourceStartUs, "FLOOR"),
+			);
+			const toFrame = Math.min(
+				map.editingEndFrame - map.editingStartFrame,
+				rawFrame(end, map.sourceStartUs, "CEIL"),
+			);
+			if (fromFrame < toFrame) excludedWindows.push({ fromFrame, toFrame });
+		}
 		const context = [
 			field(`/scenes/${sceneIndex}/summary`, scene.summary),
 			...(scene.content?.objects ?? []).flatMap((o, i) => [
@@ -187,7 +210,7 @@ export function buildLocalStoryInput(options: {
 		const intervals = scene.shots.length ? scene.shots : [scene];
 		intervals.forEach((interval, index) => {
 			const ref = `s${ordinal++}`;
-			if (EXCLUDED.has(scene.type.toUpperCase())) {
+			if (excluded) {
 				input.coverage.push({ ref, status: "EXCLUDED" });
 				return;
 			}

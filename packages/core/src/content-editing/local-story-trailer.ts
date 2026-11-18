@@ -28,12 +28,19 @@ function scopeTrailer(
 			.flatMap((event) => event.refs),
 	);
 	const ordered = [...input.shots].sort((a, b) => a.fromFrame - b.fromFrame);
+	const excluded = [...(input.excludedWindows ?? [])].sort(
+		(a, b) => a.fromFrame - b.fromFrame,
+	);
 	let priorEnd = 0;
+	let nextExcluded = 0;
 	ordered.forEach((shot, index) => {
+		while ((excluded[nextExcluded]?.toFrame ?? Infinity) <= shot.fromFrame)
+			nextExcluded++;
 		// Overlapping intervals give the same frames ambiguous classifications.
 		if (
 			shot.fromFrame < priorEnd ||
 			(ordered[index + 1]?.fromFrame ?? Infinity) < shot.toFrame ||
+			(excluded[nextExcluded]?.fromFrame ?? Infinity) < shot.toFrame ||
 			!shot.fields.some((field) => field.kind === "AISA")
 		)
 			blocked.add(shot.ref);
@@ -47,6 +54,7 @@ function scopeTrailer(
 		input: {
 			...input,
 			shots: ordered.filter((shot) => approved.has(shot.ref)),
+			requireOpeningContext: true as const,
 		},
 		ledger: { ...ledger, events },
 	};
@@ -73,6 +81,7 @@ export function selectLocalStoryTrailer(options: {
 		maxBeats,
 		openingRole: "CONTEXT",
 		exactDuration: exact,
+		skipUncoveredQuoteCandidates: true,
 	});
 	const roles = new Map(
 		scoped.ledger.events.map((event) => [event.id, event.role]),
@@ -85,6 +94,8 @@ export function selectLocalStoryTrailer(options: {
 			hasQuestion(b.eventIds) - hasQuestion(a.eventIds),
 	);
 	if (!choice) {
+		if (exact && frontier.diagnostics.truncated)
+			throw new LocalStoryError("LOCAL_TRAILER_SEARCH_LIMIT");
 		throw new LocalStoryError(
 			exact
 				? "LOCAL_TRAILER_EXACT_DURATION_UNAVAILABLE"
@@ -102,9 +113,14 @@ export function selectLocalStoryTrailer(options: {
 			uncertainty: "",
 		},
 	});
+	const opening = scoped.ledger.events.find(
+		(event) => event.id === selection.localStorySelection.selectedEventIds[0],
+	);
+	if (opening?.role !== "CONTEXT")
+		throw new LocalStoryError("LOCAL_TRAILER_NO_FITTING_PLAN");
 	let previousEnd = 0;
 	const windows = selection.clips.map(
-		({ sourceInUs, durationFrames, sceneId, shotIndex }) => {
+		({ sourceInUs, durationFrames, sceneId, shotIndex }, index) => {
 			const from = Number(
 				originalTimeToCfrFrame(
 					sourceInUs,
@@ -120,7 +136,8 @@ export function selectLocalStoryTrailer(options: {
 						shot.sceneId === sceneId &&
 						shot.shotIndex === shotIndex &&
 						shot.fromFrame <= from &&
-						shot.toFrame >= to,
+						shot.toFrame >= to &&
+						(index !== 0 || opening.refs.includes(shot.ref)),
 				)
 			)
 				throw new LocalStoryError("LOCAL_TRAILER_NO_FITTING_PLAN");

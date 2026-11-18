@@ -45,7 +45,11 @@ it("opens active progress and a pinned export after loading durable history", as
 	);
 	expect(
 		await screen.findByRole("link", { name: "View progress" }),
-	).toHaveAttribute("href", `/library/generations/${runningId}`);
+	).toHaveAttribute("href", `/library/generations/${runningId}?view=details`);
+	expect(screen.getByRole("link", { name: "View job" })).toHaveAttribute(
+		"href",
+		`/library/generations/${succeededId}?view=details`,
+	);
 	expect(screen.getByText("Sol Levante")).toBeVisible();
 	expect(
 		within(screen.getByRole("list", { name: "Generation history" })).getByText(

@@ -268,7 +268,7 @@ export function GenerationHistory({
 									</time>
 									<Link
 										className={linkClass}
-										href={`/library/generations/${task.taskId}`}
+										href={`/library/generations/${task.taskId}?view=details`}
 										prefetch={false}
 									>
 										{inProgress(task.state) ? copy.progress : copy.details}

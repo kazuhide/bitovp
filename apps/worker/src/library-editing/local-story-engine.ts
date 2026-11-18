@@ -332,6 +332,7 @@ export function createLocalStoryEngine(options: {
 			timeMap: verified.map,
 			preparedPartition: context.preparedPartition,
 			segments: transcript.segments,
+			includeExcludedWindows: parameters.trailer !== undefined,
 		});
 		const chunks = buildLocalStoryChunks(input),
 			inputHash = hashEditingEvidence(input);

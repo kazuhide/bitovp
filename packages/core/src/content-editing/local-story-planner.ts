@@ -284,6 +284,21 @@ function checkedTarget(target: number) {
 	return target;
 }
 
+function startsInContext(
+	event: LocalStoryEvent,
+	firstFrame: number | undefined,
+	shotsByRef: ReadonlyMap<string, LocalStoryInput["shots"][number]>,
+) {
+	return (
+		event.role === "CONTEXT" &&
+		firstFrame !== undefined &&
+		event.refs.some((ref) => {
+			const shot = shotsByRef.get(ref);
+			return shot && shot.fromFrame <= firstFrame && shot.toFrame > firstFrame;
+		})
+	);
+}
+
 /** Fully validate each public selection, including callers outside feasible-choice search. */
 export function selectLocalStoryClips(options: {
 	input: LocalStoryInput;
@@ -315,6 +330,9 @@ export function createLocalStoryClipSelector(options: {
 		);
 	validateLocalStoryCorpusEvents(input, ledger.events);
 	const events = new Map(ledger.events.map((e) => [e.id, e]));
+	const openingShots = input.requireOpeningContext
+		? new Map(input.shots.map((shot) => [shot.ref, shot]))
+		: undefined;
 	const candidates = new Map<string, Span[][]>();
 	return (selection: {
 		blueprint: unknown;
@@ -352,6 +370,16 @@ export function createLocalStoryClipSelector(options: {
 					for (const candidate of alternatives) {
 						if (++expansions > maxExpansions)
 							throw new LocalStoryError("LOCAL_STORY_SEARCH_LIMIT");
+						if (
+							openingShots &&
+							state.selectedEventIds.length === 0 &&
+							!startsInContext(
+								required(events.get(eventId)),
+								candidate[0]?.from,
+								openingShots,
+							)
+						)
+							continue;
 						const spans = addForward(state.spans, candidate);
 						if (!spans || count(spans) > target || !clipsFor(input, spans))
 							continue;

@@ -1,3 +1,8 @@
+import {
+	MOQ_ARCHIVE_MAX_BYTES,
+	MOQ_OBSERVATION_MAX_BODY_BYTES,
+} from "../../../config/moq-policy";
+
 export const MAX_LOGIN_BODY_BYTES = 4 * 1024;
 export const MAX_SETUP_BODY_BYTES = 8 * 1024;
 export const MAX_WEBHOOK_BODY_BYTES = 1_000_000;
@@ -14,19 +19,31 @@ export function declaredBodyTooLarge(
 	);
 }
 
-type BodyPolicy = { limit: number; error: string; archive?: true };
+type BodyPolicy = {
+	limit: number;
+	error: string;
+	moqUpload?: "archive" | "observation";
+};
 
 function policyForPath(path: string, method: string): BodyPolicy | null {
-	if (method === "PUT")
-		return /^\/api\/live-channels\/[^/]+\/runs\/[^/]+\/moq-observations\/[^/]+\/archive$/.test(
-			path,
-		)
+	if (method === "PUT") {
+		const upload =
+			/^\/api\/live-channels\/[^/]+\/runs\/[^/]+\/moq-observations\/[^/]+(\/archive)?$/.exec(
+				path,
+			);
+		if (!upload) return null;
+		return upload[1]
 			? {
 					limit: MOQ_ARCHIVE_MAX_BYTES,
 					error: "MoQ archive is too large",
-					archive: true,
+					moqUpload: "archive",
 				}
-			: null;
+			: {
+					limit: MOQ_OBSERVATION_MAX_BODY_BYTES,
+					error: "MoQ observation body is too large",
+					moqUpload: "observation",
+				};
+	}
 	if (path === "/api/auth/login") {
 		return { limit: MAX_LOGIN_BODY_BYTES, error: "Request body is too large" };
 	}
@@ -39,7 +56,7 @@ function policyForPath(path: string, method: string): BodyPolicy | null {
 	return null;
 }
 
-/** Match the bounded POST routes and the archive PUT through Next's path lookup. */
+/** Match bounded POST routes and MoQ PUTs through Next's path lookup. */
 export function publicRequestBodyPolicy(
 	method: string | undefined,
 	target: string | undefined,
@@ -66,7 +83,7 @@ export function publicRequestBodyPolicy(
 		pathname = dataPath;
 		// Conservatively cover indexed aliases without copying Next's dynamic
 		// and interception-route parsing. The policy below still names only
-		// the three limited endpoints, and the forwarded URL stays untouched.
+		// the limited endpoints, and the forwarded URL stays untouched.
 		if (pathname.startsWith("/index/")) {
 			pathname = pathname.slice(6);
 		}
@@ -82,5 +99,3 @@ export function publicRequestBodyPolicy(
 		return null;
 	}
 }
-
-import { MOQ_ARCHIVE_MAX_BYTES } from "../../../config/moq-policy";

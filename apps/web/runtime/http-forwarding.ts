@@ -6,8 +6,9 @@ import {
 } from "node:http";
 import { Transform } from "node:stream";
 import {
-	MOQ_ARCHIVE_BODY_TIMEOUT_MS,
 	MOQ_ARCHIVE_MAX_UPLOADS,
+	MOQ_OBSERVATION_MAX_UPLOADS,
+	MOQ_UPLOAD_BODY_TIMEOUT_MS,
 } from "../config/moq-policy";
 import {
 	declaredBodyTooLarge,
@@ -31,7 +32,11 @@ function rejectBody(
 	outgoing.end(body, () => incoming.destroy());
 }
 
-let archiveUploads = 0;
+const maxMoqUploads = {
+	archive: MOQ_ARCHIVE_MAX_UPLOADS,
+	observation: MOQ_OBSERVATION_MAX_UPLOADS,
+};
+const moqUploads = { archive: 0, observation: 0 };
 
 export function forwardHttpRequest(
 	incoming: IncomingMessage,
@@ -47,19 +52,20 @@ export function forwardHttpRequest(
 		rejectBody(incoming, outgoing, policy.error);
 		return;
 	}
-	if (policy?.archive && archiveUploads >= MOQ_ARCHIVE_MAX_UPLOADS) {
-		rejectBody(incoming, outgoing, "MoQ archive upload is busy", 429);
+	const upload = policy?.moqUpload;
+	if (upload && moqUploads[upload] >= maxMoqUploads[upload]) {
+		rejectBody(incoming, outgoing, `MoQ ${upload} upload is busy`, 429);
 		return;
 	}
 	let bodyDeadline: ReturnType<typeof setTimeout> | undefined;
-	if (policy?.archive) {
-		archiveUploads++;
+	if (upload) {
+		moqUploads[upload]++;
 		let held = true;
 		const release = () => {
 			if (!held) return;
 			held = false;
 			clearTimeout(bodyDeadline);
-			archiveUploads--;
+			moqUploads[upload]--;
 		};
 		outgoing.once("finish", release);
 		outgoing.once("close", release);
@@ -131,15 +137,15 @@ export function forwardHttpRequest(
 		},
 	});
 	counter.on("error", () => {});
-	if (policy.archive) {
+	if (upload) {
 		bodyDeadline = setTimeout(() => {
 			if (rejected || outgoing.writableEnded || outgoing.headersSent) return;
 			rejected = true;
 			incoming.unpipe(counter);
 			counter?.destroy();
 			upstream.destroy();
-			rejectBody(incoming, outgoing, "MoQ archive body timed out", 408);
-		}, MOQ_ARCHIVE_BODY_TIMEOUT_MS);
+			rejectBody(incoming, outgoing, `MoQ ${upload} body timed out`, 408);
+		}, MOQ_UPLOAD_BODY_TIMEOUT_MS);
 		bodyDeadline.unref();
 		upstream.once("finish", () => clearTimeout(bodyDeadline));
 	}

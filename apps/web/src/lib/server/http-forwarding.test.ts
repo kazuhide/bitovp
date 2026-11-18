@@ -96,8 +96,65 @@ function client(
 }
 
 describe("HTTP ingress body limits with a loopback upstream", () => {
-	const archivePath =
-		"/api/live-channels/00000000-0000-4000-8000-000000000001/runs/00000000-0000-4000-8000-000000000002/moq-observations/00000000-0000-4000-8000-000000000003/archive";
+	const observationPath =
+		"/api/live-channels/00000000-0000-4000-8000-000000000001/runs/00000000-0000-4000-8000-000000000002/moq-observations/00000000-0000-4000-8000-000000000003";
+	const archivePath = `${observationPath}/archive`;
+	const observationLimit = 256 * 1024;
+	it.each([
+		{ label: "canonical", path: observationPath },
+		{
+			label: "decoded",
+			path: observationPath.replace("moq-observations", "moq%2Dobservations"),
+		},
+		{
+			label: "indexed",
+			path: `/_next/data/current-build/index${observationPath}.json`,
+		},
+	])("rejects a declared oversized $label observation before contacting Next", async ({
+		path,
+	}) => {
+		const { port, received } = await fixture();
+		const body = Buffer.alloc(observationLimit + 1, 32);
+		const upload = client(
+			port,
+			path,
+			{ "content-length": String(body.length) },
+			"PUT",
+		);
+		try {
+			upload.connection.end(body);
+			expect((await upload.result).status).toBe(413);
+			expect(received.requests).toBe(0);
+		} finally {
+			upload.connection.destroy();
+		}
+	});
+	it("bounds chunked observations while retaining the larger archive allowance", async () => {
+		const { port, received } = await fixture();
+		const headers = { "transfer-encoding": "chunked" };
+		const upload = client(port, observationPath, headers, "PUT");
+		const archive = client(port, archivePath, headers, "PUT");
+		const observation = Buffer.alloc(observationLimit, 32);
+		try {
+			upload.connection.end(observation);
+			expect(await upload.result).toEqual({ status: 200, body: observation });
+			const extra = client(port, observationPath, headers, "PUT");
+			try {
+				extra.connection.end(Buffer.alloc(observationLimit + 1, 32));
+				expect((await extra.result).status).toBe(413);
+				expect(received.bodies).toHaveLength(1);
+				expect(received.bytes).toBeLessThanOrEqual(2 * observationLimit);
+			} finally {
+				extra.connection.destroy();
+			}
+			const media = Buffer.alloc(observationLimit + 1, 32);
+			archive.connection.end(media);
+			expect(await archive.result).toEqual({ status: 200, body: media });
+		} finally {
+			upload.connection.destroy();
+			archive.connection.destroy();
+		}
+	});
 	it("refuses an oversized archive before buffering or contacting Next", async () => {
 		const { port, received } = await fixture();
 		const upload = client(
@@ -138,22 +195,35 @@ describe("HTTP ingress body limits with a loopback upstream", () => {
 			await vi.waitFor(() => expect(received.requests).toBe(2));
 			third.connection.end("third");
 			expect((await third.result).status).toBe(429);
+			const observation = client(
+				port,
+				observationPath,
+				{ "content-type": "application/json" },
+				"PUT",
+			);
+			observation.connection.end("{}");
+			expect((await observation.result).status).toBe(200);
 			first.connection.destroy();
 			second.connection.end();
 			expect((await second.result).status).toBe(200);
 			const fourth = open();
 			fourth.connection.end("fourth");
 			expect((await fourth.result).status).toBe(200);
-			expect(received.requests).toBe(3);
+			expect(received.requests).toBe(4);
 		} finally {
 			for (const upload of [first, second, third]) upload.connection.destroy();
 		}
 	});
-	it("enforces a whole-body deadline while Next is still waiting for an archive", async () => {
+	it.each([
+		{ path: archivePath, kind: "archive" },
+		{ path: observationPath, kind: "observation" },
+	])("enforces a whole-body deadline while Next is still waiting for a MoQ $kind", async ({
+		path,
+	}) => {
 		const { port, received, forwarded } = await fixture();
 		const upload = client(
 			port,
-			archivePath,
+			path,
 			{ "transfer-encoding": "chunked" },
 			"PUT",
 		);

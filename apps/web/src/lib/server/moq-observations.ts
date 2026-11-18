@@ -283,7 +283,7 @@ export async function assertMoqObservationWritable(
 export async function readMoqBoundedBody(
 	req: Request,
 	limit: number,
-	timeoutMs = MOQ_ARCHIVE_BODY_TIMEOUT_MS,
+	timeoutMs = MOQ_UPLOAD_BODY_TIMEOUT_MS,
 ): Promise<Buffer> {
 	const length = req.headers.get("content-length");
 	if (
@@ -419,7 +419,9 @@ export async function putMoqObservation(
 		let json: unknown;
 		try {
 			json = JSON.parse(
-				(await readMoqBoundedBody(req, 256 * 1024)).toString("utf8"),
+				(
+					await readMoqBoundedBody(req, MOQ_OBSERVATION_MAX_BODY_BYTES)
+				).toString("utf8"),
 			);
 		} catch (error) {
 			if (error instanceof MoqObservationError) throw error;
@@ -537,4 +539,7 @@ export async function putMoqObservation(
 	}
 }
 
-import { MOQ_ARCHIVE_BODY_TIMEOUT_MS } from "../../../config/moq-policy";
+import {
+	MOQ_OBSERVATION_MAX_BODY_BYTES,
+	MOQ_UPLOAD_BODY_TIMEOUT_MS,
+} from "../../../config/moq-policy";

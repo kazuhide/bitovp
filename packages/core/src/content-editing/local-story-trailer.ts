@@ -62,10 +62,34 @@ function scopeTrailer(
 		event.refs.every((ref) => !blocked.has(ref)),
 	);
 	const approved = new Set(events.flatMap((event) => event.refs));
+	const shots = ordered.filter((shot) => approved.has(shot.ref));
+	const forbidden = [
+		...(input.excludedWindows ?? []),
+		...ordered
+			.filter((shot) => !approved.has(shot.ref))
+			.map((shot) => shot.exclusionWindow ?? shot),
+	];
 	return {
 		input: {
 			...input,
-			shots: ordered.filter((shot) => approved.has(shot.ref)),
+			shots: shots.map((shot, index) => {
+				const boundary = shot.preparedBoundary;
+				const next = shots[index + 1];
+				// Restore only the frame that belongs to this shot on the prepared
+				// clock and whose raw audio interval is covered by both approved shots.
+				if (
+					boundary &&
+					boundary.videoToFrame === shot.toFrame + 1 &&
+					next?.fromFrame === boundary.videoToFrame &&
+					next.preparedBoundary?.startInSeconds === boundary.endInSeconds &&
+					!forbidden.some(
+						({ fromFrame, toFrame }) =>
+							fromFrame <= shot.toFrame && shot.toFrame < toFrame,
+					)
+				)
+					return { ...shot, toFrame: boundary.videoToFrame };
+				return shot;
+			}),
 			trailerSelection: true as const,
 		},
 		ledger: { ...ledger, events },

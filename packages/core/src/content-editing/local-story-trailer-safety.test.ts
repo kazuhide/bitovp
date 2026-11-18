@@ -85,15 +85,19 @@ function fixture(
 	return { input, ledger, analysis, timeMap };
 }
 
-function preparedOptions({
-	analysis,
-	timeMap,
-}: Pick<ReturnType<typeof fixture>, "analysis" | "timeMap">) {
+function preparedOptions(
+	{
+		analysis,
+		timeMap,
+	}: Pick<ReturnType<typeof fixture>, "analysis" | "timeMap">,
+	hasAudio = false,
+) {
 	const normalization = authoredNormalizationReceipt({
 		organizationId: "33333333-3333-4333-8333-333333333333",
 		sourceId: "44444444-4444-4444-8444-444444444444",
 		mediaVersionId: timeMap.mediaVersionId,
 		sourceFrameCount: (timeMap.sourceEndUs * 24) / 1_000_000,
+		hasAudio,
 	});
 	const preparedTimeMap = { ...timeMap, id: normalization.timeMapId };
 	const preparedPartition = buildPreparedShotPartition({
@@ -108,6 +112,38 @@ function preparedOptions({
 }
 
 describe("trailer source boundaries", () => {
+	it.each([
+		false,
+		true,
+	])("recovers a shared approved prepared frame with or without audio (hasAudio=%s)", (hasAudio) => {
+		const f = fixture([
+			{ from: 0, to: 10.125 },
+			{ from: 10.125, to: 30 },
+		]);
+		const { options, normalization } = preparedOptions(f, hasAudio);
+		expect(normalization.sourceFrameIndex.slice(303, 305)).toEqual([242, 243]);
+		const input = buildLocalStoryInput({
+			...options,
+			includeExcludedWindows: true,
+		});
+		const request = {
+			input,
+			ledger: f.ledger,
+			targetDurationFrames: 900,
+			trailer: { durationMode: "EXACT", disclosure: "SETUP_ONLY" } as const,
+		};
+		expect(selectLocalStoryTrailer(request).windows).toEqual([
+			{ sourceInUs: 0, durationFrames: 304 },
+			{ sourceInUs: 10_133_334, durationFrames: 596 },
+		]);
+		const outcome = f.ledger.events.find((event) => event.id === "es1");
+		if (!outcome) throw new Error("Missing closing event fixture");
+		outcome.role = "OUTCOME";
+		expect(() =>
+			selectLocalStoryTrailer({ ...request, targetDurationFrames: 304 }),
+		).toThrow("LOCAL_TRAILER_EXACT_DURATION_UNAVAILABLE");
+	});
+
 	it("blocks preview frames repeated beyond the raw boundary during prepared 24 to 30 conversion", () => {
 		const f = fixture([
 			{ from: 0.02, to: 1.02, type: "PREVIEW_THIS_TITLE" },

@@ -241,6 +241,16 @@ export function buildLocalStoryInput(options: {
 				entry = p
 					? getPreparedShotPartitionEntry(p, { sceneId: scene.id, shotIndex })
 					: undefined;
+			const videoToFrame =
+				strictPrepared && entry
+					? Math.min(
+							entry.certainToFrame,
+							preparedFrameForSourceAppearance(
+								strictPrepared,
+								interval.endInSeconds,
+							),
+						)
+					: undefined;
 			// A trailer can use only the part that belongs to this shot on both clocks.
 			const fromFrame =
 				strictPrepared && entry
@@ -252,14 +262,10 @@ export function buildLocalStoryInput(options: {
 						? entry?.fromFrame
 						: rawFrame(interval.startInSeconds, map.sourceStartUs, "CEIL");
 			const toFrame =
-				strictPrepared && entry
+				videoToFrame !== undefined
 					? Math.min(
-							entry.certainToFrame,
+							videoToFrame,
 							rawFrame(interval.endInSeconds, map.sourceStartUs, "FLOOR"),
-							preparedFrameForSourceAppearance(
-								strictPrepared,
-								interval.endInSeconds,
-							),
 						)
 					: p
 						? entry?.toFrame
@@ -317,6 +323,15 @@ export function buildLocalStoryInput(options: {
 				fromFrame,
 				toFrame,
 				...(window ? { exclusionWindow: window } : {}),
+				...(videoToFrame === undefined
+					? {}
+					: {
+							preparedBoundary: {
+								startInSeconds: interval.startInSeconds,
+								endInSeconds: interval.endInSeconds,
+								videoToFrame,
+							},
+						}),
 				text: fields.map((v) => v.text).join("\n"),
 				fields,
 			});

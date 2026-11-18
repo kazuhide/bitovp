@@ -153,6 +153,11 @@ export type LocalStoryShot = {
 	fromFrame: number;
 	toFrame: number;
 	exclusionWindow?: { fromFrame: number; toFrame: number };
+	preparedBoundary?: {
+		startInSeconds: number;
+		endInSeconds: number;
+		videoToFrame: number;
+	};
 	text: string;
 	fields: LocalStoryField[];
 };

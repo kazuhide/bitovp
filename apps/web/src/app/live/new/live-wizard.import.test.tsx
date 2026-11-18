@@ -235,7 +235,12 @@ it("submits an MoQ-only plan from expert JSON without converting it to storage o
 		destination: { ...muxing.destination, outputKey: "relay" },
 	}));
 	expect(liveChannelPlanSchema.safeParse(raw).success).toBe(true);
+	let finishCheck!: (value: unknown) => void;
+	const check = new Promise((resolve) => {
+		finishCheck = resolve;
+	});
 	apiFetch.mockImplementation(async (url: string) => {
+		if (url.startsWith("/api/live-channels/moq-readiness?")) return check;
 		if (url === "/api/auth/session") return operatorSession;
 		if (url === "/api/credentials")
 			return [{ id: credentialId, provider: "MOQ", label: "MoQ evaluation" }];
@@ -249,6 +254,32 @@ it("submits an MoQ-only plan from expert JSON without converting it to storage o
 	const create = await screen.findByRole("button", {
 		name: "Create channel (imported plan)",
 	});
+	expect(create).toBeDisabled();
+	expect(
+		screen.getByText("Checking MoQ preview settings…"),
+	).toBeInTheDocument();
+	const readiness = apiFetch.mock.calls.find(([url]) =>
+		String(url).startsWith("/api/live-channels/moq-readiness?"),
+	);
+	expect(
+		new URL(readiness?.[0], "https://app.example").searchParams.toString(),
+	).toBe(
+		new URLSearchParams({
+			credentialId,
+			draftVersion: "DRAFT_18",
+			namespaceComponents: "2",
+		}).toString(),
+	);
+	expect(apiFetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+		false,
+	);
+	await act(async () => {
+		finishCheck({
+			status: "publisher-only",
+			issues: ["namespace-unsupported"],
+		});
+	});
+	expect(await screen.findByText("Publishing only")).toBeInTheDocument();
 	await waitFor(() => expect(create).toBeEnabled());
 	fireEvent.click(create);
 	await waitFor(() =>

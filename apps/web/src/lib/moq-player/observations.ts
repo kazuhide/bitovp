@@ -32,9 +32,24 @@ export const moqObservationSampleSchema = z.strictObject({
 		})
 		.nullable(),
 });
+const terminalEvents = ["stopped", "failed", "ended"] as const;
+type TerminalEvent = (typeof terminalEvents)[number];
+const milestoneEvents = [
+	"started",
+	"descriptor-ready",
+	"subscribe-requested",
+	"first-frame",
+] as const;
 export const moqObservationEventSchema = z.strictObject({
 	elapsedMs: elapsed,
-	type: z.enum(["started", "first-frame", "stopped", "failed", "ended"]),
+	type: z.enum([
+		...milestoneEvents,
+		"frame-gap",
+		"frame-resumed",
+		"canvas-unchanged",
+		"canvas-updated",
+		...terminalEvents,
+	]),
 });
 const updateFields = {
 	startedAt: z.iso.datetime(),
@@ -129,6 +144,33 @@ export const moqObservationHistorySchema = z.strictObject({
 });
 export type MoqObservationSample = z.infer<typeof moqObservationSampleSchema>;
 export type MoqObservationEvent = z.infer<typeof moqObservationEventSchema>;
+export type MoqPlaybackStage = Exclude<
+	MoqObservationEvent["type"],
+	"started" | TerminalEvent
+>;
+
+/** Keep an append-only prefix and reserve the final slot for the stop result. */
+export function appendMoqObservationEvent(
+	events: readonly MoqObservationEvent[],
+	event: MoqObservationEvent,
+): readonly MoqObservationEvent[] {
+	const parsed = moqObservationEventSchema.safeParse(event);
+	if (!parsed.success) return events;
+	const previous = events.at(-1);
+	const { elapsedMs, type } = parsed.data;
+	const terminal = terminalEvents.some((value) => value === type);
+	if (
+		events.length >= MOQ_OBSERVATION_LIMITS.events - (terminal ? 0 : 1) ||
+		(previous &&
+			(previous.elapsedMs > elapsedMs ||
+				previous.type === type ||
+				terminalEvents.some((value) => value === previous.type))) ||
+		(milestoneEvents.some((value) => value === type) &&
+			events.some((entry) => entry.type === type))
+	)
+		return events;
+	return [...events, parsed.data];
+}
 export type MoqObservationUpdate = z.infer<typeof moqObservationUpdateSchema>;
 export type MoqArchiveMetadata = z.infer<typeof moqArchiveMetadataSchema>;
 export type MoqObservationSession = z.infer<typeof moqObservationSessionSchema>;

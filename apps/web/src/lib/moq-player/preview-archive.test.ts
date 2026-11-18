@@ -79,9 +79,10 @@ describe("owned preview finalization", () => {
 			bound.analytics.licenseKey = "replacement-key";
 			bound.analytics.licenseKeySha256 = "b".repeat(64);
 		}
-		await archive.ready;
+		await vi.advanceTimersByTimeAsync(0);
 		expect(mocks.bridge).toHaveBeenCalledWith(
 			expect.objectContaining({ licenseKey: "original-key" }),
+			expect.any(AbortSignal),
 		);
 		archive.video(document.createElement("video"));
 		await archive.finish("stopped");
@@ -94,6 +95,48 @@ describe("owned preview finalization", () => {
 		expect(JSON.stringify(saved)).not.toContain("replacement-key");
 		expect(bridge.dispose).toHaveBeenCalledOnce();
 	});
+	it("attaches delayed Analytics to the existing receiving video and preserves a single owned recorder", async () => {
+		let deliver!: (bridge: unknown) => void;
+		mocks.bridge.mockReturnValueOnce(
+			new Promise((resolve) => {
+				deliver = resolve;
+			}),
+		);
+		const bridge = {
+			attach: vi.fn(),
+			getImpressionId: () => CHANNEL,
+			dispose: vi.fn().mockResolvedValue(undefined),
+		};
+		mocks.recording.mockReturnValue({ finish: () => Promise.resolve() });
+		mocks.api.mockImplementation(async (path: string) => receipt(path));
+		const archive = createMoqPreviewArchive({
+			...options(),
+			descriptor: {
+				...descriptor,
+				analytics: {
+					licenseKey: "original-key",
+					licenseKeySha256: "a".repeat(64),
+					videoId: `bitovp-moq:${descriptor.encodingId}:${RUN}`,
+					collectorVersion: "2.62.0",
+					latencyField: "customData1",
+				},
+			},
+		});
+		const video = document.createElement("video");
+		archive.video(video);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(mocks.recording).toHaveBeenCalledExactlyOnceWith(
+			video,
+			expect.any(Object),
+		);
+
+		deliver(bridge);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(bridge.attach).toHaveBeenCalledExactlyOnceWith(video);
+		await archive.finish("stopped");
+		const saved = JSON.parse(mocks.api.mock.calls.at(-1)?.[1].body);
+		expect(saved.analyticsImpressionId).toBe(CHANNEL);
+	});
 	it("ends a session acknowledged after Stop and leaves no observation timers running", async () => {
 		let acknowledge!: (value: unknown) => void;
 		mocks.api.mockImplementationOnce(
@@ -104,10 +147,11 @@ describe("owned preview finalization", () => {
 		);
 		mocks.api.mockImplementation(async (path: string) => receipt(path));
 		const archive = createMoqPreviewArchive(options());
+		archive.video(document.createElement("video"));
 		vi.advanceTimersByTime(2000);
 		const ended = archive.finish("stopped");
 		acknowledge(receipt(mocks.api.mock.calls[0]?.[0]));
-		await archive.ready;
+		await vi.advanceTimersByTimeAsync(0);
 		await ended;
 		expect(mocks.api).toHaveBeenCalledTimes(2);
 		const final = JSON.parse(mocks.api.mock.calls.at(-1)?.[1].body);
@@ -125,7 +169,7 @@ describe("owned preview finalization", () => {
 		});
 		const callbacks = options();
 		const archive = createMoqPreviewArchive(callbacks);
-		await expect(archive.ready).resolves.toBeUndefined();
+		await vi.advanceTimersByTimeAsync(0);
 		expect(callbacks.onHistoryState).toHaveBeenLastCalledWith("limit");
 		expect(callbacks.onRecordingState).toHaveBeenLastCalledWith("unavailable");
 		archive.video(document.createElement("video"));

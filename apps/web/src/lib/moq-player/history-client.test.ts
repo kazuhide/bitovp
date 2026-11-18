@@ -26,6 +26,34 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 describe("owned MoQ observation writer", () => {
+	it("retains stages observed while the initial save is still pending", async () => {
+		const ordinary = mocks.api.getMockImplementation();
+		let acknowledge!: () => void;
+		mocks.api.mockImplementationOnce(
+			(path: string, init: RequestInit) =>
+				new Promise((resolve) => {
+					acknowledge = () => resolve(ordinary?.(path, init));
+				}),
+		);
+		const writer = createMoqObservationWriter({
+			channelId: CHANNEL,
+			runId: RUN,
+			sessionId: SESSION,
+			now: () => 0,
+			onState: vi.fn(),
+		});
+		writer.event("subscribe-requested", 12);
+		writer.event("first-frame", 915);
+		const final = writer.finish("stopped");
+		acknowledge();
+		await final;
+		expect(JSON.parse(mocks.api.mock.calls.at(-1)?.[1].body).events).toEqual([
+			{ elapsedMs: 0, type: "started" },
+			{ elapsedMs: 12, type: "subscribe-requested" },
+			{ elapsedMs: 915, type: "first-frame" },
+			{ elapsedMs: 915, type: "stopped" },
+		]);
+	});
 	it("persists canvas provenance with visual update rate and unavailable original decoder counters", async () => {
 		let now = 0;
 		const writer = createMoqObservationWriter({

@@ -43,6 +43,10 @@ import {
 } from "@/lib/output-path";
 import { draftFingerprint, mergeWizardDraft } from "@/lib/wizard-draft";
 import { useWizardDraft } from "@/lib/wizard-draft-hook";
+import {
+	MoqPreviewReadiness,
+	useMoqPreviewReadiness,
+} from "../moq-preview-readiness";
 import { AisaOutputSection } from "./aisa-output-section";
 import { setAisaLiveEnabled } from "./aisa-settings-model";
 import {
@@ -309,6 +313,19 @@ export function LiveWizard({
 			}
 		: rawEvaluation;
 	const planAccount = imported ? importedAccountId(imported) : undefined;
+	const moqOutput =
+		imported && evaluation.ok
+			? evaluation.plan.outputs.find((output) => output.kind === "MOQ")
+			: undefined;
+	const moqReadiness = useMoqPreviewReadiness(
+		moqOutput
+			? {
+					credentialId: moqOutput.credentialId,
+					draftVersion: moqOutput.draftVersion,
+					namespaceComponents: moqOutput.trackNamespace.length,
+				}
+			: undefined,
+	);
 
 	/**
 	 * the auto-shutdown that will actually be POSTed, from
@@ -515,6 +532,7 @@ export function LiveWizard({
 		!evaluation.ok ||
 		(!state.accountId && !planAccount) ||
 		evaluation.issues.some((i) => i.level === "error") ||
+		moqReadiness.checking ||
 		submit.isPending;
 
 	const submitButton = (label: string) => (
@@ -707,6 +725,7 @@ export function LiveWizard({
 								{wizardSubmitError(t, submit.error)}
 							</p>
 						) : null}
+						{moqOutput ? <MoqPreviewReadiness {...moqReadiness} /> : null}
 						<div className="flex gap-2">
 							{submitButton(t("ui.createChannelImportedPlan"))}
 							<RoleAccess control="live.new.template">

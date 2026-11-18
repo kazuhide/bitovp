@@ -22,6 +22,10 @@ import { apiFetch } from "@/lib/api";
 import { RoleAccess, useMutationAccess } from "@/lib/auth/use-role-access";
 import { localizedCustomerError } from "@/lib/customer-error";
 import { useT } from "@/lib/i18n/context";
+import {
+	MoqPreviewReadiness,
+	useMoqPreviewReadiness,
+} from "../moq-preview-readiness";
 import { useAnnounce } from "./live-announcer";
 
 const LIFECYCLE_CONFIRMATIONS = {
@@ -322,6 +326,12 @@ export function ChannelLifecycleActions({
 		!canRecoverFinalization &&
 		!(cancelRequested && status !== "STOPPED") &&
 		(status === "CREATED" || status === "ERROR" || status === "STOPPED");
+	const checkMoq =
+		canStart && plan?.outputs?.some((output) => output.kind === "MOQ");
+	const moqReadiness = useMoqPreviewReadiness(
+		checkMoq ? { channelId } : undefined,
+		generation,
+	);
 	const isNewRun =
 		status === "STOPPED" || (status === "ERROR" && providerTerminal);
 	const canStop =
@@ -361,11 +371,12 @@ export function ChannelLifecycleActions({
 			{canStart && plan && !managedAisa ? (
 				<CustomLiveNotice plan={plan} compact />
 			) : null}
+			{checkMoq ? <MoqPreviewReadiness {...moqReadiness} /> : null}
 			<div className="flex flex-wrap items-center gap-2">
 				{canStart ? (
 					<Button
 						size="sm"
-						disabled={act.isPending}
+						disabled={act.isPending || moqReadiness.checking}
 						onClick={() => {
 							startingGeneration.current = generation + 1;
 							startFailed.current = false;

@@ -4,6 +4,7 @@ import { DocumentOrganizationContext } from "@/components/providers";
 import { renderWithQuery } from "@/test/render";
 import { MOQ_ARCHIVE_SAVE_TIMEOUT_MS } from "../../../../config/moq-policy";
 import { type MoqArchiveSave, MoqHistoryPanel } from "./moq-history-panel";
+import { MoqPlaybackStages } from "./moq-playback-stages";
 
 const mocks = vi.hoisted(() => ({ api: vi.fn() }));
 vi.mock("@/lib/api", () => ({ apiFetch: mocks.api }));
@@ -85,6 +86,66 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 describe("saved MoQ history and received video", () => {
+	it("shows later live stages with actual UTC beyond the saved window and ignores stale updates", () => {
+		const events = [
+			{ type: "first-frame", elapsedMs: 550 },
+			{ type: "frame-gap", elapsedMs: 598000 },
+		] as const;
+		const panel = (elapsedMs: number) => (
+			<MoqPlaybackStages
+				channelId={CHANNEL}
+				runId={RUN}
+				startedAt={at}
+				events={events}
+				latest={{ type: "frame-resumed", elapsedMs }}
+			/>
+		);
+		const rendered = renderWithQuery(panel(734200));
+		const summary = screen.getByText("Playback stages");
+		expect(summary.parentElement).toHaveTextContent(
+			"New frames observed again · 00:12:14.200 UTC",
+		);
+		fireEvent.click(summary);
+		expect(
+			screen.getByRole("link", { name: /New frames observed again/ }),
+		).toBeVisible();
+		for (const elapsedMs of [-1, 597999, Number.NaN, Number.MAX_SAFE_INTEGER]) {
+			rendered.rerender(panel(elapsedMs));
+			expect(summary.parentElement).toHaveTextContent(
+				"No new frame observed · 00:09:58.000 UTC",
+			);
+		}
+	});
+	it("shows the last browser-observed stage and links its UTC window to the same run", async () => {
+		const response = await mocks.api();
+		response.sessions[0].events = [
+			{ elapsedMs: 0, type: "started" },
+			{ elapsedMs: 1200, type: "subscribe-requested" },
+			{ elapsedMs: 3000, type: "first-frame" },
+			{ elapsedMs: 3500, type: "failed" },
+		];
+		mocks.api.mockResolvedValue(response);
+		renderWithQuery(view());
+		const summary = await screen.findByText("Playback stages");
+		expect(summary.parentElement).toHaveTextContent("First frame → Failed");
+		expect(summary.parentElement).toHaveTextContent("00:00:03.500 UTC");
+		fireEvent.click(summary);
+		const link = screen.getByRole("link", {
+			name: /First frame .* Encoder Push \/ Heartbeat/,
+		});
+		const destination = new URL(
+			link.getAttribute("href") ?? "",
+			"http://localhost",
+		);
+		expect(destination.searchParams.get("heartbeatRunId")).toBe(RUN);
+		expect(destination.searchParams.get("heartbeatFrom")).toBe(
+			"2026-11-17T23:59:33.000Z",
+		);
+		expect(destination.searchParams.get("heartbeatTo")).toBe(
+			"2026-11-18T00:00:33.000Z",
+		);
+		expect(destination.hash).toBe("#sec-heartbeat-log");
+	});
 	it("identifies an uncertain older recording while a newer session stays selected", async () => {
 		const response = await mocks.api();
 		const newerAt = "2026-11-18T00:02:00.000Z";

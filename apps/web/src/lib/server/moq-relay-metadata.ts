@@ -41,9 +41,20 @@ function jsonPart(part: string, maxBytes: number): unknown {
 
 /** Local configured metadata only. The relay verifies the JWT signature and
  * enforces authorization; these unsigned claims grant no application access. */
-export function inspectMoqRelayMetadata(playbackUrl: string): Inspection {
+export function inspectMoqRelayMetadata(
+	playbackUrl: string,
+	publisherToken?: string,
+): Inspection {
 	try {
 		const url = new URL(playbackUrl);
+		if (
+			publisherToken &&
+			[
+				...url.pathname.split("/").map(decodeURIComponent),
+				...url.searchParams.values(),
+			].includes(publisherToken)
+		)
+			return { kind: "invalid" };
 		const endpointOrigin = CLOUDFLARE_ORIGINS.find(
 			(origin) => origin === url.origin,
 		);

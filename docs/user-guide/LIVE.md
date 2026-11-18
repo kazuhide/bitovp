@@ -88,6 +88,11 @@ from the public npm SDK: an operator supplies a licensed local bundle with
 `BITOVP_MOQ_PLAYER_BUNDLE_SHA256`. The asset route verifies the file before serving
 it; the repository does not include this proprietary bundle.
 
+Before creating an imported MoQ plan or starting another run, check **MoQ preview**
+readiness beside the start button. It checks the saved credential, namespace,
+organization Player license and verified Web X bundle. Publishing-only plans
+can proceed. Relay connectivity and playback are checked once the run starts.
+
 Use **Play** in the Live playback panel to start muted MoQ playback, and **Stop**
 to release the player. Frame progress indicates received video; a successful
 start request alone does not. Preview supports one namespace component and
@@ -108,11 +113,16 @@ by the Player API used here.
 Both pages retain observations after the run ends. A playback session saves
 Player latency, FPS, buffer source and frame counters on a UTC timeline, with
 missing measurements left as gaps. The received preview is recorded for up to
-90 seconds/16MiB and saved as a seekable WebM. Play or download it from
+90 seconds/16MiB and saved as a seekable WebM. A slightly late browser stop can
+be trimmed to the recording limit. Canvas capture records video only. Play or
+download it from
 **Saved MoQ observations** after stopping. Recording covers the preview's
 received interval; its state shows recording, saving, saved, unsupported or
 failure. Each run keeps up to five observation sessions. Saved data remains
-available when the live player is inactive.
+available when the live player is inactive. Playback can start while history
+and Analytics are preparing. The playback stage timeline shows UTC timestamps
+for subscriber requests, observed frames, gaps, recovery, and termination.
+Open a timestamp to see the same airing in the Encoder Heartbeat panel.
 After ending, saved video and observations appear before the collapsed live
 preview. Historical namespace/draft/catalog come from the original output proof.
 Use `#moq-preview` on either page to open this section directly. Browser-native

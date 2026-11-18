@@ -126,6 +126,20 @@ describe("MoQ Analytics public custom-data bridge", () => {
 		await bridge.dispose();
 	});
 
+	it("cleans up the pending collector immediately when playback ends", async () => {
+		vi.useFakeTimers();
+		const abort = new AbortController();
+		const pending = createMoqAnalyticsBridge(config, abort.signal);
+		const outcome = pending.catch((error: unknown) => error);
+		const frame = document.querySelector("iframe[data-bitovp-moq-analytics]");
+		expect(frame).toBeInTheDocument();
+		abort.abort();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(frame).not.toBeInTheDocument();
+		expect(await outcome).toEqual(new Error("MoQ Analytics unavailable"));
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
 	it("fails closed on a collector load failure with a fixed error and no frame leak", async () => {
 		const pending = createMoqAnalyticsBridge(config);
 		const frame = document.querySelector<HTMLIFrameElement>(

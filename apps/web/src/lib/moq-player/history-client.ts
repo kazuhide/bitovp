@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { apiFetch } from "@/lib/api";
 import {
+	appendMoqObservationEvent,
 	MOQ_OBSERVATION_LIMITS as LIMITS,
 	type MoqObservationEvent,
 	type MoqObservationSample,
@@ -62,7 +63,9 @@ export function createMoqObservationWriter(options: Options) {
 		: undefined;
 	let endedAt: string | null = null;
 	const samples: MoqObservationSample[] = [];
-	const events: MoqObservationEvent[] = [{ elapsedMs: 0, type: "started" }];
+	let events: readonly MoqObservationEvent[] = [
+		{ elapsedMs: 0, type: "started" },
+	];
 	let finished = false;
 	let final: Promise<void> | undefined;
 	let analyticsImpressionId: string | undefined;
@@ -212,24 +215,18 @@ export function createMoqObservationWriter(options: Options) {
 		const parsed = moqObservationSampleSchema.safeParse(candidate);
 		if (parsed.success) samples.push(parsed.data);
 	}
-	function event(type: MoqObservationEvent["type"]) {
-		if (
-			finished ||
-			events.length >= LIMITS.events ||
-			events.some((e) => e.type === type)
-		)
-			return;
-		const at = elapsed();
-		if ((events.at(-1)?.elapsedMs ?? 0) <= at)
-			events.push({ elapsedMs: at, type });
+	function event(type: MoqObservationEvent["type"], elapsedMs = elapsed()) {
+		if (!finished)
+			events = appendMoqObservationEvent(events, { elapsedMs, type });
 	}
 	function finish(reason: "stopped" | "failed" | "ended") {
 		if (final) return final;
-		event(reason);
+		const finishedAt = Math.max(elapsed(), events.at(-1)?.elapsedMs ?? 0);
+		event(reason, finishedAt);
 		finished = true;
 		clearInterval(interval);
 		clearTimeout(maximum);
-		endedAt = new Date(Date.parse(startedAt) + elapsed()).toISOString();
+		endedAt = new Date(Date.parse(startedAt) + finishedAt).toISOString();
 		final = ready.then(() => flush());
 		void final.catch(() => {});
 		return final;

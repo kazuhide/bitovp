@@ -141,8 +141,8 @@ describe("catalogue parity", () => {
 		// Integrated navigation resize and restore labels (runtime measured: 3368).
 		// MoQ cleanup and unconfirmed recording states (runtime measured: 3370).
 		// Live diagnostics, run outcomes and rendition labels (runtime measured: 3390).
-		// MoQ preflight and playback stages (runtime measured: 3408).
-		pinWithDriftAid(short.size, 3408, "short");
+		// MoQ preflight and playback stages (runtime measured: 3410).
+		pinWithDriftAid(short.size, 3410, "short");
 	});
 
 	/**

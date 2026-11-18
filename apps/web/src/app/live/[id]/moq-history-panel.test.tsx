@@ -86,10 +86,40 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 describe("saved MoQ history and received video", () => {
+	it.each([
+		{
+			type: "observation-limit",
+			elapsedMs: 600_000,
+			label: "Observation limit reached",
+		},
+		{ type: "ended", elapsedMs: 600_000, label: "Observation window ended" },
+		{ type: "ended", elapsedMs: 599_000, label: "Ended" },
+	])("retains the playback evidence at $type ($elapsedMs ms)", async ({
+		type,
+		elapsedMs,
+		label,
+	}) => {
+		const response = await mocks.api();
+		const endedAt = new Date(Date.parse(at) + elapsedMs).toISOString();
+		response.sessions[0].endedAt = endedAt;
+		response.sessions[0].events = [
+			{ elapsedMs: 0, type: "started" },
+			{ elapsedMs, type },
+		];
+		mocks.api.mockResolvedValue(response);
+		const viewResult = renderWithQuery(view());
+		const summary = await screen.findByText("Playback stages");
+		expect(summary.parentElement).toHaveTextContent(
+			`${label} · ${endedAt.slice(11, 23)} UTC`,
+		);
+		expect(
+			viewResult.container.querySelector("[data-moq-playback-stages] time"),
+		).toHaveAttribute("datetime", endedAt);
+	});
 	it("shows later live stages with actual UTC beyond the saved window and ignores stale updates", () => {
 		const events = [
 			{ type: "first-frame", elapsedMs: 550 },
-			{ type: "frame-gap", elapsedMs: 598000 },
+			{ type: "observation-limit", elapsedMs: 600_000 },
 		] as const;
 		const panel = (elapsedMs: number) => (
 			<MoqPlaybackStages
@@ -109,10 +139,15 @@ describe("saved MoQ history and received video", () => {
 		expect(
 			screen.getByRole("link", { name: /New frames observed again/ }),
 		).toBeVisible();
-		for (const elapsedMs of [-1, 597999, Number.NaN, Number.MAX_SAFE_INTEGER]) {
+		for (const elapsedMs of [
+			-1,
+			599_999,
+			Number.NaN,
+			Number.MAX_SAFE_INTEGER,
+		]) {
 			rendered.rerender(panel(elapsedMs));
 			expect(summary.parentElement).toHaveTextContent(
-				"No new frame observed · 00:09:58.000 UTC",
+				"Observation limit reached · 00:10:00.000 UTC",
 			);
 		}
 	});

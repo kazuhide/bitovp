@@ -89,3 +89,47 @@ describe("configured Cloudflare MoQ relay metadata", () => {
 		});
 	});
 });
+
+describe("publisher credentials in subscriber URLs", () => {
+	const relay = "https://relay.example";
+	const publisher = "publisher+scope";
+	const encoded = encodeURIComponent(publisher);
+	const nested = encodeURIComponent(encoded);
+
+	it.each([
+		`${relay}/subscriber;${publisher};live`,
+		`${relay}/subscriber;${encoded};live`,
+		`${relay}/subscriber?${encoded}=preview`,
+		`${relay}/subscriber?capability=preview%2C${nested}%2Clive`,
+		`${relay}/retired-${publisher}/../subscriber`,
+		`${relay}/subscriber?capability=preview%2Cpublisher%${"25".repeat(24)}2Bscope%2Clive`,
+	])("refuses publisher material in raw or normalized URL components (%#)", (url) => {
+		expect(inspectMoqRelayMetadata(url, publisher)).toEqual({
+			kind: "invalid",
+		});
+	});
+
+	it("checks form-style query values without folding a path’s literal plus", () => {
+		expect(
+			inspectMoqRelayMetadata(
+				`${relay}/subscriber?capability=preview%3Apublisher+scope`,
+				"publisher scope",
+			),
+		).toEqual({ kind: "invalid" });
+		expect(
+			inspectMoqRelayMetadata(`${relay}/publisher+scope`, "publisher scope"),
+		).toEqual({ kind: "other" });
+	});
+
+	it("preserves genuinely separate credentials and normal URL encoding", () => {
+		expect(
+			inspectMoqRelayMetadata(
+				`${relay}/subscriber%25tag?filter=a%26b&track=preview%2Bstereo`,
+				publisher,
+			),
+		).toEqual({ kind: "other" });
+		expect(
+			inspectMoqRelayMetadata(`${origin}/${jwt()}`, publisher),
+		).toMatchObject({ kind: "cloudflare" });
+	});
+});

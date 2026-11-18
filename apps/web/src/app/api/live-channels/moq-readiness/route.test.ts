@@ -158,6 +158,10 @@ describe("advisory MoQ preview readiness", () => {
 			"subscribe-only-required",
 		],
 		[
+			`https://relay.example.test/preview;publisher=${PUBLISH_TOKEN}`,
+			"subscribe-only-required",
+		],
+		[
 			cloudflarePlayback({ operations: ["publish", "subscribe"] }),
 			"subscribe-only-required",
 		],

@@ -26,6 +26,55 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 describe("owned MoQ observation writer", () => {
+	it("recording the observation deadline never reports the player ended", async () => {
+		const origin = performance.now();
+		await vi.advanceTimersByTimeAsync(12_000);
+		const writer = createMoqObservationWriter({
+			channelId: CHANNEL,
+			runId: RUN,
+			sessionId: SESSION,
+			startedAt: "2026-11-18T00:00:00.000Z",
+			startedMonotonicMs: origin,
+			onState: vi.fn(),
+		});
+		await writer.ready;
+		writer.event("first-frame");
+		await vi.advanceTimersByTimeAsync(588_000);
+		expect(JSON.parse(mocks.api.mock.calls.at(-1)?.[1].body)).toMatchObject({
+			endedAt: "2026-11-18T00:10:00.000Z",
+			events: [
+				{ elapsedMs: 0, type: "started" },
+				{ elapsedMs: 12_000, type: "first-frame" },
+				{ elapsedMs: 600_000, type: "observation-limit" },
+			],
+		});
+		const saved = mocks.api.mock.calls.length;
+		writer.event("frame-gap");
+		await writer.finish("stopped");
+		expect(mocks.api).toHaveBeenCalledTimes(saved);
+	});
+	it("closes at the observation boundary when a user stops before a throttled timer fires", async () => {
+		let now = 0;
+		const writer = createMoqObservationWriter({
+			channelId: CHANNEL,
+			runId: RUN,
+			sessionId: SESSION,
+			now: () => now,
+			onState: vi.fn(),
+		});
+		await writer.ready;
+		now = 605_000;
+		writer.sample(EMPTY_MOQ_VIDEO_STATISTICS);
+		writer.event("first-frame");
+		await writer.finish("stopped");
+		expect(JSON.parse(mocks.api.mock.calls.at(-1)?.[1].body)).toMatchObject({
+			events: [
+				{ elapsedMs: 0, type: "started" },
+				{ elapsedMs: 600_000, type: "observation-limit" },
+			],
+			samples: [],
+		});
+	});
 	it("retains stages observed while the initial save is still pending", async () => {
 		const ordinary = mocks.api.getMockImplementation();
 		let acknowledge!: () => void;

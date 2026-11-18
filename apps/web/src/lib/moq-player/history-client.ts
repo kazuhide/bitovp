@@ -71,8 +71,7 @@ export function createMoqObservationWriter(options: Options) {
 	let analyticsImpressionId: string | undefined;
 	let analyticsBound = false;
 	let analyticsUnavailable = false;
-	const elapsed = () =>
-		Math.max(0, Math.min(LIMITS.durationMs, Math.round(now() - origin)));
+	const elapsed = () => Math.max(0, Math.round(now() - origin));
 	const snapshot = (): MoqObservationUpdate => ({
 		startedAt,
 		endedAt,
@@ -173,9 +172,12 @@ export function createMoqObservationWriter(options: Options) {
 	const interval = setInterval(() => {
 		if (!finished && !requestOutstanding) void flush().catch(() => {});
 	}, 5000);
-	const maximum = setTimeout(() => {
-		void finish("ended").catch(() => {});
-	}, LIMITS.durationMs);
+	const maximum = setTimeout(
+		() => {
+			void finish("observation-limit").catch(() => {});
+		},
+		Math.max(0, Math.ceil(origin + LIMITS.durationMs - now())),
+	);
 	void ready.catch(() => {
 		clearInterval(interval);
 		clearTimeout(maximum);
@@ -183,6 +185,7 @@ export function createMoqObservationWriter(options: Options) {
 	function sample(value: MoqVideoStatistics) {
 		if (finished || samples.length >= LIMITS.samples) return;
 		const at = elapsed();
+		if (at > LIMITS.durationMs) return;
 		const previous = samples.at(-1);
 		if (previous && at - previous.elapsedMs < LIMITS.sampleIntervalMs) return;
 		const dimensions = /^(\d+)×(\d+)$/.exec(value.resolution ?? "");
@@ -219,10 +222,16 @@ export function createMoqObservationWriter(options: Options) {
 		if (!finished)
 			events = appendMoqObservationEvent(events, { elapsedMs, type });
 	}
-	function finish(reason: "stopped" | "failed" | "ended") {
+	function finish(
+		reason: "stopped" | "failed" | "ended" | "observation-limit",
+	) {
 		if (final) return final;
-		const finishedAt = Math.max(elapsed(), events.at(-1)?.elapsedMs ?? 0);
-		event(reason, finishedAt);
+		const at = elapsed();
+		const finishedAt = Math.min(
+			LIMITS.durationMs,
+			Math.max(at, events.at(-1)?.elapsedMs ?? 0),
+		);
+		event(at > LIMITS.durationMs ? "observation-limit" : reason, finishedAt);
 		finished = true;
 		clearInterval(interval);
 		clearTimeout(maximum);

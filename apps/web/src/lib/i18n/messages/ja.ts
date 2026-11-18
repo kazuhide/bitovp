@@ -1050,6 +1050,7 @@ export const ja = {
 			"not-configured": "Analytics未設定",
 		},
 		stagesTitle: "再生の進行",
+		observationWindowEnded: "観測区間が終了",
 		event: {
 			started: "開始",
 			"descriptor-ready": "再生設定を取得",
@@ -1059,6 +1060,7 @@ export const ja = {
 			"frame-resumed": "描画を再び観測",
 			"canvas-unchanged": "Canvas の変化を観測できず",
 			"canvas-updated": "Canvas の変化を再び観測",
+			"observation-limit": "観測上限に到達",
 			"recording-started": "録画開始",
 			stopped: "停止",
 			failed: "失敗",

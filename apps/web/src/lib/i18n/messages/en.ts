@@ -1076,6 +1076,7 @@ export const en = {
 			"not-configured": "Analytics not configured",
 		},
 		stagesTitle: "Playback stages",
+		observationWindowEnded: "Observation window ended",
 		event: {
 			started: "Started",
 			"descriptor-ready": "Playback configuration loaded",
@@ -1085,6 +1086,7 @@ export const en = {
 			"frame-resumed": "New frames observed again",
 			"canvas-unchanged": "No Canvas changes observed",
 			"canvas-updated": "Canvas changed again",
+			"observation-limit": "Observation limit reached",
 			"recording-started": "Recording started",
 			stopped: "Stopped",
 			failed: "Failed",

@@ -1,6 +1,9 @@
 import "server-only";
 import { z } from "zod";
 
+const MAX_MOQ_URL_LENGTH = 8_192;
+const MAX_PERCENT_DECODE_PASSES = 4;
+
 const CLOUDFLARE_ORIGINS = [
 	"https://draft-16.cloudflare.mediaoverquic.com",
 	"https://draft-18.cloudflare.mediaoverquic.com",
@@ -39,6 +42,30 @@ function jsonPart(part: string, maxBytes: number): unknown {
 	return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
 }
 
+/** URL form decoding tolerates literal percent signs from an earlier escape. */
+function mayContainPublisherToken(
+	value: string,
+	publisherToken: string,
+	formQuery = false,
+): boolean {
+	for (let pass = 0; pass <= MAX_PERCENT_DECODE_PASSES; pass++) {
+		if (
+			value.includes(publisherToken) ||
+			(formQuery && value.replaceAll("+", " ").includes(publisherToken))
+		)
+			return true;
+		if (!value.includes("%")) return false;
+
+		// Decode each layer as a single value so literal separators survive.
+		const field = value.replaceAll("&", "%26").replaceAll("+", "%2B");
+		const decoded = new URLSearchParams(`value=${field}`).get("value");
+		if (decoded === null || decoded === value) return false;
+		value = decoded;
+	}
+	// The remaining nested escape could still carry a publishing capability.
+	return true;
+}
+
 /** Local configured metadata only. The relay verifies the JWT signature and
  * enforces authorization; these unsigned claims grant no application access. */
 export function inspectMoqRelayMetadata(
@@ -46,13 +73,18 @@ export function inspectMoqRelayMetadata(
 	publisherToken?: string,
 ): Inspection {
 	try {
+		if (publisherToken && playbackUrl.length > MAX_MOQ_URL_LENGTH)
+			return { kind: "invalid" };
 		const url = new URL(playbackUrl);
+		// The response can contain the original URL. Inspect it as well as the
+		// resolved URL because normalization can remove authored path segments.
 		if (
 			publisherToken &&
-			[
-				...url.pathname.split("/").map(decodeURIComponent),
-				...url.searchParams.values(),
-			].includes(publisherToken)
+			(mayContainPublisherToken(playbackUrl, publisherToken) ||
+				decodeURIComponent(url.pathname).includes(publisherToken) ||
+				(url.href !== playbackUrl &&
+					mayContainPublisherToken(url.href, publisherToken)) ||
+				mayContainPublisherToken(url.search, publisherToken, true))
 		)
 			return { kind: "invalid" };
 		const endpointOrigin = CLOUDFLARE_ORIGINS.find(
@@ -62,7 +94,7 @@ export function inspectMoqRelayMetadata(
 		if (url.username || url.password || url.search || url.hash)
 			return { kind: "invalid" };
 		const token = url.pathname.slice(1);
-		if (token.length > 8_192) return { kind: "invalid" };
+		if (token.length > MAX_MOQ_URL_LENGTH) return { kind: "invalid" };
 		const parts = /^([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/.exec(
 			token,
 		);

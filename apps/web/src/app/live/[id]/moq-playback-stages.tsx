@@ -47,6 +47,17 @@ export function MoqPlaybackStages({
 
 	const latestUtc = new Date(started + last.elapsedMs).toISOString();
 	const beforeFailure = last.type === "failed" ? timeline.at(-2) : undefined;
+	function eventLabel(event: MoqObservationEvent) {
+		if (
+			latest === undefined &&
+			event.type === "ended" &&
+			event.elapsedMs === MOQ_OBSERVATION_LIMITS.durationMs
+		) {
+			// Legacy saved sessions used "ended" at the cap for both cases.
+			return t("moqPlayback.observationWindowEnded");
+		}
+		return t(`moqPlayback.event.${event.type}`);
+	}
 	return (
 		<details data-moq-playback-stages className="text-xs">
 			<summary className="cursor-pointer text-zinc-400">
@@ -55,11 +66,11 @@ export function MoqPlaybackStages({
 					{" · "}
 					{beforeFailure ? (
 						<>
-							{t(`moqPlayback.event.${beforeFailure.type}`)}
+							{eventLabel(beforeFailure)}
 							{" → "}
 						</>
 					) : null}
-					{t(`moqPlayback.event.${last.type}`)}
+					{eventLabel(last)}
 					{" · "}
 					<time className="tabular-nums" dateTime={latestUtc}>
 						{latestUtc.slice(11, 23)} UTC
@@ -70,7 +81,7 @@ export function MoqPlaybackStages({
 				{timeline.map((event, index) => {
 					const epoch = started + event.elapsedMs;
 					const iso = new Date(epoch).toISOString();
-					const label = t(`moqPlayback.event.${event.type}`);
+					const label = eventLabel(event);
 					const time = `${iso.slice(11, 23)} UTC`;
 					const heartbeat = buildHeartbeatCorrelationUrl(
 						channelId,

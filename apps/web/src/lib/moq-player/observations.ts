@@ -32,7 +32,12 @@ export const moqObservationSampleSchema = z.strictObject({
 		})
 		.nullable(),
 });
-const terminalEvents = ["stopped", "failed", "ended"] as const;
+const terminalEvents = [
+	"stopped",
+	"failed",
+	"ended",
+	"observation-limit",
+] as const;
 type TerminalEvent = (typeof terminalEvents)[number];
 const milestoneEvents = [
 	"started",
@@ -150,7 +155,7 @@ export type MoqPlaybackStage = Exclude<
 	"started" | TerminalEvent
 >;
 
-/** Keep an append-only prefix and reserve the final slot for the stop result. */
+/** Keep an append-only prefix and reserve the final slot for the observation outcome. */
 export function appendMoqObservationEvent(
 	events: readonly MoqObservationEvent[],
 	event: MoqObservationEvent,

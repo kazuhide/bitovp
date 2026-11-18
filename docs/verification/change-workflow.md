@@ -93,3 +93,24 @@ target is a median below ten seconds per fixed profile and below one second of
 wrapper overhead, measured on the same source, file list and two-worker setting.
 The 120-second deadline is a failure bound, not a latency target or a measured
 performance claim.
+
+## Compare the same task across screens
+
+Start a UI review with operator tasks and identify other screens that support
+each task. Exercise both screens with the same role and equivalent data states.
+For lists, check the default sort with a fresh browser profile, saved
+preferences, and ties across pages. For actions, check the visible label and
+placement, count the interactions to reach confirmation or the result, and
+check when the action is disabled or hidden.
+
+For example, compare finding the newest entry and opening deletion confirmation
+in **VOD Jobs** and **Live Channels**. Use a newer active row and older terminal
+rows, with equal creation times split across pages. Each list should show the
+newest row first and open confirmation for a terminal row in one click from
+Actions. Cancel the dialog when reviewing real data.
+
+Record the task, screens, role, data state, observed steps and evidence. Give
+each unexplained difference a priority and note the reason for any intentional
+difference. Identify source-only checks when a browser run is unavailable.
+The [paired component tests](../../apps/web/src/app/live/list-operations.test.tsx)
+exercise this example with synthetic data in Web CI.

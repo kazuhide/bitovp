@@ -143,7 +143,8 @@ describe("catalogue parity", () => {
 		// Live diagnostics, run outcomes and rendition labels (runtime measured: 3390).
 		// MoQ preflight and playback stages (runtime measured: 3410).
 		// Saved clip settings and re-edit actions (runtime measured: 3422).
-		pinWithDriftAid(short.size, 3422, "short");
+		// The Live list reuses the shared delete affordance (runtime measured: 3420).
+		pinWithDriftAid(short.size, 3420, "short");
 	});
 
 	/**

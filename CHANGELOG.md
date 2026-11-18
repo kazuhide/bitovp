@@ -18,6 +18,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- Show live channels newest first by default and open the deletion confirmation from the Actions column, matching the VOD jobs list.
 - Show confirmed Live encoder termination separately from the last run's errors and output evidence. Offer the action that matches the encoder state, keep terminal errors in run history, and explain Live-to-VOD eligibility in the relevant panel.
 - Shorten Live Heartbeat diagnostics with inline help, clear archived-run labels and separate encoder and input timing. Distinguish configured renditions from observed encoding statistics and retain an explicit unavailable state.
 - **Target 1.4.0.** Keep MoQ subscriber capabilities, recordings and raw task downloads unavailable during owner view-as. Exclude provider Task text from ordinary MoQ histories and protect previously saved errors on reads; explicit administrator diagnostics remain available.

@@ -3300,8 +3300,6 @@ export const ja = {
 			scopeNote:
 				"絞り込みと並び替えは、ここまでに読み込んだ {count} 件に対して適用されます。残りを含めるには追加で読み込んでください。",
 			matchNone: "この条件に一致するチャンネルはありません。",
-			rowMenu: "「{name}」の操作",
-			openChannel: "チャンネルを開く",
 			countdownDue: "予定時刻を過ぎています",
 			countdownIn: "あと {duration}",
 			elapsed: "{duration} 経過",

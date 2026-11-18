@@ -10,12 +10,14 @@ import {
 	proposeHighlightCandidates,
 	SubjectProtectionAdoptionError,
 	sceneAnalysisDocumentSchema,
+	toCompositionDocument,
 } from "@bitovp/core";
 import { z } from "zod";
 import type {
 	AnyEditingProjectView,
 	EditingRenderView,
 } from "@/lib/library-editing";
+import { requestOrganizationId } from "@/lib/passive-request";
 import { getServerContext, type ServerContext } from "./context";
 import {
 	resolveCompositionResources,
@@ -33,10 +35,12 @@ import {
 	assertEditingBinding,
 	boundMediaUrl,
 	EditingRequestError,
+	hash,
 	initialEditingDocument,
 	json,
 	mediaView,
 } from "./library-editing-common";
+import { readExportRun } from "./library-editing-export";
 
 export async function readEditingProject(
 	id: string,
@@ -186,12 +190,109 @@ const createSchema = z.strictObject({
 	variant: z.enum(["LANDSCAPE", "PORTRAIT"]),
 	analysisRevisionId: z.uuid().nullable().optional(),
 });
+const reeditSchema = z.strictObject({
+	title: createSchema.shape.title,
+	fromExport: z.strictObject({
+		projectId: z.uuid(),
+		exportId: z.uuid(),
+		expectedOrganizationId: z.uuid(),
+		requestKey: z.uuid(),
+	}),
+});
+
+async function createEditingProjectFromExport(
+	ctx: ServerContext,
+	{ title, fromExport }: z.infer<typeof reeditSchema>,
+	actor: string | null,
+) {
+	const organizationId = requestOrganizationId(ctx);
+	if (
+		fromExport.expectedOrganizationId.toLowerCase() !==
+		organizationId.toLowerCase()
+	)
+		throw new EditingRequestError(403, "EDIT_ORGANIZATION_CHANGED");
+	// A retry reuses the draft even if the first response was lost or the draft was edited.
+	const digest = hash([
+		"bitovp:export-reedit:v1",
+		organizationId.toLowerCase(),
+		fromExport.projectId.toLowerCase(),
+		fromExport.exportId.toLowerCase(),
+		fromExport.requestKey.toLowerCase(),
+	]);
+	const id = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-8${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+	return ctx.prisma.$transaction(async (tx) => {
+		const run = await readExportRun(
+			tx,
+			organizationId,
+			fromExport.projectId,
+			fromExport.exportId,
+		);
+		if (
+			await tx.editProject.findUnique({ where: { id }, select: { id: true } })
+		)
+			return readEditingProject(id, ctx, tx);
+		const snapshot = anyEditingDocumentSchema.safeParse(run.revision.document);
+		if (!snapshot.success)
+			throw new EditingRequestError(422, "EDIT_EXPORT_SETTINGS_UNAVAILABLE");
+		const document = toCompositionDocument(snapshot.data);
+		const { contentId, mediaVersionId, variant } = run.project;
+		const media = await tx.libraryMediaVersion.findUnique({
+			where: { id: mediaVersionId, organizationId },
+		});
+		if (media?.state !== "READY")
+			throw new EditingRequestError(422, "MEDIA_NOT_READY");
+		const sourceLink = await tx.contentRevision.findFirst({
+			where: { organizationId, contentId, sourceId: media.sourceId },
+			select: { id: true },
+		});
+		if (!sourceLink)
+			throw new EditingRequestError(422, "CONTENT_MEDIA_MISMATCH");
+		if (document.analysisRevisionId) {
+			const evidence = await tx.sceneAnalysisRevision.findFirst({
+				where: {
+					organizationId,
+					id: document.analysisRevisionId,
+					sourceId: media.sourceId,
+					locale: document.locale,
+				},
+				select: { id: true },
+			});
+			if (!evidence)
+				throw new EditingRequestError(422, "ANALYSIS_BINDING_UNVERIFIED");
+		}
+		// Validate project-owned resources against the export's original project.
+		await resolveCompositionResources(
+			tx,
+			document,
+			media,
+			fromExport.projectId,
+		);
+		const created = await tx.editProject.createMany({
+			data: {
+				id,
+				organizationId,
+				contentId,
+				mediaVersionId,
+				title,
+				variant,
+				draft: json(document),
+				createdBy: actor,
+			},
+			skipDuplicates: true,
+		});
+		if (created.count) await retainCompositionResources(tx, id, document);
+		return readEditingProject(id, ctx, tx);
+	});
+}
+
 export async function createEditingProject(
 	value: unknown,
 	actor: string | null,
 ) {
-	const input = createSchema.parse(value);
+	const input = z.union([createSchema, reeditSchema]).parse(value);
 	const ctx = await getServerContext();
+	if ("fromExport" in input)
+		return createEditingProjectFromExport(ctx, input, actor);
 	const media = await ctx.prisma.libraryMediaVersion.findUnique({
 		where: { id: input.mediaVersionId },
 	});

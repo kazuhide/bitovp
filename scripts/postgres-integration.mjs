@@ -57,7 +57,7 @@ export const GROUPS = [
 			"src/lib/server/reset-live-probe.integration.test.ts": 3,
 			"src/lib/server/reset-live-transition-locking.integration.test.ts": 3,
 			"src/lib/server/library-catalog.integration.test.ts": 19,
-			"src/lib/server/library-editing.integration.test.ts": 29,
+			"src/lib/server/library-editing.integration.test.ts": 30,
 			"src/lib/server/library-editing-presentation.integration.test.ts": 2,
 			"src/lib/server/library-media-tasks.integration.test.ts": 5,
 			"src/lib/server/library-media-tasks-generation.integration.test.ts": 2,

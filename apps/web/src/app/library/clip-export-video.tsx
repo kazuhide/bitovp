@@ -25,13 +25,11 @@ export function boundExportLinks(
 export function ClipExportVideo({
 	src,
 	title,
-	autoPlay = false,
-	onFrame,
+	inline = false,
 }: {
 	src: string;
 	title: string;
-	autoPlay?: boolean;
-	onFrame?: (video: HTMLVideoElement) => void;
+	inline?: boolean;
 }) {
 	const { t } = useT();
 	const [failed, setFailed] = useState(false);
@@ -41,13 +39,15 @@ export function ClipExportVideo({
 				controls
 				muted
 				playsInline
-				autoPlay={autoPlay}
-				preload={onFrame ? "auto" : "metadata"}
+				preload={inline ? "none" : "metadata"}
 				src={src}
 				aria-label={title}
-				className="mx-auto block max-h-[65vh] max-w-full rounded-md bg-black object-contain"
+				className={
+					inline
+						? "block aspect-video w-full rounded-md bg-black object-contain"
+						: "mx-auto block max-h-[65vh] max-w-full rounded-md bg-black object-contain"
+				}
 				onError={() => setFailed(true)}
-				onLoadedData={(event) => onFrame?.(event.currentTarget)}
 			/>
 			{failed && (
 				<p role="alert" className="text-amber-300 text-sm">
@@ -56,21 +56,4 @@ export function ClipExportVideo({
 			)}
 		</div>
 	);
-}
-
-/** Make a shelf thumbnail from the video that the operator chose to load. */
-export function exportPoster(video: HTMLVideoElement) {
-	if (!video.videoHeight || !video.videoWidth) return null;
-	const canvas = document.createElement("canvas");
-	const scale = 192 / Math.max(video.videoWidth, video.videoHeight);
-	canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
-	canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
-	try {
-		const context = canvas.getContext("2d");
-		if (!context) return null;
-		context.drawImage(video, 0, 0, canvas.width, canvas.height);
-		return canvas.toDataURL("image/jpeg", 0.82);
-	} catch {
-		return null;
-	}
 }

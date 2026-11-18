@@ -670,17 +670,19 @@ it("keeps clip drafts out of the original analysis layout until requested", asyn
 	expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-it("shows the finished clips shelf on the original page with creation unavailable", async () => {
+it("keeps the clips anchor and full-width original page when creation is unavailable and there are no exports", async () => {
 	apiFetch.mockResolvedValue(pinnedContent);
 	renderWithQuery(
 		<DocumentOrganizationContext.Provider value="00000000-0000-4000-8000-000000000001">
 			<ContentDetailClient id="content" clipEditingAvailable={false} />
 		</DocumentOrganizationContext.Provider>,
 	);
-	expect(
-		await screen.findByRole("complementary", { name: "Finished clips" }),
-	).toHaveAttribute("id", "finished-clips");
-	expect(await screen.findByText("No finished clips yet.")).toBeVisible();
+	expect(await screen.findByRole("region", { name: "Clips" })).toHaveAttribute(
+		"id",
+		"finished-clips",
+	);
+	expect(await screen.findByText("No clips yet.")).toBeVisible();
+	expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
 	expect(screen.getByText("Player")).toBeVisible();
 	expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 	expect(

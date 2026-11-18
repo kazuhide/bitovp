@@ -8,7 +8,8 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
-- Find finished clips, highlights and trailers on their content page, preview one in place, and open a specific successful export from the clip list. The catalog counts exported clips and links to the retained results.
+- Play clips, highlights and trailers directly from their cards on a content page and resize the clips panel on desktop. The catalog counts exported clips and links to the retained results.
+- Review a clip's saved editing settings on its export page and open a new editing timeline from that version. The original project and export are retained.
 - Find earlier clip generation jobs in the library by content name, status and update time, and reopen their progress or results.
 - Turn a Japanese or English trailer instruction into an editable proposal. Confirm the duration and how much of the story to reveal, then review the selected AISA and transcript-based source ranges in the editor.
 - **Target 1.4.0.** Configure experimental MoQ-only Live delivery through encrypted relay credentials and expert JSON plans, with H.264/AAC fMP4 validation and audited Worker execution. A run-bound Player Web X preview uses separate subscriber credentials and an operator-supplied verified MoQ build. Diagnostics distinguish requested and selected Encoder versions/regions and provide bounded task metadata; each relay still needs interoperability verification.

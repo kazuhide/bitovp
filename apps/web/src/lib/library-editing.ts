@@ -6,6 +6,7 @@ import type {
 	EditDocument,
 	SceneAnalysisDocument,
 } from "@bitovp/core";
+import type { StoredEditingSettings } from "./stored-editing-settings";
 
 export type EditingMediaView = {
 	id: string;
@@ -70,6 +71,7 @@ export type StoredEditingExport = {
 	title: string;
 	earlierVersion: boolean;
 	purpose: EditingClipPurpose;
+	settings?: StoredEditingSettings;
 	render: EditingRenderView & {
 		kind: "EXPORT";
 		state: "SUCCEEDED";

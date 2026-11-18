@@ -166,18 +166,18 @@ function ContentDetailView({
 								{t("library.sceneLinkChanged")}
 							</p>
 						)}
-					<div className="grid min-w-0 gap-5 xl:flex xl:items-start">
-						<div className="min-w-0 flex-1">
-							<SourcePanel
-								key={`${id}:${query.data.source.id}:${initialScene ? JSON.stringify(initialScene) : ""}`}
-								source={query.data.source}
-								initialLocale={query.data.locale}
-								initialScene={validSelection}
-								player={player}
-							/>
-						</div>
-						<FinishedClips contentId={id} />
-					</div>
+					<FinishedClips
+						contentId={id}
+						canCreate={clipEditingAvailable && !query.data.archived}
+					>
+						<SourcePanel
+							key={`${id}:${query.data.source.id}:${initialScene ? JSON.stringify(initialScene) : ""}`}
+							source={query.data.source}
+							initialLocale={query.data.locale}
+							initialScene={validSelection}
+							player={player}
+						/>
+					</FinishedClips>
 				</>
 			)}
 		</div>

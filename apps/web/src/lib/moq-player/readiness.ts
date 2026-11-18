@@ -1,7 +1,12 @@
 import { z } from "zod";
 
 export const moqReadinessSchema = z.strictObject({
-	status: z.enum(["ready", "publisher-only", "needs-configuration"]),
+	status: z.enum([
+		"ready",
+		"publisher-only",
+		"needs-configuration",
+		"binding-unverified",
+	]),
 	issues: z.array(
 		z.enum([
 			"credential-unavailable",

@@ -261,8 +261,12 @@ describe("owned MoQ observation writer", () => {
 			onState: vi.fn(),
 		});
 		await writer.ready;
-		const fetch = vi.fn().mockResolvedValue(
-			new Response(
+		const anchor = { type: "recording-started", elapsedMs: 4200 } as const;
+		writer.event(anchor.type, anchor.elapsedMs);
+		const fetch = vi.fn().mockImplementation(async () => {
+			const saved = JSON.parse(mocks.api.mock.calls.at(-1)?.[1].body);
+			expect(saved.events).toContainEqual(anchor);
+			return new Response(
 				JSON.stringify({
 					runId: RUN,
 					sessionId: SESSION,
@@ -275,8 +279,8 @@ describe("owned MoQ observation writer", () => {
 					},
 				}),
 				{ status: 200, headers: { "content-type": "application/json" } },
-			),
-		);
+			);
+		});
 		vi.stubGlobal("fetch", fetch);
 		const abort = new AbortController();
 		await writer.archive(new Blob(["webm!"]), 1000, abort.signal);

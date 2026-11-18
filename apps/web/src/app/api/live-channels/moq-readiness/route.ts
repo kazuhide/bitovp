@@ -1,8 +1,10 @@
 import {
 	CREDENTIAL_PROVIDER_SHAPES,
+	deriveProviderLifecycle,
 	moqDraftVersionSchema,
 	moqPlaybackUrlSchema,
 	moqTrackNamespaceSchema,
+	stepLogSchema,
 } from "@bitovp/core";
 import { z } from "zod";
 import { publicContextError } from "@/lib/auth/public-context-error";
@@ -28,18 +30,20 @@ const requestSchema = z.union([
 			.transform(Number),
 	}),
 ]);
+const moqOutputSchema = z.object({
+	...outputFields,
+	trackNamespace: moqTrackNamespaceSchema,
+});
 const channelPlanSchema = z.object({
-	outputs: z.tuple([
-		z.object({
-			...outputFields,
-			kind: z.literal("MOQ"),
-			trackNamespace: moqTrackNamespaceSchema,
-		}),
-	]),
+	outputs: z.tuple([moqOutputSchema.extend({ kind: z.literal("MOQ") })]),
 });
 const credentialSecretSchema = z.looseObject({
 	playbackUrl: z.unknown().optional(),
 });
+const unverifiedBinding = {
+	status: "binding-unverified",
+	issues: [],
+} satisfies MoqReadiness;
 
 function json(body: unknown, status = 200) {
 	return Response.json(body, {
@@ -139,11 +143,59 @@ export async function GET(req: Request) {
 
 		const channel = await ctx.prisma.liveChannel.findUnique({
 			where: { id: input.channelId, organizationId: ctx.tenant.organizationId },
-			select: { plan: true },
+			select: {
+				plan: true,
+				status: true,
+				stepLog: true,
+				runs: {
+					orderBy: { seq: "desc" },
+					take: 1,
+					select: {
+						status: true,
+						providerStatus: true,
+						providerStatusObservedAt: true,
+						providerUnknownSince: true,
+						providerTerminalAt: true,
+					},
+				},
+			},
 		});
-		const saved = channelPlanSchema.safeParse(channel?.plan);
+		if (!channel) return json({ error: "MoQ channel not found" }, 404);
+		const saved = channelPlanSchema.safeParse(channel.plan);
 		if (!saved.success) return json({ error: "MoQ channel not found" }, 404);
-		const output = saved.data.outputs[0];
+
+		const log = stepLogSchema.safeParse(channel.stepLog);
+		if (!log.success) return json(unverifiedBinding);
+
+		// Start recompiles the channel plan for a re-air or an empty log. A
+		// continuation otherwise executes the channel's existing graph.
+		const latest = channel.runs[0];
+		const reair =
+			channel.status === "STOPPED" ||
+			latest?.status === "STOPPED" ||
+			(latest?.status === "ERROR" &&
+				deriveProviderLifecycle(latest, Date.now()) === "TERMINAL");
+		let output: z.infer<typeof moqOutputSchema> = saved.data.outputs[0];
+		if (!reair && log.data.length > 0) {
+			const operations = log.data.filter((step) =>
+				step.kind.startsWith("CREATE_OUTPUT_"),
+			);
+			const step = operations[0];
+			// Previously attempted outputs use the original run identity and may
+			// retain an older credential binding. Current settings cannot prove it.
+			if (
+				operations.length !== 1 ||
+				step?.kind !== "CREATE_OUTPUT_MOQ" ||
+				step.status !== "PENDING" ||
+				step.resourceId !== undefined ||
+				step.startedAt !== undefined ||
+				step.finishedAt !== undefined
+			)
+				return json(unverifiedBinding);
+			const pending = moqOutputSchema.safeParse(step.payload);
+			if (!pending.success) return json(unverifiedBinding);
+			output = pending.data;
+		}
 		return json(
 			await readSettings(ctx, {
 				credentialId: output.credentialId,

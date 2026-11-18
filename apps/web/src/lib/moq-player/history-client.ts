@@ -233,7 +233,9 @@ export function createMoqObservationWriter(options: Options) {
 	}
 	async function archive(blob: Blob, durationMs: number, signal: AbortSignal) {
 		await ready;
-		await queue;
+		signal.throwIfAborted();
+		// Publish the capture time before the clip can appear in history.
+		await flush();
 		signal.throwIfAborted();
 		const response = await fetch(`${path}/archive`, {
 			method: "PUT",

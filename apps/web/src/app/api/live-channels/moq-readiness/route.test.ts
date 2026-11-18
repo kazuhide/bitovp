@@ -22,13 +22,16 @@ vi.mock("@/lib/server/player-config", () => ({ readPlayerSettings }));
 function vault({
 	provider = "MOQ",
 	playbackUrl,
+	updatedAt = new Date("2026-11-17T00:00:00.000Z"),
 }: {
 	provider?: string;
 	playbackUrl?: string;
+	updatedAt?: Date;
 } = {}) {
 	revealVersioned.mockResolvedValue({
 		id: CREDENTIAL,
 		provider,
+		updatedAt,
 		secret: JSON.stringify({
 			relayUrl: "moqt://publisher.example.test:443/session",
 			authToken: PUBLISH_TOKEN,
@@ -42,6 +45,42 @@ function request(extra = "") {
 		`https://app.example.test/api/live-channels/moq-readiness?credentialId=${CREDENTIAL}&draftVersion=DRAFT_16&namespaceComponents=1${extra}`,
 	);
 }
+
+function channelRequest() {
+	return new Request(
+		`https://app.example.test/api/live-channels/moq-readiness?channelId=${CHANNEL}`,
+	);
+}
+
+const savedPlan = (trackNamespace: string[]) => ({
+	outputs: [
+		{
+			kind: "MOQ",
+			credentialId: CREDENTIAL,
+			draftVersion: "DRAFT_16",
+			trackNamespace,
+		},
+	],
+});
+
+const pendingMoqOutput = {
+	step: "output:moq",
+	kind: "CREATE_OUTPUT_MOQ",
+	status: "PENDING",
+	payload: {
+		credentialId: CREDENTIAL,
+		draftVersion: "DRAFT_16",
+		trackNamespace: ["pending"],
+	},
+	refs: {},
+};
+const committedMoqOutput = {
+	...pendingMoqOutput,
+	status: "DONE",
+	resourceId: "00000000-0000-4000-8000-000000000004",
+	startedAt: "2026-11-17T00:00:02.000Z",
+	finishedAt: "2026-11-17T00:00:04.000Z",
+};
 
 function cloudflarePlayback({
 	operations = ["subscribe"],
@@ -155,30 +194,75 @@ describe("advisory MoQ preview readiness", () => {
 
 	it("uses the tenant-scoped saved channel plan for a re-air", async () => {
 		findUnique.mockResolvedValue({
-			organizationId: ORGANIZATION,
-			plan: {
-				outputs: [
-					{
-						kind: "MOQ",
-						credentialId: CREDENTIAL,
-						draftVersion: "DRAFT_18",
-						trackNamespace: ["one", "two"],
-					},
-				],
-			},
+			status: "STOPPED",
+			runs: [{ status: "STOPPED" }],
+			stepLog: [committedMoqOutput],
+			plan: savedPlan(["one", "two"]),
 		});
-		const response = await GET(
-			new Request(
-				`https://app.example.test/api/live-channels/moq-readiness?channelId=${CHANNEL}`,
-			),
-		);
+		const response = await GET(channelRequest());
 		expect(findUnique).toHaveBeenCalledWith({
 			where: { id: CHANNEL, organizationId: ORGANIZATION },
-			select: { plan: true },
+			select: expect.objectContaining({
+				plan: true,
+				stepLog: true,
+				status: true,
+			}),
 		});
 		expect(await response.json()).toEqual({
 			status: "publisher-only",
 			issues: ["namespace-unsupported"],
+		});
+	});
+
+	it("does not call a resumed output ready after the subscription credential was changed", async () => {
+		vault({
+			playbackUrl: `https://subscriber.example.test/${SUBSCRIBE_TOKEN}`,
+			updatedAt: new Date("2026-11-17T00:00:06.000Z"),
+		});
+		findUnique.mockResolvedValue({
+			status: "ERROR",
+			runs: [{ status: "ERROR", providerStatus: null }],
+			stepLog: [committedMoqOutput],
+			plan: savedPlan(["current"]),
+		});
+		const response = await GET(channelRequest());
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({
+			status: "binding-unverified",
+			issues: [],
+		});
+		expect(revealVersioned).not.toHaveBeenCalled();
+	});
+
+	it("checks the current configuration for a fresh re-air after a provider-terminal error", async () => {
+		findUnique.mockResolvedValue({
+			status: "ERROR",
+			runs: [
+				{
+					status: "ERROR",
+					providerTerminalAt: new Date("2026-11-17T00:01:00.000Z"),
+				},
+			],
+			stepLog: [committedMoqOutput],
+			plan: savedPlan(["current"]),
+		});
+		expect(await (await GET(channelRequest())).json()).toEqual({
+			status: "ready",
+			issues: [],
+		});
+		expect(revealVersioned).toHaveBeenCalledWith(CREDENTIAL);
+	});
+
+	it("checks the pristine output that the same-run start will actually execute", async () => {
+		findUnique.mockResolvedValue({
+			status: "ERROR",
+			runs: [{ status: "ERROR" }],
+			stepLog: [pendingMoqOutput],
+			plan: savedPlan(["imported", "name"]),
+		});
+		expect(await (await GET(channelRequest())).json()).toEqual({
+			status: "ready",
+			issues: [],
 		});
 	});
 

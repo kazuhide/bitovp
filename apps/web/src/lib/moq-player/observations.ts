@@ -39,6 +39,7 @@ const milestoneEvents = [
 	"descriptor-ready",
 	"subscribe-requested",
 	"first-frame",
+	"recording-started",
 ] as const;
 export const moqObservationEventSchema = z.strictObject({
 	elapsedMs: elapsed,

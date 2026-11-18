@@ -19,27 +19,30 @@ function validEpoch(value: number): boolean {
 	return Number.isFinite(value) && Number.isFinite(new Date(value).getTime());
 }
 
-/** Original first-frame client observation, used as an estimated archive origin.
- * Recorder-start UTC and a per-packet UTC mapping were not persisted. */
+/** Use the capture start as the estimated archive origin.
+ * Older observations provide only first-frame time. */
 export function moqArchiveClientOrigin(
 	session: Pick<MoqObservationSession, "startedAt" | "events" | "archive">,
 ): number | null {
 	if (!session?.archive || !Array.isArray(session.events)) return null;
 	const startedAt = utcEpoch(session.startedAt);
-	const frames = session.events.filter(
-		(event) => event?.type === "first-frame",
+	const recordingStarts = session.events.filter(
+		(event) => event?.type === "recording-started",
 	);
-	const frame = frames[0];
+	const anchors = recordingStarts.length
+		? recordingStarts
+		: session.events.filter((event) => event?.type === "first-frame");
+	const anchor = anchors[0];
 	if (
 		startedAt === null ||
-		frames.length !== 1 ||
-		!frame ||
-		!Number.isSafeInteger(frame.elapsedMs) ||
-		frame.elapsedMs < 0 ||
-		frame.elapsedMs > MOQ_OBSERVATION_LIMITS.durationMs
+		anchors.length !== 1 ||
+		!anchor ||
+		!Number.isSafeInteger(anchor.elapsedMs) ||
+		anchor.elapsedMs < 0 ||
+		anchor.elapsedMs > MOQ_OBSERVATION_LIMITS.durationMs
 	)
 		return null;
-	const origin = startedAt + frame.elapsedMs;
+	const origin = startedAt + anchor.elapsedMs;
 	return validEpoch(origin) ? origin : null;
 }
 

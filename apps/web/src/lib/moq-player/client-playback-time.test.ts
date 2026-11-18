@@ -33,6 +33,14 @@ describe("historical client recording origin", () => {
 		value.events[1] = { type: "first-frame", elapsedMs };
 		expect(moqArchiveClientOrigin(value)).toBe(Date.parse(expected));
 	});
+	it("uses the recorded capture start when session ownership arrives after first frame", () => {
+		const value = session();
+		value.events.push({ type: "recording-started", elapsedMs: 5071 });
+		expect(moqArchiveClientOrigin(value)).toBe(
+			Date.parse("2026-11-17T20:37:53.770Z"),
+		);
+	});
+
 	it("accepts zero elapsed and UTC epoch zero without a truthiness fallback", () => {
 		const value = session();
 		value.startedAt = "1970-01-01T00:00:00Z";

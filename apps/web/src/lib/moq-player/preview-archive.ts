@@ -49,6 +49,7 @@ export function createMoqPreviewArchive(options: Options) {
 		recording = createMoqRecording(receivingVideo, {
 			upload: writer.archive,
 			onState: (state) => {
+				if (state === "recording") writer.event("recording-started");
 				options.onRecordingState(state);
 				if (state === "unconfirmed") options.onPersisted();
 			},

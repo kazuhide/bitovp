@@ -137,6 +137,37 @@ describe("owned preview finalization", () => {
 		const saved = JSON.parse(mocks.api.mock.calls.at(-1)?.[1].body);
 		expect(saved.analyticsImpressionId).toBe(CHANNEL);
 	});
+	it("records the actual capture start after a late observation receipt", async () => {
+		let acknowledge!: (value: unknown) => void;
+		mocks.api.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					acknowledge = resolve;
+				}),
+		);
+		mocks.api.mockImplementation(async (path: string) => receipt(path));
+		mocks.recording.mockImplementation((_video, { onState }) => {
+			onState("recording");
+			return { finish: () => Promise.resolve() };
+		});
+		const archive = createMoqPreviewArchive(options());
+		await vi.advanceTimersByTimeAsync(300);
+		archive.event("first-frame", 300);
+		archive.video(document.createElement("video"));
+		await vi.advanceTimersByTimeAsync(3900);
+		acknowledge(receipt(mocks.api.mock.calls[0]?.[0]));
+		await vi.advanceTimersByTimeAsync(0);
+		await archive.finish("stopped");
+
+		const saved = JSON.parse(mocks.api.mock.calls.at(-1)?.[1].body);
+		expect(saved.events).toEqual([
+			{ type: "started", elapsedMs: 0 },
+			{ type: "first-frame", elapsedMs: 300 },
+			{ type: "recording-started", elapsedMs: 4200 },
+			{ type: "stopped", elapsedMs: 4200 },
+		]);
+	});
+
 	it("ends a session acknowledged after Stop and leaves no observation timers running", async () => {
 		let acknowledge!: (value: unknown) => void;
 		mocks.api.mockImplementationOnce(

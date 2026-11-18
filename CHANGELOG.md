@@ -6,6 +6,10 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-11-19
+
+For existing installations, back up the database, apply the additive Prisma migrations, and update Web and Worker together. See the [database upgrade guide](./docs/DATABASE-UPGRADES.md).
+
 ### Added
 
 - Try sample VOD timeline edits, pseudo-live logs, and AISA-informed clip editing in the public browser demo.
@@ -13,16 +17,16 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Review a clip's saved editing settings on its export page and open a new editing timeline from that version. The original project and export are retained.
 - Find earlier clip generation jobs in the library by content name, status and update time, and reopen their progress or results.
 - Turn a Japanese or English trailer instruction into an editable proposal. Confirm the duration and how much of the story to reveal, then review the selected AISA and transcript-based source ranges in the editor.
-- **Target 1.4.0.** Configure experimental MoQ-only Live delivery through encrypted relay credentials and expert JSON plans, with H.264/AAC fMP4 validation and audited Worker execution. A run-bound Player Web X preview uses separate subscriber credentials and an operator-supplied verified MoQ build. Diagnostics distinguish requested and selected Encoder versions/regions and provide bounded task metadata; each relay still needs interoperability verification.
-- **Target 1.4.0.** Retain MoQ preview statistics and received-video recordings after a Live run, with seekable playback, UTC charts, Encoder heartbeat correlation and exact-impression Analytics custom latency readback. Compact job and standalone players show saved observations and an independent client playback clock; historical times are explicitly estimated. Normal sampling intervals stay connected in latency charts while missing measurements remain gaps. Docker persists validated recordings in a dedicated volume.
-- **Target 1.4.0.** Start the MoQ player while observation storage and Analytics prepare independently. Normalize a late browser recording to the 90-second archive limit, show preview configuration checks before Live creation or restart, and link observed playback stages to the same run's Encoder heartbeat.
+- Configure experimental MoQ-only Live delivery through encrypted relay credentials and expert JSON plans, with H.264/AAC fMP4 validation and audited Worker execution. A run-bound Player Web X preview uses separate subscriber credentials and an operator-supplied verified MoQ build. Diagnostics distinguish requested and selected Encoder versions/regions and provide bounded task metadata; each relay still needs interoperability verification.
+- Retain MoQ preview statistics and received-video recordings after a Live run, with seekable playback, UTC charts, Encoder heartbeat correlation and exact-impression Analytics custom latency readback. Compact job and standalone players show saved observations and an independent client playback clock; historical times are explicitly estimated. Normal sampling intervals stay connected in latency charts while missing measurements remain gaps. Docker persists validated recordings in a dedicated volume.
+- Start the MoQ player while observation storage and Analytics prepare independently. Normalize a late browser recording to the 90-second archive limit, show preview configuration checks before Live creation or restart, and link observed playback stages to the same run's Encoder heartbeat.
 
 ### Fixed
 
 - Show live channels newest first by default and open the deletion confirmation from the Actions column, matching the VOD jobs list.
 - Show confirmed Live encoder termination separately from the last run's errors and output evidence. Offer the action that matches the encoder state, keep terminal errors in run history, and explain Live-to-VOD eligibility in the relevant panel.
 - Shorten Live Heartbeat diagnostics with inline help, clear archived-run labels and separate encoder and input timing. Distinguish configured renditions from observed encoding statistics and retain an explicit unavailable state.
-- **Target 1.4.0.** Keep MoQ subscriber capabilities, recordings and raw task downloads unavailable during owner view-as. Exclude provider Task text from ordinary MoQ histories and protect previously saved errors on reads; explicit administrator diagnostics remain available.
+- Keep MoQ subscriber capabilities, recordings and raw task downloads unavailable during owner view-as. Exclude provider Task text from ordinary MoQ histories and protect previously saved errors on reads; explicit administrator diagnostics remain available.
 
 ## [1.3.1] - 2026-11-18
 
@@ -331,6 +335,7 @@ instructions.
 Record implemented changes under **Unreleased** until their tagged release is
 published.
 
+[1.3.2]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.2
 [1.3.1]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.1
 [1.3.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.0
 [1.2.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.2.0

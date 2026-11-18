@@ -43,12 +43,6 @@ const LIFECYCLE_CONFIRMATIONS = {
 		description: "live.retryAisaFinalizationDescription",
 		label: "live.retryAisaFinalization",
 	},
-	"retry-cleanup": {
-		action: "stop",
-		title: "live.retryCleanup",
-		description: "live.retryCleanupDescription",
-		label: "live.retryCleanup",
-	},
 } as const;
 type ConfirmationKind = keyof typeof LIFECYCLE_CONFIRMATIONS;
 
@@ -86,6 +80,7 @@ export function ChannelLifecycleActions({
 	channelId,
 	status,
 	hasEncoding,
+	encodingId,
 	hasError = false,
 	providerTerminal = false,
 	canRetryAisaFinalization = false,
@@ -98,6 +93,7 @@ export function ChannelLifecycleActions({
 	channelId: string;
 	status: LiveChannelStatus;
 	hasEncoding: boolean;
+	encodingId?: string;
 	hasError?: boolean;
 	providerTerminal?: boolean;
 	canRetryAisaFinalization?: boolean;
@@ -112,6 +108,7 @@ export function ChannelLifecycleActions({
 	type Confirmation = {
 		kind: ConfirmationKind;
 		runId: string | undefined;
+		encodingId: string | undefined;
 		generation: number;
 	};
 	const [confirming, setConfirming] = useState<Confirmation | null>(null);
@@ -181,15 +178,18 @@ export function ChannelLifecycleActions({
 	const act = useMutation({
 		mutationFn: ({
 			action,
-			finalizationRunId,
+			finalization,
 		}: {
 			action: LiveChannelAction;
-			finalizationRunId?: string;
-			label?: (typeof LIFECYCLE_CONFIRMATIONS)[ConfirmationKind]["label"];
+			finalization?: { runId: string; encodingId: string };
 		}) =>
 			apiFetch(`/api/live-channels/${channelId}/actions`, {
 				method: "POST",
-				body: JSON.stringify({ action, finalizationRunId }),
+				body: JSON.stringify(
+					finalization
+						? { action: "retry-finalization", ...finalization }
+						: { action },
+				),
 			}),
 		onMutate: () => {
 			setLastError(null);
@@ -206,7 +206,11 @@ export function ChannelLifecycleActions({
 			// : was `${vars.action} accepted.` — a raw slug in an
 			// English frame, on an otherwise-localized screen.
 			const accepted = t("live.actionAccepted", {
-				label: t(vars.label ?? ACTION_LABEL_KEYS[vars.action]),
+				label: t(
+					vars.finalization
+						? "live.retryAisaFinalization"
+						: ACTION_LABEL_KEYS[vars.action],
+				),
 			});
 			setNotice(accepted);
 			//  (audit §5.6): the same sentence, into the page's ONE
@@ -311,7 +315,7 @@ export function ChannelLifecycleActions({
 		managedAisa &&
 		providerTerminal &&
 		canRetryAisaFinalization &&
-		Boolean(runId);
+		Boolean(runId && encodingId);
 	const canStart =
 		!awaitingStartProjection &&
 		!uncleanStop &&
@@ -324,14 +328,7 @@ export function ChannelLifecycleActions({
 		!cancellationPending &&
 		hasEncoding &&
 		!providerTerminal &&
-		(status === "RUNNING" || status === "ERROR" || uncleanStop);
-	// A terminal primary encoder can still have incomplete channel cleanup.
-	const canRetryCleanup =
-		!cancellationPending &&
-		hasEncoding &&
-		providerTerminal &&
-		uncleanStop &&
-		!canRecoverFinalization;
+		(status === "RUNNING" || status === "ERROR");
 	/**
 	 * Restart is for an encoding that is STILL UP. A stopped channel's
 	 * encoding is FINISHED (stopChannel calls stopLiveEncoding), and Bitmovin
@@ -347,14 +344,14 @@ export function ChannelLifecycleActions({
 		!providerTerminal &&
 		(status === "RUNNING" || status === "ERROR");
 	const confirm = (kind: Confirmation["kind"]) =>
-		setConfirming({ kind, generation, runId });
+		setConfirming({ kind, generation, runId, encodingId });
 	const confirmation =
 		confirming?.runId === runId &&
 		confirming?.generation === generation &&
+		confirming.encodingId === encodingId &&
 		((confirming.kind === "stop" && canStop) ||
 			(confirming.kind === "restart" && canRestart) ||
-			(confirming.kind === "retry-finalization" && canRecoverFinalization) ||
-			(confirming.kind === "retry-cleanup" && canRetryCleanup))
+			(confirming.kind === "retry-finalization" && canRecoverFinalization))
 			? confirming.kind
 			: null;
 	const dialogCopy = LIFECYCLE_CONFIRMATIONS[confirmation ?? "stop"];
@@ -424,16 +421,6 @@ export function ChannelLifecycleActions({
 						{t("live.retryAisaFinalization")}
 					</Button>
 				) : null}
-				{canRetryCleanup ? (
-					<Button
-						variant="secondary"
-						size="sm"
-						disabled={act.isPending}
-						onClick={() => confirm("retry-cleanup")}
-					>
-						{t("live.retryCleanup")}
-					</Button>
-				) : null}
 				{canRestart ? (
 					<Button
 						variant="secondary"
@@ -494,15 +481,17 @@ export function ChannelLifecycleActions({
 						disabled={act.isPending}
 						onClick={() => {
 							if (!confirmation) return;
+							if (confirmation === "retry-finalization") {
+								if (runId && encodingId) {
+									act.mutate({
+										action: "stop",
+										finalization: { runId, encodingId },
+									});
+								}
+								return;
+							}
 							act.mutate({
 								action: dialogCopy.action,
-								label:
-									confirmation === "retry-finalization" ||
-									confirmation === "retry-cleanup"
-										? dialogCopy.label
-										: undefined,
-								finalizationRunId:
-									confirmation === "retry-finalization" ? runId : undefined,
 							});
 						}}
 					>

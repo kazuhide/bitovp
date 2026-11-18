@@ -6,6 +6,7 @@ import {
 	isAisaManagedLivePlan,
 	type PersistedProviderState,
 } from "@bitovp/core";
+import type { AppPrismaClient } from "@bitovp/db";
 import { aisaLiveAccessAllowed } from "./aisa-live-access";
 import {
 	projectSafeHeartbeat,
@@ -37,33 +38,74 @@ export function aisaPublisherConnectionAllowed(tenant: unknown): boolean {
 	return aisaLiveAccessAllowed(tenant);
 }
 
-/** Separate an ended run's recovery from the action that stops an active encoder. */
-export function canRetryEndedAisaFinalization(
-	channel: { status: string; bitmovinEncodingId: string | null; plan: unknown },
+/** Separate an ended encoder's recovery from the action that stops an active encoder. */
+export async function canRetryEndedAisaFinalization(
+	prisma: Pick<AppPrismaClient, "liveEffectClaim">,
+	channel: {
+		id: string;
+		status: string;
+		bitmovinEncodingId: string | null;
+		plan: unknown;
+	},
 	run:
 		| (AisaFinalizationRun &
 				PersistedProviderState & {
+					id: string;
 					status: string;
 					error: string | null;
+					cancelRequested: boolean;
 				})
 		| null,
 	nowMs: number,
-): boolean {
+): Promise<boolean> {
 	if (
 		!run ||
+		run.cancelRequested ||
 		!channel.bitmovinEncodingId ||
 		run.bitmovinEncodingId !== channel.bitmovinEncodingId ||
 		!isAisaManagedLivePlan(channel.plan) ||
-		!["ERROR", "STOPPED"].includes(channel.status) ||
-		!["ERROR", "STOPPED"].includes(run.status) ||
 		deriveProviderLifecycle(run, nowMs) !== "TERMINAL"
 	)
 		return false;
 	const finalization = aisaLiveFinalization(run);
+	if (finalization === "PENDING") {
+		const recoverable = ["RUNNING", "STOPPING", "ERROR", "STOPPED"];
+		return (
+			recoverable.includes(channel.status) && recoverable.includes(run.status)
+		);
+	}
+	if (
+		finalization !== "FAILED" ||
+		!["ERROR", "STOPPED"].includes(channel.status) ||
+		!["ERROR", "STOPPED"].includes(run.status)
+	)
+		return false;
+	if (run.status !== "ERROR" || run.error !== "AISA_LIVE_TERMINAL_FAILURE")
+		return true;
+
+	// The final result can land before its durable stop claim is acknowledged.
+	const claim = await prisma.liveEffectClaim.findUnique({
+		where: { idempotencyKey: `manual:stop:${channel.id}:${run.id}` },
+		select: {
+			state: true,
+			action: true,
+			liveChannelId: true,
+			liveChannelRunId: true,
+			providerEncodingId: true,
+			scheduleId: true,
+			targetId: true,
+			requestSha256: true,
+		},
+	});
 	return (
-		finalization === "PENDING" ||
-		(finalization === "FAILED" &&
-			(run.status !== "ERROR" || run.error !== "AISA_LIVE_TERMINAL_FAILURE"))
+		claim?.state === "AMBIGUOUS" &&
+		claim.action === "STOP" &&
+		claim.liveChannelId === channel.id &&
+		claim.liveChannelRunId === run.id &&
+		claim.providerEncodingId === channel.bitmovinEncodingId &&
+		claim.scheduleId === null &&
+		claim.targetId === null &&
+		claim.requestSha256 === null
 	);
 }
 

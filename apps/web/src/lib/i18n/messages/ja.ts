@@ -3441,9 +3441,6 @@ export const ja = {
 		startNewRun: "新しい配信を開始",
 		retryAisaFinalization: "終了処理を再試行",
 		retryAisaFinalizationDescription: "終了した配信の後処理を再試行します。",
-		retryCleanup: "停止処理を再試行",
-		retryCleanupDescription:
-			"残っているエンコードや接続中のファイル入力セッションの停止処理を再試行します。",
 		encoderStopped: "停止済み",
 		encoderActive: "エンコーダ稼働中",
 		encoderStatusUnverified: "エンコーダの状態未確認",

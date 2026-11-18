@@ -459,6 +459,7 @@ function ChannelConsole({
 					channelId={id}
 					status={row.status}
 					hasEncoding={row.bitmovinEncodingId !== null}
+					encodingId={row.bitmovinEncodingId ?? undefined}
 					plan={plan.success ? plan.data : undefined}
 					runId={run?.id}
 					generation={row.liveEffectFenceVersion}
@@ -1703,7 +1704,10 @@ function ChannelConsole({
 				((nextAction.code !== "RECOVER_FROM_ERROR" ||
 					!row.bitmovinEncodingId) &&
 					!(row.status === "STOPPED" && row.error != null) &&
-					!(providerTerminal && storedStatus === "ERROR") &&
+					!(
+						providerTerminal &&
+						(storedStatus !== "STOPPED" || row.canRetryAisaFinalization)
+					) &&
 					!(moqPlayback && nextAction.code === "WAIT_FOR_OUTPUT")) ? (
 					<NextActionPanel
 						action={nextAction}

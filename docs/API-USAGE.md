@@ -458,6 +458,11 @@ STOP intent: Retry409; [re-run/rollout](user-guide/VOD.md#copy-retry-and-cancel)
 
 Queued/provisioning `cancel-start`: [durable generation-bound contract](user-guide/LIVE.md#stop-and-broadcast-again).
 
+For a managed AISA channel with `canRetryAisaFinalization: true`, the authorized
+operator can POST `{"action":"retry-finalization","runId":"<runId>","encodingId":"<encodingId>"}`
+to `/api/live-channels/<channelId>/actions`. Use the current run and its encoder
+from the channel detail. A changed binding or ineligible recovery returns 409.
+
 `GET /api/live/orphan-inventory?bitmovinAccountId=<uuid>`: VIEWER/manual/read-only,
 `no-store`; returns account ID, ISO `checkedAt`, counts: `running` (non-terminal),
 `unexplained` (untracked), `contradicted` (terminal-channel mismatch), `inFlight`

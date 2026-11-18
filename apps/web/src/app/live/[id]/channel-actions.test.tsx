@@ -100,12 +100,13 @@ describe("ChannelLifecycleActions — restart is only offered where it can work 
 		).toBeNull();
 	});
 
-	it("targets finalization recovery at the ended AISA run", async () => {
+	it("targets finalization recovery at the ended AISA encoder while local state is running", async () => {
 		wrap(
 			<ChannelLifecycleActions
 				channelId={CHANNEL_ID}
 				runId={RUN_ID}
-				status="ERROR"
+				encodingId="encoder-1"
+				status="RUNNING"
 				hasEncoding
 				providerTerminal
 				managedAisa
@@ -128,7 +129,11 @@ describe("ChannelLifecycleActions — restart is only offered where it can work 
 				`/api/live-channels/${CHANNEL_ID}/actions`,
 				{
 					method: "POST",
-					body: JSON.stringify({ action: "stop", finalizationRunId: RUN_ID }),
+					body: JSON.stringify({
+						action: "retry-finalization",
+						runId: RUN_ID,
+						encodingId: "encoder-1",
+					}),
 				},
 			),
 		);
@@ -151,11 +156,37 @@ describe("ChannelLifecycleActions — restart is only offered where it can work 
 		).toBe(false);
 	});
 
-	it("keeps Stop available when a locally stopped channel has an unconfirmed error", () => {
+	it("discards finalization confirmation after the encoder changes on the same run", async () => {
+		const ended = {
+			channelId: CHANNEL_ID,
+			runId: RUN_ID,
+			status: "STOPPING" as const,
+			hasEncoding: true,
+			providerTerminal: true,
+			managedAisa: true,
+			canRetryAisaFinalization: true,
+		};
+		const view = wrap(
+			<ChannelLifecycleActions {...ended} encodingId="encoder-1" />,
+		);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Retry finalization" }),
+		);
+		expect(screen.getByRole("dialog")).toBeInTheDocument();
+		view.rerender(
+			<ChannelLifecycleActions {...ended} encodingId="encoder-2" />,
+		);
+		expect(screen.queryByRole("dialog")).toBeNull();
+		expect(
+			apiFetch.mock.calls.some(([, init]) => init?.method === "POST"),
+		).toBe(false);
+	});
+
+	it("keeps Stop available when an assigned encoder's error has no terminal confirmation", () => {
 		wrap(
 			<ChannelLifecycleActions
 				channelId={CHANNEL_ID}
-				status="STOPPED"
+				status="ERROR"
 				hasEncoding
 				hasError
 			/>,
@@ -163,8 +194,7 @@ describe("ChannelLifecycleActions — restart is only offered where it can work 
 		expect(screen.getByRole("button", { name: "Stop channel" })).toBeEnabled();
 	});
 
-	it("offers cleanup recovery for a stopped error even after confirming the encoder ended", async () => {
-		apiFetch.mockResolvedValue({ action: "stop", status: "STOPPED" });
+	it("does not offer a channel-wide stop from an ended encoder with a retained cleanup error", () => {
 		wrap(
 			<ChannelLifecycleActions
 				channelId={CHANNEL_ID}
@@ -178,18 +208,7 @@ describe("ChannelLifecycleActions — restart is only offered where it can work 
 			screen.queryByRole("button", { name: "Start a new run" }),
 		).toBeNull();
 		expect(screen.queryByRole("button", { name: "Stop channel" })).toBeNull();
-		await userEvent.click(
-			screen.getByRole("button", { name: "Retry cleanup" }),
-		);
-		await userEvent.click(
-			within(screen.getByRole("dialog")).getByRole("button", {
-				name: "Retry cleanup",
-			}),
-		);
-		expect(apiFetch).toHaveBeenCalledWith(
-			`/api/live-channels/${CHANNEL_ID}/actions`,
-			{ method: "POST", body: JSON.stringify({ action: "stop" }) },
-		);
+		expect(screen.queryByRole("button", { name: "Retry cleanup" })).toBeNull();
 	});
 
 	it("removes live RTMP controls once the provider reports termination", () => {

@@ -123,16 +123,6 @@ export function HeartbeatLogPanel({
 	// stays fixed when another airing starts. The channel owner keys this panel.
 	const [selectedRunId, setSelectedRunId] = useState<string>();
 	const latestRunId = currentRunId ?? runOptions[0]?.id ?? null;
-	const latestRun = runOptions.find((option) => option.id === latestRunId);
-	const latestEndedLabel =
-		currentRunEnded && latestRun?.id === currentRunId
-			? [
-					t("pushLog.latestEnded", { n: latestRun.seq }),
-					latestRun.endedAt ? formatDateTime(latestRun.endedAt) : null,
-				]
-					.filter(Boolean)
-					.join(" · ")
-			: undefined;
 	const correlation =
 		selectedRunId === undefined ? initialCorrelation : undefined;
 	const requested = correlation?.kind === "requested" ? correlation : null;
@@ -149,15 +139,11 @@ export function HeartbeatLogPanel({
 			? null
 			: selectedRunId || latestRunId;
 	const selectedValue = selectedRunId ?? requested?.runId ?? "";
-	const pinnedLatest = selectedValue !== "" && selectedValue === latestRunId;
-	const followLatestLabel =
-		latestEndedLabel !== undefined && !pinnedLatest
-			? latestEndedLabel
-			: t(
-					currentRunActive && !currentRunEnded && !pinnedLatest
-						? "pushLog.current"
-						: "pushLog.followLatest",
-				);
+	const followLatestLabel = t(
+		currentRunActive && !currentRunEnded && selectedValue !== latestRunId
+			? "pushLog.current"
+			: "pushLog.followLatest",
+	);
 	const timeWindow = requested && requestedKnown ? requested : undefined;
 	const log = useInfiniteQuery({
 		queryKey: ["live-run-heartbeat-log", channelId, runId],
@@ -263,20 +249,18 @@ export function HeartbeatLogPanel({
 						onChange={(event) => setSelectedRunId(event.target.value)}
 					>
 						<option value="">{followLatestLabel}</option>
-						{runOptions
-							.filter(
-								(option) =>
-									latestEndedLabel === undefined ||
-									pinnedLatest ||
-									option.id !== latestRunId,
-							)
-							.map((option) => (
-								<option key={option.id} value={option.id}>
-									{option.id === latestRunId && latestEndedLabel
-										? latestEndedLabel
-										: `${t("runs.seq", { n: option.seq })} · ${option.status} · ${formatDateTime(option.createdAt)}`}
-								</option>
-							))}
+						{runOptions.map((option) => (
+							<option key={option.id} value={option.id}>
+								{currentRunEnded && option.id === currentRunId
+									? [
+											t("pushLog.latestEnded", { n: option.seq }),
+											option.endedAt ? formatDateTime(option.endedAt) : null,
+										]
+											.filter(Boolean)
+											.join(" · ")
+									: `${t("runs.seq", { n: option.seq })} · ${option.status} · ${formatDateTime(option.createdAt)}`}
+							</option>
+						))}
 					</select>
 				</label>
 				{run?.summary && !timeWindow ? (

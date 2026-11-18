@@ -157,26 +157,87 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("HeartbeatLogPanel", () => {
-	it("identifies the confirmed ended latest run without duplicating it in the selector", async () => {
+	it.each([
+		"pinned",
+		"following",
+	] as const)("keeps the run selector %s after a confirmed ended run", async (selection) => {
 		mockApi("ADMIN");
-		renderWithQuery(
+		const original = apiFetch.getMockImplementation();
+		if (!original) throw new Error("fixture implementation missing");
+		let nextRunStarted = false;
+		const nextRun = {
+			...PAGE_ONE.run,
+			id: NEXT_RUN_ID,
+			seq: 4,
+			status: "RUNNING",
+			endedAt: null,
+		};
+		apiFetch.mockImplementation(async (url: string) => {
+			if (url === `/api/live-channels/${CHANNEL_ID}/runs`) {
+				const { runs } = await original(url);
+				return { runs: nextRunStarted ? [nextRun, ...runs] : runs };
+			}
+			if (url.includes("heartbeat-receipts")) {
+				const run = url.includes(`/runs/${NEXT_RUN_ID}/`)
+					? nextRun
+					: PAGE_ONE.run;
+				return { run, rows: [] };
+			}
+			if (url.includes(`/runs/${NEXT_RUN_ID}/heartbeats?`)) {
+				return { run: nextRun, rows: [], latestEvents: [] };
+			}
+			return original(url);
+		});
+		const view = renderWithQuery(
 			<HeartbeatLogPanel
 				channelId={CHANNEL_ID}
 				currentRunId={RUN_ID}
 				currentRunStatus="ERROR"
 				currentRunEnded
+				open
 			/>,
 		);
 		const opt = await screen.findByRole("option", { name: /Run #3 · Ended ·/ });
-		expect(opt).toHaveProperty("selected", true);
+		expect(opt).toHaveAttribute("value", RUN_ID);
 		expect(screen.getAllByRole("option", { name: /Run #3/ })).toHaveLength(1);
-		expect(screen.queryByRole("option", { name: /Current run/ })).toBeNull();
+		expect(
+			screen.getByRole("option", { name: "Follow latest run" }),
+		).toHaveProperty("selected", true);
+		await screen.findByText("No Push receipts");
+		const selector = screen.getByRole("combobox");
+		if (selection === "pinned") await userEvent.selectOptions(selector, opt);
+
+		nextRunStarted = true;
+		view.rerender(
+			<HeartbeatLogPanel
+				channelId={CHANNEL_ID}
+				currentRunId={NEXT_RUN_ID}
+				currentRunStatus="RUNNING"
+				currentRunActive
+				open
+			/>,
+		);
+		await screen.findByRole("option", { name: /Run #4 · RUNNING/ });
+		const expectedRunId = selection === "pinned" ? RUN_ID : NEXT_RUN_ID;
+		expect(selector).toHaveValue(selection === "pinned" ? RUN_ID : "");
+		const path = `/api/live-channels/${CHANNEL_ID}/runs/${expectedRunId}`;
 		expect(
 			screen.getByRole("link", { name: "Export JSON (admin)" }),
-		).toHaveAttribute(
-			"href",
-			`/api/live-channels/${CHANNEL_ID}/runs/${RUN_ID}/heartbeats/export`,
-		);
+		).toHaveAttribute("href", `${path}/heartbeats/export`);
+		for (const resource of ["heartbeats", "heartbeat-receipts"]) {
+			await waitFor(() =>
+				expect(apiFetch).toHaveBeenCalledWith(
+					expect.stringContaining(`${path}/${resource}?`),
+				),
+			);
+		}
+		if (selection === "pinned") {
+			expect(
+				apiFetch.mock.calls.some(([url]) =>
+					String(url).includes(`/runs/${NEXT_RUN_ID}/heartbeat`),
+				),
+			).toBe(false);
+		}
 	});
 
 	it("puts poll column definitions in the help control", async () => {

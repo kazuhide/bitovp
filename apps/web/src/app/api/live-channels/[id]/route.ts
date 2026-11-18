@@ -217,11 +217,12 @@ export async function GET(req: Request, { params }: RouteParams) {
 							aisaFeatureAllowed: true,
 							canRetryAisaFinalization:
 								channel.origin !== "AISA_IMPORTED" &&
-								canRetryEndedAisaFinalization(
+								(await canRetryEndedAisaFinalization(
+									ctx.prisma,
 									channel,
 									currentRun,
 									observedNow.getTime(),
-								),
+								)),
 						}
 					: {}),
 				// review-260 127-A5 (folded into #126): heartbeat freshness must

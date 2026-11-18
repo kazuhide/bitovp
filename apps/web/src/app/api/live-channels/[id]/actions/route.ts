@@ -73,6 +73,7 @@ type EffectPlan = {
 };
 
 type EffectPlanFailure = { error: string; code: CustomerErrorCode };
+type FinalizationTarget = { runId: string; encodingId: string };
 
 function providerRefusalCode(
 	view: ProviderLifecycleView,
@@ -104,6 +105,7 @@ async function effectPlan(
 	prisma: Pick<AppPrismaClient, "liveChannelRun">,
 	liveChannelId: string,
 	channelEncodingId: string | null,
+	target?: FinalizationTarget,
 ): Promise<EffectPlan | EffectPlanFailure> {
 	const latest = await prisma.liveChannelRun.findFirst({
 		where: { liveChannelId },
@@ -129,6 +131,18 @@ async function effectPlan(
 		};
 	}
 	const lifecycle = deriveProviderLifecycle(latest, Date.now());
+	if (
+		target &&
+		(latest.id !== target.runId ||
+			latest.bitmovinEncodingId !== target.encodingId ||
+			latest.cancelRequested ||
+			lifecycle !== "TERMINAL")
+	) {
+		return {
+			error: "The selected run changed before finalization recovery",
+			code: "LIVE_ACTION_NOT_STOPPABLE",
+		};
+	}
 	return {
 		runId: latest.id,
 		cancelRequested: latest.cancelRequested,
@@ -573,9 +587,11 @@ const actionSchema = z.discriminatedUnion("action", [
 		generation: z.number().int().min(0),
 		runId: z.uuid().optional(),
 	}),
-	z.object({
-		action: z.literal("stop"),
-		finalizationRunId: z.uuid().optional(),
+	z.object({ action: z.literal("stop") }),
+	z.strictObject({
+		action: z.literal("retry-finalization"),
+		runId: z.uuid(),
+		encodingId: z.string().min(1),
 	}),
 	z.object({ action: z.literal("restart") }),
 	z.object({
@@ -669,7 +685,9 @@ export async function POST(req: Request, { params }: RouteParams) {
 		}
 		if (
 			aisaManaged &&
-			!["start", "stop", "cancel-start"].includes(action.action)
+			!["start", "stop", "cancel-start", "retry-finalization"].includes(
+				action.action,
+			)
 		) {
 			return jsonError(
 				409,
@@ -1074,6 +1092,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 					{ status: 202 },
 				);
 			}
+			case "retry-finalization":
 			case "stop": {
 				if (!row.bitmovinEncodingId) {
 					return codedError(
@@ -1088,10 +1107,18 @@ export async function POST(req: Request, { params }: RouteParams) {
 							orderBy: { seq: "desc" },
 						})
 					: null;
+				const finalizationTarget =
+					action.action === "retry-finalization" ? action : undefined;
 				if (
-					action.finalizationRunId &&
-					(latestAisaRun?.id !== action.finalizationRunId ||
-						!canRetryEndedAisaFinalization(row, latestAisaRun, Date.now()))
+					finalizationTarget &&
+					(latestAisaRun?.id !== finalizationTarget.runId ||
+						row.bitmovinEncodingId !== finalizationTarget.encodingId ||
+						!(await canRetryEndedAisaFinalization(
+							ctx.prisma,
+							row,
+							latestAisaRun,
+							Date.now(),
+						)))
 				) {
 					return codedError(
 						409,
@@ -1099,13 +1126,15 @@ export async function POST(req: Request, { params }: RouteParams) {
 						"LIVE_ACTION_NOT_STOPPABLE",
 					);
 				}
-				const allowAisaRecovery = Boolean(
-					latestAisaRun?.aisaAnalysisId &&
-						latestAisaRun.bitmovinEncodingId === row.bitmovinEncodingId &&
-						(aisaLiveFinalization(latestAisaRun) === "PENDING" ||
-							(["STOPPED", "ERROR"].includes(row.status) &&
-								aisaLiveFinalization(latestAisaRun) === "FAILED")),
-				);
+				const allowAisaRecovery =
+					Boolean(finalizationTarget) ||
+					Boolean(
+						latestAisaRun?.aisaAnalysisId &&
+							latestAisaRun.bitmovinEncodingId === row.bitmovinEncodingId &&
+							(aisaLiveFinalization(latestAisaRun) === "PENDING" ||
+								(["STOPPED", "ERROR"].includes(row.status) &&
+									aisaLiveFinalization(latestAisaRun) === "FAILED")),
+					);
 				const retryingUnconfirmedStop =
 					allowAisaRecovery ||
 					(row.status === "STOPPED" &&
@@ -1116,6 +1145,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 						ctx.prisma,
 						id,
 						row.bitmovinEncodingId,
+						finalizationTarget,
 					);
 					if ("error" in replayPlan) {
 						return codedError(
@@ -1149,7 +1179,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 					return NextResponse.json(
 						{
 							id,
-							action: "stop",
+							action: action.action,
 							status: row.status,
 							handoffStatus: "QUEUED",
 							idempotentReplay: true,
@@ -1173,24 +1203,13 @@ export async function POST(req: Request, { params }: RouteParams) {
 					ctx.prisma,
 					id,
 					row.bitmovinEncodingId,
+					finalizationTarget,
 				);
 				if ("error" in stopPlan) {
 					return codedError(
 						409,
 						`Stop refused — ${stopPlan.error}`,
 						stopPlan.code,
-					);
-				}
-				if (
-					action.finalizationRunId &&
-					(stopPlan.runId !== action.finalizationRunId ||
-						stopPlan.providerEncodingId !== row.bitmovinEncodingId ||
-						stopPlan.providerRefusalCode !== "LIVE_ACTION_PROVIDER_TERMINAL")
-				) {
-					return codedError(
-						409,
-						"The selected run changed before finalization recovery",
-						"LIVE_ACTION_NOT_STOPPABLE",
 					);
 				}
 				/**
@@ -1232,7 +1251,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 				return NextResponse.json(
 					{
 						id,
-						action: "stop",
+						action: action.action,
 						// The route has durably handed off, but the worker is the sole
 						// STOPPING writer. Report the persisted state rather than claiming a
 						// transition that may not have happened yet.

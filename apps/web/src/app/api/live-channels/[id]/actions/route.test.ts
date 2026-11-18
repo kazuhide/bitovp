@@ -543,12 +543,14 @@ describe("AISA lifecycle admission", () => {
 		}
 	});
 	it.each([
-		null,
-		RUN_ID,
-	])("requeues same-run Analysis readback from an Encoder-only clean STOPPED row (requested run %s)", async (requestedRunId) => {
+		["STOPPED", false],
+		["STOPPED", true],
+		["RUNNING", true],
+		["STOPPING", true],
+	] as const)("requeues Analysis readback after the provider ended (%s, scoped=%s)", async (status, scoped) => {
 		findUnique.mockResolvedValue(
 			channel({
-				status: "STOPPED",
+				status,
 				error: null,
 				plan: {
 					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
@@ -558,7 +560,7 @@ describe("AISA lifecycle admission", () => {
 		runFindFirst.mockResolvedValue({
 			id: RUN_ID,
 			seq: 1,
-			status: "STOPPED",
+			status,
 			bitmovinEncodingId: "bm-live-enc",
 			aisaAnalysisId: "analysis-1",
 			aisaStatus: "RUNNING",
@@ -573,21 +575,29 @@ describe("AISA lifecycle admission", () => {
 			"completed",
 			manualStopSuccess(),
 		);
-		const response = await postAction({
-			action: "stop",
-			...(requestedRunId ? { finalizationRunId: requestedRunId } : {}),
-		});
+		const response = await postAction(
+			scoped
+				? {
+						action: "retry-finalization",
+						runId: RUN_ID,
+						encodingId: "bm-live-enc",
+					}
+				: { action: "stop" },
+		);
 		expect(response.status).toBe(202);
 		expect(queueAdd).toHaveBeenCalledOnce();
 	});
 	it.each([
 		"before lookup",
 		"during lookup",
+		"during replay",
+		"encoder rebound",
 	])("refuses recovery when the ended run was replaced %s", async (when) => {
 		const replacedRunId = "22222222-2222-4222-8222-222222222222";
+		const status = when === "during replay" ? "STOPPING" : "ERROR";
 		findUnique.mockResolvedValue(
 			channel({
-				status: "ERROR",
+				status,
 				plan: {
 					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
 				},
@@ -596,19 +606,24 @@ describe("AISA lifecycle admission", () => {
 		const current = {
 			id: RUN_ID,
 			seq: 1,
-			status: "ERROR",
+			status,
 			bitmovinEncodingId: "bm-live-enc",
 			aisaAnalysisId: "analysis-1",
 			aisaStatus: "RUNNING",
 			providerStatus: "ERROR",
 			providerTerminalAt: new Date(),
 		};
-		if (when === "during lookup") runFindFirst.mockResolvedValueOnce(current);
-		runFindFirst.mockResolvedValue({ ...current, id: replacedRunId, seq: 2 });
+		if (when !== "before lookup") runFindFirst.mockResolvedValueOnce(current);
+		runFindFirst.mockResolvedValue(
+			when === "encoder rebound"
+				? { ...current, bitmovinEncodingId: "different-encoder" }
+				: { ...current, id: replacedRunId, seq: 2 },
+		);
 
 		const response = await postAction({
-			action: "stop",
-			finalizationRunId: RUN_ID,
+			action: "retry-finalization",
+			runId: RUN_ID,
+			encodingId: "bm-live-enc",
 		});
 
 		expect(response.status).toBe(409);

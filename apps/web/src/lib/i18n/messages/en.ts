@@ -3497,9 +3497,6 @@ export const en = {
 		retryAisaFinalization: "Retry finalization",
 		retryAisaFinalizationDescription:
 			"Retry the final processing for the ended run.",
-		retryCleanup: "Retry cleanup",
-		retryCleanupDescription:
-			"Retry stopping any remaining encodings and attached file-input sessions.",
 		encoderStopped: "Stopped",
 		encoderActive: "Encoder running",
 		encoderStatusUnverified: "Encoder state unverified",

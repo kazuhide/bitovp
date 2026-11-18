@@ -23,6 +23,7 @@ import { bindPassiveRequestUrl } from "@/lib/passive-request";
 import { buildHeartbeatCorrelationUrl } from "./heartbeat-correlation";
 import { MoqAnalyticsHistory } from "./moq-analytics-history";
 import { MoqClientPlaybackClock } from "./moq-client-playback-clock";
+import { MoqPlaybackStages } from "./moq-playback-stages";
 
 const clock = (value: number) =>
 	Number.isFinite(value) ? new Date(value).toISOString().slice(11, 19) : "—";
@@ -289,6 +290,12 @@ export function MoqHistoryPanel({
 						) : null}{" "}
 						UTC
 					</p>
+					<MoqPlaybackStages
+						channelId={channelId}
+						runId={runId}
+						startedAt={session.startedAt}
+						events={session.events}
+					/>
 					{session.archive && archiveUrl ? (
 						<div key={session.id} className="max-w-2xl space-y-1">
 							<video
@@ -337,9 +344,7 @@ export function MoqHistoryPanel({
 							{t("moqPlayback.noSamples")}
 						</p>
 					)}
-					{session.samples.length ||
-					session.events.length ||
-					session.analyticsImpressionId ? (
+					{session.samples.length || session.analyticsImpressionId ? (
 						<details>
 							<summary className="cursor-pointer text-xs text-zinc-400">
 								{t("moqPlayback.moreObservations")}
@@ -371,16 +376,6 @@ export function MoqHistoryPanel({
 								</p>
 								{secondary}
 								{buffer}
-								{session.events.length ? (
-									<p className="text-xs text-zinc-500">
-										{session.events
-											.map(
-												(event) =>
-													`${(event.elapsedMs / 1000).toFixed(1)}s ${t(`moqPlayback.event.${event.type}`)}`,
-											)
-											.join(" · ")}
-									</p>
-								) : null}
 								{session.analyticsImpressionId && analyticsEncodingId ? (
 									<MoqAnalyticsHistory
 										channelId={channelId}

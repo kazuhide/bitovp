@@ -13,8 +13,10 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
+	MOQ_ARCHIVE_CAPTURE_STARTED_AT_HEADER,
 	MOQ_OBSERVATION_LIMITS,
 	type MoqArchiveMetadata,
+	moqArchiveCaptureStartedAtSchema,
 } from "@/lib/moq-player/observations";
 import {
 	EXPECTED_ORGANIZATION_QUERY,
@@ -176,6 +178,18 @@ export async function putMoqArchive(
 			Number(declared) > MOQ_OBSERVATION_LIMITS.archiveDurationMs
 		)
 			throw new MoqObservationError(400, "MOQ_ARCHIVE_DURATION_INVALID");
+		const capture = moqArchiveCaptureStartedAtSchema
+			.optional()
+			.safeParse(
+				req.headers.get(MOQ_ARCHIVE_CAPTURE_STARTED_AT_HEADER) ?? undefined,
+			);
+		if (
+			!capture.success ||
+			(capture.data !== undefined &&
+				Date.parse(capture.data) < Date.parse(previous.startedAt))
+		)
+			throw new MoqObservationError(400, "MOQ_ARCHIVE_CAPTURE_TIME_INVALID");
+		const captureStartedAt = capture.data;
 		const key = `${ctx.tenant.organizationId}:${run.id}:${previous.id}`;
 		if (archiveUploads.has(key))
 			throw new MoqObservationError(409, "MOQ_ARCHIVE_SESSION_BUSY");
@@ -191,7 +205,11 @@ export async function putMoqArchive(
 			throw new MoqObservationError(400, "MOQ_ARCHIVE_WEBM_REQUIRED");
 		const uploadSha256 = createHash("sha256").update(bytes).digest("hex");
 		if (previous.archive) {
-			if (previous.archiveUploadSha256 !== uploadSha256)
+			if (
+				previous.archiveUploadSha256 !== uploadSha256 ||
+				(captureStartedAt !== undefined &&
+					previous.archive.captureStartedAt !== captureStartedAt)
+			)
 				throw new MoqObservationError(409, "MOQ_ARCHIVE_ALREADY_SAVED");
 			const directory = await archiveDirectory(
 				ctx.tenant.organizationId,
@@ -258,6 +276,7 @@ export async function putMoqArchive(
 			sha256,
 			durationMs,
 			recordedAt: new Date().toISOString(),
+			...(captureStartedAt === undefined ? {} : { captureStartedAt }),
 		};
 		const saved = await ctx.prisma.$transaction(async (tx) => {
 			await tx.$queryRaw`SELECT id FROM "LiveChannelRun" WHERE id = ${params.runId}::uuid FOR UPDATE`;
@@ -270,7 +289,11 @@ export async function putMoqArchive(
 				throw new MoqObservationError(404, "MOQ_HISTORY_SESSION_NOT_FOUND");
 			await assertMoqObservationWritable(ctx, params, fresh, session, tx);
 			if (session.archive) {
-				if (session.archiveUploadSha256 !== uploadSha256)
+				if (
+					session.archiveUploadSha256 !== uploadSha256 ||
+					(captureStartedAt !== undefined &&
+						session.archive.captureStartedAt !== captureStartedAt)
+				)
 					throw new MoqObservationError(409, "MOQ_ARCHIVE_ALREADY_SAVED");
 				return session.archive;
 			}

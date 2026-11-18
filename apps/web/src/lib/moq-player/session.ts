@@ -2,6 +2,7 @@ import {
 	MOQ_ARCHIVE_SAVE_TIMEOUT_MS,
 	MOQ_PLAYER_DISPOSE_TIMEOUT_MS,
 } from "../../../config/moq-policy";
+import type { MoqPlaybackStage } from "./observations";
 import type {
 	MoqPlaybackDescriptor,
 	MoqPlayer,
@@ -21,6 +22,7 @@ export function createMoqPlayback(
 	telemetry?: {
 		startedAt: number;
 		onStatistics(value: MoqVideoStatistics): void;
+		onStage?(type: MoqPlaybackStage): void;
 		onVideo?(video: HTMLVideoElement): void;
 		beforeDispose?(): Promise<void>;
 	},
@@ -48,6 +50,7 @@ export function createMoqPlayback(
 		host,
 		(video) => {
 			if (!closed) {
+				telemetry?.onStage?.("first-frame");
 				telemetry?.onVideo?.(video);
 				onProgress();
 			}
@@ -166,6 +169,7 @@ export function createMoqPlayback(
 			source.logLevel = 0;
 			source.setTargetBufferLevel(2);
 			source.setVolume(0);
+			telemetry?.onStage?.("subscribe-requested");
 			await source.play();
 		} catch {
 			if (!closed) onFailure();

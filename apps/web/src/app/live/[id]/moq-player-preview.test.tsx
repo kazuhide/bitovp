@@ -29,8 +29,10 @@ vi.mock("@/lib/api", () => ({
 				updatedAt: value.startedAt,
 				archive: null,
 			};
-			mocks.observation(session);
-			return Promise.resolve({ runId, session });
+			return Promise.resolve(mocks.observation(session)).then(() => ({
+				runId,
+				session,
+			}));
 		}
 		return Promise.resolve({
 			runId,
@@ -146,7 +148,9 @@ describe("explicit MoQ preview", () => {
 		const liveHost = rendered.container.querySelector(
 			`[data-moq-live-host="${RUN}"]`,
 		);
-		rendered.rerender(view(RUN, false));
+		await act(async () => {
+			rendered.rerender(view(RUN, false));
+		});
 		const saved = rendered.container.querySelector(
 			`[data-moq-history="${RUN}"]`,
 		);
@@ -331,6 +335,73 @@ describe("explicit MoQ preview", () => {
 		).toHaveTextContent("Unmeasured");
 		expect(document.body.innerHTML).not.toContain("SYNTHETIC_");
 	});
+	it("starts rendering while the first history receipt and Analytics collector are pending", async () => {
+		let acknowledge!: () => void;
+		mocks.observation.mockReturnValueOnce(
+			new Promise<void>((resolve) => {
+				acknowledge = resolve;
+			}),
+		);
+		mocks.api.mockResolvedValue({
+			...descriptor,
+			analytics: {
+				licenseKey: "SYNTHETIC_ANALYTICS_SECRET",
+				licenseKeySha256: "a".repeat(64),
+				videoId: `bitovp-moq:${descriptor.encodingId}:${RUN}`,
+				collectorVersion: "2.62.0",
+				latencyField: "customData1",
+			},
+		});
+		const rendered = renderWithQuery(view());
+		await userEvent.click(screen.getByRole("button", { name: "Play" }));
+		await waitFor(() => expect(source.play).toHaveBeenCalledOnce());
+		const collector = document.querySelector("[data-bitovp-moq-analytics]");
+		expect(collector).toBeInTheDocument();
+		expect(
+			rendered.container.querySelector(
+				'[data-moq-playback-stage="subscribe-requested"]',
+			),
+		).toBeInTheDocument();
+
+		const capture = vi.fn(() => {
+			throw new Error("test video has no supported recorder");
+		});
+		Object.assign(video, { captureStream: capture });
+		vi.stubGlobal("MediaRecorder", class {});
+		act(() => {
+			frames = 3;
+			video.currentTime = 1;
+			video.dispatchEvent(new Event("timeupdate"));
+		});
+		expect(rendered.container.querySelector("#moq-preview")).toHaveAttribute(
+			"data-moq-phase",
+			"frames",
+		);
+		expect(
+			rendered.container.querySelector(
+				'[data-moq-playback-stage="first-frame"]',
+			),
+		).toBeInTheDocument();
+		expect(capture).not.toHaveBeenCalled();
+		await act(async () => acknowledge());
+		expect(capture).toHaveBeenCalledOnce();
+
+		await userEvent.click(screen.getByRole("button", { name: "Stop" }));
+		await waitFor(() => expect(player.dispose).toHaveBeenCalledOnce());
+		expect(collector).not.toBeInTheDocument();
+		expect(
+			mocks.observation.mock.calls
+				.at(-1)?.[0]
+				.events.map((event: { type: string }) => event.type),
+		).toEqual([
+			"started",
+			"descriptor-ready",
+			"subscribe-requested",
+			"first-frame",
+			"stopped",
+		]);
+	});
+
 	it("starts only on Play, keeps secrets out of the DOM and waits for actual video progress", async () => {
 		renderWithQuery(view());
 		expect(mocks.api).not.toHaveBeenCalled();

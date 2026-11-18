@@ -32,9 +32,30 @@ export const moqObservationSampleSchema = z.strictObject({
 		})
 		.nullable(),
 });
+const terminalEvents = [
+	"stopped",
+	"failed",
+	"ended",
+	"observation-limit",
+] as const;
+type TerminalEvent = (typeof terminalEvents)[number];
+const milestoneEvents = [
+	"started",
+	"descriptor-ready",
+	"subscribe-requested",
+	"first-frame",
+	"recording-started",
+] as const;
 export const moqObservationEventSchema = z.strictObject({
 	elapsedMs: elapsed,
-	type: z.enum(["started", "first-frame", "stopped", "failed", "ended"]),
+	type: z.enum([
+		...milestoneEvents,
+		"frame-gap",
+		"frame-resumed",
+		"canvas-unchanged",
+		"canvas-updated",
+		...terminalEvents,
+	]),
 });
 const updateFields = {
 	startedAt: z.iso.datetime(),
@@ -95,12 +116,19 @@ export const moqObservationUpdateSchema = moqObservationPublicUpdateSchema
 					"Analytics impression requires its descriptor license fingerprint",
 			});
 	});
+export const MOQ_ARCHIVE_CAPTURE_STARTED_AT_HEADER =
+	"X-BitOVP-Moq-Capture-Started-At";
+export const moqArchiveCaptureStartedAtSchema = z.iso.datetime({
+	precision: 3,
+});
+
 export const moqArchiveMetadataSchema = z.strictObject({
 	contentType: z.literal("video/webm"),
 	bytes: z.number().int().min(1).max(MOQ_OBSERVATION_LIMITS.archiveBytes),
 	sha256: z.string().regex(/^[0-9a-f]{64}$/),
 	durationMs: z.number().min(1).max(MOQ_OBSERVATION_LIMITS.archiveDurationMs),
 	recordedAt: z.iso.datetime(),
+	captureStartedAt: moqArchiveCaptureStartedAtSchema.optional(),
 });
 export const moqObservationSessionSchema =
 	moqObservationPublicUpdateSchema.safeExtend({
@@ -129,6 +157,33 @@ export const moqObservationHistorySchema = z.strictObject({
 });
 export type MoqObservationSample = z.infer<typeof moqObservationSampleSchema>;
 export type MoqObservationEvent = z.infer<typeof moqObservationEventSchema>;
+export type MoqPlaybackStage = Exclude<
+	MoqObservationEvent["type"],
+	"started" | TerminalEvent
+>;
+
+/** Keep an append-only prefix and reserve the final slot for the observation outcome. */
+export function appendMoqObservationEvent(
+	events: readonly MoqObservationEvent[],
+	event: MoqObservationEvent,
+): readonly MoqObservationEvent[] {
+	const parsed = moqObservationEventSchema.safeParse(event);
+	if (!parsed.success) return events;
+	const previous = events.at(-1);
+	const { elapsedMs, type } = parsed.data;
+	const terminal = terminalEvents.some((value) => value === type);
+	if (
+		events.length >= MOQ_OBSERVATION_LIMITS.events - (terminal ? 0 : 1) ||
+		(previous &&
+			(previous.elapsedMs > elapsedMs ||
+				previous.type === type ||
+				terminalEvents.some((value) => value === previous.type))) ||
+		(milestoneEvents.some((value) => value === type) &&
+			events.some((entry) => entry.type === type))
+	)
+		return events;
+	return [...events, parsed.data];
+}
 export type MoqObservationUpdate = z.infer<typeof moqObservationUpdateSchema>;
 export type MoqArchiveMetadata = z.infer<typeof moqArchiveMetadataSchema>;
 export type MoqObservationSession = z.infer<typeof moqObservationSessionSchema>;

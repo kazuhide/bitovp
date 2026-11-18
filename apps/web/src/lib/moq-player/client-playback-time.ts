@@ -1,6 +1,7 @@
 import {
 	MOQ_OBSERVATION_LIMITS,
 	type MoqObservationSession,
+	moqArchiveCaptureStartedAtSchema,
 } from "./observations";
 
 function utcEpoch(value: string): number | null {
@@ -19,27 +20,42 @@ function validEpoch(value: number): boolean {
 	return Number.isFinite(value) && Number.isFinite(new Date(value).getTime());
 }
 
-/** Original first-frame client observation, used as an estimated archive origin.
- * Recorder-start UTC and a per-packet UTC mapping were not persisted. */
+/** Use the clip's capture timestamp. Older archives can use retained events. */
 export function moqArchiveClientOrigin(
 	session: Pick<MoqObservationSession, "startedAt" | "events" | "archive">,
 ): number | null {
-	if (!session?.archive || !Array.isArray(session.events)) return null;
+	if (!session?.archive) return null;
 	const startedAt = utcEpoch(session.startedAt);
-	const frames = session.events.filter(
-		(event) => event?.type === "first-frame",
+	if (startedAt === null) return null;
+	if (session.archive.captureStartedAt !== undefined) {
+		const capture = moqArchiveCaptureStartedAtSchema.safeParse(
+			session.archive.captureStartedAt,
+		);
+		const origin = capture.success ? utcEpoch(capture.data) : null;
+		return origin !== null && origin >= startedAt ? origin : null;
+	}
+	if (!Array.isArray(session.events)) return null;
+	const recordingStarts = session.events.filter(
+		(event) => event?.type === "recording-started",
 	);
-	const frame = frames[0];
+	const usesCaptureClock = session.events.some(
+		(event) =>
+			event?.type === "descriptor-ready" || event?.type === "observation-limit",
+	);
+	const anchors =
+		recordingStarts.length || usesCaptureClock
+			? recordingStarts
+			: session.events.filter((event) => event?.type === "first-frame");
+	const anchor = anchors[0];
 	if (
-		startedAt === null ||
-		frames.length !== 1 ||
-		!frame ||
-		!Number.isSafeInteger(frame.elapsedMs) ||
-		frame.elapsedMs < 0 ||
-		frame.elapsedMs > MOQ_OBSERVATION_LIMITS.durationMs
+		anchors.length !== 1 ||
+		!anchor ||
+		!Number.isSafeInteger(anchor.elapsedMs) ||
+		anchor.elapsedMs < 0 ||
+		anchor.elapsedMs > MOQ_OBSERVATION_LIMITS.durationMs
 	)
 		return null;
-	const origin = startedAt + frame.elapsedMs;
+	const origin = startedAt + anchor.elapsedMs;
 	return validEpoch(origin) ? origin : null;
 }
 

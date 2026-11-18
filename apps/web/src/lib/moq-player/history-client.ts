@@ -1,10 +1,13 @@
 import { z } from "zod";
 import { apiFetch } from "@/lib/api";
 import {
+	appendMoqObservationEvent,
 	MOQ_OBSERVATION_LIMITS as LIMITS,
+	MOQ_ARCHIVE_CAPTURE_STARTED_AT_HEADER,
 	type MoqObservationEvent,
 	type MoqObservationSample,
 	type MoqObservationUpdate,
+	moqArchiveCaptureStartedAtSchema,
 	moqArchiveMetadataSchema,
 	moqObservationSampleSchema,
 	moqObservationUpdateSchema,
@@ -61,15 +64,17 @@ export function createMoqObservationWriter(options: Options) {
 		? descriptorDigest.data
 		: undefined;
 	let endedAt: string | null = null;
+	let captureStartedAt: string | undefined;
 	const samples: MoqObservationSample[] = [];
-	const events: MoqObservationEvent[] = [{ elapsedMs: 0, type: "started" }];
+	let events: readonly MoqObservationEvent[] = [
+		{ elapsedMs: 0, type: "started" },
+	];
 	let finished = false;
 	let final: Promise<void> | undefined;
 	let analyticsImpressionId: string | undefined;
 	let analyticsBound = false;
 	let analyticsUnavailable = false;
-	const elapsed = () =>
-		Math.max(0, Math.min(LIMITS.durationMs, Math.round(now() - origin)));
+	const elapsed = () => Math.max(0, Math.round(now() - origin));
 	const snapshot = (): MoqObservationUpdate => ({
 		startedAt,
 		endedAt,
@@ -170,9 +175,12 @@ export function createMoqObservationWriter(options: Options) {
 	const interval = setInterval(() => {
 		if (!finished && !requestOutstanding) void flush().catch(() => {});
 	}, 5000);
-	const maximum = setTimeout(() => {
-		void finish("ended").catch(() => {});
-	}, LIMITS.durationMs);
+	const maximum = setTimeout(
+		() => {
+			void finish("observation-limit").catch(() => {});
+		},
+		Math.max(0, Math.ceil(origin + LIMITS.durationMs - now())),
+	);
 	void ready.catch(() => {
 		clearInterval(interval);
 		clearTimeout(maximum);
@@ -180,6 +188,7 @@ export function createMoqObservationWriter(options: Options) {
 	function sample(value: MoqVideoStatistics) {
 		if (finished || samples.length >= LIMITS.samples) return;
 		const at = elapsed();
+		if (at > LIMITS.durationMs) return;
 		const previous = samples.at(-1);
 		if (previous && at - previous.elapsedMs < LIMITS.sampleIntervalMs) return;
 		const dimensions = /^(\d+)×(\d+)$/.exec(value.resolution ?? "");
@@ -212,32 +221,45 @@ export function createMoqObservationWriter(options: Options) {
 		const parsed = moqObservationSampleSchema.safeParse(candidate);
 		if (parsed.success) samples.push(parsed.data);
 	}
-	function event(type: MoqObservationEvent["type"]) {
-		if (
-			finished ||
-			events.length >= LIMITS.events ||
-			events.some((e) => e.type === type)
-		)
-			return;
-		const at = elapsed();
-		if ((events.at(-1)?.elapsedMs ?? 0) <= at)
-			events.push({ elapsedMs: at, type });
+	function event(type: MoqObservationEvent["type"], elapsedMs = elapsed()) {
+		if (!finished)
+			events = appendMoqObservationEvent(events, { elapsedMs, type });
 	}
-	function finish(reason: "stopped" | "failed" | "ended") {
+	function finish(
+		reason: "stopped" | "failed" | "ended" | "observation-limit",
+	) {
 		if (final) return final;
-		event(reason);
+		const at = elapsed();
+		const finishedAt = Math.min(
+			LIMITS.durationMs,
+			Math.max(at, events.at(-1)?.elapsedMs ?? 0),
+		);
+		event(at > LIMITS.durationMs ? "observation-limit" : reason, finishedAt);
 		finished = true;
 		clearInterval(interval);
 		clearTimeout(maximum);
-		endedAt = new Date(Date.parse(startedAt) + elapsed()).toISOString();
+		endedAt = new Date(Date.parse(startedAt) + finishedAt).toISOString();
 		final = ready.then(() => flush());
 		void final.catch(() => {});
 		return final;
 	}
+	function recordingStarted() {
+		if (captureStartedAt !== undefined) return;
+		const offset = elapsed();
+		const stamp = new Date(Date.parse(startedAt) + offset);
+		if (!Number.isFinite(stamp.getTime())) return;
+		const parsed = moqArchiveCaptureStartedAtSchema.safeParse(
+			stamp.toISOString(),
+		);
+		if (!parsed.success) return;
+		captureStartedAt = parsed.data;
+		event("recording-started", offset);
+	}
 	async function archive(blob: Blob, durationMs: number, signal: AbortSignal) {
 		await ready;
-		await queue;
 		signal.throwIfAborted();
+		if (captureStartedAt === undefined)
+			throw new Error("MoQ recording could not be saved");
 		const response = await fetch(`${path}/archive`, {
 			method: "PUT",
 			cache: "no-store",
@@ -245,6 +267,7 @@ export function createMoqObservationWriter(options: Options) {
 			headers: {
 				"Content-Type": "video/webm",
 				"X-BitOVP-Moq-Duration-Ms": String(durationMs),
+				[MOQ_ARCHIVE_CAPTURE_STARTED_AT_HEADER]: captureStartedAt,
 			},
 			body: blob,
 		}).catch(() => {
@@ -259,9 +282,13 @@ export function createMoqObservationWriter(options: Options) {
 			typeof value !== "object" ||
 			!value ||
 			Reflect.get(value, "runId") !== options.runId ||
-			Reflect.get(value, "sessionId") !== id ||
-			!moqArchiveMetadataSchema.safeParse(Reflect.get(value, "archive")).success
+			Reflect.get(value, "sessionId") !== id
 		)
+			throw new MoqArchiveSaveUnconfirmed();
+		const saved = moqArchiveMetadataSchema.safeParse(
+			Reflect.get(value, "archive"),
+		);
+		if (!saved.success || saved.data.captureStartedAt !== captureStartedAt)
 			throw new MoqArchiveSaveUnconfirmed();
 		options.onPersisted?.();
 	}
@@ -282,6 +309,7 @@ export function createMoqObservationWriter(options: Options) {
 		flush,
 		finish,
 		archive,
+		recordingStarted,
 		setAnalyticsImpressionId,
 	};
 }

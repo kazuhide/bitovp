@@ -9,6 +9,10 @@ import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
 import type { MoqHistorySaveState } from "@/lib/moq-player/history-client";
 import { loadMoqPlayer } from "@/lib/moq-player/loader";
+import {
+	appendMoqObservationEvent,
+	type MoqObservationEvent,
+} from "@/lib/moq-player/observations";
 import { createMoqPreviewArchive } from "@/lib/moq-player/preview-archive";
 import type { MoqRecordingState } from "@/lib/moq-player/recording";
 import { createMoqPlayback } from "@/lib/moq-player/session";
@@ -23,6 +27,7 @@ import {
 import { MOQ_ARCHIVE_SAVE_TIMEOUT_MS } from "../../../../config/moq-policy";
 import { MoqClientPlaybackClock } from "./moq-client-playback-clock";
 import { type MoqArchiveSave, MoqHistoryPanel } from "./moq-history-panel";
+import { MoqPlaybackStages } from "./moq-playback-stages";
 import { MoqPlayerStatistics } from "./moq-player-statistics";
 
 type Props = {
@@ -45,6 +50,13 @@ type Attempt = {
 	session?: ReturnType<typeof createMoqPlayback>;
 	archive?: ReturnType<typeof createMoqPreviewArchive>;
 	reason: "stopped" | "failed" | "ended";
+	noteStage(type: MoqObservationEvent["type"]): void;
+};
+type PlaybackTrace = {
+	attemptId: number;
+	startedAt: string;
+	events: readonly MoqObservationEvent[];
+	latest: MoqObservationEvent;
 };
 
 export function MoqPlayerPreview(props: Props) {
@@ -78,6 +90,7 @@ function MoqPlaybackAttempt({
 		"ready" | "unavailable" | "not-configured"
 	>("not-configured");
 	const [phase, setPhase] = useState<Phase>("idle");
+	const [trace, setTrace] = useState<PlaybackTrace>();
 	const [cleanupPending, setCleanupPending] = useState(false);
 	const [statistics, setStatistics] = useState<MoqVideoStatistics>(
 		EMPTY_MOQ_VIDEO_STATISTICS,
@@ -92,6 +105,7 @@ function MoqPlaybackAttempt({
 		const attempt = current.current;
 		if (!attempt) return Promise.resolve();
 		current.current = undefined;
+		attempt.noteStage(attempt.reason);
 		attempt.abort.abort();
 		const disposal =
 			attempt.session?.dispose() ??
@@ -146,11 +160,40 @@ function MoqPlaybackAttempt({
 		setRelay(undefined);
 		setRecordingState("idle");
 		setHistoryState("idle");
+		setAnalyticsState("not-configured");
 		if (typeof Reflect.get(window, "WebTransport") !== "function") {
 			setPhase("unavailable");
 			return;
 		}
-		const attempt: Attempt = { abort: new AbortController(), reason: "ended" };
+		const started: MoqObservationEvent = { type: "started", elapsedMs: 0 };
+		setTrace({
+			attemptId: ownIntent,
+			startedAt: startedWall,
+			events: [started],
+			latest: started,
+		});
+		const attempt: Attempt = {
+			abort: new AbortController(),
+			reason: "ended",
+			noteStage(type) {
+				const elapsedMs = Math.max(
+					0,
+					Math.round(performance.now() - startedAt),
+				);
+				const event = { type, elapsedMs };
+				if (mounted.current)
+					setTrace((value) => {
+						if (value?.attemptId !== ownIntent || value.latest.type === type)
+							return value;
+						return {
+							...value,
+							events: appendMoqObservationEvent(value.events, event),
+							latest: event,
+						};
+					});
+				attempt.archive?.event(type, elapsedMs);
+			},
+		};
 		current.current = attempt;
 		const owned = () =>
 			current.current === attempt && !attempt.abort.signal.aborted;
@@ -205,8 +248,7 @@ function MoqPlaybackAttempt({
 					});
 				},
 			});
-			await attempt.archive.ready;
-			if (!owned()) return;
+			attempt.noteStage("descriptor-ready");
 			const factory = await loadMoqPlayer(organizationId);
 			if (!owned() || !host.current) return;
 			attempt.session = createMoqPlayback(
@@ -219,12 +261,16 @@ function MoqPlaybackAttempt({
 				() => {
 					if (owned()) {
 						attempt.reason = "failed";
+						attempt.noteStage("failed");
 						setPhase("failed");
 						setStatistics(EMPTY_MOQ_VIDEO_STATISTICS);
 					}
 				},
 				{
 					startedAt,
+					onStage: (type) => {
+						if (owned()) attempt.noteStage(type);
+					},
 					onVideo: (video) => attempt.archive?.video(video),
 					beforeDispose: () =>
 						attempt.archive?.finish(attempt.reason) ?? Promise.resolve(),
@@ -360,6 +406,15 @@ function MoqPlaybackAttempt({
 					mode="live"
 					active={active && phase === "frames"}
 				/>
+				{trace ? (
+					<MoqPlaybackStages
+						channelId={channelId}
+						runId={runId}
+						startedAt={trace.startedAt}
+						events={trace.events}
+						latest={trace.latest}
+					/>
+				) : null}
 				<MoqPlayerStatistics
 					statistics={statistics}
 					configuration={configuration}

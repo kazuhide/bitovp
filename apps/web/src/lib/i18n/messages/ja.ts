@@ -971,7 +971,7 @@ export const ja = {
 		clientPlaybackTime: "クライアント再生時刻",
 		archivedClientPlaybackTime: "クライアント再生時刻（当時・推定）",
 		archiveClockBasis:
-			"最初のフレームのクライアント観測時刻を基準に録画の再生位置へ換算。録画開始のずれと時計のずれを含む推定値。",
+			"録画開始時刻と再生位置から推定。旧録画では最初のフレームの観測時刻が基準です。",
 		title: "MoQ再生",
 		play: "再生",
 		stop: "停止",
@@ -1067,9 +1067,19 @@ export const ja = {
 			unavailable: "Analyticsを利用できません",
 			"not-configured": "Analytics未設定",
 		},
+		stagesTitle: "再生の進行",
+		observationWindowEnded: "観測区間が終了",
 		event: {
 			started: "開始",
-			"first-frame": "初回フレーム",
+			"descriptor-ready": "再生設定を取得",
+			"subscribe-requested": "購読を要求",
+			"first-frame": "初回描画",
+			"frame-gap": "新しい描画を観測できず",
+			"frame-resumed": "描画を再び観測",
+			"canvas-unchanged": "Canvas の変化を観測できず",
+			"canvas-updated": "Canvas の変化を再び観測",
+			"observation-limit": "観測上限に到達",
+			"recording-started": "録画開始",
 			stopped: "停止",
 			failed: "失敗",
 			ended: "終了",
@@ -2038,6 +2048,30 @@ export const ja = {
 			"親ディレクトリ参照、エンコードされたパス、空白、URLの文字を含まないサブディレクトリを指定してください。",
 		sharedFolder:
 			"Liveのメディアコンテナごとに別の保存先フォルダを指定してください。このパスは別のレンディションと重複しています。",
+	},
+	moqReadiness: {
+		checking: "MoQ プレビュー設定を確認中…",
+		ready: "MoQ プレビュー設定済み",
+		"publisher-only": "配信のみ",
+		"needs-configuration": "MoQ プレビューの設定が必要",
+		"binding-unverified": "既存 MoQ 出力のプレビュー可否は未確認",
+		unavailable: "MoQ プレビュー設定を確認できませんでした",
+		advisory: "Relay 接続と再生は配信開始後に確認します。",
+		recheck: "再確認",
+		"credential-unavailable": "MoQ Relay の資格情報を確認してください。",
+		"namespace-unsupported":
+			"プレビューには namespace が1要素である必要があります。",
+		"subscriber-url-missing":
+			"プレビューを有効にするには購読 URL を設定してください。",
+		"subscriber-url-invalid": "有効な HTTPS の購読 URL を設定してください。",
+		"subscribe-only-required": "購読専用の URL を別に設定してください。",
+		"subscriber-expired":
+			"設定上の有効期限を過ぎています。Cloudflare の購読トークンを更新してください。",
+		"subscriber-draft-mismatch":
+			"プランと同じ MoQT draft の Cloudflare 購読エンドポイントを設定してください。",
+		"player-license-unavailable":
+			"組織の Player ライセンスを確認してください。",
+		"player-bundle-unavailable": "Player Web X バンドルを確認してください。",
 	},
 	liveWizard: {
 		outputWidth: "幅（px）",

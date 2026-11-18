@@ -82,6 +82,51 @@ describe("ChannelDangerZone — delete", () => {
 });
 
 describe("ChannelLifecycleActions — restart is only offered where it can work (ledger #107)", () => {
+	it("shows the server-side MoQ check for a re-air before offering the usual start", async () => {
+		apiFetch.mockImplementation(async (input: string) => {
+			if (input === `/api/live-channels/moq-readiness?channelId=${CHANNEL_ID}`)
+				return {
+					status: "needs-configuration",
+					issues: ["player-bundle-unavailable"],
+				};
+			return { ok: true };
+		});
+		wrap(
+			<ChannelLifecycleActions
+				channelId={CHANNEL_ID}
+				runId={RUN_ID}
+				status="STOPPED"
+				hasEncoding={false}
+				plan={
+					{
+						...rtmpPlan,
+						start: { encodingOption: "CUSTOM" },
+						outputs: [{ kind: "MOQ" }],
+					} as LiveChannelPlan
+				}
+			/>,
+		);
+		const start = screen.getByRole("button", { name: "Start a new run" });
+		expect(start).toBeDisabled();
+		expect(
+			await screen.findByText("MoQ preview needs configuration"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("Verify the Player Web X bundle."),
+		).toBeInTheDocument();
+		expect(
+			apiFetch.mock.calls.some(([, init]) => init?.method === "POST"),
+		).toBe(false);
+		expect(start).toBeEnabled();
+		await userEvent.click(start);
+		await waitFor(() =>
+			expect(apiFetch).toHaveBeenCalledWith(
+				`/api/live-channels/${CHANNEL_ID}/actions`,
+				expect.objectContaining({ method: "POST", body: '{"action":"start"}' }),
+			),
+		);
+	});
+
 	it("offers a fresh run after provider-confirmed termination of an error run", () => {
 		wrap(
 			<ChannelLifecycleActions

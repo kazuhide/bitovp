@@ -37,6 +37,33 @@ function fixture() {
 	return { source, player, host };
 }
 describe("owned MoQ source lifecycle", () => {
+	it("reports the subscription attempt before the SDK play promise resolves", async () => {
+		const { source, player, host } = fixture();
+		let completePlay!: () => void;
+		source.play.mockReturnValue(
+			new Promise<void>((resolve) => {
+				completePlay = resolve;
+			}),
+		);
+		const stage = vi.fn();
+		const session = createMoqPlayback(
+			() => player,
+			descriptor,
+			host,
+			vi.fn(),
+			vi.fn(),
+			{ startedAt: performance.now(), onStatistics: vi.fn(), onStage: stage },
+		);
+		try {
+			await vi.waitFor(() => expect(source.play).toHaveBeenCalledOnce());
+			expect(stage.mock.calls).toEqual([["subscribe-requested"]]);
+		} finally {
+			completePlay();
+			await session.ready;
+			await session.dispose();
+			host.remove();
+		}
+	});
 	it("still tears down the source when recording finalization exceeds its budget", async () => {
 		vi.useFakeTimers();
 		const { player, host } = fixture();

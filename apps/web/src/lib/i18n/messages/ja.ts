@@ -2110,7 +2110,6 @@ export const ja = {
 		runtimeRemaining: "経過 {elapsed} · 残り {remaining}",
 		runtimeCapReached: "経過 {elapsed} · 上限に到達",
 		/* Post-run values freeze at shutdown; they do not include the current time. */
-		runtimeRan: "{duration}",
 		summaryResolvedAlerts: "解決済み {count} 件",
 	},
 	notFound: {

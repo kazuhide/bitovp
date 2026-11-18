@@ -40,7 +40,10 @@ import {
 	routeError,
 	validationError,
 } from "@/lib/server/http";
-import { canRetryEndedAisaFinalization } from "@/lib/server/live-channel-aisa-view";
+import {
+	canRetryEndedAisaFinalization,
+	isExpiredStopDispatch,
+} from "@/lib/server/live-channel-aisa-view";
 import { getLiveChannelQueue } from "@/lib/server/queue";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -259,11 +262,16 @@ function hasExactManualStopIdentity(
 	);
 }
 
+type ManualStopRecovery = {
+	allowAisaRecovery: boolean;
+	allowExpiredAisaDispatch: boolean;
+};
+
 async function inspectManualStopClaim(
 	prisma: Pick<AppPrismaClient, "liveEffectClaim">,
 	liveChannelId: string,
 	plan: EffectPlan,
-	allowAisaRecovery = false,
+	recovery: ManualStopRecovery,
 ): Promise<ManualStopClaimInspection> {
 	const claim = await prisma.liveEffectClaim.findUnique({
 		where: {
@@ -278,6 +286,7 @@ async function inspectManualStopClaim(
 			scheduleId: true,
 			targetId: true,
 			state: true,
+			expiresAt: true,
 		},
 	});
 	if (!claim) {
@@ -298,6 +307,14 @@ async function inspectManualStopClaim(
 				"the durable claim does not match the current manual stop identity",
 		};
 	}
+	// Only an explicit run-bound finalization retry can requeue an expired
+	// dispatch. The worker still checks claim ownership before sending.
+	if (
+		recovery.allowExpiredAisaDispatch &&
+		isExpiredStopDispatch(claim, Date.now())
+	)
+		return { kind: "FAILED" };
+
 	switch (claim.state) {
 		case "FAILED":
 			return { kind: "FAILED" };
@@ -305,10 +322,10 @@ async function inspectManualStopClaim(
 		case "DISPATCHING":
 			return { kind: "OPEN", state: claim.state };
 		case "ACKED":
-			if (allowAisaRecovery) return { kind: "FAILED" };
+			if (recovery.allowAisaRecovery) return { kind: "FAILED" };
 			return { kind: "ACKED" };
 		case "AMBIGUOUS":
-			if (allowAisaRecovery) return { kind: "FAILED" };
+			if (recovery.allowAisaRecovery) return { kind: "FAILED" };
 			return {
 				kind: "REFUSED",
 				reason:
@@ -377,7 +394,7 @@ async function admitManualStop(
 	plan: EffectPlan,
 	admissionFenceVersion: number,
 	mode: "ENQUEUE_OR_REPLAY" | "REPLAY_ONLY",
-	allowAisaRecovery = false,
+	recovery: ManualStopRecovery,
 ): Promise<ManualStopAdmission> {
 	const queue = getLiveChannelQueue();
 	const jobId = `manual-stop-${liveChannelId}-${plan.runId}`;
@@ -385,7 +402,7 @@ async function admitManualStop(
 		prisma,
 		liveChannelId,
 		plan,
-		allowAisaRecovery,
+		recovery,
 	);
 	if (claim.kind === "REFUSED") {
 		return claim;
@@ -409,7 +426,7 @@ async function admitManualStop(
 				prisma,
 				liveChannelId,
 				plan,
-				allowAisaRecovery,
+				recovery,
 			);
 			if (replayClaim.kind === "REFUSED") {
 				return replayClaim;
@@ -439,7 +456,7 @@ async function admitManualStop(
 				reason: `the durable stop claim is ${claim.state.toLowerCase()} but its exact in-progress queue job is missing`,
 			};
 		}
-		if (mode === "REPLAY_ONLY" && !allowAisaRecovery) {
+		if (mode === "REPLAY_ONLY" && !recovery.allowAisaRecovery) {
 			return {
 				kind: "REFUSED",
 				reason: "the matching handoff is no longer in progress",
@@ -453,7 +470,7 @@ async function admitManualStop(
 			kind: "REFUSED",
 			reason: `the durable stop claim is ${claim.state.toLowerCase()} but its exact in-progress queue job is missing`,
 		};
-	} else if (mode === "REPLAY_ONLY" && !allowAisaRecovery) {
+	} else if (mode === "REPLAY_ONLY" && !recovery.allowAisaRecovery) {
 		return {
 			kind: "REFUSED",
 			reason: "no matching in-progress handoff exists",
@@ -495,7 +512,7 @@ async function admitManualStop(
 		prisma,
 		liveChannelId,
 		plan,
-		allowAisaRecovery,
+		recovery,
 	);
 	if (winnerClaim.kind === "REFUSED") {
 		return winnerClaim;
@@ -587,7 +604,11 @@ const actionSchema = z.discriminatedUnion("action", [
 		generation: z.number().int().min(0),
 		runId: z.uuid().optional(),
 	}),
-	z.object({ action: z.literal("stop") }),
+	z.object({
+		action: z.literal("stop"),
+		// Reject the earlier scoped request rather than stripping its run binding.
+		finalizationRunId: z.never().optional(),
+	}),
 	z.strictObject({
 		action: z.literal("retry-finalization"),
 		runId: z.uuid(),
@@ -1140,6 +1161,10 @@ export async function POST(req: Request, { params }: RouteParams) {
 					(row.status === "STOPPED" &&
 						row.error !== null &&
 						row.error !== undefined);
+				const recovery = {
+					allowAisaRecovery,
+					allowExpiredAisaDispatch: finalizationTarget !== undefined,
+				};
 				if (row.status === "STOPPING") {
 					const replayPlan = await effectPlan(
 						ctx.prisma,
@@ -1167,7 +1192,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 						replayPlan,
 						row.liveEffectFenceVersion ?? 0,
 						"REPLAY_ONLY",
-						allowAisaRecovery,
+						recovery,
 					);
 					if (admission.kind === "REFUSED") {
 						return codedError(
@@ -1230,7 +1255,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 					stopPlan,
 					admissionFenceVersion,
 					"ENQUEUE_OR_REPLAY",
-					allowAisaRecovery,
+					recovery,
 				);
 				if (admission.kind === "REFUSED") {
 					return codedError(

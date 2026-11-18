@@ -326,6 +326,8 @@ describe("AISA publisher connection projection", () => {
 		["different-stop-claim", "ERROR", false, true],
 		["acknowledged-stop-claim", "ERROR", false, true],
 		["ambiguous-stop-claim", "ERROR", true, true],
+		["expired-dispatch-stop-claim", "ERROR", true, true],
+		["unexpired-dispatch-stop-claim", "ERROR", false, true],
 	] as const)("projects private retry (%s, %s)", async (state, status, expected, settled) => {
 		if (state !== "viewer") {
 			mocks.tenant = {
@@ -371,7 +373,15 @@ describe("AISA publisher connection projection", () => {
 					state === "different-stop-claim" ? "different-run" : row.runs[0].id,
 				providerEncodingId: encodingId,
 				action: "STOP",
-				state: state === "acknowledged-stop-claim" ? "ACKED" : "AMBIGUOUS",
+				state: state.endsWith("-dispatch-stop-claim")
+					? "DISPATCHING"
+					: state === "acknowledged-stop-claim"
+						? "ACKED"
+						: "AMBIGUOUS",
+				expiresAt:
+					state === "expired-dispatch-stop-claim"
+						? new Date(0)
+						: new Date(Date.now() + 60_000),
 				requestSha256: null,
 				scheduleId: null,
 				targetId: null,

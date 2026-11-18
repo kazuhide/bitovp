@@ -2156,7 +2156,6 @@ export const en = {
 		runtimeCapReached: "{elapsed} elapsed · cap reached",
 		// The POST-MORTEM figure, frozen at the stop. Past tense on purpose:
 		// nothing about it is still running.
-		runtimeRan: "{duration}",
 		summaryResolvedAlerts: "{count} resolved",
 	},
 	notFound: {

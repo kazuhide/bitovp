@@ -169,7 +169,7 @@ export function StatusStrip({
 	const runtimeText = !active
 		? ranForSeconds === null
 			? t("status.none")
-			: t("status.runtimeRan", { duration: formatSeconds(ranForSeconds) })
+			: formatSeconds(ranForSeconds)
 		: elapsedSeconds === null
 			? t("status.none")
 			: remainingSeconds === null

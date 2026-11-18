@@ -128,7 +128,8 @@ describe("catalogue parity", () => {
 		// Window-scoped event absence adds one long value (instrument: 1677).
 		// Historical client-clock reconstruction adds one long explanation (instrument: 1678).
 		// Integrated QC deadline and desktop navigation guidance (runtime measured: 1681).
-		pinWithDriftAid(long.length, 1681, "long");
+		// Shortened Live diagnostics and terminal guidance (runtime measured: 1678).
+		pinWithDriftAid(long.length, 1678, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Runtime measurement includes three-way output labels (deduplicated).
 		// The two MoQ authorization labels add two unique short Japanese values.
@@ -138,7 +139,8 @@ describe("catalogue parity", () => {
 		// Live and estimated historical client-clock labels add two short values (instrument: 3366).
 		// Integrated navigation resize and restore labels (runtime measured: 3368).
 		// MoQ cleanup and unconfirmed recording states (runtime measured: 3370).
-		pinWithDriftAid(short.size, 3370, "short");
+		// Live diagnostics, run outcomes and rendition labels (runtime measured: 3390).
+		pinWithDriftAid(short.size, 3390, "short");
 	});
 
 	/**

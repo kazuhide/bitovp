@@ -38,6 +38,14 @@ export function aisaPublisherConnectionAllowed(tenant: unknown): boolean {
 	return aisaLiveAccessAllowed(tenant);
 }
 
+/** Matches the worker's expiry boundary for recovery of an AISA STOP claim. */
+export function isExpiredStopDispatch(
+	claim: { state: string; expiresAt: Date },
+	nowMs: number,
+): boolean {
+	return claim.state === "DISPATCHING" && claim.expiresAt.getTime() <= nowMs;
+}
+
 /** Separate an ended encoder's recovery from the action that stops an active encoder. */
 export async function canRetryEndedAisaFinalization(
 	prisma: Pick<AppPrismaClient, "liveEffectClaim">,
@@ -88,6 +96,7 @@ export async function canRetryEndedAisaFinalization(
 		where: { idempotencyKey: `manual:stop:${channel.id}:${run.id}` },
 		select: {
 			state: true,
+			expiresAt: true,
 			action: true,
 			liveChannelId: true,
 			liveChannelRunId: true,
@@ -98,7 +107,8 @@ export async function canRetryEndedAisaFinalization(
 		},
 	});
 	return (
-		claim?.state === "AMBIGUOUS" &&
+		claim !== null &&
+		(claim.state === "AMBIGUOUS" || isExpiredStopDispatch(claim, nowMs)) &&
 		claim.action === "STOP" &&
 		claim.liveChannelId === channel.id &&
 		claim.liveChannelRunId === run.id &&

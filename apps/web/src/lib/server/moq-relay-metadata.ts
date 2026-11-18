@@ -42,31 +42,34 @@ function jsonPart(part: string, maxBytes: number): unknown {
 	return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
 }
 
-/** Enumerate the relevant URL decoding layers within a fixed depth. */
+/** Enumerate URL decoding variants within the percent-decoding depth budget. */
 function componentVariants(
 	value: string,
 	formQuery: boolean,
 ): Set<string> | null {
-	const seen = new Set([value]);
-	let frontier = seen;
+	const seen = new Set<string>();
+	let frontier = new Set([value]);
 	for (let pass = 0; pass <= MAX_PERCENT_DECODE_PASSES; pass++) {
-		const next = new Set<string>();
-		for (const candidate of frontier) {
-			if (!candidate.includes("%") && !(formQuery && candidate.includes("+")))
-				continue;
-			// Encode the separator so each layer is read as one value.
-			const field = candidate.replaceAll("&", "%26");
-			const literal = field.replaceAll("+", "%2B");
-			for (const input of formQuery && field !== literal
-				? [field, literal]
-				: [literal]) {
-				const decoded = new URLSearchParams(`value=${input}`).get("value");
-				if (decoded !== null && !seen.has(decoded)) next.add(decoded);
+		const layer = new Set(frontier);
+		if (formQuery) {
+			// Form decoding folds literal plus before percent decoding. Retain
+			// both spellings at this layer, including any remaining escapes.
+			for (const candidate of frontier) {
+				layer.add(candidate.replaceAll("+", " "));
 			}
+		}
+		for (const candidate of layer) seen.add(candidate);
+
+		const next = new Set<string>();
+		for (const candidate of layer) {
+			if (!candidate.includes("%")) continue;
+			// Read a single value, preserving literal separators and plus.
+			const field = candidate.replaceAll("&", "%26").replaceAll("+", "%2B");
+			const decoded = new URLSearchParams(`value=${field}`).get("value");
+			if (decoded !== null && !seen.has(decoded)) next.add(decoded);
 		}
 		if (!next.size) return seen;
 		if (pass === MAX_PERCENT_DECODE_PASSES) return null;
-		for (const decoded of next) seen.add(decoded);
 		frontier = next;
 	}
 	return null;

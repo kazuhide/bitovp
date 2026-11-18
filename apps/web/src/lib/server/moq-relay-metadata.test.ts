@@ -189,6 +189,24 @@ describe("publisher credentials in subscriber URLs", () => {
 		});
 	});
 
+	it("checks the query spelling after folding plus without decoding percent escapes", () => {
+		expect(
+			inspectMoqRelayMetadata(
+				`${relay}/subscriber?capability=issuer+%2Bscope`,
+				"issuer %2Bscope",
+			),
+		).toEqual({ kind: "invalid" });
+	});
+
+	it("does not consume percent depth when folding a fully decoded query", () => {
+		expect(
+			inspectMoqRelayMetadata(
+				`${relay}/subscriber?filter=%2525252B`,
+				publisher,
+			),
+		).toEqual({ kind: "other" });
+	});
+
 	it("preserves genuinely separate credentials and normal URL encoding", () => {
 		expect(
 			inspectMoqRelayMetadata(

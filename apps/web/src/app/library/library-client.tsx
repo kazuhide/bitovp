@@ -68,11 +68,9 @@ export function LibraryClient({
 	useEffect(() => {
 		const location = browseLocation();
 		if (!location) return;
-		window.history.replaceState(
-			window.history.state,
-			"",
-			`${location.pathname}${libraryBrowseSearch(state)}`,
-		);
+		const url = location.pathname + libraryBrowseSearch(state);
+		if (url !== location.pathname + location.search)
+			location.replaceUrl(url, window.history.state);
 	}, [state, browseLocation]);
 	useEffect(() => {
 		const restore = () => {

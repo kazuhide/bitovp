@@ -17,7 +17,7 @@ import type { AnyEditingProjectView } from "@/lib/library-editing";
 import { readGenerationHistoryFilters } from "@/lib/library-generation-history";
 import { readLibrarySceneSelection } from "@/lib/library-scenes";
 import Link from "../shims/link";
-import { demoHref, useRouter } from "../shims/navigation";
+import { demoHref, replaceDemoBrowseUrl, useRouter } from "../shims/navigation";
 
 const EditorRouter = lazy(() =>
 	import("@/app/library/edits/[id]/editor-router").then((module) => ({
@@ -31,7 +31,11 @@ function demoBrowseLocation(path: string) {
 		const { hash, pathname } = window.location;
 		// A hash link can fire popstate before the previous screen unmounts.
 		if (hash !== href && !hash.startsWith(`${href}?`)) return null;
-		return { pathname: pathname + href, search: hash.slice(href.length) };
+		return {
+			pathname: pathname + href,
+			search: hash.slice(href.length),
+			replaceUrl: replaceDemoBrowseUrl,
+		};
 	};
 }
 const libraryLocation = demoBrowseLocation("/library");

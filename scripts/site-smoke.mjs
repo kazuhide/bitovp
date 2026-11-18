@@ -210,6 +210,19 @@ async function tryLibraryDemo(page, locale, copy) {
 		page.getByRole("heading", { name: "Harbor at Sunrise" }),
 	).toHaveCount(0);
 	assert.match(new URL(page.url()).hash, /^#\/demo\/library\?/);
+	const hash = new URL(page.url()).hash;
+	const other = locale === "en" ? "ja" : "en";
+	const languageLink = (value) =>
+		page.locator(`a[hreflang="${value}"]:visible`).first();
+	await expect(languageLink(other)).toHaveAttribute(
+		"href",
+		`/bitovp/${locales[other].path}${hash}`,
+	);
+	await languageLink(other).click();
+	await page.waitForURL(`**/bitovp/${locales[other].path}${hash}`);
+	await expect(page.getByRole("searchbox")).toHaveValue("Big Buck Bunny");
+	await languageLink(locale).click();
+	await page.waitForURL(`**/bitovp/${copy.path}${hash}`);
 	await content.click();
 	await page
 		.getByRole("combobox", { name: copy.analysisLanguage })

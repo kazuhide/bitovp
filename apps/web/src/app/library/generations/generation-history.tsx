@@ -163,7 +163,7 @@ export function GenerationHistory({
 		// Update Next's canonical URL on filter changes. On remount the browser's
 		// history entry can be newer than the saved server component props.
 		if (url !== location.pathname + location.search)
-			window.history.replaceState(null, "", url);
+			location.replaceUrl(url, null);
 		setFilters(next);
 	};
 	return (

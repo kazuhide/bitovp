@@ -2,11 +2,12 @@ import { ThemeSwitcher } from "@/components/theme-switcher";
 import { useT } from "@/lib/i18n/context";
 import { DEMO_TEXT } from "../demo/text";
 import { localePath, SITE_LOCALES } from "../site-config";
-import { demoLocaleHref } from "./navigation";
+import { demoLocaleHref, useDemoLocation } from "./navigation";
 
 export function SessionMenu() {
 	const { locale, t } = useT();
 	const text = DEMO_TEXT[locale];
+	const location = useDemoLocation();
 	return (
 		<div className="space-y-3 text-xs text-zinc-400">
 			<p>{text.workspace}</p>
@@ -17,7 +18,7 @@ export function SessionMenu() {
 						{SITE_LOCALES.map((candidate) => (
 							<a
 								key={candidate}
-								href={demoLocaleHref(candidate, window.location)}
+								href={demoLocaleHref(candidate, location)}
 								lang={candidate}
 								hrefLang={candidate}
 								aria-current={candidate === locale ? "page" : undefined}

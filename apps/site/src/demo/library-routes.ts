@@ -3,6 +3,7 @@ import {
 	compileComposition,
 	compositionDocumentSchema,
 	compositionDurationFrames,
+	confirmCompositionFraming,
 } from "@bitovp/core";
 import { z } from "zod";
 import type { LibraryCatalog, LibraryCatalogItem } from "@/lib/library-catalog";
@@ -10,7 +11,10 @@ import type {
 	AnyEditingProjectView,
 	EditingProjectSummary,
 } from "@/lib/library-editing";
-import type { LibrarySceneHit } from "@/lib/library-scenes";
+import {
+	type LibrarySceneHit,
+	librarySceneRelevance,
+} from "@/lib/library-scenes";
 import { demoLibrarySamples } from "./library-fixtures";
 
 type Sample = ReturnType<typeof demoLibrarySamples>[number];
@@ -42,6 +46,8 @@ const archiveUpdate = z.strictObject({
 });
 const matches = (value: string, query: string) =>
 	value.toLocaleLowerCase().includes(query);
+const normalizeSceneText = (text: string) =>
+	text.normalize("NFKC").toLowerCase();
 
 function newProject(
 	sample: Sample,
@@ -194,7 +200,7 @@ export function createDemoLibraryRoutes({
 			.catch(0)
 			.parse(params.get("offset"));
 		const visible = samples.filter(
-			({ content }) => archived || !content.archived,
+			({ content }) => archived === content.archived,
 		);
 
 		if (method === "GET" && path === "/api/library") {
@@ -216,12 +222,22 @@ export function createDemoLibraryRoutes({
 
 		if (method === "GET" && path === "/api/library/scenes/options")
 			return json({
-				locales: [...new Set(visible.map(({ content }) => content.locale))],
+				locales: [
+					...new Set(visible.map(({ content }) => content.locale)),
+				].sort(),
 			});
 
 		if (method === "GET" && path === "/api/library/scenes") {
 			const locale = params.get("locale");
-			const terms = query.split(/\s+/).filter(Boolean);
+			const terms = [
+				...new Set(
+					normalizeSceneText(params.get("q") ?? "")
+						.split(/\s+/u)
+						.filter(Boolean),
+				),
+			];
+			const matchAny = params.get("match") === "any";
+			const sortByRelevance = params.get("sort") !== "recent";
 			const items = visible.flatMap(({ content }) => {
 				// The detail route pins to the registered content locale.
 				const analysis = content.source.analyses.find(
@@ -233,35 +249,69 @@ export function createDemoLibraryRoutes({
 					(locale && analysis.locale !== locale)
 				)
 					return [];
-				return analysis.document.scenes.flatMap((scene): LibrarySceneHit[] => {
-					const haystack = [scene.title, scene.summary, ...scene.keywords].join(
-						" ",
-					);
-					const matched =
-						params.get("match") === "any"
-							? terms.some((term) => matches(haystack, term))
-							: terms.every((term) => matches(haystack, term));
-					return matched
-						? [
-								{
-									contentId: content.id,
-									contentTitle: content.title,
-									contentRevision: content.revision,
-									analysisRevisionId: analysis.id,
-									sceneId: scene.id,
-									locale: analysis.locale,
-									archived: content.archived,
-									startInSeconds: scene.startInSeconds,
-									endInSeconds: scene.endInSeconds,
-									title: scene.title,
-									summary: scene.summary,
-								},
-							]
-						: [];
+				return analysis.document.scenes.flatMap((scene, ordinal) => {
+					const fields = [
+						{ weight: 8, text: normalizeSceneText(scene.title) },
+						{
+							weight: 5,
+							text: normalizeSceneText(
+								[
+									...scene.keywords,
+									...scene.shots.flatMap((shot) => shot.keywords),
+								].join(" "),
+							),
+						},
+						{ weight: 3, text: normalizeSceneText(scene.summary) },
+						{
+							weight: 1,
+							text: normalizeSceneText(
+								scene.shots.map((shot) => shot.detailedDescription).join(" "),
+							),
+						},
+					];
+					let coverage = 0;
+					let weight = 0;
+					for (const term of terms) {
+						const field = fields.find(({ text }) => text.includes(term));
+						if (field) {
+							coverage++;
+							weight += field.weight;
+						}
+					}
+					if (!coverage || (!matchAny && coverage !== terms.length)) return [];
+					const hit: LibrarySceneHit = {
+						contentId: content.id,
+						contentTitle: content.title,
+						contentRevision: content.revision,
+						analysisRevisionId: analysis.id,
+						sceneId: scene.id,
+						locale: analysis.locale,
+						archived: content.archived,
+						startInSeconds: scene.startInSeconds,
+						endInSeconds: scene.endInSeconds,
+						title: scene.title,
+						summary: scene.summary,
+						relevance: librarySceneRelevance(coverage, terms.length, weight),
+					};
+					return [
+						{ hit, updatedAt: content.updatedAt, ordinal, coverage, weight },
+					];
 				});
 			});
+			items.sort((a, b) => {
+				if (sortByRelevance) {
+					const rank = b.coverage - a.coverage || b.weight - a.weight;
+					if (rank) return rank;
+				}
+				return (
+					b.updatedAt.localeCompare(a.updatedAt) ||
+					a.hit.contentId.localeCompare(b.hit.contentId) ||
+					a.hit.startInSeconds - b.hit.startInSeconds ||
+					a.ordinal - b.ordinal
+				);
+			});
 			return json({
-				items: items.slice(offset, offset + pageSize),
+				items: items.slice(offset, offset + pageSize).map(({ hit }) => hit),
 				total: items.length,
 			});
 		}
@@ -396,9 +446,11 @@ export function createDemoLibraryRoutes({
 					return error("The clip draft has changed.", 409);
 				const next = {
 					...project,
-					currentRevisionId: project.currentRevisionMatchesDraft
-						? project.currentRevisionId
-						: crypto.randomUUID(),
+					draft: input.data.confirmSuggestions
+						? confirmCompositionFraming(project.draft)
+						: project.draft,
+					draftRevision: project.draftRevision + 1,
+					currentRevisionId: crypto.randomUUID(),
 					currentRevisionMatchesDraft: true,
 					updatedAt: new Date(now()).toISOString(),
 				};

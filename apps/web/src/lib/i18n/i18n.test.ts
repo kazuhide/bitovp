@@ -142,7 +142,8 @@ describe("catalogue parity", () => {
 		// MoQ cleanup and unconfirmed recording states (runtime measured: 3370).
 		// Live diagnostics, run outcomes and rendition labels (runtime measured: 3390).
 		// MoQ preflight and playback stages (runtime measured: 3410).
-		pinWithDriftAid(short.size, 3410, "short");
+		// Saved clip settings and re-edit actions (runtime measured: 3422).
+		pinWithDriftAid(short.size, 3422, "short");
 	});
 
 	/**

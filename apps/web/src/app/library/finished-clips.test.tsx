@@ -1,7 +1,8 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { DocumentOrganizationContext } from "@/components/providers";
 import type {
+	EditingProjectPage,
 	EditingProjectSummary,
 	StoredEditingExport,
 } from "@/lib/library-editing";
@@ -9,13 +10,16 @@ import { renderWithQuery } from "@/test/render";
 import { StoredClipResult } from "./edits/[id]/result/stored-clip-result";
 import { FinishedClips } from "./finished-clips";
 
-const calls = vi.hoisted(() => ({ api: vi.fn() }));
+const calls = vi.hoisted(() => ({ api: vi.fn(), canEdit: false }));
 vi.mock("@/lib/api", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@/lib/api")>()),
 	apiFetch: calls.api,
 }));
 vi.mock("@/lib/auth/use-role-access", () => ({
-	useMutationAccess: () => false,
+	useMutationAccess: () => calls.canEdit,
+}));
+vi.mock("next/navigation", () => ({
+	useRouter: () => ({ push: vi.fn() }),
 }));
 
 const id = (suffix: number) =>
@@ -75,9 +79,12 @@ function project(result: ReturnType<typeof exported>): EditingProjectSummary {
 	};
 }
 
-beforeEach(() => calls.api.mockReset());
+beforeEach(() => {
+	calls.api.mockReset();
+	calls.canEdit = false;
+});
 
-it("offers titled results in one shelf and loads just the selected export video", async () => {
+it("renders one click-ready player and its result link in each clip card", async () => {
 	const trailer = exported(1, "Episode teaser", true);
 	const highlight = exported(2, "Opening moments");
 	calls.api.mockResolvedValue({
@@ -91,42 +98,193 @@ it("offers titled results in one shelf and loads just the selected export video"
 		</DocumentOrganizationContext.Provider>,
 	);
 	const shelf = await screen.findByRole("complementary", {
-		name: "Finished clips",
+		name: "Clips",
 	});
-	const first = await within(shelf).findByRole("button", {
-		name: "Preview Episode teaser",
-	});
-	const second = within(shelf).getByRole("button", {
-		name: "Preview Opening moments",
-	});
+	const [first, second] = within(shelf).getAllByRole("listitem");
+	if (!first || !second) throw new Error("Expected both exported clips");
 	expect(first).toHaveTextContent("Trailer · 30.0s");
 	expect(first).toHaveTextContent("Earlier version");
 	expect(second).toHaveTextContent("Highlight · 30.0s");
-	expect(container.querySelectorAll("video")).toHaveLength(0);
+	expect(container.querySelectorAll("video")).toHaveLength(2);
 	expect(calls.api.mock.calls[0]?.[0]).toContain("scope=exports");
 
-	fireEvent.click(first);
-	expect(first).toHaveAttribute("aria-pressed", "true");
-	expect(container.querySelector("video")).toHaveAttribute("autoplay");
-	expect(container.querySelector("video")).toHaveAttribute(
-		"src",
-		trailer.render.artifact.url,
+	for (const [card, result] of [
+		[first, trailer],
+		[second, highlight],
+	] as const) {
+		const video = within(card).getByLabelText(result.title);
+		expect(video.tagName).toBe("VIDEO");
+		expect(video).toHaveAttribute("controls");
+		expect(video).toHaveAttribute("preload", "none");
+		expect(video).not.toHaveAttribute("autoplay");
+		expect(video).toHaveAttribute("src", result.render.artifact.url);
+		expect(
+			within(card).getByRole("link", { name: "Watch export" }),
+		).toHaveAttribute(
+			"href",
+			`/library/edits/${result.projectId}/result?exportId=${result.render.id}`,
+		);
+	}
+	const splitter = within(shelf).getByRole("separator", {
+		name: "Resize clips panel",
+	});
+	const initialWidth = Number(splitter.getAttribute("aria-valuenow"));
+	fireEvent.keyDown(splitter, { key: "ArrowLeft" });
+	expect(Number(splitter.getAttribute("aria-valuenow"))).toBeGreaterThan(
+		initialWidth,
+	);
+	fireEvent.keyDown(splitter, { key: "End" });
+	expect(splitter.getAttribute("aria-valuenow")).toBe(
+		splitter.getAttribute("aria-valuemax"),
+	);
+	fireEvent.keyDown(splitter, { key: "Home" });
+	expect(splitter.getAttribute("aria-valuenow")).toBe(
+		splitter.getAttribute("aria-valuemin"),
+	);
+});
+
+it("keeps both players mounted when the clips divider is dragged or cancelled", async () => {
+	const result = exported(1, "Episode teaser", true);
+	calls.api.mockResolvedValue({
+		items: [project(result)],
+		offset: 0,
+		total: 1,
+	});
+	renderWithQuery(
+		<DocumentOrganizationContext.Provider value={org}>
+			<FinishedClips contentId={contentId}>
+				<p>Source player</p>
+			</FinishedClips>
+		</DocumentOrganizationContext.Provider>,
+		"ja",
+	);
+	const shelf = await screen.findByRole("complementary", {
+		name: "クリップ映像",
+	});
+	const splitter = within(shelf).getByRole("separator", {
+		name: "クリップ映像欄の幅を調整",
+	});
+	const exportedVideo = within(shelf).getByLabelText(result.title);
+	const sourcePlayer = screen.getByText("Source player");
+	const captured = new Set<number>();
+	Object.assign(splitter, {
+		setPointerCapture: (id: number) => captured.add(id),
+		hasPointerCapture: (id: number) => captured.has(id),
+		releasePointerCapture: (id: number) => captured.delete(id),
+	});
+	const pointer = { pointerId: 1, isPrimary: true, button: 0 };
+	const initialWidth = Number(splitter.getAttribute("aria-valuenow"));
+	fireEvent.pointerDown(splitter, { ...pointer, clientX: 600 });
+	fireEvent.pointerMove(splitter, { ...pointer, clientX: 550 });
+	expect(splitter).toHaveAttribute("aria-valuenow", String(initialWidth + 50));
+	fireEvent.keyDown(splitter, { key: "Escape" });
+	expect(splitter).toHaveAttribute("aria-valuenow", String(initialWidth));
+	expect(captured.size).toBe(0);
+
+	fireEvent.pointerDown(splitter, { ...pointer, clientX: 600 });
+	fireEvent.pointerMove(splitter, { ...pointer, pointerId: 2, clientX: 690 });
+	expect(splitter).toHaveAttribute("aria-valuenow", String(initialWidth));
+	fireEvent.pointerUp(splitter, { ...pointer, clientX: 100 });
+	expect(splitter.getAttribute("aria-valuenow")).toBe(
+		splitter.getAttribute("aria-valuemax"),
+	);
+	expect(captured.size).toBe(0);
+	expect(within(shelf).getByLabelText(result.title)).toBe(exportedVideo);
+	expect(screen.getByText("Source player")).toBe(sourcePlayer);
+});
+
+it("keeps empty clips in the main flow and offers the existing editing entry", async () => {
+	calls.canEdit = true;
+	calls.api.mockResolvedValue({ items: [], offset: 0, total: 0 });
+	renderWithQuery(
+		<DocumentOrganizationContext.Provider value={org}>
+			<FinishedClips contentId={contentId} canCreate>
+				<p>Source player</p>
+			</FinishedClips>
+		</DocumentOrganizationContext.Provider>,
 	);
 	expect(
-		within(shelf).getByRole("link", { name: "Watch export" }),
-	).toHaveAttribute(
-		"href",
-		`/library/edits/${trailer.projectId}/result?exportId=${trailer.render.id}`,
-	);
+		await screen.findByRole("link", { name: "Create a clip" }),
+	).toHaveAttribute("href", `/library/${contentId}/edits`);
+	expect(screen.getByText("Source player")).toBeVisible();
+	expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+	expect(screen.queryByRole("separator")).not.toBeInTheDocument();
+});
 
-	fireEvent.click(second);
-	expect(first).toHaveAttribute("aria-pressed", "false");
-	expect(second).toHaveAttribute("aria-pressed", "true");
-	expect(container.querySelectorAll("video")).toHaveLength(1);
-	expect(container.querySelector("video")).toHaveAttribute(
-		"src",
-		highlight.render.artifact.url,
+it("does not offer clip creation in an empty shelf without edit access", async () => {
+	calls.api.mockResolvedValue({ items: [], offset: 0, total: 0 });
+	renderWithQuery(
+		<DocumentOrganizationContext.Provider value={org}>
+			<FinishedClips contentId={contentId} canCreate />
+		</DocumentOrganizationContext.Provider>,
 	);
+	expect(await screen.findByText("No clips yet.")).toBeVisible();
+	expect(
+		screen.queryByRole("link", { name: "Create a clip" }),
+	).not.toBeInTheDocument();
+	expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+});
+
+it("follows an anchored shelf when the first export replaces cached empty results", async () => {
+	const scroll = vi.fn();
+	const originalScroll = Object.getOwnPropertyDescriptor(
+		HTMLElement.prototype,
+		"scrollIntoView",
+	);
+	const originalUrl = window.location.href;
+	const historyState = window.history.state;
+	Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+		configurable: true,
+		value: scroll,
+	});
+	try {
+		window.history.replaceState(null, "", "#finished-clips");
+		const response = Promise.withResolvers<EditingProjectPage>();
+		const next = exported(2, "Second page clip");
+		calls.api.mockReturnValueOnce(response.promise).mockResolvedValueOnce({
+			items: [project(next)],
+			offset: 25,
+			total: 26,
+		});
+		const { client, rerender } = renderWithQuery(null);
+		client.setQueryData(
+			["library-edit-projects", contentId, "exports", org, 0],
+			{
+				items: [],
+				offset: 0,
+				total: 0,
+			},
+		);
+		rerender(
+			<DocumentOrganizationContext.Provider value={org}>
+				<FinishedClips contentId={contentId}>
+					<p>Source player</p>
+				</FinishedClips>
+			</DocumentOrganizationContext.Provider>,
+		);
+		const empty = screen.getByRole("region", { name: "Clips" });
+		expect(scroll.mock.contexts).toEqual([empty]);
+
+		const first = exported(1, "First export");
+		await act(async () => {
+			response.resolve({ items: [project(first)], offset: 0, total: 26 });
+		});
+		const shelf = await screen.findByRole("complementary", { name: "Clips" });
+		expect(scroll.mock.contexts).toEqual([empty, shelf]);
+
+		fireEvent.click(within(shelf).getByRole("button", { name: "Next" }));
+		await within(shelf).findByRole("heading", { name: next.title });
+		expect(scroll.mock.contexts).toEqual([empty, shelf]);
+	} finally {
+		if (originalScroll)
+			Object.defineProperty(
+				HTMLElement.prototype,
+				"scrollIntoView",
+				originalScroll,
+			);
+		else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+		window.history.replaceState(historyState, "", originalUrl);
+	}
 });
 
 it("shows the pinned output and download in read-only mode", async () => {

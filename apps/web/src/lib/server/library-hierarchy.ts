@@ -14,8 +14,14 @@ import type {
 	StoredEditingExport,
 } from "@/lib/library-editing";
 import { requestOrganizationId } from "@/lib/passive-request";
+import { storedEditingSettings } from "@/lib/stored-editing-settings";
 import type { ServerContext } from "./context";
-import { boundMediaUrl, EditingRequestError } from "./library-editing-common";
+import { boundMediaUrl } from "./library-editing-common";
+import {
+	exportRuns,
+	readExportRun,
+	successfulExport,
+} from "./library-editing-export";
 import { editingDurationFrames } from "./library-editing-projects";
 import { editingThumbnailReference } from "./library-editing-thumbnail";
 
@@ -58,17 +64,6 @@ type ExportRow = {
 	derivedContentId: string | null;
 };
 
-const exportProfile = { path: ["kind"], equals: "EXPORT" };
-const exportRuns = {
-	profile: exportProfile,
-	generation: { gt: 0 },
-} satisfies Prisma.RenderRunWhereInput;
-const successfulExport = {
-	...exportRuns,
-	state: "SUCCEEDED",
-	artifact: { isNot: null },
-} satisfies Prisma.RenderRunWhereInput;
-
 function exportPurpose(
 	document: AnyEditDocument | undefined,
 ): EditingClipPurpose {
@@ -102,42 +97,7 @@ export async function readStoredEditingExport(
 	const organizationId = requestOrganizationId(ctx);
 	return ctx.prisma.$transaction(
 		async (tx) => {
-			const run = await tx.renderRun.findFirst({
-				where: {
-					id: exportId,
-					projectId,
-					organizationId,
-					...successfulExport,
-					project: { organizationId },
-					revision: { projectId, organizationId },
-					artifact: { is: { organizationId } },
-				},
-				select: {
-					id: true,
-					revisionId: true,
-					generation: true,
-					revision: { select: { document: true } },
-					project: {
-						select: {
-							contentId: true,
-							title: true,
-							draft: true,
-							currentRevisionId: true,
-						},
-					},
-					artifact: {
-						select: {
-							id: true,
-							activeDerivations: {
-								where: { organizationId, projectId },
-								select: { derivedContentId: true },
-								take: 1,
-							},
-						},
-					},
-				},
-			});
-			if (!run?.artifact) throw new EditingRequestError(404, "EDIT_NOT_FOUND");
+			const run = await readExportRun(tx, organizationId, projectId, exportId);
 			const latest = await tx.renderRun.findFirst({
 				where: {
 					projectId,
@@ -156,6 +116,9 @@ export async function readStoredEditingExport(
 				run.revision.document,
 			);
 			const draft = anyEditingDocumentSchema.safeParse(run.project.draft);
+			const settings = document.success
+				? storedEditingSettings(document.data)
+				: undefined;
 			return {
 				projectId,
 				contentId: run.project.contentId,
@@ -168,6 +131,7 @@ export async function readStoredEditingExport(
 					canonicalEditingJson(document.data) !==
 						canonicalEditingJson(draft.data),
 				purpose: exportPurpose(document.data),
+				...(settings ? { settings } : {}),
 				render: {
 					id: run.id,
 					revisionId: run.revisionId,
@@ -175,9 +139,7 @@ export async function readStoredEditingExport(
 					kind: "EXPORT",
 					state: "SUCCEEDED",
 					error: null,
-					...(document.success
-						? { durationFrames: editingDurationFrames(document.data) }
-						: {}),
+					...(settings ? { durationFrames: settings.durationFrames } : {}),
 					artifact: exportArtifact(
 						ctx,
 						run.artifact.id,

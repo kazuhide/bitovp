@@ -149,6 +149,9 @@ Cancellation may remain requested until the worker confirms its process stopped.
 An unavailable or replaced object requires investigation or a new material version;
 the editor does not silently switch to the new bytes.
 
+**Watch export** shows the saved editing settings for that export. **Re-edit**
+creates a separate draft from those settings and opens its editing timeline.
+
 #### Composition timeline and immediate preview
 
 New automatic proposals open this timeline directly. Save legacy edits before

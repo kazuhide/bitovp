@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import {
 	anyEditingDocumentSchema,
 	canonicalEditingJson,
@@ -11,12 +12,19 @@ import {
 	SubjectProtectionAdoptionError,
 	sceneAnalysisDocumentSchema,
 } from "@bitovp/core";
+import type { AppTransactionClient } from "@bitovp/db";
 import { z } from "zod";
 import type {
 	AnyEditingProjectView,
 	EditingRenderView,
 } from "@/lib/library-editing";
+import { requestOrganizationId } from "@/lib/passive-request";
 import { getServerContext, type ServerContext } from "./context";
+import {
+	isCreateRequestUniqueConflict,
+	lookupCreateRequest,
+	recordCreateRequest,
+} from "./create-request";
 import {
 	resolveCompositionResources,
 	retainCompositionResources,
@@ -33,10 +41,12 @@ import {
 	assertEditingBinding,
 	boundMediaUrl,
 	EditingRequestError,
+	hash,
 	initialEditingDocument,
 	json,
 	mediaView,
 } from "./library-editing-common";
+import { readExportRun } from "./library-editing-export";
 
 export async function readEditingProject(
 	id: string,
@@ -186,12 +196,129 @@ const createSchema = z.strictObject({
 	variant: z.enum(["LANDSCAPE", "PORTRAIT"]),
 	analysisRevisionId: z.uuid().nullable().optional(),
 });
+const reeditSchema = z.strictObject({
+	title: createSchema.shape.title,
+	fromExport: z.strictObject({
+		projectId: z.uuid(),
+		exportId: z.uuid(),
+		expectedOrganizationId: z.uuid(),
+		requestKey: z.uuid(),
+	}),
+});
+
+async function createEditingProjectFromExport(
+	ctx: ServerContext,
+	{ title, fromExport }: z.infer<typeof reeditSchema>,
+	actor: string | null,
+) {
+	const organizationId = requestOrganizationId(ctx);
+	if (
+		fromExport.expectedOrganizationId.toLowerCase() !==
+		organizationId.toLowerCase()
+	)
+		throw new EditingRequestError(403, "EDIT_ORGANIZATION_CHANGED");
+	const identity = {
+		requestKey: fromExport.requestKey.toLowerCase(),
+		requestSha256: hash([
+			fromExport.projectId.toLowerCase(),
+			fromExport.exportId.toLowerCase(),
+			title,
+		]),
+	};
+	async function replay(reader: AppTransactionClient = ctx.prisma) {
+		const receipt = await lookupCreateRequest(reader, "LIBRARY_EDIT", identity);
+		if (receipt.kind === "conflict")
+			throw new EditingRequestError(409, "REQUEST_KEY_REUSED");
+		return receipt.kind === "existing"
+			? readEditingProject(receipt.resourceId, ctx, reader)
+			: null;
+	}
+	try {
+		return await ctx.prisma.$transaction(async (tx) => {
+			const previous = await replay(tx);
+			if (previous) return previous;
+			const run = await readExportRun(
+				tx,
+				organizationId,
+				fromExport.projectId,
+				fromExport.exportId,
+			);
+			const snapshot = anyEditingDocumentSchema.safeParse(
+				run.revision.document,
+			);
+			if (!snapshot.success)
+				throw new EditingRequestError(422, "EDIT_EXPORT_SETTINGS_UNAVAILABLE");
+			const document = snapshot.data;
+			const { contentId, mediaVersionId, variant } = run.project;
+			const media = await tx.libraryMediaVersion.findUnique({
+				where: { id: mediaVersionId, organizationId },
+			});
+			if (media?.state !== "READY")
+				throw new EditingRequestError(422, "MEDIA_NOT_READY");
+			const sourceLink = await tx.contentRevision.findFirst({
+				where: { organizationId, contentId, sourceId: media.sourceId },
+				select: { id: true },
+			});
+			if (!sourceLink)
+				throw new EditingRequestError(422, "CONTENT_MEDIA_MISMATCH");
+			if (document.analysisRevisionId) {
+				const evidence = await tx.sceneAnalysisRevision.findFirst({
+					where: {
+						organizationId,
+						id: document.analysisRevisionId,
+						sourceId: media.sourceId,
+						locale: document.locale,
+					},
+					select: { id: true },
+				});
+				if (!evidence)
+					throw new EditingRequestError(422, "ANALYSIS_BINDING_UNVERIFIED");
+			}
+			if (document.schemaVersion === 2) {
+				await resolveCompositionResources(
+					tx,
+					document,
+					media,
+					fromExport.projectId,
+				);
+			} else {
+				// Keep V1 crop rounding and playback in the legacy timeline.
+				assertEditingBinding(document, media);
+			}
+			const id = randomUUID();
+			await recordCreateRequest(tx, "LIBRARY_EDIT", identity, id);
+			await tx.editProject.create({
+				data: {
+					id,
+					organizationId,
+					contentId,
+					mediaVersionId,
+					title,
+					variant,
+					draft: json(document),
+					createdBy: actor,
+				},
+			});
+			await retainCompositionResources(tx, id, document);
+			return readEditingProject(id, ctx, tx);
+		});
+	} catch (failure) {
+		if (isCreateRequestUniqueConflict(failure)) {
+			const previous = await replay();
+			if (previous) return previous;
+		}
+		throw failure;
+	}
+}
+
 export async function createEditingProject(
 	value: unknown,
 	actor: string | null,
 ) {
-	const input = createSchema.parse(value);
+	const input = z.union([createSchema, reeditSchema]).parse(value);
 	const ctx = await getServerContext();
+	if ("fromExport" in input)
+		return createEditingProjectFromExport(ctx, input, actor);
 	const media = await ctx.prisma.libraryMediaVersion.findUnique({
 		where: { id: input.mediaVersionId },
 	});

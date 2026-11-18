@@ -214,6 +214,21 @@ it("decorates the standalone library player with the selected analysis", () => {
 	);
 });
 
+it("uses the source panel's available width for the playback and analysis split", () => {
+	renderWithQuery(<SourcePanel source={playableSource} />);
+	const player = screen.getByText("Player").closest(".order-1");
+	const analysis = screen
+		.getByLabelText("Analysis language")
+		.closest(".order-2");
+	const grid = player?.parentElement;
+	expect(grid?.parentElement).toHaveClass("@container/source-panel");
+	expect(grid).toHaveClass(
+		"@min-[48rem]/source-panel:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]",
+	);
+	expect(player).toHaveClass("@min-[48rem]/source-panel:row-start-1");
+	expect(analysis).toHaveClass("@min-[48rem]/source-panel:col-start-2");
+});
+
 it("omits QC and input snapshots from both analysis presentations", () => {
 	const view = renderWithQuery(<SourcePanel source={playableSource} />);
 	expect(screen.queryByText("QC / source snapshot (read-only)")).toBeNull();
@@ -670,17 +685,19 @@ it("keeps clip drafts out of the original analysis layout until requested", asyn
 	expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-it("shows the finished clips shelf on the original page with creation unavailable", async () => {
+it("keeps the clips anchor and full-width original page when creation is unavailable and there are no exports", async () => {
 	apiFetch.mockResolvedValue(pinnedContent);
 	renderWithQuery(
 		<DocumentOrganizationContext.Provider value="00000000-0000-4000-8000-000000000001">
 			<ContentDetailClient id="content" clipEditingAvailable={false} />
 		</DocumentOrganizationContext.Provider>,
 	);
-	expect(
-		await screen.findByRole("complementary", { name: "Finished clips" }),
-	).toHaveAttribute("id", "finished-clips");
-	expect(await screen.findByText("No finished clips yet.")).toBeVisible();
+	expect(await screen.findByRole("region", { name: "Clips" })).toHaveAttribute(
+		"id",
+		"finished-clips",
+	);
+	expect(await screen.findByText("No clips yet.")).toBeVisible();
+	expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
 	expect(screen.getByText("Player")).toBeVisible();
 	expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 	expect(

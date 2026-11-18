@@ -11,6 +11,11 @@ import { apiFetch } from "@/lib/api";
 import { useMutationAccess } from "@/lib/auth/use-role-access";
 import { useT } from "@/lib/i18n/context";
 import type { StoredEditingExport } from "@/lib/library-editing";
+import {
+	createdEditShape,
+	REEDIT_STORAGE_PREFIX,
+	retainPendingEdit,
+} from "@/lib/reedit-navigation";
 import { storedEditingSettingsSchema } from "@/lib/stored-editing-settings";
 import { boundExportLinks, ClipExportVideo } from "../../../clip-export-video";
 import { editingErrorMessage } from "../../editing-errors";
@@ -31,23 +36,6 @@ const storedExportShape = z.object({
 		artifact: portraitRenderShape.shape.artifact.unwrap(),
 	}),
 });
-
-const pendingEditShape = z.strictObject({
-	title: z.string().trim().min(1).max(500),
-	requestKey: z.uuid(),
-});
-const createdEditShape = z.object({ id: z.uuid(), contentId: z.uuid() });
-
-function retainPendingEdit(storageKey: string, title: string) {
-	const value = window.sessionStorage.getItem(storageKey);
-	if (value !== null) return pendingEditShape.parse(JSON.parse(value));
-	const pending = pendingEditShape.parse({
-		title,
-		requestKey: crypto.randomUUID(),
-	});
-	window.sessionStorage.setItem(storageKey, JSON.stringify(pending));
-	return pending;
-}
 
 export function StoredClipResult(props: {
 	id: string;
@@ -84,6 +72,7 @@ function StoredClipResultView({
 	const [reediting, setReediting] = useState(false);
 	const [reeditError, setReeditError] = useState("");
 	const pendingReedit = useRef<AbortController | null>(null);
+	const createdWithoutStorage = useRef<string | null>(null);
 	useEffect(() => () => pendingReedit.current?.abort(), []);
 	const query = useQuery({
 		queryKey: ["library-export", organizationId, id, exportId],
@@ -123,11 +112,15 @@ function StoredClipResultView({
 		pendingReedit.current = controller;
 		setReediting(true);
 		setReeditError("");
-		const storageKey = `bitovp:library:reedit:${organizationId}:${id}:${exportId}`;
+		const storageKey = `${REEDIT_STORAGE_PREFIX}${organizationId}:${id}:${exportId}`;
 		try {
+			if (createdWithoutStorage.current) {
+				router.push(`/library/edits/${createdWithoutStorage.current}`);
+				return;
+			}
 			const title =
 				result.title + t("editing.exportSettings.reeditTitleSuffix");
-			let pending: z.infer<typeof pendingEditShape>;
+			let pending: ReturnType<typeof retainPendingEdit>;
 			try {
 				pending = retainPendingEdit(
 					storageKey,
@@ -137,28 +130,36 @@ function StoredClipResultView({
 				setReeditError(t("editing.exportSettings.reeditStorageUnavailable"));
 				return;
 			}
-			const created = createdEditShape.parse(
-				await apiFetch("/api/library/edits", {
-					method: "POST",
-					body: JSON.stringify({
-						title: pending.title,
-						fromExport: {
-							projectId: id,
-							exportId,
-							expectedOrganizationId: organizationId,
-							requestKey: pending.requestKey,
-						},
+			const created =
+				pending.created ??
+				createdEditShape.parse(
+					await apiFetch("/api/library/edits", {
+						method: "POST",
+						body: JSON.stringify({
+							title: pending.title,
+							fromExport: {
+								projectId: id,
+								exportId,
+								expectedOrganizationId: organizationId,
+								requestKey: pending.requestKey,
+							},
+						}),
+						signal: controller.signal,
 					}),
-					signal: controller.signal,
-				}),
-			);
+				);
 			if (created.id === id || created.contentId !== result.contentId)
 				throw new Error("INVALID_REEDIT_RESPONSE");
 			if (controller.signal.aborted) return;
-			try {
-				window.sessionStorage.removeItem(storageKey);
-			} catch {
-				// A retained request can still safely replay the completed edit.
+			if (!pending.created) {
+				try {
+					window.sessionStorage.setItem(
+						storageKey,
+						JSON.stringify({ ...pending, created }),
+					);
+				} catch {
+					// The original request can still replay this edit after a reload.
+					createdWithoutStorage.current = created.id;
+				}
 			}
 			router.push(`/library/edits/${created.id}`);
 		} catch (failure) {

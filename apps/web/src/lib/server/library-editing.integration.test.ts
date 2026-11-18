@@ -1304,6 +1304,19 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					},
 					"fixture",
 				),
+			).rejects.toMatchObject({ status: 409, code: "REQUEST_KEY_REUSED" });
+			await expect(
+				createEditingProject(
+					{
+						...request,
+						fromExport: {
+							...request.fromExport,
+							projectId: fork.id,
+							requestKey: randomUUID(),
+						},
+					},
+					"fixture",
+				),
 			).rejects.toMatchObject({ status: 404 });
 			const racedRequest = {
 				...request,

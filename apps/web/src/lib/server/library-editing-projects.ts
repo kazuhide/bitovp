@@ -235,14 +235,14 @@ async function createEditingProjectFromExport(
 	}
 	try {
 		return await ctx.prisma.$transaction(async (tx) => {
+			const previous = await replay(tx);
+			if (previous) return previous;
 			const run = await readExportRun(
 				tx,
 				organizationId,
 				fromExport.projectId,
 				fromExport.exportId,
 			);
-			const previous = await replay(tx);
-			if (previous) return previous;
 			const snapshot = anyEditingDocumentSchema.safeParse(
 				run.revision.document,
 			);

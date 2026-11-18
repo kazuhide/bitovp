@@ -116,7 +116,7 @@ it("shows the saved export settings and creates a separate draft only on re-edit
 	});
 });
 
-it("resumes the exact pending re-edit after reloading and clears it on success", async () => {
+it("resumes the exact pending re-edit after reloading", async () => {
 	calls.api
 		.mockResolvedValueOnce(result)
 		.mockRejectedValueOnce(new Error("Network error"))
@@ -132,7 +132,30 @@ it("resumes the exact pending re-edit after reloading and clears it on success",
 	expect(calls.api.mock.calls[3]?.[1]?.body).toBe(
 		calls.api.mock.calls[1]?.[1]?.body,
 	);
-	expect(window.sessionStorage.length).toBe(0);
+	expect(window.sessionStorage.length).toBe(1);
+});
+
+it("opens the same accepted draft on repeated clicks and reload while navigation has not landed", async () => {
+	calls.api
+		.mockResolvedValueOnce(result)
+		.mockResolvedValueOnce({ id: targetId, contentId: result.contentId })
+		.mockResolvedValue(result);
+	const first = mount();
+	fireEvent.click(await screen.findByRole("button", { name: "Re-edit" }));
+	await waitFor(() => expect(calls.push).toHaveBeenCalledTimes(1));
+	fireEvent.click(screen.getByRole("button", { name: "Re-edit" }));
+	await waitFor(() => expect(calls.push).toHaveBeenCalledTimes(2));
+	first.unmount();
+	mount();
+	fireEvent.click(await screen.findByRole("button", { name: "Re-edit" }));
+	await waitFor(() => expect(calls.push).toHaveBeenCalledTimes(3));
+	expect(calls.push.mock.calls).toEqual(
+		Array.from({ length: 3 }, () => [`/library/edits/${targetId}`]),
+	);
+	expect(
+		calls.api.mock.calls.filter(([, init]) => init?.method === "POST"),
+	).toHaveLength(1);
+	expect(window.sessionStorage.length).toBe(1);
 });
 
 it("does not send a re-edit when the browser cannot retain the pending request", async () => {

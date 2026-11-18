@@ -58,7 +58,7 @@ it("keeps inspected rows frozen through shutdown and shows the terminal snapshot
 		await screen.findAllByText("Details", { selector: "summary" })
 	)[0] as HTMLElement;
 	await userEvent.click(toggle);
-	await screen.findByText(/Close all details to resume/);
+	await screen.findByText("Inspecting · refresh paused");
 	for (const status of ["STOPPING", "STOPPED"] as const) {
 		apiFetch.mockResolvedValue({
 			...page,
@@ -84,7 +84,7 @@ it("keeps inspected rows frozen through shutdown and shows the terminal snapshot
 		await screen.findByText("2026-09-07T00:00:06.123Z"),
 	).toBeInTheDocument();
 	expect(
-		screen.queryByText(/Close all details to resume/),
+		screen.queryByText("Inspecting · refresh paused"),
 	).not.toBeInTheDocument();
 });
 it.each([
@@ -189,14 +189,19 @@ it.each(
 	);
 	expect(
 		screen.queryByText(
-			locale === "en"
-				? /Close all details to resume/
-				: /すべての詳細を閉じると再開/,
+			locale === "en" ? "Inspecting · refresh paused" : "閲覧中・更新停止",
 		),
 	).not.toBeInTheDocument();
+	const historical = mode === "terminal" || mode === "history";
 	expect(
 		screen.getByText(
-			locale === "en" ? /Automatic refresh paused:/ : /自動更新は停止中です/,
+			locale === "en"
+				? historical
+					? "History"
+					: "Auto-refresh paused"
+				: historical
+					? "履歴"
+					: "自動更新停止",
 		),
 	).toBeInTheDocument();
 	await userEvent.click(toggle);
@@ -243,6 +248,7 @@ it.each([
 	{ open: false },
 	{ currentRunId: "new-run" },
 	{ currentRunActive: false },
+	{ currentRunEnded: true },
 ])("does not fast-poll closed/historical/terminal %j", async (patch) => {
 	vi.useFakeTimers();
 	renderWithQuery(<PushHeartbeatLog {...props} {...patch} />);
@@ -290,9 +296,44 @@ it("read failure is not an empty-success message, and retry is explicit", async 
 	expect(
 		await screen.findByRole("button", { name: "Retry" }),
 	).toBeInTheDocument();
+	expect(screen.queryByText("No Push receipts")).not.toBeInTheDocument();
+});
+it("shows a compact historical empty state and opens receipt policy on demand", async () => {
+	apiFetch.mockResolvedValue({
+		run: { id: "run", status: "STOPPED" },
+		rows: [],
+	});
+	renderWithQuery(
+		<PushHeartbeatLog
+			{...props}
+			currentRunActive={false}
+			currentRunStatus="STOPPED"
+		/>,
+	);
+	expect(await screen.findByText("History")).toBeInTheDocument();
+	expect(await screen.findByText("No Push receipts")).toBeInTheDocument();
+	expect(screen.queryByText("0 rows loaded")).not.toBeInTheDocument();
+	expect(screen.queryByRole("note")).not.toBeInTheDocument();
+	const user = userEvent.setup();
+	await user.tab();
 	expect(
-		screen.queryByText("No verified Push receipts are stored for this run."),
-	).not.toBeInTheDocument();
+		screen.getByRole("button", {
+			name: "Push heartbeat receipts — more information",
+		}),
+	).toHaveFocus();
+	await user.keyboard("{Enter}");
+	expect(await screen.findByRole("note")).toHaveTextContent(
+		/verified.+retries/i,
+	);
+	await user.keyboard("{Escape}");
+	await waitFor(() =>
+		expect(screen.queryByRole("note")).not.toBeInTheDocument(),
+	);
+	expect(
+		screen.getByRole("button", {
+			name: "Push heartbeat receipts — more information",
+		}),
+	).toHaveFocus();
 });
 it("has Japanese copy", async () => {
 	renderWithQuery(<PushHeartbeatLog {...props} />, "ja");
@@ -308,7 +349,7 @@ it("pauses while inspecting a stable receipt drawer and resumes on close", async
 	)[0] as HTMLElement;
 	await userEvent.click(toggle);
 	expect(
-		await screen.findByText(/Close all details to resume/),
+		await screen.findByText("Inspecting · refresh paused"),
 	).toBeInTheDocument();
 	const detail = toggle.closest("details") as HTMLDetailsElement;
 	vi.useFakeTimers();
@@ -361,7 +402,7 @@ it("an already in-flight response cannot remove an inspected receipt or move its
 		});
 	});
 	await userEvent.click(toggle);
-	await screen.findByText(/Close all details to resume/);
+	await screen.findByText("Inspecting · refresh paused");
 	const container = screen.getByRole("table").parentElement as HTMLElement;
 	container.scrollTop = 40;
 	await act(async () => {

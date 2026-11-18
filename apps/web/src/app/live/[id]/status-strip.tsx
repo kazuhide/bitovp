@@ -71,8 +71,8 @@ export function StatusStrip({
 	/**
 	 * When it ENDED. Present on a finished run, and the reason the runtime cell
 	 * can say something true about one at all: `endedAt − runningSince` is a
-	 * pair of worker stamps, i.e. a MEASUREMENT of how long the broadcast was
-	 * up, where `now − runningSince` after a stop is just the age of a fact.
+	 * pair of worker stamps measuring encoder runtime, including time before
+	 * input connected. Heartbeat diagnostics separately show input duration.
 	 */
 	runEndedAt: string | null;
 	/** The runtime cap , for the remaining figure. */
@@ -150,7 +150,7 @@ export function StatusStrip({
 			? null
 			: maxRunMinutes * 60 - elapsedSeconds;
 	/**
-	 * The post-mortem figure: how long the broadcast was up, FROZEN, from the
+	 * The archived encoder runtime, frozen from the
 	 * run's own two worker stamps. No viewer clock enters it, so it reads the
 	 * same three days later as it did at the stop — which is what makes it a
 	 * measurement rather than an artifact. A finished run with no `endedAt`
@@ -169,7 +169,7 @@ export function StatusStrip({
 	const runtimeText = !active
 		? ranForSeconds === null
 			? t("status.none")
-			: t("status.runtimeRan", { duration: formatSeconds(ranForSeconds) })
+			: formatSeconds(ranForSeconds)
 		: elapsedSeconds === null
 			? t("status.none")
 			: remainingSeconds === null

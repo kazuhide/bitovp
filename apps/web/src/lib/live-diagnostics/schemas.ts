@@ -9,7 +9,15 @@ const integer = z
 export const liveDiagnosticsQuerySchema = z
 	.strictObject({
 		kind: z
-			.enum(["summary", "events", "streams", "srt", "hd-start", "task"])
+			.enum([
+				"summary",
+				"events",
+				"streams",
+				"srt",
+				"hd-start",
+				"task",
+				"ladder",
+			])
 			.default("summary"),
 		offset: integer.default(0),
 		limit: integer.pipe(z.number().min(1).max(100)).default(25),
@@ -27,6 +35,40 @@ export const liveDiagnosticsQuerySchema = z
 
 const number = z.number().finite().optional().catch(undefined);
 const uuid = z.uuid().optional().catch(undefined);
+const positiveInteger = z.number().int().positive().optional().catch(undefined);
+const nonnegative = z
+	.number()
+	.finite()
+	.nonnegative()
+	.optional()
+	.catch(undefined);
+const diagnosticsLadderRowSchema = z.object({
+	streamId: z.uuid(),
+	codec: z
+		.string()
+		.regex(/^[A-Z][A-Z0-9_]{1,31}$/)
+		.optional()
+		.catch(undefined),
+	height: positiveInteger,
+	bitrate: nonnegative,
+});
+export type LiveDiagnosticsLadderRow = z.infer<
+	typeof diagnosticsLadderRowSchema
+>;
+
+export const diagnosticsLadderResultSchema = z.object({
+	encodingId: z.uuid(),
+	streams: z
+		.array(
+			diagnosticsLadderRowSchema.extend({
+				encodedBytes: nonnegative,
+				encodedSeconds: nonnegative,
+			}),
+		)
+		.max(1000)
+		.nullish(),
+});
+
 const date = z.preprocess(
 	(v) =>
 		v instanceof Date && Number.isFinite(v.getTime()) ? v.toISOString() : v,

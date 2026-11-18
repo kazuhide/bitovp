@@ -5,11 +5,13 @@ import {
 	diagnosticsEncodingVersionsSchema,
 	diagnosticsEventSchema,
 	diagnosticsHdStartSchema,
+	diagnosticsLadderResultSchema,
 	diagnosticsSrtSchema,
 	diagnosticsStreamSchema,
 	diagnosticsSummarySchema,
 	diagnosticsTaskSchema,
 	finalHeartbeatSchema,
+	type LiveDiagnosticsLadderRow,
 	liveDiagnosticsQuerySchema,
 } from "@/lib/live-diagnostics/schemas";
 import { writeAuditLog } from "./audit";
@@ -27,6 +29,32 @@ const providerPageSchema = z.object({
 	items: z.array(z.unknown()).max(100),
 	totalCount: z.number().int().nonnegative(),
 });
+
+function observedLadder(
+	wire: unknown,
+	encodingId: string,
+): LiveDiagnosticsLadderRow[] | null {
+	const { data } = z
+		.object({ data: z.object({ result: diagnosticsLadderResultSchema }) })
+		.parse(wire);
+	const { streams } = data.result;
+	if (data.result.encodingId !== encodingId)
+		throw new Error("Statistics do not match the run encoding");
+	if (!streams) return null;
+	if (new Set(streams.map((row) => row.streamId)).size !== streams.length)
+		throw new Error("Duplicate encoded stream statistics");
+	const rows = streams
+		.filter(
+			(row) => (row.encodedBytes ?? 0) > 0 || (row.encodedSeconds ?? 0) > 0,
+		)
+		.map(({ encodedBytes: _bytes, encodedSeconds: _seconds, ...row }) => row);
+	// An explicit empty list or a complete set of zero samples can vouch for
+	// zero. A row without output counters cannot.
+	return rows.length > 0 ||
+		streams.every((row) => row.encodedBytes === 0 && row.encodedSeconds === 0)
+		? rows
+		: null;
+}
 
 /** This metadata read uses the same immutable run/account binding as statistics. */
 async function encodingVersions(
@@ -191,21 +219,42 @@ async function handleDiagnostics(
 				409,
 				"The original Bitmovin account cannot be established for this run",
 			);
-		const api = await bitmovinClientForAccount(ctx, accountId);
+		const kind = final ? "final-heartbeat" : query.kind;
+		const ladderPath = `/encoding/statistics/encodings/${encodingId}`;
+		let ladder: LiveDiagnosticsLadderRow[] | null | undefined;
+		const api =
+			kind === "ladder"
+				? await bitmovinClientForAccount(
+						ctx,
+						accountId,
+						req.signal,
+						async (url, response) => {
+							if (response.ok && new URL(url).pathname === `/v1${ladderPath}`) {
+								// EncodingStats maps omitted streams to []. Preserve the
+								// presence of the wire field before the SDK maps it.
+								ladder = observedLadder(
+									await response.clone().json(),
+									encodingId,
+								);
+							}
+						},
+					)
+				: await bitmovinClientForAccount(ctx, accountId);
 		if (!api)
 			return jsonError(
 				404,
 				"The original Bitmovin account is no longer available",
 			);
-		const kind = final ? "final-heartbeat" : query.kind;
 		const basePath = `/encoding/statistics/encodings/${encodingId}/live-statistics`;
 		const path = final
 			? `/encoding/encodings/${encodingId}/live/heartbeat-final`
-			: query.kind === "task"
-				? `/encoding/encodings/${encodingId}/status`
-				: query.kind === "hd-start"
-					? `/encoding/encodings/${encodingId}/live/hd/start`
-					: `${basePath}${query.kind === "summary" ? "" : `/${query.kind}`}${query.srtInputId ? `/${query.srtInputId}` : ""}`;
+			: query.kind === "ladder"
+				? ladderPath
+				: query.kind === "task"
+					? `/encoding/encodings/${encodingId}/status`
+					: query.kind === "hd-start"
+						? `/encoding/encodings/${encodingId}/live/hd/start`
+						: `${basePath}${query.kind === "summary" ? "" : `/${query.kind}`}${query.srtInputId ? `/${query.srtInputId}` : ""}`;
 		const started = Date.now();
 		try {
 			const stats = api.encoding.statistics.encodings.liveStatistics;
@@ -222,6 +271,11 @@ async function handleDiagnostics(
 					await api.encoding.encodings.live.heartbeatFinal.get(encodingId),
 				);
 				result = { ...envelope, data };
+			} else if (query.kind === "ladder") {
+				await api.encoding.statistics.encodings.get(encodingId);
+				if (ladder === undefined)
+					throw new Error("Encoding statistics wire response is missing");
+				result = { ...envelope, data: ladder };
 			} else if (query.kind === "task") {
 				const task = await api.encoding.encodings.status(encodingId);
 				const safe = diagnosticsTaskSchema.parse(task);

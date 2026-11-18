@@ -32,6 +32,7 @@ import {
 	AISA_CHANNEL_RESPONSE_HEADERS,
 	aisaChannelViewerProjection,
 	aisaPublisherConnectionAllowed,
+	canRetryEndedAisaFinalization,
 	isAisaLiveChannelView,
 } from "@/lib/server/live-channel-aisa-view";
 import { readHeartbeatReception } from "@/lib/server/live-heartbeat-reception";
@@ -88,6 +89,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 						aisaStatus: true,
 						aisaSnapshot: true,
 						aisaObservedAt: true,
+						aisaFinalization: true,
 						encoderIp: true,
 						streamKey: true,
 						outputPrefix: true,
@@ -161,9 +163,14 @@ export async function GET(req: Request, { params }: RouteParams) {
 		const technicalDetailsAllowed =
 			actor === "session" ||
 			(roleResolvedPrincipal && req.headers.get(ROLE_HEADER) === "ADMIN");
+		const { aisaFinalization: _finalization, ...runFields } = currentRun ?? {
+			stepLog: null,
+			error: null,
+			aisaFinalization: null,
+		};
 		const currentRunView = currentRun
 			? {
-					...publicMoqHistory(currentRun),
+					...publicMoqHistory(runFields),
 					liveToVod: liveToVodForRole(
 						currentRun.liveToVod,
 						technicalDetailsAllowed,
@@ -208,6 +215,14 @@ export async function GET(req: Request, { params }: RouteParams) {
 					? {
 							playbackLinksAvailability: "unavailable",
 							aisaFeatureAllowed: true,
+							canRetryAisaFinalization:
+								channel.origin !== "AISA_IMPORTED" &&
+								(await canRetryEndedAisaFinalization(
+									ctx.prisma,
+									channel,
+									currentRun,
+									observedNow.getTime(),
+								)),
 						}
 					: {}),
 				// review-260 127-A5 (folded into #126): heartbeat freshness must

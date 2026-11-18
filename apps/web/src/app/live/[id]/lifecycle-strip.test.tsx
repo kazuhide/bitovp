@@ -209,8 +209,11 @@ describe("LifecycleStrip", () => {
 		expect(screen.getByText(/last confirmed never/)).toBeInTheDocument();
 	});
 
-	it("an ERROR channel whose encoding the provider ENDED gets the terminal hint, not 'may still be up on Bitmovin'", () => {
-		renderWithQuery(
+	it.each([
+		"FINISHED",
+		"ERROR",
+	])("shows only the stopped stage for a local ERROR with provider status %s", (providerStatus) => {
+		const { container } = renderWithQuery(
 			<LifecycleStrip
 				status="ERROR"
 				ingestConnected={false}
@@ -220,15 +223,22 @@ describe("LifecycleStrip", () => {
 					terminal: true,
 					observedAt: "2026-08-30T12:00:00.000Z",
 					unknownSince: null,
-					status: "FINISHED",
+					status: providerStatus,
 				}}
 			/>,
 		);
+		expect(container.querySelector('[data-state="active"]')).toHaveAttribute(
+			"data-stage",
+			"7",
+		);
+		expect(container.querySelector('[data-stage="1"]')).toBeNull();
 		fireEvent.click(screen.getByRole("button"));
 		expect(
-			screen.getByText(/reported this run's encoding FINISHED/),
+			screen.getByText(
+				new RegExp(`reported this run's encoding ${providerStatus}`),
+			),
 		).toBeInTheDocument();
-		expect(screen.getByText(/fresh run/)).toBeInTheDocument();
+		expect(screen.queryByText(/fresh run/)).toBeNull();
 		expect(screen.queryByText(/may still be up on Bitmovin/)).toBeNull();
 	});
 

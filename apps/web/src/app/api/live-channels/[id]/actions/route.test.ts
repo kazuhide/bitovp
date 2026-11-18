@@ -542,10 +542,15 @@ describe("AISA lifecycle admission", () => {
 			expect(runUpdate).not.toHaveBeenCalled();
 		}
 	});
-	it("requeues same-run Analysis readback from an Encoder-only clean STOPPED row", async () => {
+	it.each([
+		["STOPPED", false],
+		["STOPPED", true],
+		["RUNNING", true],
+		["STOPPING", true],
+	] as const)("requeues Analysis readback after the provider ended (%s, scoped=%s)", async (status, scoped) => {
 		findUnique.mockResolvedValue(
 			channel({
-				status: "STOPPED",
+				status,
 				error: null,
 				plan: {
 					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
@@ -555,7 +560,7 @@ describe("AISA lifecycle admission", () => {
 		runFindFirst.mockResolvedValue({
 			id: RUN_ID,
 			seq: 1,
-			status: "STOPPED",
+			status,
 			bitmovinEncodingId: "bm-live-enc",
 			aisaAnalysisId: "analysis-1",
 			aisaStatus: "RUNNING",
@@ -570,9 +575,172 @@ describe("AISA lifecycle admission", () => {
 			"completed",
 			manualStopSuccess(),
 		);
-		const response = await postAction({ action: "stop" });
+		const response = await postAction(
+			scoped
+				? {
+						action: "retry-finalization",
+						runId: RUN_ID,
+						encodingId: "bm-live-enc",
+					}
+				: { action: "stop" },
+		);
 		expect(response.status).toBe(202);
 		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+	it.each([
+		{
+			name: "replaces a failed job",
+			jobState: "failed",
+			scoped: true,
+			expired: true,
+			response: 202,
+			enqueued: true,
+		},
+		{
+			name: "replaces a missing job",
+			jobState: null,
+			scoped: true,
+			expired: true,
+			response: 202,
+			enqueued: true,
+		},
+		{
+			name: "refuses an unexpired claim",
+			jobState: "failed",
+			scoped: true,
+			expired: false,
+			response: 409,
+			enqueued: false,
+		},
+		{
+			name: "retains an active job",
+			jobState: "active",
+			scoped: true,
+			expired: false,
+			response: 202,
+			enqueued: false,
+		},
+		{
+			name: "refuses legacy Stop",
+			jobState: "failed",
+			scoped: false,
+			expired: true,
+			response: 409,
+			enqueued: false,
+		},
+		{
+			name: "refuses another encoder's claim",
+			jobState: "failed",
+			scoped: true,
+			expired: true,
+			otherEncoder: true,
+			response: 409,
+			enqueued: false,
+		},
+	])("scoped finalization with a DISPATCHING claim: $name", async ({
+		jobState,
+		scoped,
+		expired,
+		otherEncoder,
+		response,
+		enqueued,
+	}) => {
+		findUnique.mockResolvedValue(
+			channel({
+				status: "STOPPING",
+				plan: {
+					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+				},
+			}),
+		);
+		runFindFirst.mockResolvedValue({
+			id: RUN_ID,
+			seq: 1,
+			status: "STOPPING",
+			bitmovinEncodingId: "bm-live-enc",
+			aisaAnalysisId: "analysis-1",
+			aisaStatus: "RUNNING",
+			providerStatus: "FINISHED",
+			providerTerminalAt: new Date(),
+		});
+		effectClaimFindUnique.mockResolvedValue(
+			manualStopClaim("DISPATCHING", {
+				expiresAt: expired ? new Date(0) : new Date(Date.now() + 60_000),
+				...(otherEncoder ? { providerEncodingId: "different-encoder" } : {}),
+			}),
+		);
+		const jobId = `manual-stop-${CHANNEL_ID}-${RUN_ID}`;
+		const job = jobState
+			? retainQueuedJob(jobId, manualStopJobData(), jobState)
+			: null;
+		const result = await postAction(
+			scoped
+				? {
+						action: "retry-finalization",
+						runId: RUN_ID,
+						encodingId: "bm-live-enc",
+					}
+				: { action: "stop" },
+		);
+		expect(result.status).toBe(response);
+		expect(queueAdd).toHaveBeenCalledTimes(enqueued ? 1 : 0);
+		if (enqueued) {
+			expect(queuedJobs.get(jobId)?.data).toMatchObject(manualStopJobData());
+			expect(queuedJobs.get(jobId)).not.toBe(job);
+		} else if (job) {
+			expect(queuedJobs.get(jobId)).toBe(job);
+		}
+	});
+	it("rejects the old finalization field on Stop before dispatching against the current run", async () => {
+		const result = await postAction({
+			action: "stop",
+			finalizationRunId: RUN_ID,
+		});
+		expect(result.status).toBe(400);
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+	it.each([
+		"before lookup",
+		"during lookup",
+		"during replay",
+		"encoder rebound",
+	])("refuses recovery when the ended run was replaced %s", async (when) => {
+		const replacedRunId = "22222222-2222-4222-8222-222222222222";
+		const status = when === "during replay" ? "STOPPING" : "ERROR";
+		findUnique.mockResolvedValue(
+			channel({
+				status,
+				plan: {
+					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+				},
+			}),
+		);
+		const current = {
+			id: RUN_ID,
+			seq: 1,
+			status,
+			bitmovinEncodingId: "bm-live-enc",
+			aisaAnalysisId: "analysis-1",
+			aisaStatus: "RUNNING",
+			providerStatus: "ERROR",
+			providerTerminalAt: new Date(),
+		};
+		if (when !== "before lookup") runFindFirst.mockResolvedValueOnce(current);
+		runFindFirst.mockResolvedValue(
+			when === "encoder rebound"
+				? { ...current, bitmovinEncodingId: "different-encoder" }
+				: { ...current, id: replacedRunId, seq: 2 },
+		);
+
+		const response = await postAction({
+			action: "retry-finalization",
+			runId: RUN_ID,
+			encodingId: "bm-live-enc",
+		});
+
+		expect(response.status).toBe(409);
+		expect(queueAdd).not.toHaveBeenCalled();
+		expect(runUpdate).not.toHaveBeenCalled();
 	});
 	it("blocks re-air until the independently terminal Analysis result is accounted for", async () => {
 		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");

@@ -2105,12 +2105,11 @@ export const ja = {
 		nextEventIn: "{countdown}後に{action}",
 		nextEventOverdue: "{action}が{countdown}超過",
 		nextEventSlate: "スレート {seconds}秒",
-		runtime: "稼働時間",
+		runtime: "エンコーダ稼働",
 		runtimeElapsed: "経過 {elapsed}",
 		runtimeRemaining: "経過 {elapsed} · 残り {remaining}",
 		runtimeCapReached: "経過 {elapsed} · 上限に到達",
 		/* Post-run values freeze at shutdown; they do not include the current time. */
-		runtimeRan: "配信時間 {duration}",
 		summaryResolvedAlerts: "解決済み {count} 件",
 	},
 	notFound: {
@@ -3181,8 +3180,7 @@ export const ja = {
 		providerUnobservedHint:
 			"Bitmovin エンコーダ状態の初回確認を待っています。確認できるまではオンエア中と判定しません。",
 		providerUnknownNever: "なし",
-		providerTerminalHint:
-			"Bitmovin から {status} が報告されました（{at}）。エンコーダは解放済みで再起動できません。開始すると、新しいエンコーダと入力エンドポイントで次の配信を準備します。",
+		providerTerminalHint: "Bitmovin の確認結果は {status} です（{at}）。",
 		inputUnobserved: "入力状態を未確認",
 		inputUnobservedHint: "この配信の入力接続状態は取得できていません。",
 		s2: "② インスタンス起動中",
@@ -3440,6 +3438,21 @@ export const ja = {
 		/* Primary actions describe channel tasks; the provider encoder is a secondary detail. */
 		start: "チャンネルを開始",
 		startNewRun: "新しい配信を開始",
+		retryAisaFinalization: "終了処理を再試行",
+		retryAisaFinalizationDescription: "終了した配信の後処理を再試行します。",
+		encoderStopped: "停止済み",
+		encoderActive: "エンコーダ稼働中",
+		encoderStatusUnverified: "エンコーダの状態未確認",
+		runOutputGenerated: "出力生成を確認",
+		runErrorRecorded: "エラーあり",
+		runOutputUnverified: "出力未確認",
+		runPlaybackUnverified: "再生未確認",
+		ladderConfigured: "設定ラダー",
+		ladderConfiguredSummary: "設定 {count} 件",
+		ladderConfiguredUnavailable: "設定ラダー未登録",
+		ladderObserved: "実績ラダー",
+		ladderObservedEmpty: "記録された出力なし",
+		ladderObservedUnavailable: "出力実績未取得",
 		/* Akamai MSL uses account API authentication, not a storage credential. Operators select the destination explicitly and enter its four required fields. */
 		outputDestination: "配信先",
 		destinationStorage: "オブジェクトストレージ",
@@ -3515,21 +3528,22 @@ export const ja = {
 	},
 	pushLog: {
 		title: "Push Heartbeat 受信ログ",
-		hint: "新しい受信から順に、署名を確認した通知を 1 行ずつ表示します。再送分も含みます。過去の計測記録のため、現在の状態や再生可否は判断できません。詳細には表示対象の計測項目のみを含みます。定期取得（Poll）の履歴とエクスポートは下段で確認できます。",
+		hint: "署名を確認した通知を再送分も含めて受信の新しい順に表示します。詳細には過去の計測項目を表示します。配信中の最新ページを前面で開いている間は2秒ごとに更新し、詳細の閲覧中や過去・終了済みの配信を表示中は更新を停止します。",
 		sampledAt: "Bitmovin 計測時刻",
 		receivedAt: "アプリ受信時刻",
-		auto: "現在の配信のログを開いている間は、最新の受信を 2 秒ごとに表示します。",
-		paused:
-			"自動更新は停止中です。ログを閉じた場合、終了済みの配信や過去のページを表示している場合、画面が非表示の場合は更新しません。",
-		inspecting:
-			"詳細を確認中のため更新を停止しています。すべての詳細を閉じると再開します。",
+		auto: "自動更新中",
+		paused: "自動更新停止",
+		inspecting: "閲覧中・更新停止",
 		details: "詳細",
-		empty: "この配信には、署名を確認した Push 通知の受信記録がありません。",
+		empty: "Push受信なし",
+		history: "履歴",
 		older: "古い受信",
 		latest: "最新の受信へ",
 		retry: "再試行",
 		current: "現在の配信（再起動後も切り替えて表示）",
-		poll: "定期取得の履歴・エクスポート（約 30 秒間隔）",
+		followLatest: "最新の配信に追従",
+		latestEnded: "配信 #{n} · 終了",
+		poll: "定期取得（Poll）",
 	},
 	heartbeatLog: {
 		title: "ハートビートログ",
@@ -3544,7 +3558,7 @@ export const ja = {
 		noEvents: "この配信でエンコーダはイベントを報告していません。",
 		export: "JSON をエクスポート(管理者)",
 		summaryLine:
-			"定期取得の要約: {samples} サンプル · 入力接続 {connectedMinutes} 分 · 警告/エラー {warnings} 件（Push受信は別表示）",
+			"定期取得 {samples}件 · 入力接続 {connectedMinutes}分（観測） · 警告・エラー {warnings}件",
 		rowsPruned: "元の計測値は削除済みです",
 		time: "時刻",
 		ingest: "入力",
@@ -3560,7 +3574,7 @@ export const ja = {
 		rowsLoaded: "{count} 行を読み込み済み",
 		loadMore: "さらに読み込む",
 		columnsHint:
-			"受信 Mbps と fps は、最初の映像ストリームの incomingBitrate と rate です。キーフレーム間隔は keyFrameIntervalAvg / Max、マニフェスト経過は取得時刻から最新 HLS マニフェストの更新時刻を引いた値です。イベントは、その取得で新たに確認したものだけを表示します。取得した全項目は JSON で確認できます。",
+			"約30秒間隔で取得し、JSONでエクスポートできます。受信Mbps、fps、keyFrameIntervalAvg / Maxは先頭の映像ストリームの値です。マニフェスト経過は最新HLS更新からの経過時間です。各行にその回で新たに確認したイベントを表示します。取得した全項目はJSONで確認できます。",
 	},
 	dvr: {
 		resetTitle: "タイムシフトをリセット(RUNNING 時のみ)",
@@ -3870,6 +3884,8 @@ export const ja = {
 		insert: "media point を挿入",
 	},
 	liveToVod: {
+		recordingNotConfirmed:
+			"エンコードは終了しました。録画の完結性は未確認です。",
 		stopFirst: "先にチャンネルを停止してください。ライブ → VOD は",
 		complete: "完全な",
 		manifests: "マニフェスト",

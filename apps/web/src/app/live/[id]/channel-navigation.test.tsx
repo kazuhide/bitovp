@@ -150,7 +150,10 @@ type AlertEvent = {
 type World = {
 	plan?: typeof PLAN;
 	streamKey?: string | null;
-	providerStatus?: "FINISHED";
+	providerStatus?: "FINISHED" | "ERROR";
+	runEncodingId?: string;
+	recordedError?: boolean;
+	outputProduced?: boolean;
 	status: string;
 	runId: string;
 	/**
@@ -191,19 +194,47 @@ function mockWorld() {
 		if (input.endsWith("/schedules")) {
 			return [];
 		}
+		if (input.endsWith("/runs")) {
+			return {
+				runs: world.recordedError
+					? [
+							{
+								id: world.runId,
+								seq: 3,
+								status: world.runStatus,
+								createdAt: new Date(NOW - 95 * 60_000).toISOString(),
+								runningSince: new Date(NOW - 90 * 60_000).toISOString(),
+								endedAt: new Date(NOW).toISOString(),
+								error: "retained operator evidence",
+							},
+						]
+					: [],
+			};
+		}
 		if (input.includes("/runs/") && input.endsWith("/health")) {
 			return {
 				points: [],
 				lanes: { ingest: [], encoder: [], output: [] },
 				run: {
-					id: "run-1",
+					id: world.runId,
 					seq: 1,
 					status: "RUNNING",
 					createdAt: "2026-08-29T10:00:00.000Z",
 				},
 				truncated: false,
 				outputObservable: true,
-				timeline: { window: { startMs: NOW - 7_200_000 }, events: [] },
+				timeline: {
+					window: { startMs: NOW - 7_200_000 },
+					events: world.outputProduced
+						? [
+								{
+									kind: "OUTPUT_ACTIVE",
+									atMs: NOW - 2_000,
+									source: "heartbeat",
+								},
+							]
+						: [],
+				},
 			};
 		}
 		if (input.startsWith(`/api/live-channels/${CHANNEL}`)) {
@@ -211,6 +242,7 @@ function mockWorld() {
 				id: CHANNEL,
 				name: "Navigation channel",
 				status: world.status,
+				error: world.recordedError ? "retained operator evidence" : null,
 				labels: [],
 				region: "ap-northeast-1",
 				protocol: "RTMP",
@@ -234,15 +266,15 @@ function mockWorld() {
 					id: world.runId,
 					seq: 3,
 					status: world.runStatus,
-					bitmovinEncodingId: "enc-1",
+					bitmovinEncodingId: world.runEncodingId ?? "enc-1",
 					encoderIp: null,
 					streamKey: world.streamKey ?? null,
 					outputPrefix: "out/",
 					runningSince: new Date(NOW - 90 * 60_000).toISOString(),
-					endedAt: null,
+					endedAt: world.providerStatus ? new Date(NOW).toISOString() : null,
 					programStartAt: null,
 					programEndAt: null,
-					error: null,
+					error: world.recordedError ? "retained operator evidence" : null,
 					lastHeartbeat: world.lastHeartbeat,
 					lastHeartbeatAt: world.lastHeartbeat?.at ?? null,
 					stepLog: world.stepLog,
@@ -361,7 +393,7 @@ afterEach(() => {
 /** Render the page and wait for the body (not the skeleton) to be on screen. */
 async function renderPage(locale: "en" | "ja" = "en") {
 	const result = wrap(<ChannelDetail id={CHANNEL} />, locale);
-	await screen.findByRole("region", { name: /next action|次にやること/i });
+	await screen.findByRole("heading", { name: "Navigation channel" });
 	return result;
 }
 
@@ -369,39 +401,58 @@ describe("reusable channel observes an external restart without a reload", () =>
 	it.each([
 		"en",
 		"ja",
-	] as const)("ERROR after provider FINISHED and all DONE steps does not claim startup failed in %s", async (locale) => {
+	] as const)("shows confirmed termination and earlier output after a provider error in %s", async (locale) => {
 		world.status = "ERROR";
 		world.runStatus = "ERROR";
-		world.providerStatus = "FINISHED";
+		world.providerStatus = "ERROR";
+		world.recordedError = true;
+		world.outputProduced = true;
 		world.stepLog = compileLiveChannel(PLAN).map((operation) => ({
 			...operation,
 			status: "DONE",
 		}));
-		await renderPage(locale);
-		const panel = document.querySelector(
-			'[data-next-action="RECOVER_FROM_ERROR"]',
+		wrap(<ChannelDetail id={CHANNEL} />, locale);
+		await screen.findByText(
+			locale === "ja" ? "出力生成を確認" : "Output generated",
 		);
-		expect(panel).not.toBeNull();
-		const next = within(panel as HTMLElement);
+		expect(document.getElementById("sec-last-run")).toContainElement(
+			screen.getByText(locale === "ja" ? "再生未確認" : "Playback unverified"),
+		);
 		expect(
-			next.getByText(
-				locale === "ja"
-					? "前回の配信の状態を確認してください"
-					: "Review the previous run's status",
-			),
-		).toBeInTheDocument();
+			document.querySelector('[data-next-action="RECOVER_FROM_ERROR"]'),
+		).toBeNull();
 		expect(
-			next.getByText(
-				locale === "ja"
-					? "診断と終了理由、エンコーダの状態を確認してから次の操作を選んでください。"
-					: "Review diagnostics, the end reason and the encoder state before choosing the next action.",
-			),
-		).toBeInTheDocument();
-		expect(
-			next.queryByText(/The last start failed|前回の起動が失敗/),
+			screen.queryByRole("link", {
+				name: locale === "ja" ? "操作へ" : "Go to actions",
+			}),
 		).not.toBeInTheDocument();
-		expect(next.getByRole("link")).toHaveAttribute("href", "#sec-actions");
+		expect(
+			screen.queryByText(/配信処理で問題が発生|broadcast processing/i),
+		).not.toBeInTheDocument();
+		expect(
+			within(document.getElementById("sec-runs") as HTMLElement).getByText(
+				"ERROR",
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText("retained operator evidence"),
+		).not.toBeInTheDocument();
 		expect(document.querySelector('[data-provider="terminal"]')).not.toBeNull();
+	});
+
+	it("keeps the stop path when terminal evidence is from another encoding", async () => {
+		world.status = "ERROR";
+		world.runStatus = "ERROR";
+		world.providerStatus = "ERROR";
+		world.runEncodingId = "previous-encoding";
+		world.recordedError = true;
+		wrap(<ChannelDetail id={CHANNEL} />);
+		expect(
+			await screen.findByText("Encoder state unverified"),
+		).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Stop channel" })).toBeEnabled();
+		expect(document.querySelector('[data-provider="terminal"]')).toBeNull();
+		expect(document.getElementById("sec-last-run")).toBeNull();
 	});
 
 	it.each([

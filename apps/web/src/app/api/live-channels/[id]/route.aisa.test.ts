@@ -11,6 +11,7 @@ type Principal = {
 };
 const mocks = vi.hoisted(() => ({
 	findUnique: vi.fn(),
+	stopClaim: vi.fn(),
 	credentialFindMany: vi.fn(),
 	heartbeatEvents: vi.fn(),
 	tenant: undefined as Principal | undefined,
@@ -20,6 +21,7 @@ vi.mock("@/lib/server/context", () => ({
 		tenant: mocks.tenant,
 		prisma: {
 			liveChannel: { findUnique: mocks.findUnique },
+			liveEffectClaim: { findUnique: mocks.stopClaim },
 			credential: { findMany: mocks.credentialFindMany },
 			webhookRegistration: { findFirst: vi.fn().mockResolvedValue(null) },
 			webhookEvent: { findMany: mocks.heartbeatEvents },
@@ -133,6 +135,7 @@ beforeEach(() => {
 		isImpersonating: false,
 	};
 	mocks.findUnique.mockResolvedValue(managedRow());
+	mocks.stopClaim.mockResolvedValue(null);
 	mocks.credentialFindMany.mockResolvedValue([]);
 	mocks.heartbeatEvents.mockResolvedValue([]);
 });
@@ -310,6 +313,92 @@ describe("AISA publisher connection projection", () => {
 			snapshot.observations,
 		);
 		expect(body.monitoringSafeForViewer).toBeUndefined();
+	});
+
+	it.each([
+		["pending", "ERROR", true, false],
+		["pending", "RUNNING", true, false],
+		["pending", "STOPPING", true, false],
+		["cancel-requested", "STOPPING", false, false],
+		["different-encoding", "ERROR", false, false],
+		["viewer", "ERROR", false, false],
+		["settled", "ERROR", false, true],
+		["different-stop-claim", "ERROR", false, true],
+		["acknowledged-stop-claim", "ERROR", false, true],
+		["ambiguous-stop-claim", "ERROR", true, true],
+		["expired-dispatch-stop-claim", "ERROR", true, true],
+		["unexpired-dispatch-stop-claim", "ERROR", false, true],
+	] as const)("projects private retry (%s, %s)", async (state, status, expected, settled) => {
+		if (state !== "viewer") {
+			mocks.tenant = {
+				actor: `user:${ownerId}`,
+				actorUserId: ownerId,
+				effectiveUserId: ownerId,
+				role: "ADMIN",
+				actorRole: "ADMIN",
+				isImpersonating: false,
+			};
+		}
+		const row = managedRow();
+		row.status = status;
+		Object.assign(row.runs[0], {
+			status,
+			cancelRequested: state === "cancel-requested",
+			providerStatus: "ERROR",
+			providerTerminalAt: new Date("2026-11-07T00:01:00Z"),
+			...(state === "different-encoding"
+				? { bitmovinEncodingId: accountId }
+				: {}),
+			...(settled
+				? {
+						aisaStatus: "ERROR",
+						aisaSnapshot: null,
+						error: "AISA_LIVE_TERMINAL_FAILURE",
+						aisaFinalization: {
+							analysisId,
+							encodingId,
+							status: "ERROR",
+							result: "UNAVAILABLE_TERMINAL_FAILURE",
+							observedAt: "2026-11-07T00:01:00Z",
+						},
+					}
+				: {}),
+		});
+		const idempotencyKey = `manual:stop:${channelId}:${row.runs[0].id}`;
+		if (state.endsWith("-stop-claim")) {
+			mocks.stopClaim.mockResolvedValue({
+				idempotencyKey,
+				liveChannelId: channelId,
+				liveChannelRunId:
+					state === "different-stop-claim" ? "different-run" : row.runs[0].id,
+				providerEncodingId: encodingId,
+				action: "STOP",
+				state: state.endsWith("-dispatch-stop-claim")
+					? "DISPATCHING"
+					: state === "acknowledged-stop-claim"
+						? "ACKED"
+						: "AMBIGUOUS",
+				expiresAt:
+					state === "expired-dispatch-stop-claim"
+						? new Date(0)
+						: new Date(Date.now() + 60_000),
+				requestSha256: null,
+				scheduleId: null,
+				targetId: null,
+			});
+		}
+		mocks.findUnique.mockResolvedValue(row);
+		const body = await (await GET(request(), params())).json();
+		expect(Boolean(body.canRetryAisaFinalization)).toBe(expected);
+		expect(body.currentRun).not.toHaveProperty("aisaFinalization");
+		expect(body).not.toHaveProperty("liveEffectClaim");
+		if (settled) {
+			expect(mocks.stopClaim).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({ where: { idempotencyKey } }),
+			);
+		} else {
+			expect(mocks.stopClaim).not.toHaveBeenCalled();
+		}
 	});
 
 	it.each([

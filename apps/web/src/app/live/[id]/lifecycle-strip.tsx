@@ -1,5 +1,6 @@
 "use client";
 
+import { classifyProviderStatusWord } from "@bitovp/core";
 import type { LiveChannelStatus } from "@/app/live/live-shared";
 import { HelpOverlay } from "@/components/ui/help-overlay";
 import { formatDateTime } from "@/lib/format";
@@ -43,7 +44,7 @@ export type ProviderLifecycleView = {
 	unknown: boolean;
 	/** No provider read has landed for this run yet — amber, never green. */
 	unobserved?: boolean;
-	/** Bitmovin reported the encoding ended — the ① hint changes. */
+	/** Bitmovin reported that this run's own encoder ended. */
 	terminal: boolean;
 	/** ISO of the last SUCCESSFUL readback; null = never confirmed. */
 	observedAt: string | null;
@@ -81,16 +82,20 @@ export function LifecycleStrip({
 	provider?: ProviderLifecycleView;
 }) {
 	const { t } = useT();
-	const active = lifecycleStage(status, ingestConnected);
+	const providerTerminal = provider?.terminal === true;
+	const active = providerTerminal ? 7 : lifecycleStage(status, ingestConnected);
+	const visibleStages = providerTerminal ? STAGE_DEFS.slice(-1) : STAGE_DEFS;
 	const activeDef = STAGE_DEFS.find((s) => s.n === active);
-	const inputUnobserved = status === "RUNNING" && ingestConnected === null;
-	const providerUnknown = provider?.unknown === true;
+	const inputUnobserved =
+		!providerTerminal && status === "RUNNING" && ingestConnected === null;
+	const providerUnknown = !providerTerminal && provider?.unknown === true;
 	// A terminal legacy row is historical, not waiting for a future poll.
 	const providerUnobserved =
-		provider?.unobserved === true && (status !== "STOPPED" || hasError);
+		!providerTerminal &&
+		provider?.unobserved === true &&
+		(status !== "STOPPED" || hasError);
 	const providerUnconfirmed = providerUnknown || providerUnobserved;
 	const activeUnconfirmed = providerUnconfirmed || inputUnobserved;
-	const providerTerminal = provider?.terminal === true;
 	// review-2 on #268: a STOPPED channel whose stop never CONFIRMED is more
 	// exactly the population this hint describes than an ERROR one is — the
 	// evidence there is positive and recorded , while ERROR
@@ -119,13 +124,16 @@ export function LifecycleStrip({
 						? formatDateTime(provider.unknownSince)
 						: t("lifecycle.providerUnknownNever"),
 				})
-			: errorWithEncoder && providerTerminal
-				? t("lifecycle.providerTerminalHint", {
-						status: provider?.status ?? "FINISHED",
-						at: provider?.observedAt
-							? formatDateTime(provider.observedAt)
-							: t("lifecycle.providerUnknownNever"),
-					})
+			: providerTerminal
+				? provider.status &&
+					classifyProviderStatusWord(provider.status) === "TERMINAL"
+					? t("lifecycle.providerTerminalHint", {
+							status: provider.status,
+							at: provider.observedAt
+								? formatDateTime(provider.observedAt)
+								: t("lifecycle.providerUnknownNever"),
+						})
+					: t("lifecycle.s7Hint")
 				: errorWithEncoder
 					? t("lifecycle.s1ErrorHint")
 					: inputUnobserved
@@ -146,7 +154,7 @@ export function LifecycleStrip({
 			}
 		>
 			<ol className="flex flex-wrap items-center gap-1 text-xs">
-				{STAGE_DEFS.map((stage, i) => {
+				{visibleStages.map((stage, i) => {
 					const state =
 						stage.n === active
 							? "active"

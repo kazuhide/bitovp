@@ -212,6 +212,10 @@ export const MUTATION_CONTROLS = {
 				api: "/api/live-channels/[id]/runs/[runId]/diagnostics",
 			},
 			{
+				source: "app/live/[id]/ladder-panel.tsx",
+				api: "/api/live-channels/[id]/runs/[runId]/diagnostics",
+			},
+			{
 				source: "app/live/[id]/heartbeat-log-panel.tsx",
 				api: "/api/live-channels/[id]/runs/[runId]/heartbeats",
 			},

@@ -213,11 +213,8 @@ sweep; they do not implement the provider's native Watch Folders API. Live MSL
 and SFTP mirror authoring remains a GUI gap; primary MSL already has a path and
 valid expert-JSON mirror plans are preserved.
 
-MoQ now has a Live expert-JSON/Worker path with encrypted credentials.
-The [historical short Cloudflare trial](./MOQ-LIVE-ENCODER-TEST-RESULTS.md)
-records Player Web X playback with configured draft 16. That receipt does not
-qualify the current source, other relays, Encoder-native ALPN, draft 18 or
-long-duration playback.
+MoQ Live supports expert JSON and encrypted credentials. The [historical
+playback trial](./MOQ-LIVE-ENCODER-TEST-RESULTS.md) used Cloudflare draft 16.
 AV1 Per-Title `targetQualityCrf` is an existing field whose upstream documentation
 changed, not an operation or field newly implemented by this upgrade.
 

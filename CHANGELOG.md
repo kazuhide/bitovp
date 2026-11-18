@@ -8,6 +8,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- Try sample VOD timeline edits, pseudo-live logs, and AISA-informed clip editing in the public browser demo.
 - Play clips, highlights and trailers directly from their cards on a content page and resize the clips panel on desktop. The catalog counts exported clips and links to the retained results.
 - Review a clip's saved editing settings on its export page and open a new editing timeline from that version. The original project and export are retained.
 - Find earlier clip generation jobs in the library by content name, status and update time, and reopen their progress or results.

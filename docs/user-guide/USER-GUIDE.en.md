@@ -182,7 +182,11 @@ Paths such as `/vod/new` refer to screens in the installed application. For exam
 
 The [English interactive demo](https://kazuhide.github.io/bitovp/#/demo) requires no registration. You can browse the dashboard, VOD jobs, Live channels, and quality reports, configure VOD and Live plans, and create simulated jobs.
 
-The demo does not connect to the Bitmovin Encoding API or storage, and it does not create cloud resources. Scheduled execution, runtime caps, media playback, and quality computation require the installed application. You do not need to enter credentials or signed media URLs in the demo.
+- In [New VOD job](https://kazuhide.github.io/bitovp/#/demo/vod/new), choose **Edit on timeline** in **Sources** and add the sample file from the demo storage browser. Use the clip edges to trim and drag the clips to change their order.
+- Open a feed from [Pseudo-live](https://kazuhide.github.io/bitovp/#/demo/live/feeders) and choose **Diagnostics** to see a sample log.
+- Open [Content library](https://kazuhide.github.io/bitovp/#/demo/library) to see example AISA results and edit a sample clip timeline.
+
+The demo uses browser-local sample data. Media playback, encoding input preparation, scheduled execution, runtime caps, and quality computation require the installed application. Keep credentials and signed media URLs in your installed workspace.
 
 Jobs you create in the demo are stored in the current browser tab. "Reset demo" removes added jobs and demo drafts while keeping display preferences such as language and theme. The language links open the same demo screen in another language.
 

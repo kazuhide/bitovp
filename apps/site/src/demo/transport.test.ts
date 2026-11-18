@@ -85,7 +85,8 @@ describe("isolated demo transport", () => {
 		const session = await (await transport.fetch("/api/auth/session")).json();
 		expect(session).toMatchObject({
 			authenticated: true,
-			role: "OPERATOR",
+			role: "ADMIN",
+			platformOwner: false,
 			displayName: "Demo user",
 		});
 		const job = await (

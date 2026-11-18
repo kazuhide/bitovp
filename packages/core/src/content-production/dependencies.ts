@@ -20,7 +20,7 @@ import {
 import {
 	transcriptionRawSegmentSchema,
 	transcriptionSpeechIntervalSchema,
-} from "./transcription-quality";
+} from "./transcription-schema";
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const transcriptResultSchema = z

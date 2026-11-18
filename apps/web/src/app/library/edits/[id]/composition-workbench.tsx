@@ -52,9 +52,11 @@ import { useDirectCropGesture } from "./use-direct-crop-gesture";
 export function CompositionWorkbench({
 	project,
 	initialUndoDraft,
+	previewUnavailableMessage,
 }: {
 	project: AnyEditingProjectView & { draft: CompositionDocument };
 	initialUndoDraft?: CompositionDocument;
+	previewUnavailableMessage?: string;
 }) {
 	const c = useCompositionCopy(),
 		productionCopy = useProductionCopy(),
@@ -744,6 +746,7 @@ export function CompositionWorkbench({
 							</Button>
 							<Button
 								disabled={
+									!!previewUnavailableMessage ||
 									blocked ||
 									!actorIdentity ||
 									remoteChanged ||
@@ -799,25 +802,31 @@ export function CompositionWorkbench({
 				)}
 				<div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
 					<div className="min-w-0 space-y-5">
-						<CompositionPreview
-							plan={plan}
-							media={media}
-							imageAssets={images}
-							frame={Math.min(frame, plan.durationFrames - 1)}
-							onFrame={seekFrame}
-							onSourceFrameReader={receiveSourceFrameReader}
-							onSourceFrameAvailabilityChange={sourceFrameAvailabilityChanged}
-							sourceCrop={{
-								clipId: selectedId,
-								contextKey: cropContextKey,
-								disabled: blocked || remoteChanged || otherPending,
-								active: cropGesture.active,
-								onStart: cropGesture.begin,
-								onPreview: cropGesture.preview,
-								onCommit: cropGesture.commit,
-								onCancel: cropGesture.cancel,
-							}}
-						/>
+						{previewUnavailableMessage ? (
+							<p className="rounded-lg border border-zinc-800 p-4 text-sm text-zinc-400">
+								{previewUnavailableMessage}
+							</p>
+						) : (
+							<CompositionPreview
+								plan={plan}
+								media={media}
+								imageAssets={images}
+								frame={Math.min(frame, plan.durationFrames - 1)}
+								onFrame={seekFrame}
+								onSourceFrameReader={receiveSourceFrameReader}
+								onSourceFrameAvailabilityChange={sourceFrameAvailabilityChanged}
+								sourceCrop={{
+									clipId: selectedId,
+									contextKey: cropContextKey,
+									disabled: blocked || remoteChanged || otherPending,
+									active: cropGesture.active,
+									onStart: cropGesture.begin,
+									onPreview: cropGesture.preview,
+									onCommit: cropGesture.commit,
+									onCancel: cropGesture.cancel,
+								}}
+							/>
+						)}
 						<CompositionTimeline
 							document={cropGesture.document}
 							sources={sources}
@@ -849,7 +858,10 @@ export function CompositionWorkbench({
 							media={media}
 							actorIdentity={actorIdentity}
 							disabled={
-								blocked || Boolean(pendingInputs.length) || cropGesture.active
+								!!previewUnavailableMessage ||
+								blocked ||
+								Boolean(pendingInputs.length) ||
+								cropGesture.active
 							}
 						/>
 						<details className="min-w-0">
@@ -861,6 +873,7 @@ export function CompositionWorkbench({
 									project={project}
 									disabled={blocked || cropGesture.active}
 									generationDisabled={
+										!!previewUnavailableMessage ||
 										blocked ||
 										Boolean(pendingInputs.length) ||
 										dirty ||

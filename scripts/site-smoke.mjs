@@ -3,7 +3,7 @@ import { mkdir, readFile, realpath } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 import { runGuideSmoke } from "./guide-smoke.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -66,6 +66,16 @@ const locales = {
 		summary: "Show summary",
 		manual: "Enter manually",
 		liveTimeline: "Broadcast timeline",
+		timeline: "Edit on timeline",
+		addSample: "Add big-buck-bunny-10s.mp4 to sequence",
+		trimEnd: /^Trim end,/,
+		feederDiagnostics: "Diagnostics",
+		analysisLanguage: "Analysis language",
+		bunnyScene: "Morning in the meadow",
+		editClips: "Edit clips",
+		clipLength: "Length (s)",
+		saveDraft: "Save draft",
+		draftSaved: "Draft saved",
 		createVod: "Create demo job",
 		createLive: "Create demo channel",
 		reset: "Reset demo",
@@ -88,6 +98,16 @@ const locales = {
 		summary: "概要を表示",
 		manual: "手入力する",
 		liveTimeline: "配信タイムライン",
+		timeline: "タイムラインで編集",
+		addSample: "big-buck-bunny-10s.mp4をタイムラインへ追加",
+		trimEnd: /^終了を調整,/,
+		feederDiagnostics: "診断",
+		analysisLanguage: "解析言語",
+		bunnyScene: "草原の朝",
+		editClips: "クリップを編集",
+		clipLength: "長さ（秒）",
+		saveDraft: "下書きを保存",
+		draftSaved: "保存済み",
 		createVod: "デモジョブを作成",
 		createLive: "デモチャンネルを作成",
 		reset: "デモを初期状態に戻す",
@@ -116,6 +136,104 @@ async function createContext(options) {
 		return route.continue();
 	});
 	return context;
+}
+
+async function dragBy(page, locator, dx) {
+	await locator.scrollIntoViewIfNeeded();
+	const bounds = await locator.boundingBox();
+	assert(bounds, "The drag control must be visible");
+	const x = bounds.x + bounds.width / 2;
+	const y = bounds.y + bounds.height / 2;
+	await page.mouse.move(x, y);
+	await page.mouse.down();
+	await page.mouse.move(x + dx, y, { steps: 8 });
+	await page.mouse.up();
+}
+
+async function tryVodTimeline(page, copy) {
+	await page.getByRole("button", { name: copy.timeline, exact: true }).click();
+	const add = page.getByRole("button", { name: copy.addSample, exact: true });
+	await add.click();
+	const clips = page.locator('[data-clip-track="video"]');
+	await expect(clips).toHaveCount(1);
+	const firstId = await clips.first().getAttribute("data-clip-id");
+	await clips.first().press("Enter");
+	const trimEnd = clips.first().locator("..").getByRole("slider", {
+		name: copy.trimEnd,
+	});
+	const initialEnd = Number(await trimEnd.getAttribute("aria-valuenow"));
+	assert.equal(initialEnd, 10_000);
+	const firstBounds = await clips.first().boundingBox();
+	assert(firstBounds && firstBounds.width > 30);
+	await dragBy(page, trimEnd, -firstBounds.width / 4);
+	await expect
+		.poll(async () => Number(await trimEnd.getAttribute("aria-valuenow")))
+		.toBeLessThan(initialEnd);
+
+	await add.click();
+	await expect(clips).toHaveCount(2);
+	const secondId = await clips.nth(1).getAttribute("data-clip-id");
+	assert(firstId && secondId && firstId !== secondId);
+	await clips.first().scrollIntoViewIfNeeded();
+	const from = await clips.first().boundingBox();
+	const to = await clips.nth(1).boundingBox();
+	assert(from && to);
+	await dragBy(
+		page,
+		clips.first(),
+		to.x + to.width * 0.85 - from.x - from.width / 2,
+	);
+	await expect(clips.first()).toHaveAttribute("data-clip-id", secondId);
+	await expect(clips.nth(1)).toHaveAttribute("data-clip-id", firstId);
+	await expect(page.locator(".demo-notice")).toHaveCount(0);
+}
+
+async function tryLibraryDemo(page, locale, copy) {
+	await page.locator('a[href="#/demo/library"]:visible').click();
+	const content = page.getByRole("heading", {
+		name: "Big Buck Bunny",
+		exact: true,
+	});
+	await expect(content).toBeVisible();
+	await expect(
+		page.getByRole("heading", { name: "Harbor at Sunrise" }),
+	).toBeVisible();
+	await expect(
+		page.getByRole("heading", { name: "Studio Interview" }),
+	).toBeVisible();
+	await page.getByRole("searchbox").fill("Big Buck Bunny");
+	await expect(
+		page.getByRole("heading", { name: "Harbor at Sunrise" }),
+	).toHaveCount(0);
+	assert.match(new URL(page.url()).hash, /^#\/demo\/library\?/);
+	await content.click();
+	await page
+		.getByRole("combobox", { name: copy.analysisLanguage })
+		.selectOption(locale);
+	await expect(
+		page.getByText(copy.bunnyScene, { exact: false }).first(),
+	).toBeVisible();
+	await page.getByRole("link", { name: copy.editClips, exact: true }).click();
+	const seeded = page.getByRole("link", {
+		name: "Big Buck Bunny · Sample cut",
+		exact: true,
+	});
+	await seeded.click();
+	const length = page.getByRole("spinbutton", {
+		name: copy.clipLength,
+		exact: true,
+	});
+	await expect.poll(async () => Number(await length.inputValue())).toBe(5);
+	await length.fill("4");
+	await length.press("Enter");
+	const save = page.getByRole("button", { name: copy.saveDraft, exact: true });
+	await expect(save).toBeEnabled();
+	await save.click();
+	await expect(page.getByText(copy.draftSaved, { exact: true })).toBeVisible();
+	await page.goBack();
+	await seeded.click();
+	await expect.poll(async () => Number(await length.inputValue())).toBe(4);
+	await expect(page.locator(".demo-notice")).toHaveCount(0);
 }
 
 async function runLocale(locale, copy) {
@@ -326,6 +444,11 @@ async function runLocale(locale, copy) {
 	await page.getByText(copy.advancedH264, { exact: true }).first().click();
 	await screenshot("vod-settings.png");
 	await switchLocales();
+	await step(copy.sources);
+	await tryVodTimeline(page, copy);
+	console.log(
+		`PASS (${locale}): VOD sample clips are placed, trimmed and reordered by pointer.`,
+	);
 
 	await visit(`/live/${channelId}`);
 	await page.getByText("RUNNING", { exact: true }).first().waitFor();
@@ -334,6 +457,21 @@ async function runLocale(locale, copy) {
 		.locator(".recharts-surface")
 		.waitFor();
 	await screenshot("live-monitoring.png");
+	await page.locator('a[href="#/demo/live/feeders"]:visible').click();
+	const feeder = page.locator('main a[href^="#/demo/live/feeders/"]').first();
+	await feeder.click();
+	await page
+		.getByRole("button", { name: copy.feederDiagnostics, exact: true })
+		.click();
+	await expect(page.getByText(/\[demo\] RTMP input connected/)).toBeVisible();
+	await expect(page.locator(".demo-notice")).toHaveCount(0);
+	console.log(
+		`PASS (${locale}): Opened pseudo-live diagnostic logs from the feed list.`,
+	);
+	await tryLibraryDemo(page, locale, copy);
+	console.log(
+		`PASS (${locale}): Opened sample AISA results, edited a clip and reopened its saved draft.`,
+	);
 	await visit(`/live/new?from=${channelId}`);
 	await step(copy.ladder);
 	await screenshot("live-settings.png");

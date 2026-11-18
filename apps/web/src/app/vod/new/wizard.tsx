@@ -181,6 +181,7 @@ export function VodWizard({
 	deliveryPresetId,
 	editPresetId,
 	submitLabel,
+	timelinePreviewNotice,
 	flow,
 }: {
 	/**
@@ -197,6 +198,7 @@ export function VodWizard({
 	/* Template edit mode loads through the same import path as userPreset. Its primary action updates the template with the loaded updatedAt concurrency token instead of submitting an encoding job. */
 	editPresetId?: string;
 	submitLabel?: string;
+	timelinePreviewNotice?: string;
 }) {
 	const { t, locale } = useT();
 	const router = useRouter();
@@ -1475,11 +1477,13 @@ export function VodWizard({
 									<h2 className="font-medium text-zinc-100">
 										{t("vodTimeline.title")}
 									</h2>
-									<HelpOverlay label={t("vodTimeline.title")}>
-										<span className="whitespace-pre-line">
-											{t("vodTimeline.help")}
-										</span>
-									</HelpOverlay>
+									{timelinePreviewNotice === undefined && (
+										<HelpOverlay label={t("vodTimeline.title")}>
+											<span className="whitespace-pre-line">
+												{t("vodTimeline.help")}
+											</span>
+										</HelpOverlay>
+									)}
 								</div>
 								<Button
 									variant="secondary"
@@ -1516,6 +1520,7 @@ export function VodWizard({
 								<>
 									<VodInputTimelineEditor
 										document={state.inputTimeline}
+										previewNotice={timelinePreviewNotice}
 										onChange={(document) => patch({ inputTimeline: document })}
 										sources={state.inputFiles}
 										onAddSource={() => setPicker({ timelineAdd: true })}

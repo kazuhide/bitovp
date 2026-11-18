@@ -9,6 +9,7 @@ import type {
 	HeartbeatLogResponse,
 	HeartbeatLogRow,
 } from "@/app/api/live-channels/[id]/runs/[runId]/heartbeats/route";
+import { createDemoFeederRoutes } from "./feeder-routes";
 import {
 	DEMO_ACCOUNT_ID,
 	DEMO_BUCKET,
@@ -18,6 +19,7 @@ import {
 	DEMO_USER_ID,
 	DEMO_VMAF_JOB_ID,
 	DEMO_VOD_JOB_ID,
+	DEMO_VOD_SAMPLE_KEY,
 	type DemoRecord,
 	demoAccount,
 	demoChannels,
@@ -32,6 +34,8 @@ import {
 	liveRecord,
 	vodRecord,
 } from "./fixtures";
+import { createDemoLibraryRoutes } from "./library-routes";
+import { createDemoVodInputRoutes } from "./vod-input-routes";
 
 export const DEMO_STORAGE_KEY = "bitovp.pages-demo.v2";
 export const DEMO_LIMITATION_EVENT = "bitovp:demo-limitation";
@@ -258,6 +262,21 @@ export function createDemoTransport(
 		string,
 		{ identity: string; rows: HeartbeatLogRow[] }
 	>();
+	const demoRouteOptions = { json, readBody: body, now };
+	const feeders = createDemoFeederRoutes({
+		...demoRouteOptions,
+		findChannel: (id) => {
+			const entry = state.entries.find(
+				(item) => item.kind === "live" && item.id === id,
+			);
+			return entry ? record(entry, now()) : undefined;
+		},
+	});
+	const demoRoutes = [
+		feeders,
+		createDemoVodInputRoutes(demoRouteOptions),
+		createDemoLibraryRoutes(demoRouteOptions),
+	];
 
 	function persist() {
 		const serialized = JSON.stringify(state);
@@ -446,6 +465,10 @@ export function createDemoTransport(
 				limit: 100,
 				serverNow: new Date(timestamp).toISOString(),
 			});
+		for (const handler of demoRoutes) {
+			const response = await handler.route(request, url);
+			if (response) return response;
+		}
 		if (get && path === "/api/auth/session") return json(demoSession);
 		if (get && path === "/api/settings/branding")
 			return json({ ...DEFAULT_BRANDING_SETTINGS, displayName: "bitovp demo" });
@@ -459,11 +482,7 @@ export function createDemoTransport(
 			return json({ buckets: [DEMO_BUCKET] });
 		if (get && path === `/api/credentials/${DEMO_STORAGE_ID}/storage/objects`) {
 			const prefix = url.searchParams.get("prefix") ?? "";
-			const keys = [
-				"samples/big-buck-bunny-10s.mp4",
-				"encodings/",
-				"live/studio/",
-			];
+			const keys = [DEMO_VOD_SAMPLE_KEY, "encodings/", "live/studio/"];
 			const prefixes = [
 				...new Set(
 					keys
@@ -577,7 +596,6 @@ export function createDemoTransport(
 				"/api/infrastructure/prewarmed-pools",
 				"/api/live/inputs",
 				"/api/live/stream-keys",
-				"/api/feeder-sessions",
 			].includes(path)
 		)
 			return page([]);
@@ -675,6 +693,7 @@ export function createDemoTransport(
 			if (!id && get) {
 				let items = state.entries
 					.filter((entry) => entry.kind === kind)
+					.sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
 					.map((entry) => record(entry, timestamp));
 				const status = url.searchParams.get("status");
 				const query = url.searchParams.get("q")?.toLowerCase();
@@ -718,6 +737,7 @@ export function createDemoTransport(
 					return error(409, "Stop this simulated record before deleting it.");
 				state.entries = state.entries.filter((item) => item !== entry);
 				heartbeatSnapshots.delete(id);
+				if (kind === "live") feeders.deleteChannel(id);
 				persist();
 				return new Response(null, { status: 204 });
 			}
@@ -748,8 +768,11 @@ export function createDemoTransport(
 				}
 				if (suffix === "actions" && method === "POST") {
 					const input = await body(request);
-					if (input.action === "stop") entry.status = "STOPPED";
-					else if (input.action === "start" || input.action === "restart") {
+					if (input.action === "stop") {
+						entry.status = "STOPPED";
+						feeders.stopChannel(id);
+					} else if (input.action === "start" || input.action === "restart") {
+						feeders.stopChannel(id);
 						entry.status = "RUNNING";
 						entry.createdAt = timestamp - 1_200;
 						entry.generation = Math.min(1000, (entry.generation ?? 0) + 1);
@@ -851,6 +874,7 @@ export function createDemoTransport(
 			templates.length = 0;
 			deletedReports.clear();
 			heartbeatSnapshots.clear();
+			for (const handler of demoRoutes) handler.reset();
 			try {
 				options.storage?.removeItem(DEMO_STORAGE_KEY);
 			} catch {

@@ -58,6 +58,17 @@ const Channel = lazy(() =>
 		default: m.ChannelDetail,
 	})),
 );
+const Feeders = lazy(() =>
+	import("@/app/live/feeders/feeders-client").then((m) => ({
+		default: m.FeedersClient,
+	})),
+);
+const Feeder = lazy(() =>
+	import("@/app/live/feeders/[id]/feeder-detail").then((m) => ({
+		default: m.FeederDetail,
+	})),
+);
+const Library = lazy(() => import("./library-screen"));
 const LiveWizard = lazy(() =>
 	import("@/app/live/new/live-wizard").then((m) => ({ default: m.LiveWizard })),
 );
@@ -104,6 +115,12 @@ function DemoScope() {
 					<a href="#/demo/live/new">{text.newChannelLink}</a>
 				</li>
 				<li>
+					<a href="#/demo/live/feeders">{text.feedersLink}</a>
+				</li>
+				<li>
+					<a href="#/demo/library">{text.libraryLink}</a>
+				</li>
+				<li>
 					<a href="#/demo/qc">{text.qualityLink}</a>
 				</li>
 			</ul>
@@ -136,19 +153,27 @@ function Screen({ route }: { route: string }) {
 					)
 				: undefined;
 		return from ? (
-			<CopyVodJob source={from} submitLabel={text.createJob} />
+			<CopyVodJob
+				source={from}
+				submitLabel={text.createJob}
+				timelinePreviewNotice={text.timelinePreviewNotice}
+			/>
 		) : (
 			<VodWizard
 				key={flow === "file" ? "file" : "wizard"}
 				flow={flow}
 				presetName={presetName}
 				submitLabel={text.createJob}
+				timelinePreviewNotice={text.timelinePreviewNotice}
 			/>
 		);
 	}
 	const job = /^\/vod\/jobs\/([^/]+)$/.exec(path);
 	if (job?.[1]) return <Job id={job[1]} />;
 	if (path === "/live") return <Channels />;
+	if (path === "/live/feeders") return <Feeders />;
+	const feeder = /^\/live\/feeders\/([^/]+)$/.exec(path);
+	if (feeder?.[1]) return <Feeder id={feeder[1]} />;
 	if (path === "/live/new")
 		return (
 			<LiveWizard
@@ -161,6 +186,8 @@ function Screen({ route }: { route: string }) {
 	const quality = /^\/qc\/([^/]+)$/.exec(path);
 	if (quality?.[1]) return <QualityReport id={quality[1]} />;
 	if (path === "/qc") return <QualityLab />;
+	if (path === "/library" || path.startsWith("/library/"))
+		return <Library url={url} />;
 	return <DemoScope />;
 }
 

@@ -205,7 +205,7 @@ export const enCopy: LandingCopy = {
 	},
 	demo: {
 		title: "Try the interface without an account.",
-		body: "Browse example jobs and channels, inspect sample monitoring data, and edit VOD and Live configurations. Demo actions change only demo data. They do not call the Bitmovin Encoding API or create cloud resources.",
+		body: "Edit a sample VOD timeline, inspect pseudo-live logs, and explore scene analysis and clip editing in the content library. Jobs, analysis results, and edits in the demo use browser-local sample data.",
 		link: "Open the demo",
 	},
 	run: {

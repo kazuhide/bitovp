@@ -29,6 +29,7 @@ export function useInputTimelinePreview({
 	anchorMs,
 	whole,
 	disabled,
+	renderPreview,
 }: {
 	document: VodInputTimelineDocument;
 	sources: WizardInputFile[];
@@ -36,6 +37,7 @@ export function useInputTimelinePreview({
 	anchorMs: number;
 	whole: boolean;
 	disabled: boolean;
+	renderPreview: boolean;
 }) {
 	const references: VodInputTimelineSource[] = [];
 	for (const source of sources) {
@@ -93,7 +95,7 @@ export function useInputTimelinePreview({
 			? 0
 			: Math.max(0, Math.min(Math.round(anchorMs), durationMs - length));
 	const request: VodInputPreviewRequest | null =
-		!disabled && probe.ready && previewDocument && length > 0
+		renderPreview && !disabled && probe.ready && previewDocument && length > 0
 			? {
 					kind: "PREVIEW",
 					probeId: probe.ready.id,

@@ -17,6 +17,7 @@ type ContentDetailProps = {
 	player?: PlayerClientConfig;
 	initialScene?: LibrarySceneSelection;
 	clipEditingAvailable?: boolean;
+	browseClipsHref?: string;
 };
 
 export function ContentDetailClient(props: ContentDetailProps) {
@@ -33,6 +34,7 @@ function ContentDetailView({
 	player,
 	initialScene,
 	clipEditingAvailable = false,
+	browseClipsHref,
 }: ContentDetailProps) {
 	const { t } = useT();
 	const query = useQuery({
@@ -143,14 +145,15 @@ function ContentDetailView({
 						</div>
 						<div className="flex flex-wrap items-start gap-2">
 							<ContentRemovalAction content={query.data} />
-							{!query.data.parent || !clipEditingAvailable ? (
+							{!browseClipsHref &&
+							(!query.data.parent || !clipEditingAvailable) ? (
 								<ContentClipPanel
 									contentId={id}
 									clipEditingAvailable={clipEditingAvailable}
 								/>
 							) : (
 								<Link
-									href={`/library/${id}/edits`}
+									href={browseClipsHref ?? `/library/${id}/edits`}
 									className="inline-flex h-9 items-center rounded-md border border-zinc-700 bg-zinc-900 px-4 font-medium text-sm text-zinc-200 hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-emerald-500"
 								>
 									{t("editing.open")}

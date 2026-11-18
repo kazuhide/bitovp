@@ -4,6 +4,12 @@ import {
 } from "@/lib/library-catalog";
 
 export type LibraryView = "grid" | "list";
+export type LibraryBrowseLocation = () => Pick<
+	Location,
+	"pathname" | "search"
+> | null;
+export const browserLibraryBrowseLocation: LibraryBrowseLocation = () =>
+	window.location;
 export type LibrarySceneMatch = "all" | "any";
 export type LibrarySceneSort = "relevance" | "recent";
 export type LibraryBrowseState = {

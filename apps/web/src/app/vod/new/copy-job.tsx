@@ -13,10 +13,12 @@ export function CopyVodJob({
 	source,
 	conflictingSource = false,
 	submitLabel,
+	timelinePreviewNotice,
 }: {
 	source?: string | string[];
 	conflictingSource?: boolean;
 	submitLabel?: string;
+	timelinePreviewNotice?: string;
 }) {
 	const { t } = useT();
 	const valid = !conflictingSource && z.uuid().safeParse(source).success;
@@ -77,7 +79,11 @@ export function CopyVodJob({
 						{t("wizard.copiedPerTitleBitrateFixed")}
 					</p>
 				) : null}
-				<VodWizard copiedJob={copied} submitLabel={submitLabel} />
+				<VodWizard
+					copiedJob={copied}
+					submitLabel={submitLabel}
+					timelinePreviewNotice={timelinePreviewNotice}
+				/>
 			</>
 		);
 	return (

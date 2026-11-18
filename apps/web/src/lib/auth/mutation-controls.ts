@@ -530,6 +530,10 @@ export const MUTATION_SOURCE_CENSUS = {
 			{ name: "PortraitResultActions", controls: ["library.edits.result"] },
 		],
 	},
+	"app/library/edits/[id]/result/stored-clip-result.tsx": {
+		writeCalls: 1,
+		controls: ["library.edits.edit"],
+	},
 	"app/library/edits/[id]/editor-client.tsx": {
 		writeCalls: 5,
 		controls: ["library.edits.edit"],
@@ -912,6 +916,12 @@ export const MUTATION_WRITE_FAMILIES = {
 		{
 			write: "POST /api/library/renders/x/cancel",
 			controls: ["library.edits.result"],
+		},
+	],
+	"app/library/edits/[id]/result/stored-clip-result.tsx": [
+		{
+			write: "POST /api/library/edits",
+			controls: ["library.edits.edit"],
 		},
 	],
 	"app/library/edits/[id]/editor-client.tsx": [

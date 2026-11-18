@@ -26,6 +26,7 @@ import { requestEditingRender } from "./library-editing-renders";
 import {
 	contentParent,
 	listEditingProjectSummaries,
+	readStoredEditingExport,
 } from "./library-hierarchy";
 
 const holder = vi.hoisted(() => ({
@@ -71,6 +72,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			try {
 				if (!admin) return;
 				const where = { organizationId: org };
+				await admin.createRequest.deleteMany({ where });
 				await admin.libraryAnalysisBinding.deleteMany({ where });
 				await admin.libraryEvidenceReceipt.deleteMany({ where });
 				await admin.editProjectResource.deleteMany({ where });
@@ -1195,6 +1197,200 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				await listEditingProjectSummaries(foreign, f.content.id, 0),
 			).toEqual({ items: [], offset: 0, total: 0 });
 		});
+		it("copies a successful export into one new composition across concurrent retries", async () => {
+			const { project, content, media } = await fixture();
+			const composition = await saveEditingDraft(project.id, {
+				expectedRevision: 1,
+				document: toCompositionDocument(project.draft),
+			});
+			const saved = await confirmEditingRevision(
+				project.id,
+				{
+					expectedRevision: composition.draftRevision,
+					confirmSuggestions: false,
+				},
+				"fixture",
+			);
+			const { run } = await hierarchyExecution(saved, "EXPORT", "SUCCEEDED", 1);
+			const next = structuredClone(saved.draft);
+			const clip = next.clips[0];
+			const framing = clip?.framing[0];
+			if (!clip || !framing) throw new Error("Expected fixture framing");
+			clip.durationFrames = 60;
+			framing.toFrame = 60;
+			const edited = await saveEditingDraft(project.id, {
+				expectedRevision: saved.draftRevision,
+				document: next,
+			});
+			const result = await readStoredEditingExport(
+				holder.context,
+				project.id,
+				run.id,
+			);
+			expect(result).toMatchObject({
+				earlierVersion: true,
+				settings: {
+					canvas: { width: 1080, height: 1920 },
+					durationFrames: 180,
+					clips: [{ durationFrames: 180, framing: ["FIT"], audio: "SOURCE" }],
+				},
+			});
+			const request = {
+				title: "Clip (re-edit)",
+				fromExport: {
+					projectId: project.id,
+					exportId: run.id,
+					expectedOrganizationId: org,
+					requestKey: randomUUID(),
+				},
+			};
+			const [fork, replay] = await Promise.all([
+				createEditingProject(request, "fixture"),
+				createEditingProject(request, "fixture"),
+			]);
+			expect(fork.id).not.toBe(project.id);
+			expect(replay.id).toBe(fork.id);
+			expect(fork).toMatchObject({
+				contentId: content.id,
+				title: request.title,
+				draft: {
+					schemaVersion: 2,
+					mediaVersionId: media.id,
+					clips: [{ durationFrames: 180 }],
+				},
+				currentRevisionId: null,
+				renders: [],
+			});
+			expect(await readEditingProject(project.id)).toEqual(edited);
+			expect(
+				await prisma.editProject.count({ where: { contentId: content.id } }),
+			).toBe(2);
+			expect(
+				await prisma.editProjectResource.findFirst({
+					where: { projectId: fork.id, mediaVersionId: media.id },
+				}),
+			).not.toBeNull();
+			const renamed = "Later draft title";
+			await prisma.editProject.update({
+				where: { id: fork.id },
+				data: { title: renamed },
+			});
+			await expect(
+				createEditingProject(request, "fixture"),
+			).resolves.toMatchObject({
+				id: fork.id,
+				title: renamed,
+			});
+			await expect(
+				createEditingProject({ ...request, title: renamed }, "fixture"),
+			).rejects.toMatchObject({ status: 409, code: "REQUEST_KEY_REUSED" });
+			await expect(
+				createEditingProject(
+					{
+						...request,
+						fromExport: {
+							...request.fromExport,
+							expectedOrganizationId: otherOrg,
+						},
+					},
+					"fixture",
+				),
+			).rejects.toMatchObject({ status: 403 });
+			await expect(
+				createEditingProject(
+					{
+						...request,
+						fromExport: { ...request.fromExport, projectId: fork.id },
+					},
+					"fixture",
+				),
+			).rejects.toMatchObject({ status: 409, code: "REQUEST_KEY_REUSED" });
+			await expect(
+				createEditingProject(
+					{
+						...request,
+						fromExport: {
+							...request.fromExport,
+							projectId: fork.id,
+							requestKey: randomUUID(),
+						},
+					},
+					"fixture",
+				),
+			).rejects.toMatchObject({ status: 404 });
+			const racedRequest = {
+				...request,
+				fromExport: { ...request.fromExport, requestKey: randomUUID() },
+			};
+			const raced = await Promise.allSettled([
+				createEditingProject(racedRequest, "fixture"),
+				createEditingProject(
+					{ ...racedRequest, title: "Conflicting title" },
+					"fixture",
+				),
+			]);
+			expect(raced.filter((item) => item.status === "fulfilled")).toHaveLength(
+				1,
+			);
+			expect(raced.find((item) => item.status === "rejected")).toMatchObject({
+				reason: { status: 409, code: "REQUEST_KEY_REUSED" },
+			});
+			expect(
+				await prisma.editProject.count({ where: { contentId: content.id } }),
+			).toBe(3);
+		});
+
+		it("keeps an exported legacy crop whose rounded endpoints cover one pixel", async () => {
+			const { project, media } = await fixture();
+			const saved = await saveEditingDraft(project.id, {
+				expectedRevision: 1,
+				document: {
+					...project.draft,
+					clips: project.draft.clips.map((clip) => ({
+						...clip,
+						framing: [
+							{
+								fromFrame: 0,
+								toFrame: clip.durationFrames,
+								mode: "CROP",
+								origin: "MANUAL",
+								// At source width 640 the endpoints round from 10.25 and 10.75 to 10 and 11.
+								rect: { x: 10.25 / 640, y: 0, w: 0.5 / 640, h: 1 },
+							},
+						],
+					})),
+				},
+			});
+			const confirmed = await confirmEditingRevision(
+				project.id,
+				{ expectedRevision: saved.draftRevision, confirmSuggestions: false },
+				"fixture",
+			);
+			const { run } = await hierarchyExecution(
+				confirmed,
+				"EXPORT",
+				"SUCCEEDED",
+				1,
+			);
+			const copy = await createEditingProject(
+				{
+					title: "Legacy crop",
+					fromExport: {
+						projectId: project.id,
+						exportId: run.id,
+						expectedOrganizationId: org,
+						requestKey: randomUUID(),
+					},
+				},
+				"fixture",
+			);
+			expect(copy.id).not.toBe(project.id);
+			expect(copy.media.id).toBe(media.id);
+			expect(copy.draft.schemaVersion).toBe(1);
+			expect(copy.draft).toEqual(confirmed.draft);
+			expect(copy.renders).toEqual([]);
+		});
+
 		it("paginates multiple same-format alternatives deterministically and counts archived projects consistently", async () => {
 			const f = await fixture();
 			const at = new Date("2026-11-05T01:00:00Z");

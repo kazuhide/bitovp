@@ -1,6 +1,7 @@
 import { toCompositionDocument } from "@bitovp/core";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import { DocumentOrganizationContext } from "@/components/providers";
 import { ApiError } from "@/lib/api";
 import { renderWithQuery } from "@/test/render";
 import { editingProjectFixture } from "../editing-fixtures";
@@ -22,6 +23,41 @@ vi.mock("./composition-preview", () => ({
 beforeEach(() => {
 	apiFetch.mockReset();
 	apiFetch.mockResolvedValue(editingProjectFixture());
+	window.sessionStorage.clear();
+});
+
+it("clears only the accepted re-edit belonging to the open draft and organization", async () => {
+	const project = editingProjectFixture();
+	const organizationId = "00000000-0000-4000-8000-000000000004";
+	const otherOrganizationId = "00000000-0000-4000-8000-000000000005";
+	const sourceId = "00000000-0000-4000-8000-000000000006";
+	const exportId = "00000000-0000-4000-8000-000000000007";
+	const otherExportId = "00000000-0000-4000-8000-000000000008";
+	const storageKey = `bitovp:library:reedit:${organizationId}:${sourceId}:${exportId}`;
+	const foreignKey = `bitovp:library:reedit:${otherOrganizationId}:${sourceId}:${exportId}`;
+	const pendingKey = `bitovp:library:reedit:${organizationId}:${sourceId}:${otherExportId}`;
+	const pending = {
+		title: "Clip",
+		requestKey: "00000000-0000-4000-8000-000000000009",
+	};
+	const accepted = JSON.stringify({
+		...pending,
+		created: { id: project.id, contentId: project.contentId },
+	});
+	window.sessionStorage.setItem(storageKey, accepted);
+	window.sessionStorage.setItem(foreignKey, accepted);
+	window.sessionStorage.setItem(pendingKey, JSON.stringify(pending));
+	renderWithQuery(
+		<DocumentOrganizationContext.Provider value={organizationId}>
+			<EditorRouter id={project.id} />
+		</DocumentOrganizationContext.Provider>,
+	);
+	await screen.findByRole("heading", { name: project.title });
+	await waitFor(() =>
+		expect(window.sessionStorage.getItem(storageKey)).toBeNull(),
+	);
+	expect(window.sessionStorage.getItem(foreignKey)).toBe(accepted);
+	expect(window.sessionStorage.getItem(pendingKey)).not.toBeNull();
 });
 it.each([
 	false,

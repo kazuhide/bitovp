@@ -562,13 +562,18 @@ it.each([
 		expect(document.getElementById(section), section).toBeInTheDocument();
 	}
 	expect(
-		screen.getByText("Alerts, manifests and slate reservations"),
+		screen.getByRole("button", { name: "Channel state — more information" }),
 	).toBeVisible();
 	expect(
-		screen.getByText(
-			"Raw telemetry, past runs, and the settings you change once.",
-		),
-	).toBeVisible();
+		screen.getByRole("button", {
+			name: "Diagnostics & history — more information",
+		}),
+	).toHaveAccessibleDescription(
+		"Raw telemetry, past runs, and the settings you change once.",
+	);
+	expect(
+		screen.queryByText("Alerts, manifests and slate reservations"),
+	).toBeNull();
 	if (!imported) expect(screen.queryByText("③ Waiting for input")).toBeNull();
 	expect(screen.getByTestId("aisa-analysis")).not.toBeVisible();
 	await waitFor(() => {

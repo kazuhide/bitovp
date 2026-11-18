@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { liveChannelPlanSchema } from "@bitovp/core";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
-import { renderLocalized } from "@/test/render";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { renderLocalized, renderWithQuery } from "@/test/render";
 import { LadderPanel } from "./ladder-panel";
 
 /**
@@ -36,6 +36,29 @@ realPlan.renditions.push({
 	codec: "WEBVTT",
 });
 const PLAN = liveChannelPlanSchema.parse(realPlan);
+const TEMPLATE_PLAN = { ...PLAN, renditions: [] };
+const RUN = { channelId: "channel-1", runId: "run-1", encodingId: "encoder-1" };
+const { apiFetch, canRead } = vi.hoisted(() => ({
+	apiFetch: vi.fn(),
+	canRead: vi.fn(),
+}));
+vi.mock("@/lib/api", () => ({ apiFetch }));
+vi.mock("@/lib/auth/use-role-access", () => ({ useMutationAccess: canRead }));
+
+function outputStats(data: unknown, identity = RUN) {
+	return {
+		kind: "ladder",
+		runId: identity.runId,
+		encodingId: identity.encodingId,
+		fetchedAt: "2026-10-01T00:00:00.000Z",
+		data,
+	};
+}
+
+beforeEach(() => {
+	apiFetch.mockReset();
+	canRead.mockReturnValue(true);
+});
 
 describe("LadderPanel", () => {
 	it("groups a REAL schema-parsed plan into video / audio / other", async () => {
@@ -73,5 +96,58 @@ describe("LadderPanel", () => {
 		expect(screen.getByText("映像レンディション")).toBeInTheDocument();
 		expect(screen.getByText("音声レンディション")).toBeInTheDocument();
 		expect(screen.getByText("その他のレンディション")).toBeInTheDocument();
+	});
+
+	it("lazily reports exact-run output even when the template plan has no renditions", async () => {
+		apiFetch.mockResolvedValue(
+			outputStats([
+				{ streamId: "video-1", codec: "H264", height: 720, bitrate: 2_500_000 },
+				{ streamId: "audio-1", codec: "AAC", bitrate: 128_000 },
+			]),
+		);
+		const { rerender } = renderWithQuery(
+			<LadderPanel plan={TEMPLATE_PLAN} run={RUN} open={false} />,
+		);
+		expect(apiFetch).not.toHaveBeenCalled();
+		rerender(<LadderPanel plan={TEMPLATE_PLAN} run={RUN} open />);
+		expect(screen.getByText("No ladder in the channel plan")).toBeVisible();
+		const output = await screen.findByRole("table", {
+			name: "Observed ladder",
+		});
+		expect(within(output).getByText("720p")).toBeVisible();
+		expect(within(output).getByText("H264")).toBeVisible();
+		expect(within(output).getByText("AAC")).toBeVisible();
+		expect(within(output).getByText("128 kbps")).toBeVisible();
+		expect(apiFetch).toHaveBeenCalledExactlyOnceWith(
+			"/api/live-channels/channel-1/runs/run-1/diagnostics?kind=ladder",
+			expect.objectContaining({ signal: expect.anything() }),
+		);
+	});
+
+	it.each([
+		[null, "Output statistics unavailable"],
+		[[], "No encoded streams recorded"],
+	])("shows the actual availability of %j", async (data, message) => {
+		apiFetch.mockResolvedValue(outputStats(data));
+		renderWithQuery(<LadderPanel run={RUN} open />);
+		expect(await screen.findByText(message)).toBeVisible();
+		expect(screen.getByText("unknown")).toBeVisible();
+		expect(screen.queryByText("No ladder in the channel plan")).toBeNull();
+	});
+
+	it("never renders a response for another run or makes a request as a viewer", async () => {
+		canRead.mockReturnValue(false);
+		apiFetch.mockResolvedValue(outputStats([], { ...RUN, runId: "other-run" }));
+		const { rerender } = renderWithQuery(<LadderPanel run={RUN} open />);
+		expect(apiFetch).not.toHaveBeenCalled();
+		canRead.mockReturnValue(true);
+		rerender(<LadderPanel run={RUN} open />);
+		await waitFor(() => expect(apiFetch).toHaveBeenCalledTimes(1));
+		expect(
+			await screen.findByText("Output statistics unavailable"),
+		).toBeVisible();
+		expect(
+			screen.queryByText("No encoded streams recorded"),
+		).not.toBeInTheDocument();
 	});
 });

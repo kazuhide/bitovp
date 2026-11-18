@@ -514,11 +514,11 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 			}),
 		});
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByText("Encoder runtime");
 		const cell = document.querySelector('[data-status-cell="runtime"]');
 		// `endedAt − runningSince`: two worker stamps, no viewer clock, so it
 		// reads the same three days later as it did at the stop.
-		expect(cell?.textContent).toBe("ran for 10m");
+		expect(cell?.textContent).toBe("10m");
 		// The pre-fix rendering, named so a regression is recognisable rather
 		// than merely red.
 		expect(cell?.textContent).not.toBe("72h 10m elapsed · cap reached");
@@ -537,7 +537,7 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 			currentRun: run({ status: "STOPPED", endedAt: null }),
 		});
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByText("Encoder runtime");
 		expect(
 			document.querySelector('[data-status-cell="runtime"]')?.textContent,
 		).toBe("None");
@@ -897,7 +897,7 @@ describe("the reorganised page renders in both catalogues", () => {
 		"Diagnostics & history",
 		"Danger zone",
 		"Next event",
-		"Runtime",
+		"Encoder runtime",
 		// : the slate section is a reservation list, and the emergency
 		// stop is its own section beside it.
 		"Slate reservations",
@@ -926,7 +926,7 @@ describe("the reorganised page renders in both catalogues", () => {
 		"診断・履歴",
 		"取り消せない操作",
 		"次の予定",
-		"稼働時間",
+		"エンコーダ稼働",
 		"スレートの予約",
 		"差し込みコンテンツの緊急停止",
 		"アラートルールと解決済み履歴",

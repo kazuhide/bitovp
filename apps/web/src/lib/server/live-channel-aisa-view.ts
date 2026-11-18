@@ -1,5 +1,11 @@
 import "server-only";
-import { isAisaManagedLivePlan } from "@bitovp/core";
+import {
+	type AisaFinalizationRun,
+	aisaLiveFinalization,
+	deriveProviderLifecycle,
+	isAisaManagedLivePlan,
+	type PersistedProviderState,
+} from "@bitovp/core";
 import { aisaLiveAccessAllowed } from "./aisa-live-access";
 import {
 	projectSafeHeartbeat,
@@ -29,6 +35,36 @@ export function isAisaLiveChannelView(channel: unknown, run: unknown): boolean {
 /** Use freshly authenticated context, never a caller-supplied role or actor header. */
 export function aisaPublisherConnectionAllowed(tenant: unknown): boolean {
 	return aisaLiveAccessAllowed(tenant);
+}
+
+/** Separate an ended run's recovery from the action that stops an active encoder. */
+export function canRetryEndedAisaFinalization(
+	channel: { status: string; bitmovinEncodingId: string | null; plan: unknown },
+	run:
+		| (AisaFinalizationRun &
+				PersistedProviderState & {
+					status: string;
+					error: string | null;
+				})
+		| null,
+	nowMs: number,
+): boolean {
+	if (
+		!run ||
+		!channel.bitmovinEncodingId ||
+		run.bitmovinEncodingId !== channel.bitmovinEncodingId ||
+		!isAisaManagedLivePlan(channel.plan) ||
+		!["ERROR", "STOPPED"].includes(channel.status) ||
+		!["ERROR", "STOPPED"].includes(run.status) ||
+		deriveProviderLifecycle(run, nowMs) !== "TERMINAL"
+	)
+		return false;
+	const finalization = aisaLiveFinalization(run);
+	return (
+		finalization === "PENDING" ||
+		(finalization === "FAILED" &&
+			(run.status !== "ERROR" || run.error !== "AISA_LIVE_TERMINAL_FAILURE"))
+	);
 }
 
 export const AISA_CHANNEL_RESPONSE_HEADERS = {

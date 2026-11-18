@@ -1110,6 +1110,56 @@ describe("ChannelDnsMappingsPanel (channel detail, read-only)", () => {
 });
 
 describe("LiveToVodPanel", () => {
+	it("explains an ended error run without offering another Stop or authorizing publication", () => {
+		wrap(
+			<LiveToVodPanel
+				channelId={CHANNEL_ID}
+				status="ERROR"
+				providerTerminal
+				record={null}
+				onStarted={() => {}}
+			/>,
+		);
+		expect(
+			screen.getByText(/Recording completion is unconfirmed/),
+		).toBeInTheDocument();
+		expect(screen.queryByText(/Stop the channel first/)).toBeNull();
+		expect(screen.queryByRole("button", { name: /Publish as VOD/ })).toBeNull();
+	});
+
+	it("does not offer Stop or publication for an unsupported configuration", () => {
+		wrap(
+			<LiveToVodPanel
+				channelId={CHANNEL_ID}
+				status="ERROR"
+				unsupported
+				record={null}
+				onStarted={() => {}}
+			/>,
+		);
+		expect(screen.queryByText(/Stop the channel first/)).toBeNull();
+		expect(screen.queryByRole("button", { name: /Publish as VOD/ })).toBeNull();
+	});
+
+	it("shows recording incompatibility before stop instructions", () => {
+		wrap(
+			<LiveToVodPanel
+				channelId={CHANNEL_ID}
+				status="ERROR"
+				families={{
+					supported: [],
+					unsupported: [{ family: "HLS" }, { family: "DASH" }],
+				}}
+				record={null}
+				onStarted={() => {}}
+			/>,
+		);
+		expect(
+			screen.getByText(/No VOD manifest can be generated/),
+		).toBeInTheDocument();
+		expect(screen.queryByText(/Stop the channel first/)).toBeNull();
+	});
+
 	it.each([
 		"ja",
 		"en",

@@ -542,7 +542,10 @@ describe("AISA lifecycle admission", () => {
 			expect(runUpdate).not.toHaveBeenCalled();
 		}
 	});
-	it("requeues same-run Analysis readback from an Encoder-only clean STOPPED row", async () => {
+	it.each([
+		null,
+		RUN_ID,
+	])("requeues same-run Analysis readback from an Encoder-only clean STOPPED row (requested run %s)", async (requestedRunId) => {
 		findUnique.mockResolvedValue(
 			channel({
 				status: "STOPPED",
@@ -570,9 +573,47 @@ describe("AISA lifecycle admission", () => {
 			"completed",
 			manualStopSuccess(),
 		);
-		const response = await postAction({ action: "stop" });
+		const response = await postAction({
+			action: "stop",
+			...(requestedRunId ? { finalizationRunId: requestedRunId } : {}),
+		});
 		expect(response.status).toBe(202);
 		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+	it.each([
+		"before lookup",
+		"during lookup",
+	])("refuses recovery when the ended run was replaced %s", async (when) => {
+		const replacedRunId = "22222222-2222-4222-8222-222222222222";
+		findUnique.mockResolvedValue(
+			channel({
+				status: "ERROR",
+				plan: {
+					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+				},
+			}),
+		);
+		const current = {
+			id: RUN_ID,
+			seq: 1,
+			status: "ERROR",
+			bitmovinEncodingId: "bm-live-enc",
+			aisaAnalysisId: "analysis-1",
+			aisaStatus: "RUNNING",
+			providerStatus: "ERROR",
+			providerTerminalAt: new Date(),
+		};
+		if (when === "during lookup") runFindFirst.mockResolvedValueOnce(current);
+		runFindFirst.mockResolvedValue({ ...current, id: replacedRunId, seq: 2 });
+
+		const response = await postAction({
+			action: "stop",
+			finalizationRunId: RUN_ID,
+		});
+
+		expect(response.status).toBe(409);
+		expect(queueAdd).not.toHaveBeenCalled();
+		expect(runUpdate).not.toHaveBeenCalled();
 	});
 	it("blocks re-air until the independently terminal Analysis result is accounted for", async () => {
 		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");

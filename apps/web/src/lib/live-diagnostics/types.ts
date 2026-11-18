@@ -3,6 +3,7 @@ import type {
 	diagnosticsHdStartSchema,
 	diagnosticsSummarySchema,
 	diagnosticsTaskSchema,
+	LiveDiagnosticsLadderRow,
 } from "./schemas";
 export type LiveDiagnosticsKind =
 	| "summary"
@@ -10,7 +11,8 @@ export type LiveDiagnosticsKind =
 	| "streams"
 	| "srt"
 	| "hd-start"
-	| "task";
+	| "task"
+	| "ladder";
 export type LiveDiagnosticsSummary = z.infer<typeof diagnosticsSummarySchema>;
 export type LiveDiagnosticsEvent = {
 	time?: string;
@@ -86,6 +88,7 @@ export type LiveDiagnosticsResponse = Envelope &
 		| { kind: "summary"; data: LiveDiagnosticsSummary }
 		| { kind: "task"; data: z.infer<typeof diagnosticsTaskSchema> }
 		| { kind: "hd-start"; data: z.infer<typeof diagnosticsHdStartSchema> }
+		| { kind: "ladder"; data: LiveDiagnosticsLadderRow[] | null }
 		| (Page & { kind: "events"; data: LiveDiagnosticsEvent[] })
 		| (Page & { kind: "streams"; data: LiveDiagnosticsStream[] })
 		| (Page & { kind: "srt"; data: LiveDiagnosticsSrt[] })

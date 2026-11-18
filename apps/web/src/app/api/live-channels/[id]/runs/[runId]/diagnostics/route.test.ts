@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 	account: vi.fn(),
 	audit: vi.fn(),
 	summary: vi.fn(),
+	ladder: vi.fn(),
 	encoding: vi.fn(),
 	task: vi.fn(),
 	events: vi.fn(),
@@ -69,6 +70,7 @@ beforeEach(() => {
 		encoding: {
 			statistics: {
 				encodings: {
+					get: mocks.ladder,
 					liveStatistics: {
 						get: mocks.summary,
 						events: { list: mocks.events },
@@ -99,6 +101,117 @@ beforeEach(() => {
 		list.mockResolvedValue({ items: [], totalCount: 0 });
 	mocks.final.mockResolvedValue({
 		url: "https://provider.example/heartbeat?signature=secret",
+	});
+});
+
+describe("run-bound observed ladder", () => {
+	function observeLadderWire(body: Record<string, unknown>) {
+		const api = mocks.account.getMockImplementation()?.();
+		mocks.account.mockImplementationOnce(
+			async (_ctx, _id, _signal, observe) => {
+				mocks.ladder.mockImplementationOnce(async () => {
+					await observe(
+						`https://api.bitmovin.com/v1/encoding/statistics/encodings/${ENCODING}`,
+						Response.json({ data: { result: body } }),
+					);
+					// The real SDK erases omission at this boundary.
+					return { ...body, streams: body.streams ?? [] };
+				});
+				return api;
+			},
+		);
+	}
+
+	it("shows the video and audio that encoded on an errored run through a single bound read", async () => {
+		mocks.role = "OPERATOR";
+		mocks.run.mockResolvedValue({
+			id: RUN,
+			status: "ERROR",
+			endedAt: new Date(time),
+			bitmovinEncodingId: ENCODING,
+		});
+		observeLadderWire({
+			encodingId: ENCODING,
+			streams: [
+				{
+					streamId: INPUT,
+					codec: "H264",
+					width: 1280,
+					height: 720,
+					bitrate: 2_500_000,
+					encodedBytes: 440_000_000,
+					codecConfigId: "do-not-expose",
+				},
+				{
+					streamId: "00000000-0000-4000-8000-000000000006",
+					codec: "AAC",
+					bitrate: 128_000,
+					encodedSeconds: 1828,
+					input: "do-not-expose",
+				},
+				{
+					streamId: "00000000-0000-4000-8000-000000000007",
+					codec: "H265",
+					encodedBytes: 0,
+					encodedSeconds: 0,
+				},
+			],
+			organizationId: "do-not-expose",
+		});
+		const res = await GET(request("?kind=ladder"), context());
+		expect(res.status).toBe(200);
+		expect(res.headers.get("cache-control")).toBe("private, no-store");
+		const result = await res.json();
+		expect(result).toMatchObject({
+			kind: "ladder",
+			runId: RUN,
+			encodingId: ENCODING,
+		});
+		expect(result.data).toEqual([
+			{ streamId: INPUT, codec: "H264", height: 720, bitrate: 2_500_000 },
+			{
+				streamId: "00000000-0000-4000-8000-000000000006",
+				codec: "AAC",
+				bitrate: 128_000,
+			},
+		]);
+		expect(mocks.run).toHaveBeenCalledWith(
+			expect.objectContaining({ where: { id: RUN, liveChannelId: CHANNEL } }),
+		);
+		expect(mocks.account).toHaveBeenCalledWith(
+			expect.anything(),
+			ACCOUNT,
+			expect.any(AbortSignal),
+			expect.any(Function),
+		);
+		expect(mocks.ladder).toHaveBeenCalledExactlyOnceWith(ENCODING);
+		expect(mocks.streams).not.toHaveBeenCalled();
+		expect(mocks.encoding).not.toHaveBeenCalled();
+		expect(JSON.stringify([result, mocks.audit.mock.calls])).not.toContain(
+			"do-not-expose",
+		);
+	});
+
+	it.each([
+		["omitted", {}, null],
+		["explicitly empty", { streams: [] }, []],
+		[
+			"missing evidence of encoded media",
+			{ streams: [{ streamId: INPUT, codec: "H264" }] },
+			null,
+		],
+	])("keeps %s output statistics distinct", async (_case, wire, data) => {
+		observeLadderWire({ encodingId: ENCODING, ...wire });
+		const res = await GET(request("?kind=ladder"), context());
+		expect(res.status).toBe(200);
+		expect((await res.json()).data).toEqual(data);
+	});
+
+	it("rejects statistics for an encoding other than the bound run", async () => {
+		observeLadderWire({ encodingId: INPUT, streams: [] });
+		const res = await GET(request("?kind=ladder"), context());
+		expect(res.status).toBe(502);
+		expect(JSON.stringify(mocks.audit.mock.calls)).not.toContain(INPUT);
 	});
 });
 

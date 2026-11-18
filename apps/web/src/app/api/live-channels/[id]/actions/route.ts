@@ -40,6 +40,7 @@ import {
 	routeError,
 	validationError,
 } from "@/lib/server/http";
+import { canRetryEndedAisaFinalization } from "@/lib/server/live-channel-aisa-view";
 import { getLiveChannelQueue } from "@/lib/server/queue";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -572,7 +573,10 @@ const actionSchema = z.discriminatedUnion("action", [
 		generation: z.number().int().min(0),
 		runId: z.uuid().optional(),
 	}),
-	z.object({ action: z.literal("stop") }),
+	z.object({
+		action: z.literal("stop"),
+		finalizationRunId: z.uuid().optional(),
+	}),
 	z.object({ action: z.literal("restart") }),
 	z.object({
 		action: z.literal("reset-timeshift"),
@@ -1084,6 +1088,17 @@ export async function POST(req: Request, { params }: RouteParams) {
 							orderBy: { seq: "desc" },
 						})
 					: null;
+				if (
+					action.finalizationRunId &&
+					(latestAisaRun?.id !== action.finalizationRunId ||
+						!canRetryEndedAisaFinalization(row, latestAisaRun, Date.now()))
+				) {
+					return codedError(
+						409,
+						"The selected run no longer has finalization to retry",
+						"LIVE_ACTION_NOT_STOPPABLE",
+					);
+				}
 				const allowAisaRecovery = Boolean(
 					latestAisaRun?.aisaAnalysisId &&
 						latestAisaRun.bitmovinEncodingId === row.bitmovinEncodingId &&
@@ -1164,6 +1179,18 @@ export async function POST(req: Request, { params }: RouteParams) {
 						409,
 						`Stop refused — ${stopPlan.error}`,
 						stopPlan.code,
+					);
+				}
+				if (
+					action.finalizationRunId &&
+					(stopPlan.runId !== action.finalizationRunId ||
+						stopPlan.providerEncodingId !== row.bitmovinEncodingId ||
+						stopPlan.providerRefusalCode !== "LIVE_ACTION_PROVIDER_TERMINAL")
+				) {
+					return codedError(
+						409,
+						"The selected run changed before finalization recovery",
+						"LIVE_ACTION_NOT_STOPPABLE",
 					);
 				}
 				/**

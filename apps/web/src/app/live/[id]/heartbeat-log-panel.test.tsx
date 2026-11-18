@@ -17,6 +17,7 @@ import { RunsPanel } from "./runs-panel";
 const CHANNEL_ID = "00000000-0000-4000-8000-0000000000c1";
 const RUN_ID = "00000000-0000-4000-8000-0000000000c2";
 const OLDER_RUN_ID = "00000000-0000-4000-8000-0000000000c0";
+const NEXT_RUN_ID = "00000000-0000-4000-8000-0000000000c3";
 const T0 = Date.parse("2026-09-02T07:44:30.000Z");
 const KEYFRAME =
 	"At least one input video stream key-frame interval is larger than the threshold: 2167 ms >= 2000 ms!";
@@ -156,6 +157,43 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("HeartbeatLogPanel", () => {
+	it("identifies the confirmed ended latest run without duplicating it in the selector", async () => {
+		mockApi("ADMIN");
+		renderWithQuery(
+			<HeartbeatLogPanel
+				channelId={CHANNEL_ID}
+				currentRunId={RUN_ID}
+				currentRunStatus="ERROR"
+				currentRunEnded
+			/>,
+		);
+		const opt = await screen.findByRole("option", { name: /Run #3 · Ended ·/ });
+		expect(opt).toHaveProperty("selected", true);
+		expect(screen.getAllByRole("option", { name: /Run #3/ })).toHaveLength(1);
+		expect(screen.queryByRole("option", { name: /Current run/ })).toBeNull();
+		expect(
+			screen.getByRole("link", { name: "Export JSON (admin)" }),
+		).toHaveAttribute(
+			"href",
+			`/api/live-channels/${CHANNEL_ID}/runs/${RUN_ID}/heartbeats/export`,
+		);
+	});
+
+	it("puts poll column definitions in the help control", async () => {
+		mockApi("OPERATOR");
+		renderWithQuery(
+			<HeartbeatLogPanel channelId={CHANNEL_ID} currentRunId={RUN_ID} />,
+		);
+		await screen.findAllByRole("row");
+		expect(screen.queryByText(/first video stream's measured/)).toBeNull();
+		await userEvent.click(
+			screen.getByRole("button", { name: "Poll history — more information" }),
+		);
+		expect(await screen.findByRole("note")).toHaveTextContent(
+			"keyFrameIntervalAvg",
+		);
+	});
+
 	it("does not claim the whole run has no events when loaded events are outside the window or have unknown times", async () => {
 		mockApi("OPERATOR");
 		const original = apiFetch.getMockImplementation();
@@ -330,13 +368,9 @@ describe("HeartbeatLogPanel", () => {
 		expect(screen.queryByText("Healthy")).toBeNull();
 	});
 	it.each([
-		["ja", "定期取得の要約: 17 サンプル", "Push受信は別表示"],
-		[
-			"en",
-			"Poll history summary: 17 samples",
-			"Push receipts shown separately",
-		],
-	] as const)("labels the ended-run summary as Poll-only in %s", async (locale, prefix, separate) => {
+		["ja", /定期取得.*17/, /入力接続.*観測/],
+		["en", /Poll.*17/, /observed input/i],
+	] as const)("labels the ended-run summary as Poll-only in %s", async (locale, source, input) => {
 		mockApi("OPERATOR");
 		const original = apiFetch.getMockImplementation();
 		if (!original) throw new Error("fixture missing");
@@ -362,8 +396,8 @@ describe("HeartbeatLogPanel", () => {
 			/>,
 			locale,
 		);
-		const label = await screen.findByText((text) => text.startsWith(prefix));
-		expect(label).toHaveTextContent(separate);
+		const label = await screen.findByText(source);
+		expect(label).toHaveTextContent(input);
 	});
 
 	it("passes exact current-run shutdown status to the Push receipt snapshot query", async () => {
@@ -501,9 +535,7 @@ describe("HeartbeatLogPanel", () => {
 				currentRunActive
 			/>,
 		);
-		await screen.findByText(
-			"No verified Push receipts are stored for this run.",
-		);
+		await screen.findByText("No Push receipts");
 		view.rerender(
 			<HeartbeatLogPanel
 				channelId={CHANNEL_ID}
@@ -531,7 +563,7 @@ describe("HeartbeatLogPanel", () => {
 		view.rerender(
 			<HeartbeatLogPanel
 				channelId={CHANNEL_ID}
-				currentRunId={RUN_ID}
+				currentRunId={NEXT_RUN_ID}
 				open
 				currentRunActive
 			/>,
@@ -539,7 +571,7 @@ describe("HeartbeatLogPanel", () => {
 		expect(screen.getByRole("combobox")).toHaveValue(OLDER_RUN_ID);
 		expect(
 			apiFetch.mock.calls.some((call) =>
-				String(call[0]).includes(`/runs/${RUN_ID}/heartbeat-receipts`),
+				String(call[0]).includes(`/runs/${NEXT_RUN_ID}/heartbeat-receipts`),
 			),
 		).toBe(false);
 		view.unmount();

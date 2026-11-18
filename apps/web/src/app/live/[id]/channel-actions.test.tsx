@@ -1,5 +1,5 @@
 import type { LiveChannelPlan } from "@bitovp/core";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery as wrap } from "@/test/render";
@@ -82,6 +82,130 @@ describe("ChannelDangerZone — delete", () => {
 });
 
 describe("ChannelLifecycleActions — restart is only offered where it can work (ledger #107)", () => {
+	it("offers a fresh run after provider-confirmed termination of an error run", () => {
+		wrap(
+			<ChannelLifecycleActions
+				channelId={CHANNEL_ID}
+				runId={RUN_ID}
+				status="ERROR"
+				hasEncoding
+				providerTerminal
+			/>,
+		);
+		expect(
+			screen.getByRole("button", { name: "Start a new run" }),
+		).toBeEnabled();
+		expect(
+			screen.queryByRole("button", { name: /stop channel|restart/i }),
+		).toBeNull();
+	});
+
+	it("targets finalization recovery at the ended AISA run", async () => {
+		wrap(
+			<ChannelLifecycleActions
+				channelId={CHANNEL_ID}
+				runId={RUN_ID}
+				status="ERROR"
+				hasEncoding
+				providerTerminal
+				managedAisa
+				canRetryAisaFinalization
+			/>,
+		);
+		expect(
+			screen.queryByRole("button", { name: "Start a new run" }),
+		).toBeNull();
+		await userEvent.click(
+			screen.getByRole("button", { name: "Retry finalization" }),
+		);
+		await userEvent.click(
+			within(screen.getByRole("dialog")).getByRole("button", {
+				name: "Retry finalization",
+			}),
+		);
+		await waitFor(() =>
+			expect(apiFetch).toHaveBeenCalledWith(
+				`/api/live-channels/${CHANNEL_ID}/actions`,
+				{
+					method: "POST",
+					body: JSON.stringify({ action: "stop", finalizationRunId: RUN_ID }),
+				},
+			),
+		);
+	});
+
+	it("closes a pending Stop confirmation when that encoding is found ended", async () => {
+		const pending = {
+			channelId: CHANNEL_ID,
+			runId: RUN_ID,
+			hasEncoding: true,
+			status: "ERROR" as const,
+		};
+		const view = wrap(<ChannelLifecycleActions {...pending} />);
+		await userEvent.click(screen.getByRole("button", { name: "Stop channel" }));
+		expect(screen.getByRole("dialog")).toBeInTheDocument();
+		view.rerender(<ChannelLifecycleActions {...pending} providerTerminal />);
+		expect(screen.queryByRole("dialog")).toBeNull();
+		expect(
+			apiFetch.mock.calls.some(([, init]) => init?.method === "POST"),
+		).toBe(false);
+	});
+
+	it("keeps Stop available when a locally stopped channel has an unconfirmed error", () => {
+		wrap(
+			<ChannelLifecycleActions
+				channelId={CHANNEL_ID}
+				status="STOPPED"
+				hasEncoding
+				hasError
+			/>,
+		);
+		expect(screen.getByRole("button", { name: "Stop channel" })).toBeEnabled();
+	});
+
+	it("offers cleanup recovery for a stopped error even after confirming the encoder ended", async () => {
+		apiFetch.mockResolvedValue({ action: "stop", status: "STOPPED" });
+		wrap(
+			<ChannelLifecycleActions
+				channelId={CHANNEL_ID}
+				status="STOPPED"
+				hasEncoding
+				hasError
+				providerTerminal
+			/>,
+		);
+		expect(
+			screen.queryByRole("button", { name: "Start a new run" }),
+		).toBeNull();
+		expect(screen.queryByRole("button", { name: "Stop channel" })).toBeNull();
+		await userEvent.click(
+			screen.getByRole("button", { name: "Retry cleanup" }),
+		);
+		await userEvent.click(
+			within(screen.getByRole("dialog")).getByRole("button", {
+				name: "Retry cleanup",
+			}),
+		);
+		expect(apiFetch).toHaveBeenCalledWith(
+			`/api/live-channels/${CHANNEL_ID}/actions`,
+			{ method: "POST", body: JSON.stringify({ action: "stop" }) },
+		);
+	});
+
+	it("removes live RTMP controls once the provider reports termination", () => {
+		wrap(
+			<ChannelLifecycleActions
+				channelId={CHANNEL_ID}
+				runId={RUN_ID}
+				status="RUNNING"
+				hasEncoding
+				plan={rtmpPlan}
+				providerTerminal
+			/>,
+		);
+		expect(screen.queryByText("RTMP ingest points")).toBeNull();
+	});
+
 	it("updates declared points with references and displayed run only", async () => {
 		wrap(
 			<ChannelLifecycleActions

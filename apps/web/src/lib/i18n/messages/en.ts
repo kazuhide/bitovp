@@ -2150,13 +2150,13 @@ export const en = {
 		// not a row about to fire — the same reading `overdueArmedCount` uses.
 		nextEventOverdue: "{action} overdue by {countdown}",
 		nextEventSlate: "slate {seconds}s",
-		runtime: "Runtime",
+		runtime: "Encoder runtime",
 		runtimeElapsed: "{elapsed} elapsed",
 		runtimeRemaining: "{elapsed} elapsed · {remaining} left",
 		runtimeCapReached: "{elapsed} elapsed · cap reached",
 		// The POST-MORTEM figure, frozen at the stop. Past tense on purpose:
 		// nothing about it is still running.
-		runtimeRan: "ran for {duration}",
+		runtimeRan: "{duration}",
 		summaryResolvedAlerts: "{count} resolved",
 	},
 	notFound: {
@@ -3233,7 +3233,7 @@ export const en = {
 			"Waiting for the first Bitmovin encoder status check. Until it arrives, this channel is not shown as confirmed on air.",
 		providerUnknownNever: "never",
 		providerTerminalHint:
-			"Bitmovin reported this run's encoding {status} at {at} — the encoder is gone and cannot be restarted. Start the channel for a fresh run (new encoder, new ingest coordinates).",
+			"Bitmovin reported this run's encoding {status} at {at}.",
 		inputUnobserved: "Input status unconfirmed",
 		inputUnobservedHint:
 			"Input connection status is not available for this run.",
@@ -3494,6 +3494,25 @@ export const en = {
 		// Name the operator task; the provider encoder is a secondary detail.
 		start: "Start channel",
 		startNewRun: "Start a new run",
+		retryAisaFinalization: "Retry finalization",
+		retryAisaFinalizationDescription:
+			"Retry the final processing for the ended run.",
+		retryCleanup: "Retry cleanup",
+		retryCleanupDescription:
+			"Retry stopping any remaining encodings and attached file-input sessions.",
+		encoderStopped: "Stopped",
+		encoderActive: "Encoder running",
+		encoderStatusUnverified: "Encoder state unverified",
+		runOutputGenerated: "Output generated",
+		runErrorRecorded: "Error recorded",
+		runOutputUnverified: "Output unverified",
+		runPlaybackUnverified: "Playback unverified",
+		ladderConfigured: "Configured ladder",
+		ladderConfiguredSummary: "{count} configured",
+		ladderConfiguredUnavailable: "No ladder in the channel plan",
+		ladderObserved: "Observed ladder",
+		ladderObservedEmpty: "No encoded streams recorded",
+		ladderObservedUnavailable: "Output statistics unavailable",
 		//  — the Akamai MSL output editor in the live wizard's
 		// output step. Bitmovin authenticates the MSL output resource with the
 		// account API key rather than a storage credential, and MSL takes four
@@ -3574,21 +3593,22 @@ export const en = {
 	},
 	pushLog: {
 		title: "Push heartbeat receipts",
-		hint: "Newest received first; one row per verified receipt, including retries. Historical provider snapshots, not current health or playback proof. Details include only allowed telemetry fields; Poll history and export are separate below.",
+		hint: "Each verified receipt appears newest first, including retries. These records show past measurements. Details include the permitted telemetry fields. The latest page of the active run refreshes every two seconds while open in the foreground. Refresh pauses while inspecting details or viewing older or ended runs.",
 		sampledAt: "Provider sample time",
 		receivedAt: "App receipt time",
-		auto: "Latest receipts refresh every 2 seconds while this running log is open in the foreground.",
-		paused:
-			"Automatic refresh paused: closed, ended, historical, older page, or background.",
-		inspecting:
-			"Refresh paused while inspecting details. Close all details to resume.",
+		auto: "Auto-refreshing",
+		paused: "Auto-refresh paused",
+		inspecting: "Inspecting · refresh paused",
 		details: "Details",
-		empty: "No verified Push receipts are stored for this run.",
+		empty: "No Push receipts",
+		history: "History",
 		older: "Older receipts",
 		latest: "Latest receipts",
 		retry: "Retry",
 		current: "Current run (follow restarts)",
-		poll: "Poll history and export (approximately 30-second samples)",
+		followLatest: "Follow latest run",
+		latestEnded: "Run #{n} · Ended",
+		poll: "Poll history",
 	},
 	heartbeatLog: {
 		title: "Heartbeat log",
@@ -3602,7 +3622,7 @@ export const en = {
 		noEvents: "The encoder has reported no events for this run.",
 		export: "Export JSON (admin)",
 		summaryLine:
-			"Poll history summary: {samples} samples · input connected {connectedMinutes} min · {warnings} warning/error events (Push receipts shown separately)",
+			"Poll · {samples} samples · observed input {connectedMinutes} min · {warnings} warning/error events",
 		rowsPruned: "samples pruned before the summary",
 		time: "Time",
 		ingest: "Input",
@@ -3618,7 +3638,7 @@ export const en = {
 		rowsLoaded: "{count} rows loaded",
 		loadMore: "Load more",
 		columnsHint:
-			"In Mbps and fps are the first video stream's measured incomingBitrate and rate; keyframe figures are keyFrameIntervalAvg / Max; manifest age is the poll time minus the newest HLS manifest update; events list only what appeared at that poll. Open JSON for every provider field.",
+			"Poll samples are collected about every 30 seconds and can be exported as JSON. Bitrate, fps and keyFrameIntervalAvg / Max come from the first video stream. Manifest age is measured from the latest HLS update. Each row lists newly observed events. JSON details show all recorded fields.",
 	},
 	dvr: {
 		resetTitle: "Reset timeshift (RUNNING only)",
@@ -3934,6 +3954,8 @@ export const en = {
 		insert: "Insert media point",
 	},
 	liveToVod: {
+		recordingNotConfirmed:
+			"The encoding has ended. Recording completion is unconfirmed.",
 		stopFirst: "Stop the channel first — live-to-VOD publishes a ",
 		complete: "complete",
 		manifests: "Manifests",

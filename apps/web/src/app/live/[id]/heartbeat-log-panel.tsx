@@ -21,6 +21,7 @@ import {
 } from "./heartbeat-correlation";
 import { ProviderDiagnosticsPanel } from "./provider-diagnostics-panel";
 import { PushHeartbeatLog } from "./push-heartbeat-log";
+import { SectionHelp } from "./section-card";
 
 /**
  * The two contract paths, spelled exactly as `ROUTE_RULES` and API-USAGE
@@ -87,6 +88,7 @@ export function HeartbeatLogPanel({
 	channelId,
 	currentRunId,
 	currentRunStatus,
+	currentRunEnded = false,
 	open = false,
 	currentRunActive = false,
 	initialCorrelation,
@@ -95,6 +97,8 @@ export function HeartbeatLogPanel({
 	/** The channel's current run, preselected; null when the channel never ran. */
 	currentRunId: string | null;
 	currentRunStatus?: LiveChannelStatus;
+	/** Same-encoding closure evidence; a local ERROR alone is inconclusive. */
+	currentRunEnded?: boolean;
 	open?: boolean;
 	currentRunActive?: boolean;
 	initialCorrelation?: HeartbeatCorrelation;
@@ -108,6 +112,8 @@ export function HeartbeatLogPanel({
 		queryFn: () =>
 			apiFetch<{ runs: RunOption[] }>(`/api/live-channels/${channelId}/runs`),
 		enabled: canRead,
+		placeholderData: (previous, query) =>
+			query?.queryKey[1] === channelId ? previous : undefined,
 	});
 	const runOptions = useMemo(
 		() => (Array.isArray(runs.data?.runs) ? runs.data.runs : []),
@@ -116,6 +122,17 @@ export function HeartbeatLogPanel({
 	// Empty selection follows the current airing; an explicit historical id
 	// stays fixed when another airing starts. The channel owner keys this panel.
 	const [selectedRunId, setSelectedRunId] = useState<string>();
+	const latestRunId = currentRunId ?? runOptions[0]?.id ?? null;
+	const latestRun = runOptions.find((option) => option.id === latestRunId);
+	const latestEndedLabel =
+		currentRunEnded && latestRun?.id === currentRunId
+			? [
+					t("pushLog.latestEnded", { n: latestRun.seq }),
+					latestRun.endedAt ? formatDateTime(latestRun.endedAt) : null,
+				]
+					.filter(Boolean)
+					.join(" · ")
+			: undefined;
 	const correlation =
 		selectedRunId === undefined ? initialCorrelation : undefined;
 	const requested = correlation?.kind === "requested" ? correlation : null;
@@ -130,7 +147,17 @@ export function HeartbeatLogPanel({
 			: null
 		: correlation?.kind === "invalid"
 			? null
-			: selectedRunId || currentRunId || runOptions[0]?.id || null;
+			: selectedRunId || latestRunId;
+	const selectedValue = selectedRunId ?? requested?.runId ?? "";
+	const pinnedLatest = selectedValue !== "" && selectedValue === latestRunId;
+	const followLatestLabel =
+		latestEndedLabel !== undefined && !pinnedLatest
+			? latestEndedLabel
+			: t(
+					currentRunActive && !currentRunEnded && !pinnedLatest
+						? "pushLog.current"
+						: "pushLog.followLatest",
+				);
 	const timeWindow = requested && requestedKnown ? requested : undefined;
 	const log = useInfiniteQuery({
 		queryKey: ["live-run-heartbeat-log", channelId, runId],
@@ -207,9 +234,12 @@ export function HeartbeatLogPanel({
 		);
 	if (runOptions.length === 0 && !runs.isPending) {
 		return (
-			<p className="mt-2 text-sm text-zinc-500">{t("heartbeatLog.noRuns")}</p>
+			<p className="mt-2 text-sm text-zinc-500">
+				{t(runs.isError ? "status.readUnavailable" : "heartbeatLog.noRuns")}
+			</p>
 		);
 	}
+	const pollTitle = t("pushLog.poll");
 	return (
 		<div
 			className="mt-2 space-y-3"
@@ -224,21 +254,29 @@ export function HeartbeatLogPanel({
 				</p>
 			) : null}
 			<div className="flex flex-wrap items-end gap-3">
-				<label className="flex flex-col gap-1 text-xs text-zinc-400">
+				<label className="flex min-w-0 max-w-full flex-col gap-1 text-xs text-zinc-400">
 					<span>{t("heartbeatLog.run")}</span>
 					<select
 						id={selectId}
 						className={SELECT_CLASS}
-						value={selectedRunId ?? requested?.runId ?? ""}
+						value={selectedValue}
 						onChange={(event) => setSelectedRunId(event.target.value)}
 					>
-						<option value="">{t("pushLog.current")}</option>
-						{runOptions.map((option) => (
-							<option key={option.id} value={option.id}>
-								{t("runs.seq", { n: option.seq })} · {option.status} ·{" "}
-								{formatDateTime(option.createdAt)}
-							</option>
-						))}
+						<option value="">{followLatestLabel}</option>
+						{runOptions
+							.filter(
+								(option) =>
+									latestEndedLabel === undefined ||
+									pinnedLatest ||
+									option.id !== latestRunId,
+							)
+							.map((option) => (
+								<option key={option.id} value={option.id}>
+									{option.id === latestRunId && latestEndedLabel
+										? latestEndedLabel
+										: `${t("runs.seq", { n: option.seq })} · ${option.status} · ${formatDateTime(option.createdAt)}`}
+								</option>
+							))}
 					</select>
 				</label>
 				{run?.summary && !timeWindow ? (
@@ -292,14 +330,16 @@ export function HeartbeatLogPanel({
 					runId={runId}
 					currentRunId={currentRunId}
 					currentRunActive={currentRunActive}
+					currentRunEnded={currentRunEnded && runId === currentRunId}
 					currentRunStatus={currentRunStatus}
 					open={open}
 					timeWindow={timeWindow}
 				/>
 			) : null}
-			<h4 className="border-zinc-800 border-t pt-3 font-medium text-sm text-zinc-200">
-				{t("pushLog.poll")}
-			</h4>
+			<div className="flex items-center gap-2 border-zinc-800 border-t pt-3">
+				<h4 className="font-medium text-sm text-zinc-200">{pollTitle}</h4>
+				<SectionHelp title={pollTitle} help={t("heartbeatLog.columnsHint")} />
+			</div>
 
 			{log.isError ? (
 				<p
@@ -341,7 +381,7 @@ export function HeartbeatLogPanel({
 							</li>
 						))}
 					</ul>
-				) : (
+				) : log.isError ? null : (
 					<p className="mt-1 text-xs text-zinc-500">
 						{log.isPending
 							? t("heartbeatLog.loading")
@@ -354,7 +394,7 @@ export function HeartbeatLogPanel({
 				)}
 			</div>
 
-			{rows.length === 0 ? (
+			{rows.length === 0 && !log.isError ? (
 				<p className="text-sm text-zinc-500">
 					{log.isPending
 						? t("heartbeatLog.loading")
@@ -364,7 +404,8 @@ export function HeartbeatLogPanel({
 									: "heartbeatLog.empty",
 							)}
 				</p>
-			) : (
+			) : null}
+			{rows.length > 0 ? (
 				<div className="overflow-x-auto rounded-md border border-zinc-800">
 					<table className="w-full text-xs">
 						<thead>
@@ -473,11 +514,13 @@ export function HeartbeatLogPanel({
 						</tbody>
 					</table>
 				</div>
-			)}
+			) : null}
 			<div className="flex flex-wrap items-center gap-3">
-				<p className="text-[11px] text-zinc-500">
-					{t("heartbeatLog.rowsLoaded", { count: rows.length })}
-				</p>
+				{rows.length > 0 ? (
+					<p className="text-[11px] text-zinc-500">
+						{t("heartbeatLog.rowsLoaded", { count: rows.length })}
+					</p>
+				) : null}
 				{log.hasNextPage ? (
 					<Button
 						type="button"
@@ -490,9 +533,6 @@ export function HeartbeatLogPanel({
 					</Button>
 				) : null}
 			</div>
-			<p className="text-[11px] text-zinc-500">
-				{t("heartbeatLog.columnsHint")}
-			</p>
 		</div>
 	);
 }

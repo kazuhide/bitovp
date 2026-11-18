@@ -313,6 +313,52 @@ describe("AISA publisher connection projection", () => {
 	});
 
 	it.each([
+		"pending",
+		"settled",
+		"different-encoding",
+		"viewer",
+	] as const)("projects a private AISA finalization retry only for the exact ended run (%s)", async (state) => {
+		if (state !== "viewer") {
+			mocks.tenant = {
+				actor: `user:${ownerId}`,
+				actorUserId: ownerId,
+				effectiveUserId: ownerId,
+				role: "ADMIN",
+				actorRole: "ADMIN",
+				isImpersonating: false,
+			};
+		}
+		const row = managedRow();
+		row.status = "ERROR";
+		Object.assign(row.runs[0], {
+			status: "ERROR",
+			providerStatus: "ERROR",
+			providerTerminalAt: new Date("2026-11-07T00:01:00Z"),
+			...(state === "different-encoding"
+				? { bitmovinEncodingId: accountId }
+				: {}),
+			...(state === "settled"
+				? {
+						aisaStatus: "ERROR",
+						aisaSnapshot: null,
+						error: "AISA_LIVE_TERMINAL_FAILURE",
+						aisaFinalization: {
+							analysisId,
+							encodingId,
+							status: "ERROR",
+							result: "UNAVAILABLE_TERMINAL_FAILURE",
+							observedAt: "2026-11-07T00:01:00Z",
+						},
+					}
+				: {}),
+		});
+		mocks.findUnique.mockResolvedValue(row);
+		const body = await (await GET(request(), params())).json();
+		expect(Boolean(body.canRetryAisaFinalization)).toBe(state === "pending");
+		expect(body.currentRun).not.toHaveProperty("aisaFinalization");
+	});
+
+	it.each([
 		"AISA_IMPORTED",
 		"run-binding",
 		"malformed-setting",

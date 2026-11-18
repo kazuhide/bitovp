@@ -79,6 +79,7 @@ import { deliveryDiagnosis, selectLiveTelemetry } from "./live-telemetry";
 import { LiveToVodPanel } from "./live-to-vod-panel";
 import { MoqPlayerPreview } from "./moq-player-preview";
 import { NextActionPanel } from "./next-action-panel";
+import { RunOutcome } from "./run-outcome";
 import { type AisaRunSelection, RunsPanel } from "./runs-panel";
 import { RuntimeCapPanel } from "./runtime-cap-panel";
 import { SCHEDULE_ACTION_LABEL_KEYS } from "./schedule-labels";
@@ -169,6 +170,7 @@ function ChannelConsole({
 	// predicate and the strip's age line.
 	const [nowMs, setNowMs] = useState(() => Date.now());
 	const [heartbeatLogOpen, setHeartbeatLogOpen] = useState(false);
+	const [ladderOpen, setLadderOpen] = useState(false);
 	useEffect(() => {
 		const id = setInterval(() => setNowMs(Date.now()), 30_000);
 		return () => clearInterval(id);
@@ -419,11 +421,34 @@ function ChannelConsole({
 	// every evidence-bearing channel a run row, so a non-CREATED channel
 	// without one is a legacy/cached response and shows its own status — the
 	// presence-level fallback rule, applied to status.
-	const displayStatus = run
+	const storedStatus = run
 		? deriveLiveChannelStatus(run.status)
 		: row.status === "CREATED"
 			? deriveLiveChannelStatus(null)
 			: row.status;
+	// Reuse the caught-up server clock and the current run's provider status.
+	// A completed query for a previous encoding cannot close the new one.
+	const anchoredNowMs = serverNow
+		? Date.parse(serverNow) +
+			(clockAnchor?.serverNow === serverNow
+				? Math.max(0, nowMs - clockAnchor.receivedAtMs)
+				: 0)
+		: nowMs;
+	const sameEncoding =
+		typeof run?.bitmovinEncodingId === "string" &&
+		run.bitmovinEncodingId === row.bitmovinEncodingId;
+	const providerLifecycle = deriveProviderLifecycle(
+		sameEncoding ? run : null,
+		anchoredNowMs,
+	);
+	const providerTerminal = providerLifecycle === "TERMINAL";
+	const displayStatus = providerTerminal ? "STOPPED" : storedStatus;
+	const encoderStatus = providerTerminal ? "STOPPED" : row.status;
+	const encoderEndUnconfirmed =
+		!providerTerminal &&
+		Boolean(row.bitmovinEncodingId) &&
+		(storedStatus === "ERROR" ||
+			(storedStatus === "STOPPED" && row.error != null));
 	const plan = liveChannelPlanSchema.safeParse(
 		aisaRow && !aisaOperatorAllowed ? null : row.plan,
 	);
@@ -439,6 +464,9 @@ function ChannelConsole({
 					generation={row.liveEffectFenceVersion}
 					cancelRequested={run?.cancelRequested}
 					managedAisa={aisaRow}
+					providerTerminal={providerTerminal}
+					canRetryAisaFinalization={row.canRetryAisaFinalization}
+					hasError={row.error != null}
 				/>
 			</RoleAccess>
 		) : null;
@@ -458,7 +486,10 @@ function ChannelConsole({
 		: (row.playbackLinks ?? []);
 	const playable = playableLinks({
 		links: visiblePlaybackLinks,
-		status: row.status === "RUNNING" ? "RUNNING" : "",
+		status:
+			displayStatus === "RUNNING" && encoderStatus === "RUNNING"
+				? "RUNNING"
+				: "",
 		live: true,
 	});
 	const playableKeys = new Set(playable.map((l) => l.key));
@@ -484,7 +515,9 @@ function ChannelConsole({
 			? "prepare"
 			: displayStatus === "PROVISIONING"
 				? "starting"
-				: displayStatus === "RUNNING" || displayStatus === "STOPPING"
+				: displayStatus === "RUNNING" ||
+						displayStatus === "STOPPING" ||
+						encoderEndUnconfirmed
 					? "onair"
 					: "finished";
 	// : the frozen-sample bug — the raw predicate reads only the
@@ -494,16 +527,6 @@ function ChannelConsole({
 	// and that sample young enough to vouch (3 × sweep cadence).
 	const channelActive =
 		displayStatus !== "IDLE" && isActiveChannelStatus(displayStatus);
-	// A new query payload renders before its clock-rebase effect. Use that
-	// payload's server time immediately; only add elapsed ticks to its OWN
-	// anchor. Otherwise a fresh Push briefly looks future and the announcer
-	// records a false stale/fresh transition even though the settled UI is green.
-	const anchoredNowMs = serverNow
-		? Date.parse(serverNow) +
-			(clockAnchor?.serverNow === serverNow
-				? Math.max(0, nowMs - clockAnchor.receivedAtMs)
-				: 0)
-		: nowMs;
 	// Display evidence never falls through to another airing's channel mirror.
 	const displayPoll = monitoringAllowed
 		? run
@@ -548,7 +571,6 @@ function ChannelConsole({
 	 * amber; TERMINAL is what changes the ① hint from "may still be up" to
 	 * "Bitmovin reported it ended — start a fresh run".
 	 */
-	const providerLifecycle = deriveProviderLifecycle(run ?? null, anchoredNowMs);
 	const providerUnknown = providerLifecycle === "UNKNOWN";
 	// UNOBSERVED does not block worker effects (the worker performs its own
 	// readback before them), but it is still not evidence for a customer-facing
@@ -955,7 +977,9 @@ function ChannelConsole({
 								<MoqPlayerPreview
 									channelId={id}
 									runId={run.id}
-									active={row.status === "RUNNING" && run.status === "RUNNING"}
+									active={
+										encoderStatus === "RUNNING" && run.status === "RUNNING"
+									}
 								/>
 							) : (
 								<p role="status" className="text-xs text-zinc-400">
@@ -976,7 +1000,7 @@ function ChannelConsole({
 							jobId={id}
 							scope="live"
 							links={playable}
-							live={row.status === "RUNNING"}
+							live={encoderStatus === "RUNNING"}
 							autoPlay={outputConfirmed}
 						/>
 					)}
@@ -1026,7 +1050,7 @@ function ChannelConsole({
 			>
 				<SlateReservationsPanel
 					channelId={id}
-					status={row.status}
+					status={encoderStatus}
 					bitmovinAccountId={row.bitmovinAccountId}
 				/>
 			</SectionCard>
@@ -1047,7 +1071,7 @@ function ChannelConsole({
 				    of the reservation list above. */}
 				<InsertedContentStopPanel
 					channelId={id}
-					status={row.status}
+					status={encoderStatus}
 					bitmovinAccountId={row.bitmovinAccountId}
 				/>
 			</SectionCard>
@@ -1116,7 +1140,7 @@ function ChannelConsole({
 			>
 				<ContentInsertionPanel
 					channelId={id}
-					status={row.status}
+					status={encoderStatus}
 					bitmovinAccountId={row.bitmovinAccountId}
 					runId={run?.id ?? null}
 					technicalDetailsAllowed={technicalDetailsAllowed}
@@ -1159,7 +1183,7 @@ function ChannelConsole({
 				>
 					<ChannelCueForm
 						channelId={id}
-						status={row.status}
+						status={encoderStatus}
 						stepEntries={stepEntries}
 					/>
 				</SectionCard>
@@ -1179,7 +1203,7 @@ function ChannelConsole({
 				    insertions into the running encoder. */}
 					<EsamPanel
 						channelId={id}
-						status={row.status}
+						status={encoderStatus}
 						bitmovinAccountId={row.bitmovinAccountId}
 					/>
 				</SectionCard>
@@ -1228,7 +1252,7 @@ function ChannelConsole({
 							imported || !plan.success || (aisaRow && !aisaOperatorAllowed)
 						}
 						channelId={id}
-						channelStatus={row.status}
+						channelStatus={encoderStatus}
 						plan={plan.success ? plan.data : undefined}
 						streamKey={
 							aisaRow && !aisaOperatorAllowed ? null : effectiveStreamKey
@@ -1266,7 +1290,7 @@ function ChannelConsole({
 				{plan.success ? (
 					<DvrPanel
 						channelId={id}
-						status={row.status}
+						status={encoderStatus}
 						plan={plan.data}
 						stepEntries={stepEntries}
 					/>
@@ -1307,6 +1331,8 @@ function ChannelConsole({
 				<LiveToVodPanel
 					channelId={id}
 					status={row.status}
+					providerTerminal={providerTerminal}
+					unsupported={aisaRow}
 					record={effectiveLiveToVod}
 					families={
 						aisaRow && !aisaOperatorAllowed
@@ -1334,7 +1360,7 @@ function ChannelConsole({
 					help={sectionHelp("sec-vmaf")}
 					defaultOpen={sectionOpen("sec-vmaf")}
 				>
-					<CaptureVmafPanel channelId={id} channelStatus={row.status} />
+					<CaptureVmafPanel channelId={id} channelStatus={encoderStatus} />
 				</SectionCard>
 			</RoleAccess>
 		),
@@ -1364,7 +1390,8 @@ function ChannelConsole({
 						initialCorrelation={initialHeartbeatCorrelation}
 						currentRunId={run?.id ?? null}
 						currentRunStatus={run?.status}
-						currentRunActive={run?.status === "RUNNING"}
+						currentRunActive={run?.status === "RUNNING" && !providerTerminal}
+						currentRunEnded={providerTerminal}
 						open={heartbeatLogOpen}
 					/>
 				) : (
@@ -1422,6 +1449,11 @@ function ChannelConsole({
 					selectedAisaRunId={showAisaFeature ? analysisRun?.id : undefined}
 					onSelectAisaRun={showAisaFeature ? selectAisaRun : undefined}
 				/>
+				{row.error ? (
+					<EncodingErrorDefinitionsLink
+						bitmovinAccountId={row.bitmovinAccountId}
+					/>
+				) : null}
 			</SectionCard>
 		),
 		"sec-steps": (
@@ -1460,21 +1492,30 @@ function ChannelConsole({
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-ladder"])}
 				summary={
-					plan.success
-						? t("status.summaryRenditions", {
+					plan.success && plan.data.renditions.length
+						? t("live.ladderConfiguredSummary", {
 								count: plan.data.renditions.length,
 							})
 						: undefined
 				}
 				defaultOpen={sectionOpen("sec-ladder")}
+				onOpenChange={setLadderOpen}
 			>
-				{plan.success ? (
-					<LadderPanel plan={plan.data} />
-				) : (
-					<p className="text-sm text-zinc-500">
-						{t("live.planUnavailableLadder")}
-					</p>
-				)}
+				<LadderPanel
+					plan={plan.success ? plan.data : undefined}
+					run={
+						monitoringAllowed &&
+						run?.bitmovinEncodingId &&
+						(!aisaRow || aisaOperatorAllowed)
+							? {
+									channelId: id,
+									runId: run.id,
+									encodingId: run.bitmovinEncodingId,
+								}
+							: null
+					}
+					open={ladderOpen}
+				/>
 			</SectionCard>
 		),
 		"sec-runtime-cap": (
@@ -1505,7 +1546,11 @@ function ChannelConsole({
 						{t("aisaLive.unavailableAutoShutdown")}
 					</p>
 				) : null}
-				<AutoShutdownPanel channelId={id} runId={run?.id} status={row.status} />
+				<AutoShutdownPanel
+					channelId={id}
+					runId={run?.id}
+					status={encoderStatus}
+				/>
 			</SectionCard>
 		),
 		"sec-advanced": (
@@ -1588,6 +1633,7 @@ function ChannelConsole({
 					<LiveStatusBadge
 						status={displayStatus}
 						providerLifecycle={providerLifecycle}
+						encoderEndUnconfirmed={encoderEndUnconfirmed}
 					/>
 					{plan.success ? (
 						<span className="text-xs text-zinc-500">
@@ -1653,7 +1699,12 @@ function ChannelConsole({
 				{/*  layer 1: the one thing to do next. : taking
 				 * it hands focus to the target's heading, so a keyboard operator
 			    lands where the panel just sent the page (audit §5.6). */}
-				{!(moqPlayback && nextAction.code === "WAIT_FOR_OUTPUT") ? (
+				{imported ||
+				((nextAction.code !== "RECOVER_FROM_ERROR" ||
+					!row.bitmovinEncodingId) &&
+					!(row.status === "STOPPED" && row.error != null) &&
+					!(providerTerminal && storedStatus === "ERROR") &&
+					!(moqPlayback && nextAction.code === "WAIT_FOR_OUTPUT")) ? (
 					<NextActionPanel
 						action={nextAction}
 						readOnly={imported}
@@ -1692,14 +1743,14 @@ function ChannelConsole({
 					// figure that keeps growing for as long as the channel stays
 					// stopped. The strip gates on `active`; this is what it needs to
 					// have something true to say once that gate closes.
-					runEndedAt={run?.endedAt ?? null}
+					runEndedAt={encoderEndUnconfirmed ? null : (run?.endedAt ?? null)}
 					maxRunMinutes={row.maxRunMinutes ?? null}
 					programmeHref="#layer-programme"
 					// review-366 I2: this cell hands focus over like every other
 					// jump on the page. Three docblocks already SAID it did while
 					// it was a bare `href` with no handler at all.
 					onJump={jumpToLiveSection}
-					active={phase === "onair"}
+					active={channelActive}
 					// review-260 126-A1: the ANCHORED clock — the gate and the age
 					// line must read the same now, or a slow viewer clock renders
 					// A stale relative timestamp can appear beside a green Connected label. The
@@ -1735,11 +1786,12 @@ function ChannelConsole({
 						id="sec-last-run"
 						title={t(LIVE_SECTION_TITLE_KEYS["sec-last-run"])}
 						summary={t("runs.seq", { n: run.seq })}
-						tone={row.error ? "error" : "neutral"}
 					>
-						<p className="text-sm text-zinc-300">
-							{t("runs.seq", { n: run.seq })} · {run.status}
-						</p>
+						<RunOutcome
+							channelId={id}
+							runId={run.id}
+							canReadHealth={monitoringAllowed}
+						/>
 					</FlatSection>
 				) : null}
 				{phase !== "prepare" ? (
@@ -1775,7 +1827,7 @@ function ChannelConsole({
 						manifestCount={manifestCount}
 						region={plan.success ? plan.data.bitmovin.cloudRegion : null}
 						encoderIp={effectiveEncoderIp}
-						channelStatus={row.status}
+						channelStatus={encoderStatus}
 						providerStatus={run?.providerStatus ?? null}
 						providerObservedAt={run?.providerStatusObservedAt ?? null}
 						nowMs={anchoredNowMs}
@@ -1783,16 +1835,6 @@ function ChannelConsole({
 						detailsHelp={sectionHelp}
 						onJump={jumpToLiveSection}
 					/>
-				) : null}
-				{row.error ? (
-					<div>
-						<p role="alert" className="text-red-400 text-sm">
-							{t("live.recordedFailure")}
-						</p>
-						<EncodingErrorDefinitionsLink
-							bitmovinAccountId={row.bitmovinAccountId}
-						/>
-					</div>
 				) : null}
 				{row.bitmovinEncodingId ? (
 					<p className="font-mono text-xs text-zinc-500">
@@ -1834,13 +1876,14 @@ function ChannelConsole({
 									>
 										{t(layer.titleKey)}
 									</h2>
-									{layer.helpKey ? (
+									{layer.id === "layer-danger" ? (
+										<p className="text-xs text-zinc-500">{t(layer.leadKey)}</p>
+									) : (
 										<SectionHelp
 											title={t(layer.titleKey)}
-											help={t(layer.helpKey)}
+											help={t(layer.helpKey ?? layer.leadKey)}
 										/>
-									) : null}
-									<p className="text-xs text-zinc-500">{t(layer.leadKey)}</p>
+									)}
 								</div>
 								{layer.sections.map((sectionId) => (
 									<Fragment key={sectionId}>{nodes[sectionId]}</Fragment>

@@ -2,6 +2,7 @@ import {
 	type AisaFinalizationProof,
 	type AisaLiveResultSnapshot,
 	aisaResultSchema,
+	classifyProviderStatusWord,
 } from "@bitovp/core";
 import {
 	type AisaLiveClient,
@@ -359,7 +360,7 @@ export function createAisaLiveOps(
 			// Only after a bounded drain attempt may the ordinary stop prevent a
 			// provider failure from leaving the paid Encoding running indefinitely.
 			const task = await encodingOps.getEncodingStatus(encodingId);
-			if (!["FINISHED", "CANCELED", "ERROR"].includes(task.status)) {
+			if (classifyProviderStatusWord(task.status) !== "TERMINAL") {
 				await check(false);
 				await liveOps.stopLiveEncoding(encodingId);
 			}

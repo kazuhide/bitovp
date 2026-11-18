@@ -24,6 +24,34 @@ import { localizedCustomerError } from "@/lib/customer-error";
 import { useT } from "@/lib/i18n/context";
 import { useAnnounce } from "./live-announcer";
 
+const LIFECYCLE_CONFIRMATIONS = {
+	stop: {
+		action: "stop",
+		title: "live.stopChannelTitle",
+		description: "live.stopChannelBody",
+		label: "live.stopChannel",
+	},
+	restart: {
+		action: "restart",
+		title: "live.restartChannelTitle",
+		description: "live.restartChannelBody",
+		label: "live.restartChannel",
+	},
+	"retry-finalization": {
+		action: "stop",
+		title: "live.retryAisaFinalization",
+		description: "live.retryAisaFinalizationDescription",
+		label: "live.retryAisaFinalization",
+	},
+	"retry-cleanup": {
+		action: "stop",
+		title: "live.retryCleanup",
+		description: "live.retryCleanupDescription",
+		label: "live.retryCleanup",
+	},
+} as const;
+type ConfirmationKind = keyof typeof LIFECYCLE_CONFIRMATIONS;
+
 /**
  * The channel's mutation controls, split by task.
  *
@@ -58,6 +86,9 @@ export function ChannelLifecycleActions({
 	channelId,
 	status,
 	hasEncoding,
+	hasError = false,
+	providerTerminal = false,
+	canRetryAisaFinalization = false,
 	plan,
 	runId,
 	generation = 0,
@@ -67,6 +98,9 @@ export function ChannelLifecycleActions({
 	channelId: string;
 	status: LiveChannelStatus;
 	hasEncoding: boolean;
+	hasError?: boolean;
+	providerTerminal?: boolean;
+	canRetryAisaFinalization?: boolean;
 	plan?: LiveChannelPlan;
 	runId?: string;
 	generation?: number;
@@ -75,7 +109,12 @@ export function ChannelLifecycleActions({
 }) {
 	const { t } = useT();
 	const queryClient = useQueryClient();
-	const [confirming, setConfirming] = useState<"stop" | "restart" | null>(null);
+	type Confirmation = {
+		kind: ConfirmationKind;
+		runId: string | undefined;
+		generation: number;
+	};
+	const [confirming, setConfirming] = useState<Confirmation | null>(null);
 	const [lastError, setLastError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 	const announce = useAnnounce();
@@ -140,10 +179,17 @@ export function ChannelLifecycleActions({
 	};
 
 	const act = useMutation({
-		mutationFn: ({ action }: { action: LiveChannelAction }) =>
+		mutationFn: ({
+			action,
+			finalizationRunId,
+		}: {
+			action: LiveChannelAction;
+			finalizationRunId?: string;
+			label?: (typeof LIFECYCLE_CONFIRMATIONS)[ConfirmationKind]["label"];
+		}) =>
 			apiFetch(`/api/live-channels/${channelId}/actions`, {
 				method: "POST",
-				body: JSON.stringify({ action }),
+				body: JSON.stringify({ action, finalizationRunId }),
 			}),
 		onMutate: () => {
 			setLastError(null);
@@ -160,7 +206,7 @@ export function ChannelLifecycleActions({
 			// : was `${vars.action} accepted.` — a raw slug in an
 			// English frame, on an otherwise-localized screen.
 			const accepted = t("live.actionAccepted", {
-				label: t(ACTION_LABEL_KEYS[vars.action]),
+				label: t(vars.label ?? ACTION_LABEL_KEYS[vars.action]),
 			});
 			setNotice(accepted);
 			//  (audit §5.6): the same sentence, into the page's ONE
@@ -259,15 +305,33 @@ export function ChannelLifecycleActions({
 	//  PR3: STOPPED joined the startable set — the button reads
 	// Start a new broadcast there (a NEW run with a fresh encoding; the finished
 	// one is unrecoverable by the vendor's model, C30).
+	const uncleanStop = status === "STOPPED" && hasError;
+	const canRecoverFinalization =
+		!cancellationPending &&
+		managedAisa &&
+		providerTerminal &&
+		canRetryAisaFinalization &&
+		Boolean(runId);
 	const canStart =
 		!awaitingStartProjection &&
+		!uncleanStop &&
+		!canRecoverFinalization &&
 		!(cancelRequested && status !== "STOPPED") &&
 		(status === "CREATED" || status === "ERROR" || status === "STOPPED");
-	const isNewRun = status === "STOPPED";
+	const isNewRun =
+		status === "STOPPED" || (status === "ERROR" && providerTerminal);
 	const canStop =
 		!cancellationPending &&
 		hasEncoding &&
-		(status === "RUNNING" || status === "ERROR");
+		!providerTerminal &&
+		(status === "RUNNING" || status === "ERROR" || uncleanStop);
+	// A terminal primary encoder can still have incomplete channel cleanup.
+	const canRetryCleanup =
+		!cancellationPending &&
+		hasEncoding &&
+		providerTerminal &&
+		uncleanStop &&
+		!canRecoverFinalization;
 	/**
 	 * Restart is for an encoding that is STILL UP. A stopped channel's
 	 * encoding is FINISHED (stopChannel calls stopLiveEncoding), and Bitmovin
@@ -280,7 +344,20 @@ export function ChannelLifecycleActions({
 		!managedAisa &&
 		!cancellationPending &&
 		hasEncoding &&
+		!providerTerminal &&
 		(status === "RUNNING" || status === "ERROR");
+	const confirm = (kind: Confirmation["kind"]) =>
+		setConfirming({ kind, generation, runId });
+	const confirmation =
+		confirming?.runId === runId &&
+		confirming?.generation === generation &&
+		((confirming.kind === "stop" && canStop) ||
+			(confirming.kind === "restart" && canRestart) ||
+			(confirming.kind === "retry-finalization" && canRecoverFinalization) ||
+			(confirming.kind === "retry-cleanup" && canRetryCleanup))
+			? confirming.kind
+			: null;
+	const dialogCopy = LIFECYCLE_CONFIRMATIONS[confirmation ?? "stop"];
 
 	return (
 		<div className="space-y-2">
@@ -332,9 +409,29 @@ export function ChannelLifecycleActions({
 						variant="destructive"
 						size="sm"
 						disabled={act.isPending}
-						onClick={() => setConfirming("stop")}
+						onClick={() => confirm("stop")}
 					>
 						{t("live.stop")}
+					</Button>
+				) : null}
+				{canRecoverFinalization ? (
+					<Button
+						variant="secondary"
+						size="sm"
+						disabled={act.isPending}
+						onClick={() => confirm("retry-finalization")}
+					>
+						{t("live.retryAisaFinalization")}
+					</Button>
+				) : null}
+				{canRetryCleanup ? (
+					<Button
+						variant="secondary"
+						size="sm"
+						disabled={act.isPending}
+						onClick={() => confirm("retry-cleanup")}
+					>
+						{t("live.retryCleanup")}
 					</Button>
 				) : null}
 				{canRestart ? (
@@ -342,7 +439,7 @@ export function ChannelLifecycleActions({
 						variant="secondary"
 						size="sm"
 						disabled={act.isPending}
-						onClick={() => setConfirming("restart")}
+						onClick={() => confirm("restart")}
 					>
 						{t("live.restart")}
 					</Button>
@@ -355,6 +452,7 @@ export function ChannelLifecycleActions({
 			) : null}
 			{notice ? <p className="text-emerald-400 text-sm">{notice}</p> : null}
 			{status === "RUNNING" &&
+			!providerTerminal &&
 			!managedAisa &&
 			runId &&
 			plan?.liveInput.kind === "REDUNDANT_RTMP" &&
@@ -371,22 +469,14 @@ export function ChannelLifecycleActions({
 			) : null}
 
 			<Dialog
-				open={confirming !== null}
+				open={confirmation !== null}
 				onOpenChange={(open) => {
 					if (!open) {
 						setConfirming(null);
 					}
 				}}
-				title={
-					confirming === "stop"
-						? t("live.stopChannelTitle")
-						: t("live.restartChannelTitle")
-				}
-				description={
-					confirming === "stop"
-						? t("live.stopChannelBody")
-						: t("live.restartChannelBody")
-				}
+				title={t(dialogCopy.title)}
+				description={t(dialogCopy.description)}
 			>
 				<div className="flex justify-end gap-2">
 					<Button
@@ -397,18 +487,26 @@ export function ChannelLifecycleActions({
 						{t("common.cancel")}
 					</Button>
 					<Button
-						variant="destructive"
+						variant={
+							confirmation === "retry-finalization" ? "default" : "destructive"
+						}
 						size="sm"
 						disabled={act.isPending}
 						onClick={() => {
-							if (confirming) {
-								act.mutate({ action: confirming });
-							}
+							if (!confirmation) return;
+							act.mutate({
+								action: dialogCopy.action,
+								label:
+									confirmation === "retry-finalization" ||
+									confirmation === "retry-cleanup"
+										? dialogCopy.label
+										: undefined,
+								finalizationRunId:
+									confirmation === "retry-finalization" ? runId : undefined,
+							});
 						}}
 					>
-						{confirming === "stop"
-							? t("live.stopChannel")
-							: t("live.restartChannel")}
+						{t(dialogCopy.label)}
 					</Button>
 				</div>
 			</Dialog>

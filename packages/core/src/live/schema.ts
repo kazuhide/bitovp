@@ -654,6 +654,15 @@ export const liveChannelPlanSchema = z
 			isAisaManagedLivePlan(plan) ||
 			plan.liveManifests.length > 0 ||
 			plan.muxings.some(
+				(muxing) =>
+					muxing.kind === "FMP4" &&
+					plan.outputs.some(
+						(output) =>
+							output.kind === "MOQ" &&
+							output.key === muxing.destination?.outputKey,
+					),
+			) ||
+			plan.muxings.some(
 				(m) =>
 					(m.kind === "FMP4" || m.kind === "CMAF") &&
 					[
@@ -668,7 +677,7 @@ export const liveChannelPlanSchema = z
 		{
 			path: ["liveManifests"],
 			message:
-				"At least one manifest is required unless an Origin receives Live Media Ingest",
+				"At least one manifest is required unless an Origin receives Live Media Ingest or a MoQ relay receives FMP4",
 		},
 	);
 

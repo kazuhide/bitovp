@@ -40,7 +40,7 @@ export const FEATURES = Object.freeze(
 			directory: "apps/web",
 			description: "Role enforcement and authenticated tenant context",
 			files: {
-				"src/proxy.roles.test.ts": 95,
+				"src/proxy.roles.test.ts": 101,
 				"src/lib/auth/tenancy.test.ts": 14,
 			},
 		},
@@ -52,7 +52,7 @@ export const FEATURES = Object.freeze(
 			files: {
 				"src/lib/server/create-request.test.ts": 11,
 				"src/app/api/encoding-jobs/route.test.ts": 71,
-				"src/app/api/live-channels/route.test.ts": 88,
+				"src/app/api/live-channels/route.test.ts": 91,
 			},
 		},
 		{

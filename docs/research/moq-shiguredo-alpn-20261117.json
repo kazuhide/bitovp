@@ -1,0 +1,59 @@
+{
+  "tested_at_utc": "2026-11-17T12:54:02.149529+00:00",
+  "client": "aioquic 1.8.0",
+  "scope": "native QUIC TLS/ALPN only; no MoQT SETUP, auth or media",
+  "results": [
+    {
+      "host": "sora-moq.sora-labo.shiguredo.app",
+      "port": 443,
+      "offered_alpn": "moqt-23",
+      "certificate_verification": "required",
+      "handshake_completed": true,
+      "events": [
+        "ProtocolNegotiated(alpn_protocol='moqt-23')",
+        "HandshakeCompleted(alpn_protocol='moqt-23', cipher_suite=<CipherSuite.TLS_AES_128_GCM_SHA256: 4865>, early_data_accepted=False, peer_certificates=[<Certificate(subject=<Name()>, ...)>, <Certificate(subject=<Name(CN=YE2,O=Let's Encrypt,C=US)>, ...)>, <Certificate(subject=<Name(CN=Root YE,O=ISRG,C=US)>, ...)>, <Certificate(subject=<Name(CN=ISRG Root X2,O=Internet Security Research Group,C=US)>, ...)>], session_resumed=False)",
+        "ConnectionTerminated(error_code=<QuicErrorCode.NO_ERROR: 0>, frame_type=None, reason_phrase='')"
+      ],
+      "selected_alpn": "moqt-23",
+      "status": "tls_handshake_completed"
+    },
+    {
+      "host": "sora-moq.sora-labo.shiguredo.app",
+      "port": 443,
+      "offered_alpn": "moqt-18",
+      "certificate_verification": "required",
+      "handshake_completed": false,
+      "events": [
+        "ConnectionTerminated(error_code=376, frame_type=6, reason_phrase='no_application_protocol')"
+      ],
+      "status": "not_connected",
+      "exception": "ConnectionError: "
+    },
+    {
+      "host": "sora-moq.sora-labo.shiguredo.app",
+      "port": 443,
+      "offered_alpn": "moqt-16",
+      "certificate_verification": "required",
+      "handshake_completed": false,
+      "events": [
+        "ConnectionTerminated(error_code=376, frame_type=6, reason_phrase='no_application_protocol')"
+      ],
+      "status": "not_connected",
+      "exception": "ConnectionError: "
+    },
+    {
+      "host": "sora-moq.sora-labo.shiguredo.app",
+      "port": 443,
+      "offered_alpn": "h3",
+      "certificate_verification": "required",
+      "handshake_completed": true,
+      "events": [
+        "ProtocolNegotiated(alpn_protocol='h3')",
+        "HandshakeCompleted(alpn_protocol='h3', cipher_suite=<CipherSuite.TLS_AES_128_GCM_SHA256: 4865>, early_data_accepted=False, peer_certificates=[<Certificate(subject=<Name()>, ...)>, <Certificate(subject=<Name(CN=YE2,O=Let's Encrypt,C=US)>, ...)>, <Certificate(subject=<Name(CN=Root YE,O=ISRG,C=US)>, ...)>, <Certificate(subject=<Name(CN=ISRG Root X2,O=Internet Security Research Group,C=US)>, ...)>], session_resumed=False)",
+        "ConnectionTerminated(error_code=<QuicErrorCode.NO_ERROR: 0>, frame_type=None, reason_phrase='')"
+      ],
+      "selected_alpn": "h3",
+      "status": "tls_handshake_completed"
+    }
+  ]
+}

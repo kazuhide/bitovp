@@ -2,6 +2,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { initStepLog } from "@bitovp/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MoqObservationError } from "@/lib/server/moq-observations";
+
+const moqCleanup = vi.hoisted(() => ({ snapshot: vi.fn(), cleanup: vi.fn() }));
+vi.mock("@/lib/server/moq-archive-cleanup", () => ({
+	snapshotMoqArchiveCleanup: moqCleanup.snapshot,
+	cleanupDeletedMoqArchives: moqCleanup.cleanup,
+}));
 
 const findUnique = vi.fn();
 const aisaOwnerId = "00000000-0000-4000-8000-0000000000a2";
@@ -75,6 +82,8 @@ function delReq() {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	moqCleanup.snapshot.mockReset().mockResolvedValue([]);
+	moqCleanup.cleanup.mockReset().mockResolvedValue({ removed: 0, failed: 0 });
 	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
 	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", aisaOwnerId);
 	latestRun.mockReset().mockResolvedValue(null);
@@ -100,6 +109,45 @@ beforeEach(() => {
 });
 
 afterEach(() => vi.unstubAllEnvs());
+
+describe("MoQ archive channel deletion", () => {
+	it("cleans only the locked snapshot after the database commit", async () => {
+		findUnique.mockResolvedValue({
+			id: CHANNEL_ID,
+			status: "STOPPED",
+			plan: {},
+		});
+		const snapshot = [{ runId: "owned-run" }];
+		moqCleanup.snapshot.mockResolvedValue(snapshot);
+		let committed = false;
+		$transaction.mockImplementationOnce(async (cb) => {
+			const value = await cb(tx);
+			committed = true;
+			return value;
+		});
+		moqCleanup.cleanup.mockImplementationOnce(async () => {
+			expect(committed).toBe(true);
+			return { removed: 1, failed: 0 };
+		});
+		expect((await DELETE(delReq(), ctx(CHANNEL_ID))).status).toBe(200);
+		expect(moqCleanup.cleanup).toHaveBeenCalledWith(snapshot);
+	});
+	it("keeps archive files on failed deletion or uncertain provider termination", async () => {
+		findUnique.mockResolvedValue({
+			id: CHANNEL_ID,
+			status: "STOPPED",
+			plan: {},
+		});
+		channelDeleteMany.mockResolvedValueOnce({ count: 0 });
+		expect((await DELETE(delReq(), ctx(CHANNEL_ID))).status).toBe(409);
+		expect(moqCleanup.cleanup).not.toHaveBeenCalled();
+		moqCleanup.snapshot.mockRejectedValueOnce(
+			new MoqObservationError(409, "MOQ_ARCHIVE_PROVIDER_UNCONFIRMED"),
+		);
+		expect((await DELETE(delReq(), ctx(CHANNEL_ID))).status).toBe(409);
+		expect(moqCleanup.cleanup).not.toHaveBeenCalled();
+	});
+});
 
 describe("GET /api/live-channels/[id]", () => {
 	it("adds run-bound Push reception without rewriting the poll observation", async () => {

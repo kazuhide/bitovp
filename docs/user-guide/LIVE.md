@@ -57,6 +57,93 @@ DASH suggested presentation delay and minimum update period use milliseconds in
 the form and are converted to API seconds. DVR retains a playback window; its
 manifest-element budget is checked rather than silently clamped.
 
+## Experimental MoQ delivery
+
+MoQ relay output is available through an imported expert JSON Live plan. Create a
+**MoQ relay (live delivery)** credential first. Its encrypted secret holds a
+`moqt://host[:port][/path]` relay URL and an optional authorization token/type;
+userinfo, query strings, and fragments are rejected. Keep the token out of the
+plan. `authTokenType` requires a token.
+
+Use one `MOQ` output referencing that credential, `trackNamespace` as a tuple of
+1–32 nonempty strings, and `draftVersion` as `DRAFT_16` or `DRAFT_18`. Each H264
+video or AAC audio rendition needs its own FMP4 muxing directed to that output.
+Set `liveManifests` to an empty array. Storage outputs/mirrors, DRM, SCTE-35,
+and ad insertion are not supported in this evaluation path. The plan is kept in
+expert mode so conversion to the ordinary wizard cannot discard MoQ settings.
+
+This uses Custom Live and requires Bitmovin's account-level MoQ Beta access.
+Relay interoperability and Player Web X playback need independent verification;
+the MoQ preview uses a separate Player Web X build. Requested and actual Encoder
+versions can be compared in the run's `kind=summary` diagnostics when the
+provider returns them. A selected version is never inferred from `BETA` or
+`STABLE`.
+
+For MoQ preview, set the credential's optional **Playback URL** to a separate
+HTTPS subscribe-only URL before starting the channel. Configure an own Bitmovin
+Player license in Player settings. The preview uses that key independently of
+the ordinary HLS/DASH engine choice. The current MoQ Player build is separate
+from the public npm SDK: an operator supplies a licensed local bundle with
+`BITOVP_MOQ_PLAYER_BUNDLE_PATH` and its digest in
+`BITOVP_MOQ_PLAYER_BUNDLE_SHA256`. The asset route verifies the file before serving
+it; the repository does not include this proprietary bundle.
+
+Use **Play** in the Live playback panel to start muted MoQ playback, and **Stop**
+to release the player. Frame progress indicates received video; a successful
+start request alone does not. Preview supports one namespace component and
+draft16/18. Missing configuration, a changed credential, or unavailable video
+remains explicit. Publisher tokens are never used as browser playback tokens.
+
+**Open player** opens the same preview at `/live/[id]/runs/[runId]/moq` for an
+OPERATOR. Both views show configured namespace/draft/catalog, received quality
+metadata, measured video FPS, resolution, frames, startup time and buffer level.
+The 2-second target buffer is a setting. **Video latency (barcode)** is the
+Player's timestamp-in-image estimate, requiring compatible live timestamp bars
+and synchronized source/client clocks; it is not RTT or a guaranteed compositor
+display measurement. Missing or stale values remain unmeasured. Configured
+Cloudflare Relay ID/expiry/permissions come from unverified subscriber-token
+claims, not server telemetry. Relay bytes/objects/RTT counters are not exposed
+by the Player API used here.
+
+Both pages retain observations after the run ends. A playback session saves
+Player latency, FPS, buffer source and frame counters on a UTC timeline, with
+missing measurements left as gaps. The received preview is recorded for up to
+90 seconds/16MiB and saved as a seekable WebM. Play or download it from
+**Saved MoQ observations** after stopping. Recording covers the preview's
+received interval; its state shows recording, saving, saved, unsupported or
+failure. Each run keeps up to five observation sessions. Saved data remains
+available when the live player is inactive.
+After ending, saved video and observations appear before the collapsed live
+preview. Historical namespace/draft/catalog come from the original output proof.
+Use `#moq-preview` on either page to open this section directly. Browser-native
+bundle and recording requests carry the document's organization assertion;
+switching organizations requires reloading the page.
+
+Configure the tenant's Analytics key in Player settings to collect the same
+barcode latency through Collector 2.62.0's public HTML5 adapter. **Bitmovin
+Analytics** reads back `customData1` milliseconds for the saved impression and
+run, alongside the browser measurements and persisted Encoder heartbeat
+metrics. This is collection of the Player's measurement, rather than an
+independent latency clock or the native Analytics `LATENCY` field. Use
+**Refresh** after ending if ingestion is still pending. Input bitrate/FPS,
+cumulative packet anomalies and segment processing time retain their own units;
+segment processing time does not measure end-to-end video delay.
+
+Set `BITOVP_MOQ_ARCHIVE_DIR` to persistent local storage. The Web image includes
+FFprobe/FFmpeg for bounded validation and stream-copy remuxing; the Compose
+deployments attach a dedicated persistent archive volume. Channel deletion or
+reset removes only the corresponding owned recordings after the database
+commit and required provider-stop checks succeed.
+
+The same API accepts `kind=task` for fresh provider task status and metadata
+from at most 100 messages. It reports truncation and positive message counts.
+The SDK maps an absent list to an empty array, so missing or empty mapped lists
+have `totalMessageCount: null` (unknown). Free-form text is withheld by default.
+Administrators may request `kind=task&download=task` as a bounded private
+attachment; its text is never saved in audits. Fixed
+protocol mentions describe task messages, not negotiated ALPN or successful
+Relay delivery.
+
 ## Encrypted outputs and fallback regions
 
 In **Packaging → Encryption**, add CENC, FairPlay, or SPEKE to an fMP4 track,

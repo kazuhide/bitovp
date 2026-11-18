@@ -127,7 +127,7 @@ services:
       DEPLOYMENT_PROFILE: "${DEPLOYMENT_PROFILE:-UNRESTRICTED}"
     ports:
       - "127.0.0.1:${WEB_PORT:-3100}:3100"
-    volumes: [input-previews:/vod-input-previews:ro]
+    volumes: [input-previews:/vod-input-previews:ro, moq-archives:/moq-archives]
     restart: unless-stopped
 
   ingress:
@@ -175,3 +175,4 @@ volumes:
   pgdata:
   redisdata:
   input-previews:
+  moq-archives:

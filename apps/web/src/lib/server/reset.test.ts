@@ -5,6 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 import { AisaSnapshotRequired } from "./delete-jobs";
 import { deleteOperationalData, RESET_DELETES } from "./reset";
 
+const moqCleanup = vi.hoisted(() => ({ snapshot: vi.fn(), cleanup: vi.fn() }));
+vi.mock("./moq-archive-cleanup", () => ({
+	snapshotMoqArchiveCleanup: moqCleanup.snapshot,
+	cleanupDeletedMoqArchives: moqCleanup.cleanup,
+}));
+
 function fixture(captured: boolean) {
 	const writes: string[] = [];
 	const job = {
@@ -56,6 +62,25 @@ function fixture(captured: boolean) {
 }
 
 describe("reset AISA snapshot boundary", () => {
+	it("cleans a captured archive set only after successful reset and keeps it after transaction failure", async () => {
+		moqCleanup.snapshot.mockResolvedValue([{ runId: "owned-run" }]);
+		moqCleanup.cleanup.mockClear();
+		const success = fixture(true);
+		moqCleanup.cleanup.mockImplementationOnce(async () => {
+			expect(success.writes).toContain("liveChannelRun");
+		});
+		await deleteOperationalData(success.client);
+		expect(moqCleanup.cleanup).toHaveBeenCalledWith([{ runId: "owned-run" }]);
+		moqCleanup.cleanup.mockClear();
+		const failure = fixture(true);
+		failure.client.$transaction = vi.fn(async () => {
+			throw new Error("DB deletion failed");
+		}) as unknown as typeof failure.client.$transaction;
+		await expect(deleteOperationalData(failure.client)).rejects.toThrow(
+			"DB deletion failed",
+		);
+		expect(moqCleanup.cleanup).not.toHaveBeenCalled();
+	});
 	it("rejects before any reset mutation if the completed analysis has no snapshot", async () => {
 		const { client, writes } = fixture(false);
 		await expect(deleteOperationalData(client)).rejects.toBeInstanceOf(

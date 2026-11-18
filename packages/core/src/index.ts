@@ -106,6 +106,7 @@ export {
 	// it wanted to — unverifiable by construction rather than merely
 	// unverified. The credentials route's own test now parses with it.
 	credentialSummaryWireSchema,
+	moqPlaybackUrlSchema,
 	ociCompatHost,
 	updateCredentialSchema,
 } from "./credentials/schemas";
@@ -399,6 +400,17 @@ export {
 	sourceMediaAttributes,
 	type VideoAttributes,
 } from "./live/media-attributes";
+export {
+	bindMoqPlaybackNamespace,
+	MOQ_PLAYBACK_NAMESPACE_MAX_LENGTH,
+	moqRunNamespaceSuffix,
+} from "./live/moq-run-namespace";
+export type { MoqTaskStatus } from "./live/moq-task-status";
+export {
+	MOQ_TASK_HISTORY_ERROR,
+	projectMoqTaskHistory,
+	projectMoqTaskStatus,
+} from "./live/moq-task-status";
 export type {
 	LiveChannelStatus,
 	LiveNextAction,
@@ -951,6 +963,8 @@ export {
 	imscRenditionSchema,
 	ingestStreamSchema,
 	LIBVMAF_BUILTIN_MODELS,
+	moqDraftVersionSchema,
+	moqTrackNamespaceSchema,
 	OPUS_CHANNEL_LAYOUTS,
 	opusRenditionSchema,
 	PER_TITLE_MIN_BITRATE,

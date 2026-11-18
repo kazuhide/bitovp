@@ -34,6 +34,7 @@ const runFindFirst = vi.fn(
 const runCreate = vi.fn(async (_args?: { data: Record<string, unknown> }) => ({
 	id: "run-1",
 }));
+const runFindMany = vi.fn(async (_args?: unknown): Promise<unknown[]> => []);
 const runUpdate = vi.fn(
 	async (_args?: { data: Record<string, unknown> }) => ({}),
 );
@@ -108,6 +109,7 @@ vi.mock("@/lib/server/context", () => ({
 			liveEffectClaim: { findUnique: effectClaimFindUnique },
 			liveChannelRun: {
 				findFirst: runFindFirst,
+				findMany: runFindMany,
 				create: runCreate,
 				update: runUpdate,
 			},
@@ -129,6 +131,7 @@ vi.mock("@/lib/server/context", () => ({
 					},
 					liveChannelRun: {
 						findFirst: runFindFirst,
+						findMany: runFindMany,
 						create: runCreate,
 						update: runUpdate,
 					},
@@ -368,6 +371,18 @@ describe("AISA lifecycle admission", () => {
 					};
 		findUnique.mockImplementation(async () => storedChannel);
 		runFindFirst.mockImplementation(async () => storedRun);
+		runFindMany.mockImplementation(async () =>
+			storedRun
+				? [
+						{
+							...storedRun,
+							organizationId: "00000000-0000-4000-8000-000000000001",
+							liveChannelId: CHANNEL_ID,
+							moqObservations: { version: 1, sessions: [] },
+						},
+					]
+				: [],
+		);
 		updateMany.mockImplementationOnce(async (args) => {
 			if (!storedChannel) throw new Error("missing channel");
 			Object.assign(storedChannel, args.data);
@@ -416,7 +431,17 @@ describe("AISA lifecycle admission", () => {
 		if (phase === "dispatched-revive") {
 			expect(JSON.stringify(startedRunLog)).toContain("aisaCreateDispatched");
 			expect(channelDeleteMany).not.toHaveBeenCalled();
-		} else expect(channelDeleteMany).toHaveBeenCalledTimes(1);
+			expect(runFindMany).not.toHaveBeenCalled();
+		} else {
+			expect(channelDeleteMany).toHaveBeenCalledTimes(1);
+			expect(runFindMany).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: { liveChannelId: CHANNEL_ID },
+					take: 25,
+					select: expect.objectContaining({ moqObservations: true }),
+				}),
+			);
+		}
 	});
 	it.each([
 		"CREATE_NOT_DISPATCHED",
@@ -685,6 +710,7 @@ function manualStopClaim(
 }
 
 beforeEach(() => {
+	runFindMany.mockReset().mockResolvedValue([]);
 	vi.clearAllMocks();
 	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
 	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", aisaOwnerId);

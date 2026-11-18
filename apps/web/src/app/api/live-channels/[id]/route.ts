@@ -39,6 +39,16 @@ import {
 	liveToVodFamiliesForRole,
 	liveToVodForRole,
 } from "@/lib/server/live-to-vod-view";
+import {
+	cleanupDeletedMoqArchives,
+	type MoqArchiveCleanupSnapshot,
+	snapshotMoqArchiveCleanup,
+} from "@/lib/server/moq-archive-cleanup";
+import {
+	MoqObservationError,
+	moqHistoryError,
+} from "@/lib/server/moq-observations";
+import { publicMoqHistory } from "@/lib/server/moq-public-history";
 import { playbackLinksForLivePlan } from "@/lib/server/playback-links";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -153,7 +163,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 			(roleResolvedPrincipal && req.headers.get(ROLE_HEADER) === "ADMIN");
 		const currentRunView = currentRun
 			? {
-					...currentRun,
+					...publicMoqHistory(currentRun),
 					liveToVod: liveToVodForRole(
 						currentRun.liveToVod,
 						technicalDetailsAllowed,
@@ -185,7 +195,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 		// the credential's config never needs to cross .
 		return NextResponse.json(
 			{
-				...channel,
+				...publicMoqHistory(channel),
 				liveToVod: liveToVodForRole(channel.liveToVod, technicalDetailsAllowed),
 				liveToVodFamilies,
 				currentRun: currentRunView,
@@ -311,6 +321,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 				}),
 			);
 		}
+		let moqArchives: MoqArchiveCleanupSnapshot[] = [];
 		const deletedVmafJobs = await ctx.prisma.$transaction(async (tx) => {
 			// Match Start/provision lock order. The outer read cannot authorize
 			// deletion of a later run or an Analysis created before Encoding binding.
@@ -377,6 +388,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 			if (stillScoring > 0) {
 				throw new VmafStillScoring();
 			}
+			moqArchives = await snapshotMoqArchiveCleanup(tx, id);
 			// Status-guarded, matching the assertion above, so the two cannot drift.
 			const vmafJobs = await tx.vmafJob.deleteMany({
 				where: {
@@ -395,6 +407,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 			}
 			return vmafJobs.count;
 		});
+		await cleanupDeletedMoqArchives(moqArchives);
 		await writeAuditLog(
 			ctx,
 			{
@@ -408,6 +421,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 		);
 		return NextResponse.json({ id, deleted: true });
 	} catch (err) {
+		if (err instanceof MoqObservationError) return moqHistoryError(err);
 		if (err instanceof AisaFinalizationNotConfirmed) {
 			return jsonError(
 				409,

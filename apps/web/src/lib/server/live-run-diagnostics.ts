@@ -2,17 +2,19 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
+	diagnosticsEncodingVersionsSchema,
 	diagnosticsEventSchema,
 	diagnosticsHdStartSchema,
 	diagnosticsSrtSchema,
 	diagnosticsStreamSchema,
 	diagnosticsSummarySchema,
+	diagnosticsTaskSchema,
 	finalHeartbeatSchema,
 	liveDiagnosticsQuerySchema,
 } from "@/lib/live-diagnostics/schemas";
 import { writeAuditLog } from "./audit";
 import { bitmovinClientForAccount } from "./bitmovin";
-import { getServerContext } from "./context";
+import { getServerContext, type ServerContext } from "./context";
 import {
 	invalidIdResponse,
 	jsonError,
@@ -25,6 +27,59 @@ const providerPageSchema = z.object({
 	items: z.array(z.unknown()).max(100),
 	totalCount: z.number().int().nonnegative(),
 });
+
+/** This metadata read uses the same immutable run/account binding as statistics. */
+async function encodingVersions(
+	ctx: ServerContext,
+	api: NonNullable<Awaited<ReturnType<typeof bitmovinClientForAccount>>>,
+	accountId: string,
+	encodingId: string,
+	req: Request,
+) {
+	const path = `/encoding/encodings/${encodingId}`;
+	const started = Date.now();
+	try {
+		const versions = diagnosticsEncodingVersionsSchema.parse(
+			await api.encoding.encodings.get(encodingId),
+		);
+		await writeAuditLog(
+			ctx,
+			{
+				method: "GET",
+				path,
+				bitmovinAccountId: accountId,
+				statusCode: 200,
+				durationMs: Date.now() - started,
+				response: versions,
+			},
+			req,
+		);
+		return versions;
+	} catch (err) {
+		const upstream = (err as { httpStatusCode?: unknown } | null)
+			?.httpStatusCode;
+		const statusCode =
+			typeof upstream === "number" &&
+			Number.isInteger(upstream) &&
+			upstream >= 400 &&
+			upstream <= 599
+				? upstream
+				: 502;
+		await writeAuditLog(
+			ctx,
+			{
+				method: "GET",
+				path,
+				bitmovinAccountId: accountId,
+				statusCode,
+				durationMs: Date.now() - started,
+				response: { error: "Unable to retrieve encoder version metadata" },
+			},
+			req,
+		);
+		throw err;
+	}
+}
 
 /** Reads are bound to the run's immutable encoding and original provider audit
  * account. Channel settings can be edited after a broadcast, so they are never
@@ -58,6 +113,14 @@ async function handleDiagnostics(
 	const query = parsed.data;
 	try {
 		const ctx = await getServerContext();
+		if (
+			query.download &&
+			(ctx.tenant?.isImpersonating || ctx.tenant?.role !== "ADMIN")
+		)
+			return jsonError(
+				403,
+				"Administrator access is required for raw task diagnostics",
+			);
 		const run = await ctx.prisma.liveChannelRun.findFirst({
 			where: { id: runId, liveChannelId: id },
 			select: {
@@ -138,9 +201,11 @@ async function handleDiagnostics(
 		const basePath = `/encoding/statistics/encodings/${encodingId}/live-statistics`;
 		const path = final
 			? `/encoding/encodings/${encodingId}/live/heartbeat-final`
-			: query.kind === "hd-start"
-				? `/encoding/encodings/${encodingId}/live/hd/start`
-				: `${basePath}${query.kind === "summary" ? "" : `/${query.kind}`}${query.srtInputId ? `/${query.srtInputId}` : ""}`;
+			: query.kind === "task"
+				? `/encoding/encodings/${encodingId}/status`
+				: query.kind === "hd-start"
+					? `/encoding/encodings/${encodingId}/live/hd/start`
+					: `${basePath}${query.kind === "summary" ? "" : `/${query.kind}`}${query.srtInputId ? `/${query.srtInputId}` : ""}`;
 		const started = Date.now();
 		try {
 			const stats = api.encoding.statistics.encodings.liveStatistics;
@@ -157,6 +222,27 @@ async function handleDiagnostics(
 					await api.encoding.encodings.live.heartbeatFinal.get(encodingId),
 				);
 				result = { ...envelope, data };
+			} else if (query.kind === "task") {
+				const task = await api.encoding.encodings.status(encodingId);
+				const safe = diagnosticsTaskSchema.parse(task);
+				result = {
+					...envelope,
+					data: query.download
+						? {
+								...safe,
+								messages: safe.messages.map((metadata, index) => {
+									const text = task.messages?.[index]?.text;
+									return typeof text === "string"
+										? {
+												...metadata,
+												text: text.slice(0, 16384),
+												textTruncated: text.length > 16384,
+											}
+										: metadata;
+								}),
+							}
+						: safe,
+				};
 			} else if (query.kind === "hd-start") {
 				result = {
 					...envelope,
@@ -165,9 +251,18 @@ async function handleDiagnostics(
 					),
 				};
 			} else if (query.kind === "summary") {
+				const [summary, versions] = await Promise.all([
+					stats.get(encodingId),
+					encodingVersions(ctx, api, accountId, encodingId, req).catch(
+						() => ({}),
+					),
+				]);
 				result = {
 					...envelope,
-					data: diagnosticsSummarySchema.parse(await stats.get(encodingId)),
+					data: {
+						...diagnosticsSummarySchema.pick({ status: true }).parse(summary),
+						...versions,
+					},
 				};
 			} else {
 				const raw =
@@ -213,12 +308,22 @@ async function handleDiagnostics(
 					durationMs: Date.now() - started,
 					request: { liveChannelId: id, runId, ...(final ? {} : query) },
 					// Download URLs are bearer capabilities, never durable audit data.
-					response: final ? { ...envelope, data: { available: true } } : result,
+					response:
+						final || query.download
+							? { ...envelope, data: { available: true } }
+							: result,
 				},
 				req,
 			);
 			return NextResponse.json(result, {
-				headers: { "Cache-Control": "private, no-store" },
+				headers: {
+					"Cache-Control": "private, no-store",
+					...(query.download
+						? {
+								"Content-Disposition": `attachment; filename="live-task-${runId}.json"`,
+							}
+						: {}),
+				},
 			});
 		} catch (err) {
 			const upstream = (err as { httpStatusCode?: unknown } | null)

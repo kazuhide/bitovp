@@ -1,12 +1,17 @@
 import type { z } from "zod";
-import type { diagnosticsHdStartSchema } from "./schemas";
+import type {
+	diagnosticsHdStartSchema,
+	diagnosticsSummarySchema,
+	diagnosticsTaskSchema,
+} from "./schemas";
 export type LiveDiagnosticsKind =
 	| "summary"
 	| "events"
 	| "streams"
 	| "srt"
-	| "hd-start";
-export type LiveDiagnosticsSummary = { status?: string };
+	| "hd-start"
+	| "task";
+export type LiveDiagnosticsSummary = z.infer<typeof diagnosticsSummarySchema>;
 export type LiveDiagnosticsEvent = {
 	time?: string;
 	details?: { eventType?: string; source?: string } & Partial<
@@ -79,6 +84,7 @@ type Page = {
 export type LiveDiagnosticsResponse = Envelope &
 	(
 		| { kind: "summary"; data: LiveDiagnosticsSummary }
+		| { kind: "task"; data: z.infer<typeof diagnosticsTaskSchema> }
 		| { kind: "hd-start"; data: z.infer<typeof diagnosticsHdStartSchema> }
 		| (Page & { kind: "events"; data: LiveDiagnosticsEvent[] })
 		| (Page & { kind: "streams"; data: LiveDiagnosticsStream[] })

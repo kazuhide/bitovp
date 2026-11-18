@@ -273,6 +273,15 @@ export type LiveToVodFamilySupport = {
 export function liveToVodFamilySupport(
 	entries: readonly StepLogEntry[],
 ): LiveToVodFamilySupport {
+	if (entries.some((entry) => entry.kind === "CREATE_OUTPUT_MOQ"))
+		return {
+			supported: [],
+			unsupported: (["HLS", "DASH"] as const).map((family) => ({
+				family,
+				reason:
+					"MoQ delivery does not retain storage segments for VOD manifests",
+			})),
+		};
 	const muxings = entries.filter((entry) =>
 		entry.kind.startsWith("CREATE_MUXING_"),
 	);

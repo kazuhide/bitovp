@@ -24,6 +24,7 @@ export const CREDENTIAL_PROVIDERS = [
 	"AKAMAI_NETSTORAGE",
 	"AKAMAI_MSL",
 	"LIVE_MEDIA_INGEST",
+	"MOQ",
 	"DRM_CENC",
 	"DRM_SPEKE",
 	"NEXGUARD",
@@ -81,6 +82,7 @@ export const CREDENTIAL_PROVIDER_GROUP: Record<
 	// Owner-confirmed 2026-08-19 rather than left as a quiet compromise.
 	AKAMAI_MSL: "STORAGE",
 	LIVE_MEDIA_INGEST: "STORAGE",
+	MOQ: "STORAGE",
 	DRM_CENC: "DRM",
 	DRM_SPEKE: "DRM",
 	NEXGUARD: "DRM",
@@ -133,6 +135,7 @@ export const CREDENTIAL_PROVIDER_BROWSABLE: Record<
 	// A provisioned live stream, not a container .
 	AKAMAI_MSL: false,
 	LIVE_MEDIA_INGEST: false,
+	MOQ: false,
 	DRM_CENC: false,
 	DRM_SPEKE: false,
 	NEXGUARD: false,
@@ -178,6 +181,7 @@ export const CREDENTIAL_PROVIDER_LABELS: Record<CredentialProviderId, string> =
 		AKAMAI_NETSTORAGE: "Akamai NetStorage",
 		AKAMAI_MSL: "Akamai MSL (live delivery)",
 		LIVE_MEDIA_INGEST: "Live Media Ingest",
+		MOQ: "MoQ relay (live delivery)",
 		DRM_CENC: "DRM content key (CENC/FairPlay)",
 		DRM_SPEKE: "SPEKE key provider",
 		NEXGUARD: "Nagra NexGuard license",
@@ -499,6 +503,78 @@ const liveMediaIngestSecret = z.strictObject({
 	}, "Publishing point must be an HTTP(S) URL without user credentials or fragment"),
 });
 
+/** Native MoQT relay address; authorization belongs in its separate token field. */
+export const moqRelayUrlSchema = z
+	.string()
+	.min(1)
+	.refine((value) => {
+		try {
+			const url = new URL(value);
+			return (
+				url.protocol === "moqt:" &&
+				url.hostname.length > 0 &&
+				url.port !== "0" &&
+				!url.username &&
+				!url.password &&
+				!value.includes("?") &&
+				!value.includes("#") &&
+				value === value.trim() &&
+				[...value].every((character) => {
+					const code = character.charCodeAt(0);
+					return code >= 32 && code !== 127;
+				})
+			);
+		} catch {
+			return false;
+		}
+	}, "Relay URL must be moqt://host[:port][/path] without user credentials, query or fragment");
+
+export const moqPlaybackUrlSchema = z
+	.string()
+	.min(1)
+	.max(8_192)
+	.refine((value) => {
+		try {
+			const url = new URL(value);
+			return (
+				url.protocol === "https:" &&
+				url.hostname.length > 0 &&
+				!url.username &&
+				!url.password &&
+				!value.includes("#") &&
+				value === value.trim() &&
+				[...value].every((character) => {
+					const code = character.charCodeAt(0);
+					return code > 32 && code !== 127;
+				})
+			);
+		} catch {
+			return false;
+		}
+	}, "Playback URL must be HTTPS without user credentials or fragment");
+
+const moqSecret = z
+	.strictObject({
+		relayUrl: moqRelayUrlSchema,
+		/** Independent subscribe-only capability; never sent to the Encoder. */
+		playbackUrl: moqPlaybackUrlSchema.optional(),
+		authToken: z.string().min(1).optional(),
+		authTokenType: z
+			.number()
+			.int()
+			.nonnegative()
+			.max(Number.MAX_SAFE_INTEGER)
+			.optional(),
+	})
+	.refine(
+		(value) =>
+			value.authTokenType === undefined || value.authToken !== undefined,
+		{
+			path: ["authTokenType"],
+			message: "Authorization token type requires an authorization token",
+		},
+	);
+
 /**
  * CENC/FairPlay content key — the only secret half of a DRM config. kid,
  * PSSH, license URLs and FairPlay IV/URI are public manifest material and
@@ -689,6 +765,7 @@ export const CREDENTIAL_PROVIDER_SHAPES = {
 	},
 	AKAMAI_MSL: { config: akamaiMslConfig, secret: akamaiMslSecret },
 	LIVE_MEDIA_INGEST: { config: emptyObject, secret: liveMediaIngestSecret },
+	MOQ: { config: z.strictObject({}), secret: moqSecret },
 	DRM_CENC: { config: emptyObject, secret: drmCencSecret },
 	DRM_SPEKE: { config: z.strictObject({}), secret: spekeProviderSecret },
 	NEXGUARD: { config: emptyObject, secret: nexguardSecret },
@@ -703,6 +780,12 @@ export const CREDENTIAL_PROVIDER_SHAPES = {
 } as const;
 
 export const createCredentialSchema = z.discriminatedUnion("provider", [
+	z.object({
+		provider: z.literal("MOQ"),
+		label,
+		config: z.strictObject({}).default({}),
+		secret: moqSecret,
+	}),
 	z.object({
 		provider: z.literal("LIVE_MEDIA_INGEST"),
 		label,

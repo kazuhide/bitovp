@@ -15,6 +15,45 @@ const VOD_PREVIEW_PATH =
 	"/api/vod/input-previews/00000000-0000-4000-8000-000000000003/content";
 describe("passive request bindings", () => {
 	it.each([
+		"/api/player-assets/moq",
+		`/api/live-channels/${ORG}/runs/${OTHER}/moq-observations/${ORG}/archive`,
+	])("binds only exact native MoQ asset/archive reads: %s", (path) => {
+		for (const method of ["GET", "HEAD"])
+			expect(passiveRequestPath(path, method)).toBe(true);
+		expect(bindPassiveRequestUrl(path, ORG)).toBe(
+			`${path}?expectedOrganizationId=${ORG}`,
+		);
+		for (const query of [
+			`?expectedOrganizationId=${ORG}&expectedOrganizationId=${ORG}`,
+			`?expectedOrganizationId=${ORG}&path=/tmp/private`,
+			"?expectedOrganizationId=invalid",
+		])
+			expect(
+				passiveOrganizationBinding(
+					new URL(`${path}${query}`, "http://localhost"),
+					"GET",
+				),
+			).toEqual({ kind: "invalid" });
+	});
+	it.each([
+		["/api/player-assets/moq/extra", "GET"],
+		["/api/player-assets/MOQ", "GET"],
+		[
+			`/api/live-channels/${ORG}/runs/${OTHER}/moq-observations/${ORG}/archive/extra`,
+			"GET",
+		],
+		[
+			`/api/live-channels/${ORG}/runs/${OTHER}/moq-observations/not-a-uuid/archive`,
+			"GET",
+		],
+		[
+			`/api/live-channels/${ORG}/runs/${OTHER}/moq-observations/${ORG}/archive`,
+			"PUT",
+		],
+	])("does not extend MoQ passive binding beyond exact reads: %s %s", (path, method) => {
+		expect(passiveRequestPath(path, method)).toBe(false);
+	});
+	it.each([
 		"GET",
 		"HEAD",
 	])("binds only the exact VOD input preview %s content read", (method) => {

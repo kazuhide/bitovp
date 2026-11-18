@@ -214,6 +214,55 @@ it("keeps an unresolved output editable as the exact imported JSON", async () =>
 	);
 });
 
+it("submits an MoQ-only plan from expert JSON without converting it to storage or losing its namespace", async () => {
+	const raw = plan();
+	const credentialId = "00000000-0000-4000-8000-000000000002";
+	raw.outputs = [
+		{
+			key: "relay",
+			kind: "MOQ",
+			credentialId,
+			name: "MoQ relay",
+			trackNamespace: ["interop", "event-20261117"],
+			draftVersion: "DRAFT_18",
+		},
+	];
+	raw.liveManifests = [];
+	raw.start.encodingOption = "CUSTOM";
+	raw.muxings = raw.muxings.map((muxing: { destination: object }) => ({
+		...muxing,
+		segmentLength: 1,
+		destination: { ...muxing.destination, outputKey: "relay" },
+	}));
+	expect(liveChannelPlanSchema.safeParse(raw).success).toBe(true);
+	apiFetch.mockImplementation(async (url: string) => {
+		if (url === "/api/auth/session") return operatorSession;
+		if (url === "/api/credentials")
+			return [{ id: credentialId, provider: "MOQ", label: "MoQ evaluation" }];
+		if (url === "/api/live-channels")
+			return { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee9" };
+		return [];
+	});
+	renderWithQuery(<LiveWizard />);
+	load(raw);
+	expect(screen.queryByRole("textbox", { name: "Channel name" })).toBeNull();
+	const create = await screen.findByRole("button", {
+		name: "Create channel (imported plan)",
+	});
+	await waitFor(() => expect(create).toBeEnabled());
+	fireEvent.click(create);
+	await waitFor(() =>
+		expect(push).toHaveBeenCalledWith(
+			"/live/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee9",
+		),
+	);
+	const posts = apiFetch.mock.calls.filter(
+		([url, init]) => url === "/api/live-channels" && init?.method === "POST",
+	);
+	expect(posts).toHaveLength(1);
+	expect(JSON.parse(posts[0]?.[1].body).plan).toEqual(raw);
+});
+
 it.each([
 	"OPUS",
 	"AV1",

@@ -71,6 +71,7 @@ export type OperationKind =
 	| "CREATE_OUTPUT_GCS_SERVICE_ACCOUNT"
 	| "CREATE_OUTPUT_AKAMAI_NETSTORAGE"
 	| "CREATE_OUTPUT_LIVE_MEDIA_INGEST"
+	| "CREATE_OUTPUT_MOQ"
 	| "CREATE_OUTPUT_AKAMAI_MSL"
 	| "CREATE_ENCODING"
 	| "CREATE_AISA_LIVE_ANALYSIS"
@@ -746,6 +747,8 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 				},
 				refs: {},
 			});
+		} else if (output.kind === "MOQ") {
+			throw new Error("MoQ output is available for Live channels only");
 		} else if (output.kind === "LIVE_MEDIA_INGEST") {
 			ops.push({
 				step: `output:${output.key}`,

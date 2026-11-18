@@ -88,6 +88,10 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 		method: "POST",
 		template: "/encoding/outputs/live-media-ingest",
 	},
+	CREATE_OUTPUT_MOQ: {
+		method: "POST",
+		template: "/encoding/outputs/moq",
+	},
 	CREATE_OUTPUT_AKAMAI_MSL: {
 		method: "POST",
 		template: "/encoding/outputs/akamai-msl",

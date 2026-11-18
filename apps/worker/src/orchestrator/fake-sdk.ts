@@ -43,6 +43,7 @@ export function fakeSdk(overrides: Partial<SdkOps> = {}): SdkOps {
 		createGcsServiceAccountOutput: vi.fn(nextId),
 		createAkamaiMslOutput: vi.fn(nextId),
 		createLiveMediaIngestOutput: vi.fn(nextId),
+		createMoqOutput: vi.fn(nextId),
 		createAkamaiNetStorageInput: vi.fn(nextId),
 		createAkamaiNetStorageOutput: vi.fn(nextId),
 		createEncoding: vi.fn(nextId),

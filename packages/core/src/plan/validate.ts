@@ -394,12 +394,12 @@ export function validatePlan(
 	issues.push(...checkAv1DetailPreservationVersion(plan));
 	issues.push(...checkHlsVideoUris(plan));
 	for (const [i, output] of plan.outputs.entries())
-		if (output.kind === "LIVE_MEDIA_INGEST")
+		if (output.kind === "LIVE_MEDIA_INGEST" || output.kind === "MOQ")
 			issues.push({
 				code: "PLAN_LIVE_OUTPUT_ONLY",
 				level: "error",
 				path: `outputs.${i}`,
-				message: "Live Media Ingest is available for Live channels only",
+				message: `${output.kind === "MOQ" ? "MoQ output" : "Live Media Ingest"} is available for Live channels only`,
 			});
 
 	if ((plan.qc?.vmaf || plan.qc?.psnr) && options.availableVmafModels) {

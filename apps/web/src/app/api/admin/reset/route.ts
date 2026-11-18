@@ -28,6 +28,10 @@ import {
 } from "@/lib/server/http";
 import { JobLibraryEvidenceRequired } from "@/lib/server/job-evidence-retention";
 import {
+	MoqObservationError,
+	moqHistoryError,
+} from "@/lib/server/moq-observations";
+import {
 	getFeederQueue,
 	getLiveChannelQueue,
 	getNotifyQueue,
@@ -626,6 +630,7 @@ export async function POST(req: Request) {
 				protectedCount: err.protectedCount,
 			});
 		}
+		if (err instanceof MoqObservationError) return moqHistoryError(err);
 		if (err instanceof AisaSnapshotRequired) {
 			return jsonError(
 				409,

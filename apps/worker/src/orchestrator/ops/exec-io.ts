@@ -10,6 +10,8 @@ import type { CompiledOperation } from "@bitovp/core";
 import {
 	AKAMAI_MSL_VERSION_BEHAVIOR,
 	CREDENTIAL_PROVIDER_SHAPES,
+	moqDraftVersionSchema,
+	moqTrackNamespaceSchema,
 } from "@bitovp/core";
 import type { StepResult } from "../executor";
 import type { SrtConnectionParams } from "../sdk-ops";
@@ -304,6 +306,30 @@ export async function executeIoStep(
 				cloudRegion: optStr(p.cloudRegion),
 				accessKey: requireSecret(cred, "accessKey", op.step, "GCS HMAC"),
 				secretKey: requireSecret(cred, "secret", op.step, "GCS HMAC"),
+			});
+			return { resourceId, request, response: { id: resourceId } };
+		}
+
+		case "CREATE_OUTPUT_MOQ": {
+			const cred = await ctx.resolveCredential(str(p.credentialId));
+			if (cred.provider !== "MOQ")
+				throw new Error(
+					`step "${op.step}" needs a MOQ credential but got provider "${cred.provider}"`,
+				);
+			// A stored subscriber URL may predate the current preview constraints.
+			const { playbackUrl: _playbackUrl, ...publisher } = cred.secret;
+			const secret = CREDENTIAL_PROVIDER_SHAPES.MOQ.secret.parse(publisher);
+			const resourceId = await ctx.sdk.createMoqOutput({
+				name: str(p.name),
+				trackNamespace: moqTrackNamespaceSchema.parse(p.trackNamespace),
+				draftVersion: moqDraftVersionSchema.parse(p.draftVersion),
+				relayUrl: secret.relayUrl,
+				...(secret.authToken !== undefined
+					? { authToken: secret.authToken }
+					: {}),
+				...(secret.authTokenType !== undefined
+					? { authTokenType: secret.authTokenType }
+					: {}),
 			});
 			return { resourceId, request, response: { id: resourceId } };
 		}

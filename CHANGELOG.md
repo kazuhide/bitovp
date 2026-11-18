@@ -6,6 +6,15 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **Target 1.4.0.** Configure experimental MoQ-only Live delivery through encrypted relay credentials and expert JSON plans, with H.264/AAC fMP4 validation and audited Worker execution. A run-bound Player Web X preview uses separate subscriber credentials and an operator-supplied verified MoQ build. Diagnostics distinguish requested and selected Encoder versions/regions and provide bounded task metadata; each relay still needs interoperability verification.
+- **Target 1.4.0.** Retain MoQ preview statistics and received-video recordings after a Live run, with seekable playback, UTC charts, Encoder heartbeat correlation and exact-impression Analytics custom latency readback. Compact job and standalone players show saved observations and an independent client playback clock; historical times are explicitly estimated. Normal sampling intervals stay connected in latency charts while missing measurements remain gaps. Docker persists validated recordings in a dedicated volume.
+
+### Fixed
+
+- **Target 1.4.0.** Keep MoQ subscriber capabilities, recordings and raw task downloads unavailable during owner view-as. Exclude provider Task text from ordinary MoQ histories and protect previously saved errors on reads; explicit administrator diagnostics remain available.
+
 ## [1.3.1] - 2026-11-18
 
 ### Added

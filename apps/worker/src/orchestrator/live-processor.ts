@@ -5,6 +5,7 @@ import {
 	aisaLiveFinalization,
 	aisaLiveNeverStarted,
 	aisaStartNotDispatched,
+	bindMoqPlaybackNamespace,
 	classifyProviderLifecycle,
 	deriveFeederRtmpTarget,
 	deriveLiveToVodStatus,
@@ -52,10 +53,12 @@ import {
 	liveToVodManifestsOf,
 	liveToVodParamsSchema,
 	MIN_SLATE_FIRE_SECONDS,
+	moqTrackNamespaceSchema,
 	normalizeLiveToVodRecord,
 	PROVIDER_UNKNOWN_GRACE_MS,
 	type ProviderLifecycle,
 	priorRollManifestFiles,
+	projectMoqTaskHistory,
 	providerUnknownPastGrace,
 	readLiveAutoShutdownUpdate,
 	redactSecrets,
@@ -98,6 +101,7 @@ import {
 	heartbeatSampleRef,
 	logHeartbeatStateChanges,
 } from "../live/heartbeat-state-log";
+import { withMoqTaskStatus } from "../live/moq-task-status";
 import {
 	createProviderLifecycleReconciler,
 	type RunLifecycleRow,
@@ -5311,6 +5315,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		// Failures before the first step (corrupt plan, deleted account,
 		// MASTER_KEY problems) must not strand the row in CREATED.
 		let entries: StepLogEntry[];
+		let taskHistory: ReturnType<typeof projectMoqTaskHistory>;
 		let sdk: SdkOps;
 		let accountId: string;
 		// , live half: same lifecycle as the VOD processor's pair —
@@ -5323,7 +5328,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		let fallbackError: string | undefined;
 		try {
 			const plan = liveChannelPlanSchema.parse(row.plan);
-			entries = stepLogSchema.parse(row.stepLog);
+			const parsedEntries = stepLogSchema.parse(row.stepLog);
+			taskHistory = projectMoqTaskHistory(parsedEntries, row.error);
+			entries = taskHistory.moq ? taskHistory.stepLog : parsedEntries;
 			resetOwner.entries = entries;
 			fallbackError = liveFallbackAdmissionError(plan, entries);
 			if (fallbackError && !cancelling) throw new Error(fallbackError);
@@ -5500,6 +5507,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						: {}),
 				},
 			});
+			if (taskHistory.moq) sdk = withMoqTaskStatus(sdk);
 			resetOwner.sdk = sdk;
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "setup failed";
@@ -5691,7 +5699,14 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					err instanceof Error ? err.message : err,
 				);
 			}
-			if (freshRtmpId && freshRtmpId !== rtmpStep.resourceId) {
+			// A bound MoQ airing owns a namespace and its historical Analytics
+			// encoding ID. Keep that encoding on resume. The re-air path can
+			// take the new account input after the original airing ends.
+			if (
+				freshRtmpId &&
+				freshRtmpId !== rtmpStep.resourceId &&
+				!(taskHistory.moq && reviveEncodingId)
+			) {
 				const from = entries.indexOf(rtmpStep);
 				for (let i = from; i < entries.length; i += 1) {
 					const entry = entries[i];
@@ -6055,6 +6070,22 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				// status before re-starting (same wedge prevention as VOD).
 				const wasRunning = entry.status === "RUNNING";
 				const hadStartAttempt = entry.startedAt !== undefined;
+				if (
+					entry.kind === "CREATE_OUTPUT_MOQ" &&
+					entry.status === "PENDING" &&
+					!hadStartAttempt &&
+					entry.finishedAt === undefined
+				) {
+					const namespace = moqTrackNamespaceSchema.safeParse(
+						entry.payload.trackNamespace,
+					);
+					if (namespace.success) {
+						entry.payload.trackNamespace = bindMoqPlaybackNamespace(
+							namespace.data,
+							currentRunId,
+						);
+					}
+				}
 				const wasVerificationCreateAttempt =
 					isVerificationRun &&
 					entry.kind === "CREATE_ENCODING" &&

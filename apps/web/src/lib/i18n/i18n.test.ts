@@ -119,11 +119,26 @@ describe("catalogue parity", () => {
 			expect(actual).toBe(expected);
 		};
 		/* Assert the measured number of unique long Japanese strings. Update the count only after inspecting the catalog change that crosses the length threshold. */
-		// Runtime measurement includes the desktop navigation drag/keyboard hint.
-		pinWithDriftAid(long.length, 1664, "long");
+		// Runtime measurement includes synchronized-output and separated-QC guidance.
+		// MoQ adds Custom Live output guidance and two credential refusals (measured).
+		// MoQ recording, Analytics and heartbeat history guidance (runtime measured).
+		// Canvas provenance adds one long value (catalog instrument: 1672).
+		// Compact MoQ correlation label adds one long value (instrument: 1673).
+		// Bounded heartbeat correlation adds three long values (instrument: 1676).
+		// Window-scoped event absence adds one long value (instrument: 1677).
+		// Historical client-clock reconstruction adds one long explanation (instrument: 1678).
+		// Integrated QC deadline and desktop navigation guidance (runtime measured: 1681).
+		pinWithDriftAid(long.length, 1681, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		// Runtime measurement includes navigation resize and restore labels.
-		pinWithDriftAid(short.size, 3278, "short");
+		// Runtime measurement includes three-way output labels (deduplicated).
+		// The two MoQ authorization labels add two unique short Japanese values.
+		// Canvas provenance adds five unique short values (instrument: 3361).
+		// Two compact disclosure labels are new; 設定 already exists (instrument: 3363).
+		// Whole-run export adds one short value (instrument: 3364).
+		// Live and estimated historical client-clock labels add two short values (instrument: 3366).
+		// Integrated navigation resize and restore labels (runtime measured: 3368).
+		// MoQ cleanup and unconfirmed recording states (runtime measured: 3370).
+		pinWithDriftAid(short.size, 3370, "short");
 	});
 
 	/**

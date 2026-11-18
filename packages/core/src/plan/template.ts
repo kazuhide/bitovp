@@ -472,6 +472,10 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				},
 			};
 			outputRef.set(output.key, `$/outputs/akamaiMsl/${output.key}`);
+		} else if (output.kind === "MOQ") {
+			throw new Error(
+				"MoQ output is Live-only and uses an encrypted relay credential; export the bitovp plan instead",
+			);
 		} else if (output.kind === "LIVE_MEDIA_INGEST") {
 			throw new Error(
 				"Live Media Ingest uses an encrypted publishing-point credential; export the bitovp plan instead",

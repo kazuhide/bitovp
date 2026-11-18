@@ -424,6 +424,9 @@ function outputState(
 	if (!o) {
 		return { ...D.output, basePath: base, publicRead, ...privateAcl };
 	}
+	if (o.kind === "MOQ") {
+		throw new Error("MoQ outputs require expert JSON import");
+	}
 	/**
 	 * AKAMAI_MSL  is carried through verbatim and re-emitted by
 	 * `buildOutput`. It became editable on the output step on 2026-08-18; this

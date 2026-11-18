@@ -21,6 +21,8 @@ import {
 	GoogleCloudRegion,
 	HttpsInput,
 	LiveMediaIngestOutput,
+	MoqDraftVersion,
+	MoqOutput,
 	MslPublishingAuthentication,
 	RedundantRtmpInput,
 	RtmpIngestPoint,
@@ -57,6 +59,7 @@ export function createIoOps(
 	| "createGcsServiceAccountOutput"
 	| "createAkamaiMslOutput"
 	| "createLiveMediaIngestOutput"
+	| "createMoqOutput"
 	| "createAkamaiNetStorageInput"
 	| "createAkamaiNetStorageOutput"
 	| "createRedundantRtmpInput"
@@ -66,6 +69,41 @@ export function createIoOps(
 > {
 	const { api, audited, id } = ctx;
 	return {
+		createMoqOutput: (p) =>
+			audited(
+				"POST",
+				"/encoding/outputs/moq",
+				{
+					name: p.name,
+					trackNamespace: p.trackNamespace,
+					draftVersion: p.draftVersion,
+					authTokenProvided: p.authToken !== undefined,
+				},
+				() => {
+					const model = new MoqOutput({
+						...p,
+						draftVersion: sdkEnumValue(
+							MoqDraftVersion,
+							p.draftVersion,
+							"MoqDraftVersion",
+						),
+					});
+					return api.encoding.outputs.moq
+						.create(model)
+						.catch((error: unknown) => {
+							const message = "MoQ output creation failed";
+							if (isBitmovinError(error))
+								throw Object.assign(new Error(message), {
+									httpStatusCode: error.httpStatusCode,
+									errorCode: error.errorCode,
+									requestId: error.requestId,
+									shortMessage: message,
+								});
+							throw new Error(message);
+						});
+				},
+				(r) => ({ id: r.id }),
+			).then(id),
 		createLiveMediaIngestOutput: (p) =>
 			audited(
 				"POST",

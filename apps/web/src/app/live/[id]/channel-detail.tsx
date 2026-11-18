@@ -68,6 +68,7 @@ import { EsamPanel } from "./esam-panel";
 import { FeederPanel } from "./feeder-panel";
 import { FlatSection } from "./flat-section";
 import { DeepLinkFocus, RevealFocus } from "./focus-handoff";
+import type { HeartbeatCorrelation } from "./heartbeat-correlation";
 import { HeartbeatLogPanel } from "./heartbeat-log-panel";
 import { ingestCoordinates } from "./ingest-coordinates";
 import { InsertedContentStopPanel } from "./insertion-stop-panel";
@@ -76,6 +77,7 @@ import { LifecycleStrip } from "./lifecycle-strip";
 import { LiveAnnouncer, StatusAnnouncer } from "./live-announcer";
 import { deliveryDiagnosis, selectLiveTelemetry } from "./live-telemetry";
 import { LiveToVodPanel } from "./live-to-vod-panel";
+import { MoqPlayerPreview } from "./moq-player-preview";
 import { NextActionPanel } from "./next-action-panel";
 import { type AisaRunSelection, RunsPanel } from "./runs-panel";
 import { RuntimeCapPanel } from "./runtime-cap-panel";
@@ -121,6 +123,7 @@ type ChannelDetailProps = {
 	id: string;
 	player?: PlayerClientConfig;
 	initialAisaRun?: AisaSelectedRun;
+	initialHeartbeatCorrelation?: HeartbeatCorrelation;
 	aisaFeatureUserId?: string;
 };
 
@@ -137,6 +140,7 @@ function ChannelConsole({
 	id,
 	player,
 	initialAisaRun,
+	initialHeartbeatCorrelation,
 	aisaFeatureUserId,
 }: ChannelDetailProps) {
 	const { t } = useT();
@@ -462,6 +466,9 @@ function ChannelConsole({
 		(l) => l.reason?.code === "MSL_EDGE_URL_NOT_CONFIGURED",
 	);
 	const stepEntries = entries.success ? entries.data : [];
+	const moqPlayback = stepEntries.some(
+		(entry) => entry.kind === "CREATE_OUTPUT_MOQ",
+	);
 	// Runtime records (cues, ESAM points) are appended to the same log but are
 	// not provisioning steps — counting them made a 31-step channel read
 	// "34/34 steps" after three insertions (review catch).
@@ -641,6 +648,10 @@ function ChannelConsole({
 		(event) => event.rule.severity === "CRIT",
 	);
 	const hasFailedStep = stepEntries.some((entry) => entry.status === "FAILED");
+	const heartbeatCorrelationKey =
+		initialHeartbeatCorrelation?.kind === "requested"
+			? `requested:${initialHeartbeatCorrelation.runId}:${initialHeartbeatCorrelation.from}:${initialHeartbeatCorrelation.to}`
+			: (initialHeartbeatCorrelation?.kind ?? "none");
 	const sectionOpen = (section: LiveSectionId) =>
 		(aisaRow && section === "sec-runs") ||
 		(section === "sec-analysis" &&
@@ -915,13 +926,15 @@ function ChannelConsole({
 				id="sec-manifests"
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-manifests"])}
-				defaultOpen={sectionOpen("sec-manifests")}
+				defaultOpen={moqPlayback || sectionOpen("sec-manifests")}
 				summary={
 					linksUnavailable
 						? t("status.summaryUnavailable")
-						: t("status.summaryLinks", {
-								count: visiblePlaybackLinks.length,
-							})
+						: moqPlayback
+							? t("moqPlayback.title")
+							: t("status.summaryLinks", {
+									count: visiblePlaybackLinks.length,
+								})
 				}
 				tone={playable.length > 0 ? "ok" : "neutral"}
 			>
@@ -936,21 +949,37 @@ function ChannelConsole({
 				{/*  (owner): the VOD rail's width, and no playback until
 				    the output is confirmed while RUNNING. */}
 				<div className="max-w-sm">
-					<PlayerPreview
-						// A new airing is gated again (review-539 R1).
-						key={run?.id ?? "no-run"}
-						player={player}
-						analyticsMeta={{
-							videoId: run?.bitmovinEncodingId ?? row.id,
-							title: row.name,
-							customData5: row.id,
-						}}
-						jobId={id}
-						scope="live"
-						links={playable}
-						live={row.status === "RUNNING"}
-						autoPlay={outputConfirmed}
-					/>
+					{moqPlayback ? (
+						<RoleAccess control="live.channel.heartbeat-log">
+							{run ? (
+								<MoqPlayerPreview
+									channelId={id}
+									runId={run.id}
+									active={row.status === "RUNNING" && run.status === "RUNNING"}
+								/>
+							) : (
+								<p role="status" className="text-xs text-zinc-400">
+									{t("moqPlayback.unavailable")}
+								</p>
+							)}
+						</RoleAccess>
+					) : (
+						<PlayerPreview
+							// A new airing is gated again (review-539 R1).
+							key={run?.id ?? "no-run"}
+							player={player}
+							analyticsMeta={{
+								videoId: run?.bitmovinEncodingId ?? row.id,
+								title: row.name,
+								customData5: row.id,
+							}}
+							jobId={id}
+							scope="live"
+							links={playable}
+							live={row.status === "RUNNING"}
+							autoPlay={outputConfirmed}
+						/>
+					)}
 				</div>
 				{/* The full URL list, one disclosure back (§5.7 keeps "manifest
 				 * summary" in the open state and "every URL" behind it). Without
@@ -1314,19 +1343,25 @@ function ChannelConsole({
 		"sec-heartbeat": null,
 		"sec-heartbeat-log": (
 			<SectionCard
-				key="sec-heartbeat-log"
+				// A new correlation opens only this disclosure, including when the
+				// console survives same-channel navigation. Equal windows retain
+				// the operator's manual collapse across background refreshes.
+				key={`sec-heartbeat-log:${heartbeatCorrelationKey}`}
 				id="sec-heartbeat-log"
 				level={3}
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-heartbeat-log"])}
-				defaultOpen={sectionOpen("sec-heartbeat-log")}
+				defaultOpen={
+					heartbeatCorrelationKey !== "none" || sectionOpen("sec-heartbeat-log")
+				}
 				summary={t("heartbeatLog.summary")}
 				onOpenChange={setHeartbeatLogOpen}
 			>
 				{/* Push receipts first; separately retained Poll history / ADMIN export. */}
 				{!aisaRow || aisaOperatorAllowed ? (
 					<HeartbeatLogPanel
-						key={id}
+						key={`${id}:${heartbeatCorrelationKey}`}
 						channelId={id}
+						initialCorrelation={initialHeartbeatCorrelation}
 						currentRunId={run?.id ?? null}
 						currentRunStatus={run?.status}
 						currentRunActive={run?.status === "RUNNING"}
@@ -1618,20 +1653,23 @@ function ChannelConsole({
 				{/*  layer 1: the one thing to do next. : taking
 				 * it hands focus to the target's heading, so a keyboard operator
 			    lands where the panel just sent the page (audit §5.6). */}
-				<NextActionPanel
-					action={nextAction}
-					readOnly={imported}
-					inputUnconfirmed={
-						displayedInputConnection === null &&
-						nextAction.code === "CONNECT_INPUT"
-					}
-					onJump={jumpToLiveSection}
-				/>
+				{!(moqPlayback && nextAction.code === "WAIT_FOR_OUTPUT") ? (
+					<NextActionPanel
+						action={nextAction}
+						readOnly={imported}
+						inputUnconfirmed={
+							displayedInputConnection === null &&
+							nextAction.code === "CONNECT_INPUT"
+						}
+						onJump={jumpToLiveSection}
+					/>
+				) : null}
 
 				{/* Layer 2: the monitoring line. */}
 				<StatusStrip
 					openAlerts={openAlerts}
 					playableCount={playableCount}
+					showPlayable={!moqPlayback}
 					feederCount={runningFeeders}
 					// : the next armed row, as a countdown, in the header —
 					// a healthy RUNNING channel's next action is ON_AIR, so nothing

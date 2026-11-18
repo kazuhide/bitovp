@@ -15,6 +15,7 @@ const REASON_KEYS: Readonly<Record<LiveEncodingOptionReasonCode, MessageKey>> =
 		CUSTOM_REQUESTED: "liveWizard.customRequested",
 		CODEC_UNSUPPORTED: "liveWizard.customCodec",
 		INPUT_PROTOCOL: "liveWizard.customInputProtocol",
+		OUTPUT_PROTOCOL: "liveWizard.customOutputProtocol",
 		INPUT_DEPENDENT: "liveWizard.customInput",
 		VIDEO_COUNT: "liveWizard.customVideoCount",
 		HD_VIDEO_COUNT: "liveWizard.customHdCount",

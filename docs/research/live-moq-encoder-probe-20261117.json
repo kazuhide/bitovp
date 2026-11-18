@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "e949b77e21b4d539aff786021409430ea8eaf874",
+  "startedAt": "2026-11-17T13:43:28.858Z",
+  "endedAt": "2026-11-17T13:43:37.761Z",
+  "executionPath": "BitOVP HTTP API -> Live plan compiler -> Worker -> Bitmovin API",
+  "requestedEncoderVersion": "BETA",
+  "selectedEncoderVersion": null,
+  "configuredDraftVersion": "DRAFT_18",
+  "observedPublishAlpn": null,
+  "relayHost": "sora-moq.sora-labo.shiguredo.app",
+  "moqOutputCreated": true,
+  "moqOutputId": "d75eed91-d530-45b3-a90d-ff3d7ccb9237",
+  "encodingId": "ae9ef409-57c1-4669-b610-ca9a72de75f0",
+  "liveChannelId": "44672181-97df-47c4-8e1d-f95cbc8ba9a0",
+  "liveRunId": "20641ccd-1d40-4880-b2fe-c15782dbd9be",
+  "liveStart": {
+    "httpStatus": 400,
+    "providerCode": 2002,
+    "message": "MoQ outputs are not enabled for this organization.",
+    "requestId": "87ee0b89-bb3d-4e7e-97d2-eab8ef3165bb",
+    "result": "rejected-before-encoder-start"
+  },
+  "mediaSent": false,
+  "relayNegotiationVerified": false,
+  "metadata": {
+    "encodingGetHttpStatus": 200,
+    "returnedRequestedVersion": "BETA",
+    "returnedSelectedVersion": null,
+    "liveDiagnosticsHttpStatus": 404
+  },
+  "cleanup": {
+    "applicationStatus": "STOPPED",
+    "providerStatus": "ERROR",
+    "providerTerminalAt": "2026-11-17T13:43:35.301Z",
+    "confirmedThroughBitOVP": true
+  }
+}

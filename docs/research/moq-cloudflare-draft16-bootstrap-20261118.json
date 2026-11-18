@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-18",
+  "sourceCommit": "ee835cb3f6dcb24fc273a965cf94624560fe1118",
+  "channelId": "ec427b97-bdc2-4940-917a-b124d096f53e",
+  "runId": "144995a0-c3e1-45f1-bb10-7a91dd0705a4",
+  "encodingId": "3e56e019-e255-4e28-a428-91446f448c7b",
+  "requestedEncoderVersion": "BETA",
+  "actualSelectedEncoderVersion": "2.293.0",
+  "requestedCloudRegion": "AWS_AP_NORTHEAST_1",
+  "actualSelectedCloudRegion": "AWS_AP_NORTHEAST_1",
+  "configuredDraft": "DRAFT_16",
+  "negotiatedDraft": null,
+  "configuredRelayOrigin": "moqt://draft-16.cloudflare.mediaoverquic.com:443",
+  "namespace": "bitovp-moq-76decb2b-9d7",
+  "createdThrough": "Docker BitOVP normal authenticated Live API and Worker",
+  "events": [
+    {
+      "at": "2026-11-17T17:34:29.144Z",
+      "event": "paid-live-created-through-bitovp",
+      "channelId": "ec427b97-bdc2-4940-917a-b124d096f53e",
+      "requestedRegion": "AWS_AP_NORTHEAST_1"
+    },
+    {
+      "at": "2026-11-17T17:34:29.166Z",
+      "event": "live-state",
+      "status": "PROVISIONING",
+      "runId": "144995a0-c3e1-45f1-bb10-7a91dd0705a4",
+      "encodingId": null
+    },
+    {
+      "at": "2026-11-17T17:38:16.058Z",
+      "event": "live-state",
+      "status": "RUNNING",
+      "runId": "144995a0-c3e1-45f1-bb10-7a91dd0705a4",
+      "encodingId": "3e56e019-e255-4e28-a428-91446f448c7b"
+    },
+    {
+      "at": "2026-11-17T17:38:16.435Z",
+      "event": "timestamp-rtmp-source-started",
+      "encoderVersion": "2.293.0",
+      "selectedRegion": "AWS_AP_NORTHEAST_1"
+    },
+    {
+      "at": "2026-11-17T17:38:36.445Z",
+      "event": "provider-input-connected"
+    },
+    {
+      "at": "2026-11-17T17:38:36.484Z",
+      "event": "browser-view-opening",
+      "kind": "live-preview"
+    },
+    {
+      "at": "2026-11-17T17:39:22.371Z",
+      "event": "trial-failed",
+      "message": "Video or timestamp latency was not verified in live-preview"
+    },
+    {
+      "at": "2026-11-17T17:39:22.415Z",
+      "event": "stop-requested-through-bitovp",
+      "action": "stop"
+    },
+    {
+      "at": "2026-11-17T17:39:34.018Z",
+      "event": "fresh-provider-terminal-confirmed",
+      "providerStatus": "FINISHED"
+    },
+    {
+      "at": "2026-11-17T17:39:34.095Z",
+      "event": "trial-finished",
+      "success": false,
+      "cleanupConfirmed": true
+    }
+  ],
+  "providerInputConnectionVerified": true,
+  "contribution": {
+    "framesGenerated": 1642,
+    "ffmpegExitCode": 0
+  },
+  "browserPlaybackVerified": false,
+  "failureCause": {
+    "category": "NATIVE_ASSET_ORGANIZATION_BINDING_MISSING",
+    "assetHttpStatus": 409,
+    "assetResponseMimeType": "application/json",
+    "factoryLoaded": false,
+    "webTransportCreated": false
+  },
+  "cleanup": {
+    "requestedThroughBitOVP": true,
+    "confirmed": true,
+    "freshProviderStatus": "FINISHED"
+  },
+  "limits": [
+    "Input reception was verified; Relay/catalog/media playback was not.",
+    "The Player asset was rejected before WebTransport initialization.",
+    "This attempt does not establish negotiated ALPN or draft interoperability."
+  ]
+}

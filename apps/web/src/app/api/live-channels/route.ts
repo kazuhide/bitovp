@@ -51,6 +51,7 @@ import {
 	validationError,
 } from "@/lib/server/http";
 import { latestRunsFor } from "@/lib/server/latest-runs";
+import { publicMoqListErrors } from "@/lib/server/moq-public-history";
 import {
 	recordUnrestrictedEgress,
 	submitterValidationOptions,
@@ -352,18 +353,19 @@ export async function GET(req: Request) {
 		const page = rows.slice(0, limit);
 		const pageIds = page.map((row) => row.id);
 		/**
-		 * Two page-wide reads, both bounded, both issued at once: the grouped
-		 * alert counts and the newest run per channel (the nested
+		 * Three page-wide reads, all bounded and issued at once: the grouped
+		 * alert counts, public error summaries and the newest run per channel (the nested
 		 * `runs: { take: 1 }` this replaces read every airing of every channel
 		 * on the page). Concurrent rather than sequential because neither
 		 * depends on the other, so the page still costs the operator one round
 		 * trip's worth of latency.
 		 */
-		const [openAlertsByChannel, latestRuns] = await Promise.all([
+		const [openAlertsByChannel, latestRuns, publicPage] = await Promise.all([
 			openAlertCounts(ctx.prisma, pageIds),
 			latestRunsFor(ctx.prisma, pageIds),
+			publicMoqListErrors(ctx.prisma, "channel", page),
 		]);
-		const items = page.map(
+		const items = publicPage.map(
 			({ schedules, feederSessions, runningSince, maxRunMinutes, ...item }) => {
 				/*
 				 * Run-first for the same reason every other reader is (#108
@@ -458,13 +460,16 @@ async function verificationKeyReplay(
 	});
 	const verdict = verificationReplay(existing, requestSha256);
 	if (verdict.kind === "replay") {
-		const schedules = await prisma.liveSchedule.findMany({
-			where: { liveChannelId: verdict.row.id },
-			orderBy: { fireAt: "asc" },
-		});
+		const [schedules, publicRows] = await Promise.all([
+			prisma.liveSchedule.findMany({
+				where: { liveChannelId: verdict.row.id },
+				orderBy: { fireAt: "asc" },
+			}),
+			publicMoqListErrors(prisma, "channel", [verdict.row]),
+		]);
 		// 200, not 201: nothing was created by THIS request.
 		return NextResponse.json(
-			{ ...verdict.row, issues: [], schedules, replayed: true },
+			{ ...publicRows[0], issues: [], schedules, replayed: true },
 			{ status: 200 },
 		);
 	}
@@ -491,12 +496,15 @@ async function ordinaryCreateReplay(
 		select: CREATE_SELECT,
 	});
 	if (!row) return createRequestGoneResponse();
-	const schedules = await prisma.liveSchedule.findMany({
-		where: { liveChannelId: row.id },
-		orderBy: { fireAt: "asc" },
-	});
+	const [schedules, publicRows] = await Promise.all([
+		prisma.liveSchedule.findMany({
+			where: { liveChannelId: row.id },
+			orderBy: { fireAt: "asc" },
+		}),
+		publicMoqListErrors(prisma, "channel", [row]),
+	]);
 	return NextResponse.json(
-		{ ...row, issues: [], schedules, replayed: true },
+		{ ...publicRows[0], issues: [], schedules, replayed: true },
 		{ status: 200 },
 	);
 }

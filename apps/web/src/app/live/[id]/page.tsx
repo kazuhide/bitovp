@@ -7,6 +7,7 @@ import { getServerContext } from "@/lib/server/context";
 import { readPlayerClientConfig } from "@/lib/server/player-config";
 import type { AisaSelectedRun } from "./aisa-run-selection";
 import { ChannelDetail } from "./channel-detail";
+import { parseHeartbeatCorrelation } from "./heartbeat-correlation";
 
 export const generateMetadata = localizedTitle("pageTitles.liveChannel");
 
@@ -15,10 +16,12 @@ export default async function LiveChannelDetailPage({
 	searchParams,
 }: {
 	params: Promise<{ id: string }>;
-	searchParams?: Promise<{ runId?: string | string[] }>;
+	searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
 	const { id } = await params;
-	const { runId } = (await searchParams) ?? {};
+	const query = (await searchParams) ?? {};
+	const { runId } = query;
+	const initialHeartbeatCorrelation = parseHeartbeatCorrelation(query);
 	const ctx = await getServerContext();
 	const aisaAllowed = aisaLiveAccessAllowed(ctx.tenant);
 	let initialAisaRun: AisaSelectedRun | undefined;
@@ -72,6 +75,7 @@ export default async function LiveChannelDetailPage({
 			id={id}
 			player={player}
 			initialAisaRun={initialAisaRun}
+			initialHeartbeatCorrelation={initialHeartbeatCorrelation}
 			aisaFeatureUserId={
 				aisaAllowed ? (ctx.tenant?.effectiveUserId ?? undefined) : undefined
 			}

@@ -1,0 +1,81 @@
+# MoQ Live Encoder 実通信検証 — 実装計画
+
+作成日: 2026-11-17。対象: BitOVP の検証ブランチ。
+
+## 目的
+
+公開文書の draft 16／18 と実際の最新版 Live Encoder の挙動が一致するか、
+BitOVP 自身の Live 作成・Worker・停止経路を使って検証する。
+Python の ALPN 試験を実 Encoder の接続試験の代わりにはしない。
+
+ユーザーは有料 Live 起動と映像送信を許可済み。必要機能は先に BitOVP に実装する。
+ブランチでの検証に留め、main へのマージ・リリースは今回の対象に含めない。
+
+## 実装契約
+
+- 資格情報 provider `MOQ` を追加。暗号化する secret は `relayUrl`、任意の
+  `authToken` と `authTokenType`。token type は token がある場合のみ許可する。
+- URL は `moqt://`、userinfo・query・fragment を禁止する。秘密は plan／audit／エラーに出さない。
+- plan output は `kind: MOQ`、既存の `credentialId`、`trackNamespace`（1〜32要素）、
+  `draftVersion: DRAFT_16 | DRAFT_18`、name を持つ。SDK 型外の draft を型偽装して送らない。
+  単一要素はプレビューを同じ配信回に紐付けるためのベースとし、Worker が配信回 ID を付けて送る。
+- MoQ は Live 専用、専用出力、H.264／AAC、rendition ごとの FMP4 のみ。
+  storage mirror、DRM、SCTE-35、通常の manifest は受け付けない。
+- 既存の compile → operation → Worker SDK → audit の経路に
+  `CREATE_OUTPUT_MOQ` を追加する。再開・停止・診断・tenant 認可を迂回しない。
+- 通常の Live API／expert JSON から作成できるようにする。
+  接続が成立した場合の Player Web X 再生は次の段階とし、既存 Player 8 に MoQ URL を渡さない。
+
+## 実装順序
+
+1. 資格情報 schema／migration と Live plan schema／validation／compiler のテストを先に追加。
+2. Worker SDK の実 wire body、秘密の除外、credential provider 確認、操作 dispatch をテストして実装。
+3. Web の既存資格情報管理・Live import／API／表示を対応させ、typecheck と build を確認。
+4. 分割パネルで Codex Rescue と agent team の独立レビューを実行し、指摘を修正。
+5. ブランチの Web／Worker を既存稼働状態と区別して起動し、アプリ経由で実試験。
+
+## 試験と合格条件
+
+- 実行する最新版の release／BETA の解決結果と実 Encoder version を API readback で記録。
+- 原則1映像＋1音声、短時間、自作テスト映像、専用 namespace と owned channel を使用。
+- 時雨堂公開先に対し、まず文書上の `DRAFT_18` 設定で開始し、必要なら16と比較する。
+- 実際の Encoder 接続結果、MoQT SETUP／認可／配信を区別して記録する。
+  Beta 未有効化や起動前の API 拒否は「接続互換なし」の根拠にしない。
+- 必要であれば owned Relay で TLS ALPN を記録するが、アプリの Encoder 出力先として設定する。
+- アカウント・token 不足が判明した場合は、完了していない段階と実エラーを明記する。
+- 全ての owned Live は finally 相当で停止し、provider 停止 readback を確認する。
+  他の channel／Worker／ユーザーの画面は変更しない。
+
+## 検証コマンド
+
+既存の pnpm workspace／Vitest／TypeScript を使う。新規外部依存は追加しない。
+
+```sh
+rtk proxy pnpm --filter @bitovp/core exec vitest run src/live/moq-output.test.ts
+rtk proxy pnpm --filter @bitovp/worker exec vitest run src/orchestrator/sdk-ops.moq-output.test.ts
+rtk proxy pnpm --filter @bitovp/core typecheck
+rtk proxy pnpm --filter @bitovp/worker typecheck
+rtk proxy pnpm --filter @bitovp/web typecheck
+rtk proxy pnpm --filter @bitovp/web build
+```
+
+変更した schema／資格情報／Live compiler の既存回帰試験も実行する。
+プロトコルの実測結果は研究ノートと Obsidian に日本語で追記する。
+
+## Task 状態の安全な取得
+
+既存の run 診断 API に `kind=task` を追加し、当該 run と元の account に限定して
+`GET /encoding/encodings/{id}/status` を取得・監査する。状態、有限の進捗値、
+メッセージの severity／日時のみを返し、本文・URL・追加エラー情報は保存しない。
+SDK の Message 型に公開 code フィールドはないため、code は返さない。
+SDK は省略されたメッセージ配列も空配列に変換するため、省略・空配列の件数は
+ともに不明（`totalMessageCount: null`）とし、1件以上の場合のみ総数を返す。
+先頭100件への切り詰めを明示し、本文中の `moqt-16`／`moqt-18`／
+`moqt-23`／`no_application_protocol` は固定値の「言及」としてのみ記録する。
+言及は ALPN の選択結果や接続・再生成功を示さない。認可・秘匿・上限の回帰試験を先に追加する。
+
+## 実行記録
+
+実装・回帰試験・build・独立レビューは実施済み。
+[実 Encoder 試験](MOQ-LIVE-ENCODER-TEST-RESULTS.md)はアプリ経由で開始要求まで進んだが、
+使用した organization の MoQ 機能制限で拒否された。Relay 接続と再生の検証は未完了。

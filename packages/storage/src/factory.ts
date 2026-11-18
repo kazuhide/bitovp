@@ -174,6 +174,10 @@ export function createBrowserForCredential(
 			throw new UnsupportedBrowseError(
 				"Notification webhooks hold a delivery URL — nothing to browse",
 			);
+		case "MOQ":
+			throw new UnsupportedBrowseError(
+				"MoQ relay credentials are live delivery endpoints — nothing to browse",
+			);
 		case "LIVE_MEDIA_INGEST":
 		case "AKAMAI_MSL":
 			// . A provisioned live stream, not a container: nothing

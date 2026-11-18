@@ -11,7 +11,7 @@ RUN chmod 0755 /usr/local/share/fonts /usr/local/share/fonts/bitovp /usr/local/s
 
 RUN apt-get update \
 	&& apt-get upgrade -y \
-	&& apt-get install -y --no-install-recommends openssl ca-certificates fontconfig \
+	&& apt-get install -y --no-install-recommends openssl ca-certificates fontconfig ffmpeg \
 	&& fc-cache -f /usr/local/share/fonts/bitovp \
 	&& rm -rf /var/lib/apt/lists/*
 
@@ -40,6 +40,10 @@ RUN pnpm --filter @bitovp/db run build
 RUN pnpm --filter @bitovp/web run build
 
 RUN mkdir -p /vod-input-previews && chown node:node /vod-input-previews && chmod 0700 /vod-input-previews
+RUN mkdir -p /moq-archives && chown node:node /moq-archives && chmod 0700 /moq-archives
+
+ENV FFPROBE_PATH=/usr/bin/ffprobe
+ENV BITOVP_MOQ_ARCHIVE_DIR=/moq-archives
 
 USER node
 

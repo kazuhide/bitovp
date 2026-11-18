@@ -392,6 +392,65 @@ describe("the contextual lead follows the airing's life (ledger #126)", () => {
 });
 
 describe("ChannelDetail — live playback preview", () => {
+	it("offers the dedicated MoQ player for the current run without requiring HLS output evidence", async () => {
+		const at = new Date().toISOString();
+		mockChannel({
+			currentRun: {
+				...confirmedRun("RUNNING"),
+				lastHeartbeat: {
+					at,
+					raw: { ingest: { status: "CONNECTED", healthy: true } },
+					deltas: {},
+				},
+				lastHeartbeatAt: at,
+				stepLog: [
+					{
+						step: "output:moq",
+						kind: "CREATE_OUTPUT_MOQ",
+						status: "DONE",
+						refs: {},
+						payload: {
+							credentialId: "moq-credential",
+							trackNamespace: ["owned-run"],
+							draftVersion: "DRAFT_18",
+						},
+					},
+				],
+			},
+			playbackLinks: [],
+		});
+		const implementation = apiFetch.getMockImplementation();
+		apiFetch.mockImplementation((input: string) =>
+			input === "/api/auth/session"
+				? {
+						mode: "users",
+						authenticated: true,
+						configured: true,
+						role: "OPERATOR",
+						loginKind: "password-form",
+					}
+				: implementation?.(input),
+		);
+		wrap(<ChannelDetail id={CHANNEL} />);
+		const region = await screen.findByRole("region", { name: "MoQ playback" });
+		const preview = region.parentElement;
+		expect(preview).not.toBeNull();
+		expect(
+			within(preview as HTMLElement).getByRole("button", { name: "Play" }),
+		).toBeEnabled();
+		expect(loaded).toHaveLength(0);
+		expect(screen.queryByText("Waiting for the first segments")).toBeNull();
+		expect(
+			within(
+				screen.getByRole("region", { name: "Channel status" }),
+			).queryByText("Playable"),
+		).toBeNull();
+		expect(
+			apiFetch.mock.calls.some(([url]) =>
+				String(url).endsWith("/moq-playback"),
+			),
+		).toBe(false);
+	});
 	/* Verify the current information hierarchy rather than restoring the former all-collapsed layout. */
 	it("opens with ONE thing to do, and its anchor points at a section that exists (review-260 126-A2)", async () => {
 		// RUNNING + no heartbeat ⇒ ingest unproven ⇒ CONNECT_INPUT.

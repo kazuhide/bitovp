@@ -115,6 +115,12 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 		method: "GET",
 	},
 	{
+		page: "/live/[id]/runs/[runId]/moq",
+		floor: "OPERATOR",
+		api: "/api/live-channels/channel-1/runs/run-1/moq-playback",
+		method: "GET",
+	},
+	{
 		page: "/live/analyses",
 		floor: "VIEWER",
 		api: "/api/live/analyses",
@@ -468,6 +474,7 @@ describe("pageAccess", () => {
 		["/vod/jobs", "customer", "VIEWER"],
 		["/vod/jobs/abc", "customer", "VIEWER"],
 		["/live/abc", "customer", "VIEWER"],
+		["/live/channel-1/runs/run-1/moq", "customer", "OPERATOR"],
 		["/live/feeders", "customer", "VIEWER"],
 		["/qc", "customer", "VIEWER"],
 		["/storage", "customer", "OPERATOR"],
@@ -531,6 +538,11 @@ describe("page floors agree with the API floors the pages read — the audit's c
 		["/qc", "/api/vmaf-compute-profiles", "GET"],
 		["/vod/new", "/api/encoding-jobs", "POST"],
 		["/live/new", "/api/live-channels", "POST"],
+		[
+			"/live/channel-1/runs/run-1/moq",
+			"/api/live-channels/channel-1/runs/run-1/moq-playback",
+			"GET",
+		],
 		["/storage", "/api/credentials/credential-1/storage/objects", "GET"],
 	] as const)("%s ↔ %s %s", (page, api, method) => {
 		for (const role of USER_ROLES) {

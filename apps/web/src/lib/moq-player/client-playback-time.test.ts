@@ -41,6 +41,28 @@ describe("historical client recording origin", () => {
 		);
 	});
 
+	it("uses a capture timestamp independently of the capped observation window", () => {
+		const value = session();
+		value.events = [
+			{ type: "started", elapsedMs: 0 },
+			{ type: "first-frame", elapsedMs: 599_000 },
+			{ type: "observation-limit", elapsedMs: 600_000 },
+		];
+		if (!value.archive) throw new Error("Missing test archive");
+		value.archive.captureStartedAt = "2026-11-17T20:48:01.701Z";
+		expect(moqArchiveClientOrigin(value)).toBe(
+			Date.parse(value.archive.captureStartedAt),
+		);
+	});
+	it("prefers known clip capture over historical event fallback", () => {
+		const value = session();
+		value.events.push({ type: "recording-started", elapsedMs: 5071 });
+		if (!value.archive) throw new Error("Missing test archive");
+		value.archive.captureStartedAt = "2026-11-17T20:37:54.100Z";
+		expect(moqArchiveClientOrigin(value)).toBe(
+			Date.parse(value.archive.captureStartedAt),
+		);
+	});
 	it("keeps a current clip's origin unknown when capture starts after the observation limit", () => {
 		const value = session();
 		value.events = [

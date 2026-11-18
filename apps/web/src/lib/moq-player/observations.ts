@@ -116,12 +116,19 @@ export const moqObservationUpdateSchema = moqObservationPublicUpdateSchema
 					"Analytics impression requires its descriptor license fingerprint",
 			});
 	});
+export const MOQ_ARCHIVE_CAPTURE_STARTED_AT_HEADER =
+	"X-BitOVP-Moq-Capture-Started-At";
+export const moqArchiveCaptureStartedAtSchema = z.iso.datetime({
+	precision: 3,
+});
+
 export const moqArchiveMetadataSchema = z.strictObject({
 	contentType: z.literal("video/webm"),
 	bytes: z.number().int().min(1).max(MOQ_OBSERVATION_LIMITS.archiveBytes),
 	sha256: z.string().regex(/^[0-9a-f]{64}$/),
 	durationMs: z.number().min(1).max(MOQ_OBSERVATION_LIMITS.archiveDurationMs),
 	recordedAt: z.iso.datetime(),
+	captureStartedAt: moqArchiveCaptureStartedAtSchema.optional(),
 });
 export const moqObservationSessionSchema =
 	moqObservationPublicUpdateSchema.safeExtend({

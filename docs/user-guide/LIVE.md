@@ -117,7 +117,9 @@ missing measurements left as gaps. The received preview is recorded for up to
 be trimmed to the recording limit. Canvas capture records video only. Play or
 download it from
 **Saved MoQ observations** after stopping. Recording covers the preview's
-received interval; its state shows recording, saving, saved, unsupported or
+received interval. The historical client clock estimates UTC from the saved
+browser capture time and the current recording position, even if capture
+began after the observation window. Recording status shows recording, saving, saved, unsupported or
 failure. Each run keeps up to five observation sessions. Saved data remains
 available when the live player is inactive. Playback can start while history
 and Analytics are preparing. The playback stage timeline shows UTC timestamps

@@ -442,6 +442,29 @@ describe("run-bound MoQ playback descriptor", () => {
 		expect(exposed).not.toContain(url);
 	});
 
+	it("withholds a publishing credential recovered by form query decoding", async () => {
+		const publisher = "relay issuer+scope";
+		const url =
+			"https://relay.example/preview?capability=preview+relay+issuer%2Bscope";
+		mocks.credential.mockResolvedValue({
+			...credential(),
+			secret: JSON.stringify({
+				...secret(),
+				authToken: publisher,
+				playbackUrl: url,
+			}),
+		});
+		const response = await GET(request(), params());
+		expect(response.status).toBe(409);
+		const body = await response.json();
+		expect(body.details).toEqual({
+			code: "MOQ_PLAYBACK_SUBSCRIBE_TOKEN_REQUIRED",
+		});
+		const exposed = JSON.stringify([body, mocks.audit.mock.calls]);
+		expect(exposed).not.toContain(publisher);
+		expect(exposed).not.toContain(url);
+	});
+
 	it("includes only configured Cloudflare relay metadata from the bound subscribe token", async () => {
 		const url = cloudflareUrl(["subscribe"]);
 		mocks.credential.mockResolvedValue({

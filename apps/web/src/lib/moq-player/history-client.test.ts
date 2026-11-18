@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMoqObservationWriter } from "./history-client";
+import { MoqArchiveSaveUnconfirmed } from "./recording";
 import { EMPTY_MOQ_VIDEO_STATISTICS } from "./video-statistics";
 
 const mocks = vi.hoisted(() => ({ api: vi.fn() }));
@@ -179,12 +180,14 @@ describe("owned MoQ observation writer", () => {
 			runId: RUN,
 			sessionId: SESSION,
 			analyticsLicenseKeySha256: "a".repeat(64),
+			startedAt: "2026-11-18T00:00:00.000Z",
 			now: () => now,
 			onState: vi.fn(),
 			onAnalyticsUnavailable: unavailable,
 		});
 		await writer.ready;
 		now = 1000;
+		writer.recordingStarted();
 		writer.sample({ ...EMPTY_MOQ_VIDEO_STATISTICS, latencySeconds: 2 });
 		writer.setAnalyticsImpressionId(CHANNEL);
 		mocks.api.mockRejectedValueOnce({ status: 409, details: { code } });
@@ -198,6 +201,7 @@ describe("owned MoQ observation writer", () => {
 					sha256: "b".repeat(64),
 					durationMs: 1000,
 					recordedAt: "2026-11-18T00:00:01.000Z",
+					captureStartedAt: "2026-11-18T00:00:01.000Z",
 				},
 			}),
 		);
@@ -302,21 +306,80 @@ describe("owned MoQ observation writer", () => {
 		});
 		expect(JSON.stringify(saved)).not.toContain("private-token");
 	});
-	it("uploads an archive only to its owned session and accepts validated metadata after server success", async () => {
+	it("uploads captured time to the owned session while an observation flush is pending", async () => {
+		let now = 0;
 		const writer = createMoqObservationWriter({
 			channelId: CHANNEL,
 			runId: RUN,
 			sessionId: SESSION,
+			startedAt: "2026-11-18T00:00:00.000Z",
+			now: () => now,
 			onState: vi.fn(),
 		});
 		await writer.ready;
-		const anchor = { type: "recording-started", elapsedMs: 4200 } as const;
-		writer.event(anchor.type, anchor.elapsedMs);
-		const fetch = vi.fn().mockImplementation(async () => {
-			const saved = JSON.parse(mocks.api.mock.calls.at(-1)?.[1].body);
-			expect(saved.events).toContainEqual(anchor);
-			return new Response(
-				JSON.stringify({
+		now = 4200;
+		writer.recordingStarted();
+		const captureStartedAt = "2026-11-18T00:00:04.200Z";
+		let fail!: () => void;
+		mocks.api.mockImplementationOnce(
+			() =>
+				new Promise((_resolve, reject) => {
+					fail = () => reject(new Error("Test observation save failure"));
+				}),
+		);
+		const observation = writer.flush();
+		const blob = new Blob(["webm!"]);
+		const upload = vi.fn(async () =>
+			Response.json({
+				runId: RUN,
+				sessionId: SESSION,
+				archive: {
+					contentType: "video/webm",
+					bytes: blob.size,
+					sha256: "a".repeat(64),
+					durationMs: 1000,
+					recordedAt: "2026-11-18T00:00:05.200Z",
+					captureStartedAt,
+				},
+			}),
+		);
+		vi.stubGlobal("fetch", upload);
+		const signal = new AbortController().signal;
+		await writer.archive(blob, 1000, signal);
+		expect(upload).toHaveBeenCalledExactlyOnceWith(
+			`/api/live-channels/${CHANNEL}/runs/${RUN}/moq-observations/${SESSION}/archive`,
+			expect.objectContaining({
+				method: "PUT",
+				signal,
+				headers: {
+					"Content-Type": "video/webm",
+					"X-BitOVP-Moq-Duration-Ms": "1000",
+					"X-BitOVP-Moq-Capture-Started-At": captureStartedAt,
+				},
+			}),
+		);
+		fail();
+		await expect(observation).rejects.toThrow();
+		await writer.finish("ended");
+		expect(
+			JSON.parse(mocks.api.mock.calls.at(-1)?.[1].body).events,
+		).toContainEqual({ type: "recording-started", elapsedMs: 4200 });
+	});
+	it("requires the expected capture time in the clip upload receipt", async () => {
+		const writer = createMoqObservationWriter({
+			channelId: CHANNEL,
+			runId: RUN,
+			sessionId: SESSION,
+			startedAt: "2026-11-18T00:00:00.000Z",
+			now: () => 0,
+			onState: vi.fn(),
+		});
+		await writer.ready;
+		writer.recordingStarted();
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				Response.json({
 					runId: RUN,
 					sessionId: SESSION,
 					archive: {
@@ -324,26 +387,15 @@ describe("owned MoQ observation writer", () => {
 						bytes: 5,
 						sha256: "a".repeat(64),
 						durationMs: 1000,
-						recordedAt: "2026-11-18T00:00:00.000Z",
+						recordedAt: "2026-11-18T00:00:05.100Z",
+						captureStartedAt: "2026-11-18T00:00:04.100Z",
 					},
 				}),
-				{ status: 200, headers: { "content-type": "application/json" } },
-			);
-		});
-		vi.stubGlobal("fetch", fetch);
-		const abort = new AbortController();
-		await writer.archive(new Blob(["webm!"]), 1000, abort.signal);
-		expect(fetch).toHaveBeenCalledWith(
-			`/api/live-channels/${CHANNEL}/runs/${RUN}/moq-observations/${SESSION}/archive`,
-			expect.objectContaining({
-				method: "PUT",
-				signal: abort.signal,
-				headers: {
-					"Content-Type": "video/webm",
-					"X-BitOVP-Moq-Duration-Ms": "1000",
-				},
-			}),
+			),
 		);
-		await writer.finish("ended");
+		await expect(
+			writer.archive(new Blob(["webm!"]), 1000, new AbortController().signal),
+		).rejects.toBeInstanceOf(MoqArchiveSaveUnconfirmed);
+		await writer.finish("stopped");
 	});
 });

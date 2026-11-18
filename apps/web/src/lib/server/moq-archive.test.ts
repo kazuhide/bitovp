@@ -10,11 +10,13 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { moqArchiveClientOrigin } from "@/lib/moq-player/client-playback-time";
 import {
 	getMoqArchive,
 	putMoqArchive,
 	removeMoqArchiveFile,
 } from "./moq-archive";
+import { parseMoqObservationStore } from "./moq-observations";
 
 const mocks = vi.hoisted(() => ({
 	context: vi.fn(),
@@ -178,6 +180,75 @@ afterEach(async () => {
 });
 
 describe("private received-preview WebM archives", () => {
+	it("commits archive capture with the stored clip and keeps it immutable on retry", async () => {
+		const started = new Date(Date.now() - 605_000);
+		const captureStartedAt = new Date(
+			started.getTime() + 603_000,
+		).toISOString();
+		const store = parseMoqObservationStore(row.moqObservations);
+		const session = store.sessions[0];
+		if (!session) throw new Error("Missing fixture session");
+		session.startedAt = started.toISOString();
+		session.endedAt = new Date(started.getTime() + 600_000).toISOString();
+		session.events = [{ type: "observation-limit", elapsedMs: 600_000 }];
+		row = { ...row, moqObservations: store };
+		const body = request(bytes, {
+			"X-BitOVP-Moq-Capture-Started-At": captureStartedAt,
+		});
+		const saved = await putMoqArchive(body, params);
+		expect(saved.status).toBe(200);
+		expect(await saved.json()).toMatchObject({ archive: { captureStartedAt } });
+		const stored = parseMoqObservationStore(row.moqObservations).sessions[0];
+		expect(stored?.archive?.captureStartedAt).toBe(captureStartedAt);
+		expect(stored && moqArchiveClientOrigin(stored)).toBe(
+			Date.parse(captureStartedAt),
+		);
+		const retry = await putMoqArchive(
+			request(bytes, { "X-BitOVP-Moq-Capture-Started-At": captureStartedAt }),
+			params,
+		);
+		expect(retry.status).toBe(200);
+		expect(await retry.json()).toMatchObject({ archive: { captureStartedAt } });
+		const changed = await putMoqArchive(
+			request(bytes, {
+				"X-BitOVP-Moq-Capture-Started-At": new Date().toISOString(),
+			}),
+			params,
+		);
+		expect(changed.status).toBe(409);
+		const legacy = await putMoqArchive(request(), params);
+		expect(legacy.status).toBe(200);
+		expect(await legacy.json()).toMatchObject({
+			archive: { captureStartedAt },
+		});
+		expect(mocks.execute).toHaveBeenCalledOnce();
+	});
+	it.each([
+		"not UTC",
+		"2026-02-30T00:00:00.123Z",
+		"2026-11-18T00:00:00.123+00:00",
+		"2026-11-18T00:00:00Z",
+		"2000-01-01T00:00:00.000Z",
+		"2026-11-18T00:00:00.123Z, 2026-11-18T00:00:00.123Z",
+		"a".repeat(250),
+	])("rejects an invalid capture header before media admission: %s", async (header) => {
+		const store = parseMoqObservationStore(row.moqObservations);
+		const session = store.sessions[0];
+		if (!session) throw new Error("Missing fixture session");
+		session.startedAt = "2026-01-01T00:00:00.000Z";
+		session.endedAt = session.startedAt;
+		row = { ...row, moqObservations: store };
+		const response = await putMoqArchive(
+			request(bytes, { "X-BitOVP-Moq-Capture-Started-At": header }),
+			params,
+		);
+		expect(response.status).toBe(400);
+		expect(await response.json()).toMatchObject({
+			details: { code: "MOQ_ARCHIVE_CAPTURE_TIME_INVALID" },
+		});
+		expect(mocks.normalize).not.toHaveBeenCalled();
+		expect(mocks.execute).not.toHaveBeenCalled();
+	});
 	it("refuses a valid-looking WebM prefix when the declared body is longer", async () => {
 		const short = request(bytes, {
 			"Content-Length": String(bytes.length + 1),

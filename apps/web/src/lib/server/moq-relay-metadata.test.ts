@@ -109,6 +109,27 @@ describe("publisher credentials in subscriber URLs", () => {
 		});
 	});
 
+	it.each([
+		"/",
+		"\\",
+	])("checks a leading resource separator in an authored path segment removed by normalization (%#)", (separator) => {
+		const publisherToken = `${separator}publisher-scope`;
+		const url = `${relay}/${publisherToken}/../subscriber`;
+		expect(new URL(url).pathname).toBe("//subscriber");
+		expect(inspectMoqRelayMetadata(url, publisherToken)).toEqual({
+			kind: "invalid",
+		});
+	});
+
+	it("checks an escaped publisher token that begins at the canonical path separator", () => {
+		expect(
+			inspectMoqRelayMetadata(
+				`${relay}/publish%65r-scope/subscriber`,
+				"/publisher-scope",
+			),
+		).toEqual({ kind: "invalid" });
+	});
+
 	it("checks form-style query values without folding a path’s literal plus", () => {
 		expect(
 			inspectMoqRelayMetadata(
@@ -119,6 +140,25 @@ describe("publisher credentials in subscriber URLs", () => {
 		expect(
 			inspectMoqRelayMetadata(`${relay}/publisher+scope`, "publisher scope"),
 		).toEqual({ kind: "other" });
+	});
+
+	it.each([
+		`${relay}/subscriber?capability=preview+relay+issuer%2Bscope`,
+		`${relay}/subscriber?preview+relay+issuer%2Bscope=subscribe`,
+		`${relay}/subscriber?capability=${encodeURIComponent("preview+relay+issuer%2Bscope")}`,
+	])("checks simultaneous query space and literal plus decoding at each layer (%#)", (url) => {
+		expect(inspectMoqRelayMetadata(url, "relay issuer+scope")).toEqual({
+			kind: "invalid",
+		});
+	});
+
+	it("continues checking escapes remaining after a nested form layer", () => {
+		expect(
+			inspectMoqRelayMetadata(
+				`${relay}/subscriber?capability=preview%3Arelay%2Bissuer%252Bscope%252520unit`,
+				"relay issuer+scope unit",
+			),
+		).toEqual({ kind: "invalid" });
 	});
 
 	it.each([

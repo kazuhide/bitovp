@@ -3,9 +3,11 @@ import { apiFetch } from "@/lib/api";
 import {
 	appendMoqObservationEvent,
 	MOQ_OBSERVATION_LIMITS as LIMITS,
+	MOQ_ARCHIVE_CAPTURE_STARTED_AT_HEADER,
 	type MoqObservationEvent,
 	type MoqObservationSample,
 	type MoqObservationUpdate,
+	moqArchiveCaptureStartedAtSchema,
 	moqArchiveMetadataSchema,
 	moqObservationSampleSchema,
 	moqObservationUpdateSchema,
@@ -62,6 +64,7 @@ export function createMoqObservationWriter(options: Options) {
 		? descriptorDigest.data
 		: undefined;
 	let endedAt: string | null = null;
+	let captureStartedAt: string | undefined;
 	const samples: MoqObservationSample[] = [];
 	let events: readonly MoqObservationEvent[] = [
 		{ elapsedMs: 0, type: "started" },
@@ -240,12 +243,23 @@ export function createMoqObservationWriter(options: Options) {
 		void final.catch(() => {});
 		return final;
 	}
+	function recordingStarted() {
+		if (captureStartedAt !== undefined) return;
+		const offset = elapsed();
+		const stamp = new Date(Date.parse(startedAt) + offset);
+		if (!Number.isFinite(stamp.getTime())) return;
+		const parsed = moqArchiveCaptureStartedAtSchema.safeParse(
+			stamp.toISOString(),
+		);
+		if (!parsed.success) return;
+		captureStartedAt = parsed.data;
+		event("recording-started", offset);
+	}
 	async function archive(blob: Blob, durationMs: number, signal: AbortSignal) {
 		await ready;
 		signal.throwIfAborted();
-		// Publish the capture time before the clip can appear in history.
-		await flush();
-		signal.throwIfAborted();
+		if (captureStartedAt === undefined)
+			throw new Error("MoQ recording could not be saved");
 		const response = await fetch(`${path}/archive`, {
 			method: "PUT",
 			cache: "no-store",
@@ -253,6 +267,7 @@ export function createMoqObservationWriter(options: Options) {
 			headers: {
 				"Content-Type": "video/webm",
 				"X-BitOVP-Moq-Duration-Ms": String(durationMs),
+				[MOQ_ARCHIVE_CAPTURE_STARTED_AT_HEADER]: captureStartedAt,
 			},
 			body: blob,
 		}).catch(() => {
@@ -267,9 +282,13 @@ export function createMoqObservationWriter(options: Options) {
 			typeof value !== "object" ||
 			!value ||
 			Reflect.get(value, "runId") !== options.runId ||
-			Reflect.get(value, "sessionId") !== id ||
-			!moqArchiveMetadataSchema.safeParse(Reflect.get(value, "archive")).success
+			Reflect.get(value, "sessionId") !== id
 		)
+			throw new MoqArchiveSaveUnconfirmed();
+		const saved = moqArchiveMetadataSchema.safeParse(
+			Reflect.get(value, "archive"),
+		);
+		if (!saved.success || saved.data.captureStartedAt !== captureStartedAt)
 			throw new MoqArchiveSaveUnconfirmed();
 		options.onPersisted?.();
 	}
@@ -290,6 +309,7 @@ export function createMoqObservationWriter(options: Options) {
 		flush,
 		finish,
 		archive,
+		recordingStarted,
 		setAnalyticsImpressionId,
 	};
 }

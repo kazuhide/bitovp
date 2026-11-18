@@ -1,6 +1,7 @@
 import {
 	MOQ_OBSERVATION_LIMITS,
 	type MoqObservationSession,
+	moqArchiveCaptureStartedAtSchema,
 } from "./observations";
 
 function utcEpoch(value: string): number | null {
@@ -19,13 +20,21 @@ function validEpoch(value: number): boolean {
 	return Number.isFinite(value) && Number.isFinite(new Date(value).getTime());
 }
 
-/** Use the capture start as the estimated archive origin.
- * Older observations provide only first-frame time. */
+/** Use the clip's capture timestamp. Older archives can use retained events. */
 export function moqArchiveClientOrigin(
 	session: Pick<MoqObservationSession, "startedAt" | "events" | "archive">,
 ): number | null {
-	if (!session?.archive || !Array.isArray(session.events)) return null;
+	if (!session?.archive) return null;
 	const startedAt = utcEpoch(session.startedAt);
+	if (startedAt === null) return null;
+	if (session.archive.captureStartedAt !== undefined) {
+		const capture = moqArchiveCaptureStartedAtSchema.safeParse(
+			session.archive.captureStartedAt,
+		);
+		const origin = capture.success ? utcEpoch(capture.data) : null;
+		return origin !== null && origin >= startedAt ? origin : null;
+	}
+	if (!Array.isArray(session.events)) return null;
 	const recordingStarts = session.events.filter(
 		(event) => event?.type === "recording-started",
 	);
@@ -39,7 +48,6 @@ export function moqArchiveClientOrigin(
 			: session.events.filter((event) => event?.type === "first-frame");
 	const anchor = anchors[0];
 	if (
-		startedAt === null ||
 		anchors.length !== 1 ||
 		!anchor ||
 		!Number.isSafeInteger(anchor.elapsedMs) ||

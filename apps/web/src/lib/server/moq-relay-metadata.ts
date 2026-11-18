@@ -48,22 +48,50 @@ function mayContainPublisherToken(
 	publisherToken: string,
 	formQuery = false,
 ): boolean {
+	let candidates = new Set([value]);
 	for (let pass = 0; pass <= MAX_PERCENT_DECODE_PASSES; pass++) {
-		if (
-			value.includes(publisherToken) ||
-			(formQuery && value.replaceAll("+", " ").includes(publisherToken))
-		)
-			return true;
-		if (!value.includes("%")) return false;
+		const next = new Set<string>();
+		for (const candidate of candidates) {
+			if (
+				candidate.includes(publisherToken) ||
+				(formQuery && candidate.replaceAll("+", " ").includes(publisherToken))
+			)
+				return true;
+			if (!candidate.includes("%")) continue;
 
-		// Decode each layer as a single value so literal separators survive.
-		const field = value.replaceAll("&", "%26").replaceAll("+", "%2B");
-		const decoded = new URLSearchParams(`value=${field}`).get("value");
-		if (decoded === null || decoded === value) return false;
-		value = decoded;
+			// Use one value so existing separators are preserved. Within the
+			// fixed depth, keep at most two variants per value. A percent-only
+			// pass preserves literal plus; a form pass folds it before decoding.
+			const field = candidate.replaceAll("&", "%26");
+			const percentOnly = field.replaceAll("+", "%2B");
+			const variants =
+				formQuery && field !== percentOnly
+					? [field, percentOnly]
+					: [percentOnly];
+			for (const variant of variants) {
+				const decoded = new URLSearchParams(`value=${variant}`).get("value");
+				if (decoded !== null && decoded !== candidate) next.add(decoded);
+			}
+		}
+		if (next.size === 0) return false;
+		candidates = next;
 	}
 	// The remaining nested escape could still carry a publishing capability.
 	return true;
+}
+
+function queryMayContainPublisherToken(
+	params: URLSearchParams,
+	publisherToken: string,
+): boolean {
+	for (const [name, value] of params) {
+		if (
+			mayContainPublisherToken(name, publisherToken, true) ||
+			mayContainPublisherToken(value, publisherToken, true)
+		)
+			return true;
+	}
+	return false;
 }
 
 /** Local configured metadata only. The relay verifies the JWT signature and
@@ -79,17 +107,19 @@ export function inspectMoqRelayMetadata(
 		if (publisherToken) {
 			// The descriptor can preserve authored path segments that parsing
 			// resolves away. Compare the resource components of both forms.
-			const authoredResource = playbackUrl
-				.replace(/^https:[/\\]*[^/\\?#]*/i, "")
-				.replace(/^[/\\]+/, "");
-			const path = url.pathname.slice(1);
+			const authoredResource = playbackUrl.replace(
+				/^https:[/\\]*[^/\\?#]*/i,
+				"",
+			);
+			const path = url.pathname;
 			const resolvedResource = path + url.search;
 			if (
 				mayContainPublisherToken(authoredResource, publisherToken) ||
 				decodeURIComponent(path).includes(publisherToken) ||
 				(resolvedResource !== authoredResource &&
 					mayContainPublisherToken(resolvedResource, publisherToken)) ||
-				mayContainPublisherToken(url.search.slice(1), publisherToken, true)
+				mayContainPublisherToken(url.search.slice(1), publisherToken, true) ||
+				queryMayContainPublisherToken(url.searchParams, publisherToken)
 			)
 				return { kind: "invalid" };
 		}

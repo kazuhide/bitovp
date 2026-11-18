@@ -1,4 +1,5 @@
 import "server-only";
+import { toUSVString } from "node:util";
 import { z } from "zod";
 
 const MAX_MOQ_URL_LENGTH = 8_192;
@@ -48,7 +49,9 @@ function componentVariants(
 	formQuery: boolean,
 ): Set<string> | null {
 	const seen = new Set<string>();
-	let frontier = new Set([value]);
+	// URL parsers coerce to Unicode scalar values, while the descriptor can
+	// retain the original string. Account for both before decoding.
+	let frontier = new Set([value, toUSVString(value)]);
 	for (let pass = 0; pass <= MAX_PERCENT_DECODE_PASSES; pass++) {
 		const layer = new Set(frontier);
 		if (formQuery) {

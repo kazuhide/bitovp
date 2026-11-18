@@ -207,6 +207,16 @@ describe("publisher credentials in subscriber URLs", () => {
 		).toEqual({ kind: "other" });
 	});
 
+	it("checks a Unicode scalar conversion across the authored resource", () => {
+		const resource = "/retired/../subscriber?capability=issuer+";
+		const malformedScalar = String.fromCharCode(0xd800);
+		const convertedScalar = String.fromCharCode(0xfffd);
+		const authToken = resource.replace("+", " ") + convertedScalar;
+		expect(
+			inspectMoqRelayMetadata(relay + resource + malformedScalar, authToken),
+		).toEqual({ kind: "invalid" });
+	});
+
 	it("preserves genuinely separate credentials and normal URL encoding", () => {
 		expect(
 			inspectMoqRelayMetadata(

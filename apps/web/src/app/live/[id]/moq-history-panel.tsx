@@ -27,14 +27,20 @@ import { MoqClientPlaybackClock } from "./moq-client-playback-clock";
 const clock = (value: number) =>
 	Number.isFinite(value) ? new Date(value).toISOString().slice(11, 19) : "—";
 
+export type MoqArchiveSave =
+	| { sessionId: string; state: "saving" }
+	| { sessionId: string; state: "unconfirmed"; confirmUntilMs: number };
+
 export function MoqHistoryPanel({
 	channelId,
 	runId,
 	active,
+	archiveSaves = [],
 }: {
 	channelId: string;
 	runId: string;
 	active: boolean;
+	archiveSaves?: readonly MoqArchiveSave[];
 }) {
 	const { t } = useT();
 	const organizationId = useDocumentOrganization();
@@ -42,22 +48,40 @@ export function MoqHistoryPanel({
 	const archiveVideo = useRef<HTMLVideoElement>(null);
 	const history = useQuery({
 		queryKey: ["moq-observations", channelId, runId],
-		queryFn: async () => {
+		queryFn: async ({ signal }) => {
 			const value = moqObservationHistorySchema.parse(
 				await apiFetch(moqObservationPath(channelId, runId), {
 					cache: "no-store",
+					signal,
 				}),
 			);
 			if (value.runId !== runId) throw new Error();
 			return value;
 		},
-		refetchInterval: active ? 5000 : false,
+		refetchInterval: (query) => {
+			if (active) return 5000;
+			// A lost upload receipt can race an otherwise successful archive commit.
+			const pending = archiveSaves.some(
+				(save) =>
+					save.state === "unconfirmed" &&
+					performance.now() < save.confirmUntilMs &&
+					!query.state.data?.sessions.some(
+						(session) => session.id === save.sessionId && session.archive,
+					),
+			);
+			return pending ? 5000 : false;
+		},
 	});
 	const sessions = [...(history.data?.sessions ?? [])].sort(
 		(a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt),
 	);
 	const session =
 		sessions.find((value) => value.id === selected) ?? sessions[0];
+	const archiveSave = session?.archive
+		? undefined
+		: session
+			? archiveSaves.find((save) => save.sessionId === session.id)
+			: archiveSaves.at(-1);
 	const series = moqHistorySeries(
 		session?.samples ?? [],
 		session?.startedAt ?? "",
@@ -193,6 +217,15 @@ export function MoqHistoryPanel({
 					</Link>
 				) : null}
 			</div>
+			{archiveSave ? (
+				<p
+					role="status"
+					data-moq-recording={archiveSave.state}
+					className="text-xs text-zinc-400"
+				>
+					{t(`moqPlayback.recording.${archiveSave.state}`)}
+				</p>
+			) : null}
 			{history.isPending ? (
 				<p className="text-xs text-zinc-500">{t("moqPlayback.loading")}</p>
 			) : history.isError ? (
@@ -260,7 +293,7 @@ export function MoqHistoryPanel({
 								{t("moqPlayback.downloadRecording")}
 							</a>
 						</div>
-					) : (
+					) : archiveSave ? null : (
 						<p className="text-xs text-zinc-500">
 							{t(
 								session.archive

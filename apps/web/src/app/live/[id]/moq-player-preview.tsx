@@ -20,8 +20,9 @@ import {
 	EMPTY_MOQ_VIDEO_STATISTICS,
 	type MoqVideoStatistics,
 } from "@/lib/moq-player/video-statistics";
+import { MOQ_ARCHIVE_SAVE_TIMEOUT_MS } from "../../../../config/moq-policy";
 import { MoqClientPlaybackClock } from "./moq-client-playback-clock";
-import { MoqHistoryPanel } from "./moq-history-panel";
+import { type MoqArchiveSave, MoqHistoryPanel } from "./moq-history-panel";
 import { MoqPlayerStatistics } from "./moq-player-statistics";
 
 type Props = {
@@ -69,6 +70,7 @@ function MoqPlaybackAttempt({
 	const mounted = useRef(true);
 	const [recordingState, setRecordingState] =
 		useState<MoqRecordingState>("idle");
+	const [archiveSaves, setArchiveSaves] = useState<MoqArchiveSave[]>([]);
 	const [historyState, setHistoryState] = useState<
 		MoqHistorySaveState | "idle"
 	>("idle");
@@ -169,7 +171,26 @@ function MoqPlaybackAttempt({
 				startedAt: startedWall,
 				startedMonotonicMs: startedAt,
 				onRecordingState: (value) => {
-					if (visibleArchive()) setRecordingState(value);
+					if (!visibleArchive()) return;
+					setRecordingState(value);
+					const sessionId = attempt.archive?.id;
+					if (!sessionId) return;
+					const pending: MoqArchiveSave | undefined =
+						value === "unconfirmed"
+							? {
+									sessionId,
+									state: value,
+									confirmUntilMs:
+										performance.now() + MOQ_ARCHIVE_SAVE_TIMEOUT_MS,
+								}
+							: value === "saving"
+								? { sessionId, state: value }
+								: undefined;
+					setArchiveSaves((saves) => {
+						const others = saves.filter((save) => save.sessionId !== sessionId);
+						if (pending) return [...others, pending];
+						return others.length === saves.length ? saves : others;
+					});
 				},
 				onHistoryState: (value) => {
 					if (visibleArchive()) setHistoryState(value);
@@ -267,6 +288,7 @@ function MoqPlaybackAttempt({
 					channelId={channelId}
 					runId={runId}
 					active={false}
+					archiveSaves={archiveSaves}
 				/>
 			) : null}
 			{!active && !standalone ? (
@@ -343,13 +365,15 @@ function MoqPlaybackAttempt({
 					relay={relay}
 				/>
 				<div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500">
-					<p
-						aria-live="polite"
-						data-moq-recording={recordingState}
-						hidden={recordingState === "idle"}
-					>
-						{t(`moqPlayback.recording.${recordingState}`)}
-					</p>
+					{recordingState !== "saving" && recordingState !== "unconfirmed" ? (
+						<p
+							aria-live="polite"
+							data-moq-recording={recordingState}
+							hidden={recordingState === "idle"}
+						>
+							{t(`moqPlayback.recording.${recordingState}`)}
+						</p>
+					) : null}
 					<p
 						data-moq-history-save={historyState}
 						hidden={historyState !== "failed" && historyState !== "limit"}
@@ -367,6 +391,7 @@ function MoqPlaybackAttempt({
 					channelId={channelId}
 					runId={runId}
 					active
+					archiveSaves={archiveSaves}
 				/>
 			) : null}
 		</div>

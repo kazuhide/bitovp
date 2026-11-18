@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentOrganizationContext } from "@/components/providers";
+import type { MoqObservationSession } from "@/lib/moq-player/observations";
 import type {
 	MoqPlaybackDescriptor,
 	MoqPlayerFactory,
@@ -9,27 +10,31 @@ import type {
 import { renderWithQuery } from "@/test/render";
 import { MoqPlayerPreview } from "./moq-player-preview";
 
-const mocks = vi.hoisted(() => ({ api: vi.fn(), load: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+	api: vi.fn(),
+	load: vi.fn(),
+	history: vi.fn(),
+	observation: vi.fn(),
+}));
 vi.mock("@/lib/api", () => ({
 	apiFetch: (path: string, init?: RequestInit) => {
 		if (!path.includes("/moq-observations")) return mocks.api(path, init);
 		const runId = path.split("/runs/")[1]?.split("/")[0];
 		if (init?.method === "PUT") {
 			const value = JSON.parse(String(init.body));
-			return Promise.resolve({
-				runId,
-				session: {
-					...value,
-					id: path.split("/").at(-1),
-					createdAt: value.startedAt,
-					updatedAt: value.startedAt,
-					archive: null,
-				},
-			});
+			const session = {
+				...value,
+				id: path.split("/").at(-1),
+				createdAt: value.startedAt,
+				updatedAt: value.startedAt,
+				archive: null,
+			};
+			mocks.observation(session);
+			return Promise.resolve({ runId, session });
 		}
 		return Promise.resolve({
 			runId,
-			sessions: [],
+			sessions: mocks.history(runId) ?? [],
 			heartbeat: {
 				source: "live-encoder-heartbeat",
 				points: [],
@@ -67,9 +72,14 @@ const source = {
 	play: vi.fn(),
 };
 const player = { sources: { add: vi.fn(), remove: vi.fn() }, dispose: vi.fn() };
-const view = (runId = RUN, active = true) => (
+const view = (runId = RUN, active = true, standalone = false) => (
 	<DocumentOrganizationContext.Provider value={ORG}>
-		<MoqPlayerPreview channelId={CHANNEL} runId={runId} active={active} />
+		<MoqPlayerPreview
+			channelId={CHANNEL}
+			runId={runId}
+			active={active}
+			standalone={standalone}
+		/>
 	</DocumentOrganizationContext.Provider>
 );
 beforeEach(() => {
@@ -149,6 +159,124 @@ describe("explicit MoQ preview", () => {
 		expect(saved?.compareDocumentPosition(liveHost as Node)).toBe(
 			Node.DOCUMENT_POSITION_FOLLOWING,
 		);
+	});
+	it.each([
+		{ standalone: false, commits: true },
+		{ standalone: true, commits: true },
+		{ standalone: true, commits: false },
+	])("reconciles an uncertain recording after the run ends ($standalone, $commits)", async ({
+		standalone,
+		commits,
+	}) => {
+		vi.useFakeTimers();
+		const upload = vi.fn().mockRejectedValue(new TypeError("Connection lost"));
+		vi.stubGlobal("fetch", upload);
+		class Recorder extends EventTarget {
+			static isTypeSupported = () => true;
+			state = "inactive";
+			start() {
+				this.state = "recording";
+			}
+			stop() {
+				this.state = "inactive";
+				this.dispatchEvent(
+					Object.assign(new Event("dataavailable"), {
+						data: new Blob(["WebM test recording"]),
+					}),
+				);
+				this.dispatchEvent(new Event("stop"));
+			}
+		}
+		vi.stubGlobal("MediaRecorder", Recorder);
+		let session: MoqObservationSession | undefined;
+		let committed = false;
+		mocks.observation.mockImplementation((value) => {
+			session = value;
+		});
+		mocks.history.mockImplementation((runId) => {
+			if (runId !== RUN || !session) return [];
+			return [
+				{
+					...session,
+					archive: committed
+						? {
+								contentType: "video/webm",
+								bytes: 100,
+								sha256: "a".repeat(64),
+								durationMs: 1_000,
+								recordedAt: session.startedAt,
+							}
+						: null,
+				},
+			];
+		});
+		const rendered = renderWithQuery(view(RUN, true, standalone));
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", { name: "Play" }));
+		});
+		expect(source.play).toHaveBeenCalledOnce();
+		Object.assign(video, {
+			captureStream: () => ({
+				getTracks: () => [{ stop: vi.fn() }],
+				getVideoTracks: () => [{}],
+			}),
+		});
+		act(() => {
+			vi.advanceTimersByTime(100);
+			frames = 3;
+			video.currentTime = 1;
+			video.dispatchEvent(new Event("timeupdate"));
+		});
+		await act(async () => {
+			rendered.rerender(view(RUN, false, standalone));
+		});
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(1);
+		});
+		expect(upload).toHaveBeenCalledExactlyOnceWith(
+			expect.stringContaining(
+				`/runs/${RUN}/moq-observations/${session?.id}/archive`,
+			),
+			expect.objectContaining({ method: "PUT" }),
+		);
+		const history = rendered.container.querySelector(
+			`[data-moq-history="${RUN}"]`,
+		);
+		expect(history).toHaveTextContent("Recording save could not be confirmed");
+		expect(history).not.toHaveTextContent("No received-video recording");
+		expect(history?.querySelector("video")).toBeNull();
+
+		// The first refetch was too early. The saved result can appear later.
+		committed = commits;
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(5_100);
+		});
+		if (commits) {
+			expect(history?.querySelector("video")).toHaveAttribute(
+				"data-moq-archive",
+				session?.id,
+			);
+			expect(history).not.toHaveTextContent(
+				"Recording save could not be confirmed",
+			);
+		}
+		const reads = mocks.history.mock.calls.length;
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(80_000);
+		});
+		if (commits) {
+			expect(mocks.history).toHaveBeenCalledTimes(reads);
+		} else {
+			expect(mocks.history.mock.calls.length).toBeGreaterThan(reads);
+			expect(history).toHaveTextContent(
+				"Recording save could not be confirmed",
+			);
+		}
+		const finalReads = mocks.history.mock.calls.length;
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(80_000);
+		});
+		expect(mocks.history).toHaveBeenCalledTimes(finalReads);
 	});
 	it("shows configured MoQ metadata and measured video statistics, then resets measurements on Stop", async () => {
 		vi.useFakeTimers();

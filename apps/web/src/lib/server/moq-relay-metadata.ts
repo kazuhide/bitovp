@@ -42,42 +42,53 @@ function jsonPart(part: string, maxBytes: number): unknown {
 	return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
 }
 
-/** URL form decoding tolerates literal percent signs from an earlier escape. */
-function mayContainPublisherToken(
+/** Enumerate the relevant URL decoding layers within a fixed depth. */
+function componentVariants(
 	value: string,
-	publisherToken: string,
-	formQuery = false,
-): boolean {
-	let candidates = new Set([value]);
+	formQuery: boolean,
+): Set<string> | null {
+	const seen = new Set([value]);
+	let frontier = seen;
 	for (let pass = 0; pass <= MAX_PERCENT_DECODE_PASSES; pass++) {
 		const next = new Set<string>();
-		for (const candidate of candidates) {
-			if (
-				candidate.includes(publisherToken) ||
-				(formQuery && candidate.replaceAll("+", " ").includes(publisherToken))
-			)
-				return true;
-			if (!candidate.includes("%")) continue;
-
-			// Use one value so existing separators are preserved. Within the
-			// fixed depth, keep at most two variants per value. A percent-only
-			// pass preserves literal plus; a form pass folds it before decoding.
+		for (const candidate of frontier) {
+			if (!candidate.includes("%") && !(formQuery && candidate.includes("+")))
+				continue;
+			// Encode the separator so each layer is read as one value.
 			const field = candidate.replaceAll("&", "%26");
-			const percentOnly = field.replaceAll("+", "%2B");
-			const variants =
-				formQuery && field !== percentOnly
-					? [field, percentOnly]
-					: [percentOnly];
-			for (const variant of variants) {
-				const decoded = new URLSearchParams(`value=${variant}`).get("value");
-				if (decoded !== null && decoded !== candidate) next.add(decoded);
+			const literal = field.replaceAll("+", "%2B");
+			for (const input of formQuery && field !== literal
+				? [field, literal]
+				: [literal]) {
+				const decoded = new URLSearchParams(`value=${input}`).get("value");
+				if (decoded !== null && !seen.has(decoded)) next.add(decoded);
 			}
 		}
-		if (next.size === 0) return false;
-		candidates = next;
+		if (!next.size) return seen;
+		if (pass === MAX_PERCENT_DECODE_PASSES) return null;
+		for (const decoded of next) seen.add(decoded);
+		frontier = next;
 	}
-	// The remaining nested escape could still carry a publishing capability.
-	return true;
+	return null;
+}
+
+function resourceMayContainPublisherToken(
+	resource: string,
+	publisherToken: string,
+): boolean {
+	const delimiter = resource.indexOf("?");
+	const path = delimiter === -1 ? resource : resource.slice(0, delimiter);
+	const query = delimiter === -1 ? "" : resource.slice(delimiter);
+	const paths = componentVariants(path, false);
+	const queries = componentVariants(query, true);
+	if (!paths || !queries) return true;
+	// Preserve the separator and apply form decoding only to query data.
+	for (const prefix of paths) {
+		for (const suffix of queries) {
+			if ((prefix + suffix).includes(publisherToken)) return true;
+		}
+	}
+	return false;
 }
 
 function queryMayContainPublisherToken(
@@ -85,11 +96,14 @@ function queryMayContainPublisherToken(
 	publisherToken: string,
 ): boolean {
 	for (const [name, value] of params) {
-		if (
-			mayContainPublisherToken(name, publisherToken, true) ||
-			mayContainPublisherToken(value, publisherToken, true)
-		)
-			return true;
+		for (const part of [name, value]) {
+			const variants = componentVariants(part, true);
+			if (
+				!variants ||
+				[...variants].some((value) => value.includes(publisherToken))
+			)
+				return true;
+		}
 	}
 	return false;
 }
@@ -114,11 +128,10 @@ export function inspectMoqRelayMetadata(
 			const path = url.pathname;
 			const resolvedResource = path + url.search;
 			if (
-				mayContainPublisherToken(authoredResource, publisherToken) ||
+				resourceMayContainPublisherToken(authoredResource, publisherToken) ||
 				decodeURIComponent(path).includes(publisherToken) ||
 				(resolvedResource !== authoredResource &&
-					mayContainPublisherToken(resolvedResource, publisherToken)) ||
-				mayContainPublisherToken(url.search.slice(1), publisherToken, true) ||
+					resourceMayContainPublisherToken(resolvedResource, publisherToken)) ||
 				queryMayContainPublisherToken(url.searchParams, publisherToken)
 			)
 				return { kind: "invalid" };

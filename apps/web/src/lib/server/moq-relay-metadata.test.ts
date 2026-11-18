@@ -175,6 +175,20 @@ describe("publisher credentials in subscriber URLs", () => {
 		).toEqual({ kind: "other" });
 	});
 
+	it.each([
+		["?capability=preview+plus%2Bscope", "?capability=preview plus+scope"],
+		[
+			"?capability=preview+plus%2Bscope",
+			"/subscriber?capability=preview plus+scope",
+		],
+	])("checks a publisher token across the form query separator", (query, token) => {
+		expect(
+			inspectMoqRelayMetadata(`${relay}/subscriber${query}`, token),
+		).toEqual({
+			kind: "invalid",
+		});
+	});
+
 	it("preserves genuinely separate credentials and normal URL encoding", () => {
 		expect(
 			inspectMoqRelayMetadata(

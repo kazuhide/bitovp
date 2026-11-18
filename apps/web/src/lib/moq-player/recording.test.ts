@@ -104,6 +104,42 @@ describe("received MoQ video recording", () => {
 		await second.finish();
 		expect(recorder.stop).toHaveBeenCalledOnce();
 	});
+	it("leaves the live Canvas mirror running after the archive stops at 90 seconds", async () => {
+		const f = videoFixture();
+		const mirrorTrack = { stop: vi.fn() };
+		const recordingTrack = { stop: vi.fn() };
+		class MirrorStream {
+			getTracks() {
+				return [mirrorTrack];
+			}
+			clone = vi.fn(() => ({
+				getTracks: () => [recordingTrack],
+				getVideoTracks: () => [recordingTrack],
+			}));
+		}
+		vi.stubGlobal("MediaStream", MirrorStream);
+		const source = new MirrorStream();
+		f.video.dataset.bitovpMoqCanvasMirror = "true";
+		Object.assign(f.video, { srcObject: source });
+		f.capture.mockReturnValue({
+			getTracks: () => source.getTracks(),
+			getVideoTracks: () => source.getTracks(),
+		});
+		const onState = vi.fn();
+		const recording = createMoqRecording(f.video, {
+			upload: vi.fn().mockResolvedValue(undefined),
+			onState,
+		});
+
+		vi.advanceTimersByTime(90_000);
+		await recording.finish();
+
+		expect(onState).toHaveBeenLastCalledWith("saved");
+		expect(mirrorTrack.stop).not.toHaveBeenCalled();
+		expect(recordingTrack.stop).toHaveBeenCalledOnce();
+		expect(source.clone).toHaveBeenCalledOnce();
+		expect(f.capture).not.toHaveBeenCalled();
+	});
 	it("aborts an upload that does not settle within the finalization budget", async () => {
 		const f = videoFixture();
 		const upload = vi.fn<

@@ -1,7 +1,8 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { DocumentOrganizationContext } from "@/components/providers";
 import type {
+	EditingProjectPage,
 	EditingProjectSummary,
 	StoredEditingExport,
 } from "@/lib/library-editing";
@@ -222,6 +223,68 @@ it("does not offer clip creation in an empty shelf without edit access", async (
 		screen.queryByRole("link", { name: "Create a clip" }),
 	).not.toBeInTheDocument();
 	expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+});
+
+it("follows an anchored shelf when the first export replaces cached empty results", async () => {
+	const scroll = vi.fn();
+	const originalScroll = Object.getOwnPropertyDescriptor(
+		HTMLElement.prototype,
+		"scrollIntoView",
+	);
+	const originalUrl = window.location.href;
+	const historyState = window.history.state;
+	Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+		configurable: true,
+		value: scroll,
+	});
+	try {
+		window.history.replaceState(null, "", "#finished-clips");
+		const response = Promise.withResolvers<EditingProjectPage>();
+		const next = exported(2, "Second page clip");
+		calls.api.mockReturnValueOnce(response.promise).mockResolvedValueOnce({
+			items: [project(next)],
+			offset: 25,
+			total: 26,
+		});
+		const { client, rerender } = renderWithQuery(null);
+		client.setQueryData(
+			["library-edit-projects", contentId, "exports", org, 0],
+			{
+				items: [],
+				offset: 0,
+				total: 0,
+			},
+		);
+		rerender(
+			<DocumentOrganizationContext.Provider value={org}>
+				<FinishedClips contentId={contentId}>
+					<p>Source player</p>
+				</FinishedClips>
+			</DocumentOrganizationContext.Provider>,
+		);
+		const empty = screen.getByRole("region", { name: "Clips" });
+		expect(scroll.mock.contexts).toEqual([empty]);
+
+		const first = exported(1, "First export");
+		await act(async () => {
+			response.resolve({ items: [project(first)], offset: 0, total: 26 });
+		});
+		const shelf = await screen.findByRole("complementary", { name: "Clips" });
+		expect(scroll.mock.contexts).toEqual([empty, shelf]);
+
+		fireEvent.click(within(shelf).getByRole("button", { name: "Next" }));
+		await within(shelf).findByRole("heading", { name: next.title });
+		expect(scroll.mock.contexts).toEqual([empty, shelf]);
+	} finally {
+		if (originalScroll)
+			Object.defineProperty(
+				HTMLElement.prototype,
+				"scrollIntoView",
+				originalScroll,
+			);
+		else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+		window.history.replaceState(historyState, "", originalUrl);
+	}
 });
 
 it("shows the pinned output and download in read-only mode", async () => {

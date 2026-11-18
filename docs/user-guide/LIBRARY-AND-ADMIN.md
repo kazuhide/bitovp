@@ -150,7 +150,7 @@ An unavailable or replaced object requires investigation or a new material versi
 the editor does not silently switch to the new bytes.
 
 **Watch export** shows the saved editing settings for that export. **Re-edit**
-creates a separate composition draft from those settings and opens its timeline.
+creates a separate draft from those settings and opens its editing timeline.
 
 #### Composition timeline and immediate preview
 

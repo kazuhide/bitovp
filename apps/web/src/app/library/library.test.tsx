@@ -214,6 +214,21 @@ it("decorates the standalone library player with the selected analysis", () => {
 	);
 });
 
+it("uses the source panel's available width for the playback and analysis split", () => {
+	renderWithQuery(<SourcePanel source={playableSource} />);
+	const player = screen.getByText("Player").closest(".order-1");
+	const analysis = screen
+		.getByLabelText("Analysis language")
+		.closest(".order-2");
+	const grid = player?.parentElement;
+	expect(grid?.parentElement).toHaveClass("@container/source-panel");
+	expect(grid).toHaveClass(
+		"@min-[48rem]/source-panel:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]",
+	);
+	expect(player).toHaveClass("@min-[48rem]/source-panel:row-start-1");
+	expect(analysis).toHaveClass("@min-[48rem]/source-panel:col-start-2");
+});
+
 it("omits QC and input snapshots from both analysis presentations", () => {
 	const view = renderWithQuery(<SourcePanel source={playableSource} />);
 	expect(screen.queryByText("QC / source snapshot (read-only)")).toBeNull();

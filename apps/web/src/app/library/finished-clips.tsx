@@ -6,6 +6,7 @@ import {
 	type CSSProperties,
 	type PointerEvent,
 	type ReactNode,
+	useCallback,
 	useEffect,
 	useId,
 	useRef,
@@ -78,7 +79,6 @@ function FinishedClipShelf({
 	const labels = copy[locale];
 	const canEdit = useMutationAccess("library.edits.edit");
 	const headingId = useId();
-	const shelf = useRef<HTMLElement>(null);
 	const layout = useRef<HTMLDivElement>(null);
 	const [offset, setOffset] = useState(0);
 	const [requestedWidth, setRequestedWidth] = useState(DEFAULT_WIDTH);
@@ -140,12 +140,16 @@ function FinishedClipShelf({
 		};
 	}, [hasClips]);
 
-	useEffect(() => {
-		// Results can appear after fragment navigation, once the request completes.
-		if (!query.isPending && window.location.hash === `#${anchorId}`) {
-			shelf.current?.scrollIntoView?.({ block: "nearest" });
-		}
-	}, [query.isPending]);
+	// When cached empty results are replaced, the new anchor attaches below the
+	// source on mobile. Pagination keeps the same anchor node.
+	const attachAnchor = useCallback(
+		(element: HTMLElement | null) => {
+			if (!query.isPending && window.location.hash === `#${anchorId}`) {
+				element?.scrollIntoView?.({ block: "nearest" });
+			}
+		},
+		[query.isPending],
+	);
 
 	function resizeFromPointer(event: PointerEvent<HTMLDivElement>) {
 		const current = drag.current;
@@ -198,7 +202,7 @@ function FinishedClipShelf({
 				<div className="min-w-0 flex-1">
 					{organizationId && !hasClips && (
 						<section
-							ref={shelf}
+							ref={attachAnchor}
 							id={anchorId}
 							aria-label={labels.title}
 							className="mb-4 flex flex-wrap items-center gap-3 text-sm"
@@ -242,7 +246,7 @@ function FinishedClipShelf({
 				</div>
 				{hasClips && (
 					<aside
-						ref={shelf}
+						ref={attachAnchor}
 						id={anchorId}
 						aria-labelledby={headingId}
 						style={{ "--clips-width": `${width}px` } as CSSProperties}

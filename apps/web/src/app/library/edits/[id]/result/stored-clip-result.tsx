@@ -32,6 +32,23 @@ const storedExportShape = z.object({
 	}),
 });
 
+const pendingEditShape = z.strictObject({
+	title: z.string().trim().min(1).max(500),
+	requestKey: z.uuid(),
+});
+const createdEditShape = z.object({ id: z.uuid(), contentId: z.uuid() });
+
+function retainPendingEdit(storageKey: string, title: string) {
+	const value = window.sessionStorage.getItem(storageKey);
+	if (value !== null) return pendingEditShape.parse(JSON.parse(value));
+	const pending = pendingEditShape.parse({
+		title,
+		requestKey: crypto.randomUUID(),
+	});
+	window.sessionStorage.setItem(storageKey, JSON.stringify(pending));
+	return pending;
+}
+
 export function StoredClipResult(props: {
 	id: string;
 	exportId: string;
@@ -67,7 +84,6 @@ function StoredClipResultView({
 	const [reediting, setReediting] = useState(false);
 	const [reeditError, setReeditError] = useState("");
 	const pendingReedit = useRef<AbortController | null>(null);
-	const reeditBody = useRef<string | null>(null);
 	useEffect(() => () => pendingReedit.current?.abort(), []);
 	const query = useQuery({
 		queryKey: ["library-export", organizationId, id, exportId],
@@ -107,28 +123,44 @@ function StoredClipResultView({
 		pendingReedit.current = controller;
 		setReediting(true);
 		setReeditError("");
+		const storageKey = `bitovp:library:reedit:${organizationId}:${id}:${exportId}`;
 		try {
 			const title =
 				result.title + t("editing.exportSettings.reeditTitleSuffix");
-			reeditBody.current ??= JSON.stringify({
-				title: title.length <= 500 ? title : result.title,
-				fromExport: {
-					projectId: id,
-					exportId,
-					expectedOrganizationId: organizationId,
-					requestKey: crypto.randomUUID(),
-				},
-			});
-			const created = z.object({ id: z.uuid() }).parse(
+			let pending: z.infer<typeof pendingEditShape>;
+			try {
+				pending = retainPendingEdit(
+					storageKey,
+					title.length <= 500 ? title : result.title,
+				);
+			} catch {
+				setReeditError(t("editing.exportSettings.reeditStorageUnavailable"));
+				return;
+			}
+			const created = createdEditShape.parse(
 				await apiFetch("/api/library/edits", {
 					method: "POST",
-					body: reeditBody.current,
+					body: JSON.stringify({
+						title: pending.title,
+						fromExport: {
+							projectId: id,
+							exportId,
+							expectedOrganizationId: organizationId,
+							requestKey: pending.requestKey,
+						},
+					}),
 					signal: controller.signal,
 				}),
 			);
-			if (created.id === id) throw new Error("INVALID_REEDIT_RESPONSE");
-			if (!controller.signal.aborted)
-				router.push(`/library/edits/${created.id}`);
+			if (created.id === id || created.contentId !== result.contentId)
+				throw new Error("INVALID_REEDIT_RESPONSE");
+			if (controller.signal.aborted) return;
+			try {
+				window.sessionStorage.removeItem(storageKey);
+			} catch {
+				// A retained request can still safely replay the completed edit.
+			}
+			router.push(`/library/edits/${created.id}`);
 		} catch (failure) {
 			if (!controller.signal.aborted)
 				setReeditError(editingErrorMessage(failure, t));

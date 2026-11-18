@@ -277,6 +277,7 @@ export const ja = {
 			preparing: "編集を開いています…",
 			reeditTitleSuffix: "（再編集）",
 			reeditUnavailable: "再編集には編集サービスが必要です。",
+			reeditStorageUnavailable: "このタブに再編集の情報を保存できません。",
 			originalEdit: "元の編集を開く",
 		},
 		downloadClip: "MP4をダウンロード",

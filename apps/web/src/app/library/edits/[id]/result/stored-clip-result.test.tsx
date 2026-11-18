@@ -85,12 +85,13 @@ beforeEach(() => {
 	calls.api.mockReset();
 	calls.push.mockReset();
 	calls.canEdit = true;
+	window.sessionStorage.clear();
 });
 
 it("shows the saved export settings and creates a separate draft only on re-edit", async () => {
 	calls.api
 		.mockResolvedValueOnce(result)
-		.mockResolvedValueOnce({ id: targetId });
+		.mockResolvedValueOnce({ id: targetId, contentId: result.contentId });
 	mount();
 	await screen.findByRole("heading", { name: "Editing settings" });
 	expect(screen.getByText("1080 × 1920")).toBeVisible();
@@ -115,19 +116,40 @@ it("shows the saved export settings and creates a separate draft only on re-edit
 	});
 });
 
-it("reuses the same draft request after an uncertain response", async () => {
+it("resumes the exact pending re-edit after reloading and clears it on success", async () => {
 	calls.api
 		.mockResolvedValueOnce(result)
 		.mockRejectedValueOnce(new Error("Network error"))
-		.mockResolvedValueOnce({ id: targetId });
-	mount();
+		.mockResolvedValueOnce({ ...result, title: "Renamed source" })
+		.mockResolvedValueOnce({ id: targetId, contentId: result.contentId });
+	const first = mount();
 	fireEvent.click(await screen.findByRole("button", { name: "Re-edit" }));
 	await screen.findByRole("alert");
-	fireEvent.click(screen.getByRole("button", { name: "Re-edit" }));
+	first.unmount();
+	mount();
+	fireEvent.click(await screen.findByRole("button", { name: "Re-edit" }));
 	await waitFor(() => expect(calls.push).toHaveBeenCalledOnce());
-	expect(calls.api.mock.calls[2]?.[1]?.body).toBe(
+	expect(calls.api.mock.calls[3]?.[1]?.body).toBe(
 		calls.api.mock.calls[1]?.[1]?.body,
 	);
+	expect(window.sessionStorage.length).toBe(0);
+});
+
+it("does not send a re-edit when the browser cannot retain the pending request", async () => {
+	calls.api.mockResolvedValue(result);
+	const storage = vi
+		.spyOn(Storage.prototype, "setItem")
+		.mockImplementation(() => {
+			throw new DOMException("Storage unavailable", "QuotaExceededError");
+		});
+	try {
+		mount();
+		fireEvent.click(await screen.findByRole("button", { name: "Re-edit" }));
+		await screen.findByRole("alert");
+		expect(calls.api).toHaveBeenCalledTimes(1);
+	} finally {
+		storage.mockRestore();
+	}
 });
 
 it("still shows recorded settings when editing is unavailable", async () => {

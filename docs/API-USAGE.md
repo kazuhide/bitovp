@@ -243,7 +243,7 @@ storage locations remain private; clients choose a server-listed `fileKey`.
 | `POST /api/library/sources/<id>/media-versions` | `{fileKey,output:{credentialId,bucket,prefix}}` →202 media version; pins the selected object's identity |
 | `GET /api/library/media-versions/<id>` | Preparation state, safe error, time map, dimensions and authenticated media URL |
 | `POST /api/library/edits` | `{contentId,mediaVersionId,title,variant:LANDSCAPE|PORTRAIT,analysisRevisionId?}` →201 project; requires READY material |
-| `POST /api/library/edits` | `{title,fromExport:{projectId,exportId,expectedOrganizationId,requestKey}}` →201 new composition draft from the selected successful export. Replay the same request to open the same draft. |
+| `POST /api/library/edits` | `{title,fromExport:{projectId,exportId,expectedOrganizationId,requestKey}}` →201 new editing draft from the selected successful export. Replaying the same request opens the draft. A changed source, export, or title with the same key returns409 `REQUEST_KEY_REUSED`. |
 | `GET /api/library/edits?contentId=<id>&offset=0` | `{items,offset,total}`, page size25 |
 | `GET /api/library/edits/<id>` | Draft, `draftRevision`, current immutable revision, `currentRevisionMatchesDraft`, pinned analysis and recent runs |
 | `GET /api/library/edits/<id>?exportId=<uuid>` | The selected successful export and its immutable editing settings when available |

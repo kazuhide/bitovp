@@ -302,6 +302,8 @@ export const en = {
 			preparing: "Opening edit…",
 			reeditTitleSuffix: " (re-edit)",
 			reeditUnavailable: "Re-editing requires the editing service.",
+			reeditStorageUnavailable:
+				"Re-editing requires browser storage for this tab.",
 			originalEdit: "Open original edit",
 		},
 		downloadClip: "Download MP4",

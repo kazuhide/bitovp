@@ -35,6 +35,7 @@ export async function publicMoqListErrors<
 		model === "channel"
 			? await prisma.$queryRaw<ErrorSnapshot[]>`
 				SELECT id, CASE
+					WHEN NULLIF(error, '') IS NULL THEN NULL
 					WHEN jsonb_typeof("stepLog") IS DISTINCT FROM 'array' THEN NULL
 					WHEN "stepLog" @> '[{"kind":"CREATE_OUTPUT_MOQ"}]'::jsonb
 						THEN ${MOQ_TASK_HISTORY_ERROR}
@@ -44,6 +45,7 @@ export async function publicMoqListErrors<
 			`
 			: await prisma.$queryRaw<ErrorSnapshot[]>`
 				SELECT id, CASE
+					WHEN NULLIF(error, '') IS NULL THEN NULL
 					WHEN jsonb_typeof("stepLog") IS DISTINCT FROM 'array' THEN NULL
 					WHEN "stepLog" @> '[{"kind":"CREATE_OUTPUT_MOQ"}]'::jsonb
 						THEN ${MOQ_TASK_HISTORY_ERROR}

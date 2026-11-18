@@ -28,9 +28,22 @@ function scopeTrailer(
 			.flatMap((event) => event.refs),
 	);
 	const ordered = [...input.shots].sort((a, b) => a.fromFrame - b.fromFrame);
-	const excluded = [...(input.excludedWindows ?? [])].sort(
-		(a, b) => a.fromFrame - b.fromFrame,
+	for (const shot of ordered)
+		if (!shot.fields.some((field) => field.kind === "AISA"))
+			blocked.add(shot.ref);
+	const classified = new Set(
+		ledger.events
+			.filter((event) => event.refs.every((ref) => !blocked.has(ref)))
+			.flatMap((event) => event.refs),
 	);
+	const excluded = [
+		...(input.excludedWindows ?? []),
+		...ordered.flatMap((shot) =>
+			shot.exclusionWindow && !classified.has(shot.ref)
+				? [shot.exclusionWindow]
+				: [],
+		),
+	].sort((a, b) => a.fromFrame - b.fromFrame);
 	let priorEnd = 0;
 	let nextExcluded = 0;
 	ordered.forEach((shot, index) => {
@@ -40,8 +53,7 @@ function scopeTrailer(
 		if (
 			shot.fromFrame < priorEnd ||
 			(ordered[index + 1]?.fromFrame ?? Infinity) < shot.toFrame ||
-			(excluded[nextExcluded]?.fromFrame ?? Infinity) < shot.toFrame ||
-			!shot.fields.some((field) => field.kind === "AISA")
+			(excluded[nextExcluded]?.fromFrame ?? Infinity) < shot.toFrame
 		)
 			blocked.add(shot.ref);
 		priorEnd = Math.max(priorEnd, shot.toFrame);
@@ -54,7 +66,7 @@ function scopeTrailer(
 		input: {
 			...input,
 			shots: ordered.filter((shot) => approved.has(shot.ref)),
-			requireOpeningContext: true as const,
+			trailerSelection: true as const,
 		},
 		ledger: { ...ledger, events },
 	};
@@ -81,7 +93,6 @@ export function selectLocalStoryTrailer(options: {
 		maxBeats,
 		openingRole: "CONTEXT",
 		exactDuration: exact,
-		skipUncoveredQuoteCandidates: true,
 	});
 	const roles = new Map(
 		scoped.ledger.events.map((event) => [event.id, event.role]),

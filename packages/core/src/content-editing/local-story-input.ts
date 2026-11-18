@@ -16,6 +16,7 @@ import {
 import {
 	getPreparedShotPartitionEntry,
 	type PreparedShotPartition,
+	preparedFrameForSourceAppearance,
 } from "./prepared-shot-partition";
 import { cfrTimeMapSchema } from "./schema";
 import { hashEditingEvidence } from "./verify-automatic-binding";
@@ -147,6 +148,24 @@ export function buildLocalStoryInput(options: {
 	});
 	assert(segments.length <= 20_000, "LOCAL_STORY_TRANSCRIPT_LIMIT");
 	const excludedWindows: { fromFrame: number; toFrame: number }[] = [];
+	const strictPrepared = options.includeExcludedWindows ? p : undefined;
+	function excludedSourceWindow(start: number, end: number) {
+		const rawFrom = rawFrame(start, map.sourceStartUs, "FLOOR");
+		const rawTo = rawFrame(end, map.sourceStartUs, "CEIL");
+		// The prepared track can show excluded footage beyond the same time on
+		// the original continuous clock.
+		const fromFrame = Math.max(
+			0,
+			p
+				? Math.min(rawFrom, preparedFrameForSourceAppearance(p, start))
+				: rawFrom,
+		);
+		const toFrame = Math.min(
+			map.editingEndFrame - map.editingStartFrame,
+			p ? Math.max(rawTo, preparedFrameForSourceAppearance(p, end)) : rawTo,
+		);
+		return fromFrame < toFrame ? { fromFrame, toFrame } : undefined;
+	}
 	const input: LocalStoryInput = {
 		version: "local-story-input-v1",
 		title: analysis.title,
@@ -172,15 +191,8 @@ export function buildLocalStoryInput(options: {
 				start = Math.min(start, shot.startInSeconds);
 				end = Math.max(end, shot.endInSeconds);
 			}
-			const fromFrame = Math.max(
-				0,
-				rawFrame(start, map.sourceStartUs, "FLOOR"),
-			);
-			const toFrame = Math.min(
-				map.editingEndFrame - map.editingStartFrame,
-				rawFrame(end, map.sourceStartUs, "CEIL"),
-			);
-			if (fromFrame < toFrame) excludedWindows.push({ fromFrame, toFrame });
+			const window = excludedSourceWindow(start, end);
+			if (window) excludedWindows.push(window);
 		}
 		const context = [
 			field(`/scenes/${sceneIndex}/summary`, scene.summary),
@@ -214,10 +226,14 @@ export function buildLocalStoryInput(options: {
 				input.coverage.push({ ref, status: "EXCLUDED" });
 				return;
 			}
+			const window = strictPrepared
+				? excludedSourceWindow(interval.startInSeconds, interval.endInSeconds)
+				: undefined;
 			if (
 				interval.startInSeconds < map.sourceStartUs / 1_000_000 ||
 				interval.endInSeconds > map.sourceEndUs / 1_000_000
 			) {
+				if (window) excludedWindows.push(window);
 				input.coverage.push({ ref, status: "OUTSIDE_MEDIA" });
 				return;
 			}
@@ -225,17 +241,35 @@ export function buildLocalStoryInput(options: {
 				entry = p
 					? getPreparedShotPartitionEntry(p, { sceneId: scene.id, shotIndex })
 					: undefined;
-			const fromFrame = p
-					? entry?.fromFrame
-					: rawFrame(interval.startInSeconds, map.sourceStartUs, "CEIL"),
-				toFrame = p
-					? entry?.toFrame
-					: rawFrame(interval.endInSeconds, map.sourceStartUs, "FLOOR");
+			// A trailer can use only the part that belongs to this shot on both clocks.
+			const fromFrame =
+				strictPrepared && entry
+					? Math.max(
+							entry.certainFromFrame,
+							rawFrame(interval.startInSeconds, map.sourceStartUs, "CEIL"),
+						)
+					: p
+						? entry?.fromFrame
+						: rawFrame(interval.startInSeconds, map.sourceStartUs, "CEIL");
+			const toFrame =
+				strictPrepared && entry
+					? Math.min(
+							entry.certainToFrame,
+							rawFrame(interval.endInSeconds, map.sourceStartUs, "FLOOR"),
+							preparedFrameForSourceAppearance(
+								strictPrepared,
+								interval.endInSeconds,
+							),
+						)
+					: p
+						? entry?.toFrame
+						: rawFrame(interval.endInSeconds, map.sourceStartUs, "FLOOR");
 			if (
 				fromFrame === undefined ||
 				toFrame === undefined ||
 				toFrame <= fromFrame
 			) {
+				if (window) excludedWindows.push(window);
 				input.coverage.push({ ref, status: "UNREPRESENTABLE" });
 				return;
 			}
@@ -282,6 +316,7 @@ export function buildLocalStoryInput(options: {
 				...(shotIndex === undefined ? {} : { shotIndex }),
 				fromFrame,
 				toFrame,
+				...(window ? { exclusionWindow: window } : {}),
 				text: fields.map((v) => v.text).join("\n"),
 				fields,
 			});

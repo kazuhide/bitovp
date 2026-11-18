@@ -411,6 +411,54 @@ describe("exact trailer choices", () => {
 		]);
 	});
 
+	it("keeps a short quote-supported variant when the longer variant omits it", () => {
+		const f = fixture(5, 600);
+		const [opening, bridge, action, closing, longHold] = f.input.shots;
+		const [openingEvent, bridgeEvent, actionEvent, closingEvent, holdEvent] =
+			f.ledger.events;
+		if (
+			!opening ||
+			!bridge ||
+			!action ||
+			!closing ||
+			!longHold ||
+			!openingEvent ||
+			!bridgeEvent ||
+			!actionEvent ||
+			!closingEvent ||
+			!holdEvent
+		)
+			throw new Error("fixture");
+		Object.assign(opening, { fromFrame: 0, toFrame: 300 });
+		Object.assign(bridge, { fromFrame: 882, toFrame: 901 });
+		Object.assign(action, { fromFrame: 901, toFrame: 1151 });
+		Object.assign(closing, { fromFrame: 1200, toFrame: 1778 });
+		Object.assign(longHold, { fromFrame: 1900, toFrame: 2900 });
+		// The bridge is supported but its complete event does not fit.
+		bridgeEvent.refs.push(longHold.ref);
+		bridgeEvent.quotes.push({ ref: longHold.ref, quote: longHold.text });
+		f.ledger.events.pop();
+		closingEvent.role = "CHANGE";
+
+		const text = "This quote ends before the first frame of the action shot.";
+		const segment = { startUs: 29_500_000, endUs: 30_030_000, text };
+		f.input.segments.push(segment);
+		action.fields.push({ ...segment, kind: "ASR", pointer: "/segments/0" });
+		actionEvent.label = text;
+		actionEvent.quotes = [{ ref: action.ref, quote: text }];
+
+		const result = selectLocalStoryTrailer({ ...f, trailer });
+		expect(result.selection.actualDurationFrames).toBe(900);
+		expect(result.selection.localStorySelection.selectedEventIds).toEqual([
+			openingEvent.id,
+			actionEvent.id,
+			closingEvent.id,
+		]);
+		expect(result.windows.map(({ durationFrames }) => durationFrames)).toEqual([
+			300, 19, 3, 578,
+		]);
+	});
+
 	it("distinguishes a truncated exact search from a proven lack of fitting footage", () => {
 		const f = fixture(97, 750);
 		for (const event of f.ledger.events) event.role = "CONTEXT";

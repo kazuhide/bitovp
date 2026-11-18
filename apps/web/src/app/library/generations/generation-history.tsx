@@ -114,14 +114,6 @@ export function GenerationHistory({
 		return () => clearTimeout(timer);
 	}, [filters.q]);
 	useEffect(() => {
-		const search = generationHistorySearch(filters).toString();
-		window.history.replaceState(
-			window.history.state,
-			"",
-			`${window.location.pathname}${search ? `?${search}` : ""}`,
-		);
-	}, [filters]);
-	useEffect(() => {
 		const restore = () => {
 			const next = readGenerationHistoryFilters(
 				Object.fromEntries(new URLSearchParams(window.location.search)),
@@ -129,6 +121,7 @@ export function GenerationHistory({
 			setFilters(next);
 			setDebouncedQ(next.q);
 		};
+		restore();
 		window.addEventListener("popstate", restore);
 		return () => window.removeEventListener("popstate", restore);
 	}, []);
@@ -153,8 +146,16 @@ export function GenerationHistory({
 	});
 	const data = pendingSearch ? undefined : query.data;
 	const loading = pendingSearch || query.isPending;
-	const update = (next: Partial<GenerationHistoryFilters>) =>
-		setFilters((previous) => ({ ...previous, offset: 0, ...next }));
+	const update = (patch: Partial<GenerationHistoryFilters>) => {
+		const next = { ...filters, offset: 0, ...patch };
+		const search = generationHistorySearch(next).toString();
+		const url = `${window.location.pathname}${search ? `?${search}` : ""}`;
+		// Update Next's canonical URL on filter changes. On remount the browser's
+		// history entry can be newer than the saved server component props.
+		if (url !== window.location.pathname + window.location.search)
+			window.history.replaceState(null, "", url);
+		setFilters(next);
+	};
 	return (
 		<div className="mx-auto max-w-7xl space-y-5">
 			<header className="space-y-2">

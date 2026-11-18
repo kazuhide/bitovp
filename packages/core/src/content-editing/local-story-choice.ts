@@ -76,7 +76,6 @@ type BuildOptions = {
 	maxBeats?: number;
 	openingRole?: LocalStoryCorpus["events"][number]["role"];
 	exactDuration?: boolean;
-	skipUncoveredQuoteCandidates?: boolean;
 };
 type Candidate = Omit<FeasibleStoryPlan, "id"> & {
 	indices: number[];
@@ -125,10 +124,7 @@ export function sliceFeasibleStoryChoices(
 	return signed({ ...data, plans: data.plans.slice(0, count) });
 }
 function checkedPlan(
-	options: Pick<
-		BuildOptions,
-		"input" | "ledger" | "targetDurationFrames" | "skipUncoveredQuoteCandidates"
-	>,
+	options: Pick<BuildOptions, "input" | "ledger" | "targetDurationFrames">,
 	blueprint: LocalStoryBlueprint,
 	select?: ReturnType<typeof createLocalStoryClipSelector>,
 ) {
@@ -148,14 +144,7 @@ function checkedPlan(
 		blueprint: parsed,
 		selection,
 	});
-	if (issues.length) {
-		if (
-			options.skipUncoveredQuoteCandidates &&
-			issues.every(({ code }) => code === "SELECTED_QUOTE_NOT_COVERED")
-		)
-			throw new LocalStoryError("LOCAL_STORY_NO_FITTING_PLAN");
-		invalid();
-	}
+	if (issues.length) invalid();
 	return { blueprint: parsed, selection };
 }
 function ownedSkeleton(

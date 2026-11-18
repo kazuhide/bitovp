@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { normalizeSceneAnalysis } from "../content-library/analysis";
+import { authoredNormalizationReceipt } from "../testing/normalization-clock";
 import type {
 	LocalStoryCorpus,
 	LocalStoryEvent,
 } from "./local-story-contracts";
 import { buildLocalStoryInput } from "./local-story-input";
 import { selectLocalStoryTrailer } from "./local-story-trailer";
+import {
+	buildPreparedShotPartition,
+	preparedFrameForSourceAppearance,
+} from "./prepared-shot-partition";
 import { cfrTimeMapSchema } from "./schema";
 
 type FixtureScene = {
@@ -80,7 +85,93 @@ function fixture(
 	return { input, ledger, analysis, timeMap };
 }
 
+function preparedOptions({
+	analysis,
+	timeMap,
+}: Pick<ReturnType<typeof fixture>, "analysis" | "timeMap">) {
+	const normalization = authoredNormalizationReceipt({
+		organizationId: "33333333-3333-4333-8333-333333333333",
+		sourceId: "44444444-4444-4444-8444-444444444444",
+		mediaVersionId: timeMap.mediaVersionId,
+		sourceFrameCount: (timeMap.sourceEndUs * 24) / 1_000_000,
+	});
+	const preparedTimeMap = { ...timeMap, id: normalization.timeMapId };
+	const preparedPartition = buildPreparedShotPartition({
+		analysis,
+		timeMap: preparedTimeMap,
+		normalization,
+	});
+	return {
+		normalization,
+		options: { analysis, timeMap: preparedTimeMap, preparedPartition },
+	};
+}
+
 describe("trailer source boundaries", () => {
+	it("blocks preview frames repeated beyond the raw boundary during prepared 24 to 30 conversion", () => {
+		const f = fixture([
+			{ from: 0.02, to: 1.02, type: "PREVIEW_THIS_TITLE" },
+			{ from: 1.02, to: 3 },
+			{ from: 3, to: 4 },
+		]);
+		const { options, normalization } = preparedOptions(f);
+		const { preparedPartition } = options;
+		const input = buildLocalStoryInput({
+			...options,
+			includeExcludedWindows: true,
+		});
+		expect(input.shots[0]?.fromFrame).toBe(32);
+		expect(normalization.sourceFrameIndex.slice(30, 33)).toEqual([24, 24, 25]);
+		expect(preparedFrameForSourceAppearance(preparedPartition, 0.02)).toBe(2);
+		expect(preparedFrameForSourceAppearance(preparedPartition, 1.02)).toBe(32);
+		const request = {
+			input,
+			ledger: f.ledger,
+			targetDurationFrames: 59,
+			trailer: { durationMode: "EXACT", disclosure: "SETUP_ONLY" } as const,
+		};
+		expect(() => selectLocalStoryTrailer(request)).toThrow(
+			"LOCAL_TRAILER_EXACT_DURATION_UNAVAILABLE",
+		);
+		expect(input.excludedWindows).toEqual([{ fromFrame: 0, toFrame: 32 }]);
+		expect(buildLocalStoryInput(options)).not.toHaveProperty("excludedWindows");
+		expect(
+			selectLocalStoryTrailer({
+				...request,
+				trailer: { ...request.trailer, durationMode: "TARGET" },
+			}).windows,
+		).toEqual([{ sourceInUs: 1_066_667, durationFrames: 58 }]);
+	});
+
+	it("cannot open on repeated outcome footage at an ordinary prepared scene cut", () => {
+		const f = fixture([
+			{ from: 0, to: 0.06, role: "OUTCOME" },
+			{ from: 0.06, to: 2, role: "CONTEXT" },
+		]);
+		const { options, normalization } = preparedOptions(f);
+		expect(normalization.sourceFrameIndex.slice(2, 4)).toEqual([1, 2]);
+		expect(buildLocalStoryInput(options).shots[1]?.fromFrame).toBe(2);
+		const input = buildLocalStoryInput({
+			...options,
+			includeExcludedWindows: true,
+		});
+		const request = {
+			input,
+			ledger: f.ledger,
+			targetDurationFrames: 58,
+			trailer: { durationMode: "EXACT", disclosure: "SETUP_ONLY" } as const,
+		};
+		expect(() => selectLocalStoryTrailer(request)).toThrow(
+			"LOCAL_TRAILER_EXACT_DURATION_UNAVAILABLE",
+		);
+		expect(
+			selectLocalStoryTrailer({
+				...request,
+				trailer: { ...request.trailer, durationMode: "TARGET" },
+			}).windows,
+		).toEqual([{ sourceInUs: 100_000, durationFrames: 57 }]);
+	});
+
 	it("excludes a preview scene's actual bounds when another scene's shot crosses into it", () => {
 		const { input, ledger, analysis, timeMap } = fixture([
 			{ from: 0, to: 20, shotEnd: 30 },

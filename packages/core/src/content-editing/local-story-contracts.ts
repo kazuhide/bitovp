@@ -152,6 +152,7 @@ export type LocalStoryShot = {
 	shotIndex?: number;
 	fromFrame: number;
 	toFrame: number;
+	exclusionWindow?: { fromFrame: number; toFrame: number };
 	text: string;
 	fields: LocalStoryField[];
 };
@@ -165,7 +166,7 @@ export type LocalStoryInput = {
 	scenes: { sceneId: string; text: string; fields: LocalStoryField[] }[];
 	shots: LocalStoryShot[];
 	excludedWindows?: readonly { fromFrame: number; toFrame: number }[];
-	requireOpeningContext?: true;
+	trailerSelection?: true;
 	coverage: {
 		ref: string;
 		status: "ELIGIBLE" | "EXCLUDED" | "OUTSIDE_MEDIA" | "UNREPRESENTABLE";

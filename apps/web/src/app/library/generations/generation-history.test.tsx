@@ -66,6 +66,11 @@ it("opens active progress and a pinned export after loading durable history", as
 });
 
 it("restores URL search/filter state and resets pagination on filter edits", async () => {
+	window.history.replaceState(
+		null,
+		"",
+		"/library/generations?q=Sol&state=RUNNING&period=week&offset=25",
+	);
 	renderWithQuery(
 		<GenerationHistory
 			initialFilters={{
@@ -93,6 +98,32 @@ it("restores URL search/filter state and resets pagination on filter edits", asy
 		),
 	);
 	expect(window.location.search).toBe("?q=Sol&state=ERROR&period=week");
+});
+
+it("preserves a history entry's filters when the page remounts with stale navigation props", async () => {
+	window.history.replaceState(
+		{ __NA: true },
+		"",
+		"/library/generations?q=Meridian&state=SUCCEEDED",
+	);
+	renderWithQuery(
+		<GenerationHistory
+			initialFilters={{ q: "", offset: 0, state: "", period: "" }}
+			clipEditingAvailable
+		/>,
+	);
+	expect(screen.getByRole("searchbox", { name: "Content title" })).toHaveValue(
+		"Meridian",
+	);
+	expect(screen.getByRole("combobox", { name: "Status" })).toHaveValue(
+		"SUCCEEDED",
+	);
+	expect(window.location.search).toBe("?q=Meridian&state=SUCCEEDED");
+	await waitFor(() =>
+		expect(apiFetch).toHaveBeenLastCalledWith(
+			"/api/library/media-tasks?view=history&q=Meridian&state=SUCCEEDED",
+		),
+	);
 });
 
 it("refreshes a recently cached empty history when the user returns", async () => {

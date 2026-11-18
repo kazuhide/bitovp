@@ -179,6 +179,7 @@ function fixture(
 		useSpeechEvidence?: boolean;
 		firstClause?: string;
 		clauses?: string[];
+		shotSeconds?: number;
 		shotPaddingRepeats?: number;
 		segments?: { startUs: number; endUs: number; text: string }[];
 		speechIntervals?: { startUs: number; endUs: number }[];
@@ -209,11 +210,13 @@ function fixture(
 		"The dog returns the bag to its owner.",
 		"The owner receives the bag.",
 	];
+	const shotSeconds = options.shotSeconds ?? 5;
+	const duration = clauses.length * shotSeconds;
 	const analysis = normalizeSceneAnalysis({
 		metadata: { version: "authored-local-story-engine-test" },
 		title: "A returned bag",
 		description: "A dog returns a missing bag.",
-		duration: clauses.length * 5,
+		duration,
 		scenes: [
 			{
 				id: sceneId,
@@ -221,13 +224,13 @@ function fixture(
 				title: "The bag",
 				summary: "A missing bag is returned.",
 				startInSeconds: 0,
-				endInSeconds: clauses.length * 5,
+				endInSeconds: duration,
 				content: {
 					objects: [{ category: "bag", description: "The missing bag." }],
 				},
 				shots: clauses.map((clause, index) => ({
-					startInSeconds: index * 5,
-					endInSeconds: (index + 1) * 5,
+					startInSeconds: index * shotSeconds,
+					endInSeconds: (index + 1) * shotSeconds,
 					// Long but valid source fields ensure the real byte budget creates several chunks.
 					detailedDescription:
 						clause +
@@ -252,9 +255,9 @@ function fixture(
 		mediaVersionId: mediaId,
 		kind: "CFR",
 		sourceStartUs: 0,
-		sourceEndUs: clauses.length * 5_000_000,
+		sourceEndUs: duration * 1_000_000,
 		editingStartFrame: 0,
-		editingEndFrame: clauses.length * 150,
+		editingEndFrame: duration * 30,
 		fps: { num: 30, den: 1 },
 	});
 	const segments = options.segments ?? [
@@ -300,7 +303,7 @@ function fixture(
 		},
 	};
 	mocks.createStore.mockReturnValue(store);
-	mocks.prepareTranscript.mockResolvedValue({
+	const transcript = {
 		qualityPolicyFingerprint: TRANSCRIPTION_POLICY_FINGERPRINT,
 		segments,
 		status: "READY",
@@ -314,7 +317,8 @@ function fixture(
 			options.speechIntervals && segments.length === 0 ? ["NO_SPEECH"] : [],
 		modelSha256: "b".repeat(64),
 		cached: true,
-	});
+	};
+	mocks.prepareTranscript.mockResolvedValue(transcript);
 	const requests: Request[] = [];
 	let blueprintAttempt = 0;
 	let choiceAttempt = 0;
@@ -492,6 +496,7 @@ function fixture(
 		input,
 		chunks,
 		segments,
+		transcript,
 		config,
 		choiceProbe,
 	};
@@ -760,11 +765,29 @@ describe("local story engine with real evidence contracts and a fake local model
 		expect(f.run).not.toHaveBeenCalled();
 	});
 
-	it("rejects an exact trailer when untranscribed VAD crosses into an outcome, including cached ledger replay", async () => {
+	it.each([
+		{
+			kind: "one interval",
+			shotSeconds: 5,
+			speechIntervals: [{ startUs: 4_000_000, endUs: 6_000_000 }],
+		},
+		{
+			kind: "two intervals at the 180-second transcription boundary",
+			shotSeconds: 180,
+			speechIntervals: [
+				{ startUs: 179_000_000, endUs: 180_000_000 },
+				{ startUs: 180_000_000, endUs: 181_000_000 },
+			],
+		},
+	])("rejects outcome-crossing VAD with $kind for fresh and cached evidence", async ({
+		shotSeconds,
+		speechIntervals,
+	}) => {
 		const f = fixture({
 			segments: [],
 			shotPaddingRepeats: 80,
-			speechIntervals: [{ startUs: 4_000_000, endUs: 6_000_000 }],
+			shotSeconds,
+			speechIntervals,
 			changeLedger(ledger, chunk) {
 				return chunk.refs.includes("s1")
 					? {
@@ -777,12 +800,16 @@ describe("local story engine with real evidence contracts and a fake local model
 					: ledger;
 			},
 		});
+		mocks.prepareTranscript.mockResolvedValueOnce({
+			...f.transcript,
+			cached: false,
+		});
 		const { storyMode: _storyMode, ...parameters } = f.context.parameters;
 		const context = {
 			...f.context,
 			parameters: {
 				...parameters,
-				targetDurationFrames: 150,
+				targetDurationFrames: shotSeconds * 30,
 				trailer: {
 					durationMode: "EXACT",
 					disclosure: "SETUP_AND_QUESTION",

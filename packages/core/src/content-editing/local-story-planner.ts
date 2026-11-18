@@ -1,4 +1,5 @@
 import type { AutoPortraitClip } from "./auto-portrait";
+import { localStorySelectedQuoteIssues } from "./local-story-coherence";
 import {
 	type LocalStoryEvent,
 	type LocalStoryInput,
@@ -123,13 +124,14 @@ function speechSafe(input: LocalStoryInput, spans: readonly Span[]): Span[] {
 	// Exact 1/30-microsecond ticks keep adjacent original utterances half-open.
 	// Rounding every segment first would turn a shared 6.62s boundary into an
 	// overlap at frames 198/199 and transitively join unrelated utterances.
-	const observedSpeech = input.speechIntervals?.length
-		? [...input.segments, ...input.speechIntervals]
-		: input.segments;
-	const utterances = observedSpeech.map((segment) => ({
-		from: (BigInt(segment.startUs) - sourceStart) * 30n,
-		to: (BigInt(segment.endUs) - sourceStart) * 30n,
-	}));
+	const toTicks = (interval: { startUs: number; endUs: number }) => ({
+		from: (BigInt(interval.startUs) - sourceStart) * 30n,
+		to: (BigInt(interval.endUs) - sourceStart) * 30n,
+	});
+	const utterances = input.segments.map(toTicks);
+	// Continuous VAD can be split exactly at a transcription window boundary.
+	if (input.speechIntervals?.length)
+		utterances.push(...merge(input.speechIntervals.map(toTicks)));
 	let result = merge(
 		spans.map((span) => ({
 			from: BigInt(span.from) * 1_000_000n,
@@ -330,7 +332,7 @@ export function createLocalStoryClipSelector(options: {
 		);
 	validateLocalStoryCorpusEvents(input, ledger.events);
 	const events = new Map(ledger.events.map((e) => [e.id, e]));
-	const openingShots = input.requireOpeningContext
+	const openingShots = input.trailerSelection
 		? new Map(input.shots.map((shot) => [shot.ref, shot]))
 		: undefined;
 	const candidates = new Map<string, Span[][]>();
@@ -348,11 +350,14 @@ export function createLocalStoryClipSelector(options: {
 		// a short plan needed by a later mandatory beat.
 		const maxStates = 32_768,
 			maxExpansions = 40_000;
+		const lastBeat = blueprint.beats.at(-1);
 		let beam: State[] = [
 				{ spans: [], selectedEventIds: [], selectedBeatIds: [] },
 			],
 			expansions = 0;
 		for (const beat of blueprint.beats) {
+			// A complete variant must cover its citations before duration ranking.
+			const verifyQuotes = input.trailerSelection && beat === lastBeat;
 			const next = new Map<string, State>();
 			for (const state of beam) {
 				if (!beat.requires.every((id) => state.selectedBeatIds.includes(id)))
@@ -388,6 +393,15 @@ export function createLocalStoryClipSelector(options: {
 							selectedEventIds: [...state.selectedEventIds, eventId],
 							selectedBeatIds: [...state.selectedBeatIds, beat.id],
 						};
+						if (
+							verifyQuotes &&
+							localStorySelectedQuoteIssues(
+								input,
+								value.selectedEventIds.map((id) => required(events.get(id))),
+								spans,
+							).length
+						)
+							continue;
 						next.set(signature(value), value);
 					}
 				}

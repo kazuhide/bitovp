@@ -24,7 +24,7 @@ struct Options {
     unsigned width = 0, height = 0, bits = 8, threads = 1, decode_threads = 1, max_frames = 0;
     unsigned inflight_frames = 1;
     BackendOptions device;
-    bool verify = false, device_info = false;
+    bool verify = false, device_info = false, attest_decoder_runtime = false;
 };
 inline Options parse(int argc, char **argv) {
     Options out;
@@ -39,6 +39,11 @@ inline Options parse(int argc, char **argv) {
         if (key == "--profile") {
             if (out.device.profile) throw std::invalid_argument("Duplicate --profile");
             out.device.profile = true;
+            continue;
+        }
+        if (key == "--attest-decoder-runtime") {
+            if (out.attest_decoder_runtime) throw std::invalid_argument("Duplicate --attest-decoder-runtime");
+            out.attest_decoder_runtime = true;
             continue;
         }
         if (key == "--verify-cpu") {
@@ -84,10 +89,12 @@ inline Options parse(int argc, char **argv) {
         for (const auto &key : used)
             if (key != "--backend" && key != "--device" && key != "--vendor")
                 throw std::invalid_argument("Option is not valid with --device-info: " + key);
-        if (out.verify || out.device.profile || !out.models.empty())
+        if (out.verify || out.device.profile || out.attest_decoder_runtime || !out.models.empty())
             throw std::invalid_argument("Scoring options are not valid with --device-info");
         return out;
     }
+    if (out.attest_decoder_runtime && (out.decode != "cpu" || !out.metric.empty() || out.max_frames))
+        throw std::invalid_argument("--attest-decoder-runtime requires a full CPU-decoded VMAF comparison");
     if (used.count("--metric") && out.metric != "cambi")
         throw std::invalid_argument("--metric must be cambi");
     if (out.metric == "cambi") {

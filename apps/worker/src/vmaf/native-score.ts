@@ -23,7 +23,7 @@ import {
 import {
 	type NativeScoreReuseContext,
 	readVerifiedNativeScore,
-	verifiedNativeScoreKey,
+	verifiedNativeScoreIdentity,
 } from "./native-score-reuse";
 import { resourceVideoFromProbe } from "./resource-plan";
 
@@ -304,8 +304,8 @@ export async function runNativeVmafScore(
 	};
 	// Calibration times a prefix. It cannot produce or consume a complete score.
 	const reuse = frameLimit === undefined ? context.verifiedReuse : undefined;
-	const reuseKey = reuse
-		? await verifiedNativeScoreKey(
+	const reuseIdentity = reuse
+		? await verifiedNativeScoreIdentity(
 				{ runner: deps.runner, nativePath: deps.nativePath },
 				reuse,
 				expected,
@@ -318,10 +318,10 @@ export async function runNativeVmafScore(
 	const receiptPath = `${options.logPath}.native.json`;
 	await rm(receiptPath, { force: true });
 	try {
-		if (reuseKey && reuse?.load) {
+		if (reuseIdentity && reuse?.load) {
 			const prior = await readVerifiedNativeScore(
 				reuse.load,
-				reuseKey,
+				reuseIdentity,
 				expected,
 				reuse.selection.identity.deviceUuid,
 				signal,
@@ -362,6 +362,7 @@ export async function runNativeVmafScore(
 			"--decode-threads",
 			String(options.decoderThreads ?? 1),
 			"--verify-cpu",
+			...(reuseIdentity ? ["--attest-decoder-runtime"] : []),
 			...(context.nativeInflightFrames === undefined
 				? []
 				: ["--inflight-frames", String(context.nativeInflightFrames)]),
@@ -424,11 +425,12 @@ export async function runNativeVmafScore(
 			run,
 			execution,
 			log: verified.log,
-			...(reuseKey &&
+			...(reuseIdentity &&
+			metadata.decoderRuntimeSha256 === reuseIdentity.decoderRuntimeSha256 &&
 			verified.scoring.device.uuid === reuse?.selection.identity.deviceUuid
 				? {
 						verifiedNativeScore: {
-							key: reuseKey,
+							...reuseIdentity,
 							receiptSha256: createHash("sha256").update(receipt).digest("hex"),
 						},
 					}

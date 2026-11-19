@@ -23,16 +23,24 @@ export type NativeScoreReuseContext = {
 	load?: (key: string) => Promise<Candidate | null>;
 };
 
-export type VerifiedNativeScore = {
+type VerifiedScoreIdentity = {
 	key: string;
+	decoderRuntimeSha256: string;
+};
+
+export type VerifiedNativeScore = VerifiedScoreIdentity & {
 	receiptSha256: string;
 };
 
 const sha = z.string().regex(/^[a-f0-9]{64}$/);
+const decodedRuntimeProof = z
+	.object({ schemaVersion: z.literal(1), sourceSha256: sha, sha256: sha })
+	.strict();
 const storedProof = z
 	.object({
-		version: z.literal(1),
+		version: z.literal(2),
 		key: sha,
+		decoderRuntimeSha256: sha,
 		receiptSha256: sha,
 		payloadSha256: sha,
 	})
@@ -54,7 +62,7 @@ const storedFrames = z.array(
 
 const MAX_REUSABLE_FRAME_JSON_BYTES = 16 * 1024 * 1024;
 
-export async function verifiedNativeScoreKey(
+export async function verifiedNativeScoreIdentity(
 	deps: { runner: ProcessRunner; nativePath: string },
 	scope: NativeScoreReuseContext,
 	expected: NativeExpected,
@@ -71,7 +79,7 @@ export async function verifiedNativeScoreKey(
 	)
 		return undefined;
 	try {
-		const { info, cacheable } = await inspectNativeDevice(
+		const { executable, info, cacheable } = await inspectNativeDevice(
 			deps,
 			selection,
 			signal,
@@ -88,13 +96,23 @@ export async function verifiedNativeScoreKey(
 			info.device.uuid !== identity.deviceUuid
 		)
 			return undefined;
+		const runtime = await deps.runner.run(executable, ["--decoder-runtime"], {
+			signal,
+			abortKillAfterMs: 250,
+		});
+		signal?.throwIfAborted();
+		if (runtime.code !== 0) return undefined;
+		const parsedRuntime = decodedRuntimeProof.parse(JSON.parse(runtime.stdout));
+		if (parsedRuntime.sourceSha256 !== expected.sourceSha256) return undefined;
+		const decoderRuntimeSha256 = parsedRuntime.sha256;
 		const { width, height, bitdepth } = expected.distortedOriginal;
 		// Both inputs are already materialized and hashed. The native route
 		// rejects extra transforms and always decodes on the CPU here.
-		return createHash("sha256")
+		const key = createHash("sha256")
 			.update(
 				JSON.stringify([
-					"bitovp-native-vmaf-full-pair-v1",
+					"bitovp-native-vmaf-full-pair-v2",
+					decoderRuntimeSha256,
 					scope.organizationId,
 					scope.scoringVersion,
 					expected.referenceSha256,
@@ -126,6 +144,7 @@ export async function verifiedNativeScoreKey(
 				]),
 			)
 			.digest("hex");
+		return { key, decoderRuntimeSha256 };
 	} catch {
 		signal?.throwIfAborted();
 		// Missing or unknown runtime identity disables reuse for this pair.
@@ -143,21 +162,29 @@ export function sealVerifiedNativeScore(
 	// exact bounded frame payload together in the same result row.
 	const evidence = localVmafExecutionSchema.parse(execution);
 	const payloadSha256 = createHash("sha256")
-		.update(JSON.stringify([1, proof.key, proof.receiptSha256, evidence]))
+		.update(
+			JSON.stringify([
+				2,
+				proof.key,
+				proof.decoderRuntimeSha256,
+				proof.receiptSha256,
+				evidence,
+			]),
+		)
 		.update(framesGzip)
 		.digest("hex");
-	return { version: 1 as const, ...proof, payloadSha256 };
+	return { ...proof, version: 2 as const, payloadSha256 };
 }
 
 export async function readVerifiedNativeScore(
 	load: NonNullable<NativeScoreReuseContext["load"]>,
-	key: string,
+	identity: VerifiedScoreIdentity,
 	expected: NativeExpected,
 	deviceUuid: string,
 	signal?: AbortSignal,
 ) {
 	try {
-		const candidate = await load(key);
+		const candidate = await load(identity.key);
 		signal?.throwIfAborted();
 		if (!candidate?.framesGzip) return undefined;
 		const { framesGzip } = candidate;
@@ -166,7 +193,8 @@ export async function readVerifiedNativeScore(
 			storedCandidate.parse(candidate.provenance);
 		const { scoring } = execution;
 		if (
-			proof.key !== key ||
+			proof.key !== identity.key ||
+			proof.decoderRuntimeSha256 !== identity.decoderRuntimeSha256 ||
 			execution.reusedVerifiedResult ||
 			scoring.implementation !== "bitovp-owned" ||
 			execution.attempts !== 1 ||
@@ -213,10 +241,7 @@ export async function readVerifiedNativeScore(
 		signal?.throwIfAborted();
 		return {
 			execution: { ...execution, reusedVerifiedResult: true as const },
-			verifiedNativeScore: {
-				key: proof.key,
-				receiptSha256: proof.receiptSha256,
-			},
+			verifiedNativeScore: { ...identity, receiptSha256: proof.receiptSha256 },
 			log: {
 				frames: frames.map(({ frameNum, vmaf, psnr }) => ({
 					frameNum,

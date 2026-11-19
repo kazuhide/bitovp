@@ -154,6 +154,10 @@ content digests, model, GPU build, device and driver, and scoring settings match
 The new result owns its frame payload and reports
 `localExecution.reusedVerifiedResult: true` in the measurement JSON. An absent
 or invalid completion record takes the normal full score path.
+The retry also requires the current native build to attest its loaded decoder
+runtime. The worker checks a Linux runtime probe against the evidence recorded
+during the original comparison. Changed, unsupported or late-loaded decoder
+dependencies leave the result available for ordinary scoring.
 
 For a timing comparison, record the same retry with reuse disabled and enabled
 using the same original completion record and input bytes. Keep download and

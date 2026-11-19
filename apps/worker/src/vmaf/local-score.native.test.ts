@@ -151,8 +151,26 @@ async function setupReuse() {
 	};
 	const original = h.run.getMockImplementation();
 	if (!original) throw new Error("Missing fake native runner");
-	h.run.mockImplementation(async (program, args, context) =>
-		args[0] === "--device-info"
+	const decoderRuntime = {
+		probeSha256: "8".repeat(64) as string | null,
+		completionSha256: "8".repeat(64) as string | null,
+	};
+	h.run.mockImplementation(async (program, args, context) => {
+		if (args[0] === "--decoder-runtime") {
+			const sha256 = decoderRuntime.probeSha256;
+			return {
+				code: sha256 ? 0 : 1,
+				stdout: sha256
+					? JSON.stringify({
+							schemaVersion: 1,
+							sourceSha256: identity.sourceSha256,
+							sha256,
+						})
+					: "",
+				stderr: "",
+			};
+		}
+		return args[0] === "--device-info"
 			? {
 					code: 0,
 					stdout: JSON.stringify({
@@ -171,11 +189,29 @@ async function setupReuse() {
 					}),
 					stderr: "",
 				}
-			: original(program, args, context),
-	);
+			: (async () => {
+					const result = await original(program, args, context);
+					if (
+						args.includes("--attest-decoder-runtime") &&
+						decoderRuntime.completionSha256
+					) {
+						const output = fixtureValue(args, args.indexOf("--output") + 1);
+						const receipt = JSON.parse(await readFile(output, "utf8"));
+						await writeFile(
+							output,
+							JSON.stringify({
+								...receipt,
+								decoderRuntimeSha256: decoderRuntime.completionSha256,
+							}),
+						);
+					}
+					return result;
+				})();
+	});
 	return {
 		...h,
 		device,
+		decoderRuntime,
 		reuse: {
 			organizationId: "00000000-0000-4000-8000-000000000013",
 			scoringVersion: 13,
@@ -223,6 +259,7 @@ describe("owned native local scoring", () => {
 		expect(result.execution.reusedVerifiedResult).toBe(true);
 		expect(result.verifiedNativeScore).toEqual({
 			key: h.candidate.provenance.verifiedNativeScore.key,
+			decoderRuntimeSha256: h.decoderRuntime.probeSha256,
 			receiptSha256: h.candidate.provenance.verifiedNativeScore.receiptSha256,
 		});
 		expect(parseVmafJson(result.log).frames).toEqual(h.frames);
@@ -235,6 +272,7 @@ describe("owned native local scoring", () => {
 		"organization",
 		"generation",
 		"driver",
+		"decoder-runtime",
 		"psnr",
 		"reference",
 		"distorted",
@@ -248,6 +286,10 @@ describe("owned native local scoring", () => {
 			scope.organizationId = "00000000-0000-4000-8000-000000000014";
 		if (change === "generation") scope.scoringVersion += 1;
 		if (change === "driver") h.device.driverVersion = "fixture-driver-2";
+		if (change === "decoder-runtime") {
+			h.decoderRuntime.probeSha256 = "9".repeat(64);
+			h.decoderRuntime.completionSha256 = h.decoderRuntime.probeSha256;
+		}
 		if (change === "psnr") h.options.psnr = false;
 		if (change === "reference" || change === "distorted") {
 			const bytes = "changed video";
@@ -298,6 +340,42 @@ describe("owned native local scoring", () => {
 		).toHaveLength(0);
 	});
 
+	it.each([
+		null,
+		"f".repeat(64),
+	])("scores without a reusable seal when the native completion attestation is %s", async (completionSha256) => {
+		const h = await setupReuse();
+		h.decoderRuntime.completionSha256 = completionSha256;
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: h.reuse,
+		});
+		expect(result.run.code).toBe(0);
+		expect(result.verifiedNativeScore).toBeUndefined();
+		expect(
+			h.run.mock.calls.some(([, args]) =>
+				args.includes("--attest-decoder-runtime"),
+			),
+		).toBe(true);
+	});
+
+	it("scores fresh on a legacy native executable without decoder-runtime preflight", async () => {
+		const h = await completedReuse();
+		h.decoderRuntime.probeSha256 = null;
+		const load = vi.fn(async () => h.candidate);
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: { ...h.reuse, load },
+		});
+		expect(load).not.toHaveBeenCalled();
+		expect(result.execution.reusedVerifiedResult).toBeUndefined();
+		expect(result.verifiedNativeScore).toBeUndefined();
+		const score = h.run.mock.calls.find(([, args]) =>
+			args.includes("--verify-cpu"),
+		);
+		expect(score?.[1]).not.toContain("--attest-decoder-runtime");
+	});
+
 	it("creates evidence for reuse only from a verified full native invocation", async () => {
 		const h = await setupReuse();
 		const result = await runLocalVmafScore(h.deps, h.options, {
@@ -307,6 +385,7 @@ describe("owned native local scoring", () => {
 		expect(result.verifiedNativeScore).toMatchObject({
 			key: expect.stringMatching(/^[a-f0-9]{64}$/),
 			receiptSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+			decoderRuntimeSha256: h.decoderRuntime.probeSha256,
 		});
 		expect(
 			h.run.mock.calls.filter(([, args]) => args.includes("--verify-cpu")),

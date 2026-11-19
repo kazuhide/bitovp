@@ -4728,7 +4728,11 @@ it("limits verified native results to the current organization's exact manual re
 					reusedVerifiedResult: true,
 				},
 				log: JSON.parse(vmafJson([95])),
-				verifiedNativeScore: { key, receiptSha256 },
+				verifiedNativeScore: {
+					key,
+					receiptSha256,
+					decoderRuntimeSha256: "8".repeat(64),
+				},
 			};
 		});
 	try {

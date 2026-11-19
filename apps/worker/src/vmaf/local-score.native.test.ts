@@ -319,6 +319,31 @@ describe("owned native local scoring", () => {
 		).toHaveLength(1);
 	});
 
+	it.each([
+		null,
+		"9".repeat(64),
+	])("scores fresh if the runtime changes to %s while reading a valid predecessor", async (runtime) => {
+		const h = await completedReuse();
+		const load = vi.fn(async () => {
+			h.decoderRuntime.probeSha256 = runtime;
+			h.decoderRuntime.completionSha256 = runtime;
+			return h.candidate;
+		});
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: { ...h.reuse, load },
+		});
+		expect(load).toHaveBeenCalledOnce();
+		expect(
+			h.run.mock.calls.filter(([, args]) => args[0] === "--decoder-runtime"),
+		).toHaveLength(2);
+		expect(
+			h.run.mock.calls.filter(([, args]) => args.includes("--verify-cpu")),
+		).toHaveLength(1);
+		expect(result.execution.reusedVerifiedResult).toBeUndefined();
+		expect(result.verifiedNativeScore).toBeUndefined();
+	});
+
 	it("does not continue after cancellation during predecessor read", async () => {
 		const h = await completedReuse();
 		const controller = new AbortController();

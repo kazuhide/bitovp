@@ -1,2 +1,7 @@
 // SPDX-License-Identifier: MIT
-int bitovp_runtime_fixture(void) { return 0; }
+// The probe resolves this symbol without invoking it.
+int avcodec_receive_frame(void *context, void *frame) {
+    (void)context;
+    (void)frame;
+    return -1;
+}

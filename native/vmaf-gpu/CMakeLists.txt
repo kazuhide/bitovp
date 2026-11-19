@@ -178,6 +178,10 @@ if(BITOVP_TESTS)
     target_link_libraries(decoder_runtime_test PRIVATE bitovp_decode)
     target_compile_options(decoder_runtime_test PRIVATE -Wall -Wextra -Werror)
     add_test(NAME native_decoder_runtime_identity COMMAND decoder_runtime_test "$<TARGET_FILE:decoder_runtime_fixture>")
+    add_test(NAME native_decoder_runtime_preload_order COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/decoder_runtime_preload_test.py"
+      "$<TARGET_FILE:decoder_runtime_test>" "$<TARGET_FILE:decoder_runtime_fixture>")
+    set_tests_properties(native_decoder_runtime_preload_order PROPERTIES SKIP_RETURN_CODE 77)
     add_test(NAME native_supervisor_lifecycle COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/supervisor_lifecycle_test.py"
       --guardian "$<TARGET_FILE:bitovp-vmaf-supervisor>")

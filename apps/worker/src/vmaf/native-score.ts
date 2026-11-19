@@ -22,6 +22,7 @@ import {
 } from "./native-contract";
 import {
 	type NativeScoreReuseContext,
+	probeNativeDecoderRuntime,
 	readVerifiedNativeScore,
 	verifiedNativeScoreIdentity,
 } from "./native-score-reuse";
@@ -304,7 +305,7 @@ export async function runNativeVmafScore(
 	};
 	// Calibration times a prefix. It cannot produce or consume a complete score.
 	const reuse = frameLimit === undefined ? context.verifiedReuse : undefined;
-	const reuseIdentity = reuse
+	let reuseIdentity = reuse
 		? await verifiedNativeScoreIdentity(
 				{ runner: deps.runner, nativePath: deps.nativePath },
 				reuse,
@@ -327,13 +328,23 @@ export async function runNativeVmafScore(
 				signal,
 			);
 			if (prior) {
-				await writeFile(options.logPath, JSON.stringify(prior.log));
-				signal?.throwIfAborted();
-				return {
-					run: { code: 0, stdout: "", stderr: "" },
-					resourceSnapshot: undefined,
-					...prior,
-				};
+				// A library can change while reading a valid predecessor.
+				const currentRuntime = await probeNativeDecoderRuntime(
+					{ runner: deps.runner, nativePath: deps.nativePath },
+					sourceSha256,
+					signal,
+				);
+				if (currentRuntime === reuseIdentity.decoderRuntimeSha256) {
+					await writeFile(options.logPath, JSON.stringify(prior.log));
+					signal?.throwIfAborted();
+					return {
+						run: { code: 0, stdout: "", stderr: "" },
+						resourceSnapshot: undefined,
+						...prior,
+					};
+				}
+				// Score fresh without issuing a certificate for the stale observation.
+				reuseIdentity = undefined;
 			}
 		}
 		const args = [

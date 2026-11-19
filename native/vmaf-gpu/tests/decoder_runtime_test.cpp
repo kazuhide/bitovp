@@ -38,6 +38,10 @@ int main(int argc, char **argv) {
 #if defined(__GLIBC__)
         const auto startup = capture_decoder_runtime();
         require(startup && decoder_runtime_unchanged(*startup), "Expected stable mapped FFmpeg identity");
+        if (std::string(argv[1]) == "--print-fingerprint") {
+            std::cout << startup->sha256 << '\n';
+            return 0;
+        }
         char scratch_name[] = "/tmp/bitovp-decoder-runtime-XXXXXX";
         const auto *created = mkdtemp(scratch_name);
         require(created, "Cannot create scratch directory");
@@ -65,6 +69,7 @@ int main(int argc, char **argv) {
         require(runtime_loader_generation() != std::optional<LoaderGeneration>{loaded->generation},
                 "An unload must invalidate a decode checkpoint");
 #else
+        if (std::string(argv[1]) == "--print-fingerprint") return 77;
         require(!capture_decoder_runtime(), "Unsupported loader must leave runtime identity unavailable");
 #endif
         return 0;

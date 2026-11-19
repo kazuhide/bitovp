@@ -128,34 +128,39 @@ std::optional<std::string> library_identity(const DecoderRuntime::SharedObject &
     return identity.str();
 }
 
-bool contains_decoder_symbols(const std::vector<DecoderRuntime::SharedObject> &libraries) {
-    // Resolve real shared symbols used by the demuxer, decoder and scaler.
-    // The complete initial mapped set also covers their linked dependencies
-    // (for example, external AV1 decoder implementations).
+std::optional<std::string> decoder_symbol_providers(
+    const std::vector<DecoderRuntime::SharedObject> &libraries) {
+    std::ostringstream providers;
+    providers.imbue(std::locale::classic());
     for (const auto *symbol : {"avformat_open_input", "avcodec_receive_frame", "av_pix_fmt_desc_get", "sws_scale"}) {
         const auto address = dlsym(RTLD_DEFAULT, symbol);
         Dl_info info{};
-        if (!address || !dladdr(address, &info) || !info.dli_fname ||
-            std::none_of(libraries.begin(), libraries.end(), [&](const auto &library) {
-                return library.path == info.dli_fname;
-            }))
-            return false;
+        if (!address || !dladdr(address, &info) || !info.dli_fname) return std::nullopt;
+        const auto provider = std::find_if(libraries.begin(), libraries.end(), [&](const auto &library) {
+            if (library.path != info.dli_fname) return false;
+            Dl_info mapped{};
+            return dladdr(reinterpret_cast<const void *>(library.executable_address), &mapped) &&
+                   mapped.dli_fbase == info.dli_fbase;
+        });
+        if (provider == libraries.end()) return std::nullopt;
+        providers << symbol << ':' << (provider - libraries.begin()) << '\n';
     }
-    return true;
+    return providers.str();
 }
 
 std::optional<std::string> fingerprint(const std::vector<DecoderRuntime::SharedObject> &libraries) {
-    if (!contains_decoder_symbols(libraries)) return std::nullopt;
+    const auto providers = decoder_symbol_providers(libraries);
+    if (!providers) return std::nullopt;
     const auto mappings = executable_mappings();
-    std::vector<std::string> identities;
+    // Preserve loader order. Identical mapped bytes can resolve different
+    // definitions when multiple libraries export the same symbol.
+    std::string bytes = "bitovp-decoder-runtime-v2\n";
     for (const auto &library : libraries) {
         const auto identity = library_identity(library, mappings);
         if (!identity) return std::nullopt;
-        identities.push_back(*identity);
+        bytes += *identity + '\n';
     }
-    std::sort(identities.begin(), identities.end());
-    std::string bytes = "bitovp-decoder-runtime-v1\n";
-    for (const auto &identity : identities) bytes += identity + '\n';
+    bytes += *providers;
     Sha256 hasher;
     hasher.update(reinterpret_cast<const std::uint8_t *>(bytes.data()), bytes.size());
     return hasher.finish();

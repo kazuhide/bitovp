@@ -62,6 +62,32 @@ const storedFrames = z.array(
 
 const MAX_REUSABLE_FRAME_JSON_BYTES = 16 * 1024 * 1024;
 
+export async function probeNativeDecoderRuntime(
+	deps: { runner: ProcessRunner; nativePath: string },
+	sourceSha256: string,
+	signal?: AbortSignal,
+) {
+	try {
+		const runtime = await deps.runner.run(
+			deps.nativePath,
+			["--decoder-runtime"],
+			{
+				signal,
+				abortKillAfterMs: 250,
+			},
+		);
+		signal?.throwIfAborted();
+		if (runtime.code !== 0) return undefined;
+		const parsedRuntime = decodedRuntimeProof.parse(JSON.parse(runtime.stdout));
+		return parsedRuntime.sourceSha256 === sourceSha256
+			? parsedRuntime.sha256
+			: undefined;
+	} catch {
+		signal?.throwIfAborted();
+		return undefined;
+	}
+}
+
 export async function verifiedNativeScoreIdentity(
 	deps: { runner: ProcessRunner; nativePath: string },
 	scope: NativeScoreReuseContext,
@@ -96,15 +122,12 @@ export async function verifiedNativeScoreIdentity(
 			info.device.uuid !== identity.deviceUuid
 		)
 			return undefined;
-		const runtime = await deps.runner.run(executable, ["--decoder-runtime"], {
+		const decoderRuntimeSha256 = await probeNativeDecoderRuntime(
+			{ runner: deps.runner, nativePath: executable },
+			expected.sourceSha256,
 			signal,
-			abortKillAfterMs: 250,
-		});
-		signal?.throwIfAborted();
-		if (runtime.code !== 0) return undefined;
-		const parsedRuntime = decodedRuntimeProof.parse(JSON.parse(runtime.stdout));
-		if (parsedRuntime.sourceSha256 !== expected.sourceSha256) return undefined;
-		const decoderRuntimeSha256 = parsedRuntime.sha256;
+		);
+		if (!decoderRuntimeSha256) return undefined;
 		const { width, height, bitdepth } = expected.distortedOriginal;
 		// Both inputs are already materialized and hashed. The native route
 		// rejects extra transforms and always decodes on the CPU here.

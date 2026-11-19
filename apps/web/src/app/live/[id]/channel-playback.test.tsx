@@ -517,10 +517,14 @@ describe("ChannelDetail — live playback preview", () => {
 	});
 
 	it.each([
-		["OPERATOR", false],
-		["OPERATOR", true],
-		["VIEWER", false],
-	] as const)("honors a pending MoQ link for %s with changed hash=%s", async (role, changedHash) => {
+		["OPERATOR", "wait"],
+		["OPERATOR", "different fragment"],
+		["OPERATOR", "focus elsewhere"],
+		["OPERATOR", "focus then blur"],
+		["OPERATOR", "focus before the channel loads"],
+		["OPERATOR", "return to playback fragment"],
+		["VIEWER", "wait"],
+	] as const)("honors a pending MoQ link for %s when they %s", async (role, interaction) => {
 		const row = channelRow({
 			currentRun: { ...confirmedRun("RUNNING"), stepLog: [MOQ_STEP] },
 		});
@@ -536,16 +540,61 @@ describe("ChannelDetail — live playback preview", () => {
 		const url = window.location.href;
 		window.history.replaceState(null, "", "#sec-manifests");
 		try {
-			const { client } = wrap(<ChannelDetail id={CHANNEL} />);
+			const focusBeforeLoad = interaction === "focus before the channel loads";
+			const { client } = wrap(
+				<>
+					{focusBeforeLoad ? (
+						<button type="button">Sidebar control</button>
+					) : null}
+					<ChannelDetail id={CHANNEL} />
+				</>,
+			);
+			let preservedFocus: HTMLElement | null = null;
+			if (focusBeforeLoad) {
+				expect(
+					screen.queryByRole("heading", { name: "Verification channel" }),
+				).toBeNull();
+				preservedFocus = screen.getByRole("button", {
+					name: "Sidebar control",
+				});
+				preservedFocus.focus();
+			}
 			await screen.findByRole("heading", { name: "Verification channel" });
 			expect(document.getElementById("sec-manifests")).toBeNull();
-			expect(document.activeElement).toBe(document.body);
-			if (changedHash) {
+			expect(document.activeElement).toBe(preservedFocus ?? document.body);
+
+			const visit = (fragment: string) =>
 				act(() => {
-					window.history.replaceState(null, "", "#sec-runs");
+					window.history.replaceState(null, "", fragment);
 					window.dispatchEvent(new HashChangeEvent("hashchange"));
 				});
-				expect(document.getElementById("sec-runs-h")).toHaveFocus();
+			if (
+				interaction === "different fragment" ||
+				interaction === "return to playback fragment"
+			) {
+				visit("#sec-runs");
+				const runs = document.getElementById("sec-runs-h");
+				expect(runs).toHaveFocus();
+				if (interaction === "return to playback fragment") {
+					visit("#sec-manifests");
+				} else {
+					preservedFocus = runs;
+				}
+			}
+			if (
+				interaction === "focus elsewhere" ||
+				interaction === "focus then blur"
+			) {
+				await userEvent.tab();
+				const link = screen.getByRole("link", { name: "Live Channels" });
+				expect(link).toHaveFocus();
+				if (interaction === "focus then blur") {
+					link.blur();
+					expect(document.activeElement).toBe(document.body);
+					preservedFocus = document.body;
+				} else {
+					preservedFocus = link;
+				}
 			}
 
 			await act(async () => authReady.resolve());
@@ -557,9 +606,7 @@ describe("ChannelDetail — live playback preview", () => {
 			if (role === "OPERATOR") {
 				await screen.findByRole("region", { name: "MoQ playback" });
 				expect(
-					document.getElementById(
-						changedHash ? "sec-runs-h" : "sec-manifests-h",
-					),
+					preservedFocus ?? document.getElementById("sec-manifests-h"),
 				).toHaveFocus();
 				const operatorControl = screen.getByRole("button", {
 					name: "Copy settings and edit",

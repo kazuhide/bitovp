@@ -44,17 +44,30 @@ export function DeepLinkFocus({
 }) {
 	const pendingPlaybackFocus = useRef(false);
 	useEffect(() => {
-		const focusFromHash = () => {
+		const focusFromHash = (allowDeferredPlayback: boolean) => {
 			const hash = window.location.hash.slice(1);
 			pendingPlaybackFocus.current =
-				hash === "sec-manifests" && !document.getElementById(hash);
+				allowDeferredPlayback &&
+				hash === "sec-manifests" &&
+				!document.getElementById(hash);
 			if (hash.length > 0) {
 				focusLiveSection(hash);
 			}
 		};
-		focusFromHash();
-		window.addEventListener("hashchange", focusFromHash);
-		return () => window.removeEventListener("hashchange", focusFromHash);
+		const handleHashChange = () => focusFromHash(true);
+		const cancelPendingPlaybackFocus = () => {
+			pendingPlaybackFocus.current = false;
+		};
+		const focused = document.activeElement;
+		focusFromHash(
+			focused === document.body || focused === document.documentElement,
+		);
+		window.addEventListener("hashchange", handleHashChange);
+		document.addEventListener("focusin", cancelPendingPlaybackFocus);
+		return () => {
+			window.removeEventListener("hashchange", handleHashChange);
+			document.removeEventListener("focusin", cancelPendingPlaybackFocus);
+		};
 	}, []);
 	useEffect(() => {
 		if (

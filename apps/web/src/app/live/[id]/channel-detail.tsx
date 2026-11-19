@@ -755,7 +755,7 @@ function ChannelConsole({
 							key={`${coordinate.labelKey}-${index}`}
 							className="flex items-center gap-3 rounded-md border border-zinc-800 px-3 py-2"
 						>
-							<span className="w-56 shrink-0 text-xs text-zinc-500">
+							<span className="w-24 shrink-0 break-words text-xs text-zinc-500 sm:w-56">
 								{label}
 							</span>
 							<span

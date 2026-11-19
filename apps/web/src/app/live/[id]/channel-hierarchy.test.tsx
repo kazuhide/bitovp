@@ -1,6 +1,6 @@
 import type { ManifestPlaybackLink } from "@bitovp/core";
 import { liveChannelPlanSchema } from "@bitovp/core";
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -378,8 +378,7 @@ describe("live channel detail — the §5.7 hierarchy (rows #248/#249)", () => {
 		it(`${phase.name}: renders the layers in order`, async () => {
 			mockChannel(phase.row as Over);
 			const view = wrap(<ChannelDetail id={CHANNEL} />);
-			await screen.findByRole("region", { name: /next action/i });
-			expect(renderedOrder()).toEqual(phase.order);
+			await waitFor(() => expect(renderedOrder()).toEqual(phase.order));
 			const panels = document.querySelectorAll("#sec-delivery-status");
 			expect(panels).toHaveLength(phase.row.status === "CREATED" ? 0 : 1);
 			if (panels[0]) {
@@ -399,11 +398,12 @@ describe("live channel detail — the §5.7 hierarchy (rows #248/#249)", () => {
 		it(`${phase.name}: opens exactly the sections the phase is about`, async () => {
 			mockChannel(phase.row as Over);
 			const view = wrap(<ChannelDetail id={CHANNEL} />);
-			await screen.findByRole("region", { name: /next action/i });
 			// Set equality in BOTH directions: an extra open section is as much
 			// a defect as a missing one — "collapse nothing" is the layout this
 			// replaced, and "collapse everything" is the one before that.
-			expect([...openSections()].sort()).toEqual([...phase.open].sort());
+			await waitFor(() =>
+				expect([...openSections()].sort()).toEqual([...phase.open].sort()),
+			);
 			view.unmount();
 		});
 	}
@@ -603,8 +603,12 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 			}
 			return { items: [] };
 		});
-		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		const { client } = wrap(<ChannelDetail id={CHANNEL} />);
+		await waitFor(() =>
+			expect(client.getQueryState(["live-schedules", CHANNEL])?.status).toBe(
+				"error",
+			),
+		);
 		const cell = document.querySelector('[data-status-cell="next-event"]');
 		expect(cell).toBeNull();
 	});
@@ -614,7 +618,7 @@ describe("read, configure and destroy no longer share a row (row #249)", () => {
 	it("Delete lives in the Danger zone, and NOT beside Stop in the header", async () => {
 		mockChannel({ status: "STOPPED", currentRun: run({ status: "STOPPED" }) });
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("button", { name: "Start a new run" });
 
 		const danger = document.getElementById("sec-danger") as HTMLDetailsElement;
 		expect(danger).not.toBeNull();
@@ -644,7 +648,7 @@ describe("read, configure and destroy no longer share a row (row #249)", () => {
 	it("copy settings is in the header while Save as template remains in Advanced", async () => {
 		mockChannel({ status: "STOPPED", currentRun: run({ status: "STOPPED" }) });
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("button", { name: "Copy settings and edit" });
 		const advanced = document.getElementById(
 			"sec-advanced",
 		) as HTMLDetailsElement;

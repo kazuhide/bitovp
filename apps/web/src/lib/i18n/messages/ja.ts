@@ -2816,6 +2816,9 @@ export const ja = {
 		bulkDeleteFailed: "一括削除に失敗しました",
 		loadMore: "さらに読み込む",
 		backToLab: "VMAF ラボに戻る",
+		sourceEncodingJob: "元のVODジョブを開く",
+		runDetails: "実行の詳細",
+		measurementConditions: "比較条件",
 		//  (UX-02e locale leaks): the list's pending cell, the compare
 		// screen's deleted-report line and the delete button's resource name.
 		pendingScore: "処理待ち",

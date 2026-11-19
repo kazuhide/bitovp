@@ -12,6 +12,7 @@ import { useT } from "@/lib/i18n/context";
 import { PlaybackSurface } from "./playback-surface";
 
 type PlayerPreviewProps = {
+	className?: string;
 	/**
 	 *  (owner): a RUNNING live channel's preview must not start until
 	 * its output is confirmed — a player mounted on a manifest without
@@ -86,6 +87,7 @@ export function playableLinks(args: {
  * while the enlarged dialog is open, so the two never buffer in parallel.
  */
 export function PlayerPreview({
+	className = "mt-6",
 	jobId,
 	scope = "vod",
 	links,
@@ -135,7 +137,7 @@ export function PlayerPreview({
 	}
 
 	return (
-		<section aria-labelledby="playback-preview-heading" className="mt-6">
+		<section aria-labelledby="playback-preview-heading" className={className}>
 			<div className="flex flex-wrap items-center gap-3">
 				<h2
 					id="playback-preview-heading"

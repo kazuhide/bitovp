@@ -383,16 +383,13 @@ export function DeliveryStatusPanel({
 			>
 				{t(`live.health.diagnosis.${diagnosis.notice}`)}
 			</p>
-			<p className="text-xs text-zinc-400">
-				{t("live.health.source", {
-					source:
-						telemetry.source === "none"
-							? "—"
-							: telemetry.source === "push"
-								? "Push"
-								: "Poll",
-				})}
-			</p>
+			{telemetry.source !== "none" ? (
+				<p className="text-xs text-zinc-400">
+					{t("live.health.source", {
+						source: telemetry.source === "push" ? "Push" : "Poll",
+					})}
+				</p>
+			) : null}
 			{quality.length > 0 ? (
 				<details className="text-sm text-amber-300">
 					<summary className="cursor-pointer">
@@ -416,12 +413,6 @@ export function DeliveryStatusPanel({
 					</HelpOverlay>
 				</p>
 			) : null}
-			<HeartbeatReceptionPanel
-				reception={heartbeatReception}
-				runId={run?.id ?? null}
-				nowMs={nowMs}
-				mode={mode}
-			/>
 			<div
 				className={`grid gap-3 ${manifestDelivery ? "lg:grid-cols-3" : "md:grid-cols-2"}`}
 			>
@@ -490,6 +481,12 @@ export function DeliveryStatusPanel({
 					</LaneCard>
 				))}
 			</div>
+			<HeartbeatReceptionPanel
+				reception={heartbeatReception}
+				runId={run?.id ?? null}
+				nowMs={nowMs}
+				mode={mode}
+			/>
 			{run ? (
 				<StreamHealth
 					channelId={channelId}

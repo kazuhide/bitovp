@@ -15,6 +15,7 @@ import { DeleteResourceButton } from "@/components/delete-resource-button";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
+import { HelpOverlay } from "@/components/ui/help-overlay";
 import { InfoHint } from "@/components/ui/info-hint";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api";
@@ -440,6 +441,11 @@ export function ChannelLifecycleActions({
 					</Button>
 				) : null}
 				{children}
+				{canStart && isNewRun ? (
+					<HelpOverlay labelFor={t("live.startNewRun")}>
+						{t("nextAction.startNewRunBody")}
+					</HelpOverlay>
+				) : null}
 			</div>
 			{checkMoq &&
 			!moqReadiness.checking &&

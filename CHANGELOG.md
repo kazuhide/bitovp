@@ -12,11 +12,15 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Give MoQ playback and observation charts more room, explain how the browser measures each value, and show manifest details only for manifest delivery.
 - Use specific Japanese messages for missing records, failed reads and pending results across the app.
 - Display MoQ playback and its recorded observations alongside separate player and encoder graphs.
+- Open Live playback and history from the channel header, with input and encoder observations ahead of optional notification details.
+- Give VOD previews more room, keep report links near the job summary, and support keyboard navigation between job tabs.
+- Bring the selected metric and its comparison conditions forward on VMAF Lab reports.
 
 ### Fixed
 
 - Copy live channels with MoQ or other JSON-only settings into an editable plan that preserves their configuration.
 - Keep Live input coordinates and their copy buttons within the page on narrow screens.
+- Restore focus after closing the enlarged VOD player and keep job details full width when playback is unavailable.
 
 ## [1.3.2] - 2026-11-19
 

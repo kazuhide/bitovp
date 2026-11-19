@@ -327,7 +327,6 @@ describe("the contextual lead follows the airing's life (ledger #126)", () => {
 			},
 		});
 		const view = wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
 		await waitFor(() => {
 			expect(
 				apiFetch.mock.calls.some(
@@ -409,7 +408,7 @@ describe("the contextual lead follows the airing's life (ledger #126)", () => {
 			currentRun: { seq: 3, status: "STOPPED", lastHeartbeat: null },
 		});
 		const view = wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Last broadcast" });
 		const lead = document.getElementById("sec-last-run");
 		expect(lead).not.toBeNull();
 		expect(lead?.textContent).toMatch(/#3/);
@@ -477,6 +476,20 @@ describe("ChannelDetail — live playback preview", () => {
 		mockRole("OPERATOR");
 		wrap(<ChannelDetail id={CHANNEL} />);
 		await screen.findByRole("region", { name: "MoQ playback" });
+		const header = screen.getByRole("heading", { level: 1 }).closest("header");
+		const history = within(header as HTMLElement).getByRole("link", {
+			name: "Saved MoQ observations",
+		});
+		expect(history).toHaveAttribute("href", "#sec-manifests");
+		const playback = document.getElementById("sec-manifests");
+		expect(playback).toHaveAttribute("open");
+		const disclosure = playback?.querySelector("summary");
+		expect(disclosure).not.toBeNull();
+		await userEvent.click(disclosure as HTMLElement);
+		expect(playback).not.toHaveAttribute("open");
+		await userEvent.click(history);
+		expect(playback).toHaveAttribute("open");
+		expect(document.getElementById("sec-manifests-h")).toHaveFocus();
 		expect(document.getElementById("sec-live-to-vod")).toBeNull();
 		expect(document.querySelector('a[href="#sec-live-to-vod"]')).toBeNull();
 	});
@@ -667,15 +680,22 @@ describe("ChannelDetail — live playback preview", () => {
 			}
 			return { items: [] };
 		});
-		wrap(<ChannelDetail id={CHANNEL} />);
-		const panel = await screen.findByRole("region", { name: /next action/i });
-		await waitFor(() => {
-			expect(panel.getAttribute("data-next-action")).not.toBe("SCHEDULED_ONLY");
+		mockRole("OPERATOR");
+		const { client } = wrap(<ChannelDetail id={CHANNEL} />);
+		expect(
+			await screen.findByRole("button", { name: "Start a new run" }),
+		).toBeVisible();
+		await waitFor(() =>
+			expect(client.getQueryData(["live-schedules", CHANNEL])).toEqual([
+				expect.objectContaining({ action: "STOP", status: "ARMED" }),
+			]),
+		);
+		expect(screen.queryByRole("region", { name: /next action/i })).toBeNull();
+		const help = screen.getByRole("button", {
+			name: "Start a new run — more information",
 		});
-		// #108 PR3: the honest verb for a STOPPED channel with only an armed
-		// STOP is START_NEW_RUN — still NOT "the schedule will act" (the C1
-		// property this test protects), and no longer a shrug either.
-		expect(panel.getAttribute("data-next-action")).toBe("START_NEW_RUN");
+		await userEvent.click(help);
+		expect(screen.getByRole("note")).toHaveTextContent(/fresh encoder/i);
 	});
 
 	it("an armed SLATE_IN or FEEDER_START is not a start either — they need a RUNNING channel (review-234 I1)", async () => {
@@ -722,16 +742,18 @@ describe("ChannelDetail — live playback preview", () => {
 				}
 				return { items: [] };
 			});
+			mockRole("OPERATOR");
 			const view = wrap(<ChannelDetail id={CHANNEL} />);
-			const panel = await screen.findByRole("region", {
-				name: /next action/i,
-			});
-			await waitFor(() => {
-				expect(
-					panel.getAttribute("data-next-action"),
-					`${action} must not promise automation on a stopped channel`,
-				).not.toBe("SCHEDULED_ONLY");
-			});
+			await screen.findByRole("button", { name: "Start a new run" });
+			await waitFor(() =>
+				expect(view.client.getQueryData(["live-schedules", CHANNEL])).toEqual([
+					expect.objectContaining({ action, status: "ARMED" }),
+				]),
+			);
+			expect(
+				screen.queryByRole("region", { name: /next action/i }),
+				`${action} must not promise automation on a stopped channel`,
+			).toBeNull();
 			view.unmount();
 		}
 	});

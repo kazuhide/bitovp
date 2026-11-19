@@ -418,6 +418,9 @@ describe("ChannelDetail — a lost provider observation is never on air (row #28
 		const badge = statusBadge("RUNNING · Bitmovin status unconfirmed");
 		expect(badge?.className).toContain("amber");
 		expect(badge?.className).not.toContain("emerald");
+		expect(
+			screen.getAllByText("RUNNING · Bitmovin status unconfirmed"),
+		).toHaveLength(1);
 		expect(strip()?.getAttribute("data-provider")).toBe("unknown");
 		const active = strip()?.querySelector('[data-state="active"] span + span');
 		expect(active?.className).toContain("amber");

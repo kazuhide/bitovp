@@ -1,7 +1,6 @@
 "use client";
 
 import type { BandingPooled } from "@bitovp/core";
-import Link from "next/link";
 import { type ReactNode, useState } from "react";
 import {
 	CartesianGrid,
@@ -16,20 +15,18 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { InfoHint } from "@/components/ui/info-hint";
-import { formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
 import type { PublicBandingAssessment } from "@/lib/server/banding-public";
 import {
 	type BandingJobDetail,
 	type BandingResultData,
+	isActiveVmafStatus,
 	type RenditionRef,
 	renditionLabel,
-	shortJobId,
-	VMAF_STATUS_TONE,
 } from "../vmaf-shared";
 import { BandingFrameComparison } from "./banding-frame-comparison";
 import { BandingIntervalPlayer } from "./banding-interval-player";
-import { ExportButtons } from "./export-buttons";
+import { QcReportHeader, QcReportRunDetails } from "./report-header";
 
 type Result = BandingResultData & {
 	id: string;
@@ -109,7 +106,7 @@ function BandingResultPanels({
 	return (
 		<div
 			className={
-				compact
+				compact && results.length > 1
 					? "grid min-w-0 grid-cols-1 items-start gap-3 xl:grid-cols-2"
 					: "space-y-6"
 			}
@@ -262,7 +259,8 @@ function BandingResultPanels({
 												dataKey="timestampSeconds"
 												name={t("banding.time")}
 												domain={["dataMin", "dataMax"]}
-												tick={{ fill: "var(--color-zinc-400)" }}
+												tickFormatter={fixed}
+												tick={{ fill: "var(--color-zinc-400)", fontSize: 11 }}
 												label={{
 													value: t("banding.time"),
 													position: "bottom",
@@ -441,56 +439,27 @@ export function BandingReport({
 }) {
 	const { t } = useT();
 	return (
-		<section>
+		<section className="min-w-0">
 			{loadError}
-			<p className="text-xs text-zinc-500 uppercase tracking-wide">
-				{t("banding.report")}
-			</p>
-			<header className="mt-1 flex flex-wrap items-center gap-3">
-				<h1 className="font-semibold text-xl text-zinc-50">
-					{job.encodingName ?? shortJobId(job.id)}
-				</h1>
-				<Badge tone={VMAF_STATUS_TONE[job.status]}>{job.status}</Badge>
-				<span className="font-mono text-xs text-zinc-400">
-					CAMBI · no-reference
-				</span>
-				<div className="ml-auto">{actions}</div>
-			</header>
-			<p className="mt-2 text-xs text-zinc-500">
-				{formatDateTime(job.createdAt)}
-			</p>
-			{job.encodingJobId ? (
-				<Link
-					href={`/vod/jobs/${job.encodingJobId}`}
-					className="mt-2 inline-block text-xs text-emerald-400 underline"
-				>
-					{t("uiX.fromEncodingJob")} · {shortJobId(job.encodingJobId)}
-				</Link>
-			) : null}
+			<QcReportHeader job={job} actions={actions} />
 			{job.error ? (
-				<p role="alert" className="mt-4 text-sm text-red-400">
+				<p role="alert" className="mt-4 break-words text-sm text-red-400">
 					{job.error}
 				</p>
 			) : null}
-			{job.status === "PENDING" || job.status === "RUNNING" ? (
+			{isActiveVmafStatus(job.status) ? (
 				<p role="status" className="mt-6 text-sm text-zinc-400">
 					{t("banding.running", { done: job.doneUnits, total: job.totalUnits })}
 				</p>
 			) : null}
 			{job.results.length ? (
-				<>
-					<div className="mt-6 flex justify-end">
-						<ExportButtons jobId={job.id} />
-					</div>
-					<BandingPanels results={job.results} />
-				</>
+				<BandingPanels results={job.results} />
+			) : job.status === "FINISHED" ? (
+				<p className="mt-6 text-sm text-zinc-500">
+					{t("ui.thisReportFinishedWithNoRenditionResults")}
+				</p>
 			) : null}
-			<Link
-				href="/qc"
-				className="mt-6 inline-block text-sm text-emerald-400 underline"
-			>
-				{t("qc.backToLab")}
-			</Link>
+			<QcReportRunDetails job={job} />
 		</section>
 	);
 }

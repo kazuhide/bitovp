@@ -68,9 +68,12 @@ function ownBrowser(launch, profile) {
 			try {
 				const browser = await launch.catch(() => null);
 				if (browser) await browser.close();
-				if (profile) await rm(profile, { recursive: true, force: true });
 			} finally {
-				browsers.delete(close);
+				try {
+					if (profile) await rm(profile, { recursive: true, force: true });
+				} finally {
+					browsers.delete(close);
+				}
 			}
 		})());
 	browsers.add(close);

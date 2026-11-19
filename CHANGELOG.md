@@ -6,6 +6,10 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Fixed
+
+- Copy live channels with MoQ or other JSON-only settings into an editable plan that preserves their configuration.
+
 ## [1.3.2] - 2026-11-19
 
 For existing installations, back up the database, apply the additive Prisma migrations, and update Web and Worker together. See the [database upgrade guide](./docs/DATABASE-UPGRADES.md).

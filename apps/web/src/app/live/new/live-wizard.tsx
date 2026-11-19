@@ -65,6 +65,7 @@ import { InputSection } from "./input-section";
 import { LiveLadderSection } from "./ladder-section";
 import {
 	type ImportedLivePlan,
+	importLivePlanDocument,
 	parseImportedLivePlan,
 } from "./live-plan-import";
 import {
@@ -237,39 +238,33 @@ export function LiveWizard({
 			setDuplicateError(t("aisaLive.previewUnavailable"));
 			return;
 		}
-		/**
-		 * GATED, not just parsed .
-		 *
-		 * This used to be `setState(planToLiveWizardState(parsed.data))` on a
-		 * successful parse. Parsing only proves the plan is well-formed; it says
-		 * nothing about whether the FORM can carry it back. Anything the
-		 * readback could not represent was dropped here in silence, and the
-		 * operator duplicated a channel that differed from the one they clicked
-		 * — measured three ways, each validating with zero errors. The gate
-		 * rebuilds the plan from the reconstructed state and refuses unless it
-		 * comes back identical, so a channel the form cannot express fails
-		 * loudly instead of going on air changed.
-		 */
-		const imported = tryImportLiveChannelIntoWizard(duplicate.data.plan);
-		if (imported.ok) {
-			setState(imported.state);
-			draftBase.current = imported.state;
+		const name = duplicate.data.name ?? duplicateFrom;
+		const form = tryImportLiveChannelIntoWizard(duplicate.data.plan);
+		if (form.ok) {
+			setState(form.state);
+			draftBase.current = form.state;
 			setAppliedDraftContext(
 				`from:${duplicateFrom}:${draftFingerprint(duplicate.data.plan)}`,
 			);
 			setStep(0);
-			setDuplicatedFrom(duplicate.data.name ?? duplicateFrom);
-			// Keep the source URL so refreshing never silently becomes a blank
-			// new-channel form. appliedDuplicate freezes this editing session.
 		} else {
-			// Either an older/edited stored plan that no longer parses as a live
-			// plan, or one the form cannot rebuild exactly — the gate says which.
-			setDuplicateError(
-				t(imported.reasonKey, {
-					name: duplicate.data.name ?? duplicateFrom,
-				}),
-			);
+			// If the form cannot round-trip the plan, keep the original JSON.
+			const expert = importLivePlanDocument(duplicate.data.plan, t);
+			if (
+				!expert.ok ||
+				!expert.imported.evaluation.ok ||
+				expert.imported.evaluation.issues.some(
+					(issue) => issue.level === "error",
+				)
+			) {
+				setDuplicateError(t(form.reasonKey, { name }));
+				return;
+			}
+			setImported(expert.imported);
 		}
+		// Keep the source URL so refreshing repeats the copy. appliedDuplicate
+		// keeps refetches from overwriting the edits in this session.
+		setDuplicatedFrom(name);
 	}, [
 		// `t` formats the two duplicate-failure messages this effect can set; it is
 		// stable per locale, so listing it does not re-run the duplication.
@@ -580,7 +575,7 @@ export function LiveWizard({
 					<h1 className="font-semibold text-xl text-zinc-50">
 						{t("ui.newLiveChannel")}
 					</h1>
-					{!imported ? (
+					{!imported || showImport ? (
 						<Button
 							variant="secondary"
 							size="sm"
@@ -612,7 +607,7 @@ export function LiveWizard({
 					</p>
 				) : null}
 
-				{showImport && !imported ? (
+				{showImport ? (
 					<div className="mt-4 space-y-2">
 						<Field
 							label={t("ui.liveChannelPlanJson")}
@@ -667,13 +662,13 @@ export function LiveWizard({
 									draftBase.current = editable.state;
 									setScheduleDraft(EMPTY_SCHEDULE_DRAFT);
 									setStep(0);
-									setShowImport(false);
 									setImported(null);
 									setImportLoadedForEditing(true);
 								} else {
 									// Keep the original payload when form conversion would lose options.
 									setImported(result.imported);
 								}
+								setShowImport(false);
 							}}
 						>
 							{t("ui.loadPlan")}
@@ -681,7 +676,7 @@ export function LiveWizard({
 					</div>
 				) : null}
 
-				{imported ? (
+				{imported && !showImport ? (
 					<div className="mt-6 space-y-3">
 						<p className="text-sm text-zinc-400">
 							{t("wizardX.importCannotEditWithoutLoss")}
@@ -750,7 +745,7 @@ export function LiveWizard({
 								variant="secondary"
 								onClick={() => {
 									setImportText(JSON.stringify(imported.raw, null, 2));
-									setImported(null);
+									setImportError(null);
 									setShowImport(true);
 								}}
 							>

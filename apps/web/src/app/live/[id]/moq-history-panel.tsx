@@ -1,7 +1,6 @@
 "use client";
 
 import { focusManager, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
 	CartesianGrid,
@@ -13,6 +12,7 @@ import {
 	YAxis,
 } from "recharts";
 import { useDocumentOrganization } from "@/components/providers";
+import { InfoHint } from "@/components/ui/info-hint";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
 import { moqArchiveClientOrigin } from "@/lib/moq-player/client-playback-time";
@@ -20,7 +20,6 @@ import { moqObservationPath } from "@/lib/moq-player/history-client";
 import { moqHistorySeries } from "@/lib/moq-player/history-series";
 import { moqObservationHistorySchema } from "@/lib/moq-player/observations";
 import { bindPassiveRequestUrl } from "@/lib/passive-request";
-import { buildHeartbeatCorrelationUrl } from "./heartbeat-correlation";
 import { MoqAnalyticsHistory } from "./moq-analytics-history";
 import { MoqClientPlaybackClock } from "./moq-client-playback-clock";
 import { MoqPlaybackStages } from "./moq-playback-stages";
@@ -103,18 +102,20 @@ export function MoqHistoryPanel({
 	const selectedArchiveUnresolved = unresolvedSaves.some(
 		(save) => save.sessionId === session?.id,
 	);
-	const series = moqHistorySeries(
-		session?.samples ?? [],
-		session?.startedAt ?? "",
+	const samples = session?.samples ?? [];
+	const series = moqHistorySeries(samples, session?.startedAt ?? "");
+	const frameSources = new Set(
+		samples
+			.filter((sample) => sample.fps !== null)
+			.map((sample) => sample.renderingSource),
 	);
-	const canvasRates = Boolean(
-		session?.samples.length &&
-			session.samples.every((sample) => sample.renderingSource === "canvas"),
+	const bufferSources = new Set(
+		samples
+			.filter((sample) => sample.bufferSeconds !== null)
+			.map((sample) => sample.bufferSource),
 	);
-	const videoRates = Boolean(
-		session?.samples.length &&
-			session.samples.every((sample) => sample.renderingSource === "video"),
-	);
+	const canvasRates = frameSources.size === 1 && frameSources.has("canvas");
+	const videoRates = frameSources.size === 1 && frameSources.has("video");
 	let archiveUrl: string | null = null;
 	try {
 		if (session && organizationId)
@@ -126,35 +127,19 @@ export function MoqHistoryPanel({
 		/* Never emit a bare native URL without its document binding. */
 	}
 	const analyticsEncodingId = session?.analyticsVideoId?.split(":")[1];
-	const correlationTo = session
-		? (session.endedAt ??
-			new Date(
-				Date.parse(session.startedAt) +
-					Math.max(
-						0,
-						...session.samples.map((sample) => sample.elapsedMs),
-						...session.events.map((event) => event.elapsedMs),
-					),
-			).toISOString())
-		: undefined;
-	const correlationUrl =
-		session && correlationTo
-			? buildHeartbeatCorrelationUrl(
-					channelId,
-					runId,
-					session.startedAt,
-					correlationTo,
-				)
-			: null;
 	const chart = (
 		field: "latencyMs" | "fps" | "bufferSeconds",
 		label: string,
 		unit: string,
+		help?: string,
 	) =>
 		series.some((point) => point[field] !== null) ? (
-			<figure data-moq-chart={field} className="min-w-0">
-				<figcaption className="mb-1 text-xs text-zinc-400">
-					{label} ({unit} · UTC)
+			<figure data-moq-chart={field} className="min-w-0 flex-1 basis-80">
+				<figcaption className="mb-1 flex flex-wrap items-center gap-x-1.5 text-xs text-zinc-400">
+					<span>
+						{label} ({unit} · UTC)
+					</span>
+					{help ? <InfoHint labelFor={label} text={help} /> : null}
 				</figcaption>
 				<div className="h-28 w-full">
 					<ResponsiveContainer width="100%" height="100%">
@@ -212,30 +197,40 @@ export function MoqHistoryPanel({
 					: "moqPlayback.frameHistory",
 		),
 		videoRates ? "fps" : "/s",
+		videoRates
+			? undefined
+			: t(
+					canvasRates
+						? "moqPlayback.canvasMeasurement"
+						: "moqPlayback.frameHistoryMeasurement",
+				),
 	);
-	const buffer = chart("bufferSeconds", t("moqPlayback.bufferHistory"), "s");
+	const buffer = chart(
+		"bufferSeconds",
+		t(
+			bufferSources.size === 1 && bufferSources.has("player")
+				? "moqPlayback.bufferPlayer"
+				: bufferSources.size === 1 && bufferSources.has("video")
+					? "moqPlayback.bufferVideo"
+					: "moqPlayback.bufferHistory",
+		),
+		"s",
+		t("moqPlayback.bufferMeasurement"),
+	);
 	const latency = chart("latencyMs", t("moqPlayback.latency"), "ms");
+	const historyLabel = t("moqPlayback.savedHistory");
 	return (
 		<section
 			data-moq-history={runId}
-			className="space-y-2 border-t border-zinc-800 pt-3"
+			className="min-w-0 space-y-3 border-t border-zinc-800 pt-3"
 		>
-			<div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-				<h3 className="font-medium text-sm text-zinc-200">
-					{t("moqPlayback.savedHistory")}
-				</h3>
-				{correlationUrl ? (
-					<Link
-						data-moq-encoder-correlation
-						data-moq-correlate-run={runId}
-						data-moq-correlate-start={session?.startedAt}
-						data-moq-correlate-end={correlationTo}
-						href={correlationUrl}
-						title={runId}
-						className="text-xs text-zinc-400 underline underline-offset-2"
-					>
-						{t("moqPlayback.encoderCorrelation")}
-					</Link>
+			<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+				<h3 className="font-medium text-sm text-zinc-200">{historyLabel}</h3>
+				{session ? (
+					<InfoHint
+						labelFor={historyLabel}
+						text={`${t("moqPlayback.historyClock")} ${t("moqPlayback.recordedScope")}`}
+					/>
 				) : null}
 			</div>
 			{unresolvedSaves.map((save) => (
@@ -258,46 +253,47 @@ export function MoqHistoryPanel({
 				<p className="text-xs text-zinc-500">{t("moqPlayback.noHistory")}</p>
 			) : (
 				<>
-					{sessions.length > 1 ? (
-						<label className="flex max-w-sm flex-col gap-1 text-xs text-zinc-400">
-							{t("moqPlayback.observationSession")}
-							<select
-								value={session.id}
-								onChange={(event) => select(event.target.value)}
-								className="h-8 rounded border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200"
-							>
-								{sessions.map((value) => (
-									<option key={value.id} value={value.id}>
-										{value.startedAt}
-									</option>
-								))}
-							</select>
-						</label>
-					) : null}
-					<p className="text-xs text-zinc-500">
-						{session.startedAt.slice(0, 10)}{" "}
-						<time dateTime={session.startedAt}>
-							{clock(Date.parse(session.startedAt))}
-						</time>
-						{session.endedAt ? (
-							<>
-								{" "}
-								–{" "}
-								<time dateTime={session.endedAt}>
-									{clock(Date.parse(session.endedAt))}
+					<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+						<p className="text-xs text-zinc-400 tabular-nums">
+							{session.startedAt.slice(0, 10)}{" "}
+							<span className="whitespace-nowrap">
+								<time dateTime={session.startedAt}>
+									{clock(Date.parse(session.startedAt))}
 								</time>
-							</>
-						) : null}{" "}
-						UTC
-					</p>
+								{session.endedAt ? (
+									<>
+										{" – "}
+										<time dateTime={session.endedAt}>
+											{clock(Date.parse(session.endedAt))}
+										</time>
+									</>
+								) : null}{" "}
+								UTC
+							</span>
+						</p>
+						{sessions.length > 1 ? (
+							<label className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-400">
+								{t("moqPlayback.observationSession")}
+								<select
+									value={session.id}
+									onChange={(event) => select(event.target.value)}
+									className="h-8 max-w-full truncate rounded border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 tabular-nums"
+								>
+									{sessions.map((value) => (
+										<option key={value.id} value={value.id}>
+											{value.startedAt}
+										</option>
+									))}
+								</select>
+							</label>
+						) : null}
+					</div>
 					<MoqPlaybackStages
-						channelId={channelId}
-						runId={runId}
 						startedAt={session.startedAt}
 						events={session.events}
 					/>
 					{session.archive && archiveUrl ? (
-						<div key={session.id} className="max-w-2xl space-y-1">
+						<div key={session.id} className="min-w-0 space-y-2">
 							<video
 								ref={archiveVideo}
 								data-moq-archive={session.id}
@@ -309,19 +305,21 @@ export function MoqHistoryPanel({
 								aria-label={t("moqPlayback.receivedVideo")}
 								className="aspect-video w-full rounded border border-zinc-800 bg-black"
 							/>
-							<MoqClientPlaybackClock
-								mode="archive"
-								mediaRef={archiveVideo}
-								originUtcMs={moqArchiveClientOrigin(session)}
-								durationMs={session.archive.durationMs}
-							/>
-							<a
-								href={archiveUrl}
-								download={`moq-${session.id}.webm`}
-								className="inline-block text-xs text-zinc-300 underline underline-offset-2"
-							>
-								{t("moqPlayback.downloadRecording")}
-							</a>
+							<div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+								<MoqClientPlaybackClock
+									mode="archive"
+									mediaRef={archiveVideo}
+									originUtcMs={moqArchiveClientOrigin(session)}
+									durationMs={session.archive.durationMs}
+								/>
+								<a
+									href={archiveUrl}
+									download={`moq-${session.id}.webm`}
+									className="text-xs text-zinc-300 underline underline-offset-2"
+								>
+									{t("moqPlayback.downloadRecording")}
+								</a>
+							</div>
 						</div>
 					) : selectedArchiveUnresolved ? null : (
 						<p className="text-xs text-zinc-500">
@@ -344,38 +342,20 @@ export function MoqHistoryPanel({
 							{t("moqPlayback.noSamples")}
 						</p>
 					)}
-					{session.samples.length || session.analyticsImpressionId ? (
+					{secondary ||
+					buffer ||
+					(session.analyticsImpressionId && analyticsEncodingId) ? (
 						<details>
 							<summary className="cursor-pointer text-xs text-zinc-400">
 								{t("moqPlayback.moreObservations")}
 							</summary>
 							<div className="mt-2 space-y-3">
-								<p className="text-xs text-zinc-500">
-									{t("moqPlayback.browserSource")} ·{" "}
-									<span>
-										{canvasRates
-											? t("moqPlayback.renderingCanvas")
-											: videoRates
-												? t("moqPlayback.renderingVideo")
-												: t("moqPlayback.frameHistory")}
-									</span>
-								</p>
-								{canvasRates ? (
-									<p className="text-xs text-zinc-500">
-										{t("moqPlayback.canvasMeasurement")}
-									</p>
+								{secondary || buffer ? (
+									<div className="flex flex-wrap gap-4">
+										{secondary}
+										{buffer}
+									</div>
 								) : null}
-								<p className="text-xs text-zinc-500">
-									{t("moqPlayback.historyClock")}
-								</p>
-								<p className="text-xs text-zinc-500">
-									{t("moqPlayback.recordedScope")}
-								</p>
-								<p className="break-all font-mono text-[11px] text-zinc-500">
-									{runId}
-								</p>
-								{secondary}
-								{buffer}
 								{session.analyticsImpressionId && analyticsEncodingId ? (
 									<MoqAnalyticsHistory
 										channelId={channelId}

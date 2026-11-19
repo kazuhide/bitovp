@@ -21,10 +21,14 @@ export function BuildInfoPanel({ version, commit }: WebBuildInfo) {
 			<dl className="mt-2 grid grid-cols-[auto_minmax(0,auto)] justify-end gap-x-3 gap-y-1 text-xs">
 				<dt className="text-zinc-500">{t("settingsBuild.version")}</dt>
 				<dd className="text-zinc-300">{version}</dd>
-				<dt className="text-zinc-500">{t("settingsBuild.commit")}</dt>
-				<dd className="min-w-0 break-all font-mono text-zinc-300">
-					{commit ?? t("settingsBuild.unknown")}
-				</dd>
+				{commit ? (
+					<>
+						<dt className="text-zinc-500">{t("settingsBuild.commit")}</dt>
+						<dd className="min-w-0 break-all font-mono text-zinc-300">
+							{commit}
+						</dd>
+					</>
+				) : null}
 			</dl>
 		</section>
 	);

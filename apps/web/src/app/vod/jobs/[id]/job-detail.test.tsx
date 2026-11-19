@@ -1728,6 +1728,11 @@ describe("JobDetail — rendition / input / storage panels", () => {
 		// And exactly ONCE now: the id used to render in the strip AND in a bare line
 		// above it.
 		expect(screen.getAllByText(/bm-enc-1/)).toHaveLength(1);
+		const user = userEvent.setup();
+		await user.click(
+			screen.getByRole("button", { name: "Copy Encoding id: bm-enc-1" }),
+		);
+		expect(await navigator.clipboard.readText()).toBe("bm-enc-1");
 	});
 
 	it("renders a non-finite duration as an em dash, not 'NaNm NaNs'", () => {

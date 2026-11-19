@@ -157,17 +157,17 @@ describe("current SDK request-field inventory", () => {
 				: /すべてが書き込み可能とは限りません/,
 		);
 		expect(details).toHaveTextContent(
-			locale === "en" ? /optional or undefined/ : /省略可能・undefined/,
+			locale === "en" ? /optional or undefined/ : /省略可能な値や undefined/,
 		);
 		expect(details).toHaveTextContent(
 			locale === "en"
 				? /not prove GUI access or actual transmission/
-				: /画面からの設定や実際の送信を保証しません/,
+				: /画面から指定できる属性や実行時に送信される属性の確認には別途検証が必要です/,
 		);
 		expect(details).toHaveTextContent(
 			locale === "en"
 				? /unconfirmed does not mean unimplemented/i
-				: /未確認.*未実装.*意味しません/,
+				: /スプレッド構文・変数・ヘルパー・複数候補の型には別途ソースの確認が必要です/,
 		);
 		expect(details).not.toHaveTextContent("%");
 		expect(

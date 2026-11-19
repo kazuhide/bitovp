@@ -131,7 +131,10 @@ export function OverviewStrip({
 							{t("jobDetail.encodingId")}
 						</dt>
 						<dd className="mt-0.5">
-							<CopyableId value={bitmovinEncodingId} />
+							<CopyableId
+								value={bitmovinEncodingId}
+								label={t("jobDetail.encodingId")}
+							/>
 						</dd>
 					</div>
 				) : null}

@@ -3,8 +3,7 @@
 import type { LiveChannelPlan, StepLogEntry } from "@bitovp/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { CustomLiveNotice } from "@/app/live/custom-live-notice";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
 	ACTION_LABEL_KEYS,
 	actionFailureMessage,
@@ -68,7 +67,7 @@ type ConfirmationKind = keyof typeof LIFECYCLE_CONFIRMATIONS;
  * - `ChannelLifecycleActions` → the operational header (`sec-actions`, still
  * the id `liveNextAction` points at).
  * - `ChannelCueForm` → Programme, beside the other ad-signalling insertions.
- * - `DuplicateChannelButton` → Diagnostics / Advanced.
+ * - `DuplicateChannelButton` → the header, alongside the lifecycle controls.
  * - `ChannelDangerZone` → the Danger zone, last on the page.
  *
  * Each holds only the mutation it fires, so no state is shared across the
@@ -93,6 +92,7 @@ export function ChannelLifecycleActions({
 	generation = 0,
 	cancelRequested = false,
 	managedAisa = false,
+	children,
 }: {
 	channelId: string;
 	status: LiveChannelStatus;
@@ -106,6 +106,7 @@ export function ChannelLifecycleActions({
 	generation?: number;
 	cancelRequested?: boolean;
 	managedAisa?: boolean;
+	children?: ReactNode;
 }) {
 	const { t } = useT();
 	const queryClient = useQueryClient();
@@ -368,10 +369,6 @@ export function ChannelLifecycleActions({
 
 	return (
 		<div className="space-y-2">
-			{canStart && plan && !managedAisa ? (
-				<CustomLiveNotice plan={plan} compact />
-			) : null}
-			{checkMoq ? <MoqPreviewReadiness {...moqReadiness} /> : null}
 			<div className="flex flex-wrap items-center gap-2">
 				{canStart ? (
 					<Button
@@ -442,7 +439,13 @@ export function ChannelLifecycleActions({
 						{t("live.restart")}
 					</Button>
 				) : null}
+				{children}
 			</div>
+			{checkMoq &&
+			!moqReadiness.checking &&
+			moqReadiness.result?.status !== "ready" ? (
+				<MoqPreviewReadiness {...moqReadiness} />
+			) : null}
 			{lastError ? (
 				<p role="alert" className="text-red-400 text-sm">
 					{lastError}
@@ -776,7 +779,7 @@ export function ChannelCueForm({
 
 /**
  * Recreate a fresh channel from this one's config — the clean recovery for a
- * failed start (no stale ids). An authoring verb, so it sits in Advanced.
+ * failed start (no stale ids).
  */
 export function DuplicateChannelButton({ channelId }: { channelId: string }) {
 	const { t } = useT();

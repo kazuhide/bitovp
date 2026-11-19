@@ -325,7 +325,7 @@ function MoqPlaybackAttempt({
 	return (
 		<div
 			id="moq-preview"
-			className="space-y-2 scroll-mt-4"
+			className="min-w-0 space-y-4 scroll-mt-4"
 			data-moq-preview={runId}
 			data-moq-phase={phase}
 		>
@@ -346,31 +346,30 @@ function MoqPlaybackAttempt({
 					{t("moqPlayback.openPlayer")}
 				</Link>
 			) : null}
-			<details key="live" open={active} className="space-y-2">
+			<details key="live" open={active} className="space-y-3">
 				<summary
 					className={active ? "hidden" : "cursor-pointer text-xs text-zinc-400"}
 				>
 					MoQ / Web X · {t("moqPlayback.stopped")}
 				</summary>
-				<div className="flex flex-wrap items-center gap-2">
-					<span className="rounded border border-zinc-700 px-2 py-1 font-medium text-xs text-zinc-200">
-						MoQ / Web X
-					</span>
-					<Button
-						size="sm"
-						disabled={!active || busy || cleanupPending}
-						onClick={() => void play()}
-					>
-						{t("moqPlayback.play")}
-					</Button>
-					<Button
-						size="sm"
-						variant="secondary"
-						disabled={!busy || phase === "stopping"}
-						onClick={() => void stop()}
-					>
-						{t("moqPlayback.stop")}
-					</Button>
+				<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+					<div className="flex flex-wrap gap-2">
+						<Button
+							size="sm"
+							disabled={!active || busy || cleanupPending}
+							onClick={() => void play()}
+						>
+							{t("moqPlayback.play")}
+						</Button>
+						<Button
+							size="sm"
+							variant="secondary"
+							disabled={!busy || phase === "stopping"}
+							onClick={() => void stop()}
+						>
+							{t("moqPlayback.stop")}
+						</Button>
+					</div>
 					<span
 						role={phase === "failed" ? "alert" : "status"}
 						aria-live="polite"
@@ -390,7 +389,7 @@ function MoqPlaybackAttempt({
 					{!standalone ? (
 						<Link
 							href={`/live/${channelId}/runs/${runId}/moq`}
-							className="text-xs text-zinc-300 underline underline-offset-2"
+							className="text-xs text-zinc-300 underline underline-offset-2 sm:ml-auto"
 						>
 							{t("moqPlayback.openPlayer")}
 						</Link>
@@ -400,7 +399,7 @@ function MoqPlaybackAttempt({
 					ref={host}
 					data-moq-live-host={runId}
 					aria-label={t("moqPlayback.title")}
-					className="relative aspect-video w-full max-w-2xl overflow-hidden rounded-md border border-zinc-800 bg-black [&_canvas]:h-full [&_canvas]:w-full [&_canvas]:object-contain [&_video]:h-full [&_video]:w-full [&_video]:object-contain"
+					className="relative aspect-video w-full overflow-hidden rounded-md border border-zinc-800 bg-black [&_canvas]:h-full [&_canvas]:w-full [&_canvas]:object-contain [&_video]:h-full [&_video]:w-full [&_video]:object-contain"
 				/>
 				<MoqClientPlaybackClock
 					mode="live"
@@ -408,8 +407,6 @@ function MoqPlaybackAttempt({
 				/>
 				{trace ? (
 					<MoqPlaybackStages
-						channelId={channelId}
-						runId={runId}
 						startedAt={trace.startedAt}
 						events={trace.events}
 						latest={trace.latest}

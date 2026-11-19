@@ -180,7 +180,9 @@ export function PushHeartbeatLog({
 											{row.receivedAt}
 										</td>
 										<td className="px-2 py-1.5">
-											{ingest?.status ?? t("common.unknown")}
+											{ingest?.status && ingest.status !== "UNKNOWN"
+												? ingest.status
+												: "—"}
 										</td>
 										<td className="px-2 py-1.5">
 											{incomingMbps(video?.incomingBitrate)}

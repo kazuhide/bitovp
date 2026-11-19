@@ -515,11 +515,6 @@ export function JobDetail({
 				</p>
 			) : null}
 
-			{/* The encoding id MOVED into the overview strip (design §5 clause 1). It
-			    was rendered here as well, so Overview showed it twice — the strip's
-			    labelled field and this bare line (review finding). `uiX.encodingIdLine`
-			    stays in the catalogue: the live channel detail still uses it. */}
-
 			{/*  §5: the plan is on the row — hardening this job into
 			    a launchable template is one click + a name. */}
 			<div className="mt-3 flex items-center gap-2">

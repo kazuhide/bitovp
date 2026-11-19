@@ -124,7 +124,6 @@ failure. Each run keeps up to five observation sessions. Saved data remains
 available when the live player is inactive. Playback can start while history
 and Analytics are preparing. The playback stage timeline shows UTC timestamps
 for subscriber requests, observed frames, gaps, recovery, and termination.
-Open a timestamp to see the same airing in the Encoder Heartbeat panel.
 After ending, saved video and observations appear before the collapsed live
 preview. Historical namespace/draft/catalog come from the original output proof.
 Use `#moq-preview` on either page to open this section directly. Browser-native

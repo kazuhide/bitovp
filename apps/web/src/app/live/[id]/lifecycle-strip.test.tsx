@@ -1,5 +1,6 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { formatDateTime } from "@/lib/format";
 import { renderWithQuery } from "@/test/render";
 import { LifecycleStrip, lifecycleStage } from "./lifecycle-strip";
 
@@ -207,6 +208,50 @@ describe("LifecycleStrip", () => {
 		);
 		fireEvent.click(screen.getByRole("button"));
 		expect(screen.getByText(/last confirmed never/)).toBeInTheDocument();
+	});
+
+	it.each([
+		["ja", null],
+		["ja", "2026-08-30T11:59:00.000Z"],
+		["en", null],
+		["en", "2026-08-30T11:59:00.000Z"],
+	] as const)("distinguishes a stale status from a recorded loss of confirmation in %s (%s)", (locale, unknownSince) => {
+		const observedAt = "2026-08-30T11:58:00.000Z";
+		renderWithQuery(
+			<LifecycleStrip
+				status="RUNNING"
+				ingestConnected={true}
+				hasEncoding
+				provider={{
+					unknown: true,
+					terminal: false,
+					observedAt,
+					unknownSince,
+					status: "RUNNING",
+				}}
+			/>,
+			locale,
+		);
+		fireEvent.click(screen.getByRole("button"));
+		const help = screen.getByRole("note");
+		expect(help).toHaveTextContent(
+			locale === "ja" ? "最終確認" : "last confirmed",
+		);
+		expect(help).toHaveTextContent(formatDateTime(observedAt));
+		expect(help).toHaveTextContent(
+			locale === "ja" ? "30 秒ごとに再確認" : "checked every 30 seconds",
+		);
+		expect(help).not.toHaveTextContent(/取得エラー|取得失敗|read failure/i);
+		const windowLabel =
+			locale === "ja"
+				? "状態を確認できなくなった時刻"
+				: "no confirmed status since";
+		if (unknownSince) {
+			expect(help).toHaveTextContent(windowLabel);
+			expect(help).toHaveTextContent(formatDateTime(unknownSince));
+		} else {
+			expect(help).not.toHaveTextContent(windowLabel);
+		}
 	});
 
 	it.each([

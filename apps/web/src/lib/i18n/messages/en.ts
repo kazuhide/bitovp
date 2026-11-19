@@ -1028,8 +1028,10 @@ export const en = {
 		renderingCanvas: "Canvas (video-only capture)",
 		canvasUpdates: "Canvas image updates",
 		canvasMeasurement:
-			"Distinct image updates per second. Source FPS and decoder counters are unavailable.",
-		frameHistory: "Frame observations (mixed or unknown source)",
+			"The browser counts distinct images observed on the Player Web X Canvas each second. This is a browser observation of image changes.",
+		frameHistory: "Frame observations",
+		frameHistoryMeasurement:
+			"These rates use browser frame counts for the video element and observed image changes for Canvas. Older samples may omit the rendering source.",
 		resolution: "Resolution",
 		dropped: "Dropped frames",
 		buffer: "Buffer",
@@ -1063,7 +1065,9 @@ export const en = {
 		browserSource: "Browser observations · Player Web X / MoQ",
 		historyClock:
 			"Browser clock UTC · start time + elapsed time; clocks may differ.",
-		bufferHistory: "Buffer (mixed or unknown source)",
+		bufferHistory: "Playback buffer",
+		bufferMeasurement:
+			"Player Web X reports its buffer level when available. In video-element playback, the browser can also report the seconds buffered ahead. Earlier observations may lack a source label.",
 		noSamples: "No saved samples",
 		recordedScope:
 			"Recording covers received preview playback only, up to 90 seconds.",
@@ -1924,8 +1928,7 @@ export const en = {
 		recoverBody:
 			"Review diagnostics, the end reason and the encoder state before choosing the next action.",
 		bootTitle: "Starting",
-		bootBody:
-			"Startup time varies by region and configuration. Open actions to cancel the start.",
+		bootBody: "Startup time varies by region and configuration.",
 		stoppingTitle: "Stopping — nothing to do",
 		stoppingBody:
 			"The encoder is shutting down. The step log below shows the stop steps; the channel becomes STOPPED when they finish.",
@@ -1957,7 +1960,6 @@ export const en = {
 		idleTitle: "Nothing to do",
 		idleBody:
 			"The channel is not running and nothing is armed. Start the channel, or schedule an action.",
-		goActions: "Actions",
 		goFeeders: "Feeders",
 		goSchedule: "Schedule",
 		goAlerts: "Alerts",
@@ -3277,7 +3279,8 @@ export const en = {
 		// Use amber while provider status is unconfirmed. Once the provider confirms an encoding has ended,
 		// the lifecycle hint must not imply that the encoder may still be running.
 		providerUnknownHint:
-			"Provider status cannot be confirmed — Bitmovin's status read for this run's encoding is failing (last confirmed {at}; unconfirmed since {since}). It is re-checked every 30 s. Stop remains available; start, restart, slate, SCTE-35, timeshift and new feeders wait for a fresh reading.",
+			"Provider status cannot be confirmed (last confirmed {at}{unavailableSince}). Bitmovin status is checked every 30 seconds. Stop remains available. Start, restart, slate, SCTE-35, timeshift and new feeders require a fresh reading.",
+		providerUnavailableSince: "; no confirmed status since {since}",
 		providerUnobservedHint:
 			"Waiting for the first Bitmovin encoder status check. Until it arrives, this channel is not shown as confirmed on air.",
 		providerUnknownNever: "never",
@@ -4539,7 +4542,6 @@ export const en = {
 			"This Web only. These values do not identify the worker, another Web service, or the Bitmovin encoder version.",
 		version: "App version",
 		commit: "Commit",
-		unknown: "Unknown",
 	},
 	settingsX: {
 		users: "Users",

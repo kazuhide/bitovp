@@ -628,15 +628,9 @@ it("reports failed monitoring reads as unavailable rather than healthy zero", as
 	});
 	renderWithQuery(<ChannelDetail id={ID} />);
 	await screen.findByRole("region", { name: "Channel status" });
-	expect(
-		document.querySelector('[data-status-cell="alerts"]'),
-	).toHaveTextContent("unknown");
-	expect(
-		document.querySelector('[data-status-cell="feeders"]'),
-	).toHaveTextContent("unknown");
-	expect(
-		document.querySelector('[data-status-cell="next-event"]'),
-	).toHaveTextContent("could not be read");
+	for (const key of ["alerts", "feeders", "next-event"]) {
+		expect(document.querySelector(`[data-status-cell="${key}"]`)).toBeNull();
+	}
 });
 
 it("withholds cached operator telemetry and raw logs while a fresh session is pending, then permits safe viewer monitoring", async () => {
@@ -827,9 +821,7 @@ it("shows unresolved AISA playback availability without a zero manifest count", 
 	respond(row);
 	renderWithQuery(<ChannelDetail id={ID} />);
 	await screen.findByRole("region", { name: "Channel status" });
-	expect(
-		document.querySelector('[data-status-cell="playable"]'),
-	).toHaveTextContent("unknown");
+	expect(document.querySelector('[data-status-cell="playable"]')).toBeNull();
 	expect(document.getElementById("sec-manifests")).toHaveTextContent(
 		"could not be read",
 	);

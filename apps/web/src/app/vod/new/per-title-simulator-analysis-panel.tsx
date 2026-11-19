@@ -58,7 +58,7 @@ const dependencyStatus = {
 		inactive: "無効",
 		"no-effect": "効果なし",
 		"media-dependent": "素材確認が必要",
-		unverified: "未確認",
+		unverified: "効果を判定できません",
 		unset: "未設定",
 	},
 };
@@ -189,7 +189,7 @@ function FullLadderDetails({
 			? {
 					tracked: "追従確認",
 					gap: "接続条件外",
-					unknown: "未確認",
+					unknown: "応答を判定できません",
 					"not-applicable": "対象外",
 				}
 			: {

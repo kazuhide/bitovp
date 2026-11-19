@@ -120,9 +120,11 @@ export function LifecycleStrip({
 					at: provider?.observedAt
 						? formatDateTime(provider.observedAt)
 						: t("lifecycle.providerUnknownNever"),
-					since: provider?.unknownSince
-						? formatDateTime(provider.unknownSince)
-						: t("lifecycle.providerUnknownNever"),
+					unavailableSince: provider?.unknownSince
+						? t("lifecycle.providerUnavailableSince", {
+								since: formatDateTime(provider.unknownSince),
+							})
+						: "",
 				})
 			: providerTerminal
 				? provider.status &&

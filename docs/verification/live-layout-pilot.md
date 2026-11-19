@@ -17,42 +17,24 @@ Live 詳細の修正前後を、同じ日本語の合成チャンネルとユー
 
 Node、pnpm、リポジトリの依存関係と Playwright Chromium、Lean 4.24.0 を用意します。探索を行う場合は [Bombadil 0.7.10](https://github.com/antithesishq/bombadil/releases/tag/v0.7.10) の、既存runnerが対応する公式バイナリを使います。バイナリのSHA-256は実行時に照合されます。
 
-修正前の `782632d355c6a8bf44b7c1ad02ba29f6bf853420` と検査対象のコミットを、それぞれ空のディレクトリへ detached worktree として取り出します。各 worktree で依存関係を入れ、使い捨て PostgreSQL の空のDBを用意します。2つのWebサーバーに別々のポートを使います。起動前に各 worktree で確認用のファイルを作ります。 `pilot_port` と `source_receipt` を環境ごとに変え、作業ツリーから起動します。Next.js が再生成する next-env.d.ts と確認用ファイル以外の変更は拒否します。runner は開始前と完了時にファイルとサーバー応答を照合します。
-
-```sh
-pilot_proof="$(node -p 'require("node:crypto").randomUUID()')"
-pilot_commit="$(git rev-parse HEAD)"
-pilot_tree="$(git rev-parse 'HEAD^{tree}')"
-pilot_root="$(git rev-parse --show-toplevel)"
-mkdir -p apps/web/public
-jq -n --arg commit "$pilot_commit" --arg tree "$pilot_tree" --arg proof "$pilot_proof" \
-  '{commit,tree,proof}' > "apps/web/public/live-layout-$pilot_proof.json"
-jq --arg root "$pilot_root" --arg baseURL "http://127.0.0.1:$pilot_port" \
-  '. + {root,baseURL}' "apps/web/public/live-layout-$pilot_proof.json" > "$source_receipt"
-```
-
-アプリの起動時は合成DBのURLだけを渡します。
+修正前の `782632d355c6a8bf44b7c1ad02ba29f6bf853420` と検査対象のコミットを、別々の空のディレクトリへ detached worktree として取り出します。各 worktree で依存関係を入れ、使い捨て PostgreSQL の空のDBを用意します。
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm --filter @bitovp/db build
 DATABASE_URL="$pilot_db_url" pnpm --dir packages/db exec prisma migrate deploy
-(
-  cd apps/web
-  env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" DATABASE_URL="$pilot_db_url" \
-    AUTH_MODE=none NEXT_TELEMETRY_DISABLED=1 \
-    node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port "$pilot_port"
-)
 ```
+
+runner は作業ツリーのコミットと変更状態を照合し、空いているポートでそれぞれの Next 開発サーバーを自ら起動します。アプリの `.env` や古い `.next` は取り込まず、試行終了時には起動したプロセスを止めます。同じ確認を再実行する場合は、作業用のコピーを改めて用意します。
 
 runnerがある checkout で実行します。`--bombadil` を省略すると、Lean と確定的なブラウザーテスト、画像の保存を行います。
 
 ```sh
 pnpm exec playwright install chromium
 node --test tests/browser/live-layout-pilot-probe.test.mjs
-node scripts/live-layout-pilot.mjs \
-  --historical=/absolute/path/to/before.json \
-  --current=/absolute/path/to/current.json \
+BITOVP_PILOT_DATABASE_URL="$pilot_db_url" node scripts/live-layout-pilot.mjs \
+  --historical=/absolute/path/to/before-worktree \
+  --current=/absolute/path/to/current-worktree \
   --lean=/absolute/path/to/lean \
   --bombadil=/absolute/path/to/bombadil \
   --output=/absolute/path/to/new-evidence-directory

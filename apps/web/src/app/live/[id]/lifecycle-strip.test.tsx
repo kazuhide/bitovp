@@ -50,11 +50,13 @@ describe("LifecycleStrip", () => {
 		);
 		const active = container.querySelector('[data-state="active"]');
 		expect(active).toHaveAttribute("data-stage", "3");
-		expect(active).toHaveTextContent("Input status unconfirmed");
+		expect(active).toHaveTextContent("Waiting for input data");
 		expect(active).not.toHaveTextContent(
-			/waiting for input|input connected|encoding.*delivering/i,
+			/^waiting for input$|input connected|encoding.*delivering/i,
 		);
-		expect(active?.querySelector("span + span")?.className).toContain("amber");
+		expect(active?.querySelector("span + span")?.className).not.toContain(
+			"sky",
+		);
 		expect(container.querySelector("figure")).not.toHaveAttribute(
 			"data-provider",
 		);
@@ -106,11 +108,11 @@ describe("LifecycleStrip", () => {
 			expect(screen.queryByText(/may still be up on Bitmovin/)).toBeNull();
 		} else if (state === "unobserved")
 			expect(
-				screen.getByText(/Waiting for the first Bitmovin encoder status check/),
+				screen.getByText("No Bitmovin status recorded"),
 			).toBeInTheDocument();
 		else
 			expect(
-				screen.getByText(/Provider status cannot be confirmed/),
+				screen.getByText(/Last Bitmovin reading RUNNING/),
 			).toBeInTheDocument();
 	});
 	it("highlights the ACTIVE stage and speaks its hint — RUNNING without input is ③, not broadcasting", () => {
@@ -135,6 +137,8 @@ describe("LifecycleStrip", () => {
 				hasEncoding={true}
 			/>,
 		);
+		expect(screen.queryByText(/may still be up on Bitmovin/)).toBeNull();
+		fireEvent.click(screen.getByRole("button"));
 		expect(screen.getByText(/may still be up on Bitmovin/)).toBeInTheDocument();
 		expect(screen.queryByText(/Encoder not running/)).toBeNull();
 	});
@@ -151,6 +155,8 @@ describe("LifecycleStrip", () => {
 		// The reset blocks on exactly these rows; the channel's own page is
 		// where the operator goes, and it showed the raw error string with
 		// neither the framing nor the action. ERROR is ambiguous — this is not.
+		expect(screen.queryByText(/may still be up on Bitmovin/)).toBeNull();
+		fireEvent.click(screen.getByRole("button"));
 		expect(screen.getByText(/may still be up on Bitmovin/)).toBeInTheDocument();
 	});
 
@@ -160,7 +166,7 @@ describe("LifecycleStrip", () => {
 	 * window's start; a provider-TERMINAL error run must not say "may still
 	 * be up on Bitmovin" when Bitmovin has said the encoding ended.
 	 */
-	it("provider UNKNOWN on a RUNNING channel paints the active stage AMBER and says the status cannot be confirmed — never the sky-blue on-air chip", () => {
+	it("keeps provider acquisition detail behind help while the recorded stage stays visible", () => {
 		const { container } = renderWithQuery(
 			<LifecycleStrip
 				status="RUNNING"
@@ -178,14 +184,11 @@ describe("LifecycleStrip", () => {
 		const figure = container.querySelector("figure");
 		expect(figure?.getAttribute("data-provider")).toBe("unknown");
 		const active = container.querySelector('[data-state="active"] span + span');
-		expect(active?.className).toContain("amber");
 		expect(active?.className).not.toContain("sky");
-		expect(
-			screen.getByText("RUNNING · Bitmovin status unconfirmed"),
-		).toBeVisible();
+		expect(screen.queryByText(/Last Bitmovin reading/)).toBeNull();
 		fireEvent.click(screen.getByRole("button"));
 		expect(
-			screen.getByText(/Provider status cannot be confirmed/),
+			screen.getByText(/Last Bitmovin reading RUNNING/),
 		).toBeInTheDocument();
 		// The stage hint it replaces is gone: no reassuring "encoding & delivering".
 		expect(screen.queryByText(/delivering normally/i)).toBeNull();
@@ -207,7 +210,7 @@ describe("LifecycleStrip", () => {
 			/>,
 		);
 		fireEvent.click(screen.getByRole("button"));
-		expect(screen.getByText(/last confirmed never/)).toBeInTheDocument();
+		expect(screen.getByText("No Bitmovin status recorded")).toBeInTheDocument();
 	});
 
 	it.each([
@@ -235,17 +238,12 @@ describe("LifecycleStrip", () => {
 		fireEvent.click(screen.getByRole("button"));
 		const help = screen.getByRole("note");
 		expect(help).toHaveTextContent(
-			locale === "ja" ? "最終確認" : "last confirmed",
+			locale === "ja" ? "最終取得 RUNNING" : "Last Bitmovin reading RUNNING",
 		);
 		expect(help).toHaveTextContent(formatDateTime(observedAt));
-		expect(help).toHaveTextContent(
-			locale === "ja" ? "30 秒ごとに再確認" : "checked every 30 seconds",
-		);
+		expect(help).not.toHaveTextContent(/30 秒|30 seconds/);
 		expect(help).not.toHaveTextContent(/取得エラー|取得失敗|read failure/i);
-		const windowLabel =
-			locale === "ja"
-				? "状態を確認できなくなった時刻"
-				: "no confirmed status since";
+		const windowLabel = locale === "ja" ? "から更新なし" : "no update since";
 		if (unknownSince) {
 			expect(help).toHaveTextContent(windowLabel);
 			expect(help).toHaveTextContent(formatDateTime(unknownSince));
@@ -324,8 +322,8 @@ describe("LifecycleStrip", () => {
 		expect(screen.queryByText(/may still be up on Bitmovin/)).toBeNull();
 	});
 
-	it("flips to ④ the moment the input is CONNECTED — 蓋被せ works from here", () => {
-		const { container } = renderWithQuery(
+	it("tracks reversible input changes with one current stage and no struck-through labels", () => {
+		const { container, rerender } = renderWithQuery(
 			<LifecycleStrip
 				status="RUNNING"
 				ingestConnected={true}
@@ -337,7 +335,19 @@ describe("LifecycleStrip", () => {
 				.querySelector('[data-state="active"]')
 				?.getAttribute("data-stage"),
 		).toBe("4");
-		fireEvent.click(screen.getByRole("button"));
-		expect(screen.getByText(/蓋被せ.*from here on/i)).toBeInTheDocument();
+		expect(container.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
+		expect(container.querySelector(".line-through")).toBeNull();
+		rerender(
+			<LifecycleStrip status="RUNNING" ingestConnected={false} hasEncoding />,
+		);
+		expect(container.querySelector('[aria-current="step"]')).toHaveTextContent(
+			"Waiting for input",
+		);
+		rerender(
+			<LifecycleStrip status="RUNNING" ingestConnected={null} hasEncoding />,
+		);
+		expect(container.querySelector('[aria-current="step"]')).toHaveTextContent(
+			"Waiting for input data",
+		);
 	});
 });

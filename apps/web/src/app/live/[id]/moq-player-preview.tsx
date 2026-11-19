@@ -499,14 +499,9 @@ function MoqPlaybackAttempt({
 								live
 							/>
 							<MoqEncoderHistory
+								active
 								heartbeat={heartbeat}
-								status={
-									observations.isError
-										? "error"
-										: observations.isPending
-											? "pending"
-											: undefined
-								}
+								failed={observations.isError}
 							/>
 						</div>
 					) : null}

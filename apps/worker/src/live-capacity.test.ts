@@ -41,14 +41,14 @@ describe("Live worker concurrency", () => {
 		undefined,
 		"",
 		" ",
-	])("uses eight total slots when unset or blank: %s", (value) => {
+	])("uses eight action slots when unset or blank: %s", (value) => {
 		expect(liveChannelConcurrency(value)).toBe(8);
 	});
 	it.each([
 		"2",
 		"8",
 		" 12 ",
-	])("respects an explicit total slot count: %s", (value) => {
+	])("respects an explicit action slot count: %s", (value) => {
 		expect(liveChannelConcurrency(value)).toBe(Number(value));
 	});
 	it.each([
@@ -59,6 +59,7 @@ describe("Live worker concurrency", () => {
 		"NaN",
 		"Infinity",
 		"no",
+		"9007199254740991",
 		"9007199254740992",
 	])("refuses a count that cannot reserve a stop slot: %s", (value) => {
 		expect(() => liveChannelConcurrency(value)).toThrow(
@@ -156,23 +157,52 @@ describe("Live reserved stop capacity", () => {
 		}
 	});
 
-	it("counts a complete system heartbeat sweep as normal work", async () => {
+	it("runs a trusted system heartbeat sweep alongside saturated action slots", async () => {
 		const hold = barrier();
+		const normal = job();
+		const stop = job("stop");
 		const sweep = {
 			id: "sweep",
 			name: "heartbeat-sweep",
+			repeatJobKey: "live-heartbeat-sweep",
 			data: { systemSweep: "heartbeat" },
 			token: "sweep-token",
 			moveToDelayed: vi.fn(async () => {}),
 		} as unknown as Job;
+		const entered: Job[] = [];
 		const process = reserveLiveStopCapacity(2, async (current) => {
-			if (current === sweep) await hold.promise;
+			entered.push(current);
+			await hold.promise;
 			return current.id;
 		});
-		const active = process(sweep);
+		const active = [process(normal), process(sweep), process(stop)];
 		try {
+			expect(entered).toEqual([normal, sweep, stop]);
 			await expect(process(job())).rejects.toBeInstanceOf(DelayedError);
-			await expect(process(job("stop"))).resolves.toBe("job-stop");
+			await expect(process(job("stop"))).rejects.toBeInstanceOf(DelayedError);
+			await expect(process(sweep)).rejects.toBeInstanceOf(DelayedError);
+			expect(entered).toHaveLength(3);
+		} finally {
+			hold.release();
+			await Promise.allSettled(active);
+		}
+	});
+
+	it("only reserves the heartbeat slot for the expected repeatable scheduler", async () => {
+		const hold = barrier();
+		const normal = job();
+		const process = reserveLiveStopCapacity(2, async (current) => {
+			if (current === normal) await hold.promise;
+		});
+		const active = process(normal);
+		try {
+			const untrusted = {
+				...job(),
+				name: "heartbeat-sweep",
+				repeatJobKey: "different-scheduler",
+				data: { systemSweep: "heartbeat" },
+			} as Job;
+			await expect(process(untrusted)).rejects.toBeInstanceOf(DelayedError);
 		} finally {
 			hold.release();
 			await active;

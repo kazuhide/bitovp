@@ -1,5 +1,6 @@
 import { HDR_VMAF_MODELS } from "@bitovp/core";
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { hdrMeasurementFixture } from "@/test/hdr-measurement";
 import { renderLocalized } from "@/test/render";
@@ -9,18 +10,22 @@ describe("HDR measurement scope", () => {
 	it.each([
 		"en",
 		"ja",
-	] as const)("shows calibrated HLG display and base-layer scope in %s", (locale) => {
+	] as const)("shows calibrated HLG display and base-layer scope in %s", async (locale) => {
+		const evidence = hdrMeasurementFixture(true);
 		const { container } = renderLocalized(
-			<HdrMeasurementSummary
-				results={[{ hdrMeasurement: hdrMeasurementFixture(true) }]}
-			/>,
+			<HdrMeasurementSummary results={[{ hdrMeasurement: evidence }]} />,
 			locale,
 		);
 		expect(screen.getByText(/HLG.*PQ.*1000/)).toBeVisible();
-		expect(container.textContent).toMatch(/RPU/);
-		expect(container.textContent).toMatch(
-			locale === "ja" ? /ベース映像/ : /base layer/i,
+		const scope = screen.getByText(
+			locale === "ja" ? "HDRベース映像を計測" : "HDR base layer measured",
 		);
+		expect(scope).toBeVisible();
+		const proof = container.querySelector("pre");
+		expect(proof).not.toBeVisible();
+		await userEvent.click(scope);
+		expect(proof).toBeVisible();
+		expect(JSON.parse(proof?.textContent ?? "null")).toEqual([evidence]);
 	});
 	it.each(
 		HDR_VMAF_MODELS.filter((model) => model.id.includes("_hfr_")),

@@ -382,7 +382,7 @@ describe("the contextual lead follows the airing's life (ledger #126)", () => {
 			},
 		});
 		const view = wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Verification channel" });
 		// : on air the ingest card sits inside the Input layer, after
 		// Operations and after Programme — it is a reference, not the lead.
 		const ids = Array.from(
@@ -685,17 +685,31 @@ describe("ChannelDetail — live playback preview", () => {
 		}
 	});
 	/* Verify the current information hierarchy rather than restoring the former all-collapsed layout. */
-	it("opens with ONE thing to do, and its anchor points at a section that exists (review-260 126-A2)", async () => {
-		// RUNNING + no heartbeat ⇒ ingest unproven ⇒ CONNECT_INPUT.
-		mockChannel({ currentRun: confirmedRun("RUNNING") });
+	it.each([
+		false,
+		true,
+	])("links input guidance to an existing section (observed disconnection=%s)", async (observed) => {
+		mockChannel({
+			currentRun: {
+				...confirmedRun("RUNNING"),
+				lastHeartbeat: observed
+					? {
+							at: new Date().toISOString(),
+							raw: { ingest: { status: "DISCONNECTED", healthy: false } },
+							deltas: {},
+						}
+					: null,
+			},
+		});
 		wrap(<ChannelDetail id={CHANNEL} />);
 		const panel = await screen.findByRole("region", { name: /next action/i });
-		expect(panel.getAttribute("data-next-action")).toBe("CONNECT_INPUT");
-		// Measured before this line existed: an href typo left all 246 live
-		// tests green.
+		expect(panel.getAttribute("data-next-action")).toBe(
+			observed ? "CONNECT_INPUT" : "INPUT_UNCONFIRMED",
+		);
+		const section = observed ? "sec-feeders" : "sec-heartbeat";
 		const cta = panel.querySelector("a[href^='#sec-']");
-		expect(cta?.getAttribute("href")).toBe("#sec-feeders");
-		expect(document.getElementById("sec-feeders")).not.toBeNull();
+		expect(cta?.getAttribute("href")).toBe(`#${section}`);
+		expect(document.getElementById(section)).not.toBeNull();
 	});
 
 	it("the surviving folds still auto-open when the next action points at them — the last live piece of openByDefault (ledger #126)", async () => {
@@ -782,7 +796,7 @@ describe("ChannelDetail — live playback preview", () => {
 			return { items: [] };
 		});
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Verification channel" });
 
 		// #126: flat sections carry the summary in their heading row (the
 		// first child div), the two folds keep it in <summary> — one reader
@@ -939,7 +953,7 @@ describe("ChannelDetail — live playback preview", () => {
 		// "0s ago" — the reassuring default this strip exists to avoid.
 		expect(cell("ingest-last-seen")).toBe("Last seen never");
 		// And ingest, with no heartbeat at all, must not claim connected.
-		expect(cell("ingest-state")).toBe("unknown");
+		expect(cell("ingest-state")).toBe("Waiting for data");
 	});
 
 	it("lane alerts stay unknown during a pending retry, then show the measured counts", async () => {
@@ -1040,7 +1054,7 @@ describe("ChannelDetail — live playback preview", () => {
 			// ACTIVE + stale sample = missing observation, not absent ingest —
 			// review-296 I5 restored the strip's own invariant here; None is
 			// the post-stop arm below.
-		).toBe("unknown");
+		).toBe("Waiting for data");
 		view.unmount();
 
 		// (2) STOPPED with a FRESH sample — the stop just happened, the last
@@ -1108,13 +1122,13 @@ describe("ChannelDetail — live playback preview", () => {
 		// Disconnected wrapper ⇒ ③, not ④.
 		mockChannel({
 			lastHeartbeat: {
-				at: "2026-08-11T00:00:00.000Z",
+				at: new Date().toISOString(),
 				raw: { ingest: { status: "WAITING_FOR_FIRST_CONNECT" } },
 				deltas: {},
 			},
 		});
 		const view2 = wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByText(/Waiting for input/);
+		await screen.findByText("Waiting for input");
 		expect(
 			document
 				.querySelector('[data-state="active"]')
@@ -1131,6 +1145,11 @@ describe("ChannelDetail — live playback preview", () => {
 			currentRun: confirmedRun("ERROR"),
 		});
 		wrap(<ChannelDetail id={CHANNEL} />);
+		const help = await screen.findByRole("button", {
+			name: "Encoder lifecycle — more information",
+		});
+		expect(screen.queryByText(/may still be up on Bitmovin/)).toBeNull();
+		await userEvent.click(help);
 		expect(
 			await screen.findByText(/may still be up on Bitmovin/),
 		).toBeInTheDocument();

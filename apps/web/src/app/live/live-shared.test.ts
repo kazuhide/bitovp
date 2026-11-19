@@ -125,11 +125,15 @@ describe("channel status helpers", () => {
 
 	it("never presents a locally RUNNING channel as confirmed green while the provider is UNKNOWN or UNOBSERVED", () => {
 		expect(liveStatusPresentation("RUNNING", "UNKNOWN")).toEqual({
-			tone: "warn",
+			tone: "neutral",
 			providerUnconfirmed: true,
 		});
 		expect(liveStatusPresentation("RUNNING", "UNOBSERVED")).toEqual({
-			tone: "warn",
+			tone: "neutral",
+			providerUnconfirmed: true,
+		});
+		expect(liveStatusPresentation("RUNNING", "TRANSITIONAL")).toEqual({
+			tone: "neutral",
 			providerUnconfirmed: true,
 		});
 		expect(liveStatusPresentation("RUNNING", "RUNNING")).toEqual({

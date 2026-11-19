@@ -326,8 +326,8 @@ describe("saved MoQ history and received video", () => {
 			screen.queryByRole("link", { name: "Encoder Push / Heartbeat" }),
 		).toBeNull();
 		expect(
-			rendered.container.querySelector("[data-moq-encoder-history]"),
-		).toBeNull();
+			rendered.container.querySelector('[data-moq-chart="segmentProcessing"]'),
+		).toHaveTextContent("No saved data");
 		for (const plot of ["latencyMs", "fps", "bufferSeconds"])
 			expect(
 				rendered.container.querySelector(
@@ -384,16 +384,18 @@ describe("saved MoQ history and received video", () => {
 		expect(screen.getByText(/Browser observations/)).toBeVisible();
 	});
 
-	it("renders zero-sample history compactly without empty plots or a duplicate encoder dashboard", async () => {
+	it("shows a single compact output row when nothing was measured", async () => {
 		const response = await mocks.api();
 		response.sessions[0].samples = [];
 		mocks.api.mockResolvedValue(response);
 		const rendered = renderWithQuery(view());
 		expect(await screen.findByText("No saved samples")).toBeVisible();
-		expect(rendered.container.querySelector("figure")).toBeNull();
-		expect(
-			rendered.container.querySelector("[data-moq-encoder-history]"),
-		).toBeNull();
+		expect(rendered.container.querySelectorAll("figure")).toHaveLength(1);
+		const output = rendered.container.querySelector(
+			'[data-moq-chart="segmentProcessing"]',
+		);
+		expect(output).toHaveTextContent("No saved data");
+		expect(output?.querySelector(".recharts-wrapper")).toBeNull();
 		expect(rendered.container.querySelector("video")).not.toBeNull();
 	});
 	it("names saved canvas pixel updates without presenting them as source FPS", async () => {

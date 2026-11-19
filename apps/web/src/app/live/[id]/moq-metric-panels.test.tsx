@@ -116,7 +116,50 @@ describe("MoQ metric panels", () => {
 		const encoder = screen.getByRole("region", { name: "Encoder" });
 		expect(within(encoder).getByText("Heartbeat · Poll")).toBeVisible();
 		expect(within(encoder).getByText("2.40 Mbps")).toBeVisible();
-		expect(container.querySelectorAll("figure")).toHaveLength(1);
+		expect(container.querySelectorAll("figure")).toHaveLength(2);
 		expect(container.querySelector('[data-series="audioMbps"]')).toBeNull();
+		expect(within(encoder).getByText("No saved data")).toBeVisible();
+	});
+	it("keeps MoQ output visible and shows only measured processing times", () => {
+		const { container, rerender } = renderLocalized(
+			<MoqEncoderHistory
+				active
+				heartbeat={{
+					source: "live-encoder-heartbeat",
+					points: [],
+					truncated: false,
+				}}
+			/>,
+		);
+		const output = () =>
+			container.querySelector('[data-moq-chart="segmentProcessing"]');
+		expect(output()).toHaveTextContent("Waiting for data");
+		expect(output()?.querySelector("[data-series]")).toBeNull();
+		rerender(
+			<MoqEncoderHistory
+				active
+				heartbeat={{
+					source: "live-encoder-heartbeat",
+					points: [],
+					truncated: false,
+					pushOutput: [
+						{
+							sampledAt: startedAt,
+							segmentProcessingMeanMs: 14,
+							segmentProcessingMinMs: 0,
+							segmentProcessingMaxMs: null,
+						},
+					],
+				}}
+			/>,
+		);
+		expect(output()).toHaveTextContent("Output segment processing time");
+		expect(output()).toHaveTextContent("14 ms");
+		expect(output()).toHaveTextContent("0 ms");
+		expect(output()).not.toHaveTextContent("Waiting for data");
+		expect(
+			output()?.querySelector('[data-series="segmentProcessingMaxMs"]'),
+		).toBeNull();
+		expect(output()?.closest("details")).toBeNull();
 	});
 });

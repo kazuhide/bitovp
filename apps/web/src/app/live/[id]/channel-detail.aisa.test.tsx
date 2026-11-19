@@ -543,7 +543,12 @@ it.each([
 	expect(document.querySelectorAll("#sec-analysis")).toHaveLength(1);
 	expect(screen.queryByText("AISA Live Preview")).toBeNull();
 	expect(screen.getByRole("region", { name: "Channel status" })).toBeVisible();
-	expect(screen.getByRole("region", { name: "Next action" })).toBeVisible();
+	if (imported) {
+		expect(screen.getByRole("region", { name: "Next action" })).toBeVisible();
+	} else {
+		expect(screen.getByText("Recorded RUNNING")).toBeVisible();
+		expect(screen.queryByRole("region", { name: "Next action" })).toBeNull();
+	}
 	expect(
 		screen.getByRole("heading", { name: "Delivery status" }),
 	).toBeVisible();

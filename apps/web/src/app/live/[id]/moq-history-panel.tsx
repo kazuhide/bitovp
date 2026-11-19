@@ -95,8 +95,7 @@ export function MoqHistoryPanel({
 		};
 	}, [active, channelId, queryClient, reconcileUntil, refetch, runId]);
 
-	const heartbeat = hideEncoder ? undefined : data?.heartbeat;
-	const encoder = heartbeat?.points.length ? heartbeat : undefined;
+	const encoder = hideEncoder ? undefined : data?.heartbeat;
 	let archiveUrl: string | null = null;
 	try {
 		if (session?.archive && organizationId)
@@ -191,7 +190,9 @@ export function MoqHistoryPanel({
 			) : (
 				<div className="space-y-3">
 					<p className="text-xs text-zinc-500">{t("moqPlayback.noHistory")}</p>
-					{encoder ? <MoqEncoderHistory heartbeat={encoder} /> : null}
+					{encoder ? (
+						<MoqEncoderHistory active={active} heartbeat={encoder} />
+					) : null}
 				</div>
 			)}
 			{configuration ? (
@@ -320,7 +321,9 @@ function MoqHistoryObservation({
 						startedAt={session.startedAt}
 						playhead={hasArchive ? playhead : undefined}
 					/>
-					{encoder ? <MoqEncoderHistory heartbeat={encoder} /> : null}
+					{encoder ? (
+						<MoqEncoderHistory active={active} heartbeat={encoder} />
+					) : null}
 				</div>
 			</div>
 			{session.events.length ||

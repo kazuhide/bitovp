@@ -8,7 +8,11 @@ const born = new Date("2026-11-18T00:00:00.000Z");
 const now = new Date("2026-11-18T01:00:00.000Z");
 const at = new Date("2026-11-18T00:00:30.000Z");
 
-function store(rows: { at: Date; raw: unknown }[] = [], extra = {}) {
+function store(
+	rows: { at: Date; raw: unknown }[] = [],
+	extra = {},
+	push: { receivedAt: Date; raw: unknown }[] = [],
+) {
 	const run = {
 		id: runId,
 		bitmovinEncodingId: encodingId,
@@ -20,6 +24,7 @@ function store(rows: { at: Date; raw: unknown }[] = [], extra = {}) {
 	const prisma = {
 		liveChannelRun: { findFirst: vi.fn(async () => run) },
 		liveHeartbeat: { findMany: vi.fn(async () => rows) },
+		webhookEvent: { findMany: vi.fn(async () => push) },
 	};
 	return {
 		prisma: prisma as unknown as Parameters<typeof readMoqHeartbeatHistory>[0],
@@ -50,12 +55,9 @@ describe("MoQ run heartbeat history", () => {
 			message: "private-token",
 		};
 		const { prisma, queries } = store([{ at, raw }]);
-		const result = await readMoqHeartbeatHistory(
-			prisma,
-			runId,
-			encodingId,
+		const result = await readMoqHeartbeatHistory(prisma, runId, encodingId, {
 			now,
-		);
+		});
 		expect(result).toMatchObject({
 			source: "live-encoder-heartbeat",
 			truncated: false,
@@ -91,6 +93,67 @@ describe("MoQ run heartbeat history", () => {
 				take: 601,
 			}),
 		);
+		expect(queries.webhookEvent.findMany).not.toHaveBeenCalled();
+		expect(result).not.toHaveProperty("pushOutput");
+		expect(moqHeartbeatHistorySchema.safeParse(result).success).toBe(true);
+	});
+
+	it("recovers output measurements from bound signed Push receipts and deduplicates replays", async () => {
+		const sampledAt = "2026-11-18T00:00:29.000Z";
+		const payload = (id: string, timestamp: string) => ({
+			eventType: "LIVE_ENCODING_HEARTBEAT",
+			webhookId: "33333333-3333-4333-8333-333333333333",
+			encoding: { id },
+			value: {
+				timestamp,
+				ingest: { status: "CONNECTED", healthy: true },
+				output: {
+					segments: {
+						totalProcessingStatsMs: { mean: 12, min: 0, max: 18 },
+						privateUrl: "private-token",
+					},
+				},
+			},
+		});
+		const raw = payload(encodingId, sampledAt);
+		const { prisma, queries } = store([], {}, [
+			{ receivedAt: new Date("2026-11-18T00:00:42Z"), raw },
+			{ receivedAt: at, raw },
+			{ receivedAt: at, raw: payload(runId, sampledAt) },
+			{ receivedAt: at, raw: payload(encodingId, "2026-11-17T23:59:59Z") },
+			{ receivedAt: at, raw: payload(encodingId, "no-provider-time") },
+			{ receivedAt: new Date(now.getTime() + 1), raw },
+		]);
+		const result = await readMoqHeartbeatHistory(prisma, runId, encodingId, {
+			now,
+			includePushOutput: true,
+		});
+		expect(queries.webhookEvent.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					source: "bitmovin",
+					eventType: "LIVE_ENCODING_HEARTBEAT",
+					signatureValid: true,
+					liveChannelRunId: runId,
+					raw: { path: ["encoding", "id"], equals: encodingId },
+					receivedAt: { gte: born, lte: now },
+				},
+				take: 601,
+			}),
+		);
+		expect(result).toEqual({
+			source: "live-encoder-heartbeat",
+			points: [],
+			truncated: false,
+			pushOutput: [
+				{
+					sampledAt,
+					segmentProcessingMeanMs: 12,
+					segmentProcessingMinMs: 0,
+					segmentProcessingMaxMs: 18,
+				},
+			],
+		});
 		expect(moqHeartbeatHistorySchema.safeParse(result).success).toBe(true);
 	});
 
@@ -111,12 +174,9 @@ describe("MoQ run heartbeat history", () => {
 				},
 			},
 		]);
-		const result = await readMoqHeartbeatHistory(
-			prisma,
-			runId,
-			encodingId,
+		const result = await readMoqHeartbeatHistory(prisma, runId, encodingId, {
 			now,
-		);
+		});
 		expect(result.points[0]).toMatchObject({
 			sampledAt: null,
 			ingestStatus: "DISCONNECTED",
@@ -133,13 +193,17 @@ describe("MoQ run heartbeat history", () => {
 	it("discards unbound samples and never reads history for a different provider encoding", async () => {
 		const { prisma, queries } = store([], { bitmovinEncodingId: "other" });
 		expect(
-			await readMoqHeartbeatHistory(prisma, runId, encodingId, now),
+			await readMoqHeartbeatHistory(prisma, runId, encodingId, {
+				now,
+				includePushOutput: true,
+			}),
 		).toEqual({
 			source: "live-encoder-heartbeat",
 			points: [],
 			truncated: false,
 		});
 		expect(queries.liveHeartbeat.findMany).not.toHaveBeenCalled();
+		expect(queries.webhookEvent.findMany).not.toHaveBeenCalled();
 	});
 
 	it("retains a newer run snapshot only with its dedicated heartbeat timestamp", async () => {
@@ -154,12 +218,9 @@ describe("MoQ run heartbeat history", () => {
 				},
 			},
 		);
-		const result = await readMoqHeartbeatHistory(
-			prisma,
-			runId,
-			encodingId,
+		const result = await readMoqHeartbeatHistory(prisma, runId, encodingId, {
 			now,
-		);
+		});
 		expect(
 			result.points.map((point) => [point.observedAt, point.source]),
 		).toEqual([
@@ -182,7 +243,8 @@ describe("MoQ run heartbeat history", () => {
 				},
 			);
 			expect(
-				(await readMoqHeartbeatHistory(prisma, runId, encodingId, now)).points,
+				(await readMoqHeartbeatHistory(prisma, runId, encodingId, { now }))
+					.points,
 			).toHaveLength(1);
 		}
 	});
@@ -193,12 +255,9 @@ describe("MoQ run heartbeat history", () => {
 			raw: { ingest: { status: "CONNECTED", droppedPacketsVideo: index } },
 		}));
 		const { prisma } = store(rows);
-		const result = await readMoqHeartbeatHistory(
-			prisma,
-			runId,
-			encodingId,
+		const result = await readMoqHeartbeatHistory(prisma, runId, encodingId, {
 			now,
-		);
+		});
 		expect(result.points).toHaveLength(600);
 		expect(result.truncated).toBe(true);
 		expect(result.points[0]?.observedAt).toBe(rows[599]?.at.toISOString());
@@ -216,12 +275,9 @@ describe("MoQ run heartbeat history", () => {
 			{ at: new Date(born.getTime() - 1), raw },
 			{ at: new Date("invalid"), raw },
 		]);
-		const result = await readMoqHeartbeatHistory(
-			prisma,
-			runId,
-			encodingId,
+		const result = await readMoqHeartbeatHistory(prisma, runId, encodingId, {
 			now,
-		);
+		});
 		expect(result.points).toHaveLength(1);
 		expect(result.points[0]?.sampledAt).toBeNull();
 	});

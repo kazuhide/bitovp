@@ -131,6 +131,7 @@ import {
 import { createRunHeartbeatSummarizer } from "./live/run-heartbeat-summary";
 import { reconcileStartupCancellations } from "./live/startup-cancel";
 import {
+	LIVE_HEARTBEAT_SLOTS,
 	liveChannelConcurrency,
 	reserveLiveStopCapacity,
 } from "./live-capacity";
@@ -1982,7 +1983,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 				? { concurrency: ORCHESTRATOR_CONCURRENCY }
 				: {}),
 			...(key === "liveChannel"
-				? { concurrency: LIVE_CHANNEL_CONCURRENCY }
+				? { concurrency: LIVE_CHANNEL_CONCURRENCY + LIVE_HEARTBEAT_SLOTS }
 				: {}),
 			// review-183 I3: one slow webhook host must not serialize the bus.
 			...(key === "notify" ? { concurrency: 4 } : {}),

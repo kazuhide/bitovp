@@ -1124,8 +1124,8 @@ export const en = {
 		poll: "Heartbeat · Poll",
 		lastReport: "Heartbeat · Last run report",
 		sourceHelp:
-			"Heartbeat measurements. The time axis uses the observation timestamp of the API read (UTC).",
-		details: "Packets and processing time",
+			"The input graphs use the API read time of Bitmovin Live Heartbeat (UTC).",
+		details: "Input packets",
 		ingestUnhealthy: "Input unhealthy",
 		ingest: {
 			CONNECTED: "Input connected",
@@ -1134,12 +1134,15 @@ export const en = {
 			ERROR: "Input error",
 		},
 		source: "Encoder API · receipt time UTC",
-		empty: "No saved heartbeat data.",
+		empty: "No saved data",
 		yes: "Yes",
 		no: "No",
 		inputBitrate: "Input bitrate",
 		videoFps: "Input video FPS",
-		segmentProcessing: "Segment processing",
+		segmentProcessing: "Output segment processing time",
+		output: "Output",
+		outputHelp:
+			"Segment processing times reported by Bitmovin Live Heartbeat via Poll or signed Push. Times are UTC.",
 		inputPackets: "Input packet errors (cumulative)",
 		video: "Video",
 		audio: "Audio",
@@ -2195,6 +2198,7 @@ export const en = {
 		playable: "Playable",
 		never: "never",
 		unknown: "unknown",
+		awaitingData: "Waiting for data",
 		none: "None",
 		clockSkew: "clock skew",
 		secondsAgo: "{seconds}s ago",
@@ -2706,7 +2710,7 @@ export const en = {
 		hdrProtocolHint: "HDR base layer · HLS · local CPU",
 		hdrPqContext: "HDR VMAF · PQ / ICtCp 16-bit",
 		hdrHlgContext: "HLG → PQ · 1000 nits",
-		hdrBaseLayerScope: "HDR base layer · RPU display mapping not measured",
+		hdrBaseLayerScope: "HDR base layer measured",
 		mixedHdrContexts:
 			"HDR/SDR or HLG normalization differs. These scores have different measurement conditions.",
 		separateHdrContexts:
@@ -3289,7 +3293,7 @@ export const en = {
 	lifecycle: {
 		/* Lifecycle durations shown here must be measured and include their sample counts. */
 		aria: "Encoder lifecycle",
-		s1: "① Start requested",
+		s1: "Start requested",
 		s1Hint:
 			"Encoder not running. A manual start or the schedule's START row boots it.",
 		s1ErrorHint:
@@ -3297,26 +3301,25 @@ export const en = {
 		// Use amber while provider status is unconfirmed. Once the provider confirms an encoding has ended,
 		// the lifecycle hint must not imply that the encoder may still be running.
 		providerUnknownHint:
-			"Provider status cannot be confirmed (last confirmed {at}{unavailableSince}). Bitmovin status is checked every 30 seconds. Stop remains available. Start, restart, slate, SCTE-35, timeshift and new feeders require a fresh reading.",
-		providerUnavailableSince: "; no confirmed status since {since}",
-		providerUnobservedHint:
-			"Waiting for the first Bitmovin encoder status check. Until it arrives, this channel is not shown as confirmed on air.",
+			"Last Bitmovin reading {status} ({at}){unavailableSince}",
+		providerUnavailableSince: " (no update since {since})",
+		providerUnobservedHint: "No Bitmovin status recorded",
 		providerUnknownNever: "never",
 		providerTerminalHint:
 			"Bitmovin reported this run's encoding {status} at {at}.",
-		inputUnobserved: "Input status unconfirmed",
+		inputUnobserved: "Waiting for input data",
 		inputUnobservedHint:
 			"Input connection status is not available for this run.",
-		s2: "② Instance booting",
+		s2: "Instance booting",
 		s2Hint:
 			"Bitmovin is provisioning the encoder instance. Startup time varies by region and configuration. View past measurements under Live in Settings. Input cannot be received yet.",
-		s3: "③ Waiting for input",
+		s3: "Waiting for input",
 		s3Hint:
 			"The encoder is up and listening. Nothing is broadcast yet — slates and output need a CONNECTED input. Connect your feed (or a feeder); slate content can already be registered.",
-		s4: "④ Input connected — encoding & delivering",
+		s4: "Input connected",
 		s4Hint:
-			"The pipeline is live: slates (蓋被せ) can be inserted from here on. On a running, fed channel a playback probe saw its first segment 31.8s in (n=1; connect-to-first-segment itself is unmeasured).",
-		s7: "⑦ Stopped",
+			"The encoder is receiving and encoding input. Check the generated output or open a preview to verify playback.",
+		s7: "Stopped",
 		s7Hint:
 			"While stopping, wait for completion. An ended encoding cannot be restarted. After stopping, Start new run creates a new encoder. Register insertable content again for that run.",
 	},
@@ -3327,7 +3330,6 @@ export const en = {
 		cancelStartPending: "Cancelling start",
 		cancelStart: "Cancel start",
 		title: "Live Channels",
-		providerStatusUnconfirmed: "{status} · Bitmovin status unconfirmed",
 		newChannel: "New Live Channel",
 		inventory: {
 			title: "Live encoder inventory",
@@ -3484,7 +3486,7 @@ export const en = {
 			output: "Output",
 			ok: "Healthy",
 			down: "Not detected",
-			unobservable: "Not measurable (no HLS)",
+			unobservable: "No HLS data",
 			stale:
 				"No Poll status sample within 90 seconds. This is separate from Push reception or a broadcast stopping.",
 			timelineTitle: "Broadcast timeline",
@@ -3568,6 +3570,7 @@ export const en = {
 		encoderStopped: "Stopped",
 		encoderActive: "Encoder running",
 		encoderStatusUnverified: "Encoder state unverified",
+		recordedStatus: "Recorded {status}",
 		runOutputGenerated: "Output generated",
 		runErrorRecorded: "Error recorded",
 		runOutputUnverified: "Output unverified",

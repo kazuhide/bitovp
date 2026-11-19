@@ -6,7 +6,7 @@ import { HelpOverlay } from "@/components/ui/help-overlay";
 import { formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
 
-/* Present the encoder lifecycle as start, instance boot, ingest waiting, connected input, encoding, output, and stop. Pure rendering depends on status, ingest connection, and encoding presence. Timing hints must identify measured samples and must not invent estimates for unmeasured stages. */
+/* Show the current encoder stage and observed input. A connection can return to waiting. */
 
 export type LifecycleStage = 1 | 2 | 3 | 4 | 7;
 
@@ -40,9 +40,9 @@ const STAGE_DEFS = [
  * run's encoding, as the page derives it from the run columns.
  */
 export type ProviderLifecycleView = {
-	/** The status read is failing / stale — amber, never green. */
+	/** The status read is failing or stale. */
 	unknown: boolean;
-	/** No provider read has landed for this run yet — amber, never green. */
+	/** No provider read has landed for this run yet. */
 	unobserved?: boolean;
 	/** Bitmovin reported that this run's own encoder ended. */
 	terminal: boolean;
@@ -59,7 +59,6 @@ export function LifecycleStrip({
 	ingestConnected,
 	hasEncoding,
 	hasError = false,
-	showProviderSummary = true,
 	provider,
 }: {
 	status: LiveChannelStatus;
@@ -76,8 +75,6 @@ export function LifecycleStrip({
 	hasEncoding: boolean;
 	/** A STOPPED row carrying an error is a stop Bitmovin never confirmed. */
 	hasError?: boolean;
-	/** The detail header already displays the provider's reading. */
-	showProviderSummary?: boolean;
 	/**
 	 * optional so callers without a run view (and every pre-#280
 	 * test) render exactly as before; absent = not unknown, not terminal.
@@ -96,11 +93,18 @@ export function LifecycleStrip({
 	const providerUnknown = !providerTerminal && provider?.unknown === true;
 	// A terminal legacy row is historical, not waiting for a future poll.
 	const providerUnobserved =
+		hasEncoding &&
 		!providerTerminal &&
 		provider?.unobserved === true &&
 		(status !== "STOPPED" || hasError);
-	const providerUnconfirmed = providerUnknown || providerUnobserved;
-	const activeUnconfirmed = providerUnconfirmed || inputUnobserved;
+	const providerWord = classifyProviderStatusWord(provider?.status);
+	const providerTransitional =
+		status === "RUNNING" && providerWord === "TRANSITIONAL";
+	const activeUnconfirmed =
+		providerUnknown ||
+		providerUnobserved ||
+		providerTransitional ||
+		inputUnobserved;
 	// review-2 on #268: a STOPPED channel whose stop never CONFIRMED is more
 	// exactly the population this hint describes than an ERROR one is — the
 	// evidence there is positive and recorded , while ERROR
@@ -110,27 +114,21 @@ export function LifecycleStrip({
 	// action.
 	const errorWithEncoder =
 		hasEncoding && (status === "ERROR" || (status === "STOPPED" && hasError));
-	/**
-	 * the provider's view outranks the stage hint. UNKNOWN paints the
-	 * active stage AMBER (the audit's invariant: a lost observation on a
-	 * RUNNING channel is never shown as confirmed green/on-air) and says so,
-	 * with the last successful reading and the window's start. A provider-
-	 * TERMINAL error run gets the terminal hint instead of "may still be up
-	 * on Bitmovin" — Bitmovin has said it is not.
-	 */
+	// Keep the provider observation and its timestamp in the stage help.
 	const hint = providerUnobserved
 		? t("lifecycle.providerUnobservedHint")
-		: providerUnknown
-			? t("lifecycle.providerUnknownHint", {
-					at: provider?.observedAt
-						? formatDateTime(provider.observedAt)
-						: t("lifecycle.providerUnknownNever"),
-					unavailableSince: provider?.unknownSince
-						? t("lifecycle.providerUnavailableSince", {
-								since: formatDateTime(provider.unknownSince),
-							})
-						: "",
-				})
+		: providerUnknown || providerTransitional
+			? provider?.status && provider.observedAt && providerWord !== "UNKNOWN"
+				? t("lifecycle.providerUnknownHint", {
+						status: provider.status,
+						at: formatDateTime(provider.observedAt),
+						unavailableSince: provider.unknownSince
+							? t("lifecycle.providerUnavailableSince", {
+									since: formatDateTime(provider.unknownSince),
+								})
+							: "",
+					})
+				: t("lifecycle.providerUnobservedHint")
 			: providerTerminal
 				? provider.status &&
 					classifyProviderStatusWord(provider.status) === "TERMINAL"
@@ -160,8 +158,8 @@ export function LifecycleStrip({
 							: undefined
 			}
 		>
-			<ol className="flex flex-wrap items-center gap-1 text-xs">
-				{visibleStages.map((stage, i) => {
+			<ol className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+				{visibleStages.map((stage) => {
 					const state =
 						stage.n === active
 							? "active"
@@ -174,52 +172,42 @@ export function LifecycleStrip({
 							data-stage={stage.n}
 							data-state={state}
 							aria-current={state === "active" ? "step" : undefined}
-							className={`${state === "active" || showTimelineOnSmallScreens ? "flex" : "hidden sm:flex"} items-center gap-1`}
+							className={`${state === "active" || showTimelineOnSmallScreens ? "flex" : "hidden sm:flex"} items-center gap-1.5`}
 						>
-							{i > 0 ? (
-								<span
-									aria-hidden
-									className={`${showTimelineOnSmallScreens ? "" : "hidden sm:inline"} text-zinc-700`}
-								>
-									→
-								</span>
-							) : null}
+							<span
+								aria-hidden
+								className={`size-1.5 shrink-0 rounded-full ${
+									state === "active" && !activeUnconfirmed
+										? "bg-sky-400"
+										: state === "future"
+											? "border border-zinc-500"
+											: "bg-zinc-500"
+								}`}
+							/>
 							<span
 								className={
 									state === "active"
 										? activeUnconfirmed
-											? "rounded bg-amber-950 px-2 py-0.5 font-medium text-amber-300 ring-1 ring-amber-700"
-											: "rounded bg-sky-950 px-2 py-0.5 font-medium text-sky-300 ring-1 ring-sky-700"
-										: state === "past"
-											? "rounded px-2 py-0.5 text-zinc-500 line-through decoration-zinc-700"
-											: "rounded px-2 py-0.5 text-zinc-600"
+											? "font-medium text-zinc-200"
+											: "font-medium text-sky-300"
+										: "text-zinc-400"
 								}
 							>
 								{t(
 									inputUnobserved && stage.n === 3
 										? "lifecycle.inputUnobserved"
-										: stage.labelKey,
+										: stage.n === 7 &&
+												status === "STOPPING" &&
+												!providerTerminal
+											? "nextAction.stoppingTitle"
+											: stage.labelKey,
 								)}
 							</span>
 						</li>
 					);
 				})}
 			</ol>
-			<figcaption
-				className={
-					activeUnconfirmed ? "text-xs text-amber-300" : "text-xs text-zinc-400"
-				}
-			>
-				{/* STAGE_DEFS covers the mapper's whole range, so activeDef is
-				 * total — review-228 caught the defensive ternary surviving
-				    the first "removed dead ternary" claim. */}
-				{providerUnconfirmed && showProviderSummary ? (
-					<span className="mr-1">
-						{t("live.providerStatusUnconfirmed", { status })}
-					</span>
-				) : !providerUnconfirmed && errorWithEncoder && !providerTerminal ? (
-					<span className="mr-1">{hint}</span>
-				) : null}
+			<figcaption className="text-xs text-zinc-400">
 				<HelpOverlay labelFor={t("lifecycle.aria")}>{hint}</HelpOverlay>
 			</figcaption>
 		</figure>

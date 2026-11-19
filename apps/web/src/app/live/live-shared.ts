@@ -51,7 +51,7 @@ export const LIVE_STATUS_TONE: Record<
 
 export type LiveStatusPresentation = {
 	tone: "neutral" | "ok" | "warn" | "error";
-	/** The local run says RUNNING, but Bitmovin has not confirmed it. */
+	/** The recorded run says RUNNING without a current Bitmovin RUNNING read. */
 	providerUnconfirmed: boolean;
 };
 
@@ -60,9 +60,8 @@ export type LiveStatusPresentation = {
  *
  * `LiveChannelRun.status = RUNNING` is the orchestrator's state. It becomes a
  * reassuring green claim only when the current run also carries a fresh
- * Bitmovin RUNNING observation. UNKNOWN (a failed/stale read) and UNOBSERVED
- * (no read yet, including legacy rows immediately after migration) remain the
- * truthful local word, but amber and explicitly unconfirmed.
+ * Bitmovin RUNNING observation. With any other provider reading, the visible
+ * label describes the recorded status and uses a neutral tone.
  *
  * Other local states keep their ordinary presentation: provider confirmation
  * qualifies an on-air claim, not a stopped channel's post-mortem label.
@@ -72,10 +71,9 @@ export function liveStatusPresentation(
 	providerLifecycle: ProviderLifecycleView,
 ): LiveStatusPresentation {
 	const providerUnconfirmed =
-		status === "RUNNING" &&
-		(providerLifecycle === "UNKNOWN" || providerLifecycle === "UNOBSERVED");
+		status === "RUNNING" && providerLifecycle !== "RUNNING";
 	return {
-		tone: providerUnconfirmed ? "warn" : LIVE_STATUS_TONE[status],
+		tone: providerUnconfirmed ? "neutral" : LIVE_STATUS_TONE[status],
 		providerUnconfirmed,
 	};
 }

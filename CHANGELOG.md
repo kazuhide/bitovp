@@ -13,14 +13,17 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Use specific Japanese messages for missing records, failed reads and pending results across the app.
 - Display MoQ playback and its recorded observations alongside separate player and encoder graphs.
 - Open Live playback and history from the channel header, with input and encoder observations ahead of optional notification details.
-- Give VOD previews more room, keep report links near the job summary, and support keyboard navigation between job tabs.
-- Bring the selected metric and its comparison conditions forward on VMAF Lab reports.
+- Keep the compact VOD preview at the right on wide screens and preserve detail layout as playback becomes available. Open reports near the job summary and navigate between job tabs by keyboard.
+- Identify the HDR base video measured by VMAF and keep the model and measurement conditions alongside the selected metric.
+- Highlight the current Live lifecycle stage and keep the last Bitmovin status reading in its information control.
+- Plot MoQ output segment processing time from Live Heartbeat Poll or signed Push data.
 
 ### Fixed
 
 - Copy live channels with MoQ or other JSON-only settings into an editable plan that preserves their configuration.
 - Keep Live input coordinates and their copy buttons within the page on narrow screens.
-- Restore focus after closing the enlarged VOD player and keep job details full width when playback is unavailable.
+- Restore focus after closing the enlarged VOD player.
+- Keep Bitmovin status reads moving while Live channel starts occupy the action slots.
 
 ## [1.3.2] - 2026-11-19
 

@@ -38,10 +38,9 @@ import type { LiveJumpEvent } from "./section-focus";
 import type { LivePhase, LiveSectionId } from "./section-layout";
 import { StreamHealth, useRunHealth } from "./stream-health";
 
-const LAMP_COPY: Record<LampState, MessageKey> = {
+const LAMP_COPY: Record<Exclude<LampState, "unknown">, MessageKey> = {
 	on: "live.health.ok",
 	off: "live.health.down",
-	unknown: "status.unknown",
 	unobservable: "live.health.unobservable",
 	ended: "live.health.ended",
 };
@@ -65,6 +64,7 @@ const ORIGIN_COPY: Record<
 function LaneCard({
 	lane,
 	lamp,
+	missingData,
 	state,
 	at,
 	alerts,
@@ -73,6 +73,7 @@ function LaneCard({
 }: {
 	lane: DeliveryLane;
 	lamp: LampState;
+	missingData: string;
 	state: string;
 	at: string;
 	alerts: number | "unknown";
@@ -80,6 +81,8 @@ function LaneCard({
 	children?: ReactNode;
 }) {
 	const { t } = useT();
+	const lampLabel = lamp === "unknown" ? missingData : t(LAMP_COPY[lamp]);
+	const showState = state !== lampLabel;
 	return (
 		<article
 			data-lane={lane}
@@ -95,21 +98,24 @@ function LaneCard({
 				</h3>
 				<span
 					data-lane-lamp={lamp}
+					data-lane-cell={showState ? undefined : `${lane}-state`}
 					className={`inline-flex items-center gap-1.5 text-xs ${LAMP_TONE[lamp]}`}
 				>
 					<span
 						aria-hidden
 						className="h-2.5 w-2.5 shrink-0 rounded-full bg-current"
 					/>
-					{t(LAMP_COPY[lamp])}
+					{lampLabel}
 				</span>
 			</div>
-			<p
-				data-lane-cell={`${lane}-state`}
-				className="break-words text-sm text-zinc-200"
-			>
-				{state}
-			</p>
+			{showState ? (
+				<p
+					data-lane-cell={`${lane}-state`}
+					className="break-words text-sm text-zinc-200"
+				>
+					{state}
+				</p>
+			) : null}
 			<p data-lane-cell={`${lane}-last-seen`} className="text-xs text-zinc-400">
 				{t("live.health.lastSeen", { when: at })}
 			</p>
@@ -154,6 +160,7 @@ export function DeliveryStatusPanel({
 	channelStatus,
 	providerStatus,
 	providerObservedAt,
+	monitoringAllowed = true,
 	warningEvidenceAvailable = true,
 	nowMs,
 	detailsOpen,
@@ -178,6 +185,7 @@ export function DeliveryStatusPanel({
 	channelStatus: LiveChannelStatus;
 	providerStatus: string | null;
 	providerObservedAt: string | null;
+	monitoringAllowed?: boolean;
 	/** Public telemetry may omit events; absence then cannot establish no warnings. */
 	warningEvidenceAvailable?: boolean;
 	nowMs: number;
@@ -186,6 +194,11 @@ export function DeliveryStatusPanel({
 	onJump?: (event: LiveJumpEvent, targetId: string) => void;
 }) {
 	const { t } = useT();
+	const missingData = t(
+		mode === "live" && channelStatus === "RUNNING" && monitoringAllowed
+			? "status.awaitingData"
+			: "status.unknown",
+	);
 	const health = useRunHealth(channelId, run?.id ?? null, mode === "live");
 	const telemetry = selectLiveTelemetry({
 		reception: heartbeatReception,
@@ -284,27 +297,25 @@ export function DeliveryStatusPanel({
 				? t("status.ingestConnected")
 				: diagnosis.input !== "UNKNOWN"
 					? diagnosis.input
-					: t(
-							phase === "starting" && !heartbeat
-								? "live.health.starting"
-								: "status.unknown",
-						);
+					: phase === "starting" && !heartbeat
+						? t("live.health.starting")
+						: missingData;
 	const states = {
 		ingest: inputState,
 		encoder:
 			providerLifecycle === "UNKNOWN" || providerLifecycle === "UNOBSERVED"
-				? t("status.unknown")
-				: (providerStatus ?? t("status.unknown")),
+				? missingData
+				: (providerStatus ?? missingData),
 		output:
 			diagnosis.outputSource === "origin" || origin.state === "unavailable"
 				? t(ORIGIN_COPY[origin.state])
-				: t(
-						diagnosis.output === "advancing"
-							? "origin.advancing"
-							: diagnosis.output === "stalled"
-								? "origin.stale"
-								: "status.unknown",
-					),
+				: diagnosis.output === "advancing"
+					? t("origin.advancing")
+					: diagnosis.output === "stalled"
+						? t("origin.stale")
+						: lamps.output === "unobservable"
+							? t("live.health.unobservable")
+							: missingData,
 	};
 	const stamps = {
 		ingest: heartbeat?.at ?? null,
@@ -423,6 +434,7 @@ export function DeliveryStatusPanel({
 						key={lane}
 						lane={lane}
 						lamp={lamps[lane]}
+						missingData={missingData}
 						state={states[lane]}
 						at={seen(stamps[lane])}
 						alerts={counts?.[lane] ?? "unknown"}

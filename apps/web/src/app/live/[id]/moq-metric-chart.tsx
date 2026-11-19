@@ -28,6 +28,7 @@ type Props<T extends TimedPoint> = {
 	unit: string;
 	decimals?: number;
 	help?: string;
+	emptyLabel?: string;
 	playhead?: number | null;
 };
 
@@ -70,6 +71,7 @@ export function MoqMetricChart<T extends TimedPoint>({
 	unit,
 	decimals = 1,
 	help,
+	emptyLabel,
 	playhead,
 }: Props<T>) {
 	const labelId = useId();
@@ -83,7 +85,22 @@ export function MoqMetricChart<T extends TimedPoint>({
 		);
 		return [{ ...line, hasIsolatedPoint }];
 	});
-	if (!measurements.length) return null;
+	const title = (
+		<div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-zinc-400">
+			<span id={labelId}>{label}</span>
+			{help ? <InfoHint labelFor={label} text={help} /> : null}
+		</div>
+	);
+	if (!measurements.length) {
+		return emptyLabel ? (
+			<figure data-moq-chart={id}>
+				<figcaption className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+					{title}
+					<span className="text-zinc-400">{emptyLabel}</span>
+				</figcaption>
+			</figure>
+		) : null;
+	}
 
 	const first = points[0]?.timestamp;
 	const last = points.at(-1)?.timestamp;
@@ -105,10 +122,7 @@ export function MoqMetricChart<T extends TimedPoint>({
 	return (
 		<figure data-moq-chart={id} className="min-w-0 space-y-1.5">
 			<figcaption className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
-				<div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-zinc-400">
-					<span id={labelId}>{label}</span>
-					{help ? <InfoHint labelFor={label} text={help} /> : null}
-				</div>
+				{title}
 				{measurements.map(({ field, label: name, color }) => {
 					const value = readPoint?.[field];
 					if (!isMeasurement(value) && isSingle) return null;

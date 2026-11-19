@@ -4,7 +4,10 @@ import { useId, useMemo } from "react";
 import { InfoHint } from "@/components/ui/info-hint";
 import { useT } from "@/lib/i18n/context";
 import type { MoqHeartbeatHistory } from "@/lib/moq-player/heartbeat";
-import { moqHeartbeatSeries } from "@/lib/moq-player/heartbeat-series";
+import {
+	moqHeartbeatSeries,
+	moqOutputSeries,
+} from "@/lib/moq-player/heartbeat-series";
 import { MoqMetricChart, moqUtcTime } from "./moq-metric-chart";
 
 const green = "var(--color-emerald-400)";
@@ -14,10 +17,12 @@ const red = "var(--color-rose-400)";
 
 export function MoqEncoderHistory({
 	heartbeat,
-	status,
+	active = false,
+	failed = false,
 }: {
 	heartbeat: MoqHeartbeatHistory;
-	status?: "pending" | "error";
+	active?: boolean;
+	failed?: boolean;
 }) {
 	const { t } = useT();
 	const labelId = useId();
@@ -25,12 +30,10 @@ export function MoqEncoderHistory({
 		() => moqHeartbeatSeries(heartbeat.points),
 		[heartbeat.points],
 	);
+	const output = useMemo(() => moqOutputSeries(heartbeat), [heartbeat]);
 	const latest = heartbeat.points.at(-1);
 	const hasSecondary = series.some(
 		(point) =>
-			point.segmentProcessingMeanMs !== null ||
-			point.segmentProcessingMinMs !== null ||
-			point.segmentProcessingMaxMs !== null ||
 			point.droppedPacketsVideo !== null ||
 			point.droppedPacketsAudio !== null ||
 			point.corruptPacketsVideo !== null ||
@@ -57,17 +60,12 @@ export function MoqEncoderHistory({
 					</time>
 				) : null}
 			</div>
-			{!latest ? (
-				<p className="text-xs text-zinc-500">
-					{t(
-						status === "pending"
-							? "moqPlayback.loading"
-							: status === "error"
-								? "moqPlayback.historyFailed"
-								: "moqEncoder.empty",
-					)}
+			{!latest && failed ? (
+				<p className="text-xs text-zinc-400">
+					{t("moqPlayback.historyFailed")}
 				</p>
-			) : (
+			) : null}
+			{latest ? (
 				<>
 					<p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-400">
 						<span>
@@ -119,30 +117,6 @@ export function MoqEncoderHistory({
 							</summary>
 							<div className="mt-3 space-y-3">
 								<MoqMetricChart
-									id="segmentProcessing"
-									label={t("moqEncoder.segmentProcessing")}
-									points={series}
-									lines={[
-										{
-											field: "segmentProcessingMeanMs",
-											label: t("moqEncoder.mean"),
-											color: green,
-										},
-										{
-											field: "segmentProcessingMinMs",
-											label: t("moqEncoder.min"),
-											color: teal,
-										},
-										{
-											field: "segmentProcessingMaxMs",
-											label: t("moqEncoder.max"),
-											color: amber,
-										},
-									]}
-									unit="ms"
-									decimals={0}
-								/>
-								<MoqMetricChart
 									id="inputPackets"
 									label={t("moqEncoder.inputPackets")}
 									points={series}
@@ -174,11 +148,44 @@ export function MoqEncoderHistory({
 							</div>
 						</details>
 					) : null}
-					{heartbeat.truncated ? (
-						<p className="text-xs text-zinc-500">{t("moqEncoder.truncated")}</p>
-					) : null}
 				</>
-			)}
+			) : null}
+			{!failed ? (
+				<section
+					aria-label={t("moqEncoder.output")}
+					className="border-t border-zinc-800 pt-3"
+				>
+					<MoqMetricChart
+						id="segmentProcessing"
+						label={t("moqEncoder.segmentProcessing")}
+						points={output}
+						help={t("moqEncoder.outputHelp")}
+						emptyLabel={t(active ? "status.awaitingData" : "moqEncoder.empty")}
+						lines={[
+							{
+								field: "segmentProcessingMeanMs",
+								label: t("moqEncoder.mean"),
+								color: green,
+							},
+							{
+								field: "segmentProcessingMinMs",
+								label: t("moqEncoder.min"),
+								color: teal,
+							},
+							{
+								field: "segmentProcessingMaxMs",
+								label: t("moqEncoder.max"),
+								color: amber,
+							},
+						]}
+						unit="ms"
+						decimals={0}
+					/>
+				</section>
+			) : null}
+			{heartbeat.truncated ? (
+				<p className="text-xs text-zinc-500">{t("moqEncoder.truncated")}</p>
+			) : null}
 		</section>
 	);
 }

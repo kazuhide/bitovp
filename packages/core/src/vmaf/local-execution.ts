@@ -109,6 +109,8 @@ export const localVmafExecutionSchema = z
 				})
 				.strict(),
 		]),
+		/** Scored previously with the recorded execution evidence. */
+		reusedVerifiedResult: z.literal(true).optional(),
 		attempts: z.union([z.literal(1), z.literal(2)]),
 		fallbackReason: reasonCode.optional(),
 	})

@@ -108,6 +108,11 @@ import {
 } from "./local-selection";
 import { isUnresolvableModel, unresolvableModelMessage } from "./model-error";
 import { NativePairRefusal, nativePair } from "./native-score";
+import {
+	type NativeScoreReuseContext,
+	sealVerifiedNativeScore,
+	type VerifiedNativeScore,
+} from "./native-score-reuse";
 import { prepareDisplayScaleReference } from "./reference-preparation";
 import {
 	defaultKeyLister,
@@ -198,6 +203,7 @@ export type VmafProcessorDeps = {
 	resolveBandingResources?: ResolveBandingResources;
 	selectLocalNative?: SelectLocalNative;
 	nativeSelectionFailure?: Error;
+	reuseVerifiedNativeResults?: boolean;
 	cloudScore?: (request: CloudScoreRequest) => Promise<void>;
 	resolveCloudProfile?: (profileId: string) => Promise<VmafCloudProfile>;
 	/** Product-event emit ; never throws. */
@@ -952,6 +958,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 		// the pass before this one.
 		scorerRefusal?: NativePairRefusal,
 		hdrRequest?: { target: HlsQcTarget; referenceColor?: HdrReferenceColor },
+		verifiedReuse?: NativeScoreReuseContext,
 	): Promise<void> {
 		const runner =
 			execution.backend === "LOCAL"
@@ -1272,6 +1279,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				let run: { code: number | null; stderr: string };
 				let localExecution: LocalVmafExecution | undefined;
 				let localLog: unknown;
+				let verifiedNativeScore: VerifiedNativeScore | undefined;
 				let hdrMeasurement: HdrMeasurement | undefined;
 				if (hdrRequest) {
 					if (
@@ -1365,6 +1373,9 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 									}
 								: {}),
 							distortedProbe: resourceProbe?.stdout,
+							...(scoringOptions.scoring && verifiedReuse
+								? { verifiedReuse }
+								: {}),
 						},
 					);
 					run = result.run;
@@ -1401,6 +1412,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 							: {}),
 					};
 					localLog = result.log;
+					verifiedNativeScore = result.verifiedNativeScore;
 				}
 				runSignal.throwIfAborted();
 				await assertOwned?.();
@@ -1514,6 +1526,17 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 							...(hdrMeasurement ? { hdrMeasurement } : {}),
 							...(providerResult !== undefined ? { providerResult } : {}),
 							...(localExecution ? { localExecution } : {}),
+							...(verifiedNativeScore && localExecution
+								? {
+										[localExecution.reusedVerifiedResult
+											? "reusedNativeScore"
+											: "verifiedNativeScore"]: sealVerifiedNativeScore(
+											verifiedNativeScore,
+											localExecution,
+											framesGzip,
+										),
+									}
+								: {}),
 							...(measuredBanding
 								? { bandingExecution: measuredBanding.execution }
 								: {}),
@@ -2098,6 +2121,58 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 				row.triggerKey?.startsWith(
 					labManualTriggerPrefix(row.encodingJobId ?? ""),
 				) === true;
+			const verifiedReuse: NativeScoreReuseContext | undefined = (() => {
+				if (
+					!deps.reuseVerifiedNativeResults ||
+					!manualMeasurement ||
+					!selection ||
+					selection.backend === "cpu" ||
+					!gpuGeneration ||
+					!row.organizationId ||
+					!row.encodingJobId ||
+					wantBanding ||
+					referencePreparation
+				)
+					return undefined;
+				const scope = {
+					organizationId: row.organizationId,
+					scoringVersion: gpuGeneration,
+					selection,
+				};
+				const previous = paramsAcc.retryOf;
+				if (
+					typeof previous !== "string" ||
+					!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(previous) ||
+					previous === row.id ||
+					row.triggerKey !==
+						`${labManualTriggerPrefix(row.encodingJobId)}${row.model}:retry-${previous}`
+				)
+					return scope;
+				return {
+					...scope,
+					load: (key) =>
+						deps.prisma.vmafResult.findFirst({
+							where: {
+								organizationId: scope.organizationId,
+								vmafJobId: previous,
+								vmafJob: {
+									organizationId: scope.organizationId,
+									encodingJobId: row.encodingJobId,
+									mode: "VOD",
+									status: "ERROR",
+									triggerKey: `retry-history:${previous}`,
+									model: row.model,
+									scoringVersion: scope.scoringVersion,
+								},
+								provenance: {
+									path: ["verifiedNativeScore", "key"],
+									equals: key,
+								},
+							},
+							select: { framesGzip: true, provenance: true },
+						}),
+				};
+			})();
 			const targets = hdr
 				? hlsTargets
 				: bandingOnly
@@ -2740,6 +2815,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 													: {}),
 											}
 										: undefined,
+									verifiedReuse,
 								);
 							}
 							resultCount += 1;

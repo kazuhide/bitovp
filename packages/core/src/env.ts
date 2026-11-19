@@ -72,6 +72,8 @@ const envSchema = z.object({
 	VMAF_SCORING_BACKEND: z.enum(["cpu", "cuda", "vulkan"]).default("cpu"),
 	/** Separate owned native scorer; never used by Live or cloud execution. */
 	VMAF_NATIVE_PATH: z.string().min(1).optional(),
+	/** Reuse whole-frame CPU-verified owned scores on eligible manual retries. */
+	VMAF_REUSE_VERIFIED_NATIVE_RESULTS: z.enum(["0", "1"]).default("0"),
 	/** Device index among GPUs visible to the selected local backend. */
 	VMAF_GPU_DEVICE: z.coerce.number().int().nonnegative().safe().default(0),
 	/** Optional local VOD binary, independent of the Live feeder and cloud image. */

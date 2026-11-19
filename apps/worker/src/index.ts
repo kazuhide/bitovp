@@ -1481,6 +1481,7 @@ const vmafProcessor = tenantService(() =>
 			device: env.VMAF_GPU_DEVICE,
 		},
 		scoringBackend: env.VMAF_SCORING_BACKEND,
+		reuseVerifiedNativeResults: env.VMAF_REUSE_VERIFIED_NATIVE_RESULTS === "1",
 		...(env.VMAF_NATIVE_PATH ? { nativePath: env.VMAF_NATIVE_PATH } : {}),
 		now: processorDeps.now,
 		localResources: localVmafResources,

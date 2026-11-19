@@ -123,7 +123,7 @@ worker currently requires software decoding with this scorer. A separate
 standalone NVDEC-to-CUDA path is available for validation with unchanged
 dimensions; it is not silently substituted into worker measurements.
 
-Each GPU worker run also computes the official CPU reference. Every required
+A fresh GPU worker run also computes the official CPU reference. Every required
 feature and every frame score must pass the numerical checks before a result
 is accepted. Missing or duplicated values, different model/input hashes, an
 unexpected source build, a different device, or a comparison other than the one
@@ -139,6 +139,25 @@ install the scorer again whenever an update of bitovp changes
 This verification adds CPU work. Benchmarking the qualified GPU extractor
 alone and measuring the current worker's end-to-end time answer different
 questions. Compare both before choosing a deployment setting.
+
+### Reuse verified scores on a manual retry
+
+Set `VMAF_REUSE_VERIFIED_NATIVE_RESULTS=1` in the Worker environment before
+running the original measurement and its retry. This experiment covers manual
+SDR VOD measurements with **Local (GPU if available)** and a supervised native
+scorer. Combined Banding, a specially prepared reference, and other scoring
+paths use their ordinary execution.
+
+The Worker still downloads and checks both inputs on a retry. A completed pair
+from that retry's predecessor can skip the native GPU and CPU passes once the
+content digests, model, GPU build, device and driver, and scoring settings match.
+The new result owns its frame payload and reports
+`localExecution.reusedVerifiedResult: true` in the measurement JSON. An absent
+or invalid completion record takes the normal full score path.
+
+For a timing comparison, record the same retry with reuse disabled and enabled
+using the same original completion record and input bytes. Keep download and
+preparation in job wall time, and measure native scorer calls separately.
 
 ## Prepare a repeatable BBB codec comparison
 

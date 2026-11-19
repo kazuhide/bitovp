@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import {
 	capturePerTitleResults,
 	encodingPlanSchema,
@@ -38,6 +38,8 @@ import {
 	type LocalVmafResources,
 } from "./local-resources";
 import * as localScoring from "./local-score";
+import { verifyNativeReceipt } from "./native-contract";
+import { nativeExpected, nativeReceipt } from "./native-fixture.test-helper";
 import { NativePairRefusal } from "./native-score";
 import { createVmafProcessor, type VmafProcessorDeps } from "./processor";
 import * as referencePreparation from "./reference-preparation";
@@ -244,6 +246,7 @@ function setup(
 		decodePolicy?: VmafProcessorDeps["decodePolicy"];
 		scoringBackend?: VmafProcessorDeps["scoringBackend"];
 		nativePath?: string;
+		reuseVerifiedNativeResults?: boolean;
 		download?: VmafDownload;
 		concurrency?: number;
 		cloudScore?: VmafProcessorDeps["cloudScore"];
@@ -351,6 +354,12 @@ function setup(
 		}),
 	};
 	const vmafResult = {
+		findFirst: vi.fn(
+			async (
+				_args: unknown,
+			): Promise<{ framesGzip: Uint8Array; provenance: unknown } | null> =>
+				null,
+		),
 		create: vi.fn(async ({ data }: { data: Row }) => {
 			results.push(data);
 			return { id: `r${results.length}`, ...data };
@@ -555,6 +564,7 @@ function setup(
 	const deps: VmafProcessorDeps = {
 		decodePolicy: opts.decodePolicy,
 		nativePath: opts.nativePath,
+		reuseVerifiedNativeResults: opts.reuseVerifiedNativeResults,
 		selectLocalNative: opts.selectLocalNative,
 		nativeSelectionFailure: opts.nativeSelectionFailure,
 		scoringBackend: opts.scoringBackend,
@@ -4600,6 +4610,7 @@ function autoNativeFailureHarness(
 	admitGpu = true,
 	overrides: {
 		download?: VmafDownload;
+		reuseVerifiedNativeResults?: boolean;
 		job?: Row;
 		resolveLocalResources?: VmafProcessorDeps["resolveLocalResources"];
 	} = {},
@@ -4617,6 +4628,7 @@ function autoNativeFailureHarness(
 	const localRunner: ProcessRunner = { spawn: vi.fn(), run: vi.fn() };
 	const t = setup({
 		download: overrides.download,
+		reuseVerifiedNativeResults: overrides.reuseVerifiedNativeResults,
 		nativePath: "/native",
 		localRunner,
 		probeJson: RESOURCE_PROBE_JSON,
@@ -4660,6 +4672,105 @@ function autoNativeFailureHarness(
 	vi.mocked(localRunner.run).mockImplementation(raw);
 	return t;
 }
+it("limits verified native results to the current organization's exact manual retry predecessor", async () => {
+	const organizationId = "00000000-0000-4000-8000-000000000013";
+	const previous = "00000000-0000-4000-8000-000000000014";
+	const model = "vmaf_v1.0.16_3d0h";
+	const key = "d".repeat(64);
+	const receiptSha256 = "9".repeat(64);
+	const t = autoNativeFailureHarness(true, {
+		reuseVerifiedNativeResults: true,
+		job: {
+			organizationId,
+			triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}${model}:retry-${previous}`,
+			params: {
+				execution: { backend: "LOCAL", localMode: "AUTO" },
+				retryOf: previous,
+			},
+		},
+	});
+	const predecessor = {
+		framesGzip: gzipSync(JSON.stringify([{ frameNum: 0, vmaf: 95 }])),
+		provenance: { verifiedNativeScore: { key } },
+	};
+	t.vmafResult.findFirst.mockResolvedValue(predecessor);
+	const score = vi
+		.spyOn(localScoring, "runLocalVmafScore")
+		.mockImplementation(async (_deps, _options, context) => {
+			if (!context?.verifiedReuse?.load) throw new Error("Missing retry scope");
+			expect(await context.verifiedReuse.load(key)).toEqual(predecessor);
+			const { identity } = context.verifiedReuse.selection;
+			const owned = verifyNativeReceipt(
+				nativeReceipt(),
+				nativeExpected,
+			).scoring;
+			return {
+				run: { code: 0, stderr: "" },
+				execution: {
+					version: 1,
+					requestedDecode: "cpu",
+					decode: {
+						reference: { backend: "cpu" },
+						distorted: { backend: "cpu" },
+					},
+					scoring: {
+						...owned,
+						backend: "cuda",
+						device: {
+							...owned.device,
+							index: 2,
+							uuid: identity.deviceUuid,
+							vendorId: 0x10de,
+						},
+						sourceSha256: identity.sourceSha256,
+					},
+					attempts: 1,
+					reusedVerifiedResult: true,
+				},
+				log: JSON.parse(vmafJson([95])),
+				verifiedNativeScore: { key, receiptSha256 },
+			};
+		});
+	try {
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{
+				status: "FINISHED",
+				results: 2,
+			},
+		);
+		expect(t.vmafResult.findFirst).toHaveBeenCalledWith({
+			where: {
+				organizationId,
+				vmafJobId: previous,
+				vmafJob: {
+					organizationId,
+					encodingJobId: ENCODING_JOB_ID,
+					mode: "VOD",
+					status: "ERROR",
+					triggerKey: `retry-history:${previous}`,
+					model,
+					scoringVersion: t.job.scoringVersion,
+				},
+				provenance: { path: ["verifiedNativeScore", "key"], equals: key },
+			},
+			select: { provenance: true, framesGzip: true },
+		});
+		for (const row of t.results) {
+			expect(row.vmafJobId).toBe(VMAF_JOB_ID);
+			const framePayload = row.framesGzip as Buffer;
+			expect(framePayload).not.toBe(predecessor.framesGzip);
+			expect(framePayload).toEqual(predecessor.framesGzip);
+			expect(row.provenance).toMatchObject({
+				localExecution: { reusedVerifiedResult: true },
+				reusedNativeScore: { key, receiptSha256 },
+			});
+			expect(row.provenance).not.toHaveProperty("verifiedNativeScore");
+		}
+	} finally {
+		score.mockRestore();
+	}
+});
+
 it.each([
 	"NATIVE_RECEIPT_CPU_PARITY_MISMATCH",
 	"NATIVE_MODEL_SHA256_MISMATCH",

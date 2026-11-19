@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import {
 	localVmafExecutionSchema,
@@ -14,10 +15,16 @@ import {
 } from "./hardware-decode";
 import {
 	hashNativeFile,
+	type NativeExpected,
 	nativeSourceFromVersion,
 	prepareNativeModel,
 	verifyNativeReceipt,
 } from "./native-contract";
+import {
+	type NativeScoreReuseContext,
+	readVerifiedNativeScore,
+	verifiedNativeScoreKey,
+} from "./native-score-reuse";
 import { resourceVideoFromProbe } from "./resource-plan";
 
 export type NativeScoreContext = {
@@ -30,6 +37,7 @@ export type NativeScoreContext = {
 	nativeInflightFrames?: 1 | 2 | 4;
 	/** Calibration-only prefix, written only to the caller's disposable directory. */
 	calibrationFrames?: number;
+	verifiedReuse?: NativeScoreReuseContext;
 };
 export type NativeResourceSnapshot = {
 	maxRssBytes: number;
@@ -280,9 +288,54 @@ export async function runNativeVmafScore(
 	signal?.throwIfAborted();
 	if (version.code !== 0) throw new Error("NATIVE_BINARY_UNAVAILABLE");
 	const sourceSha256 = nativeSourceFromVersion(version.stdout);
+	const expected: NativeExpected = {
+		model: options.model,
+		modelSha256: model.modelSha256,
+		backend: scoring.backend,
+		device: scoring.device,
+		sourceSha256,
+		...size,
+		bitDepth,
+		distortedOriginal: original,
+		referenceSha256,
+		distortedSha256,
+		frameCount: frameLimit ?? reference.frames ?? distorted.frames,
+		psnr: options.psnr === true || options.features?.includes("psnr") === true,
+	};
+	// Calibration times a prefix. It cannot produce or consume a complete score.
+	const reuse = frameLimit === undefined ? context.verifiedReuse : undefined;
+	const reuseKey = reuse
+		? await verifiedNativeScoreKey(
+				{ runner: deps.runner, nativePath: deps.nativePath },
+				reuse,
+				expected,
+				options.threads ?? 1,
+				options.decoderThreads ?? 1,
+				context.nativeInflightFrames ?? 1,
+				signal,
+			)
+		: undefined;
 	const receiptPath = `${options.logPath}.native.json`;
 	await rm(receiptPath, { force: true });
 	try {
+		if (reuseKey && reuse?.load) {
+			const prior = await readVerifiedNativeScore(
+				reuse.load,
+				reuseKey,
+				expected,
+				reuse.selection.identity.deviceUuid,
+				signal,
+			);
+			if (prior) {
+				await writeFile(options.logPath, JSON.stringify(prior.log));
+				signal?.throwIfAborted();
+				return {
+					run: { code: 0, stdout: "", stderr: "" },
+					resourceSnapshot: undefined,
+					...prior,
+				};
+			}
+		}
 		const args = [
 			"--reference",
 			options.referencePath,
@@ -328,22 +381,9 @@ export async function runNativeVmafScore(
 				? new NativePairRefusal(failure, "GPU_PAIR_FRAME_TIMES")
 				: new Error(failure);
 		}
-		const raw: unknown = JSON.parse(await readFile(receiptPath, "utf8"));
-		const verified = verifyNativeReceipt(raw, {
-			model: options.model,
-			modelSha256: model.modelSha256,
-			backend: scoring.backend,
-			device: scoring.device,
-			sourceSha256,
-			...size,
-			bitDepth,
-			distortedOriginal: original,
-			referenceSha256,
-			distortedSha256,
-			frameCount: frameLimit ?? reference.frames ?? distorted.frames,
-			psnr:
-				options.psnr === true || options.features?.includes("psnr") === true,
-		});
+		const receipt = await readFile(receiptPath, "utf8");
+		const raw: unknown = JSON.parse(receipt);
+		const verified = verifyNativeReceipt(raw, expected);
 		const metadata = raw as Record<string, unknown>;
 		if (
 			context.nativeInflightFrames !== undefined &&
@@ -384,6 +424,15 @@ export async function runNativeVmafScore(
 			run,
 			execution,
 			log: verified.log,
+			...(reuseKey &&
+			verified.scoring.device.uuid === reuse?.selection.identity.deviceUuid
+				? {
+						verifiedNativeScore: {
+							key: reuseKey,
+							receiptSha256: createHash("sha256").update(receipt).digest("hex"),
+						},
+					}
+				: {}),
 			...(resourceSnapshot ? { resourceSnapshot } : {}),
 		};
 	} finally {

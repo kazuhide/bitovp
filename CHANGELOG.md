@@ -15,6 +15,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ### Fixed
 
 - Copy live channels with MoQ or other JSON-only settings into an editable plan that preserves their configuration.
+- Keep Live input coordinates and their copy buttons within the page on narrow screens.
 
 ## [1.3.2] - 2026-11-19
 

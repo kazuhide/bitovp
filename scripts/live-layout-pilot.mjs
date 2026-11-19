@@ -59,33 +59,46 @@ assert.ok(databaseUrl.port, "Use a disposable loopback PostgreSQL instance");
 
 const servers = {};
 const browsers = new Set();
-const profiles = new Set();
 let stopping = false;
 let cleanup;
-async function closeBrowser(launch) {
-	const browser = await launch.catch(() => null);
-	try {
-		if (browser) await browser.close();
-	} finally {
-		browsers.delete(launch);
-	}
-}
-async function removeProfile(profile) {
-	await rm(profile, { recursive: true, force: true });
-	profiles.delete(profile);
+function ownBrowser(launch, profile) {
+	let disposal;
+	const close = () =>
+		(disposal ??= (async () => {
+			try {
+				const browser = await launch.catch(() => null);
+				if (browser) await browser.close();
+				if (profile) await rm(profile, { recursive: true, force: true });
+			} finally {
+				browsers.delete(close);
+			}
+		})());
+	browsers.add(close);
+	return { launch, close };
 }
 function cleanUp() {
 	return (cleanup ??= (async () => {
-		await Promise.allSettled([...browsers].map(closeBrowser));
-		await Promise.all([...profiles].map(removeProfile));
-		await Promise.all(
+		const browserResults = await Promise.allSettled(
+			[...browsers].map((close) => close()),
+		);
+		const serverResults = await Promise.allSettled(
 			Object.entries(servers).map(async ([label, runtime]) => {
-				await runtime.terminate();
-				await writeFile(join(evidence, `next-${label}.log`), runtime.getLog(), {
-					mode: 0o600,
-				});
+				try {
+					await runtime.terminate();
+				} finally {
+					await writeFile(
+						join(evidence, `next-${label}.log`),
+						runtime.getLog(),
+						{ mode: 0o600 },
+					);
+				}
 			}),
 		);
+		const failures = [...browserResults, ...serverResults].flatMap((result) =>
+			result.status === "rejected" ? [result.reason] : [],
+		);
+		if (failures.length)
+			throw new AggregateError(failures, "Pilot cleanup failed");
 	})());
 }
 const exitOnSignal = (code) => {
@@ -354,11 +367,12 @@ async function runPilot(sources) {
 	}
 
 	if (stopping) return;
-	const launch = chromium.launch({ ...browserSignals, headless: true });
-	browsers.add(launch);
+	const mainBrowser = ownBrowser(
+		chromium.launch({ ...browserSignals, headless: true }),
+	);
 	const observations = [];
 	try {
-		const browser = await launch;
+		const browser = await mainBrowser.launch;
 		for (const [index, testCase] of cases.entries()) {
 			const result = await exercise(browser, testCase, index);
 			observations.push(result);
@@ -367,7 +381,7 @@ async function runPilot(sources) {
 			);
 		}
 	} finally {
-		await closeBrowser(launch);
+		await mainBrowser.close();
 		await save("observations.json", observations);
 	}
 	await save(
@@ -393,20 +407,21 @@ async function runPilot(sources) {
 		const id = reproduce ? `replay-${testCase.id}` : testCase.id;
 		const profile = join(evidence, `profile-${id}`);
 		if (stopping) throw new Error("Pilot interrupted");
-		profiles.add(profile);
-		const launch = chromium.launchPersistentContext(profile, {
-			...browserSignals,
-			...fitOptions,
-			viewport: viewport(testCase),
-			headless: true,
-			args: [
-				"--remote-debugging-address=127.0.0.1",
-				"--remote-debugging-port=0",
-			],
-		});
-		browsers.add(launch);
+		const explorationBrowser = ownBrowser(
+			chromium.launchPersistentContext(profile, {
+				...browserSignals,
+				...fitOptions,
+				viewport: viewport(testCase),
+				headless: true,
+				args: [
+					"--remote-debugging-address=127.0.0.1",
+					"--remote-debugging-port=0",
+				],
+			}),
+			profile,
+		);
 		try {
-			const context = await launch;
+			const context = await explorationBrowser.launch;
 			if (stopping) throw new Error("Pilot interrupted");
 			const { page, deniedRequests } = await open(context, testCase);
 			for (const blank of context.pages()) {
@@ -430,11 +445,7 @@ async function runPilot(sources) {
 			assert.deepEqual(deniedRequests, []);
 			return { id, ...result };
 		} finally {
-			try {
-				await closeBrowser(launch);
-			} finally {
-				await removeProfile(profile);
-			}
+			await explorationBrowser.close();
 		}
 	}
 

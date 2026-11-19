@@ -17,6 +17,7 @@ const browserSignals = {
 	handleSIGINT: false,
 	handleSIGTERM: false,
 	handleSIGHUP: false,
+	timeout: 10000,
 };
 const historicCommit = "782632d355c6a8bf44b7c1ad02ba29f6bf853420";
 const { values: options } = parseArgs({
@@ -58,11 +59,25 @@ assert.ok(databaseUrl.port, "Use a disposable loopback PostgreSQL instance");
 
 const servers = {};
 const browsers = new Set();
+const profiles = new Set();
 let stopping = false;
 let cleanup;
+async function closeBrowser(launch) {
+	const browser = await launch.catch(() => null);
+	try {
+		if (browser) await browser.close();
+	} finally {
+		browsers.delete(launch);
+	}
+}
+async function removeProfile(profile) {
+	await rm(profile, { recursive: true, force: true });
+	profiles.delete(profile);
+}
 function cleanUp() {
 	return (cleanup ??= (async () => {
-		await Promise.allSettled([...browsers].map((browser) => browser.close()));
+		await Promise.allSettled([...browsers].map(closeBrowser));
+		await Promise.all([...profiles].map(removeProfile));
 		await Promise.all(
 			Object.entries(servers).map(async ([label, runtime]) => {
 				await runtime.terminate();
@@ -338,11 +353,12 @@ async function runPilot(sources) {
 		}
 	}
 
-	const browser = await chromium.launch({ ...browserSignals, headless: true });
-	browsers.add(browser);
-	let observations;
+	if (stopping) return;
+	const launch = chromium.launch({ ...browserSignals, headless: true });
+	browsers.add(launch);
+	const observations = [];
 	try {
-		observations = [];
+		const browser = await launch;
 		for (const [index, testCase] of cases.entries()) {
 			const result = await exercise(browser, testCase, index);
 			observations.push(result);
@@ -351,8 +367,7 @@ async function runPilot(sources) {
 			);
 		}
 	} finally {
-		await browser.close();
-		browsers.delete(browser);
+		await closeBrowser(launch);
 		await save("observations.json", observations);
 	}
 	await save(
@@ -377,7 +392,9 @@ async function runPilot(sources) {
 		);
 		const id = reproduce ? `replay-${testCase.id}` : testCase.id;
 		const profile = join(evidence, `profile-${id}`);
-		const context = await chromium.launchPersistentContext(profile, {
+		if (stopping) throw new Error("Pilot interrupted");
+		profiles.add(profile);
+		const launch = chromium.launchPersistentContext(profile, {
 			...browserSignals,
 			...fitOptions,
 			viewport: viewport(testCase),
@@ -387,8 +404,10 @@ async function runPilot(sources) {
 				"--remote-debugging-port=0",
 			],
 		});
-		browsers.add(context);
+		browsers.add(launch);
 		try {
+			const context = await launch;
+			if (stopping) throw new Error("Pilot interrupted");
 			const { page, deniedRequests } = await open(context, testCase);
 			for (const blank of context.pages()) {
 				if (blank !== page) await blank.close();
@@ -411,9 +430,11 @@ async function runPilot(sources) {
 			assert.deepEqual(deniedRequests, []);
 			return { id, ...result };
 		} finally {
-			await context.close();
-			browsers.delete(context);
-			await rm(profile, { recursive: true, force: true });
+			try {
+				await closeBrowser(launch);
+			} finally {
+				await removeProfile(profile);
+			}
 		}
 	}
 

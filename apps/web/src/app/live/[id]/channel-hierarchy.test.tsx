@@ -527,7 +527,7 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 		expect(cell?.className).not.toContain("amber");
 	});
 
-	it("a finished run with NO end stamp says None rather than inventing one from the clock", async () => {
+	it("omits elapsed time for a finished run without an end stamp", async () => {
 		// The counterfactual for the arm above: the frozen figure needs a
 		// MEASUREMENT. A legacy row without `endedAt` has none, and the answer
 		// to that is silence, not `now − runningSince` wearing a past tense.
@@ -537,10 +537,8 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 			currentRun: run({ status: "STOPPED", endedAt: null }),
 		});
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByText("Encoder runtime");
-		expect(
-			document.querySelector('[data-status-cell="runtime"]')?.textContent,
-		).toBe("None");
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
+		expect(document.querySelector('[data-status-cell="runtime"]')).toBeNull();
 	});
 
 	it("an armed row past its fire time reads as OVERDUE, not as 0s away", async () => {
@@ -608,8 +606,7 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 		wrap(<ChannelDetail id={CHANNEL} />);
 		await screen.findByRole("region", { name: /next action/i });
 		const cell = document.querySelector('[data-status-cell="next-event"]');
-		expect(cell?.textContent).toBe("could not be read");
-		expect(cell?.textContent).not.toBe("none armed");
+		expect(cell).toBeNull();
 	});
 });
 
@@ -629,16 +626,16 @@ describe("read, configure and destroy no longer share a row (row #249)", () => {
 			within(danger).getByRole("button", { name: /Delete channel/i }),
 		).toBeInTheDocument();
 
-		// …and the header's lifecycle row carries Start only.
+		// The other header actions stay together, away from Delete.
 		const actions = document.getElementById("sec-actions") as HTMLElement;
 		expect(
 			within(actions).queryByRole("button", { name: /Delete channel/i }),
 		).toBeNull();
 		expect(
-			within(actions).queryByRole("button", {
-				name: /設定をコピーして編集|Copy settings and edit/i,
+			within(actions).getByRole("button", {
+				name: "Copy settings and edit",
 			}),
-		).toBeNull();
+		).toBeInTheDocument();
 		expect(
 			within(actions).getByRole("button", { name: "Start a new run" }),
 		).toBeInTheDocument();

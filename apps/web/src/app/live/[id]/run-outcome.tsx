@@ -26,16 +26,7 @@ export function RunOutcome({
 			(event) => event.kind === "OUTPUT_ACTIVE",
 		);
 
-	return (
-		<ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-zinc-300">
-			<li>
-				{t(
-					outputGenerated
-						? "live.runOutputGenerated"
-						: "live.runOutputUnverified",
-				)}
-			</li>
-			<li>{t("live.runPlaybackUnverified")}</li>
-		</ul>
-	);
+	return outputGenerated ? (
+		<p className="text-sm text-zinc-300">{t("live.runOutputGenerated")}</p>
+	) : null;
 }

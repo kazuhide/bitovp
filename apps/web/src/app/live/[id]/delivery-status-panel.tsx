@@ -148,6 +148,7 @@ export function DeliveryStatusPanel({
 	alertHistory,
 	playableCount,
 	manifestCount,
+	manifestDelivery = true,
 	region,
 	encoderIp,
 	channelStatus,
@@ -171,6 +172,7 @@ export function DeliveryStatusPanel({
 	alertHistory: ChannelAlertEvent[];
 	playableCount: number | "unknown";
 	manifestCount: number | "unknown";
+	manifestDelivery?: boolean;
 	region: string | null;
 	encoderIp: string | null;
 	channelStatus: LiveChannelStatus;
@@ -420,8 +422,12 @@ export function DeliveryStatusPanel({
 				nowMs={nowMs}
 				mode={mode}
 			/>
-			<div className="grid gap-3 lg:grid-cols-3">
-				{DELIVERY_LANES.map((lane) => (
+			<div
+				className={`grid gap-3 ${manifestDelivery ? "lg:grid-cols-3" : "md:grid-cols-2"}`}
+			>
+				{DELIVERY_LANES.filter(
+					(lane) => manifestDelivery || lane !== "output",
+				).map((lane) => (
 					<LaneCard
 						key={lane}
 						lane={lane}

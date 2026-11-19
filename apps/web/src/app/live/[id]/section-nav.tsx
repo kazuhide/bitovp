@@ -13,12 +13,14 @@ import {
 /* One anchor list serves the wide-screen rail and narrow-screen jump menu. Its sections come from LIVE_LAYERS, so page and navigation change together. Preserve native fragment navigation; only same-fragment clicks cancel the default action and focus directly, because they do not trigger hashchange. */
 export function LiveSectionNav({
 	layers,
+	playbackTitleKey = LIVE_SECTION_TITLE_KEYS["sec-manifests"],
 }: {
 	layers: readonly {
 		id: LiveLayerId;
 		titleKey: MessageKey;
 		sections: readonly LiveSectionId[];
 	}[];
+	playbackTitleKey?: MessageKey;
 }) {
 	const { t } = useT();
 	const [open, setOpen] = useState(false);
@@ -114,7 +116,11 @@ export function LiveSectionNav({
 													: "border-transparent text-zinc-400"
 											}`}
 										>
-											{t(LIVE_SECTION_TITLE_KEYS[sectionId])}
+											{t(
+												sectionId === "sec-manifests"
+													? playbackTitleKey
+													: LIVE_SECTION_TITLE_KEYS[sectionId],
+											)}
 										</a>
 									</li>
 								);

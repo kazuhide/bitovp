@@ -226,10 +226,12 @@ describe("content insertion feedback", () => {
 			name: "予約要求を受け付けました",
 		});
 		expect(
-			within(feedback).getByText("映像への反映は未確認です。"),
+			within(feedback).getByText(
+				"映像への反映はプレビューで確認してください。",
+			),
 		).toBeInTheDocument();
 		expect(
-			within(feedback).getByText("現在の出力更新は未確認です。"),
+			within(feedback).getByText("現在の出力更新情報を取得できません。"),
 		).toBeInTheDocument();
 	});
 });

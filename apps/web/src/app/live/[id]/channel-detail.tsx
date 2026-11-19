@@ -34,6 +34,7 @@ import {
 	playableLinks,
 } from "@/app/vod/jobs/[id]/player-preview";
 import { CopyButton } from "@/components/copy-button";
+import { CopyableId } from "@/components/copyable-id";
 import { EncodingErrorDefinitionsLink } from "@/components/encoding-error-definitions-link";
 import { ManifestList } from "@/components/manifest-list";
 import { SaveAsTemplateButton } from "@/components/save-as-template";
@@ -455,20 +456,35 @@ function ChannelConsole({
 	const lifecycleActions =
 		!imported && (!aisaRow || showAisaFeature) ? (
 			<RoleAccess control="live.channel.lifecycle">
-				<ChannelLifecycleActions
-					channelId={id}
-					status={row.status}
-					hasEncoding={row.bitmovinEncodingId !== null}
-					encodingId={row.bitmovinEncodingId ?? undefined}
-					plan={plan.success ? plan.data : undefined}
-					runId={run?.id}
-					generation={row.liveEffectFenceVersion}
-					cancelRequested={run?.cancelRequested}
-					managedAisa={aisaRow}
-					providerTerminal={providerTerminal}
-					canRetryAisaFinalization={row.canRetryAisaFinalization}
-					hasError={row.error != null}
-				/>
+				<section
+					id="sec-actions"
+					aria-label={t(LIVE_SECTION_TITLE_KEYS["sec-actions"])}
+					tabIndex={-1}
+					className="scroll-mt-6 outline-hidden focus-visible:ring-2 focus-visible:ring-zinc-400"
+				>
+					<ChannelLifecycleActions
+						channelId={id}
+						status={row.status}
+						hasEncoding={row.bitmovinEncodingId !== null}
+						encodingId={row.bitmovinEncodingId ?? undefined}
+						plan={plan.success ? plan.data : undefined}
+						runId={run?.id}
+						generation={row.liveEffectFenceVersion}
+						cancelRequested={run?.cancelRequested}
+						managedAisa={aisaRow}
+						providerTerminal={providerTerminal}
+						canRetryAisaFinalization={row.canRetryAisaFinalization}
+						hasError={row.error != null}
+					>
+						<DuplicateChannelButton channelId={id} />
+						{showAisaFeature ? (
+							<SectionHelp
+								title={t("live.actions")}
+								help={t("aisaLive.managedActionsHint")}
+							/>
+						) : null}
+					</ChannelLifecycleActions>
+				</section>
 			</RoleAccess>
 		) : null;
 	const entries = stepLogSchema.safeParse(
@@ -498,9 +514,13 @@ function ChannelConsole({
 		(l) => l.reason?.code === "MSL_EDGE_URL_NOT_CONFIGURED",
 	);
 	const stepEntries = entries.success ? entries.data : [];
-	const moqPlayback = stepEntries.some(
-		(entry) => entry.kind === "CREATE_OUTPUT_MOQ",
-	);
+	const moqPlayback =
+		(plan.success &&
+			plan.data.outputs.some((output) => output.kind === "MOQ")) ||
+		stepEntries.some((entry) => entry.kind === "CREATE_OUTPUT_MOQ");
+	const playbackTitleKey = moqPlayback
+		? "moqPlayback.title"
+		: LIVE_SECTION_TITLE_KEYS["sec-manifests"];
 	// Runtime records (cues, ESAM points) are appended to the same log but are
 	// not provisioning steps — counting them made a 31-step channel read
 	// "34/34 steps" after three insertions (review catch).
@@ -784,6 +804,7 @@ function ChannelConsole({
 	 * the last-broadcast lead needs a run to summarise.
 	 */
 	const omittedSections: LiveSectionId[] = [];
+	if (moqPlayback) omittedSections.push("sec-origin");
 	if (aisaRow) {
 		if (!showAisaFeature) omittedSections.push("sec-ingest", "sec-danger");
 		if (imported)
@@ -948,20 +969,20 @@ function ChannelConsole({
 				key="sec-manifests"
 				id="sec-manifests"
 				level={3}
-				title={t(LIVE_SECTION_TITLE_KEYS["sec-manifests"])}
+				title={t(playbackTitleKey)}
 				defaultOpen={moqPlayback || sectionOpen("sec-manifests")}
 				summary={
-					linksUnavailable
-						? t("status.summaryUnavailable")
-						: moqPlayback
-							? t("moqPlayback.title")
+					moqPlayback
+						? undefined
+						: linksUnavailable
+							? t("status.summaryUnavailable")
 							: t("status.summaryLinks", {
 									count: visiblePlaybackLinks.length,
 								})
 				}
 				tone={playable.length > 0 ? "ok" : "neutral"}
 			>
-				{linksUnavailable ? (
+				{!moqPlayback && linksUnavailable ? (
 					<p role="status" className="text-sm text-zinc-400">
 						{t("aisaLive.manifestsUnavailable")}
 					</p>
@@ -971,7 +992,7 @@ function ChannelConsole({
 				    so the player would stall at the last one. */}
 				{/*  (owner): the VOD rail's width, and no playback until
 				    the output is confirmed while RUNNING. */}
-				<div className="max-w-sm">
+				<div className={moqPlayback ? "min-w-0" : "max-w-sm"}>
 					{moqPlayback ? (
 						<RoleAccess control="live.channel.heartbeat-log">
 							{run ? (
@@ -1015,7 +1036,7 @@ function ChannelConsole({
 				{/* rev433: the one reason with a single-field remedy is said HERE,
 				 * not only behind the URL disclosure — an MSL channel without an
 				    edge base URL showed an empty player and nothing else. */}
-				{playable.length === 0 && mslEdgeUrlMissing ? (
+				{!moqPlayback && playable.length === 0 && mslEdgeUrlMissing ? (
 					<p className="mt-2 text-sm text-amber-300">
 						{t("playback.reasonMslEdgeUrlNotConfigured")}
 						<Link
@@ -1026,16 +1047,18 @@ function ChannelConsole({
 						</Link>
 					</p>
 				) : null}
-				<Disclosure
-					id="manifest-urls"
-					label={t("live.manifestUrlsDisclose")}
-					closeLabel={t("live.manifestUrlsDiscloseClose")}
-				>
-					<ManifestList
-						links={visiblePlaybackLinks}
-						playableKeys={playableKeys}
-					/>
-				</Disclosure>
+				{!moqPlayback ? (
+					<Disclosure
+						id="manifest-urls"
+						label={t("live.manifestUrlsDisclose")}
+						closeLabel={t("live.manifestUrlsDiscloseClose")}
+					>
+						<ManifestList
+							links={visiblePlaybackLinks}
+							playableKeys={playableKeys}
+						/>
+					</Disclosure>
+				) : null}
 			</SectionCard>
 		),
 		"sec-origin": null,
@@ -1627,53 +1650,36 @@ function ChannelConsole({
 					<span aria-hidden="true">←</span>
 					{t("live.title")}
 				</Link>
-				<header className="flex flex-wrap items-center gap-3">
+				<header className="min-w-0 space-y-3">
 					<h1 className="min-w-0 break-words font-semibold text-xl text-zinc-50">
 						{row.name}
 					</h1>
-					<LiveStatusBadge
-						status={displayStatus}
-						providerLifecycle={providerLifecycle}
-						encoderEndUnconfirmed={encoderEndUnconfirmed}
-					/>
-					{plan.success ? (
-						<span className="text-xs text-zinc-500">
-							{plan.data.bitmovin.cloudRegion} · {plan.data.liveInput.kind}
-						</span>
-					) : null}
-					{!imported && (!aisaRow || showAisaFeature) ? (
-						<DuplicateChannelButton channelId={id} />
-					) : null}
-					{showAisaFeature ? <Badge>{t("aisaLive.featureBadge")}</Badge> : null}
-					{/*
-					 * the lifecycle controls, MOVED here — not copied. They
-					 * used to share a button row with Duplicate and Delete inside the
-					 * first body section. Start and Stop are the
-					 * only mutations an operator reaches for while watching the strip
-					 * above, so they belong in the fixed header; Delete is the last
-					 * section on the page. Copy settings is a separate header action. `sec-actions`
-					 * keeps its id because core's `liveNextAction` points at it.
-					 */}
-					{!imported && (!aisaRow || showAisaFeature) ? (
-						<section
-							id="sec-actions"
-							aria-label={t(LIVE_SECTION_TITLE_KEYS["sec-actions"])}
-							// : the ONE jump target with no heading of its own, and
-							// the busiest — five of the twelve next-action codes point here.
-							// `focusLiveSection` falls back to the region itself, and that
-							// fallback is a silent no-op without this tabindex.
-							tabIndex={-1}
-							className="ml-auto flex scroll-mt-6 flex-wrap items-center gap-2 outline-hidden focus-visible:ring-2 focus-visible:ring-zinc-400"
-						>
-							{lifecycleActions}
-							{showAisaFeature ? (
-								<SectionHelp
-									title={t("live.actions")}
-									help={t("aisaLive.managedActionsHint")}
+					<div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+						<LiveStatusBadge
+							status={displayStatus}
+							providerLifecycle={providerLifecycle}
+							encoderEndUnconfirmed={encoderEndUnconfirmed}
+						/>
+						{plan.success ? (
+							<span className="text-xs text-zinc-500">
+								{plan.data.bitmovin.cloudRegion} · {plan.data.liveInput.kind}
+							</span>
+						) : null}
+						{showAisaFeature ? (
+							<Badge>{t("aisaLive.featureBadge")}</Badge>
+						) : null}
+						{row.bitmovinEncodingId ? (
+							<div className="flex min-w-0 max-w-full items-center gap-1.5 text-xs text-zinc-500">
+								<span className="shrink-0">{t("live.encodingId")}</span>
+								<CopyableId
+									className="min-w-0"
+									value={row.bitmovinEncodingId}
+									label={t("live.encodingId")}
 								/>
-							) : null}
-						</section>
-					) : null}
+							</div>
+						) : null}
+					</div>
+					{lifecycleActions}
 				</header>
 				{/* : WHERE in the encoder lifecycle the channel is. */}
 				<LifecycleStrip
@@ -1708,7 +1714,11 @@ function ChannelConsole({
 						providerTerminal &&
 						(storedStatus !== "STOPPED" || row.canRetryAisaFinalization)
 					) &&
-					!(moqPlayback && nextAction.code === "WAIT_FOR_OUTPUT")) ? (
+					!(
+						moqPlayback &&
+						(nextAction.code === "WAIT_FOR_OUTPUT" ||
+							nextAction.code === "OUTPUT_UNKNOWN")
+					)) ? (
 					<NextActionPanel
 						action={nextAction}
 						readOnly={imported}
@@ -1725,7 +1735,6 @@ function ChannelConsole({
 					openAlerts={openAlerts}
 					playableCount={playableCount}
 					showPlayable={!moqPlayback}
-					feederCount={runningFeeders}
 					// : the next armed row, as a countdown, in the header —
 					// a healthy RUNNING channel's next action is ON_AIR, so nothing
 					// above the fold used to say a STOP was four minutes away.
@@ -1829,6 +1838,7 @@ function ChannelConsole({
 						alertHistory={alerts.data?.history ?? []}
 						playableCount={playableCount}
 						manifestCount={manifestCount}
+						manifestDelivery={!moqPlayback}
 						region={plan.success ? plan.data.bitmovin.cloudRegion : null}
 						encoderIp={effectiveEncoderIp}
 						channelStatus={encoderStatus}
@@ -1840,12 +1850,6 @@ function ChannelConsole({
 						onJump={jumpToLiveSection}
 					/>
 				) : null}
-				{row.bitmovinEncodingId ? (
-					<p className="font-mono text-xs text-zinc-500">
-						{t("uiX.encodingIdLine", { id: row.bitmovinEncodingId })}
-					</p>
-				) : null}
-
 				{/*
 				 * Rows #248/#249, the body: six LAYERS in operator order, each a
 				 * named landmark with a visible `h2` and a one-line reason, holding
@@ -1861,7 +1865,10 @@ function ChannelConsole({
 				 * sequence and the reading order identical at every width.
 				 */}
 				<div className="flex flex-col gap-4 xl:flex-row-reverse xl:items-start xl:gap-6">
-					<LiveSectionNav layers={bodyLayers} />
+					<LiveSectionNav
+						layers={bodyLayers}
+						playbackTitleKey={playbackTitleKey}
+					/>
 					<div className="min-w-0 flex-1 space-y-4">
 						{bodyLayers.map((layer) => (
 							<section

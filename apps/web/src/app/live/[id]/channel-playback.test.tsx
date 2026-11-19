@@ -441,6 +441,10 @@ describe("ChannelDetail — live playback preview", () => {
 		expect(loaded).toHaveLength(0);
 		expect(screen.queryByText("Waiting for the first segments")).toBeNull();
 		expect(
+			screen.queryByRole("button", { name: "Show every manifest URL" }),
+		).toBeNull();
+		expect(document.getElementById("sec-origin")).toBeNull();
+		expect(
 			within(
 				screen.getByRole("region", { name: "Channel status" }),
 			).queryByText("Playable"),

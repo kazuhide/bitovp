@@ -492,7 +492,7 @@ describe("Per-Title parameter derivation", () => {
 			screen.getByText(
 				locale === "en"
 					? "Joint conditions not established"
-					: "組み合わせた条件は未確認",
+					: "組み合わせた条件を評価できません",
 			),
 		).toBeVisible();
 		expect(

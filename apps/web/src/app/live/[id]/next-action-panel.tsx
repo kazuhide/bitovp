@@ -18,22 +18,19 @@ import type { LiveSectionId } from "./section-layout";
  */
 const COPY: Record<
 	LiveNextActionCode,
-	{ title: MessageKey; body: MessageKey; cta: MessageKey }
+	{ title: MessageKey; body: MessageKey; cta?: MessageKey }
 > = {
 	START_ENCODER: {
 		title: "nextAction.startEncoderTitle",
 		body: "nextAction.startEncoderBody",
-		cta: "nextAction.goActions",
 	},
 	RECOVER_FROM_ERROR: {
 		title: "nextAction.recoverTitle",
 		body: "nextAction.recoverBody",
-		cta: "nextAction.goActions",
 	},
 	WAIT_FOR_BOOT: {
 		title: "nextAction.bootTitle",
 		body: "nextAction.bootBody",
-		cta: "nextAction.goActions",
 	},
 	WAIT_FOR_STOP: {
 		title: "nextAction.stoppingTitle",
@@ -74,17 +71,14 @@ const COPY: Record<
 	PROVIDER_UNKNOWN: {
 		title: "nextAction.providerUnknownTitle",
 		body: "nextAction.providerUnknownBody",
-		cta: "nextAction.goActions",
 	},
 	ON_AIR: {
 		title: "nextAction.onAirTitle",
 		body: "nextAction.onAirBody",
-		cta: "nextAction.goActions",
 	},
 	START_NEW_RUN: {
 		title: "nextAction.startNewRunTitle",
 		body: "nextAction.startNewRunBody",
-		cta: "nextAction.goActions",
 	},
 	SCHEDULED_ONLY: {
 		title: "nextAction.scheduledTitle",
@@ -94,7 +88,6 @@ const COPY: Record<
 	NOTHING_TO_DO: {
 		title: "nextAction.idleTitle",
 		body: "nextAction.idleBody",
-		cta: "nextAction.goActions",
 	},
 };
 
@@ -154,6 +147,11 @@ export function NextActionPanel({
 		: inputUnconfirmed
 			? "sec-heartbeat"
 			: action.section;
+	const linkLabel = readOnly
+		? "runs.heading"
+		: inputUnconfirmed
+			? "live.health.ingestDetails"
+			: copy.cta;
 	return (
 		<section
 			aria-label={t("nextAction.regionLabel")}
@@ -166,8 +164,11 @@ export function NextActionPanel({
 			}
 			className={`rounded-md border px-4 py-3 ${tone.box}`}
 		>
-			<div className="flex items-center gap-2">
-				<span aria-hidden className={`h-2 w-2 rounded-full ${tone.dot}`} />
+			<div className="flex flex-wrap items-center gap-2">
+				<span
+					aria-hidden
+					className={`size-2 shrink-0 rounded-full ${tone.dot}`}
+				/>
 				<h2 className={`font-medium text-sm ${tone.title}`}>
 					{t(
 						readOnly
@@ -180,29 +181,15 @@ export function NextActionPanel({
 				{!readOnly && action.code === "START_NEW_RUN" ? (
 					<HelpOverlay labelFor={t(copy.title)}>{t(copy.body)}</HelpOverlay>
 				) : null}
-				{/* An in-page anchor, not a button (review-260 126-A5 rewording):
-				 * since #126 flattened the page, 13 of 15 targets are always-open
-				 * sections — the link simply scrolls. For the two surviving folds
-				 * the openByDefault mechanics open the pointed one; otherwise the
-			    operator clicks the summary. */}
-				<a
-					href={`#${target}`}
-					// The handler decides whether to cancel: on a CHANGED fragment
-					// the browser's own navigation is what scrolls and writes the
-					// hash, and `hashchange` then restores focus; on a same-fragment
-					// click it must cancel, or Blink's default action clears the
-					// focus just set (review-366 I1).
-					onClick={(event) => onJump?.(event, target)}
-					className="ml-auto shrink-0 whitespace-nowrap rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
-				>
-					{t(
-						readOnly
-							? "runs.heading"
-							: inputUnconfirmed
-								? "live.health.ingestDetails"
-								: copy.cta,
-					)}
-				</a>
+				{linkLabel ? (
+					<a
+						href={`#${target}`}
+						onClick={(event) => onJump?.(event, target)}
+						className="ml-auto rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+					>
+						{t(linkLabel)}
+					</a>
+				) : null}
 			</div>
 			{readOnly || action.code !== "START_NEW_RUN" ? (
 				<p className="mt-1 text-sm text-zinc-400">

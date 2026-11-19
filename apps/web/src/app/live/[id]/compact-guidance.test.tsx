@@ -44,7 +44,7 @@ describe.each(["ja", "en"] as const)("compact Live guidance (%s)", (locale) => {
 		expect(screen.queryByRole("note")).toBeNull();
 		expect(help).toHaveFocus();
 	});
-	it("keeps re-air explanation behind touch/click help without hiding the heading or changing the action", async () => {
+	it("keeps re-air guidance in touch/click help with no redundant action link", async () => {
 		const user = userEvent.setup();
 		renderLocalized(
 			<NextActionPanel
@@ -57,7 +57,7 @@ describe.each(["ja", "en"] as const)("compact Live guidance (%s)", (locale) => {
 				name: messages.nextAction.startNewRunTitle,
 			}),
 		).toBeVisible();
-		expect(screen.getByRole("link")).toHaveAttribute("href", "#sec-actions");
+		expect(screen.queryByRole("link")).toBeNull();
 		expect(screen.queryByText(messages.nextAction.startNewRunBody)).toBeNull();
 		await user.click(screen.getByRole("button"));
 		expect(screen.getByRole("note")).toHaveTextContent(
@@ -70,6 +70,6 @@ describe.each(["ja", "en"] as const)("compact Live guidance (%s)", (locale) => {
 		).toBeVisible();
 		await user.click(document.body);
 		expect(screen.queryByRole("note")).toBeNull();
-		expect(screen.getByRole("link")).toHaveAttribute("href", "#sec-actions");
+		expect(screen.queryByRole("link")).toBeNull();
 	});
 });

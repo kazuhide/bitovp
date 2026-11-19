@@ -46,7 +46,7 @@ it.each([
 
 it.each([
 	[0, "WAIT_FOR_OUTPUT", "nextAction.outputTitle", "sec-manifests"],
-	[1, "ON_AIR", "nextAction.onAirTitle", "sec-actions"],
+	[1, "ON_AIR", "nextAction.onAirTitle", null],
 ] as const)("keeps measured numeric playback count %s on its ordinary action", (playableCount, code, title, section) => {
 	renderLocalized(
 		<NextActionPanel action={liveNextAction({ ...running, playableCount })} />,
@@ -58,5 +58,9 @@ it.each([
 	expect(
 		screen.getByRole("heading", { name: translate(messagesFor("en"), title) }),
 	).toBeVisible();
-	expect(screen.getByRole("link")).toHaveAttribute("href", `#${section}`);
+	if (section) {
+		expect(screen.getByRole("link")).toHaveAttribute("href", `#${section}`);
+	} else {
+		expect(screen.queryByRole("link")).toBeNull();
+	}
 });

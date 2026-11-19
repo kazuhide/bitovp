@@ -130,7 +130,8 @@ describe("catalogue parity", () => {
 		// Integrated QC deadline and desktop navigation guidance (runtime measured: 1681).
 		// Shortened Live diagnostics and terminal guidance (runtime measured: 1678).
 		// MoQ preflight and playback stages (runtime measured: 1685).
-		pinWithDriftAid(long.length, 1685, "long");
+		// Availability wording and MoQ measurement sources (runtime measured: 1686).
+		pinWithDriftAid(long.length, 1686, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Runtime measurement includes three-way output labels (deduplicated).
 		// The two MoQ authorization labels add two unique short Japanese values.

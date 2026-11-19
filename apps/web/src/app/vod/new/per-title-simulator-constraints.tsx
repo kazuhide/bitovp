@@ -56,7 +56,7 @@ const texts = {
 		title: "パラメータの導出",
 		checked: "区間・本数の条件を確認",
 		checkedConditional: "素材の条件を前提に設定を確認",
-		unknown: "組み合わせた条件は未確認",
+		unknown: "組み合わせた条件を評価できません",
 		input: "確認する入力の範囲 (kbps)",
 		floor: "計算に使う下限の範囲 (kbps)",
 		calibration: "推奨する複雑度境界 (kbps)",
@@ -81,7 +81,7 @@ const texts = {
 		conditional:
 			"自動テンプレートや未確定の分岐を含む条件付きの計算です。追加レンディションの設定値は、出力本数を保証しません。",
 		conditions:
-			"確認した行順を前提にした計算です。素材解析、同じ解像度の解析順、実際のエンコード結果は未確認です。画質の最適値やAPIの出力を保証するものではありません。",
+			"確認した行順を前提に計算しました。同じ解像度の解析順は素材解析で、出力本数と画質は実際のエンコードで確認してください。",
 		changes: "パラメータの変更",
 		parameter: "項目",
 		before: "変更前",
@@ -136,14 +136,14 @@ export function PerTitleSourceConditions({
 	const copy =
 		locale === "ja"
 			? {
-					title: "素材で未確認の条件",
+					title: "素材で検証する条件",
 					lower: `最も低い解像度のPER_TITLE_TEMPLATEについて、解析値を複雑度で補正した結果が ${interval} に収まる前提です。素材では未測定で、出力のビットレート制限ではありません。`,
 					geometry: `素材の${conditions.geometry.basis === "height" ? "高さ" : "幅"}は ${sourceDimension} px 以上が必要です。${conditions.geometry.commonSourceAspectRatio ? "各段が同じ素材の縦横比を持つ前提です。" : ""}素材の寸法と実際の解像度の順序は未測定です。`,
 					rounding:
-						"丸め後の幅も、指定した解像度の順序と同じ解像度の組を保つ前提です。素材では未確認です。",
+						"丸め後の幅が指定した解像度順と同じ解像度の組を保つか、素材で検証してください。",
 					order: groups.length
-						? `同じ解像度の段（${groups.join("、")}）の実際の解析順は未確認です。`
-						: "固定段の素材解析後の順序は未確認です。",
+						? `同じ解像度の段（${groups.join("、")}）の並びは素材解析で確認してください。`
+						: "固定段の並びは素材解析で確認してください。",
 					count:
 						"実際の出力本数と画質は、素材をエンコードして確認してください。",
 				}

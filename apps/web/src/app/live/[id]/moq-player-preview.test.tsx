@@ -293,7 +293,7 @@ describe("explicit MoQ preview", () => {
 			],
 		});
 		renderWithQuery(view());
-		expect(screen.getByText("MoQ / Web X")).toBeInTheDocument();
+		expect(screen.getByRole("region", { name: "MoQ playback" })).toBeVisible();
 		expect(
 			screen.getByText("Video latency (barcode)").nextElementSibling,
 		).toHaveTextContent("Unmeasured");

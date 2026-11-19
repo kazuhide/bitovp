@@ -5,14 +5,25 @@ import { apiFetch } from "@/lib/api";
 import { moqObservationPath } from "@/lib/moq-player/history-client";
 import { moqObservationHistorySchema } from "@/lib/moq-player/observations";
 
+type HistoryScope = "live" | "archive";
+
+export function moqObservationHistoryKey(
+	channelId: string,
+	runId: string,
+	scope: HistoryScope = "archive",
+) {
+	const key = ["moq-observations", channelId, runId] as const;
+	return scope === "live" ? ([...key, "live"] as const) : key;
+}
+
 export function useMoqObservationHistory(
 	channelId: string,
 	runId: string,
-	refresh: boolean,
+	scope: HistoryScope,
 	enabled = true,
 ) {
 	return useQuery({
-		queryKey: ["moq-observations", channelId, runId],
+		queryKey: moqObservationHistoryKey(channelId, runId, scope),
 		queryFn: async ({ signal }) => {
 			const value = moqObservationHistorySchema.parse(
 				await apiFetch(moqObservationPath(channelId, runId), {
@@ -24,6 +35,7 @@ export function useMoqObservationHistory(
 			return value;
 		},
 		enabled,
-		refetchInterval: refresh ? 5000 : false,
+		retry: false,
+		refetchInterval: scope === "live" ? 5000 : false,
 	});
 }

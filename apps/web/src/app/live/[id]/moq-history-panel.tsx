@@ -16,7 +16,10 @@ import { MoqClientPlaybackClock } from "./moq-client-playback-clock";
 import { MoqEncoderHistory } from "./moq-encoder-history";
 import { MoqPlaybackStages } from "./moq-playback-stages";
 import { MoqViewerMetrics } from "./moq-viewer-metrics";
-import { useMoqObservationHistory } from "./use-moq-observation-history";
+import {
+	moqObservationHistoryKey,
+	useMoqObservationHistory,
+} from "./use-moq-observation-history";
 
 const fullUtc = (value: string) =>
 	`${value.slice(0, 10)} ${value.slice(11, 19)}`;
@@ -46,7 +49,8 @@ export function MoqHistoryPanel({
 	const history = useMoqObservationHistory(
 		channelId,
 		runId,
-		active && !hideEncoder,
+		active ? "live" : "archive",
+		!active || !hideEncoder,
 	);
 	const sessions = [...(history.data?.sessions ?? [])].sort(
 		(a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt),
@@ -76,7 +80,7 @@ export function MoqHistoryPanel({
 		const deadline = window.setTimeout(() => {
 			window.clearInterval(interval);
 			void queryClient.cancelQueries({
-				queryKey: ["moq-observations", channelId, runId],
+				queryKey: moqObservationHistoryKey(channelId, runId),
 				exact: true,
 			});
 		}, remaining);
@@ -129,7 +133,7 @@ export function MoqHistoryPanel({
 						>
 							{sessions.map((value) => (
 								<option key={value.id} value={value.id}>
-									{fullUtc(value.startedAt)} UTC
+									{value.startedAt.replace("T", " ").replace(/Z$/, " UTC")}
 								</option>
 							))}
 						</select>

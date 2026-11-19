@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import {
 	CartesianGrid,
 	type DotItemDotProps,
@@ -71,6 +72,7 @@ export function MoqMetricChart<T extends TimedPoint>({
 	help,
 	playhead,
 }: Props<T>) {
+	const labelId = useId();
 	const measurements = lines.flatMap((line) => {
 		if (!points.some((point) => isMeasurement(point[line.field]))) return [];
 		const hasIsolatedPoint = points.some(
@@ -104,7 +106,7 @@ export function MoqMetricChart<T extends TimedPoint>({
 		<figure data-moq-chart={id} className="min-w-0 space-y-1.5">
 			<figcaption className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
 				<div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-zinc-400">
-					<span>{label}</span>
+					<span id={labelId}>{label}</span>
 					{help ? <InfoHint labelFor={label} text={help} /> : null}
 				</div>
 				{measurements.map(({ field, label: name, color }) => {
@@ -140,6 +142,7 @@ export function MoqMetricChart<T extends TimedPoint>({
 					<LineChart
 						data={points}
 						accessibilityLayer
+						aria-labelledby={labelId}
 						margin={{ top: 4, right: 5, bottom: 0, left: 0 }}
 					>
 						<CartesianGrid vertical={false} stroke="var(--color-zinc-800)" />

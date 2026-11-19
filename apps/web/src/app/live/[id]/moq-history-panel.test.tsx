@@ -325,12 +325,14 @@ describe("saved MoQ history and received video", () => {
 		).toBeVisible();
 		expect(rendered.container.querySelector("video")).toBeNull();
 
+		mocks.api.mockClear();
 		rendered.rerender(
 			<MoqHistoryPanel channelId={CHANNEL} runId={RUN} active hideEncoder />,
 		);
 		expect(
 			rendered.container.querySelector("[data-moq-encoder-history]"),
 		).toBeNull();
+		expect(mocks.api).not.toHaveBeenCalled();
 	});
 
 	it("keeps the browser event stages behind the observation disclosure", async () => {

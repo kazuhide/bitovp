@@ -36,6 +36,14 @@ const state = extract(({ document, window }) => {
 		?.querySelector("[data-moq-playhead]")
 		?.getAttribute("data-moq-playhead");
 	const cursor = mark == null ? null : Number(mark);
+	const renderedLine = latency?.querySelector<SVGLineElement>(
+		"line.recharts-reference-line-line",
+	);
+	const cursorVisible =
+		renderedLine !== null &&
+		renderedLine !== undefined &&
+		renderedLine.getBoundingClientRect().height > 0 &&
+		window.getComputedStyle(renderedLine).visibility === "visible";
 	const source = video?.currentSrc || video?.src;
 	const archiveUrl = source ? new URL(source, window.location.href) : null;
 	const seconds = video?.currentTime ?? null;
@@ -71,6 +79,7 @@ const state = extract(({ document, window }) => {
 			Math.abs(seconds - last.seconds) > 0.15 ||
 			Math.abs(seconds - last.previous) < 0.2 ||
 			video?.seeking ||
+			!cursorVisible ||
 			cursor === null ||
 			!Number.isFinite(cursor) ||
 			!session ||
@@ -95,6 +104,7 @@ const state = extract(({ document, window }) => {
 		archivePath: archiveUrl?.pathname,
 		seconds,
 		cursor,
+		cursorVisible,
 		operation: last,
 		offer: {
 			seeks:

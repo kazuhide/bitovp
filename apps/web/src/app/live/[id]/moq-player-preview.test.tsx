@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentOrganizationContext } from "@/components/providers";
+import type { MoqHeartbeatPoint } from "@/lib/moq-player/heartbeat";
 import type { MoqObservationSession } from "@/lib/moq-player/observations";
 import type {
 	MoqPlaybackDescriptor,
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 	api: vi.fn(),
 	load: vi.fn(),
 	history: vi.fn(),
+	historyRead: vi.fn(),
 	observation: vi.fn(),
 }));
 vi.mock("@/lib/api", () => ({
@@ -34,15 +36,7 @@ vi.mock("@/lib/api", () => ({
 				session,
 			}));
 		}
-		return Promise.resolve({
-			runId,
-			sessions: mocks.history(runId) ?? [],
-			heartbeat: {
-				source: "live-encoder-heartbeat",
-				points: [],
-				truncated: false,
-			},
-		});
+		return Promise.resolve(mocks.historyRead(runId, init?.signal));
 	},
 }));
 vi.mock("@/lib/moq-player/loader", () => ({ loadMoqPlayer: mocks.load }));
@@ -115,6 +109,15 @@ beforeEach(() => {
 	});
 	mocks.load.mockResolvedValue(factory);
 	mocks.api.mockResolvedValue(descriptor);
+	mocks.historyRead.mockImplementation((runId) => ({
+		runId,
+		sessions: mocks.history(runId) ?? [],
+		heartbeat: {
+			source: "live-encoder-heartbeat",
+			points: [],
+			truncated: false,
+		},
+	}));
 });
 afterEach(() => {
 	vi.unstubAllGlobals();
@@ -173,6 +176,77 @@ describe("explicit MoQ preview", () => {
 			Node.DOCUMENT_POSITION_FOLLOWING,
 		);
 	});
+	it("drops previously visible encoder telemetry when a later read is forbidden", async () => {
+		const point: MoqHeartbeatPoint = {
+			observedAt: "2026-11-20T00:00:00.000Z",
+			sampledAt: null,
+			source: "poll",
+			ingestStatus: "CONNECTED",
+			ingestHealthy: true,
+			videoIncomingBitrateBps: 2_000_000,
+			audioIncomingBitrateBps: null,
+			videoFps: null,
+			droppedPacketsVideo: null,
+			droppedPacketsAudio: null,
+			corruptPacketsVideo: null,
+			corruptPacketsAudio: null,
+			segmentProcessingMeanMs: null,
+			segmentProcessingMinMs: null,
+			segmentProcessingMaxMs: null,
+		};
+		mocks.historyRead.mockResolvedValueOnce({
+			runId: RUN,
+			sessions: [],
+			heartbeat: {
+				source: "live-encoder-heartbeat",
+				points: [point],
+				truncated: false,
+			},
+		});
+		const { client, container } = renderWithQuery(view());
+		const encoder = container.querySelector("[data-moq-encoder-history]");
+		await waitFor(() => {
+			expect(
+				encoder?.querySelector('[data-moq-chart="inputBitrate"]'),
+			).toBeVisible();
+		});
+
+		mocks.historyRead.mockRejectedValueOnce(
+			Object.assign(new Error("Forbidden"), { status: 403 }),
+		);
+		await act(async () => {
+			await client.invalidateQueries({
+				queryKey: ["moq-observations", CHANNEL, RUN],
+			});
+		});
+		expect(
+			await screen.findByText("Could not load saved observations"),
+		).toBeVisible();
+		expect(encoder?.querySelector("[data-moq-chart]")).toBeNull();
+		expect(encoder?.querySelector("time")).toBeNull();
+	});
+
+	it("aborts a stalled live read and promptly loads independent ended history", async () => {
+		let liveSignal: AbortSignal | undefined;
+		mocks.historyRead.mockImplementationOnce((_run, signal: AbortSignal) => {
+			liveSignal = signal;
+			return new Promise<never>((_resolve, reject) => {
+				signal.addEventListener("abort", () => reject(signal.reason), {
+					once: true,
+				});
+			});
+		});
+		const { rerender } = renderWithQuery(view());
+		await waitFor(() => expect(liveSignal).toBeDefined());
+
+		rerender(view(RUN, false));
+		expect(
+			await screen.findByText("No saved playback observations"),
+		).toBeVisible();
+		expect(liveSignal?.aborted).toBe(true);
+		expect(mocks.historyRead).toHaveBeenCalledTimes(2);
+	});
+
 	it.each([
 		{ standalone: false, commits: true },
 		{ standalone: true, commits: true },
@@ -540,6 +614,49 @@ describe("explicit MoQ preview", () => {
 		);
 		expect(document.body.innerHTML).not.toContain("SYNTHETIC_");
 	});
+	it("keeps keyboard focus on the playback control through Play and pending Stop", async () => {
+		const user = userEvent.setup();
+		let release!: () => void;
+		player.dispose.mockReturnValue(
+			new Promise<void>((resolve) => {
+				release = resolve;
+			}),
+		);
+		renderWithQuery(view());
+
+		await user.tab();
+		expect(screen.getByRole("button", { name: "Play" })).toHaveFocus();
+		await user.keyboard("{Enter}");
+		await waitFor(() => expect(source.play).toHaveBeenCalledOnce());
+		expect(screen.getByRole("button", { name: "Stop" })).toHaveFocus();
+
+		await user.keyboard("{Enter}");
+		expect(screen.getByRole("button", { name: "Stop" })).toHaveFocus();
+		await act(async () => release());
+		expect(await screen.findByRole("button", { name: "Play" })).toHaveFocus();
+	});
+
+	it("leaves focus where the operator moved it while stopping playback", async () => {
+		const user = userEvent.setup();
+		let release!: () => void;
+		player.dispose.mockReturnValue(
+			new Promise<void>((resolve) => {
+				release = resolve;
+			}),
+		);
+		renderWithQuery(view());
+		await user.click(screen.getByRole("button", { name: "Play" }));
+		await waitFor(() => expect(source.play).toHaveBeenCalledOnce());
+		await user.click(screen.getByRole("button", { name: "Stop" }));
+		const link = screen.getByRole("link", { name: "Open player" });
+		await user.tab();
+		expect(link).toHaveFocus();
+
+		await act(async () => release());
+		await screen.findByRole("button", { name: "Play" });
+		expect(link).toHaveFocus();
+	});
+
 	it("keeps Stop disabled while its owned disposal is pending and preserves a deferred failure", async () => {
 		let reject!: (error: Error) => void;
 		player.dispose.mockReturnValue(
@@ -551,7 +668,10 @@ describe("explicit MoQ preview", () => {
 		await userEvent.click(screen.getByRole("button", { name: "Play" }));
 		await waitFor(() => expect(source.play).toHaveBeenCalledOnce());
 		await userEvent.click(screen.getByRole("button", { name: "Stop" }));
-		expect(screen.getByRole("button", { name: "Stop" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "Stop" })).toHaveAttribute(
+			"aria-disabled",
+			"true",
+		);
 		await userEvent.click(screen.getByRole("button", { name: "Stop" }));
 		expect(screen.getByRole("status")).not.toHaveTextContent("Stopped");
 		await act(async () => {

@@ -37,7 +37,10 @@ import { type MoqArchiveSave, MoqHistoryPanel } from "./moq-history-panel";
 import { MoqPlaybackStages } from "./moq-playback-stages";
 import { MoqPlayerStatistics } from "./moq-player-statistics";
 import { MoqViewerMetrics } from "./moq-viewer-metrics";
-import { useMoqObservationHistory } from "./use-moq-observation-history";
+import {
+	moqObservationHistoryKey,
+	useMoqObservationHistory,
+} from "./use-moq-observation-history";
 
 const emptyHeartbeat: MoqHeartbeatHistory = {
 	source: "live-encoder-heartbeat",
@@ -91,10 +94,11 @@ function MoqPlaybackAttempt({
 	const observations = useMoqObservationHistory(
 		channelId,
 		runId,
-		active,
+		"live",
 		active,
 	);
-	const heartbeat = observations.data?.heartbeat ?? emptyHeartbeat;
+	const liveHistory = observations.isError ? undefined : observations.data;
+	const heartbeat = liveHistory?.heartbeat ?? emptyHeartbeat;
 	const [samples, setSamples] = useState<readonly MoqMetricSample[]>([]);
 	const host = useRef<HTMLElement>(null);
 	const current = useRef<Attempt | undefined>(undefined);
@@ -153,6 +157,10 @@ function MoqPlaybackAttempt({
 	}, []);
 	useEffect(() => {
 		if (!active) {
+			void queryClient.cancelQueries({
+				queryKey: moqObservationHistoryKey(channelId, runId, "live"),
+				exact: true,
+			});
 			intent.current++;
 			void close().catch(() => {});
 			setPhase("stopped");
@@ -164,7 +172,7 @@ function MoqPlaybackAttempt({
 		return () => {
 			void close().catch(() => {});
 		};
-	}, [active, close]);
+	}, [active, channelId, close, queryClient, runId]);
 	async function play() {
 		if (!active || !host.current || closing.current) return;
 		const startedAt = performance.now();
@@ -271,7 +279,7 @@ function MoqPlaybackAttempt({
 				},
 				onPersisted: () => {
 					void queryClient.invalidateQueries({
-						queryKey: ["moq-observations", channelId, runId],
+						queryKey: moqObservationHistoryKey(channelId, runId),
 					});
 				},
 			});
@@ -369,6 +377,8 @@ function MoqPlaybackAttempt({
 		phase === "stopping" ||
 		phase === "waiting" ||
 		phase === "frames";
+	const playOverlay = active && !busy;
+	const controlPending = phase === "stopping" || (!busy && cleanupPending);
 	return (
 		<div
 			id="moq-preview"
@@ -403,44 +413,42 @@ function MoqPlaybackAttempt({
 					data-moq-live-layout
 					className="grid min-w-0 items-start gap-5 @3xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
 				>
-					<div className="min-w-0 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/35">
-						<div className="relative">
-							<section
-								ref={host}
-								data-moq-live-host={runId}
-								aria-label={t("moqPlayback.title")}
-								className="aspect-video w-full overflow-hidden bg-black [&_canvas]:h-full [&_canvas]:w-full [&_canvas]:object-contain [&_video]:h-full [&_video]:w-full [&_video]:object-contain"
-							/>
-							{!busy && active ? (
-								<div className="absolute inset-0 grid place-items-center">
-									<Button
-										size="default"
-										disabled={cleanupPending}
-										onClick={() => void play()}
-									>
-										<Play aria-hidden className="size-4" />
-										{t("moqPlayback.play")}
-									</Button>
-								</div>
-							) : null}
-						</div>
-						<div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
-							{!active ? (
-								<Button size="sm" disabled>
-									{t("moqPlayback.play")}
-								</Button>
-							) : null}
+					<div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/35">
+						<section
+							ref={host}
+							data-moq-live-host={runId}
+							aria-label={t("moqPlayback.title")}
+							className="col-span-full row-start-1 aspect-video w-full overflow-hidden bg-black [&_canvas]:h-full [&_canvas]:w-full [&_canvas]:object-contain [&_video]:h-full [&_video]:w-full [&_video]:object-contain"
+						/>
+						{/* A single control keeps focus as its label and position change. */}
+						<Button
+							size={playOverlay ? "default" : "sm"}
+							variant={busy ? "secondary" : "default"}
+							className={
+								playOverlay
+									? "col-span-full row-start-1 z-10 place-self-center aria-disabled:opacity-50"
+									: "col-start-1 row-start-2 my-2 ml-3 self-center aria-disabled:opacity-50"
+							}
+							disabled={!active}
+							aria-disabled={controlPending || undefined}
+							onClick={() => {
+								if (!active || controlPending) return;
+								if (busy) void stop();
+								else void play();
+							}}
+						>
 							{busy ? (
-								<Button
-									size="sm"
-									variant="secondary"
-									disabled={phase === "stopping"}
-									onClick={() => void stop()}
-								>
-									<Square aria-hidden className="size-3" />
-									{t("moqPlayback.stop")}
-								</Button>
+								<Square aria-hidden className="size-3" />
+							) : active ? (
+								<Play aria-hidden className="size-4" />
 							) : null}
+							{t(busy ? "moqPlayback.stop" : "moqPlayback.play")}
+						</Button>
+						<div
+							className={`row-start-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 ${
+								playOverlay ? "col-span-full" : "col-start-2"
+							}`}
+						>
 							<span
 								role={phase === "failed" ? "alert" : "status"}
 								aria-live="polite"
@@ -475,7 +483,7 @@ function MoqPlaybackAttempt({
 							) : null}
 						</div>
 						{active && phase === "frames" ? (
-							<div className="border-t border-zinc-800 px-3 py-2">
+							<div className="col-span-full row-start-3 border-t border-zinc-800 px-3 py-2">
 								<MoqClientPlaybackClock mode="live" active />
 							</div>
 						) : null}
@@ -545,7 +553,7 @@ function MoqPlaybackAttempt({
 					</p>
 				</div>
 			</details>
-			{active && (observations.data?.sessions.length || archiveSaves.length) ? (
+			{active && (liveHistory?.sessions.length || archiveSaves.length) ? (
 				<MoqHistoryPanel
 					key="history-active"
 					channelId={channelId}

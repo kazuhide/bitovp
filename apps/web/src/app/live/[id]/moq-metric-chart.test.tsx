@@ -1,3 +1,4 @@
+import { screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderLocalized } from "@/test/render";
@@ -38,6 +39,9 @@ describe("MoQ metric chart", () => {
 				unit="/s"
 			/>,
 		);
+		expect(
+			screen.getByRole("application", { name: "Frame observations" }),
+		).toBeInTheDocument();
 		const colors = Array.from(
 			container.querySelectorAll(".recharts-line-dots circle"),
 			(dot) => dot.getAttribute("fill"),

@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentOrganizationContext } from "@/components/providers";
 import { renderWithQuery } from "@/test/render";
@@ -80,6 +80,36 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("received recording selection", () => {
+	it("distinguishes sessions that start within the same UTC second", async () => {
+		const response = await mocks.api();
+		mocks.api.mockResolvedValue({
+			...response,
+			sessions: [
+				session(OLDER, "2026-11-18T00:00:00.100Z"),
+				session(NEWER, "2026-11-18T00:00:00.900Z"),
+			],
+		});
+		const rendered = renderWithQuery(
+			<DocumentOrganizationContext.Provider value={ORG}>
+				<MoqHistoryPanel channelId={CHANNEL} runId={RUN} active={false} />
+			</DocumentOrganizationContext.Provider>,
+		);
+		const selector = await screen.findByRole("combobox");
+		expect(
+			within(selector)
+				.getAllByRole("option")
+				.map((option) => option.textContent),
+		).toEqual(["2026-11-18 00:00:00.900 UTC", "2026-11-18 00:00:00.100 UTC"]);
+		const earlier = within(selector).getByRole("option", {
+			name: "2026-11-18 00:00:00.100 UTC",
+		});
+		fireEvent.change(selector, {
+			target: { value: earlier.getAttribute("value") },
+		});
+		expect(
+			rendered.container.querySelector("video[data-moq-archive]"),
+		).toHaveAttribute("data-moq-archive", OLDER);
+	});
 	it("replaces the old video and clock together across repeated session changes", async () => {
 		const rendered = renderWithQuery(
 			<DocumentOrganizationContext.Provider value={ORG}>

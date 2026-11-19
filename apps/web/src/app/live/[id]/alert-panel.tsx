@@ -55,6 +55,7 @@ export function AlertPanel({
 	open,
 	history,
 	fetchError = null,
+	loading = false,
 	mode = "open",
 	onChanged,
 }: {
@@ -76,6 +77,7 @@ export function AlertPanel({
 	 * actually succeeded.
 	 */
 	fetchError?: string | null;
+	loading?: boolean;
 	onChanged: () => void;
 }) {
 	const { t } = useT();
@@ -178,6 +180,16 @@ export function AlertPanel({
 		);
 	};
 
+	const availabilityLine = fetchError ? (
+		<p role="alert" className="text-red-400 text-xs">
+			{t("alerts.fetchFailed", { message: fetchError })}
+		</p>
+	) : loading ? (
+		<p role="status" className="text-xs text-zinc-500">
+			{t("common.loading")}
+		</p>
+	) : null;
+
 	return (
 		<div className="mt-2 space-y-4">
 			{/*
@@ -245,12 +257,10 @@ export function AlertPanel({
 								</p>
 							) : null}
 						</div>
-					) : fetchError ? (
-						<p role="alert" className="text-red-400 text-xs">
-							{t("alerts.fetchFailed", { message: fetchError })}
-						</p>
 					) : (
-						<p className="text-xs text-zinc-500">{t("alerts.noneOpen")}</p>
+						(availabilityLine ?? (
+							<p className="text-xs text-zinc-500">{t("alerts.noneOpen")}</p>
+						))
 					)}
 				</>
 			) : (
@@ -347,9 +357,11 @@ export function AlertPanel({
 							{t("alerts.history")}
 						</h4>
 						{history.length === 0 ? (
-							<p className="mt-1 text-xs text-zinc-500">
-								{t("alerts.noneHistory")}
-							</p>
+							(availabilityLine ?? (
+								<p className="mt-1 text-xs text-zinc-500">
+									{t("alerts.noneHistory")}
+								</p>
+							))
 						) : (
 							<ul className="mt-2 space-y-2">
 								{history.map((event) => (

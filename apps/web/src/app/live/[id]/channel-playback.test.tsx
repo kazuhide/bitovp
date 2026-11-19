@@ -64,6 +64,17 @@ import { ChannelDetail } from "./channel-detail";
 
 const CHANNEL = "00000000-0000-4000-8000-0000000000bb";
 const HLS_URL = "https://cdn.example.com/output/live/stream.m3u8";
+const MOQ_STEP = {
+	step: "output:moq",
+	kind: "CREATE_OUTPUT_MOQ",
+	status: "DONE",
+	refs: {},
+	payload: {
+		credentialId: "moq-credential",
+		trackNamespace: ["owned-run"],
+		draftVersion: "DRAFT_18",
+	},
+};
 
 function link(over: Partial<ManifestPlaybackLink> = {}): ManifestPlaybackLink {
 	return {
@@ -198,6 +209,21 @@ function mockChannel(over: Record<string, unknown> = {}) {
 		}
 		return { items: [] };
 	});
+}
+
+function mockRole(role: "OPERATOR" | "VIEWER") {
+	const implementation = apiFetch.getMockImplementation();
+	apiFetch.mockImplementation((input: string) =>
+		input === "/api/auth/session"
+			? {
+					mode: "users",
+					authenticated: true,
+					configured: true,
+					role,
+					loginKind: "password-form",
+				}
+			: implementation?.(input),
+	);
 }
 
 /**
@@ -404,34 +430,11 @@ describe("ChannelDetail — live playback preview", () => {
 					deltas: {},
 				},
 				lastHeartbeatAt: at,
-				stepLog: [
-					{
-						step: "output:moq",
-						kind: "CREATE_OUTPUT_MOQ",
-						status: "DONE",
-						refs: {},
-						payload: {
-							credentialId: "moq-credential",
-							trackNamespace: ["owned-run"],
-							draftVersion: "DRAFT_18",
-						},
-					},
-				],
+				stepLog: [MOQ_STEP],
 			},
 			playbackLinks: [],
 		});
-		const implementation = apiFetch.getMockImplementation();
-		apiFetch.mockImplementation((input: string) =>
-			input === "/api/auth/session"
-				? {
-						mode: "users",
-						authenticated: true,
-						configured: true,
-						role: "OPERATOR",
-						loginKind: "password-form",
-					}
-				: implementation?.(input),
-		);
+		mockRole("OPERATOR");
 		wrap(<ChannelDetail id={CHANNEL} />);
 		const region = await screen.findByRole("region", { name: "MoQ playback" });
 		const preview = region.parentElement;
@@ -456,6 +459,49 @@ describe("ChannelDetail — live playback preview", () => {
 			),
 		).toBe(false);
 	});
+
+	it("omits Live-to-VOD manifest creation for a finished MoQ-only run", async () => {
+		const at = new Date().toISOString();
+		mockChannel({
+			status: "STOPPED",
+			currentRun: {
+				...confirmedRun("RUNNING"),
+				status: "STOPPED",
+				providerStatus: "FINISHED",
+				providerTerminalAt: at,
+				endedAt: at,
+				stepLog: [MOQ_STEP],
+			},
+			playbackLinks: [],
+		});
+		mockRole("OPERATOR");
+		wrap(<ChannelDetail id={CHANNEL} />);
+		await screen.findByRole("region", { name: "MoQ playback" });
+		expect(document.getElementById("sec-live-to-vod")).toBeNull();
+		expect(document.querySelector('a[href="#sec-live-to-vod"]')).toBeNull();
+	});
+
+	it("omits the MoQ playback section and its navigation when the role cannot open it", async () => {
+		mockChannel({
+			currentRun: {
+				...confirmedRun("RUNNING"),
+				stepLog: [MOQ_STEP],
+			},
+		});
+		mockRole("VIEWER");
+		const { client } = wrap(<ChannelDetail id={CHANNEL} />);
+		await screen.findByRole("heading", { name: "Verification channel" });
+		await waitFor(() =>
+			expect(client.getQueryData(["auth", "session"])).toMatchObject({
+				role: "VIEWER",
+			}),
+		);
+		expect(document.getElementById("sec-manifests")).toBeNull();
+		expect(document.querySelector('a[href="#sec-manifests"]')).toBeNull();
+		expect(
+			apiFetch.mock.calls.some(([url]) => String(url).includes("/moq-")),
+		).toBe(false);
+	});
 	/* Verify the current information hierarchy rather than restoring the former all-collapsed layout. */
 	it("opens with ONE thing to do, and its anchor points at a section that exists (review-260 126-A2)", async () => {
 		// RUNNING + no heartbeat ⇒ ingest unproven ⇒ CONNECT_INPUT.
@@ -476,6 +522,9 @@ describe("ChannelDetail — live playback preview", () => {
 		wrap(<ChannelDetail id={CHANNEL} />);
 		const panel = await screen.findByRole("region", { name: /next action/i });
 		expect(panel.getAttribute("data-next-action")).toBe("RECOVER_FROM_ERROR");
+		expect(
+			within(panel).getByRole("link", { name: "Step log" }),
+		).toHaveAttribute("href", "#sec-steps");
 		const steps = document.getElementById("sec-steps") as HTMLDetailsElement;
 		expect(steps.open, "the pointed fold must open").toBe(true);
 	});

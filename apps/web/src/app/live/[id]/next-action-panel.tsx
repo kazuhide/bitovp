@@ -119,10 +119,12 @@ export function NextActionPanel({
 	onJump,
 	readOnly = false,
 	inputUnconfirmed = false,
+	stepsAvailable = true,
 }: {
 	action: LiveNextAction;
 	readOnly?: boolean;
 	inputUnconfirmed?: boolean;
+	stepsAvailable?: boolean;
 	/**
 	 * called with the click event and the target section id when the
 	 * CTA is taken, so the page can hand focus to that section's heading
@@ -147,11 +149,17 @@ export function NextActionPanel({
 		: inputUnconfirmed
 			? "sec-heartbeat"
 			: action.section;
+	const recoveryLink =
+		action.code === "RECOVER_FROM_ERROR" &&
+		action.section === "sec-steps" &&
+		stepsAvailable
+			? "nextAction.goSteps"
+			: undefined;
 	const linkLabel = readOnly
 		? "runs.heading"
 		: inputUnconfirmed
 			? "live.health.ingestDetails"
-			: copy.cta;
+			: (recoveryLink ?? copy.cta);
 	return (
 		<section
 			aria-label={t("nextAction.regionLabel")}

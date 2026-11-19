@@ -358,6 +358,53 @@ describe.each([
 });
 
 describe("ChannelDetail — a failed read is not a healthy channel", () => {
+	it("withholds alert and schedule counts while retrying failed first reads", async () => {
+		mockPage("none");
+		const reply = apiFetch.getMockImplementation();
+		let retry = false;
+		let release!: () => void;
+		const ready = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		apiFetch.mockImplementation(async (input: string) => {
+			if (input.endsWith("/alerts") || input.endsWith("/schedules")) {
+				if (!retry) throw new Error("first telemetry read failed");
+				await ready;
+			}
+			return reply?.(input);
+		});
+		const { client } = wrap(<ChannelDetail id={CHANNEL} />);
+		await screen.findByRole("heading", { name: "unknown-not-empty" });
+		const keys = [
+			["live-channel-alerts", CHANNEL],
+			["live-schedules", CHANNEL],
+		];
+		await waitFor(() => {
+			for (const queryKey of keys) {
+				expect(client.getQueryState(queryKey)?.status).toBe("error");
+			}
+		});
+		retry = true;
+		await act(async () => {
+			for (const queryKey of keys) void client.refetchQueries({ queryKey });
+		});
+		await waitFor(() => {
+			for (const queryKey of keys) {
+				expect(client.getQueryState(queryKey)?.status).toBe("pending");
+			}
+		});
+		expect(stripCell("alerts")).toBeNull();
+		expect(stripCell("next-event")).toBeNull();
+		expect(summaryOf("sec-alerts")).not.toBe("0 open");
+		expect(summaryOf("sec-schedule")).not.toBe("none armed");
+		expect(nextActionCode()).not.toBe("ON_AIR");
+		expect(screen.queryByText("Nothing armed.")).toBeNull();
+		await act(async () => release());
+		await waitFor(() => expect(nextActionCode()).toBe("ON_AIR"));
+		expect(stripCell("alerts")).toHaveTextContent("0");
+		expect(stripCell("next-event")).toHaveTextContent("none armed");
+	});
+
 	it("alerts RESOLVING with an empty list is still ON_AIR, a green 0, and '0 open'", async () => {
 		mockPage("none");
 		wrap(<ChannelDetail id={CHANNEL} />);

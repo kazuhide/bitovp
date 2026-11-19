@@ -44,7 +44,7 @@ import { Button } from "@/components/ui/button";
 import { aisaResultSchema } from "@/lib/aisa-live/contracts";
 import { apiFetch } from "@/lib/api";
 import type { SessionDto } from "@/lib/auth/dto";
-import { RoleAccess } from "@/lib/auth/use-role-access";
+import { RoleAccess, useMutationAccess } from "@/lib/auth/use-role-access";
 import { localizedCustomerError } from "@/lib/customer-error";
 import { useQcVmafEnabled } from "@/lib/feature-flags/context";
 import { useT } from "@/lib/i18n/context";
@@ -164,6 +164,7 @@ function ChannelConsole({
 		return () => window.removeEventListener("hashchange", update);
 	}, []);
 	const qcVmafEnabled = useQcVmafEnabled();
+	const canReadMoqPlayback = useMutationAccess("live.channel.heartbeat-log");
 	// review-260 127-A7: freshness is a function of time, but nothing
 	// re-rendered when only TIME passed — a dead sweep left byte-identical
 	// payloads, TanStack skips the re-render, and the stale badge never
@@ -656,10 +657,9 @@ function ChannelConsole({
 		: (feeders.data?.items ?? []).filter((s) => isActiveFeederStatus(s.status))
 				.length;
 	/* Use query isError for summary freshness. TanStack retains successful data after a failed background refresh, so data presence cannot establish that an alert count or schedule list is current. Keep stale detail visible with an explicit refresh error rather than reporting an empty or healthy state. */
-	const alertsUnavailable =
-		alerts.isError || (aisaRow && alerts.data === undefined);
+	const alertsUnavailable = alerts.isError || alerts.data === undefined;
 	const schedulesUnavailable =
-		schedules.isError || (aisaRow && schedules.data === undefined);
+		schedules.isError || schedules.data === undefined;
 	const openAlerts: number | "unknown" = alertsUnavailable
 		? "unknown"
 		: (alerts.data?.open.length ?? 0);
@@ -804,7 +804,11 @@ function ChannelConsole({
 	 * the last-broadcast lead needs a run to summarise.
 	 */
 	const omittedSections: LiveSectionId[] = [];
-	if (moqPlayback) omittedSections.push("sec-origin");
+	if (moqPlayback) {
+		omittedSections.push("sec-origin");
+		if (!canReadMoqPlayback) omittedSections.push("sec-manifests");
+		if (!effectiveLiveToVod) omittedSections.push("sec-live-to-vod");
+	}
 	if (aisaRow) {
 		if (!showAisaFeature) omittedSections.push("sec-ingest", "sec-danger");
 		if (imported)
@@ -942,19 +946,28 @@ function ChannelConsole({
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-alerts"])}
 				defaultOpen={sectionOpen("sec-alerts")}
 				summary={
-					openAlerts === "unknown"
-						? t("status.summaryUnavailable")
-						: t("status.summaryOpenAlerts", { count: openAlerts })
+					alerts.isPending
+						? undefined
+						: openAlerts === "unknown"
+							? t("status.summaryUnavailable")
+							: t("status.summaryOpenAlerts", { count: openAlerts })
 				}
 				tone={
-					openAlerts === "unknown" ? "warn" : openAlerts > 0 ? "error" : "ok"
+					alerts.isPending
+						? "neutral"
+						: openAlerts === "unknown"
+							? "warn"
+							: openAlerts > 0
+								? "error"
+								: "ok"
 				}
 			>
 				<AlertPanel
 					channelId={id}
 					mode="open"
+					loading={alerts.isPending}
 					fetchError={
-						alertsUnavailable
+						alerts.isError
 							? localizedCustomerError(t, alerts.error, "common.requestFailed")
 							: null
 					}
@@ -994,21 +1007,17 @@ function ChannelConsole({
 				    the output is confirmed while RUNNING. */}
 				<div className={moqPlayback ? "min-w-0" : "max-w-sm"}>
 					{moqPlayback ? (
-						<RoleAccess control="live.channel.heartbeat-log">
-							{run ? (
-								<MoqPlayerPreview
-									channelId={id}
-									runId={run.id}
-									active={
-										encoderStatus === "RUNNING" && run.status === "RUNNING"
-									}
-								/>
-							) : (
-								<p role="status" className="text-xs text-zinc-400">
-									{t("moqPlayback.unavailable")}
-								</p>
-							)}
-						</RoleAccess>
+						run ? (
+							<MoqPlayerPreview
+								channelId={id}
+								runId={run.id}
+								active={encoderStatus === "RUNNING" && run.status === "RUNNING"}
+							/>
+						) : (
+							<p role="status" className="text-xs text-zinc-400">
+								{t("moqPlayback.unavailable")}
+							</p>
+						)
 					) : (
 						<PlayerPreview
 							// A new airing is gated again (review-539 R1).
@@ -1115,21 +1124,23 @@ function ChannelConsole({
 				// armed one: the operator's next question is about the airing
 				// that failed, not about tomorrow's start.
 				summary={
-					schedulesUnavailable
-						? t("status.summaryUnavailable")
-						: failedOutcomeCount > 0
-							? t(
-									failedOutcomeCount === 1
-										? "schedule.outcomesFailedOne"
-										: "schedule.outcomesFailedOther",
-									{ count: failedOutcomeCount },
-								)
-							: nextArmed
-								? t("status.summaryNextFire", {
-										action: nextArmed.action,
-										time: new Date(nextArmed.fireAt).toLocaleString(),
-									})
-								: t("status.summaryNoneArmed")
+					schedules.isPending
+						? undefined
+						: schedulesUnavailable
+							? t("status.summaryUnavailable")
+							: failedOutcomeCount > 0
+								? t(
+										failedOutcomeCount === 1
+											? "schedule.outcomesFailedOne"
+											: "schedule.outcomesFailedOther",
+										{ count: failedOutcomeCount },
+									)
+								: nextArmed
+									? t("status.summaryNextFire", {
+											action: nextArmed.action,
+											time: new Date(nextArmed.fireAt).toLocaleString(),
+										})
+									: t("status.summaryNoneArmed")
 				}
 				tone={
 					schedulesUnavailable
@@ -1356,7 +1367,7 @@ function ChannelConsole({
 					channelId={id}
 					status={row.status}
 					providerTerminal={providerTerminal}
-					unsupported={aisaRow}
+					unsupported={aisaRow || moqPlayback}
 					record={effectiveLiveToVod}
 					families={
 						aisaRow && !aisaOperatorAllowed
@@ -1434,18 +1445,21 @@ function ChannelConsole({
 				title={t(LIVE_SECTION_TITLE_KEYS["sec-alert-rules"])}
 				defaultOpen={sectionOpen("sec-alert-rules")}
 				summary={
-					alertsUnavailable
-						? t("status.summaryUnavailable")
-						: t("status.summaryResolvedAlerts", {
-								count: (alerts.data?.history ?? []).length,
-							})
+					alerts.isPending
+						? undefined
+						: alertsUnavailable
+							? t("status.summaryUnavailable")
+							: t("status.summaryResolvedAlerts", {
+									count: (alerts.data?.history ?? []).length,
+								})
 				}
 			>
 				<AlertPanel
 					channelId={id}
 					mode="manage"
+					loading={alerts.isPending}
 					fetchError={
-						alertsUnavailable
+						alerts.isError
 							? localizedCustomerError(t, alerts.error, "common.requestFailed")
 							: null
 					}
@@ -1709,6 +1723,7 @@ function ChannelConsole({
 				{imported ||
 				((nextAction.code !== "RECOVER_FROM_ERROR" ||
 					!row.bitmovinEncodingId) &&
+					!(alerts.isPending && nextAction.code === "ALERTS_UNKNOWN") &&
 					!(row.status === "STOPPED" && row.error != null) &&
 					!(
 						providerTerminal &&
@@ -1722,6 +1737,7 @@ function ChannelConsole({
 					<NextActionPanel
 						action={nextAction}
 						readOnly={imported}
+						stepsAvailable={!omittedSections.includes("sec-steps")}
 						inputUnconfirmed={
 							displayedInputConnection === null &&
 							nextAction.code === "CONNECT_INPUT"

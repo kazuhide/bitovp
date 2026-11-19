@@ -1,5 +1,6 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { formatDateTime } from "@/lib/format";
 import { renderWithQuery } from "@/test/render";
 import { LifecycleStrip, lifecycleStage } from "./lifecycle-strip";
 
@@ -215,6 +216,7 @@ describe("LifecycleStrip", () => {
 		["en", null],
 		["en", "2026-08-30T11:59:00.000Z"],
 	] as const)("distinguishes a stale status from a recorded loss of confirmation in %s (%s)", (locale, unknownSince) => {
+		const observedAt = "2026-08-30T11:58:00.000Z";
 		renderWithQuery(
 			<LifecycleStrip
 				status="RUNNING"
@@ -223,7 +225,7 @@ describe("LifecycleStrip", () => {
 				provider={{
 					unknown: true,
 					terminal: false,
-					observedAt: "2026-08-30T11:58:00.000Z",
+					observedAt,
 					unknownSince,
 					status: "RUNNING",
 				}}
@@ -235,6 +237,10 @@ describe("LifecycleStrip", () => {
 		expect(help).toHaveTextContent(
 			locale === "ja" ? "最終確認" : "last confirmed",
 		);
+		expect(help).toHaveTextContent(formatDateTime(observedAt));
+		expect(help).toHaveTextContent(
+			locale === "ja" ? "30 秒ごとに再確認" : "checked every 30 seconds",
+		);
 		expect(help).not.toHaveTextContent(/取得エラー|取得失敗|read failure/i);
 		const windowLabel =
 			locale === "ja"
@@ -242,6 +248,7 @@ describe("LifecycleStrip", () => {
 				: "no confirmed status since";
 		if (unknownSince) {
 			expect(help).toHaveTextContent(windowLabel);
+			expect(help).toHaveTextContent(formatDateTime(unknownSince));
 		} else {
 			expect(help).not.toHaveTextContent(windowLabel);
 		}

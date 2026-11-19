@@ -1123,7 +1123,8 @@ export const en = {
 		title: "Encoder",
 		poll: "Heartbeat · Poll",
 		lastReport: "Heartbeat · Last run report",
-		sourceHelp: "Heartbeat measurements. Times are recorded on receipt (UTC).",
+		sourceHelp:
+			"Heartbeat measurements. The time axis uses the observation timestamp of the API read (UTC).",
 		details: "Packets and processing time",
 		ingestUnhealthy: "Input unhealthy",
 		ingest: {

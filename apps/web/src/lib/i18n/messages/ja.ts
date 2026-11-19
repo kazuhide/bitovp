@@ -1095,9 +1095,9 @@ export const ja = {
 	},
 	moqEncoder: {
 		title: "エンコーダ",
-		poll: "Heartbeat · 定期取得",
+		poll: "Heartbeat · API取得",
 		lastReport: "Heartbeat · 実行の最終記録",
-		sourceHelp: "Heartbeat の記録です。時刻は取得時の UTC です。",
+		sourceHelp: "Heartbeat の値です。横軸は API 取得の観測時刻（UTC）です。",
 		details: "パケット・処理時間",
 		ingestUnhealthy: "入力ヘルス低下",
 		ingest: {

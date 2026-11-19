@@ -67,13 +67,22 @@ function ownBrowser(launch, profile) {
 		(disposal ??= (async () => {
 			try {
 				const browser = await launch.catch(() => null);
-				if (browser) await browser.close();
-			} finally {
+				const failures = [];
+				try {
+					if (browser) await browser.close();
+				} catch (error) {
+					failures.push(error);
+				}
 				try {
 					if (profile) await rm(profile, { recursive: true, force: true });
-				} finally {
-					browsers.delete(close);
+				} catch (error) {
+					failures.push(error);
 				}
+				if (failures.length === 1) throw failures[0];
+				if (failures.length)
+					throw new AggregateError(failures, "Browser disposal failed");
+			} finally {
+				browsers.delete(close);
 			}
 		})());
 	browsers.add(close);

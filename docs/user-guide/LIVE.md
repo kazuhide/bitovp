@@ -308,8 +308,10 @@ leave that confirmation pending.
 
 The worker reserves one Live processing slot for stop commands and startup
 cancellation, so other channels waiting to start cannot occupy every slot.
-`LIVE_CHANNEL_CONCURRENCY` sets the total per worker (default `8`, minimum `2`);
-ordinary Live actions use at most one fewer slot. Blank uses the default.
+`LIVE_CHANNEL_CONCURRENCY` sets the action slots per worker (default `8`, minimum
+`2`). Ordinary Live actions use at most one fewer slot. Scheduled encoder
+status and heartbeat reads have a dedicated slot and can use spare ordinary
+slots when a previous read is still running. Blank uses the default.
 Invalid values prevent the worker from starting. This reservation lets a stop
 begin during a busy startup period; provider or network failures can still
 prevent confirmed termination.

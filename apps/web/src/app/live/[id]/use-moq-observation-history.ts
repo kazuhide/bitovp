@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
+import { MOQ_OUTPUT_HISTORY_HEADER } from "@/lib/moq-player/heartbeat";
 import { moqObservationPath } from "@/lib/moq-player/history-client";
 import { moqObservationHistorySchema } from "@/lib/moq-player/observations";
 
@@ -28,6 +29,7 @@ export function useMoqObservationHistory(
 			const value = moqObservationHistorySchema.parse(
 				await apiFetch(moqObservationPath(channelId, runId), {
 					cache: "no-store",
+					headers: { [MOQ_OUTPUT_HISTORY_HEADER]: "1" },
 					signal,
 				}),
 			);

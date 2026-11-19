@@ -577,9 +577,7 @@ function ChannelConsole({
 	);
 	const displayIngestConnected = reportedOutput.input === "CONNECTED";
 	const displayedInputConnection =
-		aisaRow && reportedOutput.input === "UNKNOWN"
-			? null
-			: displayIngestConnected;
+		reportedOutput.input === "UNKNOWN" ? null : displayIngestConnected;
 	//  (owner): the RUNNING preview must not start before output is
 	// confirmed — judged WITH the origin observation, exactly as the delivery
 	// status panel judges "advancing".
@@ -593,17 +591,17 @@ function ChannelConsole({
 	 * the PROVIDER's view of the current
 	 * run's encoding, judged on the server-anchored clock (a confirmed RUNNING
 	 * older than the freshness TTL is UNKNOWN, exactly as the worker judges
-	 * it). UNKNOWN is what suppresses ON_AIR and paints the lifecycle strip
-	 * amber; TERMINAL is what changes the ① hint from "may still be up" to
-	 * "Bitmovin reported it ended — start a fresh run".
+	 * it). An uncertain reading cannot establish ON_AIR.
 	 */
 	const providerUnknown = providerLifecycle === "UNKNOWN";
 	// UNOBSERVED does not block worker effects (the worker performs its own
 	// readback before them), but it is still not evidence for a customer-facing
 	// green/on-air claim. UNKNOWN and UNOBSERVED therefore share the safe UI
 	// presentation while keeping their lifecycle semantics distinct.
-	const providerUnconfirmed =
-		providerUnknown || providerLifecycle === "UNOBSERVED";
+	const providerUnconfirmed = liveStatusPresentation(
+		displayStatus,
+		providerLifecycle,
+	).providerUnconfirmed;
 	//  (review-331): three answers, not two. The boolean keeps every
 	// existing reader's meaning (connected NOW, else not); the feeder panel
 	// alone takes the tri-state, because for IT "no sample can vouch" must
@@ -667,6 +665,7 @@ function ChannelConsole({
 	const openAlerts: number | "unknown" = alertsUnavailable
 		? "unknown"
 		: (alerts.data?.open.length ?? 0);
+	const nextActionAllowed = monitoringAllowed || displayStatus !== "RUNNING";
 	const nextAction = liveNextAction({
 		//  PR3: the derived status — liveNextAction now speaks
 		// IDLE and answers STOPPED with START_NEW_RUN (the honest verb).
@@ -704,7 +703,7 @@ function ChannelConsole({
 		(section === "sec-analysis" &&
 			(selectedUnavailable || Boolean(selection) || analysisDeepLink)) ||
 		PHASE_DEFAULT_OPEN[phase].includes(section) ||
-		nextAction.section === section ||
+		(nextActionAllowed && nextAction.section === section) ||
 		(section === "sec-alerts" && criticalOpenAlert) ||
 		(section === "sec-steps" && hasFailedStep);
 	// the title-level help, read off the same table the
@@ -1723,21 +1722,20 @@ function ChannelConsole({
 					// spell CREATED.
 					status={displayStatus === "IDLE" ? "CREATED" : displayStatus}
 					ingestConnected={displayedInputConnection}
+					monitoringAllowed={monitoringAllowed}
 					hasEncoding={row.bitmovinEncodingId !== null}
 					hasError={Boolean(row.error)}
-					showProviderSummary={
-						!liveStatusPresentation(displayStatus, providerLifecycle)
-							.providerUnconfirmed
-					}
-					// : the provider's own view — amber while it cannot be
-					// confirmed, and the terminal hint once Bitmovin said it ended.
 					provider={{
 						unknown: providerUnknown,
 						unobserved: providerLifecycle === "UNOBSERVED",
 						terminal: providerLifecycle === "TERMINAL",
-						observedAt: run?.providerStatusObservedAt ?? null,
-						unknownSince: run?.providerUnknownSince ?? null,
-						status: run?.providerStatus ?? null,
+						observedAt: sameEncoding
+							? (run?.providerStatusObservedAt ?? null)
+							: null,
+						unknownSince: sameEncoding
+							? (run?.providerUnknownSince ?? null)
+							: null,
+						status: sameEncoding ? (run?.providerStatus ?? null) : null,
 					}}
 				/>
 
@@ -1745,7 +1743,9 @@ function ChannelConsole({
 				 * it hands focus to the target's heading, so a keyboard operator
 			    lands where the panel just sent the page (audit §5.6). */}
 				{imported ||
-				(nextAction.code !== "START_NEW_RUN" &&
+				(nextActionAllowed &&
+					nextAction.code !== "START_NEW_RUN" &&
+					nextAction.code !== "PROVIDER_UNKNOWN" &&
 					(nextAction.code !== "RECOVER_FROM_ERROR" ||
 						!row.bitmovinEncodingId) &&
 					!(alerts.isPending && nextAction.code === "ALERTS_UNKNOWN") &&
@@ -1764,6 +1764,7 @@ function ChannelConsole({
 						readOnly={imported}
 						stepsAvailable={!omittedSections.includes("sec-steps")}
 						inputUnconfirmed={
+							monitoringAllowed &&
 							displayedInputConnection === null &&
 							nextAction.code === "CONNECT_INPUT"
 						}
@@ -1861,6 +1862,7 @@ function ChannelConsole({
 						mode={phase === "finished" ? "finished" : "live"}
 						phase={phase}
 						lastHeartbeat={displayPoll}
+						monitoringAllowed={monitoringAllowed}
 						warningEvidenceAvailable={
 							!aisaRow ||
 							(aisaOperatorAllowed && row.monitoringSafeForViewer !== true)

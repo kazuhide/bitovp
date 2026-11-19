@@ -132,7 +132,8 @@ describe("catalogue parity", () => {
 		// MoQ preflight and playback stages (runtime measured: 1685).
 		// Availability wording and MoQ measurement sources (runtime measured: 1687).
 		// Source explanations for the MoQ graphs (runtime measured: 1689).
-		pinWithDriftAid(long.length, 1689, "long");
+		// Compact lifecycle and HDR measurement wording (runtime measured: 1688).
+		pinWithDriftAid(long.length, 1688, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Runtime measurement includes three-way output labels (deduplicated).
 		// The two MoQ authorization labels add two unique short Japanese values.
@@ -149,7 +150,8 @@ describe("catalogue parity", () => {
 		// Availability wording and measurement sources (runtime measured: 3421).
 		// Source, session, and player controls for MoQ (runtime measured: 3428).
 		// Report origin, run details and comparison conditions (runtime measured: 3431).
-		pinWithDriftAid(short.size, 3431, "short");
+		// Live input availability and Push read failure (runtime measured: 3433).
+		pinWithDriftAid(short.size, 3433, "short");
 	});
 
 	/**

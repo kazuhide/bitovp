@@ -443,7 +443,12 @@ describe("explicit MoQ preview", () => {
 		renderWithQuery(view());
 		expect(screen.getByRole("region", { name: "MoQ playback" })).toBeVisible();
 		expect(
-			document.querySelector("[data-moq-live-metrics] [data-moq-chart]"),
+			document.querySelector(
+				'[data-moq-live-metrics] [data-moq-chart="segmentProcessing"]',
+			),
+		).toHaveTextContent("Waiting for data");
+		expect(
+			document.querySelector("[data-moq-viewer-metrics] figure"),
 		).toBeNull();
 		await act(async () => {
 			fireEvent.click(screen.getByRole("button", { name: "Play" }));
@@ -483,7 +488,7 @@ describe("explicit MoQ preview", () => {
 		});
 		expect(document.querySelector("[data-moq-resolution]")).toBeNull();
 		expect(
-			document.querySelector("[data-moq-live-metrics] [data-moq-chart]"),
+			document.querySelector("[data-moq-viewer-metrics] figure"),
 		).toBeNull();
 		expect(document.body.innerHTML).not.toContain("SYNTHETIC_");
 	});

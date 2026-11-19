@@ -1251,7 +1251,7 @@ describe("JobDetail — two-column layout", () => {
 		);
 	});
 
-	it("keeps full-width detail when the only manifest cannot be played", async () => {
+	it("keeps the desktop preview track when the only manifest cannot be played", async () => {
 		const url = AWS_URL.replace("https:", "http:");
 		mockApi({
 			row: {
@@ -1264,13 +1264,13 @@ describe("JobDetail — two-column layout", () => {
 		const detailGrid = container.querySelector(
 			"#job-detail-content",
 		)?.parentElement;
-		expect(detailGrid).toHaveClass("grid-cols-1");
-		expect(detailGrid?.className).not.toContain(
-			"@min-[66rem]/vod-detail:grid-cols-",
+		expect(detailGrid).toHaveClass(
+			"grid-cols-1",
+			"@min-[66rem]/vod-detail:grid-cols-[minmax(0,1fr)_380px]",
 		);
 	});
 
-	it("renders the detail as the only grid item on a job with no manifests", async () => {
+	it("reserves the desktop track without mounting an empty playback region", async () => {
 		mockApi({ row: { playbackLinks: [] } });
 		const { container } = wrap(<JobDetail id={JOB_ID} />);
 		await screen.findByText("Sample job");
@@ -1279,6 +1279,9 @@ describe("JobDetail — two-column layout", () => {
 		expect(detail).not.toBeNull();
 		expect(detail).toContainElement(screen.getByRole("tablist"));
 		expect(detail?.parentElement?.children).toHaveLength(1);
+		expect(detail?.parentElement).toHaveClass(
+			"@min-[66rem]/vod-detail:grid-cols-[minmax(0,1fr)_380px]",
+		);
 	});
 
 	it("collapses the step timeline instead of dropping it", async () => {
@@ -1293,7 +1296,7 @@ describe("JobDetail — two-column layout", () => {
 	});
 
 	it("renders the rail before the detail in DOM order", async () => {
-		// Playback precedes the detail visually and in reading order.
+		// Playback and its skip link precede the detail in the narrow stack.
 		mockApi({ row: { playbackLinks: [link()] } });
 		const { container } = wrap(<JobDetail id={JOB_ID} />);
 		await screen.findByText(AWS_URL);

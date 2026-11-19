@@ -1097,8 +1097,9 @@ export const ja = {
 		title: "エンコーダ",
 		poll: "Heartbeat · API取得",
 		lastReport: "Heartbeat · 実行の最終記録",
-		sourceHelp: "Heartbeat の値です。横軸は API 取得の観測時刻（UTC）です。",
-		details: "パケット・処理時間",
+		sourceHelp:
+			"入力グラフの横軸は Bitmovin Live Heartbeat の API 取得時刻（UTC）です。",
+		details: "入力パケット",
 		ingestUnhealthy: "入力ヘルス低下",
 		ingest: {
 			CONNECTED: "入力あり",
@@ -1107,12 +1108,16 @@ export const ja = {
 			ERROR: "入力エラー",
 		},
 		source: "Encoder API · 受信時刻 UTC",
-		empty: "Heartbeat の記録なし",
+		empty: "記録なし",
 		yes: "はい",
 		no: "いいえ",
 		inputBitrate: "入力ビットレート",
 		videoFps: "入力映像 FPS",
-		segmentProcessing: "Segment 処理時間",
+		segmentProcessing: "出力セグメントの処理時間",
+		output: "配信出力",
+		outputHelp:
+			"Bitmovin Live Heartbeat の API 取得または署名済み Push から出力セグメントの処理時間を表示します。横軸は UTC です。",
+		pushReadFailed: "Push の計測値を読み込めませんでした。",
 		inputPackets: "入力パケット異常（累計）",
 		video: "映像",
 		audio: "音声",
@@ -2153,7 +2158,8 @@ export const ja = {
 		ingestConnected: "接続済み",
 		playable: "再生可能",
 		never: "未受信",
-		unknown: "データ未取得",
+		unknown: "データなし",
+		awaitingData: "データ待ち",
 		none: "なし",
 		clockSkew: "時刻ずれ",
 		secondsAgo: "{seconds}秒前",
@@ -2409,7 +2415,7 @@ export const ja = {
 		/* Per-Title results describe actual encoder output, rather than requested renditions. */
 		ptResults: "Per-Title 結果(エンコーダが実際に生成したもの)",
 		ptAbsent:
-			"未取得です。この機能より前に実行されたジョブは、Bitmovin 側にエンコーディングが残っている間(約 90 日)なら後から取得できます。",
+			"このジョブの結果は保存されていません。この機能より前のジョブも、Bitmovin にエンコーディングが残っている間（約90日）は結果を取得できます。",
 		ptFailed: "結果を読み取れませんでした: {error}",
 		ptCaptureNow: "今すぐ取得",
 		ptCapturing: "取得中…",
@@ -2447,7 +2453,7 @@ export const ja = {
 		ptColParams: "パラメータ",
 		ptResultParamCount: "設定 {count} 項目",
 		ptResultParamsLabel: "エンコーダが選んだコーデック設定(実測)",
-		ptResultParamsMissing: "未取得",
+		ptResultParamsMissing: "記録なし",
 		ptFromTemplate: "テンプレート {rendition} 由来",
 		ptUnattributed: "関連付けなし（{count} 件）",
 		// Keep the four fail-closed witnesses aligned with attributeResult.
@@ -2660,7 +2666,7 @@ export const ja = {
 		hdrProtocolHint: "HDRベース映像・HLS・ローカルCPU",
 		hdrPqContext: "HDR VMAF・PQ / ICtCp 16bit",
 		hdrHlgContext: "HLG → PQ・1000nit",
-		hdrBaseLayerScope: "HDRベース映像・RPUによる表示処理は評価対象外",
+		hdrBaseLayerScope: "HDRベース映像を計測",
 		mixedHdrContexts:
 			"測定条件（HDR/SDR・HLG正規化）が異なるため、スコアを直接比較できません。",
 		separateHdrContexts:
@@ -3157,14 +3163,14 @@ export const ja = {
 		classBreakdownNote:
 			"SD・HD・UHD は API の解像度区分で、実際の縦横サイズではありません。",
 		missingCodecRecords:
-			"内訳未取得の記録が {count} 件あるため、この表は一部の内訳です。",
+			"内訳がない記録が {count} 件あります。取得できた内訳を表示しています。",
 		otherApiValues: "その他の API 報告値",
 		otherApiValuesNote:
 			"追加機能・トランスマックス分はエンコード分へ合算しません。負の値も報告どおり保持し、その意味は推測していません。",
 		featureMinutes: "追加機能の分数",
 		transmuxingMinutes: "トランスマックスの分数",
 		liveUnits: "Live Units",
-		notRetrieved: "未取得",
+		notRetrieved: "記録なし",
 		liveUnitsNote:
 			"Live HD Units は専用の Live options 統計 API から取得します。日次のエンコード課金換算分は別の指標で、Custom Live だけの合計ではありません。分数から Units へ換算しません。取得後も提供元の集計が更新される場合があります。",
 		liveUnitsTitle: "日別の Live HD Units",
@@ -3240,31 +3246,30 @@ export const ja = {
 	lifecycle: {
 		/* Lifecycle durations shown here must be measured and include their sample counts. */
 		aria: "エンコーダの起動から停止まで",
-		s1: "① 起動要求",
+		s1: "起動要求",
 		s1Hint:
 			"エンコーダはまだ起動していません。手動で開始するか、スケジュールの START の時刻を待ってください。",
 		s1ErrorHint:
 			"チャンネルは ERROR 状態です。Bitmovin 側にエンコーダが残っている可能性があるため、解放するには停止してください。ここから開始すると、エンコーダの準備を再開します。",
 		/* Provider encoding state stays unknown until confirmed. A finished encoding must not imply that resources may still be running. */
-		providerUnknownHint:
-			"Bitmovin の最新のエンコーダ状態を確認できていません（最終確認 {at}{unavailableSince}）。30 秒ごとに再確認します。停止はできますが、開始・再起動・スレート・SCTE-35・タイムシフト・新しいファイル入力は、状態を確認できるまで使えません。",
-		providerUnavailableSince: "、状態を確認できなくなった時刻 {since}",
-		providerUnobservedHint:
-			"Bitmovin エンコーダ状態の初回確認を待っています。確認できるまではオンエア中と判定しません。",
+		providerUnknownHint: "Bitmovin 最終取得 {status}（{at}）{unavailableSince}",
+		providerUnavailableSince: "（{since} から更新なし）",
+		providerUnobservedHint: "Bitmovin の取得履歴なし",
 		providerUnknownNever: "なし",
 		providerTerminalHint: "Bitmovin の確認結果は {status} です（{at}）。",
-		inputUnobserved: "入力状態を取得できていません",
+		inputUnobserved: "入力データ待ち",
+		inputUnavailable: "入力データなし",
 		inputUnobservedHint: "この配信の入力接続状態は取得できていません。",
-		s2: "② インスタンス起動中",
+		s2: "インスタンス起動中",
 		s2Hint:
 			"Bitmovin がエンコーダインスタンスを起動中です。起動時間はリージョンや構成で異なります。過去の実測は設定の「ライブ」で確認できます。まだ入力は受信できません。",
-		s3: "③ 入力待機",
+		s3: "入力待機",
 		s3Hint:
 			"エンコーダは起動済みで、入力の接続を待っています。スレートの差し込みや出力の生成には入力が必要です。送信元を接続するか、ファイル入力を開始してください。この段階からスレート素材を登録できます。",
-		s4: "④ 入力接続 — エンコード・配信中",
+		s4: "入力接続",
 		s4Hint:
 			"入力を受信し、エンコードしています。スレートを差し込めます。再生できるかどうかは、出力の生成とプレビューで確認してください。",
-		s7: "⑦ 停止",
+		s7: "停止",
 		s7Hint:
 			"停止中は完了を待ってください。終了したエンコーディングは再起動できません。停止後は「新しい配信を開始」で新しいエンコーダを作成します。差し込み素材は新しい配信で再登録します。",
 	},
@@ -3274,8 +3279,6 @@ export const ja = {
 		cancelStartPending: "取り消し処理中",
 		cancelStart: "開始を取り消す",
 		title: "ライブチャンネル",
-		providerStatusUnconfirmed:
-			"{status} · Bitmovin の最新状態を確認できていません",
 		newChannel: "ライブチャンネルを作成",
 		inventory: {
 			title: "Live エンコーダの照合",
@@ -3431,7 +3434,7 @@ export const ja = {
 			output: "出力",
 			ok: "正常",
 			down: "未検出",
-			unobservable: "計測対象外(HLS なし)",
+			unobservable: "HLS データなし",
 			stale:
 				"90 秒以内の Poll 状態サンプルがありません。Push 受信や配信停止とは別の判定です。",
 			timelineTitle: "配信タイムライン",
@@ -3514,6 +3517,7 @@ export const ja = {
 		encoderStopped: "停止済み",
 		encoderActive: "エンコーダ稼働中",
 		encoderStatusUnverified: "エンコーダの最新状態を確認できていません",
+		recordedStatus: "記録 {status}",
 		runOutputGenerated: "出力生成を確認",
 		runErrorRecorded: "エラーあり",
 		runOutputUnverified: "出力記録を取得できません",
@@ -3523,7 +3527,7 @@ export const ja = {
 		ladderConfiguredUnavailable: "設定ラダー未登録",
 		ladderObserved: "実績ラダー",
 		ladderObservedEmpty: "記録された出力なし",
-		ladderObservedUnavailable: "出力実績未取得",
+		ladderObservedUnavailable: "出力実績データなし",
 		/* Akamai MSL uses account API authentication, not a storage credential. Operators select the destination explicitly and enter its four required fields. */
 		outputDestination: "配信先",
 		destinationStorage: "オブジェクトストレージ",

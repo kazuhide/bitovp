@@ -415,7 +415,7 @@ describe("live channel detail — the §5.7 hierarchy (rows #248/#249)", () => {
 				<ChannelDetail id={CHANNEL} />
 			</FeatureFlagsProvider>,
 		);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		const ids = renderedOrder();
 		expect(ids).toContain("sec-vmaf");
 		// Last of the delivery four, before the diagnostics layer opens.
@@ -465,7 +465,7 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 			},
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		const cell = document.querySelector('[data-status-cell="next-event"]');
 		expect(cell?.textContent).toBe("Insert slate (SLATE_IN) in 4m · slate 30s");
 		// The header links to the layer that owns the detail — §5.7's rule is a
@@ -482,7 +482,7 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 			currentRun: run(),
 		});
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		// The run came up 90 minutes ago under a 120-minute cap.
 		expect(
 			document.querySelector('[data-status-cell="runtime"]')?.textContent,
@@ -565,7 +565,7 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 			},
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		const cell = document.querySelector('[data-status-cell="next-event"]');
 		expect(cell?.textContent).toBe("Stop channel (STOP) overdue by 5m");
 		expect(cell?.className).toContain("amber");
@@ -694,7 +694,7 @@ describe("Programme opens with what is scheduled, not with the form (row #248)",
 			armed,
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		const section = document.getElementById("sec-schedule") as HTMLElement;
 
 		// Closed: no Action select, no Run at, no Arm button anywhere.
@@ -729,7 +729,7 @@ describe("Programme opens with what is scheduled, not with the form (row #248)",
 			armed,
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		const trigger = screen.getByRole("button", { name: "Schedule an action" });
 		expect(trigger.getAttribute("aria-expanded")).toBe("false");
 		const regionId = trigger.getAttribute("aria-controls");
@@ -754,7 +754,7 @@ describe("Programme opens with what is scheduled, not with the form (row #248)",
 			currentRun: run(),
 		});
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		const trigger = screen.getByRole("button", { name: "Start file input" });
 		expect(trigger.getAttribute("aria-expanded")).toBe("false");
 		expect(trigger.getAttribute("aria-controls")).toBe(
@@ -784,7 +784,7 @@ describe("escalations outrank the phase default (row #249)", () => {
 			},
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		expect(isOpen("sec-alerts")).toBe(true);
 	});
 
@@ -808,7 +808,7 @@ describe("escalations outrank the phase default (row #249)", () => {
 			},
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		expect(isOpen("sec-alerts")).toBe(false);
 	});
 
@@ -844,7 +844,7 @@ describe("escalations outrank the phase default (row #249)", () => {
 			},
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		for (const id of [
 			"sec-alerts",
 			"sec-ingest",
@@ -882,7 +882,7 @@ describe("escalations outrank the phase default (row #249)", () => {
 			}),
 		});
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		expect(isOpen("sec-steps")).toBe(true);
 	});
 });
@@ -955,7 +955,7 @@ describe("the reorganised page renders in both catalogues", () => {
 			currentRun: run(),
 		});
 		wrap(<ChannelDetail id={CHANNEL} />, locale);
-		await screen.findByRole("region", { name: /next action|次にやること/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		for (const text of strings) {
 			expect(
 				screen.getAllByText(text, { exact: false }).length,

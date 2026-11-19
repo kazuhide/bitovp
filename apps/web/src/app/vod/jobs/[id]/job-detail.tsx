@@ -35,7 +35,6 @@ import { ApiError, apiFetch } from "@/lib/api";
 import { RoleAccess } from "@/lib/auth/use-role-access";
 import { useQcVmafEnabled } from "@/lib/feature-flags/context";
 import { useT } from "@/lib/i18n/context";
-import { cn } from "@/lib/utils";
 import { InternalHevcV2Badge } from "../../internal-hevc-v2-badge";
 import { AuxOutputsPanel } from "./aux-outputs-panel";
 import { InputFilesPanel } from "./input-files-panel";
@@ -528,16 +527,11 @@ export function JobDetail({
 			) : null}
 
 			<div className="@container/vod-detail mt-5">
-				<div
-					className={cn(
-						"grid min-w-0 grid-cols-1 gap-6",
-						playable.length > 0 &&
-							"@min-[66rem]/vod-detail:grid-cols-[minmax(0,1fr)_minmax(40rem,1.2fr)]",
-					)}
-				>
+				{/* Reserve the desktop rail even while the job has no playback links. */}
+				<div className="grid min-w-0 grid-cols-1 gap-6 @min-[66rem]/vod-detail:grid-cols-[minmax(0,1fr)_380px] @min-[66rem]/vod-detail:gap-8">
 					{/* The preview stays mounted while switching tabs or opening a resource. */}
 					{links.length > 0 ? (
-						<div className="min-w-0">
+						<div className="min-w-0 @min-[66rem]/vod-detail:col-start-2 @min-[66rem]/vod-detail:row-start-1">
 							<PreviewRail
 								player={player}
 								sceneAnalysis={sceneAnalysis}
@@ -573,7 +567,7 @@ export function JobDetail({
 					<Tabs
 						id="job-detail-content"
 						tabIndex={-1}
-						className="min-w-0 scroll-mt-4"
+						className="min-w-0 scroll-mt-4 @min-[66rem]/vod-detail:col-start-1 @min-[66rem]/vod-detail:row-start-1"
 						value={tab}
 						onValueChange={(value) =>
 							setTab(value === "resources" ? "resources" : "overview")

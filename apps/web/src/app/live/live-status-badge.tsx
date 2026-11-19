@@ -35,7 +35,7 @@ export function LiveStatusBadge({
 								: "live.encoderStatusUnverified",
 						)
 					: presentation.providerUnconfirmed
-						? t("live.providerStatusUnconfirmed", { status })
+						? t("live.recordedStatus", { status })
 						: status}
 		</Badge>
 	);

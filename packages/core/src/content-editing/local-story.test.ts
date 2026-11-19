@@ -192,6 +192,7 @@ describe("local story contracts and complete evidence input", () => {
 	it.each([
 		{ sceneStart: 1.13, firstFrame: 35 },
 		{ sceneStart: 1.0416668, firstFrame: 33 },
+		{ sceneStart: 1.041667, firstFrame: 33 },
 	])("preserves a prepared cut and non-rounded outer boundary at $sceneStart seconds", ({
 		sceneStart,
 		firstFrame,

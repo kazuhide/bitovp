@@ -163,15 +163,19 @@ export function resolveLocalStorySceneFrameBounds(
 				scope.endUs === audio.endUs,
 			"LOCAL_STORY_CLOCK_MISMATCH",
 		);
-		// Rounded audio bounds can alias a nearby source-frame boundary.
-		// Prepared appearance must use the original, verified AISA timestamps.
+		// An authored decimal can be just past a source frame that rounds to
+		// the same microsecond. Scope boundaries must keep the original value.
 		fromFrame = Math.max(
 			fromFrame,
-			preparedFrameForSourceAppearance(prepared, scene.startInSeconds),
+			preparedFrameForSourceAppearance(prepared, scene.startInSeconds, {
+				snapToSourceGrid: false,
+			}),
 		);
 		toFrame = Math.min(
 			toFrame,
-			preparedFrameForSourceAppearance(prepared, scene.endInSeconds),
+			preparedFrameForSourceAppearance(prepared, scene.endInSeconds, {
+				snapToSourceGrid: false,
+			}),
 		);
 	}
 	assert(fromFrame < toFrame, "LOCAL_STORY_SCENE_SCOPE_INVALID");

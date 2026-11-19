@@ -281,8 +281,8 @@ function expectNoPublication(f: ReturnType<typeof fixture>) {
 }
 
 describe("local story project generation", () => {
-	function scopedFixture() {
-		const f = fixture();
+	function scopedFixture(options?: Parameters<typeof fixture>[0]) {
+		const f = fixture(options);
 		const sceneId = fixtureItem(f.sceneIds[0]);
 		Object.assign(f.task.parameters.input.parameters, {
 			storySceneId: sceneId,
@@ -325,6 +325,54 @@ describe("local story project generation", () => {
 				code: "TASK_RESULT_UNVERIFIED",
 			});
 		}
+	});
+	it.each([
+		1.0416668, 1.041667,
+	])("publishes and replays only source frames at or after the exact scene start %s", async (sceneStart) => {
+		const f = scopedFixture({ prepared: true });
+		const scene = fixtureItem(f.analysis.document.scenes[0]);
+		scene.startInSeconds = sceneStart;
+		fixtureItem(scene.shots[0]).startInSeconds = sceneStart;
+		f.binding.analysisDocumentHash = hashEditingEvidence(f.analysis.document);
+		Object.assign(f.task.parameters.identity, {
+			analysisDocumentHash: f.binding.analysisDocumentHash,
+			bindingHash: hashEditingEvidence(f.binding),
+			bindingSnapshot: f.binding,
+		});
+		Object.assign(f.task.parameters.input.parameters, {
+			targetDurationFrames: 87,
+		});
+		f.refresh();
+		Object.assign(f.authored.selection, {
+			requestedDurationFrames: 87,
+			actualDurationFrames: 87,
+		});
+		Object.assign(fixtureItem(f.authored.selection.clips[0]), {
+			sourceInUs: 1_100_000,
+			durationFrames: 27,
+		});
+		f.authored.segments = [];
+		fixtureItem(f.authored.evidence.sceneScope).startUs = 1_041_667;
+		f.authored.evidence.sceneFrameBounds = { fromFrame: 33, toFrame: 120 };
+		f.authored.evidence.artifactHash = localStoryArtifactHash(
+			f.authored.evidence,
+		);
+
+		const result = await f.run();
+		expect(result.localStoryEvidence?.sceneFrameBounds).toEqual({
+			fromFrame: 33,
+			toFrame: 120,
+		});
+		await expect(f.run()).resolves.toEqual(result);
+		const stale = structuredClone(result);
+		const evidence = fixtureItem(stale.localStoryEvidence);
+		evidence.sceneFrameBounds = { fromFrame: 32, toFrame: 120 };
+		evidence.artifactHash = localStoryArtifactHash(evidence);
+		f.task.result = stale;
+		await expect(f.run()).rejects.toMatchObject({
+			code: "TASK_RESULT_UNVERIFIED",
+		});
+		expect(f.plan).toHaveBeenCalledTimes(1);
 	});
 	it("rejects scene frame bounds inconsistent with the verified analysis even with a matching artifact hash", async () => {
 		const f = scopedFixture();

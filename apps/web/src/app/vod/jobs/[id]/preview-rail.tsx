@@ -31,7 +31,7 @@ type PreviewRailProps = {
 	/** rev433: the job has not finished — the rail says so instead of playing. */
 	pending?: boolean;
 	/** Open the enlarged dialog on a link. Absent ⇒ no dialog on this page. */
-	onPlay?: (link: ManifestPlaybackLink, trigger?: HTMLButtonElement) => void;
+	onPlay?: (link: ManifestPlaybackLink, trigger: HTMLButtonElement) => void;
 	/** Hidden while the enlarged dialog is open — one player at a time. */
 	showPlayer: boolean;
 };

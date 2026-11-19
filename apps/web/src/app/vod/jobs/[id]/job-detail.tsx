@@ -527,30 +527,10 @@ export function JobDetail({
 				</p>
 			) : null}
 
-			<Tabs
-				value={tab}
-				onValueChange={(value) =>
-					setTab(value === "resources" ? "resources" : "overview")
-				}
-				className="@container/vod-detail mt-5"
-			>
-				<TabsList
-					aria-label={t("pageTitles.vodJob")}
-					className="flex rounded-none border-0 border-zinc-800 border-b bg-transparent p-0"
-				>
-					{(["overview", "resources"] as const).map((value) => (
-						<TabsTrigger
-							key={value}
-							value={value}
-							className="-mb-px rounded-none border-transparent border-b-2 py-2 text-sm data-[state=active]:border-emerald-500 data-[state=active]:bg-transparent"
-						>
-							{t(value === "overview" ? "ui.overview" : "ui.resources")}
-						</TabsTrigger>
-					))}
-				</TabsList>
+			<div className="@container/vod-detail mt-5">
 				<div
 					className={cn(
-						"mt-4 grid min-w-0 grid-cols-1 gap-6",
+						"grid min-w-0 grid-cols-1 gap-6",
 						links.length > 0 &&
 							"@min-[66rem]/vod-detail:grid-cols-[minmax(0,1fr)_minmax(40rem,1.2fr)]",
 					)}
@@ -579,10 +559,7 @@ export function JobDetail({
 								// enlarged dialog is open, so the two never buffer in parallel.
 								showPlayer={playback === null}
 								onPlay={(link, trigger) => {
-									const focused = document.activeElement;
-									playbackTrigger.current =
-										trigger ??
-										(focused instanceof HTMLButtonElement ? focused : null);
+									playbackTrigger.current = trigger;
 									setPlayback({
 										url: link.url as string,
 										manifestKey: link.key,
@@ -593,11 +570,29 @@ export function JobDetail({
 							/>
 						</div>
 					) : null}
-					<div
+					<Tabs
 						id="job-detail-content"
 						tabIndex={-1}
 						className="min-w-0 scroll-mt-4"
+						value={tab}
+						onValueChange={(value) =>
+							setTab(value === "resources" ? "resources" : "overview")
+						}
 					>
+						<TabsList
+							aria-label={t("pageTitles.vodJob")}
+							className="flex rounded-none border-0 border-zinc-800 border-b bg-transparent p-0"
+						>
+							{(["overview", "resources"] as const).map((value) => (
+								<TabsTrigger
+									key={value}
+									value={value}
+									className="-mb-px rounded-none border-transparent border-b-2 py-2 text-sm data-[state=active]:border-emerald-500 data-[state=active]:bg-transparent"
+								>
+									{t(value === "overview" ? "ui.overview" : "ui.resources")}
+								</TabsTrigger>
+							))}
+						</TabsList>
 						<TabsContent value="overview" className="mt-0">
 							{/* What was encoded — the answer this page did not have. All
 							    three panels derive from the persisted plan + step log, so
@@ -868,9 +863,9 @@ export function JobDetail({
 								</p>
 							)}
 						</TabsContent>
-					</div>
+					</Tabs>
 				</div>
-			</Tabs>
+			</div>
 
 			<PlayerDialog
 				player={player}

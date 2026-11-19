@@ -207,9 +207,11 @@ describe("ManifestList", () => {
 			/>,
 		);
 		const user = userEvent.setup();
-		await user.click(screen.getByRole("button", { name: "Play" }));
+		const play = screen.getByRole("button", { name: "Play" });
+		await user.click(play);
 		expect(onPlay).toHaveBeenCalledWith(
 			expect.objectContaining({ key: "hls" }),
+			play,
 		);
 		unmount();
 

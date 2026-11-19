@@ -1124,6 +1124,20 @@ describe("JobDetail — two-column layout", () => {
 		expect(screen.queryByText("Step timeline")).toBeNull();
 	});
 
+	it("continues from the active detail tab into its panel", async () => {
+		mockApi({ row: { playbackLinks: [link()] } });
+		const user = userEvent.setup();
+		wrap(<JobDetail id={JOB_ID} />);
+		const overview = await screen.findByRole("tab", { name: "Overview" });
+		act(() => overview.focus());
+		await user.tab();
+		expect(screen.getByRole("tabpanel", { name: "Overview" })).toHaveFocus();
+
+		await user.click(screen.getByRole("tab", { name: "Resources" }));
+		await user.tab();
+		expect(screen.getByRole("tabpanel", { name: "Resources" })).toHaveFocus();
+	});
+
 	it("mounts one player at a time: the rail's preview yields to the dialog", async () => {
 		mockApi({ row: { playbackLinks: [link()] } });
 		wrap(<JobDetail id={JOB_ID} />);
@@ -1198,6 +1212,18 @@ describe("JobDetail — two-column layout", () => {
 		expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 	});
 
+	it("restores focus to the clicked manifest button when its click did not give it focus", async () => {
+		mockApi({ row: { playbackLinks: [link()] } });
+		const user = userEvent.setup();
+		wrap(<JobDetail id={JOB_ID} />);
+		const play = await screen.findByRole("button", { name: "Play" });
+		screen.getByRole("button", { name: "Enlarge" }).focus();
+		fireEvent.click(play);
+		expect(await screen.findByRole("dialog")).toBeVisible();
+		await user.keyboard("{Escape}");
+		await waitFor(() => expect(play).toHaveFocus());
+	});
+
 	it("keeps the step timeline in the heading outline", async () => {
 		// Collapsing it to a bare <summary> dropped it out of the outline entirely —
 		// it was an <h2> on main — so the document went h1 → h3 → h2 and the section
@@ -1232,6 +1258,7 @@ describe("JobDetail — two-column layout", () => {
 		expect(container.querySelector("aside")).toBeNull();
 		const detail = container.querySelector("#job-detail-content");
 		expect(detail).not.toBeNull();
+		expect(detail).toContainElement(screen.getByRole("tablist"));
 		expect(detail?.parentElement?.children).toHaveLength(1);
 	});
 

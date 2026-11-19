@@ -19,9 +19,12 @@ export function focusLiveSection(targetId: string): boolean {
 	if (typeof document === "undefined") {
 		return false;
 	}
-	const target =
-		document.getElementById(`${targetId}-h`) ??
-		document.getElementById(targetId);
+	const section = document.getElementById(targetId);
+	// The playback URL opens its contents on arrival and on later fragment changes.
+	if (targetId === "sec-manifests" && section instanceof HTMLDetailsElement) {
+		section.open = true;
+	}
+	const target = document.getElementById(`${targetId}-h`) ?? section;
 	if (!(target instanceof HTMLElement)) {
 		return false;
 	}

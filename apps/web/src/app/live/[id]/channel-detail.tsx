@@ -1699,12 +1699,7 @@ function ChannelConsole({
 							// biome-ignore lint/a11y/useValidAnchor: Navigate to a shareable section and transfer focus to its heading.
 							<a
 								href="#sec-manifests"
-								onClick={(event) => {
-									if (!jumpToLiveSection(event, "sec-manifests")) return;
-									const playback = document.getElementById("sec-manifests");
-									if (playback instanceof HTMLDetailsElement)
-										playback.open = true;
-								}}
+								onClick={(event) => jumpToLiveSection(event, "sec-manifests")}
 								className="rounded-sm text-sm text-zinc-300 underline decoration-zinc-600 underline-offset-4 hover:text-emerald-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
 							>
 								{t(

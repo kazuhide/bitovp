@@ -130,8 +130,8 @@ describe("catalogue parity", () => {
 		// Integrated QC deadline and desktop navigation guidance (runtime measured: 1681).
 		// Shortened Live diagnostics and terminal guidance (runtime measured: 1678).
 		// MoQ preflight and playback stages (runtime measured: 1685).
-		// Availability wording and MoQ measurement sources (runtime measured: 1686).
-		pinWithDriftAid(long.length, 1686, "long");
+		// Availability wording and MoQ measurement sources (runtime measured: 1687).
+		pinWithDriftAid(long.length, 1687, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Runtime measurement includes three-way output labels (deduplicated).
 		// The two MoQ authorization labels add two unique short Japanese values.
@@ -145,7 +145,8 @@ describe("catalogue parity", () => {
 		// MoQ preflight and playback stages (runtime measured: 3410).
 		// Saved clip settings and re-edit actions (runtime measured: 3422).
 		// The Live list reuses the shared delete affordance (runtime measured: 3420).
-		pinWithDriftAid(short.size, 3420, "short");
+		// Availability wording and measurement sources (runtime measured: 3421).
+		pinWithDriftAid(short.size, 3421, "short");
 	});
 
 	/**

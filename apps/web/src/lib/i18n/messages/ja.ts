@@ -1004,6 +1004,8 @@ export const ja = {
 		canvasMeasurement:
 			"Player Web X の Canvas で画像の変化を観測した回数を、ブラウザーで毎秒集計します。",
 		frameHistory: "フレーム観測値",
+		frameHistoryMeasurement:
+			"video 要素ではブラウザーが報告する描画フレーム数、Canvas では観測した画像の変化を毎秒に換算します。古い観測値には描画元が記録されていない場合があります。",
 		resolution: "解像度",
 		dropped: "ドロップフレーム",
 		buffer: "バッファ",
@@ -3227,7 +3229,8 @@ export const ja = {
 			"チャンネルは ERROR 状態です。Bitmovin 側にエンコーダが残っている可能性があるため、解放するには停止してください。ここから開始すると、エンコーダの準備を再開します。",
 		/* Provider encoding state stays unknown until confirmed. A finished encoding must not imply that resources may still be running. */
 		providerUnknownHint:
-			"Bitmovin からエンコーダの状態を取得できません（最終確認 {at}、取得エラーの開始時刻 {since}）。30 秒ごとに再確認します。停止はできますが、開始・再起動・スレート・SCTE-35・タイムシフト・新しいファイル入力は、状態を確認できるまで使えません。",
+			"Bitmovin の最新のエンコーダ状態を確認できていません（最終確認 {at}{readFailure}）。30 秒ごとに再確認します。停止はできますが、開始・再起動・スレート・SCTE-35・タイムシフト・新しいファイル入力は、状態を確認できるまで使えません。",
+		providerReadFailure: "、取得失敗の記録 {since}",
 		providerUnobservedHint:
 			"Bitmovin エンコーダ状態の初回確認を待っています。確認できるまではオンエア中と判定しません。",
 		providerUnknownNever: "なし",
@@ -3779,8 +3782,7 @@ export const ja = {
 		feedbackUnconfirmed: "映像への反映はプレビューで確認してください。",
 		feedbackOutputAdvancing:
 			"{source} で出力の更新を検出しました。差し込み内容はプレビューで確認してください。",
-		feedbackOutputNotAdvancing:
-			"{source} から出力の更新情報を取得できていません。",
+		feedbackOutputNotAdvancing: "{source} で出力の進行が検出されていません。",
 		feedbackOutputUnknown: "現在の出力更新情報を取得できません。",
 		feedbackPreview: "プレビューで確認",
 		needsRunning: "コンテンツ差し込みには RUNNING のチャンネルが必要です。",

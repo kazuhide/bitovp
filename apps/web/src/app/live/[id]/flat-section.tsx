@@ -35,6 +35,7 @@ export function FlatSection({
 	children: ReactNode;
 }) {
 	const Heading = level === 3 ? "h3" : "h2";
+	const hasBody = children != null;
 	const summaryTone =
 		tone === "ok"
 			? "text-emerald-400"
@@ -53,7 +54,9 @@ export function FlatSection({
 			aria-labelledby={`${id}-h`}
 			className="scroll-mt-6 rounded-md border border-zinc-800 bg-zinc-900/40"
 		>
-			<div className="flex items-center gap-2 border-zinc-800 border-b px-3 py-2">
+			<div
+				className={`flex items-center gap-2 px-3 py-2${hasBody ? " border-zinc-800 border-b" : ""}`}
+			>
 				<Heading
 					id={`${id}-h`}
 					// : the jump target. Audit §5.6 measured the gap — the
@@ -74,7 +77,7 @@ export function FlatSection({
 					</span>
 				) : null}
 			</div>
-			<div className="px-3 py-3">{children}</div>
+			{hasBody ? <div className="px-3 py-3">{children}</div> : null}
 		</section>
 	);
 }

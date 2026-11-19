@@ -197,7 +197,13 @@ export function MoqHistoryPanel({
 					: "moqPlayback.frameHistory",
 		),
 		videoRates ? "fps" : "/s",
-		frameSources.has("canvas") ? t("moqPlayback.canvasMeasurement") : undefined,
+		videoRates
+			? undefined
+			: t(
+					canvasRates
+						? "moqPlayback.canvasMeasurement"
+						: "moqPlayback.frameHistoryMeasurement",
+				),
 	);
 	const buffer = chart(
 		"bufferSeconds",

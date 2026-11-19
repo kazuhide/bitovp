@@ -215,9 +215,18 @@ describe("content insertion feedback", () => {
 		).not.toBeInTheDocument();
 	});
 
-	it("labels acceptance and unconfirmed content in Japanese", async () => {
+	it.each([
+		[null, "現在の出力更新情報を取得できません。"],
+		[false, "Poll で出力の進行が検出されていません。"],
+	])("labels acceptance and output progression %s in Japanese", async (advancing, message) => {
 		mockApi();
-		renderWithQuery(<ContentInsertionPanel {...props} />, "ja");
+		renderWithQuery(
+			<ContentInsertionPanel
+				{...props}
+				outputObservation={{ runId: "run-1", source: "poll", advancing }}
+			/>,
+			"ja",
+		);
 		await userEvent.click(
 			await screen.findByRole("button", { name: "スケジュール" }),
 		);
@@ -230,8 +239,6 @@ describe("content insertion feedback", () => {
 				"映像への反映はプレビューで確認してください。",
 			),
 		).toBeInTheDocument();
-		expect(
-			within(feedback).getByText("現在の出力更新情報を取得できません。"),
-		).toBeInTheDocument();
+		expect(within(feedback).getByText(message)).toBeInTheDocument();
 	});
 });

@@ -332,6 +332,28 @@ describe("saved MoQ history and received video", () => {
 		expect(screen.queryByText("Video FPS (fps · UTC)")).toBeNull();
 	});
 	it.each([
+		"video",
+		undefined,
+	])("explains frame observations with a Canvas sample and rendering source %s", async (source) => {
+		const response = await mocks.api();
+		const samples = response.sessions[0].samples;
+		samples[0].renderingSource = "canvas";
+		samples.push({
+			...samples[0],
+			elapsedMs: 2000,
+			renderingSource: source,
+		});
+		mocks.api.mockResolvedValue(response);
+		renderWithQuery(view());
+		fireEvent.click(await screen.findByText("More observations"));
+		expect(screen.getByText("Frame observations (/s · UTC)")).toBeVisible();
+		expect(
+			screen.getByRole("button", {
+				name: "Frame observations — more information",
+			}),
+		).toHaveAccessibleDescription(/video element.*Canvas.*older samples/i);
+	});
+	it.each([
 		{
 			source: "player",
 			second: "video",

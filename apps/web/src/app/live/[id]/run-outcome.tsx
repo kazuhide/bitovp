@@ -1,15 +1,19 @@
 "use client";
 
 import { useT } from "@/lib/i18n/context";
+import { FlatSection } from "./flat-section";
+import { LIVE_SECTION_TITLE_KEYS } from "./section-layout";
 import { useRunHealth } from "./stream-health";
 
 export function RunOutcome({
 	channelId,
 	runId,
+	runSequence,
 	canReadHealth,
 }: {
 	channelId: string;
 	runId: string;
+	runSequence: number;
 	canReadHealth: boolean;
 }) {
 	const { t } = useT();
@@ -26,7 +30,15 @@ export function RunOutcome({
 			(event) => event.kind === "OUTPUT_ACTIVE",
 		);
 
-	return outputGenerated ? (
-		<p className="text-sm text-zinc-300">{t("live.runOutputGenerated")}</p>
-	) : null;
+	return (
+		<FlatSection
+			id="sec-last-run"
+			title={t(LIVE_SECTION_TITLE_KEYS["sec-last-run"])}
+			summary={t("runs.seq", { n: runSequence })}
+		>
+			{outputGenerated ? (
+				<p className="text-sm text-zinc-300">{t("live.runOutputGenerated")}</p>
+			) : null}
+		</FlatSection>
+	);
 }

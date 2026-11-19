@@ -1795,17 +1795,12 @@ function ChannelConsole({
 					</div>
 				) : null}
 				{phase === "finished" && run ? (
-					<FlatSection
-						id="sec-last-run"
-						title={t(LIVE_SECTION_TITLE_KEYS["sec-last-run"])}
-						summary={t("runs.seq", { n: run.seq })}
-					>
-						<RunOutcome
-							channelId={id}
-							runId={run.id}
-							canReadHealth={monitoringAllowed}
-						/>
-					</FlatSection>
+					<RunOutcome
+						channelId={id}
+						runId={run.id}
+						runSequence={run.seq}
+						canReadHealth={monitoringAllowed}
+					/>
 				) : null}
 				{phase !== "prepare" ? (
 					<DeliveryStatusPanel

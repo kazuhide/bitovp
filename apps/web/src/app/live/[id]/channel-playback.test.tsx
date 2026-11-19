@@ -387,6 +387,7 @@ describe("the contextual lead follows the airing's life (ledger #126)", () => {
 		const lead = document.getElementById("sec-last-run");
 		expect(lead).not.toBeNull();
 		expect(lead?.textContent).toMatch(/#3/);
+		expect(lead?.children).toHaveLength(1);
 		view.unmount();
 	});
 });

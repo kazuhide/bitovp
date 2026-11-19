@@ -1030,6 +1030,8 @@ export const en = {
 		canvasMeasurement:
 			"The browser counts distinct images observed on the Player Web X Canvas each second. This is a browser observation of image changes.",
 		frameHistory: "Frame observations",
+		frameHistoryMeasurement:
+			"These rates use browser frame counts for the video element and observed image changes for Canvas. Older samples may omit the rendering source.",
 		resolution: "Resolution",
 		dropped: "Dropped frames",
 		buffer: "Buffer",
@@ -3277,7 +3279,8 @@ export const en = {
 		// Use amber while provider status is unconfirmed. Once the provider confirms an encoding has ended,
 		// the lifecycle hint must not imply that the encoder may still be running.
 		providerUnknownHint:
-			"Provider status cannot be confirmed — Bitmovin's status read for this run's encoding is failing (last confirmed {at}; unconfirmed since {since}). It is re-checked every 30 s. Stop remains available; start, restart, slate, SCTE-35, timeshift and new feeders wait for a fresh reading.",
+			"Provider status cannot be confirmed (last confirmed {at}{readFailure}). Bitmovin status is checked every 30 seconds. Stop remains available. Start, restart, slate, SCTE-35, timeshift and new feeders require a fresh reading.",
+		providerReadFailure: "; first recorded read failure {since}",
 		providerUnobservedHint:
 			"Waiting for the first Bitmovin encoder status check. Until it arrives, this channel is not shown as confirmed on air.",
 		providerUnknownNever: "never",

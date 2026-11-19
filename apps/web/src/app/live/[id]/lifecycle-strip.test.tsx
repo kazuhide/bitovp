@@ -210,6 +210,35 @@ describe("LifecycleStrip", () => {
 	});
 
 	it.each([
+		null,
+		"2026-08-30T11:59:00.000Z",
+	])("only labels a recorded read failure in Japanese (%s)", (unknownSince) => {
+		renderWithQuery(
+			<LifecycleStrip
+				status="RUNNING"
+				ingestConnected={true}
+				hasEncoding
+				provider={{
+					unknown: true,
+					terminal: false,
+					observedAt: "2026-08-30T11:58:00.000Z",
+					unknownSince,
+					status: "RUNNING",
+				}}
+			/>,
+			"ja",
+		);
+		fireEvent.click(screen.getByRole("button"));
+		const help = screen.getByRole("note");
+		expect(help).toHaveTextContent("最終確認");
+		if (unknownSince) {
+			expect(help).toHaveTextContent("取得失敗の記録");
+		} else {
+			expect(help).not.toHaveTextContent(/取得エラー|取得失敗/);
+		}
+	});
+
+	it.each([
 		"FINISHED",
 		"ERROR",
 	])("shows only the stopped stage for a local ERROR with provider status %s", (providerStatus) => {

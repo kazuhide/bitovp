@@ -13,6 +13,11 @@ import {
 } from "../tests/browser/live-layout-server.mjs";
 
 const root = resolve(import.meta.dirname, "..");
+const browserSignals = {
+	handleSIGINT: false,
+	handleSIGTERM: false,
+	handleSIGHUP: false,
+};
 const historicCommit = "782632d355c6a8bf44b7c1ad02ba29f6bf853420";
 const { values: options } = parseArgs({
 	options: {
@@ -52,36 +57,69 @@ assert.equal(databaseUrl.hostname, "127.0.0.1");
 assert.ok(databaseUrl.port, "Use a disposable loopback PostgreSQL instance");
 
 const servers = {};
-async function cleanServers() {
-	await Promise.all(
-		Object.entries(servers).map(async ([label, runtime]) => {
-			await runtime.terminate();
-			await writeFile(join(evidence, `next-${label}.log`), runtime.getLog(), {
-				mode: 0o600,
-			});
-		}),
-	);
+const browsers = new Set();
+let stopping = false;
+let cleanup;
+function cleanUp() {
+	return (cleanup ??= (async () => {
+		await Promise.allSettled([...browsers].map((browser) => browser.close()));
+		await Promise.all(
+			Object.entries(servers).map(async ([label, runtime]) => {
+				await runtime.terminate();
+				await writeFile(join(evidence, `next-${label}.log`), runtime.getLog(), {
+					mode: 0o600,
+				});
+			}),
+		);
+	})());
 }
-const exitOnSignal = (code) =>
-	void cleanServers().finally(() => process.exit(code));
+const exitOnSignal = (code) => {
+	if (stopping) return;
+	stopping = true;
+	void cleanUp().then(
+		() => process.exit(code),
+		(error) => {
+			console.error(error);
+			process.exit(1);
+		},
+	);
+};
 process.once("SIGTERM", () => exitOnSignal(143));
 process.once("SIGINT", () => exitOnSignal(130));
+process.once("SIGHUP", () => exitOnSignal(129));
+const next = join(root, "apps/web/node_modules/next/dist/bin/next");
 try {
-	const sources = {};
+	// Register both owned processes before the first await so signal cleanup sees both.
 	for (const [label, source] of Object.entries(checkouts)) {
-		const runtime = launchLiveSource(source, databaseUrl.href);
+		const runtime = launchLiveSource(
+			source,
+			databaseUrl.href,
+			next,
+			join(evidence, `next-${label}-exit.json`),
+		);
 		servers[label] = runtime;
-		sources[label] = { ...source, baseURL: await runtime.ready };
+		void runtime.ready.catch(() => {});
 	}
-	await save("sources.json", sources);
-	await runPilot(sources);
-	for (const [label, source] of Object.entries(checkouts)) {
-		assert.ok(servers[label].alive());
-		assert.deepEqual(inspectLiveSource(source.root), source);
+	const sources = Object.fromEntries(
+		await Promise.all(
+			Object.entries(checkouts).map(async ([label, source]) => [
+				label,
+				{ ...source, baseURL: await servers[label].ready },
+			]),
+		),
+	);
+	if (!stopping) {
+		await save("sources.json", sources);
+		await runPilot(sources);
+		for (const runtime of Object.values(servers)) assert.ok(runtime.alive());
 	}
+} catch (error) {
+	if (!stopping) throw error;
 } finally {
-	await cleanServers();
+	await cleanUp();
 }
+for (const source of Object.values(checkouts))
+	assert.deepEqual(inspectLiveSource(source.root), source);
 
 async function runPilot(sources) {
 	const leanStart = performance.now();
@@ -253,18 +291,25 @@ async function runPilot(sources) {
 				.evaluate((heading) => {
 					const range = document.createRange();
 					range.selectNodeContents(heading);
-					const box = heading.getBoundingClientRect();
 					const rectangles = [...range.getClientRects()];
-					if (
-						rectangles.some(
-							(rect) =>
-								rect.top < box.top - 1 ||
-								rect.bottom > box.bottom + 1 ||
-								rect.left < box.left - 1 ||
-								rect.right > box.right + 1,
+					for (let node = heading; node; node = node.parentElement) {
+						const style = getComputedStyle(node);
+						const box = node.getBoundingClientRect();
+						const horizontalClip =
+							node === heading || style.overflowX !== "visible";
+						const verticalClip =
+							node === heading || style.overflowY !== "visible";
+						if (
+							rectangles.some(
+								(rect) =>
+									(horizontalClip &&
+										(rect.left < box.left - 1 || rect.right > box.right + 1)) ||
+									(verticalClip &&
+										(rect.top < box.top - 1 || rect.bottom > box.bottom + 1)),
+							)
 						)
-					)
-						return 0;
+							return 0;
+					}
 					return new Set(rectangles.map((rect) => Math.round(rect.top))).size;
 				});
 			assert.deepEqual(deniedRequests, []);
@@ -293,7 +338,8 @@ async function runPilot(sources) {
 		}
 	}
 
-	const browser = await chromium.launch({ headless: true });
+	const browser = await chromium.launch({ ...browserSignals, headless: true });
+	browsers.add(browser);
 	let observations;
 	try {
 		observations = [];
@@ -306,6 +352,7 @@ async function runPilot(sources) {
 		}
 	} finally {
 		await browser.close();
+		browsers.delete(browser);
 		await save("observations.json", observations);
 	}
 	await save(
@@ -331,6 +378,7 @@ async function runPilot(sources) {
 		const id = reproduce ? `replay-${testCase.id}` : testCase.id;
 		const profile = join(evidence, `profile-${id}`);
 		const context = await chromium.launchPersistentContext(profile, {
+			...browserSignals,
 			...fitOptions,
 			viewport: viewport(testCase),
 			headless: true,
@@ -339,6 +387,7 @@ async function runPilot(sources) {
 				"--remote-debugging-port=0",
 			],
 		});
+		browsers.add(context);
 		try {
 			const { page, deniedRequests } = await open(context, testCase);
 			for (const blank of context.pages()) {
@@ -363,6 +412,7 @@ async function runPilot(sources) {
 			return { id, ...result };
 		} finally {
 			await context.close();
+			browsers.delete(context);
 			await rm(profile, { recursive: true, force: true });
 		}
 	}

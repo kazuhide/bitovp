@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+	existsSync,
+	mkdirSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
+import { OWNER_GUARD } from "../../scripts/semantic-controls.mjs";
 
 export function inspectLiveSource(path) {
 	const root = realpathSync(path);
@@ -32,10 +40,12 @@ export function inspectLiveSource(path) {
 	};
 }
 
-export function launchLiveSource(source, databaseUrl) {
+export function launchLiveSource(source, databaseUrl, next, exitPath) {
 	const cwd = join(source.root, "apps/web");
-	const next = join(cwd, "node_modules/next/dist/bin/next");
-	assert.ok(existsSync(next), "Install the frozen dependencies in each source");
+	assert.ok(
+		existsSync(next) && existsSync(join(cwd, "node_modules/next/package.json")),
+		"Install the frozen dependencies in the runner and each source",
+	);
 	assert.ok(
 		!existsSync(join(cwd, ".next")),
 		"Use a fresh source worktree without a previous Next build",
@@ -51,9 +61,28 @@ export function launchLiveSource(source, databaseUrl) {
 			`Remove ${name} from the disposable source worktree`,
 		);
 	}
+	const token = randomUUID();
+	const publicDirectory = join(cwd, "public");
+	mkdirSync(publicDirectory, { recursive: true });
+	const filename = `live-layout-source-${token}.txt`;
+	const marker = join(publicDirectory, filename);
+	writeFileSync(marker, token, { flag: "wx", mode: 0o600 });
 	const child = spawn(
 		process.execPath,
-		[next, "dev", "--hostname", "127.0.0.1", "--port", "0"],
+		[
+			"--input-type=module",
+			"-e",
+			OWNER_GUARD,
+			String(process.pid),
+			exitPath,
+			process.execPath,
+			next,
+			"dev",
+			"--hostname",
+			"127.0.0.1",
+			"--port",
+			"0",
+		],
 		{
 			cwd,
 			env: {
@@ -96,6 +125,23 @@ export function launchLiveSource(source, databaseUrl) {
 		child.once("exit", (code, signal) =>
 			finish(new Error(`Local Next server exited (${code ?? signal})`)),
 		);
+	}).then(async (origin) => {
+		const response = await fetch(new URL(filename, `${origin}/`), {
+			redirect: "error",
+			cache: "no-store",
+			signal: AbortSignal.timeout(4_000),
+		});
+		assert.equal(
+			response.status,
+			200,
+			"Local endpoint must serve this checkout's fresh marker",
+		);
+		assert.equal(
+			await response.text(),
+			token,
+			"Local endpoint served a different checkout",
+		);
+		return origin;
 	});
 	const signalGroup = (signal) => {
 		if (!child.pid) return;
@@ -119,6 +165,7 @@ export function launchLiveSource(source, databaseUrl) {
 			} finally {
 				clearTimeout(escalation);
 				signalGroup("SIGKILL");
+				rmSync(marker, { force: true });
 			}
 		},
 	};

@@ -236,50 +236,59 @@ export async function openLiveLayoutFixture({
 			const request = route.request();
 			const target = new URL(request.url());
 			const method = request.method();
-			const kind =
-				target.origin !== url.origin
-					? "external"
-					: method !== "GET" && method !== "HEAD"
-						? "mutation"
-						: null;
-			if (kind) {
-				deniedRequests.push({ method, pathname: target.pathname, kind });
-				return route.abort();
-			}
-			if (!target.pathname.startsWith("/api/")) {
-				// Redirect hops after route.continue would escape this handler.
-				const response = await route.fetch({ maxRedirects: 0 });
-				try {
-					const status = response.status();
-					if (status >= 300 && status < 400 && response.headers().location) {
-						deniedRequests.push({
-							method,
-							pathname: target.pathname,
-							kind: "redirect",
-						});
-						await route.abort();
-					} else {
-						// APIRequestContext returns a decoded body to the browser route.
-						const headers = response.headers();
-						delete headers["content-encoding"];
-						delete headers["content-length"];
-						delete headers["transfer-encoding"];
-						await route.fulfill({ response, headers });
-					}
-				} finally {
-					await response.dispose();
+			try {
+				const kind =
+					target.origin !== url.origin
+						? "external"
+						: method !== "GET" && method !== "HEAD"
+							? "mutation"
+							: null;
+				if (kind) {
+					deniedRequests.push({ method, pathname: target.pathname, kind });
+					return await route.abort();
 				}
-				return;
+				if (!target.pathname.startsWith("/api/")) {
+					// Redirect hops after route.continue would escape this handler.
+					const response = await route.fetch({ maxRedirects: 0 });
+					try {
+						const status = response.status();
+						if (status >= 300 && status < 400 && response.headers().location) {
+							deniedRequests.push({
+								method,
+								pathname: target.pathname,
+								kind: "redirect",
+							});
+							await route.abort();
+						} else {
+							// APIRequestContext returns a decoded body to the browser route.
+							const headers = response.headers();
+							delete headers["content-encoding"];
+							delete headers["content-length"];
+							delete headers["transfer-encoding"];
+							await route.fulfill({ response, headers });
+						}
+					} finally {
+						await response.dispose();
+					}
+					return;
+				}
+				const key =
+					target.pathname === readinessApi
+						? `${target.pathname}${target.search}`
+						: target.pathname;
+				if (key === readinessTarget) servedReadiness = true;
+				return await route.fulfill({
+					status: 200,
+					json: payloads.get(key) ?? { items: [] },
+				});
+			} catch {
+				deniedRequests.push({
+					method,
+					pathname: target.pathname,
+					kind: "transport",
+				});
+				await route.abort().catch(() => {});
 			}
-			const key =
-				target.pathname === readinessApi
-					? `${target.pathname}${target.search}`
-					: target.pathname;
-			if (key === readinessTarget) servedReadiness = true;
-			return route.fulfill({
-				status: 200,
-				json: payloads.get(key) ?? { items: [] },
-			});
 		});
 		await page.routeWebSocket("**/*", (socket) => {
 			const target = new URL(socket.url());

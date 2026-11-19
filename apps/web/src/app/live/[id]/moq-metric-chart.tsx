@@ -2,6 +2,7 @@
 
 import {
 	CartesianGrid,
+	type DotItemDotProps,
 	Line,
 	LineChart,
 	ReferenceLine,
@@ -36,6 +37,30 @@ export function moqUtcTime(timestamp: number) {
 		: "";
 }
 
+function isMeasurement(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value);
+}
+
+function renderIsolatedPoint({
+	cx,
+	cy,
+	index,
+	points,
+	stroke,
+	value,
+}: DotItemDotProps) {
+	if (
+		!isMeasurement(value) ||
+		!isMeasurement(cx) ||
+		!isMeasurement(cy) ||
+		isMeasurement(points[index - 1]?.value) ||
+		isMeasurement(points[index + 1]?.value)
+	) {
+		return null;
+	}
+	return <circle cx={cx} cy={cy} r={2.5} fill={stroke} />;
+}
+
 export function MoqMetricChart<T extends TimedPoint>({
 	id,
 	label,
@@ -47,10 +72,14 @@ export function MoqMetricChart<T extends TimedPoint>({
 	playhead,
 }: Props<T>) {
 	const measurements = lines.flatMap((line) => {
-		const count = points.filter(
-			(point) => typeof point[line.field] === "number",
-		).length;
-		return count ? [{ ...line, count }] : [];
+		if (!points.some((point) => isMeasurement(point[line.field]))) return [];
+		const hasIsolatedPoint = points.some(
+			(point, index) =>
+				isMeasurement(point[line.field]) &&
+				!isMeasurement(points[index - 1]?.[line.field]) &&
+				!isMeasurement(points[index + 1]?.[line.field]),
+		);
+		return [{ ...line, hasIsolatedPoint }];
 	});
 	if (!measurements.length) return null;
 
@@ -80,7 +109,7 @@ export function MoqMetricChart<T extends TimedPoint>({
 				</div>
 				{measurements.map(({ field, label: name, color }) => {
 					const value = readPoint?.[field];
-					if (typeof value !== "number" && isSingle) return null;
+					if (!isMeasurement(value) && isSingle) return null;
 					return (
 						<span
 							key={field}
@@ -96,7 +125,7 @@ export function MoqMetricChart<T extends TimedPoint>({
 									<span>{name}</span>
 								</>
 							)}
-							{typeof value === "number"
+							{isMeasurement(value)
 								? `${value.toFixed(decimals)} ${unit}`.trim()
 								: null}
 						</span>
@@ -153,20 +182,22 @@ export function MoqMetricChart<T extends TimedPoint>({
 								strokeDasharray="3 2"
 							/>
 						)}
-						{measurements.map(({ field, label: name, color, count }) => (
-							<Line
-								key={field}
-								dataKey={field}
-								name={name}
-								unit={unit ? ` ${unit}` : ""}
-								type="linear"
-								connectNulls={false}
-								isAnimationActive={false}
-								dot={count === 1 ? { r: 2.5 } : false}
-								stroke={color}
-								strokeWidth={1.75}
-							/>
-						))}
+						{measurements.map(
+							({ field, label: name, color, hasIsolatedPoint }) => (
+								<Line
+									key={field}
+									dataKey={field}
+									name={name}
+									unit={unit ? ` ${unit}` : ""}
+									type="linear"
+									connectNulls={false}
+									isAnimationActive={false}
+									dot={hasIsolatedPoint ? renderIsolatedPoint : false}
+									stroke={color}
+									strokeWidth={1.75}
+								/>
+							),
+						)}
 					</LineChart>
 				</ResponsiveContainer>
 			</div>

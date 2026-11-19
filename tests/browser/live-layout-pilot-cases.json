@@ -1,0 +1,69 @@
+[
+	{
+		"id": "reported-desktop",
+		"source": "historical",
+		"role": "OPERATOR",
+		"phase": "STOPPED",
+		"width": 1440,
+		"title": "MoQ ライブ配信",
+		"maxGap": 16,
+		"expect": ["separated-actions"],
+		"provenance": "PR #171 の修正前に利用者が報告した操作の分断"
+	},
+	{
+		"id": "compact-desktop",
+		"source": "current",
+		"role": "OPERATOR",
+		"phase": "STOPPED",
+		"width": 1440,
+		"title": "MoQ ライブ配信",
+		"maxGap": 16,
+		"expect": [],
+		"provenance": "修正後の同条件で操作がまとまる"
+	},
+	{
+		"id": "long-name-mobile",
+		"source": "current",
+		"role": "OPERATOR",
+		"phase": "STOPPED",
+		"width": 390,
+		"title": "展示会の映像を送出する本番チャンネル・日本語と英数字の長い名前 InterBEE2026Hall5BitmovinDemoMoQOutputVerification",
+		"maxGap": null,
+		"expect": [],
+		"provenance": "長いチャンネル名を折り返して表示できる"
+	},
+	{
+		"id": "wrapped-running",
+		"source": "current",
+		"role": "OPERATOR",
+		"phase": "RUNNING",
+		"width": 320,
+		"title": "MoQ ライブ配信",
+		"maxGap": null,
+		"expect": [],
+		"wrap": true,
+		"provenance": "稼働中の複数操作は狭い幅で折り返してよい"
+	},
+	{
+		"id": "viewer-mobile",
+		"source": "current",
+		"role": "VIEWER",
+		"phase": "RUNNING",
+		"width": 320,
+		"title": "MoQ ライブ配信",
+		"maxGap": null,
+		"expect": [],
+		"provenance": "閲覧者は運用者用操作の表示を必要としない"
+	},
+	{
+		"id": "viewer-stopped",
+		"source": "current",
+		"role": "VIEWER",
+		"phase": "STOPPED",
+		"width": 390,
+		"title": "MoQ ライブ配信",
+		"maxGap": null,
+		"expect": [],
+		"provenance": "配信終了後も閲覧者の操作権限は変わらない"
+	}
+]

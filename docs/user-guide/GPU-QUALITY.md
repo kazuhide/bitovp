@@ -145,8 +145,10 @@ questions. Compare both before choosing a deployment setting.
 Set `VMAF_REUSE_VERIFIED_NATIVE_RESULTS=1` in the Worker environment before
 running the original measurement and its retry. This experiment covers manual
 SDR VOD measurements with **Local (GPU if available)** and a supervised native
-scorer running one frame in flight. Parallel frames, combined Banding, a
-specially prepared reference, and other scoring paths use ordinary execution.
+scorer running one frame in flight. FFmpeg must identify both local files as
+direct MOV/MP4-family inputs, and the scorer opens them with external data
+references disabled. Playlists, parallel frames, combined Banding, and a
+specially prepared reference use ordinary execution.
 
 The Worker still downloads and checks both inputs on a retry. A completed pair
 from that retry's predecessor can skip the native GPU and CPU passes once the
@@ -156,8 +158,9 @@ The new result owns its frame payload and reports
 or invalid completion record takes the normal full score path.
 After validating the saved frames, the Worker checks the live GPU, driver,
 and executable mappings in one probe against the original scoring evidence.
-A changed driver, an unexplained executable mapping, or a loader audit
-configuration sends the pair through fresh scoring.
+A changed driver, an unexplained executable mapping, a loader audit
+configuration, or a CUDA driver version reported only by NVML sends the pair
+through fresh scoring.
 
 For a timing comparison, seed two independent and equivalent retryable
 predecessors with the same input bytes and scoring settings. Use one for the

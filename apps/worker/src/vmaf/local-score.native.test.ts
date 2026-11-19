@@ -42,8 +42,12 @@ afterEach(async () => {
 	);
 });
 const source = "a".repeat(64);
-const probe = (extra = {}) =>
+const probe = (
+	extra = {},
+	formatName: string | null = "mov,mp4,m4a,3gp,3g2,mj2",
+) =>
 	JSON.stringify({
+		...(formatName === null ? {} : { format: { format_name: formatName } }),
 		streams: [
 			{
 				codec_type: "video",
@@ -142,7 +146,7 @@ async function setupReuse() {
 		...h.receipt.device,
 		driverVersion: "fixture-driver-1",
 		driverVersionKnown: true,
-		driverVersionSource: "sysfs",
+		driverVersionSource: "vulkan-driver-properties",
 		memoryTotalBytes: null,
 		memoryAvailableBytes: null,
 		memoryAvailableSource: "unknown",
@@ -155,6 +159,7 @@ async function setupReuse() {
 		probeSha256: "8".repeat(64) as string | null,
 		completionSha256: "8".repeat(64) as string | null,
 		scoringSha256: "7".repeat(64) as string | null,
+		selfContainedMovInputs: true as boolean | undefined,
 	};
 	h.run.mockImplementation(async (program, args, context) => {
 		if (args[0] === "--decoder-runtime") {
@@ -213,6 +218,7 @@ async function setupReuse() {
 								...receipt,
 								decoderRuntimeSha256: decoderRuntime.completionSha256,
 								scoringRuntimeSha256: decoderRuntime.scoringSha256,
+								selfContainedMovInputs: decoderRuntime.selfContainedMovInputs,
 								...(device.driverVersionKnown
 									? {
 											gpuDriver: {
@@ -480,6 +486,51 @@ describe("owned native local scoring", () => {
 	it("does not certify a score without actual GPU driver evidence", async () => {
 		const h = await setupReuse();
 		h.device.driverVersionKnown = false;
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: h.reuse,
+		});
+		expect(result.run.code).toBe(0);
+		expect(result.verifiedNativeScore).toBeUndefined();
+	});
+
+	it("scores without a reusable seal if only transient NVML driver evidence was available", async () => {
+		const h = await setupReuse();
+		h.device.driverVersionSource = "nvml-driver-version";
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: h.reuse,
+		});
+		expect(result.run.code).toBe(0);
+		expect(result.verifiedNativeScore).toBeUndefined();
+	});
+
+	it.each([
+		["referenceProbe", "hls"],
+		["distortedProbe", "concat"],
+		["referenceProbe", null],
+	] as const)("scores fresh without candidate lookup when %s identifies %s", async (input, format) => {
+		const h = await completedReuse();
+		const load = vi.fn(async () => h.candidate);
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			[input]: probe({}, format),
+			verifiedReuse: { ...h.reuse, load },
+		});
+		expect(load).not.toHaveBeenCalled();
+		expect(result.execution.reusedVerifiedResult).toBeUndefined();
+		expect(result.verifiedNativeScore).toBeUndefined();
+		expect(
+			h.run.mock.calls.filter(([, args]) => args.includes("--verify-cpu")),
+		).toHaveLength(1);
+	});
+
+	it.each([
+		false,
+		undefined,
+	])("scores without a reusable seal when the native input attestation is %s", async (selfContainedMovInputs) => {
+		const h = await setupReuse();
+		h.decoderRuntime.selfContainedMovInputs = selfContainedMovInputs;
 		const result = await runLocalVmafScore(h.deps, h.options, {
 			...h.context,
 			verifiedReuse: h.reuse,

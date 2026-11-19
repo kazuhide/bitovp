@@ -50,8 +50,16 @@ bool same_loader_generation(const LoaderGeneration &expected) {
     return actual && *actual == expected;
 }
 
+bool attestable_gpu_driver(const DeviceInfo &device) {
+    if (!device.driver_version_known) return false;
+    // The optional NVML query can unload its library before capture.
+    const auto &source = device.driver_version_source;
+    return source == "sysfs-module-version" || source == "proc-driver-nvidia" ||
+           source == "vulkan-raw-driver-version" || source == "vulkan-driver-properties";
+}
+
 bool same_gpu_driver(const DeviceInfo &before, const DeviceInfo &after) {
-    return before.driver_version_known && after.driver_version_known &&
+    return attestable_gpu_driver(before) && after.driver_version_known &&
            before.backend == after.backend && before.index == after.index &&
            before.uuid == after.uuid && before.vendor_id == after.vendor_id &&
            before.device_id == after.device_id &&
@@ -141,7 +149,7 @@ void write_output(const Options &o, const OracleResult &result, const FeaturePla
                   double finish_ms, const Parity &parity,
                   const std::map<std::string, std::string> &model_hashes,
                   const std::string &reference_hash, const std::string &distorted_hash,
-                  const std::optional<std::string> &decoder_runtime_sha256,
+                  bool self_contained_mov_inputs, const std::optional<std::string> &decoder_runtime_sha256,
                   const std::optional<std::string> &scoring_runtime_sha256) {
     std::ostringstream out;
     out.imbue(std::locale::classic());
@@ -160,6 +168,7 @@ void write_output(const Options &o, const OracleResult &result, const FeaturePla
         << ",\"inflightFrames\":" << o.inflight_frames
         << ",\"requestedDeviceIndex\":" << o.device.device_index
         << ",\"referenceSha256\":" << quoted(reference_hash) << ",\"distortedSha256\":" << quoted(distorted_hash);
+    if (self_contained_mov_inputs) out << ",\"selfContainedMovInputs\":true";
     if (decoder_runtime_sha256) out << ",\"decoderRuntimeSha256\":" << quoted(*decoder_runtime_sha256);
     if (scoring_runtime_sha256)
         out << ",\"scoringRuntimeSha256\":" << quoted(*scoring_runtime_sha256)
@@ -325,7 +334,7 @@ int main(int argc, char **argv) {
 #endif
             const auto device = backend->device();
             std::optional<std::string> decoder_runtime_sha256, scoring_runtime_sha256;
-            if (runtime) {
+            if (runtime && attestable_gpu_driver(device)) {
                 const auto configured = capture_decoder_runtime();
                 if (configured && decoder_runtime_preserved(*runtime, *configured)) {
                     decoder_runtime_sha256 = runtime->sha256;
@@ -349,16 +358,18 @@ int main(int argc, char **argv) {
         const auto start = Clock::now();
         const bool resident_decode = options.decode == "cuda";
         const int decode_device = options.device.device_index < 0 ? 0 : options.device.device_index;
-        const auto decoder_runtime = options.attest_decoder_runtime && options.inflight_frames == 1
-            ? capture_decoder_runtime() : std::nullopt;
+        const bool attest_inputs = options.attest_decoder_runtime && options.inflight_frames == 1 &&
+            !resident_decode && !options.max_frames;
+        const auto decoder_runtime = attest_inputs ? capture_decoder_runtime() : std::nullopt;
         Decoder reference(options.reference, options.width, options.height, options.bits, options.decode_threads,
-                          resident_decode, decode_device);
+                          resident_decode, decode_device, attest_inputs);
         const auto first = reference.source_info();
         const unsigned width = options.width ? options.width : first.width;
         const unsigned height = options.height ? options.height : first.height;
         Decoder distorted(options.distorted, width, height, options.bits, options.decode_threads,
-                          resident_decode, decode_device);
+                          resident_decode, decode_device, attest_inputs);
         const auto second = distorted.source_info();
+        const bool self_contained_mov_inputs = first.self_contained_mov && second.self_contained_mov;
         if (!(first.frames_per_second > 0) || !(second.frames_per_second > 0) ||
             std::abs(first.frames_per_second - second.frames_per_second) > 1e-6)
             throw std::runtime_error("Inputs must have the same known frame rate; conform them before comparison");
@@ -374,7 +385,7 @@ int main(int argc, char **argv) {
             cpu_reference = std::make_unique<Decoder>(options.reference, width, height, options.bits, options.decode_threads);
             cpu_distorted = std::make_unique<Decoder>(options.distorted, width, height, options.bits, options.decode_threads);
         }
-        const bool decoder_open_stable = decoder_runtime &&
+        const bool decoder_open_stable = decoder_runtime && self_contained_mov_inputs &&
             same_loader_generation(decoder_runtime->generation);
         const auto create_backend = [&options] { return make_backend(options); };
         std::unique_ptr<FeatureBackend> backend;
@@ -390,9 +401,11 @@ int main(int argc, char **argv) {
         std::optional<DecoderRuntime> scoring_runtime;
         if (decoder_open_stable) {
             if (backend) configured_device = backend->device();
-            auto configured = capture_decoder_runtime();
-            if (configured && decoder_runtime_preserved(*decoder_runtime, *configured))
-                scoring_runtime = std::move(*configured);
+            if (!backend || attestable_gpu_driver(configured_device)) {
+                auto configured = capture_decoder_runtime();
+                if (configured && decoder_runtime_preserved(*decoder_runtime, *configured))
+                    scoring_runtime = std::move(*configured);
+            }
         }
         const double initialize_ms = elapsed(start);
         double extract_ms = 0;
@@ -460,7 +473,8 @@ int main(int argc, char **argv) {
         write_output(options, result, oracle.feature_plan(), device,
                      backend ? backend->timings() : BackendTimings{}, reference, distorted,
                      wall_ms, initialize_ms, extract_ms, finish_ms, parity, model_hashes,
-                     reference_hash, distorted_hash, decoder_runtime_sha256, scoring_runtime_sha256);
+                     reference_hash, distorted_hash, self_contained_mov_inputs,
+                     decoder_runtime_sha256, scoring_runtime_sha256);
         std::cout << "PASS " << options.backend << ": " << count << " frames, "
                   << options.models.size() << " models, " << wall_ms << " ms";
         if (options.verify) std::cout << ", CPU parity max feature=" << parity.max_feature_error

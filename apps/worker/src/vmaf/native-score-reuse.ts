@@ -39,9 +39,16 @@ const sha = z.string().regex(/^[a-f0-9]{64}$/);
 const decodedRuntimeProof = z
 	.object({ schemaVersion: z.literal(1), sourceSha256: sha, sha256: sha })
 	.strict();
+// NVML-only evidence may come from a library already unloaded when hashing starts.
+const attestedDriverSource = z.enum([
+	"sysfs-module-version",
+	"proc-driver-nvidia",
+	"vulkan-raw-driver-version",
+	"vulkan-driver-properties",
+]);
 const storedProof = z
 	.object({
-		version: z.literal(4),
+		version: z.literal(5),
 		key: sha,
 		lookupKey: sha,
 		decoderRuntimeSha256: sha,
@@ -115,7 +122,7 @@ export function verifiedNativeScoreLookupKey(
 	return createHash("sha256")
 		.update(
 			JSON.stringify([
-				"bitovp-native-vmaf-full-pair-lookup-v1",
+				"bitovp-native-vmaf-full-pair-lookup-v2",
 				scope.organizationId,
 				scope.scoringVersion,
 				expected.referenceSha256,
@@ -159,7 +166,7 @@ function bindRuntime(
 	const key = createHash("sha256")
 		.update(
 			JSON.stringify([
-				"bitovp-native-vmaf-full-pair-v4",
+				"bitovp-native-vmaf-full-pair-v5",
 				lookupKey,
 				decoderRuntimeSha256,
 				scoringRuntimeSha256,
@@ -190,6 +197,8 @@ export async function reconfirmNativeScore(
 		const { identity } = selection;
 		if (
 			!cacheable ||
+			!attestedDriverSource.safeParse(info.device.driverVersionSource)
+				.success ||
 			!info.capabilities.processSupervisor ||
 			!info.capabilities.inflightFrames.includes(inflightFrames) ||
 			info.sourceSha256 !== identity.sourceSha256 ||
@@ -218,7 +227,7 @@ export async function reconfirmNativeScore(
 const runtimeDriver = z
 	.object({
 		driverVersion: z.string().min(1).max(1024),
-		driverVersionSource: z.string().min(1).max(128),
+		driverVersionSource: attestedDriverSource,
 	})
 	.strict();
 
@@ -250,7 +259,7 @@ export function sealVerifiedNativeScore(
 	const payloadSha256 = createHash("sha256")
 		.update(
 			JSON.stringify([
-				4,
+				5,
 				proof.key,
 				proof.lookupKey,
 				proof.decoderRuntimeSha256,
@@ -261,7 +270,7 @@ export function sealVerifiedNativeScore(
 		)
 		.update(framesGzip)
 		.digest("hex");
-	return { ...proof, version: 4 as const, payloadSha256 };
+	return { ...proof, version: 5 as const, payloadSha256 };
 }
 
 export async function readVerifiedNativeScore(

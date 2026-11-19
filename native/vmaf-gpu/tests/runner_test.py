@@ -68,6 +68,26 @@ class RunnerTests(unittest.TestCase):
         self.assertGreater(receipt["timingMs"]["wall"], 0)
         self.assertGreater(receipt["memory"]["maxRssBytes"], 0)
 
+    def test_only_the_opened_mov_demuxer_attests_local_inputs(self):
+        direct = self.root / "direct.mp4"
+        renamed = self.root / "matroska.mp4"
+        renamed.write_bytes(self.reference.read_bytes())
+        subprocess.run([args.ffmpeg, "-v", "error", "-nostdin", "-i", str(self.reference),
+                        "-c:v", "mpeg4", str(direct)], check=True, stdout=subprocess.PIPE,
+                       stderr=subprocess.PIPE, timeout=60)
+        cases = (
+            ("mov", direct, direct, True),
+            ("mixed", direct, renamed, False),
+        )
+        for name, reference, distorted, eligible in cases:
+            with self.subTest(name=name):
+                run, output = self.score(f"attested-{name}.json", reference=reference,
+                                         distorted=distorted, extra=("--attest-decoder-runtime",))
+                self.assertEqual(run.returncode, 0, run.stderr)
+                receipt = json.loads(output.read_text())
+                self.assertEqual(receipt["frames"], 6)
+                self.assertEqual(receipt.get("selfContainedMovInputs") is True, eligible)
+
     def test_identical_input_uses_official_finite_psnr_caps(self):
         for bits in (8, 10):
             run, output = self.score(f"identical-{bits}.json", distorted=self.reference,

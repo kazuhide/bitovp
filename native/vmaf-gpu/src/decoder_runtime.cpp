@@ -70,6 +70,7 @@ struct ExecutableMapping {
     std::uintptr_t start, end;
     unsigned int major, minor;
     std::uintmax_t inode, file_offset;
+    std::string row;
     bool covered = false;
 };
 
@@ -88,10 +89,11 @@ std::optional<std::vector<ExecutableMapping>> executable_mappings() {
         if (permissions[2] != 'x') continue;
         if (!info.inode) {
             const auto name = std::string_view(line).substr(path_offset);
-            if (name == "[vdso]" || name == "[vsyscall]" || name == "[vectors]") continue;
-            return std::nullopt;
+            info.covered = name == "[vdso]" || name == "[vsyscall]" || name == "[vectors]";
+            if (!info.covered) return std::nullopt;
         }
-        mappings.push_back(info);
+        info.row = std::move(line);
+        mappings.push_back(std::move(info));
     }
     if (!maps.eof() || maps.bad() || mappings.empty()) return std::nullopt;
     return mappings;
@@ -292,12 +294,22 @@ std::optional<DecoderRuntime> capture_decoder_runtime() noexcept {
         }
         if (std::any_of(mappings->begin(), mappings->end(), [](const auto &mapping) {
                 return !mapping.covered;
-            }) || runtime_loader_generation() != generation)
+            }))
             return std::nullopt;
         input += runtime.providers;
         Sha256 hasher;
         hasher.update(reinterpret_cast<const std::uint8_t *>(input.data()), input.size());
         runtime.sha256 = hasher.finish();
+
+        // Mapping changes can bypass the linker counters. Compare every
+        // executable row, including address range, permissions, file
+        // identity and offset, after hashing the mapped files.
+        const auto final_mappings = executable_mappings();
+        if (!final_mappings ||
+            !std::equal(mappings->begin(), mappings->end(), final_mappings->begin(), final_mappings->end(),
+                        [](const auto &before, const auto &after) { return before.row == after.row; }) ||
+            runtime_loader_generation() != generation)
+            return std::nullopt;
         return runtime;
     } catch (...) {
         return std::nullopt;

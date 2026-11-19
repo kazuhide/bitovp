@@ -95,7 +95,10 @@ export const SCORER_PAIR_REFUSALS = [
 ];
 
 function probeInput(text: string) {
-	let parsed: { streams?: Record<string, unknown>[] };
+	let parsed: {
+		streams?: Record<string, unknown>[];
+		format?: { format_name?: unknown };
+	};
 	try {
 		parsed = JSON.parse(text);
 	} catch {
@@ -129,7 +132,11 @@ function probeInput(text: string) {
 		)
 	)
 		throw input("NATIVE_UNSUPPORTED_INPUT_FORMAT");
-	return { ...metadata, video };
+	return {
+		...metadata,
+		video,
+		movContainer: parsed?.format?.format_name === "mov,mp4,m4a,3gp,3g2,mj2",
+	};
 }
 
 /**
@@ -242,7 +249,17 @@ export async function runNativeVmafScore(
 		if (existing !== undefined) return existing;
 		const result = await deps.runner.run(
 			deps.ffprobePath,
-			["-v", "error", "-show_streams", "-of", "json", path],
+			[
+				"-v",
+				"error",
+				"-show_streams",
+				...(context.verifiedReuse && frameLimit === undefined
+					? ["-show_format"]
+					: []),
+				"-of",
+				"json",
+				path,
+			],
 			{ signal, abortKillAfterMs: 250 },
 		);
 		signal?.throwIfAborted();
@@ -305,8 +322,11 @@ export async function runNativeVmafScore(
 		frameCount: frameLimit ?? reference.frames ?? distorted.frames,
 		psnr: options.psnr === true || options.features?.includes("psnr") === true,
 	};
-	// Calibration times a prefix. It cannot produce or consume a complete score.
-	const reuse = frameLimit === undefined ? context.verifiedReuse : undefined;
+	// A complete score must come from both files' own media bytes.
+	const reuse =
+		frameLimit === undefined && reference.movContainer && distorted.movContainer
+			? context.verifiedReuse
+			: undefined;
 	let lookupKey = reuse
 		? verifiedNativeScoreLookupKey(
 				reuse,
@@ -442,6 +462,7 @@ export async function runNativeVmafScore(
 			lookupKey &&
 			decoderRuntimeSha256 &&
 			metadata.decoderRuntimeSha256 === decoderRuntimeSha256 &&
+			metadata.selfContainedMovInputs === true &&
 			verified.scoring.device.uuid === reuse?.selection.identity.deviceUuid
 				? completedNativeScoreIdentity(
 						lookupKey,

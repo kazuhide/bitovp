@@ -46,6 +46,34 @@ const result = {
 	cacheable: true,
 };
 
+it("pins a scene-scoped generation separately and restricts it to local-story drafts", () => {
+	const base = request();
+	const parameters = { ...base.parameters, policy: "LOCAL_STORY" };
+	const full = mediaTaskCreateSchema.parse({ ...base, parameters });
+	const scoped = mediaTaskCreateSchema.parse({
+		...base,
+		parameters: { ...parameters, storySceneId: id },
+	});
+	expect(mediaTaskIntentHash(scoped)).not.toBe(mediaTaskIntentHash(full));
+	expect(mediaTaskCacheKey(scoped, identity)).not.toBe(
+		mediaTaskCacheKey(full, identity),
+	);
+	for (const incompatible of [
+		{ policy: "AUTO" },
+		{ renderMode: "EXPORT" },
+		{ trailer: { durationMode: "EXACT", disclosure: "SETUP_ONLY" } },
+		{ storyMode: "FLOW", storyWorkflowVersion: "hierarchical-flow-v1" },
+		{ storySceneId: "not-a-scene-id" },
+	]) {
+		expect(
+			mediaTaskCreateSchema.safeParse({
+				...base,
+				parameters: { ...parameters, storySceneId: id, ...incompatible },
+			}).success,
+		).toBe(false);
+	}
+});
+
 describe("automatic content-preserving draft intent", () => {
 	it("pins AUTO separately from explicit FILL and FIT for cache and replay identity", () => {
 		const automatic = mediaTaskCreateSchema.parse(request());

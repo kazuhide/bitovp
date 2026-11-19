@@ -281,6 +281,70 @@ function expectNoPublication(f: ReturnType<typeof fixture>) {
 }
 
 describe("local story project generation", () => {
+	function scopedFixture() {
+		const f = fixture();
+		const sceneId = fixtureItem(f.sceneIds[0]);
+		Object.assign(f.task.parameters.input.parameters, {
+			storySceneId: sceneId,
+		});
+		f.refresh();
+		f.authored.evidence.sceneScope = { sceneId, startUs: 0, endUs: 4_000_000 };
+		f.authored.evidence.inputCoverage = {
+			totalShots: 2,
+			eligibleShots: 2,
+			processedShots: 2,
+			excludedShots: 0,
+			truncated: false,
+		};
+		f.authored.evidence.ledger.coveredRefs = ["s0", "s1"];
+		f.authored.evidence.ledgerHash = hashEditingEvidence(
+			f.authored.evidence.ledger,
+		);
+		f.authored.evidence.artifactHash = localStoryArtifactHash(
+			f.authored.evidence,
+		);
+		return f;
+	}
+	it("publishes and replays an editable draft with matching scoped evidence", async () => {
+		const f = scopedFixture();
+		const result = await f.run();
+		expect(result.localStoryEvidence?.sceneScope).toEqual(
+			f.authored.evidence.sceneScope,
+		);
+		await expect(f.run()).resolves.toEqual(result);
+		expect(f.plan).toHaveBeenCalledTimes(1);
+		const forged = structuredClone(result);
+		const evidence = fixtureItem(forged.localStoryEvidence);
+		delete evidence.sceneScope;
+		evidence.artifactHash = localStoryArtifactHash(evidence);
+		f.task.result = forged;
+		await expect(f.run()).rejects.toMatchObject({
+			code: "TASK_RESULT_UNVERIFIED",
+		});
+	});
+	it("rejects a generated clip crossing the verified scene before publication", async () => {
+		const f = scopedFixture();
+		fixtureItem(f.authored.selection.clips[1]).sourceInUs += 1_000_000;
+		await expect(f.run()).rejects.toMatchObject({
+			code: "TASK_RESULT_UNVERIFIED",
+		});
+		expectNoPublication(f);
+	});
+	it("rejects a scoped ledger that claims work outside the verified scene", async () => {
+		const f = scopedFixture();
+		f.authored.evidence.ledger.coveredRefs[1] = "s2";
+		fixtureItem(f.authored.evidence.ledger.events[0]).refs[1] = "s2";
+		f.authored.evidence.ledgerHash = hashEditingEvidence(
+			f.authored.evidence.ledger,
+		);
+		f.authored.evidence.artifactHash = localStoryArtifactHash(
+			f.authored.evidence,
+		);
+		await expect(f.run()).rejects.toMatchObject({
+			code: "TASK_RESULT_UNVERIFIED",
+		});
+		expectNoPublication(f);
+	});
 	it("publishes an editable trailer with matching original source windows and checks replay", async () => {
 		const trailer = {
 			durationMode: "EXACT",

@@ -27,6 +27,7 @@ import {
 	mergeLocalStoryLedgers,
 	type PreparedShotPartition,
 	type RevalidatedFlowLedgerRef,
+	resolveLocalStorySceneScope,
 	selectLocalStoryClips,
 	selectLocalStoryTrailer,
 	TRANSCRIPTION_POLICY_FINGERPRINT,
@@ -160,7 +161,12 @@ export type PreparedLocalStoryFullSource = {
 export function localStoryArtifactHash(
 	evidence: Pick<
 		LocalStoryEvidence,
-		"model" | "inputHash" | "ledgerHash" | "blueprintHash" | "trailer"
+		| "model"
+		| "inputHash"
+		| "ledgerHash"
+		| "blueprintHash"
+		| "trailer"
+		| "sceneScope"
 	>,
 ) {
 	return hashEditingEvidence({
@@ -170,6 +176,7 @@ export function localStoryArtifactHash(
 		ledgerHash: evidence.ledgerHash,
 		blueprintHash: evidence.blueprintHash,
 		...(evidence.trailer ? { trailer: evidence.trailer } : {}),
+		...(evidence.sceneScope ? { sceneScope: evidence.sceneScope } : {}),
 	});
 }
 
@@ -288,6 +295,22 @@ export function createLocalStoryEngine(options: {
 			options.model.sha256 !== verified.envelope.identity.modelSha256
 		)
 			throw new MediaOperationError("ASR_MODEL_CHANGED");
+		if (
+			parameters.storySceneId !== undefined &&
+			(requireReadyTranscript ||
+				parameters.trailer !== undefined ||
+				parameters.storyWorkflowVersion !== undefined ||
+				parameters.renderMode !== "DRAFT")
+		)
+			throw new MediaOperationError("LOCAL_STORY_SCENE_SCOPE_INVALID");
+		const sceneScope =
+			parameters.storySceneId === undefined
+				? undefined
+				: resolveLocalStorySceneScope({
+						analysis: verified.analysisDocument,
+						timeMap: verified.map,
+						sceneId: parameters.storySceneId,
+					});
 		const store = createLocalStoryArtifactStore({
 			prisma: options.prisma,
 			task,
@@ -301,6 +324,7 @@ export function createLocalStoryEngine(options: {
 			sourcePath: context.sourcePath,
 			mediaSha256: verified.media.sha256,
 			timeMap: verified.map,
+			...(sceneScope ? { sceneScope } : {}),
 			model: options.model,
 			language: parameters.language,
 			signal,
@@ -321,7 +345,9 @@ export function createLocalStoryEngine(options: {
 		)
 			throw new MediaOperationError("ASR_QUALITY_POLICY_CHANGED");
 		if (
-			(requireReadyTranscript || parameters.trailer !== undefined) &&
+			(requireReadyTranscript ||
+				parameters.trailer !== undefined ||
+				sceneScope !== undefined) &&
 			context.hasAudio &&
 			transcript.status !== "READY"
 		)
@@ -333,6 +359,7 @@ export function createLocalStoryEngine(options: {
 			preparedPartition: context.preparedPartition,
 			segments: transcript.segments,
 			includeExcludedWindows: parameters.trailer !== undefined,
+			storySceneId: parameters.storySceneId,
 		});
 		const chunks = buildLocalStoryChunks(input),
 			inputHash = hashEditingEvidence(input);
@@ -953,11 +980,13 @@ export function createLocalStoryEngine(options: {
 						inputHash,
 						ledgerHash,
 						blueprintHash,
+						...(input.sceneScope ? { sceneScope: input.sceneScope } : {}),
 						artifactHash: localStoryArtifactHash({
 							model: identity,
 							inputHash,
 							ledgerHash,
 							blueprintHash,
+							sceneScope: input.sceneScope,
 						}),
 						ledger,
 						blueprint,

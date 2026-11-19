@@ -71,6 +71,7 @@ export const generationTaskParametersSchema = z
 			.enum(["AUTO", "STORY", "LOCAL_STORY", "COHESION", "DURATION"])
 			.default("COHESION"),
 		storyMode: localStoryModeSchema.optional(),
+		storySceneId: uuid.optional(),
 		trailer: localStoryTrailerIntentSchema.optional(),
 		storyPlanner: z.literal("FEASIBLE_CHOICE_V1").optional(),
 		storyWorkflowVersion: z
@@ -131,8 +132,17 @@ export const generationTaskParametersSchema = z
 	)
 	.refine(
 		(value) =>
+			value.storySceneId === undefined ||
+			(value.policy === "LOCAL_STORY" &&
+				value.renderMode === "DRAFT" &&
+				value.trailer === undefined &&
+				value.storyWorkflowVersion === undefined),
+		"A scoped scene requires a local-story DRAFT without trailer or hierarchical planning",
+	)
+	.refine(
+		(value) =>
 			value.policy !== "LOCAL_STORY" || value.transcriptionTaskId === undefined,
-		"Local story prepares its complete source transcript",
+		"Local story prepares its own transcript",
 	)
 	.refine(
 		(value) =>

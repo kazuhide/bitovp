@@ -139,6 +139,15 @@ export const localStoryBlueprintSchema = z
 	});
 export type LocalStoryBlueprint = z.infer<typeof localStoryBlueprintSchema>;
 
+export const localStorySceneScopeSchema = z
+	.strictObject({
+		sceneId: z.uuid(),
+		startUs: z.number().int().nonnegative(),
+		endUs: z.number().int().positive(),
+	})
+	.refine((value) => value.startUs < value.endUs);
+export type LocalStorySceneScope = z.infer<typeof localStorySceneScopeSchema>;
+
 export type LocalStoryField = {
 	pointer: string;
 	kind: "AISA" | "ASR";
@@ -168,6 +177,7 @@ export type LocalStoryInput = {
 	timeMap: CfrTimeMap;
 	timeMapHash: string;
 	normalizationReceiptHash?: string;
+	sceneScope?: LocalStorySceneScope;
 	scenes: { sceneId: string; text: string; fields: LocalStoryField[] }[];
 	shots: LocalStoryShot[];
 	excludedWindows?: readonly { fromFrame: number; toFrame: number }[];
@@ -218,6 +228,7 @@ export const localStoryEvidenceSchema = z
 		blueprint: localStoryBlueprintSchema,
 		selection: localStorySelectionSchema,
 		inputCoverage: localStoryInputCoverageSchema,
+		sceneScope: localStorySceneScopeSchema.optional(),
 		trailer: localStoryTrailerEvidenceSchema.optional(),
 	})
 	.superRefine((value, ctx) => {
@@ -251,6 +262,11 @@ export const localStoryEvidenceSchema = z
 					"Local story selection must fulfill its declared complete blueprint",
 			});
 		}
+		if (value.sceneScope && value.trailer)
+			ctx.addIssue({
+				code: "custom",
+				message: "Scene-scoped evidence cannot be a trailer",
+			});
 		if (value.trailer) {
 			const intent = value.trailer.intent;
 			const blocked = new Set(

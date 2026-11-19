@@ -2030,6 +2030,67 @@ describe("local story engine with real evidence contracts and a fake local model
 		);
 		expect(result.segments).toEqual(f.segments);
 	});
+	it.each([
+		"legacy",
+		"choice",
+	] as const)("runs %s ASR and ledger planning only for the verified requested scene", async (planner) => {
+		const choice = planner === "choice";
+		const f = fixture({ choiceEnabled: choice });
+		const analysis = item(f.context.verified.analysisDocument);
+		const scene = item(analysis.scenes[0]);
+		f.context.verified.analysisDocument = {
+			...analysis,
+			scenes: [
+				{ ...scene, endInSeconds: 25, shots: scene.shots.slice(0, 5) },
+				{
+					...scene,
+					id: randomUUID(),
+					startInSeconds: 25,
+					shots: scene.shots.slice(5),
+				},
+			],
+		};
+		const sceneScope = { sceneId: scene.id, startUs: 0, endUs: 25_000_000 };
+		const result = await f.engine.plan({
+			...f.context,
+			parameters: {
+				...f.context.parameters,
+				storySceneId: scene.id,
+				...(choice ? { storyPlanner: "FEASIBLE_CHOICE_V1" as const } : {}),
+			},
+		});
+		expect(mocks.prepareTranscript).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ sceneScope }),
+		);
+		expect(result.evidence.sceneScope).toEqual(sceneScope);
+		expect(result.evidence.inputCoverage).toMatchObject({
+			totalShots: 5,
+			processedShots: 5,
+		});
+		expect(
+			f.requests
+				.filter((r) => r.stage === "LOCAL_LEDGER_V1")
+				.flatMap((r) => payload<LocalStoryChunk>(r.prompt).refs),
+		).toEqual(["s0", "s1", "s2", "s3", "s4"]);
+		expect(result.selection.clips.length).toBeGreaterThan(0);
+		expect(new Set(result.selection.clips.map((clip) => clip.sceneId))).toEqual(
+			new Set([scene.id]),
+		);
+		expect(result.evidence.artifactHash).toBe(
+			localStoryArtifactHash(result.evidence),
+		);
+	});
+	it("rejects an unknown requested scene before starting ASR or model work", async () => {
+		const f = fixture();
+		await expect(
+			f.engine.plan({
+				...f.context,
+				parameters: { ...f.context.parameters, storySceneId: randomUUID() },
+			}),
+		).rejects.toMatchObject({ code: "LOCAL_STORY_SCENE_SCOPE_INVALID" });
+		expect(mocks.prepareTranscript).not.toHaveBeenCalled();
+		expect(f.run).not.toHaveBeenCalled();
+	});
 	it("processes all complete source chunks and returns nontruncated coverage proof", async () => {
 		const f = fixture(),
 			result = await f.engine.plan(f.context);

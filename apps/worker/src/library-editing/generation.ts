@@ -39,6 +39,7 @@ import {
 	type LocalCaptionModelIdentity,
 	type LocalStoryEvidence,
 	type LocalStoryModelIdentity,
+	localStoryClipsWithinSceneScope,
 	localStoryEvidenceSchema,
 	matchesFinalCaptionAlignmentMeasurements,
 	mediaTaskEnvelopeSchema,
@@ -47,6 +48,7 @@ import {
 	type PreparedShotPartition,
 	preparedShotFraming,
 	refinePortraitSelectionBySpeech,
+	resolveLocalStorySceneScope,
 	resolveLocalStorySubjects,
 	SpeechBoundarySelectionError,
 	type SpeechSelectionEvidence,
@@ -187,7 +189,10 @@ function resultForRenderMode(
 		hashEditingEvidence(
 			parsed.data.localStoryEvidence?.trailer?.intent ?? null,
 		) !== hashEditingEvidence(parameters.trailer ?? null) ||
-		(parameters.trailer !== undefined &&
+		parsed.data.localStoryEvidence?.sceneScope?.sceneId !==
+			parameters.storySceneId ||
+		((parameters.trailer !== undefined ||
+			parameters.storySceneId !== undefined) &&
 			parsed.data.requestedFrames !== parameters.targetDurationFrames) ||
 		(expectedCaptionTranslationModel !== undefined &&
 			(!parsed.data.captionTranslation ||
@@ -351,6 +356,14 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 			binding = verified.binding;
 		if (!analysis || !binding || !verified.media.sha256)
 			throw new MediaOperationError("ANALYSIS_BINDING_UNVERIFIED");
+		const sceneScope =
+			parameters.storySceneId === undefined
+				? undefined
+				: resolveLocalStorySceneScope({
+						analysis,
+						timeMap: verified.map,
+						sceneId: parameters.storySceneId,
+					});
 		const link = await deps.prisma.contentRevision.findFirst({
 			where: {
 				contentId: parameters.contentId,
@@ -473,6 +486,14 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 				localStory.selection.policyVersion !== expectedAutomaticPolicyVersion ||
 				hashEditingEvidence(evidence.data.selection) !==
 					hashEditingEvidence(localStory.selection.localStorySelection) ||
+				hashEditingEvidence(evidence.data.sceneScope ?? null) !==
+					hashEditingEvidence(sceneScope ?? null) ||
+				(sceneScope !== undefined &&
+					!localStoryClipsWithinSceneScope({
+						scope: sceneScope,
+						timeMap: verified.map,
+						clips: localStory.selection.clips,
+					})) ||
 				hashEditingEvidence(evidence.data.trailer?.intent ?? null) !==
 					hashEditingEvidence(parameters.trailer ?? null) ||
 				(evidence.data.trailer !== undefined &&
@@ -779,25 +800,42 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 					}
 				: undefined;
 		const localStoryEvidence = localStory?.evidence;
-		const subjectTargets = localStory
-			? resolveLocalStorySubjects({
+		const storyInput = localStory
+			? buildLocalStoryInput({
 					analysis,
-					input: buildLocalStoryInput({
-						analysis,
-						timeMap: verified.map,
-						preparedPartition,
-						segments: localStory.segments,
-					}),
-					ledger: localStory.evidence.ledger,
-					selection: localStory.evidence.selection,
-					geometry: {
-						sourceWidth: binding.width,
-						sourceHeight: binding.height,
-						targetWidth: 1080,
-						targetHeight: 1920,
-					},
+					timeMap: verified.map,
+					preparedPartition,
+					segments: localStory.segments,
+					storySceneId: parameters.storySceneId,
 				})
-			: [];
+			: undefined;
+		if (sceneScope && storyInput && localStoryEvidence) {
+			const { coveredRefs } = localStoryEvidence.ledger;
+			if (
+				coveredRefs.length !== storyInput.shots.length ||
+				coveredRefs.some(
+					(ref, index) => ref !== storyInput.shots[index]?.ref,
+				) ||
+				localStoryEvidence.inputCoverage.totalShots !==
+					storyInput.coverage.length
+			)
+				throw new MediaOperationError("TASK_RESULT_UNVERIFIED");
+		}
+		const subjectTargets =
+			localStory && storyInput
+				? resolveLocalStorySubjects({
+						analysis,
+						input: storyInput,
+						ledger: localStory.evidence.ledger,
+						selection: localStory.evidence.selection,
+						geometry: {
+							sourceWidth: binding.width,
+							sourceHeight: binding.height,
+							targetWidth: 1080,
+							targetHeight: 1920,
+						},
+					})
+				: [];
 		const subjectTarget = (sceneId: string, shotIndex: number | undefined) =>
 			subjectTargets.find(
 				(target) =>

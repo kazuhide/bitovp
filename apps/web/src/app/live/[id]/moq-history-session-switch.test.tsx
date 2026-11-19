@@ -11,6 +11,7 @@ vi.mock("recharts", () => ({
 		children,
 	LineChart: ({ children }: { children: React.ReactNode }) => children,
 	Line: () => null,
+	ReferenceLine: () => null,
 	XAxis: () => null,
 	YAxis: () => null,
 	Tooltip: () => null,
@@ -31,7 +32,17 @@ function session(id: string, startedAt: string) {
 		endedAt: new Date(Date.parse(startedAt) + 30_000).toISOString(),
 		createdAt: startedAt,
 		updatedAt: startedAt,
-		samples: [],
+		samples: [1_000, 2_000].map((elapsedMs) => ({
+			elapsedMs,
+			latencyMs: 480,
+			fps: null,
+			bufferSeconds: null,
+			droppedFrames: null,
+			decodedFrames: null,
+			presentedFrames: null,
+			totalFrames: null,
+			resolution: null,
+		})),
 		events: [
 			{ elapsedMs: 0, type: "started" },
 			{ elapsedMs: 1000, type: "first-frame" },
@@ -76,6 +87,9 @@ describe("received recording selection", () => {
 			</DocumentOrganizationContext.Provider>,
 		);
 		await screen.findByText("2026-11-18 00:01:01.222 UTC");
+		expect(
+			rendered.container.querySelector("[data-moq-playhead]"),
+		).toHaveAttribute("data-moq-playhead", String(Date.parse(newerTime)));
 		const previousVideos: Element[] = [];
 		for (const id of [OLDER, NEWER, OLDER]) {
 			const oldVideo = rendered.container.querySelector(
@@ -99,7 +113,21 @@ describe("received recording selection", () => {
 						"time[data-moq-client-playback-time]",
 					),
 				).toHaveAttribute("dateTime", id === OLDER ? olderTime : newerTime);
+				const playheads = rendered.container.querySelectorAll(
+					"[data-moq-playhead]",
+				);
+				expect(playheads).toHaveLength(1);
+				expect(playheads[0]).toHaveAttribute(
+					"data-moq-playhead",
+					String(Date.parse(id === OLDER ? olderTime : newerTime)),
+				);
 			});
+			const video = rendered.container.querySelector("video[data-moq-archive]");
+			if (!video) throw new Error("Selected archive is unavailable");
+			fireEvent.seeking(video);
+			expect(
+				rendered.container.querySelector("[data-moq-playhead]"),
+			).toBeNull();
 			for (const video of previousVideos) expect(video.isConnected).toBe(false);
 		}
 	});

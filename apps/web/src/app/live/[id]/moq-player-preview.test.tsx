@@ -295,8 +295,8 @@ describe("explicit MoQ preview", () => {
 		renderWithQuery(view());
 		expect(screen.getByRole("region", { name: "MoQ playback" })).toBeVisible();
 		expect(
-			screen.getByText("Video latency (barcode)").nextElementSibling,
-		).toHaveTextContent("Unmeasured");
+			document.querySelector("[data-moq-live-metrics] [data-moq-chart]"),
+		).toBeNull();
 		await act(async () => {
 			fireEvent.click(screen.getByRole("button", { name: "Play" }));
 		});
@@ -314,14 +314,18 @@ describe("explicit MoQ preview", () => {
 		expect(
 			screen.getByText("Configured draft").nextElementSibling,
 		).toHaveTextContent("18");
-		expect(screen.getByText("Resolution").nextElementSibling).toHaveTextContent(
+		expect(document.querySelector("[data-moq-resolution]")).toHaveTextContent(
 			"640×360",
 		);
 		expect(
-			screen.getByText("Video latency (barcode)").nextElementSibling,
+			document.querySelector(
+				'[data-moq-live-metrics] [data-moq-chart="latencyMs"]',
+			),
 		).toHaveTextContent("300 ms");
 		expect(
-			screen.getByText("Player buffer").nextElementSibling,
+			document.querySelector(
+				'[data-moq-live-metrics] [data-moq-chart="bufferSeconds"]',
+			),
 		).toHaveTextContent("1.50 s");
 		expect(
 			screen.getByText("Target buffer").nextElementSibling,
@@ -329,10 +333,10 @@ describe("explicit MoQ preview", () => {
 		await act(async () => {
 			fireEvent.click(screen.getByRole("button", { name: "Stop" }));
 		});
-		expect(screen.queryByText("Resolution")).toBeNull();
+		expect(document.querySelector("[data-moq-resolution]")).toBeNull();
 		expect(
-			screen.getByText("Video latency (barcode)").nextElementSibling,
-		).toHaveTextContent("Unmeasured");
+			document.querySelector("[data-moq-live-metrics] [data-moq-chart]"),
+		).toBeNull();
 		expect(document.body.innerHTML).not.toContain("SYNTHETIC_");
 	});
 	it("starts rendering while the first history receipt and Analytics collector are pending", async () => {

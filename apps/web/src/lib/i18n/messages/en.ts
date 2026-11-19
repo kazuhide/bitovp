@@ -999,6 +999,9 @@ export const en = {
 		archiveClockBasis:
 			"Estimated from the recording start and current position. Older recordings use the first observed frame.",
 		title: "MoQ playback",
+		viewerMetrics: "Player",
+		noLiveSamples: "Measurements appear during playback",
+		playerDetails: "Playback details",
 		play: "Play",
 		stop: "Stop",
 		idle: "Not playing",
@@ -1060,7 +1063,7 @@ export const en = {
 		relayOperations: "Configured token operations",
 		savedHistory: "Saved MoQ observations",
 		historyFailed: "Could not load saved observations",
-		noHistory: "No saved observations",
+		noHistory: "No saved playback observations",
 		observationSession: "Observation session",
 		browserSource: "Browser observations · Player Web X / MoQ",
 		historyClock:
@@ -1117,7 +1120,19 @@ export const en = {
 		},
 	},
 	moqEncoder: {
-		title: "Live Encoder heartbeat",
+		title: "Encoder",
+		poll: "Heartbeat · Poll",
+		lastReport: "Heartbeat · Last run report",
+		sourceHelp:
+			"Encoder measurements from Heartbeat. Times are when BitOVP observed the report (UTC).",
+		details: "Packets and processing time",
+		ingestUnhealthy: "Input unhealthy",
+		ingest: {
+			CONNECTED: "Input connected",
+			DISCONNECTED: "Input disconnected",
+			WAITING_FOR_FIRST_CONNECT: "Waiting for input",
+			ERROR: "Input error",
+		},
 		source: "Encoder API · receipt time UTC",
 		empty: "No saved heartbeat data.",
 		yes: "Yes",

@@ -25,12 +25,14 @@ type Props = {
 	statistics: MoqVideoStatistics;
 	configuration: MoqPlaybackDescriptor["resource"]["metadata"] | null;
 	relay?: MoqPlaybackDescriptor["relay"];
+	detailsOnly?: boolean;
 };
 
 export function MoqPlayerStatistics({
 	statistics: s,
 	configuration,
 	relay,
+	detailsOnly = false,
 }: Props) {
 	const { t } = useT();
 	const row = (label: string, value: ReactNode) =>
@@ -59,38 +61,40 @@ export function MoqPlayerStatistics({
 	const configured = configuration || relay || s.renderingSource;
 	return (
 		<div className="space-y-2 text-xs">
-			<dl
-				aria-label={t("moqPlayback.statistics")}
-				className="flex flex-wrap gap-x-4 gap-y-1"
-			>
-				{row(
-					t("moqPlayback.latency"),
-					format(
-						s.latencySeconds === null ? null : s.latencySeconds * 1000,
-						0,
-						" ms",
-					) ?? <span>{t("moqPlayback.unmeasured")}</span>,
-				)}
-				{row(
-					t(
-						s.bufferSource === "player"
-							? "moqPlayback.bufferPlayer"
-							: s.bufferSource === "video"
-								? "moqPlayback.bufferVideo"
-								: "moqPlayback.buffer",
-					),
-					format(s.bufferSeconds, 2, " s"),
-				)}
-				{row(t("moqPlayback.resolution"), s.resolution)}
-				{row(
-					t(
-						s.renderingSource === "canvas"
-							? "moqPlayback.canvasUpdates"
-							: "moqPlayback.fps",
-					),
-					format(s.fps, 1, s.renderingSource === "canvas" ? " /s" : " fps"),
-				)}
-			</dl>
+			{detailsOnly ? null : (
+				<dl
+					aria-label={t("moqPlayback.statistics")}
+					className="flex flex-wrap gap-x-4 gap-y-1"
+				>
+					{row(
+						t("moqPlayback.latency"),
+						format(
+							s.latencySeconds === null ? null : s.latencySeconds * 1000,
+							0,
+							" ms",
+						) ?? <span>{t("moqPlayback.unmeasured")}</span>,
+					)}
+					{row(
+						t(
+							s.bufferSource === "player"
+								? "moqPlayback.bufferPlayer"
+								: s.bufferSource === "video"
+									? "moqPlayback.bufferVideo"
+									: "moqPlayback.buffer",
+						),
+						format(s.bufferSeconds, 2, " s"),
+					)}
+					{row(t("moqPlayback.resolution"), s.resolution)}
+					{row(
+						t(
+							s.renderingSource === "canvas"
+								? "moqPlayback.canvasUpdates"
+								: "moqPlayback.fps",
+						),
+						format(s.fps, 1, s.renderingSource === "canvas" ? " /s" : " fps"),
+					)}
+				</dl>
+			)}
 			{extra.length ? (
 				<details>
 					<summary className="cursor-pointer text-zinc-400">

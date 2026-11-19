@@ -1,14 +1,20 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
+import { Play, Square } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDocumentOrganization } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
+import type { MoqHeartbeatHistory } from "@/lib/moq-player/heartbeat";
 import type { MoqHistorySaveState } from "@/lib/moq-player/history-client";
 import { loadMoqPlayer } from "@/lib/moq-player/loader";
+import {
+	appendMoqLiveSample,
+	type MoqMetricSample,
+} from "@/lib/moq-player/metric-series";
 import {
 	appendMoqObservationEvent,
 	type MoqObservationEvent,
@@ -26,9 +32,18 @@ import {
 } from "@/lib/moq-player/video-statistics";
 import { MOQ_ARCHIVE_SAVE_TIMEOUT_MS } from "../../../../config/moq-policy";
 import { MoqClientPlaybackClock } from "./moq-client-playback-clock";
+import { MoqEncoderHistory } from "./moq-encoder-history";
 import { type MoqArchiveSave, MoqHistoryPanel } from "./moq-history-panel";
 import { MoqPlaybackStages } from "./moq-playback-stages";
 import { MoqPlayerStatistics } from "./moq-player-statistics";
+import { MoqViewerMetrics } from "./moq-viewer-metrics";
+import { useMoqObservationHistory } from "./use-moq-observation-history";
+
+const emptyHeartbeat: MoqHeartbeatHistory = {
+	source: "live-encoder-heartbeat",
+	points: [],
+	truncated: false,
+};
 
 type Props = {
 	channelId: string;
@@ -73,6 +88,14 @@ function MoqPlaybackAttempt({
 	const { t } = useT();
 	const organizationId = useDocumentOrganization();
 	const queryClient = useQueryClient();
+	const observations = useMoqObservationHistory(
+		channelId,
+		runId,
+		active,
+		active,
+	);
+	const heartbeat = observations.data?.heartbeat ?? emptyHeartbeat;
+	const [samples, setSamples] = useState<readonly MoqMetricSample[]>([]);
 	const host = useRef<HTMLElement>(null);
 	const current = useRef<Attempt | undefined>(undefined);
 	const generation = useRef(0);
@@ -134,6 +157,9 @@ function MoqPlaybackAttempt({
 			void close().catch(() => {});
 			setPhase("stopped");
 			setStatistics(EMPTY_MOQ_VIDEO_STATISTICS);
+			setSamples([]);
+		} else {
+			setPhase((value) => (value === "stopped" ? "idle" : value));
 		}
 		return () => {
 			void close().catch(() => {});
@@ -156,6 +182,7 @@ function MoqPlaybackAttempt({
 		const visibleArchive = () =>
 			mounted.current && archiveGeneration.current === archiveEpoch;
 		setStatistics(EMPTY_MOQ_VIDEO_STATISTICS);
+		setSamples([]);
 		setConfiguration(null);
 		setRelay(undefined);
 		setRecordingState("idle");
@@ -264,6 +291,7 @@ function MoqPlaybackAttempt({
 						attempt.noteStage("failed");
 						setPhase("failed");
 						setStatistics(EMPTY_MOQ_VIDEO_STATISTICS);
+						setSamples([]);
 					}
 				},
 				{
@@ -276,7 +304,24 @@ function MoqPlaybackAttempt({
 						attempt.archive?.finish(attempt.reason) ?? Promise.resolve(),
 					onStatistics: (value) => {
 						if (owned()) {
+							const elapsedMs = Math.max(
+								0,
+								Math.round(performance.now() - startedAt),
+							);
 							setStatistics(value);
+							setSamples((series) =>
+								appendMoqLiveSample(series, {
+									elapsedMs,
+									latencyMs:
+										value.latencySeconds === null
+											? null
+											: value.latencySeconds * 1000,
+									fps: value.fps,
+									bufferSeconds: value.bufferSeconds,
+									bufferSource: value.bufferSource,
+									renderingSource: value.renderingSource,
+								}),
+							);
 							attempt.archive?.statistics(value);
 						}
 					},
@@ -292,6 +337,7 @@ function MoqPlaybackAttempt({
 			attempt.reason = "failed";
 			void close().catch(() => {});
 			setStatistics(EMPTY_MOQ_VIDEO_STATISTICS);
+			setSamples([]);
 			setPhase(
 				typeof error === "object" &&
 					error !== null &&
@@ -308,6 +354,7 @@ function MoqPlaybackAttempt({
 		if (current.current) current.current.reason = "stopped";
 		const disposal = close();
 		setStatistics(EMPTY_MOQ_VIDEO_STATISTICS);
+		setSamples([]);
 		const ownGeneration = generation.current;
 		setPhase("stopping");
 		try {
@@ -325,7 +372,7 @@ function MoqPlaybackAttempt({
 	return (
 		<div
 			id="moq-preview"
-			className="min-w-0 space-y-4 scroll-mt-4"
+			className="@container min-w-0 space-y-4 scroll-mt-4"
 			data-moq-preview={runId}
 			data-moq-phase={phase}
 		>
@@ -341,82 +388,141 @@ function MoqPlaybackAttempt({
 			{!active && !standalone ? (
 				<Link
 					href={`/live/${channelId}/runs/${runId}/moq#moq-preview`}
-					className="inline-block text-xs text-zinc-300 underline underline-offset-2"
+					className="inline-block text-xs text-zinc-400 underline underline-offset-2 hover:text-zinc-200"
 				>
 					{t("moqPlayback.openPlayer")}
 				</Link>
 			) : null}
-			<details key="live" open={active} className="space-y-3">
+			<details key="live" open={active} className="min-w-0 space-y-2">
 				<summary
 					className={active ? "hidden" : "cursor-pointer text-xs text-zinc-400"}
 				>
 					MoQ / Web X · {t("moqPlayback.stopped")}
 				</summary>
-				<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-					<div className="flex flex-wrap gap-2">
-						<Button
-							size="sm"
-							disabled={!active || busy || cleanupPending}
-							onClick={() => void play()}
-						>
-							{t("moqPlayback.play")}
-						</Button>
-						<Button
-							size="sm"
-							variant="secondary"
-							disabled={!busy || phase === "stopping"}
-							onClick={() => void stop()}
-						>
-							{t("moqPlayback.stop")}
-						</Button>
+				<div
+					data-moq-live-layout
+					className="grid min-w-0 items-start gap-5 @3xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
+				>
+					<div className="min-w-0 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/35">
+						<div className="relative">
+							<section
+								ref={host}
+								data-moq-live-host={runId}
+								aria-label={t("moqPlayback.title")}
+								className="aspect-video w-full overflow-hidden bg-black [&_canvas]:h-full [&_canvas]:w-full [&_canvas]:object-contain [&_video]:h-full [&_video]:w-full [&_video]:object-contain"
+							/>
+							{!busy && active ? (
+								<div className="absolute inset-0 grid place-items-center">
+									<Button
+										size="default"
+										disabled={cleanupPending}
+										onClick={() => void play()}
+									>
+										<Play aria-hidden className="size-4" />
+										{t("moqPlayback.play")}
+									</Button>
+								</div>
+							) : null}
+						</div>
+						<div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+							{!active ? (
+								<Button size="sm" disabled>
+									{t("moqPlayback.play")}
+								</Button>
+							) : null}
+							{busy ? (
+								<Button
+									size="sm"
+									variant="secondary"
+									disabled={phase === "stopping"}
+									onClick={() => void stop()}
+								>
+									<Square aria-hidden className="size-3" />
+									{t("moqPlayback.stop")}
+								</Button>
+							) : null}
+							<span
+								role={phase === "failed" ? "alert" : "status"}
+								aria-live="polite"
+								className={
+									phase === "failed"
+										? "text-xs text-red-300"
+										: "text-xs text-zinc-400"
+								}
+							>
+								{t(`moqPlayback.${phase}`)}
+							</span>
+							{statistics.resolution ? (
+								<span
+									data-moq-resolution
+									className="text-xs text-zinc-400 tabular-nums"
+								>
+									{statistics.resolution}
+								</span>
+							) : null}
+							{cleanupPending && !busy ? (
+								<span className="text-xs text-zinc-400">
+									{t("moqPlayback.cleanupPending")}
+								</span>
+							) : null}
+							{active && !standalone ? (
+								<Link
+									href={`/live/${channelId}/runs/${runId}/moq#moq-preview`}
+									className="text-xs text-zinc-300 underline underline-offset-2 sm:ml-auto"
+								>
+									{t("moqPlayback.openPlayer")}
+								</Link>
+							) : null}
+						</div>
 					</div>
-					<span
-						role={phase === "failed" ? "alert" : "status"}
-						aria-live="polite"
-						className={
-							phase === "failed"
-								? "text-xs text-red-300"
-								: "text-xs text-zinc-400"
-						}
-					>
-						{t(`moqPlayback.${phase}`)}
-					</span>
-					{cleanupPending && !busy ? (
-						<span className="text-xs text-zinc-400">
-							{t("moqPlayback.cleanupPending")}
-						</span>
-					) : null}
-					{!standalone ? (
-						<Link
-							href={`/live/${channelId}/runs/${runId}/moq`}
-							className="text-xs text-zinc-300 underline underline-offset-2 sm:ml-auto"
+					{active ? (
+						<div
+							data-moq-live-metrics
+							className="min-w-0 space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/35 p-3"
 						>
-							{t("moqPlayback.openPlayer")}
-						</Link>
+							<MoqViewerMetrics
+								samples={samples}
+								startedAt={trace?.startedAt ?? ""}
+								live
+							/>
+							<MoqEncoderHistory
+								heartbeat={heartbeat}
+								status={
+									observations.isError
+										? "error"
+										: observations.isPending
+											? "pending"
+											: undefined
+								}
+							/>
+						</div>
 					) : null}
 				</div>
-				<section
-					ref={host}
-					data-moq-live-host={runId}
-					aria-label={t("moqPlayback.title")}
-					className="relative aspect-video w-full overflow-hidden rounded-md border border-zinc-800 bg-black [&_canvas]:h-full [&_canvas]:w-full [&_canvas]:object-contain [&_video]:h-full [&_video]:w-full [&_video]:object-contain"
-				/>
-				<MoqClientPlaybackClock
-					mode="live"
-					active={active && phase === "frames"}
-				/>
-				{trace ? (
-					<MoqPlaybackStages
-						startedAt={trace.startedAt}
-						events={trace.events}
-						latest={trace.latest}
-					/>
+				{active && phase === "frames" ? (
+					<MoqClientPlaybackClock mode="live" active />
 				) : null}
-				<MoqPlayerStatistics
-					statistics={statistics}
-					configuration={configuration}
-					relay={relay}
-				/>
+				{trace || configuration || relay ? (
+					<details className="min-w-0 text-xs">
+						<summary className="cursor-pointer text-zinc-400">
+							{t("moqPlayback.playerDetails")}
+						</summary>
+						<div className="mt-2 space-y-2">
+							{trace ? (
+								<MoqPlaybackStages
+									startedAt={trace.startedAt}
+									events={trace.events}
+									latest={trace.latest}
+								/>
+							) : null}
+							<MoqPlayerStatistics
+								statistics={statistics}
+								configuration={configuration}
+								relay={relay}
+								detailsOnly
+							/>
+						</div>
+					</details>
+				) : null}
 				<div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500">
 					{recordingState !== "saving" && recordingState !== "unconfirmed" ? (
 						<p
@@ -438,12 +544,13 @@ function MoqPlaybackAttempt({
 					</p>
 				</div>
 			</details>
-			{active ? (
+			{active && (observations.data?.sessions.length || archiveSaves.length) ? (
 				<MoqHistoryPanel
 					key="history-active"
 					channelId={channelId}
 					runId={runId}
 					active
+					hideEncoder
 					archiveSaves={archiveSaves}
 				/>
 			) : null}

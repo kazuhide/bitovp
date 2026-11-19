@@ -15,7 +15,8 @@ vi.mock("recharts", () => ({
 	LineChart: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
-	Line: () => null,
+	Line: ({ dataKey }: { dataKey: string }) => <span data-series={dataKey} />,
+	ReferenceLine: () => null,
 	Legend: () => null,
 	XAxis: () => null,
 	YAxis: () => null,
@@ -164,6 +165,7 @@ describe("saved MoQ history and received video", () => {
 		const summary = await screen.findByText("Playback stages");
 		expect(summary.parentElement).toHaveTextContent("First frame → Failed");
 		expect(summary.parentElement).toHaveTextContent("00:00:03.500 UTC");
+		fireEvent.click(screen.getByText("More observations"));
 		fireEvent.click(summary);
 		const firstFrame = rendered.container.querySelector(
 			'[data-moq-playback-stage="first-frame"] time',
@@ -277,28 +279,69 @@ describe("saved MoQ history and received video", () => {
 			expect(requestSignal?.aborted).toBe(false);
 		}
 	});
-	it("keeps secondary measurements collapsed without an Encoder Heartbeat link", async () => {
+	it("shows recorded player plots together without an Encoder Heartbeat link", async () => {
 		const rendered = renderWithQuery(view());
-		await screen.findByText("Video latency (barcode) (ms · UTC)");
+		await screen.findByText("Video latency (barcode)");
 		expect(
 			screen.queryByRole("link", { name: "Encoder Push / Heartbeat" }),
 		).toBeNull();
 		expect(
 			rendered.container.querySelector("[data-moq-encoder-history]"),
 		).toBeNull();
-		expect(
-			rendered.container.querySelector('[data-moq-chart="latencyMs"]'),
-		).toBeVisible();
-		expect(
-			rendered.container.querySelector('[data-moq-chart="fps"]'),
-		).not.toBeVisible();
-		expect(
-			rendered.container.querySelector('[data-moq-chart="bufferSeconds"]'),
-		).not.toBeVisible();
-		fireEvent.click(screen.getByText("More observations"));
-		for (const plot of rendered.container.querySelectorAll("[data-moq-chart]"))
-			expect(plot).toBeVisible();
+		for (const plot of ["latencyMs", "fps", "bufferSeconds"])
+			expect(
+				rendered.container.querySelector(
+					`[data-moq-history-metrics] [data-moq-chart="${plot}"]`,
+				),
+			).toBeVisible();
 	});
+	it("retains recorded encoder input even when no playback session has been saved", async () => {
+		const response = await mocks.api();
+		response.sessions = [];
+		response.heartbeat.points = [
+			{
+				observedAt: at,
+				sampledAt: at,
+				source: "poll",
+				ingestStatus: "CONNECTED",
+				ingestHealthy: true,
+				videoIncomingBitrateBps: 2_000_000,
+				audioIncomingBitrateBps: null,
+				videoFps: null,
+				droppedPacketsVideo: null,
+				droppedPacketsAudio: null,
+				corruptPacketsVideo: null,
+				corruptPacketsAudio: null,
+				segmentProcessingMeanMs: null,
+				segmentProcessingMinMs: null,
+				segmentProcessingMaxMs: null,
+			},
+		];
+		mocks.api.mockResolvedValue(response);
+		const rendered = renderWithQuery(view());
+		await screen.findByText(/No saved (playback )?observations/);
+		expect(
+			rendered.container.querySelector("[data-moq-encoder-history]"),
+		).toBeVisible();
+		expect(rendered.container.querySelector("video")).toBeNull();
+
+		rendered.rerender(
+			<MoqHistoryPanel channelId={CHANNEL} runId={RUN} active hideEncoder />,
+		);
+		expect(
+			rendered.container.querySelector("[data-moq-encoder-history]"),
+		).toBeNull();
+	});
+
+	it("keeps the browser event stages behind the observation disclosure", async () => {
+		renderWithQuery(view());
+		const stages = await screen.findByText("Playback stages");
+		expect(stages).not.toBeVisible();
+		fireEvent.click(screen.getByText("More observations"));
+		expect(stages).toBeVisible();
+		expect(screen.getByText(/Browser observations/)).toBeVisible();
+	});
+
 	it("renders zero-sample history compactly without empty plots or a duplicate encoder dashboard", async () => {
 		const response = await mocks.api();
 		response.sessions[0].samples = [];
@@ -317,11 +360,7 @@ describe("saved MoQ history and received video", () => {
 		response.sessions[0].samples[0].fps = 2;
 		mocks.api.mockResolvedValue(response);
 		renderWithQuery(view());
-		expect(
-			await screen.findByText("Canvas image updates (/s · UTC)"),
-		).not.toBeVisible();
-		fireEvent.click(screen.getByText("More observations"));
-		expect(screen.getByText("Canvas image updates (/s · UTC)")).toBeVisible();
+		expect(await screen.findByText("Canvas image updates")).toBeVisible();
 		expect(
 			screen.getByRole("button", {
 				name: "Canvas image updates — more information",
@@ -329,7 +368,7 @@ describe("saved MoQ history and received video", () => {
 		).toHaveAccessibleDescription(
 			/image updates|image changes|distinct images/i,
 		);
-		expect(screen.queryByText("Video FPS (fps · UTC)")).toBeNull();
+		expect(screen.queryByText("Video FPS")).toBeNull();
 	});
 	it.each([
 		"video",
@@ -345,8 +384,18 @@ describe("saved MoQ history and received video", () => {
 		});
 		mocks.api.mockResolvedValue(response);
 		renderWithQuery(view());
-		fireEvent.click(await screen.findByText("More observations"));
-		expect(screen.getByText("Frame observations (/s · UTC)")).toBeVisible();
+		const info = await screen.findByRole("button", {
+			name: "Frame observations — more information",
+		});
+		const plot = info.closest("figure");
+		const lines = [...(plot?.querySelectorAll("[data-series]") ?? [])].map(
+			(line) => line.getAttribute("data-series"),
+		);
+		expect(lines).toEqual(
+			source
+				? ["videoFps", "canvasUpdates"]
+				: ["canvasUpdates", "legacyFrameRate"],
+		);
 		expect(
 			screen.getByRole("button", {
 				name: "Frame observations — more information",
@@ -389,11 +438,11 @@ describe("saved MoQ history and received video", () => {
 		});
 		mocks.api.mockResolvedValue(response);
 		renderWithQuery(view());
-		fireEvent.click(await screen.findByText("More observations"));
-		expect(screen.getByText(`${label} (s · UTC)`)).toBeVisible();
-		expect(
-			screen.getByRole("button", { name: `${label} — more information` }),
-		).toHaveAccessibleDescription(/Player Web X/);
+		const info = await screen.findByRole("button", {
+			name: `${label} — more information`,
+		});
+		expect(info.closest("figure")).toBeVisible();
+		expect(info).toHaveAccessibleDescription(/Player Web X/);
 	});
 	it("keeps an ended run's graphs and seekable received archive available on the same authenticated endpoint", async () => {
 		const rendered = renderWithQuery(view());
@@ -417,7 +466,7 @@ describe("saved MoQ history and received video", () => {
 		expect(video?.controls).toBe(true);
 		expect(
 			video?.compareDocumentPosition(
-				screen.getByText("Video latency (barcode) (ms · UTC)"),
+				screen.getByText("Video latency (barcode)"),
 			),
 		).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 		expect(
@@ -471,15 +520,16 @@ describe("saved MoQ history and received video", () => {
 		).toBeInTheDocument();
 		expect(rendered.container.querySelector("video")).toBeNull();
 	});
-	it("shows an unmeasured field instead of an empty chart and names the browser UTC clock", async () => {
+	it("omits unavailable latency without an empty plot and names the browser UTC clock", async () => {
 		const response = await mocks.api();
 		response.sessions[0].samples[0].latencyMs = null;
 		mocks.api.mockResolvedValue(response);
 		renderWithQuery(
 			<MoqHistoryPanel channelId={CHANNEL} runId={RUN} active={false} />,
 		);
-		expect(await screen.findByText("Unmeasured")).toBeInTheDocument();
-		expect(screen.queryByText("Video latency (barcode) (ms · UTC)")).toBeNull();
+		expect(await screen.findByText("Frame observations")).toBeVisible();
+		expect(screen.queryByText("Unmeasured")).toBeNull();
+		expect(screen.queryByText("Video latency (barcode)")).toBeNull();
 		expect(
 			screen.getByRole("button", {
 				name: "Saved MoQ observations — more information",

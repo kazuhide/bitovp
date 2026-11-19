@@ -15,7 +15,10 @@
  * `focus` on an element with no tabindex is a silent no-op, which is the
  * shape of bug this whole function exists to remove.
  */
-export function focusLiveSection(targetId: string): boolean {
+export function focusLiveSection(
+	targetId: string,
+	{ moveFocus = true }: { moveFocus?: boolean } = {},
+): boolean {
 	if (typeof document === "undefined") {
 		return false;
 	}
@@ -23,6 +26,9 @@ export function focusLiveSection(targetId: string): boolean {
 	// The playback URL opens its contents on arrival and on later fragment changes.
 	if (targetId === "sec-manifests" && section instanceof HTMLDetailsElement) {
 		section.open = true;
+	}
+	if (!moveFocus) {
+		return false;
 	}
 	const target = document.getElementById(`${targetId}-h`) ?? section;
 	if (!(target instanceof HTMLElement)) {

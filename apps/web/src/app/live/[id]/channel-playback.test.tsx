@@ -628,6 +628,62 @@ describe("ChannelDetail — live playback preview", () => {
 			window.history.replaceState(null, "", url);
 		}
 	});
+
+	it.each([
+		"MoQ",
+		"HLS",
+	] as const)("opens a %s fragment while retaining the focused skip link when the session is ready first", async (output) => {
+		const at = new Date().toISOString();
+		mockChannel({
+			status: "STOPPED",
+			currentRun: {
+				...confirmedRun("RUNNING"),
+				status: "STOPPED",
+				providerStatus: "FINISHED",
+				providerTerminalAt: at,
+				endedAt: at,
+				stepLog: output === "MoQ" ? [MOQ_STEP] : [],
+			},
+			playbackLinks: output === "HLS" ? [link()] : [],
+		});
+		mockRole("OPERATOR");
+		const channelReady = Promise.withResolvers<void>();
+		const fixture = apiFetch.getMockImplementation();
+		apiFetch.mockImplementation(async (request: string) => {
+			if (request === `/api/live-channels/${CHANNEL}`)
+				await channelReady.promise;
+			return fixture?.(request);
+		});
+
+		const url = window.location.href;
+		window.history.replaceState(null, "", "#sec-manifests");
+		try {
+			const { client } = wrap(
+				<>
+					<a href="#main">Skip to content</a>
+					<ChannelDetail id={CHANNEL} />
+				</>,
+			);
+			const skip = screen.getByRole("link", { name: "Skip to content" });
+			skip.focus();
+			await waitFor(() =>
+				expect(client.getQueryData(["auth", "session"])).toMatchObject({
+					role: "OPERATOR",
+				}),
+			);
+			expect(
+				screen.queryByRole("heading", { name: "Verification channel" }),
+			).toBeNull();
+
+			await act(async () => channelReady.resolve());
+			await screen.findByRole("heading", { name: "Verification channel" });
+			expect(document.getElementById("sec-manifests")).toHaveAttribute("open");
+			expect(skip).toHaveFocus();
+		} finally {
+			channelReady.resolve();
+			window.history.replaceState(null, "", url);
+		}
+	});
 	/* Verify the current information hierarchy rather than restoring the former all-collapsed layout. */
 	it("opens with ONE thing to do, and its anchor points at a section that exists (review-260 126-A2)", async () => {
 		// RUNNING + no heartbeat ⇒ ingest unproven ⇒ CONNECT_INPUT.

@@ -44,14 +44,13 @@ export function DeepLinkFocus({
 }) {
 	const pendingPlaybackFocus = useRef(false);
 	useEffect(() => {
-		const focusFromHash = (allowDeferredPlayback: boolean) => {
+		const focusFromHash = (allowPlaybackFocus: boolean) => {
 			const hash = window.location.hash.slice(1);
+			const playback = hash === "sec-manifests";
 			pendingPlaybackFocus.current =
-				allowDeferredPlayback &&
-				hash === "sec-manifests" &&
-				!document.getElementById(hash);
+				allowPlaybackFocus && playback && !document.getElementById(hash);
 			if (hash.length > 0) {
-				focusLiveSection(hash);
+				focusLiveSection(hash, { moveFocus: !playback || allowPlaybackFocus });
 			}
 		};
 		const handleHashChange = () => focusFromHash(true);

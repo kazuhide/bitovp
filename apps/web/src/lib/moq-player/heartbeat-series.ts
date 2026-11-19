@@ -19,7 +19,16 @@ export function moqHeartbeatSeries(points: readonly MoqHeartbeatPoint[]) {
 	}));
 }
 
-type SegmentSample = Omit<MoqPushOutput, "sampledAt"> & { timestamp: number };
+type SegmentMeasurements = Omit<MoqPushOutput, "sampledAt">;
+type SegmentSample = SegmentMeasurements & { timestamp: number };
+
+function measured(point: SegmentMeasurements) {
+	return (
+		point.segmentProcessingMeanMs !== null ||
+		point.segmentProcessingMinMs !== null ||
+		point.segmentProcessingMaxMs !== null
+	);
+}
 
 export function moqOutputSeries(history: MoqHeartbeatHistory): SegmentSample[] {
 	const byTime = new Map<number, SegmentSample>();
@@ -29,21 +38,20 @@ export function moqOutputSeries(history: MoqHeartbeatHistory): SegmentSample[] {
 	}
 	for (const point of history.points) {
 		const timestamp = Date.parse(point.sampledAt ?? point.observedAt);
-		const previous = byTime.get(timestamp);
+		const existing = byTime.get(timestamp);
+		// A timed Push sample outranks a collision with the time of an API read.
+		// A Poll with the same explicit sample time may replace it as a whole.
+		if (
+			existing &&
+			measured(existing) &&
+			(!point.sampledAt || !measured(point))
+		)
+			continue;
 		byTime.set(timestamp, {
 			timestamp,
-			segmentProcessingMeanMs:
-				point.segmentProcessingMeanMs ??
-				previous?.segmentProcessingMeanMs ??
-				null,
-			segmentProcessingMinMs:
-				point.segmentProcessingMinMs ??
-				previous?.segmentProcessingMinMs ??
-				null,
-			segmentProcessingMaxMs:
-				point.segmentProcessingMaxMs ??
-				previous?.segmentProcessingMaxMs ??
-				null,
+			segmentProcessingMeanMs: point.segmentProcessingMeanMs,
+			segmentProcessingMinMs: point.segmentProcessingMinMs,
+			segmentProcessingMaxMs: point.segmentProcessingMaxMs,
 		});
 	}
 	return [...byTime.values()].sort((a, b) => a.timestamp - b.timestamp);

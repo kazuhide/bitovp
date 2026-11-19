@@ -40,6 +40,10 @@ export function MoqEncoderHistory({
 			point.corruptPacketsAudio !== null,
 	);
 	const title = t("moqEncoder.title");
+	const outputHelp = t("moqEncoder.outputHelp");
+	const readIssue = heartbeat.pushOutputReadFailed
+		? t("moqEncoder.pushReadFailed")
+		: null;
 	return (
 		<section
 			aria-labelledby={labelId}
@@ -159,8 +163,11 @@ export function MoqEncoderHistory({
 						id="segmentProcessing"
 						label={t("moqEncoder.segmentProcessing")}
 						points={output}
-						help={t("moqEncoder.outputHelp")}
-						emptyLabel={t(active ? "status.awaitingData" : "moqEncoder.empty")}
+						help={readIssue ? `${outputHelp} ${readIssue}` : outputHelp}
+						emptyLabel={
+							readIssue ??
+							t(active ? "status.awaitingData" : "moqEncoder.empty")
+						}
 						lines={[
 							{
 								field: "segmentProcessingMeanMs",

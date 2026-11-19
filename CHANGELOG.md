@@ -6,6 +6,8 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-11-20
+
 ### Changed
 
 - Group the Live channel controls, omit unavailable summary values and redundant jumps, and make the Encoding ID easy to copy in Live and VOD.
@@ -24,6 +26,10 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Keep Live input coordinates and their copy buttons within the page on narrow screens.
 - Restore focus after closing the enlarged VOD player.
 - Keep Bitmovin status reads moving while Live channel starts occupy the action slots.
+
+### Security
+
+- Use the patched Effect version in Prisma tooling for [GHSA-7589-6fvf-x4pw](https://github.com/advisories/GHSA-7589-6fvf-x4pw).
 
 ## [1.3.2] - 2026-11-19
 
@@ -354,6 +360,7 @@ instructions.
 Record implemented changes under **Unreleased** until their tagged release is
 published.
 
+[1.3.3]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.3
 [1.3.2]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.2
 [1.3.1]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.1
 [1.3.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.0

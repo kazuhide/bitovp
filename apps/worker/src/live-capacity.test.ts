@@ -36,6 +36,17 @@ function job(
 	} as unknown as Job;
 }
 
+function heartbeatSweep(id: string) {
+	return {
+		id,
+		name: "heartbeat-sweep",
+		repeatJobKey: "live-heartbeat-sweep",
+		data: { systemSweep: "heartbeat" },
+		token: "sweep-token",
+		moveToDelayed: vi.fn(async () => {}),
+	} as unknown as Job;
+}
+
 describe("Live worker concurrency", () => {
 	it.each([
 		undefined,
@@ -161,14 +172,7 @@ describe("Live reserved stop capacity", () => {
 		const hold = barrier();
 		const normal = job();
 		const stop = job("stop");
-		const sweep = {
-			id: "sweep",
-			name: "heartbeat-sweep",
-			repeatJobKey: "live-heartbeat-sweep",
-			data: { systemSweep: "heartbeat" },
-			token: "sweep-token",
-			moveToDelayed: vi.fn(async () => {}),
-		} as unknown as Job;
+		const sweep = heartbeatSweep("sweep");
 		const entered: Job[] = [];
 		const process = reserveLiveStopCapacity(2, async (current) => {
 			entered.push(current);
@@ -183,6 +187,46 @@ describe("Live reserved stop capacity", () => {
 			await expect(process(sweep)).rejects.toBeInstanceOf(DelayedError);
 			expect(entered).toHaveLength(3);
 		} finally {
+			hold.release();
+			await Promise.allSettled(active);
+		}
+	});
+
+	it("lets a later heartbeat sweep use spare normal capacity while keeping a stop slot", async () => {
+		const slowSweep = heartbeatSweep("slow-sweep");
+		const nextSweep = heartbeatSweep("next-sweep");
+		const normal = job();
+		const stop = job("stop");
+		const slow = barrier();
+		const hold = barrier();
+		const entered: Job[] = [];
+		const process = reserveLiveStopCapacity(3, async (current) => {
+			entered.push(current);
+			if (current === slowSweep) await slow.promise;
+			if (current === nextSweep || current === normal || current === stop) {
+				await hold.promise;
+			}
+			return current.id;
+		});
+		const first = process(slowSweep);
+		const active = [first, process(normal), process(nextSweep)];
+		try {
+			expect(entered).toEqual([slowSweep, normal, nextSweep]);
+			await expect(process(heartbeatSweep("overflow"))).rejects.toBeInstanceOf(
+				DelayedError,
+			);
+			const restart = job("restart");
+			await expect(process(restart)).rejects.toBeInstanceOf(DelayedError);
+			active.push(process(stop));
+			expect(entered).toEqual([slowSweep, normal, nextSweep, stop]);
+			await expect(process(job("stop"))).rejects.toBeInstanceOf(DelayedError);
+
+			slow.release();
+			await expect(first).resolves.toBe(slowSweep.id);
+			await expect(process(restart)).resolves.toBe(restart.id);
+			expect(entered).toEqual([slowSweep, normal, nextSweep, stop, restart]);
+		} finally {
+			slow.release();
 			hold.release();
 			await Promise.allSettled(active);
 		}

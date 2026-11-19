@@ -150,7 +150,8 @@ describe("catalogue parity", () => {
 		// Availability wording and measurement sources (runtime measured: 3421).
 		// Source, session, and player controls for MoQ (runtime measured: 3428).
 		// Report origin, run details and comparison conditions (runtime measured: 3431).
-		pinWithDriftAid(short.size, 3431, "short");
+		// Live input availability and Push read failure (runtime measured: 3433).
+		pinWithDriftAid(short.size, 3433, "short");
 	});
 
 	/**

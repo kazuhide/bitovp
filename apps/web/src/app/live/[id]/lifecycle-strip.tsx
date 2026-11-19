@@ -57,6 +57,7 @@ export type ProviderLifecycleView = {
 export function LifecycleStrip({
 	status,
 	ingestConnected,
+	monitoringAllowed = true,
 	hasEncoding,
 	hasError = false,
 	provider,
@@ -64,6 +65,7 @@ export function LifecycleStrip({
 	status: LiveChannelStatus;
 	/** null means this run has no input connection observation. */
 	ingestConnected: boolean | null;
+	monitoringAllowed?: boolean;
 	/**
 	 * review-228 I3: an ERROR channel can still have an encoder up on
 	 * Bitmovin (canStop exists for exactly that) — the ① hint must not
@@ -83,13 +85,22 @@ export function LifecycleStrip({
 }) {
 	const { t } = useT();
 	const providerTerminal = provider?.terminal === true;
-	const active = providerTerminal ? 7 : lifecycleStage(status, ingestConnected);
+	const inputUnavailable =
+		!providerTerminal && status === "RUNNING" && !monitoringAllowed;
+	const active = providerTerminal
+		? 7
+		: inputUnavailable
+			? null
+			: lifecycleStage(status, ingestConnected);
 	const visibleStages = providerTerminal ? STAGE_DEFS.slice(-1) : STAGE_DEFS;
 	const showTimelineOnSmallScreens =
 		status === "CREATED" || status === "PROVISIONING";
 	const activeDef = STAGE_DEFS.find((s) => s.n === active);
 	const inputUnobserved =
-		!providerTerminal && status === "RUNNING" && ingestConnected === null;
+		!providerTerminal &&
+		status === "RUNNING" &&
+		monitoringAllowed &&
+		ingestConnected === null;
 	const providerUnknown = !providerTerminal && provider?.unknown === true;
 	// A terminal legacy row is historical, not waiting for a future poll.
 	const providerUnobserved =
@@ -141,7 +152,7 @@ export function LifecycleStrip({
 					: t("lifecycle.s7Hint")
 				: errorWithEncoder
 					? t("lifecycle.s1ErrorHint")
-					: inputUnobserved
+					: inputUnobserved || inputUnavailable
 						? t("lifecycle.inputUnobservedHint")
 						: t(activeDef?.hintKey ?? "lifecycle.s1Hint");
 	return (
@@ -158,55 +169,61 @@ export function LifecycleStrip({
 							: undefined
 			}
 		>
-			<ol className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
-				{visibleStages.map((stage) => {
-					const state =
-						stage.n === active
-							? "active"
-							: stage.n < active
-								? "past"
-								: "future";
-					return (
-						<li
-							key={stage.n}
-							data-stage={stage.n}
-							data-state={state}
-							aria-current={state === "active" ? "step" : undefined}
-							className={`${state === "active" || showTimelineOnSmallScreens ? "flex" : "hidden sm:flex"} items-center gap-1.5`}
-						>
-							<span
-								aria-hidden
-								className={`size-1.5 shrink-0 rounded-full ${
-									state === "active" && !activeUnconfirmed
-										? "bg-sky-400"
-										: state === "future"
-											? "border border-zinc-500"
-											: "bg-zinc-500"
-								}`}
-							/>
-							<span
-								className={
-									state === "active"
-										? activeUnconfirmed
-											? "font-medium text-zinc-200"
-											: "font-medium text-sky-300"
-										: "text-zinc-400"
-								}
+			{inputUnavailable ? (
+				<span className="text-xs text-zinc-400">
+					{t("lifecycle.inputUnavailable")}
+				</span>
+			) : (
+				<ol className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+					{visibleStages.map((stage) => {
+						const state =
+							stage.n === active
+								? "active"
+								: active !== null && stage.n < active
+									? "past"
+									: "future";
+						return (
+							<li
+								key={stage.n}
+								data-stage={stage.n}
+								data-state={state}
+								aria-current={state === "active" ? "step" : undefined}
+								className={`${state === "active" || showTimelineOnSmallScreens ? "flex" : "hidden sm:flex"} items-center gap-1.5`}
 							>
-								{t(
-									inputUnobserved && stage.n === 3
-										? "lifecycle.inputUnobserved"
-										: stage.n === 7 &&
-												status === "STOPPING" &&
-												!providerTerminal
-											? "nextAction.stoppingTitle"
-											: stage.labelKey,
-								)}
-							</span>
-						</li>
-					);
-				})}
-			</ol>
+								<span
+									aria-hidden
+									className={`size-1.5 shrink-0 rounded-full ${
+										state === "active" && !activeUnconfirmed
+											? "bg-sky-400"
+											: state === "future"
+												? "border border-zinc-500"
+												: "bg-zinc-500"
+									}`}
+								/>
+								<span
+									className={
+										state === "active"
+											? activeUnconfirmed
+												? "font-medium text-zinc-200"
+												: "font-medium text-sky-300"
+											: "text-zinc-400"
+									}
+								>
+									{t(
+										inputUnobserved && stage.n === 3
+											? "lifecycle.inputUnobserved"
+											: stage.n === 7 &&
+													status === "STOPPING" &&
+													!providerTerminal
+												? "nextAction.stoppingTitle"
+												: stage.labelKey,
+									)}
+								</span>
+							</li>
+						);
+					})}
+				</ol>
+			)}
 			<figcaption className="text-xs text-zinc-400">
 				<HelpOverlay labelFor={t("lifecycle.aria")}>{hint}</HelpOverlay>
 			</figcaption>

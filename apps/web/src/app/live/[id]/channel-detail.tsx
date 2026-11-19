@@ -665,6 +665,7 @@ function ChannelConsole({
 	const openAlerts: number | "unknown" = alertsUnavailable
 		? "unknown"
 		: (alerts.data?.open.length ?? 0);
+	const nextActionAllowed = monitoringAllowed || displayStatus !== "RUNNING";
 	const nextAction = liveNextAction({
 		//  PR3: the derived status — liveNextAction now speaks
 		// IDLE and answers STOPPED with START_NEW_RUN (the honest verb).
@@ -702,7 +703,7 @@ function ChannelConsole({
 		(section === "sec-analysis" &&
 			(selectedUnavailable || Boolean(selection) || analysisDeepLink)) ||
 		PHASE_DEFAULT_OPEN[phase].includes(section) ||
-		nextAction.section === section ||
+		(nextActionAllowed && nextAction.section === section) ||
 		(section === "sec-alerts" && criticalOpenAlert) ||
 		(section === "sec-steps" && hasFailedStep);
 	// the title-level help, read off the same table the
@@ -1721,6 +1722,7 @@ function ChannelConsole({
 					// spell CREATED.
 					status={displayStatus === "IDLE" ? "CREATED" : displayStatus}
 					ingestConnected={displayedInputConnection}
+					monitoringAllowed={monitoringAllowed}
 					hasEncoding={row.bitmovinEncodingId !== null}
 					hasError={Boolean(row.error)}
 					provider={{
@@ -1741,7 +1743,8 @@ function ChannelConsole({
 				 * it hands focus to the target's heading, so a keyboard operator
 			    lands where the panel just sent the page (audit §5.6). */}
 				{imported ||
-				(nextAction.code !== "START_NEW_RUN" &&
+				(nextActionAllowed &&
+					nextAction.code !== "START_NEW_RUN" &&
 					nextAction.code !== "PROVIDER_UNKNOWN" &&
 					(nextAction.code !== "RECOVER_FROM_ERROR" ||
 						!row.bitmovinEncodingId) &&
@@ -1761,6 +1764,7 @@ function ChannelConsole({
 						readOnly={imported}
 						stepsAvailable={!omittedSections.includes("sec-steps")}
 						inputUnconfirmed={
+							monitoringAllowed &&
 							displayedInputConnection === null &&
 							nextAction.code === "CONNECT_INPUT"
 						}

@@ -47,6 +47,7 @@ export const moqHeartbeatHistorySchema = z.strictObject({
 	points: z.array(moqHeartbeatPointSchema).max(600),
 	// Separate from Poll so a burst of Push receipts cannot evict input history.
 	pushOutput: z.array(moqPushOutputPointSchema).max(600).optional(),
+	pushOutputReadFailed: z.literal(true).optional(),
 	truncated: z.boolean(),
 });
 

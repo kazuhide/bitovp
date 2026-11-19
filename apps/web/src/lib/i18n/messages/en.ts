@@ -1143,6 +1143,7 @@ export const en = {
 		output: "Output",
 		outputHelp:
 			"Segment processing times reported by Bitmovin Live Heartbeat via Poll or signed Push. Times are UTC.",
+		pushReadFailed: "Could not load Push measurements.",
 		inputPackets: "Input packet errors (cumulative)",
 		video: "Video",
 		audio: "Audio",
@@ -3308,6 +3309,7 @@ export const en = {
 		providerTerminalHint:
 			"Bitmovin reported this run's encoding {status} at {at}.",
 		inputUnobserved: "Waiting for input data",
+		inputUnavailable: "No input data",
 		inputUnobservedHint:
 			"Input connection status is not available for this run.",
 		s2: "Instance booting",

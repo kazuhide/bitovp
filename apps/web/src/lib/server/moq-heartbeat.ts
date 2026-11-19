@@ -116,22 +116,27 @@ export async function readMoqHeartbeatHistory(
 			select: { at: true, raw: true },
 		}),
 		includePushOutput
-			? prisma.webhookEvent.findMany({
-					where: {
-						source: "bitmovin",
-						eventType: "LIVE_ENCODING_HEARTBEAT",
-						signatureValid: true,
-						liveChannelRunId: runId,
-						raw: { path: ["encoding", "id"], equals: encodingId },
-						receivedAt: { gte: run.createdAt, lte: now },
-					},
-					orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
-					take: MAX_POINTS + 1,
-					select: { receivedAt: true, raw: true },
-				})
+			? prisma.webhookEvent
+					.findMany({
+						where: {
+							source: "bitmovin",
+							eventType: "LIVE_ENCODING_HEARTBEAT",
+							signatureValid: true,
+							// Only the dedicated heartbeat receiver records this identity.
+							receiverTokenHash: { not: null },
+							liveChannelRunId: runId,
+							raw: { path: ["encoding", "id"], equals: encodingId },
+							receivedAt: { gte: run.createdAt, lte: now },
+						},
+						orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
+						take: MAX_POINTS + 1,
+						select: { receivedAt: true, raw: true },
+					})
+					.catch(() => null)
 			: Promise.resolve([]),
 	]);
-	let truncated = rows.length > MAX_POINTS || receipts.length > MAX_POINTS;
+	const push = receipts ?? [];
+	let truncated = rows.length > MAX_POINTS || push.length > MAX_POINTS;
 	const points = rows
 		.slice(0, MAX_POINTS)
 		.reverse()
@@ -159,22 +164,25 @@ export async function readMoqHeartbeatHistory(
 		points.splice(0, points.length - MAX_POINTS);
 		truncated = true;
 	}
-	// These are the same provider measurements as Poll. Use provider sample time
-	// to keep a signed retry from looking like new activity on the output graph.
+	// Use provider sample time to collapse signed retries. Keep valid times
+	// without output measurements so the graph breaks at a recorded gap.
 	const output = new Map<string, MoqPushOutput>();
-	for (const row of receipts.slice(0, MAX_POINTS).reverse()) {
+	const measuredTimes = new Set<string>();
+	for (const row of push.slice(0, MAX_POINTS).reverse()) {
 		if (!validTime(row.receivedAt, run.createdAt, now)) continue;
 		const raw = safeHeartbeatReceipt(row.raw, encodingId);
-		if (!raw?.timestamp || output.has(raw.timestamp)) continue;
+		if (!raw?.timestamp || measuredTimes.has(raw.timestamp)) continue;
 		if (!validTime(new Date(raw.timestamp), run.createdAt, now)) continue;
 		const measured = segmentProcessing(raw);
-		if (Object.values(measured).every((value) => value === null)) continue;
+		if (Object.values(measured).some((value) => value !== null))
+			measuredTimes.add(raw.timestamp);
 		output.set(raw.timestamp, { sampledAt: raw.timestamp, ...measured });
 	}
 	return {
 		source: "live-encoder-heartbeat",
 		points,
 		truncated,
-		...(output.size ? { pushOutput: [...output.values()] } : {}),
+		...(measuredTimes.size ? { pushOutput: [...output.values()] } : {}),
+		...(receipts === null ? { pushOutputReadFailed: true as const } : {}),
 	};
 }

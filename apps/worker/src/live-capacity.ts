@@ -48,41 +48,37 @@ async function deferJob(job: Job): Promise<never> {
 
 /** Wrap the physical queue processor once, outside tenant dispatch. A permit
  * wait would still hold a BullMQ slot, so excess normal work must be delayed.
- * The trusted heartbeat scheduler gets a separate slot so long starts cannot
- * keep status readings stale. Tenant dispatch retains all ownership checks.
+ * One slot is reserved for the trusted heartbeat scheduler. Further sweeps
+ * can use spare normal capacity. Tenant dispatch retains all ownership checks.
  */
 export function reserveLiveStopCapacity<T>(
 	concurrency: number,
 	process: (job: Job) => Promise<T>,
 ): (job: Job) => Promise<T> {
 	assertConcurrency(concurrency);
-	let actionsActive = 0;
-	let normalActive = 0;
-	let heartbeatActive = 0;
+	const active = { heartbeat: 0, normal: 0, control: 0 };
 	return async (job) => {
-		if (isTenantSystemSweep("liveChannel", job)) {
-			if (heartbeatActive >= LIVE_HEARTBEAT_SLOTS) return deferJob(job);
-			heartbeatActive++;
-			try {
-				return await process(job);
-			} finally {
-				heartbeatActive--;
-			}
-		}
-		const normal = !isStopOrStartupCancellation(job);
+		const kind = isTenantSystemSweep("liveChannel", job)
+			? "heartbeat"
+			: isStopOrStartupCancellation(job)
+				? "control"
+				: "normal";
+		const usesHeartbeatSlot =
+			kind === "heartbeat" && active.heartbeat < LIVE_HEARTBEAT_SLOTS;
+		const normalUsed =
+			active.normal + Math.max(0, active.heartbeat - LIVE_HEARTBEAT_SLOTS);
 		if (
-			actionsActive >= concurrency ||
-			(normal && normalActive >= concurrency - 1)
+			!usesHeartbeatSlot &&
+			(normalUsed + active.control >= concurrency ||
+				(kind !== "control" && normalUsed >= concurrency - 1))
 		) {
 			return deferJob(job);
 		}
-		actionsActive++;
-		if (normal) normalActive++;
+		active[kind]++;
 		try {
 			return await process(job);
 		} finally {
-			actionsActive--;
-			if (normal) normalActive--;
+			active[kind]--;
 		}
 	};
 }

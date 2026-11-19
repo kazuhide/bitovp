@@ -1117,6 +1117,7 @@ export const ja = {
 		output: "配信出力",
 		outputHelp:
 			"Bitmovin Live Heartbeat の API 取得または署名済み Push から出力セグメントの処理時間を表示します。横軸は UTC です。",
+		pushReadFailed: "Push の計測値を読み込めませんでした。",
 		inputPackets: "入力パケット異常（累計）",
 		video: "映像",
 		audio: "音声",
@@ -3257,6 +3258,7 @@ export const ja = {
 		providerUnknownNever: "なし",
 		providerTerminalHint: "Bitmovin の確認結果は {status} です（{at}）。",
 		inputUnobserved: "入力データ待ち",
+		inputUnavailable: "入力データなし",
 		inputUnobservedHint: "この配信の入力接続状態は取得できていません。",
 		s2: "インスタンス起動中",
 		s2Hint:

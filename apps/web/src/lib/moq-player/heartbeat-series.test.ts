@@ -32,7 +32,7 @@ describe("Encoder heartbeat chart units", () => {
 		]);
 	});
 
-	it("joins simultaneous Poll and Push samples without averaging or shifting their measurements", () => {
+	it("chooses a complete sample record at a shared provider time", () => {
 		const sampledAt = "2026-11-18T00:59:55.000Z";
 		const newer = "2026-11-18T01:00:30.000Z";
 		const result = moqOutputSeries({
@@ -60,7 +60,7 @@ describe("Encoder heartbeat chart units", () => {
 			{
 				timestamp: Date.parse(sampledAt),
 				segmentProcessingMeanMs: 30,
-				segmentProcessingMinMs: 0,
+				segmentProcessingMinMs: null,
 				segmentProcessingMaxMs: 50,
 			},
 			{
@@ -70,5 +70,28 @@ describe("Encoder heartbeat chart units", () => {
 				segmentProcessingMaxMs: null,
 			},
 		]);
+	});
+
+	it("does not combine the statistics of a Push sample and an API read at the same clock time", () => {
+		const sampledAt = encoderPoint.observedAt;
+		const pushed = {
+			segmentProcessingMinMs: 40,
+			segmentProcessingMeanMs: 45,
+			segmentProcessingMaxMs: 50,
+		};
+		expect(
+			moqOutputSeries({
+				source: "live-encoder-heartbeat",
+				truncated: false,
+				points: [
+					{
+						...encoderPoint,
+						segmentProcessingMeanMs: 9,
+						segmentProcessingMaxMs: 10,
+					},
+				],
+				pushOutput: [{ sampledAt, ...pushed }],
+			}),
+		).toEqual([{ timestamp: Date.parse(sampledAt), ...pushed }]);
 	});
 });

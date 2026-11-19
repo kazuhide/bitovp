@@ -98,27 +98,45 @@ describe("MoQ run heartbeat history", () => {
 		expect(moqHeartbeatHistorySchema.safeParse(result).success).toBe(true);
 	});
 
-	it("recovers output measurements from bound signed Push receipts and deduplicates replays", async () => {
+	it("preserves signed Push output gaps and deduplicates replays", async () => {
 		const sampledAt = "2026-11-18T00:00:29.000Z";
-		const payload = (id: string, timestamp: string) => ({
+		const missingAt = "2026-11-18T00:00:34.000Z";
+		const resumedAt = "2026-11-18T00:00:38.000Z";
+		const payload = (id: string, timestamp: string, withOutput = true) => ({
 			eventType: "LIVE_ENCODING_HEARTBEAT",
 			webhookId: "33333333-3333-4333-8333-333333333333",
 			encoding: { id },
 			value: {
 				timestamp,
 				ingest: { status: "CONNECTED", healthy: true },
-				output: {
-					segments: {
-						totalProcessingStatsMs: { mean: 12, min: 0, max: 18 },
-						privateUrl: "private-token",
-					},
-				},
+				...(withOutput
+					? {
+							output: {
+								segments: {
+									totalProcessingStatsMs: { mean: 12, min: 0, max: 18 },
+									privateUrl: "private-token",
+								},
+							},
+						}
+					: {}),
 			},
 		});
 		const raw = payload(encodingId, sampledAt);
 		const { prisma, queries } = store([], {}, [
 			{ receivedAt: new Date("2026-11-18T00:00:42Z"), raw },
+			{
+				receivedAt: new Date("2026-11-18T00:00:40Z"),
+				raw: payload(encodingId, resumedAt),
+			},
+			{
+				receivedAt: new Date("2026-11-18T00:00:35Z"),
+				raw: payload(encodingId, missingAt, false),
+			},
 			{ receivedAt: at, raw },
+			{
+				receivedAt: new Date("2026-11-18T00:00:29.500Z"),
+				raw: payload(encodingId, sampledAt, false),
+			},
 			{ receivedAt: at, raw: payload(runId, sampledAt) },
 			{ receivedAt: at, raw: payload(encodingId, "2026-11-17T23:59:59Z") },
 			{ receivedAt: at, raw: payload(encodingId, "no-provider-time") },
@@ -134,6 +152,7 @@ describe("MoQ run heartbeat history", () => {
 					source: "bitmovin",
 					eventType: "LIVE_ENCODING_HEARTBEAT",
 					signatureValid: true,
+					receiverTokenHash: { not: null },
 					liveChannelRunId: runId,
 					raw: { path: ["encoding", "id"], equals: encodingId },
 					receivedAt: { gte: born, lte: now },
@@ -152,8 +171,38 @@ describe("MoQ run heartbeat history", () => {
 					segmentProcessingMinMs: 0,
 					segmentProcessingMaxMs: 18,
 				},
+				{
+					sampledAt: missingAt,
+					segmentProcessingMeanMs: null,
+					segmentProcessingMinMs: null,
+					segmentProcessingMaxMs: null,
+				},
+				{
+					sampledAt: resumedAt,
+					segmentProcessingMeanMs: 12,
+					segmentProcessingMinMs: 0,
+					segmentProcessingMaxMs: 18,
+				},
 			],
 		});
+		expect(moqHeartbeatHistorySchema.safeParse(result).success).toBe(true);
+	});
+
+	it("keeps the Poll history when the optional Push receipt read fails", async () => {
+		const raw = {
+			output: { segments: { totalProcessingStatsMs: { mean: 9 } } },
+		};
+		const { prisma, queries } = store([{ at, raw }]);
+		queries.webhookEvent.findMany.mockRejectedValueOnce(
+			new Error("private database error"),
+		);
+		const result = await readMoqHeartbeatHistory(prisma, runId, encodingId, {
+			now,
+			includePushOutput: true,
+		});
+		expect(result.points[0]?.segmentProcessingMeanMs).toBe(9);
+		expect(result.pushOutputReadFailed).toBe(true);
+		expect(result).not.toHaveProperty("pushOutput");
 		expect(moqHeartbeatHistorySchema.safeParse(result).success).toBe(true);
 	});
 

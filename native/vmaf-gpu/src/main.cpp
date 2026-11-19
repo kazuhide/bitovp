@@ -141,7 +141,8 @@ void write_output(const Options &o, const OracleResult &result, const FeaturePla
                   double finish_ms, const Parity &parity,
                   const std::map<std::string, std::string> &model_hashes,
                   const std::string &reference_hash, const std::string &distorted_hash,
-                  const std::optional<std::string> &decoder_runtime_sha256, bool gpu_driver_attested) {
+                  const std::optional<std::string> &decoder_runtime_sha256,
+                  const std::optional<std::string> &scoring_runtime_sha256) {
     std::ostringstream out;
     out.imbue(std::locale::classic());
     out << std::setprecision(17);
@@ -160,8 +161,9 @@ void write_output(const Options &o, const OracleResult &result, const FeaturePla
         << ",\"requestedDeviceIndex\":" << o.device.device_index
         << ",\"referenceSha256\":" << quoted(reference_hash) << ",\"distortedSha256\":" << quoted(distorted_hash);
     if (decoder_runtime_sha256) out << ",\"decoderRuntimeSha256\":" << quoted(*decoder_runtime_sha256);
-    if (gpu_driver_attested)
-        out << ",\"gpuDriver\":{\"driverVersion\":" << quoted(device.driver_version)
+    if (scoring_runtime_sha256)
+        out << ",\"scoringRuntimeSha256\":" << quoted(*scoring_runtime_sha256)
+            << ",\"gpuDriver\":{\"driverVersion\":" << quoted(device.driver_version)
             << ",\"driverVersionSource\":" << quoted(device.driver_version_source) << '}';
     out << ",\"distortedOriginal\":{\"width\":" << dist.source_info().width
         << ",\"height\":" << dist.source_info().height << ",\"bitdepth\":" << dist.source_info().bit_depth
@@ -322,12 +324,17 @@ int main(int argc, char **argv) {
             }
 #endif
             const auto device = backend->device();
-            std::optional<std::string> decoder_runtime_sha256;
-            if (runtime && decoder_runtime_unchanged(*runtime))
-                decoder_runtime_sha256 = runtime->sha256;
+            std::optional<std::string> decoder_runtime_sha256, scoring_runtime_sha256;
+            if (runtime) {
+                const auto configured = capture_decoder_runtime();
+                if (configured && decoder_runtime_preserved(*runtime, *configured)) {
+                    decoder_runtime_sha256 = runtime->sha256;
+                    scoring_runtime_sha256 = configured->sha256;
+                }
+            }
             std::cout << protocol::device_info(device, BITOVP_NATIVE_SOURCE_SHA256,
                                                oracle_source_revision, binary_hash, supervision,
-                                               decoder_runtime_sha256) << '\n';
+                                               decoder_runtime_sha256, scoring_runtime_sha256) << '\n';
             return 0;
         }
         if (options.metric == "cambi")
@@ -342,7 +349,8 @@ int main(int argc, char **argv) {
         const auto start = Clock::now();
         const bool resident_decode = options.decode == "cuda";
         const int decode_device = options.device.device_index < 0 ? 0 : options.device.device_index;
-        const auto decoder_runtime = options.attest_decoder_runtime ? capture_decoder_runtime() : std::nullopt;
+        const auto decoder_runtime = options.attest_decoder_runtime && options.inflight_frames == 1
+            ? capture_decoder_runtime() : std::nullopt;
         Decoder reference(options.reference, options.width, options.height, options.bits, options.decode_threads,
                           resident_decode, decode_device);
         const auto first = reference.source_info();
@@ -379,18 +387,12 @@ int main(int argc, char **argv) {
         } else backend = create_backend();
         if (backend) backend->configure(oracle.feature_plan());
         DeviceInfo configured_device;
-        if (decoder_open_stable && backend) configured_device = backend->device();
-        // Configure the GPU before taking this checkpoint. Initializing its
-        // device/driver can load GPU libraries without running the decoder.
-        // Additions or removals while opening or processing media make
-        // decoder attestation unavailable, including transient dlopen calls.
-        LoaderGeneration decode_generation{};
-        bool decode_generation_known = false;
+        std::optional<DecoderRuntime> scoring_runtime;
         if (decoder_open_stable) {
-            if (const auto checkpoint = runtime_loader_generation()) {
-                decode_generation = *checkpoint;
-                decode_generation_known = true;
-            }
+            if (backend) configured_device = backend->device();
+            auto configured = capture_decoder_runtime();
+            if (configured && decoder_runtime_preserved(*decoder_runtime, *configured))
+                scoring_runtime = std::move(*configured);
         }
         const double initialize_ms = elapsed(start);
         double extract_ms = 0;
@@ -438,12 +440,6 @@ int main(int argc, char **argv) {
         if (backend) oracle.import_scores(backend->flush());
         const auto result = oracle.finish(count);
         const double finish_ms = elapsed(finish_start);
-        std::optional<std::string> decoder_runtime_sha256;
-        if (decoder_runtime && decode_generation_known &&
-            same_loader_generation(decode_generation) &&
-            decoder_runtime_unchanged(*decoder_runtime) &&
-            same_loader_generation(decode_generation))
-            decoder_runtime_sha256 = decoder_runtime->sha256;
         Parity parity;
         if (baseline) parity = compare(baseline->finish(count), result);
         const double wall_ms = elapsed(start);
@@ -451,11 +447,20 @@ int main(int argc, char **argv) {
         device.backend = "cpu";
         device.name = "official libvmaf CPU";
         if (backend) device = backend->device();
+        std::optional<std::string> decoder_runtime_sha256;
+        if (decoder_runtime && scoring_runtime &&
+            same_loader_generation(scoring_runtime->generation) &&
+            decoder_runtime_unchanged(*scoring_runtime) &&
+            same_loader_generation(scoring_runtime->generation))
+            decoder_runtime_sha256 = decoder_runtime->sha256;
+        std::optional<std::string> scoring_runtime_sha256;
+        if (decoder_runtime_sha256 && scoring_runtime && same_gpu_driver(configured_device, device) &&
+            same_loader_generation(scoring_runtime->generation))
+            scoring_runtime_sha256 = scoring_runtime->sha256;
         write_output(options, result, oracle.feature_plan(), device,
                      backend ? backend->timings() : BackendTimings{}, reference, distorted,
                      wall_ms, initialize_ms, extract_ms, finish_ms, parity, model_hashes,
-                     reference_hash, distorted_hash, decoder_runtime_sha256,
-                     decoder_runtime_sha256 && same_gpu_driver(configured_device, device));
+                     reference_hash, distorted_hash, decoder_runtime_sha256, scoring_runtime_sha256);
         std::cout << "PASS " << options.backend << ": " << count << " frames, "
                   << options.models.size() << " models, " << wall_ms << " ms";
         if (options.verify) std::cout << ", CPU parity max feature=" << parity.max_feature_error

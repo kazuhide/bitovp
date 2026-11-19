@@ -13,6 +13,7 @@ export const nativeDeviceInfoSchema = z
 		officialSourceRevision: z.literal(NATIVE_OFFICIAL_REVISION),
 		backend: z.enum(["cuda", "vulkan"]),
 		decoderRuntimeSha256: sha256.optional(),
+		scoringRuntimeSha256: sha256.optional(),
 		device: z
 			.object({
 				index: bytes.max(256),

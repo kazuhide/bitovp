@@ -4734,6 +4734,7 @@ it("limits verified native results to the current organization's exact manual re
 					lookupKey,
 					receiptSha256,
 					decoderRuntimeSha256: "8".repeat(64),
+					scoringRuntimeSha256: "7".repeat(64),
 				},
 			};
 		});

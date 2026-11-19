@@ -64,7 +64,8 @@ inline std::string device_info(const DeviceInfo &device, const std::string &sour
                                const std::string &official_revision,
                                const std::optional<std::string> &binary,
                                const ProcessSupervisorInfo &supervisor = {},
-                               const std::optional<std::string> &decoder_runtime_sha256 = std::nullopt) {
+                               const std::optional<std::string> &decoder_runtime_sha256 = std::nullopt,
+                               const std::optional<std::string> &scoring_runtime_sha256 = std::nullopt) {
     if ((device.backend != "cuda" && device.backend != "vulkan") || device.index < 0 ||
         !hex_digest(device.uuid, 32) || device.uuid.find_first_not_of('0') == std::string::npos)
         throw std::invalid_argument("Device probe requires an identified hardware GPU");
@@ -90,6 +91,8 @@ inline std::string device_info(const DeviceInfo &device, const std::string &sour
     out << '}';
     if (decoder_runtime_sha256)
         out << ",\"decoderRuntimeSha256\":" << quoted(*decoder_runtime_sha256);
+    if (scoring_runtime_sha256)
+        out << ",\"scoringRuntimeSha256\":" << quoted(*scoring_runtime_sha256);
     out << '}';
     return out.str();
 }

@@ -19,6 +19,7 @@ extern "C" {
 #include <fstream>
 #include <iomanip>
 #include <link.h>
+#include <limits>
 #include <locale>
 #include <memory>
 #include <sstream>
@@ -54,27 +55,73 @@ private:
     std::unique_ptr<AVSHA, decltype(&av_free)> state_;
 };
 
+struct AddressRange {
+    std::uintptr_t start, end;
+    std::uintmax_t file_offset;
+};
+
+struct SharedObject {
+    std::string path;
+    std::uintptr_t executable_address{};
+    std::vector<AddressRange> executable_segments;
+};
+
 struct ExecutableMapping {
     std::uintptr_t start, end;
     unsigned int major, minor;
-    std::uintmax_t inode;
+    std::uintmax_t inode, file_offset;
+    bool covered = false;
 };
 
-std::vector<ExecutableMapping> executable_mappings() {
+std::optional<std::vector<ExecutableMapping>> executable_mappings() {
     std::vector<ExecutableMapping> mappings;
     std::ifstream maps("/proc/self/maps");
     for (std::string line; std::getline(maps, line);) {
         ExecutableMapping info{};
         char permissions[5]{};
-        std::uintmax_t offset = 0;
+        int path_offset = 0;
         if (std::sscanf(line.c_str(),
-                "%" SCNxPTR "-%" SCNxPTR " %4s %" SCNxMAX " %x:%x %" SCNuMAX,
-                &info.start, &info.end, permissions, &offset,
-                &info.major, &info.minor, &info.inode) == 7 &&
-            permissions[2] == 'x' && info.inode)
-            mappings.push_back(info);
+                "%" SCNxPTR "-%" SCNxPTR " %4s %" SCNxMAX " %x:%x %" SCNuMAX " %n",
+                &info.start, &info.end, permissions, &info.file_offset,
+                &info.major, &info.minor, &info.inode, &path_offset) != 7)
+            return std::nullopt;
+        if (permissions[2] != 'x') continue;
+        if (!info.inode) {
+            const auto name = std::string_view(line).substr(path_offset);
+            if (name == "[vdso]" || name == "[vsyscall]" || name == "[vectors]") continue;
+            return std::nullopt;
+        }
+        mappings.push_back(info);
     }
+    if (!maps.eof() || maps.bad() || mappings.empty()) return std::nullopt;
     return mappings;
+}
+
+bool add_executable_image(const dl_phdr_info &info, std::vector<SharedObject> &libraries) {
+    const std::string_view path = info.dlpi_name ? info.dlpi_name : "";
+    if (path == "linux-vdso.so.1" || path == "linux-gate.so.1") return true;
+    if (!path.empty() && path.front() != '/') return false;
+    SharedObject library{path.empty() ? "/proc/self/exe" : std::string(path), 0, {}};
+    const long page = sysconf(_SC_PAGESIZE);
+    if (page <= 0) return false;
+    const auto page_size = static_cast<std::uintptr_t>(page);
+    constexpr auto max_address = std::numeric_limits<std::uintptr_t>::max();
+    for (std::size_t i = 0; i < info.dlpi_phnum; ++i) {
+        const auto &header = info.dlpi_phdr[i];
+        if (header.p_type != PT_LOAD || !(header.p_flags & PF_X) || !header.p_filesz) continue;
+        if (header.p_vaddr > max_address - info.dlpi_addr) return false;
+        const auto start = info.dlpi_addr + header.p_vaddr;
+        if (header.p_filesz > max_address - start) return false;
+        const auto end = start + header.p_filesz;
+        const auto padding = (page_size - end % page_size) % page_size;
+        if (padding > max_address - end) return false;
+        if (library.executable_segments.empty()) library.executable_address = start;
+        library.executable_segments.push_back({start - start % page_size, end + padding,
+                                                header.p_offset - header.p_offset % page_size});
+    }
+    if (library.executable_segments.empty()) return false;
+    libraries.push_back(std::move(library));
+    return true;
 }
 
 class File {
@@ -92,8 +139,8 @@ bool same_file(const struct stat &a, const struct stat &b) {
            a.st_mtim.tv_sec == b.st_mtim.tv_sec && a.st_mtim.tv_nsec == b.st_mtim.tv_nsec;
 }
 
-std::optional<std::string> library_identity(const DecoderRuntime::SharedObject &library,
-                                             const std::vector<ExecutableMapping> &mappings) {
+std::optional<std::string> library_identity(const SharedObject &library,
+                                             std::vector<ExecutableMapping> &mappings) {
     const auto mapping = std::find_if(mappings.begin(), mappings.end(), [&](const auto &m) {
         return m.start <= library.executable_address && library.executable_address < m.end;
     });
@@ -119,6 +166,21 @@ std::optional<std::string> library_identity(const DecoderRuntime::SharedObject &
     if (fstat(file.fd, &after) != 0 || stat(library.path.c_str(), &current) != 0 ||
         !same_file(before, after) || !same_file(before, current))
         return std::nullopt;
+    // Require every executable VMA, by address as well as file identity,
+    // to be covered by base-namespace executable ELF program segments.
+    // This includes a second mapping of the same inode outside that namespace.
+    for (auto &mapped : mappings) {
+        if (mapped.major != major(before.st_dev) || mapped.minor != minor(before.st_dev) ||
+            mapped.inode != before.st_ino)
+            continue;
+        if (std::any_of(library.executable_segments.begin(), library.executable_segments.end(),
+                        [&](const auto &range) {
+                            return range.start <= mapped.start && mapped.end <= range.end &&
+                                   range.file_offset <= mapped.file_offset &&
+                                   mapped.file_offset - range.file_offset == mapped.start - range.start;
+                        }))
+            mapped.covered = true;
+    }
     // A change followed by restoration of old bytes still changes the inode
     // stamp. Encode it alongside the bytes to fence changes across scoring.
     std::ostringstream identity;
@@ -131,7 +193,7 @@ std::optional<std::string> library_identity(const DecoderRuntime::SharedObject &
 }
 
 std::optional<std::string> decoder_symbol_providers(
-    const std::vector<DecoderRuntime::SharedObject> &libraries) {
+    const std::vector<SharedObject> &libraries) {
     std::ostringstream providers;
     providers.imbue(std::locale::classic());
     for (const auto *symbol : {"avformat_open_input", "avcodec_receive_frame", "av_pix_fmt_desc_get", "sws_scale"}) {
@@ -190,25 +252,7 @@ bool loader_audit_possible() {
     }, nullptr) != 0;
 }
 
-std::optional<std::string> fingerprint(const std::vector<DecoderRuntime::SharedObject> &libraries) {
-    if (loader_audit_possible()) return std::nullopt;
-    const auto providers = decoder_symbol_providers(libraries);
-    if (!providers) return std::nullopt;
-    const auto mappings = executable_mappings();
-    // Preserve loader order. Identical mapped bytes can resolve different
-    // definitions when multiple libraries export the same symbol.
-    std::string bytes = "bitovp-decoder-runtime-v2\n";
-    for (const auto &library : libraries) {
-        const auto identity = library_identity(library, mappings);
-        if (!identity) return std::nullopt;
-        bytes += *identity + '\n';
-    }
-    bytes += *providers;
-    Sha256 hasher;
-    hasher.update(reinterpret_cast<const std::uint8_t *>(bytes.data()), bytes.size());
-    return hasher.finish();
-}
-}
+} // namespace
 
 std::optional<LoaderGeneration> runtime_loader_generation() noexcept {
     std::optional<LoaderGeneration> generation;
@@ -224,29 +268,36 @@ std::optional<LoaderGeneration> runtime_loader_generation() noexcept {
 std::optional<DecoderRuntime> capture_decoder_runtime() noexcept {
     try {
         const auto generation = runtime_loader_generation();
-        if (!generation) return std::nullopt;
-        DecoderRuntime runtime{{}, {}, *generation};
+        if (!generation || loader_audit_possible()) return std::nullopt;
+        std::vector<SharedObject> libraries;
         const int status = dl_iterate_phdr([](dl_phdr_info *info, std::size_t, void *arg) {
-            const char *path = info->dlpi_name;
-            if (!path || !*path || std::string_view(path) == "linux-vdso.so.1") return 0;
-            if (*path != '/') return 1;
-            for (unsigned int i = 0; i < info->dlpi_phnum; ++i) {
-                const auto &header = info->dlpi_phdr[i];
-                if (header.p_type != PT_LOAD || !(header.p_flags & PF_X) || !header.p_filesz) continue;
-                try {
-                    static_cast<DecoderRuntime *>(arg)->libraries.push_back(
-                        {path, info->dlpi_addr + header.p_vaddr});
-                } catch (...) {
-                    return 1;
-                }
-                return 0;
+            try {
+                return add_executable_image(*info, *static_cast<std::vector<SharedObject> *>(arg)) ? 0 : 1;
+            } catch (...) {
+                return 1;
             }
-            return 1;
-        }, &runtime);
+        }, &libraries);
         if (status != 0) return std::nullopt;
-        const auto sha256 = fingerprint(runtime.libraries);
-        if (!sha256 || runtime_loader_generation() != generation) return std::nullopt;
-        runtime.sha256 = *sha256;
+        auto providers = decoder_symbol_providers(libraries);
+        auto mappings = executable_mappings();
+        if (!providers || !mappings) return std::nullopt;
+        DecoderRuntime runtime{{}, *generation, {}, std::move(*providers)};
+        // Preserve loader order and the actual resolved provider indices.
+        std::string input = "bitovp-decoder-runtime-v3\n";
+        for (const auto &library : libraries) {
+            auto identity = library_identity(library, *mappings);
+            if (!identity) return std::nullopt;
+            input += *identity + '\n';
+            runtime.libraries.push_back(std::move(*identity));
+        }
+        if (std::any_of(mappings->begin(), mappings->end(), [](const auto &mapping) {
+                return !mapping.covered;
+            }) || runtime_loader_generation() != generation)
+            return std::nullopt;
+        input += runtime.providers;
+        Sha256 hasher;
+        hasher.update(reinterpret_cast<const std::uint8_t *>(input.data()), input.size());
+        runtime.sha256 = hasher.finish();
         return runtime;
     } catch (...) {
         return std::nullopt;
@@ -254,15 +305,21 @@ std::optional<DecoderRuntime> capture_decoder_runtime() noexcept {
 }
 
 bool decoder_runtime_unchanged(const DecoderRuntime &snapshot) noexcept {
-    try {
-        return fingerprint(snapshot.libraries) == std::optional<std::string>{snapshot.sha256};
-    } catch (...) {
-        return false;
-    }
+    const auto current = capture_decoder_runtime();
+    return current && current->sha256 == snapshot.sha256;
+}
+
+bool decoder_runtime_preserved(const DecoderRuntime &before, const DecoderRuntime &after) noexcept {
+    // GPU configuration may append libraries. It must preserve all previous
+    // mapped objects and the resolved FFmpeg providers, in the same order.
+    return before.providers == after.providers &&
+           before.libraries.size() <= after.libraries.size() &&
+           std::equal(before.libraries.begin(), before.libraries.end(), after.libraries.begin());
 }
 #else
 std::optional<LoaderGeneration> runtime_loader_generation() noexcept { return std::nullopt; }
 std::optional<DecoderRuntime> capture_decoder_runtime() noexcept { return std::nullopt; }
 bool decoder_runtime_unchanged(const DecoderRuntime &) noexcept { return false; }
+bool decoder_runtime_preserved(const DecoderRuntime &, const DecoderRuntime &) noexcept { return false; }
 #endif
 }

@@ -145,8 +145,8 @@ questions. Compare both before choosing a deployment setting.
 Set `VMAF_REUSE_VERIFIED_NATIVE_RESULTS=1` in the Worker environment before
 running the original measurement and its retry. This experiment covers manual
 SDR VOD measurements with **Local (GPU if available)** and a supervised native
-scorer. Combined Banding, a specially prepared reference, and other scoring
-paths use their ordinary execution.
+scorer running one frame in flight. Parallel frames, combined Banding, a
+specially prepared reference, and other scoring paths use ordinary execution.
 
 The Worker still downloads and checks both inputs on a retry. A completed pair
 from that retry's predecessor can skip the native GPU and CPU passes once the
@@ -154,14 +154,19 @@ content digests, model, GPU build, device and driver, and scoring settings match
 The new result owns its frame payload and reports
 `localExecution.reusedVerifiedResult: true` in the measurement JSON. An absent
 or invalid completion record takes the normal full score path.
-After validating the saved frames, the Worker checks the live GPU, driver, and
-loaded decoder runtime in one probe against the original scoring evidence.
-A changed driver, unstable or unsupported decoder runtime, or a loader audit
+After validating the saved frames, the Worker checks the live GPU, driver,
+and executable mappings in one probe against the original scoring evidence.
+A changed driver, an unexplained executable mapping, or a loader audit
 configuration sends the pair through fresh scoring.
 
-For a timing comparison, record the same retry with reuse disabled and enabled
-using the same original completion record and input bytes. Keep download and
-preparation in job wall time, and measure native scorer calls separately.
+For a timing comparison, seed two independent and equivalent retryable
+predecessors with the same input bytes and scoring settings. Use one for the
+retry with reuse disabled and the other for reuse enabled. A manual retry
+claims its predecessor, so each timing trial needs its own pre-retry state.
+Keep download and preparation in job wall time, and count native scoring
+invocations separately. Compare the reused frame values with their saved
+values exactly and report any numerical difference against an independent
+fresh score.
 
 ## Prepare a repeatable BBB codec comparison
 

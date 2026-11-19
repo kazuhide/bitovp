@@ -61,8 +61,14 @@ int main(int argc, char **argv) {
         require(loaded && loaded->sha256 != startup->sha256,
                 "A loaded dependency must change the runtime identity");
         require(loaded->generation != startup->generation, "A late load must invalidate a decode checkpoint");
-        require(decoder_runtime_unchanged(*startup),
-                "Extra modules in the isolated backend setup window leave initial mappings valid");
+        require(decoder_runtime_preserved(*startup, *loaded),
+                "Backend setup can append modules while preserving the decoder");
+        require(!decoder_runtime_unchanged(*startup), "The full runtime must include newly mapped driver modules");
+        auto *isolated = dlmopen(LM_ID_NEWLM, plugin.c_str(), RTLD_NOW | RTLD_LOCAL);
+        require(isolated, "Cannot load harmless fixture into a separate namespace");
+        require(!capture_decoder_runtime(), "Unknown executable namespace must disable attestation");
+        require(!decoder_runtime_unchanged(*loaded), "Unknown namespace must invalidate prior runtime");
+        require(dlclose(isolated) == 0, "Could not unload separate namespace fixture");
         std::ofstream(plugin, std::ios::binary | std::ios::app) << 'x';
         require(!decoder_runtime_unchanged(*loaded), "Changed mapped bytes must invalidate attestation");
         const auto updated = capture_decoder_runtime();

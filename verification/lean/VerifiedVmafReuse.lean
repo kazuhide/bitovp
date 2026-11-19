@@ -8,7 +8,9 @@ The two input identities and the scoring settings stand for the data bound by
 the worker's validated key. The worker must authenticate the predecessor,
 check the actual input and payload bytes, and validate full-frame CPU parity.
 The proof assumes those runtime checks and uses equality of the validated
-identities. Numerical equivalence is established by the existing CPU check.
+identities. The CPU check bounds numerical differences under its configured
+tolerances. The exact result theorem takes the separate premise that the
+saved report equals a fresh report for the same certified key.
 -/
 
 namespace BitOVP.VerifiedVmafReuse
@@ -23,6 +25,7 @@ structure ScoreKey where
   model : String
   scorer : String
   decoderRuntime : String
+  scoringRuntime : String
   deriving DecidableEq
 
 structure Certificate where
@@ -64,6 +67,14 @@ theorem changedDecoderRuntimeIsMiss (requested : ScoreKey) (actualFramesDigest :
   apply changedKeyIsMiss requested actualFramesDigest receipt
   intro sameKey
   exact different (congrArg ScoreKey.decoderRuntime sameKey)
+
+theorem changedScoringRuntimeIsMiss (requested : ScoreKey) (actualFramesDigest : String)
+    (receipt : Certificate)
+    (different : receipt.key.scoringRuntime ≠ requested.scoringRuntime) :
+    reusable requested actualFramesDigest (some receipt) = false := by
+  apply changedKeyIsMiss requested actualFramesDigest receipt
+  intro sameKey
+  exact different (congrArg ScoreKey.scoringRuntime sameKey)
 
 theorem changedPayloadIsMiss (requested : ScoreKey) (actualFramesDigest : String)
     (receipt : Certificate) (different : actualFramesDigest ≠ receipt.framesDigest) :

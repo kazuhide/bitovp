@@ -446,6 +446,7 @@ export async function runNativeVmafScore(
 				? completedNativeScoreIdentity(
 						lookupKey,
 						decoderRuntimeSha256,
+						metadata.scoringRuntimeSha256,
 						verified.scoring.device,
 						metadata.gpuDriver,
 					)

@@ -479,9 +479,7 @@ export function SchedulePanel({
 					{t("schedule.upcoming")}
 				</h4>
 				{unavailable ? unavailableLine : null}
-				{schedules.isLoading ? (
-					<p className="mt-1 text-xs text-zinc-500">{t("common.loading")}</p>
-				) : upcoming.length === 0 ? (
+				{upcoming.length === 0 ? (
 					unavailable ? null : (
 						<p className="mt-1 text-xs text-zinc-500">
 							{t("schedule.noneUpcoming")}

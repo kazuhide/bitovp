@@ -399,6 +399,10 @@ describe("ChannelDetail — a failed read is not a healthy channel", () => {
 		expect(summaryOf("sec-schedule")).not.toBe("none armed");
 		expect(nextActionCode()).not.toBe("ON_AIR");
 		expect(screen.queryByText("Nothing armed.")).toBeNull();
+		const upcoming = screen.getByText("Upcoming").parentElement;
+		expect(
+			within(upcoming as HTMLElement).getAllByText("Loading…"),
+		).toHaveLength(1);
 		await act(async () => release());
 		await waitFor(() => expect(nextActionCode()).toBe("ON_AIR"));
 		expect(stripCell("alerts")).toHaveTextContent("0");

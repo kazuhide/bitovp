@@ -30,6 +30,7 @@
 		"title": "展示会の映像を送出する本番チャンネル・日本語と英数字の長い名前 InterBEE2026Hall5BitmovinDemoMoQOutputVerification",
 		"maxGap": null,
 		"expect": [],
+		"wrapTitle": true,
 		"provenance": "長いチャンネル名を折り返して表示できる"
 	},
 	{

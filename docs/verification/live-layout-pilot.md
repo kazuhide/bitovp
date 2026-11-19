@@ -17,7 +17,21 @@ Live 詳細の修正前後を、同じ日本語の合成チャンネルとユー
 
 Node、pnpm、リポジトリの依存関係と Playwright Chromium、Lean 4.24.0 を用意します。探索を行う場合は [Bombadil 0.7.10](https://github.com/antithesishq/bombadil/releases/tag/v0.7.10) の、既存runnerが対応する公式バイナリを使います。バイナリのSHA-256は実行時に照合されます。
 
-修正前の `782632d355c6a8bf44b7c1ad02ba29f6bf853420` と検査対象のコミットを、それぞれ空のディレクトリへ detached worktree として取り出します。各 worktree で依存関係を入れ、使い捨て PostgreSQL の空のDBを用意します。2つのWebサーバーに別々のポートを使います。アプリの起動時は合成DBのURLだけを渡します。
+修正前の `782632d355c6a8bf44b7c1ad02ba29f6bf853420` と検査対象のコミットを、それぞれ空のディレクトリへ detached worktree として取り出します。各 worktree で依存関係を入れ、使い捨て PostgreSQL の空のDBを用意します。2つのWebサーバーに別々のポートを使います。起動前に各 worktree で確認用のファイルを作ります。 `pilot_port` と `source_receipt` を環境ごとに変え、作業ツリーから起動します。Next.js が再生成する next-env.d.ts と確認用ファイル以外の変更は拒否します。runner は開始前と完了時にファイルとサーバー応答を照合します。
+
+```sh
+pilot_proof="$(node -p 'require("node:crypto").randomUUID()')"
+pilot_commit="$(git rev-parse HEAD)"
+pilot_tree="$(git rev-parse 'HEAD^{tree}')"
+pilot_root="$(git rev-parse --show-toplevel)"
+mkdir -p apps/web/public
+jq -n --arg commit "$pilot_commit" --arg tree "$pilot_tree" --arg proof "$pilot_proof" \
+  '{commit,tree,proof}' > "apps/web/public/live-layout-$pilot_proof.json"
+jq --arg root "$pilot_root" --arg baseURL "http://127.0.0.1:$pilot_port" \
+  '. + {root,baseURL}' "apps/web/public/live-layout-$pilot_proof.json" > "$source_receipt"
+```
+
+アプリの起動時は合成DBのURLだけを渡します。
 
 ```sh
 pnpm install --frozen-lockfile
@@ -29,13 +43,6 @@ DATABASE_URL="$pilot_db_url" pnpm --dir packages/db exec prisma migrate deploy
     AUTH_MODE=none NEXT_TELEMETRY_DISABLED=1 \
     node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port "$pilot_port"
 )
-```
-
-各 worktree から別のターミナルで、起動したローカルサーバーを示す JSON を作ります。 `pilot_port` は対応するポート、`source_receipt` は修正前と検査対象で異なるファイルに設定します。
-
-```sh
-jq -n --arg commit "$(git rev-parse HEAD)" --arg tree "$(git rev-parse 'HEAD^{tree}')" \
-  --arg baseURL "http://127.0.0.1:$pilot_port" '{commit,tree,baseURL}' > "$source_receipt"
 ```
 
 runnerがある checkout で実行します。`--bombadil` を省略すると、Lean と確定的なブラウザーテスト、画像の保存を行います。
@@ -51,6 +58,6 @@ node scripts/live-layout-pilot.mjs \
   --output=/absolute/path/to/new-evidence-directory
 ```
 
-`observations.json` と画像は同じケースIDで確認できます。`design-review-cases.json` に画像と操作目的、`lean-oracle.json` に期待する操作、`explorations.json` に探索・再生結果を記録します。探索ではローカル専用Chromiumを使い、履歴の開閉と復帰を実際に確認できた場合に合格とします。起動したテストサーバーと使い捨てDBは確認後に終了します。
+`observations.json` と画像は同じケースIDで確認できます。`design-review-cases.json` に画像と操作目的、`lean-oracle.json` に期待する操作、`explorations.json` に探索・再生結果を記録します。探索ではローカル専用Chromiumを使い、履歴の開閉と復帰を実際に確認できた場合に合格とします。旧版の再生は CLI の完了と同じ違反の両方を確認します。起動したテストサーバーと使い捨てDBは確認後に終了します。
 
 この試行の範囲は Live 詳細の確定した配信状態と合成データです。画像判断の対象は提示した範囲で、ページ下部を含む横はみ出しは実寸で確認します。Lean の証明はモデルに適用され、アプリとの一致はブラウザーで検査します。手動で実行できる試行として扱い、現行の CI を利用します。

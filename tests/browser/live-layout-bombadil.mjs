@@ -229,15 +229,20 @@ export async function exploreLiveLayout({
 	let log = "";
 	let exitCode;
 	try {
-		exitCode = await guardedCommand(binary, args, {
-			cwd,
-			env: childEnvironment(output),
-			exitPath: join(output, "exit.json"),
-			timeout: (timeLimitSeconds + 15) * 1000,
-			diagnostics: (part) => {
-				log = (log + part).slice(-65536);
+		// Keep the owned process group and capture CLI stdout as well.
+		exitCode = await guardedCommand(
+			"/bin/sh",
+			["-c", 'exec "$@" 1>&2', "bombadil", binary, ...args],
+			{
+				cwd,
+				env: childEnvironment(output),
+				exitPath: join(output, "exit.json"),
+				timeout: (timeLimitSeconds + 15) * 1000,
+				diagnostics: (part) => {
+					log = (log + part).slice(-65536);
+				},
 			},
-		});
+		);
 	} finally {
 		try {
 			await writeFile(join(output, "bombadil.log"), log, {
@@ -252,6 +257,7 @@ export async function exploreLiveLayout({
 				});
 		}
 	}
+	if (reproduce) assert.match(log, /Reproduction finished/);
 	assert.equal(
 		await ownedPageTarget(endpoint, page, url),
 		targetId,

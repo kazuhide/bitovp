@@ -10,6 +10,8 @@ const userId = "f33b2230-1f22-40f7-a635-e414575ae48a";
 const sessionId = "6082871f-1d44-476a-816d-29992eec1f7b";
 const channelApi = `/api/live-channels/${channelId}`;
 const runApi = `${channelApi}/runs/${runId}`;
+const readinessApi = "/api/live-channels/moq-readiness";
+const readinessTarget = `${readinessApi}?channelId=${channelId}`;
 const planFile = new URL(
 	"../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
 	import.meta.url,
@@ -58,6 +60,7 @@ function savedHistory(startedAt, endedAt) {
 async function liveData(phase, title) {
 	const now = Date.now();
 	const stopped = phase === "STOPPED";
+	const encoderIp = stopped ? null : "192.0.2.10";
 	const startedMs = stopped ? Date.UTC(2026, 10, 19, 6) : now - 60_000;
 	const startedAt = new Date(startedMs).toISOString();
 	const archiveEnded = new Date(startedMs + 15_000).toISOString();
@@ -93,7 +96,7 @@ async function liveData(phase, title) {
 		createdAt: startedAt,
 		runningSince: startedAt,
 		endedAt,
-		encoderIp: null,
+		encoderIp,
 		streamKey: null,
 		outputPrefix: "live-layout-pilot",
 		programStartAt: null,
@@ -122,7 +125,7 @@ async function liveData(phase, title) {
 		createdAt: startedAt,
 		updatedAt: endedAt ?? startedAt,
 		streamKey: null,
-		encoderIp: null,
+		encoderIp,
 		programStartAt: null,
 		programEndAt: null,
 		lastHeartbeat: null,
@@ -189,6 +192,7 @@ export async function openLiveLayoutFixture({
 	const url = loopbackOrigin(baseURL);
 	const data = await liveData(phase, title);
 	const deniedRequests = [];
+	let servedReadiness = false;
 	const displayName = "ローカル検証";
 	const session = {
 		mode: "users",
@@ -211,7 +215,7 @@ export async function openLiveLayoutFixture({
 		[`${channelApi}/alerts`, { open: [], history: [] }],
 		[`${channelApi}/schedules`, []],
 		[`${channelApi}/runs`, { items: [data.run] }],
-		[`${channelApi}/moq-readiness`, { status: "ready", issues: [] }],
+		[readinessTarget, { status: "ready", issues: [] }],
 		[`${runApi}/health`, data.health],
 		[
 			`${runApi}/moq-observations`,
@@ -221,6 +225,11 @@ export async function openLiveLayoutFixture({
 	await context.addCookies([
 		{ name: "ovp-locale", value: "ja", url: url.origin },
 	]);
+	// Fulfilling the navigation hides the socket address from Chromium. The
+	// owned loopback origin still needs its intercepted Next dev HMR socket.
+	await context.grantPermissions(["local-network-access"], {
+		origin: url.origin,
+	});
 	const page = await context.newPage();
 	try {
 		await page.route("**/*", async (route) => {
@@ -237,10 +246,39 @@ export async function openLiveLayoutFixture({
 				deniedRequests.push({ method, pathname: target.pathname, kind });
 				return route.abort();
 			}
-			if (!target.pathname.startsWith("/api/")) return route.continue();
+			if (!target.pathname.startsWith("/api/")) {
+				// Redirect hops after route.continue would escape this handler.
+				const response = await route.fetch({ maxRedirects: 0 });
+				try {
+					const status = response.status();
+					if (status >= 300 && status < 400 && response.headers().location) {
+						deniedRequests.push({
+							method,
+							pathname: target.pathname,
+							kind: "redirect",
+						});
+						await route.abort();
+					} else {
+						// APIRequestContext returns a decoded body to the browser route.
+						const headers = response.headers();
+						delete headers["content-encoding"];
+						delete headers["content-length"];
+						delete headers["transfer-encoding"];
+						await route.fulfill({ response, headers });
+					}
+				} finally {
+					await response.dispose();
+				}
+				return;
+			}
+			const key =
+				target.pathname === readinessApi
+					? `${target.pathname}${target.search}`
+					: target.pathname;
+			if (key === readinessTarget) servedReadiness = true;
 			return route.fulfill({
 				status: 200,
-				json: payloads.get(target.pathname) ?? { items: [] },
+				json: payloads.get(key) ?? { items: [] },
 			});
 		});
 		await page.routeWebSocket("**/*", (socket) => {
@@ -287,6 +325,16 @@ export async function openLiveLayoutFixture({
 			await copySettings.waitFor();
 			await lifecycleAction.waitFor();
 			if (phase === "STOPPED") {
+				await lifecycleAction.and(page.locator("button:enabled")).waitFor();
+				assert.ok(
+					servedReadiness,
+					"Stopped MoQ channel must read its readiness result",
+				);
+				await page
+					.getByText("MoQ プレビュー設定を確認できませんでした", {
+						exact: true,
+					})
+					.waitFor({ state: "hidden" });
 				const history = page.locator("[data-moq-history]");
 				await history.locator('[data-moq-chart="latencyMs"]').waitFor();
 				await history.getByText("その他の観測情報", { exact: true }).waitFor();

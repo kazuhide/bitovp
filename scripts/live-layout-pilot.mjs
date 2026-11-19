@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { chromium } from "@playwright/test";
@@ -41,14 +41,52 @@ const sources = {
 assert.equal(sources.historical.commit, historicCommit);
 assert.notEqual(sources.current.commit, sources.historical.commit);
 assert.notEqual(sources.current.baseURL, sources.historical.baseURL);
-for (const source of Object.values(sources)) {
+async function verifyServingSource(source) {
 	assert.match(source.commit, /^[a-f0-9]{40}$/);
-	const tree = execFileSync("git", ["rev-parse", `${source.commit}^{tree}`], {
-		cwd: root,
-		encoding: "utf8",
-	}).trim();
-	assert.equal(source.tree, tree);
+	assert.match(source.proof, /^[a-f0-9-]{36}$/);
+	assert.equal(source.root, await realpath(source.root));
+	assert.notEqual(source.root, root);
+	const origin = new URL(source.baseURL);
+	assert.match(origin.origin, /^http:\/\/127\.0\.0\.1:[1-9]\d*$/);
+	assert.equal(origin.href, `${source.baseURL}/`);
+	const filename = `live-layout-${source.proof}.json`;
+	const marker = `apps/web/public/${filename}`;
+	const git = (...args) =>
+		execFileSync("git", args, { cwd: source.root, encoding: "utf8" }).trim();
+	assert.equal(git("rev-parse", "--show-toplevel"), source.root);
+	assert.equal(git("rev-parse", "HEAD"), source.commit);
+	assert.equal(git("rev-parse", "HEAD^{tree}"), source.tree);
+	assert.equal(
+		git(
+			"status",
+			"--porcelain",
+			"--untracked-files=all",
+			"--",
+			".",
+			":(exclude)apps/web/next-env.d.ts",
+		),
+		`?? ${marker}`,
+	);
+	const expected = {
+		commit: source.commit,
+		tree: source.tree,
+		proof: source.proof,
+	};
+	assert.deepEqual(await readJson(join(source.root, marker)), expected);
+	const response = await fetch(new URL(`/${filename}`, origin), {
+		cache: "no-store",
+		redirect: "error",
+		signal: AbortSignal.timeout(4_000),
+	});
+	assert.equal(
+		response.status,
+		200,
+		"Expected the dedicated pilot source marker from the server",
+	);
+	assert.deepEqual(await response.json(), expected);
 }
+for (const source of Object.values(sources)) await verifyServingSource(source);
+assert.notEqual(sources.historical.root, sources.current.root);
 
 const leanStart = performance.now();
 const oracle = JSON.parse(
@@ -151,44 +189,75 @@ async function exercise(browser, testCase, position) {
 		if (testCase.width === 320 && testCase.phase === "RUNNING") {
 			const input = page.locator("#sec-ingest");
 			await input.scrollIntoViewIfNeeded();
-			const copy = input.getByRole("button", {
-				name: /ストリームキー.*コピー/,
-			});
-			inputCoordinates = await copy.evaluate((button) => {
-				const row = button.closest("li");
-				const rowRight = row.getBoundingClientRect().right;
-				const buttonRight = button.getBoundingClientRect().right;
-				const valueWidth = row.children[1].getBoundingClientRect().width;
-				return {
-					rowRight,
-					buttonRight,
-					valueWidth,
-					fits: buttonRight <= rowRight + 1 && valueWidth > 0,
-				};
-			});
 			const inputImage = `input-${testCase.role.toLowerCase()}-320.png`;
-			await copy.scrollIntoViewIfNeeded();
 			await page.screenshot({
 				path: join(evidence, inputImage),
 				animations: "disabled",
 			});
-			if (inputCoordinates.fits) {
-				await context.grantPermissions(["clipboard-read", "clipboard-write"], {
-					origin: new URL(page.url()).origin,
-				});
-				const value = copy.locator("..").locator(":scope > span").nth(1);
-				const expected = (await value.textContent())?.trim();
-				assert.ok(expected, "Synthetic stream key must be present");
-				await copy.click({ timeout: 4_000 });
-				await page.waitForFunction(
-					async (value) => (await navigator.clipboard.readText()) === value,
-					expected,
-					{ timeout: 4_000 },
+			await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+				origin: new URL(page.url()).origin,
+			});
+			const rows = [];
+			for (const label of [/RTMP.*コピー/, /ストリームキー.*コピー/]) {
+				const copies = input.getByRole("button", { name: label });
+				assert.ok(
+					(await copies.count()) > 0,
+					`Missing synthetic copy actions: ${label}`,
 				);
-				inputCoordinates.clipboardMatches = true;
+				for (const copy of await copies.all()) {
+					const measured = await copy.evaluate((button) => {
+						const row = button.closest("li");
+						const rowRight = row.getBoundingClientRect().right;
+						const buttonRight = button.getBoundingClientRect().right;
+						const valueWidth = row.children[1].getBoundingClientRect().width;
+						return {
+							rowRight,
+							buttonRight,
+							valueWidth,
+							fits: buttonRight <= rowRight + 1 && valueWidth > 0,
+						};
+					});
+					if (measured.fits) {
+						const row = copy.locator("..");
+						const expected = (
+							await row.locator(":scope > span").nth(1).textContent()
+						)?.trim();
+						assert.ok(expected, "Synthetic input value must be present");
+						await copy.click({ timeout: 4_000 });
+						await row
+							.getByRole("status")
+							.filter({ hasText: /^コピーしました$/ })
+							.waitFor({
+								state: "attached",
+								timeout: 4_000,
+							});
+						assert.equal(
+							await page.evaluate(() => navigator.clipboard.readText()),
+							expected,
+						);
+					}
+					rows.push({
+						label: label.source,
+						...measured,
+						clipboardMatches: measured.fits,
+					});
+				}
 			}
-			inputCoordinates.image = inputImage;
+			inputCoordinates = {
+				fits: rows.every((row) => row.fits),
+				rows,
+				image: inputImage,
+			};
 		}
+		const headingLines = await page
+			.getByRole("heading", { level: 1 })
+			.evaluate((heading) => {
+				const range = document.createRange();
+				range.selectNodeContents(heading);
+				return new Set(
+					Array.from(range.getClientRects(), (rect) => Math.round(rect.top)),
+				).size;
+			});
 		assert.deepEqual(deniedRequests, []);
 		const violations = [
 			...new Set(states.flatMap(({ layout }) => layout.violations)),
@@ -208,6 +277,7 @@ async function exercise(browser, testCase, position) {
 			verdictMatches,
 			wrapMatches,
 			inputCoordinates,
+			headingLines,
 		};
 	} finally {
 		await context.close();
@@ -312,9 +382,19 @@ if (options.bombadil) {
 	explorations.push(replay);
 	await save("explorations.json", explorations);
 }
+for (const source of Object.values(sources)) await verifyServingSource(source);
 const unexpected = observations.filter(
-	({ verdictMatches, wrapMatches, inputCoordinates }) =>
-		!verdictMatches || !wrapMatches || inputCoordinates?.fits === false,
+	({
+		verdictMatches,
+		wrapMatches,
+		inputCoordinates,
+		wrapTitle,
+		headingLines,
+	}) =>
+		!verdictMatches ||
+		!wrapMatches ||
+		inputCoordinates?.fits === false ||
+		(wrapTitle && headingLines <= 1),
 );
 assert.deepEqual(
 	unexpected.map(({ id, violations }) => ({ id, violations })),

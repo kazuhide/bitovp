@@ -51,6 +51,13 @@ export function parseImportedLivePlan(
 			errorDetail: err instanceof Error ? err.message : null,
 		};
 	}
+	return importLivePlanDocument(raw, translate);
+}
+
+export function importLivePlanDocument(
+	raw: unknown,
+	translate?: Translator,
+): LiveImportResult {
 	if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
 		return { ok: false, errorKey: "wizardX.importLiveMustBeObject" };
 	}

@@ -13,6 +13,7 @@ extern "C" {
 #include <cinttypes>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <fstream>
@@ -23,6 +24,7 @@ extern "C" {
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
+#include <sys/auxv.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <unistd.h>
@@ -148,7 +150,48 @@ std::optional<std::string> decoder_symbol_providers(
     return providers.str();
 }
 
+bool has_elf_audit_tags(const dl_phdr_info &info) {
+    for (unsigned int i = 0; i < info.dlpi_phnum; ++i) {
+        const auto &dynamic = info.dlpi_phdr[i];
+        if (dynamic.p_type != PT_DYNAMIC) continue;
+        const auto *begin = info.dlpi_phdr;
+        const auto *end = begin + info.dlpi_phnum;
+        // Inspect only a dynamic table wholly contained in a readable segment.
+        if (!dynamic.p_memsz || dynamic.p_memsz % sizeof(ElfW(Dyn)) ||
+            std::none_of(begin, end, [&](const auto &segment) {
+                if (segment.p_type != PT_LOAD || !(segment.p_flags & PF_R) ||
+                    dynamic.p_vaddr < segment.p_vaddr)
+                    return false;
+                const auto offset = dynamic.p_vaddr - segment.p_vaddr;
+                return offset <= segment.p_memsz && dynamic.p_memsz <= segment.p_memsz - offset;
+            }))
+            return true;
+        const auto count = dynamic.p_memsz / sizeof(ElfW(Dyn));
+        const auto *tags = reinterpret_cast<const ElfW(Dyn) *>(info.dlpi_addr + dynamic.p_vaddr);
+        const auto *terminator = std::find_if(tags, tags + count, [](const auto &tag) {
+            return tag.d_tag == DT_NULL || tag.d_tag == DT_AUDIT || tag.d_tag == DT_DEPAUDIT;
+        });
+        if (terminator == tags + count || terminator->d_tag != DT_NULL) return true;
+    }
+    return false;
+}
+
+bool loader_audit_possible() {
+    // An auditor can use a separate namespace outside this loader census.
+    // AT_BASE is absent for explicit loader execution. Check exec-time
+    // LD_AUDIT as well since a constructor can unset the live variable.
+    if (!getauxval(AT_BASE) || std::getenv("LD_AUDIT")) return true;
+    std::ifstream environment("/proc/self/environ", std::ios::binary);
+    for (std::string entry; std::getline(environment, entry, '\0');)
+        if (entry.compare(0, 9, "LD_AUDIT=") == 0) return true;
+    if (!environment.eof() || environment.bad()) return true;
+    return dl_iterate_phdr([](dl_phdr_info *info, std::size_t, void *) {
+        return has_elf_audit_tags(*info) ? 1 : 0;
+    }, nullptr) != 0;
+}
+
 std::optional<std::string> fingerprint(const std::vector<DecoderRuntime::SharedObject> &libraries) {
+    if (loader_audit_possible()) return std::nullopt;
     const auto providers = decoder_symbol_providers(libraries);
     if (!providers) return std::nullopt;
     const auto mappings = executable_mappings();

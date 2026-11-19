@@ -30,7 +30,7 @@ receipt schema.
 
 ## Critical paths have explicit evidence layers
 
-The eight registered profiles contain 769 fixed cases. Counts are an inventory
+The eight registered profiles contain 770 fixed cases. Counts are an inventory
 check, not a quality score. Each suite must retain meaningful behavior assertions.
 
 | Path | Fast contracts | Integration evidence still required |

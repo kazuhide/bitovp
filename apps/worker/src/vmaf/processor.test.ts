@@ -4677,6 +4677,7 @@ it("limits verified native results to the current organization's exact manual re
 	const previous = "00000000-0000-4000-8000-000000000014";
 	const model = "vmaf_v1.0.16_3d0h";
 	const key = "d".repeat(64);
+	const lookupKey = "e".repeat(64);
 	const receiptSha256 = "9".repeat(64);
 	const t = autoNativeFailureHarness(true, {
 		reuseVerifiedNativeResults: true,
@@ -4691,14 +4692,14 @@ it("limits verified native results to the current organization's exact manual re
 	});
 	const predecessor = {
 		framesGzip: gzipSync(JSON.stringify([{ frameNum: 0, vmaf: 95 }])),
-		provenance: { verifiedNativeScore: { key } },
+		provenance: { verifiedNativeScore: { lookupKey } },
 	};
 	t.vmafResult.findFirst.mockResolvedValue(predecessor);
 	const score = vi
 		.spyOn(localScoring, "runLocalVmafScore")
 		.mockImplementation(async (_deps, _options, context) => {
 			if (!context?.verifiedReuse?.load) throw new Error("Missing retry scope");
-			expect(await context.verifiedReuse.load(key)).toEqual(predecessor);
+			expect(await context.verifiedReuse.load(lookupKey)).toEqual(predecessor);
 			const { identity } = context.verifiedReuse.selection;
 			const owned = verifyNativeReceipt(
 				nativeReceipt(),
@@ -4730,6 +4731,7 @@ it("limits verified native results to the current organization's exact manual re
 				log: JSON.parse(vmafJson([95])),
 				verifiedNativeScore: {
 					key,
+					lookupKey,
 					receiptSha256,
 					decoderRuntimeSha256: "8".repeat(64),
 				},
@@ -4755,7 +4757,10 @@ it("limits verified native results to the current organization's exact manual re
 					model,
 					scoringVersion: t.job.scoringVersion,
 				},
-				provenance: { path: ["verifiedNativeScore", "key"], equals: key },
+				provenance: {
+					path: ["verifiedNativeScore", "lookupKey"],
+					equals: lookupKey,
+				},
 			},
 			select: { provenance: true, framesGzip: true },
 		});

@@ -3,6 +3,7 @@ import { gunzipSync } from "node:zlib";
 import {
 	type LocalVmafExecution,
 	localVmafExecutionSchema,
+	NATIVE_OFFICIAL_REVISION,
 	PSNR_MAX_DB,
 } from "@bitovp/core";
 import { z } from "zod";
@@ -25,6 +26,7 @@ export type NativeScoreReuseContext = {
 
 type VerifiedScoreIdentity = {
 	key: string;
+	lookupKey: string;
 	decoderRuntimeSha256: string;
 };
 
@@ -38,8 +40,9 @@ const decodedRuntimeProof = z
 	.strict();
 const storedProof = z
 	.object({
-		version: z.literal(2),
+		version: z.literal(3),
 		key: sha,
+		lookupKey: sha,
 		decoderRuntimeSha256: sha,
 		receiptSha256: sha,
 		payloadSha256: sha,
@@ -88,14 +91,12 @@ export async function probeNativeDecoderRuntime(
 	}
 }
 
-export async function verifiedNativeScoreIdentity(
-	deps: { runner: ProcessRunner; nativePath: string },
+export function verifiedNativeScoreLookupKey(
 	scope: NativeScoreReuseContext,
 	expected: NativeExpected,
 	threads: number,
 	decodeThreads: number,
 	inflightFrames: 1 | 2 | 4,
-	signal?: AbortSignal,
 ) {
 	const { selection } = scope;
 	if (
@@ -104,10 +105,81 @@ export async function verifiedNativeScoreIdentity(
 		selection.identity.sourceSha256 !== expected.sourceSha256
 	)
 		return undefined;
+	const { width, height, bitdepth } = expected.distortedOriginal;
+	const { identity } = selection;
+	// Only static facts select a candidate. Acceptance requires live runtime
+	// evidence after its frame payload and stored evidence have been checked.
+	return createHash("sha256")
+		.update(
+			JSON.stringify([
+				"bitovp-native-vmaf-full-pair-lookup-v1",
+				scope.organizationId,
+				scope.scoringVersion,
+				expected.referenceSha256,
+				expected.distortedSha256,
+				expected.model,
+				expected.modelSha256,
+				expected.width,
+				expected.height,
+				expected.bitDepth,
+				width,
+				height,
+				bitdepth,
+				expected.frameCount ?? null,
+				expected.psnr,
+				threads,
+				decodeThreads,
+				inflightFrames,
+				selection.backend,
+				selection.device,
+				NATIVE_OFFICIAL_REVISION,
+				identity.sourceSha256,
+				identity.binarySha256,
+				identity.supervisorBinarySha256,
+				identity.deviceUuid,
+			]),
+		)
+		.digest("hex");
+}
+
+function bindRuntime(
+	lookupKey: string,
+	decoderRuntimeSha256: string,
+	device: {
+		vendorId: number;
+		deviceId: number;
+		driverVersion: string;
+		driverVersionSource: string;
+	},
+): VerifiedScoreIdentity {
+	const key = createHash("sha256")
+		.update(
+			JSON.stringify([
+				"bitovp-native-vmaf-full-pair-v3",
+				lookupKey,
+				decoderRuntimeSha256,
+				device.vendorId,
+				device.deviceId,
+				device.driverVersion,
+				device.driverVersionSource,
+			]),
+		)
+		.digest("hex");
+	return { key, lookupKey, decoderRuntimeSha256 };
+}
+
+export async function reconfirmNativeScore(
+	deps: { runner: ProcessRunner; nativePath: string },
+	scope: NativeScoreReuseContext,
+	proof: VerifiedNativeScore,
+	inflightFrames: 1 | 2 | 4,
+	signal?: AbortSignal,
+): Promise<boolean> {
 	try {
-		const { executable, info, cacheable } = await inspectNativeDevice(
+		const { selection } = scope;
+		const { info, cacheable } = await inspectNativeDevice(
 			deps,
-			selection,
+			{ ...selection, attestDecoderRuntime: true },
 			signal,
 		);
 		const { identity } = selection;
@@ -119,60 +191,39 @@ export async function verifiedNativeScoreIdentity(
 			info.binarySha256 !== identity.binarySha256 ||
 			info.capabilities.supervisorBinarySha256 !==
 				identity.supervisorBinarySha256 ||
-			info.device.uuid !== identity.deviceUuid
+			info.device.uuid !== identity.deviceUuid ||
+			info.decoderRuntimeSha256 !== proof.decoderRuntimeSha256
 		)
-			return undefined;
-		const decoderRuntimeSha256 = await probeNativeDecoderRuntime(
-			{ runner: deps.runner, nativePath: executable },
-			expected.sourceSha256,
-			signal,
+			return false;
+		return (
+			bindRuntime(proof.lookupKey, info.decoderRuntimeSha256, info.device)
+				.key === proof.key
 		);
-		if (!decoderRuntimeSha256) return undefined;
-		const { width, height, bitdepth } = expected.distortedOriginal;
-		// Both inputs are already materialized and hashed. The native route
-		// rejects extra transforms and always decodes on the CPU here.
-		const key = createHash("sha256")
-			.update(
-				JSON.stringify([
-					"bitovp-native-vmaf-full-pair-v2",
-					decoderRuntimeSha256,
-					scope.organizationId,
-					scope.scoringVersion,
-					expected.referenceSha256,
-					expected.distortedSha256,
-					expected.model,
-					expected.modelSha256,
-					expected.width,
-					expected.height,
-					expected.bitDepth,
-					width,
-					height,
-					bitdepth,
-					expected.frameCount ?? null,
-					expected.psnr,
-					threads,
-					decodeThreads,
-					inflightFrames,
-					info.backend,
-					info.officialSourceRevision,
-					info.sourceSha256,
-					info.binarySha256,
-					info.capabilities.supervisorBinarySha256,
-					info.device.index,
-					info.device.uuid,
-					info.device.vendorId,
-					info.device.deviceId,
-					info.device.driverVersion,
-					info.device.driverVersionSource,
-				]),
-			)
-			.digest("hex");
-		return { key, decoderRuntimeSha256 };
 	} catch {
 		signal?.throwIfAborted();
-		// Missing or unknown runtime identity disables reuse for this pair.
-		return undefined;
+		return false;
 	}
+}
+
+const runtimeDriver = z
+	.object({
+		driverVersion: z.string().min(1).max(1024),
+		driverVersionSource: z.string().min(1).max(128),
+	})
+	.strict();
+
+export function completedNativeScoreIdentity(
+	lookupKey: string,
+	decoderRuntimeSha256: string,
+	device: { vendorId: number; deviceId: number },
+	evidence: unknown,
+): VerifiedScoreIdentity | undefined {
+	const driver = runtimeDriver.safeParse(evidence);
+	if (!driver.success) return undefined;
+	return bindRuntime(lookupKey, decoderRuntimeSha256, {
+		...device,
+		...driver.data,
+	});
 }
 
 export function sealVerifiedNativeScore(
@@ -187,8 +238,9 @@ export function sealVerifiedNativeScore(
 	const payloadSha256 = createHash("sha256")
 		.update(
 			JSON.stringify([
-				2,
+				3,
 				proof.key,
+				proof.lookupKey,
 				proof.decoderRuntimeSha256,
 				proof.receiptSha256,
 				evidence,
@@ -196,18 +248,18 @@ export function sealVerifiedNativeScore(
 		)
 		.update(framesGzip)
 		.digest("hex");
-	return { ...proof, version: 2 as const, payloadSha256 };
+	return { ...proof, version: 3 as const, payloadSha256 };
 }
 
 export async function readVerifiedNativeScore(
 	load: NonNullable<NativeScoreReuseContext["load"]>,
-	identity: VerifiedScoreIdentity,
+	lookupKey: string,
 	expected: NativeExpected,
 	deviceUuid: string,
 	signal?: AbortSignal,
 ) {
 	try {
-		const candidate = await load(identity.key);
+		const candidate = await load(lookupKey);
 		signal?.throwIfAborted();
 		if (!candidate?.framesGzip) return undefined;
 		const { framesGzip } = candidate;
@@ -216,8 +268,7 @@ export async function readVerifiedNativeScore(
 			storedCandidate.parse(candidate.provenance);
 		const { scoring } = execution;
 		if (
-			proof.key !== identity.key ||
-			proof.decoderRuntimeSha256 !== identity.decoderRuntimeSha256 ||
+			proof.lookupKey !== lookupKey ||
 			execution.reusedVerifiedResult ||
 			scoring.implementation !== "bitovp-owned" ||
 			execution.attempts !== 1 ||
@@ -264,7 +315,12 @@ export async function readVerifiedNativeScore(
 		signal?.throwIfAborted();
 		return {
 			execution: { ...execution, reusedVerifiedResult: true as const },
-			verifiedNativeScore: { ...identity, receiptSha256: proof.receiptSha256 },
+			verifiedNativeScore: {
+				key: proof.key,
+				lookupKey,
+				decoderRuntimeSha256: proof.decoderRuntimeSha256,
+				receiptSha256: proof.receiptSha256,
+			},
 			log: {
 				frames: frames.map(({ frameNum, vmaf, psnr }) => ({
 					frameNum,

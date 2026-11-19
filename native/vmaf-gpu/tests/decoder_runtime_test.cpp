@@ -36,6 +36,13 @@ int main(int argc, char **argv) {
         require(avformat_version() && avcodec_version() && avutil_version() && swscale_version(),
                 "Expected FFmpeg libraries");
 #if defined(__GLIBC__)
+        if (std::string(argv[1]) == "--assert-audit-refused") {
+            require(std::getenv("LD_AUDIT"), "Expected a harmless audit environment marker");
+            require(!capture_decoder_runtime(), "Configured loader audit must disable attestation");
+            require(unsetenv("LD_AUDIT") == 0, "Cannot clear test environment marker");
+            require(!capture_decoder_runtime(), "Exec-time audit setting must still disable attestation");
+            return 0;
+        }
         const auto startup = capture_decoder_runtime();
         require(startup && decoder_runtime_unchanged(*startup), "Expected stable mapped FFmpeg identity");
         if (std::string(argv[1]) == "--print-fingerprint") {

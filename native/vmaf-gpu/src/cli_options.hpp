@@ -89,7 +89,7 @@ inline Options parse(int argc, char **argv) {
         for (const auto &key : used)
             if (key != "--backend" && key != "--device" && key != "--vendor")
                 throw std::invalid_argument("Option is not valid with --device-info: " + key);
-        if (out.verify || out.device.profile || out.attest_decoder_runtime || !out.models.empty())
+        if (out.verify || out.device.profile || !out.models.empty())
             throw std::invalid_argument("Scoring options are not valid with --device-info");
         return out;
     }

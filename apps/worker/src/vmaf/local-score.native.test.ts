@@ -180,6 +180,10 @@ async function setupReuse() {
 						officialSourceRevision: NATIVE_OFFICIAL_REVISION,
 						backend: "vulkan",
 						device,
+						...(args.includes("--attest-decoder-runtime") &&
+						decoderRuntime.probeSha256
+							? { decoderRuntimeSha256: decoderRuntime.probeSha256 }
+							: {}),
 						capabilities: {
 							inflightFrames: [1, 2, 4],
 							cpuParity: true,
@@ -202,6 +206,14 @@ async function setupReuse() {
 							JSON.stringify({
 								...receipt,
 								decoderRuntimeSha256: decoderRuntime.completionSha256,
+								...(device.driverVersionKnown
+									? {
+											gpuDriver: {
+												driverVersion: device.driverVersion,
+												driverVersionSource: device.driverVersionSource,
+											},
+										}
+									: {}),
 							}),
 						);
 					}
@@ -254,11 +266,12 @@ describe("owned native local scoring", () => {
 			verifiedReuse: { ...h.reuse, load },
 		});
 		expect(load).toHaveBeenCalledExactlyOnceWith(
-			h.candidate.provenance.verifiedNativeScore.key,
+			h.candidate.provenance.verifiedNativeScore.lookupKey,
 		);
 		expect(result.execution.reusedVerifiedResult).toBe(true);
 		expect(result.verifiedNativeScore).toEqual({
 			key: h.candidate.provenance.verifiedNativeScore.key,
+			lookupKey: h.candidate.provenance.verifiedNativeScore.lookupKey,
 			decoderRuntimeSha256: h.decoderRuntime.probeSha256,
 			receiptSha256: h.candidate.provenance.verifiedNativeScore.receiptSha256,
 		});
@@ -335,13 +348,53 @@ describe("owned native local scoring", () => {
 		});
 		expect(load).toHaveBeenCalledOnce();
 		expect(
-			h.run.mock.calls.filter(([, args]) => args[0] === "--decoder-runtime"),
-		).toHaveLength(2);
+			h.run.mock.calls.filter(
+				([, args]) =>
+					args[0] === "--device-info" &&
+					args.includes("--attest-decoder-runtime"),
+			),
+		).toHaveLength(1);
 		expect(
 			h.run.mock.calls.filter(([, args]) => args.includes("--verify-cpu")),
 		).toHaveLength(1);
 		expect(result.execution.reusedVerifiedResult).toBeUndefined();
 		expect(result.verifiedNativeScore).toBeUndefined();
+	});
+
+	it.each([
+		"changed",
+		"unavailable",
+	] as const)("scores fresh if the GPU driver is %s during predecessor lookup", async (change) => {
+		const h = await completedReuse();
+		const load = vi.fn(async () => {
+			if (change === "changed") h.device.driverVersion = "fixture-driver-2";
+			else h.device.driverVersionKnown = false;
+			return h.candidate;
+		});
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: { ...h.reuse, load },
+		});
+		expect(load).toHaveBeenCalledOnce();
+		expect(result.execution.reusedVerifiedResult).toBeUndefined();
+		expect(result.verifiedNativeScore).toBeUndefined();
+		expect(
+			h.run.mock.calls.filter(([, args]) => args.includes("--verify-cpu")),
+		).toHaveLength(1);
+	});
+
+	it("does not initialize a device probe without a reusable predecessor", async () => {
+		const h = await setupReuse();
+		await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: { ...h.reuse, load: async () => null },
+		});
+		expect(
+			h.run.mock.calls.filter(([, args]) => args[0] === "--device-info"),
+		).toHaveLength(0);
+		expect(
+			h.run.mock.calls.filter(([, args]) => args.includes("--verify-cpu")),
+		).toHaveLength(1);
 	});
 
 	it("does not continue after cancellation during predecessor read", async () => {
@@ -384,15 +437,26 @@ describe("owned native local scoring", () => {
 		).toBe(true);
 	});
 
+	it("does not certify a score without actual GPU driver evidence", async () => {
+		const h = await setupReuse();
+		h.device.driverVersionKnown = false;
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: h.reuse,
+		});
+		expect(result.run.code).toBe(0);
+		expect(result.verifiedNativeScore).toBeUndefined();
+	});
+
 	it("scores fresh on a legacy native executable without decoder-runtime preflight", async () => {
-		const h = await completedReuse();
+		const h = await setupReuse();
 		h.decoderRuntime.probeSha256 = null;
-		const load = vi.fn(async () => h.candidate);
+		const load = vi.fn(async () => null);
 		const result = await runLocalVmafScore(h.deps, h.options, {
 			...h.context,
 			verifiedReuse: { ...h.reuse, load },
 		});
-		expect(load).not.toHaveBeenCalled();
+		expect(load).toHaveBeenCalledOnce();
 		expect(result.execution.reusedVerifiedResult).toBeUndefined();
 		expect(result.verifiedNativeScore).toBeUndefined();
 		const score = h.run.mock.calls.find(([, args]) =>

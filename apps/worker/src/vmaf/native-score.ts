@@ -21,10 +21,12 @@ import {
 	verifyNativeReceipt,
 } from "./native-contract";
 import {
+	completedNativeScoreIdentity,
 	type NativeScoreReuseContext,
 	probeNativeDecoderRuntime,
 	readVerifiedNativeScore,
-	verifiedNativeScoreIdentity,
+	reconfirmNativeScore,
+	verifiedNativeScoreLookupKey,
 } from "./native-score-reuse";
 import { resourceVideoFromProbe } from "./resource-plan";
 
@@ -305,36 +307,37 @@ export async function runNativeVmafScore(
 	};
 	// Calibration times a prefix. It cannot produce or consume a complete score.
 	const reuse = frameLimit === undefined ? context.verifiedReuse : undefined;
-	let reuseIdentity = reuse
-		? await verifiedNativeScoreIdentity(
-				{ runner: deps.runner, nativePath: deps.nativePath },
+	let lookupKey = reuse
+		? verifiedNativeScoreLookupKey(
 				reuse,
 				expected,
 				options.threads ?? 1,
 				options.decoderThreads ?? 1,
 				context.nativeInflightFrames ?? 1,
-				signal,
 			)
 		: undefined;
 	const receiptPath = `${options.logPath}.native.json`;
 	await rm(receiptPath, { force: true });
 	try {
-		if (reuseIdentity && reuse?.load) {
+		const native = { runner: deps.runner, nativePath: deps.nativePath };
+		if (lookupKey && reuse?.load) {
 			const prior = await readVerifiedNativeScore(
 				reuse.load,
-				reuseIdentity,
+				lookupKey,
 				expected,
 				reuse.selection.identity.deviceUuid,
 				signal,
 			);
 			if (prior) {
-				// A library can change while reading a valid predecessor.
-				const currentRuntime = await probeNativeDecoderRuntime(
-					{ runner: deps.runner, nativePath: deps.nativePath },
-					sourceSha256,
-					signal,
-				);
-				if (currentRuntime === reuseIdentity.decoderRuntimeSha256) {
+				if (
+					await reconfirmNativeScore(
+						native,
+						reuse,
+						prior.verifiedNativeScore,
+						context.nativeInflightFrames ?? 1,
+						signal,
+					)
+				) {
 					await writeFile(options.logPath, JSON.stringify(prior.log));
 					signal?.throwIfAborted();
 					return {
@@ -343,10 +346,15 @@ export async function runNativeVmafScore(
 						...prior,
 					};
 				}
-				// Score fresh without issuing a certificate for the stale observation.
-				reuseIdentity = undefined;
+				// Score fresh without issuing a certificate for this rejected candidate.
+				lookupKey = undefined;
 			}
 		}
+		// A decoder-only probe negotiates attestation for fresh scoring without
+		// initializing a device. The score supplies its actual device evidence.
+		const decoderRuntimeSha256 = lookupKey
+			? await probeNativeDecoderRuntime(native, sourceSha256, signal)
+			: undefined;
 		const args = [
 			"--reference",
 			options.referencePath,
@@ -373,7 +381,7 @@ export async function runNativeVmafScore(
 			"--decode-threads",
 			String(options.decoderThreads ?? 1),
 			"--verify-cpu",
-			...(reuseIdentity ? ["--attest-decoder-runtime"] : []),
+			...(decoderRuntimeSha256 ? ["--attest-decoder-runtime"] : []),
 			...(context.nativeInflightFrames === undefined
 				? []
 				: ["--inflight-frames", String(context.nativeInflightFrames)]),
@@ -430,18 +438,28 @@ export async function runNativeVmafScore(
 			scoring: verified.scoring,
 			attempts: 1,
 		});
+		const scoreIdentity =
+			lookupKey &&
+			decoderRuntimeSha256 &&
+			metadata.decoderRuntimeSha256 === decoderRuntimeSha256 &&
+			verified.scoring.device.uuid === reuse?.selection.identity.deviceUuid
+				? completedNativeScoreIdentity(
+						lookupKey,
+						decoderRuntimeSha256,
+						verified.scoring.device,
+						metadata.gpuDriver,
+					)
+				: undefined;
 		await writeFile(options.logPath, JSON.stringify(verified.log));
 		signal?.throwIfAborted();
 		return {
 			run,
 			execution,
 			log: verified.log,
-			...(reuseIdentity &&
-			metadata.decoderRuntimeSha256 === reuseIdentity.decoderRuntimeSha256 &&
-			verified.scoring.device.uuid === reuse?.selection.identity.deviceUuid
+			...(scoreIdentity
 				? {
 						verifiedNativeScore: {
-							...reuseIdentity,
+							...scoreIdentity,
 							receiptSha256: createHash("sha256").update(receipt).digest("hex"),
 						},
 					}

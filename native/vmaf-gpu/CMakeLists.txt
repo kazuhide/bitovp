@@ -178,6 +178,8 @@ if(BITOVP_TESTS)
     target_link_libraries(decoder_runtime_test PRIVATE bitovp_decode)
     target_compile_options(decoder_runtime_test PRIVATE -Wall -Wextra -Werror)
     add_test(NAME native_decoder_runtime_identity COMMAND decoder_runtime_test "$<TARGET_FILE:decoder_runtime_fixture>")
+    add_test(NAME native_decoder_runtime_audit_refusal COMMAND
+      "${CMAKE_COMMAND}" -E env "LD_AUDIT=" "$<TARGET_FILE:decoder_runtime_test>" --assert-audit-refused)
     add_test(NAME native_decoder_runtime_preload_order COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/decoder_runtime_preload_test.py"
       "$<TARGET_FILE:decoder_runtime_test>" "$<TARGET_FILE:decoder_runtime_fixture>")

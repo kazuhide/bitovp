@@ -2150,7 +2150,7 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					return scope;
 				return {
 					...scope,
-					load: (key) =>
+					load: (lookupKey) =>
 						deps.prisma.vmafResult.findFirst({
 							where: {
 								organizationId: scope.organizationId,
@@ -2165,8 +2165,8 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 									scoringVersion: scope.scoringVersion,
 								},
 								provenance: {
-									path: ["verifiedNativeScore", "key"],
-									equals: key,
+									path: ["verifiedNativeScore", "lookupKey"],
+									equals: lookupKey,
 								},
 							},
 							select: { framesGzip: true, provenance: true },

@@ -210,9 +210,11 @@ describe("LifecycleStrip", () => {
 	});
 
 	it.each([
-		null,
-		"2026-08-30T11:59:00.000Z",
-	])("only labels a recorded read failure in Japanese (%s)", (unknownSince) => {
+		["ja", null],
+		["ja", "2026-08-30T11:59:00.000Z"],
+		["en", null],
+		["en", "2026-08-30T11:59:00.000Z"],
+	] as const)("distinguishes a stale status from a recorded loss of confirmation in %s (%s)", (locale, unknownSince) => {
 		renderWithQuery(
 			<LifecycleStrip
 				status="RUNNING"
@@ -226,15 +228,22 @@ describe("LifecycleStrip", () => {
 					status: "RUNNING",
 				}}
 			/>,
-			"ja",
+			locale,
 		);
 		fireEvent.click(screen.getByRole("button"));
 		const help = screen.getByRole("note");
-		expect(help).toHaveTextContent("最終確認");
+		expect(help).toHaveTextContent(
+			locale === "ja" ? "最終確認" : "last confirmed",
+		);
+		expect(help).not.toHaveTextContent(/取得エラー|取得失敗|read failure/i);
+		const windowLabel =
+			locale === "ja"
+				? "状態を確認できなくなった時刻"
+				: "no confirmed status since";
 		if (unknownSince) {
-			expect(help).toHaveTextContent("取得失敗の記録");
+			expect(help).toHaveTextContent(windowLabel);
 		} else {
-			expect(help).not.toHaveTextContent(/取得エラー|取得失敗/);
+			expect(help).not.toHaveTextContent(windowLabel);
 		}
 	});
 

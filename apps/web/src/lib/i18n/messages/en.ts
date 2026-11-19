@@ -3279,8 +3279,8 @@ export const en = {
 		// Use amber while provider status is unconfirmed. Once the provider confirms an encoding has ended,
 		// the lifecycle hint must not imply that the encoder may still be running.
 		providerUnknownHint:
-			"Provider status cannot be confirmed (last confirmed {at}{readFailure}). Bitmovin status is checked every 30 seconds. Stop remains available. Start, restart, slate, SCTE-35, timeshift and new feeders require a fresh reading.",
-		providerReadFailure: "; first recorded read failure {since}",
+			"Provider status cannot be confirmed (last confirmed {at}{unavailableSince}). Bitmovin status is checked every 30 seconds. Stop remains available. Start, restart, slate, SCTE-35, timeshift and new feeders require a fresh reading.",
+		providerUnavailableSince: "; no confirmed status since {since}",
 		providerUnobservedHint:
 			"Waiting for the first Bitmovin encoder status check. Until it arrives, this channel is not shown as confirmed on air.",
 		providerUnknownNever: "never",

@@ -1911,7 +1911,7 @@ export const ja = {
 		alertsUnknownBody:
 			"アラート一覧を読み込めないため、アラートの有無を確認できません。アラートのカードを開き、もう一度取得してください。",
 		/* An unreadable provider state proves neither running nor stopped. */
-		providerUnknownTitle: "Bitmovin からエンコーダの状態を取得できません",
+		providerUnknownTitle: "Bitmovin の最新のエンコーダ状態を確認できていません",
 		providerUnknownBody:
 			"30 秒ごとに状態を取得し直します。配信の停止は行えます。",
 		onAirTitle: "オンエア中",
@@ -3229,8 +3229,8 @@ export const ja = {
 			"チャンネルは ERROR 状態です。Bitmovin 側にエンコーダが残っている可能性があるため、解放するには停止してください。ここから開始すると、エンコーダの準備を再開します。",
 		/* Provider encoding state stays unknown until confirmed. A finished encoding must not imply that resources may still be running. */
 		providerUnknownHint:
-			"Bitmovin の最新のエンコーダ状態を確認できていません（最終確認 {at}{readFailure}）。30 秒ごとに再確認します。停止はできますが、開始・再起動・スレート・SCTE-35・タイムシフト・新しいファイル入力は、状態を確認できるまで使えません。",
-		providerReadFailure: "、取得失敗の記録 {since}",
+			"Bitmovin の最新のエンコーダ状態を確認できていません（最終確認 {at}{unavailableSince}）。30 秒ごとに再確認します。停止はできますが、開始・再起動・スレート・SCTE-35・タイムシフト・新しいファイル入力は、状態を確認できるまで使えません。",
+		providerUnavailableSince: "、状態を確認できなくなった時刻 {since}",
 		providerUnobservedHint:
 			"Bitmovin エンコーダ状態の初回確認を待っています。確認できるまではオンエア中と判定しません。",
 		providerUnknownNever: "なし",
@@ -3256,7 +3256,8 @@ export const ja = {
 		cancelStartPending: "取り消し処理中",
 		cancelStart: "開始を取り消す",
 		title: "ライブチャンネル",
-		providerStatusUnconfirmed: "{status} · Bitmovin の状態を取得できません",
+		providerStatusUnconfirmed:
+			"{status} · Bitmovin の最新状態を確認できていません",
 		newChannel: "ライブチャンネルを作成",
 		inventory: {
 			title: "Live エンコーダの照合",
@@ -3494,7 +3495,7 @@ export const ja = {
 		retryAisaFinalizationDescription: "終了した配信の後処理を再試行します。",
 		encoderStopped: "停止済み",
 		encoderActive: "エンコーダ稼働中",
-		encoderStatusUnverified: "エンコーダの状態を取得できません",
+		encoderStatusUnverified: "エンコーダの最新状態を確認できていません",
 		runOutputGenerated: "出力生成を確認",
 		runErrorRecorded: "エラーあり",
 		runOutputUnverified: "出力記録を取得できません",

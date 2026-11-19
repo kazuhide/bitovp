@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TRANSCRIPTION_POLICY_FINGERPRINT } from "@bitovp/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { hasBenchmarkSpeech } from "../../scripts/cuda-asr-benchmark-speech";
 import { MediaOperationError } from "./process";
 import {
 	parseWhisperTranscript,
@@ -184,6 +185,12 @@ describe("speech quality admission preserves raw recognition", () => {
 			-2.699848427788113,
 		);
 		expect(value.warnings).toContain("NO_SPEECH");
+		const measurement = {
+			segments: value.segments,
+			rawSegments: value.rawSegments ?? [],
+			speechIntervals: value.speechIntervals ?? [],
+		};
+		expect(hasBenchmarkSpeech(measurement)).toBe(false);
 	});
 	it("keeps short confident speech even when recorded word alignment is unavailable", () => {
 		const raw = isolatedSpeechFixture(0.95);

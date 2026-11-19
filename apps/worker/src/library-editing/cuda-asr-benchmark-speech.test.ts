@@ -14,23 +14,30 @@ const raw: LocalTranscript["rawSegments"][number] = {
 		decision: "ADMITTED",
 	},
 };
+const recognized = {
+	segments: [{ startUs: raw.startUs, endUs: raw.endUs, text: raw.text }],
+	speechIntervals: speech,
+	rawSegments: [raw],
+};
 
 describe("CUDA ASR benchmark sample evidence", () => {
 	it("rejects detector-only runs with no emitted transcript", () => {
-		expect(hasBenchmarkSpeech({ speechIntervals: [], rawSegments: [] })).toBe(
-			false,
-		);
-		expect(
-			hasBenchmarkSpeech({ speechIntervals: speech, rawSegments: [] }),
-		).toBe(false);
-		expect(
-			hasBenchmarkSpeech({ speechIntervals: [], rawSegments: [raw] }),
-		).toBe(false);
-	});
-	it("requires lexical raw speech overlapping a detected interval", () => {
 		expect(
 			hasBenchmarkSpeech({
-				speechIntervals: speech,
+				segments: [],
+				speechIntervals: [],
+				rawSegments: [],
+			}),
+		).toBe(false);
+		expect(hasBenchmarkSpeech({ ...recognized, rawSegments: [] })).toBe(false);
+		expect(hasBenchmarkSpeech({ ...recognized, speechIntervals: [] })).toBe(
+			false,
+		);
+	});
+	it("requires admitted speech overlapping a detected interval", () => {
+		expect(
+			hasBenchmarkSpeech({
+				...recognized,
 				rawSegments: [
 					{
 						...raw,
@@ -39,8 +46,7 @@ describe("CUDA ASR benchmark sample evidence", () => {
 				],
 			}),
 		).toBe(false);
-		expect(
-			hasBenchmarkSpeech({ speechIntervals: speech, rawSegments: [raw] }),
-		).toBe(true);
+		expect(hasBenchmarkSpeech({ ...recognized, segments: [] })).toBe(false);
+		expect(hasBenchmarkSpeech(recognized)).toBe(true);
 	});
 });

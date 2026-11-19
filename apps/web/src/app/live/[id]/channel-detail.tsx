@@ -26,6 +26,7 @@ import {
 import {
 	isActiveChannelStatus,
 	type LiveChannelDetailRow,
+	liveStatusPresentation,
 	normalizeLiveToVod,
 } from "@/app/live/live-shared";
 import { LiveStatusBadge } from "@/app/live/live-status-badge";
@@ -1644,7 +1645,9 @@ function ChannelConsole({
 			{/* , the three handoffs that are not a click. All three mount
 			 * WITH the body, so "the sections exist" is a fact about where they
 			    sit rather than a condition they re-derive. */}
-			<DeepLinkFocus />
+			<DeepLinkFocus
+				playbackAvailable={!omittedSections.includes("sec-manifests")}
+			/>
 			<RevealFocus revealed={escalated} />
 			<StatusAnnouncer
 				signal={{
@@ -1722,7 +1725,10 @@ function ChannelConsole({
 					ingestConnected={displayedInputConnection}
 					hasEncoding={row.bitmovinEncodingId !== null}
 					hasError={Boolean(row.error)}
-					showProviderSummary={false}
+					showProviderSummary={
+						!liveStatusPresentation(displayStatus, providerLifecycle)
+							.providerUnconfirmed
+					}
 					// : the provider's own view — amber while it cannot be
 					// confirmed, and the terminal hint once Bitmovin said it ended.
 					provider={{

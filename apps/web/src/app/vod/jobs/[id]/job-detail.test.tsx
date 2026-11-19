@@ -1251,6 +1251,25 @@ describe("JobDetail — two-column layout", () => {
 		);
 	});
 
+	it("keeps full-width detail when the only manifest cannot be played", async () => {
+		const url = AWS_URL.replace("https:", "http:");
+		mockApi({
+			row: {
+				playbackLinks: [link({ url, reason: { code: "INSECURE_ENDPOINT" } })],
+			},
+		});
+		const { container } = wrap(<JobDetail id={JOB_ID} />);
+		expect(await screen.findByText(url)).toBeVisible();
+		expect(screen.queryByRole("button", { name: "Play" })).toBeNull();
+		const detailGrid = container.querySelector(
+			"#job-detail-content",
+		)?.parentElement;
+		expect(detailGrid).toHaveClass("grid-cols-1");
+		expect(detailGrid?.className).not.toContain(
+			"@min-[66rem]/vod-detail:grid-cols-",
+		);
+	});
+
 	it("renders the detail as the only grid item on a job with no manifests", async () => {
 		mockApi({ row: { playbackLinks: [] } });
 		const { container } = wrap(<JobDetail id={JOB_ID} />);

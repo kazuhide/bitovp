@@ -41,11 +41,13 @@ export function BandingPanels({
 	labels,
 	initialIds,
 	compact = false,
+	reportDetail = false,
 }: {
 	results: Result[];
 	labels?: Readonly<Record<string, string>>;
 	initialIds?: [string, string];
 	compact?: boolean;
+	reportDetail?: boolean;
 }) {
 	const { t } = useT();
 	const heading = (
@@ -75,6 +77,7 @@ export function BandingPanels({
 						results={results}
 						labels={labels}
 						compact={compact}
+						reportDetail={reportDetail}
 						{...selection}
 					/>
 				)}
@@ -89,12 +92,14 @@ function BandingResultPanels({
 	selectedTime,
 	onTimeSelect,
 	compact,
+	reportDetail,
 }: {
 	results: Result[];
 	labels?: Readonly<Record<string, string>>;
 	selectedTime?: number;
 	onTimeSelect: (seconds: number) => void;
 	compact: boolean;
+	reportDetail: boolean;
 }) {
 	const { t } = useT();
 	const [selection, setSelection] = useState<{
@@ -106,7 +111,7 @@ function BandingResultPanels({
 	return (
 		<div
 			className={
-				compact && results.length > 1
+				compact && (!reportDetail || results.length > 1)
 					? "grid min-w-0 grid-cols-1 items-start gap-3 xl:grid-cols-2"
 					: "space-y-6"
 			}
@@ -259,8 +264,11 @@ function BandingResultPanels({
 												dataKey="timestampSeconds"
 												name={t("banding.time")}
 												domain={["dataMin", "dataMax"]}
-												tickFormatter={fixed}
-												tick={{ fill: "var(--color-zinc-400)", fontSize: 11 }}
+												tickFormatter={reportDetail ? fixed : undefined}
+												tick={{
+													fill: "var(--color-zinc-400)",
+													fontSize: reportDetail ? 11 : undefined,
+												}}
 												label={{
 													value: t("banding.time"),
 													position: "bottom",
@@ -453,7 +461,7 @@ export function BandingReport({
 				</p>
 			) : null}
 			{job.results.length ? (
-				<BandingPanels results={job.results} />
+				<BandingPanels results={job.results} reportDetail />
 			) : job.status === "FINISHED" ? (
 				<p className="mt-6 text-sm text-zinc-500">
 					{t("ui.thisReportFinishedWithNoRenditionResults")}

@@ -37,10 +37,17 @@ import type { LiveSectionId } from "./section-layout";
  * It also covers hashes no component of ours produces: a browser Back to a
  * previous fragment, or one typed into the address bar.
  */
-export function DeepLinkFocus() {
+export function DeepLinkFocus({
+	playbackAvailable = false,
+}: {
+	playbackAvailable?: boolean;
+}) {
+	const pendingPlaybackFocus = useRef(false);
 	useEffect(() => {
 		const focusFromHash = () => {
 			const hash = window.location.hash.slice(1);
+			pendingPlaybackFocus.current =
+				hash === "sec-manifests" && !document.getElementById(hash);
 			if (hash.length > 0) {
 				focusLiveSection(hash);
 			}
@@ -49,6 +56,16 @@ export function DeepLinkFocus() {
 		window.addEventListener("hashchange", focusFromHash);
 		return () => window.removeEventListener("hashchange", focusFromHash);
 	}, []);
+	useEffect(() => {
+		if (
+			playbackAvailable &&
+			pendingPlaybackFocus.current &&
+			window.location.hash === "#sec-manifests"
+		) {
+			pendingPlaybackFocus.current = false;
+			focusLiveSection("sec-manifests");
+		}
+	}, [playbackAvailable]);
 	return null;
 }
 

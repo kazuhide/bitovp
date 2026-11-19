@@ -263,7 +263,7 @@ export function VmafReport({ id }: { id: string }) {
 						key={job.id}
 						cambi={
 							job.banding ? (
-								<BandingPanels results={job.results} compact />
+								<BandingPanels results={job.results} compact reportDetail />
 							) : undefined
 						}
 						vmaf={

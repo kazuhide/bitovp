@@ -515,6 +515,72 @@ describe("ChannelDetail — live playback preview", () => {
 			apiFetch.mock.calls.some(([url]) => String(url).includes("/moq-")),
 		).toBe(false);
 	});
+
+	it.each([
+		["OPERATOR", false],
+		["OPERATOR", true],
+		["VIEWER", false],
+	] as const)("honors a pending MoQ link for %s with changed hash=%s", async (role, changedHash) => {
+		const row = channelRow({
+			currentRun: { ...confirmedRun("RUNNING"), stepLog: [MOQ_STEP] },
+		});
+		mockChannel(row);
+		mockRole(role);
+		const authReady = Promise.withResolvers<void>();
+		const fixture = apiFetch.getMockImplementation();
+		apiFetch.mockImplementation(async (url: string) => {
+			if (url === "/api/auth/session") await authReady.promise;
+			return fixture?.(url);
+		});
+
+		const url = window.location.href;
+		window.history.replaceState(null, "", "#sec-manifests");
+		try {
+			const { client } = wrap(<ChannelDetail id={CHANNEL} />);
+			await screen.findByRole("heading", { name: "Verification channel" });
+			expect(document.getElementById("sec-manifests")).toBeNull();
+			expect(document.activeElement).toBe(document.body);
+			if (changedHash) {
+				act(() => {
+					window.history.replaceState(null, "", "#sec-runs");
+					window.dispatchEvent(new HashChangeEvent("hashchange"));
+				});
+				expect(document.getElementById("sec-runs-h")).toHaveFocus();
+			}
+
+			await act(async () => authReady.resolve());
+			await waitFor(() =>
+				expect(client.getQueryData(["auth", "session"])).toMatchObject({
+					role,
+				}),
+			);
+			if (role === "OPERATOR") {
+				await screen.findByRole("region", { name: "MoQ playback" });
+				expect(
+					document.getElementById(
+						changedHash ? "sec-runs-h" : "sec-manifests-h",
+					),
+				).toHaveFocus();
+				const operatorControl = screen.getByRole("button", {
+					name: "Copy settings and edit",
+				});
+				operatorControl.focus();
+				await act(async () => {
+					client.setQueryData(["live-channel", CHANNEL], {
+						...row,
+						updatedAt: "2026-08-11T01:00:00.000Z",
+					});
+				});
+				expect(operatorControl).toHaveFocus();
+			} else {
+				expect(document.getElementById("sec-manifests")).toBeNull();
+				expect(document.activeElement).toBe(document.body);
+			}
+		} finally {
+			authReady.resolve();
+			window.history.replaceState(null, "", url);
+		}
+	});
 	/* Verify the current information hierarchy rather than restoring the former all-collapsed layout. */
 	it("opens with ONE thing to do, and its anchor points at a section that exists (review-260 126-A2)", async () => {
 		// RUNNING + no heartbeat ⇒ ingest unproven ⇒ CONNECT_INPUT.

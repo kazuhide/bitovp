@@ -531,7 +531,7 @@ export function JobDetail({
 				<div
 					className={cn(
 						"grid min-w-0 grid-cols-1 gap-6",
-						links.length > 0 &&
+						playable.length > 0 &&
 							"@min-[66rem]/vod-detail:grid-cols-[minmax(0,1fr)_minmax(40rem,1.2fr)]",
 					)}
 				>

@@ -459,6 +459,33 @@ describe("ChannelDetail — a lost provider observation is never on air (row #28
 		expect(strip()?.getAttribute("data-provider")).toBe("unknown");
 	});
 
+	it.each([
+		"unknown",
+		"unobserved",
+	] as const)("keeps the %s provider status visible while stopping", async (provider) => {
+		const row = channelRow({
+			providerStatus: provider === "unknown" ? "RUNNING" : null,
+			providerStatusObservedAt:
+				provider === "unknown"
+					? new Date(Date.now() - 10 * 60_000).toISOString()
+					: null,
+			providerUnknownSince: null,
+			providerTerminalAt: null,
+		});
+		mockPage({
+			...row,
+			status: "STOPPING",
+			currentRun: { ...row.currentRun, status: "STOPPING" },
+		});
+		wrap(<ChannelDetail id={CHANNEL} />);
+		await screen.findByRole("region", { name: /channel status/i });
+		expect(statusBadge("STOPPING")).toBeVisible();
+		expect(strip()).toHaveAttribute("data-provider", provider);
+		expect(
+			screen.getByText("STOPPING · Bitmovin status unconfirmed"),
+		).toBeVisible();
+	});
+
 	it("a run with no observation yet is not ON_AIR or green while the first Bitmovin status check is pending", async () => {
 		mockPage(
 			channelRow({

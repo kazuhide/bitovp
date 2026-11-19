@@ -36,6 +36,8 @@ export function useMoqObservationHistory(
 		},
 		enabled,
 		retry: false,
+		// The archive cache can predate the final observations of this run.
+		refetchOnMount: scope === "archive" ? "always" : true,
 		refetchInterval: scope === "live" ? 5000 : false,
 	});
 }

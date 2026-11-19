@@ -44,6 +44,23 @@ const CHANNEL = "00000000-0000-4000-8000-000000000001";
 const RUN = "00000000-0000-4000-8000-000000000002";
 const NEXT = "00000000-0000-4000-8000-000000000003";
 const ORG = "00000000-0000-4000-8000-000000000010";
+const inputHeartbeatPoint: MoqHeartbeatPoint = {
+	observedAt: "2026-11-20T00:00:00.000Z",
+	sampledAt: null,
+	source: "poll",
+	ingestStatus: "CONNECTED",
+	ingestHealthy: true,
+	videoIncomingBitrateBps: 2_000_000,
+	audioIncomingBitrateBps: null,
+	videoFps: null,
+	droppedPacketsVideo: null,
+	droppedPacketsAudio: null,
+	corruptPacketsVideo: null,
+	corruptPacketsAudio: null,
+	segmentProcessingMeanMs: null,
+	segmentProcessingMinMs: null,
+	segmentProcessingMaxMs: null,
+};
 const descriptor: MoqPlaybackDescriptor = {
 	runId: RUN,
 	encodingId: "00000000-0000-4000-8000-000000000004",
@@ -177,29 +194,12 @@ describe("explicit MoQ preview", () => {
 		);
 	});
 	it("drops previously visible encoder telemetry when a later read is forbidden", async () => {
-		const point: MoqHeartbeatPoint = {
-			observedAt: "2026-11-20T00:00:00.000Z",
-			sampledAt: null,
-			source: "poll",
-			ingestStatus: "CONNECTED",
-			ingestHealthy: true,
-			videoIncomingBitrateBps: 2_000_000,
-			audioIncomingBitrateBps: null,
-			videoFps: null,
-			droppedPacketsVideo: null,
-			droppedPacketsAudio: null,
-			corruptPacketsVideo: null,
-			corruptPacketsAudio: null,
-			segmentProcessingMeanMs: null,
-			segmentProcessingMinMs: null,
-			segmentProcessingMaxMs: null,
-		};
 		mocks.historyRead.mockResolvedValueOnce({
 			runId: RUN,
 			sessions: [],
 			heartbeat: {
 				source: "live-encoder-heartbeat",
-				points: [point],
+				points: [inputHeartbeatPoint],
 				truncated: false,
 			},
 		});
@@ -245,6 +245,71 @@ describe("explicit MoQ preview", () => {
 		).toBeVisible();
 		expect(liveSignal?.aborted).toBe(true);
 		expect(mocks.historyRead).toHaveBeenCalledTimes(2);
+	});
+
+	it("refreshes just-cached archive history when the live run ends", async () => {
+		const { client, container, rerender } = renderWithQuery(null);
+		client.setDefaultOptions({
+			queries: { retry: 1, staleTime: 15_000, refetchOnWindowFocus: false },
+		});
+		const oldHistory = {
+			runId: RUN,
+			sessions: [],
+			heartbeat: {
+				source: "live-encoder-heartbeat",
+				points: [],
+				truncated: false,
+			},
+		};
+		client.setQueryData(["moq-observations", CHANNEL, RUN], oldHistory);
+		const liveHistory = {
+			...oldHistory,
+			heartbeat: { ...oldHistory.heartbeat, points: [inputHeartbeatPoint] },
+		};
+		const startedAt = inputHeartbeatPoint.observedAt;
+		const endedAt = "2026-11-20T00:00:01.000Z";
+		const archived: MoqObservationSession = {
+			id: NEXT,
+			startedAt,
+			endedAt,
+			createdAt: startedAt,
+			updatedAt: endedAt,
+			samples: [],
+			events: [
+				{ elapsedMs: 0, type: "first-frame" },
+				{ elapsedMs: 1000, type: "ended" },
+			],
+			archive: {
+				contentType: "video/webm",
+				bytes: 100,
+				sha256: "a".repeat(64),
+				durationMs: 1000,
+				recordedAt: endedAt,
+			},
+		};
+		mocks.historyRead
+			.mockResolvedValueOnce(liveHistory)
+			.mockResolvedValueOnce({ ...liveHistory, sessions: [archived] });
+
+		rerender(view());
+		await waitFor(() => {
+			expect(
+				container.querySelector("[data-moq-encoder-history] time"),
+			).toHaveAttribute("datetime", startedAt);
+		});
+		expect(mocks.historyRead).toHaveBeenCalledTimes(1);
+
+		rerender(view(RUN, false));
+		await waitFor(() => expect(mocks.historyRead).toHaveBeenCalledTimes(2), {
+			timeout: 1000,
+		});
+		await waitFor(() => {
+			expect(
+				container.querySelector("video[data-moq-archive]"),
+			).toHaveAttribute("data-moq-archive", archived.id);
+		});
+		expect(mocks.api).not.toHaveBeenCalled();
+		expect(mocks.observation).not.toHaveBeenCalled();
 	});
 
 	it.each([

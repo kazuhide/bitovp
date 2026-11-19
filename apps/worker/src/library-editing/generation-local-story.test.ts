@@ -289,6 +289,7 @@ describe("local story project generation", () => {
 		});
 		f.refresh();
 		f.authored.evidence.sceneScope = { sceneId, startUs: 0, endUs: 4_000_000 };
+		f.authored.evidence.sceneFrameBounds = { fromFrame: 0, toFrame: 120 };
 		f.authored.evidence.inputCoverage = {
 			totalShots: 2,
 			eligibleShots: 2,
@@ -313,14 +314,28 @@ describe("local story project generation", () => {
 		);
 		await expect(f.run()).resolves.toEqual(result);
 		expect(f.plan).toHaveBeenCalledTimes(1);
-		const forged = structuredClone(result);
-		const evidence = fixtureItem(forged.localStoryEvidence);
-		delete evidence.sceneScope;
-		evidence.artifactHash = localStoryArtifactHash(evidence);
-		f.task.result = forged;
+		for (const bounds of [undefined, { fromFrame: 1, toFrame: 120 }]) {
+			const forged = structuredClone(result);
+			const evidence = fixtureItem(forged.localStoryEvidence);
+			if (bounds) evidence.sceneFrameBounds = bounds;
+			else delete evidence.sceneFrameBounds;
+			evidence.artifactHash = localStoryArtifactHash(evidence);
+			f.task.result = forged;
+			await expect(f.run()).rejects.toMatchObject({
+				code: "TASK_RESULT_UNVERIFIED",
+			});
+		}
+	});
+	it("rejects scene frame bounds inconsistent with the verified analysis even with a matching artifact hash", async () => {
+		const f = scopedFixture();
+		f.authored.evidence.sceneFrameBounds = { fromFrame: 0, toFrame: 121 };
+		f.authored.evidence.artifactHash = localStoryArtifactHash(
+			f.authored.evidence,
+		);
 		await expect(f.run()).rejects.toMatchObject({
 			code: "TASK_RESULT_UNVERIFIED",
 		});
+		expectNoPublication(f);
 	});
 	it("rejects a generated clip crossing the verified scene before publication", async () => {
 		const f = scopedFixture();
@@ -1221,6 +1236,7 @@ it("aligns a scoped caption near its left edge using observed language inside th
 	});
 	const evidence = f.authored.evidence;
 	evidence.sceneScope = { sceneId, ...audioBounds };
+	evidence.sceneFrameBounds = { fromFrame: 120, toFrame: 180 };
 	evidence.inputCoverage = {
 		totalShots: 1,
 		eligibleShots: 1,

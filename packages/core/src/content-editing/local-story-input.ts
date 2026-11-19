@@ -9,6 +9,7 @@ import {
 	type LocalStoryField,
 	type LocalStoryInput,
 	type LocalStoryLedger,
+	type LocalStorySceneFrameBounds,
 	type LocalStorySceneScope,
 	localStoryBlueprintSchema,
 	localStoryCorpusSchema,
@@ -103,34 +104,9 @@ function rawFrame(
 ) {
 	return rawClockUnits(seconds, originUs, 30n, rounding);
 }
-function sceneFrameBounds(
-	scope: LocalStorySceneScope,
-	map: CfrTimeMap,
-	prepared?: PreparedShotPartition,
-) {
-	const fromFrame = Number(
-		originalTimeToCfrFrame(scope.startUs, map.sourceStartUs, "CEIL"),
-	);
-	const toFrame = Number(
-		originalTimeToCfrFrame(scope.endUs, map.sourceStartUs, "FLOOR"),
-	);
-	if (!prepared) return { fromFrame, toFrame };
-	return {
-		fromFrame: Math.max(
-			fromFrame,
-			preparedFrameForSourceAppearance(prepared, scope.startUs / 1_000_000),
-		),
-		toFrame: Math.min(
-			toFrame,
-			preparedFrameForSourceAppearance(prepared, scope.endUs / 1_000_000),
-		),
-	};
-}
-function resolveSceneScope(
-	analysis: ReturnType<typeof sceneAnalysisDocumentSchema.parse>,
-	map: CfrTimeMap,
-	sceneId: string,
-): LocalStorySceneScope {
+type Analysis = ReturnType<typeof sceneAnalysisDocumentSchema.parse>;
+
+function findScopedScene(analysis: Analysis, sceneId: string) {
 	const matches = analysis.scenes.filter(
 		(scene) => scene.id.toLowerCase() === sceneId.toLowerCase(),
 	);
@@ -146,6 +122,13 @@ function resolveSceneScope(
 			),
 		"LOCAL_STORY_SCENE_SCOPE_INVALID",
 	);
+	return scene;
+}
+
+function sceneAudioBounds(
+	scene: Analysis["scenes"][number],
+	map: CfrTimeMap,
+): LocalStorySceneScope {
 	const result = localStorySceneScopeSchema.safeParse({
 		sceneId: scene.id.toLowerCase(),
 		startUs: rawClockUnits(scene.startInSeconds, 0, 1_000_000n, "CEIL"),
@@ -157,9 +140,52 @@ function resolveSceneScope(
 			result.data.endUs <= map.sourceEndUs,
 		"LOCAL_STORY_SCENE_SCOPE_INVALID",
 	);
-	const { fromFrame, toFrame } = sceneFrameBounds(result.data, map);
-	assert(fromFrame < toFrame, "LOCAL_STORY_SCENE_SCOPE_INVALID");
 	return result.data;
+}
+
+export function resolveLocalStorySceneFrameBounds(
+	scope: LocalStorySceneScope,
+	map: CfrTimeMap,
+	prepared?: PreparedShotPartition,
+): LocalStorySceneFrameBounds {
+	let fromFrame = Number(
+		originalTimeToCfrFrame(scope.startUs, map.sourceStartUs, "CEIL"),
+	);
+	let toFrame = Number(
+		originalTimeToCfrFrame(scope.endUs, map.sourceStartUs, "FLOOR"),
+	);
+	if (prepared) {
+		const scene = findScopedScene(prepared.analysis, scope.sceneId);
+		const audio = sceneAudioBounds(scene, map);
+		assert(
+			prepared.timeMapHash === hashEditingEvidence(map) &&
+				scope.startUs === audio.startUs &&
+				scope.endUs === audio.endUs,
+			"LOCAL_STORY_CLOCK_MISMATCH",
+		);
+		// Rounded audio bounds can alias a nearby source-frame boundary.
+		// Prepared appearance must use the original, verified AISA timestamps.
+		fromFrame = Math.max(
+			fromFrame,
+			preparedFrameForSourceAppearance(prepared, scene.startInSeconds),
+		);
+		toFrame = Math.min(
+			toFrame,
+			preparedFrameForSourceAppearance(prepared, scene.endInSeconds),
+		);
+	}
+	assert(fromFrame < toFrame, "LOCAL_STORY_SCENE_SCOPE_INVALID");
+	return { fromFrame, toFrame };
+}
+
+function resolveSceneScope(
+	analysis: Analysis,
+	map: CfrTimeMap,
+	sceneId: string,
+) {
+	const scope = sceneAudioBounds(findScopedScene(analysis, sceneId), map);
+	resolveLocalStorySceneFrameBounds(scope, map);
+	return scope;
 }
 
 export function resolveLocalStorySceneScope(options: {
@@ -176,19 +202,15 @@ export function resolveLocalStorySceneScope(options: {
 
 export function localStoryClipsWithinSceneScope(options: {
 	scope: LocalStorySceneScope;
+	frameBounds: LocalStorySceneFrameBounds;
 	timeMap: CfrTimeMap;
-	preparedPartition?: PreparedShotPartition;
 	clips: readonly {
 		sourceInUs: number;
 		durationFrames: number;
 		sceneId: string;
 	}[];
 }): boolean {
-	const { fromFrame, toFrame } = sceneFrameBounds(
-		options.scope,
-		options.timeMap,
-		options.preparedPartition,
-	);
+	const { fromFrame, toFrame } = options.frameBounds;
 	return options.clips.every((clip) => {
 		if (
 			clip.sceneId.toLowerCase() !== options.scope.sceneId ||
@@ -254,7 +276,7 @@ export function buildLocalStoryInput(options: {
 	}
 	// Use prepared joins between shots and apply both clocks only at the outer scene bounds.
 	const scopedFrames = sceneScope
-		? sceneFrameBounds(sceneScope, map, p)
+		? resolveLocalStorySceneFrameBounds(sceneScope, map, p)
 		: undefined;
 	assert(
 		bytes({ title: analysis.title, description: analysis.description }) <= 500,
@@ -300,7 +322,7 @@ export function buildLocalStoryInput(options: {
 		timeMap: map,
 		timeMapHash: hashEditingEvidence(map),
 		...(p ? { normalizationReceiptHash: p.normalizationReceiptHash } : {}),
-		...(sceneScope ? { sceneScope } : {}),
+		...(sceneScope ? { sceneScope, sceneFrameBounds: scopedFrames } : {}),
 		scenes: [],
 		shots: [],
 		...(options.includeExcludedWindows ? { excludedWindows } : {}),

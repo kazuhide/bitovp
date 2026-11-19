@@ -2063,6 +2063,10 @@ describe("local story engine with real evidence contracts and a fake local model
 			expect.objectContaining({ sceneScope }),
 		);
 		expect(result.evidence.sceneScope).toEqual(sceneScope);
+		expect(result.evidence.sceneFrameBounds).toEqual({
+			fromFrame: 0,
+			toFrame: 750,
+		});
 		expect(result.evidence.inputCoverage).toMatchObject({
 			totalShots: 5,
 			processedShots: 5,

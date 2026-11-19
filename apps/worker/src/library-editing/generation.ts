@@ -48,6 +48,7 @@ import {
 	type PreparedShotPartition,
 	preparedShotFraming,
 	refinePortraitSelectionBySpeech,
+	resolveLocalStorySceneFrameBounds,
 	resolveLocalStorySceneScope,
 	resolveLocalStorySubjects,
 	SpeechBoundarySelectionError,
@@ -159,6 +160,60 @@ function matchesLocalStoryEvidence(
 		localStoryArtifactHash(evidence) === evidence.artifactHash
 	);
 }
+function preparedPartitionForGeneration(verified: VerifiedMediaTask) {
+	if (!verified.preparedNormalization) return;
+	try {
+		return buildPreparedShotPartition({
+			analysis: verified.analysisDocument,
+			timeMap: verified.map,
+			normalization: verified.preparedNormalization.proof,
+		});
+	} catch (error) {
+		if (error instanceof PreparedShotClockError)
+			throw new MediaOperationError(
+				error.message === "PREPARED_CANDIDATE_LIMIT"
+					? "AUTO_SELECTION_LIMIT"
+					: "NORMALIZATION_EVIDENCE_UNVERIFIED",
+			);
+		throw error;
+	}
+}
+
+function resolveGenerationScene(
+	verified: VerifiedMediaTask,
+	sceneId: string | undefined,
+	preparedPartition: PreparedShotPartition | undefined,
+) {
+	if (sceneId === undefined) return;
+	const sceneScope = resolveLocalStorySceneScope({
+		analysis: verified.analysisDocument,
+		timeMap: verified.map,
+		sceneId,
+	});
+	return {
+		sceneScope,
+		sceneFrameBounds: resolveLocalStorySceneFrameBounds(
+			sceneScope,
+			verified.map,
+			preparedPartition,
+		),
+	};
+}
+
+function matchesGenerationScene(
+	evidence: LocalStoryEvidence | undefined,
+	expected: ReturnType<typeof resolveGenerationScene>,
+) {
+	return (
+		evidence?.sceneScope?.sceneId === expected?.sceneScope.sceneId &&
+		evidence?.sceneScope?.startUs === expected?.sceneScope.startUs &&
+		evidence?.sceneScope?.endUs === expected?.sceneScope.endUs &&
+		evidence?.sceneFrameBounds?.fromFrame ===
+			expected?.sceneFrameBounds.fromFrame &&
+		evidence?.sceneFrameBounds?.toFrame === expected?.sceneFrameBounds.toFrame
+	);
+}
+
 function resultForRenderMode(
 	value: unknown,
 	parameters: GenerationTaskParameters,
@@ -167,6 +222,7 @@ function resultForRenderMode(
 	expectedLocalStoryModel?: LocalStoryModelIdentity,
 	expectedCaptionTranslationModel?: LocalCaptionModelIdentity,
 	expectedGenerationPolicyFingerprint?: string,
+	expectedScene?: ReturnType<typeof resolveGenerationScene>,
 ): GenerationTaskResult {
 	const parsed = generationTaskResultSchema.safeParse(value);
 	if (
@@ -189,8 +245,7 @@ function resultForRenderMode(
 		hashEditingEvidence(
 			parsed.data.localStoryEvidence?.trailer?.intent ?? null,
 		) !== hashEditingEvidence(parameters.trailer ?? null) ||
-		parsed.data.localStoryEvidence?.sceneScope?.sceneId !==
-			parameters.storySceneId ||
+		!matchesGenerationScene(parsed.data.localStoryEvidence, expectedScene) ||
 		((parameters.trailer !== undefined ||
 			parameters.storySceneId !== undefined) &&
 			parsed.data.requestedFrames !== parameters.targetDurationFrames) ||
@@ -285,7 +340,18 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 			throw new MediaOperationError("TASK_INTENT_INVALID");
 		if (parameters.policy === "LOCAL_STORY" && !expectedLocalStoryModel)
 			throw new MediaOperationError("LOCAL_STORY_MODEL_CHANGED");
-		if (task.state === "SUCCEEDED")
+		if (task.state === "SUCCEEDED") {
+			const expectedScene =
+				parameters.storySceneId === undefined
+					? undefined
+					: await deps.prisma.$transaction(async (tx) => {
+							const verified = await verifyMediaTaskEvidence(tx, task);
+							return resolveGenerationScene(
+								verified,
+								parameters.storySceneId,
+								preparedPartitionForGeneration(verified),
+							);
+						});
 			return resultForRenderMode(
 				task.result,
 				parameters,
@@ -294,7 +360,9 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 				expectedLocalStoryModel,
 				expectedCaptionTranslationModel,
 				expectedGenerationPolicyFingerprint,
+				expectedScene,
 			);
+		}
 		if (expectedGenerationPolicyFingerprint !== GENERATION_POLICY_FINGERPRINT)
 			throw new MediaOperationError("GENERATION_POLICY_CHANGED");
 		if (parameters.captions === "JAPANESE") {
@@ -356,14 +424,6 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 			binding = verified.binding;
 		if (!analysis || !binding || !verified.media.sha256)
 			throw new MediaOperationError("ANALYSIS_BINDING_UNVERIFIED");
-		const sceneScope =
-			parameters.storySceneId === undefined
-				? undefined
-				: resolveLocalStorySceneScope({
-						analysis,
-						timeMap: verified.map,
-						sceneId: parameters.storySceneId,
-					});
 		const link = await deps.prisma.contentRevision.findFirst({
 			where: {
 				contentId: parameters.contentId,
@@ -404,23 +464,13 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 				? { searchBudget: createPortraitSelectionSearchBudget() }
 				: {}),
 		};
-		let preparedPartition: PreparedShotPartition | undefined;
-		try {
-			if (verified.preparedNormalization)
-				preparedPartition = buildPreparedShotPartition({
-					analysis,
-					timeMap: verified.map,
-					normalization: verified.preparedNormalization.proof,
-				});
-		} catch (error) {
-			if (error instanceof PreparedShotClockError)
-				throw new MediaOperationError(
-					error.message === "PREPARED_CANDIDATE_LIMIT"
-						? "AUTO_SELECTION_LIMIT"
-						: "NORMALIZATION_EVIDENCE_UNVERIFIED",
-				);
-			throw error;
-		}
+		const preparedPartition = preparedPartitionForGeneration(verified);
+		const expectedScene = resolveGenerationScene(
+			verified,
+			parameters.storySceneId,
+			preparedPartition,
+		);
+		const sceneScope = expectedScene?.sceneScope;
 		let storyArtifact:
 			| Awaited<ReturnType<typeof loadStoryArtifact>>
 			| undefined;
@@ -486,13 +536,12 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 				localStory.selection.policyVersion !== expectedAutomaticPolicyVersion ||
 				hashEditingEvidence(evidence.data.selection) !==
 					hashEditingEvidence(localStory.selection.localStorySelection) ||
-				hashEditingEvidence(evidence.data.sceneScope ?? null) !==
-					hashEditingEvidence(sceneScope ?? null) ||
-				(sceneScope !== undefined &&
+				!matchesGenerationScene(evidence.data, expectedScene) ||
+				(expectedScene !== undefined &&
 					!localStoryClipsWithinSceneScope({
-						scope: sceneScope,
+						scope: expectedScene.sceneScope,
+						frameBounds: expectedScene.sceneFrameBounds,
 						timeMap: verified.map,
-						preparedPartition,
 						clips: localStory.selection.clips,
 					})) ||
 				hashEditingEvidence(evidence.data.trailer?.intent ?? null) !==
@@ -1472,6 +1521,7 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 							expectedLocalStoryModel,
 							expectedCaptionTranslationModel,
 							expectedGenerationPolicyFingerprint,
+							expectedScene,
 						);
 					throw new MediaOperationError(
 						current?.cancelRequestedAt ? "CANCELED" : "LEASE_LOST",

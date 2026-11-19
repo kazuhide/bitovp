@@ -10,6 +10,7 @@ import {
 import {
 	buildLocalStoryChunks,
 	buildLocalStoryInput,
+	localStoryClipsWithinSceneScope,
 	mergeLocalStoryLedgers,
 	validateLocalStoryBlueprint,
 	validateLocalStoryLedger,
@@ -188,7 +189,13 @@ describe("local story contracts and complete evidence input", () => {
 			}),
 		).toThrow("PREPARED_PARTITION_FACTORY_REQUIRED");
 	});
-	it("preserves an internal prepared cut while clipping both ends to the requested scene", () => {
+	it.each([
+		{ sceneStart: 1.13, firstFrame: 35 },
+		{ sceneStart: 1.0416668, firstFrame: 33 },
+	])("preserves a prepared cut and non-rounded outer boundary at $sceneStart seconds", ({
+		sceneStart,
+		firstFrame,
+	}) => {
 		const { analysis, proof } = preparedClockFixture();
 		const normalization = authoredNormalizationReceipt({
 			organizationId: proof.organizationId,
@@ -205,15 +212,15 @@ describe("local story contracts and complete evidence input", () => {
 				{
 					...scene,
 					id: "99999999-9999-4999-8999-999999999999",
-					endInSeconds: 1.13,
-					shots: [{ ...shot, startInSeconds: 0, endInSeconds: 1.13 }],
+					endInSeconds: sceneStart,
+					shots: [{ ...shot, startInSeconds: 0, endInSeconds: sceneStart }],
 				},
 				{
 					...scene,
-					startInSeconds: 1.13,
+					startInSeconds: sceneStart,
 					endInSeconds: 5.125,
 					shots: [
-						{ ...shot, startInSeconds: 1.13, endInSeconds: 4.125 },
+						{ ...shot, startInSeconds: sceneStart, endInSeconds: 4.125 },
 						{ ...shot, startInSeconds: 4.125, endInSeconds: 5.125 },
 					],
 				},
@@ -254,9 +261,29 @@ describe("local story contracts and complete evidence input", () => {
 				toFrame,
 			]),
 		).toEqual([
-			["s1", 35, 124],
+			["s1", firstFrame, 124],
 			["s2", 124, 153],
 		]);
+		const scope = item(input.sceneScope);
+		const frameBounds = item(input.sceneFrameBounds);
+		expect(scope.startUs).toBe(Math.ceil(sceneStart * 1_000_000));
+		expect(frameBounds).toEqual({ fromFrame: firstFrame, toFrame: 153 });
+		for (const offset of [-1, 0]) {
+			expect(
+				localStoryClipsWithinSceneScope({
+					scope,
+					frameBounds,
+					timeMap: input.timeMap,
+					clips: [
+						{
+							sceneId: scene.id,
+							sourceInUs: Math.ceil(((firstFrame + offset) * 1_000_000) / 30),
+							durationFrames: 1,
+						},
+					],
+				}),
+			).toBe(offset === 0);
+		}
 	});
 	it("rejects invented refs, quotations and numerals omitted from the quotation", () => {
 		const f = fixture(),

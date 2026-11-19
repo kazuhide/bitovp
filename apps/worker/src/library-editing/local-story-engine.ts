@@ -167,6 +167,7 @@ export function localStoryArtifactHash(
 		| "blueprintHash"
 		| "trailer"
 		| "sceneScope"
+		| "sceneFrameBounds"
 	>,
 ) {
 	return hashEditingEvidence({
@@ -177,6 +178,9 @@ export function localStoryArtifactHash(
 		blueprintHash: evidence.blueprintHash,
 		...(evidence.trailer ? { trailer: evidence.trailer } : {}),
 		...(evidence.sceneScope ? { sceneScope: evidence.sceneScope } : {}),
+		...(evidence.sceneFrameBounds
+			? { sceneFrameBounds: evidence.sceneFrameBounds }
+			: {}),
 	});
 }
 
@@ -981,12 +985,16 @@ export function createLocalStoryEngine(options: {
 						ledgerHash,
 						blueprintHash,
 						...(input.sceneScope ? { sceneScope: input.sceneScope } : {}),
+						...(input.sceneFrameBounds
+							? { sceneFrameBounds: input.sceneFrameBounds }
+							: {}),
 						artifactHash: localStoryArtifactHash({
 							model: identity,
 							inputHash,
 							ledgerHash,
 							blueprintHash,
 							sceneScope: input.sceneScope,
+							sceneFrameBounds: input.sceneFrameBounds,
 						}),
 						ledger,
 						blueprint,

@@ -95,6 +95,34 @@ describe("independent client playback clock", () => {
 		expect(screen.queryByText("2026-11-17 20:37:56.158 UTC")).toBeNull();
 		expect(screen.getByText("—")).toBeVisible();
 	});
+	it("publishes the validated playhead and clears it during a seek", () => {
+		const f = media();
+		const positions = vi.fn();
+		render(
+			<MoqClientPlaybackClock
+				mode="archive"
+				mediaRef={f.ref}
+				originUtcMs={ORIGIN}
+				durationMs={21_073}
+				onTimeChange={positions}
+			/>,
+		);
+		expect(positions).toHaveBeenLastCalledWith(ORIGIN + 5000);
+		f.seeking(true);
+		fireEvent.seeking(f.ref.current);
+		expect(positions).toHaveBeenLastCalledWith(null);
+		f.position(12);
+		act(() => vi.advanceTimersByTime(100));
+		expect(positions).toHaveBeenLastCalledWith(null);
+		f.seeking(false);
+		fireEvent.seeked(f.ref.current);
+		act(() => vi.advanceTimersByTime(100));
+		expect(positions).toHaveBeenLastCalledWith(ORIGIN + 12_000);
+		f.position(0);
+		fireEvent.seeked(f.ref.current);
+		act(() => vi.advanceTimersByTime(100));
+		expect(positions).toHaveBeenLastCalledWith(ORIGIN);
+	});
 	it("coalesces frequent media events into one advancing update per 100ms", () => {
 		const f = media();
 		render(

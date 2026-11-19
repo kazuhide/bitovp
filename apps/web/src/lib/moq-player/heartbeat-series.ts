@@ -32,21 +32,23 @@ function measured(point: SegmentMeasurements) {
 
 export function moqOutputSeries(history: MoqHeartbeatHistory): SegmentSample[] {
 	const byTime = new Map<number, SegmentSample>();
+	const providerTimes = new Set<number>();
 	for (const { sampledAt, ...metrics } of history.pushOutput ?? []) {
 		const timestamp = Date.parse(sampledAt);
+		providerTimes.add(timestamp);
 		byTime.set(timestamp, { timestamp, ...metrics });
 	}
 	for (const point of history.points) {
+		if (point.sampledAt !== null)
+			providerTimes.add(Date.parse(point.sampledAt));
+	}
+	for (const point of history.points) {
 		const timestamp = Date.parse(point.sampledAt ?? point.observedAt);
+		// A provider sample at this instant carries more timing information
+		// than a Poll receipt, even when the provider sample records a gap.
+		if (point.sampledAt === null && providerTimes.has(timestamp)) continue;
 		const existing = byTime.get(timestamp);
-		// A timed Push sample outranks a collision with the time of an API read.
-		// A Poll with the same explicit sample time may replace it as a whole.
-		if (
-			existing &&
-			measured(existing) &&
-			(!point.sampledAt || !measured(point))
-		)
-			continue;
+		if (existing && measured(existing) && !measured(point)) continue;
 		byTime.set(timestamp, {
 			timestamp,
 			segmentProcessingMeanMs: point.segmentProcessingMeanMs,

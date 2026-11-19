@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { moqHeartbeatHistorySchema } from "@/lib/moq-player/heartbeat";
+import { moqOutputSeries } from "@/lib/moq-player/heartbeat-series";
 import { readMoqHeartbeatHistory } from "./moq-heartbeat";
 
 const runId = "11111111-1111-4111-8111-111111111111";
@@ -186,6 +187,46 @@ describe("MoQ run heartbeat history", () => {
 			],
 		});
 		expect(moqHeartbeatHistorySchema.safeParse(result).success).toBe(true);
+	});
+
+	it("keeps a signed Push gap between measured Poll samples", async () => {
+		const missingAt = "2026-11-18T00:00:35.000Z";
+		const resumedAt = new Date("2026-11-18T00:00:40.000Z");
+		const raw = {
+			output: { segments: { totalProcessingStatsMs: { mean: 9 } } },
+		};
+		const { prisma } = store(
+			[
+				{ at: resumedAt, raw },
+				{ at, raw },
+			],
+			{},
+			[
+				{
+					receivedAt: new Date("2026-11-18T00:00:36Z"),
+					raw: {
+						eventType: "LIVE_ENCODING_HEARTBEAT",
+						webhookId: "33333333-3333-4333-8333-333333333333",
+						encoding: { id: encodingId },
+						value: { timestamp: missingAt, output: { segments: {} } },
+					},
+				},
+			],
+		);
+		const history = await readMoqHeartbeatHistory(prisma, runId, encodingId, {
+			now,
+			includePushOutput: true,
+		});
+		expect(
+			moqOutputSeries(history).map(({ timestamp, segmentProcessingMeanMs }) => [
+				timestamp,
+				segmentProcessingMeanMs,
+			]),
+		).toEqual([
+			[at.getTime(), 9],
+			[Date.parse(missingAt), null],
+			[resumedAt.getTime(), 9],
+		]);
 	});
 
 	it("keeps the Poll history when the optional Push receipt read fails", async () => {

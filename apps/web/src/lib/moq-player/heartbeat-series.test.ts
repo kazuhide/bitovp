@@ -94,4 +94,27 @@ describe("Encoder heartbeat chart units", () => {
 			}),
 		).toEqual([{ timestamp: Date.parse(sampledAt), ...pushed }]);
 	});
+
+	it("keeps a provider-timed gap when an untimed Poll arrives at the same clock time", () => {
+		const sampledAt = encoderPoint.observedAt;
+		const gap = {
+			segmentProcessingMinMs: null,
+			segmentProcessingMeanMs: null,
+			segmentProcessingMaxMs: null,
+		};
+		expect(
+			moqOutputSeries({
+				source: "live-encoder-heartbeat",
+				truncated: false,
+				points: [
+					{
+						...encoderPoint,
+						segmentProcessingMeanMs: 9,
+						segmentProcessingMaxMs: 10,
+					},
+				],
+				pushOutput: [{ sampledAt, ...gap }],
+			}),
+		).toEqual([{ timestamp: Date.parse(sampledAt), ...gap }]);
+	});
 });

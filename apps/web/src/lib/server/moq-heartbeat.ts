@@ -178,11 +178,21 @@ export async function readMoqHeartbeatHistory(
 			measuredTimes.add(raw.timestamp);
 		output.set(raw.timestamp, { sampledAt: raw.timestamp, ...measured });
 	}
+	const observedOutput =
+		measuredTimes.size > 0 ||
+		points.some(
+			(sample) =>
+				sample.segmentProcessingMeanMs !== null ||
+				sample.segmentProcessingMinMs !== null ||
+				sample.segmentProcessingMaxMs !== null,
+		);
 	return {
 		source: "live-encoder-heartbeat",
 		points,
 		truncated,
-		...(measuredTimes.size ? { pushOutput: [...output.values()] } : {}),
+		...(output.size && observedOutput
+			? { pushOutput: [...output.values()] }
+			: {}),
 		...(receipts === null ? { pushOutputReadFailed: true as const } : {}),
 	};
 }

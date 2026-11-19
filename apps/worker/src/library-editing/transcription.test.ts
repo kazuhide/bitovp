@@ -526,10 +526,12 @@ describe("offline transcription adapter", () => {
 		dirs.push(dir);
 		const sourcePath = join(dir, "source.mp4"),
 			modelPath = join(dir, "model.bin"),
-			vadPath = join(dir, "vad.bin");
+			vadPath = join(dir, "vad.bin"),
+			binaryPath = join(dir, "whisper-cli-cuda");
 		await writeFile(sourcePath, "owned source");
 		await writeFile(modelPath, "owned model");
 		await writeFile(vadPath, "owned vad");
+		await writeFile(binaryPath, "owned CUDA binary");
 		const digest = (s: string) => createHash("sha256").update(s).digest("hex");
 		const input = {
 			sourcePath,
@@ -540,6 +542,7 @@ describe("offline transcription adapter", () => {
 			vadModel: { path: vadPath, sha256: digest("owned vad") },
 		};
 		let scratch = "";
+		let diagnostics = "";
 		let pcmBytes: Buffer = pcmWave(2);
 		execute.mockImplementation(async (_binary: string, args: string[]) => {
 			if (args.includes("--version"))
@@ -547,6 +550,7 @@ describe("offline transcription adapter", () => {
 			if (args.includes("-of")) {
 				const prefix = args[args.indexOf("-of") + 1];
 				await writeFile(`${prefix}.json`, JSON.stringify(qualityFixture()));
+				return { stdout: "", stderr: diagnostics };
 			} else {
 				scratch = args.at(-1) ?? "";
 				await writeFile(scratch, pcmBytes);
@@ -555,6 +559,10 @@ describe("offline transcription adapter", () => {
 		});
 		return {
 			input,
+			cuda: { binaryPath, binarySha256: digest("owned CUDA binary") },
+			diagnostics: (value: string) => {
+				diagnostics = value;
+			},
 			scratch: () => scratch,
 			audio: (value: Buffer) => {
 				pcmBytes = value;
@@ -584,6 +592,67 @@ describe("offline transcription adapter", () => {
 			expect.arrayContaining(["-ng", "-p", "1", "-nf", "-l", "en"]),
 		);
 		await expect(readFile(f.scratch())).rejects.toThrow();
+	});
+	it("keeps decoder options and quality while selecting the pinned CUDA binary", async () => {
+		const f = await setup();
+		const cpu = await transcribeLocalAudio(f.input);
+		const cpuDecode = execute.mock.calls.find(([, args]) =>
+			args.includes("-ojf"),
+		)?.[1] as string[];
+		execute.mockClear();
+		f.diagnostics("whisper_backend_init_gpu: using CUDA0 backend\n");
+		const cuda = await transcribeLocalAudio({ ...f.input, cuda: f.cuda });
+		const [binary, cudaDecode] =
+			execute.mock.calls.find(([, args]) => args.includes("-ojf")) ?? [];
+		expect(binary).toBe(f.cuda.binaryPath);
+		const fixedFlags = (args: string[]) =>
+			args.filter(
+				(_value, index) => !["-f", "-of"].includes(args[index - 1] ?? ""),
+			);
+		expect(fixedFlags(cudaDecode)).toEqual(
+			fixedFlags(cpuDecode).filter((value) => value !== "-ng"),
+		);
+		expect(cuda.cudaExecution).toEqual({
+			binarySha256: f.cuda.binarySha256,
+			device: "CUDA0",
+		});
+		expect(cuda.qualityPolicyFingerprint).toBe(cpu.qualityPolicyFingerprint);
+		expect(cuda.segments).toEqual(cpu.segments);
+		expect(cuda.cacheKey).not.toBe(cpu.cacheKey);
+	});
+	it.each([
+		"",
+		"whisper_backend_init_gpu: using Metal backend\n",
+		"whisper_backend_init_gpu: no GPU found\nwhisper_backend_init_gpu: using CUDA0 backend\n",
+		"whisper_backend_init_gpu: using CUDA0 backend\nwhisper_backend_init_gpu: failed to initialize CUDA0 backend\n",
+	])("rejects missing or failed CUDA initialization (%j)", async (diagnostics) => {
+		const f = await setup();
+		f.diagnostics(diagnostics);
+		await expect(
+			transcribeLocalAudio({ ...f.input, cuda: f.cuda }),
+		).rejects.toMatchObject({ code: "ASR_CUDA_NOT_VERIFIED" });
+		await expect(readFile(f.scratch())).rejects.toThrow();
+	});
+	it("reports silence without claiming any decoder device was used", async () => {
+		const f = await setup();
+		f.audio(pcmWave(2, true));
+		const result = await transcribeLocalAudio({ ...f.input, cuda: f.cuda });
+		expect(result.cudaExecution).toEqual({
+			binarySha256: f.cuda.binarySha256,
+			device: null,
+		});
+		expect(result.warnings).toEqual(["NO_SPEECH"]);
+		expect(execute.mock.calls.some(([, args]) => args.includes("-ojf"))).toBe(
+			false,
+		);
+	});
+	it("checks the CUDA executable bytes before running the program", async () => {
+		const f = await setup();
+		await writeFile(f.cuda.binaryPath, "changed executable");
+		await expect(
+			transcribeLocalAudio({ ...f.input, cuda: f.cuda }),
+		).rejects.toMatchObject({ code: "ASR_CUDA_BINARY_CHANGED" });
+		expect(execute).not.toHaveBeenCalled();
 	});
 	it("rejects changed model/media bytes before invoking any process", async () => {
 		const f = await setup();

@@ -64,6 +64,7 @@ struct SharedObject {
     std::string path;
     std::uintptr_t executable_address{};
     std::vector<AddressRange> executable_segments;
+    struct stat checked_file{};
 };
 
 struct ExecutableMapping {
@@ -141,7 +142,12 @@ bool same_file(const struct stat &a, const struct stat &b) {
            a.st_mtim.tv_sec == b.st_mtim.tv_sec && a.st_mtim.tv_nsec == b.st_mtim.tv_nsec;
 }
 
-std::optional<std::string> library_identity(const SharedObject &library,
+bool matches_backing_file(const std::string &path, const struct stat &expected) {
+    struct stat current{};
+    return stat(path.c_str(), &current) == 0 && same_file(expected, current);
+}
+
+std::optional<std::string> library_identity(SharedObject &library,
                                              std::vector<ExecutableMapping> &mappings) {
     const auto mapping = std::find_if(mappings.begin(), mappings.end(), [&](const auto &m) {
         return m.start <= library.executable_address && library.executable_address < m.end;
@@ -151,7 +157,7 @@ std::optional<std::string> library_identity(const SharedObject &library,
     // actually mapped as executable. A rename can leave an old DSO mapped
     // while another file occupies its pathname.
     const File file(library.path);
-    struct stat before{}, after{}, current{};
+    struct stat before{}, after{};
     if (file.fd < 0 || fstat(file.fd, &before) != 0 || !S_ISREG(before.st_mode) ||
         before.st_size <= 0 || mapping->major != major(before.st_dev) ||
         mapping->minor != minor(before.st_dev) || mapping->inode != before.st_ino)
@@ -165,9 +171,10 @@ std::optional<std::string> library_identity(const SharedObject &library,
         if (count == 0) break;
         hasher.update(bytes.data(), static_cast<std::size_t>(count));
     }
-    if (fstat(file.fd, &after) != 0 || stat(library.path.c_str(), &current) != 0 ||
-        !same_file(before, after) || !same_file(before, current))
+    if (fstat(file.fd, &after) != 0 || !same_file(before, after) ||
+        !matches_backing_file(library.path, before))
         return std::nullopt;
+    library.checked_file = before;
     // Require every executable VMA, by address as well as file identity,
     // to be covered by base-namespace executable ELF program segments.
     // This includes a second mapping of the same inode outside that namespace.
@@ -286,7 +293,7 @@ std::optional<DecoderRuntime> capture_decoder_runtime() noexcept {
         DecoderRuntime runtime{{}, *generation, {}, std::move(*providers)};
         // Preserve loader order and the actual resolved provider indices.
         std::string input = "bitovp-decoder-runtime-v3\n";
-        for (const auto &library : libraries) {
+        for (auto &library : libraries) {
             auto identity = library_identity(library, *mappings);
             if (!identity) return std::nullopt;
             input += *identity + '\n';
@@ -307,8 +314,13 @@ std::optional<DecoderRuntime> capture_decoder_runtime() noexcept {
         const auto final_mappings = executable_mappings();
         if (!final_mappings ||
             !std::equal(mappings->begin(), mappings->end(), final_mappings->begin(), final_mappings->end(),
-                        [](const auto &before, const auto &after) { return before.row == after.row; }) ||
-            runtime_loader_generation() != generation)
+                        [](const auto &before, const auto &after) { return before.row == after.row; }))
+            return std::nullopt;
+        // Earlier files can change in place while later files are hashed,
+        // without changing their executable mappings or the loader generation.
+        if (std::any_of(libraries.begin(), libraries.end(), [](const auto &library) {
+                return !matches_backing_file(library.path, library.checked_file);
+            }) || runtime_loader_generation() != generation)
             return std::nullopt;
         return runtime;
     } catch (...) {

@@ -5,9 +5,9 @@ Model for the clock used by scene-scoped clip analysis.
 Run with `lean verification/lean/ScopedClipWindow.lean` (Lean 4.24.0).
 
 The caller supplies a validated scene and a local decoder interval. All values
-are integer microseconds on the same clock. The model does not establish the
-identity of an AISA scene, the accuracy of decoded timestamps, or the quality
-of a generated edit.
+are integer microseconds on the same clock. The CFR formulas use offsets from
+the media origin. Runtime validation supplies the scene and timestamps.
+Editorial quality is evaluated separately.
 -/
 
 namespace BitOVP.ScopedClip
@@ -86,6 +86,16 @@ theorem admittedFramesStayInScene (sceneStartUs sceneEndUs startFrame endFrame :
       endFrame * 1000000 ≤ sceneEndUs * 30 := by
   have first := firstFrameRoundsInward sceneStartUs
   have last := endFrameRoundsInward sceneEndUs
+  omega
+
+-- A sub-frame cut rounds differently at a beginning and an end.
+example : firstCfrFrame 4125000 = pastLastCfrFrame 4125000 + 1 := by
+  decide
+
+theorem sharedPreparedJoinCoversEveryFrame (startFrame cut stopFrame frame : Nat)
+    (withinScene : startFrame ≤ frame ∧ frame < stopFrame) :
+    ((startFrame ≤ frame ∧ frame < cut) ∨ (cut ≤ frame ∧ frame < stopFrame)) ∧
+      ¬ (frame < cut ∧ cut ≤ frame) := by
   omega
 
 end BitOVP.ScopedClip

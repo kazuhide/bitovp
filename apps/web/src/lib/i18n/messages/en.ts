@@ -1123,8 +1123,7 @@ export const en = {
 		title: "Encoder",
 		poll: "Heartbeat · Poll",
 		lastReport: "Heartbeat · Last run report",
-		sourceHelp:
-			"Encoder measurements from Heartbeat. Times are when BitOVP observed the report (UTC).",
+		sourceHelp: "Heartbeat measurements. Times are recorded on receipt (UTC).",
 		details: "Packets and processing time",
 		ingestUnhealthy: "Input unhealthy",
 		ingest: {

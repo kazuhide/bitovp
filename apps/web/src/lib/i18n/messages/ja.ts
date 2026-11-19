@@ -1094,10 +1094,10 @@ export const ja = {
 		},
 	},
 	moqEncoder: {
-		title: "エンコーダー",
-		poll: "Heartbeat · Poll",
+		title: "エンコーダ",
+		poll: "Heartbeat · 定期取得",
 		lastReport: "Heartbeat · 実行の最終記録",
-		sourceHelp: "Heartbeat の記録です。時刻は BitOVP が観測した UTC です。",
+		sourceHelp: "Heartbeat の記録です。時刻は取得時の UTC です。",
 		details: "パケット・処理時間",
 		ingestUnhealthy: "入力ヘルス低下",
 		ingest: {

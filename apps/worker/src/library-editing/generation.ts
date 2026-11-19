@@ -492,6 +492,7 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 					!localStoryClipsWithinSceneScope({
 						scope: sceneScope,
 						timeMap: verified.map,
+						preparedPartition,
 						clips: localStory.selection.clips,
 					})) ||
 				hashEditingEvidence(evidence.data.trailer?.intent ?? null) !==
@@ -1054,11 +1055,15 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 			),
 		);
 		if (selectedSegments.some((segment) => !segment.words?.length)) {
+			const audioBounds = sceneScope && {
+				startUs: sceneScope.startUs,
+				endUs: sceneScope.endUs,
+			};
 			if (localStory?.transcriptLanguageWindows !== undefined)
 				captionLanguage = captionLanguageForSelectedSegments(
 					selectedSegments,
 					localStory.transcriptLanguageWindows,
-					{
+					audioBounds ?? {
 						startUs: verified.map.sourceStartUs,
 						endUs: verified.map.sourceEndUs,
 					},
@@ -1078,6 +1083,7 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 					sourceOriginUs: verified.map.sourceStartUs,
 					sourceDurationUs:
 						verified.map.sourceEndUs - verified.map.sourceStartUs,
+					...(audioBounds ? { audioBounds } : {}),
 					segments: structuredClone(segments),
 					...(localStory?.captionTimingEvidence
 						? {
@@ -1106,6 +1112,12 @@ export function createLibraryGenerationHandler(deps: Dependencies) {
 						receipt.mediaSha256 !== verified.media.sha256 ||
 						receipt.inputHash !== inputHash ||
 						receipt.outputHash !== hashEditingEvidence(aligned.segments) ||
+						(audioBounds !== undefined &&
+							[...receipt.windows, ...receipt.focusWindows].some(
+								(window) =>
+									window.startUs < audioBounds.startUs ||
+									window.endUs > audioBounds.endUs,
+							)) ||
 						receipt.omittedParagraphs?.some((omitted) => {
 							const original = segments[omitted.segmentIndex];
 							return (

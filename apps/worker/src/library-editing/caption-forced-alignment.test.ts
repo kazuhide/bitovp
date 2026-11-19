@@ -18,7 +18,10 @@ vi.mock("./process", async (original) => ({
 	runMediaProcess: execute,
 }));
 
-import { alignSelectedCaptionSegments } from "./caption-forced-alignment";
+import {
+	alignSelectedCaptionSegments,
+	captionAlignmentInputHash,
+} from "./caption-forced-alignment";
 import { MediaOperationError } from "./process";
 
 const scratch: string[] = [];
@@ -1063,6 +1066,41 @@ it("refuses unknown language, an overlong full paragraph, or canceled work befor
 		alignSelectedCaptionSegments({ ...input, signal: controller.signal }),
 	).rejects.toMatchObject({ code: "CANCELED" });
 	expect(execute).not.toHaveBeenCalled();
+});
+it("clips alignment context to the scene and keeps the media seek origin and original receipt times", async () => {
+	const base = await fixture();
+	const audioBounds = { startUs: 110_000_000, endUs: 115_000_000 };
+	const input = {
+		...base,
+		audioBounds,
+		segments: [{ startUs: 110_500_000, endUs: 114_500_000, text: "前。次。" }],
+		selectedRanges: [audioBounds],
+	};
+	const original = execute.getMockImplementation();
+	execute.mockImplementation(async (...args) => {
+		const value = await original?.(...args);
+		if (args[0] === "ffmpeg") return value;
+		const out = JSON.parse(value.stdout);
+		out.windows[0].items = [
+			{ text: "前", startUs: 500_000, endUs: 750_000 },
+			{ text: "次", startUs: 4_250_000, endUs: 4_500_000 },
+		];
+		return { stdout: JSON.stringify(out), stderr: "" };
+	});
+	const result = await alignSelectedCaptionSegments(input);
+	const ffmpeg = execute.mock.calls.find(([binary]) => binary === "ffmpeg");
+	const args = ffmpeg?.[1] as string[];
+	expect(args[args.indexOf("-ss") + 1]).toBe("10.000000");
+	expect(args[args.indexOf("-t") + 1]).toBe("5.000000");
+	expect(result.receipt.windows).toMatchObject([audioBounds]);
+	expect(result.segments[0]).toMatchObject({
+		startUs: 110_500_000,
+		endUs: 114_500_000,
+	});
+	expect(result.receipt.inputHash).toBe(captionAlignmentInputHash(input));
+	expect(result.receipt.inputHash).not.toBe(
+		captionAlignmentInputHash({ ...input, audioBounds: undefined }),
+	);
 });
 it("does not add the full text of context paragraphs whose audio is only partly inside the window", async () => {
 	const input = await fixture();

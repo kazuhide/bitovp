@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { authoredNormalizationReceipt } from "../testing/normalization-clock";
 import {
 	localStoryBlueprintSchema,
 	localStoryCorpusSchema,
@@ -186,6 +187,76 @@ describe("local story contracts and complete evidence input", () => {
 				preparedPartition: { ...preparedPartition },
 			}),
 		).toThrow("PREPARED_PARTITION_FACTORY_REQUIRED");
+	});
+	it("preserves an internal prepared cut while clipping both ends to the requested scene", () => {
+		const { analysis, proof } = preparedClockFixture();
+		const normalization = authoredNormalizationReceipt({
+			organizationId: proof.organizationId,
+			sourceId: proof.sourceId,
+			mediaVersionId: proof.mediaVersionId,
+			sourceFrameCount: 144,
+		});
+		const scene = item(analysis.scenes[0]);
+		const shot = item(scene.shots[0]);
+		const withScenes = {
+			...analysis,
+			duration: 6,
+			scenes: [
+				{
+					...scene,
+					id: "99999999-9999-4999-8999-999999999999",
+					endInSeconds: 1.13,
+					shots: [{ ...shot, startInSeconds: 0, endInSeconds: 1.13 }],
+				},
+				{
+					...scene,
+					startInSeconds: 1.13,
+					endInSeconds: 5.125,
+					shots: [
+						{ ...shot, startInSeconds: 1.13, endInSeconds: 4.125 },
+						{ ...shot, startInSeconds: 4.125, endInSeconds: 5.125 },
+					],
+				},
+				{
+					...scene,
+					id: "88888888-8888-4888-8888-888888888888",
+					startInSeconds: 5.125,
+					endInSeconds: 6,
+					shots: [{ ...shot, startInSeconds: 5.125, endInSeconds: 6 }],
+				},
+			],
+		};
+		const timeMap = {
+			id: normalization.timeMapId,
+			mediaVersionId: normalization.mediaVersionId,
+			kind: "CFR",
+			sourceStartUs: 0,
+			sourceEndUs: 6_000_000,
+			editingStartFrame: 0,
+			editingEndFrame: 180,
+			fps: { num: 30, den: 1 },
+		};
+		const preparedPartition = buildPreparedShotPartition({
+			analysis: withScenes,
+			timeMap,
+			normalization,
+		});
+		const input = buildLocalStoryInput({
+			analysis: withScenes,
+			timeMap,
+			preparedPartition,
+			storySceneId: scene.id,
+		});
+		expect(
+			input.shots.map(({ ref, fromFrame, toFrame }) => [
+				ref,
+				fromFrame,
+				toFrame,
+			]),
+		).toEqual([
+			["s1", 35, 124],
+			["s2", 124, 153],
+		]);
 	});
 	it("rejects invented refs, quotations and numerals omitted from the quotation", () => {
 		const f = fixture(),

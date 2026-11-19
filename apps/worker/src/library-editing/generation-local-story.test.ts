@@ -955,22 +955,23 @@ it("omits unaligned automatic paragraphs instead of repeating their full text ov
 	expect(f.render).not.toHaveBeenCalled();
 });
 
-function captionAlignmentStub() {
+function captionAlignmentStub(
+	window = { startUs: 0, endUs: 4_000_000 },
+	word = { startUs: 2_500_000, endUs: 3_000_000 },
+) {
 	return vi.fn<typeof alignSelectedCaptionSegments>(async (input) => {
 		const segment = input.segments[0];
 		if (!segment) throw new Error("Missing authored alignment input");
 		const segments = [
 			{
 				...segment,
-				startUs: 2_500_000,
-				endUs: 3_000_000,
+				...word,
 				words: [
 					{
 						text: segment.text,
 						startChar: 0,
 						endChar: segment.text.length,
-						startUs: 2_500_000,
-						endUs: 3_000_000,
+						...word,
 						confidence: 0,
 					},
 				],
@@ -982,8 +983,7 @@ function captionAlignmentStub() {
 			segmentIndex: 0,
 			startChar: 0,
 			endChar: segment.text.length,
-			startUs: 2_500_000,
-			endUs: 3_000_000,
+			...word,
 		};
 		return {
 			segments,
@@ -998,7 +998,7 @@ function captionAlignmentStub() {
 				inputHash: captionAlignmentInputHash(input),
 				outputHash: hashEditingEvidence(segments),
 				baseOutputHash: hashEditingEvidence(segments),
-				sourceAudioUs: 4_000_000,
+				sourceAudioUs: window.endUs - window.startUs,
 				modelLoadMs: 500,
 				alignmentMs: 750,
 				focusWindows: [],
@@ -1009,8 +1009,7 @@ function captionAlignmentStub() {
 				},
 				windows: [
 					{
-						startUs: 0,
-						endUs: 4_000_000,
+						...window,
 						inputTextHash: hashEditingEvidence(segment.text),
 						pcmSha256: "b".repeat(64),
 					},
@@ -1197,6 +1196,62 @@ it("skips extra alignment when selected words already have measured timing", asy
 	expect(document(f).captions?.[0]?.text).toBe("Hello");
 });
 
+it("aligns a scoped caption near its left edge using observed language inside that scene", async () => {
+	const audioBounds = { startUs: 4_000_000, endUs: 6_000_000 };
+	const word = { startUs: 4_500_000, endUs: 5_000_000 };
+	const aligner = captionAlignmentStub(audioBounds, word);
+	const f = fixture({ captions: "ORIGINAL", captionAligner: aligner });
+	const sceneId = fixtureItem(f.sceneIds[1]);
+	Object.assign(f.task.parameters.input.parameters, {
+		storySceneId: sceneId,
+		targetDurationFrames: 60,
+	});
+	f.refresh();
+	Object.assign(f.authored.selection, {
+		requestedDurationFrames: 60,
+		actualDurationFrames: 60,
+		clips: [
+			{
+				sceneId,
+				shotIndex: 0,
+				sourceInUs: audioBounds.startUs,
+				durationFrames: 60,
+			},
+		],
+	});
+	const evidence = f.authored.evidence;
+	evidence.sceneScope = { sceneId, ...audioBounds };
+	evidence.inputCoverage = {
+		totalShots: 1,
+		eligibleShots: 1,
+		processedShots: 1,
+		excludedShots: 0,
+		truncated: false,
+	};
+	evidence.ledger.coveredRefs = ["s2"];
+	const event = fixtureItem(evidence.ledger.events[0]);
+	event.refs = ["s2"];
+	fixtureItem(event.quotes[0]).ref = "s2";
+	evidence.ledgerHash = hashEditingEvidence(evidence.ledger);
+	evidence.artifactHash = localStoryArtifactHash(evidence);
+	f.authored.transcriptLanguageWindows = [{ ...audioBounds, language: "ja" }];
+	f.authored.segments = [{ ...word, text: "次のセリフ" }];
+	const result = await f.run();
+	expect(aligner).toHaveBeenCalledExactlyOnceWith(
+		expect.objectContaining({
+			audioBounds,
+			language: "ja",
+			sourceOriginUs: 0,
+			sourceDurationUs: 6_000_000,
+		}),
+	);
+	expect(result.captionAlignment?.windows).toMatchObject([audioBounds]);
+	expect(document(f).captions?.[0]).toMatchObject({
+		text: "次のセリフ",
+		fromFrame: 15,
+		toFrame: 30,
+	});
+});
 it("resolves selected observed language windows even without a full-source unanimous language", async () => {
 	const aligner = captionAlignmentStub();
 	const f = fixture({ captions: "ORIGINAL", captionAligner: aligner });

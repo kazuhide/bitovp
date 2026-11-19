@@ -103,13 +103,26 @@ function rawFrame(
 ) {
 	return rawClockUnits(seconds, originUs, 30n, rounding);
 }
-function sceneFrameBounds(scope: LocalStorySceneScope, map: CfrTimeMap) {
+function sceneFrameBounds(
+	scope: LocalStorySceneScope,
+	map: CfrTimeMap,
+	prepared?: PreparedShotPartition,
+) {
+	const fromFrame = Number(
+		originalTimeToCfrFrame(scope.startUs, map.sourceStartUs, "CEIL"),
+	);
+	const toFrame = Number(
+		originalTimeToCfrFrame(scope.endUs, map.sourceStartUs, "FLOOR"),
+	);
+	if (!prepared) return { fromFrame, toFrame };
 	return {
-		fromFrame: Number(
-			originalTimeToCfrFrame(scope.startUs, map.sourceStartUs, "CEIL"),
+		fromFrame: Math.max(
+			fromFrame,
+			preparedFrameForSourceAppearance(prepared, scope.startUs / 1_000_000),
 		),
-		toFrame: Number(
-			originalTimeToCfrFrame(scope.endUs, map.sourceStartUs, "FLOOR"),
+		toFrame: Math.min(
+			toFrame,
+			preparedFrameForSourceAppearance(prepared, scope.endUs / 1_000_000),
 		),
 	};
 }
@@ -164,6 +177,7 @@ export function resolveLocalStorySceneScope(options: {
 export function localStoryClipsWithinSceneScope(options: {
 	scope: LocalStorySceneScope;
 	timeMap: CfrTimeMap;
+	preparedPartition?: PreparedShotPartition;
 	clips: readonly {
 		sourceInUs: number;
 		durationFrames: number;
@@ -173,6 +187,7 @@ export function localStoryClipsWithinSceneScope(options: {
 	const { fromFrame, toFrame } = sceneFrameBounds(
 		options.scope,
 		options.timeMap,
+		options.preparedPartition,
 	);
 	return options.clips.every((clip) => {
 		if (
@@ -226,9 +241,6 @@ export function buildLocalStoryInput(options: {
 		options.storySceneId === undefined
 			? undefined
 			: resolveSceneScope(analysis, map, options.storySceneId);
-	const scopedFrames = sceneScope
-		? sceneFrameBounds(sceneScope, map)
-		: undefined;
 	if (p) {
 		// The public accessor also verifies the unforgeable factory-owned partition.
 		getPreparedShotPartitionEntry(p, {
@@ -240,6 +252,10 @@ export function buildLocalStoryInput(options: {
 			"LOCAL_STORY_CLOCK_MISMATCH",
 		);
 	}
+	// Use prepared joins between shots and apply both clocks only at the outer scene bounds.
+	const scopedFrames = sceneScope
+		? sceneFrameBounds(sceneScope, map, p)
+		: undefined;
 	assert(
 		bytes({ title: analysis.title, description: analysis.description }) <= 500,
 		"LOCAL_STORY_BRIEF_LIMIT",
@@ -259,8 +275,7 @@ export function buildLocalStoryInput(options: {
 	});
 	assert(segments.length <= 20_000, "LOCAL_STORY_TRANSCRIPT_LIMIT");
 	const excludedWindows: { fromFrame: number; toFrame: number }[] = [];
-	const strictPrepared =
-		options.includeExcludedWindows || sceneScope ? p : undefined;
+	const strictPrepared = options.includeExcludedWindows ? p : undefined;
 	function excludedSourceWindow(start: number, end: number) {
 		const rawFrom = rawFrame(start, map.sourceStartUs, "FLOOR");
 		const rawTo = rawFrame(end, map.sourceStartUs, "CEIL");

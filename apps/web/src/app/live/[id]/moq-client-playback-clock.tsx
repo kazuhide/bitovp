@@ -11,6 +11,7 @@ type Props =
 			mediaRef: RefObject<HTMLVideoElement | null>;
 			originUtcMs: number | null;
 			durationMs: number;
+			onTimeChange?: (epoch: number | null) => void;
 	  };
 
 export function MoqClientPlaybackClock(props: Props) {
@@ -20,16 +21,25 @@ export function MoqClientPlaybackClock(props: Props) {
 	const mediaRef = props.mode === "archive" ? props.mediaRef : undefined;
 	const origin = props.mode === "archive" ? props.originUtcMs : null;
 	const duration = props.mode === "archive" ? props.durationMs : 0;
+	const onTimeChange =
+		props.mode === "archive" ? props.onTimeChange : undefined;
 	const [epoch, setEpoch] = useState<number | null>(null);
 	useEffect(() => {
+		let lastEpoch: number | null | undefined;
+		function publish(epoch: number | null) {
+			if (lastEpoch === epoch) return;
+			lastEpoch = epoch;
+			setEpoch(epoch);
+			onTimeChange?.(epoch);
+		}
 		if (!active || (!live && origin === null)) {
-			setEpoch(null);
+			publish(null);
 			return;
 		}
 		const video = mediaRef?.current;
 		let blocked = false;
 		function update() {
-			setEpoch(
+			publish(
 				live
 					? Date.now()
 					: video &&
@@ -44,7 +54,7 @@ export function MoqClientPlaybackClock(props: Props) {
 		function onMedia(event: Event) {
 			if (["error", "emptied", "loadstart", "seeking"].includes(event.type)) {
 				blocked = true;
-				setEpoch(null);
+				publish(null);
 			}
 			if (["loadeddata", "seeked"].includes(event.type)) blocked = false;
 		}
@@ -68,7 +78,7 @@ export function MoqClientPlaybackClock(props: Props) {
 			window.clearTimeout(timer);
 			for (const event of events) video?.removeEventListener(event, onMedia);
 		};
-	}, [active, duration, live, mediaRef, origin]);
+	}, [active, duration, live, mediaRef, onTimeChange, origin]);
 	const date = !active || epoch === null ? null : new Date(epoch);
 	const iso =
 		date && Number.isFinite(date.getTime()) ? date.toISOString() : null;

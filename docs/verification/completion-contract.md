@@ -40,7 +40,7 @@ check, not a quality score. Each suite must retain meaningful behavior assertion
 | VOD timeline | Independent audio/video edits, snapping and output preservation, 55 cases | Installed configuration flows; real preparation/preview lifetime and media fixtures |
 | Live lifecycle | Stale owner/lease rejection, cancellation wakeup and retained terminal evidence, 52 cases | Registered PostgreSQL, Redis and lifecycle integration cases |
 | Library render recovery | Material identity, tenant/lease checks, interrupted adoption and recovery, 23 cases | Real database and storage/media fixtures |
-| QC allocation | Resource budgets, reservations and command construction, 268 cases | Native media and host-specific capacity qualification |
+| QC allocation | Resource budgets, reservations and command construction, 269 cases | Native media and host-specific capacity qualification |
 | QC measurement validity | HDR compatibility and synthetic alignment, 39 cases | Actual media/scorer evidence and browser grouping/playback |
 | QC runtime safety | Admission, cancellation/deadline ordering and process ownership, 44 cases | Real PostgreSQL cancellation race and installed cancellation readback |
 

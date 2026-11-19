@@ -87,6 +87,46 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 describe("saved MoQ history and received video", () => {
+	it("withholds cached archive data until reopening is authorized", async () => {
+		const response = await mocks.api();
+		response.configuration = {
+			namespace: ["previously-authorized"],
+			draftVersion: 16,
+			catalogTrackName: "catalog",
+		};
+		mocks.api.mockResolvedValue(response);
+		const rendered = renderWithQuery(view());
+		await screen.findByRole("link", { name: "Download received video" });
+		expect(screen.getByText("previously-authorized")).toBeInTheDocument();
+
+		rendered.rerender(null);
+		let denyRead: ((error: Error) => void) | undefined;
+		mocks.api.mockImplementation(
+			() =>
+				new Promise((_resolve, reject) => {
+					denyRead = reject;
+				}),
+		);
+		rendered.rerender(view());
+
+		const expectArchiveHidden = () => {
+			expect(rendered.container.querySelector("video")).toBeNull();
+			expect(rendered.container.querySelector("[data-moq-chart]")).toBeNull();
+			expect(screen.queryByText("previously-authorized")).toBeNull();
+		};
+		expect(denyRead).toBeDefined();
+		expectArchiveHidden();
+		expect(screen.getByText("Loading")).toBeVisible();
+
+		await act(async () => denyRead?.(new Error("Archive read denied")));
+		expect(
+			await screen.findByText("Could not load saved observations"),
+		).toBeVisible();
+		expectArchiveHidden();
+		expect(
+			rendered.client.getQueryData(["moq-observations", CHANNEL, RUN]),
+		).toBeDefined();
+	});
 	it.each([
 		{
 			type: "observation-limit",

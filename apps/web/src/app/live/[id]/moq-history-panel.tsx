@@ -52,8 +52,13 @@ export function MoqHistoryPanel({
 		active ? "live" : "archive",
 		!active || !hideEncoder,
 	);
-	const sessions = [...(history.data?.sessions ?? [])].sort(
-		(a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt),
+	const pending =
+		history.isPending || (!active && !history.isFetchedAfterMount);
+	const data = !pending && !history.isError ? history.data : undefined;
+	const sessions = [...(data?.sessions ?? [])].sort(
+		(a, b) =>
+			Date.parse(b.startedAt) - Date.parse(a.startedAt) ||
+			a.id.localeCompare(b.id),
 	);
 	const session =
 		sessions.find((value) => value.id === selected) ?? sessions[0];
@@ -90,7 +95,7 @@ export function MoqHistoryPanel({
 		};
 	}, [active, channelId, queryClient, reconcileUntil, refetch, runId]);
 
-	const heartbeat = hideEncoder ? undefined : history.data?.heartbeat;
+	const heartbeat = hideEncoder ? undefined : data?.heartbeat;
 	const encoder = heartbeat?.points.length ? heartbeat : undefined;
 	let archiveUrl: string | null = null;
 	try {
@@ -105,7 +110,7 @@ export function MoqHistoryPanel({
 	const archiveOrigin =
 		session && archiveUrl ? moqArchiveClientOrigin(session) : null;
 	const historyLabel = t("moqPlayback.savedHistory");
-	const configuration = history.data?.configuration;
+	const configuration = data?.configuration;
 	return (
 		<section
 			data-moq-history={runId}
@@ -121,7 +126,7 @@ export function MoqHistoryPanel({
 						/>
 					) : null}
 				</div>
-				{session && sessions.length > 1 && !history.isError ? (
+				{session && sessions.length > 1 ? (
 					<label className="flex max-w-full flex-wrap items-center gap-2 text-xs text-zinc-400">
 						<span className="sr-only">
 							{t("moqPlayback.observationSession")}
@@ -131,11 +136,24 @@ export function MoqHistoryPanel({
 							onChange={(event) => select(event.target.value)}
 							className="h-8 max-w-full truncate rounded-md border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 tabular-nums"
 						>
-							{sessions.map((value) => (
-								<option key={value.id} value={value.id}>
-									{value.startedAt.replace("T", " ").replace(/Z$/, " UTC")}
-								</option>
-							))}
+							{sessions.map((value) => {
+								const sameStart = sessions.filter(
+									(entry) => entry.startedAt === value.startedAt,
+								);
+								const time = value.startedAt
+									.replace("T", " ")
+									.replace(/Z$/, " UTC");
+								const suffix =
+									sameStart.length > 1
+										? ` · ${sameStart.indexOf(value) + 1}`
+										: "";
+								return (
+									<option key={value.id} value={value.id}>
+										{time}
+										{suffix}
+									</option>
+								);
+							})}
 						</select>
 					</label>
 				) : null}
@@ -152,9 +170,9 @@ export function MoqHistoryPanel({
 					<time dateTime={save.startedAt}>{fullUtc(save.startedAt)} UTC</time>
 				</p>
 			))}
-			{history.isPending && history.fetchStatus !== "idle" ? (
+			{pending && history.fetchStatus !== "idle" ? (
 				<p className="text-xs text-zinc-500">{t("moqPlayback.loading")}</p>
-			) : history.isError || history.isPending ? (
+			) : !data ? (
 				<p className="text-xs text-red-300">{t("moqPlayback.historyFailed")}</p>
 			) : session ? (
 				<MoqHistoryObservation

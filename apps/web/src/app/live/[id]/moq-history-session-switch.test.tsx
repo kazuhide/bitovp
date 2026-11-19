@@ -110,6 +110,42 @@ describe("received recording selection", () => {
 			rendered.container.querySelector("video[data-moq-archive]"),
 		).toHaveAttribute("data-moq-archive", OLDER);
 	});
+	it("numbers only identical timestamps in stable UUID order", async () => {
+		const response = await mocks.api();
+		const alternate = "00000000-0000-4000-8000-000000000005";
+		const sameStart = "2026-11-18T00:00:00.100Z";
+		mocks.api.mockResolvedValue({
+			...response,
+			sessions: [
+				session(NEWER, sameStart),
+				session(alternate, "2026-11-18T00:00:00.900Z"),
+				session(OLDER, sameStart),
+			],
+		});
+		const rendered = renderWithQuery(
+			<DocumentOrganizationContext.Provider value={ORG}>
+				<MoqHistoryPanel channelId={CHANNEL} runId={RUN} active={false} />
+			</DocumentOrganizationContext.Provider>,
+		);
+		const selector = await screen.findByRole("combobox");
+		const options = within(selector).getAllByRole("option");
+		expect(
+			options.map((option) => [
+				option.getAttribute("value"),
+				option.textContent,
+			]),
+		).toEqual([
+			[alternate, "2026-11-18 00:00:00.900 UTC"],
+			[OLDER, "2026-11-18 00:00:00.100 UTC · 1"],
+			[NEWER, "2026-11-18 00:00:00.100 UTC · 2"],
+		]);
+		fireEvent.change(selector, {
+			target: { value: options[2]?.getAttribute("value") },
+		});
+		expect(
+			rendered.container.querySelector("video[data-moq-archive]"),
+		).toHaveAttribute("data-moq-archive", NEWER);
+	});
 	it("replaces the old video and clock together across repeated session changes", async () => {
 		const rendered = renderWithQuery(
 			<DocumentOrganizationContext.Provider value={ORG}>

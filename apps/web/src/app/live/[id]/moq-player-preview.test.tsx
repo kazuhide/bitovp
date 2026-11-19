@@ -122,6 +122,15 @@ afterEach(() => {
 });
 
 describe("explicit MoQ preview", () => {
+	it("shows ready playback rather than stopped when the run first becomes active", async () => {
+		const { rerender } = renderWithQuery(view(RUN, false));
+		expect(
+			screen.getByRole("button", { name: "Play", hidden: true }),
+		).toBeDisabled();
+		rerender(view(RUN, true));
+		expect(await screen.findByRole("button", { name: "Play" })).toBeEnabled();
+		expect(screen.getByRole("status")).toHaveTextContent("Not playing");
+	});
 	it("keeps idle capture bookkeeping out of the primary player view", () => {
 		renderWithQuery(view());
 		expect(

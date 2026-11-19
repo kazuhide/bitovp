@@ -11,8 +11,8 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Group the Live channel controls, omit unavailable summary values and redundant jumps, and make the Encoding ID easy to copy in Live and VOD.
 - Give MoQ playback and observation charts more room, explain how the browser measures each value, and show manifest details only for manifest delivery.
 - Use specific Japanese messages for missing records, failed reads and pending results across the app.
-
 - Display MoQ playback and its recorded observations alongside separate player and encoder graphs.
+
 ### Fixed
 
 - Copy live channels with MoQ or other JSON-only settings into an editable plan that preserves their configuration.

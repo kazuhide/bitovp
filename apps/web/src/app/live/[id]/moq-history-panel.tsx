@@ -296,7 +296,7 @@ function MoqHistoryObservation({
 					<MoqViewerMetrics
 						samples={session.samples}
 						startedAt={session.startedAt}
-						playhead={playhead}
+						playhead={hasArchive ? playhead : undefined}
 					/>
 					{encoder ? <MoqEncoderHistory heartbeat={encoder} /> : null}
 				</div>

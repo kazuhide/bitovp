@@ -474,6 +474,11 @@ function MoqPlaybackAttempt({
 								</Link>
 							) : null}
 						</div>
+						{active && phase === "frames" ? (
+							<div className="border-t border-zinc-800 px-3 py-2">
+								<MoqClientPlaybackClock mode="live" active />
+							</div>
+						) : null}
 					</div>
 					{active ? (
 						<div
@@ -498,9 +503,6 @@ function MoqPlaybackAttempt({
 						</div>
 					) : null}
 				</div>
-				{active && phase === "frames" ? (
-					<MoqClientPlaybackClock mode="live" active />
-				) : null}
 				{trace || configuration || relay ? (
 					<details className="min-w-0 text-xs">
 						<summary className="cursor-pointer text-zinc-400">
@@ -518,7 +520,6 @@ function MoqPlaybackAttempt({
 								statistics={statistics}
 								configuration={configuration}
 								relay={relay}
-								detailsOnly
 							/>
 						</div>
 					</details>

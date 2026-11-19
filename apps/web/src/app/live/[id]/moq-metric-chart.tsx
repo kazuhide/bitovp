@@ -64,6 +64,12 @@ export function MoqMetricChart<T extends TimedPoint>({
 		playhead <= last
 			? playhead
 			: null;
+	const readPoint =
+		playhead === undefined
+			? points.at(-1)
+			: cursor === null
+				? undefined
+				: points.findLast((point) => point.timestamp <= cursor);
 	const isSingle = measurements.length === 1;
 	return (
 		<figure data-moq-chart={id} className="min-w-0 space-y-1.5">
@@ -73,7 +79,7 @@ export function MoqMetricChart<T extends TimedPoint>({
 					{help ? <InfoHint labelFor={label} text={help} /> : null}
 				</div>
 				{measurements.map(({ field, label: name, color }) => {
-					const value = points.at(-1)?.[field];
+					const value = readPoint?.[field];
 					if (typeof value !== "number" && isSingle) return null;
 					return (
 						<span

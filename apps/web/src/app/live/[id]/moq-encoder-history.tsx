@@ -14,11 +14,9 @@ const red = "var(--color-rose-400)";
 
 export function MoqEncoderHistory({
 	heartbeat,
-	playhead,
 	status,
 }: {
 	heartbeat: MoqHeartbeatHistory;
-	playhead?: number | null;
 	status?: "pending" | "error";
 }) {
 	const { t } = useT();
@@ -100,7 +98,6 @@ export function MoqEncoderHistory({
 						]}
 						unit="Mbps"
 						decimals={2}
-						playhead={playhead}
 					/>
 					<MoqMetricChart
 						id="inputFps"
@@ -114,7 +111,6 @@ export function MoqEncoderHistory({
 							},
 						]}
 						unit="fps"
-						playhead={playhead}
 					/>
 					{hasSecondary ? (
 						<details>
@@ -145,7 +141,6 @@ export function MoqEncoderHistory({
 									]}
 									unit="ms"
 									decimals={0}
-									playhead={playhead}
 								/>
 								<MoqMetricChart
 									id="inputPackets"
@@ -175,7 +170,6 @@ export function MoqEncoderHistory({
 									]}
 									unit=""
 									decimals={0}
-									playhead={playhead}
 								/>
 							</div>
 						</details>

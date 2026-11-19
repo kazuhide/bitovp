@@ -78,6 +78,8 @@ describe("MoQ metric panels", () => {
 		expect(
 			buffer?.querySelector('[data-series="videoBufferSeconds"]'),
 		).toBeTruthy();
+		expect(buffer).toHaveTextContent("1.40 s");
+		expect(buffer).not.toHaveTextContent("0.90 s");
 		expect(buffer?.querySelector("[data-moq-playhead]")).toHaveAttribute(
 			"data-moq-playhead",
 			String(Date.parse(startedAt) + 1500),

@@ -969,7 +969,7 @@ export const ja = {
 	},
 	moqPlayback: {
 		clientPlaybackTime: "クライアント再生時刻",
-		archivedClientPlaybackTime: "クライアント再生時刻（当時・推定）",
+		archivedClientPlaybackTime: "再生時刻（推定）",
 		archiveClockBasis:
 			"録画開始時刻と再生位置から推定。旧録画では最初のフレームの観測時刻が基準です。",
 		title: "MoQ再生",
@@ -1049,7 +1049,7 @@ export const ja = {
 		noSamples: "保存済みの観測値なし",
 		recordedScope: "受信したプレビューの範囲のみ、最大90秒の録画です。",
 		receivedVideo: "受信したMoQ映像の録画",
-		downloadRecording: "受信映像をダウンロード",
+		downloadRecording: "録画を保存",
 		noRecording: "受信映像の録画なし",
 		recording: {
 			idle: "映像受信後に録画を開始します",

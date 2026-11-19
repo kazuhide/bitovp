@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { chmod, mkdtemp, stat } from "node:fs/promises";
+import { constants, createReadStream, createWriteStream } from "node:fs";
+import { chmod, mkdtemp, open, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { pipeline } from "node:stream/promises";
 import asrModelProfiles from "../../native/asr-model-profiles.json" with {
 	type: "json",
 };
@@ -77,6 +78,45 @@ export async function verifyAnalysisFile(
 		budget,
 		MAX_ANALYSIS_FILE_BYTES,
 	);
+}
+
+/** The caller owns the private directory and removes it after all child processes close. */
+export async function stageCudaAsrExecutable(
+	input: { binaryPath: string; binarySha256: string },
+	directory: string,
+	budget: AnalysisBudget,
+) {
+	budget.check();
+	if (!isAbsolute(input.binaryPath) || !validDigest(input.binarySha256))
+		throw new RangeError("Expected absolute CUDA path and SHA-256");
+	const code = "ASR_CUDA_BINARY_CHANGED";
+	const filename = join(directory, "whisper-cli");
+	const original = await open(
+		input.binaryPath,
+		constants.O_RDONLY | constants.O_NONBLOCK,
+	);
+	try {
+		const facts = await original.stat();
+		if (
+			!facts.isFile() ||
+			facts.size < 1 ||
+			facts.size > MAX_ANALYSIS_FILE_BYTES
+		)
+			throw new MediaOperationError(code);
+		await pipeline(
+			original.createReadStream({ autoClose: false, end: facts.size - 1 }),
+			createWriteStream(filename, { flags: "wx", mode: 0o600 }),
+			{ signal: budget.signal },
+		);
+	} catch (error) {
+		budget.check();
+		throw error;
+	} finally {
+		await original.close();
+	}
+	await verifyAnalysisFile(filename, input.binarySha256, code, budget);
+	await chmod(filename, 0o500);
+	return filename;
 }
 
 /** Full prepared sources share preparation's limit; auxiliary files keep their smaller bound. */

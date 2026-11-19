@@ -1,15 +1,17 @@
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { hashEditingEvidence } from "@bitovp/core";
 import {
 	analysisBudget,
+	analysisScratch,
 	boundedInteger,
-	verifyAnalysisFile,
+	stageCudaAsrExecutable,
 } from "../src/library-editing/analysis-io";
 import {
 	type TranscriptionInput,
 	transcribeLocalAudio,
 } from "../src/library-editing/transcription";
+import { hasBenchmarkSpeech } from "./cuda-asr-benchmark-speech";
 
 const { values } = parseArgs({
 	options: {
@@ -42,41 +44,47 @@ const input: TranscriptionInput = {
 	sourcePath: required("media"),
 	mediaSha256: required("media-sha256"),
 	model: { path: required("model"), sha256: required("model-sha256") },
-	whisperPath: cuda.binaryPath,
 	language,
 	durationUs: Number(required("duration-us")),
 	sourceStartUs: Number(values["offset-us"]),
 };
 const pairs = boundedInteger(Number(values.pairs), 1, Number.MAX_SAFE_INTEGER);
-await verifyAnalysisFile(
-	cuda.binaryPath,
-	cuda.binarySha256,
-	"ASR_CUDA_BINARY_CHANGED",
-	analysisBudget(),
-);
 
-async function run(useCuda: boolean) {
+async function run(useCuda: boolean, binaryPath: string) {
 	const started = performance.now();
 	const result = await transcribeLocalAudio({
 		...input,
-		...(useCuda ? { cuda } : {}),
+		whisperPath: binaryPath,
+		...(useCuda ? { cuda: { ...cuda, binaryPath } } : {}),
 	});
 	const elapsedMs = performance.now() - started;
-	if (useCuda && !result.cudaExecution?.device)
-		throw new Error("The benchmark needs a non-silent interval");
+	if ((useCuda && !result.cudaExecution?.device) || !hasBenchmarkSpeech(result))
+		throw new Error(
+			`${useCuda ? "CUDA" : "CPU"} sample has no recognition evidence`,
+		);
 	return { result, elapsedMs };
 }
 
 const observations = [];
-for (let index = 0; index < pairs; index++) {
-	const cpuFirst = index % 2 === 0;
-	const first = await run(!cpuFirst);
-	const second = await run(cpuFirst);
-	observations.push({
-		order: cpuFirst ? "cpu-cuda" : "cuda-cpu",
-		cpu: cpuFirst ? first : second,
-		cuda: cpuFirst ? second : first,
-	});
+const directory = await analysisScratch("bitovp-asr-benchmark-");
+try {
+	const binary = await stageCudaAsrExecutable(
+		cuda,
+		directory,
+		analysisBudget(),
+	);
+	for (let index = 0; index < pairs; index++) {
+		const cpuFirst = index % 2 === 0;
+		const first = await run(!cpuFirst, binary);
+		const second = await run(cpuFirst, binary);
+		observations.push({
+			order: cpuFirst ? "cpu-cuda" : "cuda-cpu",
+			cpu: cpuFirst ? first : second,
+			cuda: cpuFirst ? second : first,
+		});
+	}
+} finally {
+	await rm(directory, { recursive: true, force: true });
 }
 const witness = ({ result, elapsedMs }: Awaited<ReturnType<typeof run>>) => ({
 	elapsedMs,

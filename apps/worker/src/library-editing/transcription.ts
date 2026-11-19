@@ -17,6 +17,7 @@ import {
 	analysisScratch,
 	boundedInteger,
 	MAX_ANALYSIS_DURATION_US,
+	stageCudaAsrExecutable,
 	validDigest,
 	verifyAnalysisFile,
 	verifyAnalysisSourceFile,
@@ -204,13 +205,6 @@ export async function transcribeLocalAudio(
 		throw new RangeError("Invalid transcription identity");
 	const budget = analysisBudget(input.signal, input.timeoutMs ?? 10 * 60_000);
 	const cuda = input.cuda;
-	if (cuda)
-		await verifyAnalysisFile(
-			cuda.binaryPath,
-			cuda.binarySha256,
-			"ASR_CUDA_BINARY_CHANGED",
-			budget,
-		);
 	await verifyAsrModelFile(
 		input.model.path,
 		input.model.sha256,
@@ -223,18 +217,6 @@ export async function transcribeLocalAudio(
 		"SOURCE_CHANGED",
 		budget,
 	);
-	const binary =
-		cuda?.binaryPath ??
-		input.whisperPath ??
-		process.env.WHISPER_CLI_PATH ??
-		"whisper-cli";
-	const version = await runMediaProcess(binary, ["--version"], {
-		signal: input.signal,
-		timeoutMs: Math.min(10_000, budget.remaining()),
-		maxOutputBytes: 4096,
-	});
-	if (version.stdout.trim() !== `whisper.cpp version: ${WHISPER_CPP_VERSION}`)
-		throw new MediaOperationError("ASR_VERSION_MISMATCH");
 	const directory = await analysisScratch("bitovp-asr-");
 	const finish = (
 		result: Pick<LocalTranscript, "language" | "segments" | "warnings"> &
@@ -266,6 +248,16 @@ export async function transcribeLocalAudio(
 		}),
 	});
 	try {
+		const binary = cuda
+			? await stageCudaAsrExecutable(cuda, directory, budget)
+			: (input.whisperPath ?? process.env.WHISPER_CLI_PATH ?? "whisper-cli");
+		const version = await runMediaProcess(binary, ["--version"], {
+			signal: input.signal,
+			timeoutMs: Math.min(10_000, budget.remaining()),
+			maxOutputBytes: 4096,
+		});
+		if (version.stdout.trim() !== `whisper.cpp version: ${WHISPER_CPP_VERSION}`)
+			throw new MediaOperationError("ASR_VERSION_MISMATCH");
 		const pcm = join(directory, "audio.wav"),
 			prefix = join(directory, "transcript");
 		// Official CLI requires 16 kHz mono signed 16-bit PCM. Keep ffmpeg local.

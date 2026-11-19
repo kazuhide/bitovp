@@ -28,7 +28,7 @@ rtk proxy sha256sum "$bitovp_asr_source/build/bin/whisper-cli"
 
 Set `WHISPER_CUDA_CLI_SHA256` to the executable's digest on Web and Worker, and set `WHISPER_CUDA_CLI_PATH` to its absolute path on Worker. Install the verified executable at a location writable only by the operator. Submit a fresh request key for each measurement. CUDA trials always run fresh across request keys and are excluded from generation dependencies while quality is evaluated.
 
-The request is tied to the configured executable digest. The worker checks the bytes and the Whisper version, retains the same ASR and VAD model verification and quality admission, and requires the CUDA backend to initialize during the native ASR call. The result records the binary digest and device. The device is `null` for silent PCM that skips the decoder.
+The request is tied to the configured executable digest. The worker checks a private executable copy and runs both the version check and recognition from those bytes. Use a build that resolves its CUDA libraries when the executable is copied to a temporary directory. The worker retains the same ASR and VAD model verification and quality admission and requires CUDA initialization during the native ASR call. The result records the binary digest and device. The device is `null` for silent PCM that skips the decoder.
 
 ## Compare the same interval without a database
 
@@ -42,6 +42,6 @@ rtk proxy pnpm --filter @bitovp/worker exec tsx scripts/benchmark-cuda-asr.ts \
   --duration-us 180000000 --language ja --pairs 3
 ```
 
-The samples include local source and model verification, PCM extraction, native execution and transcript validation. For the full standalone task time, measure between task creation and saved success as well. The adapter does not include queueing, storage download or database publication. The harness prints hashes and timings. Use `--private-results /new/file.json` to save the actual transcripts locally for comparison against the same reference text and annotated speech boundaries.
+The samples include local source and model verification, PCM extraction, native execution and transcript validation. Both backends must produce detected speech intervals and a raw lexical segment overlapping speech before the harness reports a comparison. For the full standalone task time, measure between task creation and saved success as well. The adapter does not include queueing, storage download or database publication. The harness prints hashes and timings. Use `--private-results /new/file.json` to save the actual transcripts locally for comparison against the same reference text and annotated speech boundaries.
 
 The whole-source story path still uses CPU. Extending the experiment there requires binding the CUDA executable and observed backend to the entire transcript recipe, preserving compatibility with existing sealed archives and verifying that resumed windows use the same backend identity.

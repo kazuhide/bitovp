@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	mkdtemp,
+	readFile,
+	rename,
+	rm,
+	stat,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TRANSCRIPTION_POLICY_FINGERPRINT } from "@bitovp/core";
@@ -604,7 +611,10 @@ describe("offline transcription adapter", () => {
 		const cuda = await transcribeLocalAudio({ ...f.input, cuda: f.cuda });
 		const [binary, cudaDecode] =
 			execute.mock.calls.find(([, args]) => args.includes("-ojf")) ?? [];
-		expect(binary).toBe(f.cuda.binaryPath);
+		expect(binary).toBe(
+			execute.mock.calls.find(([, args]) => args.includes("--version"))?.[0],
+		);
+		expect(binary).not.toBe(f.cuda.binaryPath);
 		const fixedFlags = (args: string[]) =>
 			args.filter(
 				(_value, index) => !["-f", "-of"].includes(args[index - 1] ?? ""),
@@ -619,6 +629,37 @@ describe("offline transcription adapter", () => {
 		expect(cuda.qualityPolicyFingerprint).toBe(cpu.qualityPolicyFingerprint);
 		expect(cuda.segments).toEqual(cpu.segments);
 		expect(cuda.cacheKey).not.toBe(cpu.cacheKey);
+	});
+	it("runs both CUDA processes from the verified bytes after atomic source replacement", async () => {
+		const f = await setup();
+		f.diagnostics("whisper_backend_init_gpu: using CUDA0 backend\n");
+		const delegate = execute.getMockImplementation();
+		const ran: { path: string; contents: string; mode: number }[] = [];
+		execute.mockImplementation(async (binary: string, args: string[]) => {
+			if (args.includes("--version") || args.includes("-ojf"))
+				ran.push({
+					path: binary,
+					contents: await readFile(binary, "utf8"),
+					mode: (await stat(binary)).mode & 0o777,
+				});
+			if (args.includes("--version")) {
+				const replacement = `${f.cuda.binaryPath}.next`;
+				await writeFile(replacement, "different executable");
+				await rename(replacement, f.cuda.binaryPath);
+			}
+			return delegate?.(binary, args);
+		});
+		const result = await transcribeLocalAudio({ ...f.input, cuda: f.cuda });
+		expect(ran).toEqual([
+			{ path: expect.any(String), contents: "owned CUDA binary", mode: 0o500 },
+			{ path: expect.any(String), contents: "owned CUDA binary", mode: 0o500 },
+		]);
+		const owned = ran[0]?.path;
+		if (!owned) throw new Error("Missing CUDA process");
+		expect(ran[1]?.path).toBe(owned);
+		expect(owned).not.toBe(f.cuda.binaryPath);
+		expect(result.cudaExecution?.binarySha256).toBe(f.cuda.binarySha256);
+		await expect(readFile(owned)).rejects.toMatchObject({ code: "ENOENT" });
 	});
 	it.each([
 		"",

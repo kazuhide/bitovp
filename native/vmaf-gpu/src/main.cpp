@@ -45,6 +45,11 @@ double elapsed(Clock::time_point start) {
 }
 using bitovp::gpu::protocol::quoted;
 
+bool same_loader_generation(const LoaderGeneration &expected) {
+    const auto actual = runtime_loader_generation();
+    return actual && *actual == expected;
+}
+
 std::string file_hash(const std::string &path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) throw std::runtime_error("Cannot open file for SHA-256");
@@ -344,7 +349,7 @@ int main(int argc, char **argv) {
             cpu_distorted = std::make_unique<Decoder>(options.distorted, width, height, options.bits, options.decode_threads);
         }
         const bool decoder_open_stable = decoder_runtime &&
-            runtime_loader_generation() == std::optional<LoaderGeneration>{decoder_runtime->generation};
+            same_loader_generation(decoder_runtime->generation);
         const auto create_backend = [&options] { return make_backend(options); };
         std::unique_ptr<FeatureBackend> backend;
         if (options.inflight_frames > 1) {
@@ -359,7 +364,14 @@ int main(int argc, char **argv) {
         // device/driver can load GPU libraries without running the decoder.
         // Additions or removals while opening or processing media make
         // decoder attestation unavailable, including transient dlopen calls.
-        const auto decode_generation = decoder_open_stable ? runtime_loader_generation() : std::nullopt;
+        LoaderGeneration decode_generation{};
+        bool decode_generation_known = false;
+        if (decoder_open_stable) {
+            if (const auto checkpoint = runtime_loader_generation()) {
+                decode_generation = *checkpoint;
+                decode_generation_known = true;
+            }
+        }
         const double initialize_ms = elapsed(start);
         double extract_ms = 0;
         std::uint64_t count = 0;
@@ -407,10 +419,10 @@ int main(int argc, char **argv) {
         const auto result = oracle.finish(count);
         const double finish_ms = elapsed(finish_start);
         std::optional<std::string> decoder_runtime_sha256;
-        if (decoder_runtime && decode_generation &&
-            runtime_loader_generation() == decode_generation &&
+        if (decoder_runtime && decode_generation_known &&
+            same_loader_generation(decode_generation) &&
             decoder_runtime_unchanged(*decoder_runtime) &&
-            runtime_loader_generation() == decode_generation)
+            same_loader_generation(decode_generation))
             decoder_runtime_sha256 = decoder_runtime->sha256;
         Parity parity;
         if (baseline) parity = compare(baseline->finish(count), result);

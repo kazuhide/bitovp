@@ -116,17 +116,19 @@ export function OverviewStrip({
 			<h2 id="overview-strip-heading" className="sr-only">
 				{t("ui.overview")}
 			</h2>
-			<dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
+			<dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 2xl:grid-cols-4">
 				{facts.map((fact) => (
-					<div key={fact.label}>
+					<div key={fact.label} className="min-w-0">
 						<dt className="text-[11px] text-zinc-500 uppercase tracking-wide">
 							{fact.label}
 						</dt>
-						<dd className="text-sm text-zinc-200">{fact.value}</dd>
+						<dd className="wrap-anywhere text-sm text-zinc-200">
+							{fact.value}
+						</dd>
 					</div>
 				))}
 				{bitmovinEncodingId ? (
-					<div>
+					<div className="min-w-0">
 						<dt className="text-[11px] text-zinc-500 uppercase tracking-wide">
 							{t("jobDetail.encodingId")}
 						</dt>

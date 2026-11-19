@@ -21,7 +21,7 @@ export function HdrMeasurementSummary({
 	];
 	const models = [...new Set(measured.map((evidence) => evidence.model))];
 	return (
-		<details className="mt-3 rounded-md border border-zinc-800 px-3 py-2 text-xs">
+		<details className="rounded-md border border-zinc-800 px-3 py-2 text-xs">
 			<summary className="cursor-pointer text-zinc-200 focus-visible:outline-2 focus-visible:outline-emerald-500">
 				{domains.map((domain) => (
 					<span key={domain} className="mr-3">

@@ -478,7 +478,7 @@ describe("DeliveryStatusPanel", () => {
 			expect(
 				document.querySelector(`[data-lane="${lane}"] [data-lane-lamp]`),
 			).toHaveTextContent("unknown");
-		expect(screen.getByText("Evidence: —")).toBeInTheDocument();
+		expect(screen.queryByText(/^Evidence:/)).not.toBeInTheDocument();
 		expect(inputMbps()).toHaveTextContent("—");
 		expect(screen.queryByText(/Input quality:/)).not.toBeInTheDocument();
 	});

@@ -31,21 +31,13 @@ type PreviewRailProps = {
 	/** rev433: the job has not finished — the rail says so instead of playing. */
 	pending?: boolean;
 	/** Open the enlarged dialog on a link. Absent ⇒ no dialog on this page. */
-	onPlay?: (link: ManifestPlaybackLink) => void;
+	onPlay?: (link: ManifestPlaybackLink, trigger: HTMLButtonElement) => void;
 	/** Hidden while the enlarged dialog is open — one player at a time. */
 	showPlayer: boolean;
 };
 
 /**
- * The right rail: a compact player over the manifest list.
- *
- * Why compact rather than the full-width panel it replaces. The preview's only
- * job is to show the stream actually decoding , and a
- * 380px rail still gives a 16:9 surface ~214px tall — enough to see that. What
- * the page was missing is the whole left column: the ladder, the input files, the
- * storage paths. Trading player width for that is the point of the layout, and
- * nothing is lost because the enlarged dialog already exists — the rail just
- * makes it reachable explicitly rather than only by clicking a list row.
+ * The playback column shows the selected preview and the available manifests.
  *
  * Two invariants carried over unchanged, both already pinned by tests:
  * only ONE player mounts at a time (`showPlayer` goes false while the dialog
@@ -97,7 +89,7 @@ export function PreviewRail({
 		return (
 			<aside
 				aria-label={t("playback.railLabel")}
-				className="lg:self-start rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 text-sm text-zinc-400"
+				className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 text-sm text-zinc-400"
 			>
 				<p>{t("playback.previewAfterFinish")}</p>
 				<div className="mt-3">
@@ -118,32 +110,8 @@ export function PreviewRail({
 			 * finding).
 			 */
 			aria-label={t("playback.railLabel")}
-			/*
-			 * `lg:self-start` looks like a no-op — `align-self` applies to grid/flex
-			 * items and this is a block child of the column wrapper — but the sticky
-			 * DEPENDS on it: the wrapper stretches, which gives the sticky child travel
-			 * room. Moving it to the wrapper to "fix" it collapses the wrapper and
-			 * kills the sticky (review catch). Left deliberately, documented so the
-			 * next person does not tidy it away.
-			 */
-			className="lg:sticky lg:top-4 lg:self-start"
+			className="@min-[66rem]/vod-detail:sticky @min-[66rem]/vod-detail:top-4"
 		>
-			{/*
-			 * Skip link, because the rail is first in the document.
-			 *
-			 * Mobile wants the player first and gets it. Desktop shows the detail on
-			 * the left, so a keyboard or screen-reader user traverses the player and the
-			 * whole manifest list before reaching the job's own content — and that
-			 * worsens once the rendition/input/storage panels land.
-			 *
-			 * Review suggested `lg:order-last` instead of `lg:col-start-2` to fix it,
-			 * but CSS `order` reorders only the VISUAL box, never the accessibility
-			 * tree; assistive technology follows document order either way. That is the
-			 * same mismatch as the `order-first` version this layout already rejected,
-			 * so the swap would relocate the problem rather than remove it. A skip link
-			 * is the mechanism actually designed for "bypass this block", and it works
-			 * at both breakpoints without choosing one over the other.
-			 */}
 			<a
 				href="#job-detail-content"
 				className="sr-only focus:not-sr-only focus:mb-2 focus:inline-block focus:rounded focus:bg-zinc-800 focus:px-2 focus:py-1 focus:text-sm focus:text-zinc-100"
@@ -152,6 +120,7 @@ export function PreviewRail({
 			</a>
 			{showPlayer ? (
 				<PlayerPreview
+					className="min-w-0"
 					player={player}
 					sceneAnalysis={sceneAnalysis}
 					seekRequest={seekRequest}
@@ -172,7 +141,11 @@ export function PreviewRail({
 			 */}
 			{onPlay && showing ? (
 				<div className="mt-2">
-					<Button variant="ghost" size="sm" onClick={() => onPlay(showing)}>
+					<Button
+						variant="ghost"
+						size="sm"
+						onClick={(event) => onPlay(showing, event.currentTarget)}
+					>
 						{t("playback.enlarge")}
 					</Button>
 				</div>

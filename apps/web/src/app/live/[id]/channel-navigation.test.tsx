@@ -737,6 +737,33 @@ describe("every jump lands the caret on the target's heading (audit §5.6)", () 
 		expect(heading?.closest("#sec-delivery-status")).not.toBeNull();
 	});
 
+	it("opens a finished channel's manifest section on a direct or restored fragment", async () => {
+		world.status = "STOPPED";
+		world.runStatus = "STOPPED";
+		world.providerStatus = "FINISHED";
+		window.history.replaceState(null, "", "#sec-manifests");
+		await renderPage();
+
+		const manifests = document.getElementById("sec-manifests");
+		const heading = document.getElementById("sec-manifests-h");
+		expect(manifests).toHaveAttribute("open");
+		expect(heading).toHaveFocus();
+
+		await userEvent.click(manifests?.querySelector("summary") as HTMLElement);
+		expect(manifests).not.toHaveAttribute("open");
+		act(() => {
+			window.history.replaceState(null, "", "#sec-runs");
+			window.dispatchEvent(new HashChangeEvent("hashchange"));
+		});
+		expect(document.getElementById("sec-runs-h")).toHaveFocus();
+		act(() => {
+			window.history.replaceState(null, "", "#sec-manifests");
+			window.dispatchEvent(new HashChangeEvent("hashchange"));
+		});
+		expect(manifests).toHaveAttribute("open");
+		expect(heading).toHaveFocus();
+	});
+
 	/**
 	 * The rail arm below clicks the SAME pointer twice, and the SECOND click is the
 	 * assertion, for two reasons that arrived a review apart.

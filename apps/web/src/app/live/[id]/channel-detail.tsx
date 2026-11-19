@@ -26,6 +26,7 @@ import {
 import {
 	isActiveChannelStatus,
 	type LiveChannelDetailRow,
+	liveStatusPresentation,
 	normalizeLiveToVod,
 } from "@/app/live/live-shared";
 import { LiveStatusBadge } from "@/app/live/live-status-badge";
@@ -522,6 +523,9 @@ function ChannelConsole({
 	const playbackTitleKey = moqPlayback
 		? "moqPlayback.title"
 		: LIVE_SECTION_TITLE_KEYS["sec-manifests"];
+	const hasPlaybackDestination = moqPlayback
+		? canReadMoqPlayback && run !== null
+		: visiblePlaybackLinks.length > 0;
 	// Runtime records (cues, ESAM points) are appended to the same log but are
 	// not provisioning steps — counting them made a 31-step channel read
 	// "34/34 steps" after three insertions (review catch).
@@ -1641,7 +1645,9 @@ function ChannelConsole({
 			{/* , the three handoffs that are not a click. All three mount
 			 * WITH the body, so "the sections exist" is a fact about where they
 			    sit rather than a condition they re-derive. */}
-			<DeepLinkFocus />
+			<DeepLinkFocus
+				playbackAvailable={!omittedSections.includes("sec-manifests")}
+			/>
 			<RevealFocus revealed={escalated} />
 			<StatusAnnouncer
 				signal={{
@@ -1692,6 +1698,20 @@ function ChannelConsole({
 								/>
 							</div>
 						) : null}
+						{hasPlaybackDestination ? (
+							// biome-ignore lint/a11y/useValidAnchor: Navigate to a shareable section and transfer focus to its heading.
+							<a
+								href="#sec-manifests"
+								onClick={(event) => jumpToLiveSection(event, "sec-manifests")}
+								className="rounded-sm text-sm text-zinc-300 underline decoration-zinc-600 underline-offset-4 hover:text-emerald-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+							>
+								{t(
+									moqPlayback && phase === "finished"
+										? "moqPlayback.savedHistory"
+										: playbackTitleKey,
+								)}
+							</a>
+						) : null}
 					</div>
 					{lifecycleActions}
 				</header>
@@ -1705,6 +1725,10 @@ function ChannelConsole({
 					ingestConnected={displayedInputConnection}
 					hasEncoding={row.bitmovinEncodingId !== null}
 					hasError={Boolean(row.error)}
+					showProviderSummary={
+						!liveStatusPresentation(displayStatus, providerLifecycle)
+							.providerUnconfirmed
+					}
 					// : the provider's own view — amber while it cannot be
 					// confirmed, and the terminal hint once Bitmovin said it ended.
 					provider={{
@@ -1721,8 +1745,9 @@ function ChannelConsole({
 				 * it hands focus to the target's heading, so a keyboard operator
 			    lands where the panel just sent the page (audit §5.6). */}
 				{imported ||
-				((nextAction.code !== "RECOVER_FROM_ERROR" ||
-					!row.bitmovinEncodingId) &&
+				(nextAction.code !== "START_NEW_RUN" &&
+					(nextAction.code !== "RECOVER_FROM_ERROR" ||
+						!row.bitmovinEncodingId) &&
 					!(alerts.isPending && nextAction.code === "ALERTS_UNKNOWN") &&
 					!(row.status === "STOPPED" && row.error != null) &&
 					!(

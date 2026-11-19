@@ -327,7 +327,6 @@ describe("the contextual lead follows the airing's life (ledger #126)", () => {
 			},
 		});
 		const view = wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
 		await waitFor(() => {
 			expect(
 				apiFetch.mock.calls.some(
@@ -409,7 +408,7 @@ describe("the contextual lead follows the airing's life (ledger #126)", () => {
 			currentRun: { seq: 3, status: "STOPPED", lastHeartbeat: null },
 		});
 		const view = wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Last broadcast" });
 		const lead = document.getElementById("sec-last-run");
 		expect(lead).not.toBeNull();
 		expect(lead?.textContent).toMatch(/#3/);
@@ -477,6 +476,20 @@ describe("ChannelDetail — live playback preview", () => {
 		mockRole("OPERATOR");
 		wrap(<ChannelDetail id={CHANNEL} />);
 		await screen.findByRole("region", { name: "MoQ playback" });
+		const header = screen.getByRole("heading", { level: 1 }).closest("header");
+		const history = within(header as HTMLElement).getByRole("link", {
+			name: "Saved MoQ observations",
+		});
+		expect(history).toHaveAttribute("href", "#sec-manifests");
+		const playback = document.getElementById("sec-manifests");
+		expect(playback).toHaveAttribute("open");
+		const disclosure = playback?.querySelector("summary");
+		expect(disclosure).not.toBeNull();
+		await userEvent.click(disclosure as HTMLElement);
+		expect(playback).not.toHaveAttribute("open");
+		await userEvent.click(history);
+		expect(playback).toHaveAttribute("open");
+		expect(document.getElementById("sec-manifests-h")).toHaveFocus();
 		expect(document.getElementById("sec-live-to-vod")).toBeNull();
 		expect(document.querySelector('a[href="#sec-live-to-vod"]')).toBeNull();
 	});
@@ -501,6 +514,175 @@ describe("ChannelDetail — live playback preview", () => {
 		expect(
 			apiFetch.mock.calls.some(([url]) => String(url).includes("/moq-")),
 		).toBe(false);
+	});
+
+	it.each([
+		["OPERATOR", "wait"],
+		["OPERATOR", "different fragment"],
+		["OPERATOR", "focus elsewhere"],
+		["OPERATOR", "focus then blur"],
+		["OPERATOR", "focus before the channel loads"],
+		["OPERATOR", "return to playback fragment"],
+		["VIEWER", "wait"],
+	] as const)("honors a pending MoQ link for %s when they %s", async (role, interaction) => {
+		const row = channelRow({
+			currentRun: { ...confirmedRun("RUNNING"), stepLog: [MOQ_STEP] },
+		});
+		mockChannel(row);
+		mockRole(role);
+		const authReady = Promise.withResolvers<void>();
+		const fixture = apiFetch.getMockImplementation();
+		apiFetch.mockImplementation(async (url: string) => {
+			if (url === "/api/auth/session") await authReady.promise;
+			return fixture?.(url);
+		});
+
+		const url = window.location.href;
+		window.history.replaceState(null, "", "#sec-manifests");
+		try {
+			const focusBeforeLoad = interaction === "focus before the channel loads";
+			const { client } = wrap(
+				<>
+					{focusBeforeLoad ? (
+						<button type="button">Sidebar control</button>
+					) : null}
+					<ChannelDetail id={CHANNEL} />
+				</>,
+			);
+			let preservedFocus: HTMLElement | null = null;
+			if (focusBeforeLoad) {
+				expect(
+					screen.queryByRole("heading", { name: "Verification channel" }),
+				).toBeNull();
+				preservedFocus = screen.getByRole("button", {
+					name: "Sidebar control",
+				});
+				preservedFocus.focus();
+			}
+			await screen.findByRole("heading", { name: "Verification channel" });
+			expect(document.getElementById("sec-manifests")).toBeNull();
+			expect(document.activeElement).toBe(preservedFocus ?? document.body);
+
+			const visit = (fragment: string) =>
+				act(() => {
+					window.history.replaceState(null, "", fragment);
+					window.dispatchEvent(new HashChangeEvent("hashchange"));
+				});
+			if (
+				interaction === "different fragment" ||
+				interaction === "return to playback fragment"
+			) {
+				visit("#sec-runs");
+				const runs = document.getElementById("sec-runs-h");
+				expect(runs).toHaveFocus();
+				if (interaction === "return to playback fragment") {
+					visit("#sec-manifests");
+				} else {
+					preservedFocus = runs;
+				}
+			}
+			if (
+				interaction === "focus elsewhere" ||
+				interaction === "focus then blur"
+			) {
+				await userEvent.tab();
+				const link = screen.getByRole("link", { name: "Live Channels" });
+				expect(link).toHaveFocus();
+				if (interaction === "focus then blur") {
+					link.blur();
+					expect(document.activeElement).toBe(document.body);
+					preservedFocus = document.body;
+				} else {
+					preservedFocus = link;
+				}
+			}
+
+			await act(async () => authReady.resolve());
+			await waitFor(() =>
+				expect(client.getQueryData(["auth", "session"])).toMatchObject({
+					role,
+				}),
+			);
+			if (role === "OPERATOR") {
+				await screen.findByRole("region", { name: "MoQ playback" });
+				expect(
+					preservedFocus ?? document.getElementById("sec-manifests-h"),
+				).toHaveFocus();
+				const operatorControl = screen.getByRole("button", {
+					name: "Copy settings and edit",
+				});
+				operatorControl.focus();
+				await act(async () => {
+					client.setQueryData(["live-channel", CHANNEL], {
+						...row,
+						updatedAt: "2026-08-11T01:00:00.000Z",
+					});
+				});
+				expect(operatorControl).toHaveFocus();
+			} else {
+				expect(document.getElementById("sec-manifests")).toBeNull();
+				expect(document.activeElement).toBe(document.body);
+			}
+		} finally {
+			authReady.resolve();
+			window.history.replaceState(null, "", url);
+		}
+	});
+
+	it.each([
+		"MoQ",
+		"HLS",
+	] as const)("opens a %s fragment while retaining the focused skip link when the session is ready first", async (output) => {
+		const at = new Date().toISOString();
+		mockChannel({
+			status: "STOPPED",
+			currentRun: {
+				...confirmedRun("RUNNING"),
+				status: "STOPPED",
+				providerStatus: "FINISHED",
+				providerTerminalAt: at,
+				endedAt: at,
+				stepLog: output === "MoQ" ? [MOQ_STEP] : [],
+			},
+			playbackLinks: output === "HLS" ? [link()] : [],
+		});
+		mockRole("OPERATOR");
+		const channelReady = Promise.withResolvers<void>();
+		const fixture = apiFetch.getMockImplementation();
+		apiFetch.mockImplementation(async (request: string) => {
+			if (request === `/api/live-channels/${CHANNEL}`)
+				await channelReady.promise;
+			return fixture?.(request);
+		});
+
+		const url = window.location.href;
+		window.history.replaceState(null, "", "#sec-manifests");
+		try {
+			const { client } = wrap(
+				<>
+					<a href="#main">Skip to content</a>
+					<ChannelDetail id={CHANNEL} />
+				</>,
+			);
+			const skip = screen.getByRole("link", { name: "Skip to content" });
+			skip.focus();
+			await waitFor(() =>
+				expect(client.getQueryData(["auth", "session"])).toMatchObject({
+					role: "OPERATOR",
+				}),
+			);
+			expect(
+				screen.queryByRole("heading", { name: "Verification channel" }),
+			).toBeNull();
+
+			await act(async () => channelReady.resolve());
+			await screen.findByRole("heading", { name: "Verification channel" });
+			expect(document.getElementById("sec-manifests")).toHaveAttribute("open");
+			expect(skip).toHaveFocus();
+		} finally {
+			channelReady.resolve();
+			window.history.replaceState(null, "", url);
+		}
 	});
 	/* Verify the current information hierarchy rather than restoring the former all-collapsed layout. */
 	it("opens with ONE thing to do, and its anchor points at a section that exists (review-260 126-A2)", async () => {
@@ -667,15 +849,22 @@ describe("ChannelDetail — live playback preview", () => {
 			}
 			return { items: [] };
 		});
-		wrap(<ChannelDetail id={CHANNEL} />);
-		const panel = await screen.findByRole("region", { name: /next action/i });
-		await waitFor(() => {
-			expect(panel.getAttribute("data-next-action")).not.toBe("SCHEDULED_ONLY");
+		mockRole("OPERATOR");
+		const { client } = wrap(<ChannelDetail id={CHANNEL} />);
+		expect(
+			await screen.findByRole("button", { name: "Start a new run" }),
+		).toBeVisible();
+		await waitFor(() =>
+			expect(client.getQueryData(["live-schedules", CHANNEL])).toEqual([
+				expect.objectContaining({ action: "STOP", status: "ARMED" }),
+			]),
+		);
+		expect(screen.queryByRole("region", { name: /next action/i })).toBeNull();
+		const help = screen.getByRole("button", {
+			name: "Start a new run — more information",
 		});
-		// #108 PR3: the honest verb for a STOPPED channel with only an armed
-		// STOP is START_NEW_RUN — still NOT "the schedule will act" (the C1
-		// property this test protects), and no longer a shrug either.
-		expect(panel.getAttribute("data-next-action")).toBe("START_NEW_RUN");
+		await userEvent.click(help);
+		expect(screen.getByRole("note")).toHaveTextContent(/fresh encoder/i);
 	});
 
 	it("an armed SLATE_IN or FEEDER_START is not a start either — they need a RUNNING channel (review-234 I1)", async () => {
@@ -722,16 +911,18 @@ describe("ChannelDetail — live playback preview", () => {
 				}
 				return { items: [] };
 			});
+			mockRole("OPERATOR");
 			const view = wrap(<ChannelDetail id={CHANNEL} />);
-			const panel = await screen.findByRole("region", {
-				name: /next action/i,
-			});
-			await waitFor(() => {
-				expect(
-					panel.getAttribute("data-next-action"),
-					`${action} must not promise automation on a stopped channel`,
-				).not.toBe("SCHEDULED_ONLY");
-			});
+			await screen.findByRole("button", { name: "Start a new run" });
+			await waitFor(() =>
+				expect(view.client.getQueryData(["live-schedules", CHANNEL])).toEqual([
+					expect.objectContaining({ action, status: "ARMED" }),
+				]),
+			);
+			expect(
+				screen.queryByRole("region", { name: /next action/i }),
+				`${action} must not promise automation on a stopped channel`,
+			).toBeNull();
 			view.unmount();
 		}
 	});

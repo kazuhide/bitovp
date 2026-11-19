@@ -59,6 +59,7 @@ export function LifecycleStrip({
 	ingestConnected,
 	hasEncoding,
 	hasError = false,
+	showProviderSummary = true,
 	provider,
 }: {
 	status: LiveChannelStatus;
@@ -75,6 +76,8 @@ export function LifecycleStrip({
 	hasEncoding: boolean;
 	/** A STOPPED row carrying an error is a stop Bitmovin never confirmed. */
 	hasError?: boolean;
+	/** The detail header already displays the provider's reading. */
+	showProviderSummary?: boolean;
 	/**
 	 * optional so callers without a run view (and every pre-#280
 	 * test) render exactly as before; absent = not unknown, not terminal.
@@ -85,6 +88,8 @@ export function LifecycleStrip({
 	const providerTerminal = provider?.terminal === true;
 	const active = providerTerminal ? 7 : lifecycleStage(status, ingestConnected);
 	const visibleStages = providerTerminal ? STAGE_DEFS.slice(-1) : STAGE_DEFS;
+	const showTimelineOnSmallScreens =
+		status === "CREATED" || status === "PROVISIONING";
 	const activeDef = STAGE_DEFS.find((s) => s.n === active);
 	const inputUnobserved =
 		!providerTerminal && status === "RUNNING" && ingestConnected === null;
@@ -144,7 +149,7 @@ export function LifecycleStrip({
 	return (
 		<figure
 			aria-label={t("lifecycle.aria")}
-			className="space-y-1"
+			className="flex flex-wrap items-center gap-x-2 gap-y-1"
 			data-provider={
 				providerUnobserved
 					? "unobserved"
@@ -168,9 +173,17 @@ export function LifecycleStrip({
 							key={stage.n}
 							data-stage={stage.n}
 							data-state={state}
-							className="flex items-center gap-1"
+							aria-current={state === "active" ? "step" : undefined}
+							className={`${state === "active" || showTimelineOnSmallScreens ? "flex" : "hidden sm:flex"} items-center gap-1`}
 						>
-							{i > 0 ? <span className="text-zinc-700">→</span> : null}
+							{i > 0 ? (
+								<span
+									aria-hidden
+									className={`${showTimelineOnSmallScreens ? "" : "hidden sm:inline"} text-zinc-700`}
+								>
+									→
+								</span>
+							) : null}
 							<span
 								className={
 									state === "active"
@@ -200,11 +213,11 @@ export function LifecycleStrip({
 				{/* STAGE_DEFS covers the mapper's whole range, so activeDef is
 				 * total — review-228 caught the defensive ternary surviving
 				    the first "removed dead ternary" claim. */}
-				{providerUnconfirmed ? (
+				{providerUnconfirmed && showProviderSummary ? (
 					<span className="mr-1">
 						{t("live.providerStatusUnconfirmed", { status })}
 					</span>
-				) : errorWithEncoder && !providerTerminal ? (
+				) : !providerUnconfirmed && errorWithEncoder && !providerTerminal ? (
 					<span className="mr-1">{hint}</span>
 				) : null}
 				<HelpOverlay labelFor={t("lifecycle.aria")}>{hint}</HelpOverlay>

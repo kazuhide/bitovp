@@ -173,19 +173,21 @@ export function NextActionPanel({
 			className={`rounded-md border px-4 py-3 ${tone.box}`}
 		>
 			<div className="flex flex-wrap items-center gap-2">
-				<span
-					aria-hidden
-					className={`size-2 shrink-0 rounded-full ${tone.dot}`}
-				/>
-				<h2 className={`font-medium text-sm ${tone.title}`}>
-					{t(
-						readOnly
-							? "tenant.readOnly"
-							: inputUnconfirmed
-								? "lifecycle.inputUnobserved"
-								: copy.title,
-					)}
-				</h2>
+				<div className="flex min-w-0 items-start gap-2">
+					<span
+						aria-hidden
+						className={`mt-1.5 size-2 shrink-0 rounded-full ${tone.dot}`}
+					/>
+					<h2 className={`min-w-0 font-medium text-sm ${tone.title}`}>
+						{t(
+							readOnly
+								? "tenant.readOnly"
+								: inputUnconfirmed
+									? "lifecycle.inputUnobserved"
+									: copy.title,
+						)}
+					</h2>
+				</div>
 				{!readOnly && action.code === "START_NEW_RUN" ? (
 					<HelpOverlay labelFor={t(copy.title)}>{t(copy.body)}</HelpOverlay>
 				) : null}

@@ -418,6 +418,9 @@ describe("ChannelDetail — a lost provider observation is never on air (row #28
 		const badge = statusBadge("RUNNING · Bitmovin status unconfirmed");
 		expect(badge?.className).toContain("amber");
 		expect(badge?.className).not.toContain("emerald");
+		expect(
+			screen.getAllByText("RUNNING · Bitmovin status unconfirmed"),
+		).toHaveLength(1);
 		expect(strip()?.getAttribute("data-provider")).toBe("unknown");
 		const active = strip()?.querySelector('[data-state="active"] span + span');
 		expect(active?.className).toContain("amber");
@@ -454,6 +457,33 @@ describe("ChannelDetail — a lost provider observation is never on air (row #28
 		await screen.findByRole("region", { name: /channel status/i });
 		await waitFor(() => expect(nextActionCode()).toBe("PROVIDER_UNKNOWN"));
 		expect(strip()?.getAttribute("data-provider")).toBe("unknown");
+	});
+
+	it.each([
+		"unknown",
+		"unobserved",
+	] as const)("keeps the %s provider status visible while stopping", async (provider) => {
+		const row = channelRow({
+			providerStatus: provider === "unknown" ? "RUNNING" : null,
+			providerStatusObservedAt:
+				provider === "unknown"
+					? new Date(Date.now() - 10 * 60_000).toISOString()
+					: null,
+			providerUnknownSince: null,
+			providerTerminalAt: null,
+		});
+		mockPage({
+			...row,
+			status: "STOPPING",
+			currentRun: { ...row.currentRun, status: "STOPPING" },
+		});
+		wrap(<ChannelDetail id={CHANNEL} />);
+		await screen.findByRole("region", { name: /channel status/i });
+		expect(statusBadge("STOPPING")).toBeVisible();
+		expect(strip()).toHaveAttribute("data-provider", provider);
+		expect(
+			screen.getByText("STOPPING · Bitmovin status unconfirmed"),
+		).toBeVisible();
 	});
 
 	it("a run with no observation yet is not ON_AIR or green while the first Bitmovin status check is pending", async () => {

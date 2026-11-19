@@ -7,8 +7,8 @@ Run with `lean verification/lean/VerifiedVmafReuse.lean` (Lean 4.24.0).
 The two input identities and the scoring settings stand for the data bound by
 the worker's validated key. The worker must authenticate the predecessor,
 check the actual input and payload bytes, and validate full-frame CPU parity.
-The model treats those checks as inputs and makes no claim about hashes or
-the numerical equivalence of libvmaf and a GPU implementation.
+The proof assumes those runtime checks and uses equality of the validated
+identities. Numerical equivalence is established by the existing CPU check.
 -/
 
 namespace BitOVP.VerifiedVmafReuse
@@ -22,6 +22,7 @@ structure ScoreKey where
   frameBasis : String
   model : String
   scorer : String
+  decoderRuntime : String
   deriving DecidableEq
 
 structure Certificate where
@@ -55,6 +56,14 @@ theorem changedKeyIsMiss (requested : ScoreKey) (actualFramesDigest : String)
     (receipt : Certificate) (different : receipt.key ≠ requested) :
     reusable requested actualFramesDigest (some receipt) = false := by
   simp [reusable, Certificate.matches, different]
+
+theorem changedDecoderRuntimeIsMiss (requested : ScoreKey) (actualFramesDigest : String)
+    (receipt : Certificate)
+    (different : receipt.key.decoderRuntime ≠ requested.decoderRuntime) :
+    reusable requested actualFramesDigest (some receipt) = false := by
+  apply changedKeyIsMiss requested actualFramesDigest receipt
+  intro sameKey
+  exact different (congrArg ScoreKey.decoderRuntime sameKey)
 
 theorem changedPayloadIsMiss (requested : ScoreKey) (actualFramesDigest : String)
     (receipt : Certificate) (different : actualFramesDigest ≠ receipt.framesDigest) :

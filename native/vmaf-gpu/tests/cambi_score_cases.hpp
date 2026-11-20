@@ -59,6 +59,7 @@ struct Fixture {
             if (pattern == 4) value = 63u + (x + y) % (2u * contrasts + 3u);
             if (pattern == 5) value = 128u + (x + y) % 2u;
             if (pattern == 6) value = 511u - contrasts + (x + y) % 2u;
+            if (pattern == 7) value = 64u + unsigned(x == 16u);
             // Mode 5 sees the normalized ten-bit image, independently of
             // whether decoding originally supplied eight- or ten-bit samples.
             if (depth == 8) value = value / 4u * 4u;
@@ -150,6 +151,9 @@ template<class Run> unsigned cases(Run run) {
         run(Fixture(17, 19, 10, contrasts, 3, 6, 2, 0)); ++count;
         run(Fixture(17, 19, 10, contrasts, 33, 0, 0, 0)); ++count;
     }
+    // Column 15 sees a contrast only in the next workgroup's first column.
+    // The last column and row also exercise clipped halo loads in partial groups.
+    run(Fixture(33, 17, 10, 1, 3, 7, 0, 0)); ++count;
     return count;
 }
 } // namespace bitovp::gpu::cambi_score_test

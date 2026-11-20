@@ -676,7 +676,9 @@ private:
     VkPipeline cambi_score_pipeline(const vulkan_detail::CambiParameters &parameters) {
         const auto window = parameters.window;
         const auto edge = 16u + window - 1u;
-        const bool tiled = edge * edge * sizeof(std::uint32_t) <= context_.properties.limits.maxComputeSharedMemorySize;
+        // Packed tile plus the shared contrast flag in cambi.comp.
+        const bool tiled = (edge * edge + 1u) * sizeof(std::uint32_t) <=
+            context_.properties.limits.maxComputeSharedMemorySize;
         const unsigned values[2] = {parameters.words[8], tiled ? window : 0u};
         auto &pipeline = context_.cambi_score_pipelines[{values[0], values[1]}];
         if (!pipeline) {

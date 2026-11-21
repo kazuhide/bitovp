@@ -130,34 +130,53 @@ export function matchOneToOne<E, O>(
 			`matchOneToOne: ${n} expected + ${m} observed nodes exceed the exact assignment-cost range`,
 		);
 	}
-	// Square matrix: real rows/cols plus one dummy per real node on the other
-	// side, so every real node can always be left unmatched at a known price.
-	const a: number[][] = [];
-	for (let i = 0; i < k; i += 1) {
-		const row: number[] = [];
-		for (let j = 0; j < k; j += 1) {
-			if (i < n && j < m) {
-				const e = expected[i]?.e as E;
-				const o = observed[j]?.o as O;
-				row.push(
-					input.compatible(e, o)
-						? Math.round(
-								Math.min(Math.max(input.cost(e, o), 0), MAX_ASSIGNMENT_COST) *
-									COST_SCALE,
-							)
-						: incompatible,
-				);
-			} else if (i < n || j < m) {
-				row.push(
-					unmatched + (i < n && expected[i]?.required ? requiredPenalty : 0),
-				);
-			} else {
-				row.push(0);
+	// Each disjoint compatible edge costs less than leaving its endpoints
+	// unmatched. If every edge is disjoint, all such pairs must be selected.
+	const directColumns = new Array<number>(n).fill(m);
+	const directCosts = new Array<number>(n).fill(0);
+	const claimedColumns = new Set<number>();
+	let matrix: number[][] | undefined;
+	for (let i = 0; i < n; i += 1) {
+		const e = expected[i]?.e as E;
+		for (let j = 0; j < m; j += 1) {
+			const o = observed[j]?.o as O;
+			if (!input.compatible(e, o)) continue;
+			const scaled = Math.round(
+				Math.min(Math.max(input.cost(e, o), 0), MAX_ASSIGNMENT_COST) *
+					COST_SCALE,
+			);
+			if (
+				!matrix &&
+				Number.isFinite(scaled) &&
+				directColumns[i] === m &&
+				!claimedColumns.has(j)
+			) {
+				directColumns[i] = j;
+				directCosts[i] = scaled;
+				claimedColumns.add(j);
+				continue;
 			}
+			if (!matrix) {
+				// A conflict or a non-numeric cost needs the original square
+				// assignment. Keep its dummy costs and every evaluated cell.
+				matrix = Array.from({ length: k }, (_, index) => {
+					const realRow = index < n;
+					const dummyCost =
+						unmatched + (expected[index]?.required ? requiredPenalty : 0);
+					const row = new Array<number>(k).fill(realRow ? dummyCost : 0);
+					return row.fill(realRow ? incompatible : unmatched, 0, m);
+				});
+				for (const [index, column] of directColumns.entries()) {
+					if (column === m) continue;
+					const row = matrix[index] as number[];
+					row[column] = directCosts[index] as number;
+				}
+			}
+			const row = matrix[i] as number[];
+			row[j] = scaled;
 		}
-		a.push(row);
 	}
-	const assignment = hungarian(a);
+	const assignment = matrix ? hungarian(matrix) : directColumns;
 
 	const pairs: OneToOneResult<E, O>["pairs"] = [];
 	const unmatchedExpected: E[] = [];
@@ -165,7 +184,7 @@ export function matchOneToOne<E, O>(
 	for (let i = 0; i < n; i += 1) {
 		const j = assignment[i];
 		const e = expected[i]?.e as E;
-		if (j !== undefined && j < m && a[i]?.[j] !== incompatible) {
+		if (j !== undefined && j < m && matrix?.[i]?.[j] !== incompatible) {
 			const o = observed[j]?.o as O;
 			matchedObserved.add(j);
 			pairs.push({ expected: e, observed: o, cost: input.cost(e, o) });

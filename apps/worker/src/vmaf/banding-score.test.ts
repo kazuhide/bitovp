@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	bandingInputFromProbe,
 	buildCpuBandingCommand,
 	parseBandingLibvmafVersion,
 	parseBandingTiming,
 	parseCpuBandingLog,
+	probeBandingTiming,
 } from "./banding-score";
 
 describe("standalone CPU CAMBI", () => {
@@ -75,6 +76,52 @@ describe("standalone CPU CAMBI", () => {
 		expect(graph).not.toContain("scale");
 		expect(graph).not.toContain("fps=");
 		expect(graph).not.toContain("max_val=");
+	});
+	it("keeps decoder threads separate from eight scoring threads", () => {
+		const command = buildCpuBandingCommand(
+			"/encoded.mp4",
+			"/cambi.json",
+			8,
+			undefined,
+			2,
+		);
+		expect(command[command.indexOf("-threads") + 1]).toBe("2");
+		expect(command[command.indexOf("-filter_complex") + 1]).toContain(
+			"n_threads=8:n_subsample=1",
+		);
+		for (const decoderThreads of [0, -1, 1.5, 257])
+			expect(() =>
+				buildCpuBandingCommand(
+					"/encoded.mp4",
+					"/cambi.json",
+					8,
+					undefined,
+					decoderThreads,
+				),
+			).toThrow("BANDING_DECODER_THREADS_INVALID");
+	});
+	it("bounds the full-frame timing probe decoder by the admitted allocation", async () => {
+		const runner = {
+			spawn: vi.fn(),
+			run: vi.fn(async (_program: string, _args: string[]) => ({
+				code: 0,
+				stderr: "",
+				stdout: JSON.stringify({
+					streams: [{ time_base: "1/24" }],
+					frames: [{ best_effort_timestamp: 0, duration: 1 }],
+				}),
+			})),
+		};
+		await probeBandingTiming(
+			{ runner, ffprobePath: "/ffprobe" },
+			"/encoded.mp4",
+			new AbortController().signal,
+			undefined,
+			2,
+		);
+		const args = runner.run.mock.calls[0]?.[1] as string[];
+		expect(args[args.indexOf("-threads") + 1]).toBe("2");
+		expect(args).toContain("-show_frames");
 	});
 
 	it("preserves VFR presentation durations and gaps relative to the first PTS", () => {

@@ -93,18 +93,22 @@ export function createNativeAutoResourcePlanner(deps: {
 		const base = planLocalResources(stable, pair, deps.configured ?? {}, 32);
 		if (!request.options.scoring) {
 			const charge = base.threads + 2 * (base.decoderThreads ?? 1) + 1;
+			// The existing full-frame estimate also bounds uncalibrated CPU
+			// models. Reserve that working set, not the entire host; GPU cold
+			// plans and calibration retain their separate exclusive policy.
+			if (base.manualFallback) return base;
 			return {
 				...base,
+				exclusive: false,
 				cpuChargePerComparison: Math.min(current.cpuCapacity, charge),
-				concurrency: base.exclusive
-					? 1
-					: Math.max(
-							1,
-							Math.min(
-								base.concurrency,
-								Math.floor(current.cpuCapacity / charge),
-							),
-						),
+				concurrency: Math.max(
+					1,
+					Math.min(
+						deps.configured?.concurrency ?? 32,
+						Math.floor(current.cpuCapacity / charge),
+						Math.floor((hostBudget as number) / base.estimatedBytes),
+					),
+				),
 			};
 		}
 		if (!hostBudget || !base.frameCount)

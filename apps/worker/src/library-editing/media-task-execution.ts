@@ -1,5 +1,5 @@
 import { rm } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import {
 	AutomaticBindingError,
 	DEFAULT_ASR_MODEL_SHA256,
@@ -33,7 +33,10 @@ import {
 	trackShotSubjects,
 } from "./tracking";
 import { transcriptInOriginalTime } from "./transcript-clock";
-import { transcribeLocalAudio } from "./transcription";
+import {
+	type CudaTranscriptionRuntime,
+	transcribeLocalAudio,
+} from "./transcription";
 
 export type MediaTaskExecutionDependencies = {
 	prisma: AppPrismaClient;
@@ -130,6 +133,22 @@ export async function executeMediaTask(input: {
 		speechSelectionIntentFailureCode(verified.envelope);
 	if (intentFailure) throw new MediaOperationError(intentFailure);
 	const request = verified.envelope.input;
+	let cuda: CudaTranscriptionRuntime | undefined;
+	if (
+		request.kind === "TRANSCRIBE" &&
+		request.parameters.asrBackend === "cuda"
+	) {
+		const binarySha256 = verified.envelope.identity.asrCudaBinarySha256,
+			binaryPath = process.env.WHISPER_CUDA_CLI_PATH;
+		if (
+			!binarySha256 ||
+			binarySha256 !== process.env.WHISPER_CUDA_CLI_SHA256 ||
+			!binaryPath ||
+			!isAbsolute(binaryPath)
+		)
+			throw new MediaOperationError("ASR_CUDA_NOT_CONFIGURED");
+		cuda = { binaryPath, binarySha256 };
+	}
 	const localStory =
 		request.kind === "GENERATE" && request.parameters.policy === "LOCAL_STORY";
 	if (localStory) boundedInteger(input.timeoutMs, 1, 120 * 60_000);
@@ -207,6 +226,7 @@ export async function executeMediaTask(input: {
 				durationUs,
 				signal,
 				timeoutMs: budget.remaining(),
+				...(cuda ? { cuda } : {}),
 			});
 			const origin = verified.map.sourceStartUs;
 			if (
@@ -216,7 +236,10 @@ export async function executeMediaTask(input: {
 					verified.envelope.identity.transcriptionPolicyFingerprint
 			)
 				throw new MediaOperationError("ASR_QUALITY_POLICY_CHANGED");
-			return transcriptInOriginalTime(result, origin);
+			return {
+				...transcriptInOriginalTime(result, origin),
+				...(cuda ? { cacheable: false } : {}),
+			};
 		}
 		const analysis = verified.analysisDocument;
 		if (

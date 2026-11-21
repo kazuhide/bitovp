@@ -53,6 +53,7 @@ export const transcriptionTaskParametersSchema = z.strictObject({
 	language: language.default("auto"),
 	sourceStartUs: z.number().int().min(0).max(3_600_000_000).default(0),
 	durationUs: z.number().int().min(1).max(180_000_000).optional(),
+	asrBackend: z.literal("cuda").optional(),
 });
 export const trackingTaskParametersSchema = z.strictObject({
 	sceneIds: z.array(uuid).min(1).max(20).optional(),
@@ -210,6 +211,7 @@ export const mediaTaskIdentitySchema = z.strictObject({
 	localStoryWorkflow: localStoryFlowWorkflowIdentitySchema.optional(),
 	captionTranslationModel: localCaptionModelIdentitySchema.optional(),
 	transcriptionPolicyFingerprint: hash.optional(),
+	asrCudaBinarySha256: hash.optional(),
 	generationPolicyFingerprint: hash.optional(),
 });
 export const mediaTaskEnvelopeSchema = z
@@ -218,6 +220,13 @@ export const mediaTaskEnvelopeSchema = z
 		input: mediaTaskCreateSchema,
 		identity: mediaTaskIdentitySchema,
 	})
+	.refine(
+		(value) =>
+			(value.input.kind === "TRANSCRIBE" &&
+				value.input.parameters.asrBackend === "cuda") ===
+			(value.identity.asrCudaBinarySha256 !== undefined),
+		"CUDA transcription requires its pinned executable",
+	)
 	.refine(
 		(value) =>
 			(value.input.kind === "GENERATE" &&

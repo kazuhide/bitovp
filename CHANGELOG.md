@@ -11,7 +11,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ### Added
 
 - Accept CMAF muxings and chunk frame settings in MoQ Live templates and channel plans, with playback and observation history for those runs.
-- Add opt-in Live operation analytics and weekly reports for Live starts, stops, and playback.
+- Add opt-in MoQ playback analytics with weekly reports on attempts, outcomes, and time to first frame.
 - Allow operators to opt in to reuse of verified native VMAF scores on eligible manual retries with matching inputs, model, and runtime.
 - Add experimental opt-in CUDA transcription through a SHA-256-pinned Whisper executable for standalone library transcription.
 - Allow local story drafts to limit transcription and clip analysis to an explicitly selected, verified scene.

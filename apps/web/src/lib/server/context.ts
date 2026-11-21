@@ -37,8 +37,10 @@ export function createLazyCipher(
  * cross this boundary toward the client: stores return ciphertext-free
  * summaries; reveal* results feed SDK clients exclusively.
  */
-export async function getServerContext() {
-	const tenant = await resolveAuthenticatedContext(await headers());
+export async function getServerContext(requestHeaders?: Headers) {
+	const tenant = await resolveAuthenticatedContext(
+		requestHeaders ?? (await headers()),
+	);
 	return contextForOrganization(
 		tenant.organizationId,
 		tenant.isImpersonating,

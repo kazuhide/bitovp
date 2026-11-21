@@ -25,6 +25,7 @@ export function proxyContextFixture(
 		ok: boolean;
 		tokenId?: string;
 		role?: string;
+		scope?: string | null;
 		reason?: string;
 	}>,
 	userResolver: (() => Promise<ResolvedUser | null>) | undefined,
@@ -64,6 +65,7 @@ export function proxyContextFixture(
 					(config.settings.mode === "users" ? "VIEWER" : UNKNOWN_ROLE_CEILING),
 				actorRole: role ?? UNKNOWN_ROLE_CEILING,
 				tokenRoleKnown: role !== null,
+				tokenScope: verdict.scope ?? null,
 			};
 		}
 		if (config.settings.mode === "users") {

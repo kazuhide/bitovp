@@ -12,18 +12,25 @@ import { createContext, type ReactNode, useContext } from "react";
  * which makes a component rendered outside the provider (a unit test, a
  * storybook-style harness) behave like a fresh deployment rather than throw.
  */
-const FeatureFlagsContext = createContext<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
+const FeatureFlagsContext = createContext<
+	FeatureFlags & { encodingExperiments: boolean }
+>({
+	...DEFAULT_FEATURE_FLAGS,
+	encodingExperiments: false,
+});
 
 export function FeatureFlagsProvider({
 	flags,
+	encodingExperiments = false,
 	children,
 }: {
 	flags: Partial<FeatureFlags>;
+	encodingExperiments?: boolean;
 	children: ReactNode;
 }) {
 	return (
 		<FeatureFlagsContext.Provider
-			value={{ ...DEFAULT_FEATURE_FLAGS, ...flags }}
+			value={{ ...DEFAULT_FEATURE_FLAGS, ...flags, encodingExperiments }}
 		>
 			{children}
 		</FeatureFlagsContext.Provider>
@@ -37,4 +44,8 @@ export function useFeatureFlags(): FeatureFlags {
 /** Sugar for the one flag every QC surface asks about. */
 export function useQcVmafEnabled(): boolean {
 	return useFeatureFlags().qcVmaf;
+}
+
+export function useEncodingExperimentsEnabled(): boolean {
+	return useContext(FeatureFlagsContext).encodingExperiments;
 }

@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type AppPrismaClient, createPrismaClient } from "./client";
+import {
+	claimExperimentTrial,
+	completeExperimentTrial,
+	controlExperimentCampaign,
+	enqueueExperimentBatch,
+	experimentResultPage,
+} from "./encoding-experiments";
 import { createTenantPrismaClient } from "./tenant-client";
 
 const adminUrl = process.env.BITOVP_TENANT_TEST_ADMIN_URL;
@@ -68,6 +75,15 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				await admin.operationAttempt.deleteMany({
 					where: { organizationId: { in: [orgA, orgB] } },
 				});
+				await admin.encodingExperimentBatch.deleteMany({
+					where: { organizationId: { in: [orgA, orgB] } },
+				});
+				await admin.encodingExperimentTrial.deleteMany({
+					where: { organizationId: { in: [orgA, orgB] } },
+				});
+				await admin.encodingExperimentCampaign.deleteMany({
+					where: { organizationId: { in: [orgA, orgB] } },
+				});
 				await admin.organization.deleteMany({
 					where: { id: { in: [orgA, orgB] } },
 				});
@@ -96,6 +112,75 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			expect(
 				await a.credential.findUnique({ where: { id: credentialA } }),
 			).not.toHaveProperty("encryptedSecret");
+		});
+
+		it("fences experiment claims, replays idempotent batches and isolates their results", async () => {
+			const ctx = { organizationId: orgA, prisma: a };
+			const foreign = { organizationId: orgB, prisma: b };
+			const capabilityId = "a".repeat(64);
+			const campaign = await a.encodingExperimentCampaign.create({
+				data: { name: "NVENC experiment", capabilityId, runtime: {} },
+			});
+			const trial = {
+				trialKey: "b".repeat(64),
+				sourceSha256: "c".repeat(64),
+				input: {},
+			};
+			const create = async () => [trial, trial];
+			const first = await enqueueExperimentBatch(
+				ctx,
+				campaign.id,
+				"key",
+				capabilityId,
+				create,
+			);
+			const replay = await enqueueExperimentBatch(
+				ctx,
+				campaign.id,
+				"key",
+				capabilityId,
+				async () => {
+					throw new Error("A replay must not need the current worker");
+				},
+			);
+			expect(replay).toEqual(first);
+			expect(first.items[0]?.id).toEqual(first.items[1]?.id);
+			await expect(
+				enqueueExperimentBatch(ctx, campaign.id, "key", "e".repeat(64), create),
+			).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
+			expect(await b.encodingExperimentCampaign.count()).toBe(0);
+			await expect(
+				experimentResultPage(foreign, campaign.id),
+			).rejects.toMatchObject({
+				status: 404,
+			});
+			const now = new Date();
+			const claimed = await claimExperimentTrial(ctx, capabilityId, now, 1_000);
+			if (!claimed) throw new Error("First claim was not acquired");
+			expect(claimed.attempt).toBe(1);
+			expect(
+				await claimExperimentTrial(ctx, capabilityId, now, 1_000),
+			).toBeNull();
+			const later = new Date(now.getTime() + 2_000);
+			const retry = await claimExperimentTrial(ctx, capabilityId, later, 1_000);
+			if (!retry) throw new Error("Expired claim was not recovered");
+			expect(retry.attempt).toBe(2);
+			expect(
+				await completeExperimentTrial(ctx, claimed, later, {
+					failureCode: "STALE",
+				}),
+			).toBe(false);
+			await controlExperimentCampaign(ctx, campaign.id, "cancel");
+			expect(
+				await completeExperimentTrial(ctx, retry, later, {
+					failureCode: "STALE",
+				}),
+			).toBe(false);
+			expect(await experimentResultPage(ctx, campaign.id)).toMatchObject({
+				items: [{ status: "CANCELED", resultSequence: 1 }],
+				nextCursor: null,
+				snapshot: 1,
+			});
 		});
 
 		it("refuses global SQL, projections and nested identity writes before reaching PostgreSQL", async () => {

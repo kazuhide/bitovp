@@ -256,6 +256,19 @@ export const TENANT_MODEL_RELATIONS: Readonly<
 		user: "user",
 		organization: "organization",
 	},
+	encodingExperimentCampaign: {
+		organization: "organization",
+		trials: "encodingExperimentTrial",
+		batches: "encodingExperimentBatch",
+	},
+	encodingExperimentTrial: {
+		organization: "organization",
+		campaign: "encodingExperimentCampaign",
+	},
+	encodingExperimentBatch: {
+		organization: "organization",
+		campaign: "encodingExperimentCampaign",
+	},
 	startupSample: {
 		organization: "organization",
 	},

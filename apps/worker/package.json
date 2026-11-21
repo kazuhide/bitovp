@@ -7,6 +7,8 @@
 		"dev": "tsx watch src/index.ts",
 		"build": "tsc --noEmit",
 		"start": "tsx src/index.ts",
+		"experiments:worker": "tsx src/encoding-experiments/worker.ts",
+		"experiments:register-source": "tsx src/encoding-experiments/register-source.ts",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit",
 		"smoke": "tsx scripts/sdk-interop-smoke.ts",

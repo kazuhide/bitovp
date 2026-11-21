@@ -27,13 +27,20 @@ vi.mock("@/lib/api", async (orig) => ({
 		}),
 }));
 
-function renderSidebar(locale: Locale = "en", qcVmaf = true) {
+function renderSidebar(
+	locale: Locale = "en",
+	qcVmaf = true,
+	encodingExperiments = false,
+) {
 	// : the nav's QC entry is flag-gated, and the provider's own
 	// default is OFF (a fresh deployment). The IA loop below asserts EVERY
 	// item, so it renders with the flag ON; the pair of pins at the bottom
 	// covers both states.
 	return renderWithQuery(
-		<FeatureFlagsProvider flags={{ qcVmaf }}>
+		<FeatureFlagsProvider
+			flags={{ qcVmaf }}
+			encodingExperiments={encodingExperiments}
+		>
 			<Sidebar />
 		</FeatureFlagsProvider>,
 		locale,
@@ -158,7 +165,7 @@ describe("Sidebar", () => {
 	 */
 	for (const locale of ["en", "ja"] as const) {
 		it(`renders every IA nav item with its href (${locale})`, async () => {
-			renderSidebar(locale);
+			renderSidebar(locale, true, true);
 			const messages = messagesFor(locale);
 			for (const section of NAV_SECTIONS) {
 				for (const item of section.items) {

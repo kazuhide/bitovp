@@ -10,6 +10,7 @@ and the first encoding. Use the [user guide](./USER-GUIDE.md) for other tasks.
 |---|---|
 | User guide: [English](https://kazuhide.github.io/bitovp/guide/) · [Japanese](https://kazuhide.github.io/bitovp/ja/guide/) | Complete workflows, settings, and screenshots |
 | [API usage](./API-USAGE.md) | Authentication and machine-client workflows |
+| [Local NVIDIA encoding experiments](./user-guide/ENCODING-EXPERIMENTS.md) | Repeat NVENC trials, measure CUDA VMAF, and select a setting with Lean |
 | [Supported features and limits](./BITMOVIN-API-COVERAGE.md) | Capabilities and technical restrictions that affect configuration |
 | [Operations](./OPERATIONS.md) | Deployment, backup, upgrades, and cleanup |
 | [FFmpeg build record](./FFMPEG-BUILD.md) | Sources, commands, logs, and checks of the FFmpeg that the worker image compiles |

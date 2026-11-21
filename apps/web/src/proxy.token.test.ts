@@ -343,3 +343,36 @@ describe("proxy — API token path", () => {
 		expect(res.headers.get("set-cookie")).toContain("bitovp_session");
 	});
 });
+
+it("isolates experiment tokens from ordinary API operations", async () => {
+	verifyApiTokenRequest.mockResolvedValue({
+		ok: true,
+		tokenId: "tok-1",
+		role: "VIEWER",
+		scope: "encoding-experiments",
+	});
+	const headers = { host: "localhost:3100", authorization: `Bearer ${TOKEN}` };
+	for (const [path, method, status] of [
+		["/api/encoding-experiments/v1/campaigns", "GET", 200],
+		["/api/encoding-experiments/v1/campaigns", "POST", 403],
+		["/api/credentials", "GET", 403],
+		["/api/api-tokens/tok-1", "DELETE", 200],
+		["/api/api-tokens/tok-2", "DELETE", 403],
+	] as const) {
+		const response = await proxy(
+			new NextRequest(`http://localhost:3100${path}`, { method, headers }),
+		);
+		expect(response.status, method + " " + path).toBe(status);
+	}
+	vi.stubEnv("AUTH_MODE", "none");
+	const denied = await proxy(
+		new NextRequest(
+			"http://localhost:3100/api/encoding-experiments/v1/results",
+			{ headers },
+		),
+	);
+	expect(denied.status).toBe(403);
+	expect(await denied.json()).toMatchObject({
+		details: { code: "EXPERIMENT_AUTH_REQUIRED" },
+	});
+});

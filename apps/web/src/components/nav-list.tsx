@@ -4,7 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { canAccess } from "@/lib/auth/audience";
 import { useRoleView } from "@/lib/auth/use-session";
-import { useQcVmafEnabled } from "@/lib/feature-flags/context";
+import {
+	useEncodingExperimentsEnabled,
+	useQcVmafEnabled,
+} from "@/lib/feature-flags/context";
 import { useT } from "@/lib/i18n/context";
 import { cn } from "@/lib/utils";
 import { NAV_SECTIONS } from "./nav-items";
@@ -58,6 +61,7 @@ export function NavList() {
 	const pathname = usePathname();
 	const { t } = useT();
 	const qcVmaf = useQcVmafEnabled();
+	const encodingExperiments = useEncodingExperimentsEnabled();
 	const { view } = useRoleView();
 	const sections = NAV_SECTIONS.map((section) => ({
 		...section,
@@ -65,7 +69,9 @@ export function NavList() {
 			(item) =>
 				// : the QC entry only exists when the
 				// deployment has QC/VMAF on.
-				(item.href !== "/qc" || qcVmaf) && canAccess(item, view),
+				(item.href !== "/qc" || qcVmaf) &&
+				(item.href !== "/encoding-experiments" || encodingExperiments) &&
+				canAccess(item, view),
 		),
 	}));
 	const activeHref = activeDestination(

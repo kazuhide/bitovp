@@ -1,0 +1,359 @@
+import "server-only";
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { isAbsolute } from "node:path";
+import {
+	type ExperimentTrialInput,
+	experimentBatchSchema,
+	experimentCampaignInputSchema,
+	experimentQualityRequestSchema,
+	experimentResultSchema,
+	experimentScoringProfile,
+	experimentTrialSchema,
+} from "@bitovp/core/encoding-experiments";
+import {
+	getExperimentRoot,
+	readExperimentRuntime,
+	readExperimentSource,
+	readExperimentSources,
+} from "@bitovp/core/encoding-experiments-files";
+import {
+	addExperimentCampaign,
+	controlExperimentCampaign,
+	EncodingExperimentError,
+	type ExperimentContext,
+	enqueueExperimentBatch,
+	experimentCampaignDetail,
+	experimentCampaignPage,
+	experimentResultPage,
+	experimentTrialPage,
+} from "@bitovp/db";
+import { type ZodType, z } from "zod";
+import sdkCatalog from "../../../../../native/nvenc-experiments/catalog/sdk-13.0.json";
+
+export {
+	controlExperimentCampaign as setExperimentCampaignState,
+	EncodingExperimentError,
+	experimentCampaignDetail as getExperimentCampaign,
+	experimentCampaignPage as listExperimentCampaigns,
+	experimentResultPage as listExperimentResults,
+	experimentTrialPage as listExperimentTrials,
+};
+
+export function getExperimentCatalog() {
+	return sdkCatalog;
+}
+
+function parse<T>(schema: ZodType<T>, value: unknown) {
+	const parsed = schema.safeParse(value);
+	if (!parsed.success) {
+		const issue = parsed.error.issues[0];
+		throw new EncodingExperimentError(
+			422,
+			"INVALID_EXPERIMENT_REQUEST",
+			issue?.message ?? "Invalid request",
+			issue?.path.join("."),
+		);
+	}
+	return parsed.data;
+}
+
+function sha(value: unknown): string {
+	return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+async function requireRuntime() {
+	const root = getExperimentRoot();
+	const runtime = root ? await readExperimentRuntime(root) : null;
+	if (!root || !runtime)
+		throw new EncodingExperimentError(
+			503,
+			"GPU_UNAVAILABLE",
+			"The NVIDIA experiment worker is unavailable",
+		);
+	return { root, runtime };
+}
+
+export async function getExperimentCapabilities() {
+	const root = getExperimentRoot();
+	const runtime = root ? await readExperimentRuntime(root) : null;
+	if (!runtime)
+		return {
+			schemaVersion: 1,
+			available: false,
+			reason: root ? "GPU_UNAVAILABLE" : "NOT_CONFIGURED",
+		};
+	return { ...runtime, available: true, capabilityId: runtime.runtimeId };
+}
+
+export async function listExperimentSources(organizationId: string) {
+	const root = getExperimentRoot();
+	return {
+		items: root ? await readExperimentSources(root, organizationId) : [],
+		nextCursor: null,
+	};
+}
+
+async function verifyTrial(
+	root: string,
+	organizationId: string,
+	codecs: ExperimentTrialInput["codec"][],
+	trial: ExperimentTrialInput,
+) {
+	if (!codecs.includes(trial.codec))
+		throw new EncodingExperimentError(
+			422,
+			"CODEC_UNAVAILABLE",
+			"Codec is unavailable on this worker",
+			"codec",
+		);
+	const source = await readExperimentSource(
+		root,
+		organizationId,
+		trial.sourceId,
+	);
+	if (!source)
+		throw new EncodingExperimentError(
+			422,
+			"SOURCE_NOT_REGISTERED",
+			"Source is not registered for this organization",
+			"sourceId",
+		);
+	return source;
+}
+
+export async function validateExperimentTrial(
+	organizationId: string,
+	input: unknown,
+) {
+	const trial = parse(experimentTrialSchema, input);
+	const { root, runtime } = await requireRuntime();
+	await verifyTrial(root, organizationId, runtime.supportedCodecs, trial);
+	return { valid: true, trial, capabilityId: runtime.runtimeId };
+}
+
+function compareRuntime(expected: string, actual: string) {
+	if (expected !== actual)
+		throw new EncodingExperimentError(
+			409,
+			"CAPABILITY_CHANGED",
+			"The experiment worker identity changed",
+			"capabilityId",
+		);
+}
+
+export async function createExperimentCampaign(
+	ctx: ExperimentContext,
+	input: unknown,
+) {
+	const campaign = parse(experimentCampaignInputSchema, input);
+	const { runtime } = await requireRuntime();
+	compareRuntime(campaign.capabilityId, runtime.runtimeId);
+	return addExperimentCampaign(ctx, {
+		name: campaign.name,
+		capabilityId: runtime.runtimeId,
+		runtime,
+	});
+}
+
+export function enqueueExperimentTrials(
+	ctx: ExperimentContext,
+	id: string,
+	input: unknown,
+	idempotencyKey: string | null,
+) {
+	if (!idempotencyKey || !/^[A-Za-z0-9._:-]{1,128}$/.test(idempotencyKey))
+		throw new EncodingExperimentError(
+			422,
+			"INVALID_IDEMPOTENCY_KEY",
+			"Use a stable Idempotency-Key (1–128 ASCII characters)",
+		);
+	const batch = parse(experimentBatchSchema, input);
+	return enqueueExperimentBatch(
+		ctx,
+		id,
+		idempotencyKey,
+		sha(batch),
+		async (campaign) => {
+			const { root, runtime } = await requireRuntime();
+			compareRuntime(campaign.capabilityId, runtime.runtimeId);
+			const trials = [];
+			for (const input of batch.trials) {
+				const source = await verifyTrial(
+					root,
+					ctx.organizationId,
+					runtime.supportedCodecs,
+					input,
+				);
+				trials.push({
+					trialKey: sha([1, campaign.capabilityId, source.sha256, input]),
+					sourceSha256: source.sha256,
+					input,
+				});
+			}
+			return trials;
+		},
+	);
+}
+
+const selectionResult = z.strictObject({
+	schemaVersion: z.literal(1),
+	evaluation: z.literal("measured"),
+	scoringProfileId: z.literal(experimentScoringProfile),
+	candidateSetSha256: z.string().regex(/^[0-9a-f]{64}$/),
+	status: z.enum([
+		"selected",
+		"no_feasible_candidate",
+		"insufficient_evidence",
+	]),
+	candidateCount: z.number().int().nonnegative(),
+	eligibleCount: z.number().int().nonnegative(),
+	ineligibleCount: z.number().int().nonnegative(),
+	incompleteCount: z.number().int().nonnegative(),
+	trialId: z.uuid().optional(),
+});
+
+function runSelection(bin: string, request: object): Promise<unknown> {
+	return new Promise((resolve, reject) => {
+		const child = execFile(
+			bin,
+			{
+				timeout: 10_000,
+				killSignal: "SIGKILL",
+				maxBuffer: 64 * 1024,
+				env: { PATH: process.env.PATH, NODE_ENV: process.env.NODE_ENV },
+			},
+			(error, stdout) => {
+				if (error) {
+					reject(
+						new EncodingExperimentError(
+							503,
+							"OPTIMIZER_UNAVAILABLE",
+							"Lean selection could not be executed",
+						),
+					);
+					return;
+				}
+				try {
+					resolve(JSON.parse(stdout));
+				} catch {
+					reject(
+						new EncodingExperimentError(
+							503,
+							"OPTIMIZER_INVALID_RESULT",
+							"Lean selection returned invalid JSON",
+						),
+					);
+				}
+			},
+		);
+		child.stdin?.on("error", () => {});
+		child.stdin?.end(JSON.stringify(request));
+	});
+}
+
+export async function selectExperimentQuality(
+	ctx: ExperimentContext,
+	id: string,
+	input: unknown,
+) {
+	const request = parse(experimentQualityRequestSchema, input);
+	const campaign = await experimentCampaignDetail(ctx, id);
+	const bin = process.env.BITOVP_EXPERIMENTS_OPTIMIZER;
+	if (!bin || !isAbsolute(bin))
+		throw new EncodingExperimentError(
+			503,
+			"OPTIMIZER_UNAVAILABLE",
+			"Configure the Lean selection executable",
+		);
+	const rows = await ctx.prisma.encodingExperimentTrial.findMany({
+		where: {
+			organizationId: ctx.organizationId,
+			campaignId: id,
+			AND: [
+				{ input: { path: ["sourceId"], equals: request.sourceId } },
+				{ input: { path: ["window"], equals: request.window } },
+			],
+		},
+		select: {
+			id: true,
+			input: true,
+			result: true,
+			status: true,
+			sourceSha256: true,
+		},
+		orderBy: { id: "asc" },
+		take: 5_001,
+	});
+	if (rows.length > 5_000)
+		throw new EncodingExperimentError(
+			422,
+			"SELECTION_SET_TOO_LARGE",
+			"Select an experiment window with at most 5000 trials",
+		);
+	if (new Set(rows.map((row) => row.sourceSha256)).size > 1)
+		throw new EncodingExperimentError(
+			409,
+			"SOURCE_ID_REUSED",
+			"The source ID identifies multiple media versions",
+		);
+	const candidates = rows.map((row) => {
+		const trial = experimentTrialSchema.parse(row.input);
+		const identity = {
+			trialId: row.id,
+			codec: trial.codec,
+			scoringProfileId: experimentScoringProfile,
+		};
+		if (row.status !== "SUCCEEDED") return identity;
+		const result = experimentResultSchema.parse(row.result);
+		if (result.runtimeId !== campaign.capabilityId)
+			throw new EncodingExperimentError(
+				409,
+				"CAPABILITY_CHANGED",
+				"Result uses another worker identity",
+			);
+		return {
+			...identity,
+			scoreMilli: result.scoreMilli,
+			encodeMs: result.encodeMs,
+			gopFrames: result.observedGopFrames,
+			rate: {
+				numerator: (
+					BigInt(result.videoBytes) *
+					8n *
+					BigInt(result.timeBase.den)
+				).toString(),
+				denominator: (
+					BigInt(result.durationTicks) * BigInt(result.timeBase.num)
+				).toString(),
+			},
+		};
+	});
+	const candidateSetSha256 = sha(candidates);
+	const checked = selectionResult.safeParse(
+		await runSelection(bin, {
+			schemaVersion: 1,
+			evaluation: "measured",
+			scoringProfileId: experimentScoringProfile,
+			candidateSetSha256,
+			constraints: request.constraints,
+			candidates,
+		}),
+	);
+	if (
+		!checked.success ||
+		checked.data.candidateSetSha256 !== candidateSetSha256 ||
+		checked.data.candidateCount !== candidates.length ||
+		(checked.data.status === "selected"
+			? !candidates.some(
+					(candidate) => candidate.trialId === checked.data.trialId,
+				)
+			: checked.data.trialId !== undefined)
+	)
+		throw new EncodingExperimentError(
+			503,
+			"OPTIMIZER_INVALID_RESULT",
+			"Lean selection returned a mismatched result",
+		);
+	return checked.data;
+}

@@ -531,7 +531,8 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 		expect(
 			evaluateRole("OPERATOR", "/api/operation-analytics", "HEAD").allowed,
 		).toBe(false);
-		expect(guarded.length).toBe(203);
-		expect(methods.length).toBe(282);
+		// Encoding experiments add ten guarded routes with thirteen handlers.
+		expect(guarded.length).toBe(213);
+		expect(methods.length).toBe(295);
 	});
 });

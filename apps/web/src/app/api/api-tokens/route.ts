@@ -1,15 +1,20 @@
 import { getTenantPrisma } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { mintToken } from "@/lib/auth/api-token";
+import { EXPERIMENT_TOKEN_PREFIX, mintToken } from "@/lib/auth/api-token";
 import { isHumanActor } from "@/lib/auth/api-token-gate";
+import { ENCODING_EXPERIMENT_SCOPE } from "@/lib/auth/encoding-experiment-scope";
 import { authError } from "@/lib/auth/route-context";
 import { AuthContextError, requireOrganizationAdmin } from "@/lib/auth/tenancy";
 
-const schema = z.strictObject({
-	name: z.string().trim().min(1).max(120),
-	expiresDays: z.number().int().positive().max(36500).optional(),
-});
+const schema = z
+	.strictObject({
+		name: z.string().trim().min(1).max(120),
+		expiresDays: z.number().int().positive().max(36500).optional(),
+		scope: z.literal(ENCODING_EXPERIMENT_SCOPE).optional(),
+		role: z.enum(["VIEWER", "OPERATOR"]).optional(),
+	})
+	.refine((input) => input.scope !== undefined || input.role === undefined);
 export async function GET(req: Request) {
 	try {
 		const context = await requireOrganizationAdmin(req.headers);
@@ -22,6 +27,7 @@ export async function GET(req: Request) {
 				name: true,
 				prefix: true,
 				role: true,
+				scope: true,
 				createdAt: true,
 				expiresAt: true,
 				revokedAt: true,
@@ -43,10 +49,15 @@ export async function POST(req: Request) {
 		const input = schema.safeParse(await req.json());
 		if (!input.success)
 			return NextResponse.json(
-				{ error: "Body must be { name, expiresDays? }" },
+				{
+					error:
+						"Body must include a name and may specify an expiry and experiment scope",
+				},
 				{ status: 400 },
 			);
-		const { secret, prefix, tokenHash } = mintToken();
+		const { secret, prefix, tokenHash } = mintToken(
+			input.data.scope === undefined ? undefined : EXPERIMENT_TOKEN_PREFIX,
+		);
 		const row = await getTenantPrisma(context.organizationId).apiToken.create({
 			data: {
 				name: input.data.name,
@@ -55,7 +66,8 @@ export async function POST(req: Request) {
 				organizationId: context.organizationId,
 				userId: context.actorUserId,
 				createdBy: context.actor,
-				role: "OPERATOR",
+				role: input.data.role ?? "OPERATOR",
+				...(input.data.scope === undefined ? {} : { scope: input.data.scope }),
 				...(input.data.expiresDays === undefined
 					? {}
 					: {
@@ -72,6 +84,9 @@ export async function POST(req: Request) {
 				prefix: row.prefix,
 				expiresAt: row.expiresAt,
 				secret,
+				...(input.data.scope === undefined
+					? {}
+					: { scope: row.scope, role: row.role }),
 			},
 			{ status: 201, headers: { "cache-control": "private, no-store" } },
 		);

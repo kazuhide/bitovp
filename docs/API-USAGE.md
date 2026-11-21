@@ -185,6 +185,23 @@ rejects writes, including queue operations. [Full contract](user-guide/LIBRARY-A
   organization. Cursor is an event UUID, limit1..100; foreign cursor404. These are
   non-admin access-gate decisions, not downstream provider/completion statuses.
   Query/body/secrets and background GETs are excluded.
+- ADMIN `GET /api/operation-analytics` returns `{weeks,isCollecting}` for the current
+  organization, with eight UTC weeks starting Monday. The current week is
+  partial. The report stays available when collection is paused. The first-frame
+  share divides the number of first-frame results by starts excluding pending
+  attempts. Duration percentiles use first-frame results.
+- The browser sends a bounded `POST /api/operation-attempts` after an OPERATOR
+  starts MoQ preview, with `x-bitovp-expected-org` set to the document's
+  organization. Collection is off by default. An administrator can set
+  `operationAnalytics: true` via `PATCH /api/settings/features` for that
+  organization. The JSON fields are `operation: "LIVE_MOQ_PLAYBACK"`,
+  `attemptId`, `channelId`, `runId`, and `stage`. Accepted stage values are
+  `STARTED`, `FIRST_FRAME`, `FAILED`, and `CANCELED`. A terminal event
+  requires integer `elapsedMs` between 0 and 600,000. The server accepts
+  outcomes for up to 11 minutes from the accepted start. Accepted events and
+  identical replays return 204. The first terminal event wins. Rows are
+  available for 90 days and the worker removes expired rows hourly. The
+  organization's `auditHistory` reset category also deletes these records.
 
 ## Retry a creation safely
 

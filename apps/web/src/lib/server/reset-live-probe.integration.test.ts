@@ -182,6 +182,13 @@ postgres("tenant PostgreSQL reset", () => {
 					statusCode: 200,
 				},
 			});
+			await client.operationAttempt.create({
+				data: {
+					id: randomUUID(),
+					operation: "LIVE_MOQ_PLAYBACK",
+					ownerDigest: "a".repeat(64),
+				},
+			});
 			return { account, job };
 		};
 		const aRows = await makeRows(prisma, "A");
@@ -193,6 +200,7 @@ postgres("tenant PostgreSQL reset", () => {
 		expect(await prisma.bitmovinAccount.count()).toBe(0);
 		expect(await prisma.appSetting.count()).toBe(0);
 		expect(await prisma.accessEvent.count()).toBe(0);
+		expect(await prisma.operationAttempt.count()).toBe(0);
 		expect(
 			await b.encodingJob.findUnique({ where: { id: bRows.job.id } }),
 		).toMatchObject({ name: "B" });
@@ -201,6 +209,7 @@ postgres("tenant PostgreSQL reset", () => {
 			await b.appSetting.findUnique({ where: { key: "probe.shared" } }),
 		).toMatchObject({ value: { label: "B" } });
 		expect(await b.accessEvent.count()).toBe(1);
+		expect(await b.operationAttempt.count()).toBe(1);
 		for (const model of RESET_GLOBAL_MODELS)
 			expect(() => prisma[model]).toThrow();
 		expect(

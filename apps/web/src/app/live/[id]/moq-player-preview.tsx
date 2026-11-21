@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useDocumentOrganization } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
+import { useFeatureFlags } from "@/lib/feature-flags/context";
 import { useT } from "@/lib/i18n/context";
 import type { MoqHeartbeatHistory } from "@/lib/moq-player/heartbeat";
 import type { MoqHistorySaveState } from "@/lib/moq-player/history-client";
@@ -19,6 +20,7 @@ import {
 	appendMoqObservationEvent,
 	type MoqObservationEvent,
 } from "@/lib/moq-player/observations";
+import { trackMoqPlaybackOperation } from "@/lib/moq-player/operation-analytics";
 import { createMoqPreviewArchive } from "@/lib/moq-player/preview-archive";
 import type { MoqRecordingState } from "@/lib/moq-player/recording";
 import { createMoqPlayback } from "@/lib/moq-player/session";
@@ -90,6 +92,7 @@ function MoqPlaybackAttempt({
 }: Props) {
 	const { t } = useT();
 	const organizationId = useDocumentOrganization();
+	const { operationAnalytics } = useFeatureFlags();
 	const queryClient = useQueryClient();
 	const observations = useMoqObservationHistory(
 		channelId,
@@ -178,11 +181,21 @@ function MoqPlaybackAttempt({
 		const startedAt = performance.now();
 		const startedWall = new Date().toISOString();
 		const ownIntent = ++intent.current;
+		const finishOperation =
+			operationAnalytics && organizationId
+				? trackMoqPlaybackOperation(
+						{ organizationId, channelId, runId },
+						startedAt,
+					)
+				: undefined;
 		setPhase("loading");
 		await close().catch(() => {});
-		if (ownIntent !== intent.current || !mounted.current || !host.current)
+		if (ownIntent !== intent.current || !mounted.current || !host.current) {
+			finishOperation?.("CANCELED");
 			return;
+		}
 		if (closing.current) {
+			finishOperation?.("FAILED");
 			setPhase("failed");
 			return;
 		}
@@ -197,6 +210,7 @@ function MoqPlaybackAttempt({
 		setHistoryState("idle");
 		setAnalyticsState("not-configured");
 		if (typeof Reflect.get(window, "WebTransport") !== "function") {
+			finishOperation?.("FAILED");
 			setPhase("unavailable");
 			return;
 		}
@@ -215,6 +229,10 @@ function MoqPlaybackAttempt({
 					0,
 					Math.round(performance.now() - startedAt),
 				);
+				if (type === "first-frame") finishOperation?.("FIRST_FRAME", elapsedMs);
+				if (type === "failed") finishOperation?.("FAILED", elapsedMs);
+				if (type === "stopped" || type === "ended")
+					finishOperation?.("CANCELED", elapsedMs);
 				const event = { type, elapsedMs };
 				if (mounted.current)
 					setTrace((value) => {

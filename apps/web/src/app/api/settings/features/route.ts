@@ -2,15 +2,22 @@ import {
 	FEATURE_FLAGS_KEY,
 	featureFlagsPatchSchema,
 	featureFlagsSchema,
+	parseFeatureFlags,
 } from "@bitovp/core";
 import { NextResponse } from "next/server";
+import { roleAtLeast } from "@/lib/auth/roles";
 import { writeAuditLog } from "@/lib/server/audit";
 import { getServerContext } from "@/lib/server/context";
 import { readFeatureFlags } from "@/lib/server/feature-flags";
-import { readJson, routeError, validationError } from "@/lib/server/http";
+import {
+	jsonError,
+	readJson,
+	routeError,
+	validationError,
+} from "@/lib/server/http";
 
 /**
- * : the app-wide feature flags. GET is the current state (defaults
+ * Organization-wide feature flags. GET is the current state (defaults
  * when the row is absent); PATCH writes one row via upsert, so turning a flag
  * on for the first time and changing it later are the same code path.
  *
@@ -34,19 +41,38 @@ export async function PATCH(req: Request) {
 	}
 	try {
 		const ctx = await getServerContext();
-		// Merge onto the CURRENT value, not onto the defaults: a PATCH that
-		// names one flag must not silently reset the others to default.
-		const next = featureFlagsSchema.parse({
-			...(await readFeatureFlags(ctx.prisma)),
-			...body.data,
+		const { tenant } = ctx;
+		if (
+			!tenant ||
+			tenant.isImpersonating ||
+			!roleAtLeast(tenant.role, "ADMIN")
+		) {
+			return jsonError(
+				403,
+				"Changing feature settings requires an administrator",
+			);
+		}
+		const lockKey = `${tenant.organizationId}:settings:${FEATURE_FLAGS_KEY}`;
+		const next = await ctx.prisma.$transaction(async (tx) => {
+			// The row may not exist yet. Serialize patches so concurrent changes
+			// to separate flags merge against the latest committed value.
+			await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+			const row = await tx.appSetting.findUnique({
+				where: { key: FEATURE_FLAGS_KEY },
+				select: { value: true },
+			});
+			const value = featureFlagsSchema.parse({
+				...parseFeatureFlags(row?.value),
+				...body.data,
+			});
+			await tx.appSetting.upsert({
+				where: { key: FEATURE_FLAGS_KEY },
+				create: { key: FEATURE_FLAGS_KEY, value },
+				update: { value },
+			});
+			return value;
 		});
-		await ctx.prisma.appSetting.upsert({
-			where: { key: FEATURE_FLAGS_KEY },
-			create: { key: FEATURE_FLAGS_KEY, value: next },
-			update: { value: next },
-		});
-		// An app-wide switch is exactly the kind of change the trail exists for
-		// — turning QC off changes what every future encode does.
+		// Changing collection or QC affects the entire organization.
 		await writeAuditLog(
 			ctx,
 			{

@@ -72,6 +72,11 @@ export const RULES = Object.freeze(
 			profiles: ["live-lifecycle"],
 		},
 		{
+			id: "operation-analytics",
+			patterns: [/(^|\/)(operation-analytics|operation-attempts)([/.]|$)/],
+			profiles: ["access-isolation", "live-lifecycle"],
+		},
+		{
 			id: "library",
 			patterns: [/(^|\/)(library|content-editing|local-semantic)([-/.]|$)/],
 			profiles: ["library-render-recovery"],

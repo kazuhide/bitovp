@@ -65,6 +65,9 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				await admin.credential.deleteMany({
 					where: { organizationId: { in: [orgA, orgB] } },
 				});
+				await admin.operationAttempt.deleteMany({
+					where: { organizationId: { in: [orgA, orgB] } },
+				});
 				await admin.organization.deleteMany({
 					where: { id: { in: [orgA, orgB] } },
 				});
@@ -202,6 +205,90 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			});
 			expect(retained.bitmovinAccountId).toBeNull();
 			expect(retained.organizationId).toBe(orgA);
+		});
+
+		it("isolates operation attempts and keeps their organization immutable", async () => {
+			const id = randomUUID();
+			const ownerDigest = "a".repeat(64);
+			const data = { id, operation: "LIVE_MOQ_PLAYBACK" as const, ownerDigest };
+			const attempt = await app.$transaction(async (tx) => {
+				await tx.$queryRaw`SELECT set_config('TimeZone', 'Asia/Tokyo', true)`;
+				await tx.$queryRaw`SELECT set_config('bitovp.organization_id', ${orgA}, true)`;
+				const [clock] = await tx.$queryRaw<
+					{ utc: Date }[]
+				>`SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::timestamp(3) AS utc`;
+				await tx.$executeRaw`
+					INSERT INTO "OperationAttempt" (id, operation, "ownerDigest")
+					VALUES (${id}::uuid, 'LIVE_MOQ_PLAYBACK', ${ownerDigest})
+				`;
+				const row = await tx.operationAttempt.findUniqueOrThrow({
+					where: { organizationId_id: { organizationId: orgA, id } },
+				});
+				expect(row.startedAt).toEqual(clock?.utc);
+				return row;
+			});
+			expect(attempt).toMatchObject({
+				organizationId: orgA,
+				startedAt: expect.any(Date),
+				outcome: null,
+				elapsedMs: null,
+			});
+			expect(
+				await b.operationAttempt.updateMany({
+					where: { id },
+					data: { outcome: "FIRST_FRAME", elapsedMs: 500 },
+				}),
+			).toEqual({ count: 0 });
+			await b.operationAttempt.create({
+				data: { ...data, ownerDigest: "b".repeat(64) },
+			});
+			expect(await a.operationAttempt.findMany({ where: { id } })).toEqual([
+				attempt,
+			]);
+			expect(await app.$queryRaw`SELECT id FROM "OperationAttempt"`).toEqual(
+				[],
+			);
+			await expect(a.$executeRaw`
+				INSERT INTO "OperationAttempt" ("organizationId", id, operation, "ownerDigest")
+				VALUES (${orgB}::uuid, ${randomUUID()}::uuid, 'LIVE_MOQ_PLAYBACK', ${ownerDigest})
+			`).rejects.toThrow(/row-level security/i);
+			await expect(a.$executeRaw`
+				UPDATE "OperationAttempt" SET "organizationId" = ${orgB}::uuid WHERE id = ${id}::uuid
+			`).rejects.toThrow(/Organization ownership is immutable/);
+		});
+
+		it("enforces the operation digest and paired terminal result at the database", async () => {
+			const id = randomUUID();
+			const ownerDigest = "a".repeat(64);
+			const insert = (digest: string) => a.$executeRaw`
+				INSERT INTO "OperationAttempt" (id, operation, "ownerDigest")
+				VALUES (${id}::uuid, 'LIVE_MOQ_PLAYBACK', ${digest})
+			`;
+			for (const digest of ["a".repeat(63), "A".repeat(64), "z".repeat(64)]) {
+				await expect(insert(digest)).rejects.toThrow(
+					/OperationAttempt_ownerDigest_format/,
+				);
+			}
+			await insert(ownerDigest);
+			const complete = (
+				outcome: "FIRST_FRAME" | null,
+				elapsedMs: number | null,
+			) => a.$executeRaw`
+				UPDATE "OperationAttempt" SET outcome = ${outcome}::"OperationOutcome", "elapsedMs" = ${elapsedMs}::integer
+				WHERE id = ${id}::uuid
+			`;
+			for (const [outcome, elapsed] of [
+				["FIRST_FRAME", null],
+				[null, 10],
+				["FIRST_FRAME", -1],
+				["FIRST_FRAME", 600001],
+			] as const) {
+				await expect(complete(outcome, elapsed)).rejects.toThrow(
+					/OperationAttempt_terminal_result/,
+				);
+			}
+			await expect(complete("FIRST_FRAME", 0)).resolves.toBe(1);
+			await expect(complete("FIRST_FRAME", 600000)).resolves.toBe(1);
 		});
 
 		it("does not leak scope between simultaneous pooled transactions and enforces read-only raw SQL", async () => {

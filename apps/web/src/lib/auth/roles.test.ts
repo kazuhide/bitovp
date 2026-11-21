@@ -521,7 +521,17 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 		// MoQ playback descriptor and the pinned Player asset add two GET routes.
 		// MoQ observations, session updates, archives and Analytics add four routes.
 		// Pre-start MoQ readiness adds one advisory OPERATOR GET route.
-		expect(guarded.length).toBe(201);
-		expect(methods.length).toBe(280);
+		// Operation analytics adds one ADMIN GET and one OPERATOR POST route.
+		expect(
+			evaluateRole("VIEWER", "/api/operation-attempts", "POST").allowed,
+		).toBe(false);
+		expect(
+			evaluateRole("OPERATOR", "/api/operation-attempts", "POST").allowed,
+		).toBe(true);
+		expect(
+			evaluateRole("OPERATOR", "/api/operation-analytics", "HEAD").allowed,
+		).toBe(false);
+		expect(guarded.length).toBe(203);
+		expect(methods.length).toBe(282);
 	});
 });

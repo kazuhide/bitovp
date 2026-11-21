@@ -9,16 +9,21 @@ import { apiFetch } from "@/lib/api";
 import { useMutationAccess } from "@/lib/auth/use-role-access";
 import { useT } from "@/lib/i18n/context";
 
-/**
- * : the switch itself. One row per flag, each with the sentence
- * that says what turning it off actually does — a toggle whose consequences
- * are invisible is how an operator turns something off and then files the
- * absence as a bug.
- *
- * The saved value takes effect on the NEXT page load (the flags are resolved
- * server-side in the root layout), so the confirmation says so rather than
- * leaving the operator wondering why the nav has not moved yet.
- */
+const featureRows = [
+	{
+		flag: "qcVmaf",
+		id: "feat-qc-vmaf",
+		label: "settingsX.featureQcVmaf",
+		hint: "settingsX.featureQcVmafHint",
+	},
+	{
+		flag: "operationAnalytics",
+		id: "feat-operation-analytics",
+		label: "settingsX.featureOperationAnalytics",
+		hint: "settingsX.featureOperationAnalyticsHint",
+	},
+] as const;
+
 export function FeaturesClient() {
 	const { t } = useT();
 	const canAdmin = useMutationAccess("settings.features");
@@ -70,45 +75,50 @@ export function FeaturesClient() {
 				</p>
 			) : (
 				<div className="mt-6 space-y-3">
-					<div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-						{canAdmin ? (
-							<div className="flex items-start gap-3">
-								<input
-									id="feat-qc-vmaf"
-									type="checkbox"
-									className="mt-1"
-									checked={flags.data.qcVmaf}
-									disabled={save.isPending}
-									onChange={(e) => save.mutate({ qcVmaf: e.target.checked })}
-								/>
-								<div className="flex items-center gap-1">
-									<label
-										htmlFor="feat-qc-vmaf"
-										className="font-medium text-sm text-zinc-100"
-									>
-										{t("settingsX.featureQcVmaf")}
-									</label>
-									<HelpOverlay labelFor={t("settingsX.featureQcVmaf")}>
-										{t("settingsX.featureQcVmafHint")}
-									</HelpOverlay>
+					{featureRows.map(({ flag, id, label, hint }) => {
+						const enabled = flags.data?.[flag] ?? false;
+						return (
+							<div
+								key={flag}
+								className="flex items-start justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4"
+							>
+								<div className="flex items-start gap-3">
+									{canAdmin ? (
+										<input
+											id={id}
+											type="checkbox"
+											className="mt-1"
+											checked={enabled}
+											disabled={save.isPending}
+											onChange={(e) =>
+												save.mutate({ [flag]: e.target.checked })
+											}
+										/>
+									) : null}
+									<div className="flex items-center gap-1">
+										{canAdmin ? (
+											<label
+												htmlFor={id}
+												className="font-medium text-sm text-zinc-100"
+											>
+												{t(label)}
+											</label>
+										) : (
+											<span className="font-medium text-sm text-zinc-100">
+												{t(label)}
+											</span>
+										)}
+										<HelpOverlay labelFor={t(label)}>{t(hint)}</HelpOverlay>
+									</div>
 								</div>
-							</div>
-						) : (
-							<div className="flex items-start justify-between gap-3">
-								<div className="flex items-center gap-1">
-									<span className="font-medium text-sm text-zinc-100">
-										{t("settingsX.featureQcVmaf")}
+								{canAdmin ? null : (
+									<span className="text-xs text-zinc-400">
+										{t(enabled ? "notif.enabled" : "notif.disabled")}
 									</span>
-									<HelpOverlay labelFor={t("settingsX.featureQcVmaf")}>
-										{t("settingsX.featureQcVmafHint")}
-									</HelpOverlay>
-								</div>
-								<span className="text-xs text-zinc-400">
-									{t(flags.data.qcVmaf ? "notif.enabled" : "notif.disabled")}
-								</span>
+								)}
 							</div>
-						)}
-					</div>
+						);
+					})}
 					{save.isSuccess ? (
 						<p className="text-emerald-400 text-xs">
 							{t("settingsX.featuresSavedReloadHint")}

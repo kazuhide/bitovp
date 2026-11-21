@@ -121,14 +121,13 @@ test("accepts exactly the required files and all passed assertions", () => {
 	for (const group of GROUPS) {
 		assert.doesNotThrow(() => validateReport(report(group), group, root));
 	}
-	// Includes the three LOCAL QC cancellation cases.
-	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 36);
+	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 37);
 	assert.equal(
 		GROUPS.flatMap((group) => Object.values(group.files)).reduce(
 			(a, b) => a + b,
 			0,
 		),
-		235,
+		238,
 	);
 });
 
@@ -281,7 +280,7 @@ for (const [name, wroteReport, failed, expected] of [
 			"Reason: PostgreSQL tests must have no failures, skips or unfinished cases",
 			"  - Vitest reported a failed run",
 			"  - failed tests: 1, required 0",
-			"  - tests passed: 69, required 70",
+			"  - tests passed: 71, required 72",
 			'  - src/runtime-role.integration.test.ts: 0 of 1 tests passed, 1 required; file status "failed"',
 			'  - "failed": runtime role > cannot create tables',
 			"    | Error: permission was granted",

@@ -14,15 +14,26 @@ const upsert = vi.fn(
 	},
 );
 const auditCreate = vi.fn(async () => ({ id: "a1" }));
+const execute = vi.fn(async () => 0);
+const appSetting = { findUnique: async () => ({ value: stored }), upsert };
+const tenant = {
+	role: "ADMIN",
+	isImpersonating: false,
+	organizationId: "10000000-0000-4000-8000-000000000001",
+};
 
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant,
 		prisma: {
-			appSetting: {
-				findUnique: async () => ({ value: stored }),
-				upsert,
-			},
+			appSetting,
 			auditLog: { create: auditCreate },
+			$transaction: <T>(
+				run: (tx: {
+					appSetting: typeof appSetting;
+					$executeRaw: typeof execute;
+				}) => Promise<T>,
+			) => run({ appSetting, $executeRaw: execute }),
 		},
 	}),
 }));
@@ -39,7 +50,9 @@ function patchRequest(body: unknown): Request {
 
 beforeEach(() => {
 	stored = { qcVmaf: true };
+	tenant.role = "ADMIN";
 	upsert.mockClear();
+	execute.mockClear();
 	auditCreate.mockClear();
 });
 
@@ -73,6 +86,29 @@ describe("/api/settings/features (ledger #131)", () => {
 		expect(res.status).toBe(200);
 		expect((await res.json()).qcVmaf).toBe(true);
 		expect(auditCreate).toHaveBeenCalledTimes(1);
+	});
+
+	it("changes each feature independently and locks the read and write", async () => {
+		const enabled = await PATCH(patchRequest({ operationAnalytics: true }));
+		expect(await enabled.json()).toEqual({
+			qcVmaf: true,
+			operationAnalytics: true,
+		});
+		const updated = await PATCH(patchRequest({ qcVmaf: false }));
+		expect(await updated.json()).toEqual({
+			qcVmaf: false,
+			operationAnalytics: true,
+		});
+		expect(execute).toHaveBeenCalledTimes(2);
+		expect(auditCreate).toHaveBeenCalledTimes(2);
+	});
+
+	it("rejects changes from a non-admin session", async () => {
+		tenant.role = "OPERATOR";
+		expect(
+			(await PATCH(patchRequest({ operationAnalytics: true }))).status,
+		).toBe(403);
+		expect(upsert).not.toHaveBeenCalled();
 	});
 
 	it("PATCH rejects a non-boolean rather than storing it", async () => {

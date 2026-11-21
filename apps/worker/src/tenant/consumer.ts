@@ -35,6 +35,16 @@ const sweeps = {
 	},
 } as const;
 
+export function isTenantSystemSweep(key: QueueKey, job: Job): boolean {
+	const sweep =
+		key === "liveChannel" || key === "slateNormalize" ? sweeps[key] : undefined;
+	if (!sweep || job.name !== sweep.name || job.repeatJobKey !== sweep.id) {
+		return false;
+	}
+	const marker = tenantSystemSweepSchema.safeParse(job.data);
+	return marker.success && marker.data.systemSweep === sweep.marker;
+}
+
 type TenantConsumerDeps = {
 	prisma: AppPrismaClient;
 	forEachOrganization(run: () => Promise<unknown> | unknown): Promise<void>;
@@ -206,18 +216,7 @@ export function createTenantConsumer(deps: TenantConsumerDeps) {
 		options?: { reserveFeederStopSlot?: boolean; enforceActive?: boolean },
 	) =>
 		async (job: Job): Promise<T | undefined> => {
-			const sweep =
-				key === "liveChannel" || key === "slateNormalize"
-					? sweeps[key]
-					: undefined;
-			const marker = tenantSystemSweepSchema.safeParse(job.data);
-			if (
-				sweep &&
-				job.name === sweep.name &&
-				job.repeatJobKey === sweep.id &&
-				marker.success &&
-				marker.data.systemSweep === sweep.marker
-			) {
+			if (isTenantSystemSweep(key, job)) {
 				await deps.forEachOrganization(() => handler(unwrappedJob(job, {})));
 				return;
 			}

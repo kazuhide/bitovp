@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import {
+	mkdtemp,
+	readdir,
+	readFile,
+	rm,
+	truncate,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -58,6 +65,17 @@ function request(): Extract<VodInputPreviewRequest, { kind: "PREVIEW" }> {
 		range: { startMs: 0, durationMs: 1000 },
 	};
 }
+const repeatedPreview = () => {
+	const preview = request();
+	if (preview.document.schemaVersion !== 2) throw new Error("Expected v2");
+	const parts = () =>
+		[0, 375, 750].map((startMs) => ({ ...placed(), startMs, outMs: 375 }));
+	preview.document.videoClips = parts();
+	preview.document.audioClips = parts();
+	preview.document.durationMs = 1125;
+	preview.range.durationMs = 1125;
+	return preview;
+};
 let directory: string;
 beforeEach(async () => {
 	directory = await mkdtemp(join(tmpdir(), "bitovp-vod-render-guard-"));
@@ -67,6 +85,99 @@ afterEach(async () => {
 });
 
 describe("independent preview resource and identity guards", () => {
+	it.each([
+		{ sourceVersion: { versionId: "stable-v1" }, reusable: true },
+		{ sourceVersion: { generation: "12345" }, reusable: true },
+		{ sourceVersion: { versionId: "null" }, reusable: false },
+		{ sourceVersion: {}, reusable: false },
+	])("renders repeated part inputs with source identity $sourceVersion", async ({
+		sourceVersion,
+		reusable,
+	}) => {
+		const frameCounts: string[] = [];
+		const inputs = new Map<string, string>();
+		const execute = vi.fn<typeof runMediaProcess>(async (_binary, argv) => {
+			if (argv.includes("-show_streams"))
+				return {
+					stdout: JSON.stringify({
+						format: { duration: "1.125" },
+						streams: [
+							{
+								codec_type: "video",
+								codec_name: "h264",
+								width: 640,
+								height: 360,
+							},
+							{
+								codec_type: "audio",
+								codec_name: "aac",
+								sample_rate: 48000,
+								channels: 2,
+							},
+						],
+					}),
+					stderr: "",
+				};
+			const output = argv.at(-1);
+			if (!output) throw new Error("Missing fixture output");
+			if (argv.includes("-frames:v"))
+				frameCounts.push(argv[argv.indexOf("-frames:v") + 1] ?? "");
+			if (output.endsWith("/preview.mp4"))
+				for (const track of ["video", "audio"])
+					inputs.set(
+						track,
+						await readFile(join(directory, `${track}-parts.txt`), "utf8"),
+					);
+			await writeFile(output, "media");
+			return { stdout: "", stderr: "" };
+		});
+		const result = await renderVodInputPreview({
+			request: repeatedPreview(),
+			sources: [source],
+			facts: [{ ...facts, identity: { ...identity, ...sourceVersion } }],
+			directory,
+			browserFor: vi.fn(),
+			signal: new AbortController().signal,
+			execute,
+		});
+		expect(frameCounts).toEqual(reusable ? ["11", "12"] : ["11", "12", "11"]);
+		expect(inputs.get("video")).toBe(
+			(reusable ? [0, 1, 0] : [0, 1, 2])
+				.map((index) => `file 'video-part-${index}.mp4'\n`)
+				.join(""),
+		);
+		expect(inputs.get("audio")).toBe(
+			(reusable ? [0, 0, 0] : [0, 1, 2])
+				.map((index) => `file 'audio-part-${index}.wav'\n`)
+				.join(""),
+		);
+		expect(result.durationMs).toBe(1125);
+		expect(await readdir(directory)).toEqual(["preview.mp4"]);
+	});
+	it("charges the logical byte limit for reused occurrences", async () => {
+		const execute = vi.fn<typeof runMediaProcess>(async (_binary, argv) => {
+			const output = argv.at(-1);
+			if (!output) throw new Error("Missing fixture output");
+			await writeFile(output, "");
+			await truncate(output, 48 * 1024 ** 2);
+			return { stdout: "", stderr: "" };
+		});
+		await expect(
+			renderVodInputPreview({
+				request: repeatedPreview(),
+				sources: [source],
+				facts: [
+					{ ...facts, identity: { ...identity, versionId: "stable-v1" } },
+				],
+				directory,
+				browserFor: vi.fn(),
+				signal: new AbortController().signal,
+				execute,
+			}),
+		).rejects.toMatchObject({ code: "OUTPUT_LIMIT" });
+		expect(execute).toHaveBeenCalledTimes(2);
+		expect(await readdir(directory)).toEqual([]);
+	});
 	it.each([
 		false,
 		true,

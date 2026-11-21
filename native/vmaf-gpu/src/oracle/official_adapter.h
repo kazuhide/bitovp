@@ -32,6 +32,8 @@ struct BitovpOracleDescriptionCallbacks {
 };
 struct BitovpOracleKeyValue { const char *key, *value; };
 
+int bitovp_oracle_load_model_bytes(VmafModel **model, VmafModelConfig *config,
+    const char *bytes, size_t size);
 int bitovp_oracle_model_requires_conversion(const VmafModel *model);
 int bitovp_oracle_describe_model(VmafModel *model,
     const struct BitovpOracleDescriptionCallbacks *callbacks, void *cookie);

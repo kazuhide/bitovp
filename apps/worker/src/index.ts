@@ -131,6 +131,7 @@ import {
 import { createRunHeartbeatSummarizer } from "./live/run-heartbeat-summary";
 import { reconcileStartupCancellations } from "./live/startup-cancel";
 import {
+	LIVE_HEARTBEAT_SLOTS,
 	liveChannelConcurrency,
 	reserveLiveStopCapacity,
 } from "./live-capacity";
@@ -138,6 +139,7 @@ import { createInboundDispatcher } from "./notify/dispatcher";
 import { createEventEmitter } from "./notify/emitter";
 import { createNotifyProcessor } from "./notify/processor";
 import { createWakeBus } from "./notify/wake-bus";
+import { pruneOperationAttempts } from "./operation-analytics/retention";
 import {
 	createLiveChannelProcessor,
 	createLiveHeartbeatSweep,
@@ -287,6 +289,10 @@ const resetCleanupLoop = tenantService(() =>
 );
 runTenantTick(() => resetCleanupLoop.run());
 setTenantInterval(() => resetCleanupLoop.run(), 30_000).unref();
+
+const pruneAttempts = () => pruneOperationAttempts(prisma);
+runTenantTick(pruneAttempts);
+setTenantInterval(pruneAttempts, 60 * 60 * 1000).unref();
 
 // Producer side of the feeder queue: the live channel worker enqueues
 // feeder stops when a channel stops (P3-PR3 lifecycle coupling). The
@@ -1481,6 +1487,7 @@ const vmafProcessor = tenantService(() =>
 			device: env.VMAF_GPU_DEVICE,
 		},
 		scoringBackend: env.VMAF_SCORING_BACKEND,
+		reuseVerifiedNativeResults: env.VMAF_REUSE_VERIFIED_NATIVE_RESULTS === "1",
 		...(env.VMAF_NATIVE_PATH ? { nativePath: env.VMAF_NATIVE_PATH } : {}),
 		now: processorDeps.now,
 		localResources: localVmafResources,
@@ -1982,7 +1989,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 				? { concurrency: ORCHESTRATOR_CONCURRENCY }
 				: {}),
 			...(key === "liveChannel"
-				? { concurrency: LIVE_CHANNEL_CONCURRENCY }
+				? { concurrency: LIVE_CHANNEL_CONCURRENCY + LIVE_HEARTBEAT_SLOTS }
 				: {}),
 			// review-183 I3: one slow webhook host must not serialize the bus.
 			...(key === "notify" ? { concurrency: 4 } : {}),

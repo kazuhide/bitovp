@@ -37,18 +37,47 @@ import type { LiveSectionId } from "./section-layout";
  * It also covers hashes no component of ours produces: a browser Back to a
  * previous fragment, or one typed into the address bar.
  */
-export function DeepLinkFocus() {
+export function DeepLinkFocus({
+	playbackAvailable = false,
+}: {
+	playbackAvailable?: boolean;
+}) {
+	const pendingPlaybackFocus = useRef(false);
 	useEffect(() => {
-		const focusFromHash = () => {
+		const focusFromHash = (allowPlaybackFocus: boolean) => {
 			const hash = window.location.hash.slice(1);
+			const playback = hash === "sec-manifests";
+			pendingPlaybackFocus.current =
+				allowPlaybackFocus && playback && !document.getElementById(hash);
 			if (hash.length > 0) {
-				focusLiveSection(hash);
+				focusLiveSection(hash, { moveFocus: !playback || allowPlaybackFocus });
 			}
 		};
-		focusFromHash();
-		window.addEventListener("hashchange", focusFromHash);
-		return () => window.removeEventListener("hashchange", focusFromHash);
+		const handleHashChange = () => focusFromHash(true);
+		const cancelPendingPlaybackFocus = () => {
+			pendingPlaybackFocus.current = false;
+		};
+		const focused = document.activeElement;
+		focusFromHash(
+			focused === document.body || focused === document.documentElement,
+		);
+		window.addEventListener("hashchange", handleHashChange);
+		document.addEventListener("focusin", cancelPendingPlaybackFocus);
+		return () => {
+			window.removeEventListener("hashchange", handleHashChange);
+			document.removeEventListener("focusin", cancelPendingPlaybackFocus);
+		};
 	}, []);
+	useEffect(() => {
+		if (
+			playbackAvailable &&
+			pendingPlaybackFocus.current &&
+			window.location.hash === "#sec-manifests"
+		) {
+			pendingPlaybackFocus.current = false;
+			focusLiveSection("sec-manifests");
+		}
+	}, [playbackAvailable]);
 	return null;
 }
 

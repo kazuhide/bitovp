@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { AppPrismaClient } from "@bitovp/db";
 import { Queue, QueueEvents, Worker } from "bullmq";
 import { expect, it } from "vitest";
-import { reserveLiveStopCapacity } from "./live-capacity";
+import { LIVE_HEARTBEAT_SLOTS, reserveLiveStopCapacity } from "./live-capacity";
 import { createTenantConsumer } from "./tenant/consumer";
-import { currentOrganizationId } from "./tenant/scope";
+import { currentOrganizationId, runInOrganization } from "./tenant/scope";
 
 function barrier() {
 	let release = () => {};
@@ -32,7 +32,7 @@ async function within<T>(promise: Promise<T>, label: string): Promise<T> {
 }
 
 it.skipIf(!process.env.LIVE_CAPACITY_TEST_REDIS_URL)(
-	"real BullMQ reserves STOP and cancellation capacity across tenants, then resumes delayed work without spending a retry",
+	"real BullMQ reserves heartbeat and STOP capacity across tenants, then resumes delayed work without spending a retry",
 	async () => {
 		const redisUrl = process.env.LIVE_CAPACITY_TEST_REDIS_URL;
 		if (redisUrl !== "redis://127.0.0.1:16381")
@@ -43,6 +43,7 @@ it.skipIf(!process.env.LIVE_CAPACITY_TEST_REDIS_URL)(
 			events = new QueueEvents(name, { connection });
 		const hold = barrier(),
 			sevenStarted = barrier(),
+			heartbeatStarted = barrier(),
 			overflowDelayed = barrier();
 		const orgA = randomUUID(),
 			orgB = randomUUID(),
@@ -75,7 +76,9 @@ it.skipIf(!process.env.LIVE_CAPACITY_TEST_REDIS_URL)(
 				liveChannel: resource,
 				liveChannelRun: resource,
 			} as unknown as AppPrismaClient,
-			forEachOrganization: async () => {},
+			forEachOrganization: async (run) => {
+				await runInOrganization(orgA, async () => await run());
+			},
 			isOrganizationActive: async () => true,
 		});
 		const calls: { action: string; organizationId: string | undefined }[] = [];
@@ -87,6 +90,15 @@ it.skipIf(!process.env.LIVE_CAPACITY_TEST_REDIS_URL)(
 			reserveLiveStopCapacity(
 				8,
 				consume("liveChannel", async (job) => {
+					if (job.name === "heartbeat-sweep") {
+						calls.push({
+							action: "heartbeat-sweep",
+							organizationId: currentOrganizationId(),
+						});
+						heartbeatStarted.release();
+						await hold.promise;
+						return;
+					}
 					const data = job.data as {
 						action: string;
 						params?: { cancelRunId?: string };
@@ -103,7 +115,7 @@ it.skipIf(!process.env.LIVE_CAPACITY_TEST_REDIS_URL)(
 					return "RUNNING";
 				}),
 			),
-			{ connection, concurrency: 8 },
+			{ connection, concurrency: 8 + LIVE_HEARTBEAT_SLOTS },
 		);
 		worker.on("error", (error) => errors.push(error));
 		worker.on("failed", (job) => failed.push(job?.id ?? "missing"));
@@ -123,6 +135,15 @@ it.skipIf(!process.env.LIVE_CAPACITY_TEST_REDIS_URL)(
 				),
 			);
 			await within(sevenStarted.promise, "seven normal jobs");
+			await queue.upsertJobScheduler(
+				"live-heartbeat-sweep",
+				{ every: 60_000 },
+				{ name: "heartbeat-sweep", data: { systemSweep: "heartbeat" } },
+			);
+			await within(
+				heartbeatStarted.promise,
+				"scheduled heartbeat during provision",
+			);
 			const overflow = await queue.add(
 				"live-channel",
 				payload(orgA, "provision"),
@@ -147,6 +168,10 @@ it.skipIf(!process.env.LIVE_CAPACITY_TEST_REDIS_URL)(
 			await within(overflowDelayed.promise, "overflow deferral");
 			expect(normalStarted).toBe(7);
 			expect(calls).toContainEqual({ action: "stop", organizationId: orgB });
+			expect(calls).toContainEqual({
+				action: "heartbeat-sweep",
+				organizationId: orgA,
+			});
 			expect(
 				calls.filter(
 					(call) => call.action === "provision" && call.organizationId === orgA,

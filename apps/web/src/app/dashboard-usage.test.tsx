@@ -484,7 +484,7 @@ describe("DashboardUsage", () => {
 		).toBeGreaterThan(0);
 		expect(
 			within(live).getByText("Live Units").closest("div"),
-		).toHaveTextContent("未取得");
+		).toHaveTextContent("記録なし");
 		expect(screen.queryByText("バケット")).toBeNull();
 		await userEvent.click(
 			within(live).getByRole("button", { name: "「Live Units」の説明" }),
@@ -494,7 +494,7 @@ describe("DashboardUsage", () => {
 		);
 		expect(
 			within(live)
-				.getAllByText("未取得")
+				.getAllByText("記録なし")
 				.some((node) => node.parentElement?.classList.contains("h-44")),
 		).toBe(true);
 	});

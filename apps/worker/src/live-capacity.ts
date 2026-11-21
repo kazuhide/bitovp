@@ -4,16 +4,23 @@ import {
 	tenantQueueEnvelopeSchema,
 } from "@bitovp/core";
 import { DelayedError, type Job } from "bullmq";
+import { isTenantSystemSweep } from "./tenant/consumer";
+
+export const LIVE_HEARTBEAT_SLOTS = 1;
 
 function assertConcurrency(value: number): void {
-	if (!Number.isSafeInteger(value) || value < 2) {
+	if (
+		!Number.isSafeInteger(value) ||
+		!Number.isSafeInteger(value + LIVE_HEARTBEAT_SLOTS) ||
+		value < 2
+	) {
 		throw new Error(
-			"LIVE_CHANNEL_CONCURRENCY must be an integer of at least 2",
+			"LIVE_CHANNEL_CONCURRENCY must be a safe integer of at least 2 with room for the heartbeat slot",
 		);
 	}
 }
 
-/** Total local slots: ordinary actions may use all but the reserved control slot. */
+/** Local action slots, including one slot reserved for stop and cancellation. */
 export function liveChannelConcurrency(value?: string): number {
 	const concurrency = value?.trim() ? Number(value) : 8;
 	assertConcurrency(concurrency);
@@ -34,27 +41,44 @@ function isStopOrStartupCancellation(job: Job): boolean {
 	return params.success && params.data.cancelRunId !== undefined;
 }
 
+async function deferJob(job: Job): Promise<never> {
+	await job.moveToDelayed(Date.now() + 1000, job.token);
+	throw new DelayedError();
+}
+
 /** Wrap the physical queue processor once, outside tenant dispatch. A permit
  * wait would still hold a BullMQ slot, so excess normal work must be delayed.
- * The original processor retains every ownership, generation and lease check.
+ * One slot is reserved for the trusted heartbeat scheduler. Further sweeps
+ * can use spare normal capacity. Tenant dispatch retains all ownership checks.
  */
 export function reserveLiveStopCapacity<T>(
 	concurrency: number,
 	process: (job: Job) => Promise<T>,
 ): (job: Job) => Promise<T> {
 	assertConcurrency(concurrency);
-	let normalActive = 0;
+	const active = { heartbeat: 0, normal: 0, control: 0 };
 	return async (job) => {
-		if (isStopOrStartupCancellation(job)) return process(job);
-		if (normalActive >= concurrency - 1) {
-			await job.moveToDelayed(Date.now() + 1000, job.token);
-			throw new DelayedError();
+		const kind = isTenantSystemSweep("liveChannel", job)
+			? "heartbeat"
+			: isStopOrStartupCancellation(job)
+				? "control"
+				: "normal";
+		const usesHeartbeatSlot =
+			kind === "heartbeat" && active.heartbeat < LIVE_HEARTBEAT_SLOTS;
+		const normalUsed =
+			active.normal + Math.max(0, active.heartbeat - LIVE_HEARTBEAT_SLOTS);
+		if (
+			!usesHeartbeatSlot &&
+			(normalUsed + active.control >= concurrency ||
+				(kind !== "control" && normalUsed >= concurrency - 1))
+		) {
+			return deferJob(job);
 		}
-		normalActive++;
+		active[kind]++;
 		try {
 			return await process(job);
 		} finally {
-			normalActive--;
+			active[kind]--;
 		}
 	};
 }

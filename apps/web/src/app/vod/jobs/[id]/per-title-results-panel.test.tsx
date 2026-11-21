@@ -393,7 +393,7 @@ describe("per-title results panel — the numbers", () => {
 	const WHY_EN =
 		"Results are matched first by a unique QC-mirror filename. Without that filename, fixed results require matching encoder-returned fixed settings; flexible results use a unique template-specific output path, or fall back to a sole flexible template of the same codec when no path evidence applies. Ambiguous or mismatched evidence remains “Unattributed”; it is never guessed.";
 	const WHY_JA =
-		"まずQC用ファイル名の一意な一致で結果を関連付けます。ファイル名がない場合、固定設定の結果はエンコーダが返した固定設定の一致、自動選択の結果はテンプレート固有の出力パスの一意な一致を使います。パスの根拠がない自動選択の結果に限り、同じコーデックの自動選択テンプレートが1つなら関連付けます。根拠が曖昧・不一致なら推測せず「帰属先不明」に残します。";
+		"まずQC用ファイル名の一意な一致で結果を関連付けます。ファイル名がない場合、固定設定の結果はエンコーダが返した固定設定の一致、自動選択の結果はテンプレート固有の出力パスの一意な一致を使います。パスの根拠がない自動選択の結果に限り、同じコーデックの自動選択テンプレートが1つなら関連付けます。対応先を特定できない結果は「関連付けなし」に残します。";
 
 	/** One attributed rung and two the capture could not bind. */
 	const mixedAttribution = () =>
@@ -423,7 +423,7 @@ describe("per-title results panel — the numbers", () => {
 		expect(screen.getByText(WHY_EN)).toBeTruthy();
 	});
 
-	it("ja: labels 帰属先不明 and explains all four attribution witnesses", () => {
+	it("ja: labels 関連付けなし and explains all four attribution witnesses", () => {
 		renderL(
 			<PerTitleResultsPanel
 				view={{ origin: "step", snapshot: mixedAttribution() }}
@@ -433,7 +433,7 @@ describe("per-title results panel — the numbers", () => {
 			/>,
 			"ja",
 		);
-		expect(screen.getByText("帰属先不明(2 件)")).toBeTruthy();
+		expect(screen.getByText("関連付けなし（2 件）")).toBeTruthy();
 		expect(screen.queryByText(/テンプレート不明/)).toBeNull();
 		expect(screen.getByText(WHY_JA)).toBeTruthy();
 	});

@@ -5,6 +5,7 @@ import type { AppPrismaClient, AppTransactionClient } from "@bitovp/db";
 import { z } from "zod";
 import { roleAtLeast } from "@/lib/auth/roles";
 import { AuthContextError } from "@/lib/auth/tenancy";
+import { MOQ_OUTPUT_HISTORY_HEADER } from "@/lib/moq-player/heartbeat";
 import {
 	MOQ_OBSERVATION_LIMITS,
 	type MoqObservationSession,
@@ -15,6 +16,7 @@ import { writeAuditLog } from "./audit";
 import { getServerContext, type ServerContext } from "./context";
 import { readMoqHeartbeatHistory } from "./moq-heartbeat";
 import { writeMoqObservationStore } from "./moq-observation-store";
+import { hasCompletedMoqMuxing } from "./moq-playback-run";
 import { readPlayerSettings } from "./player-config";
 
 export class MoqObservationError extends Error {
@@ -141,13 +143,7 @@ export async function readMoqObservationRun(
 		encodings.length !== 1 ||
 		encoding?.status !== "DONE" ||
 		encoding.resourceId !== encodingId.data ||
-		!log.data.some(
-			(entry) =>
-				entry.kind === "CREATE_MUXING_FMP4" &&
-				entry.status === "DONE" &&
-				entry.refs.encodingId === encoding.step &&
-				entry.refs.outputId === output.step,
-		)
+		!hasCompletedMoqMuxing(log.data, encoding.step, output.step)
 	)
 		throw new MoqObservationError(409, "MOQ_HISTORY_RUN_UNBOUND");
 	const auditSelect = {
@@ -393,6 +389,7 @@ export async function getMoqObservations(
 			ctx.prisma,
 			run.id,
 			run.bitmovinEncodingId,
+			{ includePushOutput: req.headers.get(MOQ_OUTPUT_HISTORY_HEADER) === "1" },
 		);
 		await auditMoqHistory(ctx, req, params, 200);
 		return Response.json(

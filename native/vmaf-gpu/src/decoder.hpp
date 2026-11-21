@@ -12,6 +12,7 @@ struct VideoInfo {
     unsigned bit_depth = 0;
     double frames_per_second = 0;
     std::string codec;
+    bool self_contained_mov = false;
 };
 
 // A CPU picture whose pixels and presentation timestamp survive the decoder's
@@ -38,7 +39,8 @@ public:
     // bit_depth=0 preserves supported original precision and validates the
     // standalone CAMBI input scope; existing explicit-depth decoding is unchanged.
     Decoder(const std::string &path, unsigned width, unsigned height,
-            unsigned bit_depth, unsigned threads, bool cuda = false, int device = 0);
+            unsigned bit_depth, unsigned threads, bool cuda = false, int device = 0,
+            bool attest_local_mov = false);
     ~Decoder();
     Decoder(const Decoder &) = delete;
     Decoder &operator=(const Decoder &) = delete;

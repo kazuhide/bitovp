@@ -737,7 +737,7 @@ describe("current Per-Title settings analysis", () => {
 					? {
 							tracked: "追従確認",
 							gap: "接続条件外",
-							unknown: "未確認",
+							unknown: "応答を判定できません",
 							"not-applicable": "対象外",
 						}
 					: {

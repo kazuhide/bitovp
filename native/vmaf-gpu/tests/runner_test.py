@@ -2,11 +2,14 @@
 # SPDX-License-Identifier: MIT
 """Exercise actual demux/decode, temporal flush and result publication."""
 import argparse
+import errno
 import hashlib
 import json
 import math
+import os
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -40,11 +43,15 @@ class RunnerTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.directory.cleanup()
 
-    def score(self, name, *, reference=None, distorted=None, extra=()):
+    def score_command(self, name, *, reference=None, distorted=None, model=None, extra=()):
         output = self.root / name
         command = [str(args.binary), "--reference", str(reference or self.reference),
                    "--distorted", str(distorted or self.distorted), "--output", str(output),
-                   "--model", f"test={self.model}", *extra]
+                   "--model", f"test={model or self.model}", *extra]
+        return command, output
+
+    def score(self, name, **options):
+        command, output = self.score_command(name, **options)
         run = subprocess.run(command, text=True, stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE, timeout=120)
         return run, output
@@ -67,6 +74,70 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse(receipt["cpuParity"]["checked"])
         self.assertGreater(receipt["timingMs"]["wall"], 0)
         self.assertGreater(receipt["memory"]["maxRssBytes"], 0)
+
+    def test_only_the_opened_mov_demuxer_attests_local_inputs(self):
+        direct = self.root / "direct.mp4"
+        renamed = self.root / "matroska.mp4"
+        renamed.write_bytes(self.reference.read_bytes())
+        subprocess.run([args.ffmpeg, "-v", "error", "-nostdin", "-i", str(self.reference),
+                        "-c:v", "mpeg4", str(direct)], check=True, stdout=subprocess.PIPE,
+                       stderr=subprocess.PIPE, timeout=60)
+        cases = (
+            ("mov", direct, direct, True),
+            ("mixed", direct, renamed, False),
+        )
+        for name, reference, distorted, eligible in cases:
+            with self.subTest(name=name):
+                run, output = self.score(f"attested-{name}.json", reference=reference,
+                                         distorted=distorted, extra=("--attest-decoder-runtime",))
+                self.assertEqual(run.returncode, 0, run.stderr)
+                receipt = json.loads(output.read_text())
+                self.assertEqual(receipt["frames"], 6)
+                self.assertEqual(receipt.get("selfContainedMovInputs") is True, eligible)
+
+    def test_attested_score_uses_the_model_bytes_hashed_before_path_replacement(self):
+        baseline, baseline_output = self.score("model-baseline.json")
+        self.assertEqual(baseline.returncode, 0, baseline.stderr)
+        expected = json.loads(baseline_output.read_text())["models"][0]
+
+        original = self.model.read_bytes()
+        model = self.root / "replaceable-model.json"
+        model.write_bytes(original)
+        replacement = self.root / "model-replacement.json"
+        replacement.write_bytes(b"invalid model")
+        second = self.root / "second-model.json"
+        os.mkfifo(second)
+        ready_second = self.root / "ready-second-model.json"
+        ready_second.write_bytes(original)
+        command, output = self.score_command("snapshotted-model.json", model=model, extra=(
+            "--attest-decoder-runtime", "--model", f"second={second}",
+        ))
+        # Opening the second model for hashing proves the first model was read.
+        # Keep its FIFO open until both path replacements have finished.
+        with subprocess.Popen(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as run:
+            try:
+                deadline = time.monotonic() + 10
+                while True:
+                    try:
+                        writer_fd = os.open(second, os.O_WRONLY | os.O_NONBLOCK)
+                        break
+                    except OSError as error:
+                        if error.errno != errno.ENXIO:
+                            raise
+                        if run.poll() is not None or time.monotonic() >= deadline:
+                            self.fail("Scorer did not reach the second model")
+                        time.sleep(0.01)
+                with os.fdopen(writer_fd, "wb") as writer:
+                    os.set_blocking(writer.fileno(), True)
+                    replacement.replace(model)
+                    ready_second.replace(second)
+                    writer.write(original)
+                _, stderr = run.communicate(timeout=120)
+            finally:
+                if run.poll() is None:
+                    run.kill()
+        self.assertEqual(run.returncode, 0, stderr)
+        self.assertEqual(json.loads(output.read_text())["models"][0], expected)
 
     def test_identical_input_uses_official_finite_psnr_caps(self):
         for bits in (8, 10):

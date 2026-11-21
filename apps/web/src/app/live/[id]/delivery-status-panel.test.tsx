@@ -280,10 +280,31 @@ describe("DeliveryStatusPanel", () => {
 		renderWithQuery(
 			<DeliveryStatusPanel {...props()} lastHeartbeat={null} run={null} />,
 		);
-		expect(cell("ingest-state")).toHaveTextContent("unknown");
+		expect(cell("ingest-state")).toHaveTextContent("Waiting for data");
 		expect(
 			screen.getByText(/Current input health is unconfirmed/),
 		).toBeInTheDocument();
+	});
+	it.each([
+		{ channelStatus: "RUNNING", monitoringAllowed: false, mode: "live" },
+		{ channelStatus: "STOPPING", monitoringAllowed: true, mode: "live" },
+		{ channelStatus: "STOPPED", monitoringAllowed: true, mode: "finished" },
+	] as const)("shows no encoder data when $channelStatus / monitoring $monitoringAllowed", (status) => {
+		renderWithQuery(
+			<DeliveryStatusPanel
+				{...props()}
+				{...status}
+				run={null}
+				lastHeartbeat={null}
+				providerStatus={null}
+				providerObservedAt={null}
+			/>,
+			"ja",
+		);
+		expect(cell("encoder-state")).toHaveTextContent(
+			translate(messagesFor("ja"), "status.unknown"),
+		);
+		expect(cell("encoder-state")).not.toHaveTextContent("データ待ち");
 	});
 	it.each([
 		["en", "Origin observation unavailable", "Healthy"],
@@ -395,7 +416,7 @@ describe("DeliveryStatusPanel", () => {
 		await waitFor(() =>
 			expect(
 				document.querySelector('[data-lane="output"] [data-lane-lamp]'),
-			).toHaveTextContent("Not measurable (no HLS)"),
+			).toHaveTextContent("No HLS data"),
 		);
 		for (const lane of ["ingest", "encoder", "output"])
 			expect(cell(`${lane}-alerts`)).toHaveTextContent("Unknown");
@@ -454,7 +475,7 @@ describe("DeliveryStatusPanel", () => {
 		view.rerender(
 			<DeliveryStatusPanel {...props()} run={null} lastHeartbeat={null} />,
 		);
-		expect(cell("ingest-state")).toHaveTextContent("unknown");
+		expect(cell("ingest-state")).toHaveTextContent("Waiting for data");
 		await waitFor(() => expect(apiFetch).toHaveBeenCalled());
 	});
 
@@ -477,8 +498,8 @@ describe("DeliveryStatusPanel", () => {
 		for (const lane of ["ingest", "encoder", "output"])
 			expect(
 				document.querySelector(`[data-lane="${lane}"] [data-lane-lamp]`),
-			).toHaveTextContent("unknown");
-		expect(screen.getByText("Evidence: —")).toBeInTheDocument();
+			).toHaveTextContent("Waiting for data");
+		expect(screen.queryByText(/^Evidence:/)).not.toBeInTheDocument();
 		expect(inputMbps()).toHaveTextContent("—");
 		expect(screen.queryByText(/Input quality:/)).not.toBeInTheDocument();
 	});
@@ -558,7 +579,7 @@ describe("DeliveryStatusPanel", () => {
 		);
 		expect(
 			document.querySelector('[data-lane="output"] [data-lane-lamp]'),
-		).toHaveTextContent("unknown");
+		).toHaveTextContent("Waiting for data");
 		health.outputObservable = false;
 		await view.client.invalidateQueries({
 			queryKey: ["run-health", "ch-1", "run-1"],

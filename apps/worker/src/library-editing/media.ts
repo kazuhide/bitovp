@@ -325,8 +325,16 @@ export async function probeEditingMedia(input: {
 	);
 	if (timestamps.stderr.length > 0)
 		throw new MediaOperationError("SOURCE_INCOMPLETE");
+	return validateEditingFrameTimes(facts, timestamps.stdout);
+}
+
+/** Accept only a complete CFR30 clock observed by the decoder. */
+export function validateEditingFrameTimes(
+	facts: EditingMediaFacts,
+	csv: string,
+): EditingMediaFacts {
 	let frameCount = 0;
-	for (const row of timestamps.stdout.split(/\r?\n/)) {
+	for (const row of csv.split(/\r?\n/)) {
 		if (!row.trim()) continue;
 		const pts = number(row.split(",")[0]);
 		if (

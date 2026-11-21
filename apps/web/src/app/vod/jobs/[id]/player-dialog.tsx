@@ -10,6 +10,7 @@ type PlayerDialogProps = {
 	kind: "HLS" | "DASH" | null;
 	diagnose?: { scope: "vod" | "live"; id: string; manifestKey: string };
 	onClose: () => void;
+	onCloseAutoFocus?: (event: Event) => void;
 	player?: PlayerClientConfig;
 	sceneAnalysis?: SceneAnalysisDocument;
 	seekRequest?: { seconds: number; requestId: number };
@@ -30,6 +31,7 @@ export function PlayerDialog({
 	kind,
 	diagnose,
 	onClose,
+	onCloseAutoFocus,
 	player,
 	sceneAnalysis,
 	seekRequest,
@@ -39,6 +41,7 @@ export function PlayerDialog({
 	return (
 		<Dialog
 			open={url !== null}
+			onCloseAutoFocus={onCloseAutoFocus}
 			onOpenChange={(open) => {
 				if (!open) {
 					onClose();
@@ -46,17 +49,20 @@ export function PlayerDialog({
 			}}
 			title={kind === "DASH" ? t("ui.dashPlayback") : t("ui.hlsPlayback")}
 			description={url ?? ""}
+			wide
 		>
-			<PlaybackSurface
-				player={player}
-				sceneAnalysis={sceneAnalysis}
-				seekRequest={seekRequest}
-				analyticsMeta={analyticsMeta}
-				url={url}
-				kind={kind}
-				autoPlay
-				{...(diagnose ? { diagnose } : {})}
-			/>
+			<div className="-mx-3 sm:mx-0">
+				<PlaybackSurface
+					player={player}
+					sceneAnalysis={sceneAnalysis}
+					seekRequest={seekRequest}
+					analyticsMeta={analyticsMeta}
+					url={url}
+					kind={kind}
+					autoPlay
+					{...(diagnose ? { diagnose } : {})}
+				/>
+			</div>
 		</Dialog>
 	);
 }

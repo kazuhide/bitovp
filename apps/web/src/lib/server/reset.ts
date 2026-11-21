@@ -31,6 +31,7 @@ export const RESET_DELETES = [
 	"webhookEvent",
 	"auditLog",
 	"accessEvent",
+	"operationAttempt",
 	"storageInspection",
 	"vodInputPreviewTask",
 	"watchedObject",

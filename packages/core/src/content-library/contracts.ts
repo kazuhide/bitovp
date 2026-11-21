@@ -72,6 +72,31 @@ export const librarySourceSnapshotSchema = z.discriminatedUnion("kind", [
 	librarySnapshotSchema,
 	derivedLibrarySnapshotSchema,
 ]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Remove internal VMAF score reuse records while retaining published QC evidence. */
+export function publicLibraryQcEvidence(evidence: readonly unknown[]) {
+	return evidence.map((measurement) => {
+		if (!isRecord(measurement) || !Array.isArray(measurement.results))
+			return measurement;
+		return {
+			...measurement,
+			results: measurement.results.map((result: unknown) => {
+				if (!isRecord(result) || !isRecord(result.provenance)) return result;
+				const {
+					verifiedNativeScore: _verifiedNativeScore,
+					reusedNativeScore: _reusedNativeScore,
+					...provenance
+				} = result.provenance;
+				return { ...result, provenance };
+			}),
+		};
+	});
+}
+
 export const contentEditSchema = z.object({
 	title: z.string().trim().min(1).max(500),
 	description: z.string().max(10000).default(""),

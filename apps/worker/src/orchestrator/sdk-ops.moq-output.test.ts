@@ -1,4 +1,9 @@
-import type { CompiledOperation } from "@bitovp/core";
+import { readFileSync } from "node:fs";
+import {
+	type CompiledOperation,
+	compileLiveChannel,
+	liveChannelPlanSchema,
+} from "@bitovp/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type ExecutorContext, executeStep } from "./executor";
 import { fakeSdk } from "./fake-sdk";
@@ -32,6 +37,105 @@ function mockProvider() {
 }
 
 describe("MoQ output SDK boundary", () => {
+	it("sends both CMAF renditions to the created MoQ output before live start", async () => {
+		const fetch = mockProvider();
+		const raw = JSON.parse(
+			readFileSync(
+				new URL(
+					"../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+					import.meta.url,
+				),
+				"utf8",
+			),
+		);
+		const keys = new Set(["v720", "a128"]);
+		raw.renditions = raw.renditions.filter((r: { key: string }) =>
+			keys.has(r.key),
+		);
+		raw.muxings = raw.muxings
+			.filter((m: { streamKey: string }) => keys.has(m.streamKey))
+			.map((m: { streamKey: string }) => ({
+				...m,
+				kind: "CMAF",
+				segmentLength: 0.5,
+				...(m.streamKey === "v720" ? { framesPerCmafChunk: 3 } : {}),
+			}));
+		raw.outputs = [
+			{
+				key: "origin",
+				kind: "MOQ",
+				credentialId: "00000000-0000-4000-8000-000000000001",
+				trackNamespace: namespace,
+				draftVersion: "DRAFT_16",
+			},
+		];
+		raw.liveManifests = [];
+		raw.start.encodingOption = "CUSTOM";
+		const ops = compileLiveChannel(liveChannelPlanSchema.parse(raw));
+		const ctx: ExecutorContext = {
+			sdk: createBitmovinSdkOps({ apiKey: "test-key" }, async () => {}),
+			ids: new Map([
+				["encoding", "encoding-id"],
+				["stream:v720", "video-stream-id"],
+				["stream:a128", "audio-stream-id"],
+			]),
+			resolveCredential: async () => ({
+				provider: "MOQ",
+				config: {},
+				secret: { relayUrl, authToken },
+			}),
+			poll: { intervalMs: 1, timeoutMs: 10, sleep: async () => {} },
+		};
+		for (const op of ops.filter(
+			(op) =>
+				op.kind === "CREATE_OUTPUT_MOQ" ||
+				op.kind === "CREATE_MUXING_CMAF" ||
+				op.kind === "START_LIVE_ENCODING",
+		)) {
+			const { resourceId } = await executeStep(op, ctx);
+			if (resourceId) ctx.ids.set(op.step, resourceId);
+		}
+		expect(
+			fetch.mock.calls.map(([url, req]) => [
+				req?.method,
+				new URL(url).pathname,
+			]),
+		).toEqual([
+			["POST", "/v1/encoding/outputs/moq"],
+			["POST", "/v1/encoding/encodings/encoding-id/muxings/cmaf"],
+			["POST", "/v1/encoding/encodings/encoding-id/muxings/cmaf"],
+			["POST", "/v1/encoding/encodings/encoding-id/live/start"],
+		]);
+		const [, video, audio, start] = fetch.mock.calls.map(([, req]) =>
+			JSON.parse(String(req?.body)),
+		);
+		expect(video).toMatchObject({
+			segmentLength: 0.5,
+			framesPerCmafChunk: 3,
+			streams: [{ streamId: "video-stream-id" }],
+			outputs: [
+				{
+					outputId: "moq-output-id",
+					outputPath: "output/live-rtmp-simple/video/720p",
+				},
+			],
+		});
+		expect(audio).toMatchObject({
+			segmentLength: 0.5,
+			streams: [{ streamId: "audio-stream-id" }],
+			outputs: [
+				{
+					outputId: "moq-output-id",
+					outputPath: "output/live-rtmp-simple/audio/128000",
+				},
+			],
+		});
+		expect(audio).not.toHaveProperty("framesPerCmafChunk");
+		expect(start).toMatchObject({ streamKey: "myStreamKey" });
+		expect(start.hlsManifests ?? []).toEqual([]);
+		expect(start.dashManifests ?? []).toEqual([]);
+	});
+
 	it("sends MoQ fields to the provider and keeps relay credentials out of the audit trail", async () => {
 		const fetch = mockProvider();
 		const record = vi.fn(async () => {});

@@ -1,24 +1,16 @@
 "use client";
 
-import Link from "next/link";
 import { useT } from "@/lib/i18n/context";
 import {
 	MOQ_OBSERVATION_LIMITS,
 	type MoqObservationEvent,
 } from "@/lib/moq-player/observations";
-import { buildHeartbeatCorrelationUrl } from "./heartbeat-correlation";
-
-const HEARTBEAT_MARGIN_MS = 30_000;
 
 export function MoqPlaybackStages({
-	channelId,
-	runId,
 	startedAt,
 	events,
 	latest,
 }: {
-	channelId: string;
-	runId: string;
 	startedAt: string;
 	events: readonly MoqObservationEvent[];
 	latest?: MoqObservationEvent;
@@ -72,48 +64,31 @@ export function MoqPlaybackStages({
 					) : null}
 					{eventLabel(last)}
 					{" · "}
-					<time className="tabular-nums" dateTime={latestUtc}>
+					<time className="whitespace-nowrap tabular-nums" dateTime={latestUtc}>
 						{latestUtc.slice(11, 23)} UTC
 					</time>
 				</span>
 			</summary>
-			<ol className="mt-1 space-y-1">
+			<ol className="mt-2 space-y-1">
 				{timeline.map((event, index) => {
 					const epoch = started + event.elapsedMs;
 					const iso = new Date(epoch).toISOString();
 					const label = eventLabel(event);
 					const time = `${iso.slice(11, 23)} UTC`;
-					const heartbeat = buildHeartbeatCorrelationUrl(
-						channelId,
-						runId,
-						new Date(epoch - HEARTBEAT_MARGIN_MS).toISOString(),
-						new Date(epoch + HEARTBEAT_MARGIN_MS).toISOString(),
-					);
-					const stamp = (
-						<time className="tabular-nums" dateTime={iso}>
-							{time}
-						</time>
-					);
 					return (
 						<li
 							// Several valid milestones may occur in the same millisecond.
 							key={`${event.type}:${event.elapsedMs}:${index}`}
-							className="flex flex-wrap items-baseline gap-x-2 text-zinc-300"
+							className="flex flex-wrap items-baseline justify-between gap-x-4 text-zinc-300"
 							data-moq-playback-stage={event.type}
 						>
 							<span>{label}</span>
-							{heartbeat ? (
-								<Link
-									aria-label={`${label} · ${time} · ${t("moqPlayback.encoderCorrelation")}`}
-									className="text-zinc-400 underline underline-offset-2"
-									href={heartbeat}
-									prefetch={false}
-								>
-									{stamp}
-								</Link>
-							) : (
-								stamp
-							)}
+							<time
+								className="whitespace-nowrap text-zinc-400 tabular-nums"
+								dateTime={iso}
+							>
+								{time}
+							</time>
 						</li>
 					);
 				})}

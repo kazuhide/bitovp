@@ -271,10 +271,8 @@ describe("ChannelsClient — provider-aware status", () => {
 		wrap(<ChannelsClient />);
 		await screen.findByRole("link", { name: "Unconfirmed channel" });
 		const row = rowFor("Unconfirmed channel");
-		const badge = within(row).getByText(
-			"RUNNING · Bitmovin status unconfirmed",
-		);
-		expect(badge.className).toContain("amber");
+		const badge = within(row).getByText("Recorded RUNNING");
+		expect(badge.className).not.toContain("amber");
 		expect(badge.className).not.toContain("emerald");
 		expect(within(row).queryByText("RUNNING")).toBeNull();
 	});

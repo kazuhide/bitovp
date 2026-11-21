@@ -6,6 +6,10 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- Allow operators to opt in to reuse of verified native VMAF scores on eligible manual retries with matching inputs, model, and runtime.
+
 ### Changed
 
 - Collect frame timestamps and source validation data in one probe for eligible H.264 clips in the video library.

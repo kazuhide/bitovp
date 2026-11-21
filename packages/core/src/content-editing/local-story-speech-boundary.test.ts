@@ -5,6 +5,8 @@ import { localStorySelectedPlanIssues } from "./local-story-coherence";
 import type {
 	LocalStoryBlueprint,
 	LocalStoryCorpus,
+	LocalStoryEvent,
+	LocalStoryInput,
 } from "./local-story-contracts";
 import {
 	buildLocalStoryInput,
@@ -104,12 +106,11 @@ function fixture(sourceStartUs = 0) {
 
 const scopedSceneId = "44444444-4444-4444-8444-444444444444";
 const earlierSceneId = "55555555-5555-4555-8555-555555555555";
-function sceneQuoteFixture(options: {
-	startUs: number;
-	endUs: number;
+function preparedSceneStoryInput(options: {
 	sceneStart?: number;
-	priorSpeechEndUs?: number;
 	unscoped?: boolean;
+	shots?: { startInSeconds: number; endInSeconds: number }[];
+	segments: LocalStoryInput["segments"];
 }) {
 	const sceneStart = options.sceneStart ?? 20;
 	const analysis = normalizeSceneAnalysis({
@@ -128,7 +129,9 @@ function sceneQuoteFixture(options: {
 				type: "MAIN_CONTENT",
 				startInSeconds: sceneStart,
 				endInSeconds: 40,
-				shots: [{ startInSeconds: sceneStart, endInSeconds: 40 }],
+				shots: options.shots ?? [
+					{ startInSeconds: sceneStart, endInSeconds: 40 },
+				],
 			},
 		],
 	});
@@ -149,8 +152,7 @@ function sceneQuoteFixture(options: {
 		editingEndFrame: 1_320,
 		fps: { num: 30, den: 1 },
 	});
-	const text = "I turned the switch on.";
-	const input = buildLocalStoryInput({
+	return buildLocalStoryInput({
 		analysis,
 		timeMap,
 		preparedPartition: buildPreparedShotPartition({
@@ -158,6 +160,38 @@ function sceneQuoteFixture(options: {
 			timeMap,
 			normalization,
 		}),
+		segments: options.segments,
+		...(options.unscoped ? {} : { storySceneId: scopedSceneId }),
+	});
+}
+
+function speechEvent(
+	id: string,
+	role: LocalStoryEvent["role"],
+	ref: string,
+	texts: string[],
+): LocalStoryEvent {
+	return {
+		id,
+		role,
+		label: item(texts[0]),
+		refs: [ref],
+		quotes: texts.map((quote) => ({ ref, quote })),
+		subjects: ["speaker"],
+		uncertainty: "",
+	};
+}
+
+function sceneQuoteFixture(options: {
+	startUs: number;
+	endUs: number;
+	sceneStart?: number;
+	priorSpeechEndUs?: number;
+	unscoped?: boolean;
+}) {
+	const text = "I turned the switch on.";
+	const input = preparedSceneStoryInput({
+		...options,
 		segments: [
 			...(options.priorSpeechEndUs === undefined
 				? []
@@ -170,7 +204,6 @@ function sceneQuoteFixture(options: {
 					]),
 			{ startUs: options.startUs, endUs: options.endUs, text },
 		],
-		...(options.unscoped ? {} : { storySceneId: scopedSceneId }),
 	});
 	const { ref } = item(
 		input.shots.find((shot) => shot.sceneId === scopedSceneId),
@@ -179,17 +212,7 @@ function sceneQuoteFixture(options: {
 		version: "local-story-corpus-v1",
 		summaries: [text],
 		coveredRefs: input.shots.map((shot) => shot.ref),
-		events: [
-			{
-				id: "e0",
-				role: "ACTION",
-				label: text,
-				refs: [ref],
-				quotes: [{ ref, quote: text }],
-				subjects: ["speaker"],
-				uncertainty: "",
-			},
-		],
+		events: [speechEvent("e0", "ACTION", ref, [text])],
 	};
 	const blueprint: LocalStoryBlueprint = {
 		mode: "THEME",
@@ -293,6 +316,152 @@ describe("quoted speech in a prepared scene scope", () => {
 		expect(() =>
 			selectLocalStoryClips({ ...value, targetDurationFrames: 29 }),
 		).toThrow("LOCAL_STORY_NO_FITTING_PLAN");
+	});
+	it("combines padded and unpadded events to preserve a feasible source order", () => {
+		const first = [
+			{ startUs: 21_000_000, endUs: 22_000_000, text: "The switch is on." },
+			{
+				startUs: 25_000_000,
+				endUs: 26_000_000,
+				text: "The battery is charged.",
+			},
+		];
+		const second = [
+			{
+				startUs: 22_040_000,
+				endUs: 23_000_000,
+				text: "Power reaches the motor.",
+			},
+			{ startUs: 27_000_000, endUs: 28_000_000, text: "The wheels turn." },
+		];
+		const input = preparedSceneStoryInput({ segments: [...first, ...second] });
+		const { ref } = item(input.shots[0]);
+		const ledger: LocalStoryCorpus = {
+			version: "local-story-corpus-v1",
+			summaries: ["The speaker explains how the motor starts."],
+			coveredRefs: [ref],
+			events: [
+				speechEvent(
+					"context",
+					"CONTEXT",
+					ref,
+					first.map(({ text }) => text),
+				),
+				speechEvent(
+					"result",
+					"OUTCOME",
+					ref,
+					second.map(({ text }) => text),
+				),
+			],
+		};
+		const blueprint: LocalStoryBlueprint = {
+			mode: "THEME",
+			message: "The motor starts.",
+			uncertainty: "",
+			beats: [
+				{ id: "setup", role: "CONTEXT", eventIds: ["context"], requires: [] },
+				{
+					id: "finish",
+					role: "OUTCOME",
+					eventIds: ["result"],
+					requires: ["setup"],
+				},
+			],
+		};
+		const value = { input, ledger, blueprint, targetDurationFrames: 130 };
+		const selection = selectLocalStoryClips(value);
+		expect(selection.actualDurationFrames).toBe(129);
+		expect(selection.clips).toEqual([
+			{
+				sceneId: scopedSceneId,
+				shotIndex: 0,
+				sourceInUs: 20_900_000,
+				durationFrames: 63,
+			},
+			{
+				sceneId: scopedSceneId,
+				shotIndex: 0,
+				sourceInUs: 24_900_000,
+				durationFrames: 36,
+			},
+			{
+				sceneId: scopedSceneId,
+				shotIndex: 0,
+				sourceInUs: 27_000_000,
+				durationFrames: 30,
+			},
+		]);
+		expect(localStorySelectedPlanIssues({ ...value, selection })).toEqual([]);
+		expect(() =>
+			selectLocalStoryClips({ ...value, targetDurationFrames: 128 }),
+		).toThrow("LOCAL_STORY_NO_FITTING_PLAN");
+	});
+	it("skips a whole prepared shot that misses its quote and selects the complete alternative", () => {
+		const missed = {
+			startUs: 23_550_000,
+			endUs: 25_050_000,
+			text: "The motor starts.",
+		};
+		const covered = {
+			startUs: 30_000_000,
+			endUs: 31_300_000,
+			text: "The motor is running.",
+		};
+		const input = preparedSceneStoryInput({
+			shots: [
+				{ startInSeconds: 25.041667, endInSeconds: 26.4 },
+				{ startInSeconds: 29, endInSeconds: 39 },
+			],
+			segments: [missed, covered],
+		});
+		const firstShot = item(input.shots[0]);
+		const secondShot = item(input.shots[1]);
+		expect(firstShot).toMatchObject({ fromFrame: 752, toFrame: 792 });
+		const events = [
+			speechEvent("missed", "ACTION", firstShot.ref, [missed.text]),
+			speechEvent("covered", "ACTION", secondShot.ref, [covered.text]),
+		];
+		const ledger: LocalStoryCorpus = {
+			version: "local-story-corpus-v1",
+			summaries: ["The speaker describes the motor."],
+			coveredRefs: [firstShot.ref, secondShot.ref],
+			events,
+		};
+		const blueprint: LocalStoryBlueprint = {
+			mode: "THEME",
+			message: "The motor runs.",
+			uncertainty: "",
+			beats: [
+				{
+					id: "only",
+					role: "ACTION",
+					eventIds: ["missed", "covered"],
+					requires: [],
+				},
+			],
+		};
+		const selection = selectLocalStoryClips({
+			input,
+			ledger,
+			blueprint,
+			targetDurationFrames: 42,
+		});
+		expect(selection.localStorySelection.selectedEventIds).toEqual(["covered"]);
+		expect(selection.clips).toEqual([
+			{
+				sceneId: scopedSceneId,
+				shotIndex: 1,
+				sourceInUs: 30_000_000,
+				durationFrames: 39,
+			},
+		]);
+		expect(
+			localStorySelectedPlanIssues({ input, ledger, blueprint, selection }),
+		).toEqual([]);
+		expect(
+			events.map((event) => localStoryEventMinimumDurationFrames(input, event)),
+		).toEqual([undefined, 39]);
 	});
 	it("does not cut preceding speech that intersects the first required quote frame", () => {
 		const value = sceneQuoteFixture({

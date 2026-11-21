@@ -326,7 +326,7 @@ the browser and FFmpeg consume the same compiled automation.
 
 GENERATE parameters are `{contentId,targetDurationFrames,renderMode?:DRAFT|EXPORT,
 draftPolicyVersion?:"duration-review-v2",presentation?,policy:AUTO|COHESION|DURATION|LOCAL_STORY,
-storyMode?:AUTO|FLOW|THEME,
+storyMode?:AUTO|FLOW|THEME,storySceneId?:<uuid>,
 query?,templateId?,variants:1|2|3,captions:OFF|AUTO,tracking:boolean,language:auto|ja|en,
 transcriptionTaskId?,trackingTaskId?}`.
 Defaults and exact bounds are in the core `mediaTaskCreateSchema`. The historical
@@ -358,8 +358,12 @@ storyMode. The server pins a distinct LOCAL_OLLAMA model/runtime/schema/config
 identity in the task envelope. It does not reactivate the withdrawn STORY/Codex
 provider. There is no client-supplied model, endpoint, schema or shell command.
 
-LOCAL_STORY prepares a full-source transcript when available, including when
-captions are OFF, and analyzes all eligible shots in coverage-preserving chunks.
+By default, LOCAL_STORY prepares a full-source transcript when available,
+including when captions are OFF, and analyzes all eligible shots in
+coverage-preserving chunks. Set `storySceneId` to a scene UUID from the selected
+`analysisRevisionId` to limit transcription and shot selection to that scene.
+Scene selection requires a READY analysis revision and prepared media version.
+It applies to a LOCAL_STORY DRAFT without `trailer` or `storyWorkflowVersion`.
 Immutable transcript/ledger/blueprint receipts bind source, clock, analysis and
 model identities. The planner uses real shot or observed utterance spans, retains
 source order and required beats, and rejects an infeasible duration rather than

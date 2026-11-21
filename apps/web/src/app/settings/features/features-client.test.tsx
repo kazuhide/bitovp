@@ -226,13 +226,16 @@ describe("QC settings entry", () => {
 
 	it("saves only the operation-recording setting", async () => {
 		enabled = true;
-		renderWithQuery(<FeaturesSettingsPage />);
+		const { client } = renderWithQuery(<FeaturesSettingsPage />);
+		const reportKey = ["operation-analytics", currentSession.organizationId];
+		client.setQueryData(reportKey, { weeks: [], isCollecting: false });
 		const recording = await screen.findByRole("checkbox", {
 			name: "Live operation analytics",
 		});
 		expect(recording).not.toBeChecked();
 		await userEvent.click(recording);
 		await waitFor(() => expect(recording).toBeChecked());
+		expect(client.getQueryState(reportKey)?.isInvalidated).toBe(true);
 		expect(
 			screen.getByRole("checkbox", { name: "VMAF lab and QC" }),
 		).toBeChecked();

@@ -39,8 +39,13 @@ export function FeaturesClient() {
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify(patch),
 			}),
-		onSuccess: (next) => {
+		onSuccess: (next, patch) => {
 			queryClient.setQueryData(["feature-flags"], next);
+			if (patch.operationAnalytics !== undefined) {
+				void queryClient.invalidateQueries({
+					queryKey: ["operation-analytics"],
+				});
+			}
 		},
 	});
 

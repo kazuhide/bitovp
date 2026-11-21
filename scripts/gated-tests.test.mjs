@@ -184,8 +184,8 @@ test("every listed file exists once, and every FFmpeg, Redis or script test file
 test("a plain run may skip the tests that another job runs", () => {
 	for (const [workspace, skipped] of [
 		["@bitovp/core", 25],
-		["@bitovp/db", 70],
-		["@bitovp/worker", 68],
+		["@bitovp/db", 72],
+		["@bitovp/worker", 69],
 		// Includes six favorite-registry, two still-image, two archive/restore and
 		// one WebM recovery case, plus three LOCAL QC cancellation cases and the
 		// retained export, generation history and export re-edit cases.
@@ -777,7 +777,7 @@ test("the audit keeps each allowance to its own file and list, and treats what i
 					: entry,
 			),
 		),
-		{ problems: [], skipped: 68 - gated.count },
+		{ problems: [], skipped: 69 - gated.count },
 	);
 	// The report of a failed run is refused: it lacks the tests of a file that
 	// did not load.
@@ -828,13 +828,13 @@ test("the audit keeps each allowance to its own file and list, and treats what i
 		audit(undefined, (report) => {
 			report.numPendingTests -= 2;
 		}).problems,
-		["the report counts 66 skipped tests but lists 68"],
+		["the report counts 67 skipped tests but lists 69"],
 	);
 	assert.deepEqual(
 		audit(undefined, (report) => {
 			delete report.numPendingTests;
 		}).problems,
-		["the report counts undefined skipped tests but lists 68"],
+		["the report counts undefined skipped tests but lists 69"],
 	);
 	assert.equal(
 		audit(undefined, (report) => {
@@ -1618,7 +1618,7 @@ test("the command reports through its exit status", () => {
 		assert.equal(worker.status, 0, worker.stderr);
 		assert.equal(
 			worker.stdout,
-			"@bitovp/worker: 68 tests skipped by the plain run; another job runs each of them\n",
+			"@bitovp/worker: 69 tests skipped by the plain run; another job runs each of them\n",
 		);
 
 		const hiding = run(

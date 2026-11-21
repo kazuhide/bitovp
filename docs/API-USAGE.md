@@ -201,7 +201,9 @@ rejects writes, including queue operations. [Full contract](user-guide/LIBRARY-A
   outcomes for up to 11 minutes from the accepted start. Accepted events and
   identical replays return 204. The first terminal event wins. Rows are
   available for 90 days and the worker removes expired rows hourly. The
-  organization's `auditHistory` reset category also deletes these records.
+  organization's `auditHistory` reset category also deletes these records. Allowed
+  background submissions are excluded from access history. The access gate
+  still records denials.
 
 ## Retry a creation safely
 

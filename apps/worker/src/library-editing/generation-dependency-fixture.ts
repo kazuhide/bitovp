@@ -257,21 +257,6 @@ export function generationDependencyFixture(
 				rows.find((row) => matchesWhere(row, where)) ?? null,
 			findFirst: async ({ where }: { where: Row }) =>
 				rows.find((row) => matchesWhere(row, where)) ?? null,
-			findMany: async ({
-				where,
-				orderBy,
-				take,
-			}: {
-				where: Row;
-				orderBy: Row[];
-				take: number;
-			}) =>
-				orderRows(
-					rows.filter((row) => matchesWhere(row, where)),
-					orderBy,
-				)
-					.slice(0, take)
-					.map((row) => ({ ...row })),
 			updateMany: async ({ where, data }: { where: Row; data: Row }) => {
 				let count = 0;
 				for (const row of rows)
@@ -323,6 +308,19 @@ export function generationDependencyFixture(
 	};
 	const prisma = {
 		...tx,
+		$queryRaw: async (_query: TemplateStringsArray, due: Date) =>
+			orderRows(
+				rows.filter((row) =>
+					matchesWhere(row, {
+						availableAt: { lte: due },
+						OR: [
+							{ state: "PENDING" },
+							{ state: "RUNNING", leaseUntil: { lte: due } },
+						],
+					}),
+				),
+				[{ createdAt: "asc" }, { id: "asc" }],
+			).slice(0, 20),
 		$transaction: async <T>(fn: (client: typeof tx) => Promise<T>) => fn(tx),
 	} as unknown as AppPrismaClient;
 	const context = {

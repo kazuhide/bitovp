@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import {
 	hashEditingEvidence,
 	TRANSCRIPTION_POLICY_FINGERPRINT,
@@ -38,6 +38,20 @@ export type CudaTranscriptionRuntime = {
 	binaryPath: string;
 	binarySha256: string;
 };
+export function readCudaTranscriptionRuntime():
+	| CudaTranscriptionRuntime
+	| undefined {
+	const binaryPath = process.env.WHISPER_CUDA_CLI_PATH;
+	const binarySha256 = process.env.WHISPER_CUDA_CLI_SHA256;
+	if (
+		binaryPath &&
+		isAbsolute(binaryPath) &&
+		binarySha256 &&
+		validDigest(binarySha256)
+	)
+		return { binaryPath, binarySha256 };
+}
+
 export type LocalTranscript = {
 	schemaVersion: 1;
 	engine: "whisper.cpp";

@@ -30,6 +30,8 @@ Set `WHISPER_CUDA_CLI_SHA256` to the executable's digest on Web and Worker, and 
 
 The request is tied to the configured executable digest. The worker checks a private executable copy and runs both the version check and recognition from those bytes. Use a build that resolves its CUDA libraries when the executable is copied to a temporary directory. The worker retains the same ASR and VAD model verification and quality admission and requires CUDA initialization during the native ASR call. The result records the binary digest and device. The device is `null` for silent PCM that skips the decoder.
 
+CUDA tasks wait for a Worker configured with their pinned digest. The temporary directory used by the worker and the benchmark must allow execution. If the default location is mounted with `noexec`, set `TMPDIR` for each process to a private directory on a filesystem that permits execution.
+
 ## Compare the same interval without a database
 
 Use the branch workspace with dependencies installed. The harness uses the worker adapter, the same patched executable for both backends and the same authorized prepared media and model file. Set `WHISPER_VAD_MODEL_PATH` as for the worker. Provide a non-silent interval within the media duration.

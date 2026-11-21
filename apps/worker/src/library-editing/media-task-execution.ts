@@ -1,5 +1,5 @@
 import { rm } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 import {
 	AutomaticBindingError,
 	DEFAULT_ASR_MODEL_SHA256,
@@ -35,6 +35,7 @@ import {
 import { transcriptInOriginalTime } from "./transcript-clock";
 import {
 	type CudaTranscriptionRuntime,
+	readCudaTranscriptionRuntime,
 	transcribeLocalAudio,
 } from "./transcription";
 
@@ -138,16 +139,12 @@ export async function executeMediaTask(input: {
 		request.kind === "TRANSCRIBE" &&
 		request.parameters.asrBackend === "cuda"
 	) {
-		const binarySha256 = verified.envelope.identity.asrCudaBinarySha256,
-			binaryPath = process.env.WHISPER_CUDA_CLI_PATH;
+		cuda = readCudaTranscriptionRuntime();
 		if (
-			!binarySha256 ||
-			binarySha256 !== process.env.WHISPER_CUDA_CLI_SHA256 ||
-			!binaryPath ||
-			!isAbsolute(binaryPath)
+			!cuda ||
+			cuda.binarySha256 !== verified.envelope.identity.asrCudaBinarySha256
 		)
 			throw new MediaOperationError("ASR_CUDA_NOT_CONFIGURED");
-		cuda = { binaryPath, binarySha256 };
 	}
 	const localStory =
 		request.kind === "GENERATE" && request.parameters.policy === "LOCAL_STORY";

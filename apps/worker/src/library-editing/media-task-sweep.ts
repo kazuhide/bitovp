@@ -13,6 +13,7 @@ import {
 	verifyMediaTaskEvidence,
 } from "./media-task-execution";
 import { MediaOperationError } from "./process";
+import { readCudaTranscriptionRuntime } from "./transcription";
 
 export const MEDIA_TASK_LEASE_MS = 120_000;
 export const MEDIA_TASK_HEARTBEAT_MS = 5_000;
@@ -49,10 +50,11 @@ type Dependencies = MediaTaskExecutionDependencies & {
 	canClaim: (organizationId: string) => Promise<boolean>;
 };
 type Claimed = { task: LibraryMediaTask; verified: VerifiedMediaTask };
+type Candidate = Pick<LibraryMediaTask, "id" | "organizationId" | "cacheKey">;
 
 async function claim(
 	deps: Dependencies,
-	candidate: LibraryMediaTask,
+	candidate: Candidate,
 	now: () => Date,
 ): Promise<Claimed | null> {
 	return deps.prisma.$transaction(
@@ -105,6 +107,14 @@ async function claim(
 				});
 			};
 			const stored = mediaTaskEnvelopeSchema.safeParse(task.parameters);
+			if (
+				stored.success &&
+				stored.data.input.kind === "TRANSCRIBE" &&
+				stored.data.input.parameters.asrBackend === "cuda" &&
+				readCudaTranscriptionRuntime()?.binarySha256 !==
+					stored.data.identity.asrCudaBinarySha256
+			)
+				return null;
 			const unsupportedSpeech = stored.success
 				? speechSelectionIntentFailureCode(stored.data)
 				: undefined;
@@ -455,17 +465,22 @@ export function createLibraryMediaTaskSweep(deps: Dependencies) {
 	return () =>
 		(pending ??= (async () => {
 			if (deps.signal?.aborted || activeLocalTasks >= concurrency) return;
-			const candidates = await deps.prisma.libraryMediaTask.findMany({
-				where: {
-					availableAt: { lte: now() },
-					OR: [
-						{ state: "PENDING" },
-						{ state: "RUNNING", leaseUntil: { lte: now() } },
-					],
-				},
-				orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-				take: 20,
-			});
+			const due = now();
+			const cudaDigest = readCudaTranscriptionRuntime()?.binarySha256 ?? null;
+			// A missing backend is the legacy CPU intent. Cancellation needs no CUDA.
+			const candidates = await deps.prisma.$queryRaw<Candidate[]>`
+				SELECT "id", "organizationId", "cacheKey"
+				FROM "LibraryMediaTask"
+				WHERE "availableAt" <= ${due}
+					AND ("state" = 'PENDING' OR ("state" = 'RUNNING' AND "leaseUntil" <= ${due}))
+					AND (
+						"cancelRequestedAt" IS NOT NULL
+						OR "kind" <> 'TRANSCRIBE'
+						OR "parameters" #>> '{input,parameters,asrBackend}' IS DISTINCT FROM 'cuda'
+						OR "parameters" #>> '{identity,asrCudaBinarySha256}' = ${cudaDigest}::text
+					)
+				ORDER BY "createdAt", "id"
+				LIMIT 20`;
 			const running: Promise<void>[] = [];
 			for (const candidate of candidates) {
 				if (deps.signal?.aborted || activeLocalTasks >= concurrency) break;

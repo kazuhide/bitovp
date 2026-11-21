@@ -2,7 +2,10 @@ import { toCompositionDocument } from "@bitovp/core";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
-import { editingProjectFixture } from "../editing-fixtures";
+import {
+	editingProjectFixture,
+	localStoryEvidenceFixture,
+} from "../editing-fixtures";
 import { ReproposalDialog } from "./reproposal-dialog";
 
 const mocks = vi.hoisted(() => ({
@@ -29,10 +32,43 @@ vi.mock("../../[id]/edits/association-review", () => ({
 	),
 }));
 const task = "44444444-4444-4444-8444-444444444444";
-function fixture() {
+const scopedScene = "77777777-7777-4777-8777-777777777777";
+function fixture(scoped = false) {
 	const project = editingProjectFixture();
 	const document = toCompositionDocument(project.draft);
 	document.analysisRevisionId = "33333333-3333-4333-8333-333333333333";
+	if (scoped) {
+		document.autoGeneration = {
+			policyVersion: "aisa-local-story-window-v1",
+			requestHash: "a".repeat(64),
+			requestedDurationFrames: 300,
+			generatedDurationFrames: 300,
+			reasonCodes: [],
+			binding: {
+				schemaVersion: 1,
+				kind: "FIXTURE_AUTHORED",
+				organizationId: "00000000-0000-4000-8000-000000000001",
+				sourceId: project.media.sourceId,
+				locale: "en",
+				analysisRevisionId: document.analysisRevisionId,
+				analysisRawHash: "a".repeat(64),
+				analysisDocumentHash: "a".repeat(64),
+				mediaVersionId: project.media.id,
+				mediaSha256: "a".repeat(64),
+				timeMapId: document.timeMapId,
+				timeMapHash: "a".repeat(64),
+				sourceStartUs: 0,
+				sourceEndUs: 60_000_000,
+				width: 1920,
+				height: 1080,
+			},
+			localStoryEvidence: {
+				...localStoryEvidenceFixture(),
+				sceneScope: { sceneId: scopedScene, startUs: 0, endUs: 10_000_000 },
+				sceneFrameBounds: { fromFrame: 0, toFrame: 300 },
+			},
+		};
+	}
 	const source = {
 		sourceId: project.media.sourceId,
 		files: [],
@@ -40,7 +76,7 @@ function fixture() {
 		analyses: [
 			{ id: document.analysisRevisionId, locale: "en", title: "Source" },
 		],
-		localStoryAvailable: false,
+		localStoryAvailable: scoped,
 		captionTranslationAvailable: true,
 	};
 	return { project, document, source };
@@ -50,9 +86,12 @@ beforeEach(() => {
 	mocks.push.mockReset();
 	mocks.canMutate = true;
 });
-function tree(beforeStart = vi.fn(async () => {}), dirty = false) {
-	const data = fixture(),
-		reframe = vi.fn(),
+function tree(
+	beforeStart = vi.fn(async () => {}),
+	dirty = false,
+	data = fixture(),
+) {
+	const reframe = vi.fn(),
 		onBusy = vi.fn();
 	mocks.api.mockImplementation(async (url: string) => {
 		if (url.endsWith("/editing-eligibility")) return data.source;
@@ -172,6 +211,50 @@ it("does not submit a new proposal if saving the original edit fails", async () 
 	expect(
 		screen.queryByText(/private save details|request result is unknown/i),
 	).not.toBeInTheDocument();
+});
+
+it.each([
+	{ localStoryAvailable: true, changePolicy: false },
+	{ localStoryAvailable: true, changePolicy: true },
+	{ localStoryAvailable: false, changePolicy: false },
+])("carries the saved scene until a different policy is chosen (%j)", async ({
+	localStoryAvailable,
+	changePolicy,
+}) => {
+	const data = fixture(true);
+	data.source.localStoryAvailable = localStoryAvailable;
+	tree(undefined, false, data);
+	const dialog = await prepareForm();
+	const policy = within(dialog).getByRole("combobox", {
+		name: "Selection policy",
+	});
+	expect(policy).toHaveValue("LOCAL_STORY");
+	if (!localStoryAvailable)
+		expect(
+			within(policy).getByRole("option", { name: "Story-led edit" }),
+		).toBeDisabled();
+	if (changePolicy) fireEvent.change(policy, { target: { value: "AUTO" } });
+	fireEvent.click(
+		within(dialog).getByRole("button", { name: "Create another proposal" }),
+	);
+	await waitFor(() =>
+		expect(mocks.push).toHaveBeenCalledWith(`/library/generations/${task}`),
+	);
+	const post = mocks.api.mock.calls.find(
+		([, options]) => options?.method === "POST",
+	);
+	expect(post?.[0]).toBe("/api/library/media-tasks");
+	const { parameters } = JSON.parse(post?.[1].body);
+	if (changePolicy) {
+		expect(parameters.policy).toBe("AUTO");
+		expect(parameters).not.toHaveProperty("storySceneId");
+	} else {
+		expect(parameters).toMatchObject({
+			policy: "LOCAL_STORY",
+			storyMode: "THEME",
+			storySceneId: scopedScene,
+		});
+	}
 });
 
 it.each([

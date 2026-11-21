@@ -22,6 +22,7 @@ import {
 	mediaTaskResultCacheable,
 	mediaTaskRetrySchema,
 	readLocalSemanticConfiguration,
+	resolveLocalStorySceneScope,
 	TRANSCRIPTION_POLICY_FINGERPRINT,
 	usesGeneratedCaptions,
 	verifyAutomaticAnalysisBinding,
@@ -204,6 +205,22 @@ async function identityFor(
 			throw new EditingRequestError(422, "ANALYSIS_BINDING_UNVERIFIED");
 		identity.analysisDocumentHash = hashEditingEvidence(analysis.document);
 		identity.analysisRawHash = analysis.rawHash;
+		if (
+			input.kind === "GENERATE" &&
+			input.parameters.storySceneId !== undefined
+		) {
+			if (media.state !== "READY")
+				throw new EditingRequestError(422, "LOCAL_STORY_SCENE_SCOPE_INVALID");
+			try {
+				resolveLocalStorySceneScope({
+					analysis: analysis.document,
+					timeMap: media.timeMap,
+					sceneId: input.parameters.storySceneId,
+				});
+			} catch {
+				throw new EditingRequestError(422, "LOCAL_STORY_SCENE_SCOPE_INVALID");
+			}
+		}
 		if (media.state === "READY") {
 			try {
 				const rows = await tx.$queryRaw<Array<{ proof: Prisma.JsonValue }>>`

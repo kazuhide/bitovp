@@ -182,6 +182,8 @@ export async function planLocalStoryChoice(input: {
 		inputHash: string;
 		ledgerHash: string;
 		blueprintHash: string;
+		sceneScope?: PreparedLocalStoryFullSource["input"]["sceneScope"];
+		sceneFrameBounds?: PreparedLocalStoryFullSource["input"]["sceneFrameBounds"];
 	}): string;
 }): Promise<LocalStoryGeneration> {
 	const { context, full, identity, client } = input,
@@ -309,11 +311,17 @@ export async function planLocalStoryChoice(input: {
 			inputHash: full.inputHash,
 			ledgerHash: full.ledgerHash,
 			blueprintHash,
+			...(full.input.sceneScope ? { sceneScope: full.input.sceneScope } : {}),
+			...(full.input.sceneFrameBounds
+				? { sceneFrameBounds: full.input.sceneFrameBounds }
+				: {}),
 			artifactHash: input.artifactHash({
 				model: identity,
 				inputHash: full.inputHash,
 				ledgerHash: full.ledgerHash,
 				blueprintHash,
+				sceneScope: full.input.sceneScope,
+				sceneFrameBounds: full.input.sceneFrameBounds,
 			}),
 			ledger: full.ledger,
 			blueprint,

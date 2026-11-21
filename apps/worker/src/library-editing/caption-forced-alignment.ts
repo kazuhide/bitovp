@@ -504,6 +504,8 @@ export type CaptionAlignmentInput = {
 	mediaSha256: string;
 	sourceOriginUs: number;
 	sourceDurationUs: number;
+	/** Optional context limits on the original clock. The media seek origin stays fixed. */
+	audioBounds?: Range;
 	segments: readonly CompositionSourceSegment[];
 	selectedRanges: readonly Range[];
 	language: "ja" | "en" | "auto";
@@ -522,6 +524,9 @@ export function captionAlignmentInputHash(input: CaptionAlignmentInput) {
 		mediaSha256: input.mediaSha256,
 		sourceOriginUs: input.sourceOriginUs,
 		sourceDurationUs: input.sourceDurationUs,
+		...(input.audioBounds === undefined
+			? {}
+			: { audioBounds: input.audioBounds }),
 		segments: input.segments,
 		selectedRanges: input.selectedRanges,
 		language: input.language,
@@ -552,6 +557,20 @@ export async function alignSelectedCaptionSegments(
 			!/^[a-f0-9]{64}$/.test(input.mediaSha256)
 		)
 			fail("CAPTION_ALIGNMENT_INPUT_INVALID");
+		const audioBounds =
+			input.audioBounds === undefined
+				? { startUs: input.sourceOriginUs, endUs: sourceEndUs }
+				: input.audioBounds;
+		if (
+			!record(audioBounds) ||
+			!keys(audioBounds, ["startUs", "endUs"]) ||
+			!us(audioBounds.startUs) ||
+			!us(audioBounds.endUs) ||
+			audioBounds.startUs < input.sourceOriginUs ||
+			audioBounds.endUs > sourceEndUs ||
+			audioBounds.endUs <= audioBounds.startUs
+		)
+			fail("CAPTION_ALIGNMENT_INPUT_INVALID");
 		const parsed = compositionSourceSegmentSchema
 			.array()
 			.min(1)
@@ -580,23 +599,23 @@ export async function alignSelectedCaptionSegments(
 				: captionTimingEvidenceSchema.safeParse(input.captionTimingEvidence);
 		if (timing && !timing.success) fail("CAPTION_ALIGNMENT_INPUT_INVALID");
 		const captionTimingEvidence = timing?.data;
-		let priorEnd = input.sourceOriginUs;
+		let priorEnd = audioBounds.startUs;
 		for (const segment of segments) {
-			if (segment.startUs < priorEnd || segment.endUs > sourceEndUs)
+			if (segment.startUs < priorEnd || segment.endUs > audioBounds.endUs)
 				fail("CAPTION_ALIGNMENT_INPUT_INVALID");
 			priorEnd = segment.endUs;
 		}
 		if (
 			selected.some(
-				(r) => r.startUs < input.sourceOriginUs || r.endUs > sourceEndUs,
+				(r) => r.startUs < audioBounds.startUs || r.endUs > audioBounds.endUs,
 			)
 		)
 			fail("CAPTION_ALIGNMENT_INPUT_INVALID");
 		const windows = windowsFor(
 			segments,
 			selected,
-			input.sourceOriginUs,
-			sourceEndUs,
+			audioBounds.startUs,
+			audioBounds.endUs,
 		);
 		const primaryTexts = windows.map((w) =>
 			w.indices

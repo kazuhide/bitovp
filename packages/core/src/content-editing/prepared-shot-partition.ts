@@ -353,24 +353,29 @@ export function getPreparedShotPartitionEntry(
 export function preparedFrameForSourceAppearance(
 	partition: PreparedShotPartition,
 	sourceTimeInSeconds: number,
+	options: { snapToSourceGrid?: boolean } = {},
 ): number {
 	return frameForAppearance(
 		clock(partition).normalization,
 		sourceTimeInSeconds,
+		options.snapToSourceGrid,
 	);
 }
 function frameForAppearance(
 	n: NormalizationCaptureReceipt,
 	sourceTimeInSeconds: number,
+	snapToSourceGrid = true,
 ): number {
 	requireClock(
 		Number.isFinite(sourceTimeInSeconds) && sourceTimeInSeconds >= 0,
 		"PREPARED_APPEARANCE_INVALID",
 	);
-	if (sourceTimeInSeconds >= n.source.durationUs / 1000000)
-		return n.output.frameCount;
-	const grid = sourceGridFrame(sourceTimeInSeconds, n);
-	if (grid !== undefined) return outputBoundary(n, grid);
+	if (snapToSourceGrid) {
+		if (sourceTimeInSeconds >= n.source.durationUs / 1_000_000)
+			return n.output.frameCount;
+		const grid = sourceGridFrame(sourceTimeInSeconds, n);
+		if (grid !== undefined) return outputBoundary(n, grid);
+	}
 	const time = decimal(sourceTimeInSeconds),
 		num = time.num * BigInt(n.source.fps.num),
 		den = time.den * BigInt(n.source.fps.den),

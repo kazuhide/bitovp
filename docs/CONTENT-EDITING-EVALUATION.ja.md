@@ -18,6 +18,30 @@ tags: [content-library, aisa, composition, evaluation]
 
 クリップの新規作成・再推論には、設定された Local LLM と実際に利用可能な GPU が必要。利用条件の詳細は [Local LLM Gateway の設定](../tools/local-semantic-gateway/README.md) を参照する。
 
+## 指定シーンで編集案を作る
+
+準備済みの MediaVersion と、それに対応する AISA 解析版を指定し、通常の権限で `POST /api/library/media-tasks` に送る。以下の UUID はそれぞれ対象の値に置き換える。
+
+```json
+{
+  "kind": "GENERATE",
+  "mediaVersionId": "11111111-1111-4111-8111-111111111111",
+  "analysisRevisionId": "22222222-2222-4222-8222-222222222222",
+  "requestKey": "33333333-3333-4333-8333-333333333333",
+  "parameters": {
+    "contentId": "44444444-4444-4444-8444-444444444444",
+    "targetDurationFrames": 450,
+    "renderMode": "DRAFT",
+    "policy": "LOCAL_STORY",
+    "storySceneId": "55555555-5555-4555-8555-555555555555"
+  }
+}
+```
+
+`storySceneId` は指定した解析版にある編集中のシーンの ID。Worker はそのシーン内の音声とショットに分析を限定する。元素材の時刻は再基準化せず、結果の `localStoryEvidence` に、元の音声時刻範囲を `sceneScope`、検証した映像フレーム範囲を `sceneFrameBounds` として記録する。対象内で所定の品質条件を満たさない場合はタスクのエラーを返す。`storySceneId` を省略したリクエストは全編を対象にする。予告編・階層型ワークフローとの併用は対象外。広告など除外対象のシーンや境界をまたぐショットのあるシーンは受理しない。
+
+性能比較は同じ準備済み素材・設定で全編と指定シーンを計測し、実行した音声窓、Ledger の推論回数、キャッシュ命中、素材取得から下書きが使えるまでの時間を記録する。シーン内で成立した案を編集者が確認し、必要な発話と切れ目が保たれたかを比較する。
+
 ## 比較するもの
 
 | 層 | 記録するもの | それだけでは分からないもの |

@@ -119,8 +119,11 @@ export function GenerationSettings({
 								});
 							}}
 						>
-							{localStoryAllowed && (
-								<option value="LOCAL_STORY">{c.localStorySelection}</option>
+							{(localStoryAllowed ||
+								(value.policy === "LOCAL_STORY" && value.storySceneId)) && (
+								<option value="LOCAL_STORY" disabled={!localStoryAllowed}>
+									{c.localStorySelection}
+								</option>
 							)}
 							{allowPresentation && (
 								<option value="AUTO">{c.automaticSelection}</option>

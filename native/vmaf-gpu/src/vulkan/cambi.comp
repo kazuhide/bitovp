@@ -58,9 +58,15 @@ const uint score_contrasts = 32u;
 layout(constant_id = 1) const uint score_window = 65u;
 const uint tile_pitch = 16u + score_window - 1u;
 shared uint score_tile[tile_pitch * tile_pitch];
+shared uint tile_has_contrast;
 void load_score_tile() {
     int radius = int(score_window >> 1u);
-    ivec2 origin = ivec2(gl_WorkGroupID.xy * 16u) - ivec2(radius);
+    uvec2 first = gl_WorkGroupID.xy * 16u;
+    ivec2 origin = ivec2(first) - ivec2(radius);
+    uint anchor = image(first.x, first.y);
+    if (gl_LocalInvocationIndex == 0u) tile_has_contrast = 0u;
+    barrier();
+    bool has_contrast = false;
     for (uint index = gl_LocalInvocationIndex; index < tile_pitch * tile_pitch; index += 256u) {
         ivec2 location = origin + ivec2(int(index % tile_pitch), int(index / tile_pitch));
         uint packed = 0u;
@@ -69,11 +75,14 @@ void load_score_tile() {
             uint source = uint(location.y) * parameters.width + uint(location.x);
             // CAMBI input is normalized to ten bits. Bit 16 records the
             // nonzero mask, leaving all sixteen sample bits intact.
-            packed = words[parameters.source_image + source] |
-                (words[parameters.source_mask + source] != 0u ? 65536u : 0u);
+            uint sample_value = words[parameters.source_image + source];
+            bool included = words[parameters.source_mask + source] != 0u;
+            packed = sample_value | (included ? 65536u : 0u);
+            has_contrast = has_contrast || (included && sample_value != anchor);
         }
         score_tile[index] = packed;
     }
+    if (has_contrast) atomicOr(tile_has_contrast, 1u);
     // Even lanes outside the output image take part in the halo load and
     // reach this barrier before any output-lane bounds check can return.
     barrier();
@@ -254,12 +263,25 @@ void pool_finish() {
 #endif
 void main() {
 #ifdef BITOVP_CAMBI_SCORE_PIPELINE
+    if (parameters.mode != 5u) return;
 #ifdef BITOVP_CAMBI_TILE_PIPELINE
+    // A whole workgroup shares this guard. Its first output must be in range
+    // before the tile load uses that sample as its anchor.
+    if (any(greaterThanEqual(gl_WorkGroupID.xy * 16u, uvec2(parameters.width, parameters.height)))) return;
     load_score_tile();
 #endif
     uint x = gl_GlobalInvocationID.x, y = gl_GlobalInvocationID.y;
-    if (parameters.mode == 5u && x < parameters.width && y < parameters.height)
-        calculate_score(x, y, y * parameters.width + x);
+    if (x >= parameters.width || y >= parameters.height) return;
+    uint pixel = y * parameters.width + x;
+#ifdef BITOVP_CAMBI_TILE_PIPELINE
+    // Every active center and every active sample in its clipped window is
+    // in the loaded halo. When all equal the anchor, no contrast can score.
+    if (tile_has_contrast == 0u) {
+        words[words[20] + pixel] = floatBitsToUint(0.0);
+        return;
+    }
+#endif
+    calculate_score(x, y, pixel);
 #else
     if (parameters.mode == 6u) { pool_initialize(); return; }
     if (parameters.mode == 7u) { pool_histogram(); return; }

@@ -308,8 +308,13 @@ export function generationDependencyFixture(
 	};
 	const prisma = {
 		...tx,
-		$queryRaw: async (_query: TemplateStringsArray, due: Date) =>
-			orderRows(
+		$queryRaw: async (query: TemplateStringsArray, due: unknown) => {
+			if (
+				!(due instanceof Date) ||
+				!query[0]?.includes('FROM "LibraryMediaTask"')
+			)
+				return tx.$queryRaw();
+			return orderRows(
 				rows.filter((row) =>
 					matchesWhere(row, {
 						availableAt: { lte: due },
@@ -320,7 +325,8 @@ export function generationDependencyFixture(
 					}),
 				),
 				[{ createdAt: "asc" }, { id: "asc" }],
-			).slice(0, 20),
+			).slice(0, 20);
+		},
 		$transaction: async <T>(fn: (client: typeof tx) => Promise<T>) => fn(tx),
 	} as unknown as AppPrismaClient;
 	const context = {

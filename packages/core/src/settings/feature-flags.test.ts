@@ -17,6 +17,16 @@ describe("feature flags (ledger #131)", () => {
 		expect(featureFlagsSchema.parse({}).qcVmaf).toBe(false);
 	});
 
+	it("keeps operation recording off for an existing QC-only setting", () => {
+		expect(parseFeatureFlags({ qcVmaf: true })).toEqual({
+			qcVmaf: true,
+			operationAnalytics: false,
+		});
+		expect(
+			parseFeatureFlags({ operationAnalytics: true }).operationAnalytics,
+		).toBe(true);
+	});
+
 	it("absent, empty and malformed values all read as the defaults", () => {
 		for (const value of [
 			undefined,
@@ -32,11 +42,11 @@ describe("feature flags (ledger #131)", () => {
 	});
 
 	it("an explicit true survives, and unknown keys are dropped rather than rejected", () => {
-		expect(parseFeatureFlags({ qcVmaf: true })).toEqual({ qcVmaf: true });
 		// A flag written by a NEWER build must not make this build fall back to
 		// defaults — that would silently turn QC off on a rollback.
 		expect(parseFeatureFlags({ qcVmaf: true, somethingLater: 3 })).toEqual({
 			qcVmaf: true,
+			operationAnalytics: false,
 		});
 	});
 });

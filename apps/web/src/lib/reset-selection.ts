@@ -42,7 +42,10 @@ export const RESET_CATALOG = [
 		],
 	},
 	{ category: "webhookHistory", models: ["webhookEvent"] },
-	{ category: "auditHistory", models: ["auditLog", "accessEvent"] },
+	{
+		category: "auditHistory",
+		models: ["auditLog", "accessEvent", "operationAttempt"],
+	},
 	{
 		category: "storageChecks",
 		models: ["vodInputPreviewTask", "storageInspection"],

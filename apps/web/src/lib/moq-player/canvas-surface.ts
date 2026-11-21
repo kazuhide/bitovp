@@ -2,6 +2,8 @@ export type MoqCanvasSurface = {
 	video: HTMLVideoElement;
 	/** A conservative visual update, not a decoder or source frame counter. */
 	changed(): boolean;
+	/** Whether the latest readback of this owned canvas contains a visible image. */
+	hasVisibleImage(): boolean;
 	dispose(): void;
 };
 
@@ -92,6 +94,7 @@ export function createMoqCanvasSurface(
 					return false;
 				}
 			},
+			hasVisibleImage: () => !closed && previous !== null,
 			dispose,
 		};
 	} catch {

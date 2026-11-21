@@ -93,6 +93,18 @@ export const ROUTE_RULES: readonly RouteRule[] = [
 		reason: "Organization access history",
 	},
 	{
+		prefix: "/api/operation-analytics",
+		methods: ["GET", "HEAD"],
+		minRole: "ADMIN",
+		reason: "Weekly operation aggregates for the current organization",
+	},
+	{
+		prefix: "/api/operation-attempts",
+		methods: ["POST"],
+		minRole: "OPERATOR",
+		reason: "Report the outcome of an authorized MoQ preview attempt",
+	},
+	{
 		prefix: "/api/organizations/[id]",
 		minRole: "ADMIN",
 		reason: "Organization policy management",

@@ -98,21 +98,24 @@ describe("MoQ telemetry publication cadence", () => {
 			cancelVideoFrameCallback: vi.fn(),
 		});
 		const changed = vi.fn().mockReturnValue(false),
+			hasVisibleImage = vi.fn().mockReturnValue(false),
 			dispose = vi.fn();
 		mocks.surface.mockImplementation(() => {
 			host.append(mirror);
-			return { video: mirror, changed, dispose };
+			return { video: mirror, changed, hasVisibleImage, dispose };
 		});
 		const visibility = vi.spyOn(document, "visibilityState", "get");
 		visibility.mockReturnValue("visible");
 		Object.defineProperty(mirror, "paused", { value: false });
 		const progress = vi.fn(),
 			statistics = vi.fn(),
-			stage = vi.fn();
+			stage = vi.fn(),
+			firstVisible = vi.fn();
 		const observer = observeMoqVideo(host, progress, vi.fn(), {
 			startedAt: performance.now(),
 			onStatistics: statistics,
 			onStage: stage,
+			onFirstVisibleFrame: firstVisible,
 			source: () => ({ getLatency: () => 0.25 }),
 		});
 		await Promise.resolve();
@@ -127,6 +130,10 @@ describe("MoQ telemetry publication cadence", () => {
 				height: 360,
 			});
 		emit(1);
+		expect(firstVisible).not.toHaveBeenCalled();
+		hasVisibleImage.mockReturnValue(true);
+		emit(2);
+		expect(firstVisible).toHaveBeenCalledOnce();
 		vi.advanceTimersByTime(1000);
 		expect(progress).not.toHaveBeenCalled();
 		expect(statistics.mock.calls.at(-1)?.[0]).toMatchObject({
@@ -135,9 +142,10 @@ describe("MoQ telemetry publication cadence", () => {
 			latencySeconds: null,
 		});
 		changed.mockReturnValueOnce(true);
-		emit(2);
-		expect(progress).toHaveBeenCalledExactlyOnceWith(mirror);
 		emit(3);
+		expect(progress).toHaveBeenCalledExactlyOnceWith(mirror);
+		emit(4);
+		expect(firstVisible).toHaveBeenCalledOnce();
 		vi.advanceTimersByTime(2000);
 		expect(statistics.mock.calls.at(-1)?.[0]).toMatchObject({
 			fps: null,

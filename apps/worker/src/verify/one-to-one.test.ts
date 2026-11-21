@@ -29,6 +29,116 @@ const bound = (r: ReturnType<typeof run>) =>
 	r.pairs.map((p) => `${p.expected.key}->${p.observed.id}`).sort();
 
 describe("matchOneToOne — the binding is one-to-one", () => {
+	it("preserves canonical output and callback order for disjoint compatible edges", () => {
+		const calls: string[] = [];
+		const duplicate = { key: "z", label: "second" };
+		const observed = [
+			{ key: "z", label: "first" },
+			{ key: "x", label: "unmatched" },
+			{ key: "y", label: "only" },
+			duplicate,
+		];
+		const result = matchOneToOne({
+			expected: ["c", "b", "a"],
+			observed,
+			expectedKey: (row) => row,
+			observedKey: (row) => row.key,
+			isRequired: (row) => row === "b",
+			compatible: (row, observation) => {
+				calls.push(`check:${row}:${observation.key}`);
+				return (
+					(row === "a" && observation.key === "z") ||
+					(row === "c" && observation.key === "y")
+				);
+			},
+			cost: (row, observation) => {
+				calls.push(`cost:${row}:${observation.key}`);
+				return row === "a" ? 2_000_000 : UNKNOWN_BITRATE_COST;
+			},
+		});
+		expect(calls).toEqual([
+			"check:a:x",
+			"check:a:y",
+			"check:a:z",
+			"cost:a:z",
+			"check:b:x",
+			"check:b:y",
+			"check:b:z",
+			"check:c:x",
+			"check:c:y",
+			"cost:c:y",
+			"check:c:z",
+			"cost:a:z",
+			"cost:c:y",
+		]);
+		expect(result).toEqual({
+			pairs: [
+				{ expected: "a", observed: observed[0], cost: 2_000_000 },
+				{ expected: "c", observed: observed[2], cost: UNKNOWN_BITRATE_COST },
+			],
+			unmatchedExpected: ["b"],
+			unmatchedObserved: [observed[1]],
+			duplicates: [{ key: "z", rows: [observed[0], duplicate] }],
+		});
+	});
+
+	it("preserves already evaluated edges and their scaled costs on a late row conflict", () => {
+		const costs = new Map([
+			["a:x", 10],
+			["b:y", 20],
+			["c:z", 1],
+			["c:w", 2],
+			["d:z", 1],
+			["d:w", 10],
+		]);
+		const result = matchOneToOne({
+			expected: ["d", "a", "c", "b"],
+			observed: ["y", "x", "z", "w"],
+			expectedKey: (row) => row,
+			observedKey: (row) => row,
+			compatible: (row, observation) => costs.has(`${row}:${observation}`),
+			cost: (row, observation) => costs.get(`${row}:${observation}`) ?? 0,
+		});
+		expect(result.pairs).toEqual([
+			{ expected: "a", observed: "x", cost: 10 },
+			{ expected: "b", observed: "y", cost: 20 },
+			{ expected: "c", observed: "w", cost: 2 },
+			{ expected: "d", observed: "z", cost: 1 },
+		]);
+	});
+
+	it("preserves required priority on a late column conflict", () => {
+		const result = matchOneToOne({
+			expected: ["c", "a", "b"],
+			observed: ["y", "x"],
+			expectedKey: (row) => row,
+			observedKey: (row) => row,
+			compatible: (row, observation) =>
+				observation === (row === "a" ? "x" : "y"),
+			cost: (row) => (row === "c" ? 10 : 0),
+			isRequired: (row) => row === "c",
+		});
+		expect(result.pairs).toEqual([
+			{ expected: "a", observed: "x", cost: 0 },
+			{ expected: "c", observed: "y", cost: 10 },
+		]);
+		expect(result.unmatchedExpected).toEqual(["b"]);
+	});
+
+	it("leaves a compatible pair with a non-numeric scaled cost to the solver", () => {
+		const result = matchOneToOne({
+			expected: ["expected"],
+			observed: ["observed"],
+			expectedKey: (row) => row,
+			observedKey: (row) => row,
+			compatible: () => true,
+			cost: () => Number.NaN,
+		});
+		expect(result.pairs).toEqual([]);
+		expect(result.unmatchedExpected).toEqual(["expected"]);
+		expect(result.unmatchedObserved).toEqual(["observed"]);
+	});
+
 	it("covers required nodes before a closer optional candidate", () => {
 		const result = matchOneToOne({
 			expected: [

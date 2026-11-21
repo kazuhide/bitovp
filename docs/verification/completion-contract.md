@@ -30,17 +30,17 @@ receipt schema.
 
 ## Critical paths have explicit evidence layers
 
-The eight registered profiles contain 769 fixed cases. Counts are an inventory
+The eight registered profiles contain 771 fixed cases. Counts are an inventory
 check, not a quality score. Each suite must retain meaningful behavior assertions.
 
 | Path | Fast contracts | Integration evidence still required |
 |---|---|---|
 | Authentication and tenant isolation | Role refusal and tenant-context propagation, 115 cases | Actual middleware/session boundaries and PostgreSQL runtime-role/RLS isolation |
-| VOD/Live submission | Request identity, duplicate/conflicting submission, authorization, 173 cases | Installed authenticated screen → actual API → saved-plan readback; real DB concurrent insertion |
+| VOD/Live submission | Request identity, duplicate/conflicting submission, authorization, 174 cases | Installed authenticated screen → actual API → saved-plan readback; real DB concurrent insertion |
 | VOD timeline | Independent audio/video edits, snapping and output preservation, 55 cases | Installed configuration flows; real preparation/preview lifetime and media fixtures |
 | Live lifecycle | Stale owner/lease rejection, cancellation wakeup and retained terminal evidence, 52 cases | Registered PostgreSQL, Redis and lifecycle integration cases |
 | Library render recovery | Material identity, tenant/lease checks, interrupted adoption and recovery, 23 cases | Real database and storage/media fixtures |
-| QC allocation | Resource budgets, reservations and command construction, 268 cases | Native media and host-specific capacity qualification |
+| QC allocation | Resource budgets, reservations and command construction, 269 cases | Native media and host-specific capacity qualification |
 | QC measurement validity | HDR compatibility and synthetic alignment, 39 cases | Actual media/scorer evidence and browser grouping/playback |
 | QC runtime safety | Admission, cancellation/deadline ordering and process ownership, 44 cases | Real PostgreSQL cancellation race and installed cancellation readback |
 

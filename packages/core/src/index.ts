@@ -44,6 +44,7 @@ export {
 	libraryFileContentType,
 	librarySnapshotSchema,
 	librarySourceSnapshotSchema,
+	publicLibraryQcEvidence,
 } from "./content-library/contracts";
 export {
 	isManagedEditingObjectKey,

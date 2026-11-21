@@ -9,7 +9,7 @@ export const FEATURES = Object.freeze(
 			files: {
 				"src/vmaf/resource-plan.test.ts": 12,
 				"src/vmaf/banding-resources.test.ts": 2,
-				"src/vmaf/processor.test.ts": 254,
+				"src/vmaf/processor.test.ts": 255,
 			},
 		},
 		{

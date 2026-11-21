@@ -411,6 +411,53 @@ describe("requestLibrarySource", () => {
 		expect(tx.content.create).toHaveBeenCalledOnce();
 		expect(tx.contentRevision.create).toHaveBeenCalledOnce();
 	});
+	it("persists QC scores without internal native score reuse records", async () => {
+		const { job, tx, prisma } = setup();
+		const measurement = {
+			id: "measurement",
+			model: "vmaf_v0.6.1",
+			results: [
+				{
+					id: "fresh",
+					pooled: { mean: 90 },
+					provenance: {
+						localExecution: { requestedDecode: "auto" },
+						verifiedNativeScore: { receiptSha256: "a".repeat(64) },
+					},
+				},
+				{
+					id: "reused",
+					pooled: { mean: 91 },
+					provenance: {
+						localExecution: { reusedVerifiedResult: true },
+						reusedNativeScore: { receiptSha256: "b".repeat(64) },
+					},
+				},
+			],
+		};
+		const before = structuredClone(measurement);
+		tx.vmafJob.findMany.mockResolvedValueOnce([measurement]);
+		const source = await requestLibrarySource(prisma, job.id);
+		expect(source.snapshot).toHaveProperty("qcEvidence", [
+			{
+				id: measurement.id,
+				model: measurement.model,
+				results: [
+					{
+						id: "fresh",
+						pooled: { mean: 90 },
+						provenance: { localExecution: { requestedDecode: "auto" } },
+					},
+					{
+						id: "reused",
+						pooled: { mean: 91 },
+						provenance: { localExecution: { reusedVerifiedResult: true } },
+					},
+				],
+			},
+		]);
+		expect(measurement).toEqual(before);
+	});
 	it.each([
 		{ additional: undefined, expected: ["en"] },
 		{ additional: [], expected: ["en"] },

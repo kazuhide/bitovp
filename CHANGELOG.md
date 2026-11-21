@@ -6,6 +6,10 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- Accept CMAF muxings and chunk frame settings in MoQ Live templates and channel plans.
+
 ## [1.3.3] - 2026-11-20
 
 ### Changed

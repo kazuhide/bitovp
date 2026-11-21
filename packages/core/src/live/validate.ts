@@ -30,8 +30,11 @@ import {
 	liveFallbackRegionIssues,
 	liveMediaDestination,
 } from "./protection";
-import type { LiveChannelPlan } from "./schema";
-import { SRT_LISTENER_PORTS } from "./schema";
+import {
+	isMoqMuxingKind,
+	type LiveChannelPlan,
+	SRT_LISTENER_PORTS,
+} from "./schema";
 import { AGGREGATE_CLOUD_REGIONS } from "./startup";
 
 /**
@@ -222,21 +225,21 @@ function moqOutputIssues(
 		if (
 			plan.muxings.filter(
 				(muxing) =>
-					muxing.kind === "FMP4" && muxing.streamKey === rendition.key,
+					isMoqMuxingKind(muxing.kind) && muxing.streamKey === rendition.key,
 			).length !== 1
 		)
 			reject(
 				"LIVE_MOQ_RENDITION_MUXING",
 				`renditions.${index}`,
-				`MoQ rendition "${rendition.key}" requires exactly one FMP4 muxing`,
+				`MoQ rendition "${rendition.key}" requires exactly one FMP4 or CMAF muxing`,
 			);
 	}
 	for (const [index, muxing] of plan.muxings.entries()) {
-		if (muxing.kind !== "FMP4")
+		if (!isMoqMuxingKind(muxing.kind))
 			reject(
-				"LIVE_MOQ_FMP4_ONLY",
+				"LIVE_MOQ_MUXING_UNSUPPORTED",
 				`muxings.${index}.kind`,
-				"MoQ output requires a separate FMP4 muxing per rendition",
+				"MoQ output supports FMP4 and CMAF muxing",
 			);
 		if (!outputs.some((output) => output.key === muxing.destination?.outputKey))
 			reject(
@@ -1004,7 +1007,7 @@ export function validateLiveChannel(
 		if (
 			muxing.kind === "MP4" ||
 			referenced.has(muxing.key) ||
-			(muxing.kind === "FMP4" &&
+			(isMoqMuxingKind(muxing.kind) &&
 				plan.outputs.some(
 					(output) =>
 						output.kind === "MOQ" &&

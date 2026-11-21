@@ -135,7 +135,10 @@ it("loads a channel into editable fields without creation and keeps edits on cac
 	);
 });
 
-it("copies an MoQ plan as editable JSON and preserves its settings on explicit creation", async () => {
+it.each([
+	"FMP4",
+	"CMAF",
+] as const)("copies a %s MoQ plan as editable JSON and preserves its settings on explicit creation", async (kind) => {
 	const id = "70c37149-8ccc-4b3d-bc64-0fa06e49e82b";
 	const newChannelId = "fb801929-e7a4-450d-876e-69bf643eaaa0";
 	const credentialId = "eee3c000-00e3-4aaa-8aaa-000000000aaa";
@@ -175,12 +178,15 @@ it("copies an MoQ plan as editable JSON and preserves its settings on explicit c
 	plan.muxings = [
 		{
 			...plan.muxings[1],
-			segmentLength: 1,
+			kind,
+			segmentLength: kind === "CMAF" ? 0.5 : 1,
+			...(kind === "CMAF" ? { framesPerCmafChunk: 3 } : {}),
 			destination: { outputKey: "relay", path: "test/video" },
 		},
 		{
 			...plan.muxings[3],
-			segmentLength: 1,
+			kind,
+			segmentLength: kind === "CMAF" ? 0.5 : 1,
 			destination: { outputKey: "relay", path: "test/audio" },
 		},
 	];

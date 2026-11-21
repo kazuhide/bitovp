@@ -3,7 +3,11 @@ import type {
 	EncodingExperimentTrial,
 	Prisma,
 } from "../generated/client";
-import type { AppPrismaClient, AppTransactionClient } from "./client";
+import {
+	type AppPrismaClient,
+	type AppTransactionClient,
+	dbSql,
+} from "./client";
 
 export type ExperimentContext = {
 	organizationId: string;
@@ -391,16 +395,16 @@ export async function experimentSelectionRows(
 export async function claimExperimentTrial(
 	ctx: ExperimentContext,
 	capabilityId: string,
-	now: Date,
 	leaseMs: number,
 ) {
 	const organizationId = ctx.organizationId;
 	return ctx.prisma.$transaction(async (tx) => {
+		const observedAt = await experimentDatabaseTime(tx);
 		const ready = {
 			organizationId,
 			OR: [
 				{ status: "PENDING" },
-				{ status: "RUNNING", leaseUntil: { lte: now } },
+				{ status: "RUNNING", leaseUntil: { lte: observedAt } },
 			],
 		} satisfies Prisma.EncodingExperimentTrialWhereInput;
 		const trial = await tx.encodingExperimentTrial.findFirst({
@@ -411,6 +415,7 @@ export async function claimExperimentTrial(
 		const campaign = await lockCampaign(tx, organizationId, trial.campaignId);
 		if (campaign.state !== "RUNNING" || campaign.capabilityId !== capabilityId)
 			return null;
+		const now = await experimentDatabaseTime(tx);
 		const wasRunning = trial.status === "RUNNING";
 		const expiredClaims = trial.expiredClaims + Number(wasRunning);
 		const where = {
@@ -456,40 +461,64 @@ export async function claimExperimentTrial(
 	});
 }
 
-function liveClaim(organizationId: string, claim: TrialClaim, now: Date) {
-	return {
-		organizationId,
-		campaignId: claim.campaignId,
-		id: claim.id,
-		attempt: claim.attempt,
-		status: "RUNNING",
-		leaseUntil: { gt: now },
-	} satisfies Prisma.EncodingExperimentTrialWhereInput;
+async function experimentDatabaseTime(tx: AppTransactionClient) {
+	const [clock] = await tx.$queryRaw<{ now: Date }[]>`
+		SELECT (clock_timestamp() AT TIME ZONE 'UTC') AS "now"
+	`;
+	if (!clock) throw new Error("Experiment database clock unavailable");
+	return clock.now;
+}
+
+async function updateLiveClaim(
+	tx: AppTransactionClient,
+	organizationId: string,
+	claim: TrialClaim,
+	changes: Prisma.Sql,
+) {
+	// Check expiry against the database clock after acquiring the trial row lock.
+	const changed = await tx.$queryRaw<{ id: string }[]>(dbSql`
+		WITH locked AS MATERIALIZED (
+			SELECT "id", "leaseUntil" FROM "EncodingExperimentTrial"
+			WHERE "organizationId" = ${organizationId}::uuid
+				AND "campaignId" = ${claim.campaignId}::uuid
+				AND "id" = ${claim.id}::uuid
+				AND "attempt" = ${claim.attempt}
+				AND "status" = 'RUNNING'
+			FOR UPDATE
+		)
+		UPDATE "EncodingExperimentTrial" trial
+		SET ${changes}
+		FROM locked
+		WHERE trial."id" = locked."id"
+			AND locked."leaseUntil" > (clock_timestamp() AT TIME ZONE 'UTC')
+		RETURNING trial."id"
+	`);
+	return changed.length === 1;
 }
 
 export async function renewExperimentTrial(
 	ctx: ExperimentContext,
 	claim: TrialClaim,
-	now: Date,
 	leaseMs: number,
 ) {
-	const updated = await ctx.prisma.encodingExperimentTrial.updateMany({
-		where: liveClaim(ctx.organizationId, claim, now),
-		data: { leaseUntil: new Date(now.getTime() + leaseMs) },
-	});
-	return updated.count === 1;
+	return updateLiveClaim(
+		ctx.prisma,
+		ctx.organizationId,
+		claim,
+		dbSql`"leaseUntil" = (clock_timestamp() AT TIME ZONE 'UTC') + ${leaseMs} * INTERVAL '1 millisecond'`,
+	);
 }
 
 export async function releaseExperimentTrial(
 	ctx: ExperimentContext,
 	claim: TrialClaim,
-	now: Date,
 ) {
-	const updated = await ctx.prisma.encodingExperimentTrial.updateMany({
-		where: liveClaim(ctx.organizationId, claim, now),
-		data: { status: "PENDING", leaseUntil: null },
-	});
-	return updated.count === 1;
+	return updateLiveClaim(
+		ctx.prisma,
+		ctx.organizationId,
+		claim,
+		dbSql`"status" = 'PENDING', "leaseUntil" = NULL`,
+	);
 }
 
 async function advanceResults(
@@ -518,27 +547,15 @@ export async function completeExperimentTrial(
 		const status = measured ? "SUCCEEDED" : "FAILED";
 		const result = measured ? JSON.stringify(outcome.result) : null;
 		const failureCode = measured ? null : outcome.failureCode;
-		// Read the database clock with both the campaign and trial locked.
-		const changed = await tx.$queryRaw<{ id: string }[]>`
-			WITH locked AS MATERIALIZED (
-				SELECT "id", "leaseUntil" FROM "EncodingExperimentTrial"
-				WHERE "organizationId" = ${ctx.organizationId}::uuid
-					AND "campaignId" = ${claim.campaignId}::uuid
-					AND "id" = ${claim.id}::uuid
-					AND "attempt" = ${claim.attempt}
-					AND "status" = 'RUNNING'
-				FOR UPDATE
-			)
-			UPDATE "EncodingExperimentTrial" trial
-			SET "result" = ${result}::jsonb, "failureCode" = ${failureCode},
+		const changed = await updateLiveClaim(
+			tx,
+			ctx.organizationId,
+			claim,
+			dbSql`"result" = ${result}::jsonb, "failureCode" = ${failureCode},
 				"status" = ${status}::"EncodingExperimentTrialState", "leaseUntil" = NULL,
-				"resultSequence" = ${campaign.resultSequence + 1}
-			FROM locked
-			WHERE trial."id" = locked."id"
-				AND locked."leaseUntil" > (clock_timestamp() AT TIME ZONE 'UTC')
-			RETURNING trial."id"
-		`;
-		if (changed.length) await advanceResults(tx, campaign);
-		return changed.length === 1;
+				"resultSequence" = ${campaign.resultSequence + 1}`,
+		);
+		if (changed) await advanceResults(tx, campaign);
+		return changed;
 	});
 }

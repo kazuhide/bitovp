@@ -10,6 +10,7 @@ import {
 	experimentResultPage,
 	experimentSelectionRows,
 	releaseExperimentTrial,
+	renewExperimentTrial,
 } from "./encoding-experiments";
 import { createTenantPrismaClient } from "./tenant-client";
 
@@ -179,15 +180,20 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			).rejects.toMatchObject({
 				status: 404,
 			});
-			const now = new Date();
-			const claimed = await claimExperimentTrial(ctx, capabilityId, now, 1_000);
+			const expire = async (id: string) => {
+				await a.$executeRaw`UPDATE "EncodingExperimentTrial"
+					SET "leaseUntil" = (clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 second'
+					WHERE "id" = ${id}::uuid`;
+			};
+			const claimed = await claimExperimentTrial(ctx, capabilityId, 30_000);
 			if (!claimed) throw new Error("First claim was not acquired");
 			expect(claimed.attempt).toBe(1);
-			expect(
-				await claimExperimentTrial(ctx, capabilityId, now, 1_000),
-			).toBeNull();
-			const later = new Date(now.getTime() + 2_000);
-			const retry = await claimExperimentTrial(ctx, capabilityId, later, 1_000);
+			expect(await renewExperimentTrial(ctx, claimed, 30_000)).toBe(true);
+			expect(await claimExperimentTrial(ctx, capabilityId, 30_000)).toBeNull();
+			await expire(claimed.id);
+			expect(await renewExperimentTrial(ctx, claimed, 30_000)).toBe(false);
+			expect(await releaseExperimentTrial(ctx, claimed)).toBe(false);
+			const retry = await claimExperimentTrial(ctx, capabilityId, 30_000);
 			if (!retry) throw new Error("Expired claim was not recovered");
 			expect(retry.attempt).toBe(2);
 			expect(
@@ -197,25 +203,20 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			).toBe(false);
 			let live = retry;
 			for (let attempt = 3; attempt <= 6; attempt++) {
-				expect(await releaseExperimentTrial(ctx, live, later)).toBe(true);
+				expect(await releaseExperimentTrial(ctx, live)).toBe(true);
 				expect(
 					await completeExperimentTrial(ctx, live, {
 						failureCode: "RELEASED",
 					}),
 				).toBe(false);
-				const next = await claimExperimentTrial(
-					ctx,
-					capabilityId,
-					later,
-					1_000,
-				);
+				const next = await claimExperimentTrial(ctx, capabilityId, 30_000);
 				if (!next) throw new Error("GPU contention exhausted the lease budget");
 				expect(next.attempt).toBe(attempt);
 				expect(next.expiredClaims).toBe(1);
 				live = next;
 			}
 			await controlExperimentCampaign(ctx, campaign.id, "cancel");
-			expect(await releaseExperimentTrial(ctx, live, later)).toBe(false);
+			expect(await releaseExperimentTrial(ctx, live)).toBe(false);
 			expect(
 				await completeExperimentTrial(ctx, live, {
 					failureCode: "STALE",
@@ -236,54 +237,64 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				capabilityId,
 				create,
 			);
-			const claimedAt = new Date();
 			const lease = 1_000;
-			const firstLease = await claimExperimentTrial(
-				ctx,
-				capabilityId,
-				claimedAt,
-				lease,
-			);
+			const firstLease = await claimExperimentTrial(ctx, capabilityId, lease);
 			if (!firstLease) throw new Error("Expected a live claim");
-			const locked = Promise.withResolvers<void>();
-			const unblock = Promise.withResolvers<void>();
+			let ready!: () => void;
+			let unblock!: () => void;
+			const locked = new Promise<void>((resolve) => {
+				ready = resolve;
+			});
+			const release = new Promise<void>((resolve) => {
+				unblock = resolve;
+			});
 			const locker = a.$transaction(async (tx) => {
 				await tx.$queryRaw`SELECT "id" FROM "EncodingExperimentCampaign"
 					WHERE "id" = ${exhausted.id}::uuid FOR UPDATE`;
-				locked.resolve();
-				await unblock.promise;
+				ready();
+				await release;
 			});
-			await Promise.race([locked.promise, locker]);
+			await Promise.race([locked, locker]);
 			try {
 				const waited = completeExperimentTrial(ctx, firstLease, {
 					failureCode: "TOO_LATE",
 				});
-				await sleep(claimedAt.getTime() + lease - Date.now() + 20);
-				unblock.resolve();
+				await sleep(lease + 20);
+				unblock();
 				expect(await waited).toBe(false);
 			} finally {
-				unblock.resolve();
+				unblock();
 				await locker;
 			}
-			for (let attempt = 2; attempt <= 3; attempt++)
-				expect(
-					await claimExperimentTrial(
-						ctx,
-						capabilityId,
-						new Date(claimedAt.getTime() + (attempt - 1) * lease),
-						lease,
-					),
-				).toMatchObject({ attempt, expiredClaims: attempt - 1 });
-			expect(
-				await claimExperimentTrial(
-					ctx,
-					capabilityId,
-					new Date(claimedAt.getTime() + 3 * lease),
-					lease,
-				),
-			).toBeNull();
+			for (let attempt = 2; attempt <= 3; attempt++) {
+				const next = await claimExperimentTrial(ctx, capabilityId, 30_000);
+				if (!next) throw new Error("Expected an expired lease retry");
+				expect(next).toMatchObject({ attempt, expiredClaims: attempt - 1 });
+				await expire(next.id);
+			}
+			expect(await claimExperimentTrial(ctx, capabilityId, 30_000)).toBeNull();
 			expect(await experimentResultPage(ctx, exhausted.id)).toMatchObject({
 				items: [{ status: "FAILED", failureCode: "WORKER_LEASE_EXPIRED" }],
+			});
+			const receipt = { scoreMilli: 90123 };
+			await enqueueExperimentBatch(
+				ctx,
+				exhausted.id,
+				"finish",
+				capabilityId,
+				async () => [{ ...trial, trialKey: "d".repeat(64) }],
+			);
+			const finishing = await claimExperimentTrial(ctx, capabilityId, 30_000);
+			if (!finishing) throw new Error("Expected a fresh claim");
+			expect(
+				await completeExperimentTrial(ctx, finishing, { result: receipt }),
+			).toBe(true);
+			expect(await experimentResultPage(ctx, exhausted.id)).toMatchObject({
+				items: [
+					{ status: "FAILED", resultSequence: 1 },
+					{ status: "SUCCEEDED", resultSequence: 2, result: receipt },
+				],
+				snapshot: 2,
 			});
 		});
 

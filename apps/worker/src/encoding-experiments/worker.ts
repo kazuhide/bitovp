@@ -76,7 +76,7 @@ async function runTrial(
 		renewal ??= (async () => {
 			if (
 				!(await organizationActive(ctx.organizationId)) ||
-				!(await renewExperimentTrial(ctx, claim, new Date(), leaseMs))
+				!(await renewExperimentTrial(ctx, claim, leaseMs))
 			)
 				attempt.abort();
 		})()
@@ -168,8 +168,7 @@ async function runTrial(
 		!signal.aborted &&
 		(await organizationActive(ctx.organizationId))
 	) {
-		if (outcome === "release")
-			await releaseExperimentTrial(ctx, claim, new Date());
+		if (outcome === "release") await releaseExperimentTrial(ctx, claim);
 		else await completeExperimentTrial(ctx, claim, outcome);
 	}
 }
@@ -249,7 +248,6 @@ async function main() {
 					const claim = await claimExperimentTrial(
 						ctx,
 						current.runtimeId,
-						new Date(),
 						leaseMs,
 					);
 					if (!claim) continue;

@@ -22,6 +22,7 @@ const credFindUnique = vi.fn(async () => ({ provider: "AWS_S3" }));
 // schedule rows would fire a START with no STOP. The tx double hands the
 // callback the same delegates so assertions see every write.
 const presetFindFirst = vi.fn();
+const presetCreate = vi.fn();
 /**
  * open alerts for the whole page come from ONE grouped read. The
  * default is an empty grouping — "looked, found none" — so every pre-existing
@@ -82,7 +83,7 @@ const prismaMock = {
 	},
 	liveChannel: { create, update, updateMany, findMany, findUnique },
 	$queryRaw: queryRaw,
-	preset: { findFirst: presetFindFirst },
+	preset: { findFirst: presetFindFirst, create: presetCreate },
 	liveSchedule: { createMany: scheduleCreateMany, findMany: scheduleFindMany },
 	alertEvent: { groupBy: alertGroupBy },
 	credential: {
@@ -135,6 +136,7 @@ vi.mock("@/lib/server/storage", () => ({
 	sealSourceIdentity: (...args: unknown[]) => sealSourceIdentity(...args),
 }));
 
+import { POST as savePreset } from "@/app/api/presets/route";
 import { ACTOR_HEADER } from "@/lib/auth/api-token-gate";
 import { GET, POST } from "./route";
 
@@ -157,7 +159,7 @@ function withAccount(base: Record<string, unknown> = plan) {
 	};
 }
 
-function moqPlan(): Record<string, unknown> {
+function moqPlan(kind: "FMP4" | "CMAF" = "FMP4"): Record<string, unknown> {
 	const raw = JSON.parse(
 		readFileSync(
 			join(
@@ -181,11 +183,17 @@ function moqPlan(): Record<string, unknown> {
 		],
 		liveManifests: [],
 		start: { ...raw.start, encodingOption: "CUSTOM" },
-		muxings: raw.muxings.map((muxing: { destination: object }) => ({
-			...muxing,
-			segmentLength: 1,
-			destination: { ...muxing.destination, outputKey: "relay" },
-		})),
+		muxings: raw.muxings.map(
+			(muxing: { destination: object; streamKey: string }) => ({
+				...muxing,
+				kind,
+				segmentLength: kind === "CMAF" ? 0.5 : 1,
+				...(kind === "CMAF" && muxing.streamKey !== "a128"
+					? { framesPerCmafChunk: 3 }
+					: {}),
+				destination: { ...muxing.destination, outputKey: "relay" },
+			}),
+		),
 	});
 }
 
@@ -282,6 +290,66 @@ describe("POST /api/live-channels", () => {
 				draftVersion: "DRAFT_18",
 			},
 		});
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+
+	it("saves and launches a CMAF MoQ template with its chunk settings", async () => {
+		const candidate = moqPlan("CMAF");
+		presetCreate.mockResolvedValueOnce({ id: PRESET_ID, revision: 1 });
+		const saved = await savePreset(
+			new Request("http://test/api/presets", {
+				method: "POST",
+				body: JSON.stringify({
+					kind: "LIVE_PLAN",
+					name: "CMAF MoQ",
+					plan: candidate,
+				}),
+			}),
+		);
+		expect(saved.status).toBe(201);
+		const persisted = presetCreate.mock.calls[0]?.[0].data;
+		expect(persisted).toMatchObject({
+			kind: "LIVE_PLAN",
+			body: { muxings: candidate.muxings, liveManifests: [] },
+		});
+
+		presetFindFirst.mockResolvedValueOnce({ id: PRESET_ID });
+		prismaMock.credential.findMany.mockResolvedValueOnce([
+			{ id: "00000000-0000-4000-8000-000000000002", provider: "MOQ" },
+		]);
+		const response = await POST(
+			postRequest({
+				plan: persisted.body,
+				presetId: PRESET_ID,
+				presetRevision: 1,
+			}),
+		);
+		expect(response.status).toBe(201);
+		const data = create.mock.calls[0]?.[0].data;
+		expect(data).toMatchObject({ presetId: PRESET_ID, presetRevision: 1 });
+		expect(data.plan.muxings).toEqual(persisted.body.muxings);
+		expect(
+			data.stepLog.filter((step: { kind: string }) =>
+				step.kind.startsWith("CREATE_MUXING_"),
+			),
+		).toEqual(
+			["v1080", "v720", "v360", "a128"].map((key) =>
+				expect.objectContaining({
+					kind: "CREATE_MUXING_CMAF",
+					payload: expect.objectContaining({
+						segmentLength: 0.5,
+						...(key !== "a128" ? { framesPerCmafChunk: 3 } : {}),
+					}),
+					refs: expect.objectContaining({
+						outputId: "output:relay",
+						streamId: `stream:${key}`,
+					}),
+				}),
+			),
+		);
+		expect(data.stepLog).toContainEqual(
+			expect.objectContaining({ kind: "START_LIVE_ENCODING" }),
+		);
 		expect(queueAdd).toHaveBeenCalledOnce();
 	});
 

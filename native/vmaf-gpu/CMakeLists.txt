@@ -51,7 +51,7 @@ target_compile_options(bitovp-vmaf PRIVATE -Wall -Wextra -Werror)
 file(GLOB_RECURSE OWNED_SOURCES CONFIGURE_DEPENDS
   LIST_DIRECTORIES false RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
   include/*.hpp src/*.hpp src/*.h src/*.cpp src/*.c src/*.cu src/*.cuh
-  src/*.comp src/*.glsl src/*.json src/*.py tests/*.cpp tests/*.cu tests/*.py
+  src/*.comp src/*.glsl src/*.json src/*.py tests/*.c tests/*.cpp tests/*.cu tests/*.py
   tests/*.hpp tests/*.h tests/*.cuh)
 list(APPEND OWNED_SOURCES build.py benchmark.py upstream.lock.json)
 list(SORT OWNED_SOURCES)

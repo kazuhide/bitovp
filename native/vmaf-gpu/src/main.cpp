@@ -67,15 +67,18 @@ bool same_gpu_driver(const DeviceInfo &before, const DeviceInfo &after) {
            before.driver_version_source == after.driver_version_source;
 }
 
-std::string file_hash(const std::string &path) {
+std::string file_hash(const std::string &path, std::string *snapshot = nullptr) {
     std::ifstream in(path, std::ios::binary);
     if (!in) throw std::runtime_error("Cannot open file for SHA-256");
     std::unique_ptr<AVSHA, decltype(&av_free)> state(av_sha_alloc(), &av_free);
     if (!state) throw std::bad_alloc();
     if (av_sha_init(state.get(), 256)) throw std::runtime_error("Cannot initialize SHA-256");
     std::array<char, 1 << 16> buffer{};
-    while (in.read(buffer.data(), buffer.size()) || in.gcount())
-        av_sha_update(state.get(), reinterpret_cast<const std::uint8_t *>(buffer.data()), in.gcount());
+    while (in.read(buffer.data(), buffer.size()) || in.gcount()) {
+        const auto count = static_cast<std::size_t>(in.gcount());
+        av_sha_update(state.get(), reinterpret_cast<const std::uint8_t *>(buffer.data()), count);
+        if (snapshot) snapshot->append(buffer.data(), count);
+    }
     if (!in.eof()) throw std::runtime_error("Cannot read file for SHA-256");
     std::array<std::uint8_t, 32> digest{};
     av_sha_final(state.get(), digest.data());
@@ -349,17 +352,21 @@ int main(int argc, char **argv) {
         if (options.metric == "cambi")
             return run_banding(options, [&] { return make_backend(options); },
                                BITOVP_NATIVE_SOURCE_SHA256, argv[0]);
+        const bool resident_decode = options.decode == "cuda";
+        const bool attest_inputs = options.attest_decoder_runtime && options.inflight_frames == 1 &&
+            !resident_decode && !options.max_frames;
         // Hashes are measured separately: warm file-cache reads are not scoring.
         const auto reference_hash = file_hash(options.reference);
         const auto distorted_hash = file_hash(options.distorted);
         std::map<std::string, std::string> model_hashes;
         auto models = options.models;
-        for (const auto &model : models) model_hashes[model.id] = file_hash(model.path);
+        for (auto &model : models) {
+            // Both oracles must load the very bytes included in the attested digest.
+            auto *snapshot = attest_inputs ? &model.bytes.emplace() : nullptr;
+            model_hashes[model.id] = file_hash(model.path, snapshot);
+        }
         const auto start = Clock::now();
-        const bool resident_decode = options.decode == "cuda";
         const int decode_device = options.device.device_index < 0 ? 0 : options.device.device_index;
-        const bool attest_inputs = options.attest_decoder_runtime && options.inflight_frames == 1 &&
-            !resident_decode && !options.max_frames;
         const auto decoder_runtime = attest_inputs ? capture_decoder_runtime() : std::nullopt;
         Decoder reference(options.reference, options.width, options.height, options.bits, options.decode_threads,
                           resident_decode, decode_device, attest_inputs);

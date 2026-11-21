@@ -205,6 +205,7 @@ function clipsFor(
 function eventCandidates(
 	input: LocalStoryInput,
 	event: LocalStoryEvent,
+	quotePaddingFrames: 0 | 3,
 ): Span[][] {
 	const shots = event.refs.map((ref) =>
 		required(input.shots.find((s) => s.ref === ref)),
@@ -258,7 +259,10 @@ function eventCandidates(
 			const last = sceneFrameBounds
 				? Math.max(to, sceneFrameBounds.toFrame)
 				: timeMap.editingEndFrame - timeMap.editingStartFrame;
-			return { from: Math.max(first, from - 3), to: Math.min(last, to + 3) };
+			return {
+				from: Math.max(first, from - quotePaddingFrames),
+				to: Math.min(last, to + quotePaddingFrames),
+			};
 		});
 		candidates.push(speechSafe(input, spans));
 	}
@@ -271,8 +275,11 @@ export function localStoryEventMinimumDurationFrames(
 	input: LocalStoryInput,
 	event: LocalStoryEvent,
 ): number | undefined {
+	const candidates = eventCandidates(input, event, 3);
+	if (input.sceneFrameBounds)
+		candidates.push(...eventCandidates(input, event, 0));
 	let minimum: number | undefined;
-	for (const spans of eventCandidates(input, event)) {
+	for (const spans of candidates) {
 		if (!clipsFor(input, spans)) continue;
 		const frames = count(spans);
 		if (minimum === undefined || frames < minimum) minimum = frames;
@@ -339,19 +346,17 @@ export function createLocalStoryClipSelector(options: {
 	const openingShots = input.trailerSelection
 		? new Map(input.shots.map((shot) => [shot.ref, shot]))
 		: undefined;
-	const candidates = new Map<string, Span[][]>();
-	return (selection: {
-		blueprint: unknown;
-		targetDurationFrames: number;
-	}): LocalStorySelectionResult => {
-		const target = checkedTarget(selection.targetDurationFrames);
-		const blueprint = validateLocalStoryBlueprint({
-			ledger,
-			blueprint: selection.blueprint,
-		});
-		// Five beats, four event alternatives and at most two timed variants give
-		// at most 8^5 states. Keep that bounded space so a long prefix cannot evict
-		// a short plan needed by a later mandatory beat.
+	const paddedCandidates = new Map<string, Span[][]>();
+	const unpaddedCandidates = new Map<string, Span[][]>();
+	function search(
+		blueprint: LocalStoryBlueprint,
+		target: number,
+		quotePaddingFrames: 0 | 3,
+	): State | undefined {
+		const candidates =
+			quotePaddingFrames === 0 ? unpaddedCandidates : paddedCandidates;
+		// Five beats, four event alternatives and at most two variants per event
+		// give at most 8^5 states in each pass.
 		const maxStates = 32_768,
 			maxExpansions = 40_000;
 		const lastBeat = blueprint.beats.at(-1);
@@ -373,6 +378,7 @@ export function createLocalStoryClipSelector(options: {
 						alternatives = eventCandidates(
 							input,
 							required(events.get(eventId)),
+							quotePaddingFrames,
 						);
 						candidates.set(eventId, alternatives);
 					}
@@ -421,10 +427,25 @@ export function createLocalStoryClipSelector(options: {
 					);
 				})
 				.slice(0, maxStates);
-			if (!beam.length)
-				throw new LocalStoryError("LOCAL_STORY_NO_FITTING_PLAN");
+			if (!beam.length) return undefined;
 		}
-		const selected = required(beam[0]);
+		return required(beam[0]);
+	}
+	return (selection: {
+		blueprint: unknown;
+		targetDurationFrames: number;
+	}): LocalStorySelectionResult => {
+		const target = checkedTarget(selection.targetDurationFrames);
+		const blueprint = validateLocalStoryBlueprint({
+			ledger,
+			blueprint: selection.blueprint,
+		});
+		// Keep successful padded plans. If nothing fits the scene, try the same
+		// search with complete speech and no optional padding.
+		const selected =
+			search(blueprint, target, 3) ??
+			(input.sceneFrameBounds ? search(blueprint, target, 0) : undefined);
+		if (!selected) throw new LocalStoryError("LOCAL_STORY_NO_FITTING_PLAN");
 		return {
 			policyVersion: input.normalizationReceiptHash
 				? "aisa-prepared-local-story-window-v1"

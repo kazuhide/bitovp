@@ -108,6 +108,7 @@ function sceneQuoteFixture(options: {
 	startUs: number;
 	endUs: number;
 	sceneStart?: number;
+	priorSpeechEndUs?: number;
 	unscoped?: boolean;
 }) {
 	const sceneStart = options.sceneStart ?? 20;
@@ -157,7 +158,18 @@ function sceneQuoteFixture(options: {
 			timeMap,
 			normalization,
 		}),
-		segments: [{ startUs: options.startUs, endUs: options.endUs, text }],
+		segments: [
+			...(options.priorSpeechEndUs === undefined
+				? []
+				: [
+						{
+							startUs: 20_020_000,
+							endUs: options.priorSpeechEndUs,
+							text: "An earlier utterance.",
+						},
+					]),
+			{ startUs: options.startUs, endUs: options.endUs, text },
+		],
 		...(options.unscoped ? {} : { storySceneId: scopedSceneId }),
 	});
 	const { ref } = item(
@@ -222,7 +234,7 @@ describe("quoted speech in a prepared scene scope", () => {
 				value.input,
 				item(value.ledger.events[0]),
 			),
-		).toBe(35);
+		).toBe(31);
 		expect(localStorySelectedPlanIssues({ ...value, selection })).toEqual([]);
 		expect(
 			localStoryClipsWithinSceneScope({
@@ -232,6 +244,72 @@ describe("quoted speech in a prepared scene scope", () => {
 				clips: selection.clips,
 			}),
 		).toBe(true);
+	});
+	it("uses the complete quote when padding pulls prior speech outside the scene", () => {
+		const value = sceneQuoteFixture({
+			sceneStart: 20.01,
+			priorSpeechEndUs: 20_350_000,
+			startUs: 20_390_000,
+			endUs: 21_360_000,
+		});
+		expect(value.input.sceneFrameBounds).toEqual({
+			fromFrame: 602,
+			toFrame: 1200,
+		});
+		const selection = selectLocalStoryClips(value);
+		expect(selection.clips).toEqual([
+			{
+				sceneId: scopedSceneId,
+				shotIndex: 0,
+				sourceInUs: 20_366_667,
+				durationFrames: 30,
+			},
+		]);
+		expect(localStorySelectedPlanIssues({ ...value, selection })).toEqual([]);
+		expect(
+			localStoryEventMinimumDurationFrames(
+				value.input,
+				item(value.ledger.events[0]),
+			),
+		).toBe(30);
+	});
+	it("uses the complete quote for a shorter budget and keeps padding when it fits", () => {
+		const value = sceneQuoteFixture({ startUs: 25_000_000, endUs: 26_000_000 });
+		const padded = selectLocalStoryClips(value);
+		expect(padded.actualDurationFrames).toBe(36);
+		expect(padded.clips[0]?.sourceInUs).toBe(24_900_000);
+		const exact = selectLocalStoryClips({ ...value, targetDurationFrames: 30 });
+		expect(exact.actualDurationFrames).toBe(30);
+		expect(exact.clips[0]?.sourceInUs).toBe(25_000_000);
+		expect(
+			localStorySelectedPlanIssues({ ...value, selection: exact }),
+		).toEqual([]);
+		expect(
+			localStoryEventMinimumDurationFrames(
+				value.input,
+				item(value.ledger.events[0]),
+			),
+		).toBe(30);
+		expect(() =>
+			selectLocalStoryClips({ ...value, targetDurationFrames: 29 }),
+		).toThrow("LOCAL_STORY_NO_FITTING_PLAN");
+	});
+	it("does not cut preceding speech that intersects the first required quote frame", () => {
+		const value = sceneQuoteFixture({
+			sceneStart: 20.01,
+			priorSpeechEndUs: 20_380_000,
+			startUs: 20_390_000,
+			endUs: 21_360_000,
+		});
+		expect(() => selectLocalStoryClips(value)).toThrow(
+			"LOCAL_STORY_NO_FITTING_PLAN",
+		);
+		expect(
+			localStoryEventMinimumDurationFrames(
+				value.input,
+				item(value.ledger.events[0]),
+			),
+		).toBeUndefined();
 	});
 	it("rejects speech before the available prepared frame even if its padding fits", () => {
 		const value = sceneQuoteFixture({

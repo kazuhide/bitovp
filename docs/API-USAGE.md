@@ -197,13 +197,16 @@ rejects writes, including queue operations. [Full contract](user-guide/LIBRARY-A
   organization. The JSON fields are `operation: "LIVE_MOQ_PLAYBACK"`,
   `attemptId`, `channelId`, `runId`, and `stage`. Accepted stage values are
   `STARTED`, `FIRST_FRAME`, `FAILED`, and `CANCELED`. A terminal event
-  requires integer `elapsedMs` between 0 and 600,000. The server accepts
-  outcomes for up to 11 minutes from the accepted start. Accepted events and
-  identical replays return 204. The first terminal event wins. Rows are
-  available for 90 days and the worker removes expired rows hourly. The
-  organization's `auditHistory` reset category also deletes these records. Allowed
-  background submissions are excluded from access history. The access gate
-  still records denials.
+  requires integer `elapsedMs` between 0 and 600,000. New starts must match the
+  current running MoQ run and its stored output binding. The browser measures
+  `FIRST_FRAME` at the first observed video presentation or the first readable
+  nonblank Canvas mirror sample. The server accepts outcomes for up to 11
+  minutes from the accepted start. The first terminal event wins. While collection
+  is enabled, accepted events and identical replays of retained attempts return
+  204, including a start replay after its run is deleted. The worker removes
+  records older than 90 days hourly. The organization's `auditHistory` reset
+  category also deletes these records. Allowed background submissions are
+  excluded from access history. The access gate still records denials.
 
 ## Retry a creation safely
 

@@ -53,30 +53,43 @@ export function trackMoqPlaybackOperation(
 		channelId,
 		runId,
 	} as const;
+	let startAcknowledged = false;
+	let settled = false;
+	function onPageHide() {
+		settle("CANCELED", undefined, false);
+	}
+	window.addEventListener("pagehide", onPageHide);
 	const start = sendOperationAttempt(organizationId, {
 		...identity,
 		stage: "STARTED",
+	}).then((acknowledged) => {
+		startAcknowledged = acknowledged;
+		if (!acknowledged) window.removeEventListener("pagehide", onPageHide);
+		return acknowledged;
 	});
-	let settled = false;
-	return (
+	function settle(
 		stage: ResultStage,
 		elapsedMs = Math.max(0, Math.round(performance.now() - startedAt)),
-	) => {
+		waitForAcknowledgement = true,
+	) {
 		if (settled) return;
 		settled = true;
+		window.removeEventListener("pagehide", onPageHide);
 		if (elapsedMs > MAX_OPERATION_ELAPSED_MS) return;
-		void start.then((acknowledged) => {
-			// The server pairs results with a previously accepted start.
-			if (
-				!acknowledged ||
-				performance.now() - startedAt > RESULT_RECEIVE_WINDOW_MS
-			)
-				return;
-			return sendOperationAttempt(organizationId, {
+		const send = () => {
+			if (performance.now() - startedAt > RESULT_RECEIVE_WINDOW_MS) return;
+			void sendOperationAttempt(organizationId, {
 				...identity,
 				stage,
 				elapsedMs,
 			});
-		});
-	};
+		};
+		// Start the keepalive in the pagehide handler when a start is known.
+		if (startAcknowledged) send();
+		else if (waitForAcknowledgement)
+			void start.then((acknowledged) => {
+				if (acknowledged) send();
+			});
+	}
+	return (stage: ResultStage, elapsedMs?: number) => settle(stage, elapsedMs);
 }

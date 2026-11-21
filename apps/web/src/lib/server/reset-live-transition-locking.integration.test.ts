@@ -1,5 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { AesGcmCipher } from "@bitovp/core";
+import {
+	AesGcmCipher,
+	FEATURE_FLAGS_KEY,
+	moqRunNamespaceSuffix,
+	type StepLogEntry,
+} from "@bitovp/core";
 import {
 	type AppPrismaClient,
 	type AppTransactionClient,
@@ -12,6 +17,7 @@ import { expect, it, vi } from "vitest";
 import { requiredResetCategories } from "@/lib/reset-selection";
 import { createProviderLifecycleReconciler } from "../../../../worker/src/live/provider-lifecycle";
 import { fakeSdk } from "../../../../worker/src/orchestrator/fake-sdk";
+import { recordOperationAttempt } from "./operation-attempt-collector";
 import { deleteOperationalData, ResetRaceLost } from "./reset";
 import { deleteSelectedData } from "./selected-reset";
 
@@ -42,6 +48,21 @@ function barrier() {
 	});
 	return { ready, release };
 }
+async function waitsForLock(
+	admin: AppPrismaClient,
+	blocker: number,
+	waiter: number,
+): Promise<boolean> {
+	const until = Date.now() + 5_000;
+	while (Date.now() < until) {
+		const [row] = await admin.$queryRaw<
+			{ blocked: boolean }[]
+		>`SELECT ${blocker}::integer = ANY(pg_blocking_pids(${waiter}::integer)) AS blocked`;
+		if (row?.blocked) return true;
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+	return false;
+}
 function instrument(
 	base: AppPrismaClient,
 	decorate: (tx: AppTransactionClient) => Promise<AppTransactionClient>,
@@ -61,6 +82,40 @@ function instrument(
 			return typeof value === "function" ? value.bind(target) : value;
 		},
 	});
+}
+
+function playbackSteps(runId: string, encodingId: string) {
+	return [
+		{
+			step: "encoding:main",
+			kind: "CREATE_ENCODING",
+			status: "DONE",
+			payload: {},
+			refs: {},
+			resourceId: encodingId,
+		},
+		{
+			step: "output:moq",
+			kind: "CREATE_OUTPUT_MOQ",
+			status: "DONE",
+			payload: {
+				credentialId: randomUUID(),
+				trackNamespace: [`test${moqRunNamespaceSuffix(runId)}`],
+				draftVersion: "DRAFT_18",
+			},
+			refs: {},
+			resourceId: randomUUID(),
+			startedAt: "2026-11-21T00:00:00Z",
+		},
+		{
+			step: "muxing:video",
+			kind: "CREATE_MUXING_FMP4",
+			status: "DONE",
+			payload: {},
+			refs: { encodingId: "encoding:main", outputId: "output:moq" },
+			resourceId: randomUUID(),
+		},
+	] satisfies StepLogEntry[];
 }
 
 it
@@ -179,19 +234,7 @@ it
 				}),
 			]);
 			await started.ready;
-			const until = Date.now() + 5_000;
-			let blocked = false;
-			while (Date.now() < until) {
-				blocked =
-					(
-						await admin.$queryRaw<
-							{ blocked: boolean }[]
-						>`SELECT ${resetPid}::integer = ANY(pg_blocking_pids(${ownerPid}::integer)) AS blocked`
-					)[0]?.blocked ?? false;
-				if (blocked) break;
-				await new Promise((r) => setTimeout(r, 5));
-			}
-			expect(blocked).toBe(true);
+			expect(await waitsForLock(admin, resetPid, ownerPid)).toBe(true);
 			releaseReset.release();
 			expect((await reset)[0]?.status).toBe("fulfilled");
 			expect((await owner)[0]?.status).toBe("fulfilled");
@@ -332,19 +375,7 @@ it.runIf(Boolean(runtimeUrl && adminUrl))(
 			});
 			reset = Promise.allSettled([deleteOperationalData(resetClient)]);
 			await resetStarted.ready;
-			const until = Date.now() + 5_000;
-			let blocked = false;
-			while (Date.now() < until) {
-				blocked =
-					(
-						await admin.$queryRaw<
-							{ blocked: boolean }[]
-						>`SELECT ${admissionPid}::integer = ANY(pg_blocking_pids(${resetPid}::integer)) AS blocked`
-					)[0]?.blocked ?? false;
-				if (blocked) break;
-				await new Promise((r) => setTimeout(r, 5));
-			}
-			expect(blocked).toBe(true);
+			expect(await waitsForLock(admin, admissionPid, resetPid)).toBe(true);
 			releaseAdmission.release();
 			expect((await admission)[0]?.status).toBe("fulfilled");
 			const [outcome] = await reset;
@@ -389,6 +420,169 @@ it.runIf(Boolean(runtimeUrl && adminUrl))(
 			await admin.organization.deleteMany({
 				where: { id: { in: organizationIds } },
 			});
+			await runtime.$disconnect();
+			await admin.$disconnect();
+		}
+	},
+	20_000,
+);
+
+it
+	.runIf(Boolean(runtimeUrl && adminUrl))
+	.each(["operational", "selected"] as const)(
+	"leaves no late analytics attempt after a successful %s reset",
+	async (kind) => {
+		const { admin, runtime } = clients();
+		const org = randomUUID();
+		const tenant = createTenantPrismaClient(runtime, org);
+		const collectorHasLock = barrier();
+		const releaseCollector = barrier();
+		const resetStarted = barrier();
+		const attemptId = randomUUID();
+		const cipher = new AesGcmCipher(randomBytes(32));
+		let collectorPid = 0;
+		let resetPid = 0;
+		let collector: Promise<PromiseSettledResult<Response>[]> | undefined;
+		let reset: Promise<PromiseSettledResult<unknown>[]> | undefined;
+		try {
+			await admin.organization.create({
+				data: { id: org, name: "Analytics reset probe", slug: `test-${org}` },
+			});
+			await tenant.appSetting.create({
+				data: {
+					key: FEATURE_FLAGS_KEY,
+					value: { operationAnalytics: true },
+				},
+			});
+			const channel = await tenant.liveChannel.create({
+				data: { name: "Analytics reset probe", status: "STOPPED", plan: {} },
+			});
+			const runId = randomUUID();
+			const encodingId = randomUUID();
+			const run = await tenant.liveChannelRun.create({
+				data: {
+					id: runId,
+					liveChannelId: channel.id,
+					seq: 1,
+					// Retain a readable MoQ binding while giving the legacy
+					// reset synthetic proof that this encoder has stopped.
+					status: "RUNNING",
+					bitmovinEncodingId: encodingId,
+					encoderStoppedConfirmedFor: encodingId,
+					stepLog: playbackSteps(runId, encodingId),
+					outputPrefix: "",
+				},
+			});
+			const lockTable = kind === "selected" ? "AppSetting" : "LiveChannel";
+			const intakeClient = instrument(tenant, async (tx) => {
+				const [backend] = await tx.$queryRaw<
+					{ pid: number }[]
+				>`SELECT pg_backend_pid() AS pid`;
+				collectorPid = backend?.pid ?? 0;
+				return new Proxy(tx, {
+					get(target, key) {
+						if (key === "$queryRaw")
+							return async (
+								query: TemplateStringsArray,
+								...args: unknown[]
+							) => {
+								const rows = await target.$queryRaw(query, ...args);
+								if (query.join("?").includes(`FROM "${lockTable}"`)) {
+									collectorHasLock.release();
+									await releaseCollector.ready;
+								}
+								return rows;
+							};
+						return Reflect.get(target, key);
+					},
+				});
+			});
+			collector = Promise.allSettled([
+				recordOperationAttempt(
+					intakeClient,
+					{ organizationId: org, actor: "reset-probe-operator" },
+					{
+						attemptId,
+						channelId: channel.id,
+						runId: run.id,
+						operation: "LIVE_MOQ_PLAYBACK",
+						stage: "STARTED",
+					},
+				),
+			]);
+			await Promise.race([
+				collectorHasLock.ready,
+				collector.then((result) => {
+					throw new Error("Collector did not acquire its transaction lock", {
+						cause: result,
+					});
+				}),
+			]);
+			const resetClient = instrument(tenant, async (tx) => {
+				const [backend] = await tx.$queryRaw<
+					{ pid: number }[]
+				>`SELECT pg_backend_pid() AS pid`;
+				resetPid = backend?.pid ?? 0;
+				resetStarted.release();
+				return tx;
+			});
+			reset = Promise.allSettled([
+				kind === "operational"
+					? deleteOperationalData(resetClient)
+					: deleteSelectedData(
+							resetClient,
+							requiredResetCategories([
+								"liveChannels",
+								"auditHistory",
+								"applicationSettings",
+							]),
+							cipher,
+						),
+			]);
+			await Promise.race([
+				resetStarted.ready,
+				reset.then((result) => {
+					throw new Error("Reset did not start", { cause: result });
+				}),
+			]);
+			expect(await waitsForLock(admin, collectorPid, resetPid)).toBe(true);
+			releaseCollector.release();
+			expect((await collector)[0]).toMatchObject({
+				status: "fulfilled",
+				value: { status: 204 },
+			});
+			const [outcome] = await reset;
+			if (kind === "operational") {
+				// The legacy API returns a conflict and the next attempt gets a
+				// fresh snapshot. The selected API retries these internally.
+				expect(outcome?.status).toBe("rejected");
+				if (outcome?.status === "rejected")
+					expect(outcome.reason).toMatchObject({ code: "P2034" });
+				expect(await tenant.operationAttempt.count()).toBe(1);
+				await expect(deleteOperationalData(tenant)).resolves.toMatchObject({
+					counts: { operationAttempt: 1, liveChannelRun: 1 },
+				});
+			} else {
+				expect(outcome).toMatchObject({
+					status: "fulfilled",
+					value: { counts: { operationAttempt: 1, liveChannelRun: 1 } },
+				});
+			}
+			expect(await tenant.operationAttempt.count()).toBe(0);
+			expect(await tenant.liveChannelRun.count()).toBe(0);
+		} finally {
+			releaseCollector.release();
+			await collector;
+			await reset;
+			await admin.operationAttempt.deleteMany({
+				where: { organizationId: org },
+			});
+			await admin.appSetting.deleteMany({ where: { organizationId: org } });
+			await admin.liveChannel.deleteMany({ where: { organizationId: org } });
+			await admin.resetCleanupTask.deleteMany({
+				where: { organizationId: org },
+			});
+			await admin.organization.deleteMany({ where: { id: org } });
 			await runtime.$disconnect();
 			await admin.$disconnect();
 		}

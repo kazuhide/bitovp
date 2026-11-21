@@ -63,13 +63,16 @@ describe("owned MoQ canvas observation surface", () => {
 	it("counts changed pixels only after a readable baseline and rejects blank or stale draws", () => {
 		const f = fixture();
 		const surface = createMoqCanvasSurface(f.canvas, f.host);
+		expect(surface?.hasVisibleImage()).toBe(false);
 		expect(surface?.changed()).toBe(false);
+		expect(surface?.hasVisibleImage()).toBe(true);
 		expect(surface?.changed()).toBe(false);
 		f.pixels([11, 20, 30, 255, 100, 110, 120, 255]);
 		expect(surface?.changed()).toBe(true);
 		expect(surface?.changed()).toBe(false);
 		f.pixels([0, 0, 0, 255, 0, 0, 0, 255]);
 		expect(surface?.changed()).toBe(false);
+		expect(surface?.hasVisibleImage()).toBe(false);
 		f.pixels([11, 20, 30, 255, 100, 110, 120, 255]);
 		expect(surface?.changed()).toBe(false);
 		surface?.dispose();

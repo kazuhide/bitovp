@@ -128,6 +128,12 @@ test("independent path examples preserve exact classifications, reasons and over
 			["access-isolation", "live-lifecycle"],
 		],
 		[
+			"apps/web/src/lib/server/operation-attempt-collector.ts",
+			"mapped",
+			["operation-analytics"],
+			["access-isolation", "live-lifecycle"],
+		],
+		[
 			"apps/worker/src/operation-analytics/retention.ts",
 			"mapped",
 			["operation-analytics"],

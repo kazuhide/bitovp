@@ -13,7 +13,8 @@ vi.mock("@/lib/auth/tenancy", async (original) => ({
 	requireOrganizationAdmin: mocks.admin,
 }));
 vi.mock("@/lib/server/feature-flags", () => ({
-	readFeatureFlags: mocks.readFlags,
+	readFeatureFlags: async () => ({ operationAnalytics: false }),
+	readStoredFeatureFlags: mocks.readFlags,
 }));
 vi.mock("@/lib/server/operation-analytics", () => ({
 	readWeeklyOperationAnalytics: mocks.readWeeks,
@@ -58,9 +59,26 @@ describe("GET /api/operation-analytics", () => {
 		expect(mocks.prisma).toHaveBeenCalledExactlyOnceWith(organizationId, {
 			readOnly: true,
 		});
+		expect(mocks.readFlags).toHaveBeenCalledExactlyOnceWith(prisma);
 		expect(mocks.readWeeks).toHaveBeenCalledExactlyOnceWith(
 			prisma,
 			organizationId,
 		);
+	});
+
+	it("returns an uncached error when the aggregate is available but settings cannot be read", async () => {
+		const prisma = {};
+		mocks.admin.mockResolvedValue({ organizationId });
+		mocks.prisma.mockReturnValue(prisma);
+		mocks.readWeeks.mockResolvedValue([
+			{ weekStart: "2026-11-16", started: 2 },
+		]);
+		mocks.readFlags.mockRejectedValue(new Error("Settings read failed"));
+
+		const response = await GET(new Request(url));
+		expect(response.status).toBe(503);
+		expect(response.headers.get("cache-control")).toBe("private, no-store");
+		expect(await response.json()).not.toHaveProperty("isCollecting");
+		expect(mocks.readFlags).toHaveBeenCalledExactlyOnceWith(prisma);
 	});
 });

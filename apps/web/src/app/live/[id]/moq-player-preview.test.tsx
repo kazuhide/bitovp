@@ -1,6 +1,7 @@
 import { DEFAULT_FEATURE_FLAGS } from "@bitovp/core";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useLayoutEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentOrganizationContext } from "@/components/providers";
 import { FeatureFlagsProvider } from "@/lib/feature-flags/context";
@@ -107,6 +108,11 @@ const analyticsView = (runId = RUN, active = true) => (
 );
 const operationEvents = () =>
 	mocks.operation.mock.calls.map(([, init]) => JSON.parse(init.body));
+
+function DuringCommit({ action }: { action: () => void }) {
+	useLayoutEffect(action, [action]);
+	return null;
+}
 
 beforeEach(() => {
 	vi.resetAllMocks();
@@ -300,6 +306,72 @@ describe("MoQ playback operation analytics", () => {
 			elapsedMs: expect.any(Number),
 		});
 		expect(mocks.api).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{ runId: RUN, active: false, event: "timeupdate" },
+		{ runId: NEXT, active: true, event: "error" },
+	])("settles cancellation before a stale $event during commit", async ({
+		runId,
+		active,
+		event,
+	}) => {
+		const rendered = renderWithQuery(analyticsView());
+		await userEvent.click(screen.getByRole("button", { name: "Play" }));
+		await waitFor(() => expect(source.play).toHaveBeenCalledOnce());
+		const previousVideo = video;
+		await act(async () => {
+			rendered.rerender(
+				<>
+					{analyticsView(runId, active)}
+					<DuringCommit
+						action={() => {
+							frames = 3;
+							previousVideo.currentTime = 1;
+							previousVideo.dispatchEvent(new Event(event));
+						}}
+					/>
+				</>,
+			);
+		});
+		const [started, result] = operationEvents();
+		expect(started.stage).toBe("STARTED");
+		expect(result).toEqual({
+			...started,
+			stage: "CANCELED",
+			elapsedMs: expect.any(Number),
+		});
+		expect(operationEvents()).toHaveLength(2);
+	});
+
+	it("dispatches one keepalive cancellation during pagehide if start is acknowledged", async () => {
+		const rendered = renderWithQuery(analyticsView());
+		await userEvent.click(screen.getByRole("button", { name: "Play" }));
+		const [started] = operationEvents();
+		window.dispatchEvent(new Event("pagehide"));
+		expect(operationEvents()).toEqual([
+			started,
+			{ ...started, stage: "CANCELED", elapsedMs: expect.any(Number) },
+		]);
+		expect(mocks.operation.mock.calls.at(-1)?.[1].keepalive).toBe(true);
+		window.dispatchEvent(new Event("pagehide"));
+		rendered.unmount();
+		expect(mocks.operation).toHaveBeenCalledTimes(2);
+	});
+
+	it("preserves an unacknowledged outcome when the document is left", async () => {
+		let acknowledge!: (response: { ok: boolean }) => void;
+		mocks.operation.mockReturnValueOnce(
+			new Promise((resolve) => {
+				acknowledge = resolve;
+			}),
+		);
+		const rendered = renderWithQuery(analyticsView());
+		await userEvent.click(screen.getByRole("button", { name: "Play" }));
+		window.dispatchEvent(new Event("pagehide"));
+		rendered.unmount();
+		await act(async () => acknowledge({ ok: true }));
+		expect(mocks.operation).toHaveBeenCalledOnce();
 	});
 
 	it("continues playback when the start request throws and skips sending its result", async () => {

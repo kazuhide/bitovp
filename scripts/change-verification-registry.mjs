@@ -73,7 +73,9 @@ export const RULES = Object.freeze(
 		},
 		{
 			id: "operation-analytics",
-			patterns: [/(^|\/)(operation-analytics|operation-attempts)([/.]|$)/],
+			patterns: [
+				/(^|\/)(operation-analytics|operation-attempts|operation-attempt-collector|moq-playback-run)([/.]|$)/,
+			],
 			profiles: ["access-isolation", "live-lifecycle"],
 		},
 		{

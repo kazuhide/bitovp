@@ -1,6 +1,7 @@
 import "server-only";
 import {
 	cipherFromEnv,
+	FEATURE_FLAGS_KEY,
 	type SecretCipher,
 	USAGE_BACKFILL_SETTING_PREFIX,
 } from "@bitovp/core";
@@ -132,6 +133,11 @@ export async function deleteSelectedData(
 		try {
 			const outcome = await prisma.$transaction(
 				async (tx) => {
+					if (selected.has("applicationSettings")) {
+						// The collector locks the flag before its Live channel. Take
+						// the same first lock order when both will be deleted.
+						await tx.$queryRaw`SELECT "key" FROM "AppSetting" WHERE "key" = ${FEATURE_FLAGS_KEY} FOR UPDATE`;
+					}
 					const clearsUsage =
 						selected.has("usageStatistics") ||
 						selected.has("bitmovinAccounts") ||

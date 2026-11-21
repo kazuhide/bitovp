@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import {
 	cloneElement,
 	isValidElement,
@@ -139,5 +139,24 @@ describe("OperationAnalytics", () => {
 		expect(
 			screen.queryByRole("heading", { name: "再生試行" }),
 		).not.toBeInTheDocument();
+	});
+
+	it("replaces cached data with the report error state when a refresh fails", async () => {
+		mocks.apiFetch.mockResolvedValue({ isCollecting: true, weeks: [empty] });
+		const { client } = renderWithQuery(<OperationAnalytics />);
+		expect(await screen.findByText("Collecting")).toBeInTheDocument();
+
+		mocks.apiFetch.mockRejectedValue(new Error("Settings read failed"));
+		await act(async () => {
+			await client.invalidateQueries({ queryKey: ["operation-analytics"] });
+		});
+
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"Could not load operation analytics.",
+		);
+		expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+		expect(screen.queryByText("Collection paused")).not.toBeInTheDocument();
+		expect(screen.queryByText("Collecting")).not.toBeInTheDocument();
+		expect(screen.queryByRole("table")).not.toBeInTheDocument();
 	});
 });

@@ -3,7 +3,13 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Play, Square } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { useDocumentOrganization } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
@@ -105,6 +111,8 @@ function MoqPlaybackAttempt({
 	const [samples, setSamples] = useState<readonly MoqMetricSample[]>([]);
 	const host = useRef<HTMLElement>(null);
 	const current = useRef<Attempt | undefined>(undefined);
+	const operation =
+		useRef<ReturnType<typeof trackMoqPlaybackOperation>>(undefined);
 	const generation = useRef(0);
 	const intent = useRef(0);
 	const closing = useRef<Promise<void> | undefined>(undefined);
@@ -129,6 +137,15 @@ function MoqPlaybackAttempt({
 		MoqPlaybackDescriptor["resource"]["metadata"] | null
 	>(null);
 	const [relay, setRelay] = useState<MoqPlaybackDescriptor["relay"]>();
+	const cancelOperation = useCallback(() => {
+		const finish = operation.current;
+		operation.current = undefined;
+		finish?.("CANCELED");
+	}, []);
+	// Settle analytics at commit so a stale media event cannot win before passive disposal.
+	useLayoutEffect(() => {
+		if (active) return cancelOperation;
+	}, [active, cancelOperation]);
 	const close = useCallback(() => {
 		if (closing.current) return closing.current;
 		generation.current++;
@@ -181,6 +198,7 @@ function MoqPlaybackAttempt({
 		const startedAt = performance.now();
 		const startedWall = new Date().toISOString();
 		const ownIntent = ++intent.current;
+		cancelOperation();
 		const finishOperation =
 			operationAnalytics && organizationId
 				? trackMoqPlaybackOperation(
@@ -188,6 +206,7 @@ function MoqPlaybackAttempt({
 						startedAt,
 					)
 				: undefined;
+		operation.current = finishOperation;
 		setPhase("loading");
 		await close().catch(() => {});
 		if (ownIntent !== intent.current || !mounted.current || !host.current) {
@@ -229,7 +248,6 @@ function MoqPlaybackAttempt({
 					0,
 					Math.round(performance.now() - startedAt),
 				);
-				if (type === "first-frame") finishOperation?.("FIRST_FRAME", elapsedMs);
 				if (type === "failed") finishOperation?.("FAILED", elapsedMs);
 				if (type === "stopped" || type === "ended")
 					finishOperation?.("CANCELED", elapsedMs);
@@ -322,6 +340,11 @@ function MoqPlaybackAttempt({
 				},
 				{
 					startedAt,
+					onFirstVisibleFrame: finishOperation
+						? () => {
+								if (owned()) finishOperation("FIRST_FRAME");
+							}
+						: undefined,
 					onStage: (type) => {
 						if (owned()) attempt.noteStage(type);
 					},
@@ -376,6 +399,7 @@ function MoqPlaybackAttempt({
 	}
 	async function stop() {
 		if (phase === "stopping") return;
+		cancelOperation();
 		intent.current++;
 		if (current.current) current.current.reason = "stopped";
 		const disposal = close();

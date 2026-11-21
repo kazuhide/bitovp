@@ -2,13 +2,16 @@ import {
 	FEATURE_FLAGS_KEY,
 	featureFlagsPatchSchema,
 	featureFlagsSchema,
-	parseFeatureFlags,
 } from "@bitovp/core";
 import { NextResponse } from "next/server";
 import { roleAtLeast } from "@/lib/auth/roles";
 import { writeAuditLog } from "@/lib/server/audit";
 import { getServerContext } from "@/lib/server/context";
-import { readFeatureFlags } from "@/lib/server/feature-flags";
+import {
+	lockFeatureFlags,
+	readFeatureFlags,
+	readStoredFeatureFlags,
+} from "@/lib/server/feature-flags";
 import {
 	jsonError,
 	readJson,
@@ -52,17 +55,12 @@ export async function PATCH(req: Request) {
 				"Changing feature settings requires an administrator",
 			);
 		}
-		const lockKey = `${tenant.organizationId}:settings:${FEATURE_FLAGS_KEY}`;
 		const next = await ctx.prisma.$transaction(async (tx) => {
 			// The row may not exist yet. Serialize patches so concurrent changes
 			// to separate flags merge against the latest committed value.
-			await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
-			const row = await tx.appSetting.findUnique({
-				where: { key: FEATURE_FLAGS_KEY },
-				select: { value: true },
-			});
+			await lockFeatureFlags(tx, tenant.organizationId);
 			const value = featureFlagsSchema.parse({
-				...parseFeatureFlags(row?.value),
+				...(await readStoredFeatureFlags(tx)),
 				...body.data,
 			});
 			await tx.appSetting.upsert({

@@ -275,7 +275,7 @@ def capture(args, stage):
             self.assertEqual(data["runnerSha256"], expected)
             self.assertEqual(data["scoringProfileId"], "replacement-profile")
 
-    def resolve_fixture(self, root, change_during_probe=None):
+    def resolve_fixture(self, root, change_during_probe=None, runner_link=None):
         paths = {name: root / name for name in ("ffmpeg", "ffprobe", "sdk-probe", "runner.py")}
         for name, path in paths.items():
             path.write_bytes(name.encode())
@@ -304,7 +304,9 @@ def capture(args, stage):
             "BITOVP_NVENC_VMAF_MODEL": str(model),
             "BITOVP_NVENC_GPU_INDEX": "0",
         }
-        runner_source = runner.read_runner_source(paths["runner.py"])
+        if runner_link is not None:
+            runner_link.symlink_to(paths["runner.py"])
+        runner_source = runner.read_runner_source(runner_link or paths["runner.py"])
         with patch.dict(os.environ, env), \
                 patch.object(runner, "MODEL_SHA256", hashlib.sha256(model.read_bytes()).hexdigest()), \
                 patch.object(runner, "cuda_device", return_value=(gpu, "test GPU")), \
@@ -332,7 +334,7 @@ def capture(args, stage):
         def score(_runtime, _trial, _source, _clock, _encoded, work):
             self.assertEqual((work / runner.MODEL_NAME).read_bytes(), b"validated model")
             if change_during_score:
-                self.replace_file(change_during_score)
+                change_during_score()
             return (90.0, 90000, [], 1)
 
         with patch.object(runner, "probe_media", side_effect=[{}, packet_probe]), \
@@ -364,7 +366,38 @@ def capture(args, stage):
                 root = Path(folder)
                 runtime, paths, _ = self.resolve_fixture(root)
                 with self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
-                    self.measure_fixture(runtime, root, change_during_score=paths[tool])
+                    self.measure_fixture(runtime, root, change_during_score=lambda: self.replace_file(paths[tool]))
+
+    def test_retargeting_runner_link_after_snapshot_rejects_before_probe(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            original = root / "original.py"
+            replacement = root / "replacement.py"
+            link = root / "runner.py"
+            original.write_bytes(b"original")
+            replacement.write_bytes(b"replacement")
+            link.symlink_to(original)
+            source = runner.read_runner_source(link)
+            self.retarget_link(link, replacement)
+            with patch.object(runner, "executable", side_effect=AssertionError("unexpected tool probe")), \
+                    self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
+                runner.resolve_runtime(source)
+
+    def test_retargeting_runner_link_during_measurement_rejects_receipt(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            link = root / "active-runner.py"
+            replacement = root / "replacement.py"
+            replacement.write_bytes(b"replacement")
+            runtime, _, _ = self.resolve_fixture(root, runner_link=link)
+            with self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
+                self.measure_fixture(runtime, root, lambda: self.retarget_link(link, replacement))
+
+    @staticmethod
+    def retarget_link(link, replacement):
+        new_link = link.with_suffix(".new")
+        new_link.symlink_to(replacement)
+        new_link.replace(link)
 
     def test_stable_runtime_reuses_prevalidated_model_and_digests(self):
         with TemporaryDirectory() as folder:

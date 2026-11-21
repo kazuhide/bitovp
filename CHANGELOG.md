@@ -10,6 +10,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 - Collect frame timestamps and source validation data in one probe for eligible H.264 clips in the video library.
 - Reuse identical rendered parts within a VOD input timeline job when the source and FFmpeg arguments match.
+- Skip redundant Vulkan CAMBI scoring work for uniform neighborhoods while preserving banding scores.
 
 ## [1.3.3] - 2026-11-20
 

@@ -31,20 +31,25 @@ export function reproposalDefaults(
 	const targetDurationFrames = Math.max(30, Math.min(5400, requested));
 	const { autoGeneration } = document;
 	const trailer = autoGeneration?.trailer;
+	const storySceneId = autoGeneration?.localStoryEvidence?.sceneScope?.sceneId;
 	const story = autoGeneration?.localStoryEvidence
 		? describeLocalStorySelection(autoGeneration.localStoryEvidence)
 		: undefined;
-	const policy = trailer
-		? "LOCAL_STORY"
-		: (savedPolicies[autoGeneration?.policyVersion ?? ""] ??
-			(available.localStory ? "LOCAL_STORY" : "AUTO"));
+	const policy =
+		trailer || storySceneId
+			? "LOCAL_STORY"
+			: (savedPolicies[autoGeneration?.policyVersion ?? ""] ??
+				(available.localStory ? "LOCAL_STORY" : "AUTO"));
 	return {
 		targetDurationFrames,
 		settings: {
 			policy,
 			...(trailer ? { trailer } : {}),
 			...(policy === "LOCAL_STORY" && !trailer
-				? { storyMode: story?.mode ?? "AUTO" }
+				? {
+						storyMode: story?.mode ?? "AUTO",
+						...(storySceneId ? { storySceneId } : {}),
+					}
 				: {}),
 			...(policy === "COHESION" && autoGeneration?.query
 				? { query: autoGeneration.query }

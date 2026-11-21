@@ -234,28 +234,32 @@ function eventCandidates(
 				),
 		)
 	) {
-		const spans = speechFields.flat().map((f) => ({
-			from: Math.max(
-				0,
-				Number(
-					originalTimeToCfrFrame(
-						required(f.startUs),
-						input.timeMap.sourceStartUs,
-						"FLOOR",
-					),
-				) - 3,
-			),
-			to: Math.min(
-				input.timeMap.editingEndFrame - input.timeMap.editingStartFrame,
-				Number(
-					originalTimeToCfrFrame(
-						required(f.endUs),
-						input.timeMap.sourceStartUs,
-						"CEIL",
-					),
-				) + 3,
-			),
-		}));
+		const { sceneFrameBounds, timeMap } = input;
+		const spans = speechFields.flat().map((f) => {
+			const from = Number(
+				originalTimeToCfrFrame(
+					required(f.startUs),
+					timeMap.sourceStartUs,
+					"FLOOR",
+				),
+			);
+			const to = Number(
+				originalTimeToCfrFrame(
+					required(f.endUs),
+					timeMap.sourceStartUs,
+					"CEIL",
+				),
+			);
+			// Clamp padding alone. Keep any required speech outside the scene so
+			// eligible-shot coverage can reject the candidate.
+			const first = sceneFrameBounds
+				? Math.min(from, sceneFrameBounds.fromFrame)
+				: 0;
+			const last = sceneFrameBounds
+				? Math.max(to, sceneFrameBounds.toFrame)
+				: timeMap.editingEndFrame - timeMap.editingStartFrame;
+			return { from: Math.max(first, from - 3), to: Math.min(last, to + 3) };
+		});
 		candidates.push(speechSafe(input, spans));
 	}
 	return candidates;

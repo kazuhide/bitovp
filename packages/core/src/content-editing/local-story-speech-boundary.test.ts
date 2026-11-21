@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { normalizeSceneAnalysis } from "../content-library/analysis";
+import { authoredNormalizationReceipt } from "../testing/normalization-clock";
+import { localStorySelectedPlanIssues } from "./local-story-coherence";
 import type {
 	LocalStoryBlueprint,
 	LocalStoryCorpus,
 } from "./local-story-contracts";
-import { buildLocalStoryInput } from "./local-story-input";
+import {
+	buildLocalStoryInput,
+	localStoryClipsWithinSceneScope,
+} from "./local-story-input";
 import {
 	localStoryEventMinimumDurationFrames,
 	selectLocalStoryClips,
 } from "./local-story-planner";
+import { buildPreparedShotPartition } from "./prepared-shot-partition";
 import { cfrTimeMapSchema } from "./schema";
 import { hashEditingEvidence } from "./verify-automatic-binding";
 
@@ -95,6 +101,176 @@ function fixture(sourceStartUs = 0) {
 	};
 	return { input, ledger, blueprint, targetDurationFrames: 120 };
 }
+
+const scopedSceneId = "44444444-4444-4444-8444-444444444444";
+const earlierSceneId = "55555555-5555-4555-8555-555555555555";
+function sceneQuoteFixture(options: {
+	startUs: number;
+	endUs: number;
+	sceneStart?: number;
+	unscoped?: boolean;
+}) {
+	const sceneStart = options.sceneStart ?? 20;
+	const analysis = normalizeSceneAnalysis({
+		metadata: { version: "authored-boundary-review" },
+		duration: 44,
+		scenes: [
+			{
+				id: earlierSceneId,
+				type: "MAIN_CONTENT",
+				startInSeconds: 0,
+				endInSeconds: sceneStart,
+				shots: [{ startInSeconds: 0, endInSeconds: sceneStart }],
+			},
+			{
+				id: scopedSceneId,
+				type: "MAIN_CONTENT",
+				startInSeconds: sceneStart,
+				endInSeconds: 40,
+				shots: [{ startInSeconds: sceneStart, endInSeconds: 40 }],
+			},
+		],
+	});
+	const normalization = authoredNormalizationReceipt({
+		organizationId: "00000000-0000-4000-8000-000000000001",
+		sourceId: "22222222-2222-4222-8222-222222222222",
+		mediaVersionId: "33333333-3333-4333-8333-333333333333",
+		sourceFrameCount: 44 * 24,
+		hasAudio: true,
+	});
+	const timeMap = cfrTimeMapSchema.parse({
+		id: normalization.timeMapId,
+		mediaVersionId: normalization.mediaVersionId,
+		kind: "CFR",
+		sourceStartUs: 0,
+		sourceEndUs: 44_000_000,
+		editingStartFrame: 0,
+		editingEndFrame: 1_320,
+		fps: { num: 30, den: 1 },
+	});
+	const text = "I turned the switch on.";
+	const input = buildLocalStoryInput({
+		analysis,
+		timeMap,
+		preparedPartition: buildPreparedShotPartition({
+			analysis,
+			timeMap,
+			normalization,
+		}),
+		segments: [{ startUs: options.startUs, endUs: options.endUs, text }],
+		...(options.unscoped ? {} : { storySceneId: scopedSceneId }),
+	});
+	const { ref } = item(
+		input.shots.find((shot) => shot.sceneId === scopedSceneId),
+	);
+	const ledger: LocalStoryCorpus = {
+		version: "local-story-corpus-v1",
+		summaries: [text],
+		coveredRefs: input.shots.map((shot) => shot.ref),
+		events: [
+			{
+				id: "e0",
+				role: "ACTION",
+				label: text,
+				refs: [ref],
+				quotes: [{ ref, quote: text }],
+				subjects: ["speaker"],
+				uncertainty: "",
+			},
+		],
+	};
+	const blueprint: LocalStoryBlueprint = {
+		mode: "THEME",
+		message: "A switch is turned on.",
+		uncertainty: "",
+		beats: [{ id: "only", role: "ACTION", eventIds: ["e0"], requires: [] }],
+	};
+	return { input, ledger, blueprint, targetDurationFrames: 36 };
+}
+
+describe("quoted speech in a prepared scene scope", () => {
+	it.each([
+		{
+			edge: "start",
+			startUs: 20_050_000,
+			endUs: 21_050_000,
+			sourceInUs: 20_000_000,
+		},
+		{
+			edge: "end",
+			startUs: 38_950_000,
+			endUs: 39_950_000,
+			sourceInUs: 38_833_334,
+		},
+	])("clamps only optional quote padding at the scene $edge", ({
+		startUs,
+		endUs,
+		sourceInUs,
+	}) => {
+		const value = sceneQuoteFixture({ startUs, endUs });
+		const selection = selectLocalStoryClips(value);
+		expect(value.input.sceneFrameBounds).toEqual({
+			fromFrame: 600,
+			toFrame: 1200,
+		});
+		expect(selection.actualDurationFrames).toBe(35);
+		expect(selection.clips).toEqual([
+			{ sceneId: scopedSceneId, shotIndex: 0, sourceInUs, durationFrames: 35 },
+		]);
+		expect(
+			localStoryEventMinimumDurationFrames(
+				value.input,
+				item(value.ledger.events[0]),
+			),
+		).toBe(35);
+		expect(localStorySelectedPlanIssues({ ...value, selection })).toEqual([]);
+		expect(
+			localStoryClipsWithinSceneScope({
+				scope: item(value.input.sceneScope),
+				frameBounds: item(value.input.sceneFrameBounds),
+				timeMap: value.input.timeMap,
+				clips: selection.clips,
+			}),
+		).toBe(true);
+	});
+	it("rejects speech before the available prepared frame even if its padding fits", () => {
+		const value = sceneQuoteFixture({
+			sceneStart: 20.01,
+			startUs: 20_015_000,
+			endUs: 20_020_000,
+		});
+		expect(item(value.input.sceneFrameBounds).fromFrame).toBeGreaterThan(600);
+		expect(() => selectLocalStoryClips(value)).toThrow(
+			"LOCAL_STORY_NO_FITTING_PLAN",
+		);
+	});
+	it("keeps the existing padding across scene boundaries in an unscoped plan", () => {
+		const value = sceneQuoteFixture({
+			startUs: 20_050_000,
+			endUs: 21_050_000,
+			unscoped: true,
+		});
+		const selection = selectLocalStoryClips({
+			...value,
+			targetDurationFrames: 37,
+		});
+		expect(selection.actualDurationFrames).toBe(37);
+		expect(selection.clips).toEqual([
+			{
+				sceneId: earlierSceneId,
+				shotIndex: 0,
+				sourceInUs: 19_933_334,
+				durationFrames: 2,
+			},
+			{
+				sceneId: scopedSceneId,
+				shotIndex: 0,
+				sourceInUs: 20_000_000,
+				durationFrames: 35,
+			},
+		]);
+	});
+});
 
 describe("speech closure in the original half-open clock", () => {
 	it.each([

@@ -206,6 +206,13 @@ function GenerationControlsView({
 				const effective = withTrailerIntent(settings, trailer);
 				const parameters = {
 					...effective,
+					storySceneId:
+						effective.policy === "LOCAL_STORY" &&
+						renderMode === "DRAFT" &&
+						!effective.trailer &&
+						effective.storyWorkflowVersion === undefined
+							? effective.storySceneId
+							: undefined,
 					contentId,
 					targetDurationFrames,
 					...(renderMode ? { renderMode } : {}),

@@ -5,11 +5,16 @@ import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
 	cfrTimeMapSchema,
 	editingNormalizationEvidenceSchema,
 } from "@bitovp/core";
-import { normalizeEditingMedia } from "./normalization";
+import { probeEditingMedia } from "./media";
+import {
+	normalizeEditingMedia,
+	probeEditingNormalizationSource,
+} from "./normalization";
 import { runMediaProcess } from "./process";
 
 const digest = (value: Buffer) =>
@@ -260,6 +265,66 @@ for (const [fps, frames, expectedFrames] of [
 		}
 	});
 }
+test("native identity normalization checks both clocks with one video decode", {
+	timeout: 60000,
+}, async () => {
+	const dir = await mkdtemp(join(tmpdir(), "bitovp-normalize-single-decode-"));
+	try {
+		const original = join(dir, "source.mp4");
+		const destination = join(dir, "prepared.mp4");
+		const trace = join(dir, "probe.jsonl");
+		const malformedTime = join(dir, "malformed-time");
+		// The media gate mounts TMPDIR with noexec. Run the fixture from
+		// the read-only source tree and write only its trace under TMPDIR.
+		const shim = fileURLToPath(
+			new URL("./fixtures/normalization-ffprobe-fixture.mjs", import.meta.url),
+		);
+		await source(original, "30/1", 60);
+		const input = {
+			sourcePath: original,
+			destinationPath: destination,
+			expectedSourceSha256: digest(await readFile(original)),
+			ffprobePath: shim,
+		};
+		const result = await normalizeEditingMedia(input);
+		assert.equal(result.normalization.mode, "IDENTITY_COPY");
+		assert.deepEqual(
+			result.facts,
+			await probeEditingMedia({ sourcePath: original }),
+		);
+		assert.deepEqual(
+			result.normalization.source,
+			(await probeEditingNormalizationSource({ sourcePath: original })).source,
+		);
+		const calls: string[][] = (await readFile(trace, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+		assert.equal(
+			calls.filter((args) => args.includes("-show_streams")).length,
+			1,
+		);
+		assert.equal(
+			calls.filter(
+				(args) => args.includes("v:0") && args.includes("-show_frames"),
+			).length,
+			1,
+		);
+		assert.equal(
+			calls.filter(
+				(args) => args.includes("a:0") && args.includes("-show_frames"),
+			).length,
+			1,
+		);
+		await writeFile(malformedTime, "");
+		await assert.rejects(normalizeEditingMedia(input), {
+			code: "UNSUPPORTED_MEDIA",
+		});
+		await assert.rejects(access(destination));
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
 test("native VFR is rejected before a normalized artifact is published", {
 	timeout: 60000,
 }, async () => {

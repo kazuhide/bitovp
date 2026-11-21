@@ -65,6 +65,18 @@ describe("MoQ Live output", () => {
 		).toEqual([]);
 	});
 
+	it("accepts manifest-free CMAF delivery to the MoQ relay", () => {
+		const raw = rawPlan();
+		raw.muxings = raw.muxings.map((muxing: { streamKey: string }) => ({
+			...muxing,
+			kind: "CMAF",
+			segmentLength: 0.5,
+			...(muxing.streamKey === "v720" ? { framesPerCmafChunk: 3 } : {}),
+		}));
+		const plan = liveChannelPlanSchema.parse(raw);
+		expect(validateLiveChannel(plan)).toEqual([]);
+	});
+
 	it("compiles tuple/draft fields and vault reference without relay secrets", () => {
 		const ops = compileLiveChannel(moqPlan());
 		expect(ops.find((op) => op.step === "output:origin")).toEqual({
@@ -130,7 +142,7 @@ describe("MoQ Live output", () => {
 		).toEqual([]);
 	});
 
-	it.each(["TS", "CMAF", "MP4"])("rejects %s muxings", (kind) => {
+	it.each(["TS", "MP4"])("rejects %s muxings", (kind) => {
 		const raw = rawPlan();
 		raw.muxings[0] = {
 			key: "v1080",
@@ -142,7 +154,7 @@ describe("MoQ Live output", () => {
 		const plan = liveChannelPlanSchema.parse(raw);
 		expect(
 			validateLiveChannel(plan).some(
-				(issue) => issue.code === "LIVE_MOQ_FMP4_ONLY",
+				(issue) => issue.code === "LIVE_MOQ_MUXING_UNSUPPORTED",
 			),
 		).toBe(true);
 	});
@@ -173,11 +185,11 @@ describe("MoQ Live output", () => {
 		).toBe(true);
 	});
 
-	it("requires exactly one FMP4 muxing for every rendition", () => {
+	it("requires exactly one CMAF or FMP4 muxing for every rendition", () => {
 		const plan = moqPlan();
 		const first = plan.muxings[0];
-		if (!first) throw new Error("Fixture has no muxing");
-		plan.muxings.push({ ...first, key: "duplicate" });
+		if (first?.kind !== "FMP4") throw new Error("Fixture has no FMP4 muxing");
+		plan.muxings.push({ ...first, key: "duplicate", kind: "CMAF" });
 		expect(
 			validateLiveChannel(plan).some(
 				(issue) => issue.code === "LIVE_MOQ_RENDITION_MUXING",

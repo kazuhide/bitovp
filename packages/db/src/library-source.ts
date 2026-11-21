@@ -5,6 +5,7 @@ import {
 	libraryFileOutputs,
 	libraryPlaybackLinks,
 	librarySnapshotSchema,
+	publicLibraryQcEvidence,
 	redactSecrets,
 	sceneAnalysisLocales,
 } from "@bitovp/core";
@@ -284,7 +285,7 @@ export async function requestLibrarySource(
 			fileOutputs: libraryFileOutputs(plan),
 			qcVerdict: redactSecrets(job.qcVerdict),
 			qcOverriddenAt: job.qcOverriddenAt?.toISOString() ?? null,
-			qcEvidence: redactSecrets(qcEvidence),
+			qcEvidence: redactSecrets(publicLibraryQcEvidence(qcEvidence)),
 			...(analysisOutput ? { analysisOutput } : {}),
 		};
 		const source = await tx.librarySource.create({

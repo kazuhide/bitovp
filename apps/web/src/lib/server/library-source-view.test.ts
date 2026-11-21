@@ -140,6 +140,71 @@ describe("Library source detail retained-raw projection", () => {
 		expect(view.analyses).toEqual([]);
 		expect(view.state).toBe("READY");
 	});
+	it("returns retained QC scores without exposing internal native score reuse records", async () => {
+		const qcEvidence = [
+			{
+				id: "measurement",
+				results: [
+					{
+						id: "fresh",
+						pooled: { mean: 90 },
+						provenance: {
+							localExecution: { requestedDecode: "auto" },
+							verifiedNativeScore: { receiptSha256: "a".repeat(64) },
+						},
+					},
+					{
+						id: "reused",
+						pooled: { mean: 91 },
+						provenance: {
+							localExecution: { reusedVerifiedResult: true },
+							reusedNativeScore: { receiptSha256: "b".repeat(64) },
+						},
+					},
+					{ id: "legacy", pooled: { mean: 89 }, provenance: null },
+				],
+			},
+		];
+		const { db } = database(raw, stored, {
+			snapshot: {
+				schemaVersion: 1,
+				kind: "VOD_JOB",
+				name: "Asset",
+				planHash: "hash",
+				identity: "UNVERIFIED",
+				inputs: [],
+				playbackLinks: [],
+				qcVerdict: null,
+				qcOverriddenAt: null,
+				qcEvidence,
+			},
+		});
+		const before = structuredClone(qcEvidence);
+		const view = await sourceView(
+			db,
+			"source-1",
+			"00000000-0000-4000-8000-000000000001",
+		);
+		expect(view.snapshot.qcEvidence).toEqual([
+			{
+				id: "measurement",
+				results: [
+					{
+						id: "fresh",
+						pooled: { mean: 90 },
+						provenance: { localExecution: { requestedDecode: "auto" } },
+					},
+					{
+						id: "reused",
+						pooled: { mean: 91 },
+						provenance: { localExecution: { reusedVerifiedResult: true } },
+					},
+					{ id: "legacy", pooled: { mean: 89 }, provenance: null },
+				],
+			},
+		]);
+		expect(qcEvidence).toEqual(before);
+	});
 	it("recovers scene context and sanitized provider fields without changing history", async () => {
 		const { db, row } = database(raw);
 		const before = JSON.stringify(row);

@@ -21,6 +21,7 @@ export function createMoqPlayback(
 	onFailure: () => void,
 	telemetry?: {
 		startedAt: number;
+		onFirstVisibleFrame?(): void;
 		onStatistics(value: MoqVideoStatistics): void;
 		onStage?(type: MoqPlaybackStage): void;
 		onVideo?(video: HTMLVideoElement): void;

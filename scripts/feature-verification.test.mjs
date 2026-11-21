@@ -115,7 +115,7 @@ test("successful execution retains receipt and sanitized report and cannot overw
 		JSON.parse(readFileSync(join(output, "receipt.json"))).status,
 		"passed",
 	);
-	assert.equal(result.actual.tests, 268);
+	assert.equal(result.actual.tests, 269);
 	await assert.rejects(
 		runFeature("qc-resource-allocation", { output, root }),
 		/OUTPUT_EXISTS/,

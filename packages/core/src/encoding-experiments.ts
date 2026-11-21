@@ -24,25 +24,31 @@ const windowSchema = z
 		startPts: decimal,
 		endPtsExclusive: positiveDecimal,
 	})
-	.refine((window) => {
-		if (
-			!decimal.safeParse(window.startPts).success ||
-			!positiveDecimal.safeParse(window.endPtsExclusive).success ||
-			!timeBase.safeParse(window.timeBase).success
-		)
-			return false;
+	.transform((window, ctx) => {
 		const multiplier = BigInt(window.timeBase.num) * 30n;
 		const divisor = BigInt(window.timeBase.den);
 		const start = BigInt(window.startPts) * multiplier;
 		const end = BigInt(window.endPtsExclusive) * multiplier;
-		return (
-			start % divisor === 0n &&
-			end % divisor === 0n &&
-			end > start &&
-			end - start <= divisor * 3600n &&
-			end / divisor <= BigInt(maxSigned32)
-		);
-	}, "Use a positive window of 1 to 3600 frames on the 30 fps timeline");
+		if (
+			start % divisor !== 0n ||
+			end % divisor !== 0n ||
+			end <= start ||
+			end - start > divisor * 3600n ||
+			end / divisor > BigInt(maxSigned32)
+		) {
+			ctx.addIssue({
+				code: "custom",
+				message:
+					"Use a positive window of 1 to 3600 frames on the 30 fps timeline",
+			});
+			return z.NEVER;
+		}
+		return {
+			timeBase: { num: 1, den: 30 },
+			startPts: (start / divisor).toString(),
+			endPtsExclusive: (end / divisor).toString(),
+		};
+	});
 
 export const experimentTrialSchema = z.strictObject({
 	sourceId: experimentSourceId,
@@ -58,8 +64,8 @@ export const experimentTrialSchema = z.strictObject({
 			.strictObject({
 				rateControlMode: z.literal("VBR"),
 				averageBitRate: positive,
-				maxBitRate: positive.optional(),
-				vbvBufferSize: positive.optional(),
+				maxBitRate: positiveSigned32.optional(),
+				vbvBufferSize: positiveSigned32.optional(),
 				enableAQ: z.boolean().optional(),
 				enableTemporalAQ: z.boolean().optional(),
 				lookaheadDepth: uint.max(32).optional(),

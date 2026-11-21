@@ -88,6 +88,10 @@ class CatalogTest(unittest.TestCase):
             ("NV_ENC_PIC_PARAMS_H264", "ltrUsageMode", "reserved", "picture", "in"),
             ("NV_ENC_RECONFIGURE_PARAMS", "resetEncoder", "inventoried_unbound",
              "reconfigure", "in"),
+            ("NV_ENC_H264_MV_DATA", "mbCost", "runner_managed", "output", "unspecified"),
+            ("NV_ENC_HEVC_MV_DATA", "cuType", "runner_managed", "output", "unspecified"),
+            ("NV_ENC_MVECTOR", "mvx", "runner_managed", "output", "unspecified"),
+            ("NV_ENC_LOCK_BITSTREAM", "doNotWait", "inventoried_unbound", "output", "in"),
         ]
         for type_name, field_name, classification, lifecycle, direction in cases:
             with self.subTest(type_name=type_name, field_name=field_name):
@@ -167,6 +171,13 @@ class CatalogTest(unittest.TestCase):
         args = runner["encode_options"](trial)
         self.assertEqual(len(args), 2 * len(expected))
         self.assertEqual(dict(zip(args[::2], args[1::2])), dict(expected.values()))
+
+    def test_rate_bindings_expose_ffmpeg_option_bounds(self):
+        rates = self.fields("NV_ENC_RC_PARAMS")
+        for name in ("maxBitRate", "vbvBufferSize"):
+            with self.subTest(name=name):
+                self.assertEqual(rates[name]["binding"]["maximum"], (1 << 31) - 1)
+        self.assertEqual(rates["averageBitRate"]["binding"]["maximum"], (1 << 32) - 1)
 
 
 if __name__ == "__main__":

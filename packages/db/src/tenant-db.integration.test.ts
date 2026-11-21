@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type AppPrismaClient, createPrismaClient } from "./client";
 import {
@@ -7,6 +8,8 @@ import {
 	controlExperimentCampaign,
 	enqueueExperimentBatch,
 	experimentResultPage,
+	experimentSelectionRows,
+	releaseExperimentTrial,
 } from "./encoding-experiments";
 import { createTenantPrismaClient } from "./tenant-client";
 
@@ -124,7 +127,14 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			const trial = {
 				trialKey: "b".repeat(64),
 				sourceSha256: "c".repeat(64),
-				input: {},
+				input: {
+					sourceId: "fixture",
+					window: {
+						timeBase: { num: 1, den: 90_000 },
+						startPts: "90000",
+						endPtsExclusive: "180000",
+					},
+				},
 			};
 			const create = async () => [trial, trial];
 			const first = await enqueueExperimentBatch(
@@ -145,6 +155,21 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			);
 			expect(replay).toEqual(first);
 			expect(first.items[0]?.id).toEqual(first.items[1]?.id);
+			expect(
+				await experimentSelectionRows(ctx, campaign.id, "fixture", "30", "60"),
+			).toMatchObject([{ id: first.items[0]?.id }]);
+			expect(
+				await experimentSelectionRows(ctx, campaign.id, "fixture", "30", "61"),
+			).toEqual([]);
+			expect(
+				await experimentSelectionRows(
+					foreign,
+					campaign.id,
+					"fixture",
+					"30",
+					"60",
+				),
+			).toEqual([]);
 			await expect(
 				enqueueExperimentBatch(ctx, campaign.id, "key", "e".repeat(64), create),
 			).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
@@ -166,13 +191,33 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			if (!retry) throw new Error("Expired claim was not recovered");
 			expect(retry.attempt).toBe(2);
 			expect(
-				await completeExperimentTrial(ctx, claimed, later, {
+				await completeExperimentTrial(ctx, claimed, {
 					failureCode: "STALE",
 				}),
 			).toBe(false);
+			let live = retry;
+			for (let attempt = 3; attempt <= 6; attempt++) {
+				expect(await releaseExperimentTrial(ctx, live, later)).toBe(true);
+				expect(
+					await completeExperimentTrial(ctx, live, {
+						failureCode: "RELEASED",
+					}),
+				).toBe(false);
+				const next = await claimExperimentTrial(
+					ctx,
+					capabilityId,
+					later,
+					1_000,
+				);
+				if (!next) throw new Error("GPU contention exhausted the lease budget");
+				expect(next.attempt).toBe(attempt);
+				expect(next.expiredClaims).toBe(1);
+				live = next;
+			}
 			await controlExperimentCampaign(ctx, campaign.id, "cancel");
+			expect(await releaseExperimentTrial(ctx, live, later)).toBe(false);
 			expect(
-				await completeExperimentTrial(ctx, retry, later, {
+				await completeExperimentTrial(ctx, live, {
 					failureCode: "STALE",
 				}),
 			).toBe(false);
@@ -180,6 +225,65 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				items: [{ status: "CANCELED", resultSequence: 1 }],
 				nextCursor: null,
 				snapshot: 1,
+			});
+			const exhausted = await a.encodingExperimentCampaign.create({
+				data: { name: "Expired leases", capabilityId, runtime: {} },
+			});
+			await enqueueExperimentBatch(
+				ctx,
+				exhausted.id,
+				"expired",
+				capabilityId,
+				create,
+			);
+			const claimedAt = new Date();
+			const lease = 1_000;
+			const firstLease = await claimExperimentTrial(
+				ctx,
+				capabilityId,
+				claimedAt,
+				lease,
+			);
+			if (!firstLease) throw new Error("Expected a live claim");
+			const locked = Promise.withResolvers<void>();
+			const unblock = Promise.withResolvers<void>();
+			const locker = a.$transaction(async (tx) => {
+				await tx.$queryRaw`SELECT "id" FROM "EncodingExperimentCampaign"
+					WHERE "id" = ${exhausted.id}::uuid FOR UPDATE`;
+				locked.resolve();
+				await unblock.promise;
+			});
+			await Promise.race([locked.promise, locker]);
+			try {
+				const waited = completeExperimentTrial(ctx, firstLease, {
+					failureCode: "TOO_LATE",
+				});
+				await sleep(claimedAt.getTime() + lease - Date.now() + 20);
+				unblock.resolve();
+				expect(await waited).toBe(false);
+			} finally {
+				unblock.resolve();
+				await locker;
+			}
+			for (let attempt = 2; attempt <= 3; attempt++)
+				expect(
+					await claimExperimentTrial(
+						ctx,
+						capabilityId,
+						new Date(claimedAt.getTime() + (attempt - 1) * lease),
+						lease,
+					),
+				).toMatchObject({ attempt, expiredClaims: attempt - 1 });
+			expect(
+				await claimExperimentTrial(
+					ctx,
+					capabilityId,
+					new Date(claimedAt.getTime() + 3 * lease),
+					lease,
+				),
+			).toBeNull();
+			expect(await experimentResultPage(ctx, exhausted.id)).toMatchObject({
+				items: [{ status: "FAILED", failureCode: "WORKER_LEASE_EXPIRED" }],
 			});
 		});
 

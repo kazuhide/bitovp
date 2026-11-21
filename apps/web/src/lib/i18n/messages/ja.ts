@@ -5974,7 +5974,7 @@ export const ja = {
 			insufficient_evidence: "判定に必要な計測が不足しています。",
 		},
 		title: "エンコード実験",
-		workerUnavailable: "NVENC ワーカーは利用できません",
+		workerUnavailable: "NVENC を利用できません",
 		campaigns: "キャンペーン",
 		selectCampaign: "キャンペーンを選択",
 		campaignName: "キャンペーン名",

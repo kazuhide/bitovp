@@ -6035,7 +6035,7 @@ export const en = {
 			insufficient_evidence: "More measurement evidence is needed.",
 		},
 		title: "Encoding experiments",
-		workerUnavailable: "NVENC worker unavailable",
+		workerUnavailable: "NVENC is unavailable",
 		campaigns: "Campaigns",
 		selectCampaign: "Select a campaign",
 		campaignName: "Campaign name",

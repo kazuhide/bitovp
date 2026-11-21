@@ -14,7 +14,9 @@ import sys
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from fractions import Fraction
+from math import ceil
 from pathlib import Path
+from stat import S_ISREG
 from tempfile import TemporaryDirectory
 from time import monotonic, perf_counter_ns
 from typing import Optional
@@ -26,6 +28,8 @@ MODEL_SHA256 = "5950d61fa1f861bd45d8149d80539ed9f3376cfc2495b8f0fa8e9f57cb131ee3
 CODECS = {"H264": "h264", "HEVC": "hevc", "AV1": "av1"}
 MAX_CAPTURE = 12 * 1024 * 1024
 MAX_FRAMES = 3600
+MAX_FRAME_TIME_BASE = Fraction(1, 1000)
+INT32_MAX = (1 << 31) - 1
 FORMAT_ALLOWLIST = "mov,matroska,webm"
 LOCAL_INPUT = ["-protocol_whitelist", "file", "-format_whitelist", FORMAT_ALLOWLIST]
 FFMPEG_ARGS = ["-hide_banner", "-nostats", "-nostdin", "-xerror", "-noauto_conversion_filters"]
@@ -55,6 +59,7 @@ class Runtime:
     gpu_index: int
     model_bytes: bytes
     capabilities: dict
+    tool_identities: tuple
 
 
 def fields(value, required, optional=frozenset()):
@@ -92,28 +97,29 @@ def parse_trial(request):
         raise RunnerError("INVALID_REQUEST")
     window = fields(row["window"], {"timeBase", "startPts", "endPtsExclusive"})
     clock = fields(window["timeBase"], {"num", "den"})
-    frame_ticks = Fraction(30 * integer(clock["num"], 1, 2147483647), integer(clock["den"], 1, 2147483647))
+    frame_ticks = Fraction(30 * integer(clock["num"], 1, INT32_MAX), integer(clock["den"], 1, INT32_MAX))
     start = digits(window["startPts"]) * frame_ticks
     end = digits(window["endPtsExclusive"]) * frame_ticks
     count = end - start
     if start.denominator != 1 or end.denominator != 1 or not 1 <= count <= MAX_FRAMES:
         raise RunnerError("UNSUPPORTED_WINDOW")
-    if end > 2147483647:
+    if end > INT32_MAX:
         raise RunnerError("UNSUPPORTED_WINDOW")
     codec = choice(row["codec"], CODECS)
     preset = choice(row["preset"], {"P1", "P2", "P3", "P4", "P5", "P6", "P7"})
     choice(row["tuning"], {"HIGH_QUALITY"})
     config = fields(row["config"], {"gopLength", "rcParams"}, {"frameIntervalP"})
-    gop = integer(config["gopLength"], 1, 2147483647)
+    gop = integer(config["gopLength"], 1, INT32_MAX)
     frame_interval = integer(config["frameIntervalP"], 1, 5) if "frameIntervalP" in config else None
     rate = fields(
         config["rcParams"], {"rateControlMode", "averageBitRate"},
         {"maxBitRate", "vbvBufferSize", "enableAQ", "enableTemporalAQ", "lookaheadDepth"},
     )
     choice(rate["rateControlMode"], {"VBR"})
-    for key in ("averageBitRate", "maxBitRate", "vbvBufferSize"):
+    integer(rate["averageBitRate"], 1, (1 << 32) - 1)
+    for key in ("maxBitRate", "vbvBufferSize"):
         if key in rate:
-            integer(rate[key], 1, 4294967295)
+            integer(rate[key], 1, INT32_MAX)
     if "maxBitRate" in rate and rate["maxBitRate"] < rate["averageBitRate"]:
         raise RunnerError("INVALID_REQUEST")
     for key in ("enableAQ", "enableTemporalAQ"):
@@ -205,7 +211,7 @@ def parse_measurement(probe):
     if any(side.get("side_data_type") == "Display Matrix" for side in stream.get("side_data_list", [])):
         raise RunnerError("UNSUPPORTED_VIDEO_DISPLAY")
     time_base = unsigned_rational(stream.get("time_base"), "INVALID_VIDEO_CLOCK")
-    if time_base > Fraction(1, 1000):
+    if time_base > MAX_FRAME_TIME_BASE:
         raise RunnerError("UNSUPPORTED_VIDEO_CLOCK")
     return time_base
 
@@ -216,6 +222,8 @@ def parse_frames(log, label, pixel_format):
     if len(clocks) != 1:
         raise RunnerError("INVALID_FRAME_CLOCK")
     time_base = unsigned_rational(clocks[0], "INVALID_FRAME_CLOCK")
+    if time_base > MAX_FRAME_TIME_BASE:
+        raise RunnerError("UNSUPPORTED_FRAME_CLOCK")
     rows = re.findall(prefix + r"n:\s*(\d+)\s+pts:\s*(-?\d+)\s+(.*)$", log, flags=re.MULTILINE)
     colors = re.findall(
         prefix + r"color_range:(\S+) color_space:(\S+) color_primaries:(\S+) color_trc:(\S+)",
@@ -344,11 +352,37 @@ def cuda_device(index):
     return "GPU-" + str(UUID(bytes=bytes(raw_uuid))), name.value.decode("utf-8", errors="replace")
 
 
-def sha256_file(path):
+def regular_file_identity(info):
+    if not S_ISREG(info.st_mode):
+        raise RunnerError("RUNTIME_TOOL_CHANGED")
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
+def runtime_tool_identity(path):
+    try:
+        return regular_file_identity(path.lstat())
+    except OSError as error:
+        raise RunnerError("RUNTIME_TOOL_CHANGED") from error
+
+
+def require_unchanged_tools(identities):
+    if any(runtime_tool_identity(path) != identity for path, identity in identities):
+        raise RunnerError("RUNTIME_TOOL_CHANGED")
+
+
+def sha256_file(path, identity):
     digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
+    try:
+        # A replacement symlink or FIFO must fail without being followed or blocking.
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as source:
+            if regular_file_identity(os.fstat(source.fileno())) != identity:
+                raise RunnerError("RUNTIME_TOOL_CHANGED")
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+            if regular_file_identity(os.fstat(source.fileno())) != identity:
+                raise RunnerError("RUNTIME_TOOL_CHANGED")
+    except OSError as error:
+        raise RunnerError("RUNTIME_TOOL_CHANGED") from error
     return digest.hexdigest()
 
 
@@ -380,6 +414,15 @@ def resolve_runtime():
     ffmpeg = executable("BITOVP_NVENC_FFMPEG", "ffmpeg")
     ffprobe = executable("BITOVP_NVENC_FFPROBE", "ffprobe")
     sdk_probe = executable("BITOVP_NVENC_SDK_PROBE", str(ffmpeg.with_name("sdk-probe")))
+    tool_paths = {
+        "ffmpegSha256": ffmpeg,
+        "ffprobeSha256": ffprobe,
+        "sdkProbeSha256": sdk_probe,
+        "runnerSha256": Path(__file__).resolve(strict=True),
+    }
+    identities = {path: runtime_tool_identity(path) for path in tool_paths.values()}
+    digests = {name: sha256_file(path, identities[path]) for name, path in tool_paths.items()}
+    tool_identities = tuple(identities.items())
     model = Path(os.environ.get(
         "BITOVP_NVENC_VMAF_MODEL", ffmpeg.parent.parent / "share" / "nvenc-experiments" / MODEL_NAME,
     ))
@@ -397,6 +440,7 @@ def resolve_runtime():
     )
     if not re.fullmatch(r"\d+\.\d+(?:\.\d+)?", driver_version.strip()):
         raise RunnerError("INVALID_GPU_RUNTIME")
+    require_unchanged_tools(tool_identities)
     sdk_report, _ = capture([str(sdk_probe), str(index)], "NVENC_PROBE")
     runtime_version, hardware_codecs = parse_sdk_probe(json.loads(sdk_report), index, uuid)
     inventories = []
@@ -410,15 +454,14 @@ def resolve_runtime():
     ]
     if not codecs or not {"scale_cuda", "hwupload", "libvmaf_cuda"} <= filters:
         raise RunnerError("INCOMPLETE_CUDA_RUNTIME")
+    require_unchanged_tools(tool_identities)
     data = {
         "schemaVersion": 1, "gpuUuid": uuid, "gpuName": name, "driverVersion": driver_version.strip(),
         "supportedCodecs": codecs, "scoringProfileId": PROFILE_ID,
-        "ffmpegSha256": sha256_file(ffmpeg), "ffprobeSha256": sha256_file(ffprobe),
-        "sdkProbeSha256": sha256_file(sdk_probe), "maxNvencApiVersion": runtime_version,
-        "modelSha256": model_sha, "runnerSha256": sha256_file(Path(__file__)),
+        **digests, "maxNvencApiVersion": runtime_version, "modelSha256": model_sha,
     }
     data["runtimeId"] = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    return Runtime(ffmpeg, ffprobe, index, model_bytes, data)
+    return Runtime(ffmpeg, ffprobe, index, model_bytes, data, tool_identities)
 
 
 def probe_media(runtime, path, options):
@@ -429,14 +472,15 @@ def probe_media(runtime, path, options):
     return json.loads(output)
 
 
-def rounded_ticks(frame_number, time_base):
+def first_accepted_pts(frame_number, time_base):
     ticks = Fraction(frame_number, 30) / time_base
-    return (2 * ticks.numerator + ticks.denominator) // (2 * ticks.denominator)
+    # Both neighbors of an exact half-tick satisfy validate_timeline().
+    return ceil(ticks - Fraction(1, 2))
 
 
 def reference_filter(trial, time_base, label):
-    start = rounded_ticks(trial.start_frame, time_base)
-    end = rounded_ticks(trial.start_frame + trial.frame_count, time_base)
+    start = first_accepted_pts(trial.start_frame, time_base)
+    end = first_accepted_pts(trial.start_frame + trial.frame_count, time_base)
     return "trim=start_pts={}:end_pts={},showinfo@{}=checksum=0,settb=1/30,setpts=N".format(start, end, label)
 
 
@@ -493,6 +537,7 @@ def score(runtime, trial, source, source_time_base, encoded, work, cuda=True):
 
 
 def measure(runtime, trial, cpu_audit):
+    require_unchanged_tools(runtime.tool_identities)
     if trial.codec not in runtime.capabilities["supportedCodecs"]:
         raise RunnerError("UNSUPPORTED_RUNTIME_CODEC")
     source = trial.source_path.resolve(strict=True)
@@ -526,6 +571,7 @@ def measure(runtime, trial, cpu_audit):
                 "meanVmaf": cpu_mean, "scoreMs": cpu_ms,
                 "gpuMinusCpuPerFrame": [float(gpu - cpu) for gpu, cpu in zip(scores, cpu_scores)],
             }
+        require_unchanged_tools(runtime.tool_identities)
         return result
 
 

@@ -23,7 +23,7 @@ def binding(field, option, *, required=False, **limits):
     return {"trialField": field, "ffmpegOption": option, "required": required, **limits}
 
 
-BITRATE_LIMITS = {"minimum": 1, "maximum": 4294967295}
+VBV_LIMITS = {"minimum": 1, "maximum": 2147483647}
 FFMPEG_BINDINGS = {
     ("NV_ENC_INITIALIZE_PARAMS", "encodeGUID"): binding(
         "codec", "-c:v", required=True,
@@ -50,14 +50,14 @@ FFMPEG_BINDINGS = {
         values=["VBR"], ffmpegValues={"VBR": "vbr"},
     ),
     ("NV_ENC_RC_PARAMS", "averageBitRate"): binding(
-        "config.rcParams.averageBitRate", "-b:v", required=True, unit="bps", **BITRATE_LIMITS,
+        "config.rcParams.averageBitRate", "-b:v", required=True, minimum=1, maximum=4294967295, unit="bps",
     ),
     ("NV_ENC_RC_PARAMS", "maxBitRate"): binding(
         "config.rcParams.maxBitRate", "-maxrate:v", unit="bps",
-        atLeastTrialField="config.rcParams.averageBitRate", **BITRATE_LIMITS,
+        atLeastTrialField="config.rcParams.averageBitRate", **VBV_LIMITS,
     ),
     ("NV_ENC_RC_PARAMS", "vbvBufferSize"): binding(
-        "config.rcParams.vbvBufferSize", "-bufsize:v", unit="bits", **BITRATE_LIMITS,
+        "config.rcParams.vbvBufferSize", "-bufsize:v", unit="bits", **VBV_LIMITS,
     ),
     ("NV_ENC_RC_PARAMS", "enableAQ"): binding(
         "config.rcParams.enableAQ", "-spatial-aq", values=[False, True], ffmpegConversion="boolean_to_0_or_1",
@@ -94,8 +94,9 @@ PICTURE_TYPES = {
     "CONTENT_LIGHT_LEVEL",
 }
 CONFIG_TYPES = {"NV_ENC_CONFIG", "NV_ENC_CODEC_CONFIG", "NV_ENC_RC_PARAMS", "NV_ENC_QP", "NV_ENC_PRESET_CONFIG"}
-OUTPUT_TYPES = {
-    "NV_ENC_H264_MV_DATA", "NV_ENC_HEVC_MV_DATA", "NV_ENC_MVECTOR",
+# The motion-estimation output buffer holds these payloads, whose fields omit I/O annotations.
+OUTPUT_ONLY_TYPES = {"NV_ENC_H264_MV_DATA", "NV_ENC_HEVC_MV_DATA", "NV_ENC_MVECTOR"}
+OUTPUT_TYPES = OUTPUT_ONLY_TYPES | {
     "NV_ENC_LOCK_BITSTREAM", "NV_ENC_ENCODE_OUT_PARAMS", "NV_ENC_STAT",
     "NV_ENC_SEQUENCE_PARAM_PAYLOAD", "NV_ENC_OUTPUT_STATS_ROW", "NV_ENC_OUTPUT_STATS_BLOCK",
 }
@@ -179,7 +180,7 @@ def field_classification(key, field_type, direction, phase, pointer_aliases):
         return "pointer"
     if key in FFMPEG_BINDINGS:
         return "ffmpeg_vbr_binding"
-    if (name in {"version", "apiVersion"} or direction == "out"
+    if (name in {"version", "apiVersion"} or direction == "out" or owner in OUTPUT_ONLY_TYPES
             or phase in {"resource", "abi", "capability_query"}
             or name in RUNNER_FIELDS.get(owner, ())):
         return "runner_managed"

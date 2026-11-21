@@ -26,6 +26,7 @@ import {
 	experimentCampaignDetail,
 	experimentCampaignPage,
 	experimentResultPage,
+	experimentSelectionRows,
 	experimentTrialPage,
 } from "@bitovp/db";
 import { type ZodType, z } from "zod";
@@ -266,31 +267,13 @@ export async function selectExperimentQuality(
 			"OPTIMIZER_UNAVAILABLE",
 			"Configure the Lean selection executable",
 		);
-	const rows = await ctx.prisma.encodingExperimentTrial.findMany({
-		where: {
-			organizationId: ctx.organizationId,
-			campaignId: id,
-			AND: [
-				{ input: { path: ["sourceId"], equals: request.sourceId } },
-				{ input: { path: ["window"], equals: request.window } },
-			],
-		},
-		select: {
-			id: true,
-			input: true,
-			result: true,
-			status: true,
-			sourceSha256: true,
-		},
-		orderBy: { id: "asc" },
-		take: 5_001,
-	});
-	if (rows.length > 5_000)
-		throw new EncodingExperimentError(
-			422,
-			"SELECTION_SET_TOO_LARGE",
-			"Select an experiment window with at most 5000 trials",
-		);
+	const rows = await experimentSelectionRows(
+		ctx,
+		id,
+		request.sourceId,
+		request.window.startPts,
+		request.window.endPtsExclusive,
+	);
 	if (new Set(rows.map((row) => row.sourceSha256)).size > 1)
 		throw new EncodingExperimentError(
 			409,

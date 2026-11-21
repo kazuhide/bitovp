@@ -1,8 +1,13 @@
+import hashlib
 import json
+import os
 import unittest
 from fractions import Fraction
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
+
+import runner
 
 from runner import (
     RunnerError,
@@ -14,6 +19,7 @@ from runner import (
     parse_sdk_probe,
     parse_trial,
     parse_vmaf,
+    reference_filter,
     validate_timeline,
 )
 
@@ -111,6 +117,20 @@ class RunnerTest(unittest.TestCase):
                 with self.assertRaises(RunnerError):
                     parse_trial(item)
 
+    def test_vbv_fields_use_the_signed_ffmpeg_option_limit(self):
+        for name in ("maxBitRate", "vbvBufferSize"):
+            with self.subTest(field=name):
+                item = request()
+                rate = item["trial"]["config"]["rcParams"]
+                rate[name] = (1 << 31) - 1
+                self.assertEqual(parse_trial(item).rate[name], (1 << 31) - 1)
+                rate[name] = 1 << 31
+                with self.assertRaises(RunnerError):
+                    parse_trial(item)
+        item = request()
+        item["trial"]["config"]["rcParams"]["averageBitRate"] = (1 << 32) - 1
+        self.assertEqual(parse_trial(item).rate["averageBitRate"], (1 << 32) - 1)
+
     def test_only_accepts_qualified_stream_properties(self):
         probe = {
             "streams": [{
@@ -134,6 +154,20 @@ class RunnerTest(unittest.TestCase):
             with self.subTest(points=points):
                 with self.assertRaises(RunnerError):
                     validate_timeline(log("source", points), "source", 1, 3, "yuv420p")
+
+    def test_trim_uses_the_earliest_accepted_pts_at_each_boundary(self):
+        item = request()
+        item["trial"]["window"]["endPtsExclusive"] = "6000"
+        clock = Fraction(1, 1005)
+        trial = parse_trial(item)
+        for pts in (33, 34):
+            validate_timeline(log("source", [pts], timebase="1/1005"), "source", 1, 1, "yuv420p")
+        self.assertTrue(reference_filter(trial, clock, "source").startswith("trim=start_pts=33:end_pts=67,"))
+        item["trial"]["window"].update(startPts="0", endPtsExclusive="3000")
+        self.assertTrue(reference_filter(parse_trial(item), clock, "source").startswith("trim=start_pts=0:end_pts=33,"))
+        self.assertTrue(reference_filter(trial, Fraction(1, 3000), "source").startswith("trim=start_pts=100:end_pts=200,"))
+        with self.assertRaises(RunnerError):
+            validate_timeline(log("source", [0], timebase="1/100"), "source", 0, 1, "yuv420p")
 
     def test_cuda_frame_log_cannot_be_admitted_as_software_and_vice_versa(self):
         with self.assertRaises(RunnerError):
@@ -184,6 +218,94 @@ class RunnerTest(unittest.TestCase):
                 output.write_text(json.dumps(bad))
                 with self.assertRaises(RunnerError):
                     parse_vmaf(output, 2)
+
+
+class RuntimeIdentityTest(unittest.TestCase):
+    def resolve_fixture(self, root, change_during_probe=None):
+        paths = {name: root / name for name in ("ffmpeg", "ffprobe", "sdk-probe", "runner.py")}
+        for name, path in paths.items():
+            path.write_bytes(name.encode())
+            path.chmod(0o700)
+        model = root / runner.MODEL_NAME
+        model.write_bytes(b"validated model")
+        gpu = "GPU-eb576a3f-5b2d-4be7-863c-742308e386e7"
+
+        def capture(args, stage):
+            if stage == "GPU_QUERY":
+                return "570.00", ""
+            if stage == "NVENC_PROBE":
+                return json.dumps({
+                    "schemaVersion": 1, "deviceIndex": 0, "gpuUuid": gpu, "maxNvencApiVersion": 208,
+                    "sdkApiVersion": {"major": 13, "minor": 0},
+                    "encoders": [{"codec": "HEVC", "inputFormats": [1]}],
+                }), ""
+            if change_during_probe and args[-1] == "-filters":
+                self.replace_file(paths[change_during_probe])
+            return "V hevc_nvenc\nV hevc_cuvid\nT scale_cuda\nT hwupload\nT libvmaf_cuda", ""
+
+        env = {
+            "BITOVP_NVENC_FFMPEG": str(paths["ffmpeg"]),
+            "BITOVP_NVENC_FFPROBE": str(paths["ffprobe"]),
+            "BITOVP_NVENC_SDK_PROBE": str(paths["sdk-probe"]),
+            "BITOVP_NVENC_VMAF_MODEL": str(model),
+            "BITOVP_NVENC_GPU_INDEX": "0",
+        }
+        with patch.dict(os.environ, env), patch.object(runner, "__file__", str(paths["runner.py"])), \
+                patch.object(runner, "MODEL_SHA256", hashlib.sha256(model.read_bytes()).hexdigest()), \
+                patch.object(runner, "cuda_device", return_value=(gpu, "test GPU")), \
+                patch.object(runner, "capture", side_effect=capture):
+            runtime = runner.resolve_runtime()
+        return runtime, paths, model
+
+    @staticmethod
+    def replace_file(path):
+        before = path.stat()
+        replacement = path.with_name(path.name + ".new")
+        replacement.write_bytes(b"X" * before.st_size)
+        os.utime(replacement, ns=(before.st_atime_ns, before.st_mtime_ns))
+        replacement.replace(path)
+
+    def measure_fixture(self, runtime, root, change_during_score=None):
+        source = root / "example.mkv"
+        source.touch()
+        item = request()
+        item["sourcePath"] = str(source)
+        trial = parse_trial(item)
+        packet_probe = {"streams": [{"codec_name": "hevc", "time_base": "1/30"}],
+                        "packets": [{"size": "10", "pts": 0, "flags": "K_"}]}
+
+        def score(_runtime, _trial, _source, _clock, _encoded, work):
+            self.assertEqual((work / runner.MODEL_NAME).read_bytes(), b"validated model")
+            if change_during_score:
+                self.replace_file(change_during_score)
+            return (90.0, 90000, [], 1)
+
+        with patch.object(runner, "probe_media", side_effect=[{}, packet_probe]), \
+                patch.object(runner, "parse_measurement", return_value=Fraction(1, 30)), \
+                patch.object(runner, "encode", return_value=(source, 1)), \
+                patch.object(runner, "score", side_effect=score), \
+                patch.object(runner, "sha256_file", side_effect=AssertionError("unexpected second digest")):
+            return runner.measure(runtime, trial, cpu_audit=False)
+
+    def test_replacing_runtime_tool_during_probe_rejects_capabilities(self):
+        with TemporaryDirectory() as folder, self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
+            self.resolve_fixture(Path(folder), change_during_probe="sdk-probe")
+
+    def test_replacing_consumed_tool_during_measurement_rejects_receipt(self):
+        for tool in ("ffmpeg", "ffprobe", "sdk-probe", "runner.py"):
+            with self.subTest(tool=tool), TemporaryDirectory() as folder:
+                root = Path(folder)
+                runtime, paths, _ = self.resolve_fixture(root)
+                with self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
+                    self.measure_fixture(runtime, root, change_during_score=paths[tool])
+
+    def test_stable_runtime_reuses_prevalidated_model_and_digests(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            runtime, _, model = self.resolve_fixture(root)
+            model.write_bytes(b"updated externally")
+            result = self.measure_fixture(runtime, root)
+            self.assertEqual(result["runtimeId"], runtime.capabilities["runtimeId"])
 
 
 if __name__ == "__main__":

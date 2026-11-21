@@ -1993,6 +1993,7 @@ model EncodingExperimentTrial {
   input Json
   status EncodingExperimentTrialState @default(PENDING)
   attempt Int @default(0)
+  expiredClaims Int @default(0)
   leaseUntil DateTime?
   resultSequence Int?
   result Json?

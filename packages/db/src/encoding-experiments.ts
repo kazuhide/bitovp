@@ -27,7 +27,8 @@ export class EncodingExperimentError extends Error {
 }
 
 const pageSize = 100;
-const maxAttempts = 3;
+const maxExpiredClaims = 3;
+const maxSelectionRows = 5_000;
 const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 
 function noCampaign(): never {
@@ -352,6 +353,41 @@ type TrialClaim = Pick<
 	"id" | "campaignId" | "attempt"
 >;
 
+type SelectionRow = Pick<
+	EncodingExperimentTrial,
+	"id" | "input" | "result" | "status" | "sourceSha256"
+>;
+
+export async function experimentSelectionRows(
+	ctx: ExperimentContext,
+	campaignId: string,
+	sourceId: string,
+	startFrame: string,
+	endFrameExclusive: string,
+) {
+	const { organizationId, id } = campaignWhere(ctx.organizationId, campaignId);
+	// Compare exact frame bounds, including rows stored with a different time base.
+	const rows = await ctx.prisma.$queryRaw<SelectionRow[]>`
+		SELECT "id", "input", "result", "status"::text AS "status", "sourceSha256"
+		FROM "EncodingExperimentTrial"
+		WHERE "organizationId" = ${organizationId}::uuid AND "campaignId" = ${id}::uuid
+			AND "input"->>'sourceId' = ${sourceId}
+			AND ("input"#>>'{window,startPts}')::numeric * ("input"#>>'{window,timeBase,num}')::numeric * 30
+				= ${startFrame}::numeric * ("input"#>>'{window,timeBase,den}')::numeric
+			AND ("input"#>>'{window,endPtsExclusive}')::numeric * ("input"#>>'{window,timeBase,num}')::numeric * 30
+				= ${endFrameExclusive}::numeric * ("input"#>>'{window,timeBase,den}')::numeric
+		ORDER BY "id" ASC
+		LIMIT ${maxSelectionRows + 1}
+	`;
+	if (rows.length > maxSelectionRows)
+		throw new EncodingExperimentError(
+			422,
+			"SELECTION_SET_TOO_LARGE",
+			"Select an experiment window with at most 5000 trials",
+		);
+	return rows;
+}
+
 export async function claimExperimentTrial(
 	ctx: ExperimentContext,
 	capabilityId: string,
@@ -375,13 +411,22 @@ export async function claimExperimentTrial(
 		const campaign = await lockCampaign(tx, organizationId, trial.campaignId);
 		if (campaign.state !== "RUNNING" || campaign.capabilityId !== capabilityId)
 			return null;
-		const where = { ...ready, id: trial.id, attempt: trial.attempt };
-		if (trial.attempt >= maxAttempts) {
+		const wasRunning = trial.status === "RUNNING";
+		const expiredClaims = trial.expiredClaims + Number(wasRunning);
+		const where = {
+			organizationId,
+			id: trial.id,
+			attempt: trial.attempt,
+			status: trial.status,
+			...(wasRunning ? { leaseUntil: { lte: now } } : {}),
+		};
+		if (expiredClaims >= maxExpiredClaims) {
 			const expired = await tx.encodingExperimentTrial.updateMany({
 				where,
 				data: {
 					status: "FAILED",
 					failureCode: "WORKER_LEASE_EXPIRED",
+					expiredClaims,
 					leaseUntil: null,
 					resultSequence: campaign.resultSequence + 1,
 				},
@@ -389,16 +434,24 @@ export async function claimExperimentTrial(
 			if (expired.count) await advanceResults(tx, campaign);
 			return null;
 		}
+		const leaseUntil = new Date(now.getTime() + leaseMs);
 		const changed = await tx.encodingExperimentTrial.updateMany({
 			where,
 			data: {
 				status: "RUNNING",
 				attempt: { increment: 1 },
-				leaseUntil: new Date(now.getTime() + leaseMs),
+				expiredClaims,
+				leaseUntil,
 			},
 		});
 		return changed.count
-			? { ...trial, status: "RUNNING" as const, attempt: trial.attempt + 1 }
+			? {
+					...trial,
+					status: "RUNNING" as const,
+					attempt: trial.attempt + 1,
+					expiredClaims,
+					leaseUntil,
+				}
 			: null;
 	});
 }
@@ -427,6 +480,18 @@ export async function renewExperimentTrial(
 	return updated.count === 1;
 }
 
+export async function releaseExperimentTrial(
+	ctx: ExperimentContext,
+	claim: TrialClaim,
+	now: Date,
+) {
+	const updated = await ctx.prisma.encodingExperimentTrial.updateMany({
+		where: liveClaim(ctx.organizationId, claim, now),
+		data: { status: "PENDING", leaseUntil: null },
+	});
+	return updated.count === 1;
+}
+
 async function advanceResults(
 	tx: AppTransactionClient,
 	campaign: EncodingExperimentCampaign,
@@ -440,7 +505,6 @@ async function advanceResults(
 export async function completeExperimentTrial(
 	ctx: ExperimentContext,
 	claim: TrialClaim,
-	now: Date,
 	outcome: Outcome,
 ) {
 	return ctx.prisma.$transaction(async (tx) => {
@@ -450,16 +514,31 @@ export async function completeExperimentTrial(
 			claim.campaignId,
 		);
 		if (campaign.state === "CANCELED") return false;
-		const updated = await tx.encodingExperimentTrial.updateMany({
-			where: liveClaim(ctx.organizationId, claim, now),
-			data: {
-				...outcome,
-				status: "result" in outcome ? "SUCCEEDED" : "FAILED",
-				leaseUntil: null,
-				resultSequence: campaign.resultSequence + 1,
-			},
-		});
-		if (updated.count) await advanceResults(tx, campaign);
-		return updated.count === 1;
+		const measured = "result" in outcome;
+		const status = measured ? "SUCCEEDED" : "FAILED";
+		const result = measured ? JSON.stringify(outcome.result) : null;
+		const failureCode = measured ? null : outcome.failureCode;
+		// Read the database clock with both the campaign and trial locked.
+		const changed = await tx.$queryRaw<{ id: string }[]>`
+			WITH locked AS MATERIALIZED (
+				SELECT "id", "leaseUntil" FROM "EncodingExperimentTrial"
+				WHERE "organizationId" = ${ctx.organizationId}::uuid
+					AND "campaignId" = ${claim.campaignId}::uuid
+					AND "id" = ${claim.id}::uuid
+					AND "attempt" = ${claim.attempt}
+					AND "status" = 'RUNNING'
+				FOR UPDATE
+			)
+			UPDATE "EncodingExperimentTrial" trial
+			SET "result" = ${result}::jsonb, "failureCode" = ${failureCode},
+				"status" = ${status}::"EncodingExperimentTrialState", "leaseUntil" = NULL,
+				"resultSequence" = ${campaign.resultSequence + 1}
+			FROM locked
+			WHERE trial."id" = locked."id"
+				AND locked."leaseUntil" > (clock_timestamp() AT TIME ZONE 'UTC')
+			RETURNING trial."id"
+		`;
+		if (changed.length) await advanceResults(tx, campaign);
+		return changed.length === 1;
 	});
 }

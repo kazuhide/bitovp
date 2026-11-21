@@ -21,6 +21,7 @@ import {
 	getIdentityPrisma,
 	getPrisma,
 	getTenantPrisma,
+	releaseExperimentTrial,
 	renewExperimentTrial,
 } from "@bitovp/db";
 import { readMeasurement } from "./receipt";
@@ -85,7 +86,10 @@ async function runTrial(
 			});
 	}, 5_000);
 	let scratch: string | undefined;
-	let outcome: Parameters<typeof completeExperimentTrial>[3] | undefined;
+	let outcome:
+		| Parameters<typeof completeExperimentTrial>[2]
+		| "release"
+		| undefined;
 	try {
 		const { replicateId: _, ...trial } = experimentTrialSchema.parse(
 			claim.input,
@@ -151,8 +155,8 @@ async function runTrial(
 				error instanceof ExperimentRunnerError
 					? error.code
 					: "EXPERIMENT_INVALID_MEASUREMENT";
-			// A competing process holds the GPU lock until it exits. The claim can expire and be retried.
-			if (code !== "GPU_BUSY") outcome = { failureCode: code };
+			// Contention never started this trial. Keep the claim fence and release the work.
+			outcome = code === "GPU_BUSY" ? "release" : { failureCode: code };
 		}
 	} finally {
 		clearInterval(heartbeat);
@@ -163,8 +167,11 @@ async function runTrial(
 		outcome &&
 		!signal.aborted &&
 		(await organizationActive(ctx.organizationId))
-	)
-		await completeExperimentTrial(ctx, claim, new Date(), outcome);
+	) {
+		if (outcome === "release")
+			await releaseExperimentTrial(ctx, claim, new Date());
+		else await completeExperimentTrial(ctx, claim, outcome);
+	}
 }
 
 async function publishHealth(root: string, runtime: ExperimentRuntime) {

@@ -38,7 +38,9 @@ export {
 	experimentCampaignDetail,
 	experimentCampaignPage,
 	experimentResultPage,
+	experimentSelectionRows,
 	experimentTrialPage,
+	releaseExperimentTrial,
 	renewExperimentTrial,
 } from "./encoding-experiments";
 export type {

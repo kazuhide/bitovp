@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	experimentBatchSchema,
+	experimentQualityRequestSchema,
 	experimentResultSchema,
 	experimentTrialSchema,
 } from "./encoding-experiments";
@@ -34,10 +35,40 @@ describe("the NVIDIA experiment request and receipt", () => {
 				},
 			},
 		};
-		expect(experimentTrialSchema.parse(raw)).toEqual(raw);
+		expect(experimentTrialSchema.parse(raw)).toEqual({
+			...raw,
+			window: {
+				timeBase: { num: 1, den: 30 },
+				startPts: "300",
+				endPtsExclusive: "600",
+			},
+		});
 		expect(experimentTrialSchema.parse(trial).config.rcParams).toEqual(
 			trial.config.rcParams,
 		);
+		const equivalent = experimentBatchSchema.parse({
+			schemaVersion: 1,
+			trials: [
+				trial,
+				{
+					...trial,
+					window: {
+						timeBase: { num: 2, den: 60 },
+						startPts: "300",
+						endPtsExclusive: "600",
+					},
+				},
+			],
+		});
+		expect(equivalent.trials[0]).toEqual(equivalent.trials[1]);
+		expect(
+			experimentQualityRequestSchema.parse({
+				schemaVersion: 1,
+				sourceId: trial.sourceId,
+				window: trial.window,
+				constraints: {},
+			}).window,
+		).toEqual(equivalent.trials[0]?.window);
 	});
 
 	it("rejects unaligned, inverted, and noncanonical windows", () => {
@@ -100,6 +131,33 @@ describe("the NVIDIA experiment request and receipt", () => {
 		]) {
 			expect(experimentTrialSchema.safeParse(input).success).toBe(false);
 		}
+	});
+
+	it("enforces FFmpeg's signed bounds for maxrate and bufsize", () => {
+		for (const key of ["maxBitRate", "vbvBufferSize"] as const) {
+			for (const [value, valid] of [
+				[0x7fffffff, true],
+				[0x80000000, false],
+			] as const) {
+				const input = {
+					...trial,
+					config: {
+						...trial.config,
+						rcParams: { ...trial.config.rcParams, [key]: value },
+					},
+				};
+				expect(experimentTrialSchema.safeParse(input).success).toBe(valid);
+			}
+		}
+		expect(
+			experimentTrialSchema.safeParse({
+				...trial,
+				config: {
+					...trial.config,
+					rcParams: { ...trial.config.rcParams, averageBitRate: 0xffffffff },
+				},
+			}).success,
+		).toBe(true);
 	});
 
 	it("accepts a complete measured receipt with integer rate components", () => {

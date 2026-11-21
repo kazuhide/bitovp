@@ -34,6 +34,7 @@ CREATE TABLE "EncodingExperimentTrial" (
     "input" JSONB NOT NULL,
     "status" "EncodingExperimentTrialState" NOT NULL DEFAULT 'PENDING',
     "attempt" INTEGER NOT NULL DEFAULT 0,
+    "expiredClaims" INTEGER NOT NULL DEFAULT 0,
     "leaseUntil" TIMESTAMP(3),
     "resultSequence" INTEGER,
     "result" JSONB,
@@ -62,6 +63,9 @@ CREATE INDEX "ExperimentTrial_queue" ON "EncodingExperimentTrial"("organizationI
 
 -- CreateIndex
 CREATE UNIQUE INDEX "ExperimentTrial_dedup" ON "EncodingExperimentTrial"("organizationId", "campaignId", "trialKey");
+
+-- Match results for a single source without walking every source in a campaign.
+CREATE INDEX "ExperimentTrial_source" ON "EncodingExperimentTrial"("organizationId", "campaignId", ("input"->>'sourceId'), "id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "ExperimentTrial_export" ON "EncodingExperimentTrial"("organizationId", "campaignId", "resultSequence");

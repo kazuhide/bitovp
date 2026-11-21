@@ -4297,7 +4297,7 @@
 					"type": "NV_ENC_MVECTOR[4]",
 					"direction": "unspecified",
 					"lifecycle": "output",
-					"classification": "inventoried_unbound",
+					"classification": "runner_managed",
 					"sourceLine": 1504
 				},
 				{
@@ -4305,7 +4305,7 @@
 					"type": "uint8_t",
 					"direction": "unspecified",
 					"lifecycle": "output",
-					"classification": "inventoried_unbound",
+					"classification": "runner_managed",
 					"sourceLine": 1505
 				},
 				{
@@ -4313,7 +4313,7 @@
 					"type": "uint8_t",
 					"direction": "unspecified",
 					"lifecycle": "output",
-					"classification": "inventoried_unbound",
+					"classification": "runner_managed",
 					"sourceLine": 1506
 				},
 				{
@@ -4329,7 +4329,7 @@
 					"type": "uint32_t",
 					"direction": "unspecified",
 					"lifecycle": "output",
-					"classification": "inventoried_unbound",
+					"classification": "runner_managed",
 					"sourceLine": 1508
 				}
 			]
@@ -4376,7 +4376,7 @@
 					"type": "NV_ENC_MVECTOR[4]",
 					"direction": "unspecified",
 					"lifecycle": "output",
-					"classification": "inventoried_unbound",
+					"classification": "runner_managed",
 					"sourceLine": 1516
 				},
 				{
@@ -4384,7 +4384,7 @@
 					"type": "uint8_t",
 					"direction": "unspecified",
 					"lifecycle": "output",
-					"classification": "inventoried_unbound",
+					"classification": "runner_managed",
 					"sourceLine": 1517
 				},
 				{
@@ -4392,7 +4392,7 @@
 					"type": "uint8_t",
 					"direction": "unspecified",
 					"lifecycle": "output",
-					"classification": "inventoried_unbound",
+					"classification": "runner_managed",
 					"sourceLine": 1518
 				},
 				{
@@ -4400,7 +4400,7 @@
 					"type": "uint8_t",
 					"direction": "unspecified",
 					"lifecycle": "output",
-					"classification": "inventoried_unbound",
+					"classification": "runner_managed",
 					"sourceLine": 1519
 				},
 				{
@@ -4408,7 +4408,7 @@
 					"type": "uint8_t",
 					"direction": "unspecified",
 					"lifecycle": "output",
-					"classification": "inventoried_unbound",
+					"classification": "runner_managed",
 					"sourceLine": 1522
 				}
 			]
@@ -5878,7 +5878,7 @@
 					"type": "int16_t",
 					"direction": "unspecified",
 					"lifecycle": "output",
-					"classification": "inventoried_unbound",
+					"classification": "runner_managed",
 					"sourceLine": 1495
 				},
 				{
@@ -5886,7 +5886,7 @@
 					"type": "int16_t",
 					"direction": "unspecified",
 					"lifecycle": "output",
-					"classification": "inventoried_unbound",
+					"classification": "runner_managed",
 					"sourceLine": 1496
 				}
 			]
@@ -7630,9 +7630,9 @@
 						"trialField": "config.rcParams.averageBitRate",
 						"ffmpegOption": "-b:v",
 						"required": true,
-						"unit": "bps",
 						"minimum": 1,
-						"maximum": 4294967295
+						"maximum": 4294967295,
+						"unit": "bps"
 					}
 				},
 				{
@@ -7649,7 +7649,7 @@
 						"unit": "bps",
 						"atLeastTrialField": "config.rcParams.averageBitRate",
 						"minimum": 1,
-						"maximum": 4294967295
+						"maximum": 2147483647
 					}
 				},
 				{
@@ -7665,7 +7665,7 @@
 						"required": false,
 						"unit": "bits",
 						"minimum": 1,
-						"maximum": 4294967295
+						"maximum": 2147483647
 					}
 				},
 				{

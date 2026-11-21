@@ -30,7 +30,7 @@ pnpm --filter @bitovp/worker experiments:register-source \
 
 ## Run a campaign
 
-In **Encoding experiments**, choose a source and codec, check the JSON trial request, and submit it. Use **Pause** to stop additional claims and **Resume** to admit pending trials. **Seal** closes submissions. **Cancel** cancels unfinished trials, including the active one. Download the result rows from the campaign.
+In **Encoding experiments**, create a campaign and choose a source. Set the codec and other settings in the JSON trial request and queue it. Use **Pause** to stop additional claims and **Resume** to admit pending trials. **Seal** closes submissions. **Cancel** cancels unfinished trials, including the active one. Use the CLI to export the result rows.
 
 External clients can use a token from **Settings → API tokens**. Choose the purpose **Encoding experiments · Run** for submissions and control or **Encoding experiments · Read** for retrieval. The token is scoped to the experiment API and its organization. Set `BITOVP_EXPERIMENTS_URL` and `BITOVP_API_TOKEN` in the client environment. The CLI accepts HTTPS and direct loopback HTTP for local development.
 
@@ -46,6 +46,8 @@ node scripts/encoding-experiments.mjs export <campaign-id> --format ndjson
 ```
 
 Create inputs carry `schemaVersion: 1`, `name`, and the current `capabilityId`. The queue accepts `{ "schemaVersion": 1, "trials": [...] }` in batches of at most 128. Each trial uses a registered `sourceId`, a time base and start/end PTS, codec, preset, tuning, and typed config. Use distinct `replicateId` values for intentional repeats. Retrying the same batch with the same idempotency key returns the original receipt. Results paginate against a fixed completion sequence.
+
+**Settings → Reset data** keeps encoding experiment campaigns, trials and their measurement results, and accepted batch receipts. These records are retained even when every available reset category is selected.
 
 ## Select a setting with Lean
 

@@ -1711,6 +1711,33 @@ export const en = {
 		submitting: "Changing…",
 		failed: "Password change failed",
 	},
+	operationAnalytics: {
+		title: "Operation analytics",
+		caption: "Live MoQ preview outcomes and first-frame times",
+		collecting: "Collecting",
+		paused: "Collection paused",
+		collectionSettings: "Collection settings",
+		loadFailed: "Could not load operation analytics.",
+		period: "Live MoQ preview · Weeks start Monday in UTC",
+		attempts: "Playback attempts",
+		firstFrameTime: "Time to first frame",
+		noFirstFrame: "No first-frame measurements in this period.",
+		empty: "No recorded attempts in this period.",
+		table: "Weekly MoQ playback data",
+		week: "Week of (UTC)",
+		partial: "In progress",
+		started: "Starts",
+		firstFrame: "First frames",
+		failed: "Failed",
+		canceled: "Canceled",
+		unconfirmed: "Unconfirmed",
+		pending: "Pending",
+		share: "First-frame share",
+		p50: "p50",
+		p95: "p95",
+		milliseconds: "{value} ms",
+		shareNote: "The first-frame share excludes pending attempts.",
+	},
 	common: {
 		accessAdminOnly:
 			"This area is for administrators. Ask an admin if you need access.",
@@ -4605,6 +4632,9 @@ export const en = {
 		featureQcVmaf: "VMAF lab and QC",
 		featureQcVmafHint:
 			"Off by default. When off, the VMAF lab, the wizard's QC gate editor and the per-job QC surfaces are hidden, no new measurements are created, and a plan carrying a qc block is refused. Jobs already parked or failed under an existing gate stay releasable — their QC panel, override and evidence export keep working.",
+		featureOperationAnalytics: "Live operation analytics",
+		featureOperationAnalyticsHint:
+			"Records the starts and outcomes of MoQ preview attempts for your organization. The weekly report stays available when collection is paused.",
 		featuresLoadFailed: "Could not load the feature settings.",
 		featuresSavedReloadHint:
 			"Saved. Reload the page for the navigation and the wizard to pick it up.",

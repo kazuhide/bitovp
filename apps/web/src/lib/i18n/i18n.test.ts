@@ -133,7 +133,8 @@ describe("catalogue parity", () => {
 		// Availability wording and MoQ measurement sources (runtime measured: 1687).
 		// Source explanations for the MoQ graphs (runtime measured: 1689).
 		// Compact lifecycle and HDR measurement wording (runtime measured: 1688).
-		pinWithDriftAid(long.length, 1688, "long");
+		// Operation analytics adds report guidance (runtime measured: 1691).
+		pinWithDriftAid(long.length, 1691, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Runtime measurement includes three-way output labels (deduplicated).
 		// The two MoQ authorization labels add two unique short Japanese values.
@@ -151,7 +152,8 @@ describe("catalogue parity", () => {
 		// Source, session, and player controls for MoQ (runtime measured: 3428).
 		// Report origin, run details and comparison conditions (runtime measured: 3431).
 		// Live input availability and Push read failure (runtime measured: 3433).
-		pinWithDriftAid(short.size, 3433, "short");
+		// Operation analytics adds report and collection labels (runtime measured: 3451).
+		pinWithDriftAid(short.size, 3451, "short");
 	});
 
 	/**
@@ -315,6 +317,10 @@ describe("catalogue parity", () => {
 		// Standard transfer-domain abbreviations, rather than untranslated prose.
 		"qc.measurementSdr",
 		"qc.measurementHdrPq",
+		// Percentile labels and the millisecond symbol are the same in both locales.
+		"operationAnalytics.p50",
+		"operationAnalytics.p95",
+		"operationAnalytics.milliseconds",
 	]);
 
 	it("translates every string that is not exempt", () => {

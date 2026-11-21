@@ -74,6 +74,23 @@ describe("non-admin access history", () => {
 		);
 		expect(mocks.create).toHaveBeenCalledOnce();
 	});
+	it("omits allowed telemetry submissions and keeps access-gate denials", async () => {
+		const telemetryRequest = {
+			...request,
+			method: "POST",
+			url: "http://localhost/api/operation-attempts",
+		};
+		await recordAccessNonAdmin(context, telemetryRequest, 200);
+		expect(mocks.create).not.toHaveBeenCalled();
+		await recordAccessNonAdmin(context, telemetryRequest, 403);
+		expect(mocks.create).toHaveBeenCalledOnce();
+		expect(mocks.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				path: "/api/operation-attempts",
+				statusCode: 403,
+			}),
+		});
+	});
 	it("propagates unavailable storage rather than silently losing access records", async () => {
 		mocks.create.mockRejectedValue(new Error("unavailable"));
 		await expect(recordAccessNonAdmin(context, request, 200)).rejects.toThrow(

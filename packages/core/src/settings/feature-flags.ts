@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * App-wide feature flags . Stored as ONE `AppSetting` row under
+ * Organization-wide feature flags. Stored as ONE `AppSetting` row under
  * `FEATURE_FLAGS_KEY`; the value is parsed here so a hand-edited or
  * half-migrated row degrades to defaults instead of crashing a render.
  *
@@ -24,6 +24,8 @@ export const featureFlagsSchema = z
 		 * released there .
 		 */
 		qcVmaf: z.boolean().default(false),
+		/** Recording is opt-in. Reporting remains available after a pause. */
+		operationAnalytics: z.boolean().default(false),
 	})
 	.strip();
 
@@ -44,6 +46,7 @@ export type FeatureFlags = z.infer<typeof featureFlagsSchema>;
 export const featureFlagsPatchSchema = z
 	.object({
 		qcVmaf: z.boolean().optional(),
+		operationAnalytics: z.boolean().optional(),
 	})
 	.strip();
 

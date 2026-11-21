@@ -2,6 +2,7 @@ import "server-only";
 import {
 	MOQ_PLAYBACK_NAMESPACE_MAX_LENGTH,
 	moqRunNamespaceSuffix,
+	type StepLogEntry,
 	stepLogSchema,
 } from "@bitovp/core";
 import type { Prisma } from "@bitovp/db";
@@ -29,6 +30,21 @@ export const moqStoredOutputSchema = z.object({
 	]),
 	draftVersion: z.enum(["DRAFT_16", "DRAFT_18"]),
 });
+
+export function hasCompletedMoqMuxing(
+	entries: readonly StepLogEntry[],
+	encodingStep: string,
+	outputStep: string,
+): boolean {
+	return entries.some(
+		(entry) =>
+			(entry.kind === "CREATE_MUXING_FMP4" ||
+				entry.kind === "CREATE_MUXING_CMAF") &&
+			entry.status === "DONE" &&
+			entry.refs.encodingId === encodingStep &&
+			entry.refs.outputId === outputStep,
+	);
+}
 
 /** Verify the stored run graph before opening credentials or admitting a measurement. */
 export function readMoqPlaybackBinding(
@@ -83,12 +99,10 @@ export function readMoqPlaybackBinding(
 	}
 	const stored = moqStoredOutputSchema.safeParse(output.payload);
 	const startedAt = Date.parse(output.startedAt ?? "");
-	const linkedMuxing = parsed.data.some(
-		(entry) =>
-			entry.kind === "CREATE_MUXING_FMP4" &&
-			entry.status === "DONE" &&
-			entry.refs.encodingId === encoding.step &&
-			entry.refs.outputId === output.step,
+	const linkedMuxing = hasCompletedMoqMuxing(
+		parsed.data,
+		encoding.step,
+		output.step,
 	);
 	if (!stored.success || !Number.isFinite(startedAt) || !linkedMuxing) {
 		return { ...unbound, code: "MOQ_PLAYBACK_DELIVERY_UNSUPPORTED" } as const;

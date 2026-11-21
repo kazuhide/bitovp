@@ -1,6 +1,7 @@
 import type { AutoPortraitClip } from "./auto-portrait";
 import { localStorySelectedQuoteIssues } from "./local-story-coherence";
 import {
+	type LocalStoryBlueprint,
 	type LocalStoryEvent,
 	type LocalStoryInput,
 	type LocalStorySelection,

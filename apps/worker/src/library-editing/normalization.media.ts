@@ -5,6 +5,7 @@ import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
 	cfrTimeMapSchema,
 	editingNormalizationEvidenceSchema,
@@ -273,26 +274,12 @@ test("native identity normalization checks both clocks with one video decode", {
 		const destination = join(dir, "prepared.mp4");
 		const trace = join(dir, "probe.jsonl");
 		const malformedTime = join(dir, "malformed-time");
-		const shim = join(dir, "ffprobe");
-		await source(original, "30/1", 60);
-		await writeFile(
-			shim,
-			`#!/usr/bin/env node
-const { appendFileSync, existsSync } = require("node:fs");
-const { spawnSync } = require("node:child_process");
-const args = process.argv.slice(2);
-appendFileSync(${JSON.stringify(trace)}, JSON.stringify(args) + "\\n");
-const result = spawnSync("ffprobe", args, { encoding: "utf8" });
-let stdout = result.stdout ?? "";
-if (existsSync(${JSON.stringify(malformedTime)}) && args.includes("compact=p=1:nk=0")) {
-	stdout = stdout.replace("best_effort_timestamp_time=0.000000", "best_effort_timestamp_time=0.100000");
-}
-process.stdout.write(stdout);
-process.stderr.write(result.stderr ?? "");
-process.exitCode = result.status ?? 1;
-`,
-			{ mode: 0o700 },
+		// The media gate mounts TMPDIR with noexec. Run the fixture from
+		// the read-only source tree and write only its trace under TMPDIR.
+		const shim = fileURLToPath(
+			new URL("./fixtures/normalization-ffprobe-fixture.mjs", import.meta.url),
 		);
+		await source(original, "30/1", 60);
 		const input = {
 			sourcePath: original,
 			destinationPath: destination,

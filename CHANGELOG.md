@@ -6,9 +6,12 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-11-22
+
 ### Added
 
 - Accept CMAF muxings and chunk frame settings in MoQ Live templates and channel plans, with playback and observation history for those runs.
+- Add opt-in MoQ playback analytics with weekly reports on attempts, outcomes, and time to first frame.
 - Allow operators to opt in to reuse of verified native VMAF scores on eligible manual retries with matching inputs, model, and runtime.
 - Add experimental opt-in CUDA transcription through a SHA-256-pinned Whisper executable for standalone library transcription.
 - Allow local story drafts to limit transcription and clip analysis to an explicitly selected, verified scene.
@@ -374,6 +377,7 @@ instructions.
 Record implemented changes under **Unreleased** until their tagged release is
 published.
 
+[1.3.4]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.4
 [1.3.3]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.3
 [1.3.2]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.2
 [1.3.1]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.1

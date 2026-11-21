@@ -15,6 +15,48 @@ import { localStoryFlowTaskIdentityForConfiguration } from "./local-story-workfl
 import { mediaTaskEnvelopeSchema } from "./schema";
 
 const id = "00000000-0000-4000-8000-000000000001";
+it("binds experimental CUDA transcription intent and its executable to a distinct cache key", () => {
+	const request = {
+		kind: "TRANSCRIBE",
+		mediaVersionId: id,
+		requestKey: id,
+		parameters: { durationUs: 180_000_000 },
+	};
+	const identity = {
+		organizationId: id,
+		mediaSha256: "a".repeat(64),
+		modelSha256: "b".repeat(64),
+		analysisDocumentHash: null,
+		analysisRawHash: null,
+		timeMapHash: "c".repeat(64),
+	};
+	const cpu = mediaTaskCreateSchema.parse(request);
+	const cuda = mediaTaskCreateSchema.parse({
+		...request,
+		parameters: { ...request.parameters, asrBackend: "cuda" },
+	});
+	const executable = { ...identity, asrCudaBinarySha256: "d".repeat(64) };
+	const envelope = (input: unknown, pin: unknown) =>
+		mediaTaskEnvelopeSchema.safeParse({
+			schemaVersion: 1,
+			input,
+			identity: pin,
+		});
+	expect(envelope(cuda, executable).success).toBe(true);
+	expect(envelope(cuda, identity).success).toBe(false);
+	expect(envelope(cpu, executable).success).toBe(false);
+	expect(mediaTaskIntentHash(cpu)).not.toBe(mediaTaskIntentHash(cuda));
+	expect(mediaTaskCacheKey(cpu, identity)).not.toBe(
+		mediaTaskCacheKey(cuda, executable),
+	);
+	expect(mediaTaskCacheKey(cuda, executable)).not.toBe(
+		mediaTaskCacheKey(cuda, {
+			...executable,
+			asrCudaBinarySha256: "e".repeat(64),
+		}),
+	);
+});
+
 describe("durable media production task contracts", () => {
 	it("normalizes generation defaults and preserves a stable replay intent", () => {
 		const input = {

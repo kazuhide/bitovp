@@ -67,7 +67,8 @@ plan. `authTokenType` requires a token.
 
 Use one `MOQ` output referencing that credential, `trackNamespace` as a tuple of
 1–32 nonempty strings, and `draftVersion` as `DRAFT_16` or `DRAFT_18`. Each H264
-video or AAC audio rendition needs its own FMP4 muxing directed to that output.
+video or AAC audio rendition needs one FMP4 or CMAF muxing directed to that
+output. A CMAF muxing can specify `framesPerCmafChunk`.
 Set `liveManifests` to an empty array. Storage outputs/mirrors, DRM, SCTE-35,
 and ad insertion are not supported in this evaluation path. The plan is kept in
 expert mode so conversion to the ordinary wizard cannot discard MoQ settings.

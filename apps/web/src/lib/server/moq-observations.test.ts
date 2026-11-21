@@ -60,7 +60,11 @@ const req = (body: unknown = payload()) =>
 			body: JSON.stringify(body),
 		},
 	);
-const run = (): {
+const run = (
+	muxingKind:
+		| "CREATE_MUXING_FMP4"
+		| "CREATE_MUXING_CMAF" = "CREATE_MUXING_FMP4",
+): {
 	id: string;
 	organizationId: string;
 	liveChannelId: string;
@@ -103,7 +107,7 @@ const run = (): {
 		},
 		{
 			step: "muxing",
-			kind: "CREATE_MUXING_FMP4",
+			kind: muxingKind,
 			status: "DONE",
 			payload: {},
 			refs: { encodingId: "encoding", outputId: "output" },
@@ -419,7 +423,11 @@ describe("run-bound MoQ observation persistence", () => {
 		});
 		expect(cancel).toHaveBeenCalledOnce();
 	});
-	it("creates a bounded session owned by the server actor, omitting actor from the response", async () => {
+	it.each([
+		"CREATE_MUXING_FMP4",
+		"CREATE_MUXING_CMAF",
+	] as const)("creates a bounded session for %s owned by the server actor, omitting actor from the response", async (kind) => {
+		row = run(kind);
 		const response = await putMoqObservation(req(), params);
 		expect(response.status).toBe(200);
 		const body = await response.json();

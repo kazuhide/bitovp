@@ -829,6 +829,86 @@ it("covers all 734 seconds with bounded contiguous windows and adds the original
 		/private\/source|private\/model/,
 	);
 });
+it("decodes a scoped scene on the prepared audio clock and isolates its cache from the full transcript", async () => {
+	const f = fixture();
+	const scoped = {
+		...f.input,
+		sceneScope: {
+			sceneId: "22222222-2222-4222-8222-222222222222",
+			startUs: 277_000_000,
+			endUs: 282_000_000,
+		},
+		includeCaptionLanguage: true,
+	};
+	const first = await prepareLocalStoryTranscript(scoped);
+	expect(mocks.asr).toHaveBeenCalledExactlyOnceWith(
+		expect.objectContaining({
+			sourceStartUs: 200_000_000,
+			durationUs: 5_000_000,
+		}),
+	);
+	expect(first.segments[0]).toMatchObject({
+		startUs: 277_100_000,
+		endUs: 277_200_000,
+	});
+	expect(first.captionTimingEvidence?.speechCoverage).toEqual([
+		{ startUs: 277_000_000, endUs: 282_000_000 },
+	]);
+	expect(await prepareLocalStoryTranscript(scoped)).toEqual({
+		...first,
+		cached: true,
+	});
+	const full = await prepareLocalStoryTranscript(f.input);
+	expect(full.cached).toBe(false);
+	expect(full.fingerprint).not.toBe(first.fingerprint);
+	expect(mocks.asr).toHaveBeenCalledTimes(6);
+});
+it("keeps every retry child inside the opted-in scene", async () => {
+	const f = fixture();
+	mocks.asr.mockRejectedValueOnce(
+		new MediaOperationError("TRANSCRIPT_INVALID"),
+	);
+	const result = await prepareLocalStoryTranscript({
+		...f.input,
+		sceneScope: {
+			sceneId: "22222222-2222-4222-8222-222222222222",
+			startUs: 277_000_000,
+			endUs: 315_000_000,
+		},
+		includeCaptionLanguage: true,
+	});
+	expect(
+		mocks.asr.mock.calls.map(([arg]) => {
+			const input = arg as TranscriptionInput;
+			return [input.sourceStartUs, input.durationUs];
+		}),
+	).toEqual([
+		[200_000_000, 38_000_000],
+		[200_000_000, 30_000_000],
+		[230_000_000, 8_000_000],
+	]);
+	expect(result.status).toBe("READY");
+	expect(result.captionTimingEvidence?.speechCoverage).toEqual([
+		{ startUs: 277_000_000, endUs: 307_000_000 },
+		{ startUs: 307_000_000, endUs: 315_000_000 },
+	]);
+});
+it("rejects a scoped range outside prepared media before decoding or reading a cache", async () => {
+	const f = fixture();
+	const scoped = {
+		...f.input,
+		sceneScope: {
+			sceneId: "22222222-2222-4222-8222-222222222222",
+			startUs: 76_999_999,
+			endUs: 282_000_000,
+		},
+	};
+	await expect(prepareLocalStoryTranscript(scoped)).rejects.toMatchObject({
+		code: "LOCAL_STORY_CONTEXT_LIMIT",
+	});
+	expect(f.keys).toEqual([]);
+	expect(mocks.asr).not.toHaveBeenCalled();
+});
 it("reuses complete source transcripts, and isolates model, clock and language changes", async () => {
 	const f = fixture(),
 		first = await prepareLocalStoryTranscript(f.input),

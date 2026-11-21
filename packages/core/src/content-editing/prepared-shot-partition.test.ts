@@ -130,6 +130,11 @@ describe("one prepared partition from original shared boundaries", () => {
 		expect(preparedFrameForSourceAppearance(p, 0.1)).toBe(4);
 		expect(preparedFrameForSourceAppearance(p, 5 / 24)).toBe(7);
 		expect(preparedFrameForSourceAppearance(p, 0.166667)).toBe(5);
+		expect(
+			preparedFrameForSourceAppearance(p, 0.166667, {
+				snapToSourceGrid: false,
+			}),
+		).toBe(7);
 		expect(preparedFrameForSourceAppearance(p, 2)).toBe(60);
 		expect(preparedFrameForSourceAppearance(p, 3)).toBe(60);
 		expect(() => preparedFrameForSourceAppearance(p, NaN)).toThrow();

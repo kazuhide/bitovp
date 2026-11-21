@@ -9,6 +9,10 @@ import {
 	compositionSourceSegmentSchema,
 } from "./composition-evidence";
 import {
+	type LocalStorySceneScope,
+	localStorySceneScopeSchema,
+} from "./local-story-contracts";
+import {
 	parseLegacyWhisperTranscript,
 	type LegacyRawTranscriptSegment as RawTranscriptSegment,
 	type LegacySpeechInterval as SpeechInterval,
@@ -73,6 +77,7 @@ export type LocalStoryLegacyTranscriptIdentityInput = {
 	mediaSha256: string;
 	timeMap: unknown;
 	configuredModel: null | { sha256: string };
+	sceneScope?: LocalStorySceneScope;
 	language: "ja" | "en" | "auto";
 };
 export type LocalStoryLegacyTranscriptPrepared = {
@@ -106,6 +111,7 @@ export type LocalStoryLegacyTranscriptStoredValue = {
 	mediaSha256: string;
 	modelSha256: string;
 	timeMapHash: string;
+	sceneScope?: LocalStorySceneScope;
 	language: string;
 	sourceTimeDomain: "ORIGINAL_PRESENTATION_US";
 	segments: CompositionSourceSegment[];
@@ -128,9 +134,19 @@ export function createLocalStoryLegacyTranscriptRecipe(
 				? undefined
 				: { sha256: values.configuredModel.sha256 },
 	};
-	const map = cfrTimeMapSchema.parse(values.timeMap),
-		durationUs = map.sourceEndUs - map.sourceStartUs;
+	const map = cfrTimeMapSchema.parse(values.timeMap);
+	const scoped = localStorySceneScopeSchema
+		.optional()
+		.safeParse(values.sceneScope);
+	if (!scoped.success)
+		throw new LocalStoryLegacyTranscriptError("LOCAL_STORY_CONTEXT_LIMIT");
+	const sceneScope = scoped.data;
+	const startUs = sceneScope?.startUs ?? map.sourceStartUs;
+	const endUs = sceneScope?.endUs ?? map.sourceEndUs;
+	const durationUs = endUs - startUs;
 	if (
+		startUs < map.sourceStartUs ||
+		endUs > map.sourceEndUs ||
 		durationUs < 1 ||
 		durationUs > 3_600_000_000 ||
 		!validDigest(input.mediaSha256) ||
@@ -146,6 +162,7 @@ export function createLocalStoryLegacyTranscriptRecipe(
 		engineVersion: WHISPER_CPP_VERSION,
 		mediaSha256: input.mediaSha256,
 		timeMapHash: hashEditingEvidence(map),
+		...(sceneScope ? { sceneScope } : {}),
 		modelSha256: input.model?.sha256 ?? null,
 		language: input.language,
 		windowDurationUs: MAX_ANALYSIS_DURATION_US,
@@ -165,7 +182,9 @@ export function createLocalStoryLegacyTranscriptRecipe(
 		if (!model) throw new LocalStoryLegacyTranscriptError("ASR_MODEL_CHANGED");
 		if (
 			!object(value) ||
-			Object.keys(value).length !== 14 ||
+			Object.keys(value).length !== (sceneScope ? 15 : 14) ||
+			hashEditingEvidence(value.sceneScope ?? null) !==
+				hashEditingEvidence(sceneScope ?? null) ||
 			value.version !== key.version ||
 			value.retryPolicyVersion !== RETRY_POLICY_VERSION ||
 			value.engineVersion !== WHISPER_CPP_VERSION ||
@@ -224,20 +243,20 @@ export function createLocalStoryLegacyTranscriptRecipe(
 			.array()
 			.max(10000)
 			.parse(value.speechIntervals);
-		let intervalEnd = map.sourceStartUs;
+		let intervalEnd = startUs;
 		for (const interval of speechIntervals) {
-			if (interval.startUs < intervalEnd || interval.endUs > map.sourceEndUs)
+			if (interval.startUs < intervalEnd || interval.endUs > endUs)
 				throw new LocalStoryLegacyTranscriptError(
 					"LOCAL_STORY_ARTIFACT_UNVERIFIED",
 				);
 			intervalEnd = interval.endUs;
 		}
-		let end = map.sourceStartUs,
+		let end = startUs,
 			textLength = 0,
 			words = 0,
 			windowIndex = 0;
 		for (const segment of segments) {
-			const relative = segment.startUs - map.sourceStartUs;
+			const relative = segment.startUs - startUs;
 			while (
 				mediaWindows[windowIndex] &&
 				relative >= (mediaWindows[windowIndex]?.toUs ?? Infinity)
@@ -249,8 +268,8 @@ export function createLocalStoryLegacyTranscriptRecipe(
 				segment.startUs < end ||
 				relative < window.fromUs ||
 				window.language === "und" ||
-				segment.endUs > map.sourceStartUs + window.toUs ||
-				segment.endUs > map.sourceEndUs
+				segment.endUs > startUs + window.toUs ||
+				segment.endUs > endUs
 			)
 				throw new LocalStoryLegacyTranscriptError(
 					"LOCAL_STORY_ARTIFACT_UNVERIFIED",
@@ -264,8 +283,8 @@ export function createLocalStoryLegacyTranscriptRecipe(
 		let rawCount = 0,
 			intervalCount = 0;
 		for (const window of mediaWindows) {
-			const from = map.sourceStartUs + window.fromUs,
-				to = map.sourceStartUs + window.toUs;
+			const from = startUs + window.fromUs,
+				to = startUs + window.toUs;
 			const raw = rawSegments.filter(
 				(s) => s.startUs >= from && s.startUs < to,
 			);
@@ -360,6 +379,7 @@ export function createLocalStoryLegacyTranscriptRecipe(
 			mediaSha256: input.mediaSha256,
 			modelSha256: model.sha256,
 			timeMapHash: key.timeMapHash,
+			...(sceneScope ? { sceneScope } : {}),
 			language: input.language,
 			sourceTimeDomain: "ORIGINAL_PRESENTATION_US",
 			segments,
@@ -369,6 +389,7 @@ export function createLocalStoryLegacyTranscriptRecipe(
 	};
 	return {
 		timeMap: structuredClone(map),
+		startUs,
 		durationUs,
 		totalWindows: Math.ceil(durationUs / MAX_ANALYSIS_DURATION_US),
 		kind: "LOCAL_STORY_TRANSCRIPT_V1" as const,

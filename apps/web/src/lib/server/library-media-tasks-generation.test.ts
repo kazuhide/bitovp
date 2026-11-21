@@ -217,7 +217,15 @@ function fixture() {
 		rows.push(row);
 		return row;
 	}
-	return { rows, input, dependency, media, organizationId, normalizationRows };
+	return {
+		rows,
+		input,
+		dependency,
+		media,
+		organizationId,
+		normalizationRows,
+		analysis,
+	};
 }
 beforeEach(() => {
 	vi.stubEnv("BITOVP_LOCAL_STORY_CHOICE_ENABLED", undefined);
@@ -414,6 +422,41 @@ describe("local semantic generation intake", () => {
 			identity: { localStoryModel: { profile: string } };
 		};
 		expect(envelope.identity.localStoryModel.profile).toBe("nvidia");
+	});
+	it("accepts only a scene from the pinned analysis and preserves it on retry", async () => {
+		configure();
+		const f = fixture();
+		const value = f.input();
+		const storySceneId = fixtureItem(f.analysis.document.scenes[0]).id;
+		const input = {
+			...value,
+			parameters: {
+				...value.parameters,
+				policy: "LOCAL_STORY",
+				renderMode: "DRAFT",
+				storySceneId,
+			},
+		};
+		await expect(
+			createMediaTask(
+				{
+					...input,
+					parameters: { ...input.parameters, storySceneId: randomUUID() },
+				},
+				null,
+			),
+		).rejects.toMatchObject({ code: "LOCAL_STORY_SCENE_SCOPE_INVALID" });
+		expect(f.rows).toEqual([]);
+		const accepted = await createMediaTask(input, null);
+		const row = fixtureItem(f.rows[0]);
+		expect(row.parameters).toMatchObject({
+			input: { parameters: { storySceneId } },
+		});
+		row.state = "ERROR";
+		await retryMediaTask(accepted.taskId, { requestKey: randomUUID() }, null);
+		expect(fixtureItem(f.rows[1]).parameters).toMatchObject({
+			input: { parameters: { storySceneId } },
+		});
 	});
 	it("pins new draft requests to Choice only after the dedicated capability is ready", async () => {
 		configure();

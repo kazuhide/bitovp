@@ -2,6 +2,7 @@ import "server-only";
 import { getTenantPrisma } from "@bitovp/db";
 import { verifiedClientIp } from "@/lib/auth/ip-policy";
 import type { AuthenticatedContext } from "@/lib/auth/tenancy";
+import { OPERATION_ATTEMPTS_PATH } from "@/lib/operation-attempts";
 
 /** Access-gate decisions only. Administrator traffic is intentionally absent. */
 export async function recordAccessNonAdmin(
@@ -18,6 +19,14 @@ export async function recordAccessNonAdmin(
 	const path = new URL(request.url).pathname;
 	// Polling is not an access visit and must not flood history.
 	if (request.method === "GET" && path.startsWith("/api/")) return;
+	// The browser sends this in the background. Keeping allow decisions here
+	// would duplicate the event with personal identifiers and a different TTL.
+	if (
+		statusCode === 200 &&
+		request.method === "POST" &&
+		path === OPERATION_ATTEMPTS_PATH
+	)
+		return;
 	await getTenantPrisma(context.organizationId).accessEvent.create({
 		data: {
 			userId: context.actorUserId,

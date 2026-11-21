@@ -71,6 +71,12 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 		method: "GET",
 	},
 	{
+		page: "/settings/operation-analytics",
+		floor: "ADMIN",
+		api: "/api/operation-analytics",
+		method: "GET",
+	},
+	{
 		page: "/settings/vmaf",
 		floor: "ADMIN",
 		api: "/api/settings/vmaf-profiles",

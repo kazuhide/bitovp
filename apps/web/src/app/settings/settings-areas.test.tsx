@@ -32,6 +32,7 @@ const ADMIN_AREA_HREFS = [
 	"/settings/reset",
 	"/settings/organizations",
 	"/settings/access-audit",
+	"/settings/operation-analytics",
 ] as const;
 
 const COVERAGE_HREF = "/settings/api-coverage";
@@ -248,6 +249,7 @@ describe("SettingsAreas — category panels", () => {
 				[
 					"/settings/error-definitions",
 					"/settings/clip-editing",
+					"/settings/operation-analytics",
 					"/settings/api-coverage",
 				],
 			],

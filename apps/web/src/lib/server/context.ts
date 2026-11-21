@@ -6,7 +6,10 @@ import {
 	getTenantPrisma,
 } from "@bitovp/db";
 import { headers } from "next/headers";
-import { resolveAuthenticatedContext } from "@/lib/auth/tenancy";
+import {
+	requireOrganizationAdmin,
+	resolveAuthenticatedContext,
+} from "@/lib/auth/tenancy";
 
 /**
  * Defers cipher construction until a secret is actually touched — list/read
@@ -41,6 +44,14 @@ export async function getServerContext() {
 		tenant.isImpersonating,
 		tenant,
 	);
+}
+
+export async function getOrganizationAdminReadContext(headers: Headers) {
+	const { organizationId } = await requireOrganizationAdmin(headers);
+	return {
+		organizationId,
+		prisma: getTenantPrisma(organizationId, { readOnly: true }),
+	};
 }
 
 /** Only call after an independently authenticated webhook token resolved its org. */

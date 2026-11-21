@@ -42,6 +42,7 @@ import {
 	resolveUserByIdFresh as resolveUserById,
 } from "@/lib/auth/users";
 import { viewAsMayRead } from "@/lib/auth/view-as";
+import { OPERATION_ATTEMPTS_PATH } from "@/lib/operation-attempts";
 import { passiveOrganizationBinding } from "@/lib/passive-request";
 import { recordAccessNonAdmin } from "@/lib/server/access-audit";
 
@@ -268,6 +269,13 @@ function clearSessionCookies(res: NextResponse): NextResponse {
 	return res;
 }
 
+// Telemetry may complete after logout or another identity change.
+function isOperationAttemptSubmission(req: NextRequest): boolean {
+	return (
+		req.method === "POST" && req.nextUrl.pathname === OPERATION_ATTEMPTS_PATH
+	);
+}
+
 function unauthenticated(
 	req: NextRequest,
 	isApi: boolean,
@@ -283,7 +291,9 @@ function unauthenticated(
 					req.nextUrl,
 				),
 			);
-	return staleCookie ? clearSessionCookies(res) : res;
+	return staleCookie && !isOperationAttemptSubmission(req)
+		? clearSessionCookies(res)
+		: res;
 }
 
 /**
@@ -581,6 +591,7 @@ async function usersGate(
 		if (refusal) return refusal;
 	}
 	const res = forward(req, `user:${user.id}`, context?.role, context);
+	if (isOperationAttemptSubmission(req)) return res;
 	const renewed = renewSession(verdict.payload, now, settings.idleMs);
 	if (renewed) {
 		const https = requestIsHttps(req.headers, req.url);
@@ -681,6 +692,7 @@ async function authGate(
 	const refusal = tenantRequestRefusal(context, req);
 	if (refusal) return refusal;
 	const res = forward(req, "session", context.role, context);
+	if (isOperationAttemptSubmission(req)) return res;
 	const renewed = renewSession(verdict.payload, now, settings.idleMs);
 	if (renewed) {
 		const https = requestIsHttps(req.headers, req.url);

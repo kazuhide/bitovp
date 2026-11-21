@@ -19,6 +19,7 @@ const FRAME_OBSERVATION_BOUNDARIES = [
 ] as const;
 type Telemetry = {
 	startedAt: number;
+	onFirstVisibleFrame?(): void;
 	onStatistics(value: MoqVideoStatistics): void;
 	onStage?(type: MoqPlaybackStage): void;
 	source():
@@ -47,6 +48,7 @@ export function observeMoqVideo(
 	let observedSince = performance.now();
 	const ownerDocument = host.ownerDocument;
 	const onStage = telemetry?.onStage;
+	let onFirstVisibleFrame = telemetry?.onFirstVisibleFrame;
 	const statistics = createVideoStatistics(
 		telemetry?.startedAt ?? performance.now(),
 		() => telemetry?.source(),
@@ -79,10 +81,38 @@ export function observeMoqVideo(
 			onStage(surface ? "canvas-unchanged" : "frame-gap");
 		}
 	}
-	function sample(presented?: number, mediaTime?: number) {
-		if (stopped || !video || (surface && !surface.changed())) return;
+	function reportFirstVisibleFrame() {
+		const report = onFirstVisibleFrame;
+		onFirstVisibleFrame = undefined;
+		try {
+			report?.();
+		} catch {
+			// Operation analytics cannot interrupt playback or observation.
+		}
+	}
+	function sample(
+		presented?: number,
+		mediaTime?: number,
+		canvasFrameObserved = false,
+	) {
+		if (stopped || !video) return;
+		if (surface) {
+			const changed = surface.changed();
+			if (
+				onFirstVisibleFrame &&
+				canvasFrameObserved &&
+				video.videoWidth > 0 &&
+				video.videoHeight > 0 &&
+				surface.hasVisibleImage()
+			)
+				reportFirstVisibleFrame();
+			if (!changed) return;
+		}
 		const previous = hasFrameGap ? statistics.lastFrameAt() : null;
-		if (statistics.frame(presented, mediaTime)) progress(video);
+		if (statistics.frame(presented, mediaTime)) {
+			if (!surface) reportFirstVisibleFrame();
+			progress(video);
+		}
 		if (
 			hasFrameGap &&
 			previous !== statistics.lastFrameAt() &&
@@ -93,10 +123,14 @@ export function observeMoqVideo(
 		}
 	}
 	function onTime() {
-		if (!video?.requestVideoFrameCallback) sample();
+		if (!video?.requestVideoFrameCallback) sample(undefined, undefined, true);
 	}
 	function frame(_now: number, metadata: VideoFrameCallbackMetadata) {
-		sample(metadata.presentedFrames, metadata.mediaTime);
+		sample(
+			metadata.presentedFrames,
+			metadata.mediaTime,
+			metadata.presentedFrames > 0,
+		);
 		if (!stopped && video?.requestVideoFrameCallback)
 			callback = video.requestVideoFrameCallback(frame);
 	}

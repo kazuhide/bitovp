@@ -1679,6 +1679,33 @@ export const ja = {
 		submitting: "変更しています…",
 		failed: "パスワード変更に失敗しました",
 	},
+	operationAnalytics: {
+		title: "操作分析",
+		caption: "Live MoQプレビューの結果と初回フレームまでの時間",
+		collecting: "計測中",
+		paused: "計測停止中",
+		collectionSettings: "計測設定",
+		loadFailed: "操作分析を読み込めませんでした。",
+		period: "Live MoQプレビュー · UTCの月曜始まり",
+		attempts: "再生試行",
+		firstFrameTime: "初回フレームまでの時間",
+		noFirstFrame: "この期間に初回フレームの計測値はありません。",
+		empty: "この期間に記録された試行はありません。",
+		table: "MoQ再生の週次集計",
+		week: "週の開始日（UTC）",
+		partial: "集計途中",
+		started: "開始",
+		firstFrame: "初回フレーム表示",
+		failed: "失敗",
+		canceled: "キャンセル",
+		unconfirmed: "結果不明",
+		pending: "結果待ち",
+		share: "初回フレーム到達率",
+		p50: "p50",
+		p95: "p95",
+		milliseconds: "{value} ms",
+		shareNote: "初回フレーム到達率の分母から結果待ちの試行を除いています。",
+	},
 	common: {
 		accessAdminOnly:
 			"この領域は管理者専用です。アクセスが必要な場合は管理者に依頼してください。",
@@ -4540,6 +4567,9 @@ export const ja = {
 		featureQcVmaf: "VMAF ラボと QC",
 		featureQcVmafHint:
 			"既定はオフです。オフにすると VMAF ラボ、品質基準の編集、ジョブごとの品質確認を非表示にし、新しい計測も作成しません。qc 設定を含むプランは使えません。既存の品質基準で停止・失敗したジョブは、引き続き結果の確認、基準を上書きしての再開、証跡の出力ができます。",
+		featureOperationAnalytics: "Liveの操作分析",
+		featureOperationAnalyticsHint:
+			"組織内のMoQプレビューの開始と結果を記録します。計測を止めても週次レポートは閲覧できます。",
 		featuresLoadFailed: "機能設定を読み込めませんでした。",
 		featuresSavedReloadHint:
 			"保存しました。ナビゲーションとウィザードに反映するにはページを再読み込みしてください。",

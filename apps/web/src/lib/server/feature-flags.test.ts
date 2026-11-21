@@ -18,7 +18,10 @@ import { readFeatureFlags } from "./feature-flags";
 describe("readFeatureFlags (ledger #131)", () => {
 	it("degrades to defaults when the CONTEXT itself throws — /login must still render", async () => {
 		// As a default parameter this threw outside the try and rejected.
-		await expect(readFeatureFlags()).resolves.toEqual({ qcVmaf: false });
+		await expect(readFeatureFlags()).resolves.toEqual({
+			qcVmaf: false,
+			operationAnalytics: false,
+		});
 	});
 
 	it("degrades to defaults when the QUERY throws", async () => {
@@ -29,13 +32,19 @@ describe("readFeatureFlags (ledger #131)", () => {
 				},
 			},
 		} as never;
-		await expect(readFeatureFlags(prisma)).resolves.toEqual({ qcVmaf: false });
+		await expect(readFeatureFlags(prisma)).resolves.toEqual({
+			qcVmaf: false,
+			operationAnalytics: false,
+		});
 	});
 
 	it("reads an explicit flag through the client it was handed", async () => {
 		const prisma = {
 			appSetting: { findUnique: async () => ({ value: { qcVmaf: true } }) },
 		} as never;
-		await expect(readFeatureFlags(prisma)).resolves.toEqual({ qcVmaf: true });
+		await expect(readFeatureFlags(prisma)).resolves.toEqual({
+			qcVmaf: true,
+			operationAnalytics: false,
+		});
 	});
 });

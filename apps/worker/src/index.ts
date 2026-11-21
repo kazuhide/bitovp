@@ -139,6 +139,7 @@ import { createInboundDispatcher } from "./notify/dispatcher";
 import { createEventEmitter } from "./notify/emitter";
 import { createNotifyProcessor } from "./notify/processor";
 import { createWakeBus } from "./notify/wake-bus";
+import { pruneOperationAttempts } from "./operation-analytics/retention";
 import {
 	createLiveChannelProcessor,
 	createLiveHeartbeatSweep,
@@ -288,6 +289,10 @@ const resetCleanupLoop = tenantService(() =>
 );
 runTenantTick(() => resetCleanupLoop.run());
 setTenantInterval(() => resetCleanupLoop.run(), 30_000).unref();
+
+const pruneAttempts = () => pruneOperationAttempts(prisma);
+runTenantTick(pruneAttempts);
+setTenantInterval(pruneAttempts, 60 * 60 * 1000).unref();
 
 // Producer side of the feeder queue: the live channel worker enqueues
 // feeder stops when a channel stops (P3-PR3 lifecycle coupling). The

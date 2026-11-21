@@ -16,6 +16,7 @@ vi.mock("@/lib/api", async (original) => ({
 let currentSession: SessionDto;
 let readSession: () => Promise<SessionDto>;
 let enabled: boolean;
+let operationAnalytics: boolean;
 let flagReadError: boolean;
 let saveError: boolean;
 
@@ -30,6 +31,7 @@ beforeEach(() => {
 	};
 	readSession = async () => currentSession;
 	enabled = false;
+	operationAnalytics = false;
 	flagReadError = false;
 	saveError = false;
 	apiFetch.mockReset();
@@ -39,11 +41,13 @@ beforeEach(() => {
 			if (url === "/api/settings/features") {
 				if (options?.method === "PATCH") {
 					if (saveError) throw new Error("Could not save QC settings");
-					enabled = JSON.parse(options.body ?? "{}").qcVmaf;
+					const patch = JSON.parse(options.body ?? "{}");
+					enabled = patch.qcVmaf ?? enabled;
+					operationAnalytics = patch.operationAnalytics ?? operationAnalytics;
 				} else if (flagReadError) {
 					throw new Error("offline");
 				}
-				return { qcVmaf: enabled };
+				return { qcVmaf: enabled, operationAnalytics };
 			}
 			if (
 				url === "/api/settings/vmaf-profiles" ||
@@ -151,7 +155,12 @@ describe("QC settings entry", () => {
 	it("does not mount ADMIN controls while the session is unresolved", async () => {
 		readSession = () => new Promise(() => {});
 		renderWithQuery(<FeaturesSettingsPage />);
-		expect(await screen.findByText("Disabled")).toBeInTheDocument();
+		expect(
+			await screen.findByRole("button", {
+				name: "VMAF lab and QC — more information",
+			}),
+		).toBeInTheDocument();
+		expect(screen.getAllByText("Disabled")).toHaveLength(2);
 		expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
 		expect(profileRequests()).toEqual([]);
 	});
@@ -164,7 +173,12 @@ describe("QC settings entry", () => {
 		await waitFor(() =>
 			expect(client.getQueryState(SESSION_QUERY_KEY)?.status).toBe("error"),
 		);
-		expect(await screen.findByText("Disabled")).toBeInTheDocument();
+		expect(
+			await screen.findByRole("button", {
+				name: "VMAF lab and QC — more information",
+			}),
+		).toBeInTheDocument();
+		expect(screen.getAllByText("Disabled")).toHaveLength(2);
 		expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
 		expect(profileRequests()).toEqual([]);
 	});
@@ -175,7 +189,12 @@ describe("QC settings entry", () => {
 		await waitFor(() =>
 			expect(client.getQueryState(SESSION_QUERY_KEY)?.status).toBe("success"),
 		);
-		expect(await screen.findByText("Disabled")).toBeInTheDocument();
+		expect(
+			await screen.findByRole("button", {
+				name: "VMAF lab and QC — more information",
+			}),
+		).toBeInTheDocument();
+		expect(screen.getAllByText("Disabled")).toHaveLength(2);
 		expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
 		expect(profileRequests()).toEqual([]);
 	});
@@ -205,6 +224,30 @@ describe("QC settings entry", () => {
 		expect(profileRequests()).toHaveLength(previousRequests);
 	});
 
+	it("saves only the operation-recording setting", async () => {
+		enabled = true;
+		const { client } = renderWithQuery(<FeaturesSettingsPage />);
+		const reportKey = ["operation-analytics", currentSession.organizationId];
+		client.setQueryData(reportKey, { weeks: [], isCollecting: false });
+		const recording = await screen.findByRole("checkbox", {
+			name: "Live operation analytics",
+		});
+		expect(recording).not.toBeChecked();
+		await userEvent.click(recording);
+		await waitFor(() => expect(recording).toBeChecked());
+		expect(client.getQueryState(reportKey)?.isInvalidated).toBe(true);
+		expect(
+			screen.getByRole("checkbox", { name: "VMAF lab and QC" }),
+		).toBeChecked();
+		expect(apiFetch).toHaveBeenCalledWith(
+			"/api/settings/features",
+			expect.objectContaining({
+				method: "PATCH",
+				body: JSON.stringify({ operationAnalytics: true }),
+			}),
+		);
+	});
+
 	it("saves only the QC flag and retains the explicit reload confirmation", async () => {
 		const { client } = renderWithQuery(<FeaturesSettingsPage />);
 		const checkbox = await screen.findByRole("checkbox", {
@@ -212,7 +255,10 @@ describe("QC settings entry", () => {
 		});
 		await userEvent.click(checkbox);
 		await waitFor(() => expect(checkbox).toBeChecked());
-		expect(client.getQueryData(["feature-flags"])).toEqual({ qcVmaf: true });
+		expect(client.getQueryData(["feature-flags"])).toEqual({
+			qcVmaf: true,
+			operationAnalytics: false,
+		});
 		expect(apiFetch).toHaveBeenCalledWith(
 			"/api/settings/features",
 			expect.objectContaining({

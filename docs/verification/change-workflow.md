@@ -34,6 +34,7 @@ The executable policy is
 | Encoding/live submission API and worker orchestration | Submission idempotency, plus applicable access/live rules |
 | VOD input, wizard and rendition paths | VOD timeline and submission idempotency |
 | Live and AISA Live paths | Live lifecycle |
+| Operation analytics intake, report and expiry | Access isolation and Live lifecycle |
 | Library, content editing and local semantic paths | Library render/recovery |
 | QC, VMAF, banding, CAMBI and worker feeder | Three QC profiles; Web QC also includes access isolation |
 | Shared core/database/storage packages, package/lock/config, harness/scripts/tests, workflows, native/deployment and shared UI primitives | All eight profiles |

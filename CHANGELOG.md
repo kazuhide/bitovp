@@ -10,6 +10,10 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 - Accept CMAF muxings and chunk frame settings in MoQ Live templates and channel plans, with playback and observation history for those runs.
 
+### Changed
+
+- Collect frame timestamps and source validation data in one probe for eligible H.264 clips in the video library.
+
 ## [1.3.3] - 2026-11-20
 
 ### Changed

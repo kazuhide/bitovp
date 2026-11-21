@@ -524,7 +524,15 @@ describe("POST /api/admin/reset (ledger #130)", () => {
 		);
 		expect(res.status).toBe(200);
 		expect(deleted).toEqual(["auditLog", "accessEvent", "operationAttempt"]);
-		expect(updated).toEqual([]);
+		expect(updated).toEqual([
+			[
+				"appSetting",
+				{
+					where: { key: "featureFlags" },
+					data: { updatedAt: expect.any(Date) },
+				},
+			],
+		]);
 		expect(getJobs).not.toHaveBeenCalled();
 		expect(await res.json()).toMatchObject({
 			deletedCounts: [{ category: "auditHistory", count: 3 }],

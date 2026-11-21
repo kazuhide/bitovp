@@ -4,7 +4,6 @@ import {
 	type OperationAttemptEvent,
 	RESULT_RECEIVE_WINDOW_MS,
 } from "@/lib/operation-attempts";
-import { registerBeforeIdentityChange } from "@/lib/tenant-fetch";
 
 type ResultStage = Exclude<OperationAttemptEvent["stage"], "STARTED">;
 
@@ -59,47 +58,37 @@ export function trackMoqPlaybackOperation(
 	function onPageHide() {
 		void settle("CANCELED");
 	}
-	const unregister = registerBeforeIdentityChange(() =>
-		settle("CANCELED", undefined, false),
-	);
 	window.addEventListener("pagehide", onPageHide);
 	const start = sendOperationAttempt(organizationId, {
 		...identity,
 		stage: "STARTED",
 	}).then((acknowledged) => {
 		startAcknowledged = acknowledged;
-		if (!acknowledged) {
-			window.removeEventListener("pagehide", onPageHide);
-			unregister();
-		}
+		if (!acknowledged) window.removeEventListener("pagehide", onPageHide);
 		return acknowledged;
 	});
 	function settle(
 		stage: ResultStage,
 		elapsedMs = Math.max(0, Math.round(performance.now() - startedAt)),
-		waitForAcknowledgement = true,
 	) {
 		if (settled) return;
 		settled = true;
 		window.removeEventListener("pagehide", onPageHide);
-		unregister();
 		if (elapsedMs > MAX_OPERATION_ELAPSED_MS) return;
 		const send = () => {
 			if (performance.now() - startedAt > RESULT_RECEIVE_WINDOW_MS) return;
-			return sendOperationAttempt(organizationId, {
+			void sendOperationAttempt(organizationId, {
 				...identity,
 				stage,
 				elapsedMs,
 			});
 		};
-		// A known start can send immediately during pagehide or identity change.
-		if (startAcknowledged) return send();
-		if (waitForAcknowledgement)
+		// Send immediately when a start is known, including during pagehide.
+		if (startAcknowledged) send();
+		else
 			void start.then((acknowledged) => {
-				if (acknowledged) void send();
+				if (acknowledged) send();
 			});
 	}
-	return (stage: ResultStage, elapsedMs?: number) => {
-		void settle(stage, elapsedMs);
-	};
+	return settle;
 }

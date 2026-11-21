@@ -34,7 +34,7 @@ export const GROUPS = [
 		directory: "packages/db",
 		files: {
 			"src/runtime-role.integration.test.ts": 1,
-			"src/tenant-db.integration.test.ts": 6,
+			"src/tenant-db.integration.test.ts": 8,
 			"src/tenant-legacy-migration.integration.test.ts": 1,
 			"src/create-request.integration.test.ts": 7,
 			"src/transaction-options.integration.test.ts": 6,
@@ -55,7 +55,7 @@ export const GROUPS = [
 			"src/lib/server/latest-runs.integration.test.ts": 3,
 			"src/lib/server/qc-cancel.integration.test.ts": 3,
 			"src/lib/server/reset-live-probe.integration.test.ts": 3,
-			"src/lib/server/reset-live-transition-locking.integration.test.ts": 3,
+			"src/lib/server/reset-live-transition-locking.integration.test.ts": 6,
 			"src/lib/server/library-catalog.integration.test.ts": 19,
 			"src/lib/server/library-editing.integration.test.ts": 31,
 			"src/lib/server/library-editing-presentation.integration.test.ts": 2,
@@ -81,6 +81,7 @@ export const GROUPS = [
 			"src/library-editing/generation-duration-review.integration.test.ts": 2,
 			"src/library-editing/dialogue-source.integration.test.ts": 2,
 			"src/vod-input-preview/preparation.integration.test.ts": 1,
+			"src/operation-analytics/retention.integration.test.ts": 1,
 		},
 	},
 ];

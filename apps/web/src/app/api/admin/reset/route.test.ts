@@ -134,6 +134,7 @@ const MODELS = [
 	"webhookEvent",
 	"auditLog",
 	"accessEvent",
+	"operationAttempt",
 	"storageInspection",
 	"vodInputPreviewTask",
 	"watchedObject",
@@ -522,11 +523,19 @@ describe("POST /api/admin/reset (ledger #130)", () => {
 			postRequest({ confirm: "RESET", categories: ["auditHistory"] }),
 		);
 		expect(res.status).toBe(200);
-		expect(deleted).toEqual(["auditLog", "accessEvent"]);
-		expect(updated).toEqual([]);
+		expect(deleted).toEqual(["auditLog", "accessEvent", "operationAttempt"]);
+		expect(updated).toEqual([
+			[
+				"appSetting",
+				{
+					where: { key: "featureFlags" },
+					data: { updatedAt: expect.any(Date) },
+				},
+			],
+		]);
 		expect(getJobs).not.toHaveBeenCalled();
 		expect(await res.json()).toMatchObject({
-			deletedCounts: [{ category: "auditHistory", count: 2 }],
+			deletedCounts: [{ category: "auditHistory", count: 3 }],
 			requiresSetup: false,
 			providerResources: { pointers: [], total: 0, truncated: false },
 		});

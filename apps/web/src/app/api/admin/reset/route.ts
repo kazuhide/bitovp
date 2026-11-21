@@ -74,6 +74,7 @@ const RESET_DELETE_CATEGORY_BY_MODEL = {
 	webhookEvent: "webhookHistory",
 	auditLog: "auditHistory",
 	accessEvent: "auditHistory",
+	operationAttempt: "auditHistory",
 	storageInspection: "storageChecks",
 	vodInputPreviewTask: "storageChecks",
 	watchedObject: "watchFolderHistory",

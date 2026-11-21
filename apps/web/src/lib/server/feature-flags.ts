@@ -9,8 +9,48 @@ import type { AppPrismaClient } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { getServerContext } from "./context";
 
+export async function readStoredFeatureFlags(
+	prisma: Pick<AppPrismaClient, "appSetting">,
+): Promise<FeatureFlags> {
+	const row = await prisma.appSetting.findUnique({
+		where: { key: FEATURE_FLAGS_KEY },
+		select: { value: true },
+	});
+	return parseFeatureFlags(row?.value);
+}
+
+/** Serialize setting edits even before the organization has a settings row. */
+export async function lockFeatureFlags(
+	tx: Pick<AppPrismaClient, "$executeRaw">,
+	organizationId: string,
+): Promise<void> {
+	const key = `${organizationId}:settings:${FEATURE_FLAGS_KEY}`;
+	await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+}
+
+/** Order a settings read with concurrent patches and settings reset. */
+export async function readLockedFeatureFlags(
+	tx: Pick<AppPrismaClient, "$queryRaw">,
+	organizationId: string,
+	access: "read" | "write" = "read",
+): Promise<FeatureFlags> {
+	const [row] =
+		access === "read"
+			? await tx.$queryRaw<{ value: unknown }[]>`
+			SELECT "value" FROM "AppSetting"
+			WHERE "organizationId" = ${organizationId}::uuid AND "key" = ${FEATURE_FLAGS_KEY}
+			FOR SHARE
+		`
+			: await tx.$queryRaw<{ value: unknown }[]>`
+			SELECT "value" FROM "AppSetting"
+			WHERE "organizationId" = ${organizationId}::uuid AND "key" = ${FEATURE_FLAGS_KEY}
+			FOR UPDATE
+		`;
+	return parseFeatureFlags(row?.value);
+}
+
 /**
- * . One primary-key read, NOT cached: a flag flip must take effect
+ * One primary-key read, NOT cached: a flag flip must take effect
  * on the next request, and this is the cheapest query in the app. Any failure
  * — no row, malformed JSON, database unreachable — degrades to the defaults,
  * because `/login` has to render before the database is reachable and a
@@ -27,12 +67,9 @@ export async function readFeatureFlags(
 	prisma?: AppPrismaClient,
 ): Promise<FeatureFlags> {
 	try {
-		const client = prisma ?? (await getServerContext()).prisma;
-		const row = await client.appSetting.findUnique({
-			where: { key: FEATURE_FLAGS_KEY },
-			select: { value: true },
-		});
-		return parseFeatureFlags(row?.value);
+		return await readStoredFeatureFlags(
+			prisma ?? (await getServerContext()).prisma,
+		);
 	} catch {
 		return DEFAULT_FEATURE_FLAGS;
 	}

@@ -111,6 +111,8 @@ describe("customer copy gate — catalogue arm", () => {
 
 	it("every registry pattern matches its own planted example (a loosened regex cannot pass silently)", () => {
 		const planted: Record<string, string> = {
+			"unretrieved-ja": "データ未取得",
+			"unconfirmed-ja": "停止未確認",
 			"status-number": "Health is not tracked yet (STATUS #36).",
 			"task-number": "Re-run the census (task #27).",
 			"task-number-ja": "センサスを再走してください(タスク #27)。",

@@ -110,7 +110,10 @@ export function RunsPanel({
 							})}
 						</span>
 						{run.bitmovinEncodingId ? (
-							<CopyableId value={run.bitmovinEncodingId} />
+							<CopyableId
+								value={run.bitmovinEncodingId}
+								label={t("live.encodingId")}
+							/>
 						) : null}
 						{typeof run.queueSeconds === "number" ? (
 							<span>{t("runs.queueSeconds", { s: run.queueSeconds })}</span>

@@ -250,8 +250,8 @@ describe("ChannelDetail Push display wiring stays separate from lifecycle/action
 		const row = fixture();
 		row.currentRun.providerStatusObservedAt = null;
 		setup(row);
-		await waitFor(() => expect(nextAction()).toBe("PROVIDER_UNKNOWN"));
-		expect(ingestLamp()).toBe("on");
+		await waitFor(() => expect(ingestLamp()).toBe("on"));
+		expect(nextAction()).toBeUndefined();
 		expect(screen.getByTestId("announcement")).toHaveAttribute(
 			"data-air",
 			"false",

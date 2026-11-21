@@ -401,7 +401,7 @@ describe("ChannelDetail — a lost provider observation is never on air (row #28
 		).toBeNull();
 	});
 
-	it("an open UNKNOWN window on the current run: PROVIDER_UNKNOWN, an amber strip, and the last successful observation named", async () => {
+	it("shows recorded RUNNING once and keeps the last provider reading behind help", async () => {
 		mockPage(
 			channelRow({
 				providerStatus: "RUNNING",
@@ -412,15 +412,15 @@ describe("ChannelDetail — a lost provider observation is never on air (row #28
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
 		await screen.findByRole("region", { name: /channel status/i });
-		await waitFor(() => expect(nextActionCode()).toBe("PROVIDER_UNKNOWN"));
-		expect(nextActionCode()).not.toBe("ON_AIR");
+		expect(nextActionCode()).toBeNull();
 		expect(providerOnAir()).toBe("unconfirmed");
-		const badge = statusBadge("RUNNING · Bitmovin status unconfirmed");
-		expect(badge?.className).toContain("amber");
+		const badge = statusBadge("Recorded RUNNING");
+		expect(badge?.className).not.toContain("amber");
 		expect(badge?.className).not.toContain("emerald");
+		expect(screen.getAllByText("Recorded RUNNING")).toHaveLength(1);
+		expect(screen.queryByText(/Last Bitmovin reading/)).toBeNull();
 		expect(strip()?.getAttribute("data-provider")).toBe("unknown");
 		const active = strip()?.querySelector('[data-state="active"] span + span');
-		expect(active?.className).toContain("amber");
 		expect(active?.className).not.toContain("sky");
 		fireEvent.click(
 			screen.getByRole("button", {
@@ -428,15 +428,9 @@ describe("ChannelDetail — a lost provider observation is never on air (row #28
 			}),
 		);
 		expect(
-			screen.getByText(/Provider status cannot be confirmed/),
+			screen.getByText(/Last Bitmovin reading RUNNING/),
 		).toBeInTheDocument();
-		expect(
-			screen.getByText("Bitmovin encoder status unconfirmed"),
-		).toBeInTheDocument();
-		// The next-action panel is the amber `act` tone, not emerald `watch`.
-		const panel = document.querySelector("[data-next-action]");
-		expect(panel?.className).toContain("amber");
-		expect(panel?.className).not.toContain("emerald");
+		expect(document.querySelector("[data-next-action]")).toBeNull();
 	});
 
 	it("a confirmed RUNNING older than the freshness TTL is UNKNOWN too — freshness is part of the claim", async () => {
@@ -452,8 +446,43 @@ describe("ChannelDetail — a lost provider observation is never on air (row #28
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
 		await screen.findByRole("region", { name: /channel status/i });
-		await waitFor(() => expect(nextActionCode()).toBe("PROVIDER_UNKNOWN"));
+		expect(nextActionCode()).toBeNull();
 		expect(strip()?.getAttribute("data-provider")).toBe("unknown");
+	});
+
+	it.each([
+		"unknown",
+		"unobserved",
+	] as const)("retains the %s provider detail behind help while stopping", async (provider) => {
+		const row = channelRow({
+			providerStatus: provider === "unknown" ? "RUNNING" : null,
+			providerStatusObservedAt:
+				provider === "unknown"
+					? new Date(Date.now() - 10 * 60_000).toISOString()
+					: null,
+			providerUnknownSince: null,
+			providerTerminalAt: null,
+		});
+		mockPage({
+			...row,
+			status: "STOPPING",
+			currentRun: { ...row.currentRun, status: "STOPPING" },
+		});
+		wrap(<ChannelDetail id={CHANNEL} />);
+		await screen.findByRole("region", { name: /channel status/i });
+		expect(statusBadge("STOPPING")).toBeVisible();
+		expect(strip()).toHaveAttribute("data-provider", provider);
+		const detail =
+			provider === "unknown"
+				? /Last Bitmovin reading RUNNING/
+				: /No Bitmovin status recorded/;
+		expect(screen.queryByText(detail)).toBeNull();
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Encoder lifecycle — more information",
+			}),
+		);
+		expect(screen.getByText(detail)).toBeVisible();
 	});
 
 	it("a run with no observation yet is not ON_AIR or green while the first Bitmovin status check is pending", async () => {
@@ -467,11 +496,38 @@ describe("ChannelDetail — a lost provider observation is never on air (row #28
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
 		await screen.findByRole("region", { name: /channel status/i });
-		await waitFor(() => expect(nextActionCode()).toBe("PROVIDER_UNKNOWN"));
+		expect(nextActionCode()).toBeNull();
 		expect(providerOnAir()).toBe("unconfirmed");
-		const badge = statusBadge("RUNNING · Bitmovin status unconfirmed");
-		expect(badge?.className).toContain("amber");
+		const badge = statusBadge("Recorded RUNNING");
+		expect(badge?.className).not.toContain("amber");
 		expect(badge?.className).not.toContain("emerald");
 		expect(strip()?.getAttribute("data-provider")).toBe("unobserved");
+	});
+
+	it("returns to confirmed on-air only when Bitmovin reports a current RUNNING state", async () => {
+		const observation = {
+			providerStatus: "QUEUED",
+			providerStatusObservedAt: new Date().toISOString(),
+			providerUnknownSince: null,
+			providerTerminalAt: null,
+		};
+		mockPage(channelRow(observation));
+		const { client } = wrap(<ChannelDetail id={CHANNEL} />);
+		await screen.findByRole("region", { name: /channel status/i });
+		expect(statusBadge("Recorded RUNNING")).toBeVisible();
+		expect(nextActionCode()).toBeNull();
+		expect(providerOnAir()).not.toBe("confirmed");
+		await act(async () => {
+			client.setQueryData(
+				["live-channel", CHANNEL],
+				channelRow({
+					...observation,
+					providerStatus: "RUNNING",
+				}),
+			);
+		});
+		await waitFor(() => expect(nextActionCode()).toBe("ON_AIR"));
+		expect(statusBadge("RUNNING")?.className).toContain("emerald");
+		expect(providerOnAir()).toBe("confirmed");
 	});
 });

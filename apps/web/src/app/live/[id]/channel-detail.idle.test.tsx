@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
 import { ChannelDetail } from "./channel-detail";
@@ -23,6 +24,38 @@ afterEach(() => {
 
 const ID = "00000000-0000-4000-8000-0000000000d1";
 
+function mockChannel(over: Record<string, unknown> = {}) {
+	apiFetch.mockImplementation(async (url: string) => {
+		if (url === `/api/live-channels/${ID}`) {
+			return {
+				id: ID,
+				name: "eve-idle",
+				status: "CREATED",
+				plan: { planVersion: 1, name: "eve-idle" },
+				stepLog: [],
+				streamKey: null,
+				encoderIp: null,
+				programStartAt: null,
+				programEndAt: null,
+				lastHeartbeat: null,
+				liveToVod: null,
+				playbackLinks: [],
+				maxRunMinutes: null,
+				bitmovinEncodingId: null,
+				bitmovinAccountId: null,
+				createdAt: "2026-08-17T00:00:00.000Z",
+				updatedAt: "2026-08-17T00:00:00.000Z",
+				currentRun: null,
+				...over,
+			};
+		}
+		if (url.includes("/alerts")) return { open: [], history: [] };
+		if (url.includes("/feeder")) return { items: [] };
+		if (url.includes("/runs")) return { runs: [] };
+		return [];
+	});
+}
+
 /**
  * The REQUIRED fixture : a channel
  * with NO runs at all — reachable, not theoretical, since #240's backfill
@@ -34,43 +67,7 @@ const ID = "00000000-0000-4000-8000-0000000000d1";
 describe("ChannelDetail — the never-run channel (IDLE goes live)", () => {
 	it("renders the IDLE badge with a real tone, and every panel survives currentRun: null", async () => {
 		const consoleError = vi.spyOn(console, "error");
-		apiFetch.mockImplementation(async (url: string) => {
-			if (url === `/api/live-channels/${ID}`) {
-				return {
-					id: ID,
-					name: "eve-idle",
-					status: "CREATED",
-					plan: { planVersion: 1, name: "eve-idle" },
-					stepLog: [],
-					streamKey: null,
-					encoderIp: null,
-					programStartAt: null,
-					programEndAt: null,
-					lastHeartbeat: null,
-					liveToVod: null,
-					playbackLinks: [],
-					maxRunMinutes: null,
-					bitmovinEncodingId: null,
-					bitmovinAccountId: null,
-					createdAt: "2026-08-17T00:00:00.000Z",
-					updatedAt: "2026-08-17T00:00:00.000Z",
-					currentRun: null,
-				};
-			}
-			if (url.includes("/alerts")) {
-				return { open: [], history: [] };
-			}
-			if (url.includes("/schedules")) {
-				return [];
-			}
-			if (url.includes("/feeder")) {
-				return { items: [] };
-			}
-			if (url.includes("/runs")) {
-				return { runs: [] };
-			}
-			return [];
-		});
+		mockChannel();
 		renderWithQuery(<ChannelDetail id={ID} />);
 
 		// The badge shows the DERIVED status — IDLE, not the channel column's
@@ -82,6 +79,9 @@ describe("ChannelDetail — the never-run channel (IDLE goes live)", () => {
 		// And the page did not crash on the null run: the channel name
 		// renders, which sits beyond every panel in the tree.
 		expect(screen.getByText("eve-idle")).toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: /^Copy Encoding id:/ }),
+		).not.toBeInTheDocument();
 		// The Runs card  states the empty history honestly.
 		expect(await screen.findByText(/never been started/i)).toBeInTheDocument();
 		// Layer section arrays must identify their nodes, not rely on position.
@@ -97,6 +97,20 @@ describe("ChannelDetail — the never-run channel (IDLE goes live)", () => {
 	});
 });
 
+it("copies the channel's Bitmovin encoding id in one click", async () => {
+	const encodingId = "11111111-1111-4111-8111-111111111111";
+	mockChannel({ status: "STOPPED", bitmovinEncodingId: encodingId });
+	const user = userEvent.setup();
+	renderWithQuery(<ChannelDetail id={ID} />, "ja");
+
+	await user.click(
+		await screen.findByRole("button", {
+			name: `エンコーディング ID をコピー: ${encodingId}`,
+		}),
+	);
+	expect(await navigator.clipboard.readText()).toBe(encodingId);
+});
+
 /**
  * The `{}` record (found 2026-08-22 by the real-browser pass): one production
  * row carried `liveToVod: {}` — no current writer produces it, but the reader
@@ -107,43 +121,11 @@ describe("ChannelDetail — the never-run channel (IDLE goes live)", () => {
  */
 describe("ChannelDetail — malformed liveToVod records", () => {
 	it("an empty-object record renders as NO record, not a crash", async () => {
-		apiFetch.mockImplementation(async (url: string) => {
-			if (url === `/api/live-channels/${ID}`) {
-				return {
-					id: ID,
-					name: "eve-empty-record",
-					status: "STOPPED",
-					plan: { planVersion: 1, name: "eve-empty-record" },
-					stepLog: [],
-					streamKey: null,
-					encoderIp: null,
-					programStartAt: null,
-					programEndAt: null,
-					lastHeartbeat: null,
-					// The real-world datum, verbatim.
-					liveToVod: {},
-					playbackLinks: [],
-					maxRunMinutes: null,
-					bitmovinEncodingId: null,
-					bitmovinAccountId: null,
-					createdAt: "2026-08-17T00:00:00.000Z",
-					updatedAt: "2026-08-17T00:00:00.000Z",
-					currentRun: null,
-				};
-			}
-			if (url.includes("/alerts")) {
-				return { open: [], history: [] };
-			}
-			if (url.includes("/schedules")) {
-				return [];
-			}
-			if (url.includes("/feeder")) {
-				return { items: [] };
-			}
-			if (url.includes("/runs")) {
-				return { runs: [] };
-			}
-			return [];
+		mockChannel({
+			name: "eve-empty-record",
+			status: "STOPPED",
+			plan: { planVersion: 1, name: "eve-empty-record" },
+			liveToVod: {},
 		});
 		renderWithQuery(<ChannelDetail id={ID} />);
 		// The page survives; the record block simply is not there (the

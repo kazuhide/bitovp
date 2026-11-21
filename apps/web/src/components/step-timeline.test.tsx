@@ -22,7 +22,7 @@ function entry(partial: Partial<StepLogEntry> & Pick<StepLogEntry, "step">) {
 
 describe("StepTimeline", () => {
 	it.each([
-		["ja", "挿入受付", "結果未確認", "提供元の予約一覧"],
+		["ja", "挿入受付", "反映の記録なし", "提供元の予約一覧"],
 		["en", "Insertion accepted", "Outcome unverified", "provider reservations"],
 	] as const)("marks manual acceptance as neutral, with help in %s", (locale, accepted, unknown, explanation) => {
 		render(

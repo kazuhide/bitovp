@@ -249,7 +249,7 @@ describe("ApiCoverageClient current source census", () => {
 		expect(screen.getByTestId("current-notice")).toHaveTextContent(
 			locale === "en"
 				? /not execution or paid validation/
-				: /実行検証・課金検証ではありません/,
+				: /実行時・課金時の挙動には別途検証が必要/,
 		);
 		expect(screen.getByTestId("parameter-snapshot")).toHaveTextContent(
 			locale === "en" ? /not.*refresh/i : /再調査していません/,

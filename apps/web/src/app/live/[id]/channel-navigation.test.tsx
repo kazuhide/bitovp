@@ -415,8 +415,11 @@ describe("reusable channel observes an external restart without a reload", () =>
 		await screen.findByText(
 			locale === "ja" ? "出力生成を確認" : "Output generated",
 		);
-		expect(document.getElementById("sec-last-run")).toContainElement(
-			screen.getByText(locale === "ja" ? "再生未確認" : "Playback unverified"),
+		expect(document.getElementById("sec-last-run")).toHaveTextContent(
+			locale === "ja" ? "出力生成を確認" : "Output generated",
+		);
+		expect(document.getElementById("sec-last-run")).not.toHaveTextContent(
+			/再生を確認|Playback unverified/,
 		);
 		expect(
 			document.querySelector('[data-next-action="RECOVER_FROM_ERROR"]'),
@@ -734,8 +737,35 @@ describe("every jump lands the caret on the target's heading (audit §5.6)", () 
 		expect(heading?.closest("#sec-delivery-status")).not.toBeNull();
 	});
 
+	it("opens a finished channel's manifest section on a direct or restored fragment", async () => {
+		world.status = "STOPPED";
+		world.runStatus = "STOPPED";
+		world.providerStatus = "FINISHED";
+		window.history.replaceState(null, "", "#sec-manifests");
+		await renderPage();
+
+		const manifests = document.getElementById("sec-manifests");
+		const heading = document.getElementById("sec-manifests-h");
+		expect(manifests).toHaveAttribute("open");
+		expect(heading).toHaveFocus();
+
+		await userEvent.click(manifests?.querySelector("summary") as HTMLElement);
+		expect(manifests).not.toHaveAttribute("open");
+		act(() => {
+			window.history.replaceState(null, "", "#sec-runs");
+			window.dispatchEvent(new HashChangeEvent("hashchange"));
+		});
+		expect(document.getElementById("sec-runs-h")).toHaveFocus();
+		act(() => {
+			window.history.replaceState(null, "", "#sec-manifests");
+			window.dispatchEvent(new HashChangeEvent("hashchange"));
+		});
+		expect(manifests).toHaveAttribute("open");
+		expect(heading).toHaveFocus();
+	});
+
 	/**
-	 * Both arms below click the SAME pointer twice, and the SECOND click is the
+	 * The rail arm below clicks the SAME pointer twice, and the SECOND click is the
 	 * assertion, for two reasons that arrived a review apart.
 	 *
 	 * With only a first click, reverting the click handler left the suite green:
@@ -749,24 +779,16 @@ describe("every jump lands the caret on the target's heading (audit §5.6)", () 
 	 * no `hashchange`, so the handler must cancel the default itself — which is
 	 * what these arms assert, `preventDefault` included.
 	 */
-	it("the next-action CTA focuses its target — the header region, which has no heading", async () => {
-		// A RUNNING channel with connected ingest and a playable output settles
-		// on ON_AIR, whose pointer is `sec-actions`: the one target with no
-		// heading of its own, and so the one the fallback exists for.
+	it("omits the redundant action jump and preserves existing header deep links", async () => {
 		await renderPage();
 		const panel = screen.getByRole("region", { name: /next action/i });
-		const cta = within(panel).getByRole("link");
-		await userEvent.click(cta);
-		expect(document.activeElement).toBe(document.getElementById("sec-actions"));
-
-		const parked = document.getElementById("sec-runs-h") as HTMLElement;
-		parked.focus();
-		// The URL already carries this fragment, so there is nothing to navigate
-		// to and no `hashchange` to restore the focus afterwards. The handler
-		// must cancel the default action itself.
-		expect(window.location.hash).toBe("#sec-actions");
-		expect(clickAndReadDefault(cta)).toBe("prevented");
-		expect(document.activeElement).toBe(document.getElementById("sec-actions"));
+		expect(within(panel).queryByRole("link")).toBeNull();
+		window.location.hash = "#sec-actions";
+		await waitFor(() =>
+			expect(document.activeElement).toBe(
+				document.getElementById("sec-actions"),
+			),
+		);
 	});
 
 	it("a rail link focuses the section's heading and closes the narrow menu", async () => {

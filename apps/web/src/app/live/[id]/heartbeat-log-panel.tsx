@@ -434,7 +434,7 @@ export function HeartbeatLogPanel({
 									</td>
 									<td className="px-2 py-1.5">
 										<Badge tone={statusTone(row.ingestStatus, row.healthy)}>
-											{row.ingestStatus}
+											{row.ingestStatus === "UNKNOWN" ? "—" : row.ingestStatus}
 										</Badge>
 									</td>
 									<td className="px-2 py-1.5 font-mono text-zinc-300">

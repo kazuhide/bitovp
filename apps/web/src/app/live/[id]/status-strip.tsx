@@ -5,9 +5,8 @@ import { useT } from "@/lib/i18n/context";
 import type { LiveJumpEvent } from "./section-focus";
 
 /**
- * Compact operational summary: alerts, playable output, feeders and timing.
- * Ingest state and observation freshness live in DeliveryStatusPanel. Unknown
- * readings stay unknown rather than becoming reassuring defaults.
+ * Compact operational summary of available alerts, playback and timing.
+ * Ingest state and observation freshness live in DeliveryStatusPanel.
  *
  * The two TIME cells address an operational gap: on a
  * healthy RUNNING channel the derived next action settles on `ON_AIR`, so the
@@ -25,7 +24,6 @@ export function StatusStrip({
 	openAlerts,
 	playableCount,
 	showPlayable = true,
-	feederCount,
 	nextEvent,
 	runStartedAt,
 	runEndedAt,
@@ -45,8 +43,6 @@ export function StatusStrip({
 	playableCount: number | "unknown";
 	/** A MoQ-only output has no manifest playback count. */
 	showPlayable?: boolean;
-	/** Failed reads, including stale-data refetch failures, are not zero. */
-	feederCount: number | "unknown";
 	/**
 	 * The soonest ARMED schedule row; `null` when nothing is armed, and
 	 * `"unknown"` when the schedules query FAILED — the same three-valued
@@ -106,7 +102,7 @@ export function StatusStrip({
 	const nextEventOverdue = nextEventMs !== null && nextEventMs < 0;
 	const nextEventText =
 		nextEvent === "unknown"
-			? t("status.summaryUnavailable")
+			? null
 			: armedNext === null || nextEventMs === null
 				? t("status.summaryNoneArmed")
 				: `${
@@ -154,8 +150,7 @@ export function StatusStrip({
 	 * run's own two worker stamps. No viewer clock enters it, so it reads the
 	 * same three days later as it did at the stop — which is what makes it a
 	 * measurement rather than an artifact. A finished run with no `endedAt`
-	 * (a legacy row) has no such measurement and says None rather than
-	 * inventing one from the current time.
+	 * (a legacy row) has no such measurement.
 	 */
 	const ranForSeconds =
 		active || runStartedAt === null || runEndedAt === null
@@ -168,10 +163,10 @@ export function StatusStrip({
 				);
 	const runtimeText = !active
 		? ranForSeconds === null
-			? t("status.none")
+			? null
 			: formatSeconds(ranForSeconds)
 		: elapsedSeconds === null
-			? t("status.none")
+			? null
 			: remainingSeconds === null
 				? t("status.runtimeElapsed", {
 						elapsed: formatSeconds(elapsedSeconds),
@@ -188,7 +183,7 @@ export function StatusStrip({
 	const cells: {
 		key: string;
 		label: string;
-		value: string;
+		value: string | null;
 		tone: "ok" | "warn" | "error" | "neutral";
 		/** Renders the value as an in-page link to the section that owns it. */
 		href?: string;
@@ -196,44 +191,23 @@ export function StatusStrip({
 		{
 			key: "alerts",
 			label: t("alerts.title"),
-			// A failed read is amber-unknown, never a green zero: the number
-			// an operator glances at here has to be one we actually have.
-			value:
-				openAlerts === "unknown" ? t("status.unknown") : String(openAlerts),
-			tone: openAlerts === "unknown" ? "warn" : openAlerts > 0 ? "error" : "ok",
+			value: openAlerts === "unknown" ? null : String(openAlerts),
+			tone: openAlerts !== "unknown" && openAlerts > 0 ? "error" : "ok",
 		},
 		{
 			key: "playable",
 			label: t("status.playable"),
 			value:
-				playableCount === "unknown"
-					? t("status.unknown")
+				!showPlayable || playableCount === "unknown"
+					? null
 					: String(playableCount),
-			tone:
-				playableCount === "unknown"
-					? "warn"
-					: playableCount > 0
-						? "ok"
-						: "neutral",
-		},
-		{
-			key: "feeders",
-			label: t("live.feeders"),
-			value:
-				feederCount === "unknown" ? t("status.unknown") : String(feederCount),
-			tone:
-				feederCount === "unknown" ? "warn" : feederCount > 0 ? "ok" : "neutral",
+			tone: playableCount !== "unknown" && playableCount > 0 ? "ok" : "neutral",
 		},
 		{
 			key: "next-event",
 			label: t("status.nextEvent"),
 			value: nextEventText,
-			tone:
-				nextEvent === "unknown"
-					? "warn"
-					: nextEventOverdue
-						? "warn"
-						: "neutral",
+			tone: nextEventOverdue ? "warn" : "neutral",
 			href: programmeHref,
 		},
 		{
@@ -249,6 +223,8 @@ export function StatusStrip({
 				remainingSeconds !== null && remainingSeconds <= 0 ? "warn" : "neutral",
 		},
 	];
+	const visibleCells = cells.filter((cell) => cell.value !== null);
+	if (visibleCells.length === 0) return null;
 
 	const toneClass = {
 		ok: "text-emerald-400",
@@ -262,32 +238,30 @@ export function StatusStrip({
 			aria-label={t("status.regionLabel")}
 			className="flex flex-wrap gap-x-6 gap-y-2 rounded-md border border-zinc-800 bg-zinc-900/40 px-4 py-2.5"
 		>
-			{cells
-				.filter((cell) => showPlayable || cell.key !== "playable")
-				.map((cell) => (
-					<div key={cell.key} className="flex items-baseline gap-1.5">
-						<span className="text-xs text-zinc-500">{cell.label}</span>
-						{cell.href ? (
-							<a
-								href={cell.href}
-								onClick={(event) =>
-									onJump?.(event, (cell.href as string).replace(/^#/, ""))
-								}
-								data-status-cell={cell.key}
-								className={`font-medium text-sm underline decoration-zinc-700 underline-offset-4 hover:decoration-zinc-400 ${toneClass[cell.tone]}`}
-							>
-								{cell.value}
-							</a>
-						) : (
-							<span
-								data-status-cell={cell.key}
-								className={`font-medium text-sm ${toneClass[cell.tone]}`}
-							>
-								{cell.value}
-							</span>
-						)}
-					</div>
-				))}
+			{visibleCells.map((cell) => (
+				<div key={cell.key} className="flex items-baseline gap-1.5">
+					<span className="text-xs text-zinc-500">{cell.label}</span>
+					{cell.href ? (
+						<a
+							href={cell.href}
+							onClick={(event) =>
+								onJump?.(event, (cell.href as string).replace(/^#/, ""))
+							}
+							data-status-cell={cell.key}
+							className={`font-medium text-sm underline decoration-zinc-700 underline-offset-4 hover:decoration-zinc-400 ${toneClass[cell.tone]}`}
+						>
+							{cell.value}
+						</a>
+					) : (
+						<span
+							data-status-cell={cell.key}
+							className={`font-medium text-sm ${toneClass[cell.tone]}`}
+						>
+							{cell.value}
+						</span>
+					)}
+				</div>
+			))}
 		</section>
 	);
 }

@@ -18,11 +18,13 @@ export function FeatureFlagsProvider({
 	flags,
 	children,
 }: {
-	flags: FeatureFlags;
+	flags: Partial<FeatureFlags>;
 	children: ReactNode;
 }) {
 	return (
-		<FeatureFlagsContext.Provider value={flags}>
+		<FeatureFlagsContext.Provider
+			value={{ ...DEFAULT_FEATURE_FLAGS, ...flags }}
+		>
 			{children}
 		</FeatureFlagsContext.Provider>
 	);

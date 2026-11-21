@@ -63,6 +63,12 @@ export const PAGE_ACCESS_RULES: readonly PageAccessRule[] = [
 		reason: "Access history and IP policy management",
 	},
 	{
+		prefix: "/settings/operation-analytics",
+		audience: "operator",
+		minRole: "ADMIN",
+		reason: "Weekly operation aggregates for the current organization",
+	},
+	{
 		prefix: "/settings/vmaf",
 		audience: "operator",
 		minRole: "ADMIN",

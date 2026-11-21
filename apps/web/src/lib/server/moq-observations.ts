@@ -5,6 +5,7 @@ import type { AppPrismaClient, AppTransactionClient } from "@bitovp/db";
 import { z } from "zod";
 import { roleAtLeast } from "@/lib/auth/roles";
 import { AuthContextError } from "@/lib/auth/tenancy";
+import { MOQ_OUTPUT_HISTORY_HEADER } from "@/lib/moq-player/heartbeat";
 import {
 	MOQ_OBSERVATION_LIMITS,
 	type MoqObservationSession,
@@ -393,6 +394,7 @@ export async function getMoqObservations(
 			ctx.prisma,
 			run.id,
 			run.bitmovinEncodingId,
+			{ includePushOutput: req.headers.get(MOQ_OUTPUT_HISTORY_HEADER) === "1" },
 		);
 		await auditMoqHistory(ctx, req, params, 200);
 		return Response.json(

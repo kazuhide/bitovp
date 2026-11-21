@@ -125,6 +125,11 @@ const DIAGNOSTICS: readonly Area[] = [
 		captionKey: "clipDiagnostics.caption",
 	},
 	{
+		titleKey: "operationAnalytics.title",
+		href: "/settings/operation-analytics",
+		captionKey: "operationAnalytics.caption",
+	},
+	{
 		titleKey: "settingsX.apiCoverage",
 		href: "/settings/api-coverage",
 	},

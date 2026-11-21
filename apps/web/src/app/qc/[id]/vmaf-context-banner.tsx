@@ -1,5 +1,6 @@
 "use client";
 
+import { InfoHint } from "@/components/ui/info-hint";
 import { useT } from "@/lib/i18n/context";
 import type {
 	ComparisonContext,
@@ -167,9 +168,8 @@ export function VmafContextBanner({
 	);
 
 	return (
-		<div className="mt-6 space-y-2">
-			{/* The terms of the comparison, always — this is the line that was missing. */}
-			<p className="rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
+		<div className="space-y-2">
+			<div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs">
 				<span className="font-medium text-zinc-300">
 					{context.kind === "cross-resolution"
 						? t("qc.geometryUpscaled", {
@@ -184,11 +184,11 @@ export function VmafContextBanner({
 								})
 							: t("qc.comparisonUnknown")}
 				</span>
-				{" — "}
-				{/* The sentence is BUILT HERE, from a discriminant, rather than arriving
-				    as a finished English string that no catalogue could reach. */}
-				{comparisonSentence(context, t)}
-			</p>
+				<InfoHint
+					labelFor={t("qc.measurementConditions")}
+					text={comparisonSentence(context, t)}
+				/>
+			</div>
 
 			{degenerate.length > 0 ? (
 				<p

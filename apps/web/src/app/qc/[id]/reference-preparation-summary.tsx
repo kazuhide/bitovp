@@ -28,7 +28,7 @@ export function ReferencePreparationSummary({
 	});
 	if (prepared.length === 0) return null;
 	return (
-		<details className="mt-6 rounded-md border border-zinc-800 px-3 py-2">
+		<details className="rounded-md border border-zinc-800 px-3 py-2">
 			<summary className="cursor-pointer text-amber-200 text-sm focus-visible:outline-2 focus-visible:outline-emerald-500">
 				{t("qc.referencePreparationSummary")}
 			</summary>

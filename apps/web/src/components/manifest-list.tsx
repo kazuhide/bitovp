@@ -16,7 +16,7 @@ type ManifestListProps = {
 	 */
 	playableKeys: ReadonlySet<string>;
 	/** Omitted where there is no enlarged view to open (the live channel page). */
-	onPlay?: (link: ManifestPlaybackLink) => void;
+	onPlay?: (link: ManifestPlaybackLink, trigger: HTMLButtonElement) => void;
 	/** Anchor id for a page's section nav ; omit elsewhere. */
 	headingId?: string;
 };
@@ -79,7 +79,7 @@ export function ManifestList({
 								<Button
 									variant="secondary"
 									size="sm"
-									onClick={() => onPlay(link)}
+									onClick={(event) => onPlay(link, event.currentTarget)}
 								>
 									{t("jobDetail.play")}
 								</Button>

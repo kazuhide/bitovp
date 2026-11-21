@@ -38,7 +38,7 @@ export const MAX_BYTES = 90 * 1024 * 1024;
 // media check; a deliberate change to a fixture's tests updates its count here.
 export const FIXTURES = Object.freeze({
 	"src/library-editing/hls-preparation.media.ts": 3,
-	"src/library-editing/normalization.media.ts": 8,
+	"src/library-editing/normalization.media.ts": 9,
 	"src/library-editing/normalization-untagged-color.media.ts": 1,
 	"src/library-editing/render.media.ts": 5,
 	"src/library-editing/render-movie-clock.media.ts": 17,

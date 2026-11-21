@@ -2971,6 +2971,7 @@ model Organization {
   vmafComputeCredentialRows VmafComputeCredential[]
   vmafExecutionProfileRows VmafExecutionProfile[]
   accessEventRows AccessEvent[]
+  operationAttemptRows OperationAttempt[]
   libraryEvidenceReceiptRows LibraryEvidenceReceipt[]
   libraryMediaTaskRows LibraryMediaTask[]
   libraryFlowEvidencePinRows LibraryFlowEvidencePin[]
@@ -3012,6 +3013,29 @@ model AccessEvent {
   @@unique([organizationId,id])
   @@index([organizationId,createdAt])
   @@index([organizationId])
+}
+
+enum OperationKind {
+  LIVE_MOQ_PLAYBACK
+}
+
+enum OperationOutcome {
+  FIRST_FRAME
+  FAILED
+  CANCELED
+}
+
+model OperationAttempt {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id String @db.Uuid
+  operation OperationKind
+  ownerDigest String @db.Char(64)
+  startedAt DateTime @default(dbgenerated("timezone('UTC'::text, CURRENT_TIMESTAMP)"))
+  outcome OperationOutcome?
+  elapsedMs Int?
+  @@id([organizationId,id])
+  @@index([organizationId,startedAt])
 }
 
 /// Keep every source/image ever used by a project alive across draft and revision history.

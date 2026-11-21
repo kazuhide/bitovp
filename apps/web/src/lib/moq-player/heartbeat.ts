@@ -1,6 +1,14 @@
 import { z } from "zod";
 
+// Previously loaded Web clients validate the history shape strictly.
+export const MOQ_OUTPUT_HISTORY_HEADER = "X-BitOVP-MoQ-Output";
+
 const metric = z.number().finite().nonnegative().nullable();
+const segmentProcessingFields = {
+	segmentProcessingMeanMs: metric,
+	segmentProcessingMinMs: metric,
+	segmentProcessingMaxMs: metric,
+};
 
 /** Encoder measurements retain their units and missing values; no playback inference. */
 export const moqHeartbeatPointSchema = z.strictObject({
@@ -26,16 +34,23 @@ export const moqHeartbeatPointSchema = z.strictObject({
 	corruptPacketsVideo: metric,
 	corruptPacketsAudio: metric,
 	/** Provider segment processing time, distinct from end-to-end latency. */
-	segmentProcessingMeanMs: metric,
-	segmentProcessingMinMs: metric,
-	segmentProcessingMaxMs: metric,
+	...segmentProcessingFields,
+});
+
+const moqPushOutputPointSchema = z.strictObject({
+	sampledAt: z.iso.datetime(),
+	...segmentProcessingFields,
 });
 
 export const moqHeartbeatHistorySchema = z.strictObject({
 	source: z.literal("live-encoder-heartbeat"),
 	points: z.array(moqHeartbeatPointSchema).max(600),
+	// Separate from Poll so a burst of Push receipts cannot evict input history.
+	pushOutput: z.array(moqPushOutputPointSchema).max(600).optional(),
+	pushOutputReadFailed: z.literal(true).optional(),
 	truncated: z.boolean(),
 });
 
 export type MoqHeartbeatPoint = z.infer<typeof moqHeartbeatPointSchema>;
+export type MoqPushOutput = z.infer<typeof moqPushOutputPointSchema>;
 export type MoqHeartbeatHistory = z.infer<typeof moqHeartbeatHistorySchema>;

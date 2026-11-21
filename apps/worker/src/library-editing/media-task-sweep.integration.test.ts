@@ -11,7 +11,15 @@ import {
 	createPrismaClient,
 	createTenantPrismaClient,
 } from "@bitovp/db";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+	afterAll,
+	afterEach,
+	beforeAll,
+	describe,
+	expect,
+	it,
+	vi,
+} from "vitest";
 import { createLibraryMediaTaskSweep } from "./media-task-sweep";
 
 const execute = vi.hoisted(() => vi.fn());
@@ -64,7 +72,17 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				await app?.$disconnect();
 			}
 		});
-		async function fixture(ready = true) {
+		afterEach(() => vi.unstubAllEnvs());
+		async function fixture(
+			ready = true,
+			{
+				asrCudaBinarySha256,
+				createdAt,
+			}: {
+				asrCudaBinarySha256?: string;
+				createdAt?: Date;
+			} = {},
+		) {
 			const source = await a.librarySource.create({
 				data: {
 					sourceKey: randomUUID(),
@@ -112,7 +130,10 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				kind: "TRANSCRIBE",
 				mediaVersionId: media.id,
 				requestKey: randomUUID(),
-				parameters: { language: "ja" },
+				parameters: {
+					language: "ja",
+					...(asrCudaBinarySha256 ? { asrBackend: "cuda" } : {}),
+				},
 			});
 			const identity = {
 				organizationId,
@@ -122,6 +143,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				analysisRawHash: null,
 				timeMapHash: ready ? hashEditingEvidence(map) : null,
 				bindingHash: null,
+				...(asrCudaBinarySha256 ? { asrCudaBinarySha256 } : {}),
 			};
 			const data = {
 				organizationId,
@@ -131,6 +153,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				requestHash: mediaTaskIntentHash(input),
 				cacheKey: mediaTaskCacheKey(input, identity),
 				parameters: { schemaVersion: 1, input, identity },
+				...(createdAt ? { createdAt } : {}),
 			};
 			const task = await a.libraryMediaTask.create({ data });
 			return { media, map, task, data };
@@ -285,6 +308,80 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					where: { id: exhausted.task.id },
 				}),
 			).toMatchObject({ state: "ERROR", error: "TASK_ATTEMPTS_EXHAUSTED" });
+		});
+		it("skips an incompatible CUDA backlog and still claims legacy CPU and recovers matching CUDA", async () => {
+			const digest = "d".repeat(64),
+				otherDigest = "e".repeat(64);
+			vi.stubEnv("WHISPER_CUDA_CLI_SHA256", digest);
+			vi.stubEnv("WHISPER_CUDA_CLI_PATH", "/models/whisper-cuda");
+			const unsupported = await fixture(true, {
+				asrCudaBinarySha256: otherDigest,
+			});
+			await a.libraryMediaTask.createMany({
+				data: Array.from({ length: 21 }, () => {
+					const requestKey = randomUUID();
+					const input = { ...unsupported.data.parameters.input, requestKey };
+					return {
+						...unsupported.data,
+						requestKey,
+						requestHash: mediaTaskIntentHash(input),
+						parameters: { ...unsupported.data.parameters, input },
+						createdAt: new Date(0),
+					};
+				}),
+			});
+			const canceled = await fixture(true, {
+				asrCudaBinarySha256: otherDigest,
+				createdAt: new Date(0),
+			});
+			const expired = new Date(Date.now() - 1_000);
+			await a.libraryMediaTask.update({
+				where: { id: canceled.task.id },
+				data: {
+					state: "RUNNING",
+					attempts: 1,
+					leaseToken: randomUUID(),
+					leaseUntil: expired,
+					cancelRequestedAt: expired,
+				},
+			});
+			const cpu = await fixture();
+			const cuda = await fixture(true, { asrCudaBinarySha256: digest });
+			await a.libraryMediaTask.update({
+				where: { id: cuda.task.id },
+				data: {
+					state: "RUNNING",
+					attempts: 1,
+					leaseToken: randomUUID(),
+					leaseUntil: expired,
+				},
+			});
+			execute.mockReset();
+			execute.mockResolvedValue({ cacheable: false });
+			await sweep()();
+			expect(
+				await a.libraryMediaTask.count({
+					where: {
+						cacheKey: unsupported.task.cacheKey,
+						state: "PENDING",
+						attempts: 0,
+					},
+				}),
+			).toBe(22);
+			for (const [id, attempts] of [
+				[cpu.task.id, 1],
+				[cuda.task.id, 2],
+			] as const) {
+				expect(
+					await a.libraryMediaTask.findUnique({ where: { id } }),
+				).toMatchObject({ state: "SUCCEEDED", attempts, leaseToken: null });
+			}
+			expect(
+				await a.libraryMediaTask.findUnique({
+					where: { id: canceled.task.id },
+				}),
+			).toMatchObject({ state: "CANCELED", attempts: 1, leaseToken: null });
+			expect(execute).toHaveBeenCalledTimes(2);
 		});
 	},
 );

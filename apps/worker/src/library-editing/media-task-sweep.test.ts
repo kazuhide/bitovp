@@ -22,6 +22,7 @@ vi.mock("./media-task-execution", async (original) => ({
 }));
 afterEach(() => {
 	execute.mockReset();
+	vi.unstubAllEnvs();
 	vi.useRealTimers();
 });
 type Row = Record<string, unknown>;
@@ -34,6 +35,7 @@ type DeadlineOptions = Partial<
 function setup(
 	mode: "TRANSCRIBE" | "LOCAL_STORY" | "DURATION" = "TRANSCRIBE",
 	deadlines: DeadlineOptions = {},
+	asrCudaBinarySha256?: string,
 ) {
 	const organizationId = randomUUID(),
 		mediaId = randomUUID();
@@ -104,7 +106,10 @@ function setup(
 					kind: "TRANSCRIBE",
 					mediaVersionId: mediaId,
 					requestKey: randomUUID(),
-					parameters: { language: "ja" },
+					parameters: {
+						language: "ja",
+						...(asrCudaBinarySha256 ? { asrBackend: "cuda" } : {}),
+					},
 				}
 			: {
 					kind: "GENERATE",
@@ -130,6 +135,7 @@ function setup(
 		analysisRawHash: mode === "TRANSCRIBE" ? null : analysis.rawHash,
 		timeMapHash: hashEditingEvidence(media.timeMap),
 		bindingHash: mode === "TRANSCRIBE" ? null : hashEditingEvidence(binding),
+		...(asrCudaBinarySha256 ? { asrCudaBinarySha256 } : {}),
 		...(mode === "TRANSCRIBE" ? {} : { bindingSnapshot: binding }),
 		...(mode === "LOCAL_STORY"
 			? {
@@ -170,23 +176,6 @@ function setup(
 	};
 	const rows = [row];
 	const delegate = {
-		findMany: vi.fn(
-			async ({
-				where,
-				orderBy,
-				take,
-			}: {
-				where: Row;
-				orderBy?: Row[];
-				take: number;
-			}) =>
-				orderRows(
-					rows.filter((r) => matchesWhere(r, where)),
-					orderBy,
-				)
-					.slice(0, take)
-					.map((r) => ({ ...r })),
-		),
 		findUnique: vi.fn(
 			async ({ where }: { where: Row }) =>
 				rows.find((r) => matchesWhere(r, where)) ?? null,
@@ -219,6 +208,20 @@ function setup(
 	let serial = Promise.resolve();
 	const prisma = {
 		...tx,
+		// Include potentially stale CUDA candidates; PostgreSQL tests cover the actual SQL filter.
+		$queryRaw: async (_query: TemplateStringsArray, due: Date) =>
+			orderRows(
+				rows.filter((row) =>
+					matchesWhere(row, {
+						availableAt: { lte: due },
+						OR: [
+							{ state: "PENDING" },
+							{ state: "RUNNING", leaseUntil: { lte: due } },
+						],
+					}),
+				),
+				[{ createdAt: "asc" }, { id: "asc" }],
+			).slice(0, 20),
 		$transaction: async <T>(fn: (client: typeof tx) => Promise<T>) => {
 			const result = serial.then(() => fn(tx));
 			serial = result.then(
@@ -253,6 +256,26 @@ function setup(
 	};
 }
 describe("durable production worker fences", () => {
+	it.each([
+		{ digest: undefined, path: "/models/whisper-cuda" },
+		{ digest: "e".repeat(64), path: "/models/whisper-cuda" },
+		{ digest: "d".repeat(64), path: "relative/whisper-cuda" },
+	])("leaves a CUDA candidate available if its locked intent cannot run here (%#)", async ({
+		digest,
+		path,
+	}) => {
+		vi.stubEnv("WHISPER_CUDA_CLI_SHA256", digest);
+		vi.stubEnv("WHISPER_CUDA_CLI_PATH", path);
+		const f = setup("TRANSCRIBE", {}, "d".repeat(64));
+		await f.sweep();
+		expect(f.row).toMatchObject({
+			state: "PENDING",
+			phase: "QUEUED",
+			attempts: 0,
+			leaseToken: null,
+		});
+		expect(execute).not.toHaveBeenCalled();
+	});
 	it("passes the task organization to admission and never executes under another tenant's witness", async () => {
 		let authorizedOrganizationId: string = randomUUID();
 		const canClaim = vi.fn(

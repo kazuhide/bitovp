@@ -199,6 +199,7 @@ export function verifyMediaTaskDependency(input: Input) {
 	});
 	if (previous.kind === "TRANSCRIBE") {
 		if (
+			previous.parameters.asrBackend === "cuda" ||
 			!usesGeneratedCaptions(request.parameters.captions) ||
 			row.analysisRevisionId !== null ||
 			!currentIdentity.modelSha256 ||

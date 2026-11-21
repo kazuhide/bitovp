@@ -121,6 +121,12 @@ async function identityFor(
 			? { transcriptionPolicyFingerprint: TRANSCRIPTION_POLICY_FINGERPRINT }
 			: {}),
 	};
+	if (input.kind === "TRANSCRIBE" && input.parameters.asrBackend === "cuda") {
+		const sha256 = process.env.WHISPER_CUDA_CLI_SHA256;
+		if (!sha256 || !/^[a-f0-9]{64}$/.test(sha256))
+			throw new EditingRequestError(503, "ASR_CUDA_NOT_CONFIGURED");
+		identity.asrCudaBinarySha256 = sha256;
+	}
 	if (
 		input.kind === "GENERATE" &&
 		usesGeneratedCaptions(input.parameters.captions) &&

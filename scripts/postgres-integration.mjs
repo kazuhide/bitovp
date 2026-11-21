@@ -75,7 +75,7 @@ export const GROUPS = [
 			"src/live/owned-transition-locking.integration.test.ts": 10,
 			"src/watch/sweep.capacity.integration.test.ts": 12,
 			"src/library-editing/derivatives.integration.test.ts": 8,
-			"src/library-editing/media-task-sweep.integration.test.ts": 4,
+			"src/library-editing/media-task-sweep.integration.test.ts": 5,
 			"src/library-editing/generation.integration.test.ts": 9,
 			"src/library-editing/generation-speech.integration.test.ts": 2,
 			"src/library-editing/generation-duration-review.integration.test.ts": 2,

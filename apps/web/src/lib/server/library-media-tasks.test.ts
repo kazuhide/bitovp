@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { TRANSCRIPTION_POLICY_FINGERPRINT } from "@bitovp/core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ServerContext } from "./context";
 import {
 	cancelMediaTask,
@@ -112,6 +112,7 @@ const input = (requestKey = randomUUID()) => ({
 	requestKey,
 	parameters: { language: "ja" },
 });
+afterEach(() => vi.unstubAllEnvs());
 describe("media task intent and lifecycle boundary", () => {
 	it("pins VAD/admission quality policy independently of ASR model bytes", async () => {
 		await createMediaTask(input(), null);
@@ -120,6 +121,29 @@ describe("media task intent and lifecycle boundary", () => {
 		).toMatchObject({
 			transcriptionPolicyFingerprint: TRANSCRIPTION_POLICY_FINGERPRINT,
 		});
+	});
+	it("admits experimental CUDA only with a server-pinned executable", async () => {
+		const request = {
+			...input(),
+			parameters: { language: "ja", asrBackend: "cuda" },
+		};
+		vi.stubEnv("WHISPER_CUDA_CLI_SHA256", undefined);
+		await expect(createMediaTask(request, null)).rejects.toMatchObject({
+			code: "ASR_CUDA_NOT_CONFIGURED",
+		});
+		expect(rows).toHaveLength(0);
+		const digest = "3".repeat(64);
+		vi.stubEnv("WHISPER_CUDA_CLI_SHA256", digest);
+		const cuda = await createMediaTask(request, null);
+		const original = rows.find((row) => row.id === cuda.taskId);
+		expect(original?.parameters).toMatchObject({
+			identity: { asrCudaBinarySha256: digest },
+		});
+		await createMediaTask(input(), null);
+		expect(rows.at(-1)?.cacheKey).not.toBe(original?.cacheKey);
+		vi.stubEnv("WHISPER_CUDA_CLI_SHA256", "4".repeat(64));
+		await createMediaTask({ ...request, requestKey: randomUUID() }, null);
+		expect(rows.at(-1)?.cacheKey).not.toBe(original?.cacheKey);
 	});
 	it("creates a durable task and replays a simultaneous request exactly once", async () => {
 		const value = input();

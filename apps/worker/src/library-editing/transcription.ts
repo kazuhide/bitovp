@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import {
 	hashEditingEvidence,
 	TRANSCRIPTION_POLICY_FINGERPRINT,
@@ -17,6 +17,7 @@ import {
 	analysisScratch,
 	boundedInteger,
 	MAX_ANALYSIS_DURATION_US,
+	stageCudaAsrExecutable,
 	validDigest,
 	verifyAnalysisFile,
 	verifyAnalysisSourceFile,
@@ -33,6 +34,24 @@ export const BASE_MODEL_SHA256 =
 	"60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe";
 export type TranscriptWord = LegacyTranscriptWord;
 export type TranscriptSegment = LegacyTranscriptSegment;
+export type CudaTranscriptionRuntime = {
+	binaryPath: string;
+	binarySha256: string;
+};
+export function readCudaTranscriptionRuntime():
+	| CudaTranscriptionRuntime
+	| undefined {
+	const binaryPath = process.env.WHISPER_CUDA_CLI_PATH;
+	const binarySha256 = process.env.WHISPER_CUDA_CLI_SHA256;
+	if (
+		binaryPath &&
+		isAbsolute(binaryPath) &&
+		binarySha256 &&
+		validDigest(binarySha256)
+	)
+		return { binaryPath, binarySha256 };
+}
+
 export type LocalTranscript = {
 	schemaVersion: 1;
 	engine: "whisper.cpp";
@@ -43,6 +62,7 @@ export type LocalTranscript = {
 	segments: TranscriptSegment[];
 	warnings: string[];
 	cacheKey: string;
+	cudaExecution?: { binarySha256: string; device: string | null };
 	qualityPolicyFingerprint: string;
 	rawSegments: RawTranscriptSegment[];
 	speechIntervals: SpeechInterval[];
@@ -56,6 +76,7 @@ export type TranscriptionInput = {
 	model: { path: string; sha256: string };
 	vadModel?: { path: string; sha256: string };
 	whisperPath?: string;
+	cuda?: CudaTranscriptionRuntime;
 	ffmpegPath?: string;
 	threads?: number;
 	timeoutMs?: number;
@@ -89,6 +110,7 @@ export function transcriptionCacheKey(input: {
 	durationUs: number;
 	sourceStartUs?: number;
 	qualityPolicyFingerprint?: string;
+	cudaBinarySha256?: string;
 }) {
 	return createHash("sha256")
 		.update(
@@ -102,6 +124,9 @@ export function transcriptionCacheKey(input: {
 				language: input.language,
 				durationUs: input.durationUs,
 				sourceStartUs: input.sourceStartUs ?? 0,
+				...(input.cudaBinarySha256 !== undefined
+					? { cudaBinarySha256: input.cudaBinarySha256 }
+					: {}),
 			}),
 		)
 		.digest("hex");
@@ -157,7 +182,7 @@ function pcmEvidence(bytes: Buffer, durationUs: number) {
 	return { silent: peak <= 2 };
 }
 
-/** Offline CPU adapter. Model provisioning is a separate, explicit setup action. */
+/** Offline adapter; callers opt in to a separately provisioned CUDA executable. */
 export async function transcribeLocalAudio(
 	input: TranscriptionInput,
 ): Promise<LocalTranscript> {
@@ -193,6 +218,7 @@ export async function transcribeLocalAudio(
 	)
 		throw new RangeError("Invalid transcription identity");
 	const budget = analysisBudget(input.signal, input.timeoutMs ?? 10 * 60_000);
+	const cuda = input.cuda;
 	await verifyAsrModelFile(
 		input.model.path,
 		input.model.sha256,
@@ -205,25 +231,25 @@ export async function transcribeLocalAudio(
 		"SOURCE_CHANGED",
 		budget,
 	);
-	const binary =
-		input.whisperPath ?? process.env.WHISPER_CLI_PATH ?? "whisper-cli";
-	const version = await runMediaProcess(binary, ["--version"], {
-		signal: input.signal,
-		timeoutMs: Math.min(10_000, budget.remaining()),
-		maxOutputBytes: 4096,
-	});
-	if (version.stdout.trim() !== `whisper.cpp version: ${WHISPER_CPP_VERSION}`)
-		throw new MediaOperationError("ASR_VERSION_MISMATCH");
 	const directory = await analysisScratch("bitovp-asr-");
 	const finish = (
 		result: Pick<LocalTranscript, "language" | "segments" | "warnings"> &
 			Partial<Pick<LocalTranscript, "rawSegments" | "speechIntervals">>,
+		cudaDevice: string | null = null,
 	): LocalTranscript => ({
 		schemaVersion: 1,
 		engine: "whisper.cpp",
 		engineVersion: WHISPER_CPP_VERSION,
 		modelSha256: input.model.sha256,
 		mediaSha256: input.mediaSha256,
+		...(cuda
+			? {
+					cudaExecution: {
+						binarySha256: cuda.binarySha256,
+						device: cudaDevice,
+					},
+				}
+			: {}),
 		qualityPolicyFingerprint,
 		rawSegments: result.rawSegments ?? [],
 		speechIntervals: result.speechIntervals ?? [],
@@ -232,9 +258,20 @@ export async function transcribeLocalAudio(
 			...input,
 			modelSha256: input.model.sha256,
 			qualityPolicyFingerprint,
+			cudaBinarySha256: cuda?.binarySha256,
 		}),
 	});
 	try {
+		const binary = cuda
+			? await stageCudaAsrExecutable(cuda, directory, budget)
+			: (input.whisperPath ?? process.env.WHISPER_CLI_PATH ?? "whisper-cli");
+		const version = await runMediaProcess(binary, ["--version"], {
+			signal: input.signal,
+			timeoutMs: Math.min(10_000, budget.remaining()),
+			maxOutputBytes: 4096,
+		});
+		if (version.stdout.trim() !== `whisper.cpp version: ${WHISPER_CPP_VERSION}`)
+			throw new MediaOperationError("ASR_VERSION_MISMATCH");
 		const pcm = join(directory, "audio.wav"),
 			prefix = join(directory, "transcript");
 		// Official CLI requires 16 kHz mono signed 16-bit PCM. Keep ffmpeg local.
@@ -295,7 +332,7 @@ export async function transcribeLocalAudio(
 		// Full JSON enables the engine's token timestamp calculation. Never
 		// manufacture words by dividing segment duration or text length.
 		// https://github.com/ggml-org/whisper.cpp/blob/v1.9.5/examples/cli/cli.cpp
-		await runMediaProcess(
+		const decoder = await runMediaProcess(
 			binary,
 			[
 				"-m",
@@ -321,7 +358,7 @@ export async function transcribeLocalAudio(
 				String(TRANSCRIPTION_QUALITY_POLICY.admission.noSpeechThreshold),
 				"-lpt",
 				String(TRANSCRIPTION_QUALITY_POLICY.admission.logProbabilityThreshold),
-				"-ng",
+				...(cuda ? [] : ["-ng"]),
 				"-t",
 				String(threads),
 				"-p",
@@ -346,6 +383,28 @@ export async function transcribeLocalAudio(
 				maxOutputBytes: 4 * 1024 * 1024,
 			},
 		);
+		let cudaDevice: string | null = null;
+		if (cuda) {
+			// The pinned Whisper source logs the ASR backend before VAD can
+			// initialize its own backend. A selection is logged before init.
+			const events = decoder.stderr
+				.split(/\r?\n/)
+				.filter((line) =>
+					/^whisper_backend_init_gpu: (using |no GPU found|failed to initialize )/.test(
+						line,
+					),
+				);
+			cudaDevice =
+				/^whisper_backend_init_gpu: using (CUDA[0-9]+) backend$/.exec(
+					events[0] ?? "",
+				)?.[1] ?? null;
+			if (
+				!cudaDevice ||
+				events[1] ===
+					`whisper_backend_init_gpu: failed to initialize ${cudaDevice} backend`
+			)
+				throw new MediaOperationError("ASR_CUDA_NOT_VERIFIED");
+		}
 		const output = `${prefix}.json`;
 		if ((await stat(output)).size > 8 * 1024 * 1024)
 			throw new MediaOperationError("TRANSCRIPT_LIMIT");
@@ -358,7 +417,7 @@ export async function transcribeLocalAudio(
 		);
 		if (input.language !== "auto" && result.language !== input.language)
 			throw new MediaOperationError("ASR_LANGUAGE_MISMATCH");
-		return finish(result);
+		return finish(result, cudaDevice);
 	} finally {
 		await rm(directory, { recursive: true, force: true });
 	}

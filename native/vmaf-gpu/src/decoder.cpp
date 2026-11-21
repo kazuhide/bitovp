@@ -85,12 +85,32 @@ struct Decoder::Impl {
     std::int64_t first_pts = AV_NOPTS_VALUE, current_pts = AV_NOPTS_VALUE;
     double decoded_ms = 0, conformed_ms = 0;
 
-    Impl(const std::string &path, unsigned w, unsigned h, unsigned b, unsigned threads, bool cuda, int device)
+    void open_video(const std::string &path, bool attest_local_mov) {
+        AVDictionary *options = nullptr;
+        const bool configured = attest_local_mov &&
+            av_dict_set_int(&options, "enable_drefs", 0, 0) == 0 &&
+            av_dict_set_int(&options, "use_absolute_path", 0, 0) == 0;
+        if (!configured) av_dict_free(&options);
+        const int opened = avformat_open_input(&format, path.c_str(), nullptr, configured ? &options : nullptr);
+        // libavformat returns unrecognized keys in the dictionary.
+        const bool options_applied = configured && av_dict_count(options) == 0;
+        av_dict_free(&options);
+        if (opened < 0 && configured) {
+            check(avformat_open_input(&format, path.c_str(), nullptr, nullptr), "open video");
+            return;
+        }
+        check(opened, "open video");
+        info.self_contained_mov = options_applied && format->iformat &&
+            format->iformat == av_find_input_format("mov");
+    }
+
+    Impl(const std::string &path, unsigned w, unsigned h, unsigned b, unsigned threads,
+         bool cuda, int device, bool attest_local_mov)
         : cuda_decode(cuda), standalone_input(b == 0), device_index(device), width(w), height(h), bits(b) {
         if (b != 0 && b != 8 && b != 10) throw std::invalid_argument("Decode bit depth must be 8 or 10");
         if (threads > 256) throw std::invalid_argument("Decode thread count exceeds 256");
         try {
-            check(avformat_open_input(&format, path.c_str(), nullptr, nullptr), "open video");
+            open_video(path, attest_local_mov);
             check(avformat_find_stream_info(format, nullptr), "read video streams");
             const AVCodec *decoder = nullptr;
             stream = av_find_best_stream(format, AVMEDIA_TYPE_VIDEO, -1, -1, &decoder, 0);
@@ -336,8 +356,8 @@ struct Decoder::Impl {
 };
 
 Decoder::Decoder(const std::string &path, unsigned width, unsigned height,
-                 unsigned bit_depth, unsigned threads, bool cuda, int device)
-    : impl_(std::make_unique<Impl>(path, width, height, bit_depth, threads, cuda, device)) {}
+                 unsigned bit_depth, unsigned threads, bool cuda, int device, bool attest_local_mov)
+    : impl_(std::make_unique<Impl>(path, width, height, bit_depth, threads, cuda, device, attest_local_mov)) {}
 Decoder::~Decoder() = default;
 VideoInfo Decoder::source_info() const { return impl_->info; }
 bool Decoder::next() { return impl_->next(); }

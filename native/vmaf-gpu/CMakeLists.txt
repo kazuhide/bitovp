@@ -38,9 +38,9 @@ target_include_directories(bitovp_oracle PUBLIC include src
 target_link_libraries(bitovp_oracle PUBLIC official_vmaf Threads::Threads ${CMAKE_DL_LIBS} m)
 target_compile_options(bitovp_oracle PRIVATE -Wall -Wextra -Werror)
 
-add_library(bitovp_decode STATIC src/decoder.cpp)
+add_library(bitovp_decode STATIC src/decoder.cpp src/decoder_runtime.cpp)
 target_include_directories(bitovp_decode PUBLIC include src)
-target_link_libraries(bitovp_decode PUBLIC PkgConfig::AV)
+target_link_libraries(bitovp_decode PUBLIC PkgConfig::AV ${CMAKE_DL_LIBS})
 target_compile_options(bitovp_decode PRIVATE -Wall -Wextra -Werror)
 
 add_executable(bitovp-vmaf src/main.cpp src/banding.cpp)
@@ -173,6 +173,17 @@ if(BITOVP_TESTS)
   target_compile_options(supervisor_contract_test PRIVATE -Wall -Wextra -Werror)
   add_test(NAME native_supervisor_contract COMMAND supervisor_contract_test)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_library(decoder_runtime_fixture MODULE tests/decoder_runtime_fixture.c)
+    add_executable(decoder_runtime_test tests/decoder_runtime_test.cpp)
+    target_link_libraries(decoder_runtime_test PRIVATE bitovp_decode)
+    target_compile_options(decoder_runtime_test PRIVATE -Wall -Wextra -Werror)
+    add_test(NAME native_decoder_runtime_identity COMMAND decoder_runtime_test "$<TARGET_FILE:decoder_runtime_fixture>")
+    add_test(NAME native_decoder_runtime_audit_refusal COMMAND
+      "${CMAKE_COMMAND}" -E env "LD_AUDIT=" "$<TARGET_FILE:decoder_runtime_test>" --assert-audit-refused)
+    add_test(NAME native_decoder_runtime_preload_order COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/decoder_runtime_preload_test.py"
+      "$<TARGET_FILE:decoder_runtime_test>" "$<TARGET_FILE:decoder_runtime_fixture>")
+    set_tests_properties(native_decoder_runtime_preload_order PROPERTIES SKIP_RETURN_CODE 77)
     add_test(NAME native_supervisor_lifecycle COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/supervisor_lifecycle_test.py"
       --guardian "$<TARGET_FILE:bitovp-vmaf-supervisor>")

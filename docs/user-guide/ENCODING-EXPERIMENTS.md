@@ -41,6 +41,7 @@ node scripts/encoding-experiments.mjs sources
 node scripts/encoding-experiments.mjs create --file campaign.json
 node scripts/encoding-experiments.mjs enqueue <campaign-id> \
   --file trials.json --idempotency-key <stable-submission-key>
+node scripts/encoding-experiments.mjs seal <campaign-id>
 node scripts/encoding-experiments.mjs watch <campaign-id>
 node scripts/encoding-experiments.mjs export <campaign-id> --format ndjson
 ```

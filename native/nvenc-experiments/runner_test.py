@@ -1,6 +1,8 @@
 import hashlib
 import json
 import os
+import subprocess
+import sys
 import unittest
 from fractions import Fraction
 from pathlib import Path
@@ -221,6 +223,58 @@ class RunnerTest(unittest.TestCase):
 
 
 class RuntimeIdentityTest(unittest.TestCase):
+    def test_cli_reloads_the_exact_bytes_it_fingerprints_after_preload_swap(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = Path(runner.__file__).read_text()
+            guard = 'if __name__ == "__main__":'
+            self.assertEqual(source.count(guard), 1)
+            model = root / runner.MODEL_NAME
+            model.write_bytes(b"test model")
+            gpu = "GPU-eb576a3f-5b2d-4be7-863c-742308e386e7"
+            fake_hardware = f'''
+MODEL_SHA256 = "{hashlib.sha256(model.read_bytes()).hexdigest()}"
+
+def cuda_device(index):
+    return "{gpu}", "test GPU"
+
+def capture(args, stage):
+    if stage == "GPU_QUERY":
+        return "570.00", ""
+    if stage == "NVENC_PROBE":
+        return json.dumps({{
+            "schemaVersion": 1, "deviceIndex": 0, "gpuUuid": "{gpu}", "maxNvencApiVersion": 208,
+            "sdkApiVersion": {{"major": 13, "minor": 0}},
+            "encoders": [{{"codec": "HEVC", "inputFormats": [1]}}],
+        }}), ""
+    return "V hevc_nvenc\\nV hevc_cuvid\\nT scale_cuda\\nT hwupload\\nT libvmaf_cuda", ""
+
+'''
+            source = source.replace(guard, fake_hardware + guard)
+            original = root / "runner.py"
+            replacement = root / "replacement.py"
+            replacement.write_text(source.replace(runner.PROFILE_ID, "replacement-profile"))
+            expected = hashlib.sha256(replacement.read_bytes()).hexdigest()
+            original.write_text(source.replace(guard, guard + f"\n    Path({str(replacement)!r}).replace(__file__)"))
+            tool = root / "test-executable"
+            tool.write_bytes(b"test executable")
+            tool.chmod(0o700)
+            env = {
+                **os.environ,
+                "BITOVP_NVENC_FFMPEG": str(tool),
+                "BITOVP_NVENC_FFPROBE": str(tool),
+                "BITOVP_NVENC_SDK_PROBE": str(tool),
+                "BITOVP_NVENC_VMAF_MODEL": str(model),
+                "BITOVP_NVENC_GPU_INDEX": "0",
+            }
+            completed = subprocess.run(
+                [sys.executable, "-B", str(original), "probe"],
+                env=env, capture_output=True, text=True, check=True,
+            )
+            data = json.loads(completed.stdout)
+            self.assertEqual(data["runnerSha256"], expected)
+            self.assertEqual(data["scoringProfileId"], "replacement-profile")
+
     def resolve_fixture(self, root, change_during_probe=None):
         paths = {name: root / name for name in ("ffmpeg", "ffprobe", "sdk-probe", "runner.py")}
         for name, path in paths.items():
@@ -250,11 +304,12 @@ class RuntimeIdentityTest(unittest.TestCase):
             "BITOVP_NVENC_VMAF_MODEL": str(model),
             "BITOVP_NVENC_GPU_INDEX": "0",
         }
-        with patch.dict(os.environ, env), patch.object(runner, "__file__", str(paths["runner.py"])), \
+        runner_source = runner.read_runner_source(paths["runner.py"])
+        with patch.dict(os.environ, env), \
                 patch.object(runner, "MODEL_SHA256", hashlib.sha256(model.read_bytes()).hexdigest()), \
                 patch.object(runner, "cuda_device", return_value=(gpu, "test GPU")), \
                 patch.object(runner, "capture", side_effect=capture):
-            runtime = runner.resolve_runtime()
+            runtime = runner.resolve_runtime(runner_source)
         return runtime, paths, model
 
     @staticmethod
@@ -288,8 +343,20 @@ class RuntimeIdentityTest(unittest.TestCase):
             return runner.measure(runtime, trial, cpu_audit=False)
 
     def test_replacing_runtime_tool_during_probe_rejects_capabilities(self):
-        with TemporaryDirectory() as folder, self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
-            self.resolve_fixture(Path(folder), change_during_probe="sdk-probe")
+        for tool in ("sdk-probe", "runner.py"):
+            with self.subTest(tool=tool), TemporaryDirectory() as folder, \
+                    self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
+                self.resolve_fixture(Path(folder), change_during_probe=tool)
+
+    def test_replacing_source_after_snapshot_rejects_before_runtime_probe(self):
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "runner.py"
+            path.write_bytes(b"snapshot source")
+            source = runner.read_runner_source(path)
+            self.replace_file(path)
+            with patch.object(runner, "executable", side_effect=AssertionError("unexpected tool probe")), \
+                    self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
+                runner.resolve_runtime(source)
 
     def test_replacing_consumed_tool_during_measurement_rejects_receipt(self):
         for tool in ("ffmpeg", "ffprobe", "sdk-probe", "runner.py"):

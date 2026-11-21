@@ -19,6 +19,7 @@ from pathlib import Path
 from stat import S_ISREG
 from tempfile import TemporaryDirectory
 from time import monotonic, perf_counter_ns
+from types import ModuleType
 from typing import Optional
 from uuid import UUID
 
@@ -50,6 +51,13 @@ class Trial:
     gop_length: int
     frame_interval_p: Optional[int]
     rate: dict
+
+
+@dataclass(frozen=True)
+class RunnerSource:
+    path: Path
+    identity: tuple
+    contents: bytes
 
 
 @dataclass(frozen=True)
@@ -370,6 +378,20 @@ def require_unchanged_tools(identities):
         raise RunnerError("RUNTIME_TOOL_CHANGED")
 
 
+def read_runner_source(path):
+    try:
+        path = path.resolve(strict=True)
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as handle:
+            identity = regular_file_identity(os.fstat(handle.fileno()))
+            contents = handle.read()
+            if len(contents) != identity[2] or regular_file_identity(os.fstat(handle.fileno())) != identity:
+                raise RunnerError("RUNTIME_TOOL_CHANGED")
+    except OSError as error:
+        raise RunnerError("RUNTIME_TOOL_CHANGED") from error
+    require_unchanged_tools(((path, identity),))
+    return RunnerSource(path, identity, contents)
+
+
 def sha256_file(path, identity):
     digest = hashlib.sha256()
     try:
@@ -410,7 +432,8 @@ def parse_sdk_probe(report, index, uuid):
     return runtime_version, codecs
 
 
-def resolve_runtime():
+def resolve_runtime(runner_source):
+    require_unchanged_tools(((runner_source.path, runner_source.identity),))
     ffmpeg = executable("BITOVP_NVENC_FFMPEG", "ffmpeg")
     ffprobe = executable("BITOVP_NVENC_FFPROBE", "ffprobe")
     sdk_probe = executable("BITOVP_NVENC_SDK_PROBE", str(ffmpeg.with_name("sdk-probe")))
@@ -418,10 +441,11 @@ def resolve_runtime():
         "ffmpegSha256": ffmpeg,
         "ffprobeSha256": ffprobe,
         "sdkProbeSha256": sdk_probe,
-        "runnerSha256": Path(__file__).resolve(strict=True),
     }
     identities = {path: runtime_tool_identity(path) for path in tool_paths.values()}
     digests = {name: sha256_file(path, identities[path]) for name, path in tool_paths.items()}
+    digests["runnerSha256"] = hashlib.sha256(runner_source.contents).hexdigest()
+    identities[runner_source.path] = runner_source.identity
     tool_identities = tuple(identities.items())
     model = Path(os.environ.get(
         "BITOVP_NVENC_VMAF_MODEL", ffmpeg.parent.parent / "share" / "nvenc-experiments" / MODEL_NAME,
@@ -575,7 +599,7 @@ def measure(runtime, trial, cpu_audit):
         return result
 
 
-def main():
+def main(runner_source):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("probe")
@@ -585,10 +609,10 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "probe":
-            result = resolve_runtime().capabilities
+            result = resolve_runtime(runner_source).capabilities
         else:
             trial = parse_trial(json.loads(read_file(args.request_file, 32 * 1024, "REQUEST")))
-            result = measure(resolve_runtime(), trial, args.cpu_audit)
+            result = measure(resolve_runtime(runner_source), trial, args.cpu_audit)
     except RunnerError as error:
         print(str(error), file=sys.stderr)
         return 1
@@ -599,5 +623,24 @@ def main():
     return 0
 
 
+def launch_runner(path):
+    # Python already loaded the launcher from the pathname, which may have changed.
+    # Compile and fingerprint one stable byte buffer for the actual implementation.
+    try:
+        source = read_runner_source(path)
+        code = compile(source.contents, str(source.path), "exec", dont_inherit=True)
+    except RunnerError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    except SyntaxError:
+        print("INVALID_RUNTIME_INPUT", file=sys.stderr)
+        return 1
+    implementation = ModuleType("_bitovp_nvenc_runner_impl")
+    implementation.__file__ = str(source.path)
+    sys.modules[implementation.__name__] = implementation
+    exec(code, implementation.__dict__)
+    return implementation.main(source)
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(launch_runner(Path(__file__)))

@@ -5,11 +5,12 @@ import {
 } from "@bitovp/core";
 import { NextResponse } from "next/server";
 import { roleAtLeast } from "@/lib/auth/roles";
+import { AuthContextError } from "@/lib/auth/tenancy";
 import { writeAuditLog } from "@/lib/server/audit";
 import { getServerContext } from "@/lib/server/context";
 import {
 	lockFeatureFlags,
-	readFeatureFlags,
+	readLockedFeatureFlags,
 	readStoredFeatureFlags,
 } from "@/lib/server/feature-flags";
 import {
@@ -29,9 +30,12 @@ import {
 export async function GET() {
 	try {
 		const ctx = await getServerContext();
-		return NextResponse.json(await readFeatureFlags(ctx.prisma));
+		return NextResponse.json(await readStoredFeatureFlags(ctx.prisma), {
+			headers: { "cache-control": "private, no-store" },
+		});
 	} catch (err) {
-		return routeError(err);
+		if (err instanceof AuthContextError) return routeError(err);
+		return jsonError(503, "Feature settings are unavailable");
 	}
 }
 
@@ -60,7 +64,7 @@ export async function PATCH(req: Request) {
 			// to separate flags merge against the latest committed value.
 			await lockFeatureFlags(tx, tenant.organizationId);
 			const value = featureFlagsSchema.parse({
-				...(await readStoredFeatureFlags(tx)),
+				...(await readLockedFeatureFlags(tx, tenant.organizationId, "write")),
 				...body.data,
 			});
 			await tx.appSetting.upsert({

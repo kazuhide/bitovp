@@ -429,7 +429,7 @@ it.runIf(Boolean(runtimeUrl && adminUrl))(
 
 it
 	.runIf(Boolean(runtimeUrl && adminUrl))
-	.each(["operational", "selected"] as const)(
+	.each(["operational", "selected", "auditHistory"] as const)(
 	"leaves no late analytics attempt after a successful %s reset",
 	async (kind) => {
 		const { admin, runtime } = clients();
@@ -440,6 +440,7 @@ it
 		const resetStarted = barrier();
 		const attemptId = randomUUID();
 		const cipher = new AesGcmCipher(randomBytes(32));
+		const flags = { operationAnalytics: true, qcVmaf: true };
 		let collectorPid = 0;
 		let resetPid = 0;
 		let collector: Promise<PromiseSettledResult<Response>[]> | undefined;
@@ -451,7 +452,7 @@ it
 			await tenant.appSetting.create({
 				data: {
 					key: FEATURE_FLAGS_KEY,
-					value: { operationAnalytics: true },
+					value: flags,
 				},
 			});
 			const channel = await tenant.liveChannel.create({
@@ -473,7 +474,7 @@ it
 					outputPrefix: "",
 				},
 			});
-			const lockTable = kind === "selected" ? "AppSetting" : "LiveChannel";
+			const lockTable = kind === "operational" ? "LiveChannel" : "AppSetting";
 			const intakeClient = instrument(tenant, async (tx) => {
 				const [backend] = await tx.$queryRaw<
 					{ pid: number }[]
@@ -531,11 +532,13 @@ it
 					? deleteOperationalData(resetClient)
 					: deleteSelectedData(
 							resetClient,
-							requiredResetCategories([
-								"liveChannels",
-								"auditHistory",
-								"applicationSettings",
-							]),
+							kind === "auditHistory"
+								? ["auditHistory"]
+								: requiredResetCategories([
+										"liveChannels",
+										"auditHistory",
+										"applicationSettings",
+									]),
 							cipher,
 						),
 			]);
@@ -565,11 +568,18 @@ it
 			} else {
 				expect(outcome).toMatchObject({
 					status: "fulfilled",
-					value: { counts: { operationAttempt: 1, liveChannelRun: 1 } },
+					value: { counts: { operationAttempt: 1 } },
 				});
 			}
 			expect(await tenant.operationAttempt.count()).toBe(0);
-			expect(await tenant.liveChannelRun.count()).toBe(0);
+			expect(await tenant.liveChannelRun.count()).toBe(
+				kind === "auditHistory" ? 1 : 0,
+			);
+			const setting = await tenant.appSetting.findUnique({
+				where: { key: FEATURE_FLAGS_KEY },
+				select: { value: true },
+			});
+			expect(setting).toEqual(kind === "selected" ? null : { value: flags });
 		} finally {
 			releaseCollector.release();
 			await collector;

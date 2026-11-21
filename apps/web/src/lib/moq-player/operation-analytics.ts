@@ -4,6 +4,7 @@ import {
 	type OperationAttemptEvent,
 	RESULT_RECEIVE_WINDOW_MS,
 } from "@/lib/operation-attempts";
+import { registerBeforeIdentityChange } from "@/lib/tenant-fetch";
 
 type ResultStage = Exclude<OperationAttemptEvent["stage"], "STARTED">;
 
@@ -56,15 +57,21 @@ export function trackMoqPlaybackOperation(
 	let startAcknowledged = false;
 	let settled = false;
 	function onPageHide() {
-		settle("CANCELED", undefined, false);
+		void settle("CANCELED");
 	}
+	const unregister = registerBeforeIdentityChange(() =>
+		settle("CANCELED", undefined, false),
+	);
 	window.addEventListener("pagehide", onPageHide);
 	const start = sendOperationAttempt(organizationId, {
 		...identity,
 		stage: "STARTED",
 	}).then((acknowledged) => {
 		startAcknowledged = acknowledged;
-		if (!acknowledged) window.removeEventListener("pagehide", onPageHide);
+		if (!acknowledged) {
+			window.removeEventListener("pagehide", onPageHide);
+			unregister();
+		}
 		return acknowledged;
 	});
 	function settle(
@@ -75,21 +82,24 @@ export function trackMoqPlaybackOperation(
 		if (settled) return;
 		settled = true;
 		window.removeEventListener("pagehide", onPageHide);
+		unregister();
 		if (elapsedMs > MAX_OPERATION_ELAPSED_MS) return;
 		const send = () => {
 			if (performance.now() - startedAt > RESULT_RECEIVE_WINDOW_MS) return;
-			void sendOperationAttempt(organizationId, {
+			return sendOperationAttempt(organizationId, {
 				...identity,
 				stage,
 				elapsedMs,
 			});
 		};
-		// Start the keepalive in the pagehide handler when a start is known.
-		if (startAcknowledged) send();
-		else if (waitForAcknowledgement)
+		// A known start can send immediately during pagehide or identity change.
+		if (startAcknowledged) return send();
+		if (waitForAcknowledgement)
 			void start.then((acknowledged) => {
-				if (acknowledged) send();
+				if (acknowledged) void send();
 			});
 	}
-	return (stage: ResultStage, elapsedMs?: number) => settle(stage, elapsedMs);
+	return (stage: ResultStage, elapsedMs?: number) => {
+		void settle(stage, elapsedMs);
+	};
 }

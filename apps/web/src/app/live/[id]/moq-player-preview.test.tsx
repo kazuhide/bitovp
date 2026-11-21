@@ -359,7 +359,7 @@ describe("MoQ playback operation analytics", () => {
 		expect(mocks.operation).toHaveBeenCalledTimes(2);
 	});
 
-	it("preserves an unacknowledged outcome when the document is left", async () => {
+	it("sends a pagehide cancellation after start acknowledgement if the document is still running", async () => {
 		let acknowledge!: (response: { ok: boolean }) => void;
 		mocks.operation.mockReturnValueOnce(
 			new Promise((resolve) => {
@@ -368,10 +368,15 @@ describe("MoQ playback operation analytics", () => {
 		);
 		const rendered = renderWithQuery(analyticsView());
 		await userEvent.click(screen.getByRole("button", { name: "Play" }));
+		const [started] = operationEvents();
 		window.dispatchEvent(new Event("pagehide"));
 		rendered.unmount();
-		await act(async () => acknowledge({ ok: true }));
 		expect(mocks.operation).toHaveBeenCalledOnce();
+		await act(async () => acknowledge({ ok: true }));
+		expect(operationEvents()).toEqual([
+			started,
+			{ ...started, stage: "CANCELED", elapsedMs: expect.any(Number) },
+		]);
 	});
 
 	it("continues playback when the start request throws and skips sending its result", async () => {

@@ -137,6 +137,13 @@ export async function deleteSelectedData(
 						// The collector locks the flag before its Live channel. Take
 						// the same first lock order when both will be deleted.
 						await tx.$queryRaw`SELECT "key" FROM "AppSetting" WHERE "key" = ${FEATURE_FLAGS_KEY} FOR UPDATE`;
+					} else if (selected.has("auditHistory")) {
+						// Wait for admitted collectors and invalidate a Serializable
+						// reset snapshot that predates a collector's committed insert.
+						await tx.appSetting.updateMany({
+							where: { key: FEATURE_FLAGS_KEY },
+							data: { updatedAt: new Date() },
+						});
 					}
 					const clearsUsage =
 						selected.has("usageStatistics") ||

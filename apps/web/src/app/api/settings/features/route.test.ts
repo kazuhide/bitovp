@@ -15,7 +15,9 @@ const upsert = vi.fn(
 );
 const auditCreate = vi.fn(async () => ({ id: "a1" }));
 const execute = vi.fn(async () => 0);
-const appSetting = { findUnique: async () => ({ value: stored }), upsert };
+const findUnique = vi.fn(async () => ({ value: stored }));
+const queryRaw = vi.fn(async () => [{ value: stored }]);
+const appSetting = { findUnique, upsert };
 const tenant = {
 	role: "ADMIN",
 	isImpersonating: false,
@@ -32,8 +34,9 @@ vi.mock("@/lib/server/context", () => ({
 				run: (tx: {
 					appSetting: typeof appSetting;
 					$executeRaw: typeof execute;
+					$queryRaw: typeof queryRaw;
 				}) => Promise<T>,
-			) => run({ appSetting, $executeRaw: execute }),
+			) => run({ appSetting, $executeRaw: execute, $queryRaw: queryRaw }),
 		},
 	}),
 }));
@@ -53,6 +56,8 @@ beforeEach(() => {
 	tenant.role = "ADMIN";
 	upsert.mockClear();
 	execute.mockClear();
+	findUnique.mockClear();
+	queryRaw.mockClear();
 	auditCreate.mockClear();
 });
 
@@ -67,6 +72,29 @@ describe("/api/settings/features (ledger #131)", () => {
 		const res = await GET();
 		expect(res.status).toBe(200);
 		expect((await res.json()).qcVmaf).toBe(false);
+	});
+
+	it("reports an unavailable settings read without asserting either flag is off", async () => {
+		findUnique.mockRejectedValueOnce(new Error("Database unavailable"));
+		const res = await GET();
+		expect(res.status).toBe(503);
+		expect(await res.json()).toEqual({
+			error: "Feature settings are unavailable",
+		});
+	});
+
+	it("does not restore an enabled setting erased before its row lock", async () => {
+		stored = { qcVmaf: true, operationAnalytics: true };
+		// A settings reset commits while the patch waits for the row lock.
+		queryRaw.mockResolvedValueOnce([]);
+		const res = await PATCH(patchRequest({ qcVmaf: true }));
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({
+			qcVmaf: true,
+			operationAnalytics: false,
+		});
+		expect(findUnique).not.toHaveBeenCalled();
+		expect(queryRaw).toHaveBeenCalledOnce();
 	});
 
 	it("PATCH merges onto the CURRENT value, never onto the defaults", async () => {

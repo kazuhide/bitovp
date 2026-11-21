@@ -28,16 +28,24 @@ export async function lockFeatureFlags(
 	await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
 }
 
-/** Keep a verified enabled setting stable until the collector commits. */
+/** Order a settings read with concurrent patches and settings reset. */
 export async function readLockedFeatureFlags(
 	tx: Pick<AppPrismaClient, "$queryRaw">,
 	organizationId: string,
+	access: "read" | "write" = "read",
 ): Promise<FeatureFlags> {
-	const [row] = await tx.$queryRaw<{ value: unknown }[]>`
-		SELECT "value" FROM "AppSetting"
-		WHERE "organizationId" = ${organizationId}::uuid AND "key" = ${FEATURE_FLAGS_KEY}
-		FOR SHARE
-	`;
+	const [row] =
+		access === "read"
+			? await tx.$queryRaw<{ value: unknown }[]>`
+			SELECT "value" FROM "AppSetting"
+			WHERE "organizationId" = ${organizationId}::uuid AND "key" = ${FEATURE_FLAGS_KEY}
+			FOR SHARE
+		`
+			: await tx.$queryRaw<{ value: unknown }[]>`
+			SELECT "value" FROM "AppSetting"
+			WHERE "organizationId" = ${organizationId}::uuid AND "key" = ${FEATURE_FLAGS_KEY}
+			FOR UPDATE
+		`;
 	return parseFeatureFlags(row?.value);
 }
 

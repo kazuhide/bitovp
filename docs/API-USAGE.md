@@ -201,7 +201,9 @@ rejects writes, including queue operations. [Full contract](user-guide/LIBRARY-A
   current running MoQ run and its stored output binding. The browser measures
   `FIRST_FRAME` at the first observed video presentation or the first readable
   nonblank Canvas mirror sample. The server accepts outcomes for up to 11
-  minutes from the accepted start. The first terminal event wins. While collection
+  minutes from the accepted start. The first terminal event wins. A lost
+  browser result, including during shutdown or external session invalidation,
+  remains unconfirmed after the result window. While collection
   is enabled, accepted events and identical replays of retained attempts return
   204, including a start replay after its run is deleted. The worker removes
   records older than 90 days hourly. The organization's `auditHistory` reset

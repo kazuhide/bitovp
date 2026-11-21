@@ -250,6 +250,8 @@ const en = {
 		"The editing configuration has changed. Create a new editing proposal.",
 	localStoryContextLimit:
 		"This source could not be processed within the analysis limits. Ask the operator to check the analysis settings.",
+	localStorySceneTranscriptRequired:
+		"Could not transcribe the selected scene. Check the source audio and transcription settings, then retry.",
 	localStoryPlanUnavailable:
 		"A connected edit could not fit the requested length. Try another length or editing approach.",
 	localStoryCoherence:
@@ -547,6 +549,8 @@ const ja: Record<keyof typeof en, string> = {
 		"自動構成の設定が更新されました。新しい編集案として作成してください。",
 	localStoryContextLimit:
 		"この素材を解析できる範囲を超えました。運用担当者に解析設定の確認を依頼してください。",
+	localStorySceneTranscriptRequired:
+		"選択したシーンの音声を文字起こしできませんでした。素材の音声と文字起こしの設定を確認し、再試行してください。",
 	localStoryPlanUnavailable:
 		"希望の長さに収まる編集案を作れませんでした。長さや編集方針を変えて試してください。",
 	localStoryCoherence:
@@ -678,6 +682,8 @@ export function productionFailure(
 			return c.trailerSearchLimit;
 		case "LOCAL_STORY_TRANSCRIPT_REQUIRED":
 			return c.trailerTranscriptRequired;
+		case "LOCAL_STORY_SCENE_TRANSCRIPT_REQUIRED":
+			return c.localStorySceneTranscriptRequired;
 		case "LOCAL_STORY_BLUEPRINT_COHERENCE_INVALID":
 		case "LOCAL_STORY_SELECTION_COHERENCE_INVALID":
 			return c.localStoryCoherence;

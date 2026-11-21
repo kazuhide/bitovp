@@ -362,8 +362,18 @@ By default, LOCAL_STORY prepares a full-source transcript when available,
 including when captions are OFF, and analyzes all eligible shots in
 coverage-preserving chunks. Set `storySceneId` to a scene UUID from the selected
 `analysisRevisionId` to limit transcription and shot selection to that scene.
-Scene selection requires a READY analysis revision and prepared media version.
-It applies to a LOCAL_STORY DRAFT without `trailer` or `storyWorkflowVersion`.
+The analysis revision must have a verified association with the READY media
+version. This option applies to a LOCAL_STORY DRAFT without `trailer` or
+`storyWorkflowVersion`.
+
+The UUID must identify exactly one scene within the media time map, with at
+least one usable editing frame. Every shot must stay within the scene bounds.
+Excluded scene types are `ADS`, `LOGO_IDENT`, `OPENING_CREDITS`, `END_CREDITS`,
+`BREAK_BUMPER`, `PROMOTION_OTHER_TITLE`, and `PREVIEW_THIS_TITLE`. An invalid
+scene returns HTTP 422 `LOCAL_STORY_SCENE_SCOPE_INVALID`. If the media has an
+audio track and the Worker cannot prepare a scene transcript, the task returns
+`LOCAL_STORY_SCENE_TRANSCRIPT_REQUIRED`.
+
 Immutable transcript/ledger/blueprint receipts bind source, clock, analysis and
 model identities. The planner uses real shot or observed utterance spans, retains
 source order and required beats, and rejects an infeasible duration rather than

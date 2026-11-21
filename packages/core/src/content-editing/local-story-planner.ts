@@ -285,21 +285,20 @@ function eventCandidates(
 		: candidates;
 }
 
-/** Minimum usable footprint of an already grounded event. This measures the same
- * complete-speech candidates as selection; it does not choose beats or rank events. */
+/** Minimum footage for an event candidate. Check quote coverage on the combined
+ * plan because an earlier beat can supply speech quoted by a later one. */
 export function localStoryEventMinimumDurationFrames(
 	input: LocalStoryInput,
 	event: LocalStoryEvent,
 ): number | undefined {
-	const scoped = input.sceneFrameBounds !== undefined;
-	const candidates = eventCandidates(input, event, scoped);
+	const candidates = eventCandidates(
+		input,
+		event,
+		input.sceneFrameBounds !== undefined,
+	);
 	let minimum: number | undefined;
 	for (const spans of candidates) {
-		if (
-			!clipsFor(input, spans) ||
-			(scoped && localStorySelectedQuoteIssues(input, [event], spans).length)
-		)
-			continue;
+		if (!clipsFor(input, spans)) continue;
 		const frames = count(spans);
 		if (minimum === undefined || frames < minimum) minimum = frames;
 	}

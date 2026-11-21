@@ -2095,6 +2095,23 @@ describe("local story engine with real evidence contracts and a fake local model
 		expect(mocks.prepareTranscript).not.toHaveBeenCalled();
 		expect(f.run).not.toHaveBeenCalled();
 	});
+	it("reports unavailable transcription for the selected scene before model work", async () => {
+		const f = fixture();
+		const analysis = item(f.context.verified.analysisDocument);
+		const storySceneId = item(analysis.scenes[0]).id;
+		mocks.prepareTranscript.mockResolvedValueOnce({
+			qualityPolicyFingerprint: TRANSCRIPTION_POLICY_FINGERPRINT,
+			status: "UNAVAILABLE",
+			segments: [],
+		});
+		await expect(
+			f.engine.plan({
+				...f.context,
+				parameters: { ...f.context.parameters, storySceneId },
+			}),
+		).rejects.toMatchObject({ code: "LOCAL_STORY_SCENE_TRANSCRIPT_REQUIRED" });
+		expect(f.run).not.toHaveBeenCalled();
+	});
 	it("processes all complete source chunks and returns nontruncated coverage proof", async () => {
 		const f = fixture(),
 			result = await f.engine.plan(f.context);

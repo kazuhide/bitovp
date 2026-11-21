@@ -355,7 +355,11 @@ export function createLocalStoryEngine(options: {
 			context.hasAudio &&
 			transcript.status !== "READY"
 		)
-			throw new MediaOperationError("LOCAL_STORY_TRANSCRIPT_REQUIRED");
+			throw new MediaOperationError(
+				sceneScope
+					? "LOCAL_STORY_SCENE_TRANSCRIPT_REQUIRED"
+					: "LOCAL_STORY_TRANSCRIPT_REQUIRED",
+			);
 		metrics.localStoryTranscriptCached = transcript.cached ? 1 : 0;
 		const input = buildLocalStoryInput({
 			analysis: verified.analysisDocument,

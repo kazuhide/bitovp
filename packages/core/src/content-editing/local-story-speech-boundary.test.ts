@@ -109,7 +109,11 @@ const earlierSceneId = "55555555-5555-4555-8555-555555555555";
 function preparedSceneStoryInput(options: {
 	sceneStart?: number;
 	unscoped?: boolean;
-	shots?: { startInSeconds: number; endInSeconds: number }[];
+	shots?: {
+		startInSeconds: number;
+		endInSeconds: number;
+		detailedDescription?: string;
+	}[];
 	segments: LocalStoryInput["segments"];
 }) {
 	const sceneStart = options.sceneStart ?? 20;
@@ -461,7 +465,68 @@ describe("quoted speech in a prepared scene scope", () => {
 		).toEqual([]);
 		expect(
 			events.map((event) => localStoryEventMinimumDurationFrames(input, event)),
-		).toEqual([undefined, 39]);
+		).toEqual([40, 39]);
+	});
+	it("keeps a beat whose quoted speech is covered by the previous prepared shot", () => {
+		const setup = "The motor is idle.";
+		const action = "The speaker presses a switch.";
+		const speech = "Listen to the motor.";
+		const input = preparedSceneStoryInput({
+			shots: [
+				{
+					startInSeconds: 20,
+					endInSeconds: 25.041667,
+					detailedDescription: setup,
+				},
+				{
+					startInSeconds: 25.041667,
+					endInSeconds: 26.4,
+					detailedDescription: action,
+				},
+			],
+			segments: [{ startUs: 23_550_000, endUs: 25_050_000, text: speech }],
+		});
+		const [first, second] = [item(input.shots[0]), item(input.shots[1])];
+		expect(first).toMatchObject({ fromFrame: 600, toFrame: 752 });
+		expect(second).toMatchObject({ fromFrame: 752, toFrame: 792 });
+		const events = [
+			speechEvent("setup", "CONTEXT", first.ref, [setup]),
+			speechEvent("action", "ACTION", second.ref, [action, speech]),
+		];
+		const ledger: LocalStoryCorpus = {
+			version: "local-story-corpus-v1",
+			summaries: ["The speaker starts the motor."],
+			coveredRefs: [first.ref, second.ref],
+			events,
+		};
+		const blueprint: LocalStoryBlueprint = {
+			mode: "FLOW",
+			message: "The motor starts.",
+			uncertainty: "",
+			beats: [
+				{ id: "b1", role: "CONTEXT", eventIds: ["setup"], requires: [] },
+				{ id: "b2", role: "ACTION", eventIds: ["action"], requires: ["b1"] },
+			],
+		};
+		const options = { input, ledger, blueprint, targetDurationFrames: 200 };
+		const selection = selectLocalStoryClips(options);
+		expect(selection.actualDurationFrames).toBe(192);
+		expect(selection.clips.map(({ durationFrames }) => durationFrames)).toEqual(
+			[152, 40],
+		);
+		expect(localStorySelectedPlanIssues({ ...options, selection })).toEqual([]);
+		expect(
+			events.map((event) => localStoryEventMinimumDurationFrames(input, event)),
+		).toEqual([152, 40]);
+		expect(() =>
+			selectLocalStoryClips({
+				...options,
+				blueprint: {
+					...blueprint,
+					beats: [{ ...item(blueprint.beats[1]), requires: [] }],
+				},
+			}),
+		).toThrow("LOCAL_STORY_NO_FITTING_PLAN");
 	});
 	it("does not cut preceding speech that intersects the first required quote frame", () => {
 		const value = sceneQuoteFixture({

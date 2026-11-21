@@ -84,6 +84,32 @@ it.each([
 	await screen.findByText((text) => text.startsWith(message));
 	expect(mocks.api.mock.calls.every(([, init]) => !init?.method)).toBe(true);
 });
+it.each([
+	[
+		"en",
+		"LOCAL_STORY_SCENE_TRANSCRIPT_REQUIRED",
+		"Could not transcribe the selected scene. Check the source audio and transcription settings, then retry.",
+	],
+	[
+		"ja",
+		"LOCAL_STORY_SCENE_TRANSCRIPT_REQUIRED",
+		"選択したシーンの音声を文字起こしできませんでした。素材の音声と文字起こしの設定を確認し、再試行してください。",
+	],
+	[
+		"en",
+		"LOCAL_STORY_TRANSCRIPT_REQUIRED",
+		"Trailer planning requires a transcript for the full source. Check the transcription settings and try again.",
+	],
+	[
+		"ja",
+		"LOCAL_STORY_TRANSCRIPT_REQUIRED",
+		"予告編の作成には、素材の全編の文字起こしが必要です。文字起こしの設定を確認してください。",
+	],
+] as const)("shows the transcript guidance for %s %s", async (locale, error, message) => {
+	mocks.api.mockResolvedValue({ ...task("ERROR"), renderMode: "DRAFT", error });
+	renderWithQuery(<GenerationProgress id={id} />, locale);
+	expect(await screen.findByText(message)).toBeInTheDocument();
+});
 it("shows processing phases and cancels against the current task", async () => {
 	mocks.api.mockImplementation(async (_url: string, init?: RequestInit) =>
 		init?.method === "POST" ? task("CANCELED") : task(),

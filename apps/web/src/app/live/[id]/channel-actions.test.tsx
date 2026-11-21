@@ -82,6 +82,40 @@ describe("ChannelDangerZone — delete", () => {
 });
 
 describe("ChannelLifecycleActions — restart is only offered where it can work (ledger #107)", () => {
+	it("groups the re-air and copy buttons without successful preview or pricing banners", async () => {
+		apiFetch.mockImplementation(async (input: string) =>
+			input.startsWith("/api/live-channels/moq-readiness?")
+				? { status: "ready", issues: [] }
+				: { ok: true },
+		);
+		wrap(
+			<ChannelLifecycleActions
+				channelId={CHANNEL_ID}
+				runId={RUN_ID}
+				status="STOPPED"
+				hasEncoding={false}
+				plan={
+					{
+						...rtmpPlan,
+						start: { encodingOption: "CUSTOM" },
+						outputs: [{ kind: "MOQ" }],
+					} as LiveChannelPlan
+				}
+			>
+				<button type="button">Copy setup</button>
+			</ChannelLifecycleActions>,
+		);
+		const start = screen.getByRole("button", { name: "Start a new run" });
+		await waitFor(() => expect(start).toBeEnabled());
+		expect(start.parentElement).toContainElement(
+			screen.getByRole("button", { name: "Copy setup" }),
+		);
+		expect(screen.queryByText(/MoQ preview (ready|configured)/i)).toBeNull();
+		expect(
+			screen.queryByText("This configuration will use Custom Live."),
+		).toBeNull();
+	});
+
 	it("shows the server-side MoQ check for a re-air before offering the usual start", async () => {
 		apiFetch.mockImplementation(async (input: string) => {
 			if (input === `/api/live-channels/moq-readiness?channelId=${CHANNEL_ID}`)

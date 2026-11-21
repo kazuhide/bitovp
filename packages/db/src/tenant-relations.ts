@@ -324,4 +324,7 @@ export const TENANT_MODEL_RELATIONS: Readonly<
 		organization: "organization",
 		user: "user",
 	},
+	operationAttempt: {
+		organization: "organization",
+	},
 };

@@ -26,6 +26,16 @@ export type ForbiddenTerm = {
 
 export const FORBIDDEN_CUSTOMER_TERMS: readonly ForbiddenTerm[] = [
 	{
+		id: "unretrieved-ja",
+		pattern: /未取得/,
+		why: "use the context-specific state, such as awaiting data or no saved record",
+	},
+	{
+		id: "unconfirmed-ja",
+		pattern: /未確認/,
+		why: "name the missing evidence or the operation in progress",
+	},
+	{
 		id: "status-number",
 		pattern: /STATUS #/,
 		why: "internal work-log pointer",

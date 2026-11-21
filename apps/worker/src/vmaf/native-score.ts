@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import {
 	localVmafExecutionSchema,
@@ -14,10 +15,19 @@ import {
 } from "./hardware-decode";
 import {
 	hashNativeFile,
+	type NativeExpected,
 	nativeSourceFromVersion,
 	prepareNativeModel,
 	verifyNativeReceipt,
 } from "./native-contract";
+import {
+	completedNativeScoreIdentity,
+	type NativeScoreReuseContext,
+	probeNativeDecoderRuntime,
+	readVerifiedNativeScore,
+	reconfirmNativeScore,
+	verifiedNativeScoreLookupKey,
+} from "./native-score-reuse";
 import { resourceVideoFromProbe } from "./resource-plan";
 
 export type NativeScoreContext = {
@@ -30,6 +40,7 @@ export type NativeScoreContext = {
 	nativeInflightFrames?: 1 | 2 | 4;
 	/** Calibration-only prefix, written only to the caller's disposable directory. */
 	calibrationFrames?: number;
+	verifiedReuse?: NativeScoreReuseContext;
 };
 export type NativeResourceSnapshot = {
 	maxRssBytes: number;
@@ -84,7 +95,10 @@ export const SCORER_PAIR_REFUSALS = [
 ];
 
 function probeInput(text: string) {
-	let parsed: { streams?: Record<string, unknown>[] };
+	let parsed: {
+		streams?: Record<string, unknown>[];
+		format?: { format_name?: unknown };
+	};
 	try {
 		parsed = JSON.parse(text);
 	} catch {
@@ -118,7 +132,11 @@ function probeInput(text: string) {
 		)
 	)
 		throw input("NATIVE_UNSUPPORTED_INPUT_FORMAT");
-	return { ...metadata, video };
+	return {
+		...metadata,
+		video,
+		movContainer: parsed?.format?.format_name === "mov,mp4,m4a,3gp,3g2,mj2",
+	};
 }
 
 /**
@@ -231,7 +249,17 @@ export async function runNativeVmafScore(
 		if (existing !== undefined) return existing;
 		const result = await deps.runner.run(
 			deps.ffprobePath,
-			["-v", "error", "-show_streams", "-of", "json", path],
+			[
+				"-v",
+				"error",
+				"-show_streams",
+				...(context.verifiedReuse && frameLimit === undefined
+					? ["-show_format"]
+					: []),
+				"-of",
+				"json",
+				path,
+			],
 			{ signal, abortKillAfterMs: 250 },
 		);
 		signal?.throwIfAborted();
@@ -280,9 +308,73 @@ export async function runNativeVmafScore(
 	signal?.throwIfAborted();
 	if (version.code !== 0) throw new Error("NATIVE_BINARY_UNAVAILABLE");
 	const sourceSha256 = nativeSourceFromVersion(version.stdout);
+	const expected: NativeExpected = {
+		model: options.model,
+		modelSha256: model.modelSha256,
+		backend: scoring.backend,
+		device: scoring.device,
+		sourceSha256,
+		...size,
+		bitDepth,
+		distortedOriginal: original,
+		referenceSha256,
+		distortedSha256,
+		frameCount: frameLimit ?? reference.frames ?? distorted.frames,
+		psnr: options.psnr === true || options.features?.includes("psnr") === true,
+	};
+	// A complete score must come from both files' own media bytes.
+	const reuse =
+		frameLimit === undefined && reference.movContainer && distorted.movContainer
+			? context.verifiedReuse
+			: undefined;
+	let lookupKey = reuse
+		? verifiedNativeScoreLookupKey(
+				reuse,
+				expected,
+				options.threads ?? 1,
+				options.decoderThreads ?? 1,
+				context.nativeInflightFrames ?? 1,
+			)
+		: undefined;
 	const receiptPath = `${options.logPath}.native.json`;
 	await rm(receiptPath, { force: true });
 	try {
+		const native = { runner: deps.runner, nativePath: deps.nativePath };
+		if (lookupKey && reuse?.load) {
+			const prior = await readVerifiedNativeScore(
+				reuse.load,
+				lookupKey,
+				expected,
+				reuse.selection.identity.deviceUuid,
+				signal,
+			);
+			if (prior) {
+				if (
+					await reconfirmNativeScore(
+						native,
+						reuse,
+						prior.verifiedNativeScore,
+						context.nativeInflightFrames ?? 1,
+						signal,
+					)
+				) {
+					await writeFile(options.logPath, JSON.stringify(prior.log));
+					signal?.throwIfAborted();
+					return {
+						run: { code: 0, stdout: "", stderr: "" },
+						resourceSnapshot: undefined,
+						...prior,
+					};
+				}
+				// Score fresh without issuing a certificate for this rejected candidate.
+				lookupKey = undefined;
+			}
+		}
+		// A decoder-only probe negotiates attestation for fresh scoring without
+		// initializing a device. The score supplies its actual device evidence.
+		const decoderRuntimeSha256 = lookupKey
+			? await probeNativeDecoderRuntime(native, sourceSha256, signal)
+			: undefined;
 		const args = [
 			"--reference",
 			options.referencePath,
@@ -309,6 +401,7 @@ export async function runNativeVmafScore(
 			"--decode-threads",
 			String(options.decoderThreads ?? 1),
 			"--verify-cpu",
+			...(decoderRuntimeSha256 ? ["--attest-decoder-runtime"] : []),
 			...(context.nativeInflightFrames === undefined
 				? []
 				: ["--inflight-frames", String(context.nativeInflightFrames)]),
@@ -328,22 +421,9 @@ export async function runNativeVmafScore(
 				? new NativePairRefusal(failure, "GPU_PAIR_FRAME_TIMES")
 				: new Error(failure);
 		}
-		const raw: unknown = JSON.parse(await readFile(receiptPath, "utf8"));
-		const verified = verifyNativeReceipt(raw, {
-			model: options.model,
-			modelSha256: model.modelSha256,
-			backend: scoring.backend,
-			device: scoring.device,
-			sourceSha256,
-			...size,
-			bitDepth,
-			distortedOriginal: original,
-			referenceSha256,
-			distortedSha256,
-			frameCount: frameLimit ?? reference.frames ?? distorted.frames,
-			psnr:
-				options.psnr === true || options.features?.includes("psnr") === true,
-		});
+		const receipt = await readFile(receiptPath, "utf8");
+		const raw: unknown = JSON.parse(receipt);
+		const verified = verifyNativeReceipt(raw, expected);
 		const metadata = raw as Record<string, unknown>;
 		if (
 			context.nativeInflightFrames !== undefined &&
@@ -378,12 +458,34 @@ export async function runNativeVmafScore(
 			scoring: verified.scoring,
 			attempts: 1,
 		});
+		const scoreIdentity =
+			lookupKey &&
+			decoderRuntimeSha256 &&
+			metadata.decoderRuntimeSha256 === decoderRuntimeSha256 &&
+			metadata.selfContainedMovInputs === true &&
+			verified.scoring.device.uuid === reuse?.selection.identity.deviceUuid
+				? completedNativeScoreIdentity(
+						lookupKey,
+						decoderRuntimeSha256,
+						metadata.scoringRuntimeSha256,
+						verified.scoring.device,
+						metadata.gpuDriver,
+					)
+				: undefined;
 		await writeFile(options.logPath, JSON.stringify(verified.log));
 		signal?.throwIfAborted();
 		return {
 			run,
 			execution,
 			log: verified.log,
+			...(scoreIdentity
+				? {
+						verifiedNativeScore: {
+							...scoreIdentity,
+							receiptSha256: createHash("sha256").update(receipt).digest("hex"),
+						},
+					}
+				: {}),
 			...(resourceSnapshot ? { resourceSnapshot } : {}),
 		};
 	} finally {

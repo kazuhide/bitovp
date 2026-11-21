@@ -668,7 +668,7 @@ export async function verifyHdrQcBrowser(
 			cpu: "Local CPU",
 			pq: "HDR VMAF · PQ / ICtCp 16-bit",
 			hlg: "HLG → PQ · 1000 nits",
-			scope: "HDR base layer · RPU display mapping not measured",
+			scope: "HDR base layer measured",
 			mixed:
 				"HDR/SDR or HLG measurement conditions differ. Scores and charts are shown separately.",
 			compareHelp: "Compare reports — more information",
@@ -681,7 +681,7 @@ export async function verifyHdrQcBrowser(
 			cpu: "ローカルCPU",
 			pq: "HDR VMAF・PQ / ICtCp 16bit",
 			hlg: "HLG → PQ・1000nit",
-			scope: "HDRベース映像・RPUによる表示処理は評価対象外",
+			scope: "HDRベース映像を計測",
 			mixed:
 				"HDR/SDR または HLG の測定条件が異なるため、数値とグラフを分けて表示します。",
 			compareHelp: "「レポートを比較」の説明",

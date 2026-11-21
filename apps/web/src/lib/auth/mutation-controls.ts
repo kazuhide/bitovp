@@ -264,7 +264,8 @@ export const MUTATION_CONTROLS = {
 	"vod.job.detail": {
 		minRole: "OPERATOR",
 		source: "app/vod/jobs/[id]/job-detail.tsx",
-		bindings: 4,
+		// The header gate also encloses Save as template.
+		bindings: 3,
 	},
 	"vod.job.input-inspect": {
 		minRole: "OPERATOR",

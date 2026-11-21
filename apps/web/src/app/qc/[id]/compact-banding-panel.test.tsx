@@ -1,9 +1,30 @@
 import { cleanup, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import {
+	cloneElement,
+	isValidElement,
+	type ReactElement,
+	type ReactNode,
+} from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
 import type { BandingResultDetail } from "../vmaf-shared";
 import { BandingPanels } from "./banding-panel";
+
+// Give the real Recharts SVG a measured size under jsdom.
+vi.mock("recharts", async (importOriginal) => ({
+	...(await importOriginal<typeof import("recharts")>()),
+	ResponsiveContainer: ({ children }: { children: ReactNode }) =>
+		isValidElement(children)
+			? cloneElement(
+					children as ReactElement<{ width?: number; height?: number }>,
+					{
+						width: 800,
+						height: 320,
+					},
+				)
+			: children,
+}));
 
 const hint =
 	"CAMBI detects visible contouring in the encoded video. It needs no reference video or VMAF model. Higher scores indicate more banding.";
@@ -108,6 +129,44 @@ afterEach(() => {
 });
 
 describe("compact CAMBI panels", () => {
+	it.each([
+		{ compact: true, reportDetail: false, grid: true, tick: "40.081234567" },
+		{ compact: false, reportDetail: false, grid: false, tick: "40.081234567" },
+		{ compact: true, reportDetail: true, grid: false, tick: "40.081" },
+		{ compact: false, reportDetail: true, grid: false, tick: "40.081" },
+	])("keeps one-result layout and precision scoped to report detail ($compact, $reportDetail)", ({
+		compact,
+		reportDetail,
+		grid,
+		tick,
+	}) => {
+		const precise = {
+			...result,
+			bandingFrames: result.bandingFrames?.map((point) =>
+				point.frameNum === 1001
+					? { ...point, timestampSeconds: 40.081234567 }
+					: point,
+			),
+		};
+		renderWithQuery(
+			<BandingPanels
+				results={[precise]}
+				compact={compact}
+				reportDetail={reportDetail}
+			/>,
+			"en",
+		);
+		const card = screen.getByRole("region", {
+			name: "Banding detection — 1080p",
+		});
+		expect(card.parentElement?.classList.contains("xl:grid-cols-2")).toBe(grid);
+		const chart = within(card).getByRole("img");
+		const labels = [...chart.querySelectorAll("text")].map(
+			(node) => node.textContent,
+		);
+		expect(labels).toContain(tick);
+	});
+
 	it("keeps a heading and moves the long explanation into accessible keyboard help", async () => {
 		renderWithQuery(<BandingPanels results={[result]} compact />, "en");
 		expect(

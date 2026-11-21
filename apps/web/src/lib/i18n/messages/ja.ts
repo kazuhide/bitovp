@@ -538,7 +538,7 @@ export const ja = {
 		invalidForm: "アカウント・入力・出力の設定を確認してください。",
 		requestFailed: "リクエストを完了できませんでした。",
 		createUncertain:
-			"結果が不明な場合は、もう一度作成する前に解析一覧を更新してください。",
+			"すでに作成されている可能性があります。再実行の前に解析一覧を更新してください。",
 		loading: "解析を読み込んでいます…",
 		refresh: "更新",
 		noAnalyses: "このアカウントに AISA Live の解析はありません。",
@@ -554,7 +554,7 @@ export const ja = {
 		esVersion: "Encoding Resource Service バージョン",
 		aicaVersion: "AICA バージョン",
 		actionUncertain:
-			"結果が不明な操作を繰り返す前に、解析の状態を更新してください。",
+			"処理が完了している可能性があります。再実行の前に解析の状態を更新してください。",
 		checkState: "次の操作の前に解析の状態を確認",
 		ingest: "配信の接続情報",
 		ingestWaiting: "配信が開始すると接続情報を取得できます。",
@@ -969,16 +969,19 @@ export const ja = {
 	},
 	moqPlayback: {
 		clientPlaybackTime: "クライアント再生時刻",
-		archivedClientPlaybackTime: "クライアント再生時刻（当時・推定）",
+		archivedClientPlaybackTime: "再生時刻（推定）",
 		archiveClockBasis:
 			"録画開始時刻と再生位置から推定。旧録画では最初のフレームの観測時刻が基準です。",
 		title: "MoQ再生",
+		viewerMetrics: "プレイヤー",
+		noLiveSamples: "再生すると観測値が表示されます",
+		playerDetails: "再生の詳細",
 		play: "再生",
 		stop: "停止",
 		idle: "未再生",
 		loading: "読み込み中",
 		waiting: "映像を待機中",
-		frames: "映像フレーム受信",
+		frames: "再生中",
 		stopped: "停止済み",
 		unavailable: "MoQ再生を利用できません",
 		failed: "MoQ再生に失敗しました",
@@ -1002,8 +1005,10 @@ export const ja = {
 		renderingCanvas: "Canvas（映像のみのキャプチャー）",
 		canvasUpdates: "Canvas 描画更新",
 		canvasMeasurement:
-			"画素が変化した描画回数/秒。送信元の FPS とデコーダーのカウンターは未取得です。",
-		frameHistory: "フレーム観測値（出所の混在または不明）",
+			"Player Web X の Canvas で画像の変化を観測した回数を、ブラウザーで毎秒集計します。",
+		frameHistory: "フレーム観測値",
+		frameHistoryMeasurement:
+			"video 要素ではブラウザーが報告する描画フレーム数、Canvas では観測した画像の変化を毎秒に換算します。古い観測値には描画元が記録されていない場合があります。",
 		resolution: "解像度",
 		dropped: "ドロップフレーム",
 		buffer: "バッファ",
@@ -1015,7 +1020,8 @@ export const ja = {
 		totalFrames: "映像フレーム総数",
 		latency: "映像遅延（時刻コード）",
 		unmeasured: "未計測",
-		latencyMethod: "映像内の時刻からの推定値です。",
+		latencyMethod:
+			"Player Web X が映像内の互換時刻コードを読み取り、映像遅延を推定します。",
 		draft: "設定draft",
 		namespace: "設定namespace",
 		catalog: "catalogトラック",
@@ -1025,23 +1031,25 @@ export const ja = {
 		openPlayer: "Playerを開く",
 		backToChannel: "Liveに戻る",
 		relayConfigured: "Cloudflare Relay（設定値）",
-		relayClaims: "未検証のトークン記載値です。",
+		relayClaims: "接続設定に含まれるトークンの記載値です。",
 		relayOrigin: "リレーの接続先",
 		relayId: "リレー ID",
 		relayExpiry: "設定トークンの有効期限",
 		relayOperations: "トークンの設定権限",
 		savedHistory: "MoQ観測履歴",
 		historyFailed: "観測履歴を取得できませんでした",
-		noHistory: "観測履歴なし",
+		noHistory: "再生の観測履歴なし",
 		observationSession: "観測セッション",
 		browserSource: "ブラウザー観測 · Player Web X / MoQ",
 		historyClock:
 			"ブラウザー時刻 UTC · 開始時刻＋経過時間。時計間にずれがある場合があります。",
-		bufferHistory: "バッファ（取得元は混在または不明）",
+		bufferHistory: "再生バッファ",
+		bufferMeasurement:
+			"Player Web X が報告するバッファ量を優先します。video 要素で再生する場合は、ブラウザーが示す再生位置より先のバッファ秒数も使います。古い観測値には取得元が記録されていない場合があります。",
 		noSamples: "保存済みの観測値なし",
 		recordedScope: "受信したプレビューの範囲のみ、最大90秒の録画です。",
 		receivedVideo: "受信したMoQ映像の録画",
-		downloadRecording: "受信映像をダウンロード",
+		downloadRecording: "録画を保存",
 		noRecording: "受信映像の録画なし",
 		recording: {
 			idle: "映像受信後に録画を開始します",
@@ -1067,7 +1075,7 @@ export const ja = {
 			unavailable: "Analyticsを利用できません",
 			"not-configured": "Analytics未設定",
 		},
-		stagesTitle: "再生の進行",
+		stagesTitle: "再生イベント",
 		observationWindowEnded: "観測区間が終了",
 		event: {
 			started: "開始",
@@ -1086,14 +1094,30 @@ export const ja = {
 		},
 	},
 	moqEncoder: {
-		title: "Live Encoderの推移",
+		title: "エンコーダ",
+		poll: "Heartbeat · API取得",
+		lastReport: "Heartbeat · 実行の最終記録",
+		sourceHelp:
+			"入力グラフの横軸は Bitmovin Live Heartbeat の API 取得時刻（UTC）です。",
+		details: "入力パケット",
+		ingestUnhealthy: "入力ヘルス低下",
+		ingest: {
+			CONNECTED: "入力あり",
+			DISCONNECTED: "入力切断",
+			WAITING_FOR_FIRST_CONNECT: "入力待ち",
+			ERROR: "入力エラー",
+		},
 		source: "Encoder API · 受信時刻 UTC",
-		empty: "Heartbeat の保存データはありません。",
+		empty: "記録なし",
 		yes: "はい",
 		no: "いいえ",
-		inputBitrate: "入力 bitrate",
+		inputBitrate: "入力ビットレート",
 		videoFps: "入力映像 FPS",
-		segmentProcessing: "Segment 処理時間",
+		segmentProcessing: "出力セグメントの処理時間",
+		output: "配信出力",
+		outputHelp:
+			"Bitmovin Live Heartbeat の API 取得または署名済み Push から出力セグメントの処理時間を表示します。横軸は UTC です。",
+		pushReadFailed: "Push の計測値を読み込めませんでした。",
 		inputPackets: "入力パケット異常（累計）",
 		video: "映像",
 		audio: "音声",
@@ -1655,6 +1679,33 @@ export const ja = {
 		submitting: "変更しています…",
 		failed: "パスワード変更に失敗しました",
 	},
+	operationAnalytics: {
+		title: "操作分析",
+		caption: "Live MoQプレビューの結果と初回フレームまでの時間",
+		collecting: "計測中",
+		paused: "計測停止中",
+		collectionSettings: "計測設定",
+		loadFailed: "操作分析を読み込めませんでした。",
+		period: "Live MoQプレビュー · UTCの月曜始まり",
+		attempts: "再生試行",
+		firstFrameTime: "初回フレームまでの時間",
+		noFirstFrame: "この期間に初回フレームの計測値はありません。",
+		empty: "この期間に記録された試行はありません。",
+		table: "MoQ再生の週次集計",
+		week: "週の開始日（UTC）",
+		partial: "集計途中",
+		started: "開始",
+		firstFrame: "初回フレーム表示",
+		failed: "失敗",
+		canceled: "キャンセル",
+		unconfirmed: "結果不明",
+		pending: "結果待ち",
+		share: "初回フレーム到達率",
+		p50: "p50",
+		p95: "p95",
+		milliseconds: "{value} ms",
+		shareNote: "初回フレーム到達率の分母から結果待ちの試行を除いています。",
+	},
 	common: {
 		accessAdminOnly:
 			"この領域は管理者専用です。アクセスが必要な場合は管理者に依頼してください。",
@@ -1672,8 +1723,8 @@ export const ja = {
 		save: "保存",
 		saving: "保存しています…",
 		sentenceEnd: "。",
-		unknown: "不明",
-		unknownError: "原因不明のエラー",
+		unknown: "—",
+		unknownError: "処理中にエラーが発生しました",
 		deleting: "削除しています…",
 		deleteAria: "{resource} を削除",
 		deleteAriaDisabled: "{resource} を削除(無効)",
@@ -1880,8 +1931,7 @@ export const ja = {
 	},
 	nextAction: {
 		outputUnknownTitle: "出力の配信状況を確認",
-		outputUnknownBody:
-			"再生リンクは未確認です。配信状況の監視で、出力の更新を確認してください。",
+		outputUnknownBody: "配信状況で出力の更新を確認できます。",
 		goOutput: "出力を確認",
 		regionLabel: "次にやること",
 		startEncoderTitle: "チャンネルを開始する",
@@ -1891,8 +1941,7 @@ export const ja = {
 		recoverBody:
 			"診断と終了理由、エンコーダの状態を確認してから次の操作を選んでください。",
 		bootTitle: "起動中",
-		bootBody:
-			"起動時間はリージョンと構成で異なります。取り消すには操作へ移動してください。",
+		bootBody: "起動時間はリージョンと構成で異なります。",
 		stoppingTitle: "停止処理中",
 		stoppingBody:
 			"エンコーダを停止しています。下のステップログに停止手順が出ます。完了するとチャンネルは STOPPED になります。",
@@ -1909,9 +1958,9 @@ export const ja = {
 		alertsUnknownBody:
 			"アラート一覧を読み込めないため、アラートの有無を確認できません。アラートのカードを開き、もう一度取得してください。",
 		/* An unreadable provider state proves neither running nor stopped. */
-		providerUnknownTitle: "Bitmovin エンコーダ状態未確認",
+		providerUnknownTitle: "Bitmovin の最新のエンコーダ状態を確認できていません",
 		providerUnknownBody:
-			"この配信の Bitmovin エンコーダ状態は未確認、または最新の確認に失敗しているため、オンエア中とは判断できません。30 秒ごとに再確認します。停止は可能です。ほかの配信操作は状態確認後に行ってください。",
+			"30 秒ごとに状態を取得し直します。配信の停止は行えます。",
 		onAirTitle: "オンエア中",
 		onAirBody:
 			"入力は接続済み、アラートなし、マニフェストは再生可能です。番組終了時にチャンネルを停止してください。",
@@ -1924,7 +1973,6 @@ export const ja = {
 		idleTitle: "チャンネルは停止中です",
 		idleBody:
 			"チャンネルは停止中で、待機中のスケジュールもありません。チャンネルを開始するか、スケジュールアクションを登録してください。",
-		goActions: "操作へ",
 		goFeeders: "ファイル入力へ",
 		goSchedule: "スケジュールへ",
 		goAlerts: "アラートへ",
@@ -2054,7 +2102,7 @@ export const ja = {
 		ready: "MoQ プレビュー設定済み",
 		"publisher-only": "配信のみ",
 		"needs-configuration": "MoQ プレビューの設定が必要",
-		"binding-unverified": "既存 MoQ 出力のプレビュー可否は未確認",
+		"binding-unverified": "既存 MoQ 出力のプレビュー可否を判定できません",
 		unavailable: "MoQ プレビュー設定を確認できませんでした",
 		advisory: "Relay 接続と再生は配信開始後に確認します。",
 		recheck: "再確認",
@@ -2085,7 +2133,7 @@ export const ja = {
 		customCodec: "コーデック {actual} はLive HD（H264 / AAC）の範囲外です。",
 		customOutputProtocol: "選択した出力プロトコルはCustom Liveを使用します。",
 		customInputProtocol:
-			"{actual}入力のLive HD対応は未確認です。対応を確認できる入力はRTMP・冗長RTMP・SRTです。",
+			"{actual} 入力での Live HD 利用可否を判定できません。対応を確認できる入力は RTMP・冗長 RTMP・SRT です。",
 		customInput:
 			"{actual} が入力依存または未指定のため、Live HDへの適合を確認できません。",
 		customVideoCount: "映像ストリーム数 {actual}：Live HDは最大{limit}本です。",
@@ -2137,7 +2185,8 @@ export const ja = {
 		ingestConnected: "接続済み",
 		playable: "再生可能",
 		never: "未受信",
-		unknown: "不明",
+		unknown: "データなし",
+		awaitingData: "データ待ち",
 		none: "なし",
 		clockSkew: "時刻ずれ",
 		secondsAgo: "{seconds}秒前",
@@ -2393,7 +2442,7 @@ export const ja = {
 		/* Per-Title results describe actual encoder output, rather than requested renditions. */
 		ptResults: "Per-Title 結果(エンコーダが実際に生成したもの)",
 		ptAbsent:
-			"未取得です。この機能より前に実行されたジョブは、Bitmovin 側にエンコーディングが残っている間(約 90 日)なら後から取得できます。",
+			"このジョブの結果は保存されていません。この機能より前のジョブも、Bitmovin にエンコーディングが残っている間（約90日）は結果を取得できます。",
 		ptFailed: "結果を読み取れませんでした: {error}",
 		ptCaptureNow: "今すぐ取得",
 		ptCapturing: "取得中…",
@@ -2405,7 +2454,7 @@ export const ja = {
 		ptScanMuxingsListed: "一覧から取得した muxing 数",
 		ptScanTemplatesListed: "一覧から取得したテンプレート数",
 		ptScanTemplatesDeclared: "宣言されたテンプレート数",
-		ptScanUnattributed: "帰属先不明",
+		ptScanUnattributed: "関連付けなし",
 		ptScanConfigErrors: "コーデック設定の読取り失敗数",
 		ptScanDetailLabel: "取得結果の内訳",
 		ptIncomplete:
@@ -2431,12 +2480,12 @@ export const ja = {
 		ptColParams: "パラメータ",
 		ptResultParamCount: "設定 {count} 項目",
 		ptResultParamsLabel: "エンコーダが選んだコーデック設定(実測)",
-		ptResultParamsMissing: "未取得",
+		ptResultParamsMissing: "記録なし",
 		ptFromTemplate: "テンプレート {rendition} 由来",
-		ptUnattributed: "帰属先不明({count} 件)",
+		ptUnattributed: "関連付けなし（{count} 件）",
 		// Keep the four fail-closed witnesses aligned with attributeResult.
 		ptWhyUnattributed:
-			"まずQC用ファイル名の一意な一致で結果を関連付けます。ファイル名がない場合、固定設定の結果はエンコーダが返した固定設定の一致、自動選択の結果はテンプレート固有の出力パスの一意な一致を使います。パスの根拠がない自動選択の結果に限り、同じコーデックの自動選択テンプレートが1つなら関連付けます。根拠が曖昧・不一致なら推測せず「帰属先不明」に残します。",
+			"まずQC用ファイル名の一意な一致で結果を関連付けます。ファイル名がない場合、固定設定の結果はエンコーダが返した固定設定の一致、自動選択の結果はテンプレート固有の出力パスの一意な一致を使います。パスの根拠がない自動選択の結果に限り、同じコーデックの自動選択テンプレートが1つなら関連付けます。対応先を特定できない結果は「関連付けなし」に残します。",
 		perTitle: "Per-Title",
 		perTitleScaled: "アルゴリズムが決定",
 		noMuxings: "muxing なし",
@@ -2644,7 +2693,7 @@ export const ja = {
 		hdrProtocolHint: "HDRベース映像・HLS・ローカルCPU",
 		hdrPqContext: "HDR VMAF・PQ / ICtCp 16bit",
 		hdrHlgContext: "HLG → PQ・1000nit",
-		hdrBaseLayerScope: "HDRベース映像・RPUによる表示処理は評価対象外",
+		hdrBaseLayerScope: "HDRベース映像を計測",
 		mixedHdrContexts:
 			"測定条件（HDR/SDR・HLG正規化）が異なるため、スコアを直接比較できません。",
 		separateHdrContexts:
@@ -2652,7 +2701,7 @@ export const ja = {
 		measurementSdr: "SDR",
 		measurementHdrPq: "HDR PQ",
 		measurementHdrHlg: "HDR HLG → PQ（1000 nit）",
-		measurementHdrUnverified: "HDR・測定条件未確認",
+		measurementHdrUnverified: "HDR・測定条件を特定できません",
 		measureSourceHint: "選択したジョブに対象の出力が必要です。",
 		measurePsnr: "PSNR",
 		measurePsnrInherit: "ジョブ設定に従う",
@@ -2800,6 +2849,9 @@ export const ja = {
 		bulkDeleteFailed: "一括削除に失敗しました",
 		loadMore: "さらに読み込む",
 		backToLab: "VMAF ラボに戻る",
+		sourceEncodingJob: "元のVODジョブを開く",
+		runDetails: "実行の詳細",
+		measurementConditions: "比較条件",
 		//  (UX-02e locale leaks): the list's pending cell, the compare
 		// screen's deleted-report line and the delete button's resource name.
 		pendingScore: "処理待ち",
@@ -2837,7 +2889,7 @@ export const ja = {
 		reasonAllStepsMove: "ビットレートの差に応じてスコアも変化しています",
 		reasonFlatSteps:
 			"ビットレートを変えてもスコアが変わらなかった区間: {steps}",
-		comparisonUnknown: "比較条件が不明",
+		comparisonUnknown: "比較条件を特定できません",
 		hintHarmonicMean:
 			"調和平均（n ÷ Σ(1/score)）です。算術平均よりも低スコアのフレームの影響を強く受けるため、画質が落ちる区間を確認するときに使います。",
 		hintLow1Percent:
@@ -2865,9 +2917,9 @@ export const ja = {
 		summaryNative:
 			"VMAF比較: {rendition}p を {reference}p の元動画と比較しました。{model}低いスコアには、画質の低下だけでなく比較条件も影響します。判断する前に、参照動画、フレームの同期、モデルを確認してください。",
 		summaryUnknownWithModel:
-			"{model} で採点しました。ソースの解像度が不明なため、比較条件を提示できません。",
+			"{model} で採点しました。ソース解像度の記録がないため、比較条件を提示できません。",
 		summaryUnknownNoModel:
-			"比較条件が不明です: レンディション側もソース側も高さが記録されていません。",
+			"レンディションとソースの高さが記録されていないため、比較条件を提示できません。",
 		degenerateBadge: "品質値として成立していません",
 		ladderFlatBadge: "ラダーが分離していません",
 		coarseAnchor: "おおまかな同期位置",
@@ -2878,7 +2930,7 @@ export const ja = {
 		sourceFrameStart: "ソース側の開始フレーム",
 		confidenceCaveat: "同期信頼度の注意",
 		alignmentUnverified:
-			"フレームの位置合わせは未確認です。このスコアは診断用で、画質評価の確定値ではありません。計算が完了しても、位置合わせが確認できたとは限りません。",
+			"フレームの位置合わせを検証できていません。このスコアは診断の目安にしてください。",
 		alignmentExcludedFrames: "信頼度による除外フレーム",
 		alignmentMaskedFrames: "ループ境界のマスクフレーム",
 		frameOffset: "フレームオフセット",
@@ -3059,7 +3111,7 @@ export const ja = {
 		modeLegacy: "従来のアカウント単位",
 		title: "heartbeat webhook の間隔",
 		intro:
-			"Heartbeat はライブ配信ごとに個別登録します。エンコーダが未対応または対応状況が不明な場合は、定期的な状態確認を続けます。変更は次の配信から適用され、実行中の配信の間隔は変わりません。",
+			"Heartbeat はライブ配信ごとに個別登録します。対応を確認できないエンコーダは Poll で状態を取得します。変更は次の配信から適用します。",
 		intervalLabel: "設定する送信間隔（秒）",
 		intervalHint:
 			"1〜{max}。0 で heartbeat を無効にします。実際の受信間隔とは異なる場合があります。",
@@ -3138,14 +3190,14 @@ export const ja = {
 		classBreakdownNote:
 			"SD・HD・UHD は API の解像度区分で、実際の縦横サイズではありません。",
 		missingCodecRecords:
-			"内訳未取得の記録が {count} 件あるため、この表は一部の内訳です。",
+			"内訳がない記録が {count} 件あります。取得できた内訳を表示しています。",
 		otherApiValues: "その他の API 報告値",
 		otherApiValuesNote:
 			"追加機能・トランスマックス分はエンコード分へ合算しません。負の値も報告どおり保持し、その意味は推測していません。",
 		featureMinutes: "追加機能の分数",
 		transmuxingMinutes: "トランスマックスの分数",
 		liveUnits: "Live Units",
-		notRetrieved: "未取得",
+		notRetrieved: "記録なし",
 		liveUnitsNote:
 			"Live HD Units は専用の Live options 統計 API から取得します。日次のエンコード課金換算分は別の指標で、Custom Live だけの合計ではありません。分数から Units へ換算しません。取得後も提供元の集計が更新される場合があります。",
 		liveUnitsTitle: "日別の Live HD Units",
@@ -3221,30 +3273,30 @@ export const ja = {
 	lifecycle: {
 		/* Lifecycle durations shown here must be measured and include their sample counts. */
 		aria: "エンコーダの起動から停止まで",
-		s1: "① 起動要求",
+		s1: "起動要求",
 		s1Hint:
 			"エンコーダはまだ起動していません。手動で開始するか、スケジュールの START の時刻を待ってください。",
 		s1ErrorHint:
 			"チャンネルは ERROR 状態です。Bitmovin 側にエンコーダが残っている可能性があるため、解放するには停止してください。ここから開始すると、エンコーダの準備を再開します。",
 		/* Provider encoding state stays unknown until confirmed. A finished encoding must not imply that resources may still be running. */
-		providerUnknownHint:
-			"Bitmovin からエンコーダの状態を取得できません（最終確認 {at}、{since} から未確認）。30 秒ごとに再確認します。停止はできますが、開始・再起動・スレート・SCTE-35・タイムシフト・新しいファイル入力は、状態を確認できるまで使えません。",
-		providerUnobservedHint:
-			"Bitmovin エンコーダ状態の初回確認を待っています。確認できるまではオンエア中と判定しません。",
+		providerUnknownHint: "Bitmovin 最終取得 {status}（{at}）{unavailableSince}",
+		providerUnavailableSince: "（{since} から更新なし）",
+		providerUnobservedHint: "Bitmovin の取得履歴なし",
 		providerUnknownNever: "なし",
 		providerTerminalHint: "Bitmovin の確認結果は {status} です（{at}）。",
-		inputUnobserved: "入力状態を未確認",
+		inputUnobserved: "入力データ待ち",
+		inputUnavailable: "入力データなし",
 		inputUnobservedHint: "この配信の入力接続状態は取得できていません。",
-		s2: "② インスタンス起動中",
+		s2: "インスタンス起動中",
 		s2Hint:
 			"Bitmovin がエンコーダインスタンスを起動中です。起動時間はリージョンや構成で異なります。過去の実測は設定の「ライブ」で確認できます。まだ入力は受信できません。",
-		s3: "③ 入力待機",
+		s3: "入力待機",
 		s3Hint:
 			"エンコーダは起動済みで、入力の接続を待っています。スレートの差し込みや出力の生成には入力が必要です。送信元を接続するか、ファイル入力を開始してください。この段階からスレート素材を登録できます。",
-		s4: "④ 入力接続 — エンコード・配信中",
+		s4: "入力接続",
 		s4Hint:
 			"入力を受信し、エンコードしています。スレートを差し込めます。再生できるかどうかは、出力の生成とプレビューで確認してください。",
-		s7: "⑦ 停止",
+		s7: "停止",
 		s7Hint:
 			"停止中は完了を待ってください。終了したエンコーディングは再起動できません。停止後は「新しい配信を開始」で新しいエンコーダを作成します。差し込み素材は新しい配信で再登録します。",
 	},
@@ -3254,7 +3306,6 @@ export const ja = {
 		cancelStartPending: "取り消し処理中",
 		cancelStart: "開始を取り消す",
 		title: "ライブチャンネル",
-		providerStatusUnconfirmed: "{status} · Bitmovin 状態未確認",
 		newChannel: "ライブチャンネルを作成",
 		inventory: {
 			title: "Live エンコーダの照合",
@@ -3263,9 +3314,8 @@ export const ja = {
 			select: "アカウントを選択",
 			check: "今すぐ確認",
 			checking: "確認中…",
-			unknown: "未確認・件数不明",
-			failed:
-				"確認失敗・件数不明。再試行してください。大量のリソースは管理者に個別確認を依頼してください。",
+			unknown: "照合結果なし",
+			failed: "照合に失敗しました。再試行してください。",
 			summary:
 				"要確認: {count} 件 · 未終了: {running} · 未登録: {unexplained} · 終了済みチャンネルとの不一致: {contradicted} · 作成中: {inFlight}",
 			checked: "確認日時:",
@@ -3353,7 +3403,7 @@ export const ja = {
 			sampleStale:
 				"計測から時間が経っているため、現在の入力状態は確認できません。",
 			sampleUnknown:
-				"サンプル時刻が不明なため、現在の入力状態は確認できません。",
+				"サンプルに時刻が記録されていないため、現在の入力状態を判定できません。",
 			sampleSkew:
 				"計測時刻が未来になっています。現在の入力状態は確認できません。",
 			sampleHistorical: "終了時のサンプルです。現在の入力状態ではありません。",
@@ -3362,14 +3412,15 @@ export const ja = {
 			diagnosis: {
 				ENDED: "終了した配信の記録です。",
 				UNKNOWN:
-					"現在の入力状態は未確認です。通知の受信状況と入力元を確認してください。",
+					"入力状態を取得できていません。通知の受信状況と入力元を確認してください。",
 				INPUT_WAITING:
 					"入力待ちです。送信元の接続先と送信開始を確認してください。",
 				INPUT_LOST:
 					"入力の切断・異常を検出しました。送信元とネットワークを確認してください。",
 				OUTPUT_STALLED:
 					"出力更新の停止を検出しました。出力先の詳細を確認してください。",
-				OUTPUT_UNKNOWN: "入力接続を確認しました。出力更新は未確認です。",
+				OUTPUT_UNKNOWN:
+					"入力の接続を確認しました。出力の更新情報は取得できていません。",
 				PUSH_UNAVAILABLE:
 					"Push 通知の更新を確認できないため、定期取得した状態を表示しています。配信停止を示すものではありません。",
 				HEALTHY:
@@ -3393,7 +3444,7 @@ export const ja = {
 			ingestDetails: "入力の詳細",
 			lastSeen: "最終確認 {when}",
 			laneAlerts: "アラート {count} 件",
-			laneAlertsUnknown: "アラート 不明",
+			laneAlertsUnknown: "アラートを取得できません",
 			ended: "終了",
 			starting: "起動待ち",
 			encoderIp: "エンコーダ IP",
@@ -3410,7 +3461,7 @@ export const ja = {
 			output: "出力",
 			ok: "正常",
 			down: "未検出",
-			unobservable: "計測対象外(HLS なし)",
+			unobservable: "HLS データなし",
 			stale:
 				"90 秒以内の Poll 状態サンプルがありません。Push 受信や配信停止とは別の判定です。",
 			timelineTitle: "配信タイムライン",
@@ -3466,7 +3517,7 @@ export const ja = {
 		planUnavailableLadder:
 			"保存されたプランを解析できないため、ラダーを表示できません。",
 		dvr: "DVR / タイムシフト",
-		planUnavailableDvr: "プランがないため DVR ウィンドウが不明です。",
+		planUnavailableDvr: "保存プランから DVR ウィンドウを表示できません。",
 		/* This upstream operation is not a provider Input resource. */
 		feeders: "ファイル入力（擬似ライブ）",
 		contentInsertion: "コンテンツ差し込み",
@@ -3492,17 +3543,18 @@ export const ja = {
 		retryAisaFinalizationDescription: "終了した配信の後処理を再試行します。",
 		encoderStopped: "停止済み",
 		encoderActive: "エンコーダ稼働中",
-		encoderStatusUnverified: "エンコーダの状態未確認",
+		encoderStatusUnverified: "エンコーダの最新状態を確認できていません",
+		recordedStatus: "記録 {status}",
 		runOutputGenerated: "出力生成を確認",
 		runErrorRecorded: "エラーあり",
-		runOutputUnverified: "出力未確認",
-		runPlaybackUnverified: "再生未確認",
+		runOutputUnverified: "出力記録を取得できません",
+		runPlaybackUnverified: "再生を確認できていません",
 		ladderConfigured: "設定ラダー",
 		ladderConfiguredSummary: "設定 {count} 件",
 		ladderConfiguredUnavailable: "設定ラダー未登録",
 		ladderObserved: "実績ラダー",
 		ladderObservedEmpty: "記録された出力なし",
-		ladderObservedUnavailable: "出力実績未取得",
+		ladderObservedUnavailable: "出力実績データなし",
 		/* Akamai MSL uses account API authentication, not a storage credential. Operators select the destination explicitly and enter its four required fields. */
 		outputDestination: "配信先",
 		destinationStorage: "オブジェクトストレージ",
@@ -3676,7 +3728,7 @@ export const ja = {
 		newSession: "ファイル入力を開始",
 		/* A pushing feeder without a matching heartbeat is unconfirmed, not healthy; the worker can reconnect unbound sessions. */
 		pushingUnconfirmed:
-			"ファイルの送出側は PUSHING を報告していますが、エンコーダで受信できているかを確認できる最近のハートビートがありません。受信を確認できるまで、入力状態は未確認です。",
+			"ファイル送出側は送出中と報告しています。エンコーダでの受信を示す最近のハートビートはありません。",
 		pushingNotBound:
 			"ファイルを送出していますが、エンコーダはまだ入力として認識していません。新しい接続で自動的に再試行します。長く続く場合は、入力エンドポイントとソースファイルを確認するか、ファイル入力セッションを作り直してください。",
 		inputConfirmed:
@@ -3684,9 +3736,9 @@ export const ja = {
 		prefilledFromEncoderIp:
 			"チャンネルのエンコーダ IP から自動入力しています。編集できます",
 		encoderIpUnknownRunning:
-			"チャンネルが RUNNING になるまでエンコーダ IP は不明です。手入力するか待ってください",
+			"エンコーダ IP は RUNNING 後に取得します。今すぐ設定する場合は手入力してください。",
 		prefilledFromEncoderIpShort: "チャンネルのエンコーダ IP から自動入力",
-		encoderIpUnknown: "RUNNING になるまでエンコーダ IP は不明です",
+		encoderIpUnknown: "エンコーダ IP は RUNNING 後に取得します",
 		prefilledFromSrtPort: "チャンネルの SRT listener ポートから自動入力",
 		srtPortRange: "Bitmovin の SRT listener ポートは 2088〜2091 です",
 		creating: "作成しています…",
@@ -3750,7 +3802,7 @@ export const ja = {
 		videoPosition: "映像ストリームの位置",
 		container: "コンテナ",
 		kind: "メディアの種類",
-		unknown: "不明な属性",
+		unknown: "属性名を表示できません",
 		present: "あり",
 		absent: "なし",
 		willReencode: "（一致するよう再エンコード予定）",
@@ -3777,12 +3829,11 @@ export const ja = {
 		feedbackAccepted: "予約要求を受け付けました",
 		feedbackIdentity: "コンテンツ {contentId} · 予約 {reservationId}",
 		feedbackProvider: "予約応答の状態: {status}",
-		feedbackUnconfirmed: "映像への反映は未確認です。",
+		feedbackUnconfirmed: "映像への反映はプレビューで確認してください。",
 		feedbackOutputAdvancing:
-			"{source}: 出力更新を確認。差し込み内容の一致は未確認。",
-		feedbackOutputNotAdvancing:
-			"{source}: 出力更新は未確認。差し込み失敗の判定ではありません。",
-		feedbackOutputUnknown: "現在の出力更新は未確認です。",
+			"{source} で出力の更新を検出しました。差し込み内容はプレビューで確認してください。",
+		feedbackOutputNotAdvancing: "{source} で出力の進行が検出されていません。",
+		feedbackOutputUnknown: "現在の出力更新情報を取得できません。",
 		feedbackPreview: "プレビューで確認",
 		needsRunning: "コンテンツ差し込みには RUNNING のチャンネルが必要です。",
 		stopped: "差し込みコンテンツの停止リクエストを受け付けました。",
@@ -3935,7 +3986,7 @@ export const ja = {
 	},
 	liveToVod: {
 		recordingNotConfirmed:
-			"エンコードは終了しました。録画の完結性は未確認です。",
+			"エンコードは終了しました。録画ファイルの連続性を確認してください。",
 		stopFirst: "先にチャンネルを停止してください。ライブ → VOD は",
 		complete: "完全な",
 		manifests: "マニフェスト",
@@ -4357,13 +4408,13 @@ export const ja = {
 			scopeNotice:
 				"SDK がリクエスト本文のモデルに宣言する最上位の属性を、操作ごとに数えています。レスポンスと共用の属性も含むため、すべてが書き込み可能とは限りません。",
 			assignmentNotice:
-				"「直接指定の記述あり」は、SDK 呼び出しへ直接渡すオブジェクトやモデル生成の属性名を確認したものです。省略可能・undefined の値も含み、画面からの設定や実際の送信を保証しません。スプレッド構文・変数・ヘルパー・複数候補の型は追跡しません。「未確認」は「未実装」を意味しません。",
+				"「直接指定の記述あり」は、SDK 呼び出しに直接渡すオブジェクトやモデル生成から属性名を抽出した結果です。省略可能な値や undefined も対象です。スプレッド構文・変数・ヘルパー・複数候補の型には別途ソースの確認が必要です。画面から指定できる属性や実行時に送信される属性の確認には別途検証が必要です。",
 			bodyOperations: "本文を持つ操作",
 			expandedOperations: "属性を展開した操作",
 			unexpandedOperations: "本文を展開できなかった操作",
 			totalFields: "最上位の属性数（操作ごと）",
 			sourceAssigned: "直接指定の記述あり",
-			unconfirmed: "未確認の属性",
+			unconfirmed: "直接指定を検出できなかった属性",
 			searchLabel: "リクエスト属性を検索",
 			searchPlaceholder: "属性名・型・モデル・API・ソース…",
 			property: "属性名・型",
@@ -4385,9 +4436,9 @@ export const ja = {
 			nextBodies: "未展開の本文の次のページ",
 		},
 		currentNotice:
-			"SDK の Encoding API 操作と、現行ソースの呼び出しを照合した集計です。実行検証・課金検証ではありません。動的な呼び出しは未確認に残るため、未確認は未実装を意味しません。",
+			"SDK の Encoding API 操作と、現行ソースから読み取れる呼び出しを照合した集計です。動的な呼び出しや実行時・課金時の挙動には別途検証が必要です。",
 		sourceConfirmed: "ソースで確認",
-		unconfirmed: "未確認",
+		unconfirmed: "ソースから判定できず",
 		confirmedOperations: "呼び出しを確認した操作",
 		confirmedCreates: "呼び出しを確認した SDK create メソッド",
 		currentProvenance:
@@ -4477,7 +4528,6 @@ export const ja = {
 			"この画面を表示している Web アプリの情報です。バックグラウンド処理、別の Web アプリ、Bitmovin エンコーダのバージョンは含みません。",
 		version: "アプリバージョン",
 		commit: "コミット",
-		unknown: "不明",
 	},
 	settingsX: {
 		users: "ユーザー",
@@ -4517,6 +4567,9 @@ export const ja = {
 		featureQcVmaf: "VMAF ラボと QC",
 		featureQcVmafHint:
 			"既定はオフです。オフにすると VMAF ラボ、品質基準の編集、ジョブごとの品質確認を非表示にし、新しい計測も作成しません。qc 設定を含むプランは使えません。既存の品質基準で停止・失敗したジョブは、引き続き結果の確認、基準を上書きしての再開、証跡の出力ができます。",
+		featureOperationAnalytics: "Liveの操作分析",
+		featureOperationAnalyticsHint:
+			"組織内のMoQプレビューの開始と結果を記録します。計測を止めても週次レポートは閲覧できます。",
 		featuresLoadFailed: "機能設定を読み込めませんでした。",
 		featuresSavedReloadHint:
 			"保存しました。ナビゲーションとウィザードに反映するにはページを再読み込みしてください。",
@@ -5181,7 +5234,7 @@ export const ja = {
 		av1DetailPreservationVersion:
 			"AUTO・ON には Encoder 2.291.0 以降が必要です。対応するバージョンを指定するか、細部の保持を OFF にしてください。",
 		av1DetailPreservationVersionUnresolved:
-			"AUTO・ON には Encoder 2.291.0 以降が必要です。別名が指すバージョンは未確認のため、対応する数値バージョンを指定してください。",
+			"AUTO・ON には Encoder 2.291.0 以降が必要です。別名から対応バージョンを特定できないため、対応する数値バージョンを指定してください。",
 		encoderVersion2292Help:
 			"Encoder 2.292.0 は Beta 版です。安定版を使う場合は STABLE を選択してください。",
 		av1DetailPreservationOff: "OFF — 通常のエンコード",
@@ -6881,7 +6934,7 @@ export const ja = {
 		reportShortId: "レポート {id}",
 		requestResponseAt: "リクエスト / レスポンス({when})",
 		insertionAccepted: "挿入受付",
-		insertionUnverified: "結果未確認",
+		insertionUnverified: "反映の記録なし",
 		insertionProtocol: "受付記録（詳細）",
 		insertionAcceptedHelp:
 			"挿入要求の受付記録です。映像・音声への反映や成功を示しません。現在の配信では提供元の予約一覧で状態を確認し、実際の出力も確認してください。予約が提供元から消えた後の結果は、この履歴には保存されません。",
@@ -7420,12 +7473,11 @@ export const ja = {
 		history: "履歴",
 		noneHistory: "まだ実行されたものはありません。",
 		/* Submission is not confirmed delivery. Feeder startup and provider acceptance require distinct intermediate messages rather than success wording. */
-		outcomePending: "実行要求済み — 結果は未確認",
-		outcomePushing: "送出中 — プロバイダ側の受信は未確認",
+		outcomePending: "実行を要求済み・結果待ち",
+		outcomePushing: "送出中・受信状況の取得待ち",
 		outcomeIngestConnected:
 			"入力接続を確認 — プロバイダがフィードを受信しています",
-		outcomeSlateArmed:
-			"スレート受付済み — プロバイダが受け付けましたが放映は未確認",
+		outcomeSlateArmed: "スレート受付済み・放映はプレビューで確認",
 		outcomeDelivered: "実行されました",
 		outcomeLegacyUnverified: "従来データ — 配信確認なし",
 		outcomeFailed: "実行を要求しましたが実行されませんでした",
@@ -7507,7 +7559,7 @@ export const ja = {
 			"「{name}」はデータリセットで無効化され、処理済みオブジェクトの記録も削除されています。有効化すると、配下のオブジェクトを新規として再検出し、課金対象のエンコードが作成されます。",
 		redetectConfirmEnable: "有効化して再検知",
 		lastSweep: "最終確認 {time}",
-		neverSwept: "未確認",
+		neverSwept: "確認履歴なし",
 		objects: "オブジェクト",
 		collapse: "閉じる",
 		enable: "有効化",

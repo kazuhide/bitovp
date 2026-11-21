@@ -252,25 +252,18 @@ describe("StatusStrip (ledger #149 batch 2d)", () => {
 		programmeHref: "#layer-programme",
 	} as const;
 
-	it("an UNREAD alert list is amber-unknown, never a green zero", () => {
+	it("omits the count for an unread alert list", () => {
 		renderWithQuery(
 			<StatusStrip
 				openAlerts="unknown"
 				playableCount={2}
-				feederCount={1}
 				{...TIME_CELLS}
 				active
 				nowMs={Date.parse("2026-08-21T12:00:00.000Z")}
 			/>,
 		);
 		const cell = document.querySelector('[data-status-cell="alerts"]');
-		// The old `?? 0` printed "0" in emerald — the strip's own header
-		// demands an unknown read as unknown, and 0-in-green is the most
-		// reassuring reading there is.
-		expect(cell?.textContent).toBe("unknown");
-		expect(cell?.textContent).not.toBe("0");
-		expect(cell?.className).toContain("text-amber-400");
-		expect(cell?.className).not.toContain("text-emerald-400");
+		expect(cell).toBeNull();
 	});
 
 	it("a measured zero still reads zero, in the healthy colour", () => {
@@ -280,7 +273,6 @@ describe("StatusStrip (ledger #149 batch 2d)", () => {
 			<StatusStrip
 				openAlerts={0}
 				playableCount={2}
-				feederCount={1}
 				{...TIME_CELLS}
 				active
 				nowMs={Date.parse("2026-08-21T12:00:00.000Z")}

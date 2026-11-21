@@ -434,7 +434,7 @@ describe("StreamHealth", () => {
 	it("greys the OUTPUT lamp on a DASH-only plan — unobservable, never red (N3)", async () => {
 		apiFetch.mockResolvedValue(health({ outputObservable: false }));
 		wrap(<StreamHealth channelId="ch-1" runId="run-1" mode="live" />);
-		expect(await screen.findByText(/Not measurable/)).toBeInTheDocument();
+		expect(await screen.findByText("No HLS data")).toBeInTheDocument();
 		expect(screen.queryAllByText("Not detected")).toHaveLength(0);
 	});
 

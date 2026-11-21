@@ -256,7 +256,7 @@ describe("guided setup enters the existing simulator and draft review", () => {
 		);
 		const sourceConditions = screen.getByRole("region", {
 			name:
-				locale === "ja" ? "素材で未確認の条件" : "Unmeasured source conditions",
+				locale === "ja" ? "素材で検証する条件" : "Unmeasured source conditions",
 		});
 		expect(sourceConditions).toBeVisible();
 		expect(sourceConditions).toHaveTextContent(

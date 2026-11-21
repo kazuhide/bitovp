@@ -70,8 +70,9 @@ describe("PreviewRail (ledger #149 batch 2f)", () => {
 			/>,
 		);
 		fireEvent.click(screen.getByRole("button", { name: "DASH · dash" }));
-		fireEvent.click(screen.getByRole("button", { name: "Enlarge" }));
-		expect(onPlay).toHaveBeenCalledWith(dash);
+		const enlarge = screen.getByRole("button", { name: "Enlarge" });
+		fireEvent.click(enlarge);
+		expect(onPlay).toHaveBeenCalledWith(dash, enlarge);
 	});
 });
 

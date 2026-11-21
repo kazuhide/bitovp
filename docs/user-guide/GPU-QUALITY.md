@@ -123,7 +123,7 @@ worker currently requires software decoding with this scorer. A separate
 standalone NVDEC-to-CUDA path is available for validation with unchanged
 dimensions; it is not silently substituted into worker measurements.
 
-Each GPU worker run also computes the official CPU reference. Every required
+A fresh GPU worker run also computes the official CPU reference. Every required
 feature and every frame score must pass the numerical checks before a result
 is accepted. Missing or duplicated values, different model/input hashes, an
 unexpected source build, a different device, or a comparison other than the one
@@ -139,6 +139,37 @@ install the scorer again whenever an update of bitovp changes
 This verification adds CPU work. Benchmarking the qualified GPU extractor
 alone and measuring the current worker's end-to-end time answer different
 questions. Compare both before choosing a deployment setting.
+
+### Reuse verified scores on a manual retry
+
+Set `VMAF_REUSE_VERIFIED_NATIVE_RESULTS=1` in the Worker environment before
+running the original measurement and its retry. This experiment covers manual
+SDR VOD measurements with **Local (GPU if available)** and a supervised native
+scorer running one frame in flight. FFmpeg must identify both local files as
+direct MOV/MP4-family inputs, and the scorer opens them with external data
+references disabled. Playlists, parallel frames, combined Banding, and a
+specially prepared reference use ordinary execution.
+
+The Worker still downloads and checks both inputs on a retry. A completed pair
+from that retry's predecessor can skip the native GPU and CPU passes once the
+content digests, model, GPU build, device and driver, and scoring settings match.
+The new result owns its frame payload and reports
+`localExecution.reusedVerifiedResult: true` in the measurement JSON. An absent
+or invalid completion record takes the normal full score path.
+After validating the saved frames, the Worker checks the live GPU, driver,
+and executable mappings in one probe against the original scoring evidence.
+A changed driver, an unexplained executable mapping, a loader audit
+configuration, or a CUDA driver version reported only by NVML sends the pair
+through fresh scoring.
+
+For a timing comparison, seed two independent and equivalent retryable
+predecessors with the same input bytes and scoring settings. Use one for the
+retry with reuse disabled and the other for reuse enabled. A manual retry
+claims its predecessor, so each timing trial needs its own pre-retry state.
+Keep download and preparation in job wall time, and count native scoring
+invocations separately. Compare the reused frame values with their saved
+values exactly and report any numerical difference against an independent
+fresh score.
 
 ## Prepare a repeatable BBB codec comparison
 

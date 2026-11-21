@@ -1,11 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import {
-	CREDENTIAL_PROVIDER_SHAPES,
-	MOQ_PLAYBACK_NAMESPACE_MAX_LENGTH,
-	moqRunNamespaceSuffix,
-	stepLogSchema,
-} from "@bitovp/core";
+import { CREDENTIAL_PROVIDER_SHAPES } from "@bitovp/core";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { publicContextError } from "@/lib/auth/public-context-error";
@@ -13,16 +8,14 @@ import { roleAtLeast } from "@/lib/auth/roles";
 import { AuthContextError } from "@/lib/auth/tenancy";
 import { writeAuditLog } from "./audit";
 import { getServerContext, type ServerContext } from "./context";
+import {
+	moqPlaybackRunSelect,
+	moqStoredOutputSchema,
+	readMoqPlaybackBinding,
+} from "./moq-playback-run";
 import { inspectMoqRelayMetadata } from "./moq-relay-metadata";
 import { readPlayerSettings } from "./player-config";
 
-const storedOutputSchema = z.object({
-	credentialId: z.uuid(),
-	trackNamespace: z.tuple([
-		z.string().min(1).max(MOQ_PLAYBACK_NAMESPACE_MAX_LENGTH),
-	]),
-	draftVersion: z.enum(["DRAFT_16", "DRAFT_18"]),
-});
 const createAuditSchema = z.object({
 	organizationId: z.uuid(),
 	bitmovinAccountId: z.uuid(),
@@ -100,63 +93,16 @@ export async function getMoqPlaybackDescriptor(
 		const run = await ctx.prisma.liveChannelRun.findFirst({
 			where: { liveChannelId: id },
 			orderBy: { seq: "desc" },
-			select: {
-				id: true,
-				liveChannelId: true,
-				organizationId: true,
-				status: true,
-				endedAt: true,
-				cancelRequested: true,
-				bitmovinEncodingId: true,
-				stepLog: true,
-			},
+			select: moqPlaybackRunSelect,
 		});
-		if (
-			!run ||
-			run.id !== runId ||
-			run.liveChannelId !== id ||
-			run.organizationId !== ctx.tenant.organizationId
-		)
-			return finish(404, "MOQ_PLAYBACK_RUN_NOT_FOUND");
-		if (run.status !== "RUNNING" || run.endedAt || run.cancelRequested)
-			return finish(409, "MOQ_PLAYBACK_RUN_UNBOUND");
-		const parsedEncodingId = z.uuid().safeParse(run.bitmovinEncodingId);
-		if (!parsedEncodingId.success)
-			return finish(409, "MOQ_PLAYBACK_RUN_UNBOUND");
-		encodingId = parsedEncodingId.data;
-		const parsed = stepLogSchema.safeParse(run.stepLog);
-		if (!parsed.success) return finish(409, "MOQ_PLAYBACK_RUN_UNBOUND");
-		const outputs = parsed.data.filter((entry) =>
-			entry.kind.startsWith("CREATE_OUTPUT_"),
-		);
-		const encodings = parsed.data.filter(
-			(entry) => entry.kind === "CREATE_ENCODING",
-		);
-		const output = outputs[0];
-		const encoding = encodings[0];
-		if (
-			outputs.length !== 1 ||
-			output?.kind !== "CREATE_OUTPUT_MOQ" ||
-			output.status !== "DONE" ||
-			!z.uuid().safeParse(output.resourceId).success ||
-			encodings.length !== 1 ||
-			encoding?.status !== "DONE" ||
-			encoding.resourceId !== encodingId
-		)
-			return finish(409, "MOQ_PLAYBACK_RUN_UNBOUND");
-		const stored = storedOutputSchema.safeParse(output.payload);
-		const startedAt = Date.parse(output.startedAt ?? "");
-		const linkedMuxing = parsed.data.some(
-			(entry) =>
-				entry.kind === "CREATE_MUXING_FMP4" &&
-				entry.status === "DONE" &&
-				entry.refs.encodingId === encoding.step &&
-				entry.refs.outputId === output.step,
-		);
-		if (!stored.success || !Number.isFinite(startedAt) || !linkedMuxing)
-			return finish(409, "MOQ_PLAYBACK_DELIVERY_UNSUPPORTED");
-		if (!stored.data.trackNamespace[0].endsWith(moqRunNamespaceSuffix(runId)))
-			return finish(409, "MOQ_PLAYBACK_RUN_UNBOUND");
+		const binding = readMoqPlaybackBinding(run, {
+			channelId: id,
+			runId,
+			organizationId: ctx.tenant.organizationId,
+		});
+		encodingId = "encodingId" in binding ? binding.encodingId : undefined;
+		if (!binding.ok) return finish(binding.status, binding.code);
+		const { outputId, output, startedAt } = binding;
 		const select = {
 			organizationId: true,
 			bitmovinAccountId: true,
@@ -179,7 +125,7 @@ export async function getMoqPlaybackDescriptor(
 				where: {
 					...successful,
 					path: "/encoding/outputs/moq",
-					response: { path: ["id"], equals: output.resourceId },
+					response: { path: ["id"], equals: outputId },
 				},
 				select,
 				take: 2,
@@ -191,27 +137,27 @@ export async function getMoqPlaybackDescriptor(
 			return finish(409, "MOQ_PLAYBACK_PROVENANCE_UNAVAILABLE");
 		const createdEncoding = encodingProof.data[0];
 		const createdOutput = outputProof.data[0];
-		const requestProof = storedOutputSchema
+		const requestProof = moqStoredOutputSchema
 			.omit({ credentialId: true })
 			.safeParse(createdOutput.request);
 		if (
 			createdEncoding.organizationId !== ctx.tenant.organizationId ||
 			createdOutput.organizationId !== ctx.tenant.organizationId ||
 			createdEncoding.response.id !== encodingId ||
-			createdOutput.response.id !== output.resourceId ||
+			createdOutput.response.id !== outputId ||
 			createdEncoding.bitmovinAccountId !== createdOutput.bitmovinAccountId ||
 			!requestProof.success ||
-			requestProof.data.draftVersion !== stored.data.draftVersion ||
-			requestProof.data.trackNamespace[0] !== stored.data.trackNamespace[0]
+			requestProof.data.draftVersion !== output.draftVersion ||
+			requestProof.data.trackNamespace[0] !== output.trackNamespace[0]
 		)
 			return finish(409, "MOQ_PLAYBACK_PROVENANCE_UNAVAILABLE");
 		accountId = createdEncoding.bitmovinAccountId;
 		const credential = await ctx.credentials.revealVersioned(
-			stored.data.credentialId,
+			output.credentialId,
 		);
 		const updatedAt = credential.updatedAt.getTime();
 		if (
-			credential.id !== stored.data.credentialId ||
+			credential.id !== output.credentialId ||
 			credential.provider !== "MOQ" ||
 			!Number.isFinite(updatedAt) ||
 			updatedAt >= Math.min(startedAt, createdOutput.at.getTime())
@@ -239,9 +185,9 @@ export async function getMoqPlaybackDescriptor(
 				type: "moq",
 				url: secret.data.playbackUrl,
 				metadata: {
-					namespace: stored.data.trackNamespace[0],
+					namespace: output.trackNamespace[0],
 					catalogTrackName: "catalog",
-					draftVersion: stored.data.draftVersion === "DRAFT_18" ? 18 : 16,
+					draftVersion: output.draftVersion === "DRAFT_18" ? 18 : 16,
 					mediaTypes: ["audio", "video"],
 				},
 			},

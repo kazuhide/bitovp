@@ -348,7 +348,9 @@ describe("JobDetail — VMAF-only recovery", () => {
 				<JobDetail id={JOB_ID} />
 			</FeatureFlagsProvider>,
 		);
-		await screen.findByRole("link", { name: "vmaf_v0.6.1 · VOD" });
+		const report = await screen.findByRole("link", { name: "View report →" });
+		expect(report).toHaveAttribute("href", "/qc/failed-local");
+		expect(report).toHaveAccessibleDescription("vmaf_v0.6.1 · VOD");
 		expect(
 			screen.queryByRole("button", { name: "Retry VMAF only" }),
 		).toBeNull();
@@ -547,6 +549,18 @@ describe("JobDetail — Resources tab", () => {
 		await user.click(screen.getByRole("tab", { name: "Resources" }));
 		return user;
 	}
+
+	it("uses arrow keys to select the adjacent resource panel", async () => {
+		mockApi({});
+		wrap(<JobDetail id={JOB_ID} />);
+		const overview = await screen.findByRole("tab", { name: "Overview" });
+		const resources = screen.getByRole("tab", { name: "Resources" });
+		overview.focus();
+		await userEvent.keyboard("{ArrowRight}");
+		expect(resources).toHaveFocus();
+		expect(resources).toHaveAttribute("aria-selected", "true");
+		expect(screen.getByRole("tabpanel", { name: "Resources" })).toBeVisible();
+	});
 
 	it("renders the cross-linked resource tree grouped by type", async () => {
 		mockApi({});
@@ -1110,6 +1124,20 @@ describe("JobDetail — two-column layout", () => {
 		expect(screen.queryByText("Step timeline")).toBeNull();
 	});
 
+	it("continues from the active detail tab into its panel", async () => {
+		mockApi({ row: { playbackLinks: [link()] } });
+		const user = userEvent.setup();
+		wrap(<JobDetail id={JOB_ID} />);
+		const overview = await screen.findByRole("tab", { name: "Overview" });
+		act(() => overview.focus());
+		await user.tab();
+		expect(screen.getByRole("tabpanel", { name: "Overview" })).toHaveFocus();
+
+		await user.click(screen.getByRole("tab", { name: "Resources" }));
+		await user.tab();
+		expect(screen.getByRole("tabpanel", { name: "Resources" })).toHaveFocus();
+	});
+
 	it("mounts one player at a time: the rail's preview yields to the dialog", async () => {
 		mockApi({ row: { playbackLinks: [link()] } });
 		wrap(<JobDetail id={JOB_ID} />);
@@ -1168,6 +1196,34 @@ describe("JobDetail — two-column layout", () => {
 		expect(screen.getByRole("button", { name: "Enlarge" })).toBeInTheDocument();
 	});
 
+	it.each([
+		"Enlarge",
+		"Play",
+	])("restores focus to %s after closing playback", async (name) => {
+		mockApi({ row: { playbackLinks: [link()] } });
+		const user = userEvent.setup();
+		wrap(<JobDetail id={JOB_ID} />);
+		const trigger = await screen.findByRole("button", { name });
+		trigger.focus();
+		await user.keyboard("{Enter}");
+		expect(await screen.findByRole("dialog")).toBeVisible();
+		await user.keyboard("{Escape}");
+		await waitFor(() => expect(trigger).toHaveFocus());
+		expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+	});
+
+	it("restores focus to the clicked manifest button when its click did not give it focus", async () => {
+		mockApi({ row: { playbackLinks: [link()] } });
+		const user = userEvent.setup();
+		wrap(<JobDetail id={JOB_ID} />);
+		const play = await screen.findByRole("button", { name: "Play" });
+		screen.getByRole("button", { name: "Enlarge" }).focus();
+		fireEvent.click(play);
+		expect(await screen.findByRole("dialog")).toBeVisible();
+		await user.keyboard("{Escape}");
+		await waitFor(() => expect(play).toHaveFocus());
+	});
+
 	it("keeps the step timeline in the heading outline", async () => {
 		// Collapsing it to a bare <summary> dropped it out of the outline entirely —
 		// it was an <h2> on main — so the document went h1 → h3 → h2 and the section
@@ -1195,14 +1251,37 @@ describe("JobDetail — two-column layout", () => {
 		);
 	});
 
-	it("renders no rail at all for a job with no manifests", async () => {
-		// Both children self-suppress on empty, which left an <aside aria-label>
-		// wrapping nothing: an empty complementary region announced to screen
-		// readers, and a grid cell spending gap-8 on it (review finding).
+	it("keeps the desktop preview track when the only manifest cannot be played", async () => {
+		const url = AWS_URL.replace("https:", "http:");
+		mockApi({
+			row: {
+				playbackLinks: [link({ url, reason: { code: "INSECURE_ENDPOINT" } })],
+			},
+		});
+		const { container } = wrap(<JobDetail id={JOB_ID} />);
+		expect(await screen.findByText(url)).toBeVisible();
+		expect(screen.queryByRole("button", { name: "Play" })).toBeNull();
+		const detailGrid = container.querySelector(
+			"#job-detail-content",
+		)?.parentElement;
+		expect(detailGrid).toHaveClass(
+			"grid-cols-1",
+			"@min-[66rem]/vod-detail:grid-cols-[minmax(0,1fr)_380px]",
+		);
+	});
+
+	it("reserves the desktop track without mounting an empty playback region", async () => {
 		mockApi({ row: { playbackLinks: [] } });
 		const { container } = wrap(<JobDetail id={JOB_ID} />);
 		await screen.findByText("Sample job");
 		expect(container.querySelector("aside")).toBeNull();
+		const detail = container.querySelector("#job-detail-content");
+		expect(detail).not.toBeNull();
+		expect(detail).toContainElement(screen.getByRole("tablist"));
+		expect(detail?.parentElement?.children).toHaveLength(1);
+		expect(detail?.parentElement).toHaveClass(
+			"@min-[66rem]/vod-detail:grid-cols-[minmax(0,1fr)_380px]",
+		);
 	});
 
 	it("collapses the step timeline instead of dropping it", async () => {
@@ -1217,19 +1296,7 @@ describe("JobDetail — two-column layout", () => {
 	});
 
 	it("renders the rail before the detail in DOM order", async () => {
-		/**
-		 * Below `lg` the grid collapses to one column and the rail must come first:
-		 * on a phone the question is "is it playing?".
-		 *
-		 * Asserted as DOM order, not as a class, and that distinction found a real
-		 * defect: the first implementation put the detail first and lifted the rail
-		 * with `order-first`, which DISPLAYS correctly while a keyboard or screen
-		 * reader still traverses the whole left column to reach the player. The rail
-		 * is now first in the document and placed into column 2 explicitly on `lg`,
-		 * so the visual and reading orders agree. jsdom applies no media queries, so
-		 * this pins the order the CSS starts from — which is exactly the half that
-		 * was wrong.
-		 */
+		// Playback and its skip link precede the detail in the narrow stack.
 		mockApi({ row: { playbackLinks: [link()] } });
 		const { container } = wrap(<JobDetail id={JOB_ID} />);
 		await screen.findByText(AWS_URL);
@@ -1242,45 +1309,6 @@ describe("JobDetail — two-column layout", () => {
 				rail.compareDocumentPosition(timeline) &
 					Node.DOCUMENT_POSITION_FOLLOWING,
 		).toBeTruthy();
-	});
-
-	it("places the rail in the right-hand column on wide screens", async () => {
-		/**
-		 * A CLASS assertion, and honestly labelled as one: jsdom evaluates no media
-		 * queries, loads no stylesheet and performs no layout, so the desktop
-		 * arrangement cannot be observed
-		 * here — a reviewer confirmed all three
-		 * independently (`display` resolves to "block", every rect is 0×0 even with
-		 * inline `display:grid`, and `matchMedia` is undefined).
-		 *
-		 * What it catches, corrected: my first comment said swapping
-		 * `lg:col-start-2` for `order-last` renders the layout "mirrored". It does
-		 * not — grid auto-placement uses ORDER-MODIFIED document order, so the detail
-		 * would still take the `1fr` column. What that swap actually breaks is the
-		 * MOBILE stack, since an unprefixed `order-last` pushes the player below the
-		 * detail. The mutation that truly mirrors the desktop layout is DELETING the
-		 * `col-start` classes. The assertion catches both; the comment named the
-		 * wrong hazard, which matters because it is the only thing telling the next
-		 * engineer what this test is for.
-		 *
-		 * The real check for this lives in the browser (E2E), which is where a
-		 * two-column grid can actually be measured. This exists so the class cannot
-		 * be deleted silently in the meantime.
-		 */
-		mockApi({ row: { playbackLinks: [link()] } });
-		const { container } = wrap(<JobDetail id={JOB_ID} />);
-		await screen.findByText(AWS_URL);
-		const railColumn = container.querySelector("aside")?.parentElement;
-		expect(railColumn?.className).toContain("lg:col-start-2");
-		const grid = railColumn?.parentElement;
-		expect(grid?.className).toContain("lg:grid-cols-[minmax(0,1fr)_380px]");
-		// And the detail column explicitly takes column 1, so the two cannot both
-		// land in the same cell if one class is edited.
-		expect(
-			[...(grid?.children ?? [])].some((c) =>
-				c.className.includes("lg:col-start-1"),
-			),
-		).toBe(true);
 	});
 });
 
@@ -1728,6 +1756,11 @@ describe("JobDetail — rendition / input / storage panels", () => {
 		// And exactly ONCE now: the id used to render in the strip AND in a bare line
 		// above it.
 		expect(screen.getAllByText(/bm-enc-1/)).toHaveLength(1);
+		const user = userEvent.setup();
+		await user.click(
+			screen.getByRole("button", { name: "Copy Encoding id: bm-enc-1" }),
+		);
+		expect(await navigator.clipboard.readText()).toBe("bm-enc-1");
 	});
 
 	it("renders a non-finite duration as an em dash, not 'NaNm NaNs'", () => {
@@ -2082,7 +2115,10 @@ describe("JobDetail — the QC/VMAF flag (ledger #131)", () => {
 			await screen.findByRole("button", { name: "Measure VMAF again" }),
 		);
 		expect(
-			await screen.findByRole("link", { name: "new-model · VOD" }),
+			await screen.findByRole("link", {
+				name: "View report →",
+				description: "new-model · VOD",
+			}),
 		).toHaveAttribute("href", "/qc/measurement-new");
 	});
 
@@ -2115,7 +2151,8 @@ describe("JobDetail — the QC/VMAF flag (ledger #131)", () => {
 		);
 		try {
 			const report = await screen.findByRole("link", {
-				name: "active-model · VOD",
+				name: "View report →",
+				description: "active-model · VOD",
 			});
 			const row = report.closest("li") as HTMLElement;
 			expect(within(row).getByText("PENDING")).toBeInTheDocument();

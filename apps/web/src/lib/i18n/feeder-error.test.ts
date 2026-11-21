@@ -38,7 +38,7 @@ describe("structured media differences", () => {
 				candidate: "absent",
 			}),
 		).toBe("映像ストリーム あり → なし");
-		expect(mediaAttributeLabel(ja, "__proto__")).toBe("不明な属性");
+		expect(mediaAttributeLabel(ja, "__proto__")).toBe("属性名を表示できません");
 	});
 	it.each([
 		"sourceMismatch",

@@ -10,6 +10,7 @@ import {
 	MAX_SCENE_ANALYSIS_BYTES,
 	normalizeSceneAnalysis,
 	type ProviderAnalysisView,
+	publicLibraryQcEvidence,
 	redactSecrets,
 	sceneAnalysisDocumentSchema,
 	sceneAnalysisLocales,
@@ -112,6 +113,7 @@ export async function sourceView(
 	const {
 		analysisOutput: _privateLocator,
 		fileOutputs,
+		qcEvidence,
 		...snapshot
 	} = {
 		...parsedSnapshot,
@@ -149,6 +151,9 @@ export async function sourceView(
 		snapshot: {
 			...snapshot,
 			playbackLinks: playbackLinks ?? snapshot.playbackLinks,
+			...(qcEvidence === undefined
+				? {}
+				: { qcEvidence: publicLibraryQcEvidence(qcEvidence) }),
 		},
 		analyses: analyses.flatMap((row) => {
 			if (!row) return [];

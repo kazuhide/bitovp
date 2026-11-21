@@ -227,7 +227,7 @@ function globalDetail(
 			status("unverified"),
 			["codec", "generated.targetBitrate", "encoder.version"],
 			"The H265V2 field is exposed by the pinned SDK. Its effect in the selected encoder version has not been verified; do not use it as a ladder-count, upper-target or measured-quality certificate.",
-			"固定したSDKにはH265V2のこのフィールドがあります。選択したencoder版での効果は未確認のため、ラダー本数、上限目標への到達、実測品質の証明には使えません。",
+			"固定した SDK には H265V2 のこのフィールドがあります。選択したエンコーダーでラダー本数、上限目標への到達、画質を確認するには、実際のエンコードが必要です。",
 			codecModel(goal),
 		);
 	if (key === "codecMinBitrateFactor")
@@ -378,7 +378,7 @@ export function assessPerTitleDependencies(
 				"unverified",
 				["codec", "encoder.version"],
 				"This supplied field is outside the supported controls for this codec in the pinned SDK contract. Its effect has not been verified and it is excluded from static outcome guarantees.",
-				"指定されたフィールドは固定したSDK契約に基づくこのcodecの対応操作範囲外です。効果は未確認であり、静的な結果保証には含めません。",
+				"固定した SDK 契約上、このフィールドは選択中のコーデックの対応操作範囲外です。効果の判定には実行時の検証が必要です。",
 				scope === "global" ? codecModel(goal) : "StreamPerTitleSettings",
 			);
 		else if (invalidValue(field, value))

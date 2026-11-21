@@ -652,6 +652,27 @@ describe("auth gate — guarded api paths with a valid cookie", () => {
 		expect(renewed).not.toContain("Secure");
 	});
 
+	it("keeps delayed operation telemetry responses from changing the session cookie", async () => {
+		const issuedAt = 1_760_000_000_000;
+		vi.useFakeTimers();
+		const cookie = validCookie(issuedAt);
+		const submit = () =>
+			proxy(
+				request(
+					{ host: "localhost:3100", cookie },
+					"http://localhost:3100/api/operation-attempts",
+				),
+			);
+		vi.setSystemTime(issuedAt + IDLE_MS * 0.75);
+		const allowed = await submit();
+		expect(allowed.status).toBe(200);
+		expect(setCookies(allowed)).toEqual([]);
+		vi.setSystemTime(issuedAt + IDLE_MS + 1);
+		const expired = await submit();
+		expect(expired.status).toBe(401);
+		expect(setCookies(expired)).toEqual([]);
+	});
+
 	it("uses __Host- + Secure when the request is https", async () => {
 		const issuedAt = 1_760_000_000_000;
 		vi.useFakeTimers();

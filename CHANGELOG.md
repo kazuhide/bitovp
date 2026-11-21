@@ -6,6 +6,43 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- Accept CMAF muxings and chunk frame settings in MoQ Live templates and channel plans, with playback and observation history for those runs.
+- Allow operators to opt in to reuse of verified native VMAF scores on eligible manual retries with matching inputs, model, and runtime.
+
+### Changed
+
+- Collect frame timestamps and source validation data in one probe for eligible H.264 clips in the video library.
+- Reuse identical rendered parts within a VOD input timeline job when the source and FFmpeg arguments match.
+- Skip redundant Vulkan CAMBI scoring work for uniform neighborhoods while preserving banding scores.
+- Match manifest routes directly when each compatible route has a unique counterpart.
+
+## [1.3.3] - 2026-11-20
+
+### Changed
+
+- Group the Live channel controls, omit unavailable summary values and redundant jumps, and make the Encoding ID easy to copy in Live and VOD.
+- Give MoQ playback and observation charts more room, explain how the browser measures each value, and show manifest details only for manifest delivery.
+- Use specific Japanese messages for missing records, failed reads and pending results across the app.
+- Display MoQ playback and its recorded observations alongside separate player and encoder graphs.
+- Open Live playback and history from the channel header, with input and encoder observations ahead of optional notification details.
+- Keep the compact VOD preview at the right on wide screens and preserve detail layout as playback becomes available. Open reports near the job summary and navigate between job tabs by keyboard.
+- Identify the HDR base video measured by VMAF and keep the model and measurement conditions alongside the selected metric.
+- Highlight the current Live lifecycle stage and keep the last Bitmovin status reading in its information control.
+- Plot MoQ output segment processing time from Live Heartbeat Poll or signed Push data.
+
+### Fixed
+
+- Copy live channels with MoQ or other JSON-only settings into an editable plan that preserves their configuration.
+- Keep Live input coordinates and their copy buttons within the page on narrow screens.
+- Restore focus after closing the enlarged VOD player.
+- Keep Bitmovin status reads moving while Live channel starts occupy the action slots.
+
+### Security
+
+- Use the patched Effect version in Prisma tooling for [GHSA-7589-6fvf-x4pw](https://github.com/advisories/GHSA-7589-6fvf-x4pw).
+
 ## [1.3.2] - 2026-11-19
 
 For existing installations, back up the database, apply the additive Prisma migrations, and update Web and Worker together. See the [database upgrade guide](./docs/DATABASE-UPGRADES.md).
@@ -335,6 +372,7 @@ instructions.
 Record implemented changes under **Unreleased** until their tagged release is
 published.
 
+[1.3.3]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.3
 [1.3.2]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.2
 [1.3.1]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.1
 [1.3.0]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.0

@@ -9,7 +9,7 @@ export const FEATURES = Object.freeze(
 			files: {
 				"src/vmaf/resource-plan.test.ts": 12,
 				"src/vmaf/banding-resources.test.ts": 2,
-				"src/vmaf/processor.test.ts": 254,
+				"src/vmaf/processor.test.ts": 255,
 			},
 		},
 		{
@@ -52,7 +52,7 @@ export const FEATURES = Object.freeze(
 			files: {
 				"src/lib/server/create-request.test.ts": 11,
 				"src/app/api/encoding-jobs/route.test.ts": 71,
-				"src/app/api/live-channels/route.test.ts": 91,
+				"src/app/api/live-channels/route.test.ts": 92,
 			},
 		},
 		{

@@ -35,13 +35,14 @@ describe("Settings Web build information", () => {
 			).toBeInTheDocument();
 		});
 
-		it(`${locale}: renders an explicit unknown commit without a guessed date`, () => {
+		it(`${locale}: omits the commit row when the build has no commit metadata`, () => {
 			renderLocalized(<BuildInfoPanel version="0.1.0" commit={null} />, locale);
 			expect(
-				screen.getByText(
-					translate(messagesFor(locale), "settingsBuild.unknown"),
+				screen.queryByText(
+					translate(messagesFor(locale), "settingsBuild.commit"),
 				),
-			).toBeInTheDocument();
+			).toBeNull();
+			expect(screen.getByText("0.1.0")).toBeInTheDocument();
 			expect(document.querySelector("time")).toBeNull();
 		});
 	}

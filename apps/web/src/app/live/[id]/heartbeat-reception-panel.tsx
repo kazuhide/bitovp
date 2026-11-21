@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronRight } from "lucide-react";
 import { useId } from "react";
 import { formatDateTime } from "@/lib/format";
 import type { MessageKey } from "@/lib/i18n";
@@ -89,76 +90,86 @@ export function HeartbeatReceptionPanel({
 	return (
 		<details
 			aria-labelledby={heading}
-			className="rounded-md border border-zinc-800 bg-zinc-900/30 p-3"
+			className="group rounded-md border border-zinc-800 bg-zinc-900/30"
 		>
-			<summary className="cursor-pointer">
-				<h3 id={heading} className="font-medium text-sm text-zinc-200">
-					{t("live.push.title")}
-				</h3>
-				<p className={`text-sm ${warn ? "text-amber-300" : "text-zinc-300"}`}>
-					{t(STATE_COPY[view.state])}
-				</p>
-			</summary>
-			<p className="mt-1 text-xs text-zinc-400">{t("live.push.boundary")}</p>
-			{registration ? (
-				<dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-					<div>
-						<dt className="text-xs text-zinc-400">
-							{t("heartbeatWebhook.modeLabel")}
-						</dt>
-						<dd>
-							{t(
-								registration.mode === "PER_ENCODING"
-									? "live.push.perEncoding"
-									: registration.mode === "LEGACY_ACCOUNT"
-										? "heartbeatWebhook.modeLegacy"
-										: registration.mode === "POLL_ONLY"
-											? "live.push.pollOnly"
-											: "live.push.pendingVersion",
-							)}
-						</dd>
-					</div>
-					<div>
-						<dt className="text-xs text-zinc-400">
-							{t("live.push.actualVersion")}
-						</dt>
-						<dd>{registration.resolvedEncoderVersion ?? "—"}</dd>
-					</div>
-					<div>
-						<dt className="text-xs text-zinc-400">
-							{t("live.push.registration")}
-						</dt>
-						<dd>
-							{t(
-								registration.status === "ACTIVE"
-									? "live.push.registered"
-									: registration.status === "DELETED"
-										? "live.push.retired"
-										: "live.push.notRegistered",
-							)}
-						</dd>
-					</div>
-				</dl>
-			) : null}
-			{view.latest ? (
-				<>
-					<dl className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
-						{metrics.map(([label, value]) => (
-							<div key={label} className="min-w-0">
-								<dt className="text-xs text-zinc-400">{label}</dt>
-								<dd className="mt-0.5 break-words text-sm text-zinc-200">
-									{value}
-								</dd>
-							</div>
-						))}
-					</dl>
-					<p
-						className={`mt-2 text-xs ${view.sampleState === "stale" || view.sampleState === "clock-skew" ? "text-amber-300" : "text-zinc-400"}`}
+			<summary className="flex cursor-pointer list-none items-start gap-2 px-3 py-2 hover:bg-zinc-800/50">
+				<ChevronRight
+					aria-hidden
+					className="mt-0.5 size-3.5 shrink-0 text-zinc-500 group-open:rotate-90"
+				/>
+				<div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+					<h3 id={heading} className="font-medium text-sm text-zinc-200">
+						{t("live.push.title")}
+					</h3>
+					<span
+						className={`text-xs ${warn ? "text-amber-300" : "text-zinc-400"}`}
 					>
-						{t(SAMPLE_COPY[view.sampleState])}
-					</p>
-				</>
-			) : null}
+						{t(STATE_COPY[view.state])}
+					</span>
+				</div>
+			</summary>
+			<div className="border-zinc-800 border-t px-3 py-3">
+				<p className="text-xs text-zinc-400">{t("live.push.boundary")}</p>
+				{registration ? (
+					<dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+						<div>
+							<dt className="text-xs text-zinc-400">
+								{t("heartbeatWebhook.modeLabel")}
+							</dt>
+							<dd>
+								{t(
+									registration.mode === "PER_ENCODING"
+										? "live.push.perEncoding"
+										: registration.mode === "LEGACY_ACCOUNT"
+											? "heartbeatWebhook.modeLegacy"
+											: registration.mode === "POLL_ONLY"
+												? "live.push.pollOnly"
+												: "live.push.pendingVersion",
+								)}
+							</dd>
+						</div>
+						<div>
+							<dt className="text-xs text-zinc-400">
+								{t("live.push.actualVersion")}
+							</dt>
+							<dd>{registration.resolvedEncoderVersion ?? "—"}</dd>
+						</div>
+						<div>
+							<dt className="text-xs text-zinc-400">
+								{t("live.push.registration")}
+							</dt>
+							<dd>
+								{t(
+									registration.status === "ACTIVE"
+										? "live.push.registered"
+										: registration.status === "DELETED"
+											? "live.push.retired"
+											: "live.push.notRegistered",
+								)}
+							</dd>
+						</div>
+					</dl>
+				) : null}
+				{view.latest ? (
+					<>
+						<dl className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+							{metrics.map(([label, value]) => (
+								<div key={label} className="min-w-0">
+									<dt className="text-xs text-zinc-400">{label}</dt>
+									<dd className="mt-0.5 break-words text-sm text-zinc-200">
+										{value}
+									</dd>
+								</div>
+							))}
+						</dl>
+						<p
+							className={`mt-2 text-xs ${view.sampleState === "stale" || view.sampleState === "clock-skew" ? "text-amber-300" : "text-zinc-400"}`}
+						>
+							{t(SAMPLE_COPY[view.sampleState])}
+						</p>
+					</>
+				) : null}
+			</div>
 		</details>
 	);
 }

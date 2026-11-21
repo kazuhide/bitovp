@@ -191,7 +191,9 @@ ModelOracle::ModelOracle(std::vector<ModelInput> inputs, ModelOracleConfig confi
         VmafModelConfig model_config{};
         model_config.name = input.id.c_str();
         VmafModel *model = nullptr;
-        const int load_error = vmaf_model_load_from_path(&model, &model_config, input.path.c_str());
+        const int load_error = input.bytes
+            ? bitovp_oracle_load_model_bytes(&model, &model_config, input.bytes->data(), input.bytes->size())
+            : vmaf_model_load_from_path(&model, &model_config, input.path.c_str());
         if (load_error) {
             // The pinned loader frees a partially built model on failure.
             check(load_error, "load official model " + input.id);

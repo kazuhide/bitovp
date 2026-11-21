@@ -1,15 +1,19 @@
 "use client";
 
 import { useT } from "@/lib/i18n/context";
+import { FlatSection } from "./flat-section";
+import { LIVE_SECTION_TITLE_KEYS } from "./section-layout";
 import { useRunHealth } from "./stream-health";
 
 export function RunOutcome({
 	channelId,
 	runId,
+	runSequence,
 	canReadHealth,
 }: {
 	channelId: string;
 	runId: string;
+	runSequence: number;
 	canReadHealth: boolean;
 }) {
 	const { t } = useT();
@@ -27,15 +31,14 @@ export function RunOutcome({
 		);
 
 	return (
-		<ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-zinc-300">
-			<li>
-				{t(
-					outputGenerated
-						? "live.runOutputGenerated"
-						: "live.runOutputUnverified",
-				)}
-			</li>
-			<li>{t("live.runPlaybackUnverified")}</li>
-		</ul>
+		<FlatSection
+			id="sec-last-run"
+			title={t(LIVE_SECTION_TITLE_KEYS["sec-last-run"])}
+			summary={t("runs.seq", { n: runSequence })}
+		>
+			{outputGenerated ? (
+				<p className="text-sm text-zinc-300">{t("live.runOutputGenerated")}</p>
+			) : null}
+		</FlatSection>
 	);
 }

@@ -999,6 +999,9 @@ export const en = {
 		archiveClockBasis:
 			"Estimated from the recording start and current position. Older recordings use the first observed frame.",
 		title: "MoQ playback",
+		viewerMetrics: "Player",
+		noLiveSamples: "Measurements appear during playback",
+		playerDetails: "Playback details",
 		play: "Play",
 		stop: "Stop",
 		idle: "Not playing",
@@ -1028,8 +1031,10 @@ export const en = {
 		renderingCanvas: "Canvas (video-only capture)",
 		canvasUpdates: "Canvas image updates",
 		canvasMeasurement:
-			"Distinct image updates per second. Source FPS and decoder counters are unavailable.",
-		frameHistory: "Frame observations (mixed or unknown source)",
+			"The browser counts distinct images observed on the Player Web X Canvas each second. This is a browser observation of image changes.",
+		frameHistory: "Frame observations",
+		frameHistoryMeasurement:
+			"These rates use browser frame counts for the video element and observed image changes for Canvas. Older samples may omit the rendering source.",
 		resolution: "Resolution",
 		dropped: "Dropped frames",
 		buffer: "Buffer",
@@ -1058,12 +1063,14 @@ export const en = {
 		relayOperations: "Configured token operations",
 		savedHistory: "Saved MoQ observations",
 		historyFailed: "Could not load saved observations",
-		noHistory: "No saved observations",
+		noHistory: "No saved playback observations",
 		observationSession: "Observation session",
 		browserSource: "Browser observations · Player Web X / MoQ",
 		historyClock:
 			"Browser clock UTC · start time + elapsed time; clocks may differ.",
-		bufferHistory: "Buffer (mixed or unknown source)",
+		bufferHistory: "Playback buffer",
+		bufferMeasurement:
+			"Player Web X reports its buffer level when available. In video-element playback, the browser can also report the seconds buffered ahead. Earlier observations may lack a source label.",
 		noSamples: "No saved samples",
 		recordedScope:
 			"Recording covers received preview playback only, up to 90 seconds.",
@@ -1113,14 +1120,30 @@ export const en = {
 		},
 	},
 	moqEncoder: {
-		title: "Live Encoder heartbeat",
+		title: "Encoder",
+		poll: "Heartbeat · Poll",
+		lastReport: "Heartbeat · Last run report",
+		sourceHelp:
+			"The input graphs use the API read time of Bitmovin Live Heartbeat (UTC).",
+		details: "Input packets",
+		ingestUnhealthy: "Input unhealthy",
+		ingest: {
+			CONNECTED: "Input connected",
+			DISCONNECTED: "Input disconnected",
+			WAITING_FOR_FIRST_CONNECT: "Waiting for input",
+			ERROR: "Input error",
+		},
 		source: "Encoder API · receipt time UTC",
-		empty: "No saved heartbeat data.",
+		empty: "No saved data",
 		yes: "Yes",
 		no: "No",
 		inputBitrate: "Input bitrate",
 		videoFps: "Input video FPS",
-		segmentProcessing: "Segment processing",
+		segmentProcessing: "Output segment processing time",
+		output: "Output",
+		outputHelp:
+			"Segment processing times reported by Bitmovin Live Heartbeat via Poll or signed Push. Times are UTC.",
+		pushReadFailed: "Could not load Push measurements.",
 		inputPackets: "Input packet errors (cumulative)",
 		video: "Video",
 		audio: "Audio",
@@ -1688,6 +1711,33 @@ export const en = {
 		submitting: "Changing…",
 		failed: "Password change failed",
 	},
+	operationAnalytics: {
+		title: "Operation analytics",
+		caption: "Live MoQ preview outcomes and first-frame times",
+		collecting: "Collecting",
+		paused: "Collection paused",
+		collectionSettings: "Collection settings",
+		loadFailed: "Could not load operation analytics.",
+		period: "Live MoQ preview · Weeks start Monday in UTC",
+		attempts: "Playback attempts",
+		firstFrameTime: "Time to first frame",
+		noFirstFrame: "No first-frame measurements in this period.",
+		empty: "No recorded attempts in this period.",
+		table: "Weekly MoQ playback data",
+		week: "Week of (UTC)",
+		partial: "In progress",
+		started: "Starts",
+		firstFrame: "First frames",
+		failed: "Failed",
+		canceled: "Canceled",
+		unconfirmed: "Unconfirmed",
+		pending: "Pending",
+		share: "First-frame share",
+		p50: "p50",
+		p95: "p95",
+		milliseconds: "{value} ms",
+		shareNote: "The first-frame share excludes pending attempts.",
+	},
 	common: {
 		accessAdminOnly:
 			"This area is for administrators. Ask an admin if you need access.",
@@ -1924,8 +1974,7 @@ export const en = {
 		recoverBody:
 			"Review diagnostics, the end reason and the encoder state before choosing the next action.",
 		bootTitle: "Starting",
-		bootBody:
-			"Startup time varies by region and configuration. Open actions to cancel the start.",
+		bootBody: "Startup time varies by region and configuration.",
 		stoppingTitle: "Stopping — nothing to do",
 		stoppingBody:
 			"The encoder is shutting down. The step log below shows the stop steps; the channel becomes STOPPED when they finish.",
@@ -1957,7 +2006,6 @@ export const en = {
 		idleTitle: "Nothing to do",
 		idleBody:
 			"The channel is not running and nothing is armed. Start the channel, or schedule an action.",
-		goActions: "Actions",
 		goFeeders: "Feeders",
 		goSchedule: "Schedule",
 		goAlerts: "Alerts",
@@ -2178,6 +2226,7 @@ export const en = {
 		playable: "Playable",
 		never: "never",
 		unknown: "unknown",
+		awaitingData: "Waiting for data",
 		none: "None",
 		clockSkew: "clock skew",
 		secondsAgo: "{seconds}s ago",
@@ -2689,7 +2738,7 @@ export const en = {
 		hdrProtocolHint: "HDR base layer · HLS · local CPU",
 		hdrPqContext: "HDR VMAF · PQ / ICtCp 16-bit",
 		hdrHlgContext: "HLG → PQ · 1000 nits",
-		hdrBaseLayerScope: "HDR base layer · RPU display mapping not measured",
+		hdrBaseLayerScope: "HDR base layer measured",
 		mixedHdrContexts:
 			"HDR/SDR or HLG normalization differs. These scores have different measurement conditions.",
 		separateHdrContexts:
@@ -2846,6 +2895,9 @@ export const en = {
 		bulkDeleteFailed: "Bulk delete failed",
 		loadMore: "Load more",
 		backToLab: "Back to the VMAF Lab",
+		sourceEncodingJob: "Open source VOD job",
+		runDetails: "Run details",
+		measurementConditions: "Comparison conditions",
 		pendingScore: "Pending",
 		mayHaveBeenDeleted: " They may have been deleted. ",
 		reportResourceLabel: "report {label}",
@@ -3269,7 +3321,7 @@ export const en = {
 	lifecycle: {
 		/* Lifecycle durations shown here must be measured and include their sample counts. */
 		aria: "Encoder lifecycle",
-		s1: "① Start requested",
+		s1: "Start requested",
 		s1Hint:
 			"Encoder not running. A manual start or the schedule's START row boots it.",
 		s1ErrorHint:
@@ -3277,25 +3329,26 @@ export const en = {
 		// Use amber while provider status is unconfirmed. Once the provider confirms an encoding has ended,
 		// the lifecycle hint must not imply that the encoder may still be running.
 		providerUnknownHint:
-			"Provider status cannot be confirmed — Bitmovin's status read for this run's encoding is failing (last confirmed {at}; unconfirmed since {since}). It is re-checked every 30 s. Stop remains available; start, restart, slate, SCTE-35, timeshift and new feeders wait for a fresh reading.",
-		providerUnobservedHint:
-			"Waiting for the first Bitmovin encoder status check. Until it arrives, this channel is not shown as confirmed on air.",
+			"Last Bitmovin reading {status} ({at}){unavailableSince}",
+		providerUnavailableSince: " (no update since {since})",
+		providerUnobservedHint: "No Bitmovin status recorded",
 		providerUnknownNever: "never",
 		providerTerminalHint:
 			"Bitmovin reported this run's encoding {status} at {at}.",
-		inputUnobserved: "Input status unconfirmed",
+		inputUnobserved: "Waiting for input data",
+		inputUnavailable: "No input data",
 		inputUnobservedHint:
 			"Input connection status is not available for this run.",
-		s2: "② Instance booting",
+		s2: "Instance booting",
 		s2Hint:
 			"Bitmovin is provisioning the encoder instance. Startup time varies by region and configuration. View past measurements under Live in Settings. Input cannot be received yet.",
-		s3: "③ Waiting for input",
+		s3: "Waiting for input",
 		s3Hint:
 			"The encoder is up and listening. Nothing is broadcast yet — slates and output need a CONNECTED input. Connect your feed (or a feeder); slate content can already be registered.",
-		s4: "④ Input connected — encoding & delivering",
+		s4: "Input connected",
 		s4Hint:
-			"The pipeline is live: slates (蓋被せ) can be inserted from here on. On a running, fed channel a playback probe saw its first segment 31.8s in (n=1; connect-to-first-segment itself is unmeasured).",
-		s7: "⑦ Stopped",
+			"The encoder is receiving and encoding input. Check the generated output or open a preview to verify playback.",
+		s7: "Stopped",
 		s7Hint:
 			"While stopping, wait for completion. An ended encoding cannot be restarted. After stopping, Start new run creates a new encoder. Register insertable content again for that run.",
 	},
@@ -3306,7 +3359,6 @@ export const en = {
 		cancelStartPending: "Cancelling start",
 		cancelStart: "Cancel start",
 		title: "Live Channels",
-		providerStatusUnconfirmed: "{status} · Bitmovin status unconfirmed",
 		newChannel: "New Live Channel",
 		inventory: {
 			title: "Live encoder inventory",
@@ -3463,7 +3515,7 @@ export const en = {
 			output: "Output",
 			ok: "Healthy",
 			down: "Not detected",
-			unobservable: "Not measurable (no HLS)",
+			unobservable: "No HLS data",
 			stale:
 				"No Poll status sample within 90 seconds. This is separate from Push reception or a broadcast stopping.",
 			timelineTitle: "Broadcast timeline",
@@ -3547,6 +3599,7 @@ export const en = {
 		encoderStopped: "Stopped",
 		encoderActive: "Encoder running",
 		encoderStatusUnverified: "Encoder state unverified",
+		recordedStatus: "Recorded {status}",
 		runOutputGenerated: "Output generated",
 		runErrorRecorded: "Error recorded",
 		runOutputUnverified: "Output unverified",
@@ -4539,7 +4592,6 @@ export const en = {
 			"This Web only. These values do not identify the worker, another Web service, or the Bitmovin encoder version.",
 		version: "App version",
 		commit: "Commit",
-		unknown: "Unknown",
 	},
 	settingsX: {
 		users: "Users",
@@ -4580,6 +4632,9 @@ export const en = {
 		featureQcVmaf: "VMAF lab and QC",
 		featureQcVmafHint:
 			"Off by default. When off, the VMAF lab, the wizard's QC gate editor and the per-job QC surfaces are hidden, no new measurements are created, and a plan carrying a qc block is refused. Jobs already parked or failed under an existing gate stay releasable — their QC panel, override and evidence export keep working.",
+		featureOperationAnalytics: "Live operation analytics",
+		featureOperationAnalyticsHint:
+			"Records the starts and outcomes of MoQ preview attempts for your organization. The weekly report stays available when collection is paused.",
 		featuresLoadFailed: "Could not load the feature settings.",
 		featuresSavedReloadHint:
 			"Saved. Reload the page for the navigation and the wizard to pick it up.",

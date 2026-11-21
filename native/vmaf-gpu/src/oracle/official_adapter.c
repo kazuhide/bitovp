@@ -5,6 +5,7 @@
 #include "feature/feature_extractor.h"
 #include "feature/feature_name.h"
 #include "model.h"
+#include "read_json_model.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -13,6 +14,13 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+int bitovp_oracle_load_model_bytes(VmafModel **model, VmafModelConfig *config,
+                                  const char *bytes, size_t size)
+{
+    if (size > INT_MAX) return -EOVERFLOW;
+    return vmaf_read_json_model_from_buffer(model, config, bytes, (int)size);
+}
 
 static const VmafOption *find_option(const VmafFeatureExtractor *extractor,
                                     const char *key)

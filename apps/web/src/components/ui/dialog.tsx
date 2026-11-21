@@ -8,6 +8,7 @@ import { useT } from "@/lib/i18n/context";
 type DialogProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
+	onCloseAutoFocus?: (event: Event) => void;
 	title: string;
 	description?: string;
 	/** Wide layout for browsing UIs (storage picker). */
@@ -26,6 +27,7 @@ const widths = {
 export function Dialog({
 	open,
 	onOpenChange,
+	onCloseAutoFocus,
 	title,
 	description,
 	wide = false,
@@ -38,6 +40,7 @@ export function Dialog({
 			<DialogPrimitive.Portal>
 				<DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/60" />
 				<DialogPrimitive.Content
+					onCloseAutoFocus={onCloseAutoFocus}
 					className={`fixed top-1/2 left-1/2 z-50 max-h-[85vh] ${
 						widths[size ?? (wide ? "wide" : "default")]
 					} -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950 p-6 shadow-xl`}

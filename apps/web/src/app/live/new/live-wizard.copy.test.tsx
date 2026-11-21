@@ -1,18 +1,21 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { liveChannelPlanSchema } from "@bitovp/core";
-import { act, fireEvent, screen } from "@testing-library/react";
+import { liveChannelPlanSchema, validateLiveChannel } from "@bitovp/core";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
 import { LiveWizard } from "./live-wizard";
 
-const apiFetch = vi.fn();
+const { apiFetch, push } = vi.hoisted(() => ({
+	apiFetch: vi.fn(),
+	push: vi.fn(),
+}));
 vi.mock("@/lib/api", async (original) => ({
 	...(await original<Record<string, unknown>>()),
 	apiFetch: (...args: unknown[]) => apiFetch(...args),
 }));
 vi.mock("next/navigation", () => ({
-	useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+	useRouter: () => ({ push, replace: vi.fn() }),
 	useSearchParams: () => new URLSearchParams(),
 }));
 beforeEach(() => vi.clearAllMocks());
@@ -130,6 +133,124 @@ it("loads a channel into editable fields without creation and keeps edits on cac
 	expect(apiFetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
 		false,
 	);
+});
+
+it.each([
+	"FMP4",
+	"CMAF",
+] as const)("copies a %s MoQ plan as editable JSON and preserves its settings on explicit creation", async (kind) => {
+	const id = "70c37149-8ccc-4b3d-bc64-0fa06e49e82b";
+	const newChannelId = "fb801929-e7a4-450d-876e-69bf643eaaa0";
+	const credentialId = "eee3c000-00e3-4aaa-8aaa-000000000aaa";
+	const plan = JSON.parse(
+		readFileSync(
+			join(
+				__dirname,
+				"../../../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+			),
+			"utf8",
+		),
+	);
+	plan.name = "RTMP to MoQ";
+	plan.bitmovin = {
+		accountId: "5a6ad9b8-2cae-4485-a0b3-99130b771be5",
+		cloudRegion: "AKAMAI_JP_OSA",
+		encoderVersion: "BETA",
+		labels: ["moq-example"],
+	};
+	plan.liveInput = {
+		key: "primary",
+		kind: "REDUNDANT_RTMP",
+		name: "Primary RTMP input",
+		ingestPoints: [{ applicationName: "live", streamKey: "ExampleStream" }],
+	};
+	plan.outputs = [
+		{
+			key: "relay",
+			kind: "MOQ",
+			name: "Sample MoQ relay",
+			credentialId,
+			draftVersion: "DRAFT_16",
+			trackNamespace: ["sample-broadcast"],
+		},
+	];
+	plan.renditions = [plan.renditions[1], plan.renditions[3]];
+	plan.muxings = [
+		{
+			...plan.muxings[1],
+			kind,
+			segmentLength: kind === "CMAF" ? 0.5 : 1,
+			...(kind === "CMAF" ? { framesPerCmafChunk: 3 } : {}),
+			destination: { outputKey: "relay", path: "test/video" },
+		},
+		{
+			...plan.muxings[3],
+			kind,
+			segmentLength: kind === "CMAF" ? 0.5 : 1,
+			destination: { outputKey: "relay", path: "test/audio" },
+		},
+	];
+	plan.liveManifests = [];
+	plan.start = { encodingOption: "CUSTOM", streamKey: "ExampleStream" };
+	expect(
+		validateLiveChannel(liveChannelPlanSchema.parse(plan)).filter(
+			(issue) => issue.level === "error",
+		),
+	).toEqual([]);
+
+	apiFetch.mockImplementation(async (url: string) => {
+		if (url === `/api/live-channels/${id}`) return { name: plan.name, plan };
+		if (url === "/api/auth/session")
+			return {
+				mode: "users",
+				configured: true,
+				authenticated: true,
+				role: "OPERATOR",
+				effectiveUserId: "user",
+				organizationId: "org",
+			};
+		if (url === "/api/credentials")
+			return [{ id: credentialId, provider: "MOQ" }];
+		if (url.startsWith("/api/live-channels/moq-readiness?"))
+			return { status: "ready", issues: [] };
+		if (url === "/api/live-channels") return { id: newChannelId };
+		return [];
+	});
+	renderWithQuery(<LiveWizard duplicateFrom={id} />);
+	fireEvent.click(await screen.findByRole("button", { name: "Edit JSON" }));
+	const editor = screen.getByLabelText("Live channel plan JSON");
+	expect(editor).toHaveValue(JSON.stringify(plan, null, 2));
+	expect(screen.queryByRole("textbox", { name: "Channel name" })).toBeNull();
+	expect(
+		screen.queryByRole("button", { name: "Create channel (imported plan)" }),
+	).toBeNull();
+	const edited = { ...plan, name: "Edited MoQ channel" };
+	fireEvent.change(editor, { target: { value: JSON.stringify(edited) } });
+	fireEvent.click(screen.getByRole("button", { name: "Load plan" }));
+	const create = await screen.findByRole("button", {
+		name: "Create channel (imported plan)",
+	});
+	await waitFor(() => expect(create).toBeEnabled());
+
+	const writes = () =>
+		apiFetch.mock.calls.filter(([, init]) =>
+			["POST", "PATCH", "PUT", "DELETE"].includes(init?.method),
+		);
+	expect(writes()).toHaveLength(0);
+	fireEvent.click(create);
+	await waitFor(() =>
+		expect(push).toHaveBeenCalledWith(`/live/${newChannelId}`),
+	);
+	expect(writes()).toEqual([
+		[
+			"/api/live-channels",
+			expect.objectContaining({
+				method: "POST",
+				body: expect.any(String),
+			}),
+		],
+	]);
+	expect(JSON.parse(writes()[0]?.[1].body)).toEqual({ plan: edited });
 });
 
 it("does not expose a blank editable form while copying or after a source failure", async () => {

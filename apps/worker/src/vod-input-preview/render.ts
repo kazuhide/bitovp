@@ -174,6 +174,7 @@ export async function renderVodInputPreview(
 		"-n",
 	];
 	const temporary = new Set<string>();
+	const renderedParts = new Map<string, { name: string; size: number }>();
 	const path = join(
 		input.directory,
 		preparing ? "prepared.mp4" : "preview.mp4",
@@ -192,12 +193,11 @@ export async function renderVodInputPreview(
 			segment.durationMs,
 			frameRate,
 		);
-		const name = `${media}-part-${index}.${media === "video" ? "mp4" : "wav"}`;
-		const output = join(input.directory, name);
-		temporary.add(output);
 		let read: string[], selected: string;
+		let identity: VodInputTimelineSourceFacts["identity"] | null = null;
 		if (segment.kind === "source") {
 			const fact = sourceFacts(segment.sourceKey);
+			identity = fact.identity;
 			const stream = media === "video" ? fact.video : fact.audio;
 			if (!stream)
 				throw new MediaOperationError(
@@ -220,85 +220,98 @@ export async function renderVodInputPreview(
 			];
 			selected = media === "video" ? "0:v:0" : "0:a:0";
 		}
-		await execute(
-			input.ffmpegPath ?? "ffmpeg",
-			[
-				...common,
-				...read,
-				"-t",
-				seconds,
-				"-map",
-				selected,
-				"-map_metadata",
-				"-1",
-				"-map_chapters",
-				"-1",
-				"-sn",
-				"-dn",
-				...(media === "video"
-					? [
-							"-an",
-							"-vf",
-							`scale=${canvas.width}:${canvas.height}:force_original_aspect_ratio=decrease:force_divisible_by=2:reset_sar=1,pad=${canvas.width}:${canvas.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps}${preparing ? ",setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709" : ""}`,
-							"-c:v",
-							"libx264",
-							"-preset",
-							preparing ? "veryfast" : "ultrafast",
-							"-crf",
-							preparedProfile?.crf ?? "32",
-							...(preparing
-								? [
-										"-color_primaries",
-										"bt709",
-										"-color_trc",
-										"bt709",
-										"-colorspace",
-										"bt709",
-									]
-								: ["-maxrate", "1200k", "-bufsize", "2400k"]),
-							"-threads",
-							"1",
-							"-pix_fmt",
-							"yuv420p",
-							"-f",
-							"mp4",
-							"-video_track_timescale",
-							String(frameRate.num),
-							"-frames:v",
-							String(frameCount),
-						]
-					: [
-							"-vn",
-							"-af",
-							`aresample=48000:async=1:first_pts=0,apad=whole_dur=${seconds},atrim=duration=${seconds},asetpts=N/SR/TB`,
-							"-c:a",
-							"pcm_s16le",
-							"-ar",
-							"48000",
-							"-ac",
-							"2",
-							"-threads",
-							"1",
-							"-f",
-							"wav",
-						]),
-				"-fs",
-				String(maxBytes),
-				output,
-			],
-			options(),
-		);
-		bridge.throwIfFailed();
-		const size = (await stat(output)).size;
-		partBytes += size;
+		const args = [
+			...common,
+			...read,
+			"-t",
+			seconds,
+			"-map",
+			selected,
+			"-map_metadata",
+			"-1",
+			"-map_chapters",
+			"-1",
+			"-sn",
+			"-dn",
+			...(media === "video"
+				? [
+						"-an",
+						"-vf",
+						`scale=${canvas.width}:${canvas.height}:force_original_aspect_ratio=decrease:force_divisible_by=2:reset_sar=1,pad=${canvas.width}:${canvas.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps}${preparing ? ",setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709" : ""}`,
+						"-c:v",
+						"libx264",
+						"-preset",
+						preparing ? "veryfast" : "ultrafast",
+						"-crf",
+						preparedProfile?.crf ?? "32",
+						...(preparing
+							? [
+									"-color_primaries",
+									"bt709",
+									"-color_trc",
+									"bt709",
+									"-colorspace",
+									"bt709",
+								]
+							: ["-maxrate", "1200k", "-bufsize", "2400k"]),
+						"-threads",
+						"1",
+						"-pix_fmt",
+						"yuv420p",
+						"-f",
+						"mp4",
+						"-video_track_timescale",
+						String(frameRate.num),
+						"-frames:v",
+						String(frameCount),
+					]
+				: [
+						"-vn",
+						"-af",
+						`aresample=48000:async=1:first_pts=0,apad=whole_dur=${seconds},atrim=duration=${seconds},asetpts=N/SR/TB`,
+						"-c:a",
+						"pcm_s16le",
+						"-ar",
+						"48000",
+						"-ac",
+						"2",
+						"-threads",
+						"1",
+						"-f",
+						"wav",
+					]),
+			"-fs",
+			String(maxBytes),
+		];
+		// Reuse only job-local outputs from generated inputs or a versioned object.
+		// The argument list includes the video frame count after timeline rounding.
+		const version = identity?.versionId?.trim();
+		const reusable =
+			identity === null ||
+			Boolean(identity.generation?.trim() || (version && version !== "null"));
+		const key = reusable ? JSON.stringify([identity, args]) : undefined;
+		let rendered = key === undefined ? undefined : renderedParts.get(key);
+		if (rendered) {
+			bridge.throwIfFailed();
+		} else {
+			const name = `${media}-part-${index}.${media === "video" ? "mp4" : "wav"}`;
+			const output = join(input.directory, name);
+			temporary.add(output);
+			await execute(input.ffmpegPath ?? "ffmpeg", [...args, output], options());
+			bridge.throwIfFailed();
+			rendered = { name, size: (await stat(output)).size };
+		}
+		// Count each logical occurrence even when the mux reads one file again.
+		partBytes += rendered.size;
 		if (
-			size < 1 ||
-			size >= maxBytes ||
+			rendered.size < 1 ||
+			rendered.size >= maxBytes ||
 			partBytes >
 				(preparing ? 2 * MAX_VOD_INPUT_PREPARATION_BYTES : 128 * 1024 ** 2)
 		)
 			throw new MediaOperationError("OUTPUT_LIMIT");
-		return name;
+		if (key !== undefined) renderedParts.set(key, rendered);
+		return rendered.name;
 	};
 	const track = async (
 		media: "video" | "audio",

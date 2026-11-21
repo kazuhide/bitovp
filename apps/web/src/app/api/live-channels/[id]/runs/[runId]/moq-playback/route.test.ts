@@ -63,7 +63,11 @@ const outputStep = (): StepLogEntry => ({
 	startedAt: "2026-11-17T00:00:02.000Z",
 	finishedAt: "2026-11-17T00:00:04.000Z",
 });
-const log = (): StepLogEntry[] => [
+const log = (
+	muxingKind:
+		| "CREATE_MUXING_FMP4"
+		| "CREATE_MUXING_CMAF" = "CREATE_MUXING_FMP4",
+): StepLogEntry[] => [
 	outputStep(),
 	{
 		step: "encoding:main",
@@ -75,14 +79,14 @@ const log = (): StepLogEntry[] => [
 	},
 	{
 		step: "muxing:video",
-		kind: "CREATE_MUXING_FMP4",
+		kind: muxingKind,
 		status: "DONE",
 		payload: {},
 		refs: { encodingId: "encoding:main", outputId: "output:moq" },
 		resourceId: OTHER,
 	},
 ];
-const run = () => ({
+const run = (muxingKind?: Parameters<typeof log>[0]) => ({
 	id: RUN,
 	liveChannelId: CHANNEL,
 	organizationId: ORG,
@@ -90,7 +94,7 @@ const run = () => ({
 	endedAt: null,
 	cancelRequested: false,
 	bitmovinEncodingId: ENCODING,
-	stepLog: log(),
+	stepLog: log(muxingKind),
 });
 const secret = () => ({
 	relayUrl: "moqt://publisher.example:443",
@@ -157,7 +161,11 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("run-bound MoQ playback descriptor", () => {
-	it("returns only a subscribe capability and this tenant's Player key using stored run provenance", async () => {
+	it.each([
+		"CREATE_MUXING_FMP4",
+		"CREATE_MUXING_CMAF",
+	] as const)("returns only a subscribe capability and this tenant's Player key using stored %s provenance", async (kind) => {
+		mocks.run.mockResolvedValue(run(kind));
 		const response = await GET(request(), params());
 		expect(response.status).toBe(200);
 		expect(response.headers.get("cache-control")).toBe("private, no-store");
@@ -363,6 +371,22 @@ describe("run-bound MoQ playback descriptor", () => {
 		});
 		mocks.run.mockResolvedValue(value);
 		expect((await GET(request(), params())).status).toBe(409);
+		expect(mocks.credential).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{ status: "PENDING" },
+		{ refs: { encodingId: "encoding:other", outputId: "output:moq" } },
+		{ refs: { encodingId: "encoding:main", outputId: "output:other" } },
+	] as const)("refuses a CMAF muxing outside the completed run graph (%j)", async (patch) => {
+		const value = run("CREATE_MUXING_CMAF");
+		value.stepLog = value.stepLog.map((entry) =>
+			entry.kind === "CREATE_MUXING_CMAF" ? { ...entry, ...patch } : entry,
+		);
+		mocks.run.mockResolvedValue(value);
+		const response = await GET(request(), params());
+		expect(response.status).toBe(409);
+		expect(mocks.provenance).not.toHaveBeenCalled();
 		expect(mocks.credential).not.toHaveBeenCalled();
 	});
 

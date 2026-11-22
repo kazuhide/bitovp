@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace bitovp::gpu {
 struct VideoInfo {
@@ -20,6 +21,14 @@ struct PresentationTime {
     std::int64_t pts;
     int numerator, denominator;
 };
+
+struct ExperimentCudaDecoders {
+    // Retain the actual driver and NVDEC images through decoder attestation.
+    std::shared_ptr<void> driver, nvdec;
+    std::vector<std::string> codecs;
+};
+
+ExperimentCudaDecoders load_experiment_cuda_decoders();
 
 // A CPU picture whose pixels and presentation timestamp survive the decoder's
 // next() call and destruction. Keeping the owner private prevents a dangling

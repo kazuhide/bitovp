@@ -205,8 +205,13 @@ NVDEC-decoded frames stay on the GPU through feature extraction. Add
 `--verify-cpu` to compare the window against an independent software decode and
 the official CPU reference. For standalone CPU scoring use `--backend cpu
 --decode cpu` with the same window. `--device-info --backend cuda --experiment-window`
-checks that the native executable supports this experiment mode on the selected
-GPU.
+checks the selected CUDA device, the NVDEC library and the decoder configurations
+in the scorer's linked FFmpeg. The additional `experimentCudaDecoders` array
+reports the available paths using `H264`, `HEVC`, and `AV1`. The probe and CUDA
+score record the same `decoderRuntimeSha256`, covering the mapped FFmpeg libraries,
+resolved decoder symbols, and CUDA and NVDEC libraries. Each trial opens its
+encoded input with the resident decoder and verifies the decoded frames and the
+runtime through scoring.
 
 ## Compare performance
 

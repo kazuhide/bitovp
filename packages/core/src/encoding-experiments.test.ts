@@ -163,12 +163,16 @@ describe("the NVIDIA experiment request and receipt", () => {
 			sdkProbeSha256: digest,
 			maxNvencApiVersion: 208,
 		};
-		const descriptor = {
+		const descriptorWithoutDecoderRuntime = {
 			scoringProfileId: v1Profile,
 			scorerSha256: "b".repeat(64),
 			modelSha256: "c".repeat(64),
 			sourceSha256: "d".repeat(64),
 			officialRevision: "e".repeat(40),
+		};
+		const descriptor = {
+			...descriptorWithoutDecoderRuntime,
+			decoderRuntimeSha256: "f".repeat(64),
 		};
 		expect(experimentRuntimeSchema.parse(runtime)).toEqual(runtime);
 		expect(
@@ -177,14 +181,19 @@ describe("the NVIDIA experiment request and receipt", () => {
 				additionalScoringProfiles: [descriptor],
 			}).additionalScoringProfiles,
 		).toEqual([descriptor]);
-		expect(
-			experimentRuntimeSchema.safeParse({
-				...runtime,
-				additionalScoringProfiles: [
-					{ ...descriptor, officialRevision: digest },
-				],
-			}).success,
-		).toBe(false);
+		for (const invalid of [
+			descriptorWithoutDecoderRuntime,
+			{ ...descriptor, decoderRuntimeSha256: "F".repeat(64) },
+			{ ...descriptor, decoderRuntimeSha256: "f".repeat(63) },
+			{ ...descriptor, officialRevision: digest },
+		]) {
+			expect(
+				experimentRuntimeSchema.safeParse({
+					...runtime,
+					additionalScoringProfiles: [invalid],
+				}).success,
+			).toBe(false);
+		}
 	});
 
 	it("rejects requests outside the native FFmpeg adapter's limits", () => {

@@ -33,6 +33,11 @@ export function runExperimentProcess(
 			if (process.env[key] !== undefined) env[key] = process.env[key];
 		}
 		if (options.tmpDir) env.TMPDIR = options.tmpDir;
+		// libuv and Python share the Linux CLOCK_MONOTONIC clock, including across flock.
+		const timeoutNs = BigInt(options.timeoutMs) * 1_000_000n;
+		env.BITOVP_NVENC_RUNNER_DEADLINE_NS = (
+			process.hrtime.bigint() + timeoutNs
+		).toString();
 		const child = spawn(bin, args, {
 			detached: true,
 			stdio: ["ignore", "pipe", "pipe"],

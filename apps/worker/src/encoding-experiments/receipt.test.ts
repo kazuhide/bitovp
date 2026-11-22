@@ -16,6 +16,7 @@ const runtime = {
 			modelSha256,
 			sourceSha256: "7".repeat(64),
 			officialRevision: "8".repeat(40),
+			decoderRuntimeSha256: "a".repeat(64),
 		},
 	] satisfies NonNullable<ExperimentRuntime["additionalScoringProfiles"]>,
 };

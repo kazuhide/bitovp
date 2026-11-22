@@ -2,7 +2,7 @@
 
 This optional Linux runtime produces measurements for training experiments. It encodes with the selected NVENC wrapper, decodes the result into CUDA frames with NVDEC, and scores every decoded frame with Netflix VMAF v0.6.1 on CUDA. The runner uploads software-decoded reference frames and passes CUDA frames directly from NVDEC through the distorted side of the scoring graph. The encoded Matroska file lives in a per-attempt temporary directory.
 
-An experiment can also use the [BitOVP native CUDA scorer](../vmaf-gpu/README.md#build-on-linux) to score that Matroska file against the same reference window with `vmaf_v1.0.16_3d0h`. This second scorer decodes the encoded stream into CUDA frames in its own process. Set `VMAF_NATIVE_PATH` and `VMAF_MODEL_DIR` to absolute paths and run `probe` to confirm that `additionalScoringProfiles` advertises the optional model. The runner checks the scorer's experiment-window support, the pinned model SHA-256, and the GPU UUID and driver before advertising it.
+An experiment can also use the [BitOVP native CUDA scorer](../vmaf-gpu/README.md#build-on-linux) to score that Matroska file against the same reference window with `vmaf_v1.0.16_3d0h`. This second scorer decodes the encoded stream into CUDA frames in its own process. Set `VMAF_NATIVE_PATH` and `VMAF_MODEL_DIR` to absolute paths and run `probe` to confirm that `additionalScoringProfiles` advertises the optional model. The runner checks CUDA decode support for each advertised codec, the pinned model SHA-256, and the GPU UUID and driver before advertising the optional profile.
 
 ## Build a local runtime
 
@@ -56,7 +56,7 @@ A successful result includes the runtime ID, mean score and integer thousandths 
 
 Pass `--cpu-audit` to execute an additional software decode and libvmaf calculation on the same encoded artifact and source window. That diagnostic adds `cpuAudit` with the CPU mean, timings and GPU-minus-CPU difference for every frame. It uses the separate CPU filter in the same build. [Netflix VMAF v3.2.1 source](https://github.com/Netflix/vmaf/releases/tag/v3.2.1)
 
-With the optional model advertised, add `"additionalScoringProfiles": ["bitovp-vmaf-cuda-1.0.16-3d0h"]` to `trial`. Its score or failure code appears in `additionalScores`. With `--cpu-audit`, the native scorer also compares against its pinned official CPU implementation before accepting the v1.0 score.
+With the optional model advertised, add `"additionalScoringProfiles": ["bitovp-vmaf-cuda-1.0.16-3d0h"]` to `trial`. Its score or failure code appears in `additionalScores`. The worker passes the admitted profile to the runner, which verifies the official runtime independently and reserves time to return its receipt if optional scoring times out. With `--cpu-audit`, the native scorer also compares against its pinned official CPU implementation before accepting the v1.0 score.
 
 ## Test the runner
 

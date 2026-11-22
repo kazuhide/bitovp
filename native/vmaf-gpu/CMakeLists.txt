@@ -246,9 +246,12 @@ if(BITOVP_TESTS)
     add_test(NAME cuda_banding_runner COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/banding_runner_test.py" --binary "$<TARGET_FILE:bitovp-vmaf>"
       --backend cuda --vendor nvidia)
+    if(TARGET decoder_runtime_fixture)
+      set(nvdec_probe_test_args --nvdec-library-fixture "$<TARGET_FILE:decoder_runtime_fixture>")
+    endif()
     add_test(NAME cuda_device_info COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/device_probe_test.py" --binary "$<TARGET_FILE:bitovp-vmaf>"
-      --backend cuda --vendor nvidia)
+      --backend cuda --vendor nvidia ${nvdec_probe_test_args})
     add_executable(cuda_picture_ready_test tests/cuda_picture_ready_test.cpp)
     target_include_directories(cuda_picture_ready_test PRIVATE include)
     target_link_libraries(cuda_picture_ready_test PRIVATE bitovp_cuda Threads::Threads)

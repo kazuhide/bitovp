@@ -36,6 +36,7 @@ const v1Descriptor = {
 	modelSha256: "c".repeat(64),
 	sourceSha256: "d".repeat(64),
 	officialRevision: "e".repeat(40),
+	decoderRuntimeSha256: "f".repeat(64),
 };
 let role: "VIEWER" | "OPERATOR";
 let hasV1: boolean;

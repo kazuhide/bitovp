@@ -4,6 +4,9 @@
 #ifdef BITOVP_HAVE_CUDA
 #include "cuda/frame_conformer.hpp"
 #include <cuda.h>
+#ifdef __linux__
+#include <dlfcn.h>
+#endif
 #endif
 
 extern "C" {
@@ -79,6 +82,54 @@ bool has_display_transform(const AVStream *video) {
     return av_stream_get_side_data(video, AV_PKT_DATA_DISPLAYMATRIX, &matrix_size) != nullptr;
 #endif
 }
+
+#ifdef BITOVP_HAVE_CUDA
+bool supports_cuda_decode(const AVCodec *decoder) {
+    if (!decoder) return false;
+    for (int index = 0; const auto *config = avcodec_get_hw_config(decoder, index); ++index)
+        if (config->device_type == AV_HWDEVICE_TYPE_CUDA && config->pix_fmt == AV_PIX_FMT_CUDA &&
+            (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX)) return true;
+    return false;
+}
+
+const AVCodec *resident_decoder(AVCodecID id, const AVCodec *preferred) {
+    if (supports_cuda_decode(preferred)) return preferred;
+    void *position = nullptr;
+    while (const auto *candidate = av_codec_iterate(&position))
+        if (candidate->id == id && av_codec_is_decoder(candidate) && supports_cuda_decode(candidate)) return candidate;
+    return nullptr;
+}
+#endif
+}
+
+ExperimentCudaDecoders load_experiment_cuda_decoders() {
+#if defined(BITOVP_HAVE_CUDA) && defined(__linux__)
+    // FFmpeg resolves the resident decoder's NVDEC entry points at run time.
+    const auto load = [](const char *name) -> std::shared_ptr<void> {
+        if (auto *handle = dlopen(name, RTLD_NOW | RTLD_LOCAL))
+            return {handle, [](void *handle) { dlclose(handle); }};
+        return {};
+    };
+    ExperimentCudaDecoders runtime{load("libcuda.so.1"), load("libnvcuvid.so.1"), {}};
+    if (!runtime.driver || !runtime.nvdec) return {};
+    const char *map_frame = sizeof(void *) == 8 ? "cuvidMapVideoFrame64" : "cuvidMapVideoFrame";
+    const char *unmap_frame = sizeof(void *) == 8 ? "cuvidUnmapVideoFrame64" : "cuvidUnmapVideoFrame";
+    for (const auto *symbol : {"cuvidGetDecoderCaps", "cuvidCreateDecoder", "cuvidDestroyDecoder",
+            "cuvidDecodePicture", "cuvidGetDecodeStatus", "cuvidReconfigureDecoder", map_frame, unmap_frame,
+            "cuvidCtxLockCreate", "cuvidCtxLockDestroy", "cuvidCtxLock", "cuvidCtxUnlock",
+            "cuvidCreateVideoSource", "cuvidCreateVideoSourceW", "cuvidDestroyVideoSource",
+            "cuvidSetVideoSourceState", "cuvidGetVideoSourceState", "cuvidGetSourceVideoFormat", "cuvidGetSourceAudioFormat",
+            "cuvidCreateVideoParser", "cuvidParseVideoData", "cuvidDestroyVideoParser"})
+        if (!dlsym(runtime.nvdec.get(), symbol)) return {};
+    const std::pair<AVCodecID, const char *> codecs[] = {
+        {AV_CODEC_ID_H264, "H264"}, {AV_CODEC_ID_HEVC, "HEVC"}, {AV_CODEC_ID_AV1, "AV1"},
+    };
+    for (const auto &[id, name] : codecs)
+        if (resident_decoder(id, avcodec_find_decoder(id))) runtime.codecs.emplace_back(name);
+    return runtime;
+#else
+    return {};
+#endif
 }
 
 struct Decoder::Impl {
@@ -185,25 +236,8 @@ struct Decoder::Impl {
             }
             if (cuda_decode) {
 #ifdef BITOVP_HAVE_CUDA
-                const auto supports_cuda = [](const AVCodec *candidate) {
-                    for (int i = 0;; ++i) {
-                        const auto *config = avcodec_get_hw_config(candidate, i);
-                        if (!config) return false;
-                        if (config->device_type == AV_HWDEVICE_TYPE_CUDA && config->pix_fmt == AV_PIX_FMT_CUDA &&
-                            (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX)) return true;
-                    }
-                };
-                if (!supports_cuda(decoder)) {
-                    decoder = nullptr;
-                    void *iterator = nullptr;
-                    while (const auto *candidate = av_codec_iterate(&iterator)) {
-                        if (av_codec_is_decoder(candidate) && candidate->id == video->codecpar->codec_id && supports_cuda(candidate)) {
-                            decoder = candidate;
-                            break;
-                        }
-                    }
-                    if (!decoder) throw std::runtime_error("No CUDA-capable decoder is available for this codec");
-                }
+                decoder = resident_decoder(video->codecpar->codec_id, decoder);
+                if (!decoder) throw std::runtime_error("No CUDA-capable decoder is available for this codec");
 #else
                 throw std::invalid_argument("This binary was built without resident CUDA decoding");
 #endif

@@ -155,6 +155,7 @@ const vmafV1Runtime = z.strictObject({
 	modelSha256: experimentDigest,
 	sourceSha256: experimentDigest,
 	officialRevision: z.string().regex(/^[0-9a-f]{40}$/),
+	decoderRuntimeSha256: experimentDigest,
 });
 
 export const experimentRuntimeSchema = z.strictObject({

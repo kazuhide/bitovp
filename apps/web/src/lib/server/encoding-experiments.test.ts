@@ -60,6 +60,7 @@ const additionalDescriptor = {
 	scorerSha256,
 	sourceSha256: "e".repeat(64),
 	officialRevision: "f".repeat(40),
+	decoderRuntimeSha256: "9".repeat(64),
 };
 const ctx: ExperimentContext = {
 	organizationId: "00000000-0000-4000-8000-000000000001",

@@ -169,6 +169,14 @@ class RunnerTest(unittest.TestCase):
                 self.assertIsNone(runner.discover_vmaf_v1(1, gpu, "580.178.04", ["HEVC"]))
                 self.assertIsNone(runner.discover_vmaf_v1(0, gpu, "999.0", ["HEVC"]))
                 self.assertIsNone(runner.discover_vmaf_v1(0, gpu, "580.178.04", ["HEVC", "H264"]))
+                with patch.dict(os.environ, {"BITOVP_NVENC_RUNNER_DEADLINE_NS": str(40 * 10**9)}), \
+                        patch.object(runner, "monotonic_ns", return_value=35 * 10**9) as clock:
+                    self.assertIsNotNone(runner.discover_vmaf_v1(0, gpu, "580.178.04", ["HEVC"]))
+                    self.assertEqual(capture.call_args.kwargs["timeout"], 3)
+                    clock.side_effect = [35 * 10**9, 39 * 10**9]
+                    capture.reset_mock()
+                    self.assertIsNone(runner.discover_vmaf_v1(0, gpu, "580.178.04", ["HEVC"]))
+                    capture.assert_not_called()
                 model.write_bytes(b"another model")
                 self.assertIsNone(runner.discover_vmaf_v1(0, gpu, "580.178.04", ["HEVC"]))
 

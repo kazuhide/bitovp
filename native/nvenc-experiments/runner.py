@@ -29,6 +29,7 @@ MODEL_SHA256 = "5950d61fa1f861bd45d8149d80539ed9f3376cfc2495b8f0fa8e9f57cb131ee3
 VMAF_V1_PROFILE_ID = "bitovp-vmaf-cuda-1.0.16-3d0h"
 VMAF_V1_MODEL_ID = "vmaf_v1.0.16_3d0h"
 VMAF_V1_MODEL_SHA256 = "e4cf8c147e1368b35497d772920bc92f98c1ad7853c1033d8a836947f427140e"
+VMAF_V1_PROBE_RECEIPT_MARGIN_SECONDS = 2
 VMAF_V1_RECEIPT_MARGIN_SECONDS = 15
 CODECS = {"H264": "h264", "HEVC": "hevc", "AV1": "av1"}
 MAX_CAPTURE = 12 * 1024 * 1024
@@ -505,6 +506,14 @@ def matches_owned_cuda_driver(reported, driver_version):
     ) is not None
 
 
+def optional_stage_timeout(limit, reserve):
+    deadline = os.environ.get("BITOVP_NVENC_RUNNER_DEADLINE_NS")
+    if deadline is None:
+        return limit
+    remaining = (digits(deadline, "VMAF_V1_INVALID_DEADLINE") - monotonic_ns()) / 10**9
+    return min(limit, remaining - reserve)
+
+
 def discover_vmaf_v1(index, gpu_uuid, driver_version, supported_codecs):
     binary = os.environ.get("VMAF_NATIVE_PATH")
     models = os.environ.get("VMAF_MODEL_DIR")
@@ -512,6 +521,8 @@ def discover_vmaf_v1(index, gpu_uuid, driver_version, supported_codecs):
         return None
     invocation = Path(binary)
     try:
+        if optional_stage_timeout(8, VMAF_V1_PROBE_RECEIPT_MARGIN_SECONDS) <= 0:
+            return None
         tool = executable("VMAF_NATIVE_PATH", "bitovp-vmaf")
         identity = runtime_tool_identity(tool)
         binary_sha = sha256_file(tool, identity)
@@ -520,9 +531,12 @@ def discover_vmaf_v1(index, gpu_uuid, driver_version, supported_codecs):
         if model_sha != VMAF_V1_MODEL_SHA256:
             return None
         require_unchanged_tools(((tool, identity),), invocation, tool)
+        timeout = optional_stage_timeout(8, VMAF_V1_PROBE_RECEIPT_MARGIN_SECONDS)
+        if timeout <= 0:
+            return None
         output, _ = capture(
             [str(tool), "--device-info", "--backend", "cuda", "--device", str(index), "--experiment-window"],
-            "VMAF_V1_PROBE", timeout=8,
+            "VMAF_V1_PROBE", timeout=timeout,
         )
         require_unchanged_tools(((tool, identity),), invocation, tool)
         report = json.loads(output)
@@ -753,13 +767,9 @@ def score_vmaf_v1(runtime, trial, source, encoded, work, cpu_audit):
         model = work / (VMAF_V1_MODEL_ID + ".json")
         model.write_bytes(scorer.model_bytes)
         receipt = work / "bitovp-vmaf-v1.json"
-        timeout = 300
-        deadline = os.environ.get("BITOVP_NVENC_RUNNER_DEADLINE_NS")
-        if deadline is not None:
-            remaining = (digits(deadline, "VMAF_V1_INVALID_DEADLINE") - monotonic_ns()) / 10**9
-            timeout = min(timeout, remaining - VMAF_V1_RECEIPT_MARGIN_SECONDS)
-            if timeout <= 0:
-                raise RunnerError("VMAF_V1_SCORE_TIMEOUT")
+        timeout = optional_stage_timeout(300, VMAF_V1_RECEIPT_MARGIN_SECONDS)
+        if timeout <= 0:
+            raise RunnerError("VMAF_V1_SCORE_TIMEOUT")
         started = perf_counter_ns()
         capture([
             str(scorer.executable), "--reference", str(source), "--distorted", str(encoded),

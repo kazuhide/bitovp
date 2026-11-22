@@ -148,7 +148,7 @@ class RunnerTest(unittest.TestCase):
 
     def test_runtime_discovers_a_consistent_sdk_binding_from_each_encoder(self):
         digest = "b" * 64
-        listing = "  -bitovp-nvenc-settings <string> E..V....... sdk-receipt-version=2 sdk-catalog-sha256=" + digest
+        listing = "  -bitovp-nvenc-settings-v2 <string> E..V....... sdk-receipt-version=2 sdk-catalog-sha256=" + digest
         binary = Path("/runtime/bin/ffmpeg")
         codecs = ["H264", "HEVC", "AV1"]
         with patch.object(runner, "capture", return_value=(listing, "")) as capture:
@@ -163,6 +163,7 @@ class RunnerTest(unittest.TestCase):
         with patch.object(runner, "capture", side_effect=[(listing, ""), (listing.replace(digest, "c" * 64), ""), (listing, "")]):
             self.assertIsNone(runner.discover_sdk_settings(binary, codecs))
         for stale in (
+            listing.replace("-bitovp-nvenc-settings-v2 ", "-bitovp-nvenc-settings "),
             listing.replace("sdk-receipt-version=2 ", ""),
             listing.replace("receipt-version=2", "receipt-version=1"),
             listing.replace("receipt-version=2", "receipt-version=2-beta"),
@@ -215,7 +216,7 @@ class RunnerTest(unittest.TestCase):
 
             def capture(args, stage, cwd, timeout):
                 self.assertEqual(stage, "ENCODE")
-                manifest = Path(args[args.index("-bitovp-nvenc-settings") + 1])
+                manifest = Path(args[args.index("-bitovp-nvenc-settings-v2") + 1])
                 self.assertEqual(manifest.read_bytes(), trial.sdk.manifest_bytes())
                 self.assertTrue(manifest.is_relative_to(work))
                 return "", ""

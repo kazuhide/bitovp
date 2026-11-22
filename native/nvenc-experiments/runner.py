@@ -43,9 +43,10 @@ FFMPEG_ARGS = ["-hide_banner", "-nostats", "-nostdin", "-xerror", "-noauto_conve
 NUMERALS = re.compile(r"(?:0|[1-9][0-9]{0,18})\Z")
 SDK_VERSION = "13.0"
 SDK_RECEIPT_VERSION = 2
+SDK_SETTINGS_OPTION = f"-bitovp-nvenc-settings-v{SDK_RECEIPT_VERSION}"
 SDK_FIELD_PATH = re.compile(r"NV_ENC_[A-Z0-9_]+(?:\.[A-Za-z_][A-Za-z_0-9]*(?:\[[0-9]+\])?)+\Z")
 SDK_CAPABILITY = re.compile(
-    rf"^[ \t]+-bitovp-nvenc-settings[ \t]+[^\n]*\bsdk-receipt-version={SDK_RECEIPT_VERSION}"
+    rf"^[ \t]+{SDK_SETTINGS_OPTION}[ \t]+[^\n]*\bsdk-receipt-version={SDK_RECEIPT_VERSION}"
     r"[ \t]+sdk-catalog-sha256=([0-9a-f]{64})\b", re.M,
 )
 SDK_SETTINGS_FILE = "nvenc-settings.tsv"
@@ -835,7 +836,7 @@ def encode(runtime, trial, source, source_time_base, work):
     if trial.sdk is not None:
         manifest = work / SDK_SETTINGS_FILE
         manifest.write_bytes(trial.sdk.manifest_bytes())
-        options.extend(["-bitovp-nvenc-settings", str(manifest)])
+        options.extend([SDK_SETTINGS_OPTION, str(manifest)])
     _, log = capture(
         [str(runtime.ffmpeg), *FFMPEG_ARGS, "-copyts", *cuda_args(runtime), *LOCAL_INPUT, "-noautorotate", "-i", str(source),
          "-map", "0:v:0", "-an", "-sn", "-dn", "-vf",

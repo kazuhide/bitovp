@@ -1,8 +1,12 @@
 "use client";
 
-import type {
-	ExperimentResult,
-	ExperimentTrialInput,
+import {
+	type ExperimentResult,
+	type ExperimentRuntime,
+	type ExperimentTrialInput,
+	experimentScoringProfile,
+	type experimentScoringProfiles,
+	experimentVmafV1Profile,
 } from "@bitovp/core/encoding-experiments";
 import {
 	useInfiniteQuery,
@@ -30,10 +34,12 @@ type TrialStatus =
 	| "REJECTED";
 type Campaign = {
 	id: string;
+	capabilityId: string;
 	name: string;
 	state: "RUNNING" | "PAUSED" | "CANCELED";
 	sealed: boolean;
 	statusCounts?: Partial<Record<TrialStatus, number>>;
+	runtime?: Pick<ExperimentRuntime, "additionalScoringProfiles">;
 };
 type Trial = {
 	id: string;
@@ -42,14 +48,16 @@ type Trial = {
 	result: ExperimentResult | null;
 	failureCode?: string | null;
 };
+type ScoringProfile = (typeof experimentScoringProfiles)[number];
 type Selection = {
+	scoringProfileId: ScoringProfile;
 	status: "selected" | "no_feasible_candidate" | "insufficient_evidence";
 	trialId?: string;
 	eligibleCount: number;
 	incompleteCount: number;
 };
 
-type Capabilities = {
+type Capabilities = Pick<ExperimentRuntime, "additionalScoringProfiles"> & {
 	available: boolean;
 	capabilityId?: string;
 	gpuName?: string;
@@ -69,6 +77,38 @@ const statusOrder = [
 	"CANCELED",
 ] as const;
 const queryKey = ["encoding-experiments"];
+const primaryVmafLabel = "VMAF v0.6.1";
+const v1VmafLabel = "VMAF v1.0.16";
+
+function editableTrial(json: string): Record<string, unknown> | undefined {
+	try {
+		const trial: unknown = JSON.parse(json);
+		return trial !== null && typeof trial === "object" && !Array.isArray(trial)
+			? (trial as Record<string, unknown>)
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function VmafV1Cell({ result }: { result: ExperimentResult | null }) {
+	const { t } = useT();
+	const score = result?.additionalScores?.[0];
+	return (
+		<td className="px-2 py-2 tabular-nums">
+			{score?.status === "failed" ? (
+				<>
+					{t("experiments.states.FAILED")}
+					<div className="font-mono text-xs text-red-400">
+						{score.failureCode}
+					</div>
+				</>
+			) : (
+				(score?.meanVmaf.toFixed(2) ?? "—")
+			)}
+		</td>
+	);
+}
 
 function errorMessage(error: unknown) {
 	return error instanceof Error ? error.message : null;
@@ -96,6 +136,7 @@ export function ExperimentsClient() {
 	const sourceInput = useId();
 	const trialInput = useId();
 	const referenceInput = useId();
+	const scoringProfileInput = useId();
 	const rateInput = useId();
 	const timeInput = useId();
 	const [name, setName] = useState("");
@@ -104,6 +145,9 @@ export function ExperimentsClient() {
 	const [trialJson, setTrialJson] = useState("");
 	const [confirmCancel, setConfirmCancel] = useState<string>();
 	const [referenceId, setReferenceId] = useState<string>();
+	const [scoringProfile, setScoringProfile] = useState<ScoringProfile>(
+		experimentScoringProfile,
+	);
 	const [bitrateCeiling, setBitrateCeiling] = useState("");
 	const [timeCeiling, setTimeCeiling] = useState("");
 	const retry = useRef<{ body: string; campaign: string; key: string }>(null);
@@ -136,6 +180,19 @@ export function ExperimentsClient() {
 			query.state.data?.state === "CANCELED" ? false : 3000,
 	});
 	const campaign = detail.data;
+	const hasVmafV1 =
+		campaign?.runtime?.additionalScoringProfiles?.[0]?.scoringProfileId ===
+		experimentVmafV1Profile;
+	const canQueueVmafV1 =
+		hasVmafV1 &&
+		campaign?.capabilityId === capabilities.data?.capabilityId &&
+		capabilities.data?.additionalScoringProfiles?.[0]?.scoringProfileId ===
+			experimentVmafV1Profile;
+	const draft = editableTrial(trialJson);
+	const draftProfiles = draft?.additionalScoringProfiles;
+	const measuresVmafV1 =
+		Array.isArray(draftProfiles) &&
+		draftProfiles.includes(experimentVmafV1Profile);
 	const trials = useInfiniteQuery({
 		queryKey: [...queryKey, "trials", campaignId],
 		initialPageParam: null as string | null,
@@ -174,6 +231,9 @@ export function ExperimentsClient() {
 						schemaVersion: 1,
 						sourceId: trial.input.sourceId,
 						window: trial.input.window,
+						...(hasVmafV1 && scoringProfile === experimentVmafV1Profile
+							? { scoringProfileId: experimentVmafV1Profile }
+							: {}),
 						constraints: {
 							...(bitrateCeiling === ""
 								? {}
@@ -190,6 +250,7 @@ export function ExperimentsClient() {
 	function chooseCampaign(id: string | undefined) {
 		setSelected(id);
 		setReferenceId(undefined);
+		setScoringProfile(experimentScoringProfile);
 		quality.reset();
 	}
 
@@ -215,14 +276,9 @@ export function ExperimentsClient() {
 	});
 	const enqueue = useMutation({
 		mutationFn: () => {
-			let trial: unknown;
-			try {
-				trial = JSON.parse(trialJson);
-			} catch {
-				throw new Error(t("experiments.invalidJson"));
-			}
+			if (!draft) throw new Error(t("experiments.invalidJson"));
 			if (!campaignId) throw new Error(t("experiments.selectCampaign"));
-			const body = JSON.stringify({ schemaVersion: 1, trials: [trial] });
+			const body = JSON.stringify({ schemaVersion: 1, trials: [draft] });
 			if (
 				retry.current?.body !== body ||
 				retry.current.campaign !== campaignId
@@ -262,6 +318,14 @@ export function ExperimentsClient() {
 			return refresh();
 		},
 	});
+
+	function toggleVmafV1(checked: boolean) {
+		if (!draft) return;
+		const next = { ...draft };
+		if (checked) next.additionalScoringProfiles = [experimentVmafV1Profile];
+		else delete next.additionalScoringProfiles;
+		setTrialJson(JSON.stringify(next, null, 2));
+	}
 
 	function selectSource(id: string) {
 		setSourceId(id);
@@ -415,6 +479,17 @@ export function ExperimentsClient() {
 									))}
 								</SelectNative>
 							</Field>
+							{(canQueueVmafV1 || measuresVmafV1) && (
+								<label className="flex items-center gap-2 text-sm">
+									<input
+										type="checkbox"
+										checked={measuresVmafV1}
+										disabled={busy || !draft}
+										onChange={(event) => toggleVmafV1(event.target.checked)}
+									/>
+									{t("experiments.alsoMeasureVmafV1")}
+								</label>
+							)}
 							<Field label={t("experiments.trialJson")} htmlFor={trialInput}>
 								<Textarea
 									id={trialInput}
@@ -528,6 +603,33 @@ export function ExperimentsClient() {
 											})}
 										</SelectNative>
 									</Field>
+									{hasVmafV1 && (
+										<Field
+											label={t("experiments.scoringProfile")}
+											htmlFor={scoringProfileInput}
+										>
+											<SelectNative
+												id={scoringProfileInput}
+												value={scoringProfile}
+												disabled={busy}
+												onChange={(event) => {
+													setScoringProfile(
+														event.target.value === experimentVmafV1Profile
+															? experimentVmafV1Profile
+															: experimentScoringProfile,
+													);
+													quality.reset();
+												}}
+											>
+												<option value={experimentScoringProfile}>
+													{primaryVmafLabel}
+												</option>
+												<option value={experimentVmafV1Profile}>
+													{v1VmafLabel}
+												</option>
+											</SelectNative>
+										</Field>
+									)}
 									<div className="grid gap-2 sm:grid-cols-2">
 										<Field
 											label={t("experiments.bitrateCeiling")}
@@ -577,13 +679,23 @@ export function ExperimentsClient() {
 											role="status"
 											className="wrap-anywhere text-sm text-zinc-200"
 										>
-											{quality.data.status === "selected"
-												? t("experiments.selectedTrial", {
-														id: quality.data.trialId ?? "—",
-													})
-												: t(
-														`experiments.selectionStatus.${quality.data.status}`,
-													)}
+											{hasVmafV1 && (
+												<span className="mr-2 text-zinc-400">
+													{quality.data.scoringProfileId ===
+													experimentVmafV1Profile
+														? v1VmafLabel
+														: primaryVmafLabel}
+												</span>
+											)}
+											<span>
+												{quality.data.status === "selected"
+													? t("experiments.selectedTrial", {
+															id: quality.data.trialId ?? "—",
+														})
+													: t(
+															`experiments.selectionStatus.${quality.data.status}`,
+														)}
+											</span>
 										</p>
 									)}
 								</div>
@@ -602,8 +714,13 @@ export function ExperimentsClient() {
 												{t("experiments.status")}
 											</th>
 											<th scope="col" className="px-2 py-2">
-												VMAF
+												{primaryVmafLabel}
 											</th>
+											{hasVmafV1 && (
+												<th scope="col" className="px-2 py-2">
+													{v1VmafLabel}
+												</th>
+											)}
 											<th scope="col" className="px-2 py-2">
 												{t("experiments.measuredRate")}
 											</th>
@@ -628,6 +745,7 @@ export function ExperimentsClient() {
 												<td className="px-2 py-2 tabular-nums">
 													{trial.result?.meanVmaf.toFixed(2) ?? "—"}
 												</td>
+												{hasVmafV1 && <VmafV1Cell result={trial.result} />}
 												<td className="px-2 py-2 tabular-nums">
 													{trial.result
 														? `${rateMbps(trial.result).toFixed(2)} Mb/s`

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { ExperimentRuntime } from "@bitovp/core/encoding-experiments";
 
 export class ExperimentRunnerError extends Error {
 	constructor(readonly code: string) {
@@ -11,7 +12,15 @@ export class ExperimentRunnerError extends Error {
 export function runExperimentProcess(
 	bin: string,
 	args: string[],
-	options: { timeoutMs: number; signal: AbortSignal; tmpDir?: string },
+	options: {
+		timeoutMs: number;
+		signal: AbortSignal;
+		tmpDir?: string;
+		expectedRuntime?: Pick<
+			ExperimentRuntime,
+			"runtimeId" | "additionalScoringProfiles"
+		>;
+	},
 ): Promise<unknown> {
 	options.signal.throwIfAborted();
 	return new Promise((resolve, reject) => {
@@ -27,10 +36,22 @@ export function runExperimentProcess(
 			"BITOVP_NVENC_VMAF_MODEL",
 			"BITOVP_NVENC_SDK_PROBE",
 			"BITOVP_NVENC_GPU_INDEX",
+			"VMAF_NATIVE_PATH",
+			"VMAF_MODEL_DIR",
 		]) {
 			if (process.env[key] !== undefined) env[key] = process.env[key];
 		}
 		if (options.tmpDir) env.TMPDIR = options.tmpDir;
+		// Keep the request JSON readable by existing primary-only runners.
+		if (options.expectedRuntime)
+			env.BITOVP_NVENC_EXPECTED_RUNTIME = JSON.stringify(
+				options.expectedRuntime,
+			);
+		// libuv and Python share the Linux CLOCK_MONOTONIC clock, including across flock.
+		const timeoutNs = BigInt(options.timeoutMs) * 1_000_000n;
+		env.BITOVP_NVENC_RUNNER_DEADLINE_NS = (
+			process.hrtime.bigint() + timeoutNs
+		).toString();
 		const child = spawn(bin, args, {
 			detached: true,
 			stdio: ["ignore", "pipe", "pipe"],

@@ -3,8 +3,13 @@ import {
 	experimentBatchSchema,
 	experimentQualityRequestSchema,
 	experimentResultSchema,
+	experimentRuntimeSchema,
 	experimentTrialSchema,
 } from "./encoding-experiments";
+
+const v1Profile = "bitovp-vmaf-cuda-1.0.16-3d0h";
+const officialProfile = "official-vmaf-cuda-0.6.1";
+const digest = "a".repeat(64);
 
 const trial = {
 	sourceId: "test-source",
@@ -101,6 +106,96 @@ describe("the NVIDIA experiment request and receipt", () => {
 		).toBe(false);
 	});
 
+	it("accepts one optional VMAF v1 profile and defaults selection to official VMAF", () => {
+		expect(experimentTrialSchema.parse(trial)).not.toHaveProperty(
+			"additionalScoringProfiles",
+		);
+		expect(
+			experimentTrialSchema.parse({
+				...trial,
+				additionalScoringProfiles: [v1Profile],
+			}).additionalScoringProfiles,
+		).toEqual([v1Profile]);
+		for (const profiles of [[], [officialProfile], [v1Profile, v1Profile]]) {
+			expect(
+				experimentTrialSchema.safeParse({
+					...trial,
+					additionalScoringProfiles: profiles,
+				}).success,
+			).toBe(false);
+		}
+		const selection = {
+			schemaVersion: 1,
+			sourceId: trial.sourceId,
+			window: trial.window,
+			constraints: {},
+		};
+		expect(
+			experimentQualityRequestSchema.parse(selection).scoringProfileId,
+		).toBe(officialProfile);
+		expect(
+			experimentQualityRequestSchema.parse({
+				...selection,
+				scoringProfileId: v1Profile,
+			}).scoringProfileId,
+		).toBe(v1Profile);
+		expect(
+			experimentQualityRequestSchema.safeParse({
+				...selection,
+				scoringProfileId: "unrecognized-model",
+			}).success,
+		).toBe(false);
+	});
+
+	it("admits both legacy capabilities and a pinned VMAF v1 runtime descriptor", () => {
+		const runtime = {
+			schemaVersion: 1,
+			runtimeId: digest,
+			gpuUuid: "GPU-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+			gpuName: "Example GPU",
+			driverVersion: "580.178.04",
+			supportedCodecs: ["HEVC"],
+			scoringProfileId: officialProfile,
+			ffmpegSha256: digest,
+			ffprobeSha256: digest,
+			modelSha256: digest,
+			runnerSha256: digest,
+			sdkProbeSha256: digest,
+			maxNvencApiVersion: 208,
+		};
+		const descriptorWithoutDecoderRuntime = {
+			scoringProfileId: v1Profile,
+			scorerSha256: "b".repeat(64),
+			modelSha256: "c".repeat(64),
+			sourceSha256: "d".repeat(64),
+			officialRevision: "e".repeat(40),
+		};
+		const descriptor = {
+			...descriptorWithoutDecoderRuntime,
+			decoderRuntimeSha256: "f".repeat(64),
+		};
+		expect(experimentRuntimeSchema.parse(runtime)).toEqual(runtime);
+		expect(
+			experimentRuntimeSchema.parse({
+				...runtime,
+				additionalScoringProfiles: [descriptor],
+			}).additionalScoringProfiles,
+		).toEqual([descriptor]);
+		for (const invalid of [
+			descriptorWithoutDecoderRuntime,
+			{ ...descriptor, decoderRuntimeSha256: "F".repeat(64) },
+			{ ...descriptor, decoderRuntimeSha256: "f".repeat(63) },
+			{ ...descriptor, officialRevision: digest },
+		]) {
+			expect(
+				experimentRuntimeSchema.safeParse({
+					...runtime,
+					additionalScoringProfiles: [invalid],
+				}).success,
+			).toBe(false);
+		}
+	});
+
 	it("rejects requests outside the native FFmpeg adapter's limits", () => {
 		for (const input of [
 			{ ...trial, config: { ...trial.config, gopLength: 0x80000000 } },
@@ -179,5 +274,35 @@ describe("the NVIDIA experiment request and receipt", () => {
 			experimentResultSchema.safeParse({ ...receipt, durationTicks: "0" })
 				.success,
 		).toBe(false);
+		const score = {
+			scoringProfileId: v1Profile,
+			status: "succeeded",
+			scoreMilli: 110_000,
+			meanVmaf: 110,
+			scoreMs: 300,
+			scorerSha256: "b".repeat(64),
+			modelSha256: "c".repeat(64),
+		};
+		const failure = {
+			scoringProfileId: v1Profile,
+			status: "failed",
+			failureCode: "VMAF_V1_TIMEOUT",
+		};
+		for (const additional of [score, failure]) {
+			const combined = { ...receipt, additionalScores: [additional] };
+			expect(experimentResultSchema.parse(combined)).toEqual(combined);
+		}
+		for (const invalid of [
+			{ ...score, scoreMilli: 110_001 },
+			{ ...score, meanVmaf: 110.01 },
+			{ ...failure, meanVmaf: 0 },
+		]) {
+			expect(
+				experimentResultSchema.safeParse({
+					...receipt,
+					additionalScores: [invalid],
+				}).success,
+			).toBe(false);
+		}
 	});
 });

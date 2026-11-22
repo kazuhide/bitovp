@@ -18,7 +18,7 @@ from math import ceil
 from pathlib import Path
 from stat import S_ISREG
 from tempfile import TemporaryDirectory
-from time import monotonic, perf_counter_ns
+from time import monotonic, monotonic_ns, perf_counter_ns
 from types import ModuleType
 from typing import Optional
 from uuid import UUID
@@ -26,6 +26,11 @@ from uuid import UUID
 PROFILE_ID = "official-vmaf-cuda-0.6.1"
 MODEL_NAME = "vmaf_v0.6.1.json"
 MODEL_SHA256 = "5950d61fa1f861bd45d8149d80539ed9f3376cfc2495b8f0fa8e9f57cb131ee3"
+VMAF_V1_PROFILE_ID = "bitovp-vmaf-cuda-1.0.16-3d0h"
+VMAF_V1_MODEL_ID = "vmaf_v1.0.16_3d0h"
+VMAF_V1_MODEL_SHA256 = "e4cf8c147e1368b35497d772920bc92f98c1ad7853c1033d8a836947f427140e"
+VMAF_V1_PROBE_RECEIPT_MARGIN_SECONDS = 2
+VMAF_V1_RECEIPT_MARGIN_SECONDS = 15
 CODECS = {"H264": "h264", "HEVC": "hevc", "AV1": "av1"}
 MAX_CAPTURE = 12 * 1024 * 1024
 MAX_FRAMES = 3600
@@ -51,6 +56,7 @@ class Trial:
     gop_length: int
     frame_interval_p: Optional[int]
     rate: dict
+    measure_vmaf_v1: bool
 
 
 @dataclass(frozen=True)
@@ -65,6 +71,15 @@ class RunnerSource:
 
 
 @dataclass(frozen=True)
+class OwnedVmafV1:
+    invocation_path: Path
+    executable: Path
+    identity: tuple
+    model_bytes: bytes
+    profile: dict
+
+
+@dataclass(frozen=True)
 class Runtime:
     ffmpeg: Path
     ffprobe: Path
@@ -74,6 +89,7 @@ class Runtime:
     tool_identities: tuple
     invocation_path: Path
     runner_path: Path
+    vmaf_v1: Optional[OwnedVmafV1]
 
 
 def fields(value, required, optional=frozenset()):
@@ -106,7 +122,13 @@ def parse_trial(request):
     source = request["sourcePath"]
     if not isinstance(source, str) or not Path(source).is_absolute() or "\0" in source:
         raise RunnerError("INVALID_REQUEST")
-    row = fields(request["trial"], {"sourceId", "window", "codec", "preset", "tuning", "config"})
+    row = fields(
+        request["trial"], {"sourceId", "window", "codec", "preset", "tuning", "config"},
+        {"additionalScoringProfiles"},
+    )
+    measure_vmaf_v1 = "additionalScoringProfiles" in row
+    if measure_vmaf_v1 and row["additionalScoringProfiles"] != [VMAF_V1_PROFILE_ID]:
+        raise RunnerError("INVALID_REQUEST")
     if not isinstance(row["sourceId"], str) or not 1 <= len(row["sourceId"]) <= 160:
         raise RunnerError("INVALID_REQUEST")
     window = fields(row["window"], {"timeBase", "startPts", "endPtsExclusive"})
@@ -141,7 +163,34 @@ def parse_trial(request):
             raise RunnerError("INVALID_REQUEST")
     if "lookaheadDepth" in rate:
         integer(rate["lookaheadDepth"], 0, 32)
-    return Trial(Path(source), int(start), int(count), codec, preset, gop, frame_interval, rate)
+    return Trial(Path(source), int(start), int(count), codec, preset, gop, frame_interval, rate, measure_vmaf_v1)
+
+
+def is_hex_digest(value, length):
+    return isinstance(value, str) and len(value) == length and re.fullmatch(r"[0-9a-f]+", value) is not None
+
+
+def parse_expected_runtime(encoded):
+    if encoded is None:
+        return None
+    expected = fields(json.loads(encoded), {"runtimeId"}, {"additionalScoringProfiles"})
+    if not is_hex_digest(expected["runtimeId"], 64):
+        raise RunnerError("INVALID_REQUEST")
+    if "additionalScoringProfiles" not in expected:
+        return expected
+    profiles = expected["additionalScoringProfiles"]
+    if not isinstance(profiles, list) or len(profiles) != 1:
+        raise RunnerError("INVALID_REQUEST")
+    profile = fields(profiles[0], {
+        "scoringProfileId", "scorerSha256", "modelSha256", "sourceSha256", "officialRevision", "decoderRuntimeSha256",
+    })
+    if (
+        profile["scoringProfileId"] != VMAF_V1_PROFILE_ID or profile["modelSha256"] != VMAF_V1_MODEL_SHA256
+        or not is_hex_digest(profile["scorerSha256"], 64) or not is_hex_digest(profile["sourceSha256"], 64)
+        or not is_hex_digest(profile["officialRevision"], 40) or not is_hex_digest(profile["decoderRuntimeSha256"], 64)
+    ):
+        raise RunnerError("INVALID_REQUEST")
+    return expected
 
 
 def encode_options(trial):
@@ -309,8 +358,11 @@ def observed_gop(probe, frame_count):
     return interval
 
 
-def read_file(path, limit, stage):
-    with path.open("rb") as source:
+def read_file(path, limit, stage, *, require_regular=False):
+    opener = (lambda name, flags: os.open(name, flags | os.O_NONBLOCK)) if require_regular else None
+    with open(path, "rb", opener=opener) as source:
+        if require_regular and not S_ISREG(os.fstat(source.fileno()).st_mode):
+            raise RunnerError(stage + "_NOT_REGULAR")
         content = source.read(limit + 1)
     if len(content) > limit:
         raise RunnerError(stage + "_SIZE_LIMIT")
@@ -445,7 +497,87 @@ def parse_sdk_probe(report, index, uuid):
     return runtime_version, codecs
 
 
-def resolve_runtime(runner_source, invocation_path):
+def matches_owned_cuda_device(device, index, gpu_uuid):
+    return (
+        isinstance(device, dict)
+        and type(device.get("index")) is int
+        and device["index"] == index
+        and device.get("uuid") == gpu_uuid.removeprefix("GPU-").replace("-", "").lower()
+    )
+
+
+def matches_owned_cuda_driver(reported, driver_version):
+    # The owned scorer may append the CUDA driver API version to the NVIDIA release.
+    return isinstance(reported, str) and re.fullmatch(
+        re.escape(driver_version) + r"(?:;cuda-api=[0-9]+)?", reported,
+    ) is not None
+
+
+def optional_stage_timeout(limit, reserve):
+    deadline = os.environ.get("BITOVP_NVENC_RUNNER_DEADLINE_NS")
+    if deadline is None:
+        return limit
+    remaining = (digits(deadline, "VMAF_V1_INVALID_DEADLINE") - monotonic_ns()) / 10**9
+    return min(limit, remaining - reserve)
+
+
+def discover_vmaf_v1(index, gpu_uuid, driver_version, supported_codecs):
+    binary = os.environ.get("VMAF_NATIVE_PATH")
+    models = os.environ.get("VMAF_MODEL_DIR")
+    if not binary or not models or not Path(binary).is_absolute() or not Path(models).is_absolute():
+        return None
+    invocation = Path(binary)
+    try:
+        if optional_stage_timeout(8, VMAF_V1_PROBE_RECEIPT_MARGIN_SECONDS) <= 0:
+            return None
+        tool = executable("VMAF_NATIVE_PATH", "bitovp-vmaf")
+        identity = runtime_tool_identity(tool)
+        binary_sha = sha256_file(tool, identity)
+        model = read_file(
+            Path(models) / (VMAF_V1_MODEL_ID + ".json"), 2 * 1024 * 1024,
+            "VMAF_V1_MODEL", require_regular=True,
+        )
+        model_sha = hashlib.sha256(model).hexdigest()
+        if model_sha != VMAF_V1_MODEL_SHA256:
+            return None
+        require_unchanged_tools(((tool, identity),), invocation, tool)
+        timeout = optional_stage_timeout(8, VMAF_V1_PROBE_RECEIPT_MARGIN_SECONDS)
+        if timeout <= 0:
+            return None
+        output, _ = capture(
+            [str(tool), "--device-info", "--backend", "cuda", "--device", str(index), "--experiment-window"],
+            "VMAF_V1_PROBE", timeout=timeout,
+        )
+        require_unchanged_tools(((tool, identity),), invocation, tool)
+        report = json.loads(output)
+        device = report["device"]
+        native_codecs = report["experimentCudaDecoders"]
+        if (
+            type(report["schemaVersion"]) is not int or report["schemaVersion"] != 1
+            or report["backend"] != "cuda" or report["binarySha256"] != binary_sha
+            or not isinstance(native_codecs, list) or not set(supported_codecs) <= set(native_codecs)
+            or not matches_owned_cuda_device(device, index, gpu_uuid)
+            or device.get("driverVersionKnown") is not True
+            or not matches_owned_cuda_driver(device.get("driverVersion"), driver_version)
+            or not is_hex_digest(report["sourceSha256"], 64)
+            or not is_hex_digest(report["officialSourceRevision"], 40)
+            or not is_hex_digest(report["decoderRuntimeSha256"], 64)
+        ):
+            return None
+    except (OSError, ValueError, RuntimeError, TypeError, KeyError):
+        # This optional capability cannot stop an otherwise valid v0.6.1 worker.
+        return None
+    return OwnedVmafV1(invocation, tool, identity, model, {
+        "scoringProfileId": VMAF_V1_PROFILE_ID,
+        "scorerSha256": binary_sha,
+        "modelSha256": model_sha,
+        "sourceSha256": report["sourceSha256"],
+        "officialRevision": report["officialSourceRevision"],
+        "decoderRuntimeSha256": report["decoderRuntimeSha256"],
+    })
+
+
+def resolve_runtime(runner_source, invocation_path, *, expected_runtime=None, probe_vmaf_v1=True):
     invocation_path = invocation_path.absolute()
     runner_path = runner_source.path
     require_unchanged_tools(((runner_path, runner_source.identity),), invocation_path, runner_path)
@@ -499,8 +631,23 @@ def resolve_runtime(runner_source, invocation_path):
         "supportedCodecs": codecs, "scoringProfileId": PROFILE_ID,
         **digests, "maxNvencApiVersion": runtime_version, "modelSha256": model_sha,
     }
+    vmaf_v1 = discover_vmaf_v1(index, uuid, data["driverVersion"], codecs) if probe_vmaf_v1 else None
+    discovered_profiles = [vmaf_v1.profile] if vmaf_v1 else None
+    if expected_runtime is not None:
+        # The worker supplied the admitted descriptor. Keep it in the receipt's
+        # identity even when only the required runtime can be verified now.
+        admitted_profiles = expected_runtime.get("additionalScoringProfiles")
+        if admitted_profiles is not None:
+            data["additionalScoringProfiles"] = admitted_profiles
+        if discovered_profiles != admitted_profiles:
+            vmaf_v1 = None
+    elif discovered_profiles is not None:
+        data["additionalScoringProfiles"] = discovered_profiles
+    require_unchanged_tools(tool_identities, invocation_path, runner_path)
     data["runtimeId"] = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    return Runtime(ffmpeg, ffprobe, index, model_bytes, data, tool_identities, invocation_path, runner_path)
+    if expected_runtime is not None and data["runtimeId"] != expected_runtime["runtimeId"]:
+        raise RunnerError("EXPERIMENT_RUNTIME_CHANGED")
+    return Runtime(ffmpeg, ffprobe, index, model_bytes, data, tool_identities, invocation_path, runner_path, vmaf_v1)
 
 
 def probe_media(runtime, path, options):
@@ -575,6 +722,90 @@ def score(runtime, trial, source, source_time_base, encoded, work, cuda=True):
     return (*parse_vmaf(work / name, trial.frame_count), elapsed_ms)
 
 
+def parse_vmaf_v1(payload, runtime, trial, cpu_audit):
+    code = "VMAF_V1_INVALID_RECEIPT"
+    profile = runtime.vmaf_v1.profile
+    try:
+        window = payload["experimentWindow"]
+        if (
+            type(payload["schema"]) is not int or payload["schema"] != 1
+            or payload["implementation"] != "bitovp-owned" or payload["backend"] != "cuda"
+            or payload["referenceDecodeBackend"] != "cpu" or payload["decodeBackend"] != "cuda"
+            or payload["sourceSha256"] != profile["sourceSha256"]
+            or payload["officialRevision"] != profile["officialRevision"]
+            or payload["decoderRuntimeSha256"] != profile["decoderRuntimeSha256"]
+            or not matches_owned_cuda_device(payload["device"], runtime.gpu_index, runtime.capabilities["gpuUuid"])
+            or not matches_owned_cuda_driver(payload["gpuDriver"]["driverVersion"], runtime.capabilities["driverVersion"])
+            or (payload["width"], payload["height"], payload["bitDepth"]) != (1920, 1080, 8)
+            or integer(payload["frames"], 1, MAX_FRAMES, code) != trial.frame_count
+            or integer(window["startFrame"], 0, INT32_MAX, code) != trial.start_frame
+            or integer(window["frameCount"], 1, MAX_FRAMES, code) != trial.frame_count
+        ):
+            raise RunnerError(code)
+        models = payload["models"]
+        if not isinstance(models, list) or len(models) != 1:
+            raise RunnerError(code)
+        model = models[0]
+        if model["id"] != VMAF_V1_MODEL_ID or model["sha256"] != profile["modelSha256"]:
+            raise RunnerError(code)
+        scores, mean = model["frames"], model["pooled"]["mean"]
+        if not isinstance(scores, list) or len(scores) != trial.frame_count:
+            raise RunnerError(code)
+        if any(type(value) not in (int, Decimal) or not 0 <= value <= 110 for value in [mean, *scores]):
+            raise RunnerError(code)
+        if abs(mean - sum(map(Decimal, scores)) / trial.frame_count) > Decimal("0.000002"):
+            raise RunnerError(code)
+        if cpu_audit:
+            parity = payload["cpuParity"]
+            if (
+                parity["checked"] is not True or parity["scoreCount"] != trial.frame_count
+                or not parity["featureCount"] or not 0 <= parity["maxScoreError"] <= Decimal("0.0001")
+            ):
+                raise RunnerError(code)
+        return float(mean), int((Decimal(mean) * 1000).to_integral_value(rounding=ROUND_HALF_UP))
+    except (KeyError, TypeError, ArithmeticError) as error:
+        raise RunnerError(code) from error
+
+
+def score_vmaf_v1(runtime, trial, source, encoded, work, cpu_audit):
+    profile_id = {"scoringProfileId": VMAF_V1_PROFILE_ID}
+    scorer = runtime.vmaf_v1
+    if scorer is None:
+        return {**profile_id, "status": "failed", "failureCode": "VMAF_V1_UNAVAILABLE"}
+    try:
+        identities = ((scorer.executable, scorer.identity),)
+        require_unchanged_tools(identities, scorer.invocation_path, scorer.executable)
+        model = work / (VMAF_V1_MODEL_ID + ".json")
+        model.write_bytes(scorer.model_bytes)
+        receipt = work / "bitovp-vmaf-v1.json"
+        timeout = optional_stage_timeout(300, VMAF_V1_RECEIPT_MARGIN_SECONDS)
+        if timeout <= 0:
+            raise RunnerError("VMAF_V1_SCORE_TIMEOUT")
+        started = perf_counter_ns()
+        capture([
+            str(scorer.executable), "--reference", str(source), "--distorted", str(encoded),
+            "--backend", "cuda", "--decode", "cuda", "--device", str(runtime.gpu_index),
+            "--experiment-window", "--reference-start-frame", str(trial.start_frame),
+            "--frame-count", str(trial.frame_count), "--bit-depth", "8", "--output", str(receipt),
+            "--model", VMAF_V1_MODEL_ID + "=" + str(model),
+            *(["--verify-cpu"] if cpu_audit else []),
+        ], "VMAF_V1_SCORE", work, timeout=timeout)
+        score_ms = (perf_counter_ns() - started) // 1000000
+        payload = json.loads(
+            read_file(receipt, MAX_CAPTURE, "VMAF_V1_RECEIPT", require_regular=True), parse_float=Decimal,
+        )
+        mean, milli = parse_vmaf_v1(payload, runtime, trial, cpu_audit)
+        require_unchanged_tools(identities, scorer.invocation_path, scorer.executable)
+    except RunnerError as error:
+        return {**profile_id, "status": "failed", "failureCode": str(error)}
+    except (OSError, ValueError, RecursionError):
+        return {**profile_id, "status": "failed", "failureCode": "VMAF_V1_INVALID_RECEIPT"}
+    return {
+        **profile_id, "status": "succeeded", "scoreMilli": milli, "meanVmaf": mean, "scoreMs": score_ms,
+        "modelSha256": scorer.profile["modelSha256"], "scorerSha256": scorer.profile["scorerSha256"],
+    }
+
+
 def measure(runtime, trial, cpu_audit):
     require_unchanged_tools(runtime.tool_identities, runtime.invocation_path, runtime.runner_path)
     if trial.codec not in runtime.capabilities["supportedCodecs"]:
@@ -604,6 +835,8 @@ def measure(runtime, trial, cpu_audit):
         interval = observed_gop(packet_probe, trial.frame_count)
         if interval is not None:
             result["observedGopFrames"] = interval
+        if trial.measure_vmaf_v1:
+            result["additionalScores"] = [score_vmaf_v1(runtime, trial, source, encoded, work, cpu_audit)]
         if cpu_audit:
             cpu_mean, _, cpu_scores, cpu_ms = score(runtime, trial, source, source_clock, encoded, work, cuda=False)
             result["cpuAudit"] = {
@@ -629,8 +862,16 @@ def main(runner_source):
         if args.command == "probe":
             result = resolve_runtime(runner_source, invocation_path).capabilities
         else:
-            trial = parse_trial(json.loads(read_file(args.request_file, 32 * 1024, "REQUEST")))
-            result = measure(resolve_runtime(runner_source, invocation_path), trial, args.cpu_audit)
+            request = json.loads(read_file(args.request_file, 32 * 1024, "REQUEST"))
+            trial = parse_trial(request)
+            expected_runtime = parse_expected_runtime(os.environ.get("BITOVP_NVENC_EXPECTED_RUNTIME"))
+            runtime = resolve_runtime(
+                runner_source, invocation_path, expected_runtime=expected_runtime,
+                probe_vmaf_v1=expected_runtime is None or (
+                    trial.measure_vmaf_v1 and "additionalScoringProfiles" in expected_runtime
+                ),
+            )
+            result = measure(runtime, trial, args.cpu_audit)
     except RunnerError as error:
         print(str(error), file=sys.stderr)
         return 1

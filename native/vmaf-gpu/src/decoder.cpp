@@ -4,6 +4,9 @@
 #ifdef BITOVP_HAVE_CUDA
 #include "cuda/frame_conformer.hpp"
 #include <cuda.h>
+#ifdef __linux__
+#include <dlfcn.h>
+#endif
 #endif
 
 extern "C" {
@@ -20,6 +23,7 @@ extern "C" {
 }
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <stdexcept>
 
@@ -61,6 +65,84 @@ bool unsupported_banding_color(AVColorTransferCharacteristic transfer,
            transfer == AVCOL_TRC_SMPTE428 || primaries == AVCOL_PRI_BT2020 ||
            space == AVCOL_SPC_BT2020_NCL || space == AVCOL_SPC_BT2020_CL;
 }
+
+bool limited_bt709(AVColorRange range, AVColorSpace space,
+                   AVColorPrimaries primaries, AVColorTransferCharacteristic transfer) {
+    return range == AVCOL_RANGE_MPEG && space == AVCOL_SPC_BT709 &&
+        primaries == AVCOL_PRI_BT709 && transfer == AVCOL_TRC_BT709;
+}
+
+bool has_display_transform(const AVStream *video) {
+    if (const auto *rotation = av_dict_get(video->metadata, "rotate", nullptr, 0);
+        rotation && std::string(rotation->value) != "0") return true;
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 102)
+    return av_packet_side_data_get(video->codecpar->coded_side_data, video->codecpar->nb_coded_side_data,
+                                   AV_PKT_DATA_DISPLAYMATRIX) != nullptr;
+#else
+    std::size_t matrix_size = 0;
+    return av_stream_get_side_data(video, AV_PKT_DATA_DISPLAYMATRIX, &matrix_size) != nullptr;
+#endif
+}
+
+#ifdef BITOVP_HAVE_CUDA
+int create_primary_cuda_device(AVBufferRef **context, int device) {
+    return av_hwdevice_ctx_create(context, AV_HWDEVICE_TYPE_CUDA, std::to_string(device).c_str(),
+                                  nullptr, AV_CUDA_USE_PRIMARY_CONTEXT);
+}
+
+bool supports_cuda_decode(const AVCodec *decoder) {
+    if (!decoder) return false;
+    for (int index = 0; const auto *config = avcodec_get_hw_config(decoder, index); ++index)
+        if (config->device_type == AV_HWDEVICE_TYPE_CUDA && config->pix_fmt == AV_PIX_FMT_CUDA &&
+            (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX)) return true;
+    return false;
+}
+
+const AVCodec *resident_decoder(AVCodecID id, const AVCodec *preferred) {
+    if (supports_cuda_decode(preferred)) return preferred;
+    void *position = nullptr;
+    while (const auto *candidate = av_codec_iterate(&position))
+        if (candidate->id == id && av_codec_is_decoder(candidate) && supports_cuda_decode(candidate)) return candidate;
+    return nullptr;
+}
+#endif
+}
+
+ExperimentCudaDecoders load_experiment_cuda_decoders([[maybe_unused]] int device) {
+#if defined(BITOVP_HAVE_CUDA) && defined(__linux__)
+    // CUDA can otherwise first load its JIT libraries during feature extraction.
+    if (setenv("CUDA_FORCE_PRELOAD_LIBRARIES", "1", 1) != 0) return {};
+    // FFmpeg resolves the resident decoder's NVDEC entry points at run time.
+    const auto load = [](const char *name) -> std::shared_ptr<void> {
+        if (auto *handle = dlopen(name, RTLD_NOW | RTLD_LOCAL))
+            return {handle, [](void *handle) { dlclose(handle); }};
+        return {};
+    };
+    ExperimentCudaDecoders runtime{load("libcuda.so.1"), load("libnvcuvid.so.1"), {}, {}};
+    if (!runtime.driver || !runtime.nvdec) return {};
+    const char *map_frame = sizeof(void *) == 8 ? "cuvidMapVideoFrame64" : "cuvidMapVideoFrame";
+    const char *unmap_frame = sizeof(void *) == 8 ? "cuvidUnmapVideoFrame64" : "cuvidUnmapVideoFrame";
+    for (const auto *symbol : {"cuvidGetDecoderCaps", "cuvidCreateDecoder", "cuvidDestroyDecoder",
+            "cuvidDecodePicture", "cuvidGetDecodeStatus", "cuvidReconfigureDecoder", map_frame, unmap_frame,
+            "cuvidCtxLockCreate", "cuvidCtxLockDestroy", "cuvidCtxLock", "cuvidCtxUnlock",
+            "cuvidCreateVideoSource", "cuvidCreateVideoSourceW", "cuvidDestroyVideoSource",
+            "cuvidSetVideoSourceState", "cuvidGetVideoSourceState", "cuvidGetSourceVideoFormat", "cuvidGetSourceAudioFormat",
+            "cuvidCreateVideoParser", "cuvidParseVideoData", "cuvidDestroyVideoParser"})
+        if (!dlsym(runtime.nvdec.get(), symbol)) return {};
+    const std::pair<AVCodecID, const char *> codecs[] = {
+        {AV_CODEC_ID_H264, "H264"}, {AV_CODEC_ID_HEVC, "HEVC"}, {AV_CODEC_ID_AV1, "AV1"},
+    };
+    for (const auto &[id, name] : codecs)
+        if (resident_decoder(id, avcodec_find_decoder(id))) runtime.codecs.emplace_back(name);
+    if (runtime.codecs.empty()) return {};
+    AVBufferRef *context = nullptr;
+    const int created = create_primary_cuda_device(&context, device);
+    if (context) runtime.device_context = {context, [](AVBufferRef *handle) { av_buffer_unref(&handle); }};
+    if (created < 0 || !runtime.device_context) return {};
+    return runtime;
+#else
+    return {};
+#endif
 }
 
 struct Decoder::Impl {
@@ -73,6 +155,7 @@ struct Decoder::Impl {
     AVBufferRef *hardware = nullptr;
     bool cuda_decode = false;
     bool standalone_input = false;
+    bool experiment_input = false;
     int device_index = 0;
     Picture resident;
 #ifdef BITOVP_HAVE_CUDA
@@ -87,6 +170,16 @@ struct Decoder::Impl {
 
     void open_video(const std::string &path, bool attest_local_mov) {
         AVDictionary *options = nullptr;
+        if (experiment_input) {
+            const bool configured = av_dict_set(&options, "protocol_whitelist", "file", 0) == 0 &&
+                av_dict_set(&options, "format_whitelist", "mov,matroska,webm", 0) == 0 &&
+                av_dict_set_int(&options, "enable_drefs", 0, 0) == 0 &&
+                av_dict_set_int(&options, "use_absolute_path", 0, 0) == 0;
+            const int opened = configured ? avformat_open_input(&format, path.c_str(), nullptr, &options) : AVERROR(ENOMEM);
+            av_dict_free(&options);
+            check(opened, "open local experiment video");
+            return;
+        }
         const bool configured = attest_local_mov &&
             av_dict_set_int(&options, "enable_drefs", 0, 0) == 0 &&
             av_dict_set_int(&options, "use_absolute_path", 0, 0) == 0;
@@ -104,9 +197,27 @@ struct Decoder::Impl {
             format->iformat == av_find_input_format("mov");
     }
 
+    void validate_experiment_stream(AVStream *video) const {
+        unsigned videos = 0;
+        for (unsigned i = 0; i < format->nb_streams; ++i)
+            videos += format->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO;
+        const auto *par = video->codecpar;
+        if (videos != 1 || (video->disposition & AV_DISPOSITION_ATTACHED_PIC) || has_display_transform(video) ||
+            par->width != 1920 || par->height != 1080 || par->format != AV_PIX_FMT_YUV420P ||
+            av_cmp_q(av_guess_sample_aspect_ratio(format, video, nullptr), {1, 1}) != 0 ||
+            av_cmp_q(video->avg_frame_rate, {30, 1}) != 0 ||
+            !limited_bt709(par->color_range, par->color_space, par->color_primaries, par->color_trc))
+            throw std::invalid_argument("Experiment video requires one untransformed 1920x1080 30 fps BT.709 limited yuv420p track");
+        const auto clock = video->time_base;
+        if (clock.num <= 0 || clock.den <= 0 || av_cmp_q(clock, {1, 1000}) > 0)
+            throw std::invalid_argument("Experiment video ticks must be positive and at most 1 ms");
+    }
+
     Impl(const std::string &path, unsigned w, unsigned h, unsigned b, unsigned threads,
-         bool cuda, int device, bool attest_local_mov)
-        : cuda_decode(cuda), standalone_input(b == 0), device_index(device), width(w), height(h), bits(b) {
+         bool cuda, int device, bool attest_local_mov, bool experiment,
+         [[maybe_unused]] const AVBufferRef *cuda_context)
+        : cuda_decode(cuda), standalone_input(b == 0), experiment_input(experiment),
+          device_index(device), width(w), height(h), bits(b) {
         if (b != 0 && b != 8 && b != 10) throw std::invalid_argument("Decode bit depth must be 8 or 10");
         if (threads > 256) throw std::invalid_argument("Decode thread count exceeds 256");
         try {
@@ -116,6 +227,7 @@ struct Decoder::Impl {
             stream = av_find_best_stream(format, AVMEDIA_TYPE_VIDEO, -1, -1, &decoder, 0);
             check(stream, "find video stream");
             auto *video = format->streams[stream];
+            if (experiment_input) validate_experiment_stream(video);
             if (standalone_input) {
                 unsigned videos = 0;
                 for (unsigned i = 0; i < format->nb_streams; ++i)
@@ -133,39 +245,13 @@ struct Decoder::Impl {
                      parameters->format != AV_PIX_FMT_YUV420P10LE) ||
                     parameters->color_range == AVCOL_RANGE_JPEG)
                     throw std::invalid_argument("Standalone CAMBI requires limited-range planar 4:2:0 input");
-                if (const auto *rotation = av_dict_get(video->metadata, "rotate", nullptr, 0);
-                    rotation && std::string(rotation->value) != "0")
-                    throw std::invalid_argument("Standalone CAMBI presentation transforms are unsupported");
-#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 102)
-                if (av_packet_side_data_get(parameters->coded_side_data, parameters->nb_coded_side_data,
-                                            AV_PKT_DATA_DISPLAYMATRIX))
-#else
-                std::size_t matrix_size = 0;
-                if (av_stream_get_side_data(video, AV_PKT_DATA_DISPLAYMATRIX, &matrix_size))
-#endif
+                if (has_display_transform(video))
                     throw std::invalid_argument("Standalone CAMBI presentation transforms are unsupported");
             }
             if (cuda_decode) {
 #ifdef BITOVP_HAVE_CUDA
-                const auto supports_cuda = [](const AVCodec *candidate) {
-                    for (int i = 0;; ++i) {
-                        const auto *config = avcodec_get_hw_config(candidate, i);
-                        if (!config) return false;
-                        if (config->device_type == AV_HWDEVICE_TYPE_CUDA && config->pix_fmt == AV_PIX_FMT_CUDA &&
-                            (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX)) return true;
-                    }
-                };
-                if (!supports_cuda(decoder)) {
-                    decoder = nullptr;
-                    void *iterator = nullptr;
-                    while (const auto *candidate = av_codec_iterate(&iterator)) {
-                        if (av_codec_is_decoder(candidate) && candidate->id == video->codecpar->codec_id && supports_cuda(candidate)) {
-                            decoder = candidate;
-                            break;
-                        }
-                    }
-                    if (!decoder) throw std::runtime_error("No CUDA-capable decoder is available for this codec");
-                }
+                decoder = resident_decoder(video->codecpar->codec_id, decoder);
+                if (!decoder) throw std::runtime_error("No CUDA-capable decoder is available for this codec");
 #else
                 throw std::invalid_argument("This binary was built without resident CUDA decoding");
 #endif
@@ -197,6 +283,7 @@ struct Decoder::Impl {
             codec = avcodec_alloc_context3(decoder);
             if (!codec) throw std::bad_alloc();
             check(avcodec_parameters_to_context(codec, video->codecpar), "configure decoder");
+            if (experiment_input) codec->pkt_timebase = video->time_base;
             codec->thread_count = int(threads);
             if (cuda_decode) {
 #ifdef BITOVP_HAVE_CUDA
@@ -204,8 +291,9 @@ struct Decoder::Impl {
                     throw std::invalid_argument("Resident CUDA decoding currently requires unchanged input dimensions");
                 if (device < 0 || (info.bit_depth != 8 && info.bit_depth != 10) || info.bit_depth > bits)
                     throw std::invalid_argument("Resident CUDA decoding requires supported 8/10-bit input without precision loss");
-                check(av_hwdevice_ctx_create(&hardware, AV_HWDEVICE_TYPE_CUDA,
-                    std::to_string(device).c_str(), nullptr, AV_CUDA_USE_PRIMARY_CONTEXT), "create primary CUDA decoder context");
+                if (cuda_context) hardware = av_buffer_ref(cuda_context);
+                else check(create_primary_cuda_device(&hardware, device), "create primary CUDA decoder context");
+                if (!hardware) throw std::bad_alloc();
                 codec->hw_device_ctx = av_buffer_ref(hardware);
                 if (!codec->hw_device_ctx) throw std::bad_alloc();
                 codec->get_format = [](AVCodecContext *, const AVPixelFormat *formats) -> AVPixelFormat {
@@ -305,6 +393,13 @@ struct Decoder::Impl {
         if (frame->width != int(info.width) || frame->height != int(info.height) || !descriptor ||
             unsigned(descriptor->comp[0].depth) != info.bit_depth)
             throw std::runtime_error("Mid-stream video format changes are not supported");
+        if (experiment_input &&
+            (actual_format != (cuda_decode ? AV_PIX_FMT_NV12 : AV_PIX_FMT_YUV420P) ||
+             !limited_bt709(frame->color_range, frame->colorspace, frame->color_primaries, frame->color_trc) ||
+             av_cmp_q(av_guess_sample_aspect_ratio(format, format->streams[stream], frame), {1, 1}) != 0 ||
+             (frame->flags & AV_FRAME_FLAG_INTERLACED) || frame->crop_top || frame->crop_bottom ||
+             frame->crop_left || frame->crop_right || av_frame_get_side_data(frame, AV_FRAME_DATA_DISPLAYMATRIX)))
+            throw std::runtime_error("Experiment decoded presentation or color changed");
         if (standalone_input && (unsupported_banding_color(frame->color_trc, frame->color_primaries,
                 frame->colorspace) || frame->crop_top || frame->crop_bottom || frame->crop_left ||
                 frame->crop_right || av_frame_get_side_data(frame, AV_FRAME_DATA_DISPLAYMATRIX) ||
@@ -313,7 +408,7 @@ struct Decoder::Impl {
                 (frame->sample_aspect_ratio.num > 0 && frame->sample_aspect_ratio.den > 0 &&
                  frame->sample_aspect_ratio.num != frame->sample_aspect_ratio.den)))
             throw std::runtime_error("Standalone CAMBI decoded presentation or color is unsupported");
-        current_pts = frame->best_effort_timestamp;
+        current_pts = experiment_input ? frame->pts : frame->best_effort_timestamp;
         if (current_pts == AV_NOPTS_VALUE)
             throw std::runtime_error("Comparison input has no presentation timestamps");
         if (first_pts == AV_NOPTS_VALUE) first_pts = current_pts;
@@ -356,8 +451,10 @@ struct Decoder::Impl {
 };
 
 Decoder::Decoder(const std::string &path, unsigned width, unsigned height,
-                 unsigned bit_depth, unsigned threads, bool cuda, int device, bool attest_local_mov)
-    : impl_(std::make_unique<Impl>(path, width, height, bit_depth, threads, cuda, device, attest_local_mov)) {}
+                 unsigned bit_depth, unsigned threads, bool cuda, int device,
+                 bool attest_local_mov, bool experiment_input, const AVBufferRef *cuda_context)
+    : impl_(std::make_unique<Impl>(path, width, height, bit_depth, threads, cuda, device,
+                                   attest_local_mov, experiment_input, cuda_context)) {}
 Decoder::~Decoder() = default;
 VideoInfo Decoder::source_info() const { return impl_->info; }
 bool Decoder::next() { return impl_->next(); }
@@ -390,6 +487,11 @@ double Decoder::timestamp() const {
     if (!impl_->has_picture) throw std::logic_error("No decoded comparison timestamp");
     return double(impl_->current_pts - impl_->first_pts) *
         av_q2d(impl_->format->streams[impl_->stream]->time_base);
+}
+PresentationTime Decoder::presentation_time() const {
+    if (!impl_->has_picture) throw std::logic_error("No decoded comparison timestamp");
+    const auto clock = impl_->format->streams[impl_->stream]->time_base;
+    return {impl_->current_pts, clock.num, clock.den};
 }
 double Decoder::duration() const {
     if (!impl_->has_picture) throw std::logic_error("No decoded frame duration");

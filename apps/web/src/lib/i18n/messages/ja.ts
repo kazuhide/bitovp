@@ -5963,6 +5963,8 @@ export const ja = {
 		vmafV1DockerWorker: "{model}(VMAF v1:同梱モデル)",
 	},
 	experiments: {
+		alsoMeasureVmafV1: "VMAF v1.0.16 も測定",
+		scoringProfile: "選択に使う採点プロファイル",
 		reference: "選択対象の素材と区間",
 		bitrateCeiling: "実測レート上限（bps）",
 		timeCeiling: "処理時間上限（ms）",

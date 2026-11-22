@@ -4,9 +4,12 @@ import os
 import subprocess
 import sys
 import unittest
+from dataclasses import replace
+from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import runner
@@ -73,6 +76,159 @@ def log(label, points, keys=(0,), timebase="1/1000", pix_fmt="yuv420p"):
 
 
 class RunnerTest(unittest.TestCase):
+    def test_standalone_primary_measurement_discovers_the_runtime(self):
+        with TemporaryDirectory() as folder:
+            request_path = Path(folder) / "trial.json"
+            request_path.write_text(json.dumps(request()))
+            runtime = object()
+            args = ["runner.py", "measure", "--request-file", str(request_path)]
+            with patch.object(sys, "argv", args), patch("builtins.print"), \
+                    patch.object(runner, "resolve_runtime", return_value=runtime) as resolve, \
+                    patch.object(runner, "measure", return_value={}) as measure:
+                self.assertEqual(runner.main(object()), 0)
+            self.assertIsNone(resolve.call_args.kwargs["expected_runtime"])
+            self.assertTrue(resolve.call_args.kwargs["probe_vmaf_v1"])
+            self.assertFalse(measure.call_args.args[1].measure_vmaf_v1)
+
+    def test_managed_primary_measurement_uses_only_the_admitted_runtime(self):
+        with TemporaryDirectory() as folder:
+            request_path = Path(folder) / "trial.json"
+            request_path.write_text(json.dumps(request()))
+            expected = {"runtimeId": "c" * 64}
+            args = ["runner.py", "measure", "--request-file", str(request_path)]
+            with patch.object(sys, "argv", args), patch("builtins.print"), \
+                    patch.dict(os.environ, {"BITOVP_NVENC_EXPECTED_RUNTIME": json.dumps(expected)}), \
+                    patch.object(runner, "resolve_runtime") as resolve, patch.object(runner, "measure", return_value={}):
+                self.assertEqual(runner.main(object()), 0)
+            self.assertEqual(resolve.call_args.kwargs["expected_runtime"], expected)
+            self.assertFalse(resolve.call_args.kwargs["probe_vmaf_v1"])
+
+    def test_secondary_model_is_explicit_and_unique(self):
+        item = request()
+        self.assertFalse(parse_trial(item).measure_vmaf_v1)
+        profile = "bitovp-vmaf-cuda-1.0.16-3d0h"
+        item["trial"]["additionalScoringProfiles"] = [profile]
+        self.assertTrue(parse_trial(item).measure_vmaf_v1)
+        for invalid in ([], [profile, profile], ["official-vmaf-cuda-0.6.1"], profile):
+            with self.subTest(invalid=invalid), self.assertRaises(RunnerError):
+                item["trial"]["additionalScoringProfiles"] = invalid
+                parse_trial(item)
+
+    def test_v1_scores_are_bound_to_the_selected_window_model_and_device(self):
+        item = request()
+        trial = parse_trial(item)
+        profile = {
+            "scoringProfileId": "bitovp-vmaf-cuda-1.0.16-3d0h",
+            "scorerSha256": "a" * 64,
+            "modelSha256": "b" * 64,
+            "sourceSha256": "c" * 64,
+            "officialRevision": "d" * 40,
+            "decoderRuntimeSha256": "f" * 64,
+        }
+        uuid = "eb576a3f5b2d4be7863c742308e386e7"
+        runtime = SimpleNamespace(
+            gpu_index=0,
+            capabilities={
+                "gpuUuid": "GPU-eb576a3f-5b2d-4be7-863c-742308e386e7",
+                "driverVersion": "580.178.04",
+            },
+            vmaf_v1=SimpleNamespace(profile=profile),
+        )
+        report = {
+            "schema": 1, "implementation": "bitovp-owned", "backend": "cuda",
+            "referenceDecodeBackend": "cpu", "decodeBackend": "cuda",
+            "experimentWindow": {"startFrame": 1, "frameCount": 3},
+            "frames": 3, "width": 1920, "height": 1080, "bitDepth": 8,
+            "sourceSha256": profile["sourceSha256"], "officialRevision": profile["officialRevision"],
+            "decoderRuntimeSha256": profile["decoderRuntimeSha256"],
+            "device": {"uuid": uuid, "index": 0},
+            "gpuDriver": {"driverVersion": "580.178.04;cuda-api=13000"},
+            "models": [{
+                "id": "vmaf_v1.0.16_3d0h", "sha256": profile["modelSha256"],
+                "pooled": {"mean": Decimal("101.125")},
+                "frames": [Decimal("101.125")] * 3,
+            }],
+        }
+        self.assertEqual(runner.parse_vmaf_v1(report, runtime, trial, False), (101.125, 101125))
+        for invalid in (
+            {**report, "decodeBackend": "cpu"},
+            {**report, "referenceDecodeBackend": "cuda"},
+            {**report, "device": {"uuid": "e" * 32, "index": 0}},
+            {**report, "gpuDriver": {"driverVersion": "580.178.05;cuda-api=13000"}},
+            {**report, "gpuDriver": {"driverVersion": "580.178.04;cuda-api=unknown"}},
+            {**report, "decoderRuntimeSha256": "a" * 64},
+            {**report, "experimentWindow": {"startFrame": 0, "frameCount": 3}},
+            {**report, "models": [{**report["models"][0], "sha256": "e" * 64}]},
+            {**report, "models": [{**report["models"][0], "frames": [101]}]},
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(RunnerError):
+                runner.parse_vmaf_v1(invalid, runtime, trial, False)
+
+    def test_v1_requires_a_pinned_model_and_matching_cuda_identity(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            tool = root / "bitovp-vmaf"
+            tool.write_bytes(b"owned scorer")
+            tool.chmod(0o700)
+            model = root / (runner.VMAF_V1_MODEL_ID + ".json")
+            model.write_bytes(b"pinned model")
+            model_sha = hashlib.sha256(model.read_bytes()).hexdigest()
+            report = {
+                "schemaVersion": 1, "backend": "cuda", "sourceSha256": "a" * 64,
+                "officialSourceRevision": "b" * 40,
+                "binarySha256": hashlib.sha256(tool.read_bytes()).hexdigest(),
+                "decoderRuntimeSha256": "d" * 64,
+                "experimentCudaDecoders": ["HEVC", "AV1"],
+                "device": {
+                    "uuid": "eb576a3f5b2d4be7863c742308e386e7", "index": 0,
+                    "driverVersionKnown": True, "driverVersion": "580.178.04;cuda-api=13000",
+                },
+            }
+            env = {"VMAF_NATIVE_PATH": str(tool), "VMAF_MODEL_DIR": str(root)}
+            gpu = "GPU-eb576a3f-5b2d-4be7-863c-742308e386e7"
+            with patch.dict(os.environ, env), patch.object(runner, "VMAF_V1_MODEL_SHA256", model_sha), \
+                    patch.object(runner, "capture", return_value=(json.dumps(report), "")) as capture:
+                scorer = runner.discover_vmaf_v1(0, gpu, "580.178.04", ["HEVC", "AV1"])
+                self.assertEqual(scorer.profile["modelSha256"], model_sha)
+                self.assertEqual(scorer.profile["decoderRuntimeSha256"], report["decoderRuntimeSha256"])
+                self.assertEqual(scorer.model_bytes, b"pinned model")
+                self.assertIn("--experiment-window", capture.call_args.args[0])
+                self.assertIsNone(runner.discover_vmaf_v1(1, gpu, "580.178.04", ["HEVC"]))
+                self.assertIsNone(runner.discover_vmaf_v1(0, gpu, "999.0", ["HEVC"]))
+                self.assertIsNone(runner.discover_vmaf_v1(0, gpu, "580.178.04", ["HEVC", "H264"]))
+                with patch.dict(os.environ, {"BITOVP_NVENC_RUNNER_DEADLINE_NS": str(40 * 10**9)}), \
+                        patch.object(runner, "monotonic_ns", return_value=35 * 10**9) as clock:
+                    self.assertIsNotNone(runner.discover_vmaf_v1(0, gpu, "580.178.04", ["HEVC"]))
+                    self.assertEqual(capture.call_args.kwargs["timeout"], 3)
+                    clock.side_effect = [35 * 10**9, 39 * 10**9]
+                    capture.reset_mock()
+                    self.assertIsNone(runner.discover_vmaf_v1(0, gpu, "580.178.04", ["HEVC"]))
+                    capture.assert_not_called()
+                model.write_bytes(b"another model")
+                self.assertIsNone(runner.discover_vmaf_v1(0, gpu, "580.178.04", ["HEVC"]))
+
+    def test_optional_model_fifo_cannot_block_official_capability_discovery(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            tool = root / "bitovp-vmaf"
+            tool.write_bytes(b"owned scorer")
+            tool.chmod(0o700)
+            fifo = root / "model.pipe"
+            os.mkfifo(fifo)
+            (root / (runner.VMAF_V1_MODEL_ID + ".json")).symlink_to(fifo)
+            env = {**os.environ, "VMAF_NATIVE_PATH": str(tool), "VMAF_MODEL_DIR": str(root)}
+            env.pop("BITOVP_NVENC_RUNNER_DEADLINE_NS", None)
+            probe = (
+                "import runner\n"
+                'assert runner.discover_vmaf_v1(0, "GPU-eb576a3f-5b2d-4be7-863c-742308e386e7",'
+                ' "580.178.04", ["HEVC"]) is None'
+            )
+            completed = subprocess.run(
+                [sys.executable, "-B", "-c", probe],
+                cwd=Path(runner.__file__).parent, env=env, capture_output=True, text=True, timeout=2,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_sdk_hardware_attestation_cannot_name_another_device(self):
         gpu = "GPU-eb576a3f-5b2d-4be7-863c-742308e386e7"
         report = {
@@ -320,7 +476,7 @@ sys.exit(implementation.main(source))
             self.assertEqual(snapshot.invocation_path, alias.absolute())
             self.assertEqual(snapshot.invocation_path.resolve(strict=True), snapshot.path)
 
-    def resolve_fixture(self, root, change_during_probe=None, runner_link=None):
+    def resolve_fixture(self, root, change_during_probe=None, runner_link=None, **runtime_options):
         paths = {name: root / name for name in ("ffmpeg", "ffprobe", "sdk-probe", "runner.py")}
         for name, path in paths.items():
             path.write_bytes(name.encode())
@@ -357,7 +513,7 @@ sys.exit(implementation.main(source))
                 patch.object(runner, "MODEL_SHA256", hashlib.sha256(model.read_bytes()).hexdigest()), \
                 patch.object(runner, "cuda_device", return_value=(gpu, "test GPU")), \
                 patch.object(runner, "capture", side_effect=capture):
-            runtime = runner.resolve_runtime(runner_source, invocation_path)
+            runtime = runner.resolve_runtime(runner_source, invocation_path, **runtime_options)
         return runtime, paths, model
 
     @staticmethod
@@ -368,11 +524,13 @@ sys.exit(implementation.main(source))
         os.utime(replacement, ns=(before.st_atime_ns, before.st_mtime_ns))
         replacement.replace(path)
 
-    def measure_fixture(self, runtime, root, change_during_score=None):
+    def measure_fixture(self, runtime, root, change_during_score=None, measure_vmaf_v1=False):
         source = root / "example.mkv"
         source.touch()
         item = request()
         item["sourcePath"] = str(source)
+        if measure_vmaf_v1:
+            item["trial"]["additionalScoringProfiles"] = ["bitovp-vmaf-cuda-1.0.16-3d0h"]
         trial = parse_trial(item)
         packet_probe = {"streams": [{"codec_name": "hevc", "time_base": "1/30"}],
                         "packets": [{"size": "10", "pts": 0, "flags": "K_"}]}
@@ -452,6 +610,87 @@ sys.exit(implementation.main(source))
             model.write_bytes(b"updated externally")
             result = self.measure_fixture(runtime, root)
             self.assertEqual(result["runtimeId"], runtime.capabilities["runtimeId"])
+
+    def test_missing_optional_scorer_preserves_the_primary_measurement(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            runtime, _, _ = self.resolve_fixture(root)
+            result = self.measure_fixture(runtime, root, measure_vmaf_v1=True)
+            self.assertEqual(result["scoreMilli"], 90000)
+            self.assertEqual(result["additionalScores"], [{
+                "scoringProfileId": "bitovp-vmaf-cuda-1.0.16-3d0h",
+                "status": "failed",
+                "failureCode": "VMAF_V1_UNAVAILABLE",
+            }])
+
+    def test_claimed_runtime_keeps_official_measurement_when_v1_probe_fails(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            profile = {
+                "scoringProfileId": runner.VMAF_V1_PROFILE_ID,
+                "scorerSha256": "a" * 64,
+                "modelSha256": runner.VMAF_V1_MODEL_SHA256,
+                "sourceSha256": "b" * 64,
+                "officialRevision": "c" * 40,
+                "decoderRuntimeSha256": "d" * 64,
+            }
+            with patch.object(runner, "discover_vmaf_v1", return_value=SimpleNamespace(profile=profile)):
+                admitted, _, _ = self.resolve_fixture(root)
+            expected = {
+                "runtimeId": admitted.capabilities["runtimeId"],
+                "additionalScoringProfiles": [profile],
+            }
+            options = {"expected_runtime": runner.parse_expected_runtime(json.dumps(expected))}
+            changed = SimpleNamespace(profile={**profile, "decoderRuntimeSha256": "e" * 64})
+            for current in (None, changed):
+                with self.subTest(current=current):
+                    with patch.object(runner, "discover_vmaf_v1", return_value=current) as discover:
+                        dual, _, _ = self.resolve_fixture(root, **options, probe_vmaf_v1=True)
+                        discover.assert_called_once()
+                    dual_result = self.measure_fixture(dual, root, measure_vmaf_v1=True)
+                    self.assertEqual(dual_result["runtimeId"], expected["runtimeId"])
+                    self.assertEqual(dual_result["scoreMilli"], 90000)
+                    self.assertEqual(dual_result["additionalScores"][0]["failureCode"], "VMAF_V1_UNAVAILABLE")
+            with patch.object(runner, "discover_vmaf_v1", side_effect=AssertionError("unexpected v1 probe")):
+                primary, _, _ = self.resolve_fixture(root, **options, probe_vmaf_v1=False)
+                primary_result = self.measure_fixture(primary, root)
+                with self.assertRaisesRegex(RunnerError, "EXPERIMENT_RUNTIME_CHANGED"):
+                    self.resolve_fixture(root, expected_runtime={**expected, "runtimeId": "0" * 64}, probe_vmaf_v1=False)
+            self.assertEqual(primary_result["runtimeId"], expected["runtimeId"])
+            self.assertNotIn("additionalScores", primary_result)
+
+    def test_claimed_official_only_runtime_keeps_its_id_when_v1_becomes_available(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            with patch.object(runner, "discover_vmaf_v1", return_value=None):
+                admitted, _, _ = self.resolve_fixture(root)
+            expected = {"runtimeId": admitted.capabilities["runtimeId"]}
+            with patch.object(runner, "discover_vmaf_v1", side_effect=AssertionError("unexpected v1 probe")):
+                primary, _, _ = self.resolve_fixture(root, expected_runtime=expected, probe_vmaf_v1=False)
+            result = self.measure_fixture(primary, root)
+            self.assertEqual(result["runtimeId"], expected["runtimeId"])
+            self.assertEqual(result["scoreMilli"], 90000)
+            self.assertNotIn("additionalScores", result)
+
+    def test_secondary_reserves_time_to_return_the_primary_receipt(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            runtime, _, _ = self.resolve_fixture(root)
+            tool, identity = runtime.tool_identities[0]
+            runtime = replace(runtime, vmaf_v1=runner.OwnedVmafV1(tool, tool, identity, b"model", {}))
+            now = 755_000_000_000
+            for remaining, expected_timeout in ((295, 280), (10, None)):
+                with self.subTest(remaining=remaining), \
+                        patch.dict(os.environ, {"BITOVP_NVENC_RUNNER_DEADLINE_NS": str(now + remaining * 10**9)}), \
+                        patch.object(runner, "monotonic_ns", return_value=now), \
+                        patch.object(runner, "capture", side_effect=RunnerError("VMAF_V1_SCORE_TIMEOUT")) as capture:
+                    result = self.measure_fixture(runtime, root, measure_vmaf_v1=True)
+                    self.assertEqual(result["scoreMilli"], 90000)
+                    self.assertEqual(result["additionalScores"][0]["failureCode"], "VMAF_V1_SCORE_TIMEOUT")
+                    if expected_timeout is None:
+                        capture.assert_not_called()
+                    else:
+                        self.assertEqual(capture.call_args.kwargs["timeout"], expected_timeout)
 
 
 if __name__ == "__main__":

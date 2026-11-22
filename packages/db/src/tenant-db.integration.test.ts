@@ -130,10 +130,23 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				sourceSha256: "c".repeat(64),
 				input: {
 					sourceId: "fixture",
+					codec: "H264",
 					window: {
 						timeBase: { num: 1, den: 90_000 },
 						startPts: "90000",
 						endPtsExclusive: "180000",
+					},
+					sdk: {
+						version: "13.0",
+						pictures: [
+							{
+								frameIndex: 0,
+								metadata: Array.from({ length: 7 }, () => ({
+									type: 5,
+									payload: "ab".repeat(16_384),
+								})),
+							},
+						],
 					},
 				},
 			};
@@ -158,9 +171,20 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			expect(first.items[0]?.id).toEqual(first.items[1]?.id);
 			expect(
 				await experimentSelectionRows(ctx, campaign.id, "fixture", "30", "60"),
-			).toMatchObject([{ id: first.items[0]?.id }]);
+			).toEqual([
+				{
+					id: first.items[0]?.id,
+					codec: "H264",
+					result: null,
+					status: "PENDING",
+					sourceSha256: trial.sourceSha256,
+				},
+			]);
 			expect(
 				await experimentSelectionRows(ctx, campaign.id, "fixture", "30", "61"),
+			).toEqual([]);
+			expect(
+				await experimentSelectionRows(ctx, campaign.id, "other", "30", "60"),
 			).toEqual([]);
 			expect(
 				await experimentSelectionRows(
@@ -227,6 +251,17 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				nextCursor: null,
 				snapshot: 1,
 			});
+			expect(
+				await experimentSelectionRows(ctx, campaign.id, "fixture", "30", "60"),
+			).toEqual([
+				{
+					id: first.items[0]?.id,
+					codec: "H264",
+					result: null,
+					status: "CANCELED",
+					sourceSha256: trial.sourceSha256,
+				},
+			]);
 			const exhausted = await a.encodingExperimentCampaign.create({
 				data: { name: "Expired leases", capabilityId, runtime: {} },
 			});

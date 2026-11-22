@@ -359,8 +359,8 @@ type TrialClaim = Pick<
 
 type SelectionRow = Pick<
 	EncodingExperimentTrial,
-	"id" | "input" | "result" | "status" | "sourceSha256"
->;
+	"id" | "result" | "status" | "sourceSha256"
+> & { codec: string | null };
 
 export async function experimentSelectionRows(
 	ctx: ExperimentContext,
@@ -372,7 +372,7 @@ export async function experimentSelectionRows(
 	const { organizationId, id } = campaignWhere(ctx.organizationId, campaignId);
 	// Compare exact frame bounds, including rows stored with a different time base.
 	const rows = await ctx.prisma.$queryRaw<SelectionRow[]>`
-		SELECT "id", "input", "result", "status"::text AS "status", "sourceSha256"
+		SELECT "id", "input"->>'codec' AS "codec", "result", "status"::text AS "status", "sourceSha256"
 		FROM "EncodingExperimentTrial"
 		WHERE "organizationId" = ${organizationId}::uuid AND "campaignId" = ${id}::uuid
 			AND "input"->>'sourceId' = ${sourceId}

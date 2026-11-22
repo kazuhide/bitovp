@@ -146,14 +146,14 @@ beforeEach(() => {
 	fake.rows.mockResolvedValue([
 		{
 			id: legacyId,
-			input: trial,
+			codec: trial.codec,
 			status: "SUCCEEDED",
 			result: primaryResult,
 			sourceSha256,
 		},
 		{
 			id: dualId,
-			input: dualTrial,
+			codec: dualTrial.codec,
 			status: "SUCCEEDED",
 			result: {
 				...primaryResult,
@@ -175,7 +175,7 @@ beforeEach(() => {
 		},
 		{
 			id: failedId,
-			input: dualTrial,
+			codec: dualTrial.codec,
 			status: "SUCCEEDED",
 			result: {
 				...primaryResult,
@@ -432,4 +432,45 @@ it.each([
 			scoringProfileId: additionalProfile,
 		}),
 	).rejects.toMatchObject({ status: 503, code: "OPTIMIZER_INVALID_RESULT" });
+});
+
+it("keeps trials without measurements in Lean's projected candidate set", async () => {
+	const observed = {
+		id: legacyId,
+		codec: "HEVC",
+		status: "SUCCEEDED",
+		result: primaryResult,
+		sourceSha256,
+	};
+	const unobserved = ["PENDING", "RUNNING", "FAILED", "CANCELED"].map(
+		(status, index) => ({
+			id: `11111111-1111-4111-8111-11111111111${index}`,
+			codec: "H264",
+			status,
+			result: null,
+			sourceSha256,
+		}),
+	);
+	fake.rows.mockResolvedValue([observed, ...unobserved]);
+	fake.solve.mockReturnValue({ trialId: observed.id, incompleteCount: 4 });
+	await expect(
+		selectExperimentQuality(ctx, campaign, selection),
+	).resolves.toMatchObject({ candidateCount: 5, incompleteCount: 4 });
+	const [request] = fake.solve.mock.calls[0] ?? [];
+	expect(request.candidates).toEqual([
+		{
+			trialId: observed.id,
+			codec: "HEVC",
+			scoringProfileId: primaryProfile,
+			scoreMilli: 91200,
+			rate: { numerator: "240000000", denominator: "60" },
+			encodeMs: 123,
+			gopFrames: 30,
+		},
+		...unobserved.map(({ id, codec }) => ({
+			trialId: id,
+			codec,
+			scoringProfileId: primaryProfile,
+		})),
+	]);
 });

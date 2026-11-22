@@ -225,7 +225,7 @@ export const experimentTrialSchema = z
 				),
 		}),
 	})
-	.superRefine((trial, ctx) => {
+	.transform((trial, ctx) => {
 		const frameCount = experimentFrameCount(trial.window);
 		const mode = trial.sdk?.session?.["NV_ENC_RC_PARAMS.qpMapMode"];
 		const pictures = trial.sdk?.pictures ?? [];
@@ -281,6 +281,7 @@ export const experimentTrialSchema = z
 					message: "Emphasis mode requires H.264 and QP map values from 0 to 5",
 				});
 		}
+		return trial;
 	});
 export type ExperimentTrialInput = z.infer<typeof experimentTrialSchema>;
 

@@ -145,7 +145,8 @@ def prepare(root):
             "    nv_status = p_nvenc->nvEncEncodePicture(ctx->nvencoder, &pic_params);",
             """    res = nvenc_push_context(avctx);
     if (res >= 0)
-        nv_status = p_nvenc->nvEncEncodePicture(ctx->nvencoder, &pic_params);
+        nv_status = bitovp_nvenc_submit_picture(p_nvenc->nvEncEncodePicture, ctx->nvencoder,
+                                               &pic_params, ctx->bitovp_nvenc_settings != NULL);
 
     av_freep(&picture_payload.combined_metadata);
     if (res < 0)
@@ -154,7 +155,10 @@ def prepare(root):
         (
             '        return nvenc_print_error(avctx, nv_status, "EncodePicture failed!");\n\n'
             "    if (frame && frame->buf[0]) {",
-            """        return nvenc_print_error(avctx, nv_status, "EncodePicture failed!");
+            """    {
+        res = nvenc_print_error(avctx, nv_status, "EncodePicture failed!");
+        return ctx->bitovp_nvenc_settings && res == AVERROR(EAGAIN) ? AVERROR(EIO) : res;
+    }
 
     if (frame && frame->buf[0]) {
         if (ctx->bitovp_nvenc_settings)

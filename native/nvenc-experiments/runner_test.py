@@ -128,7 +128,8 @@ class RunnerTest(unittest.TestCase):
             b"picture\t0\tNV_ENC_PIC_PARAMS.encodePicFlags\t2\n"
             b"picture\t2\tNV_ENC_PIC_PARAMS_HEVC.sliceModeData\t3\n",
         )
-        self.assertEqual(trial.sdk.expected_receipt(), b"bitovp-nvenc-settings-v1\t2\t2\n")
+        digest = hashlib.sha256(trial.sdk.manifest_bytes()).hexdigest()
+        self.assertEqual(trial.sdk.expected_receipt(), f"bitovp-nvenc-settings-v1\t2\t2\t{digest}\n".encode())
 
     def test_sdk_rejects_ambiguous_or_out_of_window_writes(self):
         item = request()
@@ -183,7 +184,8 @@ class RunnerTest(unittest.TestCase):
             "metadata\t1\t5\t0011",
             "metadata\t1\t4\taa",
         ])
-        self.assertEqual(trial.sdk.expected_receipt(), b"bitovp-nvenc-settings-v1\t1\t6\n")
+        digest = hashlib.sha256(trial.sdk.manifest_bytes()).hexdigest()
+        self.assertEqual(trial.sdk.expected_receipt(), f"bitovp-nvenc-settings-v1\t1\t6\t{digest}\n".encode())
         for invalid in (
             {**sdk, "session": {}},
             {**sdk, "session": {"NV_ENC_RC_PARAMS.qpMapMode": 1}},
@@ -218,7 +220,7 @@ class RunnerTest(unittest.TestCase):
                 timeline.assert_not_called()
 
                 receipt = work / (runner.SDK_SETTINGS_FILE + ".receipt")
-                receipt.write_bytes(b"bitovp-nvenc-settings-v1\t0\t1\n")
+                receipt.write_bytes(b"bitovp-nvenc-settings-v1\t1\t0\t" + b"f" * 64 + b"\n")
                 with self.assertRaisesRegex(RunnerError, "NVENC_SDK_SETTINGS_NOT_APPLIED"):
                     runner.encode(runtime, trial, Path("/source.mkv"), Fraction(1, 1000), work)
                 timeline.assert_not_called()

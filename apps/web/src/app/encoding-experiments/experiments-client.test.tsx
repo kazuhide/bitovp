@@ -176,20 +176,20 @@ it("sets catalog-backed SDK session and picture values in the queued trial", asy
 	expect(apiFetch.mock.calls.some(([url]) => url === `${root}/catalog`)).toBe(
 		false,
 	);
-	await userEvent.click(await screen.findByText("NVENC SDK settings"));
+	await userEvent.click(await screen.findByText("NVENC settings"));
 	await userEvent.selectOptions(
-		await screen.findByLabelText("SDK field"),
+		await screen.findByLabelText("Setting"),
 		"NV_ENC_RC_PARAMS.enableAQ",
 	);
-	await userEvent.selectOptions(screen.getByLabelText("Field value"), "false");
-	await userEvent.click(screen.getByRole("button", { name: "Set SDK field" }));
+	await userEvent.selectOptions(screen.getByLabelText("Value"), "false");
+	await userEvent.click(screen.getByRole("button", { name: "Apply setting" }));
 	await userEvent.selectOptions(
-		screen.getByLabelText("SDK field"),
+		screen.getByLabelText("Setting"),
 		"NV_ENC_PIC_PARAMS.encodePicFlags",
 	);
-	await userEvent.type(screen.getByLabelText("Field value"), "2");
+	await userEvent.type(screen.getByLabelText("Value"), "2");
 	expect(screen.getByLabelText("Frame index (zero-based)")).toHaveValue(0);
-	await userEvent.click(screen.getByRole("button", { name: "Set SDK field" }));
+	await userEvent.click(screen.getByRole("button", { name: "Apply setting" }));
 	await userEvent.click(screen.getByRole("button", { name: "Queue trial" }));
 	await waitFor(() => {
 		const request = apiFetch.mock.calls.find(

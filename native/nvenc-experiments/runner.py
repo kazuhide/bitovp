@@ -73,13 +73,18 @@ class SdkSettings:
     def manifest_bytes(self):
         return "".join(self.session + self.pictures).encode("ascii")
 
+    def manifest_sha256(self):
+        return hashlib.sha256(self.manifest_bytes()).hexdigest()
+
     def expected_receipt(self):
-        return f"bitovp-nvenc-settings-v1\t{len(self.session)}\t{len(self.pictures)}\n".encode("ascii")
+        return (
+            f"bitovp-nvenc-settings-v1\t{len(self.session)}\t{len(self.pictures)}\t{self.manifest_sha256()}\n"
+        ).encode("ascii")
 
     def applied(self):
         return {
             "fieldCount": len(self.session) + len(self.pictures),
-            "manifestSha256": hashlib.sha256(self.manifest_bytes()).hexdigest(),
+            "manifestSha256": self.manifest_sha256(),
         }
 
 

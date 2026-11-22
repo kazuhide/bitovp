@@ -12,6 +12,8 @@
 #include <unistd.h>
 
 #include "libavutil/avstring.h"
+#include "libavutil/sha.h"
+#include "libavutil/time.h"
 #include "bitovp_nvenc_bindings.h"
 
 _Static_assert(offsetof(NvencContext, avclass) == 0,
@@ -67,6 +69,7 @@ typedef struct BitovpNvencSettings {
     size_t count;
     size_t init_count;
     size_t picture_cursor;
+    uint8_t manifest_sha256[32];
     NV_ENC_FILM_GRAIN_PARAMS_AV1 initial_film_grain;
     BitovpNvencTiles initial_tiles;
     int receipt_written;
@@ -208,6 +211,7 @@ static int bitovp_nvenc_read_settings(AVCodecContext *avctx)
     NvencContext *ctx = avctx->priv_data;
     const char *path = ctx->bitovp_nvenc_settings_path;
     BitovpNvencSettings *settings;
+    struct AVSHA *hash;
     struct stat info;
     FILE *stream;
     char line[BITOVP_NVENC_LINE_CAPACITY];
@@ -230,7 +234,7 @@ static int bitovp_nvenc_read_settings(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "Invalid BitOVP NVENC settings file\n");
         return AVERROR(EINVAL);
     }
-    stream = fdopen(fd, "r");
+    stream = fdopen(fd, "rb");
     if (!stream) {
         result = AVERROR(errno);
         close(fd);
@@ -250,12 +254,21 @@ static int bitovp_nvenc_read_settings(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
     }
 
+    hash = av_sha_alloc();
+    if (!hash) {
+        fclose(stream);
+        bitovp_nvenc_free_settings(ctx);
+        return AVERROR(ENOMEM);
+    }
+    av_sha_init(hash, 256);
+
     while (fgets(line, sizeof(line), stream)) {
         char *end = strchr(line, '\n');
         if (!end || settings->count == BITOVP_NVENC_MAX_WRITES) {
             result = AVERROR(EINVAL);
             break;
         }
+        av_sha_update(hash, (const uint8_t *)line, end - line + 1);
         *end = '\0';
         result = bitovp_nvenc_parse_line(line, &settings->writes[settings->count]);
         if (result < 0)
@@ -266,6 +279,8 @@ static int bitovp_nvenc_read_settings(AVCodecContext *avctx)
     if (ferror(stream))
         result = AVERROR(EIO);
     fclose(stream);
+    av_sha_final(hash, settings->manifest_sha256);
+    av_free(hash);
     if (result < 0 || !settings->count) {
         bitovp_nvenc_free_settings(ctx);
         av_log(avctx, AV_LOG_ERROR, "Invalid BitOVP NVENC settings entry\n");
@@ -407,8 +422,51 @@ static int bitovp_nvenc_tiles_valid(const NV_ENC_INITIALIZE_PARAMS *init,
            bitovp_nvenc_tiles_dimension(heights, rows, NV_MAX_TILE_ROWS_AV1, init->encodeHeight);
 }
 
+static int bitovp_nvenc_uniform_tile_count(uint32_t count)
+{
+    /* Zero asks NVENC to choose the smallest allowed count. */
+    return !count || !(count & (count - 1));
+}
+
+static int bitovp_nvenc_requested(const BitovpNvencWrite *begin, const BitovpNvencWrite *end,
+                                  const char *field)
+{
+    for (const BitovpNvencWrite *write = begin; write != end; write++)
+        if (!strcmp(write->field, field))
+            return 1;
+    return 0;
+}
+
+static int bitovp_nvenc_grain_writes_valid(const NV_ENC_FILM_GRAIN_PARAMS_AV1 *grain,
+                                          const BitovpNvencWrite *begin, const BitovpNvencWrite *end,
+                                          const char *root)
+{
+    const struct {
+        const char *prefix;
+        unsigned count;
+    } indices[] = {
+        { "pointYValue[", grain->numYPoints }, { "pointYScaling[", grain->numYPoints },
+        { "pointCbValue[", grain->numCbPoints }, { "pointCbScaling[", grain->numCbPoints },
+        { "pointCrValue[", grain->numCrPoints }, { "pointCrScaling[", grain->numCrPoints },
+    };
+
+    for (const BitovpNvencWrite *write = begin; write != end; write++) {
+        const char *field;
+        if (!av_strstart(write->field, root, &field))
+            continue;
+        for (size_t i = 0; i < FF_ARRAY_ELEMS(indices); i++) {
+            const char *index;
+            if (av_strstart(field, indices[i].prefix, &index) &&
+                strtoul(index, NULL, 10) >= indices[i].count)
+                return 0;
+        }
+    }
+    return 1;
+}
+
 static int bitovp_nvenc_check_picture(AVCodecContext *avctx, const NV_ENC_PIC_PARAMS *picture,
-                                       const BitovpNvencPayload *payload)
+                                       const BitovpNvencPayload *payload,
+                                       const BitovpNvencWrite *begin, const BitovpNvencWrite *end)
 {
     NvencContext *ctx = avctx->priv_data;
     const NV_ENC_CODEC_CONFIG *codec = &ctx->encode_config.encodeCodecConfig;
@@ -417,15 +475,36 @@ static int bitovp_nvenc_check_picture(AVCodecContext *avctx, const NV_ENC_PIC_PA
 
     if ((picture->encodePicFlags & ~allowed) || picture->pictureStruct != NV_ENC_PIC_STRUCT_FRAME)
         goto invalid;
+    if (avctx->codec_id == AV_CODEC_ID_H264) {
+        const NV_ENC_PIC_PARAMS_H264 *h264 = &picture->codecPicParams.h264PicParams;
+        if ((!h264->sliceModeDataUpdate || h264->forceIntraRefreshWithFrameCnt) &&
+            bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_H264.sliceModeData"))
+            goto invalid;
+    }
     if (avctx->codec_id == AV_CODEC_ID_HEVC) {
         const NV_ENC_PIC_PARAMS_HEVC *hevc = &picture->codecPicParams.hevcPicParams;
-        if ((hevc->pMasteringDisplay == &payload->mastering_display && !codec->hevcConfig.outputMasteringDisplay) ||
+        if ((!hevc->temporalConfigUpdate &&
+             bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_HEVC.numTemporalLayers")) ||
+            (hevc->temporalConfigUpdate && !codec->hevcConfig.enableTemporalSVC) ||
+            ((!hevc->sliceModeDataUpdate || hevc->forceIntraRefreshWithFrameCnt) &&
+             bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_HEVC.sliceModeData")) ||
+            (hevc->pMasteringDisplay == &payload->mastering_display && !codec->hevcConfig.outputMasteringDisplay) ||
             (hevc->pMaxCll == &payload->content_light && !codec->hevcConfig.outputMaxCll))
             goto invalid;
     }
     if (avctx->codec_id == AV_CODEC_ID_AV1) {
         const NV_ENC_PIC_PARAMS_AV1 *av1 = &picture->codecPicParams.av1PicParams;
-        if ((av1->tileConfigUpdate && av1->forceIntraRefreshWithFrameCnt) ||
+        if ((!av1->temporalConfigUpdate &&
+             bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_AV1.numTemporalLayers")) ||
+            (av1->temporalConfigUpdate && !codec->av1Config.enableTemporalSVC) ||
+            (!av1->tileConfigUpdate &&
+             (bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_AV1.numTileColumns") ||
+              bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_AV1.numTileRows"))) ||
+            (av1->tileConfigUpdate &&
+             (av1->forceIntraRefreshWithFrameCnt ||
+              (!av1->enableCustomTileConfig &&
+               (!bitovp_nvenc_uniform_tile_count(av1->numTileColumns) ||
+                !bitovp_nvenc_uniform_tile_count(av1->numTileRows))))) ||
             (av1->enableCustomTileConfig &&
              (!av1->tileConfigUpdate ||
               av1->tileWidths != payload->tiles.widths ||
@@ -438,7 +517,10 @@ static int bitovp_nvenc_check_picture(AVCodecContext *avctx, const NV_ENC_PIC_PA
             (av1->pMaxCll == &payload->content_light && !codec->av1Config.outputMaxCll) ||
             (av1->filmGrainParams == &payload->film_grain) != av1->filmGrainParamsUpdate ||
             (av1->filmGrainParamsUpdate &&
-             (!codec->av1Config.enableFilmGrainParams || !bitovp_nvenc_grain_valid(av1->filmGrainParams))))
+             (!codec->av1Config.enableFilmGrainParams ||
+              !bitovp_nvenc_grain_valid(av1->filmGrainParams) ||
+              !bitovp_nvenc_grain_writes_valid(av1->filmGrainParams, begin, end,
+                                             "NV_ENC_PIC_PARAMS_AV1.filmGrainParams."))))
             goto invalid;
     }
     return 0;
@@ -481,7 +563,8 @@ static int bitovp_nvenc_reconfigure(AVCodecContext *avctx, unsigned frame, size_
         } else if (!strcmp(path, "NV_ENC_RC_PARAMS.averageBitRate") ||
                    !strcmp(path, "NV_ENC_RC_PARAMS.maxBitRate") ||
                    !strcmp(path, "NV_ENC_RC_PARAMS.vbvBufferSize")) {
-            if (bitovp_nvenc_write_field(&params.reInitEncodeParams, NULL, path, value) != 0)
+            if ((!strcmp(path, "NV_ENC_RC_PARAMS.maxBitRate") && IS_CBR(config.rcParams.rateControlMode)) ||
+                bitovp_nvenc_write_field(&params.reInitEncodeParams, NULL, path, value) != 0)
                 goto invalid;
             updates_rate = 1;
         } else {
@@ -490,14 +573,18 @@ static int bitovp_nvenc_reconfigure(AVCodecContext *avctx, unsigned frame, size_
         (*cursor)++;
     }
 
-    if (*cursor == start || !execute)
+    if (*cursor == start)
         return 0;
     if (updates_rate && (!ctx->support_dyn_bitrate || config.rcParams.rateControlMode == NV_ENC_PARAMS_RC_CONSTQP))
         goto invalid;
+    if (!execute)
+        return 0;
 
     status = ctx->nvenc_dload_funcs.nvenc_funcs.nvEncReconfigureEncoder(ctx->nvencoder, &params);
-    if (status != NV_ENC_SUCCESS)
-        return nvenc_print_error(avctx, status, "BitOVP NvEncReconfigureEncoder failed");
+    if (status != NV_ENC_SUCCESS) {
+        int result = nvenc_print_error(avctx, status, "BitOVP NvEncReconfigureEncoder failed");
+        return result == AVERROR(EAGAIN) ? AVERROR(EIO) : result;
+    }
     ctx->encode_config = config;
     return 0;
 
@@ -628,7 +715,9 @@ static int bitovp_nvenc_apply_picture(AVCodecContext *avctx, NV_ENC_PIC_PARAMS *
         (*cursor)++;
     }
     if (*cursor > start) {
-        int result = bitovp_nvenc_check_picture(avctx, picture, payload);
+        int result = bitovp_nvenc_check_picture(avctx, picture, payload,
+                                               settings->writes + start,
+                                               settings->writes + *cursor);
         if (result < 0)
             return result;
     }
@@ -649,6 +738,12 @@ static int bitovp_nvenc_picture_preflight(AVCodecContext *avctx)
         int result;
 
         picture.frameIdx = settings->writes[cursor].frame;
+        if (avctx->codec_id == AV_CODEC_ID_AV1) {
+            /* Match nvenc_codec_specific_pic_params() in the pinned wrapper. */
+            const NV_ENC_CONFIG_AV1 *av1 = &ctx->encode_config.encodeCodecConfig.av1Config;
+            picture.codecPicParams.av1PicParams.numTileColumns = av1->numTileColumns;
+            picture.codecPicParams.av1PicParams.numTileRows = av1->numTileRows;
+        }
         result = bitovp_nvenc_reconfigure(avctx, picture.frameIdx, &cursor, 0);
         if (result < 0)
             return result;
@@ -759,15 +854,23 @@ static int bitovp_nvenc_validate_transport(AVCodecContext *avctx, int lookahead)
         goto unsupported;
     if (avctx->codec_id == AV_CODEC_ID_AV1) {
         const NV_ENC_CONFIG_AV1 *av1 = &codec->av1Config;
-        const BitovpNvencTiles *tiles = &ctx->bitovp_nvenc_settings->initial_tiles;
+        const BitovpNvencSettings *settings = ctx->bitovp_nvenc_settings;
+        const BitovpNvencTiles *tiles = &settings->initial_tiles;
         if (av1->outputAnnexBFormat ||
             !!av1->enableFilmGrainParams != !!av1->filmGrainParams ||
-            (av1->filmGrainParams && !bitovp_nvenc_grain_valid(av1->filmGrainParams)) ||
+            (av1->filmGrainParams &&
+             (!bitovp_nvenc_grain_valid(av1->filmGrainParams) ||
+              !bitovp_nvenc_grain_writes_valid(av1->filmGrainParams, settings->writes,
+                                             settings->writes + settings->init_count,
+                                             "NV_ENC_CONFIG_AV1.filmGrainParams."))) ||
             (av1->enableCustomTileConfig &&
              (av1->tileWidths != tiles->widths || av1->tileHeights != tiles->heights ||
               !bitovp_nvenc_tiles_valid(init, av1->tileWidths, av1->numTileColumns,
                                        av1->tileHeights, av1->numTileRows))) ||
-            (!av1->enableCustomTileConfig && (av1->tileWidths || av1->tileHeights)))
+            (!av1->enableCustomTileConfig &&
+             (av1->tileWidths || av1->tileHeights ||
+              !bitovp_nvenc_uniform_tile_count(av1->numTileColumns) ||
+              !bitovp_nvenc_uniform_tile_count(av1->numTileRows))))
             goto unsupported;
     }
     return 0;
@@ -826,6 +929,18 @@ static int bitovp_nvenc_apply_settings(AVCodecContext *avctx, int requested_surf
     return 0;
 }
 
+static NVENCSTATUS bitovp_nvenc_submit_picture(PNVENCENCODEPICTURE encode, void *encoder,
+                                               NV_ENC_PIC_PARAMS *picture, int retry_busy)
+{
+    NVENCSTATUS status = encode(encoder, picture);
+
+    /* Keep the staged picture, surface and reconfigure event intact on BUSY.
+     * The managed encode stage already has a process deadline. */
+    while (retry_busy && status == NV_ENC_ERR_ENCODER_BUSY && av_usleep(5000) == 0)
+        status = encode(encoder, picture);
+    return status;
+}
+
 static int bitovp_nvenc_verify_end(AVCodecContext *avctx)
 {
     NvencContext *ctx = avctx->priv_data;
@@ -843,7 +958,9 @@ static int bitovp_nvenc_write_receipt(AVCodecContext *avctx)
     NvencContext *ctx = avctx->priv_data;
     BitovpNvencSettings *settings = ctx->bitovp_nvenc_settings;
     char *receipt;
-    char contents[96];
+    static const char hex[] = "0123456789abcdef";
+    char digest[65];
+    char contents[128];
     int length;
     int fd;
     ssize_t written;
@@ -863,8 +980,14 @@ static int bitovp_nvenc_write_receipt(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "Cannot create BitOVP NVENC settings receipt\n");
         return result;
     }
-    length = snprintf(contents, sizeof(contents), "bitovp-nvenc-settings-v1\t%zu\t%zu\n",
-                      settings->init_count, settings->count - settings->init_count);
+    for (size_t i = 0; i < sizeof(settings->manifest_sha256); i++) {
+        uint8_t byte = settings->manifest_sha256[i];
+        digest[2 * i] = hex[byte >> 4];
+        digest[2 * i + 1] = hex[byte & 15];
+    }
+    digest[64] = '\0';
+    length = snprintf(contents, sizeof(contents), "bitovp-nvenc-settings-v1\t%zu\t%zu\t%s\n",
+                      settings->init_count, settings->count - settings->init_count, digest);
 
     do {
         written = write(fd, contents, length);

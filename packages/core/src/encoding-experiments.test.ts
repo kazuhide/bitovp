@@ -91,6 +91,36 @@ describe("the NVIDIA experiment request and receipt", () => {
 		}
 	});
 
+	it("returns window validation issues for legacy and SDK trials", () => {
+		const sdkTrial = {
+			...trial,
+			sdk: {
+				version: "13.0",
+				pictures: [
+					{ frameIndex: 0, fields: { "NV_ENC_PIC_PARAMS.encodePicFlags": 2 } },
+				],
+			},
+		};
+		const invalidWindows = [
+			[{ ...trial.window, startPts: "x" }, ["window", "startPts"]],
+			[
+				{ ...trial.window, timeBase: { num: 1, den: 0 } },
+				["window", "timeBase", "den"],
+			],
+			[{ ...trial.window, startPts: "1" }, ["window"]],
+		] as const;
+		for (const input of [trial, sdkTrial])
+			for (const [window, path] of invalidWindows)
+				expect(
+					experimentTrialSchema.safeParse({ ...input, window }),
+				).toMatchObject({
+					success: false,
+					error: {
+						issues: expect.arrayContaining([expect.objectContaining({ path })]),
+					},
+				});
+	});
+
 	it("accepts a bounded batch of the three codecs without arbitrary options", () => {
 		expect(
 			experimentBatchSchema.parse({

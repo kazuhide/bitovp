@@ -9,6 +9,7 @@ import {
 	type ExperimentTrialInput,
 	experimentBatchSchema,
 	experimentCampaignInputSchema,
+	experimentCodecs,
 	experimentNvencSdkVersion,
 	experimentQualityRequestSchema,
 	experimentResultSchema,
@@ -294,6 +295,7 @@ export function enqueueExperimentTrials(
 	);
 }
 
+const experimentCodecSchema = z.enum(experimentCodecs);
 const selectionResult = z.strictObject({
 	schemaVersion: z.literal(1),
 	evaluation: z.literal("measured"),
@@ -379,10 +381,9 @@ export async function selectExperimentQuality(
 			"The source ID identifies multiple media versions",
 		);
 	const candidates = rows.map((row) => {
-		const trial = experimentTrialSchema.parse(row.input);
 		const identity = {
 			trialId: row.id,
-			codec: trial.codec,
+			codec: experimentCodecSchema.parse(row.codec),
 			scoringProfileId,
 		};
 		if (row.status !== "SUCCEEDED")

@@ -55,7 +55,8 @@ class Trial:
 
 @dataclass(frozen=True)
 class RunnerSource:
-    invocation_path: Path
+    """Snapshot passed from the launcher to the compiled implementation."""
+
     path: Path
     identity: tuple
     contents: bytes
@@ -69,7 +70,8 @@ class Runtime:
     model_bytes: bytes
     capabilities: dict
     tool_identities: tuple
-    runner_source: RunnerSource
+    invocation_path: Path
+    runner_path: Path
 
 
 def fields(value, required, optional=frozenset()):
@@ -375,12 +377,12 @@ def runtime_tool_identity(path):
         raise RunnerError("RUNTIME_TOOL_CHANGED") from error
 
 
-def require_unchanged_tools(identities, runner_source):
+def require_unchanged_tools(identities, invocation_path, runner_path):
     try:
-        current_runner = runner_source.invocation_path.resolve(strict=True)
+        current_runner = invocation_path.resolve(strict=True)
     except (OSError, RuntimeError) as error:
         raise RunnerError("RUNTIME_TOOL_CHANGED") from error
-    if current_runner != runner_source.path or any(
+    if current_runner != runner_path or any(
         runtime_tool_identity(path) != identity for path, identity in identities
     ):
         raise RunnerError("RUNTIME_TOOL_CHANGED")
@@ -397,9 +399,8 @@ def read_runner_source(invocation_path):
                 raise RunnerError("RUNTIME_TOOL_CHANGED")
     except (OSError, RuntimeError) as error:
         raise RunnerError("RUNTIME_TOOL_CHANGED") from error
-    source = RunnerSource(invocation_path, path, identity, contents)
-    require_unchanged_tools(((path, identity),), source)
-    return source
+    require_unchanged_tools(((path, identity),), invocation_path, path)
+    return RunnerSource(path, identity, contents)
 
 
 def sha256_file(path, identity):
@@ -442,8 +443,10 @@ def parse_sdk_probe(report, index, uuid):
     return runtime_version, codecs
 
 
-def resolve_runtime(runner_source):
-    require_unchanged_tools(((runner_source.path, runner_source.identity),), runner_source)
+def resolve_runtime(runner_source, invocation_path):
+    invocation_path = invocation_path.absolute()
+    runner_path = runner_source.path
+    require_unchanged_tools(((runner_path, runner_source.identity),), invocation_path, runner_path)
     ffmpeg = executable("BITOVP_NVENC_FFMPEG", "ffmpeg")
     ffprobe = executable("BITOVP_NVENC_FFPROBE", "ffprobe")
     sdk_probe = executable("BITOVP_NVENC_SDK_PROBE", str(ffmpeg.with_name("sdk-probe")))
@@ -455,7 +458,7 @@ def resolve_runtime(runner_source):
     identities = {path: runtime_tool_identity(path) for path in tool_paths.values()}
     digests = {name: sha256_file(path, identities[path]) for name, path in tool_paths.items()}
     digests["runnerSha256"] = hashlib.sha256(runner_source.contents).hexdigest()
-    identities[runner_source.path] = runner_source.identity
+    identities[runner_path] = runner_source.identity
     tool_identities = tuple(identities.items())
     model = Path(os.environ.get(
         "BITOVP_NVENC_VMAF_MODEL", ffmpeg.parent.parent / "share" / "nvenc-experiments" / MODEL_NAME,
@@ -474,7 +477,7 @@ def resolve_runtime(runner_source):
     )
     if not re.fullmatch(r"\d+\.\d+(?:\.\d+)?", driver_version.strip()):
         raise RunnerError("INVALID_GPU_RUNTIME")
-    require_unchanged_tools(tool_identities, runner_source)
+    require_unchanged_tools(tool_identities, invocation_path, runner_path)
     sdk_report, _ = capture([str(sdk_probe), str(index)], "NVENC_PROBE")
     runtime_version, hardware_codecs = parse_sdk_probe(json.loads(sdk_report), index, uuid)
     inventories = []
@@ -488,14 +491,14 @@ def resolve_runtime(runner_source):
     ]
     if not codecs or not {"scale_cuda", "hwupload", "libvmaf_cuda"} <= filters:
         raise RunnerError("INCOMPLETE_CUDA_RUNTIME")
-    require_unchanged_tools(tool_identities, runner_source)
+    require_unchanged_tools(tool_identities, invocation_path, runner_path)
     data = {
         "schemaVersion": 1, "gpuUuid": uuid, "gpuName": name, "driverVersion": driver_version.strip(),
         "supportedCodecs": codecs, "scoringProfileId": PROFILE_ID,
         **digests, "maxNvencApiVersion": runtime_version, "modelSha256": model_sha,
     }
     data["runtimeId"] = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    return Runtime(ffmpeg, ffprobe, index, model_bytes, data, tool_identities, runner_source)
+    return Runtime(ffmpeg, ffprobe, index, model_bytes, data, tool_identities, invocation_path, runner_path)
 
 
 def probe_media(runtime, path, options):
@@ -571,7 +574,7 @@ def score(runtime, trial, source, source_time_base, encoded, work, cuda=True):
 
 
 def measure(runtime, trial, cpu_audit):
-    require_unchanged_tools(runtime.tool_identities, runtime.runner_source)
+    require_unchanged_tools(runtime.tool_identities, runtime.invocation_path, runtime.runner_path)
     if trial.codec not in runtime.capabilities["supportedCodecs"]:
         raise RunnerError("UNSUPPORTED_RUNTIME_CODEC")
     source = trial.source_path.resolve(strict=True)
@@ -605,7 +608,7 @@ def measure(runtime, trial, cpu_audit):
                 "meanVmaf": cpu_mean, "scoreMs": cpu_ms,
                 "gpuMinusCpuPerFrame": [float(gpu - cpu) for gpu, cpu in zip(scores, cpu_scores)],
             }
-        require_unchanged_tools(runtime.tool_identities, runtime.runner_source)
+        require_unchanged_tools(runtime.tool_identities, runtime.invocation_path, runtime.runner_path)
         return result
 
 
@@ -617,12 +620,15 @@ def main(runner_source):
     run.add_argument("--request-file", type=Path, required=True)
     run.add_argument("--cpu-audit", action="store_true")
     args = parser.parse_args()
+    # The invocation path comes from this process, including when an older
+    # launcher read the compiled implementation during a runtime upgrade.
+    invocation_path = Path(sys.argv[0])
     try:
         if args.command == "probe":
-            result = resolve_runtime(runner_source).capabilities
+            result = resolve_runtime(runner_source, invocation_path).capabilities
         else:
             trial = parse_trial(json.loads(read_file(args.request_file, 32 * 1024, "REQUEST")))
-            result = measure(resolve_runtime(runner_source), trial, args.cpu_audit)
+            result = measure(resolve_runtime(runner_source, invocation_path), trial, args.cpu_audit)
     except RunnerError as error:
         print(str(error), file=sys.stderr)
         return 1

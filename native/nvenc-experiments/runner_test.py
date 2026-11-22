@@ -253,7 +253,8 @@ def capture(args, stage):
             source = source.replace(guard, fake_hardware + guard)
             original = root / "runner.py"
             replacement = root / "replacement.py"
-            replacement.write_text(source.replace(runner.PROFILE_ID, "replacement-profile"))
+            replacement_source = source.replace(runner.PROFILE_ID, "replacement-profile")
+            replacement.write_text(replacement_source)
             expected = hashlib.sha256(replacement.read_bytes()).hexdigest()
             original.write_text(source.replace(guard, guard + f"\n    Path({str(replacement)!r}).replace(__file__)"))
             tool = root / "test-executable"
@@ -274,6 +275,39 @@ def capture(args, stage):
             data = json.loads(completed.stdout)
             self.assertEqual(data["runnerSha256"], expected)
             self.assertEqual(data["scoringProfileId"], "replacement-profile")
+
+            with self.subTest(launcher="older snapshot"):
+                replacement.write_text(replacement_source)
+                previous = root / "previous.py"
+                previous.write_text(f'''
+import os
+import sys
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
+
+alias = Path(sys.argv[0])
+new_link = alias.with_suffix(".new")
+new_link.symlink_to({str(replacement)!r})
+new_link.replace(alias)
+path = alias.resolve(strict=True)
+with path.open("rb") as handle:
+    info = os.fstat(handle.fileno())
+    identity = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+    source = SimpleNamespace(path=path, identity=identity, contents=handle.read())
+implementation = ModuleType("_bitovp_nvenc_runner_impl")
+implementation.__file__ = str(path)
+sys.modules[implementation.__name__] = implementation
+exec(compile(source.contents, str(path), "exec", dont_inherit=True), implementation.__dict__)
+sys.exit(implementation.main(source))
+''')
+                alias = root / "active.py"
+                alias.symlink_to(previous)
+                completed = subprocess.run(
+                    [sys.executable, "-B", str(alias), "probe"],
+                    env=env, capture_output=True, text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(json.loads(completed.stdout), data)
 
     def resolve_fixture(self, root, change_during_probe=None, runner_link=None):
         paths = {name: root / name for name in ("ffmpeg", "ffprobe", "sdk-probe", "runner.py")}
@@ -306,12 +340,13 @@ def capture(args, stage):
         }
         if runner_link is not None:
             runner_link.symlink_to(paths["runner.py"])
-        runner_source = runner.read_runner_source(runner_link or paths["runner.py"])
+        invocation_path = runner_link or paths["runner.py"]
+        runner_source = runner.read_runner_source(invocation_path)
         with patch.dict(os.environ, env), \
                 patch.object(runner, "MODEL_SHA256", hashlib.sha256(model.read_bytes()).hexdigest()), \
                 patch.object(runner, "cuda_device", return_value=(gpu, "test GPU")), \
                 patch.object(runner, "capture", side_effect=capture):
-            runtime = runner.resolve_runtime(runner_source)
+            runtime = runner.resolve_runtime(runner_source, invocation_path)
         return runtime, paths, model
 
     @staticmethod
@@ -358,7 +393,7 @@ def capture(args, stage):
             self.replace_file(path)
             with patch.object(runner, "executable", side_effect=AssertionError("unexpected tool probe")), \
                     self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
-                runner.resolve_runtime(source)
+                runner.resolve_runtime(source, path)
 
     def test_replacing_consumed_tool_during_measurement_rejects_receipt(self):
         for tool in ("ffmpeg", "ffprobe", "sdk-probe", "runner.py"):
@@ -381,7 +416,7 @@ def capture(args, stage):
             self.retarget_link(link, replacement)
             with patch.object(runner, "executable", side_effect=AssertionError("unexpected tool probe")), \
                     self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
-                runner.resolve_runtime(source)
+                runner.resolve_runtime(source, link)
 
     def test_retargeting_runner_link_during_measurement_rejects_receipt(self):
         with TemporaryDirectory() as folder:

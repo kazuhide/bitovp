@@ -6024,6 +6024,8 @@ export const en = {
 		vmafV1DockerWorker: "{model} (VMAF v1 — bundled model)",
 	},
 	experiments: {
+		alsoMeasureVmafV1: "Also measure VMAF v1.0.16",
+		scoringProfile: "Quality scoring profile",
 		reference: "Selection source and window",
 		bitrateCeiling: "Bitrate ceiling (bps)",
 		timeCeiling: "Time ceiling (ms)",

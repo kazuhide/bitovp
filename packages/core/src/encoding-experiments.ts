@@ -2,6 +2,11 @@ import { z } from "zod";
 
 export const experimentCodecs = ["H264", "HEVC", "AV1"] as const;
 export const experimentScoringProfile = "official-vmaf-cuda-0.6.1";
+export const experimentVmafV1Profile = "bitovp-vmaf-cuda-1.0.16-3d0h";
+export const experimentScoringProfiles = [
+	experimentScoringProfile,
+	experimentVmafV1Profile,
+] as const;
 export const experimentScope = "encoding-experiments";
 export const experimentBatchLimit = 128;
 export const experimentSourceId = z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/);
@@ -13,6 +18,7 @@ const maxSigned32 = 0x7fffffff;
 const positiveSigned32 = positive.max(maxSigned32);
 const decimal = z.string().regex(/^(0|[1-9][0-9]{0,17})$/);
 const positiveDecimal = z.string().regex(/^[1-9][0-9]{0,17}$/);
+const vmafV1Profile = z.literal(experimentVmafV1Profile);
 const timeBase = z.strictObject({
 	num: positiveSigned32,
 	den: positiveSigned32,
@@ -57,6 +63,7 @@ export const experimentTrialSchema = z.strictObject({
 	codec: z.enum(experimentCodecs),
 	preset: z.enum(["P1", "P2", "P3", "P4", "P5", "P6", "P7"]),
 	tuning: z.literal("HIGH_QUALITY"),
+	additionalScoringProfiles: z.tuple([vmafV1Profile]).optional(),
 	config: z.strictObject({
 		gopLength: positiveSigned32,
 		frameIntervalP: z.number().int().min(1).max(5).optional(),
@@ -98,6 +105,9 @@ export const experimentQualityRequestSchema = z.strictObject({
 	schemaVersion: z.literal(1),
 	sourceId: experimentSourceId,
 	window: windowSchema,
+	scoringProfileId: z
+		.enum(experimentScoringProfiles)
+		.default(experimentScoringProfile),
 	constraints: z.strictObject({
 		codec: z.enum(experimentCodecs).optional(),
 		bitrateLimitBps: positive.optional(),
@@ -105,6 +115,23 @@ export const experimentQualityRequestSchema = z.strictObject({
 		gopFrames: positive.optional(),
 	}),
 });
+
+const vmafV1Score = z.discriminatedUnion("status", [
+	z.strictObject({
+		scoringProfileId: vmafV1Profile,
+		status: z.literal("succeeded"),
+		scoreMilli: z.number().int().min(0).max(110_000),
+		meanVmaf: z.number().min(0).max(110),
+		scoreMs: uint,
+		scorerSha256: experimentDigest,
+		modelSha256: experimentDigest,
+	}),
+	z.strictObject({
+		scoringProfileId: vmafV1Profile,
+		status: z.literal("failed"),
+		failureCode: z.string().regex(/^[A-Z][A-Z_0-9]{1,63}$/),
+	}),
+]);
 
 export const experimentResultSchema = z.strictObject({
 	schemaVersion: z.literal(1),
@@ -119,6 +146,15 @@ export const experimentResultSchema = z.strictObject({
 	encodeMs: uint,
 	scoreMs: uint,
 	observedGopFrames: positive.optional(),
+	additionalScores: z.tuple([vmafV1Score]).optional(),
+});
+
+const vmafV1Runtime = z.strictObject({
+	scoringProfileId: vmafV1Profile,
+	scorerSha256: experimentDigest,
+	modelSha256: experimentDigest,
+	sourceSha256: experimentDigest,
+	officialRevision: z.string().regex(/^[0-9a-f]{40}$/),
 });
 
 export const experimentRuntimeSchema = z.strictObject({
@@ -135,6 +171,7 @@ export const experimentRuntimeSchema = z.strictObject({
 	runnerSha256: experimentDigest,
 	sdkProbeSha256: experimentDigest,
 	maxNvencApiVersion: uint.min(208),
+	additionalScoringProfiles: z.tuple([vmafV1Runtime]).optional(),
 });
 
 export const experimentWorkerHealthSchema = z.strictObject({

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Kazuhide Yamamoto
 #pragma once
 #include "bitovp_gpu.hpp"
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -13,6 +14,11 @@ struct VideoInfo {
     double frames_per_second = 0;
     std::string codec;
     bool self_contained_mov = false;
+};
+
+struct PresentationTime {
+    std::int64_t pts;
+    int numerator, denominator;
 };
 
 // A CPU picture whose pixels and presentation timestamp survive the decoder's
@@ -40,7 +46,7 @@ public:
     // standalone CAMBI input scope; existing explicit-depth decoding is unchanged.
     Decoder(const std::string &path, unsigned width, unsigned height,
             unsigned bit_depth, unsigned threads, bool cuda = false, int device = 0,
-            bool attest_local_mov = false);
+            bool attest_local_mov = false, bool experiment_input = false);
     ~Decoder();
     Decoder(const Decoder &) = delete;
     Decoder &operator=(const Decoder &) = delete;
@@ -50,6 +56,7 @@ public:
     RetainedPicture retain_picture() const;
     // Relative presentation time in seconds. Throws if timestamps are absent.
     double timestamp() const;
+    PresentationTime presentation_time() const;
     // Actual decoded-frame duration in seconds. No frame-rate estimate is used.
     double duration() const;
     double decode_ms() const;

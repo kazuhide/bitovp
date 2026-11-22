@@ -75,6 +75,50 @@ class RunnerTests(unittest.TestCase):
         self.assertGreater(receipt["timingMs"]["wall"], 0)
         self.assertGreater(receipt["memory"]["maxRssBytes"], 0)
 
+    def test_nvenc_experiment_aligns_absolute_pts_and_requires_exact_coverage(self):
+        reference = self.root / "experiment-reference.mp4"
+        selected = self.root / "experiment-selected.mkv"
+        late = self.root / "experiment-late.mkv"
+        colors = ["-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
+        commands = [
+            # Video frame one starts at PTS 33 on a 1/1005 clock, exactly half a tick early.
+            ["-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=30", "-frames:v", "6", "-vf",
+             "settb=1/1005,setpts=floor(N*67/2),setsar=1", "-c:v", "libx264", "-preset", "ultrafast",
+             "-threads", "1", "-bf", "0", "-enc_time_base", "1:1005", "-fps_mode", "passthrough",
+             "-video_track_timescale", "1005", *colors, str(reference)],
+            ["-i", str(reference), "-vf", "trim=start_frame=1:end_frame=3,settb=1/30,setpts=N", "-c:v", "ffv1",
+             "-threads", "1", "-fps_mode", "passthrough", *colors, str(selected)],
+            ["-i", str(selected), "-c", "copy", "-output_ts_offset", "0.033", str(late)],
+        ]
+        for command in commands:
+            subprocess.run([args.ffmpeg, "-v", "error", "-nostdin", *command], check=True,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+
+        ordinary, ordinary_output = self.score("experiment-ordinary.json", reference=selected, distorted=selected)
+        self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+        expected = json.loads(ordinary_output.read_text())
+        self.assertNotIn("experimentWindow", expected)
+        self.assertNotIn("referenceDecodeBackend", expected)
+        window = ("--experiment-window", "--reference-start-frame", "1", "--frame-count")
+        run, output = self.score("experiment-window.json", reference=reference, distorted=selected, extra=(*window, "2"))
+        self.assertEqual(run.returncode, 0, run.stderr)
+        result = json.loads(output.read_text())
+        self.assertEqual(result["experimentWindow"], {"startFrame": 1, "frameCount": 2})
+        self.assertEqual(result["referenceDecodeBackend"], "cpu")
+        self.assertEqual(result["decodeBackend"], "cpu")
+        self.assertEqual(result["frames"], 2)
+        self.assertEqual(result["features"], expected["features"])
+        self.assertEqual(result["models"], expected["models"])
+
+        for name, distorted, frame_count in (("extra", selected, "1"), ("short", selected, "3"), ("late", late, "2")):
+            with self.subTest(name=name):
+                run, output = self.score(
+                    f"experiment-{name}.json", reference=reference, distorted=distorted, extra=(*window, frame_count),
+                )
+                self.assertNotEqual(run.returncode, 0, name)
+                self.assertIn("distorted", run.stderr.lower(), name)
+                self.assertFalse(output.exists(), name)
+
     def test_only_the_opened_mov_demuxer_attests_local_inputs(self):
         direct = self.root / "direct.mp4"
         renamed = self.root / "matroska.mp4"
@@ -278,6 +322,25 @@ class RunnerTests(unittest.TestCase):
             run, output = self.score(f"invalid-{index}.json", extra=extra)
             self.assertNotEqual(run.returncode, 0)
             self.assertFalse(output.exists())
+
+    def test_nvenc_experiment_cli_rejects_partial_or_conflicting_window_options(self):
+        window = ("--experiment-window", "--reference-start-frame", "0", "--frame-count", "1")
+        for index, extra in enumerate((
+            window[1:],
+            window[:-2],
+            (*window[:-1], "0"),
+            (*window[:-1], "3601"),
+            ("--experiment-window", "--reference-start-frame", "2147483647", "--frame-count", "1"),
+            (*window, "--max-frames", "0"),
+            (*window, "--bit-depth", "10"),
+            (*window, "--width", "640", "--height", "360"),
+            (*window, "--decode", "cpu", "--backend", "cuda"),
+        )):
+            with self.subTest(extra=extra):
+                run, output = self.score(f"experiment-invalid-{index}.json", extra=extra)
+                self.assertNotEqual(run.returncode, 0)
+                self.assertRegex(run.stderr.lower(), r"experiment|--frame-count")
+                self.assertFalse(output.exists())
 
 
 unittest.main(argv=[__file__, *remaining])

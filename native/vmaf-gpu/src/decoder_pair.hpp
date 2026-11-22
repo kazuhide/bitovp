@@ -16,6 +16,36 @@ inline std::optional<RetainedPair> next_retained_pair(Decoder &reference, Decode
     if (!has_reference) return std::nullopt;
     return RetainedPair{reference.retain_picture(), distorted.retain_picture()};
 }
+
+// Use the unshifted presentation clock, with the same inclusive half-tick
+// bounds as the experiment runner. Wide intermediates cover signed 64-bit PTS.
+inline int experiment_pts_position(const Decoder &decoder, std::uint64_t expected_frame) {
+    const auto clock = decoder.presentation_time();
+    const auto half_tick = __int128(clock.numerator) * 30;
+    const auto difference = 2 * (__int128(clock.pts) * half_tick - __int128(expected_frame) * clock.denominator);
+    return difference < -half_tick ? -1 : (difference > half_tick ? 1 : 0);
+}
+
+inline void read_experiment_pair(Decoder &reference, Decoder &distorted,
+                                  std::uint64_t start_frame, std::uint64_t index) {
+    const auto expected_frame = start_frame + index;
+    auto has_reference = reference.next();
+    if (index == 0) {
+        while (has_reference && experiment_pts_position(reference, expected_frame) < 0)
+            has_reference = reference.next();
+    }
+    if (!has_reference || experiment_pts_position(reference, expected_frame) != 0)
+        throw std::runtime_error("Experiment reference frame is missing or has incorrect PTS");
+    if (!distorted.next() || experiment_pts_position(distorted, index) != 0)
+        throw std::runtime_error("Experiment distorted frame is missing or has incorrect PTS");
+}
+
+inline void validate_experiment_end(Decoder &reference, Decoder &distorted, std::uint64_t end_frame) {
+    if (distorted.next()) throw std::runtime_error("Experiment distorted video contains excess frames");
+    if (reference.next() && experiment_pts_position(reference, end_frame) < 0)
+        throw std::runtime_error("Experiment reference window contains excess frames");
+}
+
 // Frame `index` of each input, timed from that input's first frame. The
 // ordinary method gives each input one frame per slot of the frame rate with
 // FFmpeg's `fps` filter, counted from its first frame, before libvmaf compares

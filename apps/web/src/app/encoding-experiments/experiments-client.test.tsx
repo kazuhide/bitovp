@@ -14,6 +14,7 @@ const root = "/api/encoding-experiments/v1";
 const id = "11111111-1111-4111-8111-111111111111";
 const campaign = {
 	id,
+	capabilityId: "a".repeat(64),
 	name: "Day one",
 	state: "RUNNING",
 	sealed: false,
@@ -28,20 +29,39 @@ const capability = {
 	scoringProfileId: "official-vmaf-cuda-0.6.1",
 };
 
+const v1Profile = "bitovp-vmaf-cuda-1.0.16-3d0h";
+const v1Descriptor = {
+	scoringProfileId: v1Profile,
+	scorerSha256: "b".repeat(64),
+	modelSha256: "c".repeat(64),
+	sourceSha256: "d".repeat(64),
+	officialRevision: "e".repeat(40),
+};
 let role: "VIEWER" | "OPERATOR";
+let hasV1: boolean;
+let workerOnline: boolean;
+let v1Status: "succeeded" | "failed" | undefined;
 beforeEach(() => {
 	role = "OPERATOR";
+	hasV1 = false;
+	workerOnline = true;
+	v1Status = undefined;
 	apiFetch
 		.mockReset()
 		.mockImplementation(async (url: string, init?: RequestInit) => {
 			if (url === "/api/auth/session")
 				return { configured: true, authenticated: true, mode: "users", role };
-			if (url === `${root}/capabilities`) return capability;
+			const additionalScoringProfiles = hasV1 ? [v1Descriptor] : undefined;
+			if (url === `${root}/capabilities`)
+				return workerOnline
+					? { ...capability, additionalScoringProfiles }
+					: { available: false };
 			if (url === `${root}/sources`)
 				return { items: [source], nextCursor: null };
 			if (url === `${root}/campaigns`)
 				return { items: [campaign], nextCursor: null };
-			if (url === `${root}/campaigns/${id}`) return campaign;
+			if (url === `${root}/campaigns/${id}`)
+				return { ...campaign, runtime: { additionalScoringProfiles } };
 			if (url === `${root}/campaigns/${id}/trials`)
 				return init?.method === "POST"
 					? { items: [], nextCursor: null }
@@ -53,6 +73,9 @@ beforeEach(() => {
 									input: {
 										codec: "HEVC",
 										sourceId: source.id,
+										...(v1Status
+											? { additionalScoringProfiles: [v1Profile] }
+											: {}),
 										window: {
 											timeBase: { num: 1, den: 30 },
 											startPts: "0",
@@ -65,6 +88,27 @@ beforeEach(() => {
 										durationTicks: "2",
 										timeBase: { num: 1, den: 1 },
 										encodeMs: 123,
+										...(v1Status === "succeeded"
+											? {
+													additionalScores: [
+														{
+															scoringProfileId: v1Profile,
+															status: v1Status,
+															meanVmaf: 87.25,
+														},
+													],
+												}
+											: v1Status === "failed"
+												? {
+														additionalScores: [
+															{
+																scoringProfileId: v1Profile,
+																status: v1Status,
+																failureCode: "VMAF_V1_SCORE_FAILED",
+															},
+														],
+													}
+												: {}),
 									},
 								},
 							],
@@ -74,6 +118,9 @@ beforeEach(() => {
 				return {
 					status: "selected",
 					trialId: "trial-1",
+					scoringProfileId:
+						JSON.parse(String(init?.body)).scoringProfileId ??
+						capability.scoringProfileId,
 					eligibleCount: 1,
 					incompleteCount: 0,
 				};
@@ -132,4 +179,71 @@ it("asks the Lean selector to evaluate the chosen measured source window", async
 		},
 		constraints: { bitrateLimitBps: 4500000 },
 	});
+});
+
+it("opts in to dual measurements in the editable trial request", async () => {
+	hasV1 = true;
+	renderWithQuery(<ExperimentsClient />);
+	await userEvent.selectOptions(
+		await screen.findByLabelText("Registered source"),
+		source.id,
+	);
+	await userEvent.click(
+		await screen.findByRole("checkbox", { name: "Also measure VMAF v1.0.16" }),
+	);
+	const editor = screen.getByLabelText(
+		"Trial configuration (JSON)",
+	) as HTMLTextAreaElement;
+	expect(JSON.parse(editor.value)).toMatchObject({
+		sourceId: source.id,
+		codec: "HEVC",
+		additionalScoringProfiles: [v1Profile],
+	});
+	await userEvent.click(screen.getByRole("button", { name: "Queue trial" }));
+	const call = apiFetch.mock.calls.find(
+		([url, init]) =>
+			url === `${root}/campaigns/${id}/trials` && init?.method === "POST",
+	);
+	expect(JSON.parse(call?.[1].body)).toMatchObject({
+		schemaVersion: 1,
+		trials: [
+			{
+				sourceId: source.id,
+				codec: "HEVC",
+				additionalScoringProfiles: [v1Profile],
+			},
+		],
+	});
+});
+
+it("reads both scores and selects v1 on a historical campaign when its runtime is offline", async () => {
+	hasV1 = true;
+	workerOnline = false;
+	v1Status = "succeeded";
+	renderWithQuery(<ExperimentsClient />);
+	expect(await screen.findByText("87.25")).toBeInTheDocument();
+	expect(screen.getByText("91.20")).toBeInTheDocument();
+	await userEvent.selectOptions(
+		await screen.findByLabelText("Quality scoring profile"),
+		v1Profile,
+	);
+	await userEvent.click(
+		screen.getByRole("button", { name: "Select best quality" }),
+	);
+	expect(await screen.findByText("Selected trial trial-1")).toBeInTheDocument();
+	const call = apiFetch.mock.calls.find(
+		([url]) => url === `${root}/campaigns/${id}/select`,
+	);
+	expect(JSON.parse(call?.[1].body)).toMatchObject({
+		scoringProfileId: v1Profile,
+	});
+});
+
+it("shows an independent v1 measurement failure while retaining the primary score", async () => {
+	hasV1 = true;
+	v1Status = "failed";
+	role = "VIEWER";
+	renderWithQuery(<ExperimentsClient />);
+	expect(await screen.findByText("VMAF_V1_SCORE_FAILED")).toBeInTheDocument();
+	expect(screen.getByText("91.20")).toBeInTheDocument();
 });

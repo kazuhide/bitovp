@@ -4,9 +4,11 @@ import os
 import subprocess
 import sys
 import unittest
+from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import runner
@@ -73,6 +75,95 @@ def log(label, points, keys=(0,), timebase="1/1000", pix_fmt="yuv420p"):
 
 
 class RunnerTest(unittest.TestCase):
+    def test_secondary_model_is_explicit_and_unique(self):
+        item = request()
+        self.assertFalse(parse_trial(item).measure_vmaf_v1)
+        profile = "bitovp-vmaf-cuda-1.0.16-3d0h"
+        item["trial"]["additionalScoringProfiles"] = [profile]
+        self.assertTrue(parse_trial(item).measure_vmaf_v1)
+        for invalid in ([], [profile, profile], ["official-vmaf-cuda-0.6.1"], profile):
+            with self.subTest(invalid=invalid), self.assertRaises(RunnerError):
+                item["trial"]["additionalScoringProfiles"] = invalid
+                parse_trial(item)
+
+    def test_v1_scores_are_bound_to_the_selected_window_model_and_device(self):
+        item = request()
+        trial = parse_trial(item)
+        profile = {
+            "scoringProfileId": "bitovp-vmaf-cuda-1.0.16-3d0h",
+            "scorerSha256": "a" * 64,
+            "modelSha256": "b" * 64,
+            "sourceSha256": "c" * 64,
+            "officialRevision": "d" * 40,
+        }
+        uuid = "eb576a3f5b2d4be7863c742308e386e7"
+        runtime = SimpleNamespace(
+            gpu_index=0,
+            capabilities={
+                "gpuUuid": "GPU-eb576a3f-5b2d-4be7-863c-742308e386e7",
+                "driverVersion": "580.178.04",
+            },
+            vmaf_v1=SimpleNamespace(profile=profile),
+        )
+        report = {
+            "schema": 1, "implementation": "bitovp-owned", "backend": "cuda",
+            "referenceDecodeBackend": "cpu", "decodeBackend": "cuda",
+            "experimentWindow": {"startFrame": 1, "frameCount": 3},
+            "frames": 3, "width": 1920, "height": 1080, "bitDepth": 8,
+            "sourceSha256": profile["sourceSha256"], "officialRevision": profile["officialRevision"],
+            "device": {"uuid": uuid, "index": 0},
+            "gpuDriver": {"driverVersion": "580.178.04;cuda-api=13000"},
+            "models": [{
+                "id": "vmaf_v1.0.16_3d0h", "sha256": profile["modelSha256"],
+                "pooled": {"mean": Decimal("101.125")},
+                "frames": [Decimal("101.125")] * 3,
+            }],
+        }
+        self.assertEqual(runner.parse_vmaf_v1(report, runtime, trial, False), (101.125, 101125))
+        for invalid in (
+            {**report, "decodeBackend": "cpu"},
+            {**report, "referenceDecodeBackend": "cuda"},
+            {**report, "device": {"uuid": "e" * 32, "index": 0}},
+            {**report, "gpuDriver": {"driverVersion": "580.178.05;cuda-api=13000"}},
+            {**report, "gpuDriver": {"driverVersion": "580.178.04;cuda-api=unknown"}},
+            {**report, "experimentWindow": {"startFrame": 0, "frameCount": 3}},
+            {**report, "models": [{**report["models"][0], "sha256": "e" * 64}]},
+            {**report, "models": [{**report["models"][0], "frames": [101]}]},
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(RunnerError):
+                runner.parse_vmaf_v1(invalid, runtime, trial, False)
+
+    def test_v1_requires_a_pinned_model_and_matching_cuda_identity(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            tool = root / "bitovp-vmaf"
+            tool.write_bytes(b"owned scorer")
+            tool.chmod(0o700)
+            model = root / (runner.VMAF_V1_MODEL_ID + ".json")
+            model.write_bytes(b"pinned model")
+            model_sha = hashlib.sha256(model.read_bytes()).hexdigest()
+            report = {
+                "schemaVersion": 1, "backend": "cuda", "sourceSha256": "a" * 64,
+                "officialSourceRevision": "b" * 40,
+                "binarySha256": hashlib.sha256(tool.read_bytes()).hexdigest(),
+                "device": {
+                    "uuid": "eb576a3f5b2d4be7863c742308e386e7", "index": 0,
+                    "driverVersionKnown": True, "driverVersion": "580.178.04;cuda-api=13000",
+                },
+            }
+            env = {"VMAF_NATIVE_PATH": str(tool), "VMAF_MODEL_DIR": str(root)}
+            gpu = "GPU-eb576a3f-5b2d-4be7-863c-742308e386e7"
+            with patch.dict(os.environ, env), patch.object(runner, "VMAF_V1_MODEL_SHA256", model_sha), \
+                    patch.object(runner, "capture", return_value=(json.dumps(report), "")) as capture:
+                scorer = runner.discover_vmaf_v1(0, gpu, "580.178.04")
+                self.assertEqual(scorer.profile["modelSha256"], model_sha)
+                self.assertEqual(scorer.model_bytes, b"pinned model")
+                self.assertIn("--experiment-window", capture.call_args.args[0])
+                self.assertIsNone(runner.discover_vmaf_v1(1, gpu, "580.178.04"))
+                self.assertIsNone(runner.discover_vmaf_v1(0, gpu, "999.0"))
+                model.write_bytes(b"another model")
+                self.assertIsNone(runner.discover_vmaf_v1(0, gpu, "580.178.04"))
+
     def test_sdk_hardware_attestation_cannot_name_another_device(self):
         gpu = "GPU-eb576a3f-5b2d-4be7-863c-742308e386e7"
         report = {
@@ -368,11 +459,13 @@ sys.exit(implementation.main(source))
         os.utime(replacement, ns=(before.st_atime_ns, before.st_mtime_ns))
         replacement.replace(path)
 
-    def measure_fixture(self, runtime, root, change_during_score=None):
+    def measure_fixture(self, runtime, root, change_during_score=None, measure_vmaf_v1=False):
         source = root / "example.mkv"
         source.touch()
         item = request()
         item["sourcePath"] = str(source)
+        if measure_vmaf_v1:
+            item["trial"]["additionalScoringProfiles"] = ["bitovp-vmaf-cuda-1.0.16-3d0h"]
         trial = parse_trial(item)
         packet_probe = {"streams": [{"codec_name": "hevc", "time_base": "1/30"}],
                         "packets": [{"size": "10", "pts": 0, "flags": "K_"}]}
@@ -452,6 +545,18 @@ sys.exit(implementation.main(source))
             model.write_bytes(b"updated externally")
             result = self.measure_fixture(runtime, root)
             self.assertEqual(result["runtimeId"], runtime.capabilities["runtimeId"])
+
+    def test_missing_optional_scorer_preserves_the_primary_measurement(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            runtime, _, _ = self.resolve_fixture(root)
+            result = self.measure_fixture(runtime, root, measure_vmaf_v1=True)
+            self.assertEqual(result["scoreMilli"], 90000)
+            self.assertEqual(result["additionalScores"], [{
+                "scoringProfileId": "bitovp-vmaf-cuda-1.0.16-3d0h",
+                "status": "failed",
+                "failureCode": "VMAF_V1_UNAVAILABLE",
+            }])
 
 
 if __name__ == "__main__":

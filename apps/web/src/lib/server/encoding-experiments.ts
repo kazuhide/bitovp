@@ -3,12 +3,14 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
 import {
+	type ExperimentRuntime,
 	type ExperimentTrialInput,
 	experimentBatchSchema,
 	experimentCampaignInputSchema,
 	experimentQualityRequestSchema,
 	experimentResultSchema,
 	experimentScoringProfile,
+	experimentScoringProfiles,
 	experimentTrialSchema,
 } from "@bitovp/core/encoding-experiments";
 import {
@@ -98,15 +100,27 @@ export async function listExperimentSources(organizationId: string) {
 async function verifyTrial(
 	root: string,
 	organizationId: string,
-	codecs: ExperimentTrialInput["codec"][],
+	runtime: ExperimentRuntime,
 	trial: ExperimentTrialInput,
 ) {
-	if (!codecs.includes(trial.codec))
+	if (!runtime.supportedCodecs.includes(trial.codec))
 		throw new EncodingExperimentError(
 			422,
 			"CODEC_UNAVAILABLE",
 			"Codec is unavailable on this worker",
 			"codec",
+		);
+	const requestedProfile = trial.additionalScoringProfiles?.[0];
+	if (
+		requestedProfile &&
+		runtime.additionalScoringProfiles?.[0]?.scoringProfileId !==
+			requestedProfile
+	)
+		throw new EncodingExperimentError(
+			422,
+			"SCORING_PROFILE_UNAVAILABLE",
+			"The requested VMAF scoring profile is unavailable",
+			"additionalScoringProfiles",
 		);
 	const source = await readExperimentSource(
 		root,
@@ -129,7 +143,7 @@ export async function validateExperimentTrial(
 ) {
 	const trial = parse(experimentTrialSchema, input);
 	const { root, runtime } = await requireRuntime();
-	await verifyTrial(root, organizationId, runtime.supportedCodecs, trial);
+	await verifyTrial(root, organizationId, runtime, trial);
 	return { valid: true, trial, capabilityId: runtime.runtimeId };
 }
 
@@ -183,7 +197,7 @@ export function enqueueExperimentTrials(
 				const source = await verifyTrial(
 					root,
 					ctx.organizationId,
-					runtime.supportedCodecs,
+					runtime,
 					input,
 				);
 				trials.push({
@@ -200,7 +214,7 @@ export function enqueueExperimentTrials(
 const selectionResult = z.strictObject({
 	schemaVersion: z.literal(1),
 	evaluation: z.literal("measured"),
-	scoringProfileId: z.literal(experimentScoringProfile),
+	scoringProfileId: z.enum(experimentScoringProfiles),
 	candidateSetSha256: z.string().regex(/^[0-9a-f]{64}$/),
 	status: z.enum([
 		"selected",
@@ -259,6 +273,7 @@ export async function selectExperimentQuality(
 	input: unknown,
 ) {
 	const request = parse(experimentQualityRequestSchema, input);
+	const { scoringProfileId } = request;
 	const campaign = await experimentCampaignDetail(ctx, id);
 	const bin = process.env.BITOVP_EXPERIMENTS_OPTIMIZER;
 	if (!bin || !isAbsolute(bin))
@@ -285,9 +300,10 @@ export async function selectExperimentQuality(
 		const identity = {
 			trialId: row.id,
 			codec: trial.codec,
-			scoringProfileId: experimentScoringProfile,
+			scoringProfileId,
 		};
-		if (row.status !== "SUCCEEDED") return identity;
+		if (row.status !== "SUCCEEDED")
+			return { ...identity, scoreMilli: undefined };
 		const result = experimentResultSchema.parse(row.result);
 		if (result.runtimeId !== campaign.capabilityId)
 			throw new EncodingExperimentError(
@@ -295,9 +311,18 @@ export async function selectExperimentQuality(
 				"CAPABILITY_CHANGED",
 				"Result uses another worker identity",
 			);
+		const additional = result.additionalScores?.find(
+			(score) => score.scoringProfileId === scoringProfileId,
+		);
+		const scoreMilli =
+			scoringProfileId === experimentScoringProfile
+				? result.scoreMilli
+				: additional?.status === "succeeded"
+					? additional.scoreMilli
+					: undefined;
 		return {
 			...identity,
-			scoreMilli: result.scoreMilli,
+			scoreMilli,
 			encodeMs: result.encodeMs,
 			gopFrames: result.observedGopFrames,
 			rate: {
@@ -317,7 +342,7 @@ export async function selectExperimentQuality(
 		await runSelection(bin, {
 			schemaVersion: 1,
 			evaluation: "measured",
-			scoringProfileId: experimentScoringProfile,
+			scoringProfileId,
 			candidateSetSha256,
 			constraints: request.constraints,
 			candidates,
@@ -325,11 +350,14 @@ export async function selectExperimentQuality(
 	);
 	if (
 		!checked.success ||
+		checked.data.scoringProfileId !== scoringProfileId ||
 		checked.data.candidateSetSha256 !== candidateSetSha256 ||
 		checked.data.candidateCount !== candidates.length ||
 		(checked.data.status === "selected"
 			? !candidates.some(
-					(candidate) => candidate.trialId === checked.data.trialId,
+					(candidate) =>
+						candidate.trialId === checked.data.trialId &&
+						candidate.scoreMilli !== undefined,
 				)
 			: checked.data.trialId !== undefined)
 	)

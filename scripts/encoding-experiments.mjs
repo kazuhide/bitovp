@@ -23,6 +23,9 @@ Commands:
 
 Set BITOVP_EXPERIMENTS_URL and BITOVP_API_TOKEN. --url overrides the server origin.
 Use a scoped encoding-experiments token. JSON is the default output.
+For dual scoring, set each trial's additionalScoringProfiles to
+["bitovp-vmaf-cuda-1.0.16-3d0h"] when capabilities lists it.
+Set scoringProfileId in the select JSON file to select by v1.0.16.
 `;
 
 function serverOrigin(raw) {

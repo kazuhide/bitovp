@@ -7,6 +7,7 @@ import { runExperiments } from "./encoding-experiments.mjs";
 
 const token = `boe_${"A".repeat(43)}`;
 const id = "11111111-1111-4111-8111-111111111111";
+const v1Profile = "bitovp-vmaf-cuda-1.0.16-3d0h";
 
 function fixture(handler) {
 	const calls = [];
@@ -50,7 +51,10 @@ test("forwards JSON files and a stable idempotency key for enqueue", async () =>
 	const dir = await mkdtemp(join(tmpdir(), "bitovp-experiments-cli-"));
 	try {
 		const path = join(dir, "batch.json");
-		const batch = { schemaVersion: 1, trials: [{ sourceId: "src_1" }] };
+		const batch = {
+			schemaVersion: 1,
+			trials: [{ sourceId: "src_1", additionalScoringProfiles: [v1Profile] }],
+		};
 		await writeFile(path, JSON.stringify(batch));
 		const io = fixture(() => Response.json({ items: [], nextCursor: null }, { status: 202 }));
 		await runExperiments(["enqueue", id, "--file", path, "--idempotency-key", "trial-set-a"], io.api);
@@ -64,11 +68,16 @@ test("forwards JSON files and a stable idempotency key for enqueue", async () =>
 	}
 });
 
-test("submits candidate selection constraints to the campaign selector", async () => {
+test("forwards the scoring profile and constraints to the campaign selector", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "bitovp-experiments-cli-"));
 	try {
 		const file = join(dir, "select.json");
-		const body = { schemaVersion: 1, sourceId: "src_1", constraints: { bitrateLimitBps: 2_000_000 } };
+		const body = {
+			schemaVersion: 1,
+			sourceId: "src_1",
+			scoringProfileId: v1Profile,
+			constraints: { bitrateLimitBps: 2_000_000 },
+		};
 		await writeFile(file, JSON.stringify(body));
 		const io = fixture(() => Response.json({ status: "selected", trialId: "best" }));
 		await runExperiments(["select", id, "--file", file], io.api);
@@ -82,12 +91,24 @@ test("submits candidate selection constraints to the campaign selector", async (
 });
 
 test("streams each NDJSON page under the returned snapshot cursor", async () => {
+	const scored = {
+		id: "one",
+		result: {
+			scoringProfileId: "official-vmaf-cuda-0.6.1",
+			scoreMilli: 90000,
+			additionalScores: [{
+				scoringProfileId: v1Profile,
+				status: "failed",
+				failureCode: "VMAF_V1_SCORE_FAILED",
+			}],
+		},
+	};
 	const io = fixture((n) => Response.json(n === 1
-		? { items: [{ id: "one" }], nextCursor: "snapshot:1:1" }
+		? { items: [scored], nextCursor: "snapshot:1:1" }
 		: { items: [{ id: "two" }], nextCursor: null }));
 	await runExperiments(["export", id, "--format", "ndjson"], io.api);
 	assert.deepEqual(io.calls.map(({ url }) => url.searchParams.get("cursor")), [null, "snapshot:1:1"]);
-	assert.deepEqual(io.items, [{ id: "one" }, { id: "two" }]);
+	assert.deepEqual(io.items, [scored, { id: "two" }]);
 });
 
 test("fails a remote response with a public code and avoids reflecting its message", async () => {

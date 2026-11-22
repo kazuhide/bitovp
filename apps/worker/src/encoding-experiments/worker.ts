@@ -29,6 +29,8 @@ import { ExperimentRunnerError, runExperimentProcess } from "./runner-process";
 
 const leaseMs = 30_000;
 const probeEveryMs = 30_000;
+const measurementTimeoutMs = 750_000;
+const secondaryScoringTimeoutMs = 300_000;
 const localMedia = new Map<string, { stamp: string; digest: string }>();
 type Claim = NonNullable<Awaited<ReturnType<typeof claimExperimentTrial>>>;
 
@@ -114,6 +116,9 @@ async function runTrial(
 			JSON.stringify({ schemaVersion: 1, sourcePath, trial }),
 			{ mode: 0o600 },
 		);
+		const timeoutMs = trial.additionalScoringProfiles
+			? measurementTimeoutMs + secondaryScoringTimeoutMs
+			: measurementTimeoutMs;
 		const output = await runExperimentProcess(
 			"flock",
 			[
@@ -130,7 +135,7 @@ async function runTrial(
 				"--request-file",
 				request,
 			],
-			{ timeoutMs: 750_000, signal, tmpDir: scratch },
+			{ timeoutMs, signal, tmpDir: scratch },
 		);
 		const current = await readExperimentSource(
 			root,
@@ -145,8 +150,9 @@ async function runTrial(
 		outcome = {
 			result: readMeasurement(
 				output,
-				runtime.runtimeId,
+				runtime,
 				experimentFrameCount(trial.window),
+				trial.additionalScoringProfiles,
 			),
 		};
 	} catch (error) {

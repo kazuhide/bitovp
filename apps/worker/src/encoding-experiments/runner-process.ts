@@ -27,6 +27,8 @@ export function runExperimentProcess(
 			"BITOVP_NVENC_VMAF_MODEL",
 			"BITOVP_NVENC_SDK_PROBE",
 			"BITOVP_NVENC_GPU_INDEX",
+			"VMAF_NATIVE_PATH",
+			"VMAF_MODEL_DIR",
 		]) {
 			if (process.env[key] !== undefined) env[key] = process.env[key];
 		}

@@ -4,6 +4,7 @@ import {
 	type ExperimentResult,
 	type ExperimentRuntime,
 	type ExperimentTrialInput,
+	experimentRequestByteLimit,
 	experimentScoringProfile,
 	type experimentScoringProfiles,
 	experimentVmafV1Profile,
@@ -22,6 +23,7 @@ import { Input, SelectNative, Textarea } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api";
 import { useMutationAccess } from "@/lib/auth/use-role-access";
 import { useT } from "@/lib/i18n/context";
+import { SdkSettings } from "./sdk-settings";
 
 type Page<T> = { items: T[]; nextCursor: string | null };
 type Source = { id: string; label: string };
@@ -57,7 +59,10 @@ type Selection = {
 	incompleteCount: number;
 };
 
-type Capabilities = Pick<ExperimentRuntime, "additionalScoringProfiles"> & {
+type Capabilities = Pick<
+	ExperimentRuntime,
+	"additionalScoringProfiles" | "nvencSdk"
+> & {
 	available: boolean;
 	capabilityId?: string;
 	gpuName?: string;
@@ -189,6 +194,7 @@ export function ExperimentsClient() {
 		capabilities.data?.additionalScoringProfiles?.[0]?.scoringProfileId ===
 			experimentVmafV1Profile;
 	const draft = editableTrial(trialJson);
+	const nvencSdk = capabilities.data?.nvencSdk;
 	const draftProfiles = draft?.additionalScoringProfiles;
 	const measuresVmafV1 =
 		Array.isArray(draftProfiles) &&
@@ -490,12 +496,24 @@ export function ExperimentsClient() {
 									{t("experiments.alsoMeasureVmafV1")}
 								</label>
 							)}
+							{nvencSdk &&
+								draft &&
+								campaign.capabilityId === capabilities.data?.capabilityId && (
+									<SdkSettings
+										draft={draft}
+										catalogSha256={nvencSdk.catalogSha256}
+										disabled={busy}
+										onChange={(next) =>
+											setTrialJson(JSON.stringify(next, null, 2))
+										}
+									/>
+								)}
 							<Field label={t("experiments.trialJson")} htmlFor={trialInput}>
 								<Textarea
 									id={trialInput}
 									value={trialJson}
 									onChange={(event) => setTrialJson(event.target.value)}
-									maxLength={8192}
+									maxLength={experimentRequestByteLimit}
 									rows={9}
 								/>
 							</Field>

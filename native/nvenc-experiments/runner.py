@@ -33,6 +33,7 @@ VMAF_V1_PROBE_RECEIPT_MARGIN_SECONDS = 2
 VMAF_V1_RECEIPT_MARGIN_SECONDS = 15
 CODECS = {"H264": "h264", "HEVC": "hevc", "AV1": "av1"}
 MAX_CAPTURE = 12 * 1024 * 1024
+MAX_REQUEST = 272 * 1024
 MAX_FRAMES = 3600
 MAX_FRAME_TIME_BASE = Fraction(1, 1000)
 INT32_MAX = (1 << 31) - 1
@@ -40,10 +41,46 @@ FORMAT_ALLOWLIST = "mov,matroska,webm"
 LOCAL_INPUT = ["-protocol_whitelist", "file", "-format_whitelist", FORMAT_ALLOWLIST]
 FFMPEG_ARGS = ["-hide_banner", "-nostats", "-nostdin", "-xerror", "-noauto_conversion_filters"]
 NUMERALS = re.compile(r"(?:0|[1-9][0-9]{0,18})\Z")
+SDK_VERSION = "13.0"
+SDK_FIELD_PATH = re.compile(r"NV_ENC_[A-Z0-9_]+(?:\.[A-Za-z_][A-Za-z_0-9]*(?:\[[0-9]+\])?)+\Z")
+SDK_CAPABILITY = re.compile(
+    r"^[ \t]+-bitovp-nvenc-settings[ \t]+[^\n]*\bsdk-catalog-sha256=([0-9a-f]{64})\b", re.M,
+)
+SDK_SETTINGS_FILE = "nvenc-settings.tsv"
+MAX_SDK_WRITES = 4096
+MAX_SDK_BAG_SIZE = 512
+MAX_SAFE_INTEGER = (1 << 53) - 1
+SDK_QP_MODE = "NV_ENC_RC_PARAMS.qpMapMode"
+SDK_QP_MAP_BYTES = {"H264": 8160, "HEVC": 2040, "AV1": 510}
+SDK_RECONFIGURATION = {
+    "NV_ENC_RC_PARAMS.averageBitRate": int,
+    "NV_ENC_RC_PARAMS.maxBitRate": int,
+    "NV_ENC_RC_PARAMS.vbvBufferSize": int,
+    "NV_ENC_RECONFIGURE_PARAMS.resetEncoder": bool,
+    "NV_ENC_RECONFIGURE_PARAMS.forceIDR": bool,
+}
 
 
 class RunnerError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class SdkSettings:
+    session: tuple[str, ...]
+    pictures: tuple[str, ...]
+
+    def manifest_bytes(self):
+        return "".join(self.session + self.pictures).encode("ascii")
+
+    def expected_receipt(self):
+        return f"bitovp-nvenc-settings-v1\t{len(self.session)}\t{len(self.pictures)}\n".encode("ascii")
+
+    def applied(self):
+        return {
+            "fieldCount": len(self.session) + len(self.pictures),
+            "manifestSha256": hashlib.sha256(self.manifest_bytes()).hexdigest(),
+        }
 
 
 @dataclass(frozen=True)
@@ -57,6 +94,7 @@ class Trial:
     frame_interval_p: Optional[int]
     rate: dict
     measure_vmaf_v1: bool
+    sdk: Optional[SdkSettings] = None
 
 
 @dataclass(frozen=True)
@@ -116,6 +154,88 @@ def choice(value, accepted):
     return value
 
 
+def sdk_write_rows(bag, prefix):
+    if not isinstance(bag, dict) or len(bag) > MAX_SDK_BAG_SIZE:
+        raise RunnerError("INVALID_REQUEST")
+    for key, value in bag.items():
+        if (
+            not isinstance(key, str) or len(key) > 160 or not SDK_FIELD_PATH.fullmatch(key)
+            or (type(value) is not bool and (type(value) is not int or abs(value) > MAX_SAFE_INTEGER))
+        ):
+            raise RunnerError("INVALID_REQUEST")
+    return tuple(f"{prefix}\t{key}\t{int(bag[key])}\n" for key in sorted(bag))
+
+
+def sdk_reconfiguration_rows(bag, frame_index):
+    rows = sdk_write_rows(bag, f"reconfigure\t{frame_index}")
+    for key, value in bag.items():
+        if type(value) is not SDK_RECONFIGURATION.get(key) or not 0 <= value <= (1 << 32) - 1:
+            raise RunnerError("INVALID_REQUEST")
+    return rows
+
+
+def sdk_qp_map_row(value, mode, codec, frame_index):
+    if (
+        mode == 0 or not isinstance(value, str) or len(value) != 2 * SDK_QP_MAP_BYTES[codec]
+        or not re.fullmatch(r"[0-9a-f]+", value)
+        or (mode == 1 and any(level > 5 for level in bytes.fromhex(value)))
+    ):
+        raise RunnerError("INVALID_REQUEST")
+    return f"qpmap\t{frame_index}\t{value}\n"
+
+
+def sdk_metadata_rows(entries, codec, frame_index):
+    if not isinstance(entries, list) or len(entries) > 32:
+        raise RunnerError("INVALID_REQUEST")
+    rows = []
+    for entry in entries:
+        fields(entry, {"type", "payload"})
+        if codec == "AV1":
+            metadata_type = integer(entry["type"], 1, 5)
+        else:
+            metadata_type = integer(entry["type"], 0, (1 << 32) - 1)
+        data = entry["payload"]
+        if (
+            not isinstance(data, str) or not 2 <= len(data) <= 32768 or len(data) % 2
+            or not re.fullmatch(r"[0-9a-f]+", data)
+        ):
+            raise RunnerError("INVALID_REQUEST")
+        rows.append(f"metadata\t{frame_index}\t{metadata_type}\t{data}\n")
+    return tuple(rows)
+
+
+def parse_sdk_settings(data, frame_count, codec):
+    data = fields(data, {"version"}, {"session", "pictures"})
+    choice(data["version"], {SDK_VERSION})
+    session_values = data.get("session", {})
+    session = sdk_write_rows(session_values, "init")
+    qp_mode = integer(session_values.get(SDK_QP_MODE, 0), 0, 2)
+    if qp_mode == 1 and codec != "H264":
+        raise RunnerError("INVALID_REQUEST")
+    pictures = {}
+    entries = data.get("pictures", [])
+    if not isinstance(entries, list) or len(entries) > frame_count:
+        raise RunnerError("INVALID_REQUEST")
+    total = len(session)
+    has_qp_maps = False
+    for entry in entries:
+        fields(entry, {"frameIndex"}, {"fields", "reconfigure", "qpMap", "metadata"})
+        frame_index = integer(entry["frameIndex"], 0, frame_count - 1)
+        rows = sdk_reconfiguration_rows(entry.get("reconfigure", {}), frame_index)
+        rows += sdk_write_rows(entry.get("fields", {}), f"picture\t{frame_index}")
+        if "qpMap" in entry:
+            rows += (sdk_qp_map_row(entry["qpMap"], qp_mode, codec, frame_index),)
+            has_qp_maps = True
+        rows += sdk_metadata_rows(entry.get("metadata", []), codec, frame_index)
+        total += len(rows)
+        if not rows or frame_index in pictures or total > MAX_SDK_WRITES:
+            raise RunnerError("INVALID_REQUEST")
+        pictures[frame_index] = rows
+    if not total or bool(qp_mode) != has_qp_maps:
+        raise RunnerError("INVALID_REQUEST")
+    return SdkSettings(session, tuple(row for frame in sorted(pictures) for row in pictures[frame]))
+
+
 def parse_trial(request):
     fields(request, {"schemaVersion", "sourcePath", "trial"})
     integer(request["schemaVersion"], 1, 1)
@@ -124,7 +244,7 @@ def parse_trial(request):
         raise RunnerError("INVALID_REQUEST")
     row = fields(
         request["trial"], {"sourceId", "window", "codec", "preset", "tuning", "config"},
-        {"additionalScoringProfiles"},
+        {"additionalScoringProfiles", "sdk"},
     )
     measure_vmaf_v1 = "additionalScoringProfiles" in row
     if measure_vmaf_v1 and row["additionalScoringProfiles"] != [VMAF_V1_PROFILE_ID]:
@@ -163,7 +283,8 @@ def parse_trial(request):
             raise RunnerError("INVALID_REQUEST")
     if "lookaheadDepth" in rate:
         integer(rate["lookaheadDepth"], 0, 32)
-    return Trial(Path(source), int(start), int(count), codec, preset, gop, frame_interval, rate, measure_vmaf_v1)
+    sdk = parse_sdk_settings(row["sdk"], int(count), codec) if "sdk" in row else None
+    return Trial(Path(source), int(start), int(count), codec, preset, gop, frame_interval, rate, measure_vmaf_v1, sdk)
 
 
 def is_hex_digest(value, length):
@@ -173,9 +294,13 @@ def is_hex_digest(value, length):
 def parse_expected_runtime(encoded):
     if encoded is None:
         return None
-    expected = fields(json.loads(encoded), {"runtimeId"}, {"additionalScoringProfiles"})
+    expected = fields(json.loads(encoded), {"runtimeId"}, {"additionalScoringProfiles", "nvencSdk"})
     if not is_hex_digest(expected["runtimeId"], 64):
         raise RunnerError("INVALID_REQUEST")
+    if "nvencSdk" in expected:
+        sdk = fields(expected["nvencSdk"], {"version", "catalogSha256"})
+        if sdk["version"] != SDK_VERSION or not is_hex_digest(sdk["catalogSha256"], 64):
+            raise RunnerError("INVALID_REQUEST")
     if "additionalScoringProfiles" not in expected:
         return expected
     profiles = expected["additionalScoringProfiles"]
@@ -577,6 +702,22 @@ def discover_vmaf_v1(index, gpu_uuid, driver_version, supported_codecs):
     })
 
 
+def discover_sdk_settings(ffmpeg, codecs):
+    digests = set()
+    for codec in codecs:
+        stdout, stderr = capture(
+            [str(ffmpeg), "-hide_banner", "-h", "encoder=" + CODECS[codec] + "_nvenc"],
+            "NVENC_SETTINGS_PROBE",
+        )
+        matches = SDK_CAPABILITY.findall(stdout + "\n" + stderr)
+        if len(matches) != 1:
+            return None
+        digests.add(matches[0])
+    if len(digests) == 1:
+        return {"version": SDK_VERSION, "catalogSha256": digests.pop()}
+    return None
+
+
 def resolve_runtime(runner_source, invocation_path, *, expected_runtime=None, probe_vmaf_v1=True):
     invocation_path = invocation_path.absolute()
     runner_path = runner_source.path
@@ -631,6 +772,11 @@ def resolve_runtime(runner_source, invocation_path, *, expected_runtime=None, pr
         "supportedCodecs": codecs, "scoringProfileId": PROFILE_ID,
         **digests, "maxNvencApiVersion": runtime_version, "modelSha256": model_sha,
     }
+    sdk = discover_sdk_settings(ffmpeg, codecs)
+    if expected_runtime is not None and sdk != expected_runtime.get("nvencSdk"):
+        raise RunnerError("EXPERIMENT_RUNTIME_CHANGED")
+    if sdk is not None:
+        data["nvencSdk"] = sdk
     vmaf_v1 = discover_vmaf_v1(index, uuid, data["driverVersion"], codecs) if probe_vmaf_v1 else None
     discovered_profiles = [vmaf_v1.profile] if vmaf_v1 else None
     if expected_runtime is not None:
@@ -677,16 +823,30 @@ def cuda_args(runtime):
 def encode(runtime, trial, source, source_time_base, work):
     started = perf_counter_ns()
     output = work / "encoded.mkv"
+    options = encode_options(trial)
+    if trial.sdk is not None:
+        manifest = work / SDK_SETTINGS_FILE
+        manifest.write_bytes(trial.sdk.manifest_bytes())
+        options.extend(["-bitovp-nvenc-settings", str(manifest)])
     _, log = capture(
         [str(runtime.ffmpeg), *FFMPEG_ARGS, "-copyts", *cuda_args(runtime), *LOCAL_INPUT, "-noautorotate", "-i", str(source),
          "-map", "0:v:0", "-an", "-sn", "-dn", "-vf",
          reference_filter(trial, source_time_base, "encode_ref") + ",scale=out_range=limited,format=nv12,hwupload",
-         *encode_options(trial), "-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709",
+         *options, "-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709",
          "-color_trc", "bt709", "-fps_mode", "passthrough", "-avoid_negative_ts", "disabled",
          "-frames:v", str(trial.frame_count + 1), "-fs", "1073741824", str(output)],
         "ENCODE", work, timeout=300,
     )
     elapsed_ms = (perf_counter_ns() - started) // 1000000
+    if trial.sdk is not None:
+        expected = trial.sdk.expected_receipt()
+        try:
+            applied = read_file(manifest.with_name(manifest.name + ".receipt"), len(expected), "NVENC_SDK_SETTINGS",
+                                require_regular=True)
+        except (OSError, RunnerError) as error:
+            raise RunnerError("NVENC_SDK_SETTINGS_NOT_APPLIED") from error
+        if applied != expected:
+            raise RunnerError("NVENC_SDK_SETTINGS_NOT_APPLIED")
     validate_timeline(log, "encode_ref", trial.start_frame, trial.frame_count, "yuv420p")
     return output, elapsed_ms
 
@@ -810,6 +970,8 @@ def measure(runtime, trial, cpu_audit):
     require_unchanged_tools(runtime.tool_identities, runtime.invocation_path, runtime.runner_path)
     if trial.codec not in runtime.capabilities["supportedCodecs"]:
         raise RunnerError("UNSUPPORTED_RUNTIME_CODEC")
+    if trial.sdk is not None and "nvencSdk" not in runtime.capabilities:
+        raise RunnerError("NVENC_SDK_SETTINGS_UNAVAILABLE")
     source = trial.source_path.resolve(strict=True)
     if not source.is_file():
         raise RunnerError("SOURCE_UNAVAILABLE")
@@ -832,6 +994,8 @@ def measure(runtime, trial, cpu_audit):
             "durationTicks": str(trial.frame_count), "timeBase": {"num": 1, "den": 30},
             "encodeMs": encode_ms, "scoreMs": score_ms,
         }
+        if trial.sdk is not None:
+            result["nvencSdkApplied"] = trial.sdk.applied()
         interval = observed_gop(packet_probe, trial.frame_count)
         if interval is not None:
             result["observedGopFrames"] = interval
@@ -862,7 +1026,7 @@ def main(runner_source):
         if args.command == "probe":
             result = resolve_runtime(runner_source, invocation_path).capabilities
         else:
-            request = json.loads(read_file(args.request_file, 32 * 1024, "REQUEST"))
+            request = json.loads(read_file(args.request_file, MAX_REQUEST, "REQUEST"))
             trial = parse_trial(request)
             expected_runtime = parse_expected_runtime(os.environ.get("BITOVP_NVENC_EXPECTED_RUNTIME"))
             runtime = resolve_runtime(

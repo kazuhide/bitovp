@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ExperimentRuntime } from "@bitovp/core/encoding-experiments";
 import { expect, it } from "vitest";
 import { readMeasurement } from "./receipt";
@@ -91,5 +92,93 @@ it("binds both secondary hashes to the advertised runtime", () => {
 		expect(() =>
 			readMeasurement(dualReceipt, runtime, 300, [v1Profile]),
 		).toThrow("EXPERIMENT_RECEIPT_MISMATCH");
+	}
+});
+
+it("requires proof of the exact SDK settings, including typed zero and frame order", () => {
+	const qpMap = "ff".repeat(2040);
+	const sdk = {
+		version: "13.0" as const,
+		session: {
+			"NV_ENC_RC_PARAMS.enableAQ": false,
+			"NV_ENC_RC_PARAMS.constQP.qpInterP": 0,
+			"NV_ENC_RC_PARAMS.qpMapMode": 2,
+		},
+		pictures: [
+			{ frameIndex: 10, fields: { "NV_ENC_PIC_PARAMS.encodePicFlags": 2 } },
+			{
+				frameIndex: 2,
+				fields: { "NV_ENC_PIC_PARAMS.encodePicFlags": 2 },
+				qpMap,
+				reconfigure: {
+					"NV_ENC_RECONFIGURE_PARAMS.resetEncoder": false,
+					"NV_ENC_RC_PARAMS.averageBitRate": 2_000_000,
+				},
+				metadata: [
+					{ type: 6, payload: "1122" },
+					{ type: 5, payload: "ff" },
+				],
+			},
+		],
+	};
+	const nvencSdkApplied = {
+		fieldCount: 10,
+		manifestSha256: createHash("sha256")
+			.update(
+				[
+					"init\tNV_ENC_RC_PARAMS.constQP.qpInterP\t0",
+					"init\tNV_ENC_RC_PARAMS.enableAQ\t0",
+					"init\tNV_ENC_RC_PARAMS.qpMapMode\t2",
+					"reconfigure\t2\tNV_ENC_RC_PARAMS.averageBitRate\t2000000",
+					"reconfigure\t2\tNV_ENC_RECONFIGURE_PARAMS.resetEncoder\t0",
+					"picture\t2\tNV_ENC_PIC_PARAMS.encodePicFlags\t2",
+					`qpmap\t2\t${qpMap}`,
+					"metadata\t2\t6\t1122",
+					"metadata\t2\t5\tff",
+					"picture\t10\tNV_ENC_PIC_PARAMS.encodePicFlags\t2",
+					"",
+				].join("\n"),
+			)
+			.digest("hex"),
+	};
+	const expected = {
+		...runtime,
+		nvencSdk: { version: sdk.version, catalogSha256: "e".repeat(64) },
+	};
+	const applied = { ...receipt, nvencSdkApplied };
+	expect(readMeasurement(applied, expected, 300, undefined, sdk)).toEqual(
+		applied,
+	);
+	for (const call of [
+		() => readMeasurement(receipt, expected, 300, undefined, sdk),
+		() => readMeasurement(applied, expected, 300),
+		() => readMeasurement(applied, legacyRuntime, 300, undefined, sdk),
+		() =>
+			readMeasurement(
+				{
+					...applied,
+					nvencSdkApplied: { ...nvencSdkApplied, fieldCount: 9 },
+				},
+				expected,
+				300,
+				undefined,
+				sdk,
+			),
+		() =>
+			readMeasurement(
+				{
+					...applied,
+					nvencSdkApplied: {
+						...nvencSdkApplied,
+						manifestSha256: "f".repeat(64),
+					},
+				},
+				expected,
+				300,
+				undefined,
+				sdk,
+			),
+	]) {
+		expect(call).toThrow("EXPERIMENT_RECEIPT_MISMATCH");
 	}
 });

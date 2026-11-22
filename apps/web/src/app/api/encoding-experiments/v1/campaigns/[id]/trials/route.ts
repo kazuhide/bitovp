@@ -1,3 +1,4 @@
+import { experimentRequestByteLimit } from "@bitovp/core/encoding-experiments";
 import {
 	enqueueExperimentTrials,
 	listExperimentTrials,
@@ -28,7 +29,7 @@ export function POST(req: Request, route: CampaignParams) {
 			enqueueExperimentTrials(
 				ctx,
 				await experimentCampaignId(route),
-				await experimentBody(req, 256 * 1024),
+				await experimentBody(req, experimentRequestByteLimit),
 				req.headers.get("idempotency-key"),
 			),
 		202,

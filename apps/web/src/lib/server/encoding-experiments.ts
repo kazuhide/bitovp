@@ -3,15 +3,19 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
 import {
+	type ExperimentNvencSdkBinding,
+	type ExperimentNvencSdkSettings,
 	type ExperimentRuntime,
 	type ExperimentTrialInput,
 	experimentBatchSchema,
 	experimentCampaignInputSchema,
+	experimentNvencSdkVersion,
 	experimentQualityRequestSchema,
 	experimentResultSchema,
 	experimentScoringProfile,
 	experimentScoringProfiles,
 	experimentTrialSchema,
+	isExperimentNvencSdkFieldValue,
 } from "@bitovp/core/encoding-experiments";
 import {
 	getExperimentRoot,
@@ -45,6 +49,26 @@ export {
 
 export function getExperimentCatalog() {
 	return sdkCatalog;
+}
+
+const sdkBindings = new Map(
+	(
+		(sdkCatalog as { sdkBindings?: readonly ExperimentNvencSdkBinding[] })
+			.sdkBindings ?? []
+	).map((binding) => [`${binding.phase}:${binding.field}`, binding]),
+);
+// Match the pinned generator's ASCII JSON bytes in the server bundle.
+const sdkCatalogSha256 = createHash("sha256")
+	.update(`${JSON.stringify(sdkCatalog, null, "\t")}\n`)
+	.digest("hex");
+
+function availableNvencSdk(runtime: ExperimentRuntime) {
+	const sdk = runtime.nvencSdk;
+	return sdk?.version === experimentNvencSdkVersion &&
+		sdk.catalogSha256 === sdkCatalogSha256 &&
+		sdkBindings.size > 0
+		? sdk
+		: undefined;
 }
 
 function parse<T>(schema: ZodType<T>, value: unknown) {
@@ -86,7 +110,14 @@ export async function getExperimentCapabilities() {
 			available: false,
 			reason: root ? "GPU_UNAVAILABLE" : "NOT_CONFIGURED",
 		};
-	return { ...runtime, available: true, capabilityId: runtime.runtimeId };
+	const { nvencSdk: _, ...base } = runtime;
+	const nvencSdk = availableNvencSdk(runtime);
+	return {
+		...base,
+		...(nvencSdk && { nvencSdk }),
+		available: true,
+		capabilityId: runtime.runtimeId,
+	};
 }
 
 export async function listExperimentSources(organizationId: string) {
@@ -95,6 +126,57 @@ export async function listExperimentSources(organizationId: string) {
 		items: root ? await readExperimentSources(root, organizationId) : [],
 		nextCursor: null,
 	};
+}
+
+function verifyNvencSdkSettings(
+	runtime: ExperimentRuntime,
+	trial: ExperimentTrialInput,
+	settings: ExperimentNvencSdkSettings,
+) {
+	if (runtime.nvencSdk?.version !== settings.version)
+		throw new EncodingExperimentError(
+			422,
+			"NVENC_SDK_UNAVAILABLE",
+			"The worker does not advertise the requested NVENC SDK",
+			"sdk.version",
+		);
+	if (!availableNvencSdk(runtime))
+		throw new EncodingExperimentError(
+			409,
+			"NVENC_SDK_CATALOG_CHANGED",
+			"The worker uses a different NVENC SDK field catalog",
+			"sdk.version",
+		);
+
+	const bags = [
+		{ phase: "session", path: "sdk.session", fields: settings.session ?? {} },
+		...(settings.pictures ?? []).flatMap(({ fields, reconfigure }, index) => [
+			{
+				phase: "picture",
+				path: `sdk.pictures.${index}.fields`,
+				fields: fields ?? {},
+			},
+			{
+				phase: "reconfigure",
+				path: `sdk.pictures.${index}.reconfigure`,
+				fields: reconfigure ?? {},
+			},
+		]),
+	];
+	for (const { phase, path, fields } of bags)
+		for (const [field, value] of Object.entries(fields)) {
+			const binding = sdkBindings.get(`${phase}:${field}`);
+			if (
+				!binding?.codecs.includes(trial.codec) ||
+				!isExperimentNvencSdkFieldValue(binding, value, trial.codec)
+			)
+				throw new EncodingExperimentError(
+					422,
+					"INVALID_NVENC_SDK_SETTING",
+					"Use a supported NVENC SDK field and value for this codec and phase",
+					`${path}.${field}`,
+				);
+		}
 }
 
 async function verifyTrial(
@@ -122,6 +204,7 @@ async function verifyTrial(
 			"The requested VMAF scoring profile is unavailable",
 			"additionalScoringProfiles",
 		);
+	if (trial.sdk) verifyNvencSdkSettings(runtime, trial, trial.sdk);
 	const source = await readExperimentSource(
 		root,
 		organizationId,

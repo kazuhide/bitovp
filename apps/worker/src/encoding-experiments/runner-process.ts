@@ -18,7 +18,7 @@ export function runExperimentProcess(
 		tmpDir?: string;
 		expectedRuntime?: Pick<
 			ExperimentRuntime,
-			"runtimeId" | "additionalScoringProfiles"
+			"runtimeId" | "additionalScoringProfiles" | "nvencSdk"
 		>;
 	},
 ): Promise<unknown> {

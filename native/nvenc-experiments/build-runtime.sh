@@ -53,6 +53,7 @@ fetch vmaf Netflix/vmaf \
 fetch ffmpeg FFmpeg/FFmpeg \
     894da5ca7d742e4429ffb2af534fcda0103ef593 \
     9dad3557314f1b7923b61aff15e30079e964c3b41276bbd43dd8bb15b8028b5f
+python3 -B "$script_dir/sdk/prepare_ffmpeg.py" "$work_dir/ffmpeg"
 (
     cd ffmpeg
     ./configure --prefix="$prefix" --disable-autodetect --disable-everything --disable-network \

@@ -103,6 +103,135 @@ class RunnerTest(unittest.TestCase):
             self.assertEqual(resolve.call_args.kwargs["expected_runtime"], expected)
             self.assertFalse(resolve.call_args.kwargs["probe_vmaf_v1"])
 
+    def test_managed_runtime_keeps_sdk_catalog_attestation(self):
+        expected = {"runtimeId": "a" * 64, "nvencSdk": {"version": "13.0", "catalogSha256": "b" * 64}}
+        self.assertEqual(runner.parse_expected_runtime(json.dumps(expected)), expected)
+        expected["nvencSdk"]["catalogSha256"] = "c" * 63
+        with self.assertRaisesRegex(RunnerError, "INVALID_REQUEST"):
+            runner.parse_expected_runtime(json.dumps(expected))
+
+    def test_sdk_manifest_is_canonical_with_exact_zero_and_false(self):
+        item = request()
+        item["trial"]["sdk"] = {
+            "version": "13.0",
+            "session": {"NV_ENC_RC_PARAMS.lookaheadDepth": 0, "NV_ENC_RC_PARAMS.enableAQ": False},
+            "pictures": [
+                {"frameIndex": 2, "fields": {"NV_ENC_PIC_PARAMS_HEVC.sliceModeData": 3}},
+                {"frameIndex": 0, "fields": {"NV_ENC_PIC_PARAMS.encodePicFlags": 2}},
+            ],
+        }
+        trial = parse_trial(item)
+        self.assertEqual(
+            trial.sdk.manifest_bytes(),
+            b"init\tNV_ENC_RC_PARAMS.enableAQ\t0\n"
+            b"init\tNV_ENC_RC_PARAMS.lookaheadDepth\t0\n"
+            b"picture\t0\tNV_ENC_PIC_PARAMS.encodePicFlags\t2\n"
+            b"picture\t2\tNV_ENC_PIC_PARAMS_HEVC.sliceModeData\t3\n",
+        )
+        self.assertEqual(trial.sdk.expected_receipt(), b"bitovp-nvenc-settings-v1\t2\t2\n")
+
+    def test_sdk_rejects_ambiguous_or_out_of_window_writes(self):
+        item = request()
+        picture = {"frameIndex": 0, "fields": {"NV_ENC_PIC_PARAMS.encodePicFlags": 2}}
+        for invalid in (
+            {},
+            {"version": "13.0"},
+            {"version": "13.0", "session": {"NV_ENC_RC_PARAMS.enableAQ\t": True}},
+            {"version": "13.0", "session": {"NV_ENC_RC_PARAMS.aqStrength": 2.5}},
+            {"version": "13.0", "pictures": [picture, picture]},
+            {"version": "13.0", "pictures": [{**picture, "frameIndex": 3}]},
+        ):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(RunnerError, "INVALID_REQUEST"):
+                item["trial"]["sdk"] = invalid
+                parse_trial(item)
+
+    def test_runtime_discovers_a_consistent_sdk_binding_from_each_encoder(self):
+        digest = "b" * 64
+        listing = "  -bitovp-nvenc-settings <string> E..V....... sdk-catalog-sha256=" + digest
+        binary = Path("/runtime/bin/ffmpeg")
+        codecs = ["H264", "HEVC", "AV1"]
+        with patch.object(runner, "capture", return_value=(listing, "")) as capture:
+            self.assertEqual(
+                runner.discover_sdk_settings(binary, codecs),
+                {"version": "13.0", "catalogSha256": digest},
+            )
+            self.assertEqual([call.args[0][-1] for call in capture.call_args_list],
+                             ["encoder=h264_nvenc", "encoder=hevc_nvenc", "encoder=av1_nvenc"])
+        with patch.object(runner, "capture", side_effect=[(listing, ""), ("", ""), (listing, "")]):
+            self.assertIsNone(runner.discover_sdk_settings(binary, codecs))
+        with patch.object(runner, "capture", side_effect=[(listing, ""), (listing.replace(digest, "c" * 64), ""), (listing, "")]):
+            self.assertIsNone(runner.discover_sdk_settings(binary, codecs))
+
+    def test_sdk_scheduled_reconfigure_picture_and_qp_map_have_one_manifest_order(self):
+        item = request()
+        qp_map = "fd" * 2040
+        frame = {
+            "frameIndex": 1, "qpMap": qp_map,
+            "reconfigure": {"NV_ENC_RECONFIGURE_PARAMS.forceIDR": False, "NV_ENC_RC_PARAMS.averageBitRate": 1000000},
+            "fields": {"NV_ENC_PIC_PARAMS_HEVC.sliceModeData": 1},
+            "metadata": [{"type": 5, "payload": "0011"}, {"type": 4, "payload": "aa"}],
+        }
+        sdk = {"version": "13.0", "session": {"NV_ENC_RC_PARAMS.qpMapMode": 2}, "pictures": [frame]}
+        item["trial"]["sdk"] = sdk
+        trial = parse_trial(item)
+        self.assertEqual(trial.sdk.manifest_bytes().decode("ascii").splitlines(), [
+            "init\tNV_ENC_RC_PARAMS.qpMapMode\t2",
+            "reconfigure\t1\tNV_ENC_RC_PARAMS.averageBitRate\t1000000",
+            "reconfigure\t1\tNV_ENC_RECONFIGURE_PARAMS.forceIDR\t0",
+            "picture\t1\tNV_ENC_PIC_PARAMS_HEVC.sliceModeData\t1",
+            "qpmap\t1\t" + qp_map,
+            "metadata\t1\t5\t0011",
+            "metadata\t1\t4\taa",
+        ])
+        self.assertEqual(trial.sdk.expected_receipt(), b"bitovp-nvenc-settings-v1\t1\t6\n")
+        for invalid in (
+            {**sdk, "session": {}},
+            {**sdk, "session": {"NV_ENC_RC_PARAMS.qpMapMode": 1}},
+            {**sdk, "pictures": [{**frame, "qpMap": "00"}]},
+            {**sdk, "pictures": [{**frame, "reconfigure": {"NV_ENC_CONFIG.gopLength": 2}}]},
+            {**sdk, "pictures": [{**frame, "metadata": [{"type": 4, "payload": "AA"}]}]},
+            {**sdk, "pictures": [{**frame, "metadata": [{"type": -1, "payload": "aa"}]}]},
+        ):
+            with self.subTest(session=invalid["session"]), self.assertRaisesRegex(RunnerError, "INVALID_REQUEST"):
+                item["trial"]["sdk"] = invalid
+                parse_trial(item)
+
+    def test_encode_demands_receipt_for_all_sdk_writes(self):
+        item = request()
+        item["trial"]["sdk"] = {"version": "13.0", "session": {"NV_ENC_RC_PARAMS.aqStrength": 5}}
+        trial = parse_trial(item)
+        with TemporaryDirectory() as directory:
+            work = Path(directory)
+            runtime = SimpleNamespace(ffmpeg=Path("/runtime/bin/ffmpeg"), gpu_index=0)
+
+            def capture(args, stage, cwd, timeout):
+                self.assertEqual(stage, "ENCODE")
+                manifest = Path(args[args.index("-bitovp-nvenc-settings") + 1])
+                self.assertEqual(manifest.read_bytes(), trial.sdk.manifest_bytes())
+                self.assertTrue(manifest.is_relative_to(work))
+                return "", ""
+
+            with patch.object(runner, "capture", side_effect=capture), \
+                    patch.object(runner, "validate_timeline") as timeline:
+                with self.assertRaisesRegex(RunnerError, "NVENC_SDK_SETTINGS_NOT_APPLIED"):
+                    runner.encode(runtime, trial, Path("/source.mkv"), Fraction(1, 1000), work)
+                timeline.assert_not_called()
+
+                receipt = work / (runner.SDK_SETTINGS_FILE + ".receipt")
+                receipt.write_bytes(b"bitovp-nvenc-settings-v1\t0\t1\n")
+                with self.assertRaisesRegex(RunnerError, "NVENC_SDK_SETTINGS_NOT_APPLIED"):
+                    runner.encode(runtime, trial, Path("/source.mkv"), Fraction(1, 1000), work)
+                timeline.assert_not_called()
+
+                receipt.write_bytes(trial.sdk.expected_receipt())
+                encoded, _ = runner.encode(runtime, trial, Path("/source.mkv"), Fraction(1, 1000), work)
+                self.assertEqual(encoded, work / "encoded.mkv")
+                timeline.assert_called_once()
+        self.assertEqual(trial.sdk.applied(), {
+            "fieldCount": 1,
+            "manifestSha256": hashlib.sha256(b"init\tNV_ENC_RC_PARAMS.aqStrength\t5\n").hexdigest(),
+        })
+
     def test_secondary_model_is_explicit_and_unique(self):
         item = request()
         self.assertFalse(parse_trial(item).measure_vmaf_v1)

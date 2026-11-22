@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 const prefix = "/api/encoding-experiments/v1";
+const trialRequestByteLimit = 256 * 1024;
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const cursorPattern = /^[A-Za-z0-9._:-]{1,1024}$/;
 const idempotencyPattern = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -23,6 +24,9 @@ Commands:
 
 Set BITOVP_EXPERIMENTS_URL and BITOVP_API_TOKEN. --url overrides the server origin.
 Use a scoped encoding-experiments token. JSON is the default output.
+For direct NVENC settings, use sdk.version, sdk.session and sdk.pictures.
+See capabilities.nvencSdk and catalog.sdkBindings.
+Per-picture records can include fields, qpMap, reconfigure or metadata.
 For dual scoring, set each trial's additionalScoringProfiles to
 ["bitovp-vmaf-cuda-1.0.16-3d0h"] when capabilities lists it.
 Set scoringProfileId in the select JSON file to select by v1.0.16.
@@ -123,7 +127,7 @@ export async function runExperiments(args, {
 		(withId && !uuid.test(id))
 	)
 		throw new Error("Expected an experiment command and its campaign ID, if required. See --help");
-	const inputSize = { validate: 8192, create: 4096, select: 8192, enqueue: 256 * 1024 };
+	const inputSize = { validate: trialRequestByteLimit, create: 4096, select: 8192, enqueue: trialRequestByteLimit };
 	const hasFile = Object.hasOwn(inputSize, command);
 	if (hasFile !== Boolean(values.file))
 		throw new Error(hasFile ? "A JSON input file is required" : "--file is unavailable for this command");

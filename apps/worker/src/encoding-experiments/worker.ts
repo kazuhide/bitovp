@@ -142,6 +142,7 @@ async function runTrial(
 				expectedRuntime: {
 					runtimeId: runtime.runtimeId,
 					additionalScoringProfiles: runtime.additionalScoringProfiles,
+					nvencSdk: runtime.nvencSdk,
 				},
 			},
 		);
@@ -161,6 +162,7 @@ async function runTrial(
 				runtime,
 				experimentFrameCount(trial.window),
 				trial.additionalScoringProfiles,
+				trial.sdk,
 			),
 		};
 	} catch (error) {

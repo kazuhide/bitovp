@@ -1,7 +1,11 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { ExperimentContext } from "@bitovp/db";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
 	enqueueExperimentTrials,
+	getExperimentCapabilities,
 	selectExperimentQuality,
 	validateExperimentTrial,
 } from "./encoding-experiments";
@@ -83,6 +87,30 @@ const trial = {
 };
 const dualTrial = { ...trial, additionalScoringProfiles: [additionalProfile] };
 const runtime = { runtimeId, supportedCodecs: ["HEVC"] };
+const catalogSha256 = createHash("sha256")
+	.update(
+		readFileSync(
+			resolve(
+				import.meta.dirname,
+				"../../../../../native/nvenc-experiments/catalog/sdk-13.0.json",
+			),
+		),
+	)
+	.digest("hex");
+const sdkRuntime = {
+	...runtime,
+	nvencSdk: { version: "13.0", catalogSha256 },
+};
+const sdkTrial = {
+	...trial,
+	sdk: {
+		version: "13.0",
+		session: {
+			"NV_ENC_RC_PARAMS.enableAQ": true,
+			"NV_ENC_RC_PARAMS.aqStrength": 8,
+		},
+	},
+};
 const selection = {
 	schemaVersion: 1,
 	sourceId: trial.sourceId,
@@ -235,6 +263,123 @@ it("admits the requested additional profile only when the runtime advertises it"
 	).resolves.toMatchObject([
 		{ input: dualTrial, trialKey: expect.any(String) },
 	]);
+});
+
+it("admits SDK settings against the worker's exact catalog and fingerprints them", async () => {
+	fake.readRuntime.mockResolvedValue(sdkRuntime);
+	await expect(getExperimentCapabilities()).resolves.toMatchObject({
+		available: true,
+		nvencSdk: sdkRuntime.nvencSdk,
+	});
+	await expect(
+		validateExperimentTrial(ctx.organizationId, sdkTrial),
+	).resolves.toMatchObject({
+		valid: true,
+		trial: sdkTrial,
+	});
+	const reversed = {
+		...sdkTrial,
+		sdk: {
+			...sdkTrial.sdk,
+			session: Object.fromEntries(
+				Object.entries(sdkTrial.sdk.session).reverse(),
+			),
+		},
+	};
+	for (const input of [sdkTrial, reversed])
+		await expect(
+			enqueueExperimentTrials(
+				ctx,
+				campaign,
+				{ schemaVersion: 1, trials: [input] },
+				"sdk-order",
+			),
+		).resolves.toMatchObject([
+			{ input: sdkTrial, trialKey: expect.any(String) },
+		]);
+	expect(fake.enqueue.mock.calls[0]?.[3]).toBe(fake.enqueue.mock.calls[1]?.[3]);
+});
+
+it("rejects SDK settings without a compatible worker catalog", async () => {
+	await expect(
+		validateExperimentTrial(ctx.organizationId, sdkTrial),
+	).rejects.toMatchObject({
+		status: 422,
+		code: "NVENC_SDK_UNAVAILABLE",
+	});
+	fake.readRuntime.mockResolvedValue({
+		...sdkRuntime,
+		nvencSdk: { ...sdkRuntime.nvencSdk, catalogSha256: "d".repeat(64) },
+	});
+	expect(await getExperimentCapabilities()).not.toHaveProperty("nvencSdk");
+	await expect(
+		enqueueExperimentTrials(
+			ctx,
+			campaign,
+			{ schemaVersion: 1, trials: [sdkTrial] },
+			"sdk-catalog",
+		),
+	).rejects.toMatchObject({ status: 409, code: "NVENC_SDK_CATALOG_CHANGED" });
+});
+
+it("admits QP maps and timed field writes using different phase bindings", async () => {
+	fake.readRuntime.mockResolvedValue(sdkRuntime);
+	const input = {
+		...trial,
+		sdk: {
+			version: "13.0",
+			session: {
+				"NV_ENC_RC_PARAMS.qpMapMode": 2,
+				"NV_ENC_RC_PARAMS.averageBitRate": 1_500_000,
+			},
+			pictures: [
+				{
+					frameIndex: 3,
+					qpMap: "ff".repeat(2040),
+					reconfigure: { "NV_ENC_RC_PARAMS.averageBitRate": 2_000_000 },
+				},
+			],
+		},
+	};
+	await expect(
+		validateExperimentTrial(ctx.organizationId, input),
+	).resolves.toMatchObject({
+		valid: true,
+		trial: input,
+	});
+	await expect(
+		validateExperimentTrial(ctx.organizationId, {
+			...input,
+			sdk: {
+				...input.sdk,
+				pictures: [
+					{
+						frameIndex: 3,
+						qpMap: "ff".repeat(2040),
+						reconfigure: { "NV_ENC_RC_PARAMS.aqStrength": 5 },
+					},
+				],
+			},
+		}),
+	).rejects.toMatchObject({ status: 422, code: "INVALID_NVENC_SDK_SETTING" });
+});
+
+it.each([
+	{ session: { "NV_ENC_RC_PARAMS.enableAQ": 1 } },
+	{ session: { "NV_ENC_RC_PARAMS.aqStrength": -1 } },
+	{ session: { "NV_ENC_CONFIG_H264.idrPeriod": 60 } },
+	{ session: { "NV_ENC_RC_PARAMS.thisFieldDoesNotExist": 1 } },
+	{
+		pictures: [{ frameIndex: 0, fields: { "NV_ENC_RC_PARAMS.aqStrength": 6 } }],
+	},
+])("rejects SDK fields outside their catalog type, phase or codec", async (settings) => {
+	fake.readRuntime.mockResolvedValue(sdkRuntime);
+	await expect(
+		validateExperimentTrial(ctx.organizationId, {
+			...trial,
+			sdk: { version: "13.0", ...settings },
+		}),
+	).rejects.toMatchObject({ status: 422, code: "INVALID_NVENC_SDK_SETTING" });
 });
 
 it("defaults to the historical v0.6.1 score and selects the v1 profile independently", async () => {

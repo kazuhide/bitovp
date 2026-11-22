@@ -358,8 +358,11 @@ def observed_gop(probe, frame_count):
     return interval
 
 
-def read_file(path, limit, stage):
-    with path.open("rb") as source:
+def read_file(path, limit, stage, *, require_regular=False):
+    opener = (lambda name, flags: os.open(name, flags | os.O_NONBLOCK)) if require_regular else None
+    with open(path, "rb", opener=opener) as source:
+        if require_regular and not S_ISREG(os.fstat(source.fileno()).st_mode):
+            raise RunnerError(stage + "_NOT_REGULAR")
         content = source.read(limit + 1)
     if len(content) > limit:
         raise RunnerError(stage + "_SIZE_LIMIT")
@@ -530,7 +533,10 @@ def discover_vmaf_v1(index, gpu_uuid, driver_version, supported_codecs):
         tool = executable("VMAF_NATIVE_PATH", "bitovp-vmaf")
         identity = runtime_tool_identity(tool)
         binary_sha = sha256_file(tool, identity)
-        model = read_file(Path(models) / (VMAF_V1_MODEL_ID + ".json"), 2 * 1024 * 1024, "VMAF_V1_MODEL")
+        model = read_file(
+            Path(models) / (VMAF_V1_MODEL_ID + ".json"), 2 * 1024 * 1024,
+            "VMAF_V1_MODEL", require_regular=True,
+        )
         model_sha = hashlib.sha256(model).hexdigest()
         if model_sha != VMAF_V1_MODEL_SHA256:
             return None
@@ -785,7 +791,9 @@ def score_vmaf_v1(runtime, trial, source, encoded, work, cpu_audit):
             *(["--verify-cpu"] if cpu_audit else []),
         ], "VMAF_V1_SCORE", work, timeout=timeout)
         score_ms = (perf_counter_ns() - started) // 1000000
-        payload = json.loads(read_file(receipt, MAX_CAPTURE, "VMAF_V1_RECEIPT"), parse_float=Decimal)
+        payload = json.loads(
+            read_file(receipt, MAX_CAPTURE, "VMAF_V1_RECEIPT", require_regular=True), parse_float=Decimal,
+        )
         mean, milli = parse_vmaf_v1(payload, runtime, trial, cpu_audit)
         require_unchanged_tools(identities, scorer.invocation_path, scorer.executable)
     except RunnerError as error:

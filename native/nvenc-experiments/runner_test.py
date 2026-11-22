@@ -207,6 +207,28 @@ class RunnerTest(unittest.TestCase):
                 model.write_bytes(b"another model")
                 self.assertIsNone(runner.discover_vmaf_v1(0, gpu, "580.178.04", ["HEVC"]))
 
+    def test_optional_model_fifo_cannot_block_official_capability_discovery(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            tool = root / "bitovp-vmaf"
+            tool.write_bytes(b"owned scorer")
+            tool.chmod(0o700)
+            fifo = root / "model.pipe"
+            os.mkfifo(fifo)
+            (root / (runner.VMAF_V1_MODEL_ID + ".json")).symlink_to(fifo)
+            env = {**os.environ, "VMAF_NATIVE_PATH": str(tool), "VMAF_MODEL_DIR": str(root)}
+            env.pop("BITOVP_NVENC_RUNNER_DEADLINE_NS", None)
+            probe = (
+                "import runner\n"
+                'assert runner.discover_vmaf_v1(0, "GPU-eb576a3f-5b2d-4be7-863c-742308e386e7",'
+                ' "580.178.04", ["HEVC"]) is None'
+            )
+            completed = subprocess.run(
+                [sys.executable, "-B", "-c", probe],
+                cwd=Path(runner.__file__).parent, env=env, capture_output=True, text=True, timeout=2,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_sdk_hardware_attestation_cannot_name_another_device(self):
         gpu = "GPU-eb576a3f-5b2d-4be7-863c-742308e386e7"
         report = {

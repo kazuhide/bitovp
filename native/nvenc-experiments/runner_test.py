@@ -309,6 +309,17 @@ sys.exit(implementation.main(source))
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 self.assertEqual(json.loads(completed.stdout), data)
 
+    def test_snapshot_retains_alias_for_an_older_implementation(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            target = root / "runner.py"
+            target.write_bytes(b"runner source")
+            alias = root / "active.py"
+            alias.symlink_to(target)
+            snapshot = runner.read_runner_source(alias)
+            self.assertEqual(snapshot.invocation_path, alias.absolute())
+            self.assertEqual(snapshot.invocation_path.resolve(strict=True), snapshot.path)
+
     def resolve_fixture(self, root, change_during_probe=None, runner_link=None):
         paths = {name: root / name for name in ("ffmpeg", "ffprobe", "sdk-probe", "runner.py")}
         for name, path in paths.items():

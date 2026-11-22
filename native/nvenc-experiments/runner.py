@@ -60,6 +60,8 @@ class RunnerSource:
     path: Path
     identity: tuple
     contents: bytes
+    # An older compiled implementation may still read the alias from the snapshot.
+    invocation_path: Path
 
 
 @dataclass(frozen=True)
@@ -400,7 +402,7 @@ def read_runner_source(invocation_path):
     except (OSError, RuntimeError) as error:
         raise RunnerError("RUNTIME_TOOL_CHANGED") from error
     require_unchanged_tools(((path, identity),), invocation_path, path)
-    return RunnerSource(path, identity, contents)
+    return RunnerSource(path, identity, contents, invocation_path)
 
 
 def sha256_file(path, identity):

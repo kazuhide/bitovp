@@ -54,6 +54,35 @@ Enable **Also measure VMAF v1.0.16** in the app or include `"additionalScoringPr
 
 **Settings → Reset data** keeps encoding experiment campaigns, trials and their measurement results, and accepted batch receipts. These records are retained even when every available reset category is selected.
 
+## Set NVENC SDK fields
+
+Rebuild the local runtime and restart the worker. A capability with `nvencSdk.version` set to `"13.0"` can apply SDK settings. Create the campaign with that capability. The catalog's `sdkBindings` describes the field names, phases, codecs, types, and values supported by the runner. `sdkLimitations` explains settings that require other media formats or SDK operations. The NVIDIA driver validates the requested combination.
+
+Add an `sdk` property with the following value to the trial JSON in the app, CLI, or API. The SDK values take precedence over the initial recipe. This example uses a window of at least 31 frames.
+
+```json
+{
+  "version": "13.0",
+  "session": {
+    "NV_ENC_RC_PARAMS.enableAQ": true,
+    "NV_ENC_RC_PARAMS.aqStrength": 7,
+    "NV_ENC_RC_PARAMS.multiPass": 1
+  },
+  "pictures": [
+    {
+      "frameIndex": 30,
+      "fields": { "NV_ENC_PIC_PARAMS.encodePicFlags": 2 }
+    }
+  ]
+}
+```
+
+Frame indices start at zero within the trial window. A picture entry can also carry a `reconfigure` object for supported bit rate and VBV changes or a `qpMap` for a QP or emphasis map. Set `NV_ENC_RC_PARAMS.qpMapMode` in `session` when supplying a map. Supply signed bytes in raster order as lowercase hexadecimal. At 1920×1080 the map contains 8,160 bytes for H.264, 2,040 for HEVC, or 510 for AV1. Emphasis mode uses H.264, values 0 to 5, and both spatial and temporal AQ disabled. [NVIDIA's QP and emphasis map API](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.0/nvenc-video-encoder-api-prog-guide/index.html#emphasis-map)
+
+Use a picture's `metadata` array to submit SEI for H.264 or HEVC, or metadata OBUs for AV1. Each entry has a codec-specific numeric `type` and a `payload` of lowercase hexadecimal bytes. AV1 uses metadata types 1 through 5. A frame accepts up to 32 entries of up to 16,384 bytes each, within the request size limit.
+
+SDK trial results include `nvencSdkApplied` with the number of writes accepted by the SDK and the SHA-256 of the manifest read by the encoder. Each QP map or metadata element counts as one write. An encoder failure or a missing write acknowledgement fails the trial. Bit rate, scores, and regular GOP are measured from the output.
+
 ## Select a setting with Lean
 
 Build the [Lean selection executable](../../verification/lean/encoding-experiments/README.md) and set `BITOVP_EXPERIMENTS_OPTIMIZER` in the web process to its absolute path. Select the best trial for one source and window in the app or from the CLI.

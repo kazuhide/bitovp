@@ -155,7 +155,8 @@ describe("catalogue parity", () => {
 		// Operation analytics adds report and collection labels (runtime measured: 3451).
 		// Encoding experiments add campaign, trial, and token controls (3486).
 		// Measuring and selecting the additional VMAF profile add two labels.
-		pinWithDriftAid(short.size, 3488, "short");
+		// NVENC settings add picker labels and a load error (runtime measured: 3498).
+		pinWithDriftAid(short.size, 3498, "short");
 	});
 
 	/**

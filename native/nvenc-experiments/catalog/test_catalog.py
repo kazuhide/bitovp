@@ -179,6 +179,62 @@ class CatalogTest(unittest.TestCase):
                 self.assertEqual(rates[name]["binding"]["maximum"], (1 << 31) - 1)
         self.assertEqual(rates["averageBitRate"]["binding"]["maximum"], (1 << 32) - 1)
 
+    def test_sdk_bindings_cover_session_and_picture_fields(self):
+        fields = self.catalog["sdkBindings"]
+        by_name = {field["field"]: field for field in fields if field["phase"] != "reconfigure"}
+        self.assertEqual(len(fields), len({(field["phase"], field["field"]) for field in fields}))
+        self.assertGreater(len(fields), 150)
+        all_codecs = ["H264", "HEVC", "AV1"]
+        for field, phase, codecs in (
+            ("NV_ENC_RC_PARAMS.aqStrength", "session", all_codecs),
+            ("NV_ENC_RC_PARAMS.constQP.qpInterP", "session", all_codecs),
+            ("NV_ENC_RC_PARAMS.temporalLayerQP[7]", "session", all_codecs),
+            ("NV_ENC_CONFIG_H264_VUI_PARAMETERS.videoFullRangeFlag", "session", ["H264"]),
+            ("NV_ENC_CONFIG_HEVC_VUI_PARAMETERS.videoFullRangeFlag", "session", ["HEVC"]),
+            ("NV_ENC_CONFIG.profileGUID", "session", all_codecs),
+            ("NV_ENC_PIC_PARAMS_HEVC.ltrMarkFrame", "picture", ["HEVC"]),
+            ("NV_ENC_PIC_PARAMS_AV1.temporalConfigUpdate", "picture", ["AV1"]),
+            ("NV_ENC_CONFIG_AV1.tileWidths[63]", "session", ["AV1"]),
+            ("NV_ENC_PIC_PARAMS_AV1.tileHeights[0]", "picture", ["AV1"]),
+        ):
+            with self.subTest(field=field):
+                self.assertEqual(by_name[field]["phase"], phase)
+                self.assertEqual(by_name[field]["codecs"], codecs)
+        self.assertEqual(by_name["NV_ENC_RC_PARAMS.aqStrength"]["maximum"], 15)
+        self.assertEqual(by_name["NV_ENC_RC_PARAMS.enableAQ"]["type"], "boolean")
+        self.assertEqual(by_name["NV_ENC_RC_PARAMS.qpMapMode"]["values"], [0, 1, 2])
+        self.assertEqual(by_name["NV_ENC_RC_PARAMS.qpMapMode"]["choices"][1]["codecs"], ["H264"])
+        self.assertEqual(by_name["NV_ENC_CONFIG_AV1.filmGrainParams.numYPoints"]["maximum"], 14)
+        self.assertEqual(by_name["NV_ENC_CONFIG_AV1.level"]["maximum"], 24)
+        self.assertEqual(by_name["NV_ENC_CONFIG_HEVC.tier"]["values"], [0, 1])
+        self.assertEqual(by_name["NV_ENC_CONFIG_HEVC.maxCUSize"]["values"], [0, 3])
+        self.assertEqual(by_name["NV_ENC_CONFIG_AV1.tileWidths[63]"]["minimum"], 1)
+        for field in (
+            "NV_ENC_INITIALIZE_PARAMS.enableOutputInVidmem",
+            "NV_ENC_INITIALIZE_PARAMS.encodeWidth",
+            "NV_ENC_CONFIG.version",
+            "NV_ENC_CONFIG.profileGUID.Data1",
+            "NV_ENC_PIC_PARAMS.inputBuffer",
+            "NV_ENC_PIC_PARAMS.inputTimeStamp",
+            "NV_ENC_PIC_PARAMS_AV1.tileWidths",
+        ):
+            self.assertNotIn(field, by_name)
+
+    def test_timed_rate_change_has_its_own_schema(self):
+        by_name = {row["field"]: row for row in self.catalog["sdkBindings"] if row["phase"] == "reconfigure"}
+        self.assertEqual(by_name.keys(), {
+            "NV_ENC_RC_PARAMS.averageBitRate", "NV_ENC_RC_PARAMS.maxBitRate", "NV_ENC_RC_PARAMS.vbvBufferSize",
+            "NV_ENC_RECONFIGURE_PARAMS.resetEncoder", "NV_ENC_RECONFIGURE_PARAMS.forceIDR",
+        })
+        self.assertEqual(by_name["NV_ENC_RECONFIGURE_PARAMS.forceIDR"]["type"], "boolean")
+
+    def test_typed_metadata_owns_codec_payload_arrays(self):
+        for codec, prefix in (("H264", "sei"), ("HEVC", "sei"), ("AV1", "obu")):
+            for suffix in ("PayloadArray", "PayloadArrayCnt"):
+                field = f"NV_ENC_PIC_PARAMS_{codec}.{prefix}{suffix}"
+                with self.subTest(field=field):
+                    self.assertEqual(self.catalog["sdkLimitations"][field]["role"], "typed_payload")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -50,7 +50,9 @@ The worker passes an internal JSON file with the source's resolved path. The sou
 python3 native/nvenc-experiments/runner.py measure --request-file /absolute/trial.json
 ```
 
-The writable options in this runtime are P1–P7, HQ tuning, GOP length, B-frame count via `frameIntervalP`, VBR target, maximum rate, VBV size, spatial AQ, temporal AQ and lookahead. Optional options are passed only when requested. `frameIntervalP=1` explicitly requests zero B-frames. The runner's implementation uses these FFmpeg bindings. SDK fields without a binding are documented by the catalog's support status.
+The base recipe exposes P1–P7, HQ tuning, GOP length, B-frame count via `frameIntervalP`, VBR target, maximum rate, VBV size, spatial AQ, temporal AQ and lookahead. `frameIntervalP=1` explicitly requests zero B-frames.
+
+The private FFmpeg build also accepts explicit `trial.sdk` settings from the [SDK field catalog](catalog/README.md). The bridge applies session overrides to the SDK structs before encoder initialization and scheduled overrides when it submits a picture. Timed bit rate and VBV changes use `NvEncReconfigureEncoder`. The encoder acknowledges the completed writes after the final frame submission. See the [trial input and results](../../docs/user-guide/ENCODING-EXPERIMENTS.md#set-nvenc-sdk-fields) for the request shape.
 
 A successful result includes the runtime ID, mean score and integer thousandths of a point, verified frame count, video payload byte sum, presentation duration and process wall times. The result's time base is 1/30. The encode wall time includes source decoding, upload, encoding and muxing. The GOP interval is present when encoded key-packet timestamps establish a regular interval. The runner verifies frame counts, presentation timestamps, geometry and color metadata on both inputs. The rate counts video packet bytes, including codec data within those packets. The encode and each requested scoring stage are limited to 300 seconds. The intermediate encoded file has a 1 GiB output limit.
 

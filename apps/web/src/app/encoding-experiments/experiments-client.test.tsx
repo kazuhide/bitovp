@@ -40,11 +40,13 @@ const v1Descriptor = {
 };
 let role: "VIEWER" | "OPERATOR";
 let hasV1: boolean;
+let hasSdk: boolean;
 let workerOnline: boolean;
 let v1Status: "succeeded" | "failed" | undefined;
 beforeEach(() => {
 	role = "OPERATOR";
 	hasV1 = false;
+	hasSdk = false;
 	workerOnline = true;
 	v1Status = undefined;
 	apiFetch
@@ -55,8 +57,35 @@ beforeEach(() => {
 			const additionalScoringProfiles = hasV1 ? [v1Descriptor] : undefined;
 			if (url === `${root}/capabilities`)
 				return workerOnline
-					? { ...capability, additionalScoringProfiles }
+					? {
+							...capability,
+							additionalScoringProfiles,
+							...(hasSdk && {
+								nvencSdk: { version: "13.0", catalogSha256: "b".repeat(64) },
+							}),
+						}
 					: { available: false };
+			if (url === `${root}/catalog`)
+				return {
+					sdkBindings: [
+						{
+							field: "NV_ENC_RC_PARAMS.enableAQ",
+							phase: "session",
+							type: "boolean",
+							minimum: 0,
+							maximum: 1,
+							codecs: ["HEVC", "H264", "AV1"],
+						},
+						{
+							field: "NV_ENC_PIC_PARAMS.encodePicFlags",
+							phase: "picture",
+							type: "integer",
+							minimum: 0,
+							maximum: 7,
+							codecs: ["HEVC", "H264", "AV1"],
+						},
+					],
+				};
 			if (url === `${root}/sources`)
 				return { items: [source], nextCursor: null };
 			if (url === `${root}/campaigns`)
@@ -135,6 +164,46 @@ it("shows measured values to viewers and does not offer write controls", async (
 	expect(await screen.findByText("91.20")).toBeInTheDocument();
 	expect(screen.getByText("4.00 Mb/s")).toBeInTheDocument();
 	expect(screen.queryByRole("button", { name: "Queue trial" })).toBeNull();
+});
+
+it("sets catalog-backed SDK session and picture values in the queued trial", async () => {
+	hasSdk = true;
+	renderWithQuery(<ExperimentsClient />);
+	await userEvent.selectOptions(
+		await screen.findByLabelText("Registered source"),
+		source.id,
+	);
+	expect(apiFetch.mock.calls.some(([url]) => url === `${root}/catalog`)).toBe(
+		false,
+	);
+	await userEvent.click(await screen.findByText("NVENC settings"));
+	await userEvent.selectOptions(
+		await screen.findByLabelText("Setting"),
+		"NV_ENC_RC_PARAMS.enableAQ",
+	);
+	await userEvent.selectOptions(screen.getByLabelText("Value"), "false");
+	await userEvent.click(screen.getByRole("button", { name: "Apply setting" }));
+	await userEvent.selectOptions(
+		screen.getByLabelText("Setting"),
+		"NV_ENC_PIC_PARAMS.encodePicFlags",
+	);
+	await userEvent.type(screen.getByLabelText("Value"), "2");
+	expect(screen.getByLabelText("Frame index (zero-based)")).toHaveValue(0);
+	await userEvent.click(screen.getByRole("button", { name: "Apply setting" }));
+	await userEvent.click(screen.getByRole("button", { name: "Queue trial" }));
+	await waitFor(() => {
+		const request = apiFetch.mock.calls.find(
+			([url, init]) =>
+				url === `${root}/campaigns/${id}/trials` && init?.method === "POST",
+		);
+		expect(JSON.parse(String(request?.[1]?.body)).trials[0].sdk).toEqual({
+			version: "13.0",
+			session: { "NV_ENC_RC_PARAMS.enableAQ": false },
+			pictures: [
+				{ frameIndex: 0, fields: { "NV_ENC_PIC_PARAMS.encodePicFlags": 2 } },
+			],
+		});
+	});
 });
 
 it("queues a typed trial selected from the organization's registered sources", async () => {

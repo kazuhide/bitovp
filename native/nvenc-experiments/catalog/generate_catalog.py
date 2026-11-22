@@ -10,6 +10,8 @@ import subprocess
 import tempfile
 import urllib.request
 
+from sdk_bindings import FIELD_ROLES, reconfigure_bindings, render_binding_header, sdk_writes
+
 
 COMMIT = "e844e5b26f46bb77479f063029595293aa8f812d"
 HEADER_SHA256 = "4fe4094541ef0f8a13249d97a8692dc5f835a6e9dd42eeadb3e2f7321d54dc7e"
@@ -17,6 +19,8 @@ HEADER_URL = (
     f"https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/{COMMIT}/include/ffnvcodec/nvEncodeAPI.h"
 )
 CATALOG = Path(__file__).with_name("sdk-13.0.json")
+BINDING_HEADER = Path(__file__).with_name("sdk-settings.h")
+BINDING_TEST = Path(__file__).with_name("test_sdk_settings.c")
 
 
 def binding(field, option, *, required=False, **limits):
@@ -343,25 +347,49 @@ def read_pinned_header(path):
     return header
 
 
+def verify_binding_header(clang, header, bindings):
+    with tempfile.TemporaryDirectory(prefix="bitovp-nvenc-bindings-") as scratch:
+        root = Path(scratch)
+        include = root / "ffnvcodec"
+        include.mkdir()
+        (include / "nvEncodeAPI.h").write_bytes(header)
+        (root / BINDING_HEADER.name).write_bytes(bindings)
+        executable = root / "test_sdk_settings"
+        subprocess.run(
+            [clang, "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", str(root),
+             str(BINDING_TEST), "-o", str(executable)], check=True,
+        )
+        subprocess.run([str(executable)], check=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="fail if the catalog differs from the pinned header")
+    parser.add_argument("--check", action="store_true", help="verify generated files against the pinned header")
     parser.add_argument("--header", type=Path, help="use a local copy of the pinned header")
     parser.add_argument("--clang", default="clang", help="path to the Clang executable")
     parser.add_argument("--output", type=Path, default=CATALOG)
+    parser.add_argument("--bindings-output", type=Path, help="generated C header path, beside the catalog by default")
     options = parser.parse_args()
     try:
         header = read_pinned_header(options.header)
         catalog = render_catalog(compile_header(options.clang, header), header)
+        writes = sdk_writes(catalog)
+        catalog["sdkBindings"] = [item.descriptor for item in writes] + reconfigure_bindings(catalog, writes)
+        catalog["sdkLimitations"] = dict(sorted(FIELD_ROLES.items()))
         data = (json.dumps(catalog, indent="\t") + "\n").encode("utf-8")
+        binding_path = options.bindings_output or options.output.with_name(BINDING_HEADER.name)
+        binding_bytes = render_binding_header(writes).encode("utf-8")
+        for path, contents in ((options.output, data), (binding_path, binding_bytes)):
+            if options.check:
+                if path.read_bytes() != contents:
+                    raise ValueError(f"generated file differs from the pinned header: {path}")
+            else:
+                path.write_bytes(contents)
         if options.check:
-            if options.output.read_bytes() != data:
-                raise ValueError(f"catalog differs from the pinned header: {options.output}")
-        else:
-            options.output.write_bytes(data)
+            verify_binding_header(options.clang, header, binding_bytes)
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         parser.exit(1, f"{exc}\n")
-    print(f"{options.output.name}: {catalog['denominator']}")
+    print(f"{options.output.name}: {catalog['denominator']}, {len(catalog['sdkBindings'])} indexed SDK setting paths")
 
 
 if __name__ == "__main__":

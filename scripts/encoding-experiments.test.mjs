@@ -68,6 +68,29 @@ test("forwards JSON files and a stable idempotency key for enqueue", async () =>
 	}
 });
 
+test("validates a direct NVENC trial with a 1080p QP map larger than 8 KiB", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "bitovp-experiments-cli-"));
+	try {
+		const path = join(dir, "trial.json");
+		const trial = {
+			sourceId: "src_1",
+			codec: "H264",
+			sdk: {
+				version: "13.0",
+				session: { "NV_ENC_RC_PARAMS.qpMapMode": 2 },
+				pictures: [{ frameIndex: 0, qpMap: "ff".repeat(8160) }],
+			},
+		};
+		await writeFile(path, JSON.stringify(trial));
+		const io = fixture(() => Response.json({ valid: true, trial }));
+		await runExperiments(["validate", "--file", path], io.api);
+		assert.equal(io.calls[0].url.pathname, "/api/encoding-experiments/v1/validate");
+		assert.deepEqual(JSON.parse(io.calls[0].init.body), trial);
+	} finally {
+		await rm(dir, { force: true, recursive: true });
+	}
+});
+
 test("forwards the scoring profile and constraints to the campaign selector", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "bitovp-experiments-cli-"));
 	try {
@@ -96,6 +119,7 @@ test("streams each NDJSON page under the returned snapshot cursor", async () => 
 		result: {
 			scoringProfileId: "official-vmaf-cuda-0.6.1",
 			scoreMilli: 90000,
+			nvencSdkApplied: { fieldCount: 4, manifestSha256: "b".repeat(64) },
 			additionalScores: [{
 				scoringProfileId: v1Profile,
 				status: "failed",

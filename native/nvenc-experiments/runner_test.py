@@ -90,6 +90,19 @@ class RunnerTest(unittest.TestCase):
             self.assertTrue(resolve.call_args.kwargs["probe_vmaf_v1"])
             self.assertFalse(measure.call_args.args[1].measure_vmaf_v1)
 
+    def test_managed_primary_measurement_uses_only_the_admitted_runtime(self):
+        with TemporaryDirectory() as folder:
+            request_path = Path(folder) / "trial.json"
+            request_path.write_text(json.dumps(request()))
+            expected = {"runtimeId": "c" * 64}
+            args = ["runner.py", "measure", "--request-file", str(request_path)]
+            with patch.object(sys, "argv", args), patch("builtins.print"), \
+                    patch.dict(os.environ, {"BITOVP_NVENC_EXPECTED_RUNTIME": json.dumps(expected)}), \
+                    patch.object(runner, "resolve_runtime") as resolve, patch.object(runner, "measure", return_value={}):
+                self.assertEqual(runner.main(object()), 0)
+            self.assertEqual(resolve.call_args.kwargs["expected_runtime"], expected)
+            self.assertFalse(resolve.call_args.kwargs["probe_vmaf_v1"])
+
     def test_secondary_model_is_explicit_and_unique(self):
         item = request()
         self.assertFalse(parse_trial(item).measure_vmaf_v1)
@@ -605,9 +618,7 @@ sys.exit(implementation.main(source))
                 "runtimeId": admitted.capabilities["runtimeId"],
                 "additionalScoringProfiles": [profile],
             }
-            item = {**request(), "expectedRuntime": expected}
-            self.assertFalse(parse_trial(item).measure_vmaf_v1)
-            options = {"expected_runtime": runner.parse_expected_runtime(item)}
+            options = {"expected_runtime": runner.parse_expected_runtime(json.dumps(expected))}
             changed = SimpleNamespace(profile={**profile, "decoderRuntimeSha256": "e" * 64})
             for current in (None, changed):
                 with self.subTest(current=current):
@@ -625,6 +636,19 @@ sys.exit(implementation.main(source))
                     self.resolve_fixture(root, expected_runtime={**expected, "runtimeId": "0" * 64}, probe_vmaf_v1=False)
             self.assertEqual(primary_result["runtimeId"], expected["runtimeId"])
             self.assertNotIn("additionalScores", primary_result)
+
+    def test_claimed_official_only_runtime_keeps_its_id_when_v1_becomes_available(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            with patch.object(runner, "discover_vmaf_v1", return_value=None):
+                admitted, _, _ = self.resolve_fixture(root)
+            expected = {"runtimeId": admitted.capabilities["runtimeId"]}
+            with patch.object(runner, "discover_vmaf_v1", side_effect=AssertionError("unexpected v1 probe")):
+                primary, _, _ = self.resolve_fixture(root, expected_runtime=expected, probe_vmaf_v1=False)
+            result = self.measure_fixture(primary, root)
+            self.assertEqual(result["runtimeId"], expected["runtimeId"])
+            self.assertEqual(result["scoreMilli"], 90000)
+            self.assertNotIn("additionalScores", result)
 
     def test_secondary_reserves_time_to_return_the_primary_receipt(self):
         with TemporaryDirectory() as folder:

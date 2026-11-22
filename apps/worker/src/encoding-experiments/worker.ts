@@ -111,15 +111,9 @@ async function runTrial(
 		const stamp = await verifyMedia(sourcePath, source.sha256);
 		scratch = await mkdtemp(join(root, "work", "trial-"));
 		const request = join(scratch, "request.json");
-		const expectedRuntime = runtime.additionalScoringProfiles
-			? {
-					runtimeId: runtime.runtimeId,
-					additionalScoringProfiles: runtime.additionalScoringProfiles,
-				}
-			: undefined;
 		await writeFile(
 			request,
-			JSON.stringify({ schemaVersion: 1, sourcePath, trial, expectedRuntime }),
+			JSON.stringify({ schemaVersion: 1, sourcePath, trial }),
 			{ mode: 0o600 },
 		);
 		const timeoutMs = trial.additionalScoringProfiles
@@ -141,7 +135,15 @@ async function runTrial(
 				"--request-file",
 				request,
 			],
-			{ timeoutMs, signal, tmpDir: scratch },
+			{
+				timeoutMs,
+				signal,
+				tmpDir: scratch,
+				expectedRuntime: {
+					runtimeId: runtime.runtimeId,
+					additionalScoringProfiles: runtime.additionalScoringProfiles,
+				},
+			},
 		);
 		const current = await readExperimentSource(
 			root,

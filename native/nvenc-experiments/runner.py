@@ -117,7 +117,7 @@ def choice(value, accepted):
 
 
 def parse_trial(request):
-    fields(request, {"schemaVersion", "sourcePath", "trial"}, {"expectedRuntime"})
+    fields(request, {"schemaVersion", "sourcePath", "trial"})
     integer(request["schemaVersion"], 1, 1)
     source = request["sourcePath"]
     if not isinstance(source, str) or not Path(source).is_absolute() or "\0" in source:
@@ -170,12 +170,16 @@ def is_hex_digest(value, length):
     return isinstance(value, str) and len(value) == length and re.fullmatch(r"[0-9a-f]+", value) is not None
 
 
-def parse_expected_runtime(request):
-    if "expectedRuntime" not in request:
+def parse_expected_runtime(encoded):
+    if encoded is None:
         return None
-    expected = fields(request["expectedRuntime"], {"runtimeId", "additionalScoringProfiles"})
+    expected = fields(json.loads(encoded), {"runtimeId"}, {"additionalScoringProfiles"})
+    if not is_hex_digest(expected["runtimeId"], 64):
+        raise RunnerError("INVALID_REQUEST")
+    if "additionalScoringProfiles" not in expected:
+        return expected
     profiles = expected["additionalScoringProfiles"]
-    if not is_hex_digest(expected["runtimeId"], 64) or not isinstance(profiles, list) or len(profiles) != 1:
+    if not isinstance(profiles, list) or len(profiles) != 1:
         raise RunnerError("INVALID_REQUEST")
     profile = fields(profiles[0], {
         "scoringProfileId", "scorerSha256", "modelSha256", "sourceSha256", "officialRevision", "decoderRuntimeSha256",
@@ -626,8 +630,9 @@ def resolve_runtime(runner_source, invocation_path, *, expected_runtime=None, pr
     if expected_runtime is not None:
         # The worker supplied the admitted descriptor. Keep it in the receipt's
         # identity even when only the required runtime can be verified now.
-        admitted_profiles = expected_runtime["additionalScoringProfiles"]
-        data["additionalScoringProfiles"] = admitted_profiles
+        admitted_profiles = expected_runtime.get("additionalScoringProfiles")
+        if admitted_profiles is not None:
+            data["additionalScoringProfiles"] = admitted_profiles
         if discovered_profiles != admitted_profiles:
             vmaf_v1 = None
     elif discovered_profiles is not None:
@@ -851,10 +856,12 @@ def main(runner_source):
         else:
             request = json.loads(read_file(args.request_file, 32 * 1024, "REQUEST"))
             trial = parse_trial(request)
-            expected_runtime = parse_expected_runtime(request)
+            expected_runtime = parse_expected_runtime(os.environ.get("BITOVP_NVENC_EXPECTED_RUNTIME"))
             runtime = resolve_runtime(
                 runner_source, invocation_path, expected_runtime=expected_runtime,
-                probe_vmaf_v1=expected_runtime is None or trial.measure_vmaf_v1,
+                probe_vmaf_v1=expected_runtime is None or (
+                    trial.measure_vmaf_v1 and "additionalScoringProfiles" in expected_runtime
+                ),
             )
             result = measure(runtime, trial, args.cpu_audit)
     except RunnerError as error:

@@ -567,7 +567,7 @@ def discover_vmaf_v1(index, gpu_uuid, driver_version, supported_codecs):
     })
 
 
-def resolve_runtime(runner_source, invocation_path, *, expected_runtime=None, measure_vmaf_v1=True):
+def resolve_runtime(runner_source, invocation_path, *, expected_runtime=None, probe_vmaf_v1=True):
     invocation_path = invocation_path.absolute()
     runner_path = runner_source.path
     require_unchanged_tools(((runner_path, runner_source.identity),), invocation_path, runner_path)
@@ -621,7 +621,7 @@ def resolve_runtime(runner_source, invocation_path, *, expected_runtime=None, me
         "supportedCodecs": codecs, "scoringProfileId": PROFILE_ID,
         **digests, "maxNvencApiVersion": runtime_version, "modelSha256": model_sha,
     }
-    vmaf_v1 = discover_vmaf_v1(index, uuid, data["driverVersion"], codecs) if measure_vmaf_v1 else None
+    vmaf_v1 = discover_vmaf_v1(index, uuid, data["driverVersion"], codecs) if probe_vmaf_v1 else None
     discovered_profiles = [vmaf_v1.profile] if vmaf_v1 else None
     if expected_runtime is not None:
         # The worker supplied the admitted descriptor. Keep it in the receipt's
@@ -851,9 +851,10 @@ def main(runner_source):
         else:
             request = json.loads(read_file(args.request_file, 32 * 1024, "REQUEST"))
             trial = parse_trial(request)
+            expected_runtime = parse_expected_runtime(request)
             runtime = resolve_runtime(
-                runner_source, invocation_path, expected_runtime=parse_expected_runtime(request),
-                measure_vmaf_v1=trial.measure_vmaf_v1,
+                runner_source, invocation_path, expected_runtime=expected_runtime,
+                probe_vmaf_v1=expected_runtime is None or trial.measure_vmaf_v1,
             )
             result = measure(runtime, trial, args.cpu_audit)
     except RunnerError as error:

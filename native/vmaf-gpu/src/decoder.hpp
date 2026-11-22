@@ -8,6 +8,8 @@
 #include <utility>
 #include <vector>
 
+struct AVBufferRef;
+
 namespace bitovp::gpu {
 struct VideoInfo {
     unsigned width = 0, height = 0;
@@ -25,10 +27,11 @@ struct PresentationTime {
 struct ExperimentCudaDecoders {
     // Retain the actual driver and NVDEC images through decoder attestation.
     std::shared_ptr<void> driver, nvdec;
+    std::shared_ptr<AVBufferRef> device_context;
     std::vector<std::string> codecs;
 };
 
-ExperimentCudaDecoders load_experiment_cuda_decoders();
+ExperimentCudaDecoders load_experiment_cuda_decoders(int device);
 
 // A CPU picture whose pixels and presentation timestamp survive the decoder's
 // next() call and destruction. Keeping the owner private prevents a dangling
@@ -55,7 +58,8 @@ public:
     // standalone CAMBI input scope; existing explicit-depth decoding is unchanged.
     Decoder(const std::string &path, unsigned width, unsigned height,
             unsigned bit_depth, unsigned threads, bool cuda = false, int device = 0,
-            bool attest_local_mov = false, bool experiment_input = false);
+            bool attest_local_mov = false, bool experiment_input = false,
+            const AVBufferRef *cuda_context = nullptr);
     ~Decoder();
     Decoder(const Decoder &) = delete;
     Decoder &operator=(const Decoder &) = delete;

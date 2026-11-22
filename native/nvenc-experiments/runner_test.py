@@ -76,6 +76,20 @@ def log(label, points, keys=(0,), timebase="1/1000", pix_fmt="yuv420p"):
 
 
 class RunnerTest(unittest.TestCase):
+    def test_standalone_primary_measurement_discovers_the_runtime(self):
+        with TemporaryDirectory() as folder:
+            request_path = Path(folder) / "trial.json"
+            request_path.write_text(json.dumps(request()))
+            runtime = object()
+            args = ["runner.py", "measure", "--request-file", str(request_path)]
+            with patch.object(sys, "argv", args), patch("builtins.print"), \
+                    patch.object(runner, "resolve_runtime", return_value=runtime) as resolve, \
+                    patch.object(runner, "measure", return_value={}) as measure:
+                self.assertEqual(runner.main(object()), 0)
+            self.assertIsNone(resolve.call_args.kwargs["expected_runtime"])
+            self.assertTrue(resolve.call_args.kwargs["probe_vmaf_v1"])
+            self.assertFalse(measure.call_args.args[1].measure_vmaf_v1)
+
     def test_secondary_model_is_explicit_and_unique(self):
         item = request()
         self.assertFalse(parse_trial(item).measure_vmaf_v1)
@@ -598,17 +612,17 @@ sys.exit(implementation.main(source))
             for current in (None, changed):
                 with self.subTest(current=current):
                     with patch.object(runner, "discover_vmaf_v1", return_value=current) as discover:
-                        dual, _, _ = self.resolve_fixture(root, **options, measure_vmaf_v1=True)
+                        dual, _, _ = self.resolve_fixture(root, **options, probe_vmaf_v1=True)
                         discover.assert_called_once()
                     dual_result = self.measure_fixture(dual, root, measure_vmaf_v1=True)
                     self.assertEqual(dual_result["runtimeId"], expected["runtimeId"])
                     self.assertEqual(dual_result["scoreMilli"], 90000)
                     self.assertEqual(dual_result["additionalScores"][0]["failureCode"], "VMAF_V1_UNAVAILABLE")
             with patch.object(runner, "discover_vmaf_v1", side_effect=AssertionError("unexpected v1 probe")):
-                primary, _, _ = self.resolve_fixture(root, **options, measure_vmaf_v1=False)
+                primary, _, _ = self.resolve_fixture(root, **options, probe_vmaf_v1=False)
                 primary_result = self.measure_fixture(primary, root)
                 with self.assertRaisesRegex(RunnerError, "EXPERIMENT_RUNTIME_CHANGED"):
-                    self.resolve_fixture(root, expected_runtime={**expected, "runtimeId": "0" * 64}, measure_vmaf_v1=False)
+                    self.resolve_fixture(root, expected_runtime={**expected, "runtimeId": "0" * 64}, probe_vmaf_v1=False)
             self.assertEqual(primary_result["runtimeId"], expected["runtimeId"])
             self.assertNotIn("additionalScores", primary_result)
 

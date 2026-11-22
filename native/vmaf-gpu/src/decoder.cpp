@@ -23,6 +23,7 @@ extern "C" {
 }
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <stdexcept>
 
@@ -84,6 +85,11 @@ bool has_display_transform(const AVStream *video) {
 }
 
 #ifdef BITOVP_HAVE_CUDA
+int create_primary_cuda_device(AVBufferRef **context, int device) {
+    return av_hwdevice_ctx_create(context, AV_HWDEVICE_TYPE_CUDA, std::to_string(device).c_str(),
+                                  nullptr, AV_CUDA_USE_PRIMARY_CONTEXT);
+}
+
 bool supports_cuda_decode(const AVCodec *decoder) {
     if (!decoder) return false;
     for (int index = 0; const auto *config = avcodec_get_hw_config(decoder, index); ++index)
@@ -102,15 +108,17 @@ const AVCodec *resident_decoder(AVCodecID id, const AVCodec *preferred) {
 #endif
 }
 
-ExperimentCudaDecoders load_experiment_cuda_decoders() {
+ExperimentCudaDecoders load_experiment_cuda_decoders([[maybe_unused]] int device) {
 #if defined(BITOVP_HAVE_CUDA) && defined(__linux__)
+    // CUDA can otherwise first load its JIT libraries during feature extraction.
+    if (setenv("CUDA_FORCE_PRELOAD_LIBRARIES", "1", 1) != 0) return {};
     // FFmpeg resolves the resident decoder's NVDEC entry points at run time.
     const auto load = [](const char *name) -> std::shared_ptr<void> {
         if (auto *handle = dlopen(name, RTLD_NOW | RTLD_LOCAL))
             return {handle, [](void *handle) { dlclose(handle); }};
         return {};
     };
-    ExperimentCudaDecoders runtime{load("libcuda.so.1"), load("libnvcuvid.so.1"), {}};
+    ExperimentCudaDecoders runtime{load("libcuda.so.1"), load("libnvcuvid.so.1"), {}, {}};
     if (!runtime.driver || !runtime.nvdec) return {};
     const char *map_frame = sizeof(void *) == 8 ? "cuvidMapVideoFrame64" : "cuvidMapVideoFrame";
     const char *unmap_frame = sizeof(void *) == 8 ? "cuvidUnmapVideoFrame64" : "cuvidUnmapVideoFrame";
@@ -126,6 +134,11 @@ ExperimentCudaDecoders load_experiment_cuda_decoders() {
     };
     for (const auto &[id, name] : codecs)
         if (resident_decoder(id, avcodec_find_decoder(id))) runtime.codecs.emplace_back(name);
+    if (runtime.codecs.empty()) return {};
+    AVBufferRef *context = nullptr;
+    const int created = create_primary_cuda_device(&context, device);
+    if (context) runtime.device_context = {context, [](AVBufferRef *handle) { av_buffer_unref(&handle); }};
+    if (created < 0 || !runtime.device_context) return {};
     return runtime;
 #else
     return {};
@@ -201,7 +214,8 @@ struct Decoder::Impl {
     }
 
     Impl(const std::string &path, unsigned w, unsigned h, unsigned b, unsigned threads,
-         bool cuda, int device, bool attest_local_mov, bool experiment)
+         bool cuda, int device, bool attest_local_mov, bool experiment,
+         [[maybe_unused]] const AVBufferRef *cuda_context)
         : cuda_decode(cuda), standalone_input(b == 0), experiment_input(experiment),
           device_index(device), width(w), height(h), bits(b) {
         if (b != 0 && b != 8 && b != 10) throw std::invalid_argument("Decode bit depth must be 8 or 10");
@@ -277,8 +291,9 @@ struct Decoder::Impl {
                     throw std::invalid_argument("Resident CUDA decoding currently requires unchanged input dimensions");
                 if (device < 0 || (info.bit_depth != 8 && info.bit_depth != 10) || info.bit_depth > bits)
                     throw std::invalid_argument("Resident CUDA decoding requires supported 8/10-bit input without precision loss");
-                check(av_hwdevice_ctx_create(&hardware, AV_HWDEVICE_TYPE_CUDA,
-                    std::to_string(device).c_str(), nullptr, AV_CUDA_USE_PRIMARY_CONTEXT), "create primary CUDA decoder context");
+                if (cuda_context) hardware = av_buffer_ref(cuda_context);
+                else check(create_primary_cuda_device(&hardware, device), "create primary CUDA decoder context");
+                if (!hardware) throw std::bad_alloc();
                 codec->hw_device_ctx = av_buffer_ref(hardware);
                 if (!codec->hw_device_ctx) throw std::bad_alloc();
                 codec->get_format = [](AVCodecContext *, const AVPixelFormat *formats) -> AVPixelFormat {
@@ -437,9 +452,9 @@ struct Decoder::Impl {
 
 Decoder::Decoder(const std::string &path, unsigned width, unsigned height,
                  unsigned bit_depth, unsigned threads, bool cuda, int device,
-                 bool attest_local_mov, bool experiment_input)
+                 bool attest_local_mov, bool experiment_input, const AVBufferRef *cuda_context)
     : impl_(std::make_unique<Impl>(path, width, height, bit_depth, threads, cuda, device,
-                                   attest_local_mov, experiment_input)) {}
+                                   attest_local_mov, experiment_input, cuda_context)) {}
 Decoder::~Decoder() = default;
 VideoInfo Decoder::source_info() const { return impl_->info; }
 bool Decoder::next() { return impl_->next(); }

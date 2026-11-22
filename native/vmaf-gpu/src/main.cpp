@@ -50,11 +50,9 @@ bool same_loader_generation(const LoaderGeneration &expected) {
     return actual && *actual == expected;
 }
 
-std::optional<DecoderRuntime> initialized_experiment_runtime(const std::optional<DecoderRuntime> &admitted) {
-    if (!admitted) return std::nullopt;
-    auto initialized = capture_decoder_runtime();
-    if (!initialized || !decoder_runtime_preserved(*admitted, *initialized)) return std::nullopt;
-    return initialized;
+bool experiment_runtime_unchanged(const std::optional<DecoderRuntime> &admitted) {
+    return admitted && same_loader_generation(admitted->generation) && decoder_runtime_unchanged(*admitted) &&
+        same_loader_generation(admitted->generation);
 }
 
 bool attestable_gpu_driver(const DeviceInfo &device) {
@@ -323,12 +321,18 @@ int main(int argc, char **argv) {
         }
         const auto options = parse(argc, argv);
         const bool experiment_cuda = options.experiment_window && options.backend == "cuda";
-        const auto experiment_decoders = experiment_cuda ? load_experiment_cuda_decoders() : ExperimentCudaDecoders{};
+        const int decode_device = options.device.device_index < 0 ? 0 : options.device.device_index;
+        const auto experiment_decoders = experiment_cuda
+            ? load_experiment_cuda_decoders(decode_device) : ExperimentCudaDecoders{};
+        // Initialize both CUDA APIs before fingerprinting. The probe and scoring
+        // start from the same mapped libraries, including the driver's JIT support.
+        auto experiment_backend = experiment_cuda && (options.device_info || experiment_decoders.device_context)
+            ? make_backend(options) : nullptr;
         const auto admitted_experiment_runtime = experiment_decoders.codecs.empty()
             ? std::nullopt : capture_decoder_runtime();
         if (options.device_info) {
             const auto runtime = options.attest_decoder_runtime ? capture_decoder_runtime() : std::nullopt;
-            const auto backend = make_backend(options);
+            const auto backend = experiment_cuda ? std::move(experiment_backend) : make_backend(options);
             std::optional<std::string> binary_hash;
             try {
 #if defined(__linux__)
@@ -362,7 +366,7 @@ int main(int argc, char **argv) {
             std::optional<std::vector<std::string>> experiment_codecs;
             if (options.experiment_window) {
                 experiment_codecs.emplace();
-                if (initialized_experiment_runtime(admitted_experiment_runtime)) {
+                if (experiment_runtime_unchanged(admitted_experiment_runtime)) {
                     experiment_codecs = experiment_decoders.codecs;
                     decoder_runtime_sha256 = admitted_experiment_runtime->sha256;
                 }
@@ -397,7 +401,6 @@ int main(int argc, char **argv) {
             model_hashes[model.id] = file_hash(model.path, snapshot);
         }
         const auto start = Clock::now();
-        const int decode_device = options.device.device_index < 0 ? 0 : options.device.device_index;
         const auto decoder_runtime = attest_inputs ? capture_decoder_runtime() : std::nullopt;
         Decoder reference(options.reference, options.width, options.height, options.bits, options.decode_threads,
                           resident_decode && !experiment, decode_device, attest_inputs, experiment);
@@ -405,7 +408,8 @@ int main(int argc, char **argv) {
         const unsigned width = options.width ? options.width : first.width;
         const unsigned height = options.height ? options.height : first.height;
         Decoder distorted(options.distorted, width, height, options.bits, options.decode_threads,
-                          resident_decode, decode_device, attest_inputs, experiment);
+                          resident_decode, decode_device, attest_inputs, experiment,
+                          experiment_decoders.device_context.get());
         const auto second = distorted.source_info();
         const bool self_contained_mov_inputs = first.self_contained_mov && second.self_contained_mov;
         if (!experiment && (!(first.frames_per_second > 0) || !(second.frames_per_second > 0) ||
@@ -427,7 +431,9 @@ int main(int argc, char **argv) {
         }
         const bool decoder_open_stable = decoder_runtime && self_contained_mov_inputs &&
             same_loader_generation(decoder_runtime->generation);
-        const auto create_backend = [&options] { return make_backend(options); };
+        const auto create_backend = [&options, &experiment_backend] {
+            return experiment_backend ? std::move(experiment_backend) : make_backend(options);
+        };
         std::unique_ptr<FeatureBackend> backend;
         if (options.inflight_frames > 1) {
             PictureStager stager = stage_host_picture;
@@ -450,7 +456,6 @@ int main(int argc, char **argv) {
         const double initialize_ms = elapsed(start);
         double extract_ms = 0;
         std::uint64_t count = 0;
-        std::optional<DecoderRuntime> active_experiment_runtime;
         const auto extract = [&](const Picture &ref, const Picture &dist) {
             const auto feature_start = Clock::now();
             if (backend) oracle.import_scores(backend->extract(count, ref, dist));
@@ -480,13 +485,8 @@ int main(int argc, char **argv) {
                         throw std::runtime_error("CPU/NVDEC experiment presentation timestamps differ");
                     baseline->submit(count, cpu_reference->picture(), cpu_distorted->picture());
                 }
-                if (experiment_cuda && count == 0) {
-                    // The first decode/extraction can initialize CUDA libraries lazily. From
-                    // this point until publication both the closure and generation must match.
-                    active_experiment_runtime = initialized_experiment_runtime(admitted_experiment_runtime);
-                    if (!active_experiment_runtime)
-                        throw std::runtime_error("Experiment CUDA decoder runtime changed during initialization");
-                }
+                if (experiment_cuda && count == 0 && !experiment_runtime_unchanged(admitted_experiment_runtime))
+                    throw std::runtime_error("Experiment CUDA decoder runtime changed during initialization");
             }
             const auto end = options.reference_start_frame + options.frame_count;
             validate_experiment_end(reference, distorted, end);
@@ -528,10 +528,7 @@ int main(int argc, char **argv) {
         if (backend) device = backend->device();
         std::optional<std::string> decoder_runtime_sha256;
         if (experiment_cuda) {
-            const auto finalized = capture_decoder_runtime();
-            if (!active_experiment_runtime || !finalized ||
-                finalized->generation != active_experiment_runtime->generation ||
-                finalized->sha256 != active_experiment_runtime->sha256 || !same_loader_generation(finalized->generation))
+            if (!experiment_runtime_unchanged(admitted_experiment_runtime))
                 throw std::runtime_error("Experiment CUDA decoder runtime changed during scoring");
             decoder_runtime_sha256 = admitted_experiment_runtime->sha256;
         } else if (decoder_runtime && scoring_runtime &&

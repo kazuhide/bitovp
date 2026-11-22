@@ -105,6 +105,13 @@ if a.backend:
                                          text=True, capture_output=True, timeout=60)
                 blocked_report = json.loads(blocked.stdout)
                 assert blocked_report["experimentCudaDecoders"] == [] and "decoderRuntimeSha256" not in blocked_report
+            # The fixture leaves the codec registration intact and makes libavutil's context creation fail.
+            env = os.environ.copy()
+            env["LD_PRELOAD"] = os.pathsep.join(filter(None, (str(a.nvdec_library_fixture.resolve(strict=True)), env.get("LD_PRELOAD"))))
+            unavailable = subprocess.run(experiment_command, check=True, env=env,
+                                         text=True, capture_output=True, timeout=60)
+            unavailable_report = json.loads(unavailable.stdout)
+            assert unavailable_report["experimentCudaDecoders"] == [] and "decoderRuntimeSha256" not in unavailable_report
             audited = subprocess.run(experiment_command, check=True, env={**os.environ, "LD_AUDIT": ""},
                                      text=True, capture_output=True, timeout=60)
             audited_report = json.loads(audited.stdout)

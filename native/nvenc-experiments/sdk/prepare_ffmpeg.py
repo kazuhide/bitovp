@@ -42,7 +42,7 @@ def prepare(root):
             wrapper.read_text(encoding="utf-8"),
             "static const AVOption options[] = {",
             f"""static const AVOption options[] = {{
-    {{ "bitovp-nvenc-settings", "Apply checked BitOVP SDK fields (sdk-catalog-sha256={catalog_digest})",
+    {{ "bitovp-nvenc-settings", "Apply checked BitOVP SDK fields (sdk-receipt-version=2 sdk-catalog-sha256={catalog_digest})",
       OFFSET(bitovp_nvenc_settings_path), AV_OPT_TYPE_STRING, {{ .str = NULL }}, 0, 0, VE }},""",
         ).encode()
 

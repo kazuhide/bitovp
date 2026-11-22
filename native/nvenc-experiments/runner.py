@@ -42,9 +42,11 @@ LOCAL_INPUT = ["-protocol_whitelist", "file", "-format_whitelist", FORMAT_ALLOWL
 FFMPEG_ARGS = ["-hide_banner", "-nostats", "-nostdin", "-xerror", "-noauto_conversion_filters"]
 NUMERALS = re.compile(r"(?:0|[1-9][0-9]{0,18})\Z")
 SDK_VERSION = "13.0"
+SDK_RECEIPT_VERSION = 2
 SDK_FIELD_PATH = re.compile(r"NV_ENC_[A-Z0-9_]+(?:\.[A-Za-z_][A-Za-z_0-9]*(?:\[[0-9]+\])?)+\Z")
 SDK_CAPABILITY = re.compile(
-    r"^[ \t]+-bitovp-nvenc-settings[ \t]+[^\n]*\bsdk-catalog-sha256=([0-9a-f]{64})\b", re.M,
+    rf"^[ \t]+-bitovp-nvenc-settings[ \t]+[^\n]*\bsdk-receipt-version={SDK_RECEIPT_VERSION}"
+    r"[ \t]+sdk-catalog-sha256=([0-9a-f]{64})\b", re.M,
 )
 SDK_SETTINGS_FILE = "nvenc-settings.tsv"
 MAX_SDK_WRITES = 4096
@@ -78,7 +80,8 @@ class SdkSettings:
 
     def expected_receipt(self):
         return (
-            f"bitovp-nvenc-settings-v1\t{len(self.session)}\t{len(self.pictures)}\t{self.manifest_sha256()}\n"
+            f"bitovp-nvenc-settings-v{SDK_RECEIPT_VERSION}\t{len(self.session)}\t{len(self.pictures)}"
+            f"\t{self.manifest_sha256()}\n"
         ).encode("ascii")
 
     def applied(self):

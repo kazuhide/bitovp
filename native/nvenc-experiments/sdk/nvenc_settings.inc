@@ -439,21 +439,41 @@ static int bitovp_nvenc_requested(const BitovpNvencWrite *begin, const BitovpNve
 
 static int bitovp_nvenc_grain_writes_valid(const NV_ENC_FILM_GRAIN_PARAMS_AV1 *grain,
                                           const BitovpNvencWrite *begin, const BitovpNvencWrite *end,
-                                          const char *root)
+                                          const char *root, unsigned chroma_format)
 {
+    /* AV1 infers zero chroma points when scaling from luma or when 4:2:0
+     * has no luma points. Derive the coefficient counts from the coded syntax. */
+    const int independent_chroma_points = !grain->chromaScalingFromLuma &&
+                                          (chroma_format != 1 || grain->numYPoints);
+    const unsigned cb_points = independent_chroma_points ? grain->numCbPoints : 0;
+    const unsigned cr_points = independent_chroma_points ? grain->numCrPoints : 0;
+    const unsigned lag = grain->arCoeffLag;
+    const unsigned luma_coeffs = 2 * lag * (lag + 1);
+    const unsigned chroma_coeffs = luma_coeffs + !!grain->numYPoints;
     const struct {
         const char *prefix;
         unsigned count;
     } indices[] = {
         { "pointYValue[", grain->numYPoints }, { "pointYScaling[", grain->numYPoints },
-        { "pointCbValue[", grain->numCbPoints }, { "pointCbScaling[", grain->numCbPoints },
-        { "pointCrValue[", grain->numCrPoints }, { "pointCrScaling[", grain->numCrPoints },
+        { "pointCbValue[", cb_points }, { "pointCbScaling[", cb_points },
+        { "pointCrValue[", cr_points }, { "pointCrScaling[", cr_points },
+        { "arCoeffsYPlus128[", grain->numYPoints ? luma_coeffs : 0 },
+        { "arCoeffsCbPlus128[", grain->chromaScalingFromLuma || cb_points ? chroma_coeffs : 0 },
+        { "arCoeffsCrPlus128[", grain->chromaScalingFromLuma || cr_points ? chroma_coeffs : 0 },
     };
 
     for (const BitovpNvencWrite *write = begin; write != end; write++) {
         const char *field;
         if (!av_strstart(write->field, root, &field))
             continue;
+        if ((!grain->applyGrain && strcmp(field, "applyGrain")) ||
+            (!independent_chroma_points &&
+             (!strcmp(field, "numCbPoints") || !strcmp(field, "numCrPoints"))) ||
+            (!cb_points &&
+             (!strcmp(field, "cbMult") || !strcmp(field, "cbLumaMult") || !strcmp(field, "cbOffset"))) ||
+            (!cr_points &&
+             (!strcmp(field, "crMult") || !strcmp(field, "crLumaMult") || !strcmp(field, "crOffset"))))
+            return 0;
         for (size_t i = 0; i < FF_ARRAY_ELEMS(indices); i++) {
             const char *index;
             if (av_strstart(field, indices[i].prefix, &index) &&
@@ -477,8 +497,10 @@ static int bitovp_nvenc_check_picture(AVCodecContext *avctx, const NV_ENC_PIC_PA
         goto invalid;
     if (avctx->codec_id == AV_CODEC_ID_H264) {
         const NV_ENC_PIC_PARAMS_H264 *h264 = &picture->codecPicParams.h264PicParams;
-        if ((!h264->sliceModeDataUpdate || h264->forceIntraRefreshWithFrameCnt) &&
-            bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_H264.sliceModeData"))
+        if (((!h264->sliceModeDataUpdate || h264->forceIntraRefreshWithFrameCnt) &&
+             bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_H264.sliceModeData")) ||
+            (h264->forceIntraRefreshWithFrameCnt &&
+             bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_H264.sliceMode")))
             goto invalid;
     }
     if (avctx->codec_id == AV_CODEC_ID_HEVC) {
@@ -488,23 +510,27 @@ static int bitovp_nvenc_check_picture(AVCodecContext *avctx, const NV_ENC_PIC_PA
             (hevc->temporalConfigUpdate && !codec->hevcConfig.enableTemporalSVC) ||
             ((!hevc->sliceModeDataUpdate || hevc->forceIntraRefreshWithFrameCnt) &&
              bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_HEVC.sliceModeData")) ||
+            (hevc->forceIntraRefreshWithFrameCnt &&
+             bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_HEVC.sliceMode")) ||
             (hevc->pMasteringDisplay == &payload->mastering_display && !codec->hevcConfig.outputMasteringDisplay) ||
             (hevc->pMaxCll == &payload->content_light && !codec->hevcConfig.outputMaxCll))
             goto invalid;
     }
     if (avctx->codec_id == AV_CODEC_ID_AV1) {
         const NV_ENC_PIC_PARAMS_AV1 *av1 = &picture->codecPicParams.av1PicParams;
+        const int columns_written = bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_AV1.numTileColumns");
+        const int rows_written = bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_AV1.numTileRows");
         if ((!av1->temporalConfigUpdate &&
              bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_AV1.numTemporalLayers")) ||
             (av1->temporalConfigUpdate && !codec->av1Config.enableTemporalSVC) ||
             (!av1->tileConfigUpdate &&
-             (bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_AV1.numTileColumns") ||
-              bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_AV1.numTileRows"))) ||
+             (columns_written || rows_written ||
+              bitovp_nvenc_requested(begin, end, "NV_ENC_PIC_PARAMS_AV1.enableCustomTileConfig"))) ||
             (av1->tileConfigUpdate &&
              (av1->forceIntraRefreshWithFrameCnt ||
               (!av1->enableCustomTileConfig &&
-               (!bitovp_nvenc_uniform_tile_count(av1->numTileColumns) ||
-                !bitovp_nvenc_uniform_tile_count(av1->numTileRows))))) ||
+               ((columns_written && !bitovp_nvenc_uniform_tile_count(av1->numTileColumns)) ||
+                (rows_written && !bitovp_nvenc_uniform_tile_count(av1->numTileRows)))))) ||
             (av1->enableCustomTileConfig &&
              (!av1->tileConfigUpdate ||
               av1->tileWidths != payload->tiles.widths ||
@@ -520,7 +546,8 @@ static int bitovp_nvenc_check_picture(AVCodecContext *avctx, const NV_ENC_PIC_PA
              (!codec->av1Config.enableFilmGrainParams ||
               !bitovp_nvenc_grain_valid(av1->filmGrainParams) ||
               !bitovp_nvenc_grain_writes_valid(av1->filmGrainParams, begin, end,
-                                             "NV_ENC_PIC_PARAMS_AV1.filmGrainParams."))))
+                                             "NV_ENC_PIC_PARAMS_AV1.filmGrainParams.",
+                                             codec->av1Config.chromaFormatIDC))))
             goto invalid;
     }
     return 0;
@@ -836,6 +863,7 @@ static int bitovp_nvenc_validate_transport(AVCodecContext *avctx, int lookahead)
     const NV_ENC_CONFIG *encode = &ctx->encode_config;
     const NV_ENC_CODEC_CONFIG *codec = &encode->encodeCodecConfig;
     const int frame_interval = encode->frameIntervalP;
+    const BitovpNvencSettings *settings = ctx->bitovp_nvenc_settings;
 
     if (init->enableEncodeAsync || init->enablePTD != 1 ||
         init->reportSliceOffsets || init->enableSubFrameWrite ||
@@ -849,12 +877,17 @@ static int bitovp_nvenc_validate_transport(AVCodecContext *avctx, int lookahead)
         frame_interval < 0 || frame_interval > MAX_REGISTERED_FRAMES / 4 ||
         lookahead < 0 || lookahead > MAX_REGISTERED_FRAMES - frame_interval - 5)
         goto unsupported;
+    if (IS_CBR(encode->rcParams.rateControlMode) &&
+        bitovp_nvenc_requested(settings->writes, settings->writes + settings->init_count,
+                               "NV_ENC_RC_PARAMS.maxBitRate")) {
+        av_log(avctx, AV_LOG_ERROR, "BitOVP NVENC maximum bitrate requires VBR\n");
+        return AVERROR(EINVAL);
+    }
     if (avctx->codec_id == AV_CODEC_ID_HEVC &&
         (codec->hevcConfig.enableAlphaLayerEncoding || codec->hevcConfig.enableMVHEVC))
         goto unsupported;
     if (avctx->codec_id == AV_CODEC_ID_AV1) {
         const NV_ENC_CONFIG_AV1 *av1 = &codec->av1Config;
-        const BitovpNvencSettings *settings = ctx->bitovp_nvenc_settings;
         const BitovpNvencTiles *tiles = &settings->initial_tiles;
         if (av1->outputAnnexBFormat ||
             !!av1->enableFilmGrainParams != !!av1->filmGrainParams ||
@@ -862,7 +895,8 @@ static int bitovp_nvenc_validate_transport(AVCodecContext *avctx, int lookahead)
              (!bitovp_nvenc_grain_valid(av1->filmGrainParams) ||
               !bitovp_nvenc_grain_writes_valid(av1->filmGrainParams, settings->writes,
                                              settings->writes + settings->init_count,
-                                             "NV_ENC_CONFIG_AV1.filmGrainParams."))) ||
+                                             "NV_ENC_CONFIG_AV1.filmGrainParams.",
+                                             av1->chromaFormatIDC))) ||
             (av1->enableCustomTileConfig &&
              (av1->tileWidths != tiles->widths || av1->tileHeights != tiles->heights ||
               !bitovp_nvenc_tiles_valid(init, av1->tileWidths, av1->numTileColumns,
@@ -986,7 +1020,7 @@ static int bitovp_nvenc_write_receipt(AVCodecContext *avctx)
         digest[2 * i + 1] = hex[byte & 15];
     }
     digest[64] = '\0';
-    length = snprintf(contents, sizeof(contents), "bitovp-nvenc-settings-v1\t%zu\t%zu\t%s\n",
+    length = snprintf(contents, sizeof(contents), "bitovp-nvenc-settings-v2\t%zu\t%zu\t%s\n",
                       settings->init_count, settings->count - settings->init_count, digest);
 
     do {

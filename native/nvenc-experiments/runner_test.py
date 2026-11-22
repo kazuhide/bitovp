@@ -129,7 +129,7 @@ class RunnerTest(unittest.TestCase):
             b"picture\t2\tNV_ENC_PIC_PARAMS_HEVC.sliceModeData\t3\n",
         )
         digest = hashlib.sha256(trial.sdk.manifest_bytes()).hexdigest()
-        self.assertEqual(trial.sdk.expected_receipt(), f"bitovp-nvenc-settings-v1\t2\t2\t{digest}\n".encode())
+        self.assertEqual(trial.sdk.expected_receipt(), f"bitovp-nvenc-settings-v2\t2\t2\t{digest}\n".encode())
 
     def test_sdk_rejects_ambiguous_or_out_of_window_writes(self):
         item = request()
@@ -148,7 +148,7 @@ class RunnerTest(unittest.TestCase):
 
     def test_runtime_discovers_a_consistent_sdk_binding_from_each_encoder(self):
         digest = "b" * 64
-        listing = "  -bitovp-nvenc-settings <string> E..V....... sdk-catalog-sha256=" + digest
+        listing = "  -bitovp-nvenc-settings <string> E..V....... sdk-receipt-version=2 sdk-catalog-sha256=" + digest
         binary = Path("/runtime/bin/ffmpeg")
         codecs = ["H264", "HEVC", "AV1"]
         with patch.object(runner, "capture", return_value=(listing, "")) as capture:
@@ -162,6 +162,13 @@ class RunnerTest(unittest.TestCase):
             self.assertIsNone(runner.discover_sdk_settings(binary, codecs))
         with patch.object(runner, "capture", side_effect=[(listing, ""), (listing.replace(digest, "c" * 64), ""), (listing, "")]):
             self.assertIsNone(runner.discover_sdk_settings(binary, codecs))
+        for stale in (
+            listing.replace("sdk-receipt-version=2 ", ""),
+            listing.replace("receipt-version=2", "receipt-version=1"),
+            listing.replace("receipt-version=2", "receipt-version=2-beta"),
+        ):
+            with self.subTest(stale=stale), patch.object(runner, "capture", return_value=(stale, "")):
+                self.assertIsNone(runner.discover_sdk_settings(binary, codecs))
 
     def test_sdk_scheduled_reconfigure_picture_and_qp_map_have_one_manifest_order(self):
         item = request()
@@ -185,7 +192,7 @@ class RunnerTest(unittest.TestCase):
             "metadata\t1\t4\taa",
         ])
         digest = hashlib.sha256(trial.sdk.manifest_bytes()).hexdigest()
-        self.assertEqual(trial.sdk.expected_receipt(), f"bitovp-nvenc-settings-v1\t1\t6\t{digest}\n".encode())
+        self.assertEqual(trial.sdk.expected_receipt(), f"bitovp-nvenc-settings-v2\t1\t6\t{digest}\n".encode())
         for invalid in (
             {**sdk, "session": {}},
             {**sdk, "session": {"NV_ENC_RC_PARAMS.qpMapMode": 1}},
@@ -220,7 +227,7 @@ class RunnerTest(unittest.TestCase):
                 timeline.assert_not_called()
 
                 receipt = work / (runner.SDK_SETTINGS_FILE + ".receipt")
-                receipt.write_bytes(b"bitovp-nvenc-settings-v1\t1\t0\t" + b"f" * 64 + b"\n")
+                receipt.write_bytes(b"bitovp-nvenc-settings-v2\t1\t0\t" + b"f" * 64 + b"\n")
                 with self.assertRaisesRegex(RunnerError, "NVENC_SDK_SETTINGS_NOT_APPLIED"):
                     runner.encode(runtime, trial, Path("/source.mkv"), Fraction(1, 1000), work)
                 timeline.assert_not_called()

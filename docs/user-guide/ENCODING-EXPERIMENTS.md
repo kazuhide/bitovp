@@ -81,7 +81,7 @@ Frame indices start at zero within the trial window. A picture entry can also ca
 
 Use a picture's `metadata` array to submit SEI for H.264 or HEVC, or metadata OBUs for AV1. Each entry has a codec-specific numeric `type` and a `payload` of lowercase hexadecimal bytes. AV1 uses metadata types 1 through 5. A frame accepts up to 32 entries of up to 16,384 bytes each, within the request size limit.
 
-SDK trial results include `nvencSdkApplied` with the number of writes and the SHA-256 of the manifest passed to the encoder. Each QP map or metadata element counts as one write. An encoder failure or a missing write acknowledgement fails the trial. Bit rate, scores, and regular GOP are measured from the output.
+SDK trial results include `nvencSdkApplied` with the number of writes accepted by the SDK and the SHA-256 of the manifest read by the encoder. Each QP map or metadata element counts as one write. An encoder failure or a missing write acknowledgement fails the trial. Bit rate, scores, and regular GOP are measured from the output.
 
 ## Select a setting with Lean
 

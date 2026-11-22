@@ -83,6 +83,12 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 		method: "GET",
 	},
 	{ page: "/", floor: "VIEWER", api: "/api/dashboard/usage", method: "GET" },
+	{
+		page: "/encoding-experiments",
+		floor: "VIEWER",
+		api: "/api/encoding-experiments/v1/campaigns",
+		method: "GET",
+	},
 	{ page: "/library", floor: "VIEWER", api: "/api/library", method: "GET" },
 	{
 		page: "/library/[id]",
@@ -327,6 +333,36 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 /** Higher-floor panels/actions embedded in otherwise readable pages. */
 const MIXED_SURFACES: readonly SurfaceContract[] = [
 	{
+		page: "/encoding-experiments",
+		floor: "OPERATOR",
+		api: "/api/encoding-experiments/v1/campaigns",
+		method: "POST",
+	},
+	{
+		page: "/encoding-experiments",
+		floor: "OPERATOR",
+		api: "/api/encoding-experiments/v1/campaigns/campaign-1",
+		method: "PATCH",
+	},
+	{
+		page: "/encoding-experiments",
+		floor: "OPERATOR",
+		api: "/api/encoding-experiments/v1/campaigns/campaign-1/trials",
+		method: "POST",
+	},
+	{
+		page: "/encoding-experiments",
+		floor: "OPERATOR",
+		api: "/api/encoding-experiments/v1/campaigns/campaign-1/cancel",
+		method: "POST",
+	},
+	{
+		page: "/encoding-experiments",
+		floor: "OPERATOR",
+		api: "/api/encoding-experiments/v1/campaigns/campaign-1/select",
+		method: "POST",
+	},
+	{
 		page: "/live/analyses/[analysisId]",
 		floor: "OPERATOR",
 		api: "/api/live/analyses/analysis-1/ingest",
@@ -489,6 +525,7 @@ describe("pageAccess", () => {
 		["/live/channel-1/runs/run-1/moq", "customer", "OPERATOR"],
 		["/live/feeders", "customer", "VIEWER"],
 		["/qc", "customer", "VIEWER"],
+		["/encoding-experiments", "customer", "VIEWER"],
 		["/storage", "customer", "OPERATOR"],
 		// Segment boundary: a sibling that merely STARTS with a rule's prefix
 		// is not under it — the same lesson the API table learned from
@@ -548,6 +585,12 @@ describe("page floors agree with the API floors the pages read — the audit's c
 		["/live", "/api/live-channels", "GET"],
 		["/qc", "/api/vmaf-jobs", "GET"],
 		["/qc", "/api/vmaf-compute-profiles", "GET"],
+		[
+			"/encoding-experiments",
+			"/api/encoding-experiments/v1/capabilities",
+			"GET",
+		],
+		["/encoding-experiments", "/api/encoding-experiments/v1/campaigns", "GET"],
 		["/vod/new", "/api/encoding-jobs", "POST"],
 		["/live/new", "/api/live-channels", "POST"],
 		[

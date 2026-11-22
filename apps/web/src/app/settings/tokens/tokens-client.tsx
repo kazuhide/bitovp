@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { HelpOverlay } from "@/components/ui/help-overlay";
-import { Input } from "@/components/ui/input";
+import { Input, SelectNative } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
@@ -23,6 +23,7 @@ type TokenWire = {
 	name: string;
 	prefix: string;
 	role: string;
+	scope?: string | null;
 	createdAt: string;
 	expiresAt: string | null;
 	revokedAt: string | null;
@@ -34,8 +35,10 @@ export function TokensClient() {
 	const queryClient = useQueryClient();
 	const nameId = useId();
 	const daysId = useId();
+	const scopeId = useId();
 	const [name, setName] = useState("");
 	const [expiresDays, setExpiresDays] = useState("");
+	const [tokenRole, setTokenRole] = useState("");
 	const [minted, setMinted] = useState<{
 		name: string;
 		secret: string;
@@ -56,6 +59,9 @@ export function TokensClient() {
 				body: JSON.stringify({
 					name,
 					...(days !== undefined ? { expiresDays: days } : {}),
+					...(tokenRole === ""
+						? {}
+						: { scope: "encoding-experiments", role: tokenRole }),
 				}),
 			});
 		},
@@ -63,6 +69,7 @@ export function TokensClient() {
 			setMinted(created);
 			setName("");
 			setExpiresDays("");
+			setTokenRole("");
 			queryClient.invalidateQueries({ queryKey: ["api-tokens"] });
 		},
 	});
@@ -146,6 +153,17 @@ export function TokensClient() {
 						onChange={(e) => setExpiresDays(e.target.value)}
 					/>
 				</Field>
+				<Field label={t("tokens.scope")} htmlFor={scopeId}>
+					<SelectNative
+						id={scopeId}
+						value={tokenRole}
+						onChange={(event) => setTokenRole(event.target.value)}
+					>
+						<option value="">{t("tokens.scopeGeneral")}</option>
+						<option value="VIEWER">{t("tokens.scopeExperimentsRead")}</option>
+						<option value="OPERATOR">{t("tokens.scopeExperimentsRun")}</option>
+					</SelectNative>
+				</Field>
 				{mint.isError ? (
 					<p role="alert" className="text-red-400 text-sm">
 						{mint.error instanceof Error
@@ -202,9 +220,13 @@ export function TokensClient() {
 								{token.name}
 							</span>
 							<span className="select-all font-mono text-zinc-400">
-								bo_{token.prefix}…
+								{token.scope === "encoding-experiments" ? "boe_" : "bo_"}
+								{token.prefix}…
 							</span>
 							<Badge>{token.role}</Badge>
+							{token.scope === "encoding-experiments" && (
+								<Badge>{t("experiments.title")}</Badge>
+							)}
 							{token.revokedAt ? (
 								<Badge tone="error">{t("tokens.revoked")}</Badge>
 							) : token.expiresAt &&

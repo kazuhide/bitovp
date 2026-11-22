@@ -4,6 +4,7 @@ import {
 	verificationIntentsSealable,
 } from "@bitovp/core";
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
+import { RESET_RETAINED_EXPERIMENT_MODELS } from "@/lib/reset-selection";
 import { assertAisaSnapshotCaptured } from "./delete-jobs";
 import {
 	assertNoJobEvidenceReferences,
@@ -65,6 +66,7 @@ export const RESET_DELETES = [
 export const RESET_PRESERVES = [
 	// A stale create retry must remain spent after its resource is reset.
 	"createRequest",
+	...RESET_RETAINED_EXPERIMENT_MODELS,
 	"librarySource",
 	"sceneAnalysisRevision",
 	"content",

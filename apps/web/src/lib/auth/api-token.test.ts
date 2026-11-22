@@ -31,7 +31,14 @@ describe("token shape helpers", () => {
 		expect(tokenHash).toBe(hashToken(secret));
 	});
 
-	it("bearerToken extracts ONLY bo_ Bearer credentials", () => {
+	it("recognizes the distinct experiment secret format and preserves its lookup key", () => {
+		const minted = mintToken("boe_");
+		expect(minted.secret).toMatch(/^boe_[A-Za-z0-9_-]{43}$/);
+		expect(minted.prefix).toBe(minted.secret.slice(4, 12));
+		expect(tokenPrefixOf(minted.secret)).toBe(minted.prefix);
+		expect(bearerToken(`Bearer ${minted.secret}`)).toBe(minted.secret);
+	});
+	it("bearerToken extracts only BitOVP Bearer credentials", () => {
 		expect(bearerToken("Bearer bo_abc")).toBe("bo_abc");
 		// RFC 7235: scheme is case-insensitive (review-188 I3 — `bearer`
 		// skipped the token path entirely, and under none-mode that let a

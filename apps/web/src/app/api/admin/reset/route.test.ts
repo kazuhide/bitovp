@@ -21,6 +21,7 @@ import {
 	ENCODER_POINTER_RECORD_LIMIT,
 	RESET_BLOCKING_CHANNEL_STATUSES,
 	RESET_BLOCKING_JOB_STATUSES,
+	RESET_PRESERVES,
 	RESET_STOPPED_CHANNEL_STATUSES,
 	RESET_STOPPED_JOB_STATUSES,
 } from "@/lib/server/reset";
@@ -152,8 +153,14 @@ const MODELS = [
 	"liveChannel",
 	"encodingJob",
 ];
+const EXPERIMENT_MODELS = [
+	"encodingExperimentCampaign",
+	"encodingExperimentTrial",
+	"encodingExperimentBatch",
+];
 const PRESERVES = [
 	...RESET_PROTECTED_EDITING_MODELS,
+	...EXPERIMENT_MODELS,
 	"createRequest",
 	// Internal ownership ledgers must survive reset until external cleanup completes.
 	"resetCleanupTask",
@@ -540,12 +547,12 @@ describe("POST /api/admin/reset (ledger #130)", () => {
 			providerResources: { pointers: [], total: 0, truncated: false },
 		});
 	});
-	it("selecting every organization category keeps all global identities and platform settings", async () => {
+	it("selecting every organization category keeps global data and encoding experiment records", async () => {
 		const response = await POST(
 			postRequest({ confirm: "RESET", categories: RESET_CATEGORIES }),
 		);
 		expect(response.status).toBe(200);
-		for (const model of RESET_GLOBAL_MODELS) {
+		for (const model of [...RESET_GLOBAL_MODELS, ...EXPERIMENT_MODELS]) {
 			expect(deleted).not.toContain(model);
 			expect(
 				(prisma[model] as { deleteMany: ReturnType<typeof vi.fn> }).deleteMany,
@@ -703,7 +710,7 @@ describe("POST /api/admin/reset (ledger #130)", () => {
 			expect(
 				(prisma[evidence] as { deleteMany: { mock: { calls: unknown[] } } })
 					.deleteMany.mock.calls,
-				`${evidence} is recovery evidence and must survive a reset`,
+				`${evidence} must survive a reset`,
 			).toHaveLength(0);
 		}
 		// Children before parents: results before jobs, runs before channels.
@@ -1204,6 +1211,7 @@ describe("the reset's guards (review-265 130-A1/A3/A4)", () => {
 		const models = [...schema.matchAll(/^model (\w+) \{/gm)]
 			.map((m) => m[1] ?? "")
 			.map((name) => name.charAt(0).toLowerCase() + name.slice(1));
+		expect(RESET_PRESERVES).toEqual(expect.arrayContaining(EXPERIMENT_MODELS));
 		const classified = new Set([...MODELS, ...KEEPS, ...PRESERVES]);
 		expect(models.filter((m) => !classified.has(m))).toEqual([]);
 		expect([...classified].filter((m) => !models.includes(m))).toEqual([]);

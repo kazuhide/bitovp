@@ -77,7 +77,13 @@ export default async function RootLayout({
 		<html lang={locale} data-theme={theme}>
 			<body className="min-h-screen bg-zinc-950 font-sans text-zinc-200 antialiased">
 				<LocaleProvider locale={locale}>
-					<FeatureFlagsProvider flags={flags}>
+					<FeatureFlagsProvider
+						flags={flags}
+						encodingExperiments={
+							Boolean(process.env.BITOVP_EXPERIMENTS_ROOT) &&
+							process.env.AUTH_MODE !== "none"
+						}
+					>
 						<ThemeProvider initialTheme={theme}>
 							<Providers
 								organizationId={

@@ -10,6 +10,8 @@
 		"./presets": "./src/plan/sample-presets.ts",
 		"./wizard": "./src/wizard/index.ts",
 		"./vod-input-timeline": "./src/vod-input-timeline/index.ts",
+		"./encoding-experiments": "./src/encoding-experiments.ts",
+		"./encoding-experiments-files": "./src/encoding-experiments-files.ts",
 		"./testing": "./src/testing/index.ts",
 		"./local-semantic-diagnostic-probe": "./src/local-semantic-diagnostic-probe.ts",
 		"./local-caption-config": "./src/content-editing/local-caption-config-node.ts",

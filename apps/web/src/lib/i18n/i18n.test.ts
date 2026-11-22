@@ -153,7 +153,8 @@ describe("catalogue parity", () => {
 		// Report origin, run details and comparison conditions (runtime measured: 3431).
 		// Live input availability and Push read failure (runtime measured: 3433).
 		// Operation analytics adds report and collection labels (runtime measured: 3451).
-		pinWithDriftAid(short.size, 3451, "short");
+		// Encoding experiments add the campaign, trial, and token controls.
+		pinWithDriftAid(short.size, 3486, "short");
 	});
 
 	/**

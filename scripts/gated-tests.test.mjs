@@ -184,7 +184,7 @@ test("every listed file exists once, and every FFmpeg, Redis or script test file
 test("a plain run may skip the tests that another job runs", () => {
 	for (const [workspace, skipped] of [
 		["@bitovp/core", 25],
-		["@bitovp/db", 72],
+		["@bitovp/db", 73],
 		["@bitovp/worker", 70],
 		// Includes six favorite-registry, two still-image, two archive/restore and
 		// one WebM recovery case, plus three LOCAL QC cancellation cases and the
@@ -5458,6 +5458,7 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 		.sort();
 	assert.deepEqual(others, [
 		"bombadil.yml",
+		"encoding-experiments.yml",
 		"hierarchical-flow.yml",
 		"native-vmaf.yml",
 		"pages.yml",

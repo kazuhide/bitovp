@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { ACTOR_HEADER, bearerToken } from "@/lib/auth/api-token-gate";
-import { loadAuthConfig } from "@/lib/auth/config";
+import { type AuthMode, loadAuthConfig } from "@/lib/auth/config";
+import { experimentScopeRefusal } from "@/lib/auth/encoding-experiment-scope";
 import { classifyPath, loginPath, type PathClass } from "@/lib/auth/gate";
 import { ingressHostname } from "@/lib/auth/ingress-allowlist";
 import {
@@ -413,8 +414,21 @@ async function contextRefusal(
 function tenantRequestRefusal(
 	context: AuthenticatedContext,
 	req: NextRequest,
+	mode: AuthMode,
 ): NextResponse | null {
 	const path = req.nextUrl.pathname;
+	const scopeDenied = experimentScopeRefusal(context, path, req.method, mode);
+	if (scopeDenied)
+		return NextResponse.json(
+			{
+				error:
+					scopeDenied === "TOKEN_SCOPE_DENIED"
+						? "The token cannot access this endpoint"
+						: "Encoding experiments require authentication",
+				details: { code: scopeDenied },
+			},
+			{ status: 403, headers: { "Cache-Control": "private, no-store" } },
+		);
 	if (context.isImpersonating && !viewAsMayRead(path, req.method))
 		return NextResponse.json(
 			{ error: "View-as is read-only" },
@@ -446,11 +460,7 @@ function tenantRequestRefusal(
 				req.method,
 			)
 		) {
-			if (
-				context.tokenRoleKnown === false &&
-				loadAuthConfig().ok &&
-				process.env.AUTH_MODE === "users"
-			)
+			if (context.tokenRoleKnown === false && mode === "users")
 				return NextResponse.json(
 					{ error: "Invalid token role" },
 					{ status: 403 },
@@ -582,7 +592,7 @@ async function usersGate(
 		} catch (err) {
 			return contextRefusal(err, req, isApi);
 		}
-		const refusal = tenantRequestRefusal(context, req);
+		const refusal = tenantRequestRefusal(context, req, settings.mode);
 		try {
 			await recordAccessNonAdmin(context, req, refusal ? refusal.status : 200);
 		} catch {
@@ -629,7 +639,11 @@ async function authGate(
 		} catch (err) {
 			return contextRefusal(err, req, true);
 		}
-		const refusal = tenantRequestRefusal(context, req);
+		const refusal = tenantRequestRefusal(
+			context,
+			req,
+			configured.settings.mode,
+		);
 		try {
 			await recordAccessNonAdmin(context, req, refusal ? refusal.status : 200);
 		} catch {
@@ -655,7 +669,7 @@ async function authGate(
 	if (settings.mode === "none") {
 		try {
 			const context = await resolveAuthenticatedContext(req.headers);
-			const refusal = tenantRequestRefusal(context, req);
+			const refusal = tenantRequestRefusal(context, req, settings.mode);
 			return refusal ?? forward(req, "none", context.role, context);
 		} catch (err) {
 			return contextRefusal(err, req, isApi);
@@ -689,7 +703,7 @@ async function authGate(
 	} catch (err) {
 		return contextRefusal(err, req, isApi);
 	}
-	const refusal = tenantRequestRefusal(context, req);
+	const refusal = tenantRequestRefusal(context, req, settings.mode);
 	if (refusal) return refusal;
 	const res = forward(req, "session", context.role, context);
 	if (isOperationAttemptSubmission(req)) return res;

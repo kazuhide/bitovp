@@ -98,6 +98,36 @@ describe("organization-bound tokens", () => {
 		});
 		expect(fake.apiToken.findUnique).toHaveBeenCalledTimes(1);
 	});
+	it("keeps experiment secrets tied to their stored scope", async () => {
+		const ordinary = credential();
+		const base = await fake.apiToken.findUnique();
+		fake.apiToken.findUnique.mockResolvedValue({
+			...base,
+			scope: "encoding-experiments",
+		});
+		await expect(resolveAuthenticatedContext(ordinary)).rejects.toMatchObject({
+			status: 401,
+		});
+		const scoped = mintToken("boe_");
+		const headers = new Headers({ authorization: `Bearer ${scoped.secret}` });
+		fake.apiToken.findUnique.mockResolvedValue({
+			...base,
+			tokenHash: scoped.tokenHash,
+			scope: null,
+		});
+		await expect(resolveAuthenticatedContext(headers)).rejects.toMatchObject({
+			status: 401,
+		});
+		fake.apiToken.findUnique.mockResolvedValue({
+			...base,
+			tokenHash: scoped.tokenHash,
+			scope: "encoding-experiments",
+		});
+		expect(await resolveAuthenticatedContext(headers)).toMatchObject({
+			tokenScope: "encoding-experiments",
+			role: "VIEWER",
+		});
+	});
 	it("a token of an organization administrator remains admin-authored for audit exclusion despite its narrower token role", async () => {
 		const input = credential();
 		fake.apiToken.findUnique.mockResolvedValue({

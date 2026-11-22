@@ -79,6 +79,7 @@ export type AuthenticationToken = {
 	id: string;
 	tokenHash: string;
 	role: string;
+	scope?: string | null;
 	revokedAt: Date | null;
 	expiresAt: Date | null;
 	organizationId: string;

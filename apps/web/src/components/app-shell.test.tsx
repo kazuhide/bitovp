@@ -32,9 +32,12 @@ beforeEach(() => {
 	pathname = "/vod/jobs";
 });
 
-function renderShell(qcVmaf = true) {
+function renderShell(qcVmaf = true, encodingExperiments = false) {
 	return renderWithQuery(
-		<FeatureFlagsProvider flags={{ qcVmaf }}>
+		<FeatureFlagsProvider
+			flags={{ qcVmaf }}
+			encodingExperiments={encodingExperiments}
+		>
 			<AppShell>
 				<h1>the page</h1>
 			</AppShell>
@@ -148,13 +151,15 @@ describe("AppShell responsive shells", () => {
 	});
 
 	it.each([
-		true,
-		false,
-	])("offers the sheet the SAME destinations as the column, from one list (qcVmaf=%s)", async (qcVmaf) => {
-		// Both flag states (review-344 M1): at the default flag a hand-forked
-		// list in the sheet happens to equal the declared set, so only the
-		// flag-off arm can tell a fork from the shared component.
-		renderShell(qcVmaf);
+		{ qcVmaf: true, encodingExperiments: true },
+		{ qcVmaf: true, encodingExperiments: false },
+		{ qcVmaf: false, encodingExperiments: true },
+		{ qcVmaf: false, encodingExperiments: false },
+	])("offers the same destinations in both shells (qcVmaf=$qcVmaf, encodingExperiments=$encodingExperiments)", async ({
+		qcVmaf,
+		encodingExperiments,
+	}) => {
+		renderShell(qcVmaf, encodingExperiments);
 		// The OPERATOR storage entry renders once the password-mode session has
 		// resolved; read both shells only after the column shows it.
 		await within(desktopColumn()).findByRole("link", {
@@ -165,11 +170,13 @@ describe("AppShell responsive shells", () => {
 		);
 		const fromColumn = navHrefs(desktopColumn());
 		const fromSheet = navHrefs(screen.getByRole("dialog"));
-		// Derived from the IA, never hand-listed — a nav item added to
-		// NAV_SECTIONS must appear in both shells or this fails on both arms.
 		const declared = NAV_SECTIONS.flatMap((section) =>
 			section.items.map((item) => item.href),
-		).filter((href) => qcVmaf || href !== "/qc");
+		).filter(
+			(href) =>
+				(qcVmaf || href !== "/qc") &&
+				(encodingExperiments || href !== "/encoding-experiments"),
+		);
 		expect(fromColumn).toEqual(declared);
 		expect(fromSheet).toEqual(declared);
 	});

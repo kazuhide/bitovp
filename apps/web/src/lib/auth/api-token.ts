@@ -6,8 +6,8 @@ import { hashApiTokenSecret } from "@bitovp/core";
  * an in-process TTL cache; the DB access is INJECTED so the proxy gate, the
  * routes and the tests share one implementation with different loaders.
  *
- * Token shape: `bo_` + 43 base64url chars (32 random bytes). The prefix
- * (first 8 chars after `bo_`) is the lookup key and is NOT secret; the
+ * Both token formats carry 43 base64url chars (32 random bytes). The first
+ * 8 chars of that payload form the lookup key. The
  * stored hash is SHA-256 hex (not scrypt — the secret is 256-bit random, a
  * KDF adds per-request latency without security), compared timing-safely.
  *
@@ -25,11 +25,16 @@ import { hashApiTokenSecret } from "@bitovp/core";
  */
 
 export const TOKEN_PREFIX = "bo_";
+// Older builds only recognize bo_. A distinct prefix keeps scoped tokens
+// confined during a mixed-version deployment or rollback.
+export const EXPERIMENT_TOKEN_PREFIX = "boe_";
 export const TOKEN_CACHE_TTL_MS = 60_000;
 const PREFIX_LENGTH = 8;
 /** 32 random bytes → 43 base64url chars (no padding). */
 const SECRET_LENGTH = 43;
-const TOKEN_SHAPE = new RegExp(`^bo_[A-Za-z0-9_-]{${SECRET_LENGTH}}$`);
+const TOKEN_SHAPE = new RegExp(
+	`^(?:${TOKEN_PREFIX}|${EXPERIMENT_TOKEN_PREFIX})([A-Za-z0-9_-]{${SECRET_LENGTH}})$`,
+);
 
 export type ApiTokenRow = {
 	id: string;
@@ -55,12 +60,14 @@ export type TokenVerdict =
 	  };
 
 /** Mints a new token: the caller stores hash+prefix and shows secret ONCE. */
-export function mintToken(): {
+export function mintToken(
+	kind: typeof TOKEN_PREFIX | typeof EXPERIMENT_TOKEN_PREFIX = TOKEN_PREFIX,
+): {
 	secret: string;
 	prefix: string;
 	tokenHash: string;
 } {
-	const secret = `${TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
+	const secret = `${kind}${randomBytes(32).toString("base64url")}`;
 	return {
 		secret,
 		prefix: tokenPrefixOf(secret) ?? "",
@@ -80,10 +87,7 @@ export const hashToken = hashApiTokenSecret;
 
 /** The lookup key, or null when the shape is not even a token. */
 export function tokenPrefixOf(secret: string): string | null {
-	if (!TOKEN_SHAPE.test(secret)) {
-		return null;
-	}
-	return secret.slice(TOKEN_PREFIX.length, TOKEN_PREFIX.length + PREFIX_LENGTH);
+	return TOKEN_SHAPE.exec(secret)?.[1]?.slice(0, PREFIX_LENGTH) ?? null;
 }
 
 /** Bearer header → candidate secret, or null when no token was PRESENTED. */
@@ -95,9 +99,11 @@ export function bearerToken(header: string | null): string | null {
 		return null;
 	}
 	const candidate = header.slice("Bearer ".length).trim();
-	// Only bo_ tokens enter the token path — any other Bearer scheme is not
-	// ours and must not shadow the session flow.
-	return candidate.startsWith(TOKEN_PREFIX) ? candidate : null;
+	// A malformed credential of either BitOVP kind still enters the token path.
+	return candidate.startsWith(TOKEN_PREFIX) ||
+		candidate.startsWith(EXPERIMENT_TOKEN_PREFIX)
+		? candidate
+		: null;
 }
 
 type CacheEntry = { row: ApiTokenRow | null; loadedAt: number };

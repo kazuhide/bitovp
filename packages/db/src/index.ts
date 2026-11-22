@@ -27,6 +27,22 @@ export type {
 } from "./credentials";
 export { createCredentialStore } from "./credentials";
 export { recordUnrestrictedEgress } from "./egress-audit";
+export type { ExperimentContext } from "./encoding-experiments";
+export {
+	addExperimentCampaign,
+	claimExperimentTrial,
+	completeExperimentTrial,
+	controlExperimentCampaign,
+	EncodingExperimentError,
+	enqueueExperimentBatch,
+	experimentCampaignDetail,
+	experimentCampaignPage,
+	experimentResultPage,
+	experimentSelectionRows,
+	experimentTrialPage,
+	releaseExperimentTrial,
+	renewExperimentTrial,
+} from "./encoding-experiments";
 export type {
 	AuthenticationToken,
 	IdentityPrismaClient,

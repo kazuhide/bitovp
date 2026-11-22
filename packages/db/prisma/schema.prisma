@@ -1938,6 +1938,7 @@ model ApiToken {
   prefix     String    @unique
   tokenHash  String
   role       String    @default("OPERATOR")
+  scope      String?
   /// user:<id> once multi-user lands; null until then.
   createdBy  String?
   expiresAt  DateTime?
@@ -1948,6 +1949,72 @@ model ApiToken {
 
   @@unique([organizationId, id])
   @@index([organizationId])
+}
+
+enum EncodingExperimentState {
+  RUNNING
+  PAUSED
+  CANCELED
+}
+
+enum EncodingExperimentTrialState {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
+model EncodingExperimentCampaign {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  capabilityId String @db.Char(64)
+  runtime Json
+  state EncodingExperimentState @default(RUNNING)
+  sealed Boolean @default(false)
+  resultSequence Int @default(0)
+  createdAt DateTime @default(now())
+  trials EncodingExperimentTrial[]
+  batches EncodingExperimentBatch[]
+
+  @@unique([organizationId, id])
+}
+
+model EncodingExperimentTrial {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  campaignId String @db.Uuid
+  campaign EncodingExperimentCampaign @relation(fields: [organizationId, campaignId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction)
+  trialKey String @db.Char(64)
+  sourceSha256 String @db.Char(64)
+  input Json
+  status EncodingExperimentTrialState @default(PENDING)
+  attempt Int @default(0)
+  expiredClaims Int @default(0)
+  leaseUntil DateTime?
+  resultSequence Int?
+  result Json?
+  failureCode String?
+  createdAt DateTime @default(now())
+
+  @@unique([organizationId, campaignId, trialKey], map: "ExperimentTrial_dedup")
+  @@unique([organizationId, campaignId, resultSequence], map: "ExperimentTrial_export")
+  @@index([organizationId, status, id], map: "ExperimentTrial_queue")
+}
+
+model EncodingExperimentBatch {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  campaignId String @db.Uuid
+  campaign EncodingExperimentCampaign @relation(fields: [organizationId, campaignId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction)
+  key String
+  requestHash String @db.Char(64)
+  response Json
+
+  @@id([organizationId, campaignId, key])
 }
 
 /// Live schedule statuses.
@@ -2955,6 +3022,9 @@ model Organization {
   notificationChannelRows NotificationChannel[]
   notificationRuleRows NotificationRule[]
   apiTokenRows ApiToken[]
+  encodingExperimentCampaignRows EncodingExperimentCampaign[]
+  encodingExperimentTrialRows EncodingExperimentTrial[]
+  encodingExperimentBatchRows EncodingExperimentBatch[]
   startupSampleRows StartupSample[]
   liveScheduleRows LiveSchedule[]
   slateNormalizationRows SlateNormalization[]

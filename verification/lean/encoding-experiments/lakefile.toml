@@ -1,0 +1,10 @@
+name = "bitovp-quality-selection"
+version = "0.1.0"
+defaultTargets = ["bitovp-quality-select"]
+
+[[lean_lib]]
+name = "QualitySelection"
+
+[[lean_exe]]
+name = "bitovp-quality-select"
+root = "Main"

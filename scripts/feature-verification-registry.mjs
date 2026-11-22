@@ -41,7 +41,7 @@ export const FEATURES = Object.freeze(
 			description: "Role enforcement and authenticated tenant context",
 			files: {
 				"src/proxy.roles.test.ts": 101,
-				"src/lib/auth/tenancy.test.ts": 14,
+				"src/lib/auth/tenancy.test.ts": 15,
 			},
 		},
 		{

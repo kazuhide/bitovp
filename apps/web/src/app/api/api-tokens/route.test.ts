@@ -159,3 +159,28 @@ describe("organization API tokens", () => {
 		expect(fake.tenant).not.toHaveBeenCalled();
 	});
 });
+
+it("issues viewer and operator experiment tokens, but no wider role", async () => {
+	const scope = "encoding-experiments";
+	for (const role of ["VIEWER", "OPERATOR"]) {
+		const response = await post({ name: role, scope, role });
+		expect(response.status).toBe(201);
+		expect(await response.json()).toMatchObject({
+			scope,
+			role,
+			secret: expect.stringMatching(/^boe_/),
+		});
+		expect(fake.create.mock.lastCall?.[0].data).toMatchObject({
+			scope,
+			role,
+			organizationId: ORG,
+		});
+	}
+	expect((await post({ name: "Too broad", scope, role: "ADMIN" })).status).toBe(
+		400,
+	);
+	expect((await post({ name: "Unscoped role", role: "VIEWER" })).status).toBe(
+		400,
+	);
+	expect(fake.create).toHaveBeenCalledTimes(2);
+});

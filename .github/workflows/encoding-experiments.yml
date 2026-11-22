@@ -1,0 +1,48 @@
+name: Encoding experiments
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/encoding-experiments.yml
+      - native/nvenc-experiments/**
+      - scripts/encoding-experiments*
+      - verification/lean/encoding-experiments/**
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/encoding-experiments.yml
+      - native/nvenc-experiments/**
+      - scripts/encoding-experiments*
+      - verification/lean/encoding-experiments/**
+
+permissions:
+  contents: read
+
+jobs:
+  experiment-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - run: node --test scripts/encoding-experiments.test.mjs
+      - run: python3 -B native/nvenc-experiments/runner_test.py
+      - run: python3 -B native/nvenc-experiments/catalog/test_catalog.py
+      - run: python3 -B native/nvenc-experiments/catalog/generate_catalog.py --check
+      - uses: leanprover/lean-action@ba3fdfe5c4476c925da13bf11a005ddb47e47aee # v1
+        with:
+          lake-package-directory: verification/lean/encoding-experiments
+          auto-config: "false"
+          build: "true"
+          test: "false"
+          lint: "false"
+          use-github-cache: "false"
+      - name: Check selection proofs and CLI fixtures
+        working-directory: verification/lean/encoding-experiments
+        run: |
+          lake env lean Proofs.lean
+          python3 -B test_cli.py

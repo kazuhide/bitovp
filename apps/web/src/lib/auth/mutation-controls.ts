@@ -27,6 +27,11 @@ export type MutationControlContract = {
  * so deleting a gate or adding a new write call cannot leave this table green.
  */
 export const MUTATION_CONTROLS = {
+	"encoding-experiments.manage": {
+		minRole: "OPERATOR",
+		source: "app/encoding-experiments/experiments-client.tsx",
+		bindings: 1,
+	},
 	"live.aisa.translate": {
 		minRole: "OPERATOR",
 		source: "app/live/aisa-channel-analysis.tsx",
@@ -453,6 +458,10 @@ export type MutationSourceContract = {
  * is hidden (for example CaptureVmafPanel -> live.channel.vmaf).
  */
 export const MUTATION_SOURCE_CENSUS = {
+	"app/encoding-experiments/experiments-client.tsx": {
+		writeCalls: 5,
+		controls: ["encoding-experiments.manage"],
+	},
 	"app/library/content-removal-action.tsx": {
 		writeCalls: 1,
 		controls: ["library.content.remove"],
@@ -791,6 +800,28 @@ export type MutationWriteFamily = {
  * never used as surrogate evidence for a write.
  */
 export const MUTATION_WRITE_FAMILIES = {
+	"app/encoding-experiments/experiments-client.tsx": [
+		{
+			write: "POST /api/encoding-experiments/v1/campaigns/x/select",
+			controls: ["encoding-experiments.manage"],
+		},
+		{
+			write: "POST /api/encoding-experiments/v1/campaigns",
+			controls: ["encoding-experiments.manage"],
+		},
+		{
+			write: "POST /api/encoding-experiments/v1/campaigns/x/trials",
+			controls: ["encoding-experiments.manage"],
+		},
+		{
+			write: "PATCH /api/encoding-experiments/v1/campaigns/x",
+			controls: ["encoding-experiments.manage"],
+		},
+		{
+			write: "POST /api/encoding-experiments/v1/campaigns/x/cancel",
+			controls: ["encoding-experiments.manage"],
+		},
+	],
 	"app/library/content-removal-action.tsx": [
 		{ write: "PATCH /api/library/x", controls: ["library.content.remove"] },
 	],

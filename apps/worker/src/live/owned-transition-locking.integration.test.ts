@@ -38,6 +38,7 @@ import {
 	recordFinalRestartFailure,
 	recordFinalStopFailure,
 } from "./dead-job-outcome";
+import { requestProbeStop } from "./probe-runner";
 import {
 	createProviderLifecycleReconciler,
 	type RunLifecycleRow,
@@ -1197,6 +1198,132 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			).toMatchObject({ state: "ACKED", attempt: 1 });
 			expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
 			expect(f.sdk.stopAisaLiveAnalysis).not.toHaveBeenCalled();
+		});
+
+		it.each([
+			"RUNNING",
+			"STOPPING",
+		] as const)("delivers a probe's %s teardown through the scheduler to the exact run and provider", async (initial) => {
+			const f = await dispatchFixture();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { purpose: "PROBE", status: initial },
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: initial },
+			});
+			expect(
+				await requestProbeStop(otherTenant, f.channel.id, f.run.id, now),
+			).toBe("unconfirmed");
+			expect(
+				await requestProbeStop(tenant, f.channel.id, randomUUID(), now),
+			).toBe("unconfirmed");
+			expect(
+				(
+					await Promise.all([
+						requestProbeStop(tenant, f.channel.id, f.run.id, now),
+						requestProbeStop(tenant, f.channel.id, f.run.id, now),
+					])
+				).sort(),
+			).toEqual(["pending", "scheduled"]);
+			const schedule = await tenant.liveSchedule.findFirstOrThrow({
+				where: { liveChannelId: f.channel.id },
+			});
+			const enqueue = vi.fn(
+				async (_data: import("@bitovp/core").LiveChannelJob, _id: string) => {},
+			);
+			const sweep = createScheduleSweep({
+				prisma: tenant,
+				enqueue,
+				now: () => new Date(now.getTime() + 600_000),
+			});
+			if (initial === "RUNNING") await sweep();
+			else await sweep.dispatchPending();
+			const jobs = enqueue.mock.calls.filter(
+				([job]) => job.liveChannelId === f.channel.id,
+			);
+			expect(jobs).toHaveLength(1);
+			expect(jobs[0]).toEqual([
+				expect.objectContaining({
+					action: "stop",
+					plannedLiveChannelRunId: f.run.id,
+					effect: expect.objectContaining({
+						action: "STOP",
+						liveChannelRunId: f.run.id,
+						providerEncodingId: f.encodingId,
+						scheduleId: schedule.id,
+					}),
+				}),
+				`sched-${schedule.id}`,
+			]);
+			const result = await createLiveChannelProcessor(f.deps)(jobs[0]?.[0]);
+			expect(result.status).toBe("STOPPED");
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(
+				f.encodingId,
+			);
+		});
+
+		it.each([
+			true,
+			false,
+		])("adopts an exact preclaimed legacy scheduled STOP and preserves first-delivery send authority (%s)", async (firstDelivery) => {
+			const f = await dispatchFixture();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "STOPPING" },
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPING" },
+			});
+			if (!firstDelivery) {
+				await tenant.liveChannel.update({
+					where: { id: f.channel.id },
+					data: { bitmovinEncodingId: null },
+				});
+				await tenant.liveChannelRun.update({
+					where: { id: f.run.id },
+					data: {
+						bitmovinEncodingId: null,
+						previousProviderEncodingIds: [f.encodingId],
+					},
+				});
+			}
+			const schedule = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "STOP",
+					status: "FIRED",
+					fireAt: now,
+					firedAt: now,
+				},
+			});
+			const job = {
+				liveChannelId: f.channel.id,
+				action: "stop",
+				...(firstDelivery ? { plannedLiveChannelRunId: f.run.id } : {}),
+			};
+			const process = createLiveChannelProcessor(f.deps);
+			expect(
+				(await process(job, `sched-${randomUUID()}`, firstDelivery)).status,
+			).toBe("EFFECT_REFUSED");
+			expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+			const result = await process(job, `sched-${schedule.id}`, firstDelivery);
+			expect(result.status).toBe("STOPPED");
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledTimes(
+				firstDelivery ? 1 : 0,
+			);
+			expect(
+				await tenant.liveEffectClaim.findFirst({
+					where: { scheduleId: schedule.id },
+				}),
+			).toMatchObject({
+				state: "ACKED",
+				providerEncodingId: f.encodingId,
+				liveChannelRunId: f.run.id,
+			});
 		});
 
 		it.each([

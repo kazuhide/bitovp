@@ -25,6 +25,7 @@ export type HandlerDeps = {
 	liveChannel(
 		jobData: unknown,
 		queueJobId?: string,
+		firstQueueDelivery?: boolean,
 	): Promise<LiveChannelResult>;
 	/** Polls heartbeats for every RUNNING channel (repeatable job). */
 	liveHeartbeatSweep(): Promise<unknown>;
@@ -79,7 +80,13 @@ export function createHandlers(deps: HandlerDeps): Record<QueueKey, Handler> {
 				await deps.liveHeartbeatSweep();
 				return { acknowledged: true, queue: "liveChannel" };
 			}
-			return deps.liveChannel(job.data, job.id);
+			return deps.liveChannel(
+				job.data,
+				job.id,
+				job.attemptsStarted === 1 &&
+					job.attemptsMade === 0 &&
+					job.stalledCounter === 0,
+			);
 		},
 		storageInspect: async (job: Job) => {
 			await deps.storageInspect(job.data);

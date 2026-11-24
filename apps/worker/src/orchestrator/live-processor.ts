@@ -120,6 +120,7 @@ import {
 	heartbeatSampleRef,
 	logHeartbeatStateChanges,
 } from "../live/heartbeat-state-log";
+import { readLegacyScheduledStop } from "../live/legacy-scheduled-stop";
 import { withMoqTaskStatus } from "../live/moq-task-status";
 import {
 	createProviderLifecycleReconciler,
@@ -4938,7 +4939,10 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		job: LiveChannelJob,
 		expectedAction: LiveEffectIntent["action"],
 		allowedChannelStatuses: readonly string[],
-		options: { supersedeOpen?: boolean } = {},
+		options: {
+			supersedeOpen?: boolean;
+			legacyStopDelivery?: "FIRST" | "UNKNOWN";
+		} = {},
 	): Promise<PreparedLiveEffect> {
 		const intent = job.effect;
 		if (!intent || intent.action !== expectedAction) {
@@ -4978,7 +4982,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			expiresAt: new Date(Date.parse(deps.now()) + 20 * 60_000),
 			allowedChannelStatuses,
 			...(expectedAction === "STOP" ? { resumeAisaFinalization: true } : {}),
-			...(options.supersedeOpen ? { supersedeOpen: true } : {}),
+			...options,
 		});
 		if (begun.kind === "EXECUTE") {
 			return {
@@ -7098,6 +7102,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 	return async function process(
 		jobData: unknown,
 		queueJobId?: string,
+		firstQueueDelivery = false,
 	): Promise<LiveChannelResult> {
 		const job = liveChannelJobSchema.parse(jobData);
 		const { liveChannelId } = job;
@@ -7205,6 +7210,16 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			}
 			case "stop": {
 				const legacyId = job.effect ? undefined : legacyScheduleId(queueJobId);
+				const legacy = legacyId
+					? await readLegacyScheduledStop(
+							deps.prisma,
+							legacyId,
+							liveChannelId,
+							job.plannedLiveChannelRunId,
+						)
+					: null;
+				if (legacy && !job.plannedLiveChannelRunId)
+					job.plannedLiveChannelRunId = legacy.liveChannelRunId;
 				const legacyTarget =
 					legacyId && job.plannedLiveChannelRunId
 						? {
@@ -7229,6 +7244,14 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					))
 				) {
 					return staleGenerationResult();
+				}
+				let legacyStopDelivery: "FIRST" | "UNKNOWN" | undefined;
+				if (
+					legacy?.effect &&
+					legacy.liveChannelRunId === job.plannedLiveChannelRunId
+				) {
+					job.effect = legacy.effect;
+					legacyStopDelivery = firstQueueDelivery ? "FIRST" : "UNKNOWN";
 				}
 				if (job.effect?.action !== "STOP") {
 					if (legacyId) {
@@ -7255,7 +7278,10 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					job,
 					"STOP",
 					["RUNNING", "STOPPING", "ERROR", "STOPPED"],
-					{ supersedeOpen: true },
+					{
+						supersedeOpen: true,
+						...(legacyStopDelivery ? { legacyStopDelivery } : {}),
+					},
 				);
 				if (prepared.kind === "RETURN") return prepared.result;
 				try {

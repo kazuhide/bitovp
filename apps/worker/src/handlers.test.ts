@@ -70,12 +70,23 @@ describe("createHandlers", () => {
 		);
 	});
 
-	it("forwards the retained BullMQ identity to the live processor", async () => {
+	it.each([
+		[1, 0, 0, true],
+		[2, 0, 1, false],
+		[2, 1, 0, false],
+		[1, 0, 1, false],
+	] as const)("forwards the retained BullMQ identity and delivery evidence (%s starts, %s failed, %s stalls)", async (attemptsStarted, attemptsMade, stalledCounter, first) => {
 		const d = deps();
 		const id = "sched-44444444-4444-4444-8444-444444444444";
 		const data = { liveChannelId: "channel", action: "stop" };
-		await createHandlers(d).liveChannel({ id, data } as Job);
-		expect(d.liveChannel).toHaveBeenCalledWith(data, id);
+		await createHandlers(d).liveChannel({
+			id,
+			data,
+			attemptsStarted,
+			attemptsMade,
+			stalledCounter,
+		} as Job);
+		expect(d.liveChannel).toHaveBeenCalledWith(data, id, first);
 	});
 
 	it.each([
@@ -121,6 +132,7 @@ describe("createHandlers", () => {
 				action: "stop",
 			},
 			"1",
+			false,
 		);
 		expect(d.liveHeartbeatSweep).not.toHaveBeenCalled();
 	});

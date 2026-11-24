@@ -119,8 +119,8 @@ import {
 import { releaseDeadLiveToVodIfFinal } from "./live/live-to-vod-release";
 import { createOriginObserver } from "./live/origin-observer";
 import {
+	createAbandonedProbeSweep,
 	createProbeBatchProcessor,
-	reconcileAbandonedProbes,
 } from "./live/probe-runner";
 import {
 	ABANDONED_LEASE_SWEEP_MS,
@@ -1714,6 +1714,9 @@ const enqueueLiveJob = async (
 		removeOnFail: 1000,
 	});
 };
+const sweepAbandonedProbes = tenantService(() =>
+	createAbandonedProbeSweep(prisma),
+);
 const processProbeBatch = tenantService(() =>
 	createProbeBatchProcessor({
 		prisma,
@@ -1844,7 +1847,7 @@ setTenantInterval(() => {
 // #160 PR4 §4: the out-of-process probe teardown — a dead runner's RUNNING
 // probe is stopped by the next minute's pass, independent of any batch job.
 setTenantInterval(() => {
-	reconcileAbandonedProbes(prisma, enqueueLiveJob, new Date()).catch((err) =>
+	sweepAbandonedProbes(new Date()).catch((err) =>
 		console.error(
 			"probe reconcile failed:",
 			err instanceof Error ? err.message : err,

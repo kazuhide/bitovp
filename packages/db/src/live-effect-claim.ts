@@ -33,6 +33,8 @@ export type LiveEffectAction =
 	| "FEEDER_SPAWN";
 
 export type LiveEffectBeginInput = {
+	/** Retained pre-effect schedule, checked under the channel/schedule locks. */
+	legacyStopDelivery?: "FIRST" | "UNKNOWN";
 	idempotencyKey: string;
 	requestSha256?: string;
 	liveChannelId: string;
@@ -584,6 +586,41 @@ export async function beginLiveEffect(
 	hooks: BeginHooks = {},
 ): Promise<LiveEffectBeginResult> {
 	return prisma.$transaction(async (tx) => {
+		if (input.legacyStopDelivery) {
+			if (
+				input.action !== "STOP" ||
+				!input.scheduleId ||
+				input.idempotencyKey !== `schedule:${input.scheduleId}:stop`
+			)
+				return {
+					kind: "STALE" as const,
+					reason: "Legacy schedule STOP has no exact receipt",
+				};
+			await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${input.liveChannelId}::uuid FOR UPDATE`;
+			await tx.$queryRaw`SELECT id FROM "LiveSchedule" WHERE id = ${input.scheduleId}::uuid FOR UPDATE`;
+			const original = await tx.liveSchedule.findFirst({
+				where: {
+					id: input.scheduleId,
+					liveChannelId: input.liveChannelId,
+					liveChannelRunId: input.liveChannelRunId,
+					action: "STOP",
+					status: "FIRED",
+					outcome: "PENDING",
+					liveChannel: { status: "STOPPING" },
+					OR: [
+						{ dispatchJobId: null },
+						{ dispatchJobId: `sched-${input.scheduleId}` },
+					],
+				},
+				select: { id: true },
+			});
+			if (!original)
+				return {
+					kind: "STALE" as const,
+					reason:
+						"The preclaimed legacy schedule or its broadcast is no longer pending",
+				};
+		}
 		const durableManualStop =
 			input.action === "STOP" &&
 			input.supersedeOpen === true &&
@@ -850,7 +887,11 @@ export async function beginLiveEffect(
 				reason: "the live effect generation changed after admission",
 			};
 		}
-		if (open && !input.supersedeOpen) {
+		if (
+			open &&
+			(!input.supersedeOpen ||
+				(input.legacyStopDelivery && open.id !== existing?.id))
+		) {
 			return {
 				kind: "BLOCKED",
 				claimId: open.id,
@@ -951,7 +992,16 @@ export async function beginLiveEffect(
 						liveChannelRunId: input.liveChannelRunId,
 						...(input.scheduleId ? { scheduleId: input.scheduleId } : {}),
 						action: input.action,
-						...(input.action === "STOP" ? { stopProtocolVersion: 1 } : {}),
+						...(input.legacyStopDelivery === "UNKNOWN"
+							? // A worker from before the send ledger may have posted for any
+								// encoder in this compound STOP. Reuse its readback-only semantics.
+								{
+									stopProtocolVersion: null,
+									stopSendEncodingIds: [input.providerEncodingId],
+								}
+							: input.action === "STOP"
+								? { stopProtocolVersion: 1 }
+								: {}),
 						idempotencyKey: input.idempotencyKey,
 						...(input.requestSha256
 							? { requestSha256: input.requestSha256 }

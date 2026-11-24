@@ -50,7 +50,7 @@ export async function GET(request: Request) {
 		return NextResponse.json(await readMemory(), { headers });
 	} catch {
 		return NextResponse.json(
-			{ error: "Redis memory is unavailable" },
+			{ error: "Instance memory usage is unavailable" },
 			{ status: 503, headers },
 		);
 	}

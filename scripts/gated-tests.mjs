@@ -109,6 +109,7 @@ export const REDIS = {
 			"src/handlers.redis.integration.test.ts": 1,
 			"src/live-capacity.redis.integration.test.ts": 1,
 			"src/tenant/redis.integration.test.ts": 1,
+			"src/system-sweeps.redis.integration.test.ts": 1,
 		},
 	},
 	availability: {
@@ -123,6 +124,7 @@ export const REDIS = {
 		VOD_REDELIVERY_TEST_REDIS_URL: 16380,
 		LIVE_CAPACITY_TEST_REDIS_URL: 16381,
 		CLIP_AVAILABILITY_TEST_REDIS_URL: 16382,
+		SWEEP_HISTORY_TEST_REDIS_URL: 16384,
 	},
 };
 

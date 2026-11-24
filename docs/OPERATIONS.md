@@ -57,6 +57,38 @@ Never run web or worker with a PostgreSQL superuser or BYPASSRLS role. An image
 rollback may be incompatible with an already-applied migration. Preserve the
 new worker while it owns pending cleanup or cancellation work.
 
+### Redis queue memory
+
+The worker removes each finished periodic Live heartbeat and slate promotion
+job, including failed ticks. After a tick completes or fails, the worker
+examines up to 100 older entries in each terminal state of that queue in the
+background. Tenant job history keeps its existing retention settings.
+Worker logs record failures.
+
+For a new standard installation, `.env.example` sets `REDIS_MAXMEMORY=128mb`
+in the default 256 MiB Redis container. Standard and customer Compose accept
+this setting. Existing environment files that omit it retain the previous
+Redis budget of `0` (unlimited within the container). For customer Compose,
+set the value in the private application settings file.
+
+Check the current dataset and container consumption before enabling or lowering
+the budget on a populated installation. Use the Compose project for that
+installation. For customer installations, pass the same subcommands to
+`scripts/customer-compose.sh` with the usual project and settings files.
+
+```bash
+docker compose exec -T redis redis-cli INFO memory
+docker compose exec -T redis redis-cli INFO persistence
+docker compose stats --no-stream redis
+```
+
+Compare `used_memory`, `used_memory_rss` and `maxmemory` over representative
+load, including an AOF rewrite. Choose a budget above normal queue usage and
+leave container headroom for allocator overhead, buffers and copy-on-write.
+With `noeviction`, writes that require more memory can fail at the budget.
+Allow the worker to drain old periodic-job history before tightening the
+budget and apply the Compose setting during a maintenance window.
+
 ### Worker FFmpeg
 
 The worker image compiles FFmpeg and ffprobe in the `ffmpeg-*` stages of

@@ -2,6 +2,7 @@ import type { QueueKey } from "@bitovp/core";
 import { DelayedError, type Job } from "bullmq";
 import type { LiveChannelResult } from "./orchestrator/live-processor";
 import { ATTEMPT_LEASE_MS } from "./orchestrator/processor";
+import { systemSweeps } from "./system-sweeps";
 import { VOD_INPUT_PREVIEW_LEASE_MS } from "./vod-input-preview/processor";
 
 export type HandlerResult =
@@ -14,7 +15,7 @@ export type HandlerResult =
 type Handler = (job: Job) => Promise<HandlerResult>;
 
 /** Repeatable job name on the live-channel queue (no per-channel payload). */
-export const HEARTBEAT_SWEEP_JOB = "heartbeat-sweep";
+export const HEARTBEAT_SWEEP_JOB = systemSweeps.liveChannel.name;
 
 export type HandlerDeps = {
 	usageStatistics(job: Job): Promise<unknown>;

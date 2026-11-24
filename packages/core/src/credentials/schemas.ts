@@ -559,12 +559,7 @@ const moqSecret = z
 		/** Independent subscribe-only capability; never sent to the Encoder. */
 		playbackUrl: moqPlaybackUrlSchema.optional(),
 		authToken: z.string().min(1).optional(),
-		authTokenType: z
-			.number()
-			.int()
-			.nonnegative()
-			.max(Number.MAX_SAFE_INTEGER)
-			.optional(),
+		authTokenType: z.int32().nonnegative().optional(),
 	})
 	.refine(
 		(value) =>

@@ -13,4 +13,4 @@
 - [x] 実 CI で cold/warm の計測条件、Web 全件の網羅、Installed GUI・Offline media の検証結果を照合。同じ PR コミットの Web は291秒と298秒で、各回13,063件成功・監査済みスキップ110件。[PR の CI](https://github.com/kazuhide/bitovp/actions/runs/44126936633)
 - [x] 2系統の独立レビューで指摘を解消。
 - [x] [QC 実行制御 #152](https://github.com/kazuhide/bitovp/pull/152) と[検証ハーネス・CI #153](https://github.com/kazuhide/bitovp/pull/153) の必須 CI が成功し、main に統合。
-- [x] マージ後のツリーと CI を照合し、Obsidian の統合記録に追記。[main の CI](https://github.com/kazuhide/bitovp/actions/runs/44129414735) は全ジョブ成功。Web は404秒で完了し、4台のランナーの合計実行時間は1,266秒で計画上限を15秒超過した。
+- [x] マージ後のツリーと CI を照合し、Obsidian の統合記録に追記。[main の CI](https://github.com/kazuhide/bitovp/actions/runs/44129414735) は全ジョブ成功。Web は404秒で完了し、Webの4分割ジョブは合計1,249秒。集計ジョブの17秒を含む5ジョブ合計は1,266秒で、計画上限1,251秒を15秒超過した。

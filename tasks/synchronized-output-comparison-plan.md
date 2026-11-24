@@ -29,7 +29,7 @@ tags: [bitovp, interbee, playback, qc]
 ## 実装と検証
 - [x] 制御口と同期協調の失敗テストを書き、再生待ち・競合・破棄を確認してから実装する。
 - [x] URL・出力選択・片側音声・エラー表示、混在 QC の分離と SDR 維持をテストする。
-- [x] rtk proxy pnpm --filter @bitovp/web test --maxWorkers=2
+- [x] Web 全件は [PR #144 の tests (web)](https://github.com/kazuhide/bitovp/actions/runs/43829369702/job/133170805009) で成功。ローカルの `--maxWorkers=2` による全件実行は途中で中断した。
 - [x] rtk proxy pnpm --filter @bitovp/web typecheck
 - [x] rtk proxy pnpm --filter @bitovp/web build
 - [x] Biome とソース識別情報を保存し、親担当の二系統レビューへ渡す。

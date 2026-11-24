@@ -52,18 +52,18 @@ beforeEach(() => {
 it("shows used and configured Redis memory, refreshes, and discards a stale reading on failure", async () => {
 	showSettings();
 	expect(
-		await screen.findByText("Used 1.0 MB · Redis limit 4.0 MB"),
+		await screen.findByText("Used 1.0 MB · Limit 4.0 MB"),
 	).toBeVisible();
 	fake.memory.mockRejectedValue(new Error("sensitive endpoint"));
 	await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
-	expect(await screen.findByText("Redis memory is unavailable.")).toBeVisible();
+	expect(await screen.findByText("Queue memory usage is unavailable.")).toBeVisible();
 	expect(screen.queryByText(/1\.0 MB|sensitive endpoint/)).toBeNull();
 });
 it("shows an unset Redis limit distinctly in Japanese", async () => {
 	fake.memory.mockResolvedValue({ usedBytes: 1024 * 1024, limitBytes: null });
 	showSettings("ja");
 	expect(
-		await screen.findByText("使用中 1.0 MB・Redis 上限未設定"),
+		await screen.findByText("使用中 1.0 MB・上限未設定"),
 	).toBeVisible();
 });
 it("renders a truncated HTTP 200 JSON body as unavailable", async () => {
@@ -80,7 +80,7 @@ it("renders a truncated HTTP 200 JSON body as unavailable", async () => {
 		}
 	});
 	showSettings();
-	expect(await screen.findByText("Redis memory is unavailable.")).toBeVisible();
+	expect(await screen.findByText("Queue memory usage is unavailable.")).toBeVisible();
 });
 it.each([
 	{},
@@ -89,7 +89,7 @@ it.each([
 ])("rejects an incomplete or invalid successful reading (%j)", async (value) => {
 	fake.memory.mockResolvedValue(value);
 	showSettings();
-	expect(await screen.findByText("Redis memory is unavailable.")).toBeVisible();
+	expect(await screen.findByText("Queue memory usage is unavailable.")).toBeVisible();
 });
 it.each([
 	{ platformOwner: false },
@@ -102,7 +102,7 @@ it.each([
 		expect(client.getQueryState(["auth", "session"])?.status).toBe("success"),
 	);
 	expect(
-		screen.queryByRole("heading", { name: "Instance Redis memory" }),
+		screen.queryByRole("heading", { name: "Job queue memory" }),
 	).toBeNull();
 	expect(fake.api.mock.calls.some(([url]) => url === endpoint)).toBe(false);
 });
@@ -122,7 +122,7 @@ it.each([
 	fake.session.mockResolvedValue({ ...owner, role });
 	showSettings();
 	expect(
-		await screen.findByText("Used 1.0 MB · Redis limit 4.0 MB"),
+		await screen.findByText("Used 1.0 MB · Limit 4.0 MB"),
 	).toBeVisible();
 });
 it("keeps the reading on the organization recovery page for an owner without an active membership", async () => {
@@ -137,18 +137,18 @@ it("keeps the reading on the organization recovery page for an owner without an 
 		</PageAccessGate>,
 	);
 	expect(
-		await screen.findByText("Used 1.0 MB · Redis limit 4.0 MB"),
+		await screen.findByText("Used 1.0 MB · Limit 4.0 MB"),
 	).toBeVisible();
 });
 it("replaces an old reading when refreshed offline", async () => {
 	showSettings();
-	await screen.findByText("Used 1.0 MB · Redis limit 4.0 MB");
+	await screen.findByText("Used 1.0 MB · Limit 4.0 MB");
 	try {
 		act(() => onlineManager.setOnline(false));
 		fake.memory.mockRejectedValue(new TypeError("Failed to fetch"));
 		await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
 		expect(
-			await screen.findByText("Redis memory is unavailable."),
+			await screen.findByText("Queue memory usage is unavailable."),
 		).toBeVisible();
 		expect(screen.queryByText(/1\.0 MB/)).toBeNull();
 	} finally {

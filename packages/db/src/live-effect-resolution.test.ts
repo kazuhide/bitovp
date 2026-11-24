@@ -305,7 +305,9 @@ describe("resolveLiveEffectsAfterConfirmedStop", () => {
 
 	it("refuses primary-only readback when a failed same-run RESTART preserves another encoder", async () => {
 		const f = ambiguousStop();
-		Object.assign(f.claims[0]!, {
+		const prior = f.claims[0];
+		if (!prior) throw new Error("Missing earlier effect fixture");
+		Object.assign(prior, {
 			action: "RESTART",
 			state: "FAILED",
 			providerEncodingId: "encoding-B",
@@ -318,7 +320,9 @@ describe("resolveLiveEffectsAfterConfirmedStop", () => {
 
 	it("settles matched sibling STOPs together without losing their original failure", async () => {
 		const f = ambiguousStop();
-		Object.assign(f.claims[0]!, {
+		const prior = f.claims[0];
+		if (!prior) throw new Error("Missing earlier effect fixture");
+		Object.assign(prior, {
 			action: "STOP",
 			failure:
 				"stop response lost; the provider/process call crossed its send boundary, so exact readback or operator resolution is required before retry",
@@ -370,9 +374,12 @@ describe("resolveLiveEffectsAfterConfirmedStop", () => {
 
 	it("commits the owner's compound STOP only after readback of every historical and logged target", async () => {
 		const f = setup();
-		const owner = f.claims[1]!;
+		const owner = f.claims[1];
+		if (!owner) throw new Error("Missing STOP owner fixture");
 		Object.assign(owner, { token: "owner" });
-		Object.assign(f.claims[0]!, {
+		const prior = f.claims[0];
+		if (!prior) throw new Error("Missing earlier effect fixture");
+		Object.assign(prior, {
 			action: "RESTART",
 			state: "FAILED",
 			providerEncodingId: "encoding-B",

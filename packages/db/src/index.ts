@@ -98,8 +98,8 @@ export {
 	markLiveEffectFailed,
 	matchesRecordedStopFailure,
 	recordLiveStopFailure,
-	wasLiveStopAcknowledged,
 	resolveLiveEffectsAfterConfirmedStop,
+	wasLiveStopAcknowledged,
 } from "./live-effect-claim";
 export { CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION } from "./live-stop-delivery";
 export {

@@ -442,7 +442,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			// The first producer dies after Redis accepts the job and before PostgreSQL records acceptance.
 			const accepted = new Map<string, unknown>();
 			const jobId = `live-stop-notification-${f.run.id}`;
-			let targetAttempts=0;
+			let targetAttempts = 0;
 			const add = vi.fn(
 				async (
 					_name: string,
@@ -452,9 +452,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					const id = String(opts?.jobId);
 					if (id !== jobId) return;
 					targetAttempts++;
-					if (!accepted.has(id)) accepted.set(id,event);
-					if (targetAttempts === 1)
-						throw new Error("lost enqueue response");
+					if (!accepted.has(id)) accepted.set(id, event);
+					if (targetAttempts === 1) throw new Error("lost enqueue response");
 				},
 			);
 			const enqueue = createEventEnqueuer({ queue: { add } });
@@ -520,20 +519,49 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				acknowledgedAt: now,
 				failure: liveEffectSendUncertainty(error),
 			});
-			await tenant.liveChannel.update({where:{id:f.channel.id},data:{status:"RUNNING",bitmovinEncodingId:"new-encoding"}});
-			await tenant.liveChannelRun.create({data:{liveChannelId:f.channel.id,seq:2,status:"RUNNING",bitmovinEncodingId:"new-encoding",outputPrefix:""}});
-			const process = createLiveChannelProcessor({
-				...deps,sleep:async()=>{},pollIntervalMs:10,pollTimeoutMs:250,enqueueFeederJob:async()=>{},
-				resolveCredential:async()=>{throw new Error("no credential required");},
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "RUNNING", bitmovinEncodingId: "new-encoding" },
 			});
-			const replay = await process({liveChannelId:f.channel.id,action:"stop",plannedLiveChannelRunId:f.run.id,effect:{
-				scheduleId:scheduled.id,idempotencyKey:claim.idempotencyKey,action:"STOP",liveChannelRunId:f.run.id,
-				providerEncodingId:f.encodingId,admissionFenceVersion:claim.generation,
-			}});
+			await tenant.liveChannelRun.create({
+				data: {
+					liveChannelId: f.channel.id,
+					seq: 2,
+					status: "RUNNING",
+					bitmovinEncodingId: "new-encoding",
+					outputPrefix: "",
+				},
+			});
+			const process = createLiveChannelProcessor({
+				...deps,
+				sleep: async () => {},
+				pollIntervalMs: 10,
+				pollTimeoutMs: 250,
+				enqueueFeederJob: async () => {},
+				resolveCredential: async () => {
+					throw new Error("no credential required");
+				},
+			});
+			const replay = await process({
+				liveChannelId: f.channel.id,
+				action: "stop",
+				plannedLiveChannelRunId: f.run.id,
+				effect: {
+					scheduleId: scheduled.id,
+					idempotencyKey: claim.idempotencyKey,
+					action: "STOP",
+					liveChannelRunId: f.run.id,
+					providerEncodingId: f.encodingId,
+					admissionFenceVersion: claim.generation,
+				},
+			});
 			expect(replay.status).toBe("EFFECT_ALREADY_ACKNOWLEDGED");
-			expect(await tenant.liveSchedule.findUniqueOrThrow({where:{id:scheduled.id}})).toEqual(scheduled);
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: scheduled.id },
+				}),
+			).toEqual(scheduled);
 			expect(sdk.stopLiveEncoding).not.toHaveBeenCalled();
-
 		}, 15_000);
 
 		it("finishes only the interrupted STOP's pending schedule and preserves its receipts on redelivery after re-air", async () => {

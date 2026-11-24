@@ -21,11 +21,13 @@ export function LivePackagingSection({
 				credentials={credentials}
 				onPatch={onPatch}
 			/>
-			<LiveArchiveSection
-				state={state}
-				credentials={credentials}
-				onPatch={onPatch}
-			/>
+			{state.output.kind !== "MOQ" || state.archive ? (
+				<LiveArchiveSection
+					state={state}
+					credentials={credentials}
+					onPatch={onPatch}
+				/>
+			) : null}
 		</div>
 	);
 }

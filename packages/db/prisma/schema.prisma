@@ -988,6 +988,8 @@ model LiveChannelRun {
   previousProviderEncodingIds   String[]          @default([])
   /// Highest contiguous RTMP rebuild attempt whose replaced encoder IDs were archived.
   archivedRtmpAttempt            Int               @default(0)
+  /// Displaced RTMP encoder IDs positively retired under their originating account.
+  rtmpRetirementEvidence        Json?
   /// Unique across ALL runs; null only until CREATE_ENCODING lands.
   bitmovinEncodingId            String?           @unique
   /// Provider Analysis identity belongs to this exact airing, never the channel.

@@ -179,11 +179,75 @@ function rtmpRebuildAttempt(log: unknown): number {
 		: 0;
 }
 
+export type RtmpRetirementReceipt = {
+	accountId: string;
+	encodingId: string;
+	providerStatus: string;
+	observedAt: string;
+	disposition: "TERMINAL" | "NEVER_STARTED";
+};
+
+function validRetirement(value: unknown): value is RtmpRetirementReceipt {
+	if (!value || typeof value !== "object") return false;
+	const r = value as Partial<RtmpRetirementReceipt>;
+	return (
+		typeof r.encodingId === "string" &&
+		!!r.encodingId &&
+		typeof r.accountId === "string" &&
+		!!r.accountId &&
+		typeof r.observedAt === "string" &&
+		Number.isFinite(Date.parse(r.observedAt)) &&
+		((r.disposition === "TERMINAL" &&
+			classifyProviderStatusWord(r.providerStatus) === "TERMINAL") ||
+			(r.disposition === "NEVER_STARTED" && r.providerStatus === "CREATED"))
+	);
+}
+
+export function mergeRtmpRetirementEvidence(
+	existing: unknown,
+	receipts: readonly RtmpRetirementReceipt[],
+): RtmpRetirementReceipt[] {
+	const result = new Map<string, RtmpRetirementReceipt>();
+	for (const r of [...(Array.isArray(existing) ? existing : []), ...receipts])
+		if (validRetirement(r))
+			result.set(JSON.stringify([r.accountId, r.encodingId]), r);
+	return [...result.values()];
+}
+
+export function unconfirmedRtmpEncoders(
+	run: {
+		stepLog: unknown;
+		previousProviderEncodingIds?: readonly string[];
+		archivedRtmpAttempt?: number;
+		rtmpRetirementEvidence?: unknown;
+	},
+	channel: { stepLog: unknown },
+	accountId: string | null,
+): string[] | null {
+	if (
+		Math.max(
+			rtmpRebuildAttempt(run.stepLog),
+			rtmpRebuildAttempt(channel.stepLog),
+		) > (run.archivedRtmpAttempt ?? 0)
+	)
+		return null;
+	const retired = new Set(
+		mergeRtmpRetirementEvidence(run.rtmpRetirementEvidence, [])
+			.filter((r) => r.accountId === accountId)
+			.map((r) => r.encodingId),
+	);
+	return (run.previousProviderEncodingIds ?? []).filter(
+		(id) => !retired.has(id),
+	);
+}
+
 export function liveStopKnownTargets(
 	run: {
 		bitmovinEncodingId: string | null;
 		stepLog: unknown;
 		previousProviderEncodingIds?: readonly string[];
+		rtmpRetirementEvidence?: unknown;
+		archivedRtmpAttempt?: number;
 	},
 	channel: {
 		bitmovinEncodingId: string | null;
@@ -191,6 +255,7 @@ export function liveStopKnownTargets(
 		error?: string | null;
 	},
 	history: readonly StopHistory[],
+	accountId?: string | null,
 ): string[] | null {
 	const channelIds = liveStopLogEncodings(channel.stepLog);
 	const runIds = liveStopLogEncodings(run.stepLog);
@@ -200,7 +265,11 @@ export function liveStopKnownTargets(
 		...(channel.bitmovinEncodingId ? [channel.bitmovinEncodingId] : []),
 		...channelIds,
 		...runIds,
-		...(run.previousProviderEncodingIds ?? []),
+		...(accountId
+			? (unconfirmedRtmpEncoders(run, channel, accountId) ??
+				run.previousProviderEncodingIds ??
+				[])
+			: (run.previousProviderEncodingIds ?? [])),
 	]);
 	for (const claim of history) {
 		ids.add(claim.providerEncodingId);
@@ -753,6 +822,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						stepLog: true,
 						previousProviderEncodingIds: true,
 						archivedRtmpAttempt: true,
+						rtmpRetirementEvidence: true,
 						endedAt: true,
 					},
 				}),
@@ -842,7 +912,12 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				return blocked(
 					"encoder identities from an earlier RTMP rebuild were not archived; verify the provider account before resolving this broadcast",
 				);
-			const targets = liveStopKnownTargets(run, channel, history);
+			const targets = liveStopKnownTargets(
+				run,
+				channel,
+				history,
+				liveChannelAccountId(channel),
+			);
 			if (!targets || targets.some((id) => !terminal.has(id)))
 				return blocked(
 					"a broadcast log or historical effect identifies an encoder without terminal readback",

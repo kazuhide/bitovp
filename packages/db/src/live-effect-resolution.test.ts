@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AppPrismaClient } from "./client";
-import { resolveLiveEffectsAfterConfirmedStop } from "./live-effect-claim";
+import {
+	mergeRtmpRetirementEvidence,
+	resolveLiveEffectsAfterConfirmedStop,
+	unconfirmedRtmpEncoders,
+} from "./live-effect-claim";
 
 type ClaimState =
 	| "CLAIMED"
@@ -278,6 +282,45 @@ const input = {
 	stopIdempotencyKey: "manual:stop:channel-1:run-1:7",
 	at: new Date("2026-09-01T00:00:01.000Z"),
 };
+
+describe("displaced RTMP encoder retirement", () => {
+	it("trusts only the exact account and verified encoder, and keeps a legacy archive gap separate", () => {
+		const receipt = {
+			accountId: "a",
+			encodingId: "old",
+			disposition: "NEVER_STARTED" as const,
+			providerStatus: "CREATED",
+			observedAt: "2026-11-25T00:00:00Z",
+		};
+		const run = {
+			stepLog: [] as unknown,
+			previousProviderEncodingIds: ["old", "other"],
+			rtmpRetirementEvidence: mergeRtmpRetirementEvidence(
+				[{ ...receipt, encodingId: "other", providerStatus: "RUNNING" }],
+				[receipt, receipt],
+			),
+		};
+		expect(run.rtmpRetirementEvidence).toEqual([receipt]);
+		expect(unconfirmedRtmpEncoders(run, { stepLog: [] }, "a")).toEqual([
+			"other",
+		]);
+		expect(unconfirmedRtmpEncoders(run, { stepLog: [] }, "b")).toEqual([
+			"old",
+			"other",
+		]);
+		run.stepLog = [
+			{
+				step: "input",
+				kind: "CREATE_INPUT_RTMP",
+				status: "DONE",
+				attempt: 1,
+				refs: {},
+				payload: {},
+			},
+		];
+		expect(unconfirmedRtmpEncoders(run, { stepLog: [] }, "a")).toBeNull();
+	});
+});
 
 describe("resolveLiveEffectsAfterConfirmedStop", () => {
 	it("requires a contiguous encoder archive for a rebuild already recorded before upgrade", async () => {

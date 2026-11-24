@@ -20,6 +20,7 @@ import {
 	type ProviderLifecycleView,
 	providerEffectRefusal,
 	reseedFailedSteps,
+	restoreLiveProvisionEvidence,
 	selectRtmpIngestPoints,
 	stepLogSchema,
 } from "@bitovp/core";
@@ -843,10 +844,11 @@ export async function POST(req: Request, { params }: RouteParams) {
 						// keeps the (channel ERROR × latest STOPPED) cell from
 						// reseeding a FINISHED encoding's step log (review-244
 						// K3 — unreachable as traced, moot by construction).
-						const { latest, archivesRetired } = await readLockedLiveStartState(
-							tx,
-							id,
-						);
+						const {
+							channel: lockedChannel,
+							latest,
+							archivesRetired,
+						} = await readLockedLiveStartState(tx, id);
 						// K2: ONE definition of "live" — core's, pinned to the
 						// migration's index predicate by #240's test.
 						if (latest?.cancelRequested && latest.status !== "STOPPED")
@@ -907,9 +909,17 @@ export async function POST(req: Request, { params }: RouteParams) {
 						// the fresh log is compiled PER RUN: seq ≥ 2 rebases
 						// into the run's own subtree so a re-air cannot write
 						// over the previous airing's segments (design §4).
-						const reseeded = reseedFailedSteps(
-							stepLogSchema.parse(row.stepLog),
-						);
+						const sourceLog = lockedChannel?.stepLog ?? row.stepLog;
+						const restored =
+							isRevive && latest
+								? restoreLiveProvisionEvidence(
+										sourceLog,
+										latest.stepLog,
+										latest.bitmovinEncodingId,
+									)
+								: stepLogSchema.parse(sourceLog);
+						if (!restored) throw new StartNotClaimableError();
+						const reseeded = reseedFailedSteps(restored);
 						// An EMPTY log also compiles on the resume arm: there is
 						// nothing to resume, and reseeding [] reproduces the
 						// re-air death above on any row the old bug stranded

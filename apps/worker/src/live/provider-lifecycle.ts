@@ -5,6 +5,7 @@ import {
 	FEEDER_ACTIVE_STATUSES,
 	type FeederJob,
 	feederOccupancyWhere,
+	PROVIDER_TERMINAL_STATUSES,
 	type ProviderLifecycle,
 	type ProviderObservation,
 	providerEffectIdentityRefusal,
@@ -293,7 +294,11 @@ export function createProviderLifecycleReconciler(deps: {
 		return count === 1;
 	}
 
-	type TerminalRun = { liveChannelId: string; seq: number } & Pick<
+	type TerminalRun = {
+		liveChannelId: string;
+		seq: number;
+		providerStatus?: string | null;
+	} & Pick<
 		RunLifecycleRow,
 		| "id"
 		| "bitmovinEncodingId"
@@ -309,12 +314,12 @@ export function createProviderLifecycleReconciler(deps: {
 	async function enqueueTerminalFeederStops(
 		run: TerminalRun,
 		legacyOnly = false,
+		currentChannelEncodingId = run.bitmovinEncodingId,
 	): Promise<boolean> {
 		const terminalAt = run.providerTerminalAt;
 		const encodingId = run.bitmovinEncodingId;
 		if (
-			terminalAt === null ||
-			encodingId === null ||
+			deriveProviderLifecycle(run, Date.now()) !== "TERMINAL" ||
 			(!legacyOnly && run.providerFeederStopsEnqueuedAt !== null)
 		) {
 			return false;
@@ -331,7 +336,7 @@ export function createProviderLifecycleReconciler(deps: {
 								liveChannelRunId: null,
 								liveChannel: {
 									id: run.liveChannelId,
-									bitmovinEncodingId: encodingId,
+									bitmovinEncodingId: currentChannelEncodingId,
 									status: { in: ["STOPPED", "ERROR"] },
 									runs: { none: { seq: { gt: run.seq } } },
 								},
@@ -375,6 +380,7 @@ export function createProviderLifecycleReconciler(deps: {
 				id: run.id,
 				bitmovinEncodingId: encodingId,
 				providerTerminalAt: terminalAt,
+				...(terminalAt === null ? { providerStatus: run.providerStatus } : {}),
 				providerFeederStopsEnqueuedAt: null,
 			},
 			data: { providerFeederStopsEnqueuedAt: at },
@@ -394,12 +400,16 @@ export function createProviderLifecycleReconciler(deps: {
 			seq: true,
 			liveChannelId: true,
 			bitmovinEncodingId: true,
+			providerStatus: true,
 			providerTerminalAt: true,
 			providerFeederStopsEnqueuedAt: true,
 		} as const;
 		const pendingRuns = await deps.prisma.liveChannelRun.findMany({
 			where: {
-				providerTerminalAt: { not: null },
+				OR: [
+					{ providerTerminalAt: { not: null } },
+					{ providerStatus: { in: [...PROVIDER_TERMINAL_STATUSES] } },
+				],
 				providerFeederStopsEnqueuedAt: null,
 			},
 			select,
@@ -433,20 +443,38 @@ export function createProviderLifecycleReconciler(deps: {
 			orphanChannels.length === 100 ? orphanChannels.at(-1)?.id : undefined;
 		const legacyRuns = orphanChannels.flatMap((c) => {
 			const run = c.runs[0];
-			return run?.providerTerminalAt &&
-				run.providerFeederStopsEnqueuedAt &&
-				c.bitmovinEncodingId === run.bitmovinEncodingId
-				? [run]
+			return run &&
+				deriveProviderLifecycle(run, Date.now()) === "TERMINAL" &&
+				(run.providerFeederStopsEnqueuedAt ||
+					run.bitmovinEncodingId === null) &&
+				(run.bitmovinEncodingId === null ||
+					c.bitmovinEncodingId === run.bitmovinEncodingId)
+				? [
+						{
+							run,
+							currentChannelEncodingId: c.bitmovinEncodingId,
+							legacyOnly: true,
+						},
+					]
 				: [];
 		});
 		let completed = 0;
 		let failed = 0;
-		for (const pendingRun of [...pendingRuns, ...legacyRuns]) {
+		for (const target of [
+			...pendingRuns.map((run) => ({
+				run,
+				currentChannelEncodingId: run.bitmovinEncodingId,
+				legacyOnly: false,
+			})),
+			...legacyRuns,
+		]) {
+			const pendingRun = target.run;
 			try {
 				if (
 					await enqueueTerminalFeederStops(
 						pendingRun,
-						!!pendingRun.providerFeederStopsEnqueuedAt,
+						target.legacyOnly,
+						target.currentChannelEncodingId,
 					)
 				)
 					completed += 1;

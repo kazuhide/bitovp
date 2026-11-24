@@ -500,6 +500,7 @@ export {
 	providerEffectRefusal,
 	providerUnknownPastGrace,
 } from "./live/provider-lifecycle";
+export { restoreLiveProvisionEvidence } from "./live/provision-evidence";
 export {
 	type LiveRtmpIngestParams,
 	liveRtmpIngestParamsSchema,

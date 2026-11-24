@@ -439,10 +439,26 @@ export async function bindArchivedStopTargetInTransaction(
 		return null;
 	const target = archivedStopRecoveryTarget(channel, run, history);
 	if (!target || channel.bitmovinEncodingId === target) return target;
+	// Rebinding cannot retroactively validate an old CREATED observation. Only an ID
+	// previously indexed by the retirement writer qualified for that disposition.
+	const receipts = mergeRtmpRetirementEvidence(run.rtmpRetirementEvidence, []);
+	const retained = receipts.filter(
+		(r) =>
+			r.encodingId !== target ||
+			r.disposition !== "NEVER_STARTED" ||
+			run.previousProviderEncodingIds.includes(target),
+	);
 	await tx.liveChannelRun.update({
 		where: { id: run.id },
 		data: {
 			bitmovinEncodingId: target,
+			...(retained.length !== receipts.length
+				? { rtmpRetirementEvidence: retained }
+				: {}),
+			// The rebound primary remains an outstanding archive until its own receipt lands.
+			previousProviderEncodingIds: [
+				...new Set([...run.previousProviderEncodingIds, target]),
+			],
 			providerStatus: null,
 			providerStatusObservedAt: null,
 			providerTerminalAt: null,
@@ -636,7 +652,14 @@ export function pendingAiringRetirement(
 	if (!pending) return null;
 	// An explicitly indexed encoder can itself have been rebound as the primary of
 	// an archive-only STOP. Its positive receipt is still required before re-air.
-	const indexed = unconfirmedRtmpEncoders(run, channel, accountId) ?? [];
+	const valid = new Set(
+		validLiveRetirementReceipts(run, history, accountId).map(
+			(receipt) => receipt.encodingId,
+		),
+	);
+	const indexed = (run.previousProviderEncodingIds ?? []).filter(
+		(id) => !valid.has(id),
+	);
 	return [...new Set([...pending, ...indexed])].sort();
 }
 export function readAiringEffectHistory(
@@ -681,6 +704,28 @@ export function stopNotificationHistoryEligible(
 					legacyStopFailedBeforeSend(claim, channel, run)),
 	);
 }
+/** An acknowledged provider operation carries the target checked against this airing
+ * at admission. A failed operation, feeder-only claim, or ID mentioned in a
+ * diagnostic can require observation without authorizing a new encoder mutation. */
+export function acknowledgedProviderTargets(
+	history: readonly (StopHistory & { state: string })[],
+): string[] {
+	return history
+		.filter(
+			(c) =>
+				c.state === "ACKED" &&
+				[
+					"RESTART",
+					"SLATE_INSERT",
+					"SLATE_REGISTER",
+					"SCTE35",
+					"TIMESHIFT_RESET",
+					"RTMP_INGEST_UPDATE",
+					"AUTO_SHUTDOWN_UPDATE",
+				].includes(c.action),
+		)
+		.map((c) => c.providerEncodingId);
+}
 /** Targets with affirmative run ownership and no historical STOP reservation.
  * Legacy dispatches cannot distinguish an attempted encoding from an untouched one. */
 export function unreservedStopTargets(
@@ -699,6 +744,7 @@ export function unreservedStopTargets(
 		stops.flatMap((c) => c.stopSendEncodingIds ?? []),
 	);
 	const owned = new Set([
+		...acknowledgedProviderTargets(history),
 		run.bitmovinEncodingId,
 		...(liveStopLogEncodings(run.stepLog) ?? []),
 		...(liveStopLogEncodings(channel.stepLog) ?? []),

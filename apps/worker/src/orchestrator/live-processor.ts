@@ -15,6 +15,7 @@ import {
 	type FeederJob,
 	feederOccupancyWhere,
 	hasAisaLiveBinding,
+	hasAisaLiveStepLog,
 	isAisaManagedLivePlan,
 	isRuntimeRecordKind,
 	isStaleGeneration,
@@ -65,6 +66,7 @@ import {
 	readLiveAutoShutdownUpdate,
 	redactSecrets,
 	resolveLiveToVodTarget,
+	restoreLiveProvisionEvidence,
 	type SlateSource,
 	type StepLogEntry,
 	selectRtmpIngestPoints,
@@ -77,6 +79,7 @@ import type {
 	Prisma,
 } from "@bitovp/db";
 import {
+	acknowledgedProviderTargets,
 	appendLiveChannelStepLogEntry,
 	appendLiveEffectStepLogEntry,
 	assertLiveEffectCurrent,
@@ -1405,6 +1408,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				let primaryFailure: { cause: unknown } | undefined;
 				const ids = new Set(allEncodingIdsOf(row));
 				const observeOnly = new Set<string>();
+				const legacyUnsent = new Set<string>();
 				let analysisToRefresh: string | null = null;
 				let managedStop = isAisaManagedLivePlan(row.plan);
 				if (effect) {
@@ -1442,6 +1446,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					if (!run)
 						throw new ChannelStateError("the STOP broadcast disappeared");
 					for (const id of [
+						...acknowledgedProviderTargets(history),
 						...(liveStopLogEncodings(run.stepLog) ?? []),
 						...(unconfirmedRtmpEncoders(run, row, liveChannelAccountId(row)) ??
 							run.previousProviderEncodingIds ??
@@ -1473,6 +1478,8 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					for (const id of authorized) if (!ids.has(id)) observeOnly.add(id);
 					for (const prior of history) {
 						if (prior.action !== "STOP") continue;
+						for (const id of prior.legacyUnsentStopIds ?? [])
+							legacyUnsent.add(id);
 						for (const id of prior.stopSendEncodingIds ?? [])
 							observeOnly.add(id);
 						if (
@@ -1534,7 +1541,8 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					if (observeOnly.has(id)) continue;
 					try {
 						if (
-							effect?.claim.requireActiveStopReadback &&
+							(effect?.claim.requireActiveStopReadback ||
+								legacyUnsent.has(id)) &&
 							!managedStop &&
 							!activeTargets
 						) {
@@ -5652,9 +5660,22 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						throw new ProvisionLeaseLostError(liveChannelId);
 					const createdProof =
 						proof?.basis === "BOUND_CREATED_NOT_STARTED" ? proof : undefined;
+					const rawLog = restoreLiveProvisionEvidence(
+						channel.stepLog,
+						run.stepLog,
+						run.bitmovinEncodingId,
+					);
+					const provenLog =
+						rawLog &&
+						restoreLiveProvisionEvidence(
+							entries,
+							rawLog,
+							run.bitmovinEncodingId,
+						);
+					if (!provenLog) throw new AisaLiveFinalizationPendingError();
 					const prospective = {
 						...run,
-						stepLog: entries,
+						stepLog: provenLog,
 						...(proof ? { aisaFinalization: proof } : {}),
 						...(createdProof
 							? { providerStatus: "CREATED", aisaStatus: "CREATED" }
@@ -5664,10 +5685,12 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 							: {}),
 					};
 					if (
-						isAisaManagedLivePlan(channel.plan) &&
+						(isAisaManagedLivePlan(channel.plan) ||
+							hasAisaLiveStepLog(provenLog)) &&
 						(proof
 							? !aisaLiveNeverStarted(prospective, {
 									...channel,
+									stepLog: provenLog,
 									...(outcome.encodingId
 										? { encoderStoppedConfirmedFor: outcome.encodingId }
 										: {}),
@@ -5685,7 +5708,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						data: {
 							status: outcome.status,
 							error: outcome.error,
-							stepLog: entries as unknown as Prisma.InputJsonValue,
+							stepLog: provenLog as unknown as Prisma.InputJsonValue,
 							provisionClaimedAt: null,
 							...(outcome.encodingId
 								? { encoderStoppedConfirmedFor: outcome.encodingId }
@@ -5720,7 +5743,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 								? { cancelRequested: false }
 								: {}),
 							endedAt: run.endedAt ?? new Date(deps.now()),
-							stepLog: entries as unknown as Prisma.InputJsonValue,
+							stepLog: provenLog as unknown as Prisma.InputJsonValue,
 							...(proof
 								? { aisaFinalization: proof as Prisma.InputJsonValue }
 								: {}),
@@ -5808,10 +5831,37 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			};
 		};
 
+		// Reload the exact airing after winning the lease. A pre-upgrade failed
+		// dual write could leave provider acceptance in only one of its mirrors.
+		const claimedRun = pendingRun
+			? await deps.prisma.liveChannelRun.findFirst({
+					where: { liveChannelId },
+					orderBy: { seq: "desc" },
+				})
+			: null;
+		if (claimedRun?.id !== pendingRun?.id)
+			throw new ProvisionLeaseLostError(liveChannelId);
+		const provisionLog = restoreLiveProvisionEvidence(
+			row.stepLog,
+			claimedRun?.stepLog,
+			claimedRun?.bitmovinEncodingId,
+		);
+		if (
+			!provisionLog ||
+			(hasAisaLiveStepLog(provisionLog) && !isAisaManagedLivePlan(row.plan))
+		) {
+			const status = cancelling ? "STOPPING" : "ERROR";
+			await projectProvisionEnd({
+				status,
+				error:
+					"The provider operation history for this airing could not be verified",
+			});
+			return status;
+		}
 		// A queued cancellation with no attempted encoding CREATE has no paid
 		// provider work to reclaim and must not depend on deleted credentials.
 		if (cancelling && pendingRun && !row.bitmovinEncodingId) {
-			const untouched = stepLogSchema.parse(row.stepLog);
+			const untouched = provisionLog;
 			if (
 				!pendingRun.bitmovinEncodingId &&
 				displacedRetirementWrite(
@@ -5919,7 +5969,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		let fallbackError: string | undefined;
 		try {
 			const plan = liveChannelPlanSchema.parse(row.plan);
-			const parsedEntries = stepLogSchema.parse(row.stepLog);
+			const parsedEntries = provisionLog;
 			taskHistory = projectMoqTaskHistory(parsedEntries, row.error);
 			entries = taskHistory.moq ? taskHistory.stepLog : parsedEntries;
 			resetOwner.entries = entries;

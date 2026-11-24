@@ -11414,6 +11414,7 @@ describe("cooperative startup cancellation", () => {
 		"start-preflight",
 		"commit-interrupted",
 		"start-dispatched",
+		"run-only-create",
 	])("preserves safe AISA cancellation recovery for %s", async (phase) => {
 		const analysisId = "00000000-0000-4000-8000-0000000000aa";
 		const encodingId = "00000000-0000-4000-8000-0000000000ee";
@@ -11484,7 +11485,18 @@ describe("cooperative startup cancellation", () => {
 			cancelRequested: true,
 			bitmovinEncodingId: created ? encodingId : null,
 			aisaAnalysisId: created ? analysisId : null,
-			stepLog: entries,
+			stepLog:
+				phase === "run-only-create"
+					? entries.map((e, i) =>
+							i === 0
+								? {
+										...e,
+										status: "RUNNING",
+										response: { aisaCreateDispatched: true },
+									}
+								: e,
+						)
+					: entries,
 		});
 		h.sdk.getAisaLiveAnalysis = vi.fn(async () => ({
 			analysisId,
@@ -11517,13 +11529,19 @@ describe("cooperative startup cancellation", () => {
 		].includes(phase);
 		expect(outcome.status).toBe(safe ? "STOPPED" : "STOPPING");
 		expect(requiredFixtureRun(h).cancelRequested).toBe(!safe);
+		if (phase === "run-only-create")
+			expect(JSON.stringify(requiredFixtureRun(h).stepLog)).toContain(
+				"aisaCreateDispatched",
+			);
 		if (safe) {
 			expect(aisaLiveNeverStarted(requiredFixtureRun(h), h.row)).toBe(true);
 			expect(requiredFixtureRun(h).aisaSnapshot).toBeUndefined();
 			expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
 		} else expect(requiredFixtureRun(h).aisaFinalization).toBeUndefined();
 		expect(h.sdk.startAisaLiveAnalysis).not.toHaveBeenCalled();
-		expect(h.sdk.createAisaLiveAnalysis).not.toHaveBeenCalled();
+		if (phase === "run-only-create")
+			expect(h.sdk.createAisaLiveAnalysis).toHaveBeenCalledTimes(1); // Adapter checks the prior operation by GET.
+		else expect(h.sdk.createAisaLiveAnalysis).not.toHaveBeenCalled();
 	});
 	it.each([
 		...(["RUNNING", "FINISHED", "ERROR", "CANCELED"] as const).map(

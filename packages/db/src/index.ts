@@ -84,6 +84,7 @@ export type {
 	RtmpRetirementReceipt,
 } from "./live-effect-claim";
 export {
+	acknowledgedProviderTargets,
 	archivedStopRecoveryTarget,
 	archivedStopRevision,
 	assertLiveEffectCurrent,

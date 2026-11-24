@@ -444,8 +444,10 @@ function makeStore(
 				inTx = true;
 				const tx = {
 					...store.prisma,
-					$queryRaw: async (_sql: TemplateStringsArray, id: string) =>
-						store.channels.filter((channel) => channel.id === id),
+					$queryRaw: async (sql: TemplateStringsArray, id: string) =>
+						sql[0]?.includes('FROM "LiveEffectClaim" c')
+							? []
+							: store.channels.filter((channel) => channel.id === id),
 					liveSchedule: {
 						...store.prisma.liveSchedule,
 						updateMany: (args: unknown) =>

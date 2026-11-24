@@ -318,6 +318,7 @@ describe("AISA lifecycle admission", () => {
 		"reair",
 		"legacy-revive",
 		"dispatched-revive",
+		"run-dispatched-revive",
 	])("keeps the run log authoritative across Start → SDK setup failure → DELETE: %s", async (phase) => {
 		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
 		const plan = liveChannelPlanSchema.parse({
@@ -341,7 +342,7 @@ describe("AISA lifecycle admission", () => {
 			},
 		});
 		const canonical = initStepLog(compileAisaManagedLiveChannel(plan));
-		if (phase === "dispatched-revive") {
+		if (phase.endsWith("dispatched-revive")) {
 			const create = canonical[0];
 			if (!create) throw new Error("missing CREATE fixture");
 			create.status = "FAILED";
@@ -357,7 +358,10 @@ describe("AISA lifecycle admission", () => {
 			error: null,
 			bitmovinEncodingId: null,
 			plan,
-			stepLog: canonical,
+			stepLog:
+				phase === "run-dispatched-revive"
+					? initStepLog(compileAisaManagedLiveChannel(plan))
+					: canonical,
 		});
 		let storedRun: Awaited<ReturnType<typeof runFindFirst>> =
 			phase === "first-start"
@@ -370,7 +374,10 @@ describe("AISA lifecycle admission", () => {
 						aisaAnalysisId: null,
 						bitmovinEncodingId: null,
 						// Legacy route-created runs defaulted to [] until the first persist.
-						stepLog: phase === "reair" ? structuredClone(canonical) : [],
+						stepLog:
+							phase === "reair" || phase === "run-dispatched-revive"
+								? structuredClone(canonical)
+								: [],
 						...(phase === "reair"
 							? {
 									aisaFinalization: {
@@ -425,7 +432,7 @@ describe("AISA lifecycle admission", () => {
 				};
 				return { id: storedRun.id };
 			});
-		if (phase === "legacy-revive" || phase === "dispatched-revive")
+		if (phase === "legacy-revive" || phase.endsWith("dispatched-revive"))
 			runUpdate.mockImplementationOnce(async (args) => {
 				if (!args || !storedRun) throw new Error("missing run revive");
 				Object.assign(storedRun, args.data);
@@ -449,9 +456,11 @@ describe("AISA lifecycle admission", () => {
 			}),
 			{ params: Promise.resolve({ id: CHANNEL_ID }) },
 		);
-		expect(response.status).toBe(phase === "dispatched-revive" ? 409 : 200);
+		expect(response.status).toBe(
+			phase.endsWith("dispatched-revive") ? 409 : 200,
+		);
 		expect(startedRunLog).toEqual(startedChannelLog);
-		if (phase === "dispatched-revive") {
+		if (phase.endsWith("dispatched-revive")) {
 			expect(JSON.stringify(startedRunLog)).toContain("aisaCreateDispatched");
 			expect(channelDeleteMany).not.toHaveBeenCalled();
 			expect(runFindMany).not.toHaveBeenCalledWith(
@@ -1364,6 +1373,32 @@ describe("POST /api/live-channels/[id]/actions", () => {
 		);
 	});
 
+	it("revives a native encoder whose completed CREATE is retained only on its own run", async () => {
+		const primary = "same-encoder";
+		findUnique.mockResolvedValueOnce(
+			channel({ status: "ERROR", stepLog: [], bitmovinEncodingId: primary }),
+		);
+		const step = {
+			kind: "CREATE_ENCODING",
+			step: "encoding",
+			refs: {},
+			payload: {},
+			status: "DONE",
+			resourceId: primary,
+		};
+		runFindFirst.mockResolvedValueOnce({
+			id: RUN_ID,
+			seq: 1,
+			status: "ERROR",
+			bitmovinEncodingId: primary,
+			stepLog: [step],
+		});
+		updateMany.mockResolvedValueOnce({ count: 1 });
+		expect((await postAction({ action: "start" })).status).toBe(200);
+		expect(updateMany.mock.calls[0]?.[0]).toMatchObject({
+			data: { stepLog: [step] },
+		});
+	});
 	it("ERROR resume with an EMPTY log compiles fresh — the stranded-corpse recovery (ledger #108)", async () => {
 		// The exact shape the old re-air bug left behind: channel ERROR,
 		// latest run ERROR, stepLog []. Reseeding [] would walk zero steps

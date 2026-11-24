@@ -1,3 +1,4 @@
+import { restoreLiveProvisionEvidence } from "@bitovp/core";
 import type { AppPrismaClient, AppTransactionClient, Prisma } from "@bitovp/db";
 import { createRunMirror } from "../orchestrator/run-mirror";
 
@@ -11,7 +12,7 @@ export async function lockProvisionAiring(
 	return tx.liveChannelRun.findFirst({
 		where: { liveChannelId },
 		orderBy: { seq: "desc" },
-		select: { id: true, status: true, cancelRequested: true },
+		select: { id: true, status: true, cancelRequested: true, stepLog:true, bitmovinEncodingId:true },
 	});
 }
 
@@ -41,6 +42,33 @@ export async function commitProvisionEnd(
 			(target.requireProvisioning && latest?.status === "RUNNING")
 		)
 			return false;
+		let projection = outcome;
+		if (latest && outcome.stepLog !== undefined) {
+			const channel = await tx.liveChannel.findUnique({
+				where: { id: liveChannelId },
+				select: { stepLog: true },
+			});
+			if (!channel) return false;
+			const saved = restoreLiveProvisionEvidence(
+				channel.stepLog,
+				latest.stepLog,
+				latest.bitmovinEncodingId,
+			);
+			const restored =
+				saved &&
+				restoreLiveProvisionEvidence(
+					outcome.stepLog,
+					saved,
+					latest.bitmovinEncodingId,
+				);
+			projection = {
+				status: outcome.status,
+				error: outcome.error,
+				...(restored
+					? { stepLog: restored as unknown as Prisma.InputJsonValue }
+					: {}),
+			};
+		}
 		const changed = await tx.liveChannel.updateMany({
 			where: {
 				id: liveChannelId,
@@ -48,7 +76,7 @@ export async function commitProvisionEnd(
 				provisionClaimedAt: lease,
 				liveEffectFenceVersion: generation,
 			},
-			data: { ...outcome, provisionClaimedAt: null },
+			data: { ...projection, provisionClaimedAt: null },
 		});
 		if (!changed.count) return false;
 		if (
@@ -58,7 +86,7 @@ export async function commitProvisionEnd(
 					latest.cancelRequested &&
 					outcome.status === "STOPPING"))
 		) {
-			await createRunMirror(tx).mirror(liveChannelId, outcome);
+			await createRunMirror(tx).mirror(liveChannelId, projection);
 		}
 		return true;
 	});

@@ -109,7 +109,6 @@ export async function canResumeAisaStop(
 		run.cancelRequested ||
 		!channel.bitmovinEncodingId ||
 		run.bitmovinEncodingId !== channel.bitmovinEncodingId ||
-		!isAisaManagedLivePlan(channel.plan) ||
 		deriveProviderLifecycle(run, nowMs) === "TERMINAL"
 	)
 		return false;
@@ -138,7 +137,7 @@ export async function canRetryEndedAisaFinalization(
 		run.cancelRequested ||
 		!channel.bitmovinEncodingId ||
 		run.bitmovinEncodingId !== channel.bitmovinEncodingId ||
-		!isAisaManagedLivePlan(channel.plan) ||
+		!run.aisaAnalysisId ||
 		deriveProviderLifecycle(run, nowMs) !== "TERMINAL"
 	)
 		return false;

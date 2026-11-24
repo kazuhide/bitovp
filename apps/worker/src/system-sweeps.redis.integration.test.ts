@@ -38,8 +38,9 @@ it.skipIf(!process.env.SWEEP_HISTORY_TEST_REDIS_URL)(
 				};
 				const data = { systemSweep: sweep.marker };
 				try {
+					const lookalikeId = `repeat:${sweep.id}:42`;
 					const lookalike = await queue.add(sweep.name, data, {
-						jobId: `repeat:${sweep.id}:42`,
+						jobId: lookalikeId,
 					});
 					await (await next()).moveToCompleted("tenant result", token, false);
 					const tenantFailure = await queue.add(sweep.name, {
@@ -74,11 +75,13 @@ it.skipIf(!process.env.SWEEP_HISTORY_TEST_REDIS_URL)(
 					const [pending] = await queue.getDelayed(0, 0);
 					expect(pending?.id).toMatch(/^repeat:/);
 
+					const completed = queue.toKey("completed");
 					const seed = redis.multi();
-					seed.zadd(queue.toKey("completed"), 100, oldSuccess.id);
+					seed.zadd(completed, "XX", 100, oldSuccess.id);
+					seed.zadd(completed, "XX", 101, lookalikeId);
 					for (let i = 0; i < 100; i++) {
 						const id = `tenant-${i}`;
-						seed.zadd(queue.toKey("completed"), i, id);
+						seed.zadd(completed, i, id);
 						seed.hset(queue.toKey(id), "name", sweep.name, "data", "{}");
 					}
 					await seed.exec();
@@ -89,11 +92,11 @@ it.skipIf(!process.env.SWEEP_HISTORY_TEST_REDIS_URL)(
 					// A concurrent retry shifts the old tick one rank to the left.
 					// Fresh history fills a whole new page at the far end of the set.
 					const churn = redis.multi();
-					churn.zrem(queue.toKey("completed"), "tenant-0");
+					churn.zrem(completed, "tenant-0");
 					churn.del(queue.toKey("tenant-0"));
 					for (let i = 100; i < 200; i++) {
 						const id = `tenant-${i}`;
-						churn.zadd(queue.toKey("completed"), Date.now() + i, id);
+						churn.zadd(completed, 1_000 + i, id);
 						churn.hset(queue.toKey(id), "name", sweep.name, "data", "{}");
 					}
 					await churn.exec();
@@ -111,10 +114,19 @@ it.skipIf(!process.env.SWEEP_HISTORY_TEST_REDIS_URL)(
 					expect(await pending?.getState()).toBe("delayed");
 					expect(await queue.getCompletedCount()).toBe(200);
 					await inFlight.moveToCompleted(null, token, false);
-					// The final old worker can finish after another worker's first pass.
+					// Set its real terminal record later than every seeded score, as
+					// on a slow runner. The in-progress pass excludes that new rank.
+					await redis.zadd(completed, "XX", 2_000, inFlight.id);
+					expect(await redis.zrank(completed, inFlight.id)).toBe(200);
 					await pruneSystemSweepHistory(redis, queue, sweep);
 					await pruneSystemSweepHistory(redis, queue, sweep);
+					expect(await inFlight.getState()).toBe("completed");
+					// A fresh pass sees all 201 entries in three bounded pages.
+					for (let page = 0; page < 3; page++) {
+						await pruneSystemSweepHistory(redis, queue, sweep);
+					}
 					expect(await inFlight.getState()).toBe("unknown");
+					expect(await redis.exists(queue.toKey(inFlight.id))).toBe(0);
 
 					const success = await next();
 					await success.moveToCompleted(null, token, false);

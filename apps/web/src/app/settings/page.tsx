@@ -1,6 +1,7 @@
 import { localizedTitle } from "@/lib/i18n/metadata";
 import { getWebBuildInfo } from "@/lib/server/build-info";
 import { BuildInfoPanel } from "./build-info-panel";
+import { PlatformRedisMemory } from "./redis-memory";
 import { SettingsAreas } from "./settings-areas";
 
 export const generateMetadata = localizedTitle("pageTitles.settings");
@@ -14,6 +15,7 @@ export default function SettingsPage() {
 	return (
 		<>
 			<SettingsAreas />
+			<PlatformRedisMemory />
 			<BuildInfoPanel version={build.version} commit={build.commit} />
 		</>
 	);

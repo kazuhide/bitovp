@@ -9,6 +9,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ### Added
 
 - Change the target buffer, volume, and available video quality in the MoQ player while watching a live stream.
+- Show instance-wide Redis memory usage and the configured Redis limit to platform owners in Settings.
 - Optionally score an NVENC experiment with BitOVP CUDA VMAF v1.0.16 alongside v0.6.1, export both measurements, and choose a scoring model for Lean selection.
 
 ### Fixed

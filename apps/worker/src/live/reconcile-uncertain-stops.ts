@@ -3,11 +3,13 @@ import {
 	isAisaManagedLivePlan,
 } from "@bitovp/core";
 import {
+	canObserveLiveStop,
 	liveChannelAccountId,
+	liveStopKnownTargets,
 	liveStopRunOwnsEncoding,
-	matchesRecordedStopFailure,
 	type ResolveLiveEffectsAfterConfirmedStopInput,
 	resolveLiveEffectsAfterConfirmedStop,
+	savedStopReadbacks,
 } from "@bitovp/db";
 import { HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS } from "../heartbeat-cadence";
 import type { LiveChannelDeps } from "../orchestrator/live-processor";
@@ -38,12 +40,7 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 						{
 							state: "DISPATCHING",
 							expiresAt: { lte: new Date(deps.now()) },
-							liveChannel: {
-								OR: [
-									{ status: "STOPPED", error: null },
-									{ status: "STOPPING" },
-								],
-							},
+							liveChannel: { status: { in: ["ERROR", "STOPPING", "STOPPED"] } },
 						},
 					],
 				},
@@ -58,6 +55,9 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 					generation: true,
 					state: true,
 					failure: true,
+					expiresAt: true,
+					stopProtocolVersion: true,
+					stopOutcomeEvidence: true,
 					liveChannel: {
 						select: {
 							origin: true,
@@ -68,12 +68,19 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 							bitmovinEncodingId: true,
 							liveEffectFenceVersion: true,
 							plan: true,
+							stepLog: true,
 							runs: {
 								orderBy: { seq: "desc" },
 								take: 1,
 								select: {
 									id: true,
 									stepLog: true,
+									previousProviderEncodingIds: true,
+									status: true,
+									error: true,
+									providerStatus: true,
+									providerTerminalAt: true,
+									providerStatusObservedAt: true,
 									bitmovinEncodingId: true,
 									aisaAnalysisId: true,
 								},
@@ -106,20 +113,36 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 				};
 				try {
 					let terminalReadback: ResolveLiveEffectsAfterConfirmedStopInput["terminalReadback"];
-					if (channel.status !== "STOPPED" || channel.error !== null) {
+					const at = new Date(deps.now());
+					if (!canObserveLiveStop(claim, channel, at)) continue;
+					const history = await deps.prisma.liveEffectClaim.findMany({
+						where: {
+							liveChannelRunId: run.id,
+							liveChannelId: claim.liveChannelId,
+						},
+						select: {
+							action: true,
+							providerEncodingId: true,
+							failure: true,
+							stopProtocolVersion: true,
+							stopSendEncodingIds: true,
+							stopOutcomeEvidence: true,
+						},
+					});
+					const targets = liveStopKnownTargets(run, channel, history);
+					if (!targets) continue;
+					const clean =
+						channel.status === "STOPPED" &&
+						channel.error === null &&
+						run.status === "STOPPED" &&
+						run.error === null &&
+						run.providerTerminalAt &&
+						run.providerStatusObservedAt &&
+						classifyProviderStatusWord(run.providerStatus) === "TERMINAL" &&
+						targets.length === 1;
+					if (!clean) {
 						const bitmovinAccountId = liveChannelAccountId(channel);
-						if (
-							!bitmovinAccountId ||
-							(channel.status !== "STOPPING" &&
-								(claim.state !== "AMBIGUOUS" ||
-									!matchesRecordedStopFailure(
-										channel.status,
-										channel.error,
-										claim.failure,
-										claim.providerEncodingId,
-									)))
-						)
-							continue;
+						if (!bitmovinAccountId) continue;
 						const credentials =
 							await deps.revealBitmovinAccount(bitmovinAccountId);
 						const sdk = deps.makeSdk({
@@ -129,14 +152,29 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 								HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS,
 							),
 						});
-						const { status } = await sdk.getEncodingStatus(
-							claim.providerEncodingId,
+						const prior = new Map(
+							savedStopReadbacks(claim, bitmovinAccountId).map((r) => [
+								r.id,
+								r.status,
+							]),
 						);
-						if (classifyProviderStatusWord(status) !== "TERMINAL") continue;
+						const encodings: { id: string; status: string }[] = [];
+						for (const id of targets) {
+							const status =
+								(id !== claim.providerEncodingId && prior.get(id)) ||
+								(await sdk.getEncodingStatus(id)).status;
+							if (classifyProviderStatusWord(status) === "TERMINAL")
+								encodings.push({ id, status });
+						}
+						const primary = encodings.find(
+							(r) => r.id === claim.providerEncodingId,
+						);
+						if (!primary || encodings.length !== targets.length) continue;
 						terminalReadback = {
 							generation: claim.generation,
 							bitmovinAccountId,
-							providerStatus: status,
+							providerStatus: primary.status,
+							encodings,
 						};
 					}
 					const outcome = await resolveLiveEffectsAfterConfirmedStop(

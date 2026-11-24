@@ -276,6 +276,35 @@ const input = {
 };
 
 describe("resolveLiveEffectsAfterConfirmedStop", () => {
+	it("requires a contiguous encoder archive for a rebuild already recorded before upgrade", async () => {
+		const f = setup();
+		const receipt = {
+			step: "rtmp",
+			kind: "CREATE_INPUT_RTMP",
+			payload: {},
+			refs: {},
+			status: "DONE",
+			resourceId: "current-input",
+			attempt: 1,
+		};
+		Object.assign(f.run, {
+			stepLog: [receipt],
+			archivedRtmpAttempt: 0,
+			previousProviderEncodingIds: [],
+		});
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, input),
+		).resolves.toMatchObject({
+			kind: "BLOCKED",
+			reason: expect.stringContaining("RTMP rebuild"),
+		});
+		expect(f.channel.liveEffectFenceVersion).toBe(8);
+		Object.assign(f.run, { archivedRtmpAttempt: 1 });
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, input),
+		).resolves.toMatchObject({ kind: "RESOLVED" });
+	});
+
 	function ambiguousStop() {
 		const f = setup();
 		Object.assign(f.channel, { status: "ERROR", error: "stop response lost" });
@@ -302,6 +331,64 @@ describe("resolveLiveEffectsAfterConfirmedStop", () => {
 			providerStatus: "FINISHED",
 		},
 	};
+
+	it.each([
+		"late feeder",
+		"previous run error",
+		"lost pre-upgrade dispatch",
+	] as const)("recovers a fenced terminal observation after %s", async (kind) => {
+		const f = ambiguousStop();
+		if (kind === "late feeder") {
+			f.channel.status = f.run.status = "STOPPING";
+			f.channel.error = f.run.error = null;
+			Object.assign(f.stopClaim, {
+				stopProtocolVersion: 1,
+				failure: "a feeder still occupies this channel",
+			});
+		} else if (kind === "previous run error") {
+			f.channel.status = "STOPPING";
+			f.stopClaim.state = "DISPATCHING";
+		} else {
+			f.stopClaim.state = "DISPATCHING";
+			f.stopClaim.failure = null;
+		}
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "RESOLVED" });
+	});
+	it("accepts a drained feeder enqueue failure only after exact terminal target and channel-wide release", async () => {
+		const f = ambiguousStop();
+		f.channel.status = f.run.status = "STOPPED";
+		f.channel.error =
+			f.run.error =
+			f.stopClaim.failure =
+				"stop did not confirm — feeder stop could not be enqueued (legacy-feeder: queue unavailable) — its push may still be running";
+		f.setFeederOccupiesRun(true);
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "BLOCKED" });
+		f.setFeederOccupiesRun(false);
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "RESOLVED" });
+	});
+	it("keeps an overwritten provisioning target until every retained encoder has terminal proof", async () => {
+		const f = ambiguousStop();
+		Object.assign(f.run, { previousProviderEncodingIds: ["rtmp-first"] });
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "BLOCKED" });
+		const readbacks = {
+			...observedStop.terminalReadback,
+			encodings: [{ id: "rtmp-first", status: "FINISHED" }],
+		};
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, {
+				...input,
+				terminalReadback: readbacks,
+			}),
+		).resolves.toMatchObject({ kind: "RESOLVED" });
+	});
 
 	it("refuses primary-only readback when a failed same-run RESTART preserves another encoder", async () => {
 		const f = ambiguousStop();
@@ -586,7 +673,10 @@ describe("resolveLiveEffectsAfterConfirmedStop", () => {
 		if (reason === "new generation") f.channel.liveEffectFenceVersion++;
 		if (reason === "unrelated error")
 			f.channel.error = f.run.error = "disk full";
-		if (reason === "unexpired dispatch") f.stopClaim.state = "DISPATCHING";
+		if (reason === "unexpired dispatch") {
+			f.stopClaim.state = "DISPATCHING";
+			f.stopClaim.expiresAt = new Date("2099-01-01T00:00:00Z");
+		}
 		if (reason === "managed Analysis")
 			f.channel.plan = { start: { aiSceneAnalysisLive: {} } };
 		if (reason === "bound Analysis") f.run.aisaAnalysisId = "analysis";

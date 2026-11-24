@@ -9,6 +9,8 @@ import {
 	type AppPrismaClient,
 	type AppTransactionClient,
 	appendLiveEffectStepLogEntry,
+	beginLiveEffect,
+	claimLiveStopSend,
 	createPrismaClient,
 	createTenantPrismaClient,
 	type LiveChannelStatus,
@@ -247,6 +249,242 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			};
 			return { ...f, fields, claim, proof };
 		}
+
+		async function dispatchFixture() {
+			const f = await fixture("RUNNING", null);
+			const accountId = randomUUID();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { plan: { bitmovin: { accountId } } },
+			});
+			const identity = {
+				liveChannelRunId: f.run.id,
+				providerEncodingId: f.encodingId,
+				action: "STOP" as const,
+			};
+			const job = {
+				liveChannelId: f.channel.id,
+				action: "stop" as const,
+				effect: {
+					...identity,
+					idempotencyKey: `manual:stop:${f.channel.id}:${f.run.id}:0`,
+					admissionFenceVersion: 0,
+				},
+			};
+			const sdk = fakeSdk({
+				getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })),
+			});
+			const deps: LiveChannelDeps = {
+				prisma: tenant,
+				now: () => now.toISOString(),
+				makeSdk: () => sdk,
+				revealBitmovinAccount: async () => ({
+					apiKey: "unused",
+					tenantOrgId: null,
+				}),
+				resolveCredential: async () => {
+					throw new Error("unexpected storage operation");
+				},
+				sleep: async () => {},
+				pollIntervalMs: 1,
+				pollTimeoutMs: 200,
+				enqueueFeederJob: vi.fn(async () => {}),
+			};
+			return { ...f, accountId, identity, job, sdk, deps };
+		}
+
+		it.each([
+			false,
+			true,
+		])("manual supersession accounts for precisely one provider call (scheduled first send reserved: %s)", async (alreadySent) => {
+			const f = await dispatchFixture();
+			const schedule = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "STOP",
+					fireAt: lease,
+					status: "FIRED",
+				},
+			});
+			const old = await beginLiveEffect(tenant, {
+				...f.identity,
+				liveChannelId: f.channel.id,
+				expectedFenceVersion: 0,
+				idempotencyKey: `schedule:${schedule.id}:stop`,
+				scheduleId: schedule.id,
+				ownerId: "first",
+				now,
+				expiresAt: new Date(now.getTime() + 60000),
+			});
+			if (old.kind !== "EXECUTE")
+				throw new Error("scheduled claim not admitted");
+			if (alreadySent) {
+				expect(
+					await claimLiveStopSend(tenant, old.claim, f.encodingId, now),
+				).toBe(true);
+				await f.sdk.stopLiveEncoding(f.encodingId);
+			}
+			vi.mocked(f.sdk.getEncodingStatus).mockImplementation(async () => ({
+				status: vi.mocked(f.sdk.stopLiveEncoding).mock.calls.length
+					? "FINISHED"
+					: "RUNNING",
+			}));
+			expect(await createLiveChannelProcessor(f.deps)(f.job)).toMatchObject({
+				status: "STOPPED",
+			});
+			expect(
+				await claimLiveStopSend(tenant, old.claim, f.encodingId, now),
+			).toBe(false);
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledTimes(1);
+			const claims = await tenant.liveEffectClaim.findMany({
+				where: { liveChannelRunId: f.run.id },
+			});
+			expect(claims.map((c) => c.state)).toEqual(["ACKED", "ACKED"]);
+			expect(claims.flatMap((c) => c.stopSendEncodingIds)).toEqual([
+				f.encodingId,
+			]);
+		});
+
+		it("an expired worker cannot mark or enqueue feeder stops on the successor broadcast", async () => {
+			const f = await dispatchFixture();
+			const feeder = {
+				liveChannelId: f.channel.id,
+				liveChannelRunId: f.run.id,
+				sourceCredentialId: randomUUID(),
+				sourceBucket: "fixture",
+				sourceKey: "fixture.mp4",
+				protocol: "RTMP" as const,
+				target: {},
+				status: "PUSHING" as const,
+			};
+			const old = await tenant.feederSession.create({ data: feeder });
+			const captured = barrier(),
+				resume = barrier();
+			let seen = false;
+			const prisma = new Proxy(tenant, {
+				get(target, key) {
+					if (key === "$transaction")
+						return async (
+							fn: (tx: AppTransactionClient) => Promise<unknown>,
+						) => {
+							const result = await target.$transaction(fn);
+							if (
+								!seen &&
+								Array.isArray(result) &&
+								result.some((item) => item?.id === old.id)
+							) {
+								seen = true;
+								captured.release();
+								await resume.ready;
+							}
+							return result;
+						};
+					const value = Reflect.get(target, key);
+					return typeof value === "function" ? value.bind(target) : value;
+				},
+			});
+			const owner = Promise.allSettled([
+				createLiveChannelProcessor({ ...f.deps, prisma })(f.job),
+			]);
+			try {
+				await reach(captured.ready, owner);
+				await tenant.feederSession.update({
+					where: { id: old.id },
+					data: { status: "STOPPED" },
+				});
+				await tenant.liveEffectClaim.updateMany({
+					where: { liveChannelRunId: f.run.id },
+					data: { expiresAt: lease },
+				});
+				await createUncertainStopReconciler(f.deps)();
+				expect(
+					await tenant.liveEffectClaim.findFirstOrThrow({
+						where: { liveChannelRunId: f.run.id },
+					}),
+				).toMatchObject({ state: "ACKED" });
+				const next = await tenant.liveChannelRun.create({
+					data: {
+						liveChannelId: f.channel.id,
+						seq: 2,
+						status: "RUNNING",
+						bitmovinEncodingId: randomUUID(),
+						outputPrefix: "next",
+					},
+				});
+				await tenant.liveChannel.update({
+					where: { id: f.channel.id },
+					data: {
+						status: "RUNNING",
+						bitmovinEncodingId: next.bitmovinEncodingId,
+					},
+				});
+				const nextFeeder = await tenant.feederSession.create({
+					data: { ...feeder, liveChannelRunId: next.id },
+				});
+				resume.release();
+				expect(await owner).toEqual([
+					{
+						status: "fulfilled",
+						value: expect.objectContaining({
+							status: "EFFECT_ALREADY_ACKNOWLEDGED",
+						}),
+					},
+				]);
+				expect(
+					await tenant.liveChannelRun.findUniqueOrThrow({
+						where: { id: next.id },
+					}),
+				).toMatchObject({ status: "RUNNING" });
+				expect(
+					await tenant.feederSession.findUniqueOrThrow({
+						where: { id: nextFeeder.id },
+					}),
+				).toMatchObject({ status: "PUSHING" });
+				expect(f.deps.enqueueFeederJob).not.toHaveBeenCalled();
+				expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+			} finally {
+				resume.release();
+				await owner;
+			}
+		});
+
+		it("keeps the secondary terminal receipt on the exact account and settles after the primary finishes", async () => {
+			const f = await dispatchFixture();
+			const secondary = randomUUID();
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { previousProviderEncodingIds: [secondary] },
+			});
+			vi.mocked(f.sdk.getEncodingStatus).mockImplementation(async (id) => ({
+				status: id === secondary ? "CANCELED" : "RUNNING",
+			}));
+			expect(await createLiveChannelProcessor(f.deps)(f.job)).toMatchObject({
+				status: "EFFECT_AMBIGUOUS",
+			});
+			const failed = await tenant.liveEffectClaim.findFirstOrThrow({
+				where: { liveChannelRunId: f.run.id },
+			});
+			expect(failed.stopOutcomeEvidence).toMatchObject({
+				accountId: f.accountId,
+				requiredEncodingIds: [f.encodingId, secondary],
+				encodings: [{ id: secondary, status: "CANCELED" }],
+			});
+			vi.mocked(f.sdk.getEncodingStatus)
+				.mockClear()
+				.mockImplementation(async (id) => {
+					if (id !== f.encodingId) throw new Error("unexpected repeated GET");
+					return { status: "FINISHED" };
+				});
+			await createUncertainStopReconciler(f.deps)();
+			expect(
+				await tenant.liveEffectClaim.findUniqueOrThrow({
+					where: { id: failed.id },
+				}),
+			).toMatchObject({ state: "ACKED" });
+			expect(f.sdk.getEncodingStatus).toHaveBeenCalledWith(f.encodingId);
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledTimes(2);
+		});
 
 		it("settles same-encoder STOP siblings only after proving a failed restart's other encoder terminal", async () => {
 			const f = await stopFixture();

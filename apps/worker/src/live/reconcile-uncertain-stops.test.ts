@@ -20,10 +20,12 @@ function setup() {
 		generation: 4,
 		liveChannelId: "channel",
 		state: "AMBIGUOUS",
+		expiresAt: new Date("2026-11-24T08:00:00Z"),
 		failure:
 			"response lost; the provider/process call crossed its send boundary, so exact readback or operator resolution is required before retry",
 		liveChannel: {
 			origin: "MANAGED",
+			stepLog: [],
 			bitmovinAccountId: "account",
 			plan: {},
 			bitmovinEncodingId: "encoding",
@@ -31,7 +33,18 @@ function setup() {
 			error: "response lost",
 			liveEffectFenceVersion: 4,
 			runs: [
-				{ id: "run", bitmovinEncodingId: "encoding", aisaAnalysisId: null },
+				{
+					id: "run",
+					bitmovinEncodingId: "encoding",
+					aisaAnalysisId: null,
+					stepLog: [],
+					previousProviderEncodingIds: [] as string[],
+					status: "ERROR",
+					error: "response lost" as string | null,
+					providerStatus: null as string | null,
+					providerTerminalAt: null as Date | null,
+					providerStatusObservedAt: null as Date | null,
+				},
 			],
 		},
 	};
@@ -40,7 +53,12 @@ function setup() {
 	const stopLiveEncoding = vi.fn();
 	const tick = createUncertainStopReconciler({
 		now,
-		prisma: { liveEffectClaim: { findMany } } as unknown as AppPrismaClient,
+		prisma: {
+			liveEffectClaim: {
+				findMany: (args: { where: { action?: string } }) =>
+					args.where.action ? findMany(args) : Promise.resolve([]),
+			},
+		} as unknown as AppPrismaClient,
 		revealBitmovinAccount: vi
 			.fn()
 			.mockResolvedValue({ apiKey: "mock", tenantOrgId: null }),
@@ -76,6 +94,7 @@ describe("ordinary Live STOP reconciliation", () => {
 					generation: 4,
 					bitmovinAccountId: "account",
 					providerStatus: "FINISHED",
+					encodings: [{ id: "encoding", status: "FINISHED" }],
 				},
 			}),
 		);
@@ -85,6 +104,14 @@ describe("ordinary Live STOP reconciliation", () => {
 	it("closes an interrupted ACK from already-persisted clean evidence without provider I/O", async () => {
 		const f = setup();
 		f.candidate.state = "DISPATCHING";
+		f.candidate.expiresAt = new Date("2026-11-24T02:00:00Z");
+		Object.assign(f.candidate.liveChannel.runs[0] ?? {}, {
+			status: "STOPPED",
+			error: null,
+			providerStatus: "FINISHED",
+			providerStatusObservedAt: new Date(),
+			providerTerminalAt: new Date(),
+		});
 		Object.assign(f.candidate.liveChannel, { status: "STOPPED", error: null });
 		await f.tick();
 		expect(f.getEncodingStatus).not.toHaveBeenCalled();
@@ -101,6 +128,29 @@ describe("ordinary Live STOP reconciliation", () => {
 				expiresAt: { lte: expect.any(Date) },
 			}),
 		);
+	});
+
+	it("rechecks every displaced encoder and a partial legacy channel projection before releasing the broadcast", async () => {
+		const f = setup();
+		const run = f.candidate.liveChannel.runs[0];
+		if (!run) throw new Error("missing fixture");
+		run.previousProviderEncodingIds.push("old");
+		run.status = "STOPPING";
+		Object.assign(f.candidate.liveChannel, { status: "STOPPED", error: null });
+		f.getEncodingStatus.mockImplementation(async (id) => ({
+			status: id === "old" ? "RUNNING" : "FINISHED",
+		}));
+		expect(await f.tick()).toBe(0);
+		expect(f.getEncodingStatus.mock.calls.map(([id]) => id)).toEqual([
+			"encoding",
+			"old",
+		]);
+		f.getEncodingStatus.mockResolvedValue({ status: "FINISHED" });
+		expect(await f.tick()).toBe(1);
+		expect(
+			db.resolve.mock.calls[0]?.[1].terminalReadback.encodings,
+		).toHaveLength(2);
+		expect(f.stopLiveEncoding).not.toHaveBeenCalled();
 	});
 
 	it("reads with the plan-only account used by the original dispatch", async () => {

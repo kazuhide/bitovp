@@ -98,6 +98,29 @@ function fixture() {
 }
 
 describe("managed AISA worker boundary", () => {
+	it("refreshes a terminal Analysis and persists its exact final result without a provider STOP", async () => {
+		const f = fixture();
+		f.bind();
+		f.setProvider({ analysisId, encodingId, status: "FINISHED" });
+		if (!f.options.aisaLive) throw new Error("missing control");
+		const observe = vi.fn(async () => {});
+		f.options.aisaLive.onObservation = observe;
+		const fetch = vi.fn();
+		vi.stubGlobal("fetch", fetch);
+		await f.ops.getAisaLiveAnalysis(analysisId, true);
+		expect(observe).toHaveBeenCalledWith(
+			expect.objectContaining({
+				snapshot: finalSnapshot,
+				finalization: expect.objectContaining({
+					analysisId,
+					encodingId,
+					result: "FINAL",
+				}),
+			}),
+		);
+		expect(f.client.stop).not.toHaveBeenCalled();
+		expect(fetch).not.toHaveBeenCalled();
+	});
 	it("keeps bound cleanup available after Preview is disabled, while refusing Create and Start", async () => {
 		const f = fixture();
 		f.bind();

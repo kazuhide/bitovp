@@ -526,7 +526,10 @@ export type Scte35CueParams = {
 
 export type SdkOps = {
 	createAisaLiveAnalysis(request: AisaLiveCreateRequest): Promise<string>;
-	getAisaLiveAnalysis(analysisId: string): Promise<AisaLiveAnalysis>;
+	getAisaLiveAnalysis(
+		analysisId: string,
+		includeFinalResult?: boolean,
+	): Promise<AisaLiveAnalysis>;
 	startAisaLiveAnalysis(
 		analysisId: string,
 		encodingId: string,

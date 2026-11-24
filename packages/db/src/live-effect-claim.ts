@@ -54,6 +54,7 @@ export type LiveEffectBeginInput = {
 
 export type LiveEffectClaimHandle = {
 	id: string;
+	scheduleId?: string | null;
 	idempotencyKey: string;
 	token: string;
 	liveChannelId: string;
@@ -112,6 +113,7 @@ export type ResolveLiveEffectsAfterConfirmedStopInput = {
 		generation: number;
 		bitmovinAccountId: string;
 		providerStatus: string;
+		encodings?: readonly { id: string; status: string }[];
 	};
 };
 
@@ -130,30 +132,172 @@ export function liveChannelAccountId(row: {
 	return typeof account === "string" && account.length > 0 ? account : null;
 }
 
-/** Match the projections written by a finished STOP attempt, including pre-upgrade records. */
-export function matchesRecordedStopFailure(
-	status: string,
-	error: string | null,
-	failure: string | null | undefined,
-	encodingId: string,
-): boolean {
-	if (!error) return false;
-	if (status === "ERROR") return failure === liveEffectSendUncertainty(error);
+const LEGACY_EXPIRED_DISPATCH =
+	"effect owner expired after DISPATCHING; exact readback is required before retry";
+
+type StopReceipt = { id: string; status: string };
+type StopHistory = {
+	providerEncodingId: string;
+	action: string;
+	failure?: string | null;
+	stopProtocolVersion?: number | null;
+	stopSendEncodingIds?: string[];
+	stopOutcomeEvidence?: unknown;
+};
+
+/** Only legacy STOP diagnostics need to recover target IDs from human-readable fields. */
+function legacyFaultTargets(error: string | null | undefined): string[] | null {
 	const prefix = "stop did not confirm — ";
-	if (status !== "STOPPED" || !error.startsWith(prefix) || failure !== error)
+	if (!error?.startsWith(prefix)) return [];
+	const ids: string[] = [];
+	for (const fault of error.slice(prefix.length).split("; ")) {
+		if (
+			/^feeder [^:;]+: stop was enqueued but publisher termination was not confirmed$/.test(
+				fault,
+			) ||
+			/^feeder stop could not be enqueued \(.+\) — its push may still be running$/.test(
+				fault,
+			)
+		)
+			continue;
+		const match = /^([A-Za-z0-9_-]+): /.exec(fault);
+		if (!match?.[1]) return null;
+		ids.push(match[1]);
+	}
+	return ids;
+}
+
+function rtmpRebuildAttempt(log: unknown): number {
+	const parsed = stepLogSchema.safeParse(log);
+	return parsed.success
+		? Math.max(
+				0,
+				...parsed.data
+					.filter((entry) => entry.kind === "CREATE_INPUT_RTMP")
+					.map((entry) => entry.attempt ?? 0),
+			)
+		: 0;
+}
+
+export function liveStopKnownTargets(
+	run: {
+		bitmovinEncodingId: string | null;
+		stepLog: unknown;
+		previousProviderEncodingIds?: readonly string[];
+	},
+	channel: {
+		bitmovinEncodingId: string | null;
+		stepLog: unknown;
+		error?: string | null;
+	},
+	history: readonly StopHistory[],
+): string[] | null {
+	const channelIds = liveStopLogEncodings(channel.stepLog);
+	const runIds = liveStopLogEncodings(run.stepLog);
+	if (!channelIds || !runIds) return null;
+	const ids = new Set([
+		...(run.bitmovinEncodingId ? [run.bitmovinEncodingId] : []),
+		...(channel.bitmovinEncodingId ? [channel.bitmovinEncodingId] : []),
+		...channelIds,
+		...runIds,
+		...(run.previousProviderEncodingIds ?? []),
+	]);
+	for (const claim of history) {
+		ids.add(claim.providerEncodingId);
+		for (const id of claim.stopSendEncodingIds ?? []) ids.add(id);
+		const required = (
+			claim.stopOutcomeEvidence as { requiredEncodingIds?: unknown } | null
+		)?.requiredEncodingIds;
+		if (Array.isArray(required))
+			for (const id of required) {
+				if (typeof id !== "string" || !id) return null;
+				ids.add(id);
+			}
+		if (claim.action !== "STOP" || claim.stopProtocolVersion === 1) continue;
+		const legacy = legacyFaultTargets(claim.failure);
+		if (!legacy) return null;
+		for (const id of legacy) ids.add(id);
+	}
+	// An unclaimed or pre-upgrade projection can be the last remaining trace of
+	// a secondary encoder. Typed receipts retain the exact set separately.
+	const ownerRecordedError = history.some(
+		(c) =>
+			c.stopProtocolVersion === 1 &&
+			(c.stopOutcomeEvidence as { error?: unknown } | null)?.error ===
+				channel.error,
+	);
+	if (!ownerRecordedError) {
+		const extra = legacyFaultTargets(channel.error);
+		if (!extra) return null;
+		for (const id of extra) ids.add(id);
+	}
+	return [...ids];
+}
+
+export function savedStopReadbacks(
+	claim: { stopOutcomeEvidence?: unknown },
+	accountId: string,
+): StopReceipt[] {
+	const saved = claim.stopOutcomeEvidence as {
+		accountId?: unknown;
+		encodings?: unknown;
+	} | null;
+	if (
+		!saved ||
+		saved.accountId !== accountId ||
+		!Array.isArray(saved.encodings)
+	)
+		return [];
+	return saved.encodings.filter(
+		(r): r is StopReceipt =>
+			r &&
+			typeof r.id === "string" &&
+			typeof r.status === "string" &&
+			classifyProviderStatusWord(r.status) === "TERMINAL",
+	);
+}
+
+export function canObserveLiveStop(
+	claim: {
+		state: string;
+		failure?: string | null;
+		expiresAt: Date;
+		stopProtocolVersion?: number | null;
+		stopOutcomeEvidence?: unknown;
+	},
+	channel: { status: string; error: string | null },
+	at: Date,
+): boolean {
+	if (
+		claim.state !== "AMBIGUOUS" &&
+		!(claim.state === "DISPATCHING" && claim.expiresAt <= at)
+	)
 		return false;
-	// A historic error can be the last remaining mention of a second encoder.
-	// A read of the primary must never erase that evidence.
-	return error
-		.slice(prefix.length)
-		.split("; ")
-		.every(
-			(fault) =>
-				fault.startsWith(`${encodingId}: `) ||
-				/^feeder [0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}: stop was enqueued but publisher termination was not confirmed$/i.test(
-					fault,
-				),
+	if (channel.status === "STOPPING") return true;
+	if (channel.status !== "ERROR" && channel.status !== "STOPPED") return false;
+	if (channel.status === "STOPPED" && channel.error === null) return true;
+	const saved = claim.stopOutcomeEvidence as {
+		status?: unknown;
+		error?: unknown;
+	} | null;
+	if (claim.stopProtocolVersion === 1)
+		return (
+			!!saved &&
+			saved.status === channel.status &&
+			saved.error === channel.error
 		);
+	const expired =
+		claim.expiresAt <= at &&
+		(claim.state === "DISPATCHING" ||
+			claim.failure === LEGACY_EXPIRED_DISPATCH);
+	return (
+		!!channel.error &&
+		(expired ||
+			(channel.status === "ERROR"
+				? claim.failure === liveEffectSendUncertainty(channel.error)
+				: claim.failure === channel.error &&
+					channel.error.startsWith("stop did not confirm — ")))
+	);
 }
 
 /** Both projected logs are part of a broadcast's encoder ownership record. */
@@ -197,26 +341,6 @@ export function liveStopFeederWhere(liveChannelId: string) {
 	};
 }
 
-function stopFaultsCovered(
-	failure: string | null,
-	terminal: ReadonlyMap<string, string>,
-): boolean {
-	const prefix = "stop did not confirm — ";
-	if (!failure?.startsWith(prefix)) return true;
-	return failure
-		.slice(prefix.length)
-		.split("; ")
-		.every((fault) => {
-			if (
-				/^feeder [0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}: stop was enqueued but publisher termination was not confirmed$/i.test(
-					fault,
-				)
-			)
-				return true;
-			return [...terminal.keys()].some((id) => fault.startsWith(id + ": "));
-		});
-}
-
 export type ResolveLiveEffectsAfterConfirmedStopResult =
 	| {
 			kind: "RESOLVED";
@@ -229,6 +353,7 @@ export type ResolveLiveEffectsAfterConfirmedStopResult =
 
 function handleOf(row: {
 	id: string;
+	scheduleId?: string | null;
 	idempotencyKey: string;
 	token: string;
 	liveChannelId: string;
@@ -240,6 +365,7 @@ function handleOf(row: {
 }): LiveEffectClaimHandle {
 	return {
 		id: row.id,
+		...(row.scheduleId ? { scheduleId: row.scheduleId } : {}),
 		idempotencyKey: row.idempotencyKey,
 		token: row.token,
 		liveChannelId: row.liveChannelId,
@@ -362,8 +488,7 @@ export async function beginLiveEffect(
 					},
 					data: {
 						state: "AMBIGUOUS",
-						failure:
-							"effect owner expired after DISPATCHING; exact readback is required before retry",
+						failure: LEGACY_EXPIRED_DISPATCH,
 					},
 				});
 				if (expired.count === 1) state = "AMBIGUOUS";
@@ -405,7 +530,7 @@ export async function beginLiveEffect(
 			tx.liveChannelRun.findFirst({
 				where: { liveChannelId: input.liveChannelId },
 				orderBy: { seq: "desc" },
-				select: { id: true, bitmovinEncodingId: true },
+				select: { id: true, bitmovinEncodingId: true, stepLog: true },
 			}),
 			tx.liveEffectClaim.findFirst({
 				where: {
@@ -432,6 +557,9 @@ export async function beginLiveEffect(
 		}
 		if (
 			currentRun?.id !== input.liveChannelRunId ||
+			(input.action === "STOP" &&
+				(!liveStopRunOwnsEncoding(currentRun, input.providerEncodingId) ||
+					channel.bitmovinEncodingId !== input.providerEncodingId)) ||
 			(currentRun.bitmovinEncodingId ?? channel.bitmovinEncodingId) !==
 				input.providerEncodingId
 		) {
@@ -532,6 +660,14 @@ export async function beginLiveEffect(
 						dispatchedAt: null,
 						acknowledgedAt: null,
 						failure: null,
+						...(retryingFailed.stopProtocolVersion == null &&
+						input.action === "STOP" &&
+						retryingFailed.state !== "FAILED" &&
+						!retryingFailed.stopSendEncodingIds?.includes(
+							input.providerEncodingId,
+						)
+							? { stopSendEncodingIds: { push: input.providerEncodingId } }
+							: {}),
 						attempt: { increment: 1 },
 					},
 				})
@@ -541,6 +677,7 @@ export async function beginLiveEffect(
 						liveChannelRunId: input.liveChannelRunId,
 						...(input.scheduleId ? { scheduleId: input.scheduleId } : {}),
 						action: input.action,
+						...(input.action === "STOP" ? { stopProtocolVersion: 1 } : {}),
 						idempotencyKey: input.idempotencyKey,
 						...(input.requestSha256
 							? { requestSha256: input.requestSha256 }
@@ -612,6 +749,8 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						aisaSnapshot: true,
 						aisaFinalization: true,
 						stepLog: true,
+						previousProviderEncodingIds: true,
+						archivedRtmpAttempt: true,
 						endedAt: true,
 					},
 				}),
@@ -635,6 +774,9 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						state: true,
 						token: true,
 						failure: true,
+						stopProtocolVersion: true,
+						stopSendEncodingIds: true,
+						stopOutcomeEvidence: true,
 					},
 				}),
 			]);
@@ -666,7 +808,10 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				);
 			const stopGeneration = stopClaim.generation;
 			const terminal = new Map(
-				owner?.encodings.map(({ id, status }) => [id, status]),
+				(owner?.encodings ?? proof?.encodings ?? []).map(({ id, status }) => [
+					id,
+					status,
+				]),
 			);
 			if (!owner) {
 				const recorded =
@@ -686,17 +831,17 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				return blocked(
 					"the exact provider encoding has no authoritative terminal readback",
 				);
-			const channelIds = liveStopLogEncodings(channel.stepLog);
-			const runIds = liveStopLogEncodings(run.stepLog);
 			if (
-				!channelIds ||
-				!runIds ||
-				[
-					...channelIds,
-					...runIds,
-					...history.map((c) => c.providerEncodingId),
-				].some((id) => !terminal.has(id))
+				Math.max(
+					rtmpRebuildAttempt(run.stepLog),
+					rtmpRebuildAttempt(channel.stepLog),
+				) > (run.archivedRtmpAttempt ?? 0)
 			)
+				return blocked(
+					"encoder identities from an earlier RTMP rebuild were not archived; verify the provider account before resolving this broadcast",
+				);
+			const targets = liveStopKnownTargets(run, channel, history);
+			if (!targets || targets.some((id) => !terminal.has(id)))
 				return blocked(
 					"a broadcast log or historical effect identifies an encoder without terminal readback",
 				);
@@ -709,11 +854,8 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				stops.some(
 					(c) =>
 						c.providerEncodingId !== input.providerEncodingId ||
-						c.generation > stopGeneration ||
-						!stopFaultsCovered(c.failure, terminal),
-				) ||
-				!stopFaultsCovered(channel.error, terminal) ||
-				!stopFaultsCovered(run.error, terminal)
+						c.generation > stopGeneration,
+				)
 			)
 				return blocked(
 					"another unresolved STOP needs independent target verification",
@@ -752,20 +894,6 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				)
 					return blocked("the original STOP no longer owns these readbacks");
 			} else if (proof) {
-				const interrupted =
-					channel.status === "STOPPING" &&
-					stopClaim.expiresAt <= input.at &&
-					(stopClaim.state === "DISPATCHING" ||
-						stopClaim.failure ===
-							"effect owner expired after DISPATCHING; exact readback is required before retry");
-				const matchesFailure =
-					stopClaim.state === "AMBIGUOUS" &&
-					matchesRecordedStopFailure(
-						channel.status,
-						channel.error,
-						stopClaim.failure,
-						input.providerEncodingId,
-					);
 				const matchingRun =
 					channel.status === run.status && channel.error === run.error;
 				const terminalHeartbeat =
@@ -777,11 +905,22 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				if (
 					proof.generation !== stopGeneration ||
 					liveChannelAccountId(channel) !== proof.bitmovinAccountId ||
-					(!interrupted && !matchesFailure) ||
+					!canObserveLiveStop(stopClaim, channel, input.at) ||
 					!(
 						matchingRun ||
 						terminalHeartbeat ||
-						(interrupted && run.status === "RUNNING" && run.error === null)
+						(stopClaim.stopProtocolVersion == null &&
+							channel.status === "STOPPED" &&
+							!channel.error &&
+							run.status === "STOPPING") ||
+						(channel.status === "STOPPING" &&
+							[
+								"STOPPING",
+								"RUNNING",
+								"ERROR",
+								"PROVISIONING",
+								"STOPPED",
+							].includes(run.status))
 					)
 				)
 					return blocked(
@@ -890,6 +1029,9 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				data: {
 					state: "ACKED",
 					acknowledgedAt: input.at,
+					...(proof && !stopClaim.failure && channel.error
+						? { failure: channel.error }
+						: {}),
 					...(confirmedError && !stopClaim.failure
 						? { failure: confirmedError }
 						: {}),
@@ -1044,6 +1186,39 @@ export async function assertLiveEffectCurrent(
 	);
 }
 
+/** Reserve each outgoing STOP under the same channel lock used for supersession. */
+export async function claimLiveStopSend(
+	prisma: AppPrismaClient,
+	claim: LiveEffectClaimHandle,
+	encodingId: string,
+	at: Date,
+): Promise<boolean> {
+	return prisma.$transaction(async (tx) => {
+		const held = {
+			id: claim.id,
+			action: "STOP" as const,
+			token: claim.token,
+			state: "DISPATCHING" as const,
+			expiresAt: { gt: at },
+		};
+		const lock = await tx.liveChannel.updateMany({
+			where: {
+				id: claim.liveChannelId,
+				bitmovinEncodingId: claim.providerEncodingId,
+				liveEffectFenceVersion: claim.generation,
+				effectClaims: { some: held },
+			},
+			data: { liveEffectFenceVersion: claim.generation },
+		});
+		if (!lock.count) return false;
+		const recorded = await tx.liveEffectClaim.updateMany({
+			where: { ...held, NOT: { stopSendEncodingIds: { has: encodingId } } },
+			data: { stopSendEncodingIds: { push: encodingId } },
+		});
+		return recorded.count === 1;
+	});
+}
+
 export async function markLiveEffectAcked(
 	prisma: AppPrismaClient,
 	claim: LiveEffectClaimHandle,
@@ -1077,6 +1252,9 @@ export async function recordLiveStopFailure(
 		error: string;
 		failure: string;
 		state: "FAILED" | "AMBIGUOUS";
+		accountId?: string | null;
+		encodings?: StopReceipt[];
+		requiredEncodingIds?: string[];
 		at: Date;
 	},
 ): Promise<"RECORDED" | "ALREADY_ACKED" | "LOST"> {
@@ -1106,13 +1284,54 @@ export async function recordLiveStopFailure(
 			id: claim.liveChannelRunId,
 			liveChannelId: claim.liveChannelId,
 		};
+		const account =
+			input.accountId &&
+			(await tx.liveChannel.findUnique({
+				where: { id: claim.liveChannelId },
+				select: { plan: true, bitmovinAccountId: true },
+			}));
+		const accountMatches =
+			!!account && liveChannelAccountId(account) === input.accountId;
+		const receipts = (accountMatches ? (input.encodings ?? []) : []).filter(
+			(r) => classifyProviderStatusWord(r.status) === "TERMINAL",
+		);
+		const primary =
+			input.accountId &&
+			receipts.find((r) => r.id === claim.providerEncodingId);
 		const projected = await tx.liveChannelRun.updateMany({
 			where: run,
-			data: { status: input.status, error: input.error },
+			data: {
+				status: input.status,
+				error: input.error,
+				...(primary
+					? {
+							providerStatus: primary.status,
+							providerStatusObservedAt: input.at,
+							heartbeatPollEpoch: { increment: 1 },
+							providerUnknownSince: null,
+							providerUnknownAlertedAt: null,
+						}
+					: {}),
+			},
 		});
+		if (primary)
+			await tx.liveChannelRun.updateMany({
+				where: { ...run, providerTerminalAt: null },
+				data: { providerTerminalAt: input.at },
+			});
 		const marked = await tx.liveEffectClaim.updateMany({
 			where: { id: claim.id, token: claim.token, state: "DISPATCHING" },
-			data: { state: input.state, failure: input.failure },
+			data: {
+				state: input.state,
+				failure: input.failure,
+				stopOutcomeEvidence: {
+					status: input.status,
+					error: input.error,
+					accountId: input.accountId ?? null,
+					encodings: receipts,
+					requiredEncodingIds: input.requiredEncodingIds ?? [],
+				},
+			},
 		});
 		if (projected.count !== 1 || marked.count !== 1)
 			throw new Error("LIVE_STOP_FAILURE_FENCE_LOST");

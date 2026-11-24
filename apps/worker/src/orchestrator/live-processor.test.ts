@@ -64,6 +64,7 @@ import {
 const liveEffectMocks = vi.hoisted(() => ({
 	begin: vi.fn(),
 	assertCurrent: vi.fn(),
+	claimStopSend: vi.fn(),
 	bindTarget: vi.fn(),
 	markAcked: vi.fn(),
 	markAmbiguous: vi.fn(),
@@ -78,6 +79,7 @@ vi.mock("@bitovp/db", async (importOriginal) => {
 		...actual,
 		beginLiveEffect: liveEffectMocks.begin,
 		assertLiveEffectCurrent: liveEffectMocks.assertCurrent,
+		claimLiveStopSend: liveEffectMocks.claimStopSend,
 		bindLiveEffectTarget: liveEffectMocks.bindTarget,
 		markLiveEffectAcked: liveEffectMocks.markAcked,
 		markLiveEffectAmbiguous: liveEffectMocks.markAmbiguous,
@@ -510,6 +512,7 @@ function setup(
 					{
 						id: LIVE_TO_VOD_RUN_ID,
 						seq: 1,
+						stepLog: structuredClone(row.stepLog),
 						status: "RUNNING",
 						bitmovinEncodingId: row.bitmovinEncodingId,
 						heartbeatPollEpoch: 0,
@@ -889,6 +892,7 @@ beforeEach(() => {
 		}),
 	);
 	liveEffectMocks.assertCurrent.mockResolvedValue(true);
+	liveEffectMocks.claimStopSend.mockResolvedValue(true);
 	liveEffectMocks.bindTarget.mockResolvedValue(true);
 	liveEffectMocks.markAcked.mockResolvedValue(true);
 	liveEffectMocks.markAmbiguous.mockResolvedValue(true);
@@ -1733,7 +1737,7 @@ describe("live channel provisioning", () => {
 		// the dead encoding and hit "input could not be found" (2025) again. The
 		// provision must rebuild the input layer + a fresh encoding against the
 		// current input.
-		const { process, row, sdk } = setup({ status: "PROVISIONING" });
+		const { process, row, sdk, runRows } = setup({ status: "PROVISIONING" });
 		const entries = row.stepLog as StepLogEntry[];
 		const input = entries.find((e) => e.kind === "CREATE_INPUT_RTMP");
 		const encoding = entries.find((e) => e.kind === "CREATE_ENCODING");
@@ -1747,6 +1751,7 @@ describe("live channel provisioning", () => {
 		await process({ liveChannelId: CHANNEL_ID });
 		// Re-resolved, found stale → the DONE encoding is rebuilt, not reused…
 		expect(sdk.createEncoding).toHaveBeenCalled();
+		expect(runRows[0]?.previousProviderEncodingIds).toContain("bm-stale-enc");
 		// …and the new input streams reference the FRESH account input id.
 		// Live streams reference the input directly (no IngestInputStream) — the
 		// resolved RTMP input id rides on createStream's StreamInput (C13).
@@ -2245,10 +2250,33 @@ describe("live channel actions", () => {
 			);
 			expect(h.row.status).toBe("ERROR");
 			expect(liveEffectMocks.markAmbiguous).toHaveBeenCalled();
+			Object.assign(h.deps.prisma.liveEffectClaim, {
+				findMany: async () => [
+					{
+						id: "scheduled-sibling",
+						providerEncodingId: encodingId,
+						action: "STOP",
+						state: "AMBIGUOUS",
+						stopProtocolVersion: 1,
+						stopSendEncodingIds: [encodingId],
+					},
+				],
+			});
+			h.sdk.getAisaLiveAnalysis = vi.fn(async () => {
+				Object.assign(requiredFixtureRun(h), {
+					aisaStatus: "FINISHED",
+					aisaSnapshot: finalAisaSnapshot(analysisId, encodingId),
+				});
+				return { analysisId, encodingId, status: "FINISHED" as const };
+			});
 		}
 		await expect(h.rawProcess(job)).resolves.toMatchObject({
 			status: mode === "terminal-failure" ? "ERROR" : "STOPPED",
 		});
+		if (mode === "recover") {
+			expect(h.sdk.getAisaLiveAnalysis).toHaveBeenCalledWith(analysisId, true);
+			expect(h.sdk.stopLiveEncoding).toHaveBeenCalledTimes(1);
+		}
 		expect(h.runRows).toHaveLength(1);
 		expect(h.row.error).toBe(
 			mode === "terminal-failure" ? "AISA_LIVE_TERMINAL_FAILURE" : null,
@@ -2333,7 +2361,9 @@ describe("live channel actions", () => {
 			});
 			expect(result).toMatchObject({ action: "stop", status: "STOPPED" });
 			expect(sdk.stopLiveEncoding).toHaveBeenCalledWith("bm-live-enc");
-			const statusUpdates = updates.map((u) => u.status);
+			const statusUpdates = updates
+				.filter((u) => "status" in u)
+				.map((u) => u.status);
 			expect(statusUpdates).toEqual(["STOPPING", "STOPPED"]);
 			expect(row.status).toBe("STOPPED");
 		} finally {
@@ -2524,6 +2554,7 @@ describe("live channel actions", () => {
 		runRows.push({
 			id: LIVE_TO_VOD_RUN_ID,
 			seq: 1,
+			stepLog: [],
 			status: "STOPPED",
 			bitmovinEncodingId: "bm-live-enc",
 			providerStatus: "RUNNING",
@@ -5928,6 +5959,7 @@ describe("run-generation fence for queue retries", () => {
 			t.runRows.push({
 				id: RUN_2,
 				seq: 2,
+				stepLog: [],
 				status: "RUNNING",
 				bitmovinEncodingId: "bm-live-enc",
 				providerStatus: "RUNNING",
@@ -10366,6 +10398,7 @@ describe("provider lifecycle reconciliation — sweep, provision, effects (row #
 			getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })),
 		});
 		const run = seedRun(t, {
+			id: LIVE_TO_VOD_RUN_ID,
 			providerStatus: "RUNNING",
 			providerUnknownSince: new Date(Date.parse(NOW) - 60_000),
 		});

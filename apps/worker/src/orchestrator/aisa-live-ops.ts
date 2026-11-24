@@ -287,7 +287,17 @@ export function createAisaLiveOps(
 				throw new Error("AISA_LIVE_CREATE_OUTCOME_UNKNOWN");
 			}
 		},
-		getAisaLiveAnalysis: get,
+		getAisaLiveAnalysis: async (id, includeFinalResult) => {
+			const analysis = await get(id);
+			if (
+				includeFinalResult &&
+				["FINISHED", "ERROR", "CANCELED", "TRANSFER_ERROR"].includes(
+					analysis.status,
+				)
+			)
+				await observeFinal(analysis);
+			return analysis;
+		},
 		startAisaLiveAnalysis: async (
 			id: string,
 			encodingId: string,

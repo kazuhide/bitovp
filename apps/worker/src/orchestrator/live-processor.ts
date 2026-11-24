@@ -80,11 +80,14 @@ import {
 	assertLiveEffectCurrent,
 	beginLiveEffect,
 	bindLiveEffectTarget,
+	claimLiveStopSend,
 	LiveToVodFenceError,
 	liveChannelAccountId,
 	liveEffectSendUncertainty,
 	liveStopFeederWhere,
+	liveStopKnownTargets,
 	liveStopLogEncodings,
+	liveStopRunOwnsEncoding,
 	markLiveEffectAcked,
 	markLiveEffectAmbiguous,
 	markLiveEffectFailed,
@@ -695,7 +698,7 @@ type LiveEffectFence = {
 	claim: LiveEffectClaimHandle;
 	readonly crossedSendBoundary: boolean;
 	assertCurrent(label: string): Promise<void>;
-	beforeSend(label: string): Promise<void>;
+	beforeSend(label: string, stopEncodingId?: string): Promise<void>;
 };
 
 function liveEffectFence(
@@ -726,8 +729,20 @@ function liveEffectFence(
 				);
 			}
 		},
-		async beforeSend(label: string) {
+		async beforeSend(label: string, stopEncodingId?: string) {
 			await this.assertCurrent(label);
+			if (
+				stopEncodingId &&
+				!(await claimLiveStopSend(
+					prisma,
+					claim,
+					stopEncodingId,
+					new Date(now()),
+				))
+			)
+				throw new LiveEffectFenceLostError(
+					"STOP send reservation is no longer current",
+				);
 			// Set immediately before invoking the provider/process API. From here
 			// on, a thrown response is ambiguous and must never be blindly retried.
 			crossedSendBoundary = true;
@@ -1155,65 +1170,99 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			// ( sweep — deleting the "unused variable" would have
 			// let stop flip an unprovisioned channel to STOPPING).
 			encodingIdOf(row);
-			const { count } = await deps.prisma.liveChannel.updateMany({
-				where: {
-					id: liveChannelId,
-					// beginLiveEffect atomically puts a durable manual STOP into
-					// STOPPING at this exact generation. Recheck that ownership before
-					// feeder/provider effects; a later winner must make this delivery
-					// fail and retry, never send under the stale prepared claim.
-					...(effect
-						? { liveEffectFenceVersion: effect.claim.generation }
-						: {}),
-					OR: [
-						{ status: { in: ["RUNNING", "STOPPING", "ERROR"] } },
-						// A queue-first manual stop can reach the worker before the
-						// route's post-add STOPPING projection. Preserve the existing
-						// retry remedy, but only for a stop that carries positive
-						// evidence it never confirmed; a clean STOPPED row stays closed.
-						{ status: "STOPPED", error: { not: null } },
-					],
-				},
-				data: { status: "STOPPING" },
-			});
-			if (count === 0) {
-				throw new ChannelStateError(
-					effect
-						? `Channel stop lost its prepared generation or cannot be stopped from status ${row.status}`
-						: `Channel cannot be stopped from status ${row.status}`,
-				);
-			}
-			await runs.mirror(liveChannelId, { status: "STOPPING" });
-			// Feeder coupling contract (P3-PR3): a channel stop ALSO stops
-			// every attached active feeder session — a feeder must never
-			// outlive its channel's stop INTENT (it would keep pushing at a
-			// dead ingest until its restart backoff exhausts). Enqueued right
-			// after the STOPPING claim, before the API stop, so the intent
-			// propagates even when the stop call below fails. Best-effort per
-			// session: an enqueue failure logs and never blocks the channel
-			// stop (the supervisor's own backoff converges an orphaned feed
-			// to ERROR). jobId `<sessionId>:stop` collapses this with a
-			// concurrent route-issued stop; a SETTLED job under that id is
-			// removed before the add (`enqueueFeederJob`), so a re-stop of a
-			// row that is terminal-but-still-holding-a-pid is deliverable —
-			// the claim that used to sit here, "sessions are terminal after
-			// one stop", stopped being true with audit 2026-08-29 CRITICAL-2.
-			const feeders = await deps.prisma.feederSession.findMany({
-				where: {
-					liveChannelId,
-					OR: [
-						// LC-02: terminal held claims are just as important as
-						// terminal pid pointers. Use core's complete occupancy
-						// population so a channel stop reaches either orphan shape.
-						feederOccupancyWhere(),
-						// Every active row, staged holds INCLUDED — a channel stop
-						// must stop a switch that is holding for it too (core's
-						// list, so the three status copies collapse to one).
-						{ status: { in: [...FEEDER_ACTIVE_STATUSES] } },
-					],
-				},
+			const eligible: Prisma.LiveChannelWhereInput = {
+				id: liveChannelId,
+				OR: [
+					{ status: { in: ["RUNNING", "STOPPING", "ERROR"] } },
+					{ status: "STOPPED", error: { not: null } },
+				],
+			};
+			const feederQuery = {
+				where: liveStopFeederWhere(liveChannelId),
 				select: { id: true },
-			});
+			} as const;
+			const ambiguousReceipt = async (reason: string) => {
+				if (!effect?.claim.scheduleId) return;
+				await recordScheduleOutcomeBestEffort(
+					deps.prisma,
+					{
+						scheduledStop: {
+							id: effect.claim.scheduleId,
+							liveChannelId,
+							liveChannelRunId: effect.claim.liveChannelRunId,
+						},
+					},
+					"UNKNOWN",
+					reason,
+					new Date(deps.now()),
+					"JOB_TERMINAL_UNKNOWN",
+				);
+			};
+			let feeders: { id: string }[];
+			if (effect) {
+				const { claim } = effect;
+				const captured = await deps.prisma.$transaction(async (tx) => {
+					const held = await tx.liveChannel.updateMany({
+						where: {
+							...eligible,
+							liveEffectFenceVersion: claim.generation,
+							bitmovinEncodingId: claim.providerEncodingId,
+							effectClaims: {
+								some: {
+									id: claim.id,
+									token: claim.token,
+									state: "DISPATCHING",
+									expiresAt: { gt: new Date(deps.now()) },
+								},
+							},
+						},
+						data: { liveEffectFenceVersion: claim.generation },
+					});
+					if (!held.count)
+						throw new ChannelStateError(
+							`Channel stop lost its prepared generation or cannot be stopped from status ${row.status}`,
+						);
+					const run = await tx.liveChannelRun.findFirst({
+						where: { liveChannelId },
+						orderBy: { seq: "desc" },
+						select: { id: true, stepLog: true, bitmovinEncodingId: true },
+					});
+					if (
+						!run ||
+						run.id !== claim.liveChannelRunId ||
+						!liveStopRunOwnsEncoding(run, claim.providerEncodingId)
+					)
+						return null;
+					await tx.liveChannel.update({
+						where: { id: liveChannelId },
+						data: { status: "STOPPING" },
+					});
+					await tx.liveChannelRun.update({
+						where: { id: run.id },
+						data: { status: "STOPPING" },
+					});
+					return tx.feederSession.findMany(feederQuery);
+				});
+				if (!captured) {
+					const reason =
+						"the exact broadcast does not own this encoder; no STOP was sent";
+					await markLiveEffectAmbiguous(deps.prisma, claim, reason);
+					await ambiguousReceipt(reason);
+					return "EFFECT_AMBIGUOUS";
+				}
+				feeders = captured;
+			} else {
+				const changed = await deps.prisma.liveChannel.updateMany({
+					where: eligible,
+					data: { status: "STOPPING" },
+				});
+				if (!changed.count)
+					throw new ChannelStateError(
+						`Channel cannot be stopped from status ${row.status}`,
+					);
+				await runs.mirror(liveChannelId, { status: "STOPPING" });
+				feeders = await deps.prisma.feederSession.findMany(feederQuery);
+			}
 			// Row 268: a feeder stop we could not
 			// enqueue is NOT swallowed. An enqueue that never lands leaves the
 			// feeder's `-stream_loop -1` ffmpeg pushing into a now-dead ingest
@@ -1227,6 +1276,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			// (the encodings must still be stopped), it surfaces as evidence.
 			const feederStopEnqueueFailures: string[] = [];
 			for (const feeder of feeders) {
+				await effect?.assertCurrent("feeder stop");
 				try {
 					await deps.enqueueFeederJob({
 						feederSessionId: feeder.id,
@@ -1244,6 +1294,17 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					feederStopEnqueueFailures.push(`${feeder.id}: ${message}`);
 				}
 			}
+			const terminalReadbacks = new Map<string, string>();
+			let requiredEncodingIds: string[] = [];
+			const receipts = () => ({
+				requiredEncodingIds,
+				accountId: liveChannelAccountId(row),
+				encodings: [...terminalReadbacks].map(([id, status]) => ({
+					id,
+					status,
+				})),
+			});
+			let observedPriorSend = false;
 			try {
 				const sdk = await sdkFor(row);
 				/**
@@ -1254,19 +1315,22 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				 * channel kept running and billing. So the stop is followed by a status read, and a
 				 * failure to reach a terminal state is reported rather than assumed away.
 				 *
-				 * Bounded: a handful of polls, because a channel stop that is still settling must
-				 * not hold the queue slot — and `stopLiveEncoding` is idempotent, so the sweep can
-				 * try again.
+				 * Inline polling is bounded. The observer subsequently uses only provider reads.
 				 */
 				const failures: string[] = [];
-				const terminalReadbacks = new Map<string, string>();
 				const ids = new Set(allEncodingIdsOf(row));
 				const observeOnly = new Set<string>();
+				let analysisToRefresh: string | null = null;
 				if (effect) {
 					const [run, history] = await Promise.all([
 						deps.prisma.liveChannelRun.findFirst({
 							where: { id: effect.claim.liveChannelRunId, liveChannelId },
-							select: { stepLog: true, bitmovinEncodingId: true },
+							select: {
+								stepLog: true,
+								bitmovinEncodingId: true,
+								previousProviderEncodingIds: true,
+								aisaAnalysisId: true,
+							},
 						}),
 						deps.prisma.liveEffectClaim.findMany({
 							where: {
@@ -1278,23 +1342,42 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 								action: true,
 								state: true,
 								providerEncodingId: true,
+								failure: true,
+								stopProtocolVersion: true,
+								stopSendEncodingIds: true,
+								stopOutcomeEvidence: true,
 							},
 						}),
 					]);
-					if (run?.bitmovinEncodingId) ids.add(run.bitmovinEncodingId);
-					for (const id of liveStopLogEncodings(run?.stepLog) ?? [])
+					if (!run)
+						throw new ChannelStateError("the STOP broadcast disappeared");
+					for (const id of [
+						...(liveStopLogEncodings(run.stepLog) ?? []),
+						...(run.previousProviderEncodingIds ?? []),
+					])
 						ids.add(id);
+					if (run.bitmovinEncodingId) ids.add(run.bitmovinEncodingId);
+					const targets = liveStopKnownTargets(run, row, history);
+					if (!targets)
+						throw new ChannelStateError(
+							"the STOP broadcast has incomplete encoder ownership records",
+						);
+					requiredEncodingIds = targets;
+					for (const id of targets) if (!ids.has(id)) observeOnly.add(id);
 					for (const prior of history) {
-						if (prior.id === effect.claim.id) continue;
-						// Historical targets need positive terminal evidence. Only a currently
-						// bound log/column authorizes a provider mutation on this delivery.
+						if (prior.action !== "STOP") continue;
+						for (const id of prior.stopSendEncodingIds ?? [])
+							observeOnly.add(id);
 						if (
-							!ids.has(prior.providerEncodingId) ||
-							(prior.action === "STOP" &&
-								(prior.state === "DISPATCHING" || prior.state === "AMBIGUOUS"))
+							prior.id !== effect.claim.id &&
+							prior.stopProtocolVersion == null &&
+							["DISPATCHING", "AMBIGUOUS", "ACKED"].includes(prior.state)
 						)
 							observeOnly.add(prior.providerEncodingId);
 					}
+					observedPriorSend = observeOnly.has(effect.claim.providerEncodingId);
+					if (observedPriorSend && isAisaManagedLivePlan(row.plan))
+						analysisToRefresh = run.aisaAnalysisId;
 				}
 				for (const id of observeOnly) {
 					try {
@@ -1311,10 +1394,14 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						);
 					}
 				}
+				if (analysisToRefresh && effect) {
+					await effect.assertCurrent("AISA finalization readback");
+					await sdk.getAisaLiveAnalysis(analysisToRefresh, true);
+				}
 				for (const [index, id] of [...ids].entries()) {
 					if (observeOnly.has(id)) continue;
 					try {
-						await effect?.beforeSend(`Stop encoding ${id}`);
+						await effect?.beforeSend(`Stop encoding ${id}`, id);
 						await sdk.stopLiveEncoding(id);
 					} catch (stopErr) {
 						/**
@@ -1328,6 +1415,13 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						 * the normal path.
 						 */
 						if (index === 0) {
+							if (stopErr instanceof AisaLiveFinalizationPendingError) {
+								const sample = await sdk
+									.getEncodingStatus(id)
+									.catch(() => null);
+								if (sample && STOP_TERMINAL_STATUSES.includes(sample.status))
+									terminalReadbacks.set(id, sample.status);
+							}
 							throw stopErr;
 						}
 						failures.push(
@@ -1500,6 +1594,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						(await wasLiveStopAcknowledged(deps.prisma, effect.claim))
 					)
 						return "EFFECT_ALREADY_ACKNOWLEDGED";
+					await ambiguousReceipt(settled.reason);
 					return "EFFECT_AMBIGUOUS";
 				}
 				if (effect && unconfirmed) {
@@ -1511,6 +1606,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 							status: "STOPPED",
 							error: unconfirmed,
 							failure: unconfirmed,
+							...receipts(),
 							state: "AMBIGUOUS",
 							at,
 						},
@@ -1544,7 +1640,8 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				// prove that the stop failed to land. Keep the schedule fail-closed as
 				// UNKNOWN, matching the durable AMBIGUOUS claim; only a refusal before
 				// the send boundary is evidence of FAILED.
-				const crossedSendBoundary = effect?.crossedSendBoundary === true;
+				const crossedSendBoundary =
+					effect?.crossedSendBoundary === true || observedPriorSend;
 				if (effect) {
 					const error = redactSecrets(message);
 					const at = new Date(deps.now());
@@ -1554,6 +1651,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						{
 							status: "ERROR",
 							error,
+							...receipts(),
 							failure: crossedSendBoundary
 								? liveEffectSendUncertainty(error)
 								: error,
@@ -5829,6 +5927,50 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				freshRtmpId !== rtmpStep.resourceId &&
 				!(taskHistory.moq && reviveEncodingId)
 			) {
+				// Save every encoder of this exact run before replacing the two projected
+				// logs. A crash after this write can repeat the archive safely.
+				await deps.prisma.$transaction(async (tx) => {
+					const lock = await tx.liveChannel.updateMany({
+						where: { id: liveChannelId, provisionClaimedAt: heldAt },
+						data: { provisionClaimedAt: heldAt },
+					});
+					if (!lock.count) throw new ProvisionLeaseLostError(liveChannelId);
+					const run = await tx.liveChannelRun.findFirst({
+						where: { liveChannelId },
+						orderBy: { seq: "desc" },
+						select: {
+							id: true,
+							bitmovinEncodingId: true,
+							previousProviderEncodingIds: true,
+							archivedRtmpAttempt: true,
+							stepLog: true,
+						},
+					});
+					if (!run || run.id !== currentRunId)
+						throw new ProvisionLeaseLostError(liveChannelId);
+					const previous = new Set(run.previousProviderEncodingIds ?? []);
+					for (const id of [
+						row?.bitmovinEncodingId,
+						run.bitmovinEncodingId,
+						...(liveStopLogEncodings(entries) ?? []),
+						...(liveStopLogEncodings(run.stepLog) ?? []),
+					])
+						if (id) previous.add(id);
+					await tx.liveChannelRun.update({
+						where: { id: run.id },
+						data: {
+							previousProviderEncodingIds: [...previous],
+							...((run.archivedRtmpAttempt ?? 0) >= (rtmpStep.attempt ?? 0)
+								? {
+										archivedRtmpAttempt: Math.max(
+											run.archivedRtmpAttempt ?? 0,
+											(rtmpStep.attempt ?? 0) + 1,
+										),
+									}
+								: {}),
+						},
+					});
+				});
 				const from = entries.indexOf(rtmpStep);
 				for (let i = from; i < entries.length; i += 1) {
 					const entry = entries[i];

@@ -52,6 +52,7 @@ import {
 /** The job shape this reads — BullMQ's `Job`, narrowed to what matters. */
 export type DeadLiveJob =
 	| {
+			id?: string;
 			name?: string;
 			data?: unknown;
 			attemptsMade?: number;
@@ -60,14 +61,12 @@ export type DeadLiveJob =
 	  }
 	| undefined;
 
-function manualStopIntent(job: DeadLiveJob) {
+function boundStopIntent(job: DeadLiveJob) {
 	const parsed = liveChannelJobSchema.safeParse(job?.data);
 	if (
 		!parsed.success ||
 		parsed.data.action !== "stop" ||
-		parsed.data.effect?.action !== "STOP" ||
-		!parsed.data.effect.idempotencyKey.startsWith("manual:stop:") ||
-		parsed.data.effect.scheduleId
+		parsed.data.effect?.action !== "STOP"
 	) {
 		return null;
 	}
@@ -78,12 +77,15 @@ function manualStopIntent(job: DeadLiveJob) {
 }
 
 /** BullMQ emits `failed` after incrementing attemptsMade on every delivery. */
-export function isManualStopJob(job: DeadLiveJob): boolean {
-	return manualStopIntent(job) !== null;
+export function isRunBoundStopJob(job: DeadLiveJob): boolean {
+	return boundStopIntent(job) !== null;
 }
 
-export function isFinalManualStopFailure(job: DeadLiveJob): boolean {
-	if (!manualStopIntent(job)) return false;
+export function isFinalStopFailure(job: DeadLiveJob): boolean {
+	return boundStopIntent(job) !== null && isTerminalDelivery(job);
+}
+
+function isTerminalDelivery(job: DeadLiveJob): boolean {
 	// BullMQ stamps finishedOn before emitting `failed` for every terminal
 	// failure, including stalled-limit, UnrecoverableError, discard and a
 	// backoff strategy that refuses another delivery. Those paths may stop
@@ -100,22 +102,22 @@ export function isFinalManualStopFailure(job: DeadLiveJob): boolean {
 }
 
 /**
- * A manual STOP that exhausts every delivery before crossing the provider
+ * A run-bound STOP that exhausts every delivery before crossing the provider
  * boundary must not disappear behind the route's earlier 202. Project an
  * operator-visible ERROR only while this exact run/provider/fence still owns
  * the channel. A newer run, generation, ACK or unresolved send boundary wins
  * and is never overwritten by this failed-job callback.
  */
-export async function recordFinalManualStopFailure(
+export async function recordFinalStopFailure(
 	prisma: AppPrismaClient,
 	job: DeadLiveJob,
 	message: string,
 	emitEvent?: EmitProductEvent,
 ): Promise<boolean> {
-	const intent = manualStopIntent(job);
-	if (!intent || !isFinalManualStopFailure(job)) return false;
+	const intent = boundStopIntent(job);
+	if (!intent || !isFinalStopFailure(job)) return false;
 	const error = redactSecrets(
-		`Manual stop delivery exhausted before the provider send was confirmed — retry Stop. ${message}`,
+		`Live stop delivery exhausted before the provider send was confirmed — retry Stop. ${message}`,
 	);
 
 	const result = await prisma.$transaction(async (tx) => {
@@ -138,6 +140,7 @@ export async function recordFinalManualStopFailure(
 				where: { idempotencyKey: intent.idempotencyKey },
 				select: {
 					state: true,
+					scheduleId: true,
 					generation: true,
 					liveChannelId: true,
 					liveChannelRunId: true,
@@ -159,6 +162,7 @@ export async function recordFinalManualStopFailure(
 		if (claim) {
 			if (
 				claim.state !== "FAILED" ||
+				(claim.scheduleId ?? null) !== (intent.scheduleId ?? null) ||
 				claim.action !== "STOP" ||
 				claim.liveChannelId !== intent.liveChannelId ||
 				claim.liveChannelRunId !== intent.liveChannelRunId ||
@@ -213,6 +217,7 @@ type LiveJobData = {
 	liveChannelId?: string;
 	action?: string;
 	params?: { scheduleId?: string };
+	effect?: { action?: string; scheduleId?: string; liveChannelRunId?: string };
 };
 
 /**
@@ -231,7 +236,8 @@ export function deadJobScheduleWrites(
 	// Durable manual STOP has its own run/provider/fence-bound failure
 	// projection. It never owns a LiveSchedule row; reverse-looking up the
 	// channel here could corrupt an unrelated FIRED scheduled STOP as UNKNOWN.
-	if (manualStopIntent(job)) {
+	const intent = boundStopIntent(job);
+	if (intent && !intent.scheduleId) {
 		return [];
 	}
 	// The repeatable heartbeat sweep rides the same queue with no channel id
@@ -263,12 +269,26 @@ export function deadJobScheduleWrites(
 			];
 		}
 		case "stop": {
-			if (!data.liveChannelId) {
+			if (job?.attemptsMade !== undefined && !isTerminalDelivery(job))
 				return [];
-			}
+			// Old scheduler payloads had no effect but their BullMQ id was sched-<row uuid>.
+			const legacyId =
+				/^sched-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(
+					job?.id ?? "",
+				)?.[1];
+			const id = intent?.scheduleId ?? (data.effect ? undefined : legacyId);
+			if (!data.liveChannelId || !id) return [];
 			return [
 				{
-					target: { channelStop: data.liveChannelId },
+					target: {
+						scheduledStop: {
+							id,
+							liveChannelId: data.liveChannelId,
+							...(intent?.liveChannelRunId
+								? { liveChannelRunId: intent.liveChannelRunId }
+								: {}),
+						},
+					},
 					outcome: "UNKNOWN",
 					note: `the scheduled stop's job died before it could report a result: ${message}`,
 				},

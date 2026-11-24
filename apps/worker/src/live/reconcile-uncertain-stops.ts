@@ -4,6 +4,7 @@ import {
 } from "@bitovp/core";
 import {
 	liveChannelAccountId,
+	liveStopRunOwnsEncoding,
 	matchesRecordedStopFailure,
 	type ResolveLiveEffectsAfterConfirmedStopInput,
 	resolveLiveEffectsAfterConfirmedStop,
@@ -32,12 +33,17 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 					OR: [
 						{
 							state: "AMBIGUOUS",
-							liveChannel: { status: { in: ["ERROR", "STOPPED"] } },
+							liveChannel: { status: { in: ["ERROR", "STOPPED", "STOPPING"] } },
 						},
 						{
 							state: "DISPATCHING",
 							expiresAt: { lte: new Date(deps.now()) },
-							liveChannel: { status: "STOPPED", error: null },
+							liveChannel: {
+								OR: [
+									{ status: "STOPPED", error: null },
+									{ status: "STOPPING" },
+								],
+							},
 						},
 					],
 				},
@@ -67,6 +73,7 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 								take: 1,
 								select: {
 									id: true,
+									stepLog: true,
 									bitmovinEncodingId: true,
 									aisaAnalysisId: true,
 								},
@@ -84,7 +91,7 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 					channel.liveEffectFenceVersion !== claim.generation ||
 					channel.bitmovinEncodingId !== claim.providerEncodingId ||
 					run?.id !== claim.liveChannelRunId ||
-					run.bitmovinEncodingId !== claim.providerEncodingId ||
+					!liveStopRunOwnsEncoding(run, claim.providerEncodingId) ||
 					channel.origin !== "MANAGED" ||
 					run.aisaAnalysisId ||
 					isAisaManagedLivePlan(channel.plan)
@@ -102,14 +109,15 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 					if (channel.status !== "STOPPED" || channel.error !== null) {
 						const bitmovinAccountId = liveChannelAccountId(channel);
 						if (
-							claim.state !== "AMBIGUOUS" ||
 							!bitmovinAccountId ||
-							!matchesRecordedStopFailure(
-								channel.status,
-								channel.error,
-								claim.failure,
-								claim.providerEncodingId,
-							)
+							(channel.status !== "STOPPING" &&
+								(claim.state !== "AMBIGUOUS" ||
+									!matchesRecordedStopFailure(
+										channel.status,
+										channel.error,
+										claim.failure,
+										claim.providerEncodingId,
+									)))
 						)
 							continue;
 						const credentials =
@@ -141,16 +149,7 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 								: { interruptedAckGeneration: claim.generation }),
 						},
 					);
-					if (outcome.kind === "RESOLVED") {
-						resolved++;
-						if (outcome.recoveredFromError)
-							await deps.emitEvent?.({
-								kind: "CHANNEL_STOPPED",
-								liveChannelId: claim.liveChannelId,
-								name: channel.name,
-								path: `/live/${claim.liveChannelId}`,
-							});
-					}
+					if (outcome.kind === "RESOLVED") resolved++;
 				} catch {
 					// One unavailable account, readback or transaction must not starve the next claim.
 					console.warn(

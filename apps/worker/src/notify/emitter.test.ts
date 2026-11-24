@@ -46,6 +46,35 @@ describe("createEventEmitter", () => {
 		expect(data).not.toHaveProperty("path");
 	});
 
+	it("keeps a stored occurrence time when a failure notification is delayed", async () => {
+		const add = vi.fn(
+			async (
+				_name: string,
+				_data: unknown,
+				_opts?: Record<string, unknown>,
+			) => {},
+		);
+		const emit = createEventEmitter({
+			queue: { add },
+			now: () => new Date("2026-08-15T00:00:00Z"),
+		});
+		const at = new Date("2026-08-12T00:00:00Z");
+		await emit(
+			{
+				kind: "CHANNEL_ERROR",
+				liveChannelId: JOB,
+				name: "test",
+				error: "lost stop response",
+				path: `/live/${JOB}`,
+			},
+			at,
+		);
+		expect(add.mock.calls[0]?.[1]).toMatchObject({
+			occurredAt: at.toISOString(),
+		});
+		expect(add.mock.calls[0]?.[2]).not.toHaveProperty("jobId");
+	});
+
 	it("NEVER throws when the queue is down (the job survives)", async () => {
 		const add = vi.fn().mockRejectedValue(new Error("redis down"));
 		const error = vi.spyOn(console, "error").mockImplementation(() => {});

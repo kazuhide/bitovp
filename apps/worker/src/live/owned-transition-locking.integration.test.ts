@@ -14,14 +14,25 @@ import {
 	type LiveChannelStatus,
 	liveEffectSendUncertainty,
 	persistLiveToVodAttempt,
+	recordLiveStopFailure,
+	resolveLiveEffectsAfterConfirmedStop,
 } from "@bitovp/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createEventEnqueuer } from "../notify/emitter";
 import { fakeSdk } from "../orchestrator/fake-sdk";
+import {
+	createLiveChannelProcessor,
+	type LiveChannelDeps,
+} from "../orchestrator/live-processor";
 import {
 	createProviderLifecycleReconciler,
 	type RunLifecycleRow,
 } from "./provider-lifecycle";
 import { createUncertainStopReconciler } from "./reconcile-uncertain-stops";
+import {
+	createStopNotificationSweep,
+	witnessStopNotificationQueue,
+} from "./stop-notifications";
 
 const runtimeUrl = process.env.BITOVP_MONITORING_TEST_DATABASE_URL;
 const adminUrl = process.env.BITOVP_MONITORING_TEST_ADMIN_URL;
@@ -197,6 +208,156 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			});
 		}
 
+		async function stopFixture() {
+			const f = await fixture("STOPPING", null);
+			const accountId = randomUUID();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { plan: { bitmovin: { accountId } }, liveEffectFenceVersion: 2 },
+			});
+			const fields = {
+				liveChannelId: f.channel.id,
+				liveChannelRunId: f.run.id,
+				providerEncodingId: f.encodingId,
+				ownerId: "fixture",
+				expiresAt: now,
+				dispatchedAt: lease,
+			};
+			const claim = await tenant.liveEffectClaim.create({
+				data: {
+					...fields,
+					generation: 2,
+					token: randomUUID(),
+					action: "STOP",
+					state: "DISPATCHING",
+					idempotencyKey: randomUUID(),
+				},
+			});
+			const proof = {
+				...fields,
+				stopClaimId: claim.id,
+				stopIdempotencyKey: claim.idempotencyKey,
+				at: now,
+				ownerReadbacks: {
+					generation: 2,
+					token: claim.token,
+					bitmovinAccountId: accountId,
+					encodings: [{ id: f.encodingId, status: "FINISHED" }],
+				},
+			};
+			return { ...f, fields, claim, proof };
+		}
+
+		it("settles same-encoder STOP siblings only after proving a failed restart's other encoder terminal", async () => {
+			const f = await stopFixture();
+			const other = "historical-" + randomUUID();
+			const older = await tenant.liveEffectClaim.create({
+				data: {
+					...f.fields,
+					generation: 1,
+					token: randomUUID(),
+					action: "STOP",
+					state: "AMBIGUOUS",
+					failure: "a prior STOP lost its response",
+					idempotencyKey: randomUUID(),
+				},
+			});
+			const restart = await tenant.liveEffectClaim.create({
+				data: {
+					...f.fields,
+					generation: 0,
+					token: randomUUID(),
+					action: "RESTART",
+					state: "FAILED",
+					failure: "refused pre-send",
+					providerEncodingId: other,
+					idempotencyKey: randomUUID(),
+				},
+			});
+			expect(
+				await resolveLiveEffectsAfterConfirmedStop(tenant, f.proof),
+			).toMatchObject({ kind: "BLOCKED" });
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({
+				status: "STOPPING",
+				stopNotificationAt: null,
+				endedAt: null,
+			});
+			f.proof.ownerReadbacks.encodings.push({ id: other, status: "CANCELED" });
+			expect(
+				await resolveLiveEffectsAfterConfirmedStop(tenant, f.proof),
+			).toMatchObject({ kind: "RESOLVED" });
+			expect(
+				await tenant.liveEffectClaim.findUniqueOrThrow({
+					where: { id: older.id },
+				}),
+			).toMatchObject({ state: "ACKED", failure: older.failure });
+			expect(
+				await tenant.liveEffectClaim.findUniqueOrThrow({
+					where: { id: restart.id },
+				}),
+			).toMatchObject({ state: "FAILED", failure: restart.failure });
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({
+				status: "STOPPED",
+				heartbeatPollEpoch: 8,
+				stopNotificationAt: now,
+				endedAt: now,
+			});
+		});
+
+		it("returns the durable winner when the late owner tries to report failure, even after re-air", async () => {
+			const f = await stopFixture();
+			expect(
+				await resolveLiveEffectsAfterConfirmedStop(tenant, f.proof),
+			).toMatchObject({ kind: "RESOLVED" });
+			const successor = "successor-" + randomUUID();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "RUNNING", bitmovinEncodingId: successor },
+			});
+			await tenant.liveChannelRun.create({
+				data: {
+					liveChannelId: f.channel.id,
+					seq: 2,
+					status: "RUNNING",
+					bitmovinEncodingId: successor,
+					outputPrefix: "",
+				},
+			});
+			expect(
+				await recordLiveStopFailure(
+					tenant,
+					{ ...f.claim, action: "STOP" },
+					{
+						state: "AMBIGUOUS",
+						status: "ERROR",
+						error: "late",
+						failure: "late",
+						at: now,
+					},
+				),
+			).toBe("ALREADY_ACKED");
+			expect(
+				await resolveLiveEffectsAfterConfirmedStop(tenant, f.proof),
+			).toMatchObject({ kind: "ALREADY_ACKED" });
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({
+				status: "RUNNING",
+				bitmovinEncodingId: successor,
+				error: null,
+			});
+		});
+
 		it("two periodic observers acknowledge the exact uncertain STOP once after both read its terminal encoder", async () => {
 			const f = await fixture("ERROR", null);
 			const error = "provider response lost";
@@ -211,6 +372,21 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				where: { id: f.run.id },
 				data: { error },
 			});
+			const scheduled = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "STOP",
+					fireAt: lease,
+					status: "FIRED",
+					outcome: "UNKNOWN",
+					outcomeNote: "original lost response",
+					outcomeAt: lease,
+					outcomeEvidenceAt: lease,
+					outcomeEvidenceVersion: 1,
+					outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+				},
+			});
 			const claim = await tenant.liveEffectClaim.create({
 				data: {
 					liveChannelId: f.channel.id,
@@ -219,7 +395,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					generation: f.channel.liveEffectFenceVersion,
 					action: "STOP",
 					state: "AMBIGUOUS",
-					idempotencyKey: randomUUID(),
+					scheduleId: scheduled.id,
+					idempotencyKey: `schedule:${scheduled.id}:stop`,
 					token: randomUUID(),
 					ownerId: "synthetic",
 					dispatchedAt: lease,
@@ -234,10 +411,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				return { status: "FINISHED" };
 			});
 			const sdk = fakeSdk({ getEncodingStatus });
-			const emitEvent = vi.fn(async () => {});
+
 			const deps = {
 				prisma: tenant,
-				emitEvent,
 				now: () => now.toISOString(),
 				revealBitmovinAccount: async (id: string) => {
 					expect(id).toBe(account.id);
@@ -250,16 +426,66 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				createUncertainStopReconciler(deps)(),
 			]);
 			expect(results.sort()).toEqual([0, 1]);
-			expect(emitEvent.mock.calls).toEqual([
-				[
-					{
-						kind: "CHANNEL_STOPPED",
-						name: f.channel.name,
-						liveChannelId: f.channel.id,
-						path: `/live/${f.channel.id}`,
-					},
-				],
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: scheduled.id },
+				}),
+			).toEqual(scheduled);
+			const runAfterAck = await tenant.liveChannelRun.findUniqueOrThrow({
+				where: { id: f.run.id },
+			});
+			expect(runAfterAck).toMatchObject({
+				stopNotificationAt: now,
+				stopNotificationKind: "CHANNEL_STOPPED",
+				stopNotificationQueuedAt: null,
+			});
+			// The first producer dies after Redis accepts the job and before PostgreSQL records acceptance.
+			const accepted = new Map<string, unknown>();
+			const jobId = `live-stop-notification-${f.run.id}`;
+			let targetAttempts=0;
+			const add = vi.fn(
+				async (
+					_name: string,
+					event: unknown,
+					opts?: Record<string, unknown>,
+				) => {
+					const id = String(opts?.jobId);
+					if (id !== jobId) return;
+					targetAttempts++;
+					if (!accepted.has(id)) accepted.set(id,event);
+					if (targetAttempts === 1)
+						throw new Error("lost enqueue response");
+				},
+			);
+			const enqueue = createEventEnqueuer({ queue: { add } });
+			await createStopNotificationSweep(otherTenant, enqueue)();
+			expect(add).not.toHaveBeenCalled();
+			await createStopNotificationSweep(tenant, enqueue)();
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({ stopNotificationQueuedAt: null });
+			await Promise.all([
+				createStopNotificationSweep(tenant, enqueue)(),
+				createStopNotificationSweep(tenant, enqueue)(),
 			]);
+			expect(targetAttempts).toBe(2);
+			expect([...accepted.keys()]).toEqual([jobId]);
+			expect(accepted.get(jobId)).toMatchObject({
+				kind: "CHANNEL_STOPPED",
+				liveChannelId: f.channel.id,
+				name: f.channel.name,
+				occurredAt: now.toISOString(),
+			});
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({ stopNotificationQueuedAt: expect.any(Date) });
+			await witnessStopNotificationQueue(tenant, jobId);
+			await createStopNotificationSweep(tenant, enqueue)();
+			expect(targetAttempts).toBe(2);
 			expect(getEncodingStatus.mock.calls).toEqual([
 				[f.encodingId],
 				[f.encodingId],
@@ -294,7 +520,155 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				acknowledgedAt: now,
 				failure: liveEffectSendUncertainty(error),
 			});
+			await tenant.liveChannel.update({where:{id:f.channel.id},data:{status:"RUNNING",bitmovinEncodingId:"new-encoding"}});
+			await tenant.liveChannelRun.create({data:{liveChannelId:f.channel.id,seq:2,status:"RUNNING",bitmovinEncodingId:"new-encoding",outputPrefix:""}});
+			const process = createLiveChannelProcessor({
+				...deps,sleep:async()=>{},pollIntervalMs:10,pollTimeoutMs:250,enqueueFeederJob:async()=>{},
+				resolveCredential:async()=>{throw new Error("no credential required");},
+			});
+			const replay = await process({liveChannelId:f.channel.id,action:"stop",plannedLiveChannelRunId:f.run.id,effect:{
+				scheduleId:scheduled.id,idempotencyKey:claim.idempotencyKey,action:"STOP",liveChannelRunId:f.run.id,
+				providerEncodingId:f.encodingId,admissionFenceVersion:claim.generation,
+			}});
+			expect(replay.status).toBe("EFFECT_ALREADY_ACKNOWLEDGED");
+			expect(await tenant.liveSchedule.findUniqueOrThrow({where:{id:scheduled.id}})).toEqual(scheduled);
+			expect(sdk.stopLiveEncoding).not.toHaveBeenCalled();
+
 		}, 15_000);
+
+		it("finishes only the interrupted STOP's pending schedule and preserves its receipts on redelivery after re-air", async () => {
+			const f = await fixture("STOPPED", null);
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: {
+					providerStatus: "FINISHED",
+					providerStatusObservedAt: lease,
+					providerTerminalAt: lease,
+				},
+			});
+			const scheduleData = {
+				liveChannelId: f.channel.id,
+				liveChannelRunId: f.run.id,
+				action: "STOP" as const,
+				status: "FIRED" as const,
+				fireAt: lease,
+				dispatchedAt: lease,
+			};
+			const own = await tenant.liveSchedule.create({ data: scheduleData });
+			const unrelated = await tenant.liveSchedule.create({
+				data: scheduleData,
+			});
+			const effect = {
+				idempotencyKey: `schedule:${own.id}:stop`,
+				scheduleId: own.id,
+				action: "STOP" as const,
+				liveChannelRunId: f.run.id,
+				providerEncodingId: f.encodingId,
+				admissionFenceVersion: f.channel.liveEffectFenceVersion,
+			};
+			await tenant.liveEffectClaim.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					providerEncodingId: f.encodingId,
+					action: "STOP",
+					scheduleId: own.id,
+					idempotencyKey: effect.idempotencyKey,
+					token: randomUUID(),
+					generation: f.channel.liveEffectFenceVersion,
+					state: "DISPATCHING",
+					ownerId: "interrupted-owner",
+					dispatchedAt: lease,
+					expiresAt: lease,
+				},
+			});
+			const sdk = fakeSdk();
+			const deps: LiveChannelDeps = {
+				prisma: tenant,
+				now: () => now.toISOString(),
+				makeSdk: () => sdk,
+				sleep: async () => {},
+				pollIntervalMs: 10,
+				pollTimeoutMs: 250,
+				enqueueFeederJob: async () => {},
+				resolveCredential: async () => {
+					throw new Error("no credential required");
+				},
+				revealBitmovinAccount: async () => {
+					throw new Error("no account required");
+				},
+			};
+			expect(await createUncertainStopReconciler(deps)()).toBe(1);
+			const receipt = await tenant.liveSchedule.findUniqueOrThrow({
+				where: { id: own.id },
+			});
+			expect(receipt).toMatchObject({
+				status: "FIRED",
+				outcome: "DELIVERED",
+				outcomeEvidenceKind: "PROVIDER_TERMINAL",
+				outcomeEvidenceAt: now,
+			});
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: unrelated.id },
+				}),
+			).toEqual(unrelated);
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({
+				endedAt: now,
+				stopNotificationKind: "CHANNEL_STOPPED",
+				stopNotificationQueuedAt: null,
+			});
+			// A fresh worker can recover the intent even if the earlier enqueue receipt was lost.
+			const jobId = `live-stop-notification-${f.run.id}`;
+			await witnessStopNotificationQueue(otherTenant, jobId);
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({ stopNotificationQueuedAt: null });
+			await witnessStopNotificationQueue(tenant, jobId);
+			const add = vi.fn(async () => {});
+			await createStopNotificationSweep(
+				tenant,
+				createEventEnqueuer({ queue: { add } }),
+			)();
+			expect(add).not.toHaveBeenCalled();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "RUNNING", bitmovinEncodingId: "new-broadcast" },
+			});
+			await tenant.liveChannelRun.create({
+				data: {
+					liveChannelId: f.channel.id,
+					seq: 2,
+					status: "RUNNING",
+					bitmovinEncodingId: "new-broadcast",
+					outputPrefix: "",
+				},
+			});
+			const process = createLiveChannelProcessor(deps);
+			expect(
+				await process({
+					liveChannelId: f.channel.id,
+					action: "stop",
+					plannedLiveChannelRunId: f.run.id,
+					effect,
+				}),
+			).toMatchObject({ status: "EFFECT_ALREADY_ACKNOWLEDGED" });
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({ where: { id: own.id } }),
+			).toEqual(receipt);
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: unrelated.id },
+				}),
+			).toEqual(unrelated);
+			expect(sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		});
 
 		function terminal(
 			door: ReturnType<typeof reconciler>["door"],

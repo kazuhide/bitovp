@@ -772,6 +772,14 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		if (
 			await transitionScheduleToStale(deps.prisma, {
 				scheduleId: row.id,
+				...(row.action === "STOP"
+					? {
+							stop: {
+								liveChannelId: row.liveChannelId,
+								liveChannelRunId: row.liveChannelRunId,
+							},
+						}
+					: {}),
 				note,
 				at: deps.now(),
 			})

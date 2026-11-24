@@ -82,10 +82,14 @@ import {
 	bindLiveEffectTarget,
 	LiveToVodFenceError,
 	liveChannelAccountId,
+	liveStopFeederWhere,
+	liveStopLogEncodings,
 	liveEffectSendUncertainty,
 	markLiveEffectAcked,
 	markLiveEffectAmbiguous,
 	markLiveEffectFailed,
+	recordLiveStopFailure,
+	wasLiveStopAcknowledged,
 	persistLiveToVodAttempt,
 	resolveLiveEffectsAfterConfirmedStop,
 } from "@bitovp/db";
@@ -991,25 +995,12 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 	 * to stop a running one is a bill, and the two errors are not remotely symmetrical.
 	 */
 	function allEncodingIdsOf(row: LiveChannelRow): string[] {
-		const ids = new Set<string>();
-		if (row.bitmovinEncodingId) {
-			ids.add(row.bitmovinEncodingId);
-		}
-		try {
-			for (const entry of stepLogSchema.parse(row.stepLog)) {
-				if (
-					(entry.kind === "CREATE_ENCODING" ||
-						entry.kind === "RESOLVE_AISA_LIVE_ENCODING") &&
-					entry.resourceId
-				) {
-					ids.add(entry.resourceId);
-				}
-			}
-		} catch {
-			// An unparseable log must not stop us stopping what the column names — losing the
-			// column's id here would reintroduce the exact leak this function exists to close.
-		}
-		return [...ids];
+		return [
+			...new Set([
+				...(row.bitmovinEncodingId ? [row.bitmovinEncodingId] : []),
+				...(liveStopLogEncodings(row.stepLog) ?? []),
+			]),
+		];
 	}
 
 	const emitChannel = (
@@ -1017,6 +1008,45 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		liveChannelId: string,
 		error?: string,
 	) => emitChannelEvent(deps, kind, liveChannelId, error);
+
+	async function emitRecordedStopError(
+		claim: LiveEffectClaimHandle,
+		status: "ERROR" | "STOPPED",
+		error: string,
+		at: Date,
+	) {
+		if (!deps.emitEvent) return;
+		const row = await deps.prisma.liveChannel
+			.findUnique({
+				where: {
+					id: claim.liveChannelId,
+					liveEffectFenceVersion: claim.generation,
+					bitmovinEncodingId: claim.providerEncodingId,
+					status,
+					error,
+					effectClaims: {
+						some: {
+							id: claim.id,
+							liveChannelRunId: claim.liveChannelRunId,
+							state: { in: ["FAILED", "AMBIGUOUS"] },
+						},
+					},
+				},
+				select: { name: true },
+			})
+			.catch(() => null);
+		if (row)
+			await deps.emitEvent(
+				{
+					kind: "CHANNEL_ERROR",
+					liveChannelId: claim.liveChannelId,
+					name: row.name,
+					error,
+					path: `/live/${claim.liveChannelId}`,
+				},
+				at,
+			);
+	}
 
 	async function markError(liveChannelId: string, message: string) {
 		await deps.prisma.liveChannel.update({
@@ -1116,7 +1146,9 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		async stopChannel(
 			liveChannelId: string,
 			effect?: LiveEffectFence,
-		): Promise<void> {
+		): Promise<
+			"STOPPED" | "ERROR" | "EFFECT_AMBIGUOUS" | "EFFECT_ALREADY_ACKNOWLEDGED"
+		> {
 			const row = await loadChannel(liveChannelId);
 			// The guard IS the point: throws ChannelStateError for a channel that
 			// was never provisioned. The binding was unused; the call must stay
@@ -1228,8 +1260,59 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				 */
 				const failures: string[] = [];
 				const terminalReadbacks = new Map<string, string>();
-				const ids = allEncodingIdsOf(row);
-				for (const [index, id] of ids.entries()) {
+				const ids = new Set(allEncodingIdsOf(row));
+				const observeOnly = new Set<string>();
+				if (effect) {
+					const [run, history] = await Promise.all([
+						deps.prisma.liveChannelRun.findFirst({
+							where: { id: effect.claim.liveChannelRunId, liveChannelId },
+							select: { stepLog: true, bitmovinEncodingId: true },
+						}),
+						deps.prisma.liveEffectClaim.findMany({
+							where: {
+								liveChannelId,
+								liveChannelRunId: effect.claim.liveChannelRunId,
+							},
+							select: {
+								id: true,
+								action: true,
+								state: true,
+								providerEncodingId: true,
+							},
+						}),
+					]);
+					if (run?.bitmovinEncodingId) ids.add(run.bitmovinEncodingId);
+					for (const id of liveStopLogEncodings(run?.stepLog) ?? [])
+						ids.add(id);
+					for (const prior of history) {
+						if (prior.id === effect.claim.id) continue;
+						// Historical targets need positive terminal evidence. Only a currently
+						// bound log/column authorizes a provider mutation on this delivery.
+						if (
+							!ids.has(prior.providerEncodingId) ||
+							(prior.action === "STOP" &&
+								(prior.state === "DISPATCHING" || prior.state === "AMBIGUOUS"))
+						)
+							observeOnly.add(prior.providerEncodingId);
+					}
+				}
+				for (const id of observeOnly) {
+					try {
+						const { status } = await sdk.getEncodingStatus(id);
+						if (STOP_TERMINAL_STATUSES.includes(status))
+							terminalReadbacks.set(id, status);
+						else
+							failures.push(
+								`${id}: prior effect still ${status}, no further STOP was issued`,
+							);
+					} catch {
+						failures.push(
+							`${id}: could not read the encoder bound to a prior effect`,
+						);
+					}
+				}
+				for (const [index, id] of [...ids].entries()) {
+					if (observeOnly.has(id)) continue;
 					try {
 						await effect?.beforeSend(`Stop encoding ${id}`);
 						await sdk.stopLiveEncoding(id);
@@ -1296,43 +1379,11 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						failures.push(
 							`${effect.claim.providerEncodingId}: the exact claimed encoding has no terminal readback`,
 						);
-					} else {
-						const observedAt = new Date(deps.now());
-						const exactRun = {
-							id: effect.claim.liveChannelRunId,
-							liveChannelId,
-							bitmovinEncodingId: effect.claim.providerEncodingId,
-						};
-						const persisted = await deps.prisma.liveChannelRun.updateMany({
-							where: exactRun,
-							data: {
-								providerStatus,
-								providerStatusObservedAt: observedAt,
-								providerUnknownSince: null,
-							},
-						});
-						if (persisted.count === 1) {
-							// A cleanup read refreshes observation, never the first
-							// provider end clock. CAS also preserves a concurrent stamp.
-							await deps.prisma.liveChannelRun.updateMany({
-								where: { ...exactRun, providerTerminalAt: null },
-								data: { providerTerminalAt: observedAt },
-							});
-						}
-						if (persisted.count !== 1) {
-							failures.push(
-								`${effect.claim.providerEncodingId}: terminal readback could not be bound to the exact live run`,
-							);
-						}
 					}
-
 					let occupyingFeeder: { id: string } | null = null;
 					for (let attempt = 0; attempt < 6; attempt += 1) {
 						occupyingFeeder = await deps.prisma.feederSession.findFirst({
-							where: {
-								...feederOccupancyWhere(liveChannelId),
-								liveChannelRunId: effect.claim.liveChannelRunId,
-							},
+							where: liveStopFeederWhere(liveChannelId),
 							select: { id: true },
 						});
 						if (!occupyingFeeder) break;
@@ -1370,7 +1421,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				];
 				const unconfirmed =
 					stopFaults.length > 0
-						? `stop did not confirm — ${stopFaults.join("; ")}`
+						? redactSecrets(`stop did not confirm — ${stopFaults.join("; ")}`)
 						: null;
 				if (unconfirmed) {
 					console.error(`[live-channel] ${liveChannelId}: ${unconfirmed}`);
@@ -1392,55 +1443,101 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					if (finalization === "PENDING" || finalization === "UNBOUND")
 						throw new AisaLiveFinalizationPendingError();
 					aisaFailure = finalization === "FAILED";
-					await deps.prisma.liveChannelRun.updateMany({
-						where: {
-							id: run.id,
-							bitmovinEncodingId: run.bitmovinEncodingId,
-							aisaAnalysisId: run.aisaAnalysisId,
-						},
-						data: {
-							providerStatus,
-							providerStatusObservedAt: new Date(deps.now()),
-							cancelRequested: false,
-						},
-					});
+					if (!effect)
+						await deps.prisma.liveChannelRun.updateMany({
+							where: {
+								id: run.id,
+								bitmovinEncodingId: run.bitmovinEncodingId,
+								aisaAnalysisId: run.aisaAnalysisId,
+							},
+							data: {
+								providerStatus,
+								providerStatusObservedAt: new Date(deps.now()),
+								cancelRequested: false,
+							},
+						});
 				}
 				const settledStatus = aisaFailure && !unconfirmed ? "ERROR" : "STOPPED";
 				const settledError =
 					unconfirmed ?? (aisaFailure ? "AISA_LIVE_TERMINAL_FAILURE" : null);
-				await deps.prisma.liveChannel.update({
-					where: { id: liveChannelId },
-					data: { status: settledStatus, error: settledError },
-				});
-				await runs.mirror(liveChannelId, {
-					status: settledStatus,
-					error: settledError,
-				});
-				/**
-				 * what the SCHEDULED stop delivered.
-				 *
-				 * The same evidence that decides `error` on the channel decides
-				 * this — a stop whose encodings could not be OBSERVED terminal is
-				 * `UNKNOWN`, not `DELIVERED`, because the encoder may still be up
-				 * and billing (#48). Reading the row's `STOPPED` back as delivery
-				 * would repeat the exact substitution this change removes: our own
-				 * write standing in for the provider's answer.
-				 */
-				await recordScheduleOutcomeBestEffort(
-					deps.prisma,
-					{ channelStop: liveChannelId },
-					unconfirmed === null ? "DELIVERED" : "UNKNOWN",
-					unconfirmed === null ? null : redactSecrets(unconfirmed),
-					new Date(deps.now()),
-					unconfirmed === null
-						? "PROVIDER_TERMINAL"
-						: "PROVIDER_STATUS_UNKNOWN",
-				);
+				if (effect && !unconfirmed) {
+					const accountId = liveChannelAccountId(row);
+					if (!accountId)
+						throw new ChannelStateError(
+							"STOP readbacks have no bound Bitmovin account",
+						);
+					const settled = await resolveLiveEffectsAfterConfirmedStop(
+						deps.prisma,
+						{
+							liveChannelId,
+							liveChannelRunId: effect.claim.liveChannelRunId,
+							providerEncodingId: effect.claim.providerEncodingId,
+							stopClaimId: effect.claim.id,
+							stopIdempotencyKey: effect.claim.idempotencyKey,
+							at: new Date(deps.now()),
+							ownerReadbacks: {
+								generation: effect.claim.generation,
+								token: effect.claim.token,
+								bitmovinAccountId: accountId,
+								encodings: [...terminalReadbacks].map(([id, status]) => ({
+									id,
+									status,
+								})),
+							},
+						},
+					);
+					if (settled.kind === "ALREADY_ACKED")
+						return "EFFECT_ALREADY_ACKNOWLEDGED";
+					if (settled.kind === "RESOLVED")
+						return settled.terminalFailure ? "ERROR" : "STOPPED";
+					const changed = await markLiveEffectAmbiguous(
+						deps.prisma,
+						effect.claim,
+						settled.reason,
+					);
+					if (
+						!changed &&
+						(await wasLiveStopAcknowledged(deps.prisma, effect.claim))
+					)
+						return "EFFECT_ALREADY_ACKNOWLEDGED";
+					return "EFFECT_AMBIGUOUS";
+				}
+				if (effect && unconfirmed) {
+					const at = new Date(deps.now());
+					const recorded = await recordLiveStopFailure(
+						deps.prisma,
+						effect.claim,
+						{
+							status: "STOPPED",
+							error: unconfirmed,
+							failure: unconfirmed,
+							state: "AMBIGUOUS",
+							at,
+						},
+					);
+					if (recorded !== "RECORDED")
+						return recorded === "ALREADY_ACKED"
+							? "EFFECT_ALREADY_ACKNOWLEDGED"
+							: "EFFECT_AMBIGUOUS";
+					await emitRecordedStopError(effect.claim, "STOPPED", unconfirmed, at);
+					return "EFFECT_AMBIGUOUS";
+				} else {
+					await deps.prisma.liveChannel.update({
+						where: { id: liveChannelId },
+						data: { status: settledStatus, error: settledError },
+					});
+					await runs.mirror(liveChannelId, {
+						status: settledStatus,
+						error: settledError,
+					});
+				}
+
 				await emitChannel(
 					aisaFailure ? "CHANNEL_ERROR" : "CHANNEL_STOPPED",
 					liveChannelId,
 					aisaFailure ? "AISA_LIVE_TERMINAL_FAILURE" : undefined,
 				);
+				return settledStatus;
 			} catch (err) {
 				const message = err instanceof Error ? err.message : "stop failed";
 				// Once the provider call was attempted, a thrown response does not
@@ -1448,15 +1545,27 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				// UNKNOWN, matching the durable AMBIGUOUS claim; only a refusal before
 				// the send boundary is evidence of FAILED.
 				const crossedSendBoundary = effect?.crossedSendBoundary === true;
-				await recordScheduleOutcomeBestEffort(
-					deps.prisma,
-					{ channelStop: liveChannelId },
-					crossedSendBoundary ? "UNKNOWN" : "FAILED",
-					redactSecrets(message),
-					new Date(deps.now()),
-					crossedSendBoundary ? "JOB_TERMINAL_UNKNOWN" : "EFFECT_FAILED",
-				);
-				await markError(liveChannelId, message);
+				if (effect) {
+					const error = redactSecrets(message);
+					const at = new Date(deps.now());
+					const recorded = await recordLiveStopFailure(
+						deps.prisma,
+						effect.claim,
+						{
+							status: "ERROR",
+							error,
+							failure: crossedSendBoundary
+								? liveEffectSendUncertainty(error)
+								: error,
+							state: crossedSendBoundary ? "AMBIGUOUS" : "FAILED",
+							at,
+						},
+					);
+					if (recorded === "ALREADY_ACKED")
+						return "EFFECT_ALREADY_ACKNOWLEDGED";
+					if (recorded === "LOST") throw err;
+					await emitRecordedStopError(effect.claim, "ERROR", error, at);
+				} else await markError(liveChannelId, message);
 				throw err;
 			}
 		},
@@ -4677,6 +4786,14 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			if (intent.scheduleId) {
 				await transitionScheduleToStale(deps.prisma, {
 					scheduleId: intent.scheduleId,
+					...(expectedAction === "STOP"
+						? {
+								stop: {
+									liveChannelId: job.liveChannelId,
+									liveChannelRunId: intent.liveChannelRunId,
+								},
+							}
+						: {}),
 					note: begun.reason,
 					at: new Date(deps.now()),
 				});
@@ -4705,16 +4822,17 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				stopIdempotencyKey: intent.idempotencyKey,
 				at: new Date(deps.now()),
 			});
+			if (resolved.kind === "ALREADY_ACKED")
+				return {
+					kind: "RETURN",
+					result: effectResult(job, "EFFECT_ALREADY_ACKNOWLEDGED"),
+				};
 			if (resolved.kind === "RESOLVED") {
-				const channel = await deps.prisma.liveChannel.findUnique({
-					where: { id: job.liveChannelId },
-					select: { status: true },
-				});
 				return {
 					kind: "RETURN",
 					result: effectResult(
 						job,
-						channel?.status === "ERROR" ? "ERROR" : "STOPPED",
+						resolved.terminalFailure ? "ERROR" : "STOPPED",
 					),
 				};
 			}
@@ -4759,15 +4877,20 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		const reason = redactSecrets(
 			err instanceof Error ? err.message : String(err),
 		);
-		if (!fence.crossedSendBoundary) {
-			await markLiveEffectFailed(deps.prisma, fence.claim, reason);
-			throw err;
-		}
-		await markLiveEffectAmbiguous(
-			deps.prisma,
-			fence.claim,
-			liveEffectSendUncertainty(reason),
-		);
+		const recorded = fence.crossedSendBoundary
+			? await markLiveEffectAmbiguous(
+					deps.prisma,
+					fence.claim,
+					liveEffectSendUncertainty(reason),
+				)
+			: await markLiveEffectFailed(deps.prisma, fence.claim, reason);
+		if (
+			recorded === false &&
+			job.action === "stop" &&
+			(await wasLiveStopAcknowledged(deps.prisma, fence.claim))
+		)
+			return effectResult(job, "EFFECT_ALREADY_ACKNOWLEDGED");
+		if (!fence.crossedSendBoundary) throw err;
 		if (err instanceof AisaLiveFinalizationPendingError) throw err;
 		if (job.effect?.scheduleId) {
 			await recordScheduleOutcomeBestEffort(
@@ -6517,7 +6640,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 	async function refuseStaleQueuedGeneration(
 		liveChannelId: string,
 		plannedLiveChannelRunId: string | null | undefined,
-		target: { scheduleId: string } | { channelStop: string },
+		target: { scheduleId: string } | undefined,
 	): Promise<boolean> {
 		if (plannedLiveChannelRunId == null) {
 			return false;
@@ -6535,7 +6658,8 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			`armed for run ${plannedLiveChannelRunId}, but this channel is now on ` +
 			`run ${currentRun?.id ?? "none"} — the queued job outlived its airing ` +
 			`and was refused rather than run against a different one`;
-		await transitionScheduleToStale(deps.prisma, { ...target, note, at });
+		if (target)
+			await transitionScheduleToStale(deps.prisma, { ...target, note, at });
 		return true;
 	}
 
@@ -6624,15 +6748,17 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				};
 			}
 			case "stop": {
-				const staleStopTarget = job.effect?.scheduleId
-					? ({ scheduleId: job.effect.scheduleId } as const)
-					: ({ channelStop: liveChannelId } as const);
+				// An identified STOP uses beginLiveEffect: it returns the prior ACK even
+				// after re-air, and fences new sends against the exact current run.
+				// Legacy/mismatched jobs must never act on a different airing.
 				if (
-					await refuseStaleQueuedGeneration(
+					(job.effect?.action !== "STOP" ||
+						job.plannedLiveChannelRunId !== job.effect.liveChannelRunId) &&
+					(await refuseStaleQueuedGeneration(
 						liveChannelId,
 						job.plannedLiveChannelRunId,
-						staleStopTarget,
-					)
+						undefined,
+					))
 				) {
 					return staleGenerationResult();
 				}
@@ -6644,52 +6770,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				);
 				if (prepared.kind === "RETURN") return prepared.result;
 				try {
-					await actions.stopChannel(liveChannelId, prepared.fence);
-					const stopped = await deps.prisma.liveChannel.findUnique({
-						where: { id: liveChannelId },
-						select: { status: true, error: true },
-					});
-					const finalRun =
-						stopped?.status === "ERROR" &&
-						stopped.error === "AISA_LIVE_TERMINAL_FAILURE"
-							? await deps.prisma.liveChannelRun.findFirst({
-									where: { liveChannelId },
-									orderBy: { seq: "desc" },
-								})
-							: null;
-					const confirmedAisaFailure =
-						finalRun && aisaLiveFinalization(finalRun) === "FAILED";
-					if (
-						!confirmedAisaFailure &&
-						(stopped?.status !== "STOPPED" || stopped.error !== null)
-					) {
-						await markLiveEffectAmbiguous(
-							deps.prisma,
-							prepared.fence.claim,
-							stopped?.error ?? "the channel did not reach confirmed STOPPED",
-						);
-						return effectResult(job, "EFFECT_AMBIGUOUS");
-					}
-					const resolved = await resolveLiveEffectsAfterConfirmedStop(
-						deps.prisma,
-						{
-							liveChannelId,
-							liveChannelRunId: prepared.fence.claim.liveChannelRunId,
-							providerEncodingId: prepared.fence.claim.providerEncodingId,
-							stopClaimId: prepared.fence.claim.id,
-							stopIdempotencyKey: prepared.fence.claim.idempotencyKey,
-							at: new Date(deps.now()),
-						},
+					const result = await actions.stopChannel(
+						liveChannelId,
+						prepared.fence,
 					);
-					if (resolved.kind === "BLOCKED") {
-						await markLiveEffectAmbiguous(
-							deps.prisma,
-							prepared.fence.claim,
-							resolved.reason,
-						);
-						return effectResult(job, "EFFECT_AMBIGUOUS");
-					}
-					return effectResult(job, confirmedAisaFailure ? "ERROR" : "STOPPED");
+					return effectResult(job, result);
 				} catch (err) {
 					return await failLiveEffect(job, prepared.fence, err);
 				} finally {

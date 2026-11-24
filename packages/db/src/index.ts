@@ -89,13 +89,19 @@ export {
 	LIVE_EFFECT_OPEN_STATES,
 	liveChannelAccountId,
 	liveEffectSendUncertainty,
+	liveStopFeederWhere,
+	liveStopLogEncodings,
+	liveStopRunOwnsEncoding,
 	loadLiveEffectTargetClaim,
 	markLiveEffectAcked,
 	markLiveEffectAmbiguous,
 	markLiveEffectFailed,
 	matchesRecordedStopFailure,
+	recordLiveStopFailure,
+	wasLiveStopAcknowledged,
 	resolveLiveEffectsAfterConfirmedStop,
 } from "./live-effect-claim";
+export { CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION } from "./live-stop-delivery";
 export {
 	claimLiveToVodAttempt,
 	LiveToVodFenceError,

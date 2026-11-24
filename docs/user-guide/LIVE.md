@@ -306,22 +306,31 @@ Stop the feeder, stop the channel, and confirm provider termination and output
 progression ending. Deleting a local row does not by itself establish cloud cleanup.
 
 During the original stop request, a transport failure can cause up to three
-send attempts. Once the worker records an uncertain result, the periodic check
-only reads encoder status. Each worker examines up to four stop records per minute per
-organization and rotates through longer lists. For ordinary Live with one known
-encoding and one unresolved stop, a terminal provider status and the end of all
-feeder activity can clear a lost response or a timeout waiting for the encoder
-or feeder to stop.
+send attempts. After an uncertain response or rate limit, the periodic check
+only reads encoder status. Each worker starts a pass about once a minute and
+examines up to four stop records per organization per pass, rotating through longer lists.
 
-If the encoder still reports `RUNNING` or `QUEUED`, verify its ID in the
-provider dashboard. The periodic check also remains read-only after a rate
-limit. Pressing **Stop** again cannot force a new request for an ambiguous
-manual stop. When more than one STOP remains unresolved for a broadcast, an operator
-must verify each attempt and its target, including when the normal worker or a
-redelivered job processes a later STOP. Multiple encoding IDs, feeder enqueue
-failures, AISA finalization and an interruption before the worker recorded the
-stop outcome also require separate verification. A schedule recorded as unknown
-keeps that delivery history after the encoder is confirmed terminal.
+For ordinary Live, automatic confirmation requires terminal provider evidence
+for the broadcast's encoder and an end to all feeder activity on the channel.
+Several pending stops for the same encoder can be confirmed together when
+their recorded targets and broadcast history agree. If the worker exited
+during shutdown, its replacement can read the encoder after the old worker's
+claim expires. If the stopped broadcast already has a terminal provider
+receipt, the replacement can finish recording the outcome from that receipt.
+An older broadcast without a stored encoder ID needs its own encoder-creation
+receipt.
+
+If an encoder still reports `RUNNING` or `QUEUED`, check its ID in the
+provider dashboard. Pressing **Stop** again cannot force another send for the
+same ambiguous manual stop. When the history identifies another encoder, an
+explicit stop can check that historical ID. Automatic recovery waits for proof
+that every target has ended. Feeder enqueue failures and pending AISA
+finalization also need separate verification.
+
+A recovered stop completes its own pending schedule. A schedule already marked
+unknown keeps its original evidence, including after a subsequent broadcast.
+The worker records one terminal notification per broadcast and retries handing
+it to the notification queue. Webhook retries can deliver the event to a destination more than once.
 
 A START error can leave the provider state uncertain. Startup cancellation
 prevents further START retries once the worker observes it. If a request is

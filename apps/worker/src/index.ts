@@ -107,11 +107,11 @@ import { createEditingWorkQueue } from "./library-editing/runtime-work-queue";
 import { createLibraryEditingSweep } from "./library-editing/sweep";
 import { createShutdown, createSweepLoop } from "./lifecycle";
 import {
-	isFinalManualStopFailure,
-	isManualStopJob,
+	isFinalStopFailure,
+	isRunBoundStopJob,
 	recordDeadFeederJob,
 	recordDeadJobScheduleOutcomes,
-	recordFinalManualStopFailure,
+	recordFinalStopFailure,
 	releaseDeadStageClaim,
 } from "./live/dead-job-outcome";
 import { releaseDeadLiveToVodIfFinal } from "./live/live-to-vod-release";
@@ -132,12 +132,16 @@ import { createUncertainStopReconciler } from "./live/reconcile-uncertain-stops"
 import { createRunHeartbeatSummarizer } from "./live/run-heartbeat-summary";
 import { reconcileStartupCancellations } from "./live/startup-cancel";
 import {
+	createStopNotificationSweep,
+	witnessStopNotificationQueue,
+} from "./live/stop-notifications";
+import {
 	LIVE_HEARTBEAT_SLOTS,
 	liveChannelConcurrency,
 	reserveLiveStopCapacity,
 } from "./live-capacity";
 import { createInboundDispatcher } from "./notify/dispatcher";
-import { createEventEmitter } from "./notify/emitter";
+import { createEventEmitter, createEventEnqueuer } from "./notify/emitter";
 import { createNotifyProcessor } from "./notify/processor";
 import { createWakeBus } from "./notify/wake-bus";
 import { pruneOperationAttempts } from "./operation-analytics/retention";
@@ -1153,8 +1157,26 @@ runTenantTick(() => orphanEncodingSweep());
 const reconcileUncertainStops = tenantService(() =>
 	createUncertainStopReconciler(processorDeps),
 );
-setTenantInterval(reconcileUncertainStops, 60_000).unref();
-runTenantTick(reconcileUncertainStops);
+const uncertainStopLoop = tenantService(() =>
+	createSweepLoop(async () => {
+		await reconcileUncertainStops();
+	}),
+);
+const stopNotificationLoop = tenantService(() =>
+	createSweepLoop(
+		createStopNotificationSweep(
+			prisma,
+			createEventEnqueuer({
+				queue: notifyQueue,
+				publicBaseUrl: env.PUBLIC_BASE_URL,
+			}),
+		),
+	),
+);
+setTenantInterval(() => uncertainStopLoop.run(), 60_000).unref();
+setTenantInterval(() => stopNotificationLoop.run(), 5_000).unref();
+runTenantTick(() => uncertainStopLoop.run());
+runTenantTick(() => stopNotificationLoop.run());
 // : the SAME stranding, storage-inspection pipeline — same
 // claim shape (PENDING → RUNNING), same queue discriminator (jobId = row
 // id), no DELETE route and a status-blind 30-day prune as the only exit.
@@ -1711,7 +1733,10 @@ const handlers = createHandlers({
 	vmaf: dispatchVmaf,
 	storageInspect: (jobData) => storageInspectProcessor(jobData),
 	vodInputPreview: (jobData) => vodInputPreviewProcessor(jobData),
-	notify: (jobData) => notifyProcessor({ data: jobData }),
+	notify: async (jobData, jobId) => {
+		await witnessStopNotificationQueue(prisma, jobId);
+		return notifyProcessor({ data: jobData });
+	},
 	startupProbe: (jobData) => processProbeBatch(jobData),
 	slateNormalize: (job) =>
 		job.name === SLATE_NORMALIZE_PROMOTE_JOB
@@ -2095,16 +2120,12 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 					  }
 					| undefined;
 				const liveAction = liveJob?.action ?? "provision";
-				const manualStopJob = key === "liveChannel" && isManualStopJob(job);
-				const finalManualStopFailure =
-					manualStopJob && isFinalManualStopFailure(job);
+				const boundStopJob = key === "liveChannel" && isRunBoundStopJob(job);
+				const finalStopFailure = boundStopJob && isFinalStopFailure(job);
 				if (
 					key === "liveChannel" &&
 					job?.name !== HEARTBEAT_SWEEP_JOB &&
-					!manualStopJob &&
-					(liveAction === "provision" ||
-						liveAction === "stop" ||
-						liveAction === "restart")
+					(liveAction === "provision" || liveAction === "restart")
 				) {
 					const liveChannelId = liveJob?.liveChannelId;
 					if (liveChannelId) {
@@ -2162,8 +2183,8 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 							);
 					}
 				}
-				if (key === "liveChannel" && finalManualStopFailure) {
-					void recordFinalManualStopFailure(
+				if (key === "liveChannel" && finalStopFailure) {
+					void recordFinalStopFailure(
 						prisma,
 						job,
 						err.message,
@@ -2235,10 +2256,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 				 * they are stated once and tested, rather than half here and half
 				 * there where the two copies can drift.
 				 */
-				if (
-					key === "liveChannel" &&
-					(!manualStopJob || finalManualStopFailure)
-				) {
+				if (key === "liveChannel" && (!boundStopJob || finalStopFailure)) {
 					void recordDeadJobScheduleOutcomes(
 						prisma,
 						job,
@@ -2329,6 +2347,16 @@ const shutdown = createShutdown({
 	// not manufacture the lost handoff the outbox exists to recover from.
 	drains: [
 		{
+			name: "live STOP reconciliation",
+			run: () => drainTenantLoop(uncertainStopLoop),
+			recovery: "durable STOP claims are inspected after restart",
+		},
+		{
+			name: "live STOP notification",
+			run: () => drainTenantLoop(stopNotificationLoop),
+			recovery: "unacknowledged STOP notifications are queued after restart",
+		},
+		{
 			name: "VOD input preview recovery",
 			run: () => drainTenantLoop(vodInputPreviewSweepLoop),
 		},
@@ -2414,6 +2442,7 @@ const shutdown = createShutdown({
 	],
 	closables: [
 		...workers,
+		notifyQueue,
 		liveChannelQueue,
 		feederQueue,
 		vmafQueue,

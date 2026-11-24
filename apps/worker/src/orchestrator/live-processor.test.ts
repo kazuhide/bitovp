@@ -69,6 +69,7 @@ const liveEffectMocks = vi.hoisted(() => ({
 	markAmbiguous: vi.fn(),
 	markFailed: vi.fn(),
 	resolveAfterStop: vi.fn(),
+	recordStopFailure: vi.fn(),
 }));
 
 vi.mock("@bitovp/db", async (importOriginal) => {
@@ -82,6 +83,7 @@ vi.mock("@bitovp/db", async (importOriginal) => {
 		markLiveEffectAmbiguous: liveEffectMocks.markAmbiguous,
 		markLiveEffectFailed: liveEffectMocks.markFailed,
 		resolveLiveEffectsAfterConfirmedStop: liveEffectMocks.resolveAfterStop,
+		recordLiveStopFailure: liveEffectMocks.recordStopFailure,
 	};
 });
 
@@ -656,6 +658,10 @@ function setup(
 	// lost fence that production cannot produce.
 	let transactionTail = Promise.resolve();
 	const prisma = {
+		liveEffectClaim: {
+			findMany: vi.fn(async () => []),
+			findUnique: vi.fn(async () => null),
+		},
 		liveChannel,
 		feederSession,
 		liveHeartbeat,
@@ -887,10 +893,59 @@ beforeEach(() => {
 	liveEffectMocks.markAcked.mockResolvedValue(true);
 	liveEffectMocks.markAmbiguous.mockResolvedValue(true);
 	liveEffectMocks.markFailed.mockResolvedValue(true);
-	liveEffectMocks.resolveAfterStop.mockResolvedValue({
-		kind: "RESOLVED",
-		count: 0,
-	});
+	liveEffectMocks.recordStopFailure.mockImplementation(
+		async (prisma: AppPrismaClient, claim, data) => {
+			const projection = { status: data.status, error: data.error };
+			await prisma.liveChannel.update({
+				where: { id: claim.liveChannelId },
+				data: projection,
+			});
+			await prisma.liveChannelRun.updateMany({
+				where: { id: claim.liveChannelRunId },
+				data: projection,
+			});
+			return "RECORDED";
+		},
+	);
+	liveEffectMocks.resolveAfterStop.mockImplementation(
+		async (prisma: AppPrismaClient, input) => {
+			if (input.ownerReadbacks) {
+				const run = await prisma.liveChannelRun.findFirst({
+					where: { id: input.liveChannelRunId },
+				});
+				const terminal = input.ownerReadbacks.encodings.find(
+					(r: { id: string }) => r.id === input.providerEncodingId,
+				)?.status;
+				const aisaFailure = run?.aisaStatus === "ERROR";
+				const state = {
+					status: aisaFailure ? ("ERROR" as const) : ("STOPPED" as const),
+					error: aisaFailure ? "AISA_LIVE_TERMINAL_FAILURE" : null,
+				};
+				// The DB settlement is the owner of these writes. Drive the worker fixture's
+				// projections; the resolver suite exercises the transaction and its guards.
+				await prisma.liveChannel.update({
+					where: { id: input.liveChannelId },
+					data: state,
+				});
+				await prisma.liveChannelRun.updateMany({
+					where: { id: input.liveChannelRunId },
+					data: {
+						...state,
+						providerStatus: terminal,
+						providerStatusObservedAt: input.at,
+						endedAt: run?.endedAt ?? input.at,
+					},
+				});
+				await prisma.liveChannelRun.updateMany({
+					where: { id: input.liveChannelRunId, providerTerminalAt: null },
+					data: { providerTerminalAt: input.at },
+				});
+				if (aisaFailure)
+					return { kind: "RESOLVED", count: 0, terminalFailure: true };
+			}
+			return { kind: "RESOLVED", count: 0 };
+		},
+	);
 });
 
 describe("run-bound automatic stop replacement", () => {
@@ -2235,6 +2290,7 @@ describe("live channel actions", () => {
 		h.deps.acknowledgeResetEntity = ack;
 		Object.assign(h.deps.prisma, {
 			liveEffectClaim: {
+				findMany: async () => [],
 				findUnique: async () => {
 					cleanupEntered();
 					await cleanupWait;
@@ -2263,15 +2319,7 @@ describe("live channel actions", () => {
 		expect(ack).not.toHaveBeenCalled();
 		expect(liveEffectMocks.markAcked).not.toHaveBeenCalled();
 		expect(liveEffectMocks.resolveAfterStop).not.toHaveBeenCalled();
-		expect(h.liveSchedule.updateMany.mock.calls).toEqual(
-			expect.arrayContaining([
-				[
-					expect.objectContaining({
-						data: expect.objectContaining({ outcome: "UNKNOWN" }),
-					}),
-				],
-			]),
-		);
+		expect(h.liveSchedule.updateMany).not.toHaveBeenCalled(); // This manual STOP has no scheduled row.
 	});
 
 	it("stops a RUNNING channel: STOPPING → stop API → STOPPED", async () => {
@@ -2314,7 +2362,11 @@ describe("live channel actions", () => {
 		});
 		const result = await process({ liveChannelId: CHANNEL_ID, action: "stop" });
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ state: "AMBIGUOUS" }),
+		);
 		expect(row.status).toBe("STOPPED");
 		expect(row.error).toMatch(/stop did not confirm/);
 	});
@@ -2343,7 +2395,11 @@ describe("live channel actions", () => {
 		});
 		const result = await process({ liveChannelId: CHANNEL_ID, action: "stop" });
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ state: "AMBIGUOUS" }),
+		);
 		expect(row.status).toBe("STOPPED");
 		expect(row.error).toMatch(/stop did not confirm/);
 		expect(row.error).toMatch(/could never be read/);
@@ -2393,7 +2449,11 @@ describe("live channel actions", () => {
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
 		expect(t.row.error).toMatch(/publisher termination was not confirmed/);
 		expect(liveEffectMocks.resolveAfterStop).not.toHaveBeenCalled();
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ state: "AMBIGUOUS" }),
+		);
 	});
 
 	it.each([
@@ -2483,6 +2543,84 @@ describe("live channel actions", () => {
 		expect(row.error).toBeNull();
 	});
 
+	it("stops a run-log-only encoder and checks the failed restart's historical target without sending it STOP", async () => {
+		const statuses: Record<string, string> = {
+			"bm-live-enc": "FINISHED",
+			"run-only": "CANCELED",
+			"prior-restart": "RUNNING",
+		};
+		const t = setup(runningRow, {
+			getEncodingStatus: vi.fn(async (id) => ({
+				status: statuses[id] ?? "RUNNING",
+			})),
+		});
+		const run = t.runRows[0];
+		if (!run) throw new Error("missing run");
+		run.stepLog = stepLogNaming("run-only");
+		Object.assign(t.deps.prisma.liveEffectClaim, {
+			findMany: vi.fn(async () => [
+				{
+					id: "old",
+					action: "RESTART",
+					state: "FAILED",
+					providerEncodingId: "prior-restart",
+				},
+			]),
+		});
+		const result = await t.process({
+			liveChannelId: CHANNEL_ID,
+			action: "stop",
+		});
+		expect(
+			vi.mocked(t.sdk.stopLiveEncoding).mock.calls.map((call) => call[0]),
+		).toEqual(["bm-live-enc", "run-only"]);
+		expect(t.sdk.getEncodingStatus).toHaveBeenCalledWith("prior-restart");
+		expect(result.status).toBe("EFFECT_AMBIGUOUS");
+		expect(t.row.error).toContain("prior-restart: prior effect still RUNNING");
+		expect(liveEffectMocks.resolveAfterStop).not.toHaveBeenCalled();
+	});
+
+	it("does not clear the channel or publish a success event when other STOP evidence blocks settlement", async () => {
+		const t = setup(runningRow, {
+			getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })),
+		});
+		const events = vi.fn(async () => {});
+		t.deps.emitEvent = events;
+		liveEffectMocks.resolveAfterStop.mockResolvedValueOnce({
+			kind: "BLOCKED",
+			reason: "another target is not terminal",
+		});
+		await expect(
+			t.process({ liveChannelId: CHANNEL_ID, action: "stop" }),
+		).resolves.toMatchObject({ status: "EFFECT_AMBIGUOUS" });
+		expect(t.row.status).toBe("STOPPING");
+		expect(events).not.toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "CHANNEL_STOPPED" }),
+		);
+	});
+
+	it("returns the durable winning ACK to a redelivery or to an expired owner", async () => {
+		for (const redelivery of [false, true]) {
+			const t = setup(runningRow, {
+				getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })),
+			});
+			if (redelivery)
+				liveEffectMocks.begin.mockResolvedValueOnce({
+					kind: "BLOCKED",
+					claimId: "exact",
+					state: "DISPATCHING",
+					reason: "lost reply",
+				});
+			liveEffectMocks.resolveAfterStop.mockResolvedValueOnce({
+				kind: "ALREADY_ACKED",
+			});
+			await expect(
+				t.process({ liveChannelId: CHANNEL_ID, action: "stop" }),
+			).resolves.toMatchObject({ status: "EFFECT_ALREADY_ACKNOWLEDGED" });
+			if (redelivery) expect(t.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		}
+	});
+
 	it("stops EVERY encoding the channel knows about, not just the column's", async () => {
 		/**
 		 * The seven-hour leak, as a test.
@@ -2529,7 +2667,11 @@ describe("live channel actions", () => {
 		});
 		const result = await process({ liveChannelId: CHANNEL_ID, action: "stop" });
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ state: "AMBIGUOUS" }),
+		);
 		expect(row.status).toBe("STOPPED");
 	});
 
@@ -2550,7 +2692,11 @@ describe("live channel actions", () => {
 		});
 		const result = await process({ liveChannelId: CHANNEL_ID, action: "stop" });
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ state: "AMBIGUOUS" }),
+		);
 		expect(row.status).toBe("ERROR");
 		expect(row.error).toBe("stop refused");
 	});
@@ -2591,7 +2737,11 @@ describe("live channel actions", () => {
 		feederSession.findMany.mockResolvedValueOnce([{ id: "feed-1" }]);
 		const result = await process({ liveChannelId: CHANNEL_ID, action: "stop" });
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ state: "AMBIGUOUS" }),
+		);
 		expect(enqueueFeederJob).toHaveBeenCalledWith({
 			feederSessionId: "feed-1",
 			action: "stop",
@@ -2619,7 +2769,11 @@ describe("live channel actions", () => {
 		const result = await process({ liveChannelId: CHANNEL_ID, action: "stop" });
 		// Not blocked: the channel still reaches STOPPED and the encodings stop.
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ state: "AMBIGUOUS" }),
+		);
 		expect(sdk.stopLiveEncoding).toHaveBeenCalled();
 		expect(row.status).toBe("STOPPED");
 		// Not swallowed: the enqueue failure is durable on the channel error, so
@@ -5715,6 +5869,14 @@ describe("run-generation fence for queue retries", () => {
 				liveChannelId: CHANNEL_ID,
 				action: "stop",
 				plannedLiveChannelRunId: run,
+				effect: {
+					idempotencyKey: `schedule:${SCHEDULE_ID}:stop`,
+					liveChannelRunId: run,
+					providerEncodingId: "bm-live-enc",
+					admissionFenceVersion: 0,
+					action: "STOP",
+					scheduleId: SCHEDULE_ID,
+				},
 			}),
 			// The STOPPING claim — stopChannel's first write.
 			sideEffect: (t) => t.liveChannel.updateMany,
@@ -5735,6 +5897,11 @@ describe("run-generation fence for queue retries", () => {
 				providerStatusObservedAt: new Date("2099-01-01T00:00:00.000Z"),
 			});
 			c.prep?.(t);
+			if (c.action === "stop")
+				liveEffectMocks.begin.mockResolvedValueOnce({
+					kind: "STALE",
+					reason: "the exact planned airing has ended",
+				});
 			const result = await t.process(c.job(RUN_1));
 			expect(result).toMatchObject({ status: "SKIPPED_STALE_GENERATION" });
 			// Nothing was pushed / stopped / inserted, and nothing spawned.
@@ -6330,73 +6497,79 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 		expect(list).toHaveBeenCalledTimes(1);
 	});
 
-	it("a CONFIRMED stop marks its scheduled STOP row DELIVERED", async () => {
-		// The harness default reports RUNNING forever (it is AWAIT_LIVE_RUNNING's
-		// steady state), which is the UNCONFIRMED arm below — an OBSERVED
-		// terminal encoding is what makes a stop confirmed.
-		const harness = setup(runningRow, {
+	const scheduledStopJob = {
+		liveChannelId: CHANNEL_ID,
+		action: "stop",
+		plannedLiveChannelRunId: LIVE_TO_VOD_RUN_ID,
+		effect: {
+			idempotencyKey: `schedule:${SCHEDULE_ID}:stop`,
+			liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+			providerEncodingId: "bm-live-enc",
+			admissionFenceVersion: 0,
+			action: "STOP",
+			scheduleId: SCHEDULE_ID,
+		},
+	};
+
+	it("hands the exact scheduled STOP with its terminal readback to the settlement transaction", async () => {
+		const h = setup(runningRow, {
 			getEncodingStatus: async () => ({ status: "FINISHED" }) as never,
 		});
-		await harness.process({ liveChannelId: CHANNEL_ID, action: "stop" });
-		expect(outcomeWrites(harness.liveSchedule)).toEqual([
-			{
-				where: {
-					liveChannelId: CHANNEL_ID,
-					action: "STOP",
-					status: "FIRED",
-					outcome: {
-						in: [
-							"PENDING",
-							"PROCESS_PUSHING",
-							"INGEST_CONNECTED",
-							"SLATE_ARMED",
-						],
-					},
-				},
-				data: expect.objectContaining({
-					outcome: "DELIVERED",
-					outcomeNote: null,
-				}),
-			},
-		]);
-	});
-
-	it("an UNCONFIRMED stop is UNKNOWN, not DELIVERED — the encoder may still be billing", async () => {
-		const harness = setup(runningRow, {
-			getEncodingStatus: async () => ({ status: "RUNNING" }) as never,
-		});
-		await harness.process({ liveChannelId: CHANNEL_ID, action: "stop" });
-		expect(outcomeWrites(harness.liveSchedule)).toEqual([
+		await h.rawProcess(scheduledStopJob);
+		expect(liveEffectMocks.begin).toHaveBeenCalledWith(
+			h.deps.prisma,
 			expect.objectContaining({
-				data: expect.objectContaining({
-					outcome: "UNKNOWN",
-					outcomeNote: expect.stringMatching(/stop did not confirm/),
+				scheduleId: SCHEDULE_ID,
+				liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+			}),
+		);
+		expect(liveEffectMocks.resolveAfterStop).toHaveBeenCalledWith(
+			h.deps.prisma,
+			expect.objectContaining({
+				stopIdempotencyKey: scheduledStopJob.effect.idempotencyKey,
+				liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+				ownerReadbacks: expect.objectContaining({
+					encodings: [{ id: "bm-live-enc", status: "FINISHED" }],
 				}),
 			}),
-		]);
+		);
+		expect(h.liveSchedule.updateMany).not.toHaveBeenCalled(); // Ownership of the write stays with the transaction.
 	});
 
-	it("a stop rejected after send is AMBIGUOUS and leaves schedule evidence fail-closed", async () => {
-		const harness = setup(runningRow, {
+	it("records an unconfirmed scheduled stop using its exact claim", async () => {
+		const h = setup(runningRow, {
+			getEncodingStatus: async () => ({ status: "RUNNING" }) as never,
+		});
+		await h.rawProcess(scheduledStopJob);
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			h.deps.prisma,
+			expect.objectContaining({
+				idempotencyKey: scheduledStopJob.effect.idempotencyKey,
+			}),
+			expect.objectContaining({
+				state: "AMBIGUOUS",
+				error: expect.stringMatching(/stop did not confirm/),
+			}),
+		);
+	});
+
+	it("records an uncertain response for the scheduled STOP that crossed its send boundary", async () => {
+		const h = setup(runningRow, {
 			stopLiveEncoding: vi.fn(async () => {
 				throw new Error("409 the encoding cannot be stopped");
 			}),
 		});
-		const result = await harness.process({
-			liveChannelId: CHANNEL_ID,
-			action: "stop",
-		});
+		const result = await h.rawProcess(scheduledStopJob);
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
-		expect(outcomeWrites(harness.liveSchedule)).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					data: expect.objectContaining({
-						outcome: "UNKNOWN",
-						outcomeNote: expect.stringMatching(/cannot be stopped/),
-					}),
-				}),
-			]),
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			h.deps.prisma,
+			expect.objectContaining({
+				idempotencyKey: scheduledStopJob.effect.idempotencyKey,
+			}),
+			expect.objectContaining({
+				state: "AMBIGUOUS",
+				error: expect.stringContaining("cannot be stopped"),
+			}),
 		);
 	});
 

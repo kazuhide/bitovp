@@ -186,6 +186,267 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				});
 		}
 
+		it.each([
+			"lost response",
+			"open STOP",
+		] as const)("rolls back a late CANCELED poll after %s", async (stage) => {
+			const { channel, run, encodingId } = await fixture();
+			const response = barrier();
+			const started = barrier();
+			const status = vi.fn(async () => {
+				started.release();
+				await response.ready;
+				return { status: "CANCELED" as const };
+			});
+			const emitChannel = vi.fn(async () => {});
+			const enqueueFeederJob = vi.fn(async () => {});
+			const result = createProviderLifecycleReconciler({
+				prisma: tenant,
+				now: () => now.toISOString(),
+				emitChannel,
+				enqueueFeederJob,
+			}).reconcile({
+				channel,
+				run,
+				encodingId,
+				fence: { epoch: 7 },
+				sdk: fakeSdk({ getEncodingStatus: status }),
+			});
+			try {
+				await started.ready;
+				await tenant.liveEffectClaim.create({
+					data: {
+						liveChannelId: channel.id,
+						liveChannelRunId: run.id,
+						providerEncodingId: encodingId,
+						action: "STOP",
+						state: stage === "lost response" ? "AMBIGUOUS" : "DISPATCHING",
+						generation: 1,
+						token: randomUUID(),
+						idempotencyKey: randomUUID(),
+						ownerId: "poll-test",
+						expiresAt: now,
+						dispatchedAt: now,
+					},
+				});
+				if (stage === "lost response") {
+					const data = {
+						status: "ERROR" as const,
+						error: "STOP response lost",
+					};
+					await tenant.liveChannel.update({ where: { id: channel.id }, data });
+					await tenant.liveChannelRun.update({ where: { id: run.id }, data });
+				}
+				const beforeChannel = await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: channel.id },
+				});
+				const beforeRun = await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: run.id },
+				});
+				response.release();
+				expectDiscarded("provider terminal", await result);
+				expect(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: channel.id },
+					}),
+				).toEqual(beforeChannel);
+				expect(
+					await tenant.liveChannelRun.findUniqueOrThrow({
+						where: { id: run.id },
+					}),
+				).toEqual(beforeRun);
+				expect(status).toHaveBeenCalledOnce();
+				expect(emitChannel).not.toHaveBeenCalled();
+				expect(enqueueFeederJob).not.toHaveBeenCalled();
+			} finally {
+				response.release();
+				await result;
+			}
+		});
+
+		it.each([
+			"RUNNING",
+			"timeout",
+		] as const)("preserves terminal evidence when an in-flight %s read returns", async (word) => {
+			const { channel, run, encodingId } = await fixture();
+			const response = barrier();
+			const started = barrier();
+			const emitChannel = vi.fn(async () => {});
+			const enqueueFeederJob = vi.fn(async () => {});
+			const providerStatus = vi.fn(async () => {
+				started.release();
+				await response.ready;
+				if (word === "timeout") throw new Error("readback timed out");
+				return { status: word };
+			});
+			const result = createProviderLifecycleReconciler({
+				prisma: tenant,
+				now: () => now.toISOString(),
+				emitChannel,
+				enqueueFeederJob,
+			}).reconcile({
+				channel,
+				run,
+				encodingId,
+				fence: { epoch: 7 },
+				sdk: fakeSdk({ getEncodingStatus: providerStatus }),
+			});
+			try {
+				await started.ready;
+				// Another terminal writer can win without changing the poll epoch.
+				const terminal = poll(
+					"provider terminal",
+					tenant,
+					channel.id,
+					run,
+					encodingId,
+				);
+				expect(await terminal.result).toMatchObject({
+					landed: true,
+					terminalised: true,
+					channelLanded: true,
+				});
+				const beforeRun = await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: run.id },
+				});
+				expect(beforeRun).toMatchObject({
+					providerStatus: "FINISHED",
+					providerStatusObservedAt: now,
+					providerTerminalAt: now,
+					endedAt: now,
+					status: "STOPPED",
+					heartbeatPollEpoch: 7,
+				});
+				response.release();
+				expect(await result).toMatchObject({
+					landed: false,
+					channelLanded: false,
+				});
+				expect(
+					await tenant.liveChannelRun.findUniqueOrThrow({
+						where: { id: run.id },
+					}),
+				).toEqual(beforeRun);
+				expect(providerStatus).toHaveBeenCalledOnce();
+				expect(emitChannel).not.toHaveBeenCalled();
+				expect(enqueueFeederJob).not.toHaveBeenCalled();
+			} finally {
+				response.release();
+				await result;
+			}
+		});
+
+		it("repairs a cached terminal projection under its current epoch without reading the provider again", async () => {
+			const { channel, run, encodingId } = await fixture();
+			const cached = await tenant.liveChannelRun.update({
+				where: { id: run.id },
+				data: {
+					status: "STOPPED",
+					providerStatus: "FINISHED",
+					providerStatusObservedAt: now,
+					providerTerminalAt: now,
+					endedAt: now,
+				},
+			});
+			const emitChannel = vi.fn(async () => {});
+			const sdk = fakeSdk();
+			const reconciler = createProviderLifecycleReconciler({
+				prisma: tenant,
+				now: () => now.toISOString(),
+				emitChannel,
+				enqueueFeederJob: vi.fn(async () => {}),
+			});
+			const repair = (epoch: number) =>
+				reconciler.reconcile({
+					channel,
+					run: cached,
+					encodingId,
+					sdk,
+					fence: { epoch },
+				});
+			expectDiscarded("provider terminal", await repair(6));
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: channel.id },
+				}),
+			).toEqual(channel);
+			expect(emitChannel).not.toHaveBeenCalled();
+			expect(await repair(7)).toMatchObject({
+				channelLanded: true,
+				terminalised: false,
+			});
+			expect(
+				(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: channel.id },
+					})
+				).status,
+			).toBe("STOPPED");
+			expect(emitChannel).toHaveBeenCalledOnce();
+			expect(sdk.getEncodingStatus).not.toHaveBeenCalled();
+		});
+
+		it("keeps a pending AISA encoder's terminal readback when a stale RUNNING observation arrives", async () => {
+			const { channel, run, encodingId } = await fixture();
+			const capturedRun = await tenant.liveChannelRun.update({
+				where: { id: run.id },
+				data: { aisaAnalysisId: randomUUID(), aisaStatus: "RUNNING" },
+			});
+			const emitChannel = vi.fn(async () => {});
+			const enqueueFeederJob = vi.fn(async () => {});
+			const reconciler = createProviderLifecycleReconciler({
+				prisma: tenant,
+				now: () => now.toISOString(),
+				emitChannel,
+				enqueueFeederJob,
+			});
+			const sdk = fakeSdk();
+			const observed = (status: string) =>
+				reconciler.reconcile({
+					channel,
+					run: capturedRun,
+					encodingId,
+					sdk,
+					fence: { epoch: 7 },
+					observation: { ok: true, status, observedAt: now.toISOString() },
+				});
+			await observed("FINISHED");
+			const before = await tenant.liveChannelRun.findUniqueOrThrow({
+				where: { id: run.id },
+			});
+			expect(before).toMatchObject({
+				status: "RUNNING",
+				providerStatus: "FINISHED",
+				providerStatusObservedAt: now,
+				providerTerminalAt: null,
+				endedAt: null,
+			});
+			expect(await observed("RUNNING")).toMatchObject({
+				landed: false,
+				terminalised: false,
+			});
+			const cached = await reconciler.reconcile({
+				channel,
+				run: before,
+				encodingId,
+				sdk,
+				fence: { epoch: 7 },
+			});
+			expect(cached).toMatchObject({
+				lifecycle: "TERMINAL",
+				terminalised: false,
+				channelLanded: false,
+			});
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: run.id },
+				}),
+			).toEqual(before);
+			expect(sdk.getEncodingStatus).not.toHaveBeenCalled();
+			expect(emitChannel).not.toHaveBeenCalled();
+			expect(enqueueFeederJob).not.toHaveBeenCalled();
+		});
+
 		it.each(
 			kinds,
 		)("discards %s instead of deadlocking with cancel-start", async (kind) => {

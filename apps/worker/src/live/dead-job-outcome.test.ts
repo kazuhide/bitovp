@@ -3,10 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HEARTBEAT_SWEEP_JOB } from "../handlers";
 import {
 	deadJobScheduleWrites,
-	isFinalManualStopFailure,
+	isFinalStopFailure,
 	recordDeadFeederJob,
 	recordDeadJobScheduleOutcomes,
-	recordFinalManualStopFailure,
+	recordFinalStopFailure,
 	releaseDeadStageClaim,
 } from "./dead-job-outcome";
 
@@ -26,6 +26,7 @@ const SCHEDULE = "33333333-3333-4333-8333-333333333333";
 const SESSION = "00000000-0000-4000-8000-0000000000f1";
 const RUN = "11111111-1111-4111-8111-111111111111";
 
+const SCHEDULE_ID = "00000000-0000-4000-8000-000000000123";
 const MANUAL_STOP_JOB = {
 	name: "live-channel",
 	attemptsMade: 5,
@@ -45,25 +46,25 @@ const MANUAL_STOP_JOB = {
 
 describe("manual STOP final-delivery projection", () => {
 	it("projects only the final failed attempt", () => {
+		expect(isFinalStopFailure({ ...MANUAL_STOP_JOB, attemptsMade: 4 })).toBe(
+			false,
+		);
+		expect(isFinalStopFailure(MANUAL_STOP_JOB)).toBe(true);
 		expect(
-			isFinalManualStopFailure({ ...MANUAL_STOP_JOB, attemptsMade: 4 }),
-		).toBe(false);
-		expect(isFinalManualStopFailure(MANUAL_STOP_JOB)).toBe(true);
-		expect(
-			isFinalManualStopFailure({
+			isFinalStopFailure({
 				...MANUAL_STOP_JOB,
 				attemptsMade: 1,
 				finishedOn: Date.parse("2026-08-31T12:00:00.000Z"),
 			}),
 		).toBe(true);
 		expect(
-			isFinalManualStopFailure({
+			isFinalStopFailure({
 				...MANUAL_STOP_JOB,
 				attemptsMade: 1,
 			}),
 		).toBe(false);
 		expect(
-			isFinalManualStopFailure({
+			isFinalStopFailure({
 				...MANUAL_STOP_JOB,
 				data: { ...MANUAL_STOP_JOB.data, action: "restart" },
 			}),
@@ -120,7 +121,7 @@ describe("manual STOP final-delivery projection", () => {
 		const t = projectionStore();
 		const emitEvent = vi.fn(async () => undefined);
 		await expect(
-			recordFinalManualStopFailure(
+			recordFinalStopFailure(
 				t.prisma,
 				MANUAL_STOP_JOB,
 				"database down",
@@ -153,7 +154,7 @@ describe("manual STOP final-delivery projection", () => {
 			claim: { state: "FAILED", generation: 8 },
 		});
 		await expect(
-			recordFinalManualStopFailure(t.prisma, MANUAL_STOP_JOB, "pre-send"),
+			recordFinalStopFailure(t.prisma, MANUAL_STOP_JOB, "pre-send"),
 		).resolves.toBe(true);
 		expect(t.updateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -172,7 +173,7 @@ describe("manual STOP final-delivery projection", () => {
 		]) {
 			const t = projectionStore(over);
 			await expect(
-				recordFinalManualStopFailure(t.prisma, MANUAL_STOP_JOB, "boom"),
+				recordFinalStopFailure(t.prisma, MANUAL_STOP_JOB, "boom"),
 			).resolves.toBe(false);
 			expect(t.updateMany).not.toHaveBeenCalled();
 		}
@@ -216,16 +217,55 @@ describe("deadJobScheduleWrites (ledger #238)", () => {
 		 */
 		expect(
 			deadJobScheduleWrites(
-				{ data: { liveChannelId: CHANNEL, action: "stop" } },
+				{
+					id: `sched-${SCHEDULE_ID}`,
+					data: { liveChannelId: CHANNEL, action: "stop" },
+				},
 				"stalled twice",
 			),
 		).toEqual([
 			{
-				target: { channelStop: CHANNEL },
+				target: { scheduledStop: { id: SCHEDULE_ID, liveChannelId: CHANNEL } },
 				outcome: "UNKNOWN",
 				note: expect.stringContaining("stalled twice"),
 			},
 		]);
+	});
+
+	it("closes only the failed scheduled STOP's own airing after attempts are exhausted", () => {
+		const job = {
+			...MANUAL_STOP_JOB,
+			data: {
+				...MANUAL_STOP_JOB.data,
+				effect: {
+					...MANUAL_STOP_JOB.data.effect,
+					scheduleId: SCHEDULE_ID,
+					idempotencyKey: `schedule:${SCHEDULE_ID}:stop`,
+				},
+			},
+		};
+		expect(
+			deadJobScheduleWrites({ ...job, attemptsMade: 1 }, "retrying"),
+		).toEqual([]);
+		expect(deadJobScheduleWrites(job, "exhausted")).toEqual([
+			{
+				target: {
+					scheduledStop: {
+						id: SCHEDULE_ID,
+						liveChannelId: CHANNEL,
+						liveChannelRunId: RUN,
+					},
+				},
+				outcome: "UNKNOWN",
+				note: expect.stringContaining("exhausted"),
+			},
+		]);
+		expect(
+			deadJobScheduleWrites(
+				{ data: { liveChannelId: CHANNEL, action: "stop" } },
+				"unknown legacy job",
+			),
+		).toEqual([]);
 	});
 
 	it("a durable manual stop never owns or mutates a scheduled STOP outcome", async () => {
@@ -347,12 +387,16 @@ describe("recordDeadJobScheduleOutcomes", () => {
 		const at = new Date("2026-08-29T12:00:00.000Z");
 		await recordDeadJobScheduleOutcomes(
 			prisma,
-			{ data: { liveChannelId: CHANNEL, action: "stop" } },
+			{
+				id: `sched-${SCHEDULE_ID}`,
+				data: { liveChannelId: CHANNEL, action: "stop" },
+			},
 			"connection to postgresql://u:hunter2@db/x failed",
 			at,
 		);
 		expect(updateMany).toHaveBeenCalledWith({
 			where: {
+				id: SCHEDULE_ID,
 				liveChannelId: CHANNEL,
 				action: "STOP",
 				status: "FIRED",

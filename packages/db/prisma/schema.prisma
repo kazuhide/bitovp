@@ -1028,6 +1028,10 @@ model LiveChannelRun {
   queueSeconds                  Int?
   runningSince                  DateTime?
   endedAt                       DateTime?
+  /// Transactional handoff of the confirmed STOP event for this broadcast.
+  stopNotificationKind          String?
+  stopNotificationAt            DateTime?
+  stopNotificationQueuedAt      DateTime?
   /// Snapshot of the window THIS run served (R6): the channel's own
   /// programStartAt/EndAt mean the UPCOMING window and get rewritten.
   programStartAt                DateTime?

@@ -120,7 +120,8 @@ function setup() {
 			updateMany: vi.fn(async ({ where, data }) => {
 				if (
 					where.id !== run.id ||
-					where.bitmovinEncodingId !== run.bitmovinEncodingId
+					("bitmovinEncodingId" in where &&
+						where.bitmovinEncodingId !== run.bitmovinEncodingId)
 				)
 					return { count: 0 };
 				Object.assign(run, data);
@@ -133,6 +134,7 @@ function setup() {
 			),
 		},
 		liveEffectClaim: {
+			findMany: vi.fn(async () => claims),
 			findFirst: vi.fn(
 				async ({ where }) =>
 					claims.find(
@@ -300,6 +302,144 @@ describe("resolveLiveEffectsAfterConfirmedStop", () => {
 			providerStatus: "FINISHED",
 		},
 	};
+
+	it("refuses primary-only readback when a failed same-run RESTART preserves another encoder", async () => {
+		const f = ambiguousStop();
+		Object.assign(f.claims[0]!, {
+			action: "RESTART",
+			state: "FAILED",
+			providerEncodingId: "encoding-B",
+		});
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "BLOCKED" });
+		expect(f.channel.status).toBe("ERROR");
+	});
+
+	it("settles matched sibling STOPs together without losing their original failure", async () => {
+		const f = ambiguousStop();
+		Object.assign(f.claims[0]!, {
+			action: "STOP",
+			failure:
+				"stop response lost; the provider/process call crossed its send boundary, so exact readback or operator resolution is required before retry",
+		});
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "RESOLVED" });
+		expect(f.claims.map((c) => c.state)).toEqual(["ACKED", "ACKED"]);
+		expect(f.claims[0]?.failure).toContain("stop response lost");
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "ALREADY_ACKED" });
+	});
+
+	it("recovers a null run encoder only from its positive creation receipt", async () => {
+		const f = ambiguousStop();
+		Object.assign(f.run, { bitmovinEncodingId: null });
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "BLOCKED" });
+		f.run.stepLog = [
+			{
+				step: "create",
+				kind: "CREATE_ENCODING",
+				status: "DONE",
+				resourceId: input.providerEncodingId,
+				refs: {},
+				payload: {},
+			},
+		];
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "RESOLVED" });
+		expect(f.run.bitmovinEncodingId).toBe(input.providerEncodingId);
+	});
+
+	it("repairs a historical run-only terminal heartbeat only when the STOP owns channel ERROR", async () => {
+		const f = ambiguousStop();
+		Object.assign(f.run, {
+			status: "STOPPED",
+			error: null,
+			providerStatus: "FINISHED",
+		});
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "RESOLVED" });
+		expect(f.run.endedAt).toEqual(input.at);
+	});
+
+	it("commits the owner's compound STOP only after readback of every historical and logged target", async () => {
+		const f = setup();
+		const owner = f.claims[1]!;
+		Object.assign(owner, { token: "owner" });
+		Object.assign(f.claims[0]!, {
+			action: "RESTART",
+			state: "FAILED",
+			providerEncodingId: "encoding-B",
+		});
+		f.channel.status = f.run.status = "STOPPING";
+		const logged = {
+			step: "created",
+			kind: "CREATE_ENCODING",
+			status: "DONE",
+			resourceId: "encoding-C",
+			refs: {},
+			payload: {},
+		};
+		f.run.stepLog = [logged];
+		const proof = {
+			...input,
+			ownerReadbacks: {
+				generation: 8,
+				token: "owner",
+				bitmovinAccountId: "account-1",
+				encodings: [
+					{ id: "encoding-1", status: "FINISHED" },
+					{ id: "encoding-B", status: "CANCELED" },
+				],
+			},
+		};
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, proof),
+		).resolves.toMatchObject({ kind: "BLOCKED" });
+		expect(f.channel.status).toBe("STOPPING");
+		expect(owner.state).toBe("DISPATCHING");
+		proof.ownerReadbacks.encodings.push({
+			id: "encoding-C",
+			status: "FINISHED",
+		});
+		f.setFeederOccupiesRun(true);
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, proof),
+		).resolves.toMatchObject({ kind: "BLOCKED" });
+		expect(f.feederLookup.mock.lastCall?.[0].where).not.toHaveProperty(
+			"liveChannelRunId",
+		);
+		f.setFeederOccupiesRun(false);
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, proof),
+		).resolves.toMatchObject({ kind: "RESOLVED" });
+		expect(owner.state).toBe("ACKED");
+		expect(f.claims[0]?.state).toBe("FAILED");
+		expect(f.run).toMatchObject({
+			status: "STOPPED",
+			endedAt: input.at,
+			stopNotificationAt: input.at,
+			providerStatus: "FINISHED",
+		});
+	});
+
+	it("requires read-only terminal proof after a worker exits during STOPPING", async () => {
+		const f = setup();
+		f.channel.status = f.run.status = "STOPPING";
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, input),
+		).resolves.toMatchObject({ kind: "BLOCKED" });
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "RESOLVED" });
+		expect(f.run.endedAt).toEqual(input.at);
+	});
 
 	it("does not acknowledge a clean interrupted STOP when the run log alone names a second encoding", async () => {
 		const f = setup();

@@ -12,7 +12,11 @@ import {
 	redactSecrets,
 } from "@bitovp/core";
 import type { AppPrismaClient, AppTransactionClient, Prisma } from "@bitovp/db";
-import { DB_NULL, replaceLiveRunStepLogSnapshot } from "@bitovp/db";
+import {
+	DB_NULL,
+	LIVE_EFFECT_OPEN_STATES,
+	replaceLiveRunStepLogSnapshot,
+} from "@bitovp/db";
 import type { SdkOps } from "../orchestrator/sdk-ops";
 import { tryLockCurrentPollChannel } from "./poll-channel-lock";
 
@@ -516,7 +520,7 @@ export function createProviderLifecycleReconciler(deps: {
 		};
 		persistRun: boolean;
 		/** Only a fenced background observation may discard its whole transaction. */
-		nonblockingPoll?: boolean;
+		pollEpoch?: number;
 		signal?: AbortSignal;
 	}): Promise<{ runLanded: boolean; channelLanded: boolean }> {
 		const aisa = aisaLiveFinalization({
@@ -524,12 +528,16 @@ export function createProviderLifecycleReconciler(deps: {
 			providerStatus: args.status,
 		});
 		if (aisa === "PENDING") {
+			// The persisted encoder result is already sufficient while Analysis
+			// drains. Replaying it could replace a newer observation timestamp.
+			if (!args.persistRun) return { runLanded: false, channelLanded: false };
 			await deps.prisma.liveChannelRun.updateMany({
 				where: {
 					...(args.fenceWhere ?? {
 						id: args.run.id,
 						bitmovinEncodingId: args.encodingId,
 					}),
+					providerTerminalAt: null,
 				},
 				data: {
 					providerStatus: args.status,
@@ -552,7 +560,7 @@ export function createProviderLifecycleReconciler(deps: {
 		try {
 			await deps.prisma.$transaction(async (tx) => {
 				args.signal?.throwIfAborted();
-				if (!args.nonblockingPoll) {
+				if (args.pollEpoch === undefined) {
 					// Keep old-run terminal facts even after a re-air: lock by channel
 					// identity only, then preserve the exact run/projection CAS below.
 					await lockOwnedChannel(tx, args.channelId);
@@ -587,16 +595,43 @@ export function createProviderLifecycleReconciler(deps: {
 					runLanded = runWrite.count === 1;
 					if (!runLanded) return;
 				}
-				if (
-					args.nonblockingPoll &&
-					!(await tryLockCurrentPollChannel(
+				if (args.pollEpoch !== undefined) {
+					// A cached terminal repair skipped the run CAS above. Keep its
+					// exact epoch locked through the projection just like a fresh poll.
+					if (!args.persistRun) {
+						const rows = await tx.$queryRaw<{ id: string }[]>`
+							SELECT id FROM "LiveChannelRun"
+							WHERE id = ${args.run.id}::uuid
+								AND "liveChannelId" = ${args.channelId}::uuid
+								AND "bitmovinEncodingId" = ${args.encodingId}
+								AND "heartbeatPollEpoch" = ${args.pollEpoch}
+							FOR UPDATE SKIP LOCKED`;
+						if (rows.length !== 1) throw new PollChannelUnavailableError();
+					}
+					const current = await tryLockCurrentPollChannel(
 						tx,
 						args.channelId,
 						args.run.id,
 						args.encodingId,
-					))
-				) {
-					throw new PollChannelUnavailableError();
+					);
+					// A STOP owns terminal projection once admitted, including before
+					// the worker sets STOPPING. Roll back the poll's run CAS as well.
+					if (!current) throw new PollChannelUnavailableError();
+					const canProject = await tx.liveChannel.findUnique({
+						where: {
+							id: args.channelId,
+							status: "RUNNING",
+							effectClaims: {
+								none: {
+									liveChannelRunId: args.run.id,
+									action: "STOP",
+									state: { in: [...LIVE_EFFECT_OPEN_STATES] },
+								},
+							},
+						},
+						select: { id: true },
+					});
+					if (!canProject) throw new PollChannelUnavailableError();
 				}
 				args.signal?.throwIfAborted();
 				const channelWrite = await tx.liveChannel.updateMany({
@@ -717,10 +752,14 @@ export function createProviderLifecycleReconciler(deps: {
 				message,
 				channelWrite: args.channelWrite,
 				persistRun: false,
+				pollEpoch: args.fence?.epoch,
 				signal: args.signal,
 			});
 			args.signal?.throwIfAborted();
-			if (run.providerFeederStopsEnqueuedAt === null) {
+			if (
+				run.providerFeederStopsEnqueuedAt === null &&
+				(args.fence === undefined || repaired.runLanded)
+			) {
 				await enqueueTerminalFeederStops(run).catch((err) => {
 					console.error(
 						`[live-channel] persisted-terminal feeder-stop attempt for run ${run.id} failed:`,
@@ -751,6 +790,10 @@ export function createProviderLifecycleReconciler(deps: {
 		const now = new Date(observedAt);
 		const fenceWhere = {
 			id: run.id,
+			providerTerminalAt: null,
+			// An AISA encoder can finish while its Analysis is still draining:
+			// its terminal word is durable before the final run stamp exists.
+			...(run.aisaAnalysisId ? { providerStatus: run.providerStatus } : {}),
 			...(run.bitmovinEncodingId !== null
 				? { bitmovinEncodingId: encodingId }
 				: {}),
@@ -819,7 +862,7 @@ export function createProviderLifecycleReconciler(deps: {
 			fenceWhere,
 			channelWrite: args.channelWrite,
 			persistRun: true,
-			nonblockingPoll: args.fence !== undefined,
+			pollEpoch: args.fence?.epoch,
 			signal: args.signal,
 		});
 		args.signal?.throwIfAborted();

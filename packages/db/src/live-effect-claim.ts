@@ -7,7 +7,11 @@ import {
 	isAisaManagedLivePlan,
 	stepLogSchema,
 } from "@bitovp/core";
-import type { AppPrismaClient } from "./client";
+import type { AppPrismaClient, AppTransactionClient } from "./client";
+import {
+	recordConfirmedStopDelivery,
+	recordStopScheduleFailure,
+} from "./live-stop-delivery";
 
 export const LIVE_EFFECT_OPEN_STATES = [
 	"CLAIMED",
@@ -94,6 +98,13 @@ export type ResolveLiveEffectsAfterConfirmedStopInput = {
 	stopClaimId: string;
 	stopIdempotencyKey: string;
 	at: Date;
+	/** Terminal GETs for every encoder actually observed by the original owner. */
+	ownerReadbacks?: {
+		generation: number;
+		token: string;
+		bitmovinAccountId: string;
+		encodings: readonly { id: string; status: string }[];
+	};
 	/** Periodic recovery after the original worker committed a clean STOP projection. */
 	interruptedAckGeneration?: number;
 	/** Fresh provider GET issued for this generation after its owner recorded ambiguity. */
@@ -145,21 +156,76 @@ export function matchesRecordedStopFailure(
 		);
 }
 
-function hasOnlyClaimedEncoding(log: unknown, encodingId: string): boolean {
+/** Both projected logs are part of a broadcast's encoder ownership record. */
+export function liveStopLogEncodings(log: unknown): string[] | null {
 	const parsed = stepLogSchema.safeParse(log);
+	if (!parsed.success) return null;
+	return parsed.data.flatMap((entry) =>
+		(entry.kind === "CREATE_ENCODING" ||
+			entry.kind === "RESOLVE_AISA_LIVE_ENCODING") &&
+		entry.resourceId
+			? [entry.resourceId]
+			: [],
+	);
+}
+
+/** Older runs had no encoder column. Only their own completed creation receipt can replace it. */
+export function liveStopRunOwnsEncoding(
+	run: { bitmovinEncodingId: string | null; stepLog: unknown },
+	id: string,
+): boolean {
+	if (run.bitmovinEncodingId !== null) return run.bitmovinEncodingId === id;
+	const parsed = stepLogSchema.safeParse(run.stepLog);
 	return (
 		parsed.success &&
-		parsed.data.every(
+		parsed.data.some(
 			(entry) =>
-				entry.kind !== "RESOLVE_AISA_LIVE_ENCODING" &&
-				(entry.kind !== "CREATE_ENCODING" || entry.resourceId === encodingId),
+				entry.kind === "CREATE_ENCODING" &&
+				entry.status === "DONE" &&
+				entry.resourceId === id,
 		)
 	);
 }
 
+export function liveStopFeederWhere(liveChannelId: string) {
+	return {
+		liveChannelId,
+		OR: [
+			feederOccupancyWhere(),
+			{ status: { in: [...FEEDER_ACTIVE_STATUSES] } },
+		],
+	};
+}
+
+function stopFaultsCovered(
+	failure: string | null,
+	terminal: ReadonlyMap<string, string>,
+): boolean {
+	const prefix = "stop did not confirm — ";
+	if (!failure?.startsWith(prefix)) return true;
+	return failure
+		.slice(prefix.length)
+		.split("; ")
+		.every((fault) => {
+			if (
+				/^feeder [0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}: stop was enqueued but publisher termination was not confirmed$/i.test(
+					fault,
+				)
+			)
+				return true;
+			return [...terminal.keys()].some((id) => fault.startsWith(id + ": "));
+		});
+}
+
 export type ResolveLiveEffectsAfterConfirmedStopResult =
-	| { kind: "RESOLVED"; count: number; recoveredFromError?: true }
-	| { kind: "BLOCKED"; reason: string };
+	| {
+			kind: "RESOLVED";
+			count: number;
+			recoveredFromError?: true;
+			terminalFailure?: true;
+	  }
+	| { kind: "BLOCKED"; reason: string }
+	| { kind: "ALREADY_ACKED" };
 
 function handleOf(row: {
 	id: string;
@@ -513,9 +579,10 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 	return prisma.$transaction(
 		async (tx) => {
 			const proof = input.terminalReadback;
+			const owner = input.ownerReadbacks;
 			const periodic =
 				proof !== undefined || input.interruptedAckGeneration !== undefined;
-			const [channel, run, feeder, stopClaim] = await Promise.all([
+			const [channel, run, feeder, stopClaim, history] = await Promise.all([
 				tx.liveChannel.findUnique({
 					where: { id: input.liveChannelId },
 					select: {
@@ -523,12 +590,10 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						error: true,
 						liveEffectFenceVersion: true,
 						bitmovinEncodingId: true,
-						...(periodic && {
-							bitmovinAccountId: true,
-							origin: true,
-							plan: true,
-							stepLog: true,
-						}),
+						bitmovinAccountId: true,
+						origin: true,
+						plan: true,
+						stepLog: true,
 					},
 				}),
 				tx.liveChannelRun.findFirst({
@@ -546,160 +611,198 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						aisaStatus: true,
 						aisaSnapshot: true,
 						aisaFinalization: true,
-						...(periodic && { stepLog: true, endedAt: true }),
+						stepLog: true,
+						endedAt: true,
 					},
 				}),
 				tx.feederSession.findFirst({
-					where: periodic
-						? {
-								liveChannelId: input.liveChannelId,
-								OR: [
-									feederOccupancyWhere(),
-									{ status: { in: [...FEEDER_ACTIVE_STATUSES] } },
-								],
-							}
-						: {
-								...feederOccupancyWhere(input.liveChannelId),
-								liveChannelRunId: input.liveChannelRunId,
-							},
+					where: liveStopFeederWhere(input.liveChannelId),
 					select: { id: true },
 				}),
-				tx.liveEffectClaim.findUnique({
-					where: { id: input.stopClaimId },
+				tx.liveEffectClaim.findUnique({ where: { id: input.stopClaimId } }),
+				tx.liveEffectClaim.findMany({
+					where: {
+						liveChannelId: input.liveChannelId,
+						liveChannelRunId: input.liveChannelRunId,
+					},
 					select: {
+						id: true,
 						idempotencyKey: true,
-						liveChannelId: true,
-						liveChannelRunId: true,
+						scheduleId: true,
 						providerEncodingId: true,
 						action: true,
 						generation: true,
 						state: true,
-						...(periodic && { failure: true, expiresAt: true }),
+						token: true,
+						failure: true,
 					},
 				}),
 			]);
-			const aisa = run ? aisaLiveFinalization(run) : "UNBOUND";
-			if (aisa === "PENDING")
-				return {
-					kind: "BLOCKED",
-					reason: "the exact Analysis finalization is not yet confirmed",
-				};
-			const confirmedStatus = aisa === "FAILED" ? "ERROR" : "STOPPED";
-			const confirmedError =
-				aisa === "FAILED" ? "AISA_LIVE_TERMINAL_FAILURE" : null;
-			if (
-				!channel ||
-				channel.bitmovinEncodingId !== input.providerEncodingId ||
-				(!proof &&
-					(channel.status !== confirmedStatus ||
-						channel.error !== confirmedError))
-			) {
-				return {
-					kind: "BLOCKED",
-					reason: "the exact channel STOP is not confirmed clean",
-				};
-			}
-			if (
-				run?.id !== input.liveChannelRunId ||
-				run.bitmovinEncodingId !== input.providerEncodingId ||
-				(!proof &&
-					(run.status !== confirmedStatus ||
-						run.error !== confirmedError ||
-						!run.providerStatusObservedAt ||
-						!run.providerTerminalAt ||
-						classifyProviderStatusWord(run.providerStatus) !== "TERMINAL"))
-			) {
-				return {
-					kind: "BLOCKED",
-					reason:
-						"the exact provider encoding has no authoritative terminal readback",
-				};
-			}
+			const blocked = (reason: string) => ({
+				kind: "BLOCKED" as const,
+				reason,
+			});
 			if (
 				!stopClaim ||
 				stopClaim.idempotencyKey !== input.stopIdempotencyKey ||
 				stopClaim.liveChannelId !== input.liveChannelId ||
 				stopClaim.liveChannelRunId !== input.liveChannelRunId ||
 				stopClaim.providerEncodingId !== input.providerEncodingId ||
-				stopClaim.action !== "STOP" ||
+				stopClaim.action !== "STOP"
+			)
+				return blocked("the exact STOP identity changed");
+			if (stopClaim.state === "ACKED") return { kind: "ALREADY_ACKED" };
+			if (
+				!channel ||
+				!run ||
+				run.id !== input.liveChannelRunId ||
+				channel.bitmovinEncodingId !== input.providerEncodingId ||
+				!liveStopRunOwnsEncoding(run, input.providerEncodingId) ||
 				stopClaim.generation !== channel.liveEffectFenceVersion ||
-				(stopClaim.state !== "DISPATCHING" && stopClaim.state !== "AMBIGUOUS")
-			) {
-				return {
-					kind: "BLOCKED",
-					reason: "the exact STOP claim is not the current unresolved effect",
-				};
-			}
+				!["DISPATCHING", "AMBIGUOUS"].includes(stopClaim.state)
+			)
+				return blocked(
+					"the exact STOP claim is not the current unresolved effect",
+				);
 			const stopGeneration = stopClaim.generation;
+			const terminal = new Map(
+				owner?.encodings.map(({ id, status }) => [id, status]),
+			);
+			if (!owner) {
+				const recorded =
+					run.providerStatusObservedAt && run.providerTerminalAt
+						? run.providerStatus
+						: null;
+				const status = proof?.providerStatus ?? recorded;
+				if (status) terminal.set(input.providerEncodingId, status);
+			}
+			const providerStatus = terminal.get(input.providerEncodingId);
+			if (
+				!providerStatus ||
+				[...terminal.values()].some(
+					(status) => classifyProviderStatusWord(status) !== "TERMINAL",
+				)
+			)
+				return blocked(
+					"the exact provider encoding has no authoritative terminal readback",
+				);
+			const channelIds = liveStopLogEncodings(channel.stepLog);
+			const runIds = liveStopLogEncodings(run.stepLog);
+			if (
+				!channelIds ||
+				!runIds ||
+				[
+					...channelIds,
+					...runIds,
+					...history.map((c) => c.providerEncodingId),
+				].some((id) => !terminal.has(id))
+			)
+				return blocked(
+					"a broadcast log or historical effect identifies an encoder without terminal readback",
+				);
+			const stops = history.filter(
+				(c) =>
+					c.action === "STOP" &&
+					LIVE_EFFECT_OPEN_STATES.some((state) => state === c.state),
+			);
+			if (
+				stops.some(
+					(c) =>
+						c.providerEncodingId !== input.providerEncodingId ||
+						c.generation > stopGeneration ||
+						!stopFaultsCovered(c.failure, terminal),
+				) ||
+				!stopFaultsCovered(channel.error, terminal) ||
+				!stopFaultsCovered(run.error, terminal)
+			)
+				return blocked(
+					"another unresolved STOP needs independent target verification",
+				);
+			if (feeder) return blocked("a feeder still occupies this channel");
+			const aisa = aisaLiveFinalization({ ...run, providerStatus });
+			if (
+				aisa === "PENDING" ||
+				(isAisaManagedLivePlan(channel.plan) && aisa === "UNBOUND")
+			)
+				return blocked("the exact Analysis finalization is not yet confirmed");
+			const confirmedStatus = aisa === "FAILED" ? "ERROR" : "STOPPED";
+			const confirmedError =
+				aisa === "FAILED" ? "AISA_LIVE_TERMINAL_FAILURE" : null;
 			if (
 				periodic &&
 				(channel.origin !== "MANAGED" ||
 					isAisaManagedLivePlan(channel.plan) ||
 					run.aisaAnalysisId ||
-					!hasOnlyClaimedEncoding(channel.stepLog, input.providerEncodingId) ||
-					!hasOnlyClaimedEncoding(run.stepLog, input.providerEncodingId))
+					[run.stepLog, channel.stepLog].some((log) =>
+						stepLogSchema
+							.parse(log)
+							.some((e) => e.kind === "RESOLVE_AISA_LIVE_ENCODING"),
+					))
 			)
-				return {
-					kind: "BLOCKED",
-					reason:
-						"periodic STOP reconciliation requires one ordinary encoder in both broadcast logs",
-				};
-			if (
-				input.interruptedAckGeneration !== undefined &&
-				(input.interruptedAckGeneration !== stopGeneration ||
-					(stopClaim.state === "DISPATCHING" &&
-						(!stopClaim.expiresAt || stopClaim.expiresAt > input.at)))
-			)
-				return {
-					kind: "BLOCKED",
-					reason:
-						"the interrupted STOP is not the expired owner or ambiguous claim that was scanned",
-				};
-			if (
-				proof &&
-				(proof.generation !== stopGeneration ||
-					stopClaim.state !== "AMBIGUOUS" ||
-					classifyProviderStatusWord(proof.providerStatus) !== "TERMINAL" ||
-					liveChannelAccountId(channel) !== proof.bitmovinAccountId ||
-					channel.error !== run.error ||
-					channel.status !== run.status ||
-					!matchesRecordedStopFailure(
+				return blocked(
+					"periodic STOP reconciliation applies only to ordinary managed broadcasts",
+				);
+			if (owner) {
+				if (
+					owner.generation !== stopGeneration ||
+					owner.token !== stopClaim.token ||
+					stopClaim.state !== "DISPATCHING" ||
+					liveChannelAccountId(channel) !== owner.bitmovinAccountId ||
+					channel.status !== "STOPPING"
+				)
+					return blocked("the original STOP no longer owns these readbacks");
+			} else if (proof) {
+				const interrupted =
+					channel.status === "STOPPING" &&
+					stopClaim.expiresAt <= input.at &&
+					(stopClaim.state === "DISPATCHING" ||
+						stopClaim.failure ===
+							"effect owner expired after DISPATCHING; exact readback is required before retry");
+				const matchesFailure =
+					stopClaim.state === "AMBIGUOUS" &&
+					matchesRecordedStopFailure(
 						channel.status,
 						channel.error,
 						stopClaim.failure,
 						input.providerEncodingId,
-					))
-			) {
-				return {
-					kind: "BLOCKED",
-					reason:
-						"the readback does not match a completed uncertain STOP of one ordinary live encoding",
-				};
+					);
+				const matchingRun =
+					channel.status === run.status && channel.error === run.error;
+				const terminalHeartbeat =
+					run.status === "STOPPED" &&
+					run.error === null &&
+					run.providerTerminalAt &&
+					run.providerStatusObservedAt &&
+					classifyProviderStatusWord(run.providerStatus) === "TERMINAL";
+				if (
+					proof.generation !== stopGeneration ||
+					liveChannelAccountId(channel) !== proof.bitmovinAccountId ||
+					(!interrupted && !matchesFailure) ||
+					!(
+						matchingRun ||
+						terminalHeartbeat ||
+						(interrupted && run.status === "RUNNING" && run.error === null)
+					)
+				)
+					return blocked(
+						"the terminal GET cannot be bound to this interrupted or uncertain STOP",
+					);
+			} else {
+				if (
+					channel.status !== confirmedStatus ||
+					channel.error !== confirmedError ||
+					run.status !== confirmedStatus ||
+					run.error !== confirmedError
+				)
+					return blocked("the exact channel STOP is not confirmed clean");
+				if (
+					input.interruptedAckGeneration !== undefined &&
+					(input.interruptedAckGeneration !== stopGeneration ||
+						(stopClaim.state === "DISPATCHING" &&
+							stopClaim.expiresAt > input.at))
+				)
+					return blocked("the interrupted STOP owner has not expired");
 			}
-			if (feeder) {
-				return {
-					kind: "BLOCKED",
-					reason: "a feeder still occupies the ended live run",
-				};
-			}
-			// A superseded STOP can be the only record of a second encoder.
-			// Preserve that evidence on initial ACK, redelivery and periodic recovery.
-			const otherStop = await tx.liveEffectClaim.findFirst({
-				where: {
-					id: { not: input.stopClaimId },
-					liveChannelId: input.liveChannelId,
-					liveChannelRunId: input.liveChannelRunId,
-					action: "STOP",
-					state: { in: [...LIVE_EFFECT_OPEN_STATES] },
-				},
-				select: { id: true },
-			});
-			if (otherStop)
-				return {
-					kind: "BLOCKED",
-					reason:
-						"another unresolved STOP on this run needs independent target verification",
-				};
 			// Advance the same CAS that beginLiveEffect uses. A stale admission that
 			// read the pre-reconciliation fence must lose even if it resumes only after
 			// this transaction commits; a no-op row lock would not invalidate it.
@@ -719,14 +822,15 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 							action: "STOP",
 							generation: stopGeneration,
 							state: {
-								in: proof ? ["AMBIGUOUS"] : ["DISPATCHING", "AMBIGUOUS"],
+								in: [stopClaim.state],
 							},
 						},
 					},
 				},
 				data: {
 					liveEffectFenceVersion: { increment: 1 },
-					...(proof && { status: confirmedStatus, error: confirmedError }),
+					status: confirmedStatus,
+					error: confirmedError,
 				},
 			});
 			if (locked.count !== 1) {
@@ -735,12 +839,12 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					reason: "the exact channel STOP changed during reconciliation",
 				};
 			}
-			if (proof) {
+			{
 				const projected = await tx.liveChannelRun.updateMany({
 					where: {
 						id: run.id,
 						liveChannelId: input.liveChannelId,
-						bitmovinEncodingId: input.providerEncodingId,
+						bitmovinEncodingId: run.bitmovinEncodingId,
 						status: run.status,
 						error: run.error,
 					},
@@ -748,9 +852,14 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						status: confirmedStatus,
 						error: confirmedError,
 						endedAt: run.endedAt ?? input.at,
-						providerStatus: proof.providerStatus,
-						providerStatusObservedAt: input.at,
+						bitmovinEncodingId: input.providerEncodingId,
+						heartbeatPollEpoch: { increment: 1 },
+						providerStatus,
+						providerStatusObservedAt:
+							proof || owner ? input.at : run.providerStatusObservedAt,
+						...(run.aisaAnalysisId && { cancelRequested: false }),
 						providerUnknownSince: null,
+						providerUnknownAlertedAt: null,
 						providerTerminalAt: run.providerTerminalAt ?? input.at,
 					},
 				});
@@ -766,7 +875,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					providerEncodingId: input.providerEncodingId,
 					action: "STOP",
 					generation: stopGeneration,
-					state: { in: proof ? ["AMBIGUOUS"] : ["DISPATCHING", "AMBIGUOUS"] },
+					state: { in: [stopClaim.state] },
 					// Keep the ownership predicate on the ACK itself as a second fence. The
 					// channel row is already write-locked above against re-air admission.
 					liveChannel: {
@@ -781,7 +890,9 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				data: {
 					state: "ACKED",
 					acknowledgedAt: input.at,
-					...(periodic ? {} : { failure: confirmedError }),
+					...(confirmedError && !stopClaim.failure
+						? { failure: confirmedError }
+						: {}),
 				},
 			});
 			if (acknowledged.count !== 1) {
@@ -789,6 +900,27 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				// re-runs authoritative readback and never sends a second provider STOP.
 				throw new Error("LIVE_STOP_RECONCILIATION_ACK_FENCE_LOST");
 			}
+			for (const sibling of stops.filter((c) => c.id !== input.stopClaimId)) {
+				const finished = await tx.liveEffectClaim.updateMany({
+					where: {
+						id: sibling.id,
+						token: sibling.token,
+						generation: sibling.generation,
+						providerEncodingId: input.providerEncodingId,
+						state: sibling.state,
+					},
+					data: { state: "ACKED", acknowledgedAt: input.at },
+				});
+				if (finished.count !== 1)
+					throw new Error("LIVE_STOP_RECONCILIATION_SIBLING_FENCE_LOST");
+			}
+			await recordConfirmedStopDelivery(tx, {
+				liveChannelId: input.liveChannelId,
+				liveChannelRunId: run.id,
+				status: confirmedStatus,
+				at: input.at,
+				scheduleIds: stops.flatMap((c) => (c.scheduleId ? [c.scheduleId] : [])),
+			});
 			const { count } = await tx.liveEffectClaim.updateMany({
 				where: {
 					id: { not: input.stopClaimId },
@@ -801,17 +933,14 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				data: {
 					state: "RESOLVED",
 					acknowledgedAt: input.at,
-					...(periodic
-						? {}
-						: {
-								failure:
-									"resolved by authoritative provider-terminal and feeder-stop readback",
-							}),
 				},
 			});
 			return {
 				kind: "RESOLVED",
 				count,
+				...(confirmedStatus === "ERROR"
+					? { terminalFailure: true as const }
+					: {}),
 				...(proof && channel.status === "ERROR"
 					? { recoveredFromError: true as const }
 					: {}),
@@ -821,13 +950,58 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 	);
 }
 
+export async function wasLiveStopAcknowledged(
+	db: Pick<AppTransactionClient, "liveEffectClaim">,
+	claim: Pick<
+		LiveEffectClaimHandle,
+		| "id"
+		| "idempotencyKey"
+		| "liveChannelId"
+		| "liveChannelRunId"
+		| "providerEncodingId"
+	>,
+): Promise<boolean> {
+	const row = await db.liveEffectClaim.findUnique({
+		where: { id: claim.id },
+		select: {
+			state: true,
+			action: true,
+			idempotencyKey: true,
+			liveChannelId: true,
+			liveChannelRunId: true,
+			providerEncodingId: true,
+		},
+	});
+	return (
+		row?.state === "ACKED" &&
+		row.action === "STOP" &&
+		row.idempotencyKey === claim.idempotencyKey &&
+		row.liveChannelId === claim.liveChannelId &&
+		row.liveChannelRunId === claim.liveChannelRunId &&
+		row.providerEncodingId === claim.providerEncodingId
+	);
+}
+
 export async function resolveLiveEffectsAfterConfirmedStop(
 	prisma: AppPrismaClient,
 	input: ResolveLiveEffectsAfterConfirmedStopInput,
 ): Promise<ResolveLiveEffectsAfterConfirmedStopResult> {
 	for (let attempt = 0; ; attempt += 1) {
 		try {
-			return await resolveLiveEffectsAfterConfirmedStopOnce(prisma, input);
+			const outcome = await resolveLiveEffectsAfterConfirmedStopOnce(
+				prisma,
+				input,
+			);
+			if (
+				outcome.kind === "BLOCKED" &&
+				(await wasLiveStopAcknowledged(prisma, {
+					...input,
+					id: input.stopClaimId,
+					idempotencyKey: input.stopIdempotencyKey,
+				}))
+			)
+				return { kind: "ALREADY_ACKED" };
+			return outcome;
 		} catch (error) {
 			if (!isPrismaSerializationConflict(error) || attempt >= 2) throw error;
 		}
@@ -892,6 +1066,70 @@ export async function markLiveEffectAcked(
 		},
 	});
 	return count === 1;
+}
+
+/** A late owner cannot overwrite the winner's channel, history, or error evidence. */
+export async function recordLiveStopFailure(
+	prisma: AppPrismaClient,
+	claim: LiveEffectClaimHandle,
+	input: {
+		status: "STOPPED" | "ERROR";
+		error: string;
+		failure: string;
+		state: "FAILED" | "AMBIGUOUS";
+		at: Date;
+	},
+): Promise<"RECORDED" | "ALREADY_ACKED" | "LOST"> {
+	return prisma.$transaction(async (tx) => {
+		const current = await tx.liveChannel.updateMany({
+			where: {
+				id: claim.liveChannelId,
+				liveEffectFenceVersion: claim.generation,
+				bitmovinEncodingId: claim.providerEncodingId,
+				effectClaims: {
+					some: {
+						id: claim.id,
+						token: claim.token,
+						action: "STOP",
+						state: "DISPATCHING",
+					},
+				},
+			},
+			data: { status: input.status, error: input.error },
+		});
+		if (!current.count) {
+			return (await wasLiveStopAcknowledged(tx, claim))
+				? "ALREADY_ACKED"
+				: "LOST";
+		}
+		const run = {
+			id: claim.liveChannelRunId,
+			liveChannelId: claim.liveChannelId,
+		};
+		const projected = await tx.liveChannelRun.updateMany({
+			where: run,
+			data: { status: input.status, error: input.error },
+		});
+		const marked = await tx.liveEffectClaim.updateMany({
+			where: { id: claim.id, token: claim.token, state: "DISPATCHING" },
+			data: { state: input.state, failure: input.failure },
+		});
+		if (projected.count !== 1 || marked.count !== 1)
+			throw new Error("LIVE_STOP_FAILURE_FENCE_LOST");
+		await recordStopScheduleFailure(tx, claim.id, {
+			liveChannelId: claim.liveChannelId,
+			liveChannelRunId: claim.liveChannelRunId,
+			state: input.state,
+			status: input.status,
+			error: input.error,
+			at: input.at,
+		});
+		await tx.liveChannelRun.updateMany({
+			where: { ...run, endedAt: null },
+			data: { endedAt: input.at },
+		});
+		return "RECORDED";
+	});
 }
 
 export async function markLiveEffectAmbiguous(

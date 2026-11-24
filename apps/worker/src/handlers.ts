@@ -36,7 +36,7 @@ export type HandlerDeps = {
 	storageInspect(jobData: unknown): Promise<unknown>;
 	vodInputPreview(jobData: unknown): Promise<{ status: string }>;
 	/** Outbound notification delivery : one event, fan-out. */
-	notify(jobData: unknown): Promise<unknown>;
+	notify(jobData: unknown, jobId?: string): Promise<unknown>;
 	startupProbe: (data: unknown) => Promise<unknown>;
 	/**
 	 * Slate normalization : the whole job, because the queue carries
@@ -67,7 +67,7 @@ export function createHandlers(deps: HandlerDeps): Record<QueueKey, Handler> {
 			return { acknowledged: true, queue: "orchestrator" };
 		},
 		notify: async (job: Job) => {
-			await deps.notify(job.data);
+			await deps.notify(job.data, job.id);
 			return { acknowledged: true, queue: "notify" };
 		},
 		liveChannel: async (job: Job) => {

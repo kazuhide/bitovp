@@ -159,6 +159,7 @@ const EXPERIMENT_MODELS = [
 	"encodingExperimentBatch",
 ];
 const PRESERVES = [
+	"liveStopNotification",
 	...RESET_PROTECTED_EDITING_MODELS,
 	...EXPERIMENT_MODELS,
 	"createRequest",

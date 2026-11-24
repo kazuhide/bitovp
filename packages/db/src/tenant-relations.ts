@@ -15,6 +15,9 @@ export const TENANT_MODEL_RELATIONS: Readonly<
 		outputLibraryMediaVersions: "libraryMediaVersion",
 		renderOutputRuns: "renderRun",
 	},
+	liveStopNotification: {
+		organization: "organization",
+	},
 	resetCleanupTask: {
 		organization: "organization",
 	},

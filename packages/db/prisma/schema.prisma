@@ -114,6 +114,24 @@ model ResetCleanupTask {
   @@index([organizationId])
 }
 
+/// One pending terminal product event per broadcast. Channel deletion keeps its delivery work.
+model LiveStopNotification {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// The immutable broadcast run ID. The event can outlive the channel and run.
+  id             String @id @db.Uuid
+  channelId      String @db.Uuid
+  channelName    String
+  kind           String
+  occurredAt     DateTime
+  failures       Int @default(0)
+  nextAttemptAt  DateTime @default(now())
+  leaseToken     String? @db.Uuid
+
+  @@index([organizationId, nextAttemptAt, id])
+}
+
 model BitmovinAccount {
   organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
@@ -1035,7 +1053,7 @@ model LiveChannelRun {
   /// Transactional handoff of the confirmed STOP event for this broadcast.
   stopNotificationKind          String?
   stopNotificationAt            DateTime?
-  stopNotificationQueuedAt      DateTime?
+  stopNotificationState         String?
   /// Snapshot of the window THIS run served (R6): the channel's own
   /// programStartAt/EndAt mean the UPCOMING window and get rewritten.
   programStartAt                DateTime?
@@ -3001,6 +3019,7 @@ model Organization {
   appSettingRows AppSetting[]
   credentialRows Credential[]
   resetCleanupTaskRows ResetCleanupTask[]
+  liveStopNotificationRows LiveStopNotification[]
   bitmovinAccountRows BitmovinAccount[]
   storageLocationPresetRows StorageLocationPreset[]
   createRequestRows CreateRequest[]

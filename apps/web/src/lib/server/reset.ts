@@ -64,6 +64,8 @@ export const RESET_DELETES = [
  * would cascade away the exact proof needed to find and clean a paid resource.
  */
 export const RESET_PRESERVES = [
+	// The pending terminal event remains deliverable after its broadcast is deleted.
+	"liveStopNotification",
 	// A stale create retry must remain spent after its resource is reset.
 	"createRequest",
 	...RESET_RETAINED_EXPERIMENT_MODELS,

@@ -14,6 +14,7 @@ import { HEARTBEAT_SWEEP_JOB } from "../handlers";
 import type { EmitProductEvent } from "../notify/emitter";
 import {
 	legacyScheduleId,
+	recordScheduleOutcome,
 	recordScheduleOutcomeBestEffort,
 	type ScheduleOutcome,
 	type ScheduleOutcomeTarget,
@@ -410,6 +411,26 @@ export async function recordFinalStopFailure(
 			throw new Error(
 				"Live STOP failure lost its exact airing during projection",
 			);
+		if (
+			intent.scheduleId &&
+			job?.id === `sched-${intent.scheduleId}` &&
+			intent.idempotencyKey === `schedule:${intent.scheduleId}:stop`
+		) {
+			await recordScheduleOutcome(
+				tx,
+				{
+					scheduledStop: {
+						id: intent.scheduleId,
+						liveChannelId: intent.liveChannelId,
+						liveChannelRunId: currentRun.id,
+					},
+				},
+				"UNKNOWN",
+				error,
+				new Date(),
+				"JOB_TERMINAL_UNKNOWN",
+			);
+		}
 		return { projected: true as const, channelName: channel.name };
 	});
 	if (!result.projected) return false;

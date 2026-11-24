@@ -42,8 +42,6 @@ export async function resolveProvisionAdmission(
 				select: {
 					liveChannelRunId: true,
 					startAdmissionFenceVersion: true,
-					dispatchedAt: true,
-					firedAt: true,
 				},
 			})
 		: null;
@@ -56,86 +54,64 @@ export async function resolveProvisionAdmission(
 				delivery.provisionFenceVersion !== row.startAdmissionFenceVersion)
 		)
 			return null;
+		// A pre-upgrade queued job can predate a later revival of the same
+		// run even if its asynchronous dispatch ACK was recorded afterwards.
+		if (
+			delivery.provisionFenceVersion === undefined &&
+			queuedAt !== undefined
+		) {
+			const run = await prisma.liveChannelRun.findFirst({
+				where: { id: row.liveChannelRunId, liveChannelId: channelId },
+				select: { legacyProvisionAdmissionAt: true },
+			});
+			if (
+				run?.legacyProvisionAdmissionAt &&
+				queuedAt < run.legacyProvisionAdmissionAt.getTime()
+			)
+				return null;
+		}
 		return {
 			runId: row.liveChannelRunId,
 			generation: row.startAdmissionFenceVersion,
 		};
 	}
-	if (delivery.provisionFenceVersion !== undefined) return null;
-	// Pre-upgrade jobs carried only a timestamped manual ID or sched-<id>.
-	// Bound their possible admission by both the immutable migration fence and
-	// their original enqueue time. A delayed callback must never target a revival.
-	const time = legacyManual
-		? Number(jobId?.slice(manualPrefix.length))
-		: queuedAt !== undefined && row?.dispatchedAt
-			? Math.min(queuedAt, row.dispatchedAt.getTime())
-			: (queuedAt ?? row?.dispatchedAt?.getTime() ?? row?.firedAt?.getTime());
-	if (time === undefined || !Number.isSafeInteger(time) || time <= 0)
-		return null;
-	const [channel, current] = await Promise.all([
-		prisma.liveChannel.findUnique({
-			where: { id: channelId },
-			select: {
-				legacyAdmissionFenceVersion: true,
-				liveEffectFenceVersion: true,
-				updatedAt: true,
+	// The migration pins legacy scheduled admissions to their actual run. A
+	// fresh Redis timestamp cannot supply the binding an old schedule lacked.
+	if (scheduleId || delivery.provisionFenceVersion !== undefined) return null;
+	const time = Number(jobId?.slice(manualPrefix.length));
+	if (!Number.isSafeInteger(time) || time <= 0) return null;
+	const channel = await prisma.liveChannel.findUnique({
+		where: { id: channelId },
+		select: {
+			liveEffectFenceVersion: true,
+			legacyAdmissionFenceVersion: true,
+			runs: {
+				orderBy: { seq: "desc" },
+				take: 1,
+				select: { id: true, legacyProvisionAdmissionAt: true },
 			},
-		}),
-		prisma.liveChannelRun.findFirst({
-			where: { liveChannelId: channelId },
-			orderBy: { seq: "desc" },
-			select: { id: true, seq: true, updatedAt: true },
-		}),
-	]);
+		},
+	});
+	const run = channel?.runs[0];
 	if (
 		!channel ||
 		channel.legacyAdmissionFenceVersion !== channel.liveEffectFenceVersion ||
-		!current ||
-		channel.updatedAt.getTime() > time ||
-		current.updatedAt.getTime() > time ||
-		(runId && runId !== current.id) ||
-		(row?.liveChannelRunId && row.liveChannelRunId !== current.id)
+		!run?.legacyProvisionAdmissionAt ||
+		run.legacyProvisionAdmissionAt.getTime() >
+			Math.min(time, queuedAt ?? time) ||
+		(runId && runId !== run.id)
 	)
 		return null;
-	if (row && scheduleId) {
-		// Promote a verified legacy job so its finish, retry and failure own exactly
-		// one schedule even when its old payload and FIRED row had no run ID.
-		const saved = await prisma.liveSchedule.updateMany({
-			where: {
-				id: scheduleId,
-				action: "START",
-				status: "FIRED",
-				liveChannelId: channelId,
-				liveChannelRunId: row.liveChannelRunId,
-				startAdmissionFenceVersion: null,
-				liveChannel: {
-					legacyAdmissionFenceVersion: channel.liveEffectFenceVersion,
-					liveEffectFenceVersion: channel.liveEffectFenceVersion,
-					runs: {
-						some: { id: current.id },
-						none: { seq: { gt: current.seq } },
-					},
-				},
-			},
-			data: {
-				liveChannelRunId: current.id,
-				startAdmissionFenceVersion: channel.liveEffectFenceVersion,
-			},
-		});
-		if (!saved.count) {
-			const winner = await prisma.liveSchedule.findFirst({
-				where: {
-					id: scheduleId,
-					liveChannelId: channelId,
-					action: "START",
-					status: "FIRED",
-					liveChannelRunId: current.id,
-					startAdmissionFenceVersion: channel.liveEffectFenceVersion,
-				},
-				select: { id: true },
-			});
-			if (!winner) return null;
-		}
-	}
-	return { runId: current.id, generation: channel.liveEffectFenceVersion };
+	const scheduledOwner = await prisma.liveSchedule.findFirst({
+		where: {
+			liveChannelId: channelId,
+			liveChannelRunId: run.id,
+			action: "START",
+			status: "FIRED",
+			startAdmissionFenceVersion: channel.liveEffectFenceVersion,
+		},
+		select: { id: true },
+	});
+	if (scheduledOwner) return null;
+	return { runId: run.id, generation: channel.liveEffectFenceVersion };
 }

@@ -466,7 +466,7 @@ export type ScheduleSweep = (() => Promise<ScheduleSweepStats>) & {
 };
 
 type SweepDeps = {
-	recoverExhaustedLegacyStops?: () => Promise<void>;
+	recoverExhaustedDeliveries?: () => Promise<void>;
 	prisma: AppPrismaClient;
 	allowNewWork?: () => Promise<boolean>;
 	enqueue(job: LiveChannelJob, dedupeId: string): Promise<void>;
@@ -2165,7 +2165,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	}
 
 	async function dispatchPendingOnce(): Promise<number> {
-		await deps.recoverExhaustedLegacyStops?.();
+		await deps.recoverExhaustedDeliveries?.();
 		const now = deps.now();
 		let redispatched = 0;
 		// Outbox failures retain their rows. Resume in stable schedule order,

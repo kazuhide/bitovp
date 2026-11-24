@@ -988,6 +988,8 @@ model LiveChannelRun {
   id                            String            @id @default(uuid()) @db.Uuid
   liveChannelId                 String            @db.Uuid
   liveChannel                   LiveChannel       @relation(fields: [liveChannelId], references: [id], onDelete: Cascade)
+  /// Upgrade-only lower bound for a timestamped START delivery on this airing.
+  legacyProvisionAdmissionAt DateTime?
   /// Monotonic per channel, starting at one; displayed as the broadcast number.
   seq                           Int
   status                        LiveChannelStatus @default(CREATED)

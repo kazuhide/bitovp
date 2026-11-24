@@ -5,7 +5,7 @@ import {
 	type SecretCipher,
 	USAGE_BACKFILL_SETTING_PREFIX,
 } from "@bitovp/core";
-import type { AppPrismaClient, AppTransactionClient } from "@bitovp/db";
+import type { AppPrismaClient, AppTransactionClient, Prisma } from "@bitovp/db";
 import {
 	RESET_CATALOG,
 	RESET_PROTECTED_EDITING_MODELS,
@@ -70,12 +70,24 @@ export class SelectedResetLibraryEditingBlocked extends Error {
 	}
 }
 
-// The scheduler recovers a lost queue acknowledgement from this exact row.
-const pendingScheduledStop = {
-	action: "STOP",
+// These rows still authorize a queued START or a STOP recovery pass. Count
+// and delete against the same predicate so the confirmation matches the reset.
+const operativeSchedule: Prisma.LiveScheduleWhereInput = {
 	status: "FIRED",
-	outcome: "PENDING",
-} as const;
+	OR: [
+		{ action: "STOP", outcome: "PENDING" },
+		{
+			action: "STOP",
+			outcome: "UNKNOWN",
+			liveChannel: { status: "STOPPING" },
+		},
+		{
+			action: "START",
+			outcome: { in: ["PENDING", "UNKNOWN"] },
+			liveChannel: { status: { in: ["CREATED", "PROVISIONING"] } },
+		},
+	],
+};
 
 async function countProtectedEditing(prisma: ResetClient): Promise<number> {
 	return (
@@ -101,7 +113,7 @@ export async function countResetCategories(
 							model === "liveSchedule" &&
 								categories &&
 								!categories.has("liveChannels")
-								? { where: { NOT: pendingScheduledStop } }
+								? { where: { NOT: operativeSchedule } }
 								: model === "vmafComputeCredential"
 									? { where: { disabledAt: null } }
 									: model === "vmafExecutionProfile"
@@ -271,7 +283,7 @@ export async function deleteSelectedData(
 							const deleted =
 								model === "liveSchedule" && !selected.has("liveChannels")
 									? await tx.liveSchedule.deleteMany({
-											where: { NOT: pendingScheduledStop },
+											where: { NOT: operativeSchedule },
 										})
 									: model === "vmafComputeCredential"
 										? await delegate(tx, model).updateMany({

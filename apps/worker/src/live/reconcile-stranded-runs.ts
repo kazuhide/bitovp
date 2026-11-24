@@ -3,6 +3,7 @@ import {
 	LIVE_EFFECT_OPEN_STATES,
 	STRANDED_RUN_ERROR,
 } from "@bitovp/db";
+import { recordScheduleOutcome } from "../scheduler/schedule-outcome";
 
 /**
  *  — a LiveChannelRun stranded in a transitional state makes its
@@ -108,6 +109,7 @@ export async function recordExpiredProvisionFailure(
 	staleBefore: Date,
 	at: Date,
 	admission: Admission,
+	scheduleId?: string,
 ): Promise<boolean> {
 	return (
 		(await projectProvisionFailure(
@@ -117,6 +119,8 @@ export async function recordExpiredProvisionFailure(
 			staleBefore,
 			at,
 			admission,
+			undefined,
+			scheduleId,
 		)) === "RETIRED"
 	);
 }
@@ -151,6 +155,7 @@ async function projectProvisionFailure(
 	at: Date,
 	admission: Admission,
 	inactive?: { scheduleId?: string },
+	exhaustedScheduleId?: string,
 ): Promise<"RETIRED" | "UNCHANGED" | "COMMITTED"> {
 	return prisma.$transaction(async (tx) => {
 		const locked = await tx.$queryRaw<
@@ -227,6 +232,26 @@ async function projectProvisionFailure(
 				},
 				data: { status: "ERROR", error, endedAt: at },
 			});
+		if (
+			exhaustedScheduleId &&
+			"runId" in admission &&
+			admission.generation !== undefined
+		)
+			await recordScheduleOutcome(
+				tx,
+				{
+					scheduledStart: {
+						id: exhaustedScheduleId,
+						liveChannelId,
+						liveChannelRunId: admission.runId,
+						startAdmissionFenceVersion: admission.generation,
+					},
+				},
+				"UNKNOWN",
+				error,
+				at,
+				"JOB_TERMINAL_UNKNOWN",
+			);
 		if (inactive?.scheduleId && "runId" in admission) {
 			await tx.liveSchedule.updateMany({
 				where: {

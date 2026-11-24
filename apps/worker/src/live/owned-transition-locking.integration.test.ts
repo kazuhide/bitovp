@@ -50,7 +50,8 @@ import {
 	recordFinalRestartFailure,
 	recordFinalStopFailure,
 } from "./dead-job-outcome";
-import { createExhaustedLegacyStopRecovery } from "./exhausted-legacy-stops";
+import { createExhaustedProvisionRecovery } from "./exhausted-provisions";
+import { createExhaustedScheduledStopRecovery } from "./exhausted-scheduled-stops";
 import { requestProbeStop } from "./probe-runner";
 import {
 	createProviderLifecycleReconciler,
@@ -980,6 +981,18 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			});
 		}
 
+		async function snapshotLegacyAdmissions() {
+			const migration = readFileSync(
+				new URL(
+					"../../../../packages/db/prisma/migrations/20261125133000_live_start_admission/migration.sql",
+					import.meta.url,
+				),
+				"utf8",
+			);
+			const bootstrap = migration.slice(migration.indexOf("DO $$"));
+			await admin.$executeRawUnsafe(bootstrap);
+		}
+
 		it("snapshots only pending upgrade generations across tenant-scoped START and STOP histories", async () => {
 			const pending = await fixture("PROVISIONING", null);
 			const stopped = await fixture("STOPPED", null);
@@ -991,15 +1004,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					liveEffectFenceVersion: 8,
 				},
 			});
-			const migration = readFileSync(
-				new URL(
-					"../../../../packages/db/prisma/migrations/20261125133000_live_start_admission/migration.sql",
-					import.meta.url,
-				),
-				"utf8",
-			);
-			const bootstrap = migration.slice(migration.indexOf("DO $$"));
-			await admin.$executeRawUnsafe(bootstrap);
+			await snapshotLegacyAdmissions();
 			expect(
 				(
 					await tenant.liveChannel.findUniqueOrThrow({
@@ -1303,11 +1308,21 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				data: {
 					liveChannelId: f.channel.id,
 					action: "START",
+					liveChannelRunId: kind === "scheduled" ? f.run.id : null,
 					status: "FIRED",
 					fireAt: now,
 					firedAt: now,
 					dispatchedAt: at,
 				},
+			});
+			await tenant.liveSchedule.update({
+				where: { id: row.id },
+				data: { dispatchJobId: `sched-${row.id}` },
+			});
+			await snapshotLegacyAdmissions();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { maxRunMinutes: 73, updatedAt: new Date(at.getTime() + 10000) },
 			});
 			const id =
 				kind === "manual"
@@ -1320,18 +1335,42 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				id,
 				at.getTime(),
 			);
+			if (kind === "scheduled")
+				expect(
+					await resolveProvisionAdmission(
+						tenant,
+						f.channel.id,
+						{},
+						`${f.channel.id}-provision-${at.getTime()}`,
+						at.getTime(),
+					),
+				).toBeNull();
 			expect(admission).toEqual({ runId: f.run.id, generation: 5 });
 			if (!admission) throw new Error("missing retained job");
-			expect(
-				await recordExpiredProvisionFailure(
-					tenant,
-					f.channel.id,
-					"exhausted",
-					at,
-					at,
-					admission,
-				),
-			).toBe(true);
+			const data = { liveChannelId: f.channel.id, action: "provision" };
+			const readJob = vi.fn(async (key: string) =>
+				key === id
+					? {
+							id,
+							data,
+							timestamp: at.getTime(),
+							getState: async () => "failed",
+						}
+					: undefined,
+			);
+			const recover = createExhaustedProvisionRecovery(
+				tenant,
+				async () => [id],
+				readJob,
+			);
+			await recover(at);
+			const outcome = await tenant.liveSchedule.findUniqueOrThrow({
+				where: { id: row.id },
+			});
+			expect(outcome.outcome).toBe(
+				kind === "scheduled" ? "UNKNOWN" : "PENDING",
+			);
+
 			expect(
 				await tenant.liveChannelRun.findUniqueOrThrow({
 					where: { id: f.run.id },
@@ -1365,6 +1404,234 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			}
 		});
 
+		it("preserves an unstamped scheduler handoff committed with its run and refuses earlier deliveries", async () => {
+			const f = await fixture("PROVISIONING", null);
+			const other = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "START",
+					status: "FIRED",
+					fireAt: now,
+					firedAt: now,
+				},
+			});
+			const heldAt = new Date(Date.now() - 1_000);
+			const admitted = await tenant.$transaction(async (tx) => {
+				await tx.liveChannelRun.update({
+					where: { id: f.run.id },
+					data: { updatedAt: heldAt },
+				});
+				return tx.liveSchedule.create({
+					data: {
+						liveChannelId: f.channel.id,
+						liveChannelRunId: f.run.id,
+						action: "START",
+						status: "FIRED",
+						fireAt: now,
+						firedAt: now,
+					},
+				});
+			});
+			await snapshotLegacyAdmissions();
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { lastHeartbeatAt: new Date() },
+			});
+			expect(
+				await resolveProvisionAdmission(
+					tenant,
+					f.channel.id,
+					{},
+					`sched-${admitted.id}`,
+					heldAt.getTime() + 50,
+				),
+			).toEqual({ runId: f.run.id, generation: 0 });
+			expect(
+				await resolveProvisionAdmission(
+					tenant,
+					f.channel.id,
+					{},
+					`sched-${admitted.id}`,
+					heldAt.getTime() - 50,
+				),
+			).toBeNull();
+			expect(
+				await resolveProvisionAdmission(
+					tenant,
+					f.channel.id,
+					{},
+					`sched-${other.id}`,
+					Date.now(),
+				),
+			).toBeNull();
+			expect(
+				await resolveProvisionAdmission(
+					tenant,
+					f.channel.id,
+					{},
+					`${f.channel.id}-provision-${heldAt.getTime() - 50}`,
+					Date.now(),
+				),
+			).toBeNull();
+		});
+		it("leaves conflicting retained START receipts unassigned for both manual and scheduled jobs", async () => {
+			const f = await fixture("PROVISIONING", null);
+			const at = new Date(Date.now() + 1000);
+			const ids = [randomUUID(), randomUUID()];
+			await tenant.liveSchedule.createMany({
+				data: ids.map((id) => ({
+					id,
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "START",
+					status: "FIRED",
+					fireAt: now,
+					firedAt: now,
+					dispatchedAt: at,
+					dispatchJobId: `sched-${id}`,
+				})),
+			});
+			await snapshotLegacyAdmissions();
+			for (const id of [
+				...ids.map((id) => `sched-${id}`),
+				`${f.channel.id}-provision-${at.getTime()}`,
+			])
+				expect(
+					await resolveProvisionAdmission(
+						tenant,
+						f.channel.id,
+						{},
+						id,
+						at.getTime(),
+					),
+				).toBeNull();
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({ status: "PROVISIONING", provisionClaimedAt: null });
+		});
+		it("never credits an unbound pre-upgrade START to a later manual job on redispatch", async () => {
+			const f = await fixture("PROVISIONING", null);
+			const old = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					action: "START",
+					status: "FIRED",
+					fireAt: lease,
+					firedAt: lease,
+				},
+			});
+			await snapshotLegacyAdmissions();
+			const at = Date.now() + 10_000;
+			const admission = await resolveProvisionAdmission(
+				tenant,
+				f.channel.id,
+				{},
+				`sched-${old.id}`,
+				at,
+			);
+			expect(admission).toBeNull();
+			expect(
+				(await tenant.liveSchedule.findUniqueOrThrow({ where: { id: old.id } }))
+					.liveChannelRunId,
+			).toBeNull();
+		});
+
+		it.each([
+			"failed",
+			"waiting",
+			"purged",
+			"wrong target",
+			"new generation",
+		] as const)("recovers only the admitted current STOP after a lost terminal callback (%s)", async (scenario) => {
+			const f = await dispatchFixture();
+			const schedule = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "STOP",
+					fireAt: now,
+				},
+			});
+			const jobs = new Map<string, import("@bitovp/core").LiveChannelJob>();
+			const enqueue = vi.fn(
+				async (job: import("@bitovp/core").LiveChannelJob, id: string) => {
+					jobs.set(id, job);
+				},
+			);
+			const sweep = createScheduleSweep({
+				prisma: tenant,
+				now: () => now,
+				enqueue,
+			});
+			await sweep();
+			const id = `sched-${schedule.id}`;
+			const original = jobs.get(id);
+			if (!original?.effect) throw new Error("missing original STOP");
+			const data =
+				scenario === "wrong target"
+					? {
+							...original,
+							effect: { ...original.effect, providerEncodingId: randomUUID() },
+						}
+					: original;
+			if (scenario === "new generation")
+				await tenant.liveChannel.update({
+					where: { id: f.channel.id },
+					data: { liveEffectFenceVersion: { increment: 1 } },
+				});
+			const read = vi.fn(async (key: string) =>
+				key !== id || scenario === "purged"
+					? undefined
+					: {
+							id,
+							data,
+							finishedOn: now.getTime(),
+							getState: async () =>
+								scenario === "waiting" ? "waiting" : "failed",
+						},
+			);
+			const resume = vi.fn(async () => {});
+			const recovery = createExhaustedScheduledStopRecovery(
+				f.deps,
+				read,
+				resume,
+			);
+			await recovery();
+			expect(
+				(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					})
+				).status,
+			).toBe(scenario === "failed" ? "ERROR" : "STOPPING");
+			expect(
+				(
+					await tenant.liveChannelRun.findUniqueOrThrow({
+						where: { id: f.run.id },
+					})
+				).status,
+			).toBe(scenario === "failed" ? "ERROR" : "STOPPING");
+			expect(
+				(
+					await tenant.liveSchedule.findUniqueOrThrow({
+						where: { id: schedule.id },
+					})
+				).outcome,
+			).toBe(scenario === "failed" ? "UNKNOWN" : "PENDING");
+			if (scenario === "purged")
+				expect(resume).toHaveBeenCalledWith(original, id);
+			else expect(resume).not.toHaveBeenCalled();
+			expect(
+				await tenant.liveEffectClaim.count({
+					where: { liveChannelId: f.channel.id },
+				}),
+			).toBe(0);
+			expect(f.sdk.getEncodingStatus).not.toHaveBeenCalled();
+			await tenant.liveSchedule.delete({ where: { id: schedule.id } });
+		});
 		it.each([
 			"unknown",
 			"failed",
@@ -1396,6 +1663,12 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					outcome: ["unknown", "successor"].includes(scenario)
 						? "UNKNOWN"
 						: "PENDING",
+					...(scenario === "purged"
+						? {
+								stopProviderEncodingId: f.encodingId,
+								stopAdmissionFenceVersion: 2,
+							}
+						: {}),
 					dispatchedAt: now,
 				},
 			});
@@ -1421,7 +1694,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 								scenario === "waiting" ? "waiting" : "failed",
 						},
 			);
-			const probe = createExhaustedLegacyStopRecovery(f.deps, queue);
+			const probe = createExhaustedScheduledStopRecovery(f.deps, queue);
 			await probe();
 			const key = { idempotencyKey: `schedule:${row.id}:stop` };
 			const claim = await tenant.liveEffectClaim.findFirst({ where: key });

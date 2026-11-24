@@ -9,6 +9,7 @@ import {
 	FEEDER_CONCURRENCY,
 	hashEditingEvidence,
 	INGRESS_RESOLVE_INTERVAL_MS,
+	type LiveChannelJob,
 	loadEnv,
 	PUBLISH_LOCAL_SEMANTIC_DIAGNOSTIC,
 	PUBLISH_LOCAL_STORY_CHOICE_DIAGNOSTIC,
@@ -116,7 +117,8 @@ import {
 	recordFinalStopFailure,
 	releaseDeadStageClaim,
 } from "./live/dead-job-outcome";
-import { createExhaustedLegacyStopRecovery } from "./live/exhausted-legacy-stops";
+import { createExhaustedProvisionRecovery } from "./live/exhausted-provisions";
+import { createExhaustedScheduledStopRecovery } from "./live/exhausted-scheduled-stops";
 import { releaseDeadLiveToVodIfFinal } from "./live/live-to-vod-release";
 import { createOriginObserver } from "./live/origin-observer";
 import {
@@ -163,6 +165,7 @@ import {
 } from "./orchestrator/stop-remote-encodings";
 import { createResetCleanupSweep } from "./reset/cleanup";
 import { resetCleanupProvider } from "./reset/provider";
+import { legacyScheduleId } from "./scheduler/schedule-outcome";
 import {
 	createScheduleSweep,
 	DEFAULT_START_GRACE_MINUTES,
@@ -1859,33 +1862,49 @@ setTenantInterval(() => {
 	);
 }, 60_000).unref();
 
-const scheduleSweep = tenantService(() =>
-	createScheduleSweep({
-		recoverExhaustedLegacyStops: createExhaustedLegacyStopRecovery(
-			processorDeps,
-			(id) => liveChannelQueue.getJob(id),
-		),
+async function enqueueScheduledLiveJob(job: LiveChannelJob, dedupeId: string) {
+	await liveChannelQueue.add("live-channel", job, {
+		jobId: dedupeId,
+		// review-190 I3/C2: a scheduled action must survive a transient
+		// failure (the review-183 C1 lesson — BullMQ's default attempts
+		// is 0), and completed sched-* jobs must not pile up in Redis.
+		attempts: 5,
+		backoff: { type: "exponential", delay: 5_000 },
+		removeOnComplete: 1000,
+		removeOnFail: 1000,
+	});
+}
+
+const scheduleSweep = tenantService(() => {
+	const readJob = (id: string) => liveChannelQueue.getJob(id);
+	const recoverStops = createExhaustedScheduledStopRecovery(
+		processorDeps,
+		readJob,
+		enqueueScheduledLiveJob,
+	);
+	const recoverStarts = createExhaustedProvisionRecovery(
+		prisma,
+		(offset, limit) =>
+			liveChannelQueue.getRanges(["failed"], offset, offset + limit - 1, true),
+		readJob,
+	);
+	return createScheduleSweep({
+		recoverExhaustedDeliveries: async () => {
+			await recoverStops();
+			await recoverStarts(new Date()).catch(() =>
+				console.warn("[live] Failed startup queue inspection deferred"),
+			);
+		},
 		prisma,
 		allowNewWork: isOrganizationActive,
-		enqueue: async (job, dedupeId) => {
-			await liveChannelQueue.add("live-channel", job, {
-				jobId: dedupeId,
-				// review-190 I3/C2: a scheduled action must survive a transient
-				// failure (the review-183 C1 lesson — BullMQ's default attempts
-				// is 0), and completed sched-* jobs must not pile up in Redis.
-				attempts: 5,
-				backoff: { type: "exponential", delay: 5_000 },
-				removeOnComplete: 1000,
-				removeOnFail: 1000,
-			});
-		},
+		enqueue: enqueueScheduledLiveJob,
 		emitEvent,
 		now: () => new Date(),
 		startGraceMinutes: Number(
 			process.env.SCHEDULE_START_GRACE_MINUTES ?? DEFAULT_START_GRACE_MINUTES,
 		),
-	}),
-);
+	});
+});
 // : the tick is now TRACKED, so `shutdown` can await a sweep
 // that is between its committed claim and its `queue.add` instead of
 // closing the queue underneath it.
@@ -2180,6 +2199,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 								new Date(at.getTime() - PROVISION_LEASE_MS),
 								at,
 								admission,
+								legacyScheduleId(job?.id),
 							).catch((updateErr) =>
 								console.error(
 									"[worker:liveChannel] failed to mark channel/run ERROR:",

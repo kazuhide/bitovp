@@ -184,7 +184,7 @@ function whereOf(target: ScheduleOutcomeTarget): Prisma.LiveScheduleWhereInput {
  * so callers must hand it already redacted.
  */
 export async function recordScheduleOutcome(
-	prisma: AppPrismaClient,
+	prisma: Pick<AppPrismaClient, "liveSchedule">,
 	target: ScheduleOutcomeTarget,
 	outcome: Exclude<ScheduleOutcome, "PENDING">,
 	note: string | null,

@@ -33,7 +33,7 @@ import {
 	RESET_KEEPS,
 	reconcileEncoderPointers,
 } from "@/lib/server/reset";
-import { deleteSelectedData } from "./selected-reset";
+import { countResetCategories, deleteSelectedData } from "./selected-reset";
 
 /** Opt-in isolated PostgreSQL proof; fixtures belong to random organizations. */
 const adminUrl = process.env.BITOVP_TENANT_TEST_ADMIN_URL;
@@ -365,6 +365,32 @@ postgres("tenant PostgreSQL reset", () => {
 		await prisma.liveSchedule.create({
 			data: { ...data, outcome: "DELIVERED", dispatchedAt: firedAt },
 		});
+		const legacy = await prisma.liveSchedule.create({
+			data: {
+				...data,
+				stopProviderEncodingId: null,
+				stopAdmissionFenceVersion: null,
+				outcome: "UNKNOWN",
+			},
+		});
+		const starting = await prisma.liveChannel.create({
+			data: { name: "Pending start", plan: {}, status: "PROVISIONING" },
+		});
+		const startup = await prisma.liveSchedule.create({
+			data: {
+				liveChannelId: starting.id,
+				action: "START",
+				status: "FIRED",
+				fireAt: firedAt,
+				dispatchedAt: firedAt,
+				firedAt,
+			},
+		});
+		expect(
+			(await countResetCategories(prisma, new Set(["liveSchedules"]))).find(
+				(entry) => entry.category === "liveSchedules",
+			)?.count,
+		).toBe(1);
 		const enqueue = vi
 			.fn()
 			.mockRejectedValueOnce(new Error("queue receipt lost"))
@@ -382,6 +408,11 @@ postgres("tenant PostgreSQL reset", () => {
 			new AesGcmCipher(randomBytes(32)),
 		);
 		expect(result.counts.liveSchedule).toBe(1);
+		expect(
+			await prisma.liveSchedule.count({
+				where: { id: { in: [startup.id, legacy.id] } },
+			}),
+		).toBe(2);
 		expect(await sweep.dispatchPending()).toBe(1);
 		expect(enqueue.mock.calls[1]).toEqual(enqueue.mock.calls[0]);
 		expect(enqueue.mock.calls[1]?.[0]).toMatchObject({

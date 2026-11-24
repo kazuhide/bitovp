@@ -1159,7 +1159,9 @@ const orphanEncodingSweep = () =>
 setTenantInterval(orphanEncodingSweep, 60_000).unref();
 runTenantTick(() => orphanEncodingSweep());
 const reconcileUncertainStops = tenantService(() =>
-	createUncertainStopReconciler(processorDeps, (job) => liveChannel(job)),
+	createUncertainStopReconciler(processorDeps, (job, activeTargets) =>
+		liveChannel(job, undefined, false, activeTargets),
+	),
 );
 const reconcileExpiredRestarts = tenantService(() =>
 	createExpiredRestartReconciler(processorDeps.prisma, processorDeps.emitEvent),

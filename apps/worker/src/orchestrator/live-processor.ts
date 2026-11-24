@@ -1247,6 +1247,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		async stopChannel(
 			liveChannelId: string,
 			effect?: LiveEffectFence,
+			activeTargets?: ReadonlySet<string>,
 		): Promise<
 			"STOPPED" | "ERROR" | "EFFECT_AMBIGUOUS" | "EFFECT_ALREADY_ACKNOWLEDGED"
 		> {
@@ -1473,6 +1474,8 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						!!run.aisaAnalysisId &&
 						history.some((c) => c.stopAnalysisSendId === run.aisaAnalysisId);
 				}
+				if (activeTargets)
+					for (const id of ids) if (!activeTargets.has(id)) observeOnly.add(id);
 				for (const id of observeOnly) {
 					try {
 						const { status } = await sdk.getEncodingStatus(id);
@@ -7103,6 +7106,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		jobData: unknown,
 		queueJobId?: string,
 		firstQueueDelivery = false,
+		activeTargets?: ReadonlySet<string>,
 	): Promise<LiveChannelResult> {
 		const job = liveChannelJobSchema.parse(jobData);
 		const { liveChannelId } = job;
@@ -7288,6 +7292,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					const result = await actions.stopChannel(
 						liveChannelId,
 						prepared.fence,
+						activeTargets,
 					);
 					return effectResult(job, result);
 				} catch (err) {

@@ -371,6 +371,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				}),
 			).toEqual(channel);
 			expect(emitChannel).not.toHaveBeenCalled();
+			expect(
+				await tenant.liveStopNotification.count({ where: { id: run.id } }),
+			).toBe(0);
 			expect(await repair(7)).toMatchObject({
 				channelLanded: true,
 				terminalised: false,
@@ -382,7 +385,16 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					})
 				).status,
 			).toBe("STOPPED");
-			expect(emitChannel).toHaveBeenCalledOnce();
+			expect(emitChannel).not.toHaveBeenCalled();
+			expect(
+				await tenant.liveStopNotification.findUniqueOrThrow({
+					where: { id: run.id },
+				}),
+			).toMatchObject({
+				id: run.id,
+				channelId: channel.id,
+				kind: "CHANNEL_STOPPED",
+			});
 			expect(sdk.getEncodingStatus).not.toHaveBeenCalled();
 		});
 
@@ -693,7 +705,16 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						})
 					).status,
 				).toBe("STOPPED");
-				expect(attempt.emitChannel).toHaveBeenCalledOnce();
+				expect(attempt.emitChannel).not.toHaveBeenCalled();
+				expect(
+					await tenant.liveStopNotification.findUniqueOrThrow({
+						where: { id: run.id },
+					}),
+				).toMatchObject({
+					id: run.id,
+					channelId: channel.id,
+					kind: "CHANNEL_STOPPED",
+				});
 			}
 		});
 	},

@@ -957,10 +957,11 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			true,
 		])("recovers only the original unreserved STOP targets after process death (primary was reserved: %s)", async (primarySent) => {
 			const f = await dispatchFixture(),
-				secondary = randomUUID();
+				secondary = randomUUID(),
+				finished = randomUUID();
 			await tenant.liveChannelRun.update({
 				where: { id: f.run.id },
-				data: { previousProviderEncodingIds: [secondary] },
+				data: { previousProviderEncodingIds: [secondary, finished] },
 			});
 			const old = await beginLiveEffect(tenant, {
 				...f.identity,
@@ -979,6 +980,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				).toBe(true);
 			vi.mocked(f.sdk.getEncodingStatus).mockImplementation(async (id) => ({
 				status:
+					id === finished ||
 					(id === f.encodingId && primarySent) ||
 					vi
 						.mocked(f.sdk.stopLiveEncoding)
@@ -988,7 +990,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			}));
 			f.deps.now = () => new Date(now.getTime() + 2000).toISOString();
 			const process = createLiveChannelProcessor(f.deps);
-			const tick = createUncertainStopReconciler(f.deps, (job) => process(job));
+			const tick = createUncertainStopReconciler(f.deps, (job, activeTargets) =>
+				process(job, undefined, false, activeTargets),
+			);
 			for (let i = 0; i < 3; i++) await tick();
 			expect(
 				vi.mocked(f.sdk.stopLiveEncoding).mock.calls.map(([id]) => id),

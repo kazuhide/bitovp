@@ -160,7 +160,7 @@ export function createExpiredRestartReconciler(
 					prisma,
 					claim.liveChannelId,
 					{
-						action:"RESTART",
+						action: "RESTART",
 						liveChannelRunId: claim.liveChannelRunId,
 						providerEncodingId: claim.providerEncodingId,
 						idempotencyKey: claim.idempotencyKey,
@@ -186,7 +186,7 @@ export async function retireRestartAdmission(
 	message: string,
 	at: Date,
 	emitEvent?: EmitProductEvent,
-	expiredClaimId?:string,
+	expiredClaimId?: string,
 ): Promise<boolean> {
 	if (effect.action !== "RESTART") return false;
 	const error = redactSecrets(message);

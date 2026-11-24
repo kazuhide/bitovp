@@ -25,7 +25,10 @@ type Dependencies = Pick<
 /** Revisit durable STOP claims after a worker has exhausted its inline readbacks. */
 export function createUncertainStopReconciler(
 	deps: Dependencies,
-	resumeUnsent?: (job: LiveChannelJob) => Promise<unknown>,
+	resumeUnsent?: (
+		job: LiveChannelJob,
+		activeTargets: ReadonlySet<string>,
+	) => Promise<unknown>,
 ) {
 	const pageSize = 4;
 	let after: string | undefined;
@@ -142,14 +145,15 @@ export function createUncertainStopReconciler(
 							stopOutcomeEvidence: true,
 						},
 					});
-					const targets = liveStopKnownTargets(
+					const completeTargets = liveStopKnownTargets(
 						run,
 						channel,
 						history,
 						liveChannelAccountId(channel),
 					);
-					if (!targets) continue;
+					const targets = completeTargets ?? [claim.providerEncodingId];
 					const clean =
+						completeTargets !== null &&
 						channel.status === "STOPPED" &&
 						channel.error === null &&
 						run.status === "STOPPED" &&
@@ -183,34 +187,43 @@ export function createUncertainStopReconciler(
 							claim.expiresAt <= at
 								? unreservedStopTargets(run, channel, history)
 								: [];
-						let needsFirstStop = false;
+						const activeTargets = new Set<string>();
 						for (const id of targets) {
 							const status =
 								(id !== claim.providerEncodingId && prior.get(id)) ||
-								(await sdk.getEncodingStatus(id)).status;
+								(await sdk.getEncodingStatus(id).catch(() => null))?.status;
+							if (!status) continue;
 							if (classifyProviderStatusWord(status) === "TERMINAL")
 								encodings.push({ id, status });
 							else if (
 								unsent.includes(id) &&
 								["RUNNING", "QUEUED", "CREATED"].includes(status)
 							)
-								needsFirstStop = true;
+								activeTargets.add(id);
 						}
-						if (needsFirstStop && resumeUnsent) {
+						if (activeTargets.size && resumeUnsent) {
 							// Re-enter the original exact intent. beginLiveEffect fences owner
 							// takeover; the per-ID journal suppresses every prior reservation.
-							await resumeUnsent({
-								liveChannelId: claim.liveChannelId,
-								action: "stop",
-								effect: {
-									action: "STOP",
-									idempotencyKey: claim.idempotencyKey,
-									admissionFenceVersion: claim.generation,
-									liveChannelRunId: run.id,
-									providerEncodingId: claim.providerEncodingId,
-									...(claim.scheduleId ? { scheduleId: claim.scheduleId } : {}),
+							await resumeUnsent(
+								{
+									liveChannelId: claim.liveChannelId,
+									action: "stop",
+									...(claim.scheduleId
+										? { plannedLiveChannelRunId: run.id }
+										: {}),
+									effect: {
+										action: "STOP",
+										idempotencyKey: claim.idempotencyKey,
+										admissionFenceVersion: claim.generation,
+										liveChannelRunId: run.id,
+										providerEncodingId: claim.providerEncodingId,
+										...(claim.scheduleId
+											? { scheduleId: claim.scheduleId }
+											: {}),
+									},
 								},
-							});
+								activeTargets,
+							);
 							continue;
 						}
 						const primary = encodings.find(

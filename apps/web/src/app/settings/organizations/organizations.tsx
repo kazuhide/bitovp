@@ -10,6 +10,7 @@ import { useT } from "@/lib/i18n/context";
 import { reloadAfterOrganizationChange } from "@/lib/tenant-fetch";
 import { SettingsBreadcrumb } from "../settings-breadcrumb";
 import { IpPolicy, type Organization } from "./ip-policy";
+import { InstanceRedisMemory } from "./redis-memory";
 import { ViewAs } from "./view-as";
 
 export function Organizations() {
@@ -205,6 +206,7 @@ export function Organizations() {
 							)}
 						/>
 					) : null}
+					{!session.data?.mustChangePassword && <InstanceRedisMemory />}
 				</>
 			) : (
 				<p className="mt-6 text-sm text-zinc-400">{t("tenant.ownerOnly")}</p>

@@ -63,6 +63,7 @@ vi.mock("@/lib/server/context", () => ({
 			appSetting: { findUnique: vi.fn().mockResolvedValue(null) },
 			liveChannel: { findUnique, update, deleteMany: channelDeleteMany },
 			liveChannelRun: { findFirst: latestRun },
+			liveEffectClaim: { findMany: vi.fn().mockResolvedValue([]) },
 			credential: { findMany: credentialFindMany },
 			vmafJob: {
 				deleteMany: vmafDeleteMany,
@@ -1350,4 +1351,35 @@ it("selects the durable cancellation flag for the detail UI", async () => {
 	expect(
 		findUnique.mock.calls[0]?.[0].include.runs.select.cancelRequested,
 	).toBe(true);
+});
+
+it("offers an actionable archive Stop revision for a running managed probe with no primary", async () => {
+	const accountId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+	const encoderId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+	findUnique.mockResolvedValueOnce({
+		id: CHANNEL_ID,
+		origin: "MANAGED",
+		purpose: "PROBE",
+		status: "RUNNING",
+		bitmovinAccountId: accountId,
+		bitmovinEncodingId: null,
+		liveEffectFenceVersion: 3,
+		plan: { bitmovin: { accountId } },
+		stepLog: [],
+		runs: [
+			{
+				id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+				seq: 1,
+				status: "RUNNING",
+				bitmovinEncodingId: null,
+				previousProviderEncodingIds: [encoderId],
+				stepLog: [],
+			},
+		],
+	});
+	const response = await GET(new Request("http://test"), ctx(CHANNEL_ID));
+	expect(response.status).toBe(200);
+	expect((await response.json()).archivedStopRevision).toMatch(
+		/^[0-9a-f]{64}$/,
+	);
 });

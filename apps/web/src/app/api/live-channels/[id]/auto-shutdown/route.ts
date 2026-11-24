@@ -30,6 +30,9 @@ const requestSchema = z.strictObject({
 	configuration: liveAutoShutdownUpdateParamsSchema.shape.configuration,
 });
 const runSelect = {
+	aisaAnalysisId: true,
+	aisaStatus: true,
+	aisaSnapshot: true,
 	id: true,
 	cancelRequested: true,
 	bitmovinEncodingId: true,
@@ -101,10 +104,16 @@ export async function GET(req: Request, { params }: RouteParams) {
 		.safeParse(Object.fromEntries(new URL(req.url).searchParams));
 	if (!query.success) return validationError(query.error);
 	try {
-		const { prisma } = await getServerContext();
+		const { prisma, tenant } = await getServerContext();
 		const channel = await prisma.liveChannel.findUnique({
 			where: { id },
-			select: { id: true, bitmovinEncodingId: true },
+			select: {
+				id: true,
+				origin: true,
+				plan: true,
+				stepLog: true,
+				bitmovinEncodingId: true,
+			},
 		});
 		if (!channel) return jsonError(404, "Not found");
 		const run = await prisma.liveChannelRun.findFirst({
@@ -112,6 +121,8 @@ export async function GET(req: Request, { params }: RouteParams) {
 			orderBy: { seq: "desc" },
 			select: runSelect,
 		});
+		const refusal = rejectAisaGraphMutation(channel, tenant, run);
+		if (refusal) return refusal;
 		if (
 			!run ||
 			run.id !== query.data.runId ||
@@ -203,25 +214,26 @@ export async function POST(req: Request, { params }: RouteParams) {
 		const body = requestSchema.safeParse(await readJson(req));
 		if (!body.success) return validationError(body.error);
 		masterKeyFromEnv();
-		const { prisma } = await getServerContext();
+		const { prisma, tenant } = await getServerContext();
 		const channel = await prisma.liveChannel.findUnique({
 			where: { id },
 			select: {
 				status: true,
 				origin: true,
+				stepLog: true,
 				plan: true,
 				bitmovinEncodingId: true,
 				liveEffectFenceVersion: true,
 			},
 		});
 		if (!channel) return jsonError(404, "Not found");
-		const refusal = rejectAisaGraphMutation(channel);
-		if (refusal) return refusal;
 		const run = await prisma.liveChannelRun.findFirst({
 			where: { liveChannelId: id },
 			orderBy: { seq: "desc" },
 			select: runSelect,
 		});
+		const refusal = rejectAisaGraphMutation(channel, tenant, run);
+		if (refusal) return refusal;
 		if (
 			channel.status !== "RUNNING" ||
 			!run ||

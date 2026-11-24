@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { type StepLogEntry, stepLogSchema } from "../plan/steplog";
+import { isAisaManagedLivePlan } from "./aisa";
 import { aisaResultSchema } from "./aisa-result";
 
 export const aisaNeverStartedProofSchema = z.discriminatedUnion("basis", [
@@ -39,6 +40,28 @@ export function hasAisaLiveStepLog(log: unknown): boolean {
 		)
 	);
 }
+function record(value: unknown): Record<string, unknown> | null {
+	return value !== null && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
+}
+
+/** A persisted run binding still protects a channel whose old plan is unreadable. */
+export function hasAisaLiveBinding(channel: unknown, run: unknown): boolean {
+	const row = record(channel);
+	const binding = record(run);
+	return (
+		row?.origin === "AISA_IMPORTED" ||
+		isAisaManagedLivePlan(row?.plan) ||
+		hasAisaLiveStepLog(row?.stepLog) ||
+		hasAisaLiveStepLog(binding?.stepLog) ||
+		(binding !== null &&
+			["aisaAnalysisId", "aisaStatus", "aisaSnapshot"].some(
+				(key) => binding[key] !== null && binding[key] !== undefined,
+			))
+	);
+}
+
 function managedEntries(log: unknown): StepLogEntry[] | null {
 	const parsed = stepLogSchema.safeParse(log);
 	const kinds = [...AISA_LIVE_STEP_KINDS, "AWAIT_LIVE_RUNNING"];

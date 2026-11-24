@@ -14,6 +14,7 @@ import {
 	FEEDER_MAX_ACTIVE_SESSIONS,
 	type FeederJob,
 	feederOccupancyWhere,
+	hasAisaLiveBinding,
 	isAisaManagedLivePlan,
 	isRuntimeRecordKind,
 	isStaleGeneration,
@@ -133,6 +134,7 @@ import { resolveProvisionAdmission } from "../live/provision-admission";
 import { PROVISION_LEASE_MS } from "../live/provision-lease";
 import {
 	commitProvisionEnd,
+	lockProvisionAiring,
 	type ProvisionEnd,
 } from "../live/provision-outcome";
 import type { EmitProductEvent } from "../notify/emitter";
@@ -2162,9 +2164,17 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			const currentRun = await deps.prisma.liveChannelRun.findFirst({
 				where: { liveChannelId },
 				orderBy: { seq: "desc" },
-				select: { id: true, bitmovinEncodingId: true, stepLog: true },
+				select: {
+					id: true,
+					bitmovinEncodingId: true,
+					stepLog: true,
+					aisaAnalysisId: true,
+					aisaStatus: true,
+					aisaSnapshot: true,
+				},
 			});
 			if (
+				hasAisaLiveBinding(row, currentRun) ||
 				currentRun?.id !== effect.claim.liveChannelRunId ||
 				currentRun.bitmovinEncodingId !== encodingId
 			)
@@ -4934,20 +4944,16 @@ class ProvisionLeaseLostError extends Error {
 	}
 }
 
-/** The channel CAS landed; only the denormalized current-run mirror failed. */
-class LiveRunMirrorAfterPrimaryPersistError extends Error {
-	readonly primaryPersisted = true as const;
+/** A transaction lost its acknowledgement after staging the channel write. */
+class ProvisionProgressUnconfirmed extends Error {
 	constructor(cause: unknown) {
-		super(
-			"live channel primary write landed but current-run mirror persistence is unknown",
-			{ cause },
-		);
-		this.name = "LiveRunMirrorAfterPrimaryPersistError";
+		super("The provision progress transaction could not be confirmed", {
+			cause,
+		});
 	}
 }
 
 export function createLiveChannelProcessor(deps: LiveChannelDeps) {
-	const runs = createRunMirror(deps.prisma);
 	const emitChannel = (
 		kind: "CHANNEL_RUNNING" | "CHANNEL_ERROR" | "CHANNEL_STOPPED",
 		liveChannelId: string,
@@ -5170,43 +5176,18 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		return effectResult(job, "EFFECT_AMBIGUOUS");
 	}
 
-	/**
-	 * The fenced write . Every persist during
-	 * a provision matches the row only while `provisionClaimedAt` is still the
-	 * value THIS worker last wrote — the same compare-and-swap the renewal
-	 * uses — and reports whether it landed. The first cut fenced the claim and
-	 * the renewal but wrote the step log, the provider encoding id and the
-	 * RUNNING / ERROR finalize unconditionally, so a worker whose lease had
-	 * been taken during a long SDK call could still land its late response on
-	 * the winner's row. Leaving PROVISIONING (RUNNING or ERROR) releases the
-	 * lease, as the VOD twin (#200) does; the run mirror follows only a
-	 * landed write.
-	 */
+	/** Commit a progress snapshot on the admitted run and channel under the same lease. */
 	async function persistFenced(
 		liveChannelId: string,
+		runId: string | null,
+		generation: number,
 		entries: StepLogEntry[],
 		extra: Record<string, unknown>,
-		fence: { heldAt: Date | null; setHeld: (next: Date | null) => void },
+		fence: { heldAt: Date | null; setHeld: (next: Date) => void },
 	): Promise<boolean> {
-		const leaving = ["RUNNING", "ERROR", "STOPPING", "STOPPED"].includes(
-			String(extra.status),
-		);
-		const next = leaving ? null : new Date(new Date(deps.now()).getTime());
-		const { count } = await deps.prisma.liveChannel.updateMany({
-			where: { id: liveChannelId, provisionClaimedAt: fence.heldAt },
-			data: {
-				stepLog: entries as unknown as Prisma.InputJsonValue,
-				...extra,
-				provisionClaimedAt: next,
-			},
-		});
-		if (count === 0) {
-			return false;
-		}
-		fence.setHeld(next);
-		// Dual-write : the step log is the run's replay
-		// record; the extras that are run facts ride along, the rest (e.g.
-		// bitmovinAccountId) stay channel-only.
+		if (!fence.heldAt) return false;
+		const lease = fence.heldAt;
+		const next = new Date(deps.now());
 		const runExtra: Record<string, unknown> = {};
 		const aisaCreate = entries.find(
 			(entry) => entry.kind === "CREATE_AISA_LIVE_ANALYSIS" && entry.resourceId,
@@ -5224,19 +5205,55 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				runExtra[key] = extra[key];
 			}
 		}
+		const write = async () => {
+			let staged = false;
+			try {
+				return await deps.prisma.$transaction(async (tx) => {
+					const latest = await lockProvisionAiring(tx, liveChannelId);
+					if ((latest?.id ?? null) !== runId) return false;
+					const log = entries as unknown as Prisma.InputJsonValue;
+					const changed = await tx.liveChannel.updateMany({
+						where: {
+							id: liveChannelId,
+							provisionClaimedAt: lease,
+							liveEffectFenceVersion: generation,
+						},
+						data: { stepLog: log, ...extra, provisionClaimedAt: next },
+					});
+					if (!changed.count) return false;
+					staged = true;
+					if (latest)
+						await createRunMirror(tx).mirror(liveChannelId, {
+							stepLog: log,
+							...runExtra,
+						});
+					return true;
+				});
+			} catch (error) {
+				if (staged) throw new ProvisionProgressUnconfirmed(error);
+				throw error;
+			}
+		};
+		let landed: boolean;
 		try {
-			await runs.mirror(liveChannelId, {
-				stepLog: entries as unknown as Prisma.InputJsonValue,
-				...runExtra,
-			});
-		} catch (err) {
-			// The paid-resource ownership barrier is the channel row above. Do not
-			// collapse a later mirror failure into "the id was never persisted":
-			// doing so authorizes compensation to delete an encoding the primary
-			// database already owns. The next fenced step write retries the mirror.
-			throw new LiveRunMirrorAfterPrimaryPersistError(err);
+			landed = await write();
+		} catch (error) {
+			if (
+				!(error instanceof ProvisionProgressUnconfirmed) ||
+				(error.cause as { code?: string })?.code !== "P1001"
+			)
+				throw error;
+			// Retry only the local journal. A missing reply can also mean COMMIT
+			// landed; losing its original fence never proves that an ID is disposable.
+			try {
+				landed = await write();
+			} catch (retryError) {
+				throw new ProvisionProgressUnconfirmed(retryError);
+			}
+			if (!landed) throw error;
 		}
-		return true;
+		if (landed) fence.setHeld(next);
+		return landed;
 	}
 
 	/**
@@ -5558,7 +5575,14 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			}
 			if (
 				!(await withFenceWrite(() =>
-					persistFenced(liveChannelId, entries, extra, fence),
+					persistFenced(
+						liveChannelId,
+						provisionRunId,
+						admissionGeneration,
+						entries,
+						extra,
+						fence,
+					),
 				))
 			) {
 				throw new ProvisionLeaseLostError(liveChannelId);
@@ -6046,18 +6070,6 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 											encoderStoppedConfirmedFor: null,
 										});
 									} catch (err) {
-										if (err instanceof LiveRunMirrorAfterPrimaryPersistError) {
-											activeEntry.response = redactSecrets({
-												providerId,
-												source,
-												durability: "PROVIDER_ID_PERSISTED",
-												runMirror: "PERSISTENCE_UNKNOWN_RETRY_PENDING",
-											});
-											console.warn(
-												`[live-channel] ${liveChannelId}: provider id landed on the channel row; current-run mirror failed and will be retried by the next fenced persist`,
-											);
-											return "PERSISTED" as const;
-										}
 										if (err instanceof ProvisionLeaseLostError) {
 											return "OWNERSHIP_LOST" as const;
 										}
@@ -6099,10 +6111,39 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		// the one-live-per-channel index two modules away), and the attempt
 		// clock anchors totalSeconds to THIS attempt (#3 — a resume keeps the
 		// prior attempt's DONE stamps, so entries[0] is a cross-attempt clock).
-		const currentRunId =
-			cancelling && pendingRun
-				? pendingRun.id
-				: await runs.ensureCurrentRun(liveChannelId);
+		const initializedRunId = await withFenceWrite(async () => {
+			const lease = heldAt;
+			if (!lease) return null;
+			return deps.prisma.$transaction(async (tx) => {
+				const latest = await lockProvisionAiring(tx, liveChannelId);
+				if ((latest?.id ?? null) !== provisionRunId) return null;
+				const changed = await tx.liveChannel.updateMany({
+					where: {
+						id: liveChannelId,
+						provisionClaimedAt: lease,
+						liveEffectFenceVersion: admissionGeneration,
+					},
+					data: {
+						status: "PROVISIONING",
+						bitmovinAccountId: accountId,
+						error: null,
+					},
+				});
+				if (!changed.count) return null;
+				const mirror = createRunMirror(tx);
+				const id =
+					cancelling && pendingRun
+						? pendingRun.id
+						: await mirror.ensureCurrentRun(liveChannelId);
+				await mirror.mirror(liveChannelId, {
+					status: "PROVISIONING",
+					...(!cancelling ? { encoderStoppedConfirmedFor: null } : {}),
+				});
+				return id;
+			});
+		});
+		if (!initializedRunId) return "PROVISIONING";
+		const currentRunId: string = initializedRunId;
 		provisionRunId = currentRunId;
 		const shouldCancel = async () => {
 			const current = await deps.prisma.liveChannelRun.findFirst({
@@ -6115,25 +6156,6 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		};
 
 		const attemptStartedAt = deps.now();
-		const started = await deps.prisma.liveChannel.updateMany({
-			where: { id: liveChannelId, provisionClaimedAt: heldAt },
-			data: {
-				status: "PROVISIONING",
-				bitmovinAccountId: accountId,
-				error: null,
-			},
-		});
-		if (started.count === 0) {
-			// Taken between the claim and this write: the winner's row is theirs.
-			console.warn(new ProvisionLeaseLostError(liveChannelId).message);
-			return "PROVISIONING";
-		}
-		// A (re)start clears confirmation; cancellation only tears down the
-		// current encoding and must retain its exact existing stop proof.
-		await runs.mirror(liveChannelId, {
-			status: "PROVISIONING",
-			...(!cancelling ? { encoderStoppedConfirmedFor: null } : {}),
-		});
 
 		/**
 		 * a REVIVE replays DONE steps, and

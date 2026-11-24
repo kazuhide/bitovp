@@ -15,6 +15,7 @@ import {
 	type AppTransactionClient,
 	appendLiveEffectStepLogEntry,
 	archivedStopRevision,
+	assertLiveEffectCurrent,
 	beginLiveEffect,
 	bindArchivedStopTarget,
 	claimLiveStopSend,
@@ -2275,6 +2276,174 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				).archivesRetired,
 			).toBe(true);
 		});
+		it("revalidates run-only AISA ownership at the last automatic shutdown send fence", async () => {
+			const f = await dispatchFixture(randomUUID());
+			const held = await beginLiveEffect(tenant, {
+				...f.identity,
+				action: "AUTO_SHUTDOWN_UPDATE",
+				liveChannelId: f.channel.id,
+				idempotencyKey: "timer:" + randomUUID(),
+				expectedFenceVersion: 0,
+				ownerId: "local-worker",
+				now,
+				expiresAt: new Date(now.getTime() + 60_000),
+			});
+			if (held.kind !== "EXECUTE")
+				throw new Error("Missing timer claim: " + held.kind);
+			expect(await assertLiveEffectCurrent(tenant, held.claim, now)).toBe(true);
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { aisaAnalysisId: randomUUID() },
+			});
+			expect(await assertLiveEffectCurrent(tenant, held.claim, now)).toBe(
+				false,
+			);
+		});
+
+		it.each([
+			"initialization",
+			"progress",
+		] as const)("keeps a successor run intact when a displaced provision resumes during %s", async (phase) => {
+			const f = await dispatchFixture(randomUUID());
+			const plan = JSON.parse(
+				readFileSync(
+					new URL(
+						"../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+						import.meta.url,
+					),
+					"utf8",
+				),
+			);
+			plan.bitmovin.accountId = f.accountId;
+			await tenant.bitmovinAccount.create({
+				data: {
+					id: f.accountId,
+					label: "offline fixture",
+					encryptedApiKey: "fixture-only",
+				},
+			});
+			const stepLog = JSON.parse(
+				JSON.stringify(
+					initStepLog(compileLiveChannel(plan)).map((entry) =>
+						["CREATE_INPUT_RTMP", "CREATE_OUTPUT_S3"].includes(entry.kind)
+							? { ...entry, status: "DONE", resourceId: randomUUID() }
+							: entry,
+					),
+				),
+			);
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					status: "PROVISIONING",
+					bitmovinEncodingId: null,
+					plan,
+					stepLog,
+				},
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "PROVISIONING", bitmovinEncodingId: null, stepLog },
+			});
+			const entered = barrier(),
+				reply = barrier();
+			const pause = async () => {
+				entered.release();
+				await reply.ready;
+			};
+			f.deps.resolveCredential = async () => ({
+				provider: "AWS_S3",
+				config: {},
+				secret: {
+					accessKeyId: "fixture-id",
+					secretAccessKey: "fixture-secret",
+				},
+			});
+			const reveal = f.deps.revealBitmovinAccount;
+			f.deps.revealBitmovinAccount = async (id) => {
+				if (phase === "initialization") await pause();
+				return reveal(id);
+			};
+			f.sdk.createEncoding = vi.fn(async () => {
+				if (phase === "progress") await pause();
+				return f.encodingId;
+			});
+			const work = Promise.allSettled([
+				createLiveChannelProcessor(f.deps)({
+					action: "provision",
+					liveChannelId: f.channel.id,
+					plannedLiveChannelRunId: f.run.id,
+				}),
+			]);
+			const winner = randomUUID();
+			try {
+				await Promise.race([
+					entered.ready,
+					work.then(([r]) => {
+						throw new Error(
+							"Provision ended before " +
+								phase +
+								": " +
+								(r?.status === "rejected"
+									? String(r.reason)
+									: JSON.stringify(r)),
+						);
+					}),
+				]);
+				await tenant.$transaction(async (tx) => {
+					// Different admission in the same clock tick. The run/generation still identify the successor.
+					await tx.liveChannel.update({
+						where: { id: f.channel.id },
+						data: {
+							status: "RUNNING",
+							liveEffectFenceVersion: { increment: 1 },
+							bitmovinEncodingId: winner,
+							stepLog: [],
+						},
+					});
+					await tx.liveChannelRun.update({
+						where: { id: f.run.id },
+						data: { status: "ERROR" },
+					});
+					await tx.liveChannelRun.create({
+						data: {
+							liveChannelId: f.channel.id,
+							seq: 2,
+							status: "RUNNING",
+							outputPrefix: "successor",
+							bitmovinEncodingId: winner,
+							encoderStoppedConfirmedFor: winner,
+							stepLog: [],
+						},
+					});
+				});
+			} finally {
+				reply.release();
+			}
+			const [finished] = await work;
+			expect(finished?.status).toBe("fulfilled");
+			expect(
+				await tenant.liveChannelRun.findFirstOrThrow({
+					where: { liveChannelId: f.channel.id },
+					orderBy: { seq: "desc" },
+				}),
+			).toMatchObject({
+				status: "RUNNING",
+				bitmovinEncodingId: winner,
+				encoderStoppedConfirmedFor: winner,
+				stepLog: [],
+			});
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({
+				status: "RUNNING",
+				bitmovinEncodingId: winner,
+				stepLog: [],
+			});
+			expect(f.sdk.startLiveEncoding).not.toHaveBeenCalled();
+		});
+
 		it("a manual STOP invalidates a provision lease while its last details GET is delayed", async () => {
 			const f = await dispatchFixture(randomUUID());
 			const plan = JSON.parse(

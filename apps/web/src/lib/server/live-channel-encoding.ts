@@ -1,6 +1,6 @@
 import "server-only";
 import type BitmovinApi from "@bitmovin/api-sdk";
-import { ingestConnectedFresh, isAisaManagedLivePlan } from "@bitovp/core";
+import { hasAisaLiveBinding, ingestConnectedFresh } from "@bitovp/core";
 import type { NextResponse } from "next/server";
 import { customerErrorDetails } from "@/lib/customer-error";
 import { aisaLiveAccessAllowed } from "./aisa-live-access";
@@ -8,6 +8,7 @@ import { bitmovinClientForAccount } from "./bitmovin";
 import type { ServerContext } from "./context";
 import { jsonError } from "./http";
 import {
+	latestScheduleBinding,
 	rejectAisaGraphMutation,
 	rejectImportedAisaMutation,
 } from "./live-channel-mutation-guard";
@@ -45,7 +46,7 @@ export async function resolveLiveEncoding(options: {
 	const channel = await ctx.prisma.liveChannel.findUnique({
 		where: { id: channelId },
 		select: {
-			...(options.mutation ? { origin: true, plan: true } : {}),
+			...(options.mutation ? { origin: true, plan: true, stepLog: true } : {}),
 			status: true,
 			bitmovinEncodingId: true,
 			bitmovinAccountId: true,
@@ -54,18 +55,18 @@ export async function resolveLiveEncoding(options: {
 			runs: {
 				orderBy: { seq: "desc" },
 				take: 1,
-				select: { lastHeartbeat: true },
+				select: {
+					...(options.mutation ? latestScheduleBinding.select : {}),
+					lastHeartbeat: true,
+				},
 			},
 		},
 	});
 	if (!channel) {
 		return { ok: false, response: jsonError(404, "Not found") };
 	}
-	if (
-		options.mutation &&
-		isAisaManagedLivePlan(channel.plan) &&
-		!aisaLiveAccessAllowed(ctx.tenant)
-	) {
+	const managed = hasAisaLiveBinding(channel, channel.runs?.[0]);
+	if (options.mutation && managed && !aisaLiveAccessAllowed(ctx.tenant)) {
 		return { ok: false, response: jsonError(404, "Not found") };
 	}
 	// The account is an explicit request parameter (every route in this surface
@@ -102,7 +103,7 @@ export async function resolveLiveEncoding(options: {
 	if (options.mutation) {
 		const refusal =
 			options.mutation === "graph"
-				? rejectAisaGraphMutation(channel)
+				? rejectAisaGraphMutation(channel, ctx.tenant)
 				: rejectImportedAisaMutation(channel);
 		if (refusal) return { ok: false, response: refusal };
 	}
@@ -164,6 +165,6 @@ export async function resolveLiveEncoding(options: {
 		ok: true,
 		api,
 		encodingId: channel.bitmovinEncodingId,
-		aisaManaged: isAisaManagedLivePlan(channel.plan),
+		aisaManaged: managed,
 	};
 }

@@ -23,7 +23,10 @@ import {
 	routeError,
 	validationError,
 } from "@/lib/server/http";
-import { rejectAisaGraphMutation } from "@/lib/server/live-channel-mutation-guard";
+import {
+	latestScheduleBinding,
+	rejectAisaGraphMutation,
+} from "@/lib/server/live-channel-mutation-guard";
 import { getLiveChannelQueue } from "@/lib/server/queue";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -173,6 +176,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 			select: {
 				id: true,
 				origin: true,
+				runs: latestScheduleBinding,
 				plan: true,
 				status: true,
 				bitmovinEncodingId: true,
@@ -184,7 +188,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 		if (!row) {
 			return jsonError(404, "Not found");
 		}
-		const refusal = rejectAisaGraphMutation(row);
+		const refusal = rejectAisaGraphMutation(row, ctx.tenant);
 		if (refusal) return refusal;
 		if (row.status !== "STOPPED") {
 			return liveToVodRequestError(
@@ -202,7 +206,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 		}
 		const run = await ctx.prisma.liveChannelRun.findUnique({
 			where: { bitmovinEncodingId: row.bitmovinEncodingId },
-			select: { id: true, liveChannelId: true },
+			select: { ...latestScheduleBinding.select, liveChannelId: true },
 		});
 		if (!run || run.liveChannelId !== id) {
 			return liveToVodRequestError(
@@ -211,6 +215,8 @@ export async function POST(req: Request, { params }: RouteParams) {
 				"Channel has no exact run row for this recording; re-provision before publishing",
 			);
 		}
+		const exactRunRefusal = rejectAisaGraphMutation(row, ctx.tenant, run);
+		if (exactRunRefusal) return exactRunRefusal;
 		// C35 : an explicit manifest path that is not a parent of the
 		// recording's muxing paths can ONLY end in Bitmovin's `code 2701`. The
 		// worker refuses it too — it is the single writer and holds the rule —

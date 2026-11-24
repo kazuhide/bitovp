@@ -1012,6 +1012,14 @@ describe("run-bound automatic stop replacement", () => {
 		};
 	}
 
+	it("refuses an already-queued automatic stop when the current run retains an AISA binding", async () => {
+		const t = harness();
+		const run = t.runRows[0];
+		if (!run) throw new Error("Missing current run");
+		Object.assign(run, { aisaStatus: "RUNNING" });
+		await expect(t.rawProcess(t.job)).rejects.toThrow(/current live run/);
+		expect(t.sdk.updateLiveAutoShutdown).not.toHaveBeenCalled();
+	});
 	it("applies once after the send fence, stores the accepted instant on the admitted run and keeps the next-run plan", async () => {
 		const t = harness();
 		const planBefore = structuredClone(t.row.plan);
@@ -10045,7 +10053,7 @@ describe("verification provider identity durability", () => {
 		}
 	});
 
-	it("does not classify a post-primary run-mirror P1001 as safe-to-compensate", async () => {
+	it("retries a rolled-back run mirror under the same fence before confirming the provider ID", async () => {
 		let callbackResult: string | undefined;
 		const h = setup(
 			{
@@ -10093,16 +10101,16 @@ describe("verification provider identity durability", () => {
 		expect(callbackResult).toBe("PERSISTED");
 		expect(h.row.bitmovinEncodingId).toBe("bm-live-primary-landed");
 		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		expect(h.runRows.at(-1)?.bitmovinEncodingId).toBe("bm-live-primary-landed");
 		const persisted = (h.row.stepLog as StepLogEntry[]).find(
 			(entry) => entry.kind === "CREATE_ENCODING",
 		);
-		expect(persisted?.response).toMatchObject({
-			providerBarrier: {
-				providerId: "bm-live-primary-landed",
-				durability: "PROVIDER_ID_PERSISTED",
-				runMirror: "PERSISTENCE_UNKNOWN_RETRY_PENDING",
-			},
+		expect(failedProviderMirror).toBe(true);
+		expect(persisted).toMatchObject({
+			status: "DONE",
+			resourceId: "bm-live-primary-landed",
 		});
+		expect(h.runRows.at(-1)?.stepLog).toEqual(h.row.stepLog);
 	});
 
 	it("classifies live P1001 before the provider-id write as safe-to-compensate", async () => {
@@ -11987,7 +11995,10 @@ describe("cooperative startup cancellation", () => {
 		let raced = false;
 		Object.assign(h.deps.prisma, {
 			$transaction: async <T>(fn: (tx: AppTransactionClient) => Promise<T>) => {
-				if (!raced) {
+				if (
+					!raced &&
+					vi.mocked(h.sdk.getLiveEncodingDetails).mock.calls.length > 0
+				) {
 					raced = true;
 					const run = h.runRows[0];
 					if (!run) throw new Error("Missing startup run");

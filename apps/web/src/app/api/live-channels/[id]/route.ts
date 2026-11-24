@@ -234,7 +234,11 @@ export async function GET(req: Request, { params }: RouteParams) {
 		const archiveRevision =
 			currentRun &&
 			channel.origin === "MANAGED" &&
-			["STOPPING", "STOPPED", "ERROR"].includes(channel.status) &&
+			(["STOPPING", "STOPPED", "ERROR"].includes(channel.status) ||
+				(channel.status === "RUNNING" &&
+					channel.purpose === "PROBE" &&
+					!channel.bitmovinEncodingId &&
+					!currentRun.bitmovinEncodingId)) &&
 			!row.provisionClaimedAt &&
 			!aisaChannel
 				? archivedStopRevision(

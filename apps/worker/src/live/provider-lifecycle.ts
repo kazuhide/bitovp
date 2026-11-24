@@ -629,6 +629,7 @@ export function createProviderLifecycleReconciler(deps: {
 		runLanded: boolean;
 		channelLanded: boolean;
 		durableNotification?: boolean;
+		committedError?: string | null;
 	}> {
 		const aisa = aisaLiveFinalization({
 			...args.run,
@@ -925,7 +926,12 @@ export function createProviderLifecycleReconciler(deps: {
 			}
 			throw error;
 		}
-		return { runLanded, channelLanded, durableNotification };
+		return {
+			runLanded,
+			channelLanded,
+			durableNotification,
+			committedError: error,
+		};
 	}
 
 	async function assertRestartOwner(
@@ -1086,8 +1092,12 @@ export function createProviderLifecycleReconciler(deps: {
 					);
 				});
 			}
-			if (repaired.channelLanded && !repaired.durableNotification) {
-				await deps.emitChannel(channel.id, terminalError(status, run, message));
+			if (
+				repaired.channelLanded &&
+				!repaired.durableNotification &&
+				repaired.committedError !== undefined
+			) {
+				await deps.emitChannel(channel.id, repaired.committedError);
 			}
 			return {
 				lifecycle: "TERMINAL",
@@ -1238,8 +1248,12 @@ export function createProviderLifecycleReconciler(deps: {
 				err instanceof Error ? err.message : err,
 			);
 		});
-		if (terminal.channelLanded && !committed.durableNotification) {
-			await deps.emitChannel(channel.id, terminalError(status, run, message));
+		if (
+			terminal.channelLanded &&
+			!committed.durableNotification &&
+			committed.committedError !== undefined
+		) {
+			await deps.emitChannel(channel.id, committed.committedError);
 		}
 		return terminal;
 	}

@@ -15,13 +15,21 @@ export function rejectImportedAisaMutation(channel: { origin?: string }) {
 }
 
 /** Current managed integration does not retain the ordinary authored graph. */
-export function rejectAisaGraphMutation(channel: {
-	origin?: string;
-	plan?: unknown;
-}) {
+export function rejectAisaGraphMutation(
+	channel: {
+		origin?: string;
+		plan?: unknown;
+		runs?: readonly unknown[];
+	},
+	tenant: unknown,
+	run: unknown = channel.runs?.[0],
+) {
+	const managed = isAisaLiveChannelView(channel, run);
+	if (managed && !aisaLiveAccessAllowed(tenant))
+		return jsonError(404, "Not found");
 	const imported = rejectImportedAisaMutation(channel);
 	if (imported) return imported;
-	if (isAisaManagedLivePlan(channel.plan))
+	if (managed)
 		return jsonError(
 			409,
 			"This operation is unavailable for AISA Live Preview",

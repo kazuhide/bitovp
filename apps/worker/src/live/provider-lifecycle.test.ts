@@ -131,6 +131,56 @@ beforeEach(() => {
 });
 
 describe("reconcile — identity guards", () => {
+	it.each([
+		false,
+		true,
+	])("emits the committed AISA failure when a canceled encoder is reconciled (persisted=%s)", async (persisted) => {
+		const h = harness();
+		const encodingId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+		const analysisId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+		const current = run({
+			bitmovinEncodingId: encodingId,
+			aisaAnalysisId: analysisId,
+			aisaStatus: "ERROR",
+			aisaFinalization: {
+				encodingId,
+				analysisId,
+				status: "ERROR",
+				result: "UNAVAILABLE_TERMINAL_FAILURE",
+				observedAt: NOW,
+			},
+			...(persisted
+				? { providerTerminalAt: new Date(NOW), providerStatus: "CANCELED" }
+				: {}),
+		});
+		h.runFindFirst.mockResolvedValue({
+			...current,
+			liveChannel: { bitmovinEncodingId: encodingId },
+		} as typeof current);
+		const result = await h.reconciler.reconcile({
+			channel: { id: CHANNEL },
+			run: current,
+			encodingId,
+			sdk: fakeSdk({
+				getEncodingStatus: vi.fn(async () => ({ status: "CANCELED" })),
+			}),
+		});
+		expect(result.channelLanded).toBe(true);
+		expect(h.channelUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "ERROR",
+					error: "AISA_LIVE_TERMINAL_FAILURE",
+				}),
+			}),
+		);
+		expect(h.emitChannel).toHaveBeenCalledWith(
+			CHANNEL,
+			"AISA_LIVE_TERMINAL_FAILURE",
+		);
+		expect(h.outboxCreate).not.toHaveBeenCalled();
+	});
+
 	it("records Encoder termination without completing an AISA run whose Analysis is still draining", async () => {
 		const h = harness();
 		const pending = run({

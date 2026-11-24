@@ -3,8 +3,6 @@ import {
 	type AisaFinalizationRun,
 	aisaLiveFinalization,
 	deriveProviderLifecycle,
-	hasAisaLiveStepLog,
-	isAisaManagedLivePlan,
 	type PersistedProviderState,
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
@@ -20,21 +18,7 @@ function record(value: unknown): Record<string, unknown> | null {
 		: null;
 }
 
-/** A persisted run binding still protects a channel whose old plan is unreadable. */
-export function isAisaLiveChannelView(channel: unknown, run: unknown): boolean {
-	const row = record(channel);
-	const binding = record(run);
-	return (
-		row?.origin === "AISA_IMPORTED" ||
-		isAisaManagedLivePlan(row?.plan) ||
-		hasAisaLiveStepLog(row?.stepLog) ||
-		hasAisaLiveStepLog(binding?.stepLog) ||
-		(binding !== null &&
-			["aisaAnalysisId", "aisaStatus", "aisaSnapshot"].some(
-				(key) => binding[key] !== null && binding[key] !== undefined,
-			))
-	);
-}
+export { hasAisaLiveBinding as isAisaLiveChannelView } from "@bitovp/core";
 
 /** Use freshly authenticated context, never a caller-supplied role or actor header. */
 export function aisaPublisherConnectionAllowed(tenant: unknown): boolean {

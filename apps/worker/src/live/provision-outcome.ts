@@ -1,5 +1,19 @@
-import type { AppPrismaClient, Prisma } from "@bitovp/db";
+import type { AppPrismaClient, AppTransactionClient, Prisma } from "@bitovp/db";
 import { createRunMirror } from "../orchestrator/run-mirror";
+
+/** Keep the channel and its latest run stable, always locking the channel first. */
+export async function lockProvisionAiring(
+	tx: AppTransactionClient,
+	liveChannelId: string,
+) {
+	await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${liveChannelId}::uuid FOR UPDATE`;
+	await tx.$queryRaw`SELECT id FROM "LiveChannelRun" WHERE "liveChannelId" = ${liveChannelId}::uuid ORDER BY seq DESC LIMIT 1 FOR UPDATE`;
+	return tx.liveChannelRun.findFirst({
+		where: { liveChannelId },
+		orderBy: { seq: "desc" },
+		select: { id: true, status: true, cancelRequested: true },
+	});
+}
 
 export type ProvisionEnd = {
 	status: "ERROR" | "STOPPING";
@@ -21,13 +35,7 @@ export async function commitProvisionEnd(
 ): Promise<boolean> {
 	return prisma.$transaction(async (tx) => {
 		const { liveChannelId, runId, generation, lease } = target;
-		await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${liveChannelId}::uuid FOR UPDATE`;
-		await tx.$queryRaw`SELECT id FROM "LiveChannelRun" WHERE "liveChannelId" = ${liveChannelId}::uuid ORDER BY seq DESC LIMIT 1 FOR UPDATE`;
-		const latest = await tx.liveChannelRun.findFirst({
-			where: { liveChannelId },
-			orderBy: { seq: "desc" },
-			select: { id: true, status: true, cancelRequested: true },
-		});
+		const latest = await lockProvisionAiring(tx, liveChannelId);
 		if (
 			(latest?.id ?? null) !== runId ||
 			(target.requireProvisioning && latest?.status === "RUNNING")

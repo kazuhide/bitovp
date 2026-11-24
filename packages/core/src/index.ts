@@ -238,6 +238,7 @@ export {
 	aisaLiveNeverStarted,
 	aisaNeverStartedProofSchema,
 	aisaStartNotDispatched,
+	hasAisaLiveBinding,
 	hasAisaLiveStepLog,
 } from "./live/aisa-finalization";
 export {

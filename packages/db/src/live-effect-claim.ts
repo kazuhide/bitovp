@@ -4,6 +4,7 @@ import {
 	classifyProviderStatusWord,
 	FEEDER_ACTIVE_STATUSES,
 	feederOccupancyWhere,
+	hasAisaLiveBinding,
 	isAisaManagedLivePlan,
 	stepLogSchema,
 } from "@bitovp/core";
@@ -1981,6 +1982,7 @@ export async function assertLiveEffectCurrent(
 	claim: LiveEffectClaimHandle,
 	now: Date,
 ): Promise<boolean> {
+	const ordinaryTimer = claim.action === "AUTO_SHUTDOWN_UPDATE";
 	const [held, channel, currentRun] = await Promise.all([
 		prisma.liveEffectClaim.findUnique({
 			where: { idempotencyKey: claim.idempotencyKey },
@@ -1989,6 +1991,7 @@ export async function assertLiveEffectCurrent(
 		prisma.liveChannel.findUnique({
 			where: { id: claim.liveChannelId },
 			select: {
+				...(ordinaryTimer ? { origin: true, plan: true, stepLog: true } : {}),
 				liveEffectFenceVersion: true,
 				provisionClaimedAt: true,
 				bitmovinEncodingId: true,
@@ -1997,10 +2000,22 @@ export async function assertLiveEffectCurrent(
 		prisma.liveChannelRun.findFirst({
 			where: { liveChannelId: claim.liveChannelId },
 			orderBy: { seq: "desc" },
-			select: { id: true, bitmovinEncodingId: true },
+			select: {
+				id: true,
+				bitmovinEncodingId: true,
+				...(ordinaryTimer
+					? {
+							stepLog: true,
+							aisaAnalysisId: true,
+							aisaStatus: true,
+							aisaSnapshot: true,
+						}
+					: {}),
+			},
 		}),
 	]);
 	return (
+		(!ordinaryTimer || !hasAisaLiveBinding(channel, currentRun)) &&
 		held?.id === claim.id &&
 		held.token === claim.token &&
 		held.state === "DISPATCHING" &&

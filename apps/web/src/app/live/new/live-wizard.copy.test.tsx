@@ -3,7 +3,10 @@ import { join } from "node:path";
 import { liveChannelPlanSchema, validateLiveChannel } from "@bitovp/core";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import { createSubmissionClient } from "@/lib/creation-submission";
 import { renderWithQuery } from "@/test/render";
+import { buildLiveChannelPlan } from "./build-live-plan";
+import { tryImportLiveChannelIntoWizard } from "./live-plan-to-wizard";
 import { LiveWizard } from "./live-wizard";
 
 const { apiFetch, push } = vi.hoisted(() => ({
@@ -18,7 +21,10 @@ vi.mock("next/navigation", () => ({
 	useRouter: () => ({ push, replace: vi.fn() }),
 	useSearchParams: () => new URLSearchParams(),
 }));
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+	vi.clearAllMocks();
+	sessionStorage.clear();
+});
 
 it("shows the existing refusal when source conversion cannot rebuild an unresolved output", async () => {
 	const id = "9f8edfe4-fc30-4a9a-89e3-a3e89d5245df";
@@ -135,13 +141,12 @@ it("loads a channel into editable fields without creation and keeps edits on cac
 	);
 });
 
-it.each([
-	"FMP4",
-	"CMAF",
-] as const)("copies a %s MoQ channel into the wizard and preserves its settings on creation", async (kind) => {
-	const id = "70c37149-8ccc-4b3d-bc64-0fa06e49e82b";
-	const newChannelId = "fb801929-e7a4-450d-876e-69bf643eaaa0";
-	const credentialId = "eee3c000-00e3-4aaa-8aaa-000000000aaa";
+const sourceChannelId = "70c37149-8ccc-4b3d-bc64-0fa06e49e82b";
+const newChannelId = "fb801929-e7a4-450d-876e-69bf643eaaa0";
+const credentialId = "eee3c000-00e3-4aaa-8aaa-000000000aaa";
+const fixtureAccountId = "5a6ad9b8-2cae-4485-a0b3-99130b771be5";
+
+function moqCopyPlan(kind: "FMP4" | "CMAF") {
 	const plan = JSON.parse(
 		readFileSync(
 			join(
@@ -153,7 +158,7 @@ it.each([
 	);
 	plan.name = "RTMP to MoQ";
 	plan.bitmovin = {
-		accountId: "5a6ad9b8-2cae-4485-a0b3-99130b771be5",
+		accountId: fixtureAccountId,
 		cloudRegion: "AKAMAI_JP_OSA",
 		encoderVersion: "2.294.0",
 		labels: ["moq-example"],
@@ -195,13 +200,13 @@ it.each([
 			kind,
 			segmentLength: kind === "CMAF" ? 0.5 : 1,
 			...(kind === "CMAF" ? { framesPerCmafChunk: 3 } : {}),
-			destination: { outputKey: "relay", path: "video" },
+			destination: { outputKey: "relay", path: "custom/video/720p" },
 		},
 		{
 			...plan.muxings[3],
 			kind,
 			segmentLength: kind === "CMAF" ? 0.5 : 1,
-			destination: { outputKey: "relay", path: "audio" },
+			destination: { outputKey: "relay", path: "custom/audio/128000" },
 		},
 	];
 	plan.liveManifests = [];
@@ -215,14 +220,13 @@ it.each([
 			waitingForFirstConnectTimeoutMinutes: 10,
 		},
 	};
-	expect(
-		validateLiveChannel(liveChannelPlanSchema.parse(plan)).filter(
-			(issue) => issue.level === "error",
-		),
-	).toEqual([]);
+	return plan;
+}
 
+function mockMoqCopy(plan: ReturnType<typeof moqCopyPlan>) {
 	apiFetch.mockImplementation(async (url: string) => {
-		if (url === `/api/live-channels/${id}`) return { name: plan.name, plan };
+		if (url === `/api/live-channels/${sourceChannelId}`)
+			return { name: plan.name, plan };
 		if (url === "/api/auth/session")
 			return {
 				mode: "users",
@@ -233,17 +237,41 @@ it.each([
 				organizationId: "org",
 			};
 		if (url === "/api/credentials")
-			return [{ id: credentialId, provider: "MOQ" }];
+			return [{ id: credentialId, label: "Test relay", provider: "MOQ" }];
+		if (url === "/api/bitmovin-accounts")
+			return [{ id: fixtureAccountId, label: "Test Bitmovin account" }];
 		if (url.startsWith("/api/live-channels/moq-readiness?"))
-			return { status: "ready", issues: [] };
+			return url.includes("namespaceComponents=2")
+				? { status: "publisher-only", issues: ["namespace-unsupported"] }
+				: { status: "ready", issues: [] };
 		if (url === "/api/live-channels") return { id: newChannelId };
 		return [];
 	});
-	renderWithQuery(<LiveWizard duplicateFrom={id} />);
+}
+
+it.each([
+	"FMP4",
+	"CMAF",
+] as const)("copies a %s MoQ channel into the wizard and preserves its settings on creation", async (kind) => {
+	const plan = moqCopyPlan(kind);
+	expect(
+		validateLiveChannel(liveChannelPlanSchema.parse(plan)).filter(
+			(issue) => issue.level === "error",
+		),
+	).toEqual([]);
+	mockMoqCopy(plan);
+	renderWithQuery(<LiveWizard duplicateFrom={sourceChannelId} />);
 	const name = await screen.findByRole("textbox", { name: "Channel name" });
 	expect(name).toHaveValue(plan.name);
 	expect(screen.queryByRole("button", { name: "Edit JSON" })).toBeNull();
+	fireEvent.change(name, { target: { value: "" } });
 	fireEvent.change(name, { target: { value: "Edited MoQ channel" } });
+	fireEvent.click(screen.getByRole("button", { name: "3. Ladder" }));
+	const audioBitrate = screen
+		.getAllByLabelText<HTMLInputElement>("Bitrate (bps)")
+		.find((input) => input.value === "128000");
+	if (!audioBitrate) throw new Error("Missing copied audio bitrate");
+	fireEvent.change(audioBitrate, { target: { value: "96000" } });
 	fireEvent.click(screen.getByRole("button", { name: "4. Output" }));
 	expect(screen.getByRole("combobox", { name: "Credential" })).toHaveValue(
 		credentialId,
@@ -259,6 +287,7 @@ it.each([
 		name: "Create live channel",
 	});
 	await waitFor(() => expect(create).toBeEnabled());
+	expect(await screen.findByText("Publishing only")).toBeInTheDocument();
 	const readiness = new URLSearchParams({
 		credentialId,
 		draftVersion: "DRAFT_18",
@@ -292,6 +321,10 @@ it.each([
 		liveChannelPlanSchema.parse({
 			...plan,
 			name: "Edited MoQ channel",
+			renditions: [
+				plan.renditions[0],
+				{ ...plan.renditions[1], bitrate: 96000 },
+			],
 			outputs: [
 				{
 					...plan.outputs[0],
@@ -301,6 +334,54 @@ it.each([
 			],
 		}),
 	);
+});
+
+it.each([
+	["FMP4", 0],
+	["CMAF", 1],
+] as const)("copies a single-track %s MoQ channel without adding renditions", (kind, index) => {
+	const plan = moqCopyPlan(kind);
+	plan.renditions = [plan.renditions[index]];
+	plan.muxings = [plan.muxings[index]];
+	plan.ingest = [plan.ingest[index]];
+	const parsed = liveChannelPlanSchema.parse(plan);
+	expect(
+		validateLiveChannel(parsed).filter((issue) => issue.level === "error"),
+	).toEqual([]);
+	const copy = tryImportLiveChannelIntoWizard(plan);
+	if (!copy.ok) throw Error(copy.reasonKey);
+	expect(liveChannelPlanSchema.parse(buildLiveChannelPlan(copy.state))).toEqual(
+		parsed,
+	);
+});
+
+it("reuses the pending expert request when an unchanged MoQ copy opens in the form", async () => {
+	const plan = moqCopyPlan("FMP4");
+	const lostResponse =
+		vi.fn<(path: string, init: RequestInit) => Promise<unknown>>();
+	lostResponse.mockRejectedValue(new Error("Connection closed after creation"));
+	const legacy = createSubmissionClient(
+		["org", "user", "live", `wizard:${sourceChannelId}`],
+		{ storage: sessionStorage, send: lostResponse },
+	);
+	await expect(legacy.submit({ plan })).rejects.toThrow(
+		"Connection closed after creation",
+	);
+
+	mockMoqCopy(plan);
+	renderWithQuery(<LiveWizard duplicateFrom={sourceChannelId} />);
+	await screen.findByRole("textbox", { name: "Channel name" });
+	fireEvent.click(screen.getByRole("button", { name: "9. Review" }));
+	const create = screen.getByRole("button", { name: "Create live channel" });
+	await waitFor(() => expect(create).toBeEnabled());
+	fireEvent.click(create);
+	await waitFor(() =>
+		expect(push).toHaveBeenCalledWith(`/live/${newChannelId}`),
+	);
+	const posts = apiFetch.mock.calls.filter(
+		([, init]) => init?.method === "POST",
+	);
+	expect(posts).toEqual([lostResponse.mock.calls[0]]);
 });
 
 it("does not expose a blank editable form while copying or after a source failure", async () => {

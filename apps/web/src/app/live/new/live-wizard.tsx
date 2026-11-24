@@ -6,8 +6,10 @@ import {
 	type CredentialProviderId,
 	type CredentialSummaryWire,
 	isAisaManagedLivePlan,
+	liveChannelPlanSchema,
 	moqDraftVersionSchema,
 } from "@bitovp/core";
+import { plansDeepEqual } from "@bitovp/core/wizard";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -180,6 +182,10 @@ export function LiveWizard({
 	// Duplicate: ?from=<id> prefills the form from an existing channel's plan
 	// (the clean retry for a failed channel — a fresh provision, no stale ids).
 	const [appliedDuplicate, setAppliedDuplicate] = useState<string | null>(null);
+	const copiedMoqSource = useRef<{
+		channelId: string;
+		raw: Record<string, unknown>;
+	} | null>(null);
 	const [duplicatedFrom, setDuplicatedFrom] = useState<string | null>(null);
 	const [duplicateError, setDuplicateError] = useState<string | null>(null);
 	const validDuplicate = z.uuid().safeParse(duplicateFrom).success;
@@ -242,6 +248,12 @@ export function LiveWizard({
 		const name = duplicate.data.name ?? duplicateFrom;
 		const form = tryImportLiveChannelIntoWizard(duplicate.data.plan);
 		if (form.ok) {
+			if (form.state.output.kind === "MOQ") {
+				copiedMoqSource.current = {
+					channelId: duplicateFrom,
+					raw: duplicate.data.plan as Record<string, unknown>,
+				};
+			}
 			setState(form.state);
 			draftBase.current = form.state;
 			setAppliedDraftContext(
@@ -285,6 +297,9 @@ export function LiveWizard({
 	]);
 	const allCredentials = credentials.data ?? [];
 	const isMoq = state.output.kind === "MOQ";
+	const hasStorageMirrors = Boolean(
+		state.mirror || state.additionalMirrors?.length,
+	);
 	const validationOptions = {
 		credentialProviders: new Map(
 			(credentials.data ?? []).map((c) => [c.id, c.provider]),
@@ -388,10 +403,20 @@ export function LiveWizard({
 					t(verdict.errorKey as MessageKey, verdict.params),
 				);
 			}
+			let plan = imported
+				? buildSubmissionPlan(imported, state.accountId)
+				: buildLiveChannelPlan(state);
+			const source = copiedMoqSource.current;
+			if (!imported && source && source.channelId === duplicateFrom) {
+				// An unchanged copy must replay an outstanding expert-mode
+				// request with the same body and idempotency key.
+				const original = buildSubmissionPlan(source, state.accountId);
+				const parsed = liveChannelPlanSchema.safeParse(original);
+				if (parsed.success && plansDeepEqual(parsed.data, current.plan))
+					plan = original;
+			}
 			return creation.submit<{ id: string }>({
-				plan: imported
-					? buildSubmissionPlan(imported, state.accountId)
-					: buildLiveChannelPlan(state),
+				plan,
 				...(verdict.schedule ? { schedule: verdict.schedule } : {}),
 			});
 		},
@@ -481,9 +506,6 @@ export function LiveWizard({
 					...(kind === "AKAMAI_MSL"
 						? {}
 						: { mslStreamFormat: undefined, mslVersion: undefined }),
-					...(kind === "MOQ" && prev.output.kind !== "MOQ"
-						? { publicRead: false, explicitPrivateAcl: undefined }
-						: {}),
 				},
 			};
 			/*
@@ -843,11 +865,14 @@ export function LiveWizard({
 											// unless the base still follows the folder/name shape).
 											output: {
 												...prev.output,
-												basePath: renameOutputBase(
-													prev.output.basePath,
-													prev.name,
-													e.target.value,
-												),
+												basePath:
+													prev.output.kind === "MOQ"
+														? prev.output.basePath
+														: renameOutputBase(
+																prev.output.basePath,
+																prev.name,
+																e.target.value,
+															),
 											},
 										}))
 									}
@@ -1264,9 +1289,7 @@ export function LiveWizard({
 						</>
 					) : null}
 
-					{step === 3 &&
-					!aisaEnabled &&
-					(!isMoq || state.mirror || state.additionalMirrors?.length) ? (
+					{step === 3 && !aisaEnabled && (!isMoq || hasStorageMirrors) ? (
 						<LiveMirrorListSection
 							state={state}
 							credentials={allCredentials}
@@ -1281,7 +1304,7 @@ export function LiveWizard({
 						/>
 					) : null}
 					{step === 6 && !aisaEnabled ? (
-						isMoq ? (
+						isMoq && !hasStorageMirrors && !state.scte35AdMarkers ? (
 							<p className="text-sm text-zinc-400">
 								{t("liveWizard.moqCatalog")}
 							</p>

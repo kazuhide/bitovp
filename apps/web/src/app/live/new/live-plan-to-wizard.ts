@@ -16,6 +16,7 @@ import {
 	type LiveWizardState,
 	liveManifestDestination,
 } from "./build-live-plan";
+import { liveRenditionOptionsProblem } from "./live-rendition-options";
 
 /**
  * Inverse of buildLiveChannelPlan: rebuild an editable LiveWizardState from a
@@ -306,8 +307,10 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 					}
 				: {};
 		})(),
-		videos: videos.length > 0 ? videos : D.videos,
-		audios: audios.length > 0 ? audios : D.audios,
+		videos:
+			videos.length > 0 || primaryState.kind === "MOQ" ? videos : D.videos,
+		audios:
+			audios.length > 0 || primaryState.kind === "MOQ" ? audios : D.audios,
 		segmentLength,
 		manifests: {
 			hls: hlsM
@@ -358,7 +361,12 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 			muxing.initSegmentName !== original.initSegmentName
 		)
 			options.initSegmentName = muxing.initSegmentName;
-		if (muxing.destination?.path !== original.destination?.path)
+		// A copied relay's paths belong to the channel, even when they match
+		// the paths the wizard would derive from the current rendition.
+		if (
+			state.output.kind === "MOQ" ||
+			muxing.destination?.path !== original.destination?.path
+		)
 			options.path = muxing.destination?.path;
 		if (Object.keys(options).length) row.muxing = options;
 	}
@@ -782,7 +790,7 @@ export function tryImportLiveChannelIntoWizard(
 		return { ok: false, reasonKey: "uiX.couldNotDuplicateInvalidPlan" };
 	}
 	let state: LiveWizardState;
-	let rebuilt: unknown;
+	let rebuilt: Plan;
 	try {
 		state = planToLiveWizardState(parsed.data);
 		rebuilt = liveChannelPlanSchema.parse(buildLiveChannelPlan(state));
@@ -795,7 +803,10 @@ export function tryImportLiveChannelIntoWizard(
 			reasonKey: "uiX.couldNotDuplicateUnrepresentedOptions",
 		};
 	}
-	if (!plansDeepEqual(rebuilt, parsed.data)) {
+	if (
+		!plansDeepEqual(rebuilt, parsed.data) ||
+		(state.output.kind === "MOQ" && liveRenditionOptionsProblem(state, rebuilt))
+	) {
 		return {
 			ok: false,
 			reasonKey: "uiX.couldNotDuplicateUnrepresentedOptions",

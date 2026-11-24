@@ -1358,6 +1358,7 @@ function cacheControlSettings(
 }
 
 function outputAcl(output: LiveWizardState["output"]) {
+	if (output.kind === "MOQ") return undefined;
 	return output.publicRead
 		? ("PUBLIC_READ" as const)
 		: output.explicitPrivateAcl

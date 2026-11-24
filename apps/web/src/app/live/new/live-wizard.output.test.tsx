@@ -214,7 +214,7 @@ function optionFor(
 	return option;
 }
 
-it("creates a manifest-free plan when a MoQ relay is chosen in the Live wizard", async () => {
+it("switches to a manifest-free MoQ plan and retains the storage ACL when switching back", async () => {
 	const credential = {
 		id: "77000000-0000-4000-8000-000000000001",
 		label: "Test relay",
@@ -226,14 +226,40 @@ it("creates a manifest-free plan when a MoQ relay is chosen in the Live wizard",
 			return { status: "ready", issues: [] };
 		return [];
 	});
-	const select = await outputCredentialSelect();
+	await outputCredentialSelect();
 	const option = await screen.findByRole("option", { name: /Test relay/ });
 	expect(option).toBeEnabled();
-	await userEvent.selectOptions(select, credential.id);
-	expect(screen.queryByLabelText("Bucket")).not.toBeInTheDocument();
+	fireEvent.click(
+		screen.getByLabelText("ACL PUBLIC_READ (request public read access)"),
+	);
+	fireEvent.click(
+		screen.getByRole("checkbox", { name: "Also deliver to storage" }),
+	);
+	fireEvent.click(screen.getByRole("button", { name: "7. Manifests" }));
+	fireEvent.change(screen.getByLabelText("Output destination"), {
+		target: { value: "mirror-1" },
+	});
+	fireEvent.click(screen.getByRole("checkbox", { name: /Enable SCTE-35/i }));
+	fireEvent.click(screen.getByRole("button", { name: "4. Output" }));
+	fireEvent.change(
+		screen.getByLabelText("Credential", { selector: "#lw-out-cred" }),
+		{
+			target: { value: credential.id },
+		},
+	);
+	expect(document.getElementById("lw-out-bucket")).toBeNull();
 	fireEvent.change(screen.getByLabelText("Track namespace"), {
 		target: { value: "new-channel" },
 	});
+	fireEvent.click(screen.getByRole("button", { name: "7. Manifests" }));
+	fireEvent.change(screen.getByLabelText("Output destination"), {
+		target: { value: "origin" },
+	});
+	fireEvent.click(screen.getByRole("checkbox", { name: /Enable SCTE-35/i }));
+	fireEvent.click(screen.getByRole("button", { name: "4. Output" }));
+	fireEvent.click(
+		screen.getByRole("checkbox", { name: "Also deliver to storage" }),
+	);
 	fireEvent.click(screen.getByRole("button", { name: "1. Basics" }));
 	fireEvent.change(screen.getByLabelText("Channel name"), {
 		target: { value: "New MoQ channel" },
@@ -250,7 +276,22 @@ it("creates a manifest-free plan when a MoQ relay is chosen in the Live wizard",
 		}),
 	]);
 	expect(plan.liveManifests).toEqual([]);
-	expect(plan.muxings.every((muxing) => muxing.kind === "FMP4")).toBe(true);
+	expect(plan.adMarkers).toBeUndefined();
+	expect(
+		plan.muxings.every(
+			(muxing) => muxing.kind === "FMP4" && !muxing.destination?.acl,
+		),
+	).toBe(true);
+	fireEvent.click(screen.getByRole("button", { name: "4. Output" }));
+	fireEvent.change(
+		screen.getByLabelText("Credential", { selector: "#lw-out-cred" }),
+		{
+			target: { value: "cred-s3" },
+		},
+	);
+	expect(
+		screen.getByLabelText("ACL PUBLIC_READ (request public read access)"),
+	).toBeChecked();
 });
 
 it.each([

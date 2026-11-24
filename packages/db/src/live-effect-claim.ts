@@ -274,7 +274,6 @@ export function archivedStopRecoveryTarget(
 		channel.origin !== "MANAGED" ||
 		channel.provisionClaimedAt ||
 		!["STOPPING", "ERROR", "STOPPED"].includes(channel.status) ||
-		(channel.status === "STOPPED" && !channel.error) ||
 		isAisaManagedLivePlan(channel.plan) ||
 		run.aisaAnalysisId
 	)
@@ -287,8 +286,7 @@ export function archivedStopRecoveryTarget(
 	if (!channel.bitmovinEncodingId && !run.bitmovinEncodingId)
 		return archive[0] ?? null;
 	return channel.bitmovinEncodingId &&
-		run.bitmovinEncodingId === channel.bitmovinEncodingId &&
-		archive.includes(channel.bitmovinEncodingId)
+		run.bitmovinEncodingId === channel.bitmovinEncodingId
 		? channel.bitmovinEncodingId
 		: null;
 }
@@ -318,11 +316,21 @@ export async function bindArchivedStopTarget(
 		if (!target || channel.bitmovinEncodingId === target) return target;
 		await tx.liveChannelRun.update({
 			where: { id: run.id },
-			data: { bitmovinEncodingId: target },
+			data: {
+				bitmovinEncodingId: target,
+				providerStatus: null,
+				providerStatusObservedAt: null,
+				providerTerminalAt: null,
+				providerFeederStopsEnqueuedAt: null,
+				providerUnknownSince: null,
+				providerUnknownAlertedAt: null,
+				encoderStoppedConfirmedFor: null,
+				heartbeatPollEpoch: { increment: 1 },
+			},
 		});
 		await tx.liveChannel.update({
 			where: { id: liveChannelId },
-			data: { bitmovinEncodingId: target },
+			data: { bitmovinEncodingId: target, encoderStoppedConfirmedFor: null },
 		});
 		return target;
 	});
@@ -672,6 +680,26 @@ export async function beginLiveEffect(
 				retryingFailed = existing;
 				unsentGeneration = existing.generation;
 			}
+		}
+		if (
+			durableManualStop &&
+			existing?.state === "ACKED" &&
+			existing.liveChannelRunId === input.liveChannelRunId &&
+			existing.providerEncodingId === input.providerEncodingId
+		) {
+			const [channel, run] = await Promise.all([
+				tx.liveChannel.findUnique({ where: { id: input.liveChannelId } }),
+				tx.liveChannelRun.findFirst({
+					where: { liveChannelId: input.liveChannelId },
+					orderBy: { seq: "desc" },
+				}),
+			]);
+			if (
+				channel &&
+				run?.id === input.liveChannelRunId &&
+				archivedStopRecoveryTarget(channel, run) === input.providerEncodingId
+			)
+				retryingFailed = existing;
 		}
 		if (
 			existing &&
@@ -1315,6 +1343,28 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 			// Advance the same CAS that beginLiveEffect uses. A stale admission that
 			// read the pre-reconciliation fence must lose even if it resumes only after
 			// this transaction commits; a no-op row lock would not invalidate it.
+			const archived =
+				unconfirmedRtmpEncoders(run, channel, liveChannelAccountId(channel)) ??
+				[];
+			if (archived.length && !owner && !proof)
+				return blocked(
+					"archived encoder ownership requires an account-bound provider read",
+				);
+			const observedAccount =
+				owner?.bitmovinAccountId ?? proof?.bitmovinAccountId;
+			const retirements: RtmpRetirementReceipt[] = [];
+			if (observedAccount)
+				for (const encodingId of archived) {
+					const status = terminal.get(encodingId);
+					if (status)
+						retirements.push({
+							accountId: observedAccount,
+							encodingId,
+							providerStatus: status,
+							observedAt: input.at.toISOString(),
+							disposition: "TERMINAL",
+						});
+				}
 			const locked = await tx.liveChannel.updateMany({
 				where: {
 					id: input.liveChannelId,
@@ -1360,6 +1410,14 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					data: {
 						status: confirmedStatus,
 						error: confirmedError,
+						...(retirements.length
+							? {
+									rtmpRetirementEvidence: mergeRtmpRetirementEvidence(
+										run.rtmpRetirementEvidence,
+										retirements,
+									),
+								}
+							: {}),
 						endedAt: run.endedAt ?? input.at,
 						bitmovinEncodingId: input.providerEncodingId,
 						heartbeatPollEpoch: { increment: 1 },

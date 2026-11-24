@@ -104,8 +104,10 @@ const EXPECTATIONS: Expectation[] = [
 		// Count its { status, error } write; the owned failure emits after commit.
 		// Ordinary cancellation now shares the same two atomic terminal writes.
 		// The two former standalone persists disappear; both call sites still emit.
-		writeCount: 11,
-		emitCount: 11,
+		// An unsafe RTMP replacement marks both the channel and its run ERROR
+		// in one transaction, then emits one CHANNEL_ERROR for that broadcast.
+		writeCount: 13,
+		emitCount: 12,
 	},
 	{
 		// the provider-lifecycle

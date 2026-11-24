@@ -12,6 +12,7 @@ import {
 	type ResolveLiveEffectsAfterConfirmedStopInput,
 	resolveLiveEffectsAfterConfirmedStop,
 	savedStopReadbacks,
+	unconfirmedRtmpEncoders,
 	unreservedStopTargets,
 } from "@bitovp/db";
 import { HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS } from "../heartbeat-cadence";
@@ -154,6 +155,8 @@ export function createUncertainStopReconciler(
 					const targets = completeTargets ?? [claim.providerEncodingId];
 					const clean =
 						completeTargets !== null &&
+						unconfirmedRtmpEncoders(run, channel, liveChannelAccountId(channel))
+							?.length === 0 &&
 						channel.status === "STOPPED" &&
 						channel.error === null &&
 						run.status === "STOPPED" &&

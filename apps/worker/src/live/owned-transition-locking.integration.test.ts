@@ -873,14 +873,18 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				archive = randomUUID();
 			await tenant.liveChannel.update({
 				where: { id: f.channel.id },
-				data: { status: "ERROR", bitmovinEncodingId: null },
+				data: { status: "STOPPED", bitmovinEncodingId: null },
 			});
 			await tenant.liveChannelRun.update({
 				where: { id: f.run.id },
 				data: {
-					status: "ERROR",
+					status: "STOPPED",
 					bitmovinEncodingId: null,
 					previousProviderEncodingIds: [archive],
+					providerStatus: "FINISHED",
+					providerTerminalAt: lease,
+					providerStatusObservedAt: lease,
+					encoderStoppedConfirmedFor: f.encodingId,
 				},
 			});
 			expect(
@@ -892,6 +896,18 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			expect(await bindArchivedStopTarget(tenant, f.channel.id, f.run.id)).toBe(
 				archive,
 			);
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({
+				bitmovinEncodingId: archive,
+				providerStatus: null,
+				providerTerminalAt: null,
+				providerStatusObservedAt: null,
+				encoderStoppedConfirmedFor: null,
+				heartbeatPollEpoch: 8,
+			});
 			const job = {
 				...f.job,
 				effect: { ...f.job.effect, providerEncodingId: archive },
@@ -900,6 +916,46 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				status: "STOPPED",
 			});
 			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(archive);
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({
+				rtmpRetirementEvidence: [
+					{
+						accountId: f.accountId,
+						encodingId: archive,
+						providerStatus: "FINISHED",
+						disposition: "TERMINAL",
+						observedAt: now.toISOString(),
+					},
+				],
+			});
+			expect(
+				await bindArchivedStopTarget(tenant, f.channel.id, f.run.id),
+			).toBeNull();
+			// An upgraded ACKED run may lack the second encoder's retirement receipt.
+			// Keep the confirmed primary binding and recover only the other encoder.
+			const oldSecondary = randomUUID();
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { previousProviderEncodingIds: [archive, oldSecondary] },
+			});
+			expect(await bindArchivedStopTarget(tenant, f.channel.id, f.run.id)).toBe(
+				archive,
+			);
+			expect(await createLiveChannelProcessor(f.deps)(job)).toMatchObject({
+				status: "STOPPED",
+			});
+			expect(
+				vi.mocked(f.sdk.stopLiveEncoding).mock.calls.map(([id]) => id),
+			).toEqual([archive, oldSecondary]);
+			expect(
+				await bindArchivedStopTarget(tenant, f.channel.id, f.run.id),
+			).toBeNull();
+			expect(
+				await tenant.liveStopNotification.count({ where: { id: f.run.id } }),
+			).toBe(1);
 		});
 
 		it("retires an exhausted still-current RESTART after lease expiry without touching its provider", async () => {

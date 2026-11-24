@@ -568,11 +568,24 @@ const liveDrm = z.discriminatedUnion("kind", [
 	}),
 ]);
 const live = fields(
-	"name accountId cloudRegion encoderVersion staticIpId inputKind mirrorKey",
+	"name accountId cloudRegion encoderVersion staticIpId inputKind inputKey mirrorKey",
 	"segmentLength",
 	"scte35AdMarkers",
 	{
 		...common,
+		output: group(
+			location.extend({
+				moq: group(
+					fields("key draftVersion", "", "", {
+						// The namespace is a tuple. Omit it as a unit if a value
+						// cannot be saved, so restore can keep the source tuple.
+						trackNamespace: group(
+							z.array(z.string().max(2048).refine(draftKeepsText)).max(32),
+						),
+					}),
+				),
+			}),
+		),
 		aisaLive: group(
 			fields(
 				"outputId recordingPath analysisPath esVersion aicaVersion",
@@ -819,6 +832,7 @@ export function mergeWizardDraft<T>(
 					]),
 		],
 		output: outputFields,
+		"output.moq": ["key", "draftVersion", "trackNamespace"],
 		mirror: outputFields,
 		"additionalOutputs.*": outputFields,
 		"additionalMirrors.*": ["key", "output"],

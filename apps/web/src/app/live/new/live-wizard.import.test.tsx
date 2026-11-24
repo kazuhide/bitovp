@@ -214,7 +214,7 @@ it("keeps an unresolved output editable as the exact imported JSON", async () =>
 	);
 });
 
-it("submits an MoQ-only plan from expert JSON without converting it to storage or losing its namespace", async () => {
+it("keeps a valid MoQ plan with a relay-root path submittable through expert JSON", async () => {
 	const raw = plan();
 	const credentialId = "00000000-0000-4000-8000-000000000002";
 	raw.outputs = [
@@ -229,11 +229,17 @@ it("submits an MoQ-only plan from expert JSON without converting it to storage o
 	];
 	raw.liveManifests = [];
 	raw.start.encodingOption = "CUSTOM";
-	raw.muxings = raw.muxings.map((muxing: { destination: object }) => ({
-		...muxing,
-		segmentLength: 1,
-		destination: { ...muxing.destination, outputKey: "relay" },
-	}));
+	raw.muxings = raw.muxings.map(
+		(muxing: { destination: object }, index: number) => ({
+			...muxing,
+			segmentLength: 1,
+			destination: {
+				...muxing.destination,
+				...(index === 0 ? { path: "" } : {}),
+				outputKey: "relay",
+			},
+		}),
+	);
 	expect(liveChannelPlanSchema.safeParse(raw).success).toBe(true);
 	let finishCheck!: (value: unknown) => void;
 	const check = new Promise((resolve) => {

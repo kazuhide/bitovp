@@ -44,6 +44,7 @@ const LIVE_OUTPUT_KINDS: Record<LiveWizardState["output"]["kind"], true> = {
 	AKAMAI_NETSTORAGE: true,
 	AKAMAI_MSL: true,
 	LIVE_MEDIA_INGEST: true,
+	MOQ: true,
 };
 
 describe("every live output kind is reachable from a credential", () => {
@@ -76,6 +77,11 @@ describe("every live output kind is reachable from a credential", () => {
 		// impossible VOD output selectable, which is a worse bug than the one
 		// being fixed because it fails at submit rather than at the dropdown.
 		expect(outputKindForProvider("AKAMAI_MSL")).toBeNull();
+	});
+
+	it("exposes a relay credential for Live only", () => {
+		expect(liveOutputKindForProvider("MOQ")).toBe("MOQ");
+		expect(outputKindForProvider("MOQ")).toBeNull();
 	});
 
 	it("still refuses providers that are not storage at all", () => {

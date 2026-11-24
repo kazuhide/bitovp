@@ -130,6 +130,7 @@ model LiveStopNotification {
   leaseToken     String? @db.Uuid
   finishedAt     DateTime?
   failureReason  String?
+  skipped        Boolean @default(false)
 
   @@index([organizationId, nextAttemptAt, id])
   @@index([organizationId, finishedAt, id])

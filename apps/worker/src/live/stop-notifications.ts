@@ -2,12 +2,15 @@ import { randomUUID } from "node:crypto";
 import { EVENT_VERSION } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 
-import { NotificationDeliveryError } from "../notify/processor";
+import {
+	type DeliveryResult,
+	NotificationDeliveryError,
+} from "../notify/processor";
 
 type Deliver = (job: {
 	data: unknown;
 	beforeSend?: () => Promise<void>;
-}) => Promise<unknown>;
+}) => Promise<Pick<DeliveryResult, "outcome">[]>;
 
 const leaseMs = 60_000;
 const maxAttempts = 5;
@@ -27,7 +30,7 @@ export function createStopNotificationSweep(
 			orderBy: [{ nextAttemptAt: "asc" }, { id: "asc" }],
 			take: 16,
 		});
-		const finishedStates = new Set<"PROCESSED" | "FAILED">();
+		const finishedStates = new Set<"PROCESSED" | "FAILED" | "NO_DESTINATION">();
 		for (const row of pending) {
 			const token = randomUUID();
 			const owner = { id: row.id, leaseToken: token };
@@ -46,10 +49,11 @@ export function createStopNotificationSweep(
 			});
 			if (!claimed.count) continue;
 
-			let result: "PROCESSED" | "FAILED" = "PROCESSED";
+			let result: "PROCESSED" | "FAILED" | "NO_DESTINATION" = "PROCESSED";
+			let retry = false;
 			let failureReason: string | null = null;
 			try {
-				await deliver({
+				const destinations = await deliver({
 					data: {
 						eventVersion: EVENT_VERSION,
 						kind: row.kind,
@@ -72,8 +76,14 @@ export function createStopNotificationSweep(
 						if (!renewed.count) throw new DeliveryLeaseLost();
 					},
 				});
+				if (!destinations.length) result = "NO_DESTINATION";
+				else if (destinations.some(({ outcome }) => outcome !== "DELIVERED")) {
+					result = "FAILED";
+					failureReason = "A notification destination refused delivery";
+				}
 			} catch (error) {
 				if (error instanceof DeliveryLeaseLost) continue;
+				retry = true;
 				result = "FAILED";
 				failureReason =
 					error instanceof NotificationDeliveryError
@@ -81,7 +91,7 @@ export function createStopNotificationSweep(
 						: "Notification processing failed";
 			}
 
-			if (result === "FAILED" && row.failures + 1 < maxAttempts) {
+			if (retry && row.failures + 1 < maxAttempts) {
 				await prisma.liveStopNotification.updateMany({
 					where: owner,
 					data: {
@@ -102,6 +112,7 @@ export function createStopNotificationSweep(
 						leaseToken: null,
 						nextAttemptAt: null,
 						finishedAt: now(),
+						skipped: result === "NO_DESTINATION",
 						failureReason,
 						failures: row.failures + (result === "FAILED" ? 1 : 0),
 					},
@@ -118,7 +129,7 @@ export function createStopNotificationSweep(
 				});
 				if (result === "FAILED")
 					console.warn(
-						`[notify] STOP notification failed after ${maxAttempts} attempts for broadcast ${row.id}`,
+						`[notify] STOP notification failed after ${row.failures + 1} attempts for broadcast ${row.id}`,
 					);
 			});
 		}
@@ -127,6 +138,7 @@ export function createStopNotificationSweep(
 		for (const state of finishedStates) {
 			const where = {
 				finishedAt: { not: null },
+				skipped: state === "NO_DESTINATION",
 				failureReason: state === "FAILED" ? { not: null } : null,
 			};
 			const expired = await prisma.liveStopNotification.findMany({

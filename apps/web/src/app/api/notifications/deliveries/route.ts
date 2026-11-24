@@ -20,6 +20,7 @@ export async function GET() {
 				prisma.liveStopNotification.findMany({
 					where: {
 						finishedAt: { not: null },
+						skipped: false,
 						failureReason: failed ? { not: null } : null,
 					},
 					orderBy: [{ finishedAt: "desc" }, { id: "desc" }],

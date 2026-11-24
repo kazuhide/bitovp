@@ -29,6 +29,7 @@ import {
 } from "@bitovp/db";
 import type { Job } from "bullmq";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createNotifyProcessor } from "../notify/processor";
 import { createAisaLiveOps } from "../orchestrator/aisa-live-ops";
 import { fakeSdk } from "../orchestrator/fake-sdk";
 import {
@@ -2118,7 +2119,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			).toBe(state === "FAILED" ? 1 : 0);
 		});
 
-		it("upgrades the same pre-send legacy STOP key and commits its CHANNEL_STOPPED work", async () => {
+		it.each([
+			1, 2, 4,
+		])("upgrades the same ordinary legacy STOP key after %i pre-send failures", async (attempt) => {
 			const f = await dispatchFixture();
 			await tenant.liveEffectClaim.create({
 				data: {
@@ -2127,6 +2130,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					providerEncodingId: f.encodingId,
 					action: "STOP",
 					state: "FAILED",
+					attempt,
 					token: randomUUID(),
 					generation: 0,
 					ownerId: "legacy",
@@ -2284,13 +2288,14 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					if (
 						(data as { liveChannelId: string }).liveChannelId !== f.channel.id
 					)
-						return;
+						return [];
 					await beforeSend?.();
 					calls.push(data);
 					if (!failed) {
 						failed = true;
 						throw new Error("test delivery failure");
 					}
+					return [{ outcome: "DELIVERED" }];
 				},
 				"https://bitovp.example",
 				() => clock,
@@ -2345,11 +2350,12 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					if (
 						(data as { liveChannelId: string }).liveChannelId !== f.channel.id
 					)
-						return;
+						return [];
 					entered.release();
 					await resume.ready;
 					await beforeSend?.();
 					delivered("stale");
+					return [{ outcome: "DELIVERED" }];
 				},
 				undefined,
 				() => clock,
@@ -2363,9 +2369,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						if (
 							(data as { liveChannelId: string }).liveChannelId !== f.channel.id
 						)
-							return;
+							return [];
 						await beforeSend?.();
 						delivered("replacement");
+						return [{ outcome: "DELIVERED" }];
 					},
 					undefined,
 					() => clock,
@@ -2420,6 +2427,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					async ({ data }) => {
 						if ((data as { kind: string }).kind === "CHANNEL_ERROR")
 							throw new Error("private destination");
+						return [{ outcome: "DELIVERED" }];
 					},
 					undefined,
 					() => now,
@@ -2450,6 +2458,81 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			}
 		});
 
+		it.each([
+			"host",
+			"config",
+			"none",
+			"partial",
+		] as const)("records actual webhook delivery with %s destinations", async (mode) => {
+			const f = await stopFixture();
+			await tenant.liveEffectClaim.update({
+				where: { id: f.claim.id },
+				data: { stopProtocolVersion: 1 },
+			});
+			await resolveLiveEffectsAfterConfirmedStop(tenant, f.proof);
+			const ch = {
+				id: randomUUID(),
+				name: "private-name",
+				kind: "GENERIC_WEBHOOK",
+				credentialId: "refused",
+				rules: [{ events: ["CHANNEL_STOPPED"], filter: {} }],
+			};
+			const fetchImpl = vi.fn(async () => new Response(null, { status: 204 }));
+			const deliver = createNotifyProcessor({
+				prisma: {
+					notificationChannel: {
+						findMany: async () =>
+							mode === "none"
+								? []
+								: [
+										ch,
+										...(mode === "partial"
+											? [{ ...ch, id: randomUUID(), credentialId: "ok" }]
+											: []),
+									],
+					},
+				},
+				egressAllowlist: () => ["allowed.example"],
+				revealWebhookUrl: async (id) =>
+					id === "ok"
+						? "https://allowed.example/events"
+						: mode === "config"
+							? "malformed"
+							: "https://refused.example/events",
+				fetchImpl,
+			});
+			const process = createStopNotificationSweep(
+				tenant,
+				async (job) =>
+					(job.data as { liveChannelId: string }).liveChannelId === f.channel.id
+						? deliver(job)
+						: [],
+				undefined,
+				() => now,
+			);
+			await process();
+			await process();
+			expect(fetchImpl).toHaveBeenCalledTimes(mode === "partial" ? 1 : 0);
+			const row = await tenant.liveStopNotification.findUniqueOrThrow({
+				where: { id: f.run.id },
+			});
+			expect(row).toMatchObject({
+				nextAttemptAt: null,
+				skipped: mode === "none",
+				failures: mode === "none" ? 0 : 1,
+				failureReason:
+					mode === "none"
+						? null
+						: "A notification destination refused delivery",
+			});
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({
+				stopNotificationState: mode === "none" ? "NO_DESTINATION" : "FAILED",
+			});
+		});
 		it("records a terminal failed delivery after five known failures", async () => {
 			const f = await stopFixture();
 			await tenant.liveChannelRun.update({
@@ -2471,7 +2554,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					if (
 						(data as { liveChannelId: string }).liveChannelId !== f.channel.id
 					)
-						return;
+						return [];
 					await beforeSend?.();
 					attempts++;
 					throw new Error("simulated destination outage");
@@ -2653,6 +2736,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			}) => {
 				await job.beforeSend?.();
 				events.push(job.data);
+				return [{ outcome: "DELIVERED" as const }];
 			};
 			await createStopNotificationSweep(otherTenant, deliver)();
 			expect(events).toEqual([]);

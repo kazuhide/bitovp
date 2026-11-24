@@ -6,7 +6,7 @@ ALTER TABLE "LiveChannelRun"
     ("stopNotificationKind" IS NULL AND "stopNotificationAt" IS NULL AND "stopNotificationState" IS NULL)
     OR ("stopNotificationKind" IS NOT NULL AND "stopNotificationKind" IN ('CHANNEL_STOPPED','CHANNEL_ERROR')
         AND "stopNotificationAt" IS NOT NULL AND "stopNotificationState" IS NOT NULL
-        AND "stopNotificationState" IN ('PENDING','PROCESSED','FAILED','LEGACY_UNKNOWN'))
+        AND "stopNotificationState" IN ('PENDING','PROCESSED','FAILED','LEGACY_UNKNOWN','NO_DESTINATION'))
   );
 
 CREATE TABLE "LiveStopNotification" (
@@ -22,9 +22,11 @@ CREATE TABLE "LiveStopNotification" (
   "leaseToken" UUID,
   "finishedAt" TIMESTAMP(3),
   "failureReason" TEXT,
+  "skipped" BOOLEAN NOT NULL DEFAULT FALSE,
+  CHECK (NOT "skipped" OR ("finishedAt" IS NOT NULL AND "failureReason" IS NULL)),
   CHECK (("finishedAt" IS NULL AND "nextAttemptAt" IS NOT NULL AND "failureReason" IS NULL AND "failures" < 5)
     OR ("finishedAt" IS NOT NULL AND "nextAttemptAt" IS NULL AND "leaseToken" IS NULL AND
-        (("failureReason" IS NULL AND "failures" < 5) OR ("failureReason" IS NOT NULL AND "failures" = 5))))
+        (("failureReason" IS NULL AND "failures" < 5) OR ("failureReason" IS NOT NULL AND "failures" BETWEEN 1 AND 5))))
 );
 
 CREATE INDEX "LiveStopNotification_organizationId_nextAttemptAt_id_idx"

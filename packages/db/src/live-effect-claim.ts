@@ -153,6 +153,37 @@ type StopHistory = {
 	stopOutcomeEvidence?: unknown;
 };
 
+/** Native legacy STOP only retried its own FAILED key before sending. An
+ * Analysis retry could follow a composite dispatch, so an older multi-attempt
+ * Analysis needs independent evidence before emitting a new notification. */
+function legacyStopFailedBeforeSend(
+	claim: {
+		state: string;
+		attempt: number;
+		stopSendEncodingIds?: string[];
+		stopAnalysisSendId?: string | null;
+		stopOutcomeEvidence?: unknown;
+	},
+	channel: { plan: unknown },
+	run: {
+		aisaAnalysisId?: string | null;
+		aisaStatus?: string | null;
+		aisaSnapshot?: unknown;
+	},
+): boolean {
+	return (
+		claim.state === "FAILED" &&
+		!claim.stopSendEncodingIds?.length &&
+		!claim.stopAnalysisSendId &&
+		claim.stopOutcomeEvidence == null &&
+		(claim.attempt === 1 ||
+			(!isAisaManagedLivePlan(channel.plan) &&
+				!run.aisaAnalysisId &&
+				run.aisaStatus == null &&
+				run.aisaSnapshot == null))
+	);
+}
+
 /** Only legacy STOP diagnostics need to recover target IDs from human-readable fields. */
 function legacyFaultTargets(error: string | null | undefined): string[] | null {
 	const prefix = "stop did not confirm — ";
@@ -926,6 +957,9 @@ export async function beginLiveEffect(
 					providerTerminalAt: true,
 					stopNotificationAt: true,
 					stopNotificationKind: true,
+					aisaAnalysisId: true,
+					aisaStatus: true,
+					aisaSnapshot: true,
 					archivedRtmpAttempt: true,
 					previousProviderEncodingIds: true,
 					rtmpRetirementEvidence: true,
@@ -1103,8 +1137,7 @@ export async function beginLiveEffect(
 							: {}),
 						...(input.action === "STOP" &&
 						retryingFailed.stopProtocolVersion == null &&
-						retryingFailed.state === "FAILED" &&
-						retryingFailed.attempt === 1
+						legacyStopFailedBeforeSend(retryingFailed, channel, currentRun)
 							? {
 									stopProtocolVersion: 1,
 									legacyStopErrorNotificationPossible: true,
@@ -1268,6 +1301,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						legacyStopErrorNotificationPossible: true,
 						attempt: true,
 						stopSendEncodingIds: true,
+						stopAnalysisSendId: true,
 						stopOutcomeEvidence: true,
 					},
 				}),
@@ -1612,8 +1646,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 								? confirmedStatus === "STOPPED" ||
 									!claim.legacyStopErrorNotificationPossible
 								: confirmedStatus === "STOPPED" &&
-									claim.state === "FAILED" &&
-									claim.attempt === 1),
+									legacyStopFailedBeforeSend(claim, channel, run)),
 					),
 				liveChannelId: input.liveChannelId,
 				liveChannelRunId: run.id,

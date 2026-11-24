@@ -160,7 +160,7 @@ it("merges retained STOP receipts and queue jobs by completion time, breaking ti
 	});
 	for (const failureReason of [null, { not: null }])
 		expect(findMany).toHaveBeenCalledWith({
-			where: { finishedAt: { not: null }, failureReason },
+			where: { finishedAt: { not: null }, skipped: false, failureReason },
 			orderBy: [{ finishedAt: "desc" }, { id: "desc" }],
 			take: 20,
 			select: {

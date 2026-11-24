@@ -347,6 +347,8 @@ delivery. A destination can receive the event again after a retry or worker rest
 For stops already in progress during upgrade, prior delivery can be unknown.
 In that case recovery records the uncertainty and skips a replacement notification.
 
+If a managed AISA channel stays in **Stopping** after the worker that accepted a manual stop exits, reopen the channel. **Stop channel** becomes available to its preview owner when the 20-minute dispatch lease expires and the current airing has a per-target stop record. Confirming it retries that airing. The worker checks the Analysis and encoder IDs and reads back any previously reserved send. If a legacy stop has no per-target record, check both resources in the provider account before attempting further action.
+
 If managed AISA already has a final result and a terminal encoder, the worker can finish stop confirmation after the last feeder exits. A RESTART that loses its worker returns an error after its ownership period expires. Check the provider or use Stop on the same encoder.
 
 A START error can leave the provider state uncertain. Startup cancellation

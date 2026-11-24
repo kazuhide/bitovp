@@ -224,6 +224,7 @@ export type LiveChannelDetailRow = LiveChannelListItem & {
 	/** Server-authorized AISA capability; absent is denied. */
 	aisaFeatureAllowed?: boolean;
 	canRecoverArchivedStop?: boolean;
+	canResumeAisaStop?: boolean;
 	canRetryAisaFinalization?: boolean;
 	liveEffectFenceVersion?: number;
 	/** Absent on older responses; absence never proves no Push was received. */

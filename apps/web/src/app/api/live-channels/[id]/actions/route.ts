@@ -46,6 +46,7 @@ import {
 	validationError,
 } from "@/lib/server/http";
 import {
+	canResumeAisaStop,
 	canRetryEndedAisaFinalization,
 	isExpiredStopDispatch,
 } from "@/lib/server/live-channel-aisa-view";
@@ -319,7 +320,7 @@ async function inspectManualStopClaim(
 				"the durable claim does not match the current manual stop identity",
 		};
 	}
-	// Only an explicit run-bound finalization retry can requeue an expired
+	// Only an explicit run-bound AISA retry can requeue an expired
 	// dispatch. The worker still checks claim ownership before sending.
 	if (
 		recovery.allowExpiredAisaDispatch &&
@@ -620,6 +621,9 @@ const actionSchema = z.discriminatedUnion("action", [
 		action: z.literal("stop"),
 		// Reject the earlier scoped request rather than stripping its run binding.
 		finalizationRunId: z.never().optional(),
+		recoveryTarget: z
+			.strictObject({ runId: z.uuid(), encodingId: z.string().min(1) })
+			.optional(),
 	}),
 	z.strictObject({
 		action: z.literal("retry-finalization"),
@@ -1130,6 +1134,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 				let recoveredTarget: string | null = null;
 				if (
 					action.action === "stop" &&
+					!action.recoveryTarget &&
 					(!row.bitmovinEncodingId || row.status === "STOPPING") &&
 					!aisaManaged &&
 					["ERROR", "STOPPED", "STOPPING"].includes(row.status)
@@ -1179,6 +1184,25 @@ export async function POST(req: Request, { params }: RouteParams) {
 						"LIVE_ACTION_NOT_STOPPABLE",
 					);
 				}
+				const activeTarget =
+					action.action === "stop" ? action.recoveryTarget : undefined;
+				if (
+					activeTarget &&
+					(latestAisaRun?.id !== activeTarget.runId ||
+						row.bitmovinEncodingId !== activeTarget.encodingId ||
+						!(await canResumeAisaStop(
+							ctx.prisma,
+							row,
+							latestAisaRun,
+							Date.now(),
+						)))
+				) {
+					return codedError(
+						409,
+						"The selected AISA stop is no longer available for retry",
+						"LIVE_ACTION_NOT_STOPPABLE",
+					);
+				}
 				const allowAisaRecovery =
 					Boolean(finalizationTarget) ||
 					Boolean(
@@ -1195,7 +1219,8 @@ export async function POST(req: Request, { params }: RouteParams) {
 						row.error !== undefined);
 				const recovery = {
 					allowAisaRecovery,
-					allowExpiredAisaDispatch: finalizationTarget !== undefined,
+					allowExpiredAisaDispatch:
+						finalizationTarget !== undefined || activeTarget !== undefined,
 				};
 				if (row.status === "STOPPING" && !recoveredTarget) {
 					const replayPlan = await effectPlan(
@@ -1204,6 +1229,21 @@ export async function POST(req: Request, { params }: RouteParams) {
 						row.bitmovinEncodingId,
 						{ finalizationTarget },
 					);
+					if (
+						activeTarget &&
+						!("error" in replayPlan) &&
+						(replayPlan.runId !== activeTarget.runId ||
+							replayPlan.providerEncodingId !== activeTarget.encodingId ||
+							replayPlan.cancelRequested ||
+							replayPlan.providerRefusalCode ===
+								"LIVE_ACTION_PROVIDER_TERMINAL")
+					) {
+						return codedError(
+							409,
+							"The selected AISA stop changed before retry",
+							"LIVE_ACTION_NOT_STOPPABLE",
+						);
+					}
 					if ("error" in replayPlan) {
 						return codedError(
 							409,

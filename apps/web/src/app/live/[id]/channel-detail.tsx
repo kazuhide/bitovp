@@ -477,6 +477,7 @@ function ChannelConsole({
 						providerTerminal={providerTerminal}
 						canRecoverArchivedStop={row.canRecoverArchivedStop}
 						canRetryAisaFinalization={row.canRetryAisaFinalization}
+						canResumeAisaStop={row.canResumeAisaStop}
 						hasError={row.error != null}
 					>
 						<DuplicateChannelButton channelId={id} />

@@ -691,6 +691,66 @@ describe("AISA lifecycle admission", () => {
 			expect(queuedJobs.get(jobId)).toBe(job);
 		}
 	});
+	it.each([
+		["expired", 202],
+		["missing-job", 202],
+		["before-run-mirror", 202],
+		["old-generation", 409],
+		["stale-observation", 202],
+		["current-lease", 409],
+		["legacy", 409],
+		["wrong-run", 409],
+		["wrong-encoder", 409],
+		["terminal", 409],
+		["cancelled", 409],
+	] as const)("retries the interrupted active AISA Stop from the detail view (%s)", async (condition, status) => {
+		findUnique.mockResolvedValue(
+			channel({
+				status: "STOPPING",
+				plan: {
+					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+				},
+			}),
+		);
+		runFindFirst.mockResolvedValue({
+			id: RUN_ID,
+			seq: 1,
+			status: condition === "before-run-mirror" ? "RUNNING" : "STOPPING",
+			bitmovinEncodingId: "bm-live-enc",
+			cancelRequested: condition === "cancelled",
+			aisaAnalysisId: "analysis-1",
+			aisaStatus: "RUNNING",
+			providerStatus: condition === "terminal" ? "FINISHED" : "RUNNING",
+			providerTerminalAt: condition === "terminal" ? new Date() : null,
+			providerStatusObservedAt:
+				condition === "stale-observation" ? new Date(0) : new Date(),
+		});
+		effectClaimFindUnique.mockResolvedValue(
+			manualStopClaim("DISPATCHING", {
+				stopProtocolVersion: condition === "legacy" ? null : 1,
+				generation: condition === "old-generation" ? 9 : 0,
+				expiresAt:
+					condition === "current-lease"
+						? new Date(Date.now() + 60000)
+						: new Date(0),
+			}),
+		);
+		const jobId = `manual-stop-${CHANNEL_ID}-${RUN_ID}`;
+		if (condition !== "missing-job")
+			retainQueuedJob(jobId, manualStopJobData(), "failed");
+		const result = await postAction({
+			action: "stop",
+			recoveryTarget: {
+				runId: condition === "wrong-run" ? REQUEST_ID : RUN_ID,
+				encodingId:
+					condition === "wrong-encoder" ? "old-encoder" : "bm-live-enc",
+			},
+		});
+		expect(result.status).toBe(status);
+		expect(queueAdd).toHaveBeenCalledTimes(status === 202 ? 1 : 0);
+		if (status === 202)
+			expect(queuedJobs.get(jobId)?.data).toMatchObject(manualStopJobData());
+	});
 	it("rejects the old finalization field on Stop before dispatching against the current run", async () => {
 		const result = await postAction({
 			action: "stop",

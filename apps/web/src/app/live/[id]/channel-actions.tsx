@@ -89,6 +89,7 @@ export function ChannelLifecycleActions({
 	providerTerminal = false,
 	canRecoverArchivedStop = false,
 	canRetryAisaFinalization = false,
+	canResumeAisaStop = false,
 	plan,
 	runId,
 	generation = 0,
@@ -104,6 +105,7 @@ export function ChannelLifecycleActions({
 	providerTerminal?: boolean;
 	canRecoverArchivedStop?: boolean;
 	canRetryAisaFinalization?: boolean;
+	canResumeAisaStop?: boolean;
 	plan?: LiveChannelPlan;
 	runId?: string;
 	generation?: number;
@@ -187,16 +189,18 @@ export function ChannelLifecycleActions({
 		mutationFn: ({
 			action,
 			finalization,
+			recoveryTarget,
 		}: {
 			action: LiveChannelAction;
 			finalization?: { runId: string; encodingId: string };
+			recoveryTarget?: { runId: string; encodingId: string };
 		}) =>
 			apiFetch(`/api/live-channels/${channelId}/actions`, {
 				method: "POST",
 				body: JSON.stringify(
 					finalization
 						? { action: "retry-finalization", ...finalization }
-						: { action },
+						: { action, recoveryTarget },
 				),
 			}),
 		onMutate: () => {
@@ -338,12 +342,17 @@ export function ChannelLifecycleActions({
 	);
 	const isNewRun =
 		status === "STOPPED" || (status === "ERROR" && providerTerminal);
+	const retryActiveStop =
+		canResumeAisaStop &&
+		managedAisa &&
+		status === "STOPPING" &&
+		Boolean(runId && encodingId);
 	const canStop =
 		canRecoverArchivedStop ||
 		(!cancellationPending &&
 			hasEncoding &&
 			!providerTerminal &&
-			(status === "RUNNING" || status === "ERROR"));
+			(status === "RUNNING" || status === "ERROR" || retryActiveStop));
 	/**
 	 * Restart is for an encoding that is STILL UP. A stopped channel's
 	 * encoding is FINISHED (stopChannel calls stopLiveEncoding), and Bitmovin
@@ -515,6 +524,12 @@ export function ChannelLifecycleActions({
 							}
 							act.mutate({
 								action: dialogCopy.action,
+								...(confirmation === "stop" &&
+								retryActiveStop &&
+								runId &&
+								encodingId
+									? { recoveryTarget: { runId, encodingId } }
+									: {}),
 							});
 						}}
 					>

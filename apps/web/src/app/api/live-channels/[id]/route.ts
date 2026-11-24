@@ -36,6 +36,7 @@ import {
 	AISA_CHANNEL_RESPONSE_HEADERS,
 	aisaChannelViewerProjection,
 	aisaPublisherConnectionAllowed,
+	canResumeAisaStop,
 	canRetryEndedAisaFinalization,
 	isAisaLiveChannelView,
 } from "@/lib/server/live-channel-aisa-view";
@@ -254,6 +255,14 @@ export async function GET(req: Request, { params }: RouteParams) {
 					? {
 							playbackLinksAvailability: "unavailable",
 							aisaFeatureAllowed: true,
+							canResumeAisaStop:
+								channel.origin === "MANAGED" &&
+								(await canResumeAisaStop(
+									ctx.prisma,
+									channel,
+									currentRun,
+									observedNow.getTime(),
+								)),
 							canRetryAisaFinalization:
 								channel.origin !== "AISA_IMPORTED" &&
 								(await canRetryEndedAisaFinalization(

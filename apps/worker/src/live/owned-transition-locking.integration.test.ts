@@ -1060,7 +1060,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			).toMatchObject({ state: "ACKED", attempt: 2 });
 		});
 
-		it("supersedes during the real AISA binding GET, sends the first Analysis STOP and fences the old observation", async () => {
+		it.each([
+			"manual-after-schedule",
+			"expired-manual",
+		] as const)("sends the first Analysis STOP and fences the interrupted binding GET (%s)", async (scenario) => {
 			const f = await dispatchFixture(randomUUID()),
 				analysisId = randomUUID();
 			const snapshot = {
@@ -1121,28 +1124,51 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					f.sdk,
 				),
 			});
-			const schedule = await tenant.liveSchedule.create({
-				data: {
-					action: "STOP",
-					fireAt: lease,
-					liveChannelId: f.channel.id,
-					liveChannelRunId: f.run.id,
-					status: "FIRED",
-				},
-			});
+			const schedule =
+				scenario === "manual-after-schedule"
+					? await tenant.liveSchedule.create({
+							data: {
+								action: "STOP",
+								fireAt: lease,
+								liveChannelId: f.channel.id,
+								liveChannelRunId: f.run.id,
+								status: "FIRED",
+							},
+						})
+					: null;
 			const process = createLiveChannelProcessor(f.deps);
+			f.job.effect.idempotencyKey = `manual:stop:${f.channel.id}:${f.run.id}`;
 			const old = Promise.allSettled([
-				process({
-					...f.job,
-					effect: {
-						...f.job.effect,
-						idempotencyKey: "schedule:" + schedule.id + ":stop",
-						scheduleId: schedule.id,
-					},
-				}),
+				process(
+					schedule
+						? {
+								...f.job,
+								effect: {
+									...f.job.effect,
+									idempotencyKey: "schedule:" + schedule.id + ":stop",
+									scheduleId: schedule.id,
+								},
+							}
+						: f.job,
+				),
 			]);
 			try {
 				await reach(first.ready, old);
+				if (!schedule) {
+					const interrupted = await tenant.liveEffectClaim.findUniqueOrThrow({
+						where: { idempotencyKey: f.job.effect.idempotencyKey },
+					});
+					expect(interrupted).toMatchObject({
+						state: "DISPATCHING",
+						stopProtocolVersion: 1,
+						stopSendEncodingIds: [],
+						stopAnalysisSendId: null,
+					});
+					await tenant.liveEffectClaim.update({
+						where: { id: interrupted.id },
+						data: { expiresAt: lease },
+					});
+				}
 				expect(await process(f.job)).toMatchObject({ status: "STOPPED" });
 			} finally {
 				release.release();

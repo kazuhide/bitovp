@@ -193,6 +193,37 @@ describe("ChannelLifecycleActions — restart is only offered where it can work 
 		).toBeNull();
 	});
 
+	it("binds the retry of an interrupted active AISA stop to the displayed airing", async () => {
+		wrap(
+			<ChannelLifecycleActions
+				channelId={CHANNEL_ID}
+				runId={RUN_ID}
+				encodingId="encoder-1"
+				status="STOPPING"
+				hasEncoding
+				managedAisa
+				canResumeAisaStop
+			/>,
+		);
+		await userEvent.click(screen.getByRole("button", { name: "Stop channel" }));
+		await userEvent.click(
+			within(screen.getByRole("dialog")).getByRole("button", {
+				name: "Stop channel",
+			}),
+		);
+		await waitFor(() =>
+			expect(apiFetch).toHaveBeenCalledWith(
+				`/api/live-channels/${CHANNEL_ID}/actions`,
+				{
+					method: "POST",
+					body: JSON.stringify({
+						action: "stop",
+						recoveryTarget: { runId: RUN_ID, encodingId: "encoder-1" },
+					}),
+				},
+			),
+		);
+	});
 	it("targets finalization recovery at the ended AISA encoder while local state is running", async () => {
 		wrap(
 			<ChannelLifecycleActions

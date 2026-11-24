@@ -2,18 +2,22 @@ import { classifyProviderStatusWord } from "@bitovp/core";
 import {
 	liveChannelAccountId,
 	mergeRtmpRetirementEvidence,
+	pendingSecondaryStopTargets,
 	type RtmpRetirementReceipt,
 	unconfirmedRtmpEncoders,
 } from "@bitovp/db";
 import type { SdkOps } from "../orchestrator/sdk-ops";
 
 export type RtmpRunSnapshot = {
+	bitmovinEncodingId?: string | null;
 	stepLog?: unknown;
 	previousProviderEncodingIds?: readonly string[];
 	archivedRtmpAttempt?: number;
 	rtmpRetirementEvidence?: unknown;
 };
 export type RtmpChannelSnapshot = {
+	bitmovinEncodingId?: string | null;
+	error?: string | null;
 	stepLog?: unknown;
 	bitmovinAccountId?: string | null;
 	plan?: unknown;
@@ -23,6 +27,42 @@ export type DisplacedReadbacks = {
 	receipts: RtmpRetirementReceipt[];
 };
 
+type AiringTargets = {
+	primary: string;
+	history: Parameters<typeof pendingSecondaryStopTargets>[2];
+};
+
+function pendingTargets(
+	run: RtmpRunSnapshot,
+	channel: RtmpChannelSnapshot,
+	account: string | null,
+	airing?: AiringTargets,
+) {
+	// Unselected optional columns in lifecycle callers are not evidence of
+	// another encoder. The terminal projection reloads both full logs under lock.
+	if (airing)
+		return pendingSecondaryStopTargets(
+			{
+				...run,
+				stepLog: run.stepLog === undefined ? [] : run.stepLog,
+				bitmovinEncodingId: run.bitmovinEncodingId ?? null,
+			},
+			{
+				...channel,
+				stepLog: channel.stepLog === undefined ? [] : channel.stepLog,
+				bitmovinEncodingId: channel.bitmovinEncodingId ?? null,
+			},
+			airing.history,
+			account,
+			airing.primary,
+		);
+	return unconfirmedRtmpEncoders(
+		{ ...run, stepLog: run.stepLog },
+		{ stepLog: channel.stepLog },
+		account,
+	);
+}
+
 /** Heartbeats and cancellation recovery observe prior targets. Only their STOP owner can send. */
 export async function readDisplacedEncoders(
 	run: RtmpRunSnapshot,
@@ -31,12 +71,9 @@ export async function readDisplacedEncoders(
 	sdk: Pick<SdkOps, "getEncodingStatus">,
 	now: () => string,
 	signal?: AbortSignal,
+	airing?: AiringTargets,
 ): Promise<DisplacedReadbacks | null> {
-	const pending = unconfirmedRtmpEncoders(
-		{ ...run, stepLog: run.stepLog },
-		{ stepLog: channel.stepLog },
-		accountId,
-	);
+	const pending = pendingTargets(run, channel, accountId, airing);
 	if (
 		!pending ||
 		(pending.length &&
@@ -71,6 +108,7 @@ export function displacedRetirementWrite(
 	run: RtmpRunSnapshot,
 	channel: RtmpChannelSnapshot,
 	proof: DisplacedReadbacks,
+	airing?: AiringTargets,
 ) {
 	const accountId = liveChannelAccountId(channel);
 	if (
@@ -82,10 +120,11 @@ export function displacedRetirementWrite(
 		run.rtmpRetirementEvidence,
 		proof.receipts,
 	);
-	const pending = unconfirmedRtmpEncoders(
-		{ ...run, stepLog: run.stepLog, rtmpRetirementEvidence: merged },
-		{ stepLog: channel.stepLog },
+	const pending = pendingTargets(
+		{ ...run, rtmpRetirementEvidence: merged },
+		channel,
 		accountId,
+		airing,
 	);
 	if (!pending || pending.length) return null;
 	return proof.receipts.length ? { rtmpRetirementEvidence: merged } : {};

@@ -649,6 +649,126 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			expect(sdk.stopLiveEncoding).not.toHaveBeenCalled();
 		});
 
+		it.each([
+			"channel-log",
+			"run-log",
+			"effect-history",
+			"late-log",
+		] as const)("refuses passive completion until the second encoder in %s terminates", async (source) => {
+			const f = await dispatchFixture();
+			const secondary = `second-${randomUUID()}`;
+			const stepLog = [
+				{
+					kind: "CREATE_ENCODING",
+					step: "old",
+					status: "DONE",
+					resourceId: secondary,
+					refs: {},
+					payload: {},
+				},
+			];
+			const addLog = () =>
+				tenant.liveChannel.update({
+					where: { id: f.channel.id },
+					data: { stepLog },
+				});
+			if (source === "channel-log") await addLog();
+			if (source === "run-log")
+				await tenant.liveChannelRun.update({
+					where: { id: f.run.id },
+					data: { stepLog },
+				});
+			if (source === "effect-history")
+				await tenant.liveEffectClaim.create({
+					data: {
+						action: "RESTART",
+						state: "FAILED",
+						liveChannelId: f.channel.id,
+						liveChannelRunId: f.run.id,
+						providerEncodingId: secondary,
+						ownerId: "previous",
+						generation: 0,
+						token: randomUUID(),
+						idempotencyKey: randomUUID(),
+						expiresAt: now,
+					},
+				});
+			let finished = false;
+			const sdk = fakeSdk({
+				getEncodingStatus: vi.fn(async (id: string) => {
+					if (source === "late-log" && id === f.encodingId && !finished)
+						await addLog();
+					return {
+						status: id === secondary && !finished ? "RUNNING" : "FINISHED",
+					};
+				}),
+			});
+			const h = reconciler().door;
+			const tick = async () =>
+				h.reconcile({
+					channel: await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					}),
+					run: await h.loadCurrentRun(f.channel.id),
+					encodingId: f.encodingId,
+					sdk,
+					fence: { epoch: 7 },
+				});
+			expect((await tick()).channelLanded).toBe(false);
+			expect(
+				await tenant.liveStopNotification.count({ where: { id: f.run.id } }),
+			).toBe(0);
+			finished = true;
+			expect((await tick()).channelLanded).toBe(true);
+			expect(sdk.getEncodingStatus).toHaveBeenCalledWith(secondary);
+		});
+		it.each([
+			true,
+			false,
+		])("keeps the airing open until the publishing feeder exits (run bound=%s)", async (bound) => {
+			const f = await dispatchFixture();
+			const feeder = await tenant.feederSession.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: bound ? f.run.id : null,
+					sourceCredentialId: randomUUID(),
+					sourceBucket: "fixture",
+					sourceKey: "fixture.mp4",
+					protocol: "RTMP",
+					target: {},
+					status: "PUSHING",
+				},
+			});
+			const h = reconciler();
+			const tick = async () =>
+				h.door.reconcile({
+					channel: await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					}),
+					run: await h.door.loadCurrentRun(f.channel.id),
+					encodingId: f.encodingId,
+					sdk: f.sdk,
+					fence: { epoch: 7 },
+				});
+			expect((await tick()).channelLanded).toBe(false);
+			expect(h.enqueueFeederJob).toHaveBeenCalledWith({
+				feederSessionId: feeder.id,
+				action: "stop",
+			});
+			expect(
+				await tenant.liveStopNotification.count({ where: { id: f.run.id } }),
+			).toBe(0);
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({ status: "RUNNING" });
+			await tenant.feederSession.delete({ where: { id: feeder.id } });
+			expect((await tick()).channelLanded).toBe(true);
+			expect(
+				await tenant.liveStopNotification.count({ where: { id: f.run.id } }),
+			).toBe(1);
+		});
 		function running(
 			door: ReturnType<typeof reconciler>["door"],
 			f: Awaited<ReturnType<typeof fixture>>,

@@ -480,6 +480,69 @@ export function liveStopKnownTargets(
 	return targets.complete ? targets.encodingIds : null;
 }
 
+/** All identities whose retirement still needs a readback on this account. */
+export function pendingSecondaryStopTargets(
+	run: Parameters<typeof liveStopKnownTargets>[0],
+	channel: Parameters<typeof liveStopKnownTargets>[1],
+	history: readonly StopHistory[],
+	accountId: string | null,
+	primary: string,
+): string[] | null {
+	if (unconfirmedRtmpEncoders(run, channel, accountId) === null) return null;
+	const all = liveStopKnownTargets(run, channel, history, accountId);
+	if (!all) return null;
+	const retired = new Set(
+		mergeRtmpRetirementEvidence(run.rtmpRetirementEvidence, [])
+			.filter(
+				(receipt) =>
+					receipt.accountId === accountId && receipt.disposition === "TERMINAL",
+			)
+			.map((receipt) => receipt.encodingId),
+	);
+	return all.filter((id) => id !== primary && !retired.has(id));
+}
+
+export function readAiringEffectHistory(
+	tx: Pick<AppTransactionClient, "liveEffectClaim">,
+	liveChannelId: string,
+	liveChannelRunId: string,
+) {
+	return tx.liveEffectClaim.findMany({
+		where: { liveChannelId, liveChannelRunId },
+		select: {
+			action: true,
+			providerEncodingId: true,
+			state: true,
+			failure: true,
+			attempt: true,
+			stopProtocolVersion: true,
+			stopSendEncodingIds: true,
+			stopAnalysisSendId: true,
+			stopOutcomeEvidence: true,
+			legacyStopErrorNotificationPossible: true,
+		},
+	});
+}
+
+export function stopNotificationHistoryEligible(
+	history: Awaited<ReturnType<typeof readAiringEffectHistory>>,
+	channel: { plan: unknown },
+	run: {
+		aisaAnalysisId?: string | null;
+		aisaStatus?: string | null;
+		aisaSnapshot?: unknown;
+	},
+	status: "STOPPED" | "ERROR",
+) {
+	return history.every(
+		(claim) =>
+			claim.action !== "STOP" ||
+			(claim.stopProtocolVersion === 1
+				? status === "STOPPED" || !claim.legacyStopErrorNotificationPossible
+				: status === "STOPPED" &&
+					legacyStopFailedBeforeSend(claim, channel, run)),
+	);
+}
 /** Targets with affirmative run ownership and no historical STOP reservation.
  * Legacy dispatches cannot distinguish an attempted encoding from an untouched one. */
 export function unreservedStopTargets(
@@ -1012,11 +1075,17 @@ export async function beginLiveEffect(
 			classifyProviderStatusWord(currentRun.providerStatus) === "TERMINAL" &&
 			currentRun.stopNotificationAt &&
 			currentRun.stopNotificationKind === "CHANNEL_STOPPED" &&
-			unconfirmedRtmpEncoders(
+			pendingSecondaryStopTargets(
 				currentRun,
 				channel,
+				await readAiringEffectHistory(tx, input.liveChannelId, currentRun.id),
 				liveChannelAccountId(channel),
-			)?.length === 0
+				input.providerEncodingId,
+			)?.length === 0 &&
+			!(await tx.feederSession.findFirst({
+				where: liveStopFeederWhere(input.liveChannelId),
+				select: { id: true },
+			}))
 		) {
 			return {
 				kind: "STALE",
@@ -1636,14 +1705,11 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				// Older workers could emit an unkeyed notification before persisting the ACK.
 				notificationEligible:
 					stopClaim.stopProtocolVersion === 1 &&
-					history.every(
-						(claim) =>
-							claim.action !== "STOP" ||
-							(claim.stopProtocolVersion === 1
-								? confirmedStatus === "STOPPED" ||
-									!claim.legacyStopErrorNotificationPossible
-								: confirmedStatus === "STOPPED" &&
-									legacyStopFailedBeforeSend(claim, channel, run)),
+					stopNotificationHistoryEligible(
+						history,
+						channel,
+						run,
+						confirmedStatus,
 					),
 				liveChannelId: input.liveChannelId,
 				liveChannelRunId: run.id,

@@ -74,6 +74,7 @@ function harness(now: () => string = () => NOW) {
 			findUnique: channelFindUnique,
 		},
 		liveStopNotification: { create: outboxCreate },
+		liveEffectClaim: { findMany: async () => [] },
 		feederSession: { findMany: feederFindMany },
 		$transaction: transaction,
 	} as unknown as AppPrismaClient;

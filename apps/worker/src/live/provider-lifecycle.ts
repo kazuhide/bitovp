@@ -22,8 +22,11 @@ import {
 	DB_NULL,
 	LIVE_EFFECT_OPEN_STATES,
 	liveChannelAccountId,
+	liveStopFeederWhere,
+	readAiringEffectHistory,
 	recordConfirmedStopDelivery,
 	replaceLiveRunStepLogSnapshot,
+	stopNotificationHistoryEligible,
 } from "@bitovp/db";
 import type { SdkOps } from "../orchestrator/sdk-ops";
 import {
@@ -124,6 +127,11 @@ export function providerTerminalMessage(
 
 class RunningCommitFenceLostError extends Error {}
 class PollChannelUnavailableError extends Error {}
+class TerminalFeedersPending extends Error {
+	constructor(readonly sessions: { id: string }[]) {
+		super();
+	}
+}
 
 /** Owned transitions wait for channel-first writers before taking any run lock. */
 async function lockOwnedChannel(tx: AppTransactionClient, channelId: string) {
@@ -644,6 +652,7 @@ export function createProviderLifecycleReconciler(deps: {
 					if (!runLanded) return;
 				}
 				let polledChannelName: string | undefined;
+				let notificationEligible = false;
 				if (args.pollEpoch !== undefined) {
 					// A cached terminal repair skipped the run CAS above. Keep its
 					// exact epoch locked through the projection just like a fresh poll.
@@ -690,25 +699,55 @@ export function createProviderLifecycleReconciler(deps: {
 					!!args.run.previousProviderEncodingIds?.length ||
 					!!args.run.archivedRtmpAttempt ||
 					args.displaced.receipts.length > 0;
-				if (archived) {
+				if (archived || args.pollEpoch !== undefined) {
 					const current = await tx.liveChannelRun.findFirst({
 						where: { id: args.run.id, liveChannelId: args.channelId },
 						select: {
 							stepLog: true,
+							bitmovinEncodingId: true,
+							aisaAnalysisId: true,
+							aisaStatus: true,
+							aisaSnapshot: true,
 							previousProviderEncodingIds: true,
 							archivedRtmpAttempt: true,
 							rtmpRetirementEvidence: true,
 							liveChannel: {
-								select: { stepLog: true, bitmovinAccountId: true, plan: true },
+								select: {
+									stepLog: true,
+									bitmovinAccountId: true,
+									bitmovinEncodingId: true,
+									error: true,
+									plan: true,
+								},
 							},
 						},
 					});
+					const history =
+						args.pollEpoch === undefined
+							? []
+							: await readAiringEffectHistory(tx, args.channelId, args.run.id);
+					if (current && args.pollEpoch !== undefined) {
+						if (
+							liveChannelAccountId(current.liveChannel) !==
+							args.displaced.accountId
+						)
+							throw new RunningCommitFenceLostError();
+						notificationEligible = stopNotificationHistoryEligible(
+							history,
+							current.liveChannel,
+							current,
+							status,
+						);
+					}
 					const write =
 						current &&
 						displacedRetirementWrite(
 							current,
 							current.liveChannel,
 							args.displaced,
+							args.pollEpoch !== undefined
+								? { primary: args.encodingId, history }
+								: undefined,
 						);
 					if (!write) throw new RunningCommitFenceLostError();
 					if (write.rtmpRetirementEvidence)
@@ -760,12 +799,17 @@ export function createProviderLifecycleReconciler(deps: {
 					status === "STOPPED" &&
 					polledChannelName !== undefined
 				) {
+					const occupied = await tx.feederSession.findMany({
+						where: liveStopFeederWhere(args.channelId),
+						select: { id: true },
+					});
+					if (occupied.length) throw new TerminalFeedersPending(occupied);
 					await recordConfirmedStopDelivery(tx, {
 						liveChannelId: args.channelId,
 						liveChannelRunId: args.run.id,
 						scheduleIds: [],
 						channelName: polledChannelName,
-						notificationEligible: true,
+						notificationEligible,
 						status,
 						at: args.observedAt,
 					});
@@ -775,6 +819,22 @@ export function createProviderLifecycleReconciler(deps: {
 					throw new RunningCommitFenceLostError();
 			});
 		} catch (error) {
+			if (error instanceof TerminalFeedersPending) {
+				// The rolled-back poll leaves the running airing visible to the next
+				// tick, including when the queue is temporarily unavailable.
+				for (const session of error.sessions) {
+					args.signal?.throwIfAborted();
+					await deps
+						.enqueueFeederJob({ feederSessionId: session.id, action: "stop" })
+						.catch(() => {
+							console.warn(
+								`[live-channel] pending terminal feeder stop for ${session.id}`,
+							);
+						});
+				}
+				return { runLanded: false, channelLanded: false };
+			}
+
 			if (
 				error instanceof PollChannelUnavailableError ||
 				error instanceof RunningCommitFenceLostError
@@ -877,7 +937,7 @@ export function createProviderLifecycleReconciler(deps: {
 		}
 		const displacedPending =
 			"Displaced RTMP encoder retirement is not yet confirmed for this broadcast";
-		const observeDisplaced = () =>
+		const observeDisplaced = async () =>
 			readDisplacedEncoders(
 				run,
 				channel,
@@ -885,6 +945,16 @@ export function createProviderLifecycleReconciler(deps: {
 				sdk,
 				deps.now,
 				args.signal,
+				args.fence
+					? {
+							primary: encodingId,
+							history: await readAiringEffectHistory(
+								deps.prisma,
+								channel.id,
+								run.id,
+							),
+						}
+					: undefined,
 			);
 		if (
 			deriveProviderLifecycle(run, new Date(observedAt).getTime()) ===

@@ -536,13 +536,21 @@ function setup(
 		 * OLD run, not the newest row; every other read is "the current run".
 		 */
 		findFirst: vi.fn(
-			async (args?: { where?: { bitmovinEncodingId?: string } }) => {
+			async (args?: {
+				where?: { id?: string; bitmovinEncodingId?: string };
+				select?: { liveChannel?: unknown };
+			}) => {
 				const want = args?.where?.bitmovinEncodingId;
 				const pool =
 					want === undefined
 						? runRows
 						: runRows.filter((r) => r.bitmovinEncodingId === want);
-				return pool[pool.length - 1] ?? null;
+				const selected = args?.where?.id
+					? pool.find((r) => r.id === args.where?.id)
+					: pool.at(-1);
+				if (selected && args?.select?.liveChannel)
+					return { ...selected, liveChannel: structuredClone(row) };
+				return selected ?? null;
 			},
 		),
 		findMany: vi.fn(async () => runRows),

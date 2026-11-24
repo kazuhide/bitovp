@@ -344,8 +344,9 @@ result for that broadcast.
 A recovered stop completes its own pending schedule. A schedule already marked
 unknown keeps its original evidence, including after a subsequent broadcast.
 For new stops, confirmation records one notification per broadcast. The worker
-can finish delivery after the channel is deleted. Five recorded failures end
-delivery. A destination can receive the event again after a retry or worker restart.
+can finish delivery after the channel is deleted. A network or HTTP failure is
+retried up to five attempts. A refused host or invalid destination configuration
+ends delivery with a failure. If no rule matched, delivery history has no entry. A destination can receive the event again after a retry or worker restart.
 For stops already in progress during upgrade, prior delivery can be unknown.
 In that case recovery records the uncertainty and skips a replacement notification.
 

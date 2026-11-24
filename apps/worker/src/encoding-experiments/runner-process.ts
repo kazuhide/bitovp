@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { ExperimentRuntime } from "@bitovp/core/encoding-experiments";
+import { experimentCapabilityByteLimit } from "@bitovp/core/encoding-experiments-files";
 
 export class ExperimentRunnerError extends Error {
 	constructor(readonly code: string) {
@@ -16,6 +17,7 @@ export function runExperimentProcess(
 		timeoutMs: number;
 		signal: AbortSignal;
 		tmpDir?: string;
+		probe?: boolean;
 		expectedRuntime?: Pick<
 			ExperimentRuntime,
 			"runtimeId" | "additionalScoringProfiles" | "nvencSdk"
@@ -27,6 +29,10 @@ export function runExperimentProcess(
 		const env: NodeJS.ProcessEnv = {};
 		for (const key of [
 			"PATH",
+			"BITOVP_EXPERIMENTS_BACKEND",
+			"BITOVP_SOFTWARE_FFMPEG",
+			"BITOVP_SOFTWARE_FFPROBE",
+			"BITOVP_SOFTWARE_VMAF_MODEL",
 			"LANG",
 			"LD_LIBRARY_PATH",
 			"CUDA_DEVICE_ORDER",
@@ -80,7 +86,8 @@ export function runExperimentProcess(
 		);
 		child.stdout.on("data", (chunk: Buffer) => {
 			size += chunk.length;
-			if (size > 64 * 1024) terminate("RUNNER_OUTPUT_TOO_LARGE");
+			if (size > (options.probe ? experimentCapabilityByteLimit : 64 * 1024))
+				terminate("RUNNER_OUTPUT_TOO_LARGE");
 			else chunks.push(chunk);
 		});
 		child.stderr.on("data", (chunk: Buffer) => {

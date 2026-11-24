@@ -249,3 +249,17 @@ it("passes typed conflicts through a stable public error", async () => {
 		details: { code: "CAPABILITY_CHANGED" },
 	});
 });
+
+it("uses the requested software backend and rejects ambiguous discovery", async () => {
+	await catalog(request("/catalog?backend=software"));
+	expect(fake.catalog).toHaveBeenCalledWith("software");
+	await capabilities(request("/capabilities"));
+	expect(fake.capabilities).toHaveBeenCalledWith("nvenc");
+	expect(
+		(
+			await capabilities(
+				request("/capabilities?backend=nvenc&backend=software"),
+			)
+		).status,
+	).toBe(422);
+});

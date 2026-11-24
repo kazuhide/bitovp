@@ -128,7 +128,12 @@ async function runTrial(
 				"30",
 				"--conflict-exit-code",
 				"75",
-				join(root, `${runtime.gpuUuid}.lock`),
+				join(
+					root,
+					runtime.runtimeKind === "software"
+						? "software.lock"
+						: `${runtime.gpuUuid}.lock`,
+				),
 				"python3",
 				runner,
 				"measure",
@@ -196,7 +201,15 @@ async function publishHealth(root: string, runtime: ExperimentRuntime) {
 			flag: "wx",
 			mode: 0o640,
 		});
-		await rename(temp, join(root, "runtime.json"));
+		await rename(
+			temp,
+			join(
+				root,
+				runtime.runtimeKind === "software"
+					? "software-runtime.json"
+					: "runtime.json",
+			),
+		);
 	} finally {
 		await rm(temp, { force: true });
 	}
@@ -224,6 +237,7 @@ async function main() {
 	const runProbe = async () =>
 		experimentRuntimeSchema.parse(
 			await runExperimentProcess("python3", [runner, "probe"], {
+				probe: true,
 				timeoutMs: 40_000,
 				signal,
 			}),
@@ -242,7 +256,7 @@ async function main() {
 				.catch(() => {
 					available = false;
 					if (!signal.aborted)
-						console.error("[encoding-experiments] GPU probe unavailable");
+						console.error("[encoding-experiments] runtime probe unavailable");
 				})
 				.finally(() => {
 					refresh = undefined;

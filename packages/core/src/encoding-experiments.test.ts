@@ -48,9 +48,9 @@ describe("the NVIDIA experiment request and receipt", () => {
 				endPtsExclusive: "600",
 			},
 		});
-		expect(experimentTrialSchema.parse(trial).config.rcParams).toEqual(
-			trial.config.rcParams,
-		);
+		expect(
+			(experimentTrialSchema.parse(trial) as typeof trial).config.rcParams,
+		).toEqual(trial.config.rcParams);
 		const equivalent = experimentBatchSchema.parse({
 			schemaVersion: 1,
 			trials: [

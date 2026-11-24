@@ -10,6 +10,7 @@ import {
 	experimentBatchSchema,
 	experimentCampaignInputSchema,
 	experimentCodecs,
+	experimentCpuScoringProfile,
 	experimentNvencSdkVersion,
 	experimentQualityRequestSchema,
 	experimentResultSchema,
@@ -48,8 +49,16 @@ export {
 	experimentTrialPage as listExperimentTrials,
 };
 
-export function getExperimentCatalog() {
-	return sdkCatalog;
+export async function getExperimentCatalog(
+	kind: "nvenc" | "software" = "nvenc",
+) {
+	if (kind === "nvenc") return sdkCatalog;
+	const { runtime } = await requireRuntime("software");
+	return {
+		schemaVersion: 1,
+		runtimeId: runtime.runtimeId,
+		softwareEncoders: runtime.softwareEncoders,
+	};
 }
 
 const sdkBindings = new Map(
@@ -90,26 +99,36 @@ function sha(value: unknown): string {
 	return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-async function requireRuntime() {
+async function requireRuntime(kind: "nvenc" | "software") {
 	const root = getExperimentRoot();
-	const runtime = root ? await readExperimentRuntime(root) : null;
+	const runtime = root
+		? await readExperimentRuntime(root, Date.now(), kind)
+		: null;
 	if (!root || !runtime)
 		throw new EncodingExperimentError(
 			503,
-			"GPU_UNAVAILABLE",
-			"The NVIDIA experiment worker is unavailable",
+			kind === "nvenc" ? "GPU_UNAVAILABLE" : "SOFTWARE_UNAVAILABLE",
+			"The selected experiment worker is unavailable",
 		);
 	return { root, runtime };
 }
 
-export async function getExperimentCapabilities() {
+export async function getExperimentCapabilities(
+	kind: "nvenc" | "software" = "nvenc",
+) {
 	const root = getExperimentRoot();
-	const runtime = root ? await readExperimentRuntime(root) : null;
+	const runtime = root
+		? await readExperimentRuntime(root, Date.now(), kind)
+		: null;
 	if (!runtime)
 		return {
 			schemaVersion: 1,
 			available: false,
-			reason: root ? "GPU_UNAVAILABLE" : "NOT_CONFIGURED",
+			reason: !root
+				? "NOT_CONFIGURED"
+				: kind === "nvenc"
+					? "GPU_UNAVAILABLE"
+					: "SOFTWARE_UNAVAILABLE",
 		};
 	const { nvencSdk: _, ...base } = runtime;
 	const nvencSdk = availableNvencSdk(runtime);
@@ -186,7 +205,37 @@ async function verifyTrial(
 	runtime: ExperimentRuntime,
 	trial: ExperimentTrialInput,
 ) {
-	if (!runtime.supportedCodecs.includes(trial.codec))
+	if (Boolean(trial.software) !== (runtime.runtimeKind === "software"))
+		throw new EncodingExperimentError(
+			422,
+			"ENCODER_UNAVAILABLE",
+			"Use a campaign for the requested encoding backend",
+		);
+	if (trial.software) {
+		const settings = trial.software;
+		const encoder = runtime.softwareEncoders?.find(
+			(e) => e.encoder === settings.encoder,
+		);
+		if (!encoder || encoder.codec !== trial.codec)
+			throw new EncodingExperimentError(
+				422,
+				"ENCODER_UNAVAILABLE",
+				"Software encoder is unavailable",
+			);
+		for (const group of ["options", "nativeOptions"] as const) {
+			const names = new Set(encoder[group].map((f) => f.name));
+			for (const key of Object.keys(settings[group] ?? {})) {
+				if (!names.has(key))
+					throw new EncodingExperimentError(
+						422,
+						"INVALID_ENCODER_SETTING",
+						"Setting is not available on this encoder",
+						`software.${group}.${key}`,
+					);
+			}
+		}
+	}
+	if (!runtime.supportedCodecs.some((codec) => codec === trial.codec))
 		throw new EncodingExperimentError(
 			422,
 			"CODEC_UNAVAILABLE",
@@ -226,7 +275,9 @@ export async function validateExperimentTrial(
 	input: unknown,
 ) {
 	const trial = parse(experimentTrialSchema, input);
-	const { root, runtime } = await requireRuntime();
+	const { root, runtime } = await requireRuntime(
+		trial.software ? "software" : "nvenc",
+	);
 	await verifyTrial(root, organizationId, runtime, trial);
 	return { valid: true, trial, capabilityId: runtime.runtimeId };
 }
@@ -246,8 +297,30 @@ export async function createExperimentCampaign(
 	input: unknown,
 ) {
 	const campaign = parse(experimentCampaignInputSchema, input);
-	const { runtime } = await requireRuntime();
-	compareRuntime(campaign.capabilityId, runtime.runtimeId);
+	const root = getExperimentRoot();
+	const [gpu, cpu] = root
+		? await Promise.all([
+				readExperimentRuntime(root, Date.now(), "nvenc"),
+				readExperimentRuntime(root, Date.now(), "software"),
+			])
+		: [];
+	const runtime = [gpu, cpu].find(
+		(r) => r?.runtimeId === campaign.capabilityId,
+	);
+	if (!runtime) {
+		if (!gpu && !cpu)
+			throw new EncodingExperimentError(
+				503,
+				"ENCODER_UNAVAILABLE",
+				"No experiment worker is available",
+			);
+		throw new EncodingExperimentError(
+			409,
+			"CAPABILITY_CHANGED",
+			"Use the current worker identity",
+			"capabilityId",
+		);
+	}
 	return addExperimentCampaign(ctx, {
 		name: campaign.name,
 		capabilityId: runtime.runtimeId,
@@ -274,7 +347,11 @@ export function enqueueExperimentTrials(
 		idempotencyKey,
 		sha(batch),
 		async (campaign) => {
-			const { root, runtime } = await requireRuntime();
+			const kind =
+				z
+					.object({ runtimeKind: z.literal("software").optional() })
+					.parse(campaign.runtime ?? {}).runtimeKind ?? "nvenc";
+			const { root, runtime } = await requireRuntime(kind);
 			compareRuntime(campaign.capabilityId, runtime.runtimeId);
 			const trials = [];
 			for (const input of batch.trials) {
@@ -358,8 +435,17 @@ export async function selectExperimentQuality(
 	input: unknown,
 ) {
 	const request = parse(experimentQualityRequestSchema, input);
-	const { scoringProfileId } = request;
 	const campaign = await experimentCampaignDetail(ctx, id);
+	const cpu = z
+		.object({ runtimeKind: z.literal("software") })
+		.safeParse(campaign.runtime).success;
+	const explicitProfile =
+		typeof input === "object" && input !== null && "scoringProfileId" in input;
+	const scoringProfileId = explicitProfile
+		? request.scoringProfileId
+		: cpu
+			? experimentCpuScoringProfile
+			: experimentScoringProfile;
 	const bin = process.env.BITOVP_EXPERIMENTS_OPTIMIZER;
 	if (!bin || !isAbsolute(bin))
 		throw new EncodingExperimentError(
@@ -399,7 +485,7 @@ export async function selectExperimentQuality(
 			(score) => score.scoringProfileId === scoringProfileId,
 		);
 		const scoreMilli =
-			scoringProfileId === experimentScoringProfile
+			scoringProfileId === result.scoringProfileId
 				? result.scoreMilli
 				: additional?.status === "succeeded"
 					? additional.scoreMilli

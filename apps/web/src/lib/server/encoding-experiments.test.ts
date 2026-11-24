@@ -474,3 +474,94 @@ it("keeps trials without measurements in Lean's projected candidate set", async 
 		})),
 	]);
 });
+
+const cpuProfile = "official-vmaf-cpu-0.6.1";
+const cpuRuntime = {
+	runtimeId,
+	runtimeKind: "software",
+	scoringProfileId: cpuProfile,
+	supportedCodecs: ["VP9"],
+	softwareEncoders: [
+		{
+			encoder: "libvpx-vp9",
+			codec: "VP9",
+			options: [{ name: "b", type: "int", description: "" }],
+			nativeOptions: [],
+			limitations: [],
+		},
+	],
+};
+const cpuTrial = {
+	window: trial.window,
+	sourceId: trial.sourceId,
+	codec: "VP9",
+	software: { encoder: "libvpx-vp9", options: { b: "2000000" } },
+};
+
+it("validates software trials against the software worker and its installed catalog", async () => {
+	fake.readRuntime.mockResolvedValue(cpuRuntime);
+	await expect(
+		validateExperimentTrial(ctx.organizationId, cpuTrial),
+	).resolves.toMatchObject({ valid: true });
+	expect(fake.readRuntime).toHaveBeenCalledWith(
+		"/experiment-fixture",
+		expect.any(Number),
+		"software",
+	);
+	await expect(
+		validateExperimentTrial(ctx.organizationId, {
+			...cpuTrial,
+			software: { ...cpuTrial.software, options: { unlisted: "1" } },
+		}),
+	).rejects.toMatchObject({ code: "INVALID_ENCODER_SETTING" });
+	await expect(
+		validateExperimentTrial(ctx.organizationId, trial),
+	).rejects.toMatchObject({ code: "ENCODER_UNAVAILABLE" });
+});
+
+it("uses the CPU campaign identity for software batch admission", async () => {
+	fake.enqueue.mockImplementationOnce((_ctx, _id, _key, _hash, prepare) =>
+		prepare({ capabilityId: runtimeId, runtime: cpuRuntime }),
+	);
+	fake.readRuntime.mockResolvedValue(cpuRuntime);
+	await expect(
+		enqueueExperimentTrials(
+			ctx,
+			campaign,
+			{ schemaVersion: 1, trials: [cpuTrial] },
+			"cpu-trial",
+		),
+	).resolves.toMatchObject([{ input: { software: cpuTrial.software } }]);
+});
+
+it("does not reuse a CPU measurement for a requested CUDA profile", async () => {
+	fake.rows.mockResolvedValue([
+		{
+			id: legacyId,
+			codec: "VP9",
+			status: "SUCCEEDED",
+			result: { ...primaryResult, scoringProfileId: cpuProfile },
+			sourceSha256,
+		},
+	]);
+	fake.solve.mockReturnValueOnce({
+		status: "insufficient_evidence",
+		eligibleCount: 0,
+		incompleteCount: 1,
+	});
+	await selectExperimentQuality(ctx, campaign, {
+		...selection,
+		scoringProfileId: primaryProfile,
+	});
+	expect(
+		fake.solve.mock.calls.at(-1)?.[0].candidates[0].scoreMilli,
+	).toBeUndefined();
+	fake.solve.mockReturnValueOnce({ trialId: legacyId, incompleteCount: 0 });
+	await selectExperimentQuality(ctx, campaign, {
+		...selection,
+		scoringProfileId: cpuProfile,
+	});
+	expect(fake.solve.mock.calls.at(-1)?.[0].candidates[0].scoreMilli).toBe(
+		primaryResult.scoreMilli,
+	);
+});

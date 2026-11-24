@@ -832,5 +832,94 @@ sys.exit(implementation.main(source))
                         self.assertEqual(capture.call_args.kwargs["timeout"], expected_timeout)
 
 
+class SoftwareRunnerTest(unittest.TestCase):
+    def software_request(self, codec="H264", encoder="libx264", options=None):
+        item = request()
+        original = item["trial"]
+        item["trial"] = {
+            "sourceId": original["sourceId"], "window": original["window"], "codec": codec,
+            "software": {"encoder": encoder, "options": options or {}},
+        }
+        return item
+
+    def test_software_codec_and_runtime_must_match(self):
+        for encoder, codec in runner.SOFTWARE_CODECS.items():
+            trial = parse_trial(self.software_request(codec, encoder))
+            self.assertIsInstance(trial, runner.SoftwareTrial)
+            self.assertEqual(trial.frame_count, 3)
+        with self.assertRaisesRegex(RunnerError, "INVALID_REQUEST"):
+            parse_trial(self.software_request("AV1"))
+        mixed = self.software_request()
+        mixed["trial"]["preset"] = "P4"
+        with self.assertRaisesRegex(RunnerError, "INVALID_REQUEST"):
+            parse_trial(mixed)
+        runtime = SimpleNamespace(tool_identities=(), invocation_path=Path(runner.__file__),
+                                  runner_path=Path(runner.__file__), capabilities={"supportedCodecs": ["H264"]})
+        with self.assertRaisesRegex(RunnerError, "UNSUPPORTED_RUNTIME_ENCODER"):
+            runner.measure(runtime, parse_trial(self.software_request()), False)
+
+    def test_software_rejects_ignored_native_settings(self):
+        for warning in (
+            "[libx264 @ 0x1] Error parsing option 'b-adapt = xyz'.",
+            "[libx265 @ 0x1] Unknown option: bad-field.",
+            "[libx265 @ 0x1] Invalid value for bframes: 30.",
+            "[libsvtav1 @ 0x1] Error setting option aq-mode to value bad.",
+        ):
+            with self.subTest(warning=warning), self.assertRaisesRegex(RunnerError, "SOFTWARE_SETTING_NOT_APPLIED"):
+                runner.check_software_report(warning)
+        runner.check_software_report("    title: Error parsing option")
+
+    def test_two_pass_requires_nonempty_statistics_before_encoding_output(self):
+        item = self.software_request(options={"passes": "2", "b": "2000000"})
+        runtime = SimpleNamespace(ffmpeg=Path("/ffmpeg"), capabilities={"softwareEncoders": []},
+                                  software_catalog=SimpleNamespace(build_software_options=lambda *_: ["-c:v", "libx264"]))
+        with TemporaryDirectory() as directory, patch.object(runner, "capture", return_value=("", "")) as capture, \
+                patch.object(runner, "validate_timeline"):
+            with self.assertRaisesRegex(RunnerError, "UNSUPPORTED_SOFTWARE_MULTIPASS"):
+                runner.encode(runtime, parse_trial(item), Path("/source"), Fraction(1, 1000), Path(directory))
+            capture.assert_called_once()
+            self.assertIn("-passlogfile:v", capture.call_args.args[0])
+
+    @unittest.skipUnless(os.environ.get("BITOVP_SOFTWARE_E2E") == "1", "requires FFmpeg, four software encoders and a pinned VMAF model")
+    def test_real_cpu_encoder_passes_and_vmaf(self):
+        env = {**os.environ, "BITOVP_EXPERIMENTS_BACKEND": "software"}
+        command = [sys.executable, "-B", runner.__file__]
+        runtime = json.loads(subprocess.check_output([*command, "probe"], env=env))
+        self.assertEqual(runtime["runtimeKind"], "software")
+        self.assertEqual({e["encoder"] for e in runtime["softwareEncoders"]}, set(runner.SOFTWARE_CODECS))
+        env["BITOVP_NVENC_EXPECTED_RUNTIME"] = json.dumps({"runtimeId": runtime["runtimeId"]})
+        with TemporaryDirectory() as folder:
+            source = Path(folder) / "source.mp4"
+            subprocess.run([
+                env.get("BITOVP_SOFTWARE_FFMPEG", "ffmpeg"), "-v", "error", "-f", "lavfi", "-i",
+                "testsrc2=s=1920x1080:r=30", "-vf",
+                "setsar=1,setparams=range=limited:colorspace=bt709:color_trc=bt709:color_primaries=bt709",
+                "-frames:v", "8", "-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709",
+                "-color_trc", "bt709", "-c:v", "libx264", "-preset", "ultrafast", str(source),
+            ], check=True)
+            fast_options = {
+                "libx264": {"preset": "ultrafast"}, "libx265": {"preset": "ultrafast"},
+                "libvpx-vp9": {"deadline": "good", "cpu-used": "8"}, "libsvtav1": {"preset": "8"},
+            }
+            native_options = {
+                "libx264": {"aq-mode": "1"}, "libx265": {"me": "hex"},
+                "libvpx-vp9": {"ts_layering_mode": "0"}, "libsvtav1": {"aq-mode": "2"},
+            }
+            for encoder, codec in runner.SOFTWARE_CODECS.items():
+                for passes in ("1", "2"):
+                    with self.subTest(encoder=encoder, passes=passes):
+                        item = self.software_request(codec, encoder, {"b": "2000000", "passes": passes, **fast_options[encoder]})
+                        item["trial"]["software"]["nativeOptions"] = native_options[encoder]
+                        item["sourcePath"] = str(source)
+                        path = Path(folder) / "request.json"
+                        path.write_text(json.dumps(item))
+                        row = json.loads(subprocess.check_output([*command, "measure", "--request-file", str(path)], env=env))
+                        self.assertEqual(row["runtimeId"], runtime["runtimeId"])
+                        self.assertEqual(row["scoringProfileId"], runner.SOFTWARE_PROFILE_ID)
+                        self.assertEqual(row["frameCount"], 3)
+                        self.assertGreater(int(row["videoBytes"]), 0)
+                        self.assertAlmostEqual(row["meanVmaf"], row["scoreMilli"] / 1000, delta=0.00051)
+
+
 if __name__ == "__main__":
     unittest.main()

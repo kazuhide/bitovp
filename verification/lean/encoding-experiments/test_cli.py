@@ -100,6 +100,17 @@ class QualitySelectionCLI(unittest.TestCase):
         for rows in (candidates, list(reversed(candidates))):
             self.assert_result(request(rows, evaluation="predicted"), decision)
 
+    def test_selects_measured_vp9_software_trial(self):
+        profile = "official-vmaf-cpu-0.6.1"
+        candidates = [
+            trial("vp9", codec="VP9", scoringProfileId=profile, scoreMilli=90000),
+            trial("h264", codec="H264", scoringProfileId=profile, scoreMilli=95000),
+        ]
+        self.assert_result(request(candidates, scoringProfileId=profile, constraints={"codec": "VP9"}), {
+            "status": "selected", "trialId": "vp9",
+            "eligibleCount": 1, "ineligibleCount": 1, "incompleteCount": 0,
+        })
+
     def test_zero_is_a_measured_value(self):
         self.assert_result(
             request(
@@ -155,8 +166,8 @@ class QualitySelectionCLI(unittest.TestCase):
             "invalid profile": request([], scoringProfileId=" "),
             "bad digest": request([], candidateSetSha256=DIGEST.upper()),
             "unknown constraint": request([], constraints={"bitratLimitBps": 3500000}),
-            "unsupported constraint codec": request([], constraints={"codec": "VP9"}),
-            "unsupported candidate codec": request([trial("x", codec="VP9")]),
+            "unsupported constraint codec": request([], constraints={"codec": "VP8"}),
+            "unsupported candidate codec": request([trial("x", codec="VP8")]),
             "mixed profiles": request([trial("x", scoringProfileId="v1")]),
             "duplicate trial IDs": request([trial("X"), trial("X")]),
             "blank ID": request([trial(" ")]),

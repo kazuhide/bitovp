@@ -4,6 +4,7 @@ import {
 	type ExperimentRuntime,
 	type ExperimentTrialInput,
 	experimentResultSchema,
+	experimentScoringProfile,
 } from "@bitovp/core/encoding-experiments";
 
 function sdkManifestReceipt(settings: ExperimentNvencSdkSettings) {
@@ -39,7 +40,8 @@ export function readMeasurement(
 	runtime: Pick<
 		ExperimentRuntime,
 		"runtimeId" | "additionalScoringProfiles" | "nvencSdk"
-	>,
+	> &
+		Partial<Pick<ExperimentRuntime, "scoringProfileId">>,
 	frameCount: number,
 	requestedProfiles?: ExperimentTrialInput["additionalScoringProfiles"],
 	requestedSdk?: ExperimentNvencSdkSettings,
@@ -48,6 +50,8 @@ export function readMeasurement(
 	const secondary = result.additionalScores?.[0];
 	if (
 		result.runtimeId !== runtime.runtimeId ||
+		result.scoringProfileId !==
+			(runtime.scoringProfileId ?? experimentScoringProfile) ||
 		result.frameCount !== frameCount ||
 		BigInt(result.durationTicks) * BigInt(result.timeBase.num) * 30n !==
 			BigInt(frameCount) * BigInt(result.timeBase.den) ||

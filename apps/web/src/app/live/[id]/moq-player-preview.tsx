@@ -33,6 +33,7 @@ import {
 	createMoqPlayback,
 	DEFAULT_MOQ_PLAYBACK_SETTINGS,
 	type MoqPlaybackSettings,
+	type MoqVideoQualitySelection,
 } from "@/lib/moq-player/session";
 import {
 	type MoqPlaybackDescriptor,
@@ -140,8 +141,8 @@ function MoqPlaybackAttempt({
 	);
 	const [settings, setSettings] = useState(DEFAULT_MOQ_PLAYBACK_SETTINGS);
 	const latestSettings = useRef(settings);
-	const [canSelectQuality, setCanSelectQuality] = useState(false);
-	const [requestedQuality, setRequestedQuality] = useState<string>();
+	const [qualitySelection, setQualitySelection] =
+		useState<MoqVideoQualitySelection | null>(null);
 	const [configuration, setConfiguration] = useState<
 		MoqPlaybackDescriptor["resource"]["metadata"] | null
 	>(null);
@@ -161,6 +162,7 @@ function MoqPlaybackAttempt({
 		const attempt = current.current;
 		if (!attempt) return Promise.resolve();
 		current.current = undefined;
+		if (mounted.current) setQualitySelection(null);
 		attempt.noteStage(attempt.reason);
 		attempt.abort.abort();
 		const disposal =
@@ -212,8 +214,9 @@ function MoqPlaybackAttempt({
 		return true;
 	}
 	function selectQuality(name: string) {
-		if (!current.current?.session?.selectVideoQuality(name)) return false;
-		setRequestedQuality(name);
+		const session = current.current?.session;
+		if (!session?.selectVideoQuality(name)) return false;
+		setQualitySelection(session.readVideoQualitySelection());
 		return true;
 	}
 	async function play() {
@@ -246,8 +249,6 @@ function MoqPlaybackAttempt({
 			mounted.current && archiveGeneration.current === archiveEpoch;
 		setStatistics(EMPTY_MOQ_VIDEO_STATISTICS);
 		setSamples([]);
-		setCanSelectQuality(false);
-		setRequestedQuality(undefined);
 		setConfiguration(null);
 		setRelay(undefined);
 		setRecordingState("idle");
@@ -360,6 +361,7 @@ function MoqPlaybackAttempt({
 						attempt.noteStage("failed");
 						setPhase("failed");
 						setStatistics(EMPTY_MOQ_VIDEO_STATISTICS);
+						setQualitySelection(null);
 						setSamples([]);
 					}
 				},
@@ -383,8 +385,8 @@ function MoqPlaybackAttempt({
 								Math.round(performance.now() - startedAt),
 							);
 							setStatistics(value);
-							setCanSelectQuality(
-								attempt.session?.canSelectVideoQuality() ?? false,
+							setQualitySelection(
+								attempt.session?.readVideoQualitySelection() ?? null,
 							);
 							setSamples((series) =>
 								appendMoqLiveSample(series, {
@@ -406,10 +408,12 @@ function MoqPlaybackAttempt({
 				() => latestSettings.current,
 			);
 			await attempt.session.ready;
-			if (owned())
+			if (owned()) {
+				setQualitySelection(attempt.session.readVideoQualitySelection());
 				setPhase((value) =>
 					value === "frames" || value === "failed" ? value : "waiting",
 				);
+			}
 		} catch (error) {
 			if (!owned()) return;
 			attempt.reason = "failed";
@@ -557,12 +561,7 @@ function MoqPlaybackAttempt({
 							<MoqPlaybackControls
 								settings={settings}
 								updateSetting={updateSetting}
-								qualities={
-									canSelectQuality ? statistics.availableQualities : null
-								}
-								selectedQuality={
-									requestedQuality ?? statistics.currentQuality?.name
-								}
+								qualitySelection={qualitySelection}
 								selectQuality={selectQuality}
 							/>
 						) : null}

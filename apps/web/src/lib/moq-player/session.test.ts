@@ -164,6 +164,49 @@ describe("owned MoQ source lifecycle", () => {
 		expect(player.dispose).toHaveBeenCalledOnce();
 		host.remove();
 	});
+	it.each([
+		false,
+		true,
+	])("requests silence once before recording finalization (setter throws: %s)", async (setterThrows) => {
+		const { source, player, host } = fixture();
+		let finishRecording!: () => void;
+		const recording = new Promise<void>((resolve) => {
+			finishRecording = resolve;
+		});
+		const beforeDispose = vi.fn(() => recording);
+		const settings = { targetBufferMs: 750, volumePercent: 40 };
+		const session = createMoqPlayback(
+			() => player,
+			descriptor,
+			host,
+			vi.fn(),
+			vi.fn(),
+			{ startedAt: performance.now(), onStatistics: vi.fn(), beforeDispose },
+			() => settings,
+		);
+		try {
+			await session.ready;
+			if (setterThrows) {
+				source.setVolume.mockImplementationOnce(() => {
+					throw new Error("source already closed");
+				});
+			}
+			const stopping = session.dispose();
+			expect(session.dispose()).toBe(stopping);
+			expect(source.setVolume.mock.calls).toEqual([[0.4], [0]]);
+			await Promise.resolve();
+			expect(beforeDispose).toHaveBeenCalledOnce();
+			expect(player.sources.remove).not.toHaveBeenCalled();
+			expect(settings.volumePercent).toBe(40);
+		} finally {
+			finishRecording();
+			await session.dispose();
+			host.remove();
+		}
+		expect(player.sources.remove).toHaveBeenCalledExactlyOnceWith(source);
+		expect(player.dispose).toHaveBeenCalledOnce();
+		expect(source.setVolume).toHaveBeenCalledTimes(2);
+	});
 	it("starts one muted source with the exact descriptor, then removes and disposes it once", async () => {
 		const { source, player, host } = fixture();
 		const factory = vi.fn(() => player);

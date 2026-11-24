@@ -776,6 +776,11 @@ describe("explicit MoQ preview", () => {
 		await user.click(apply);
 		expect(source.setTargetBufferLevel).toHaveBeenCalledTimes(2);
 		expect(screen.getByRole("alert")).toHaveTextContent("whole number");
+		fireEvent.change(screen.getByRole("slider", { name: "Volume" }), {
+			target: { value: "50" },
+		});
+		expect(target).toHaveAttribute("aria-invalid", "true");
+		expect(screen.getByRole("alert")).toHaveTextContent("whole number");
 		await user.click(screen.getByRole("button", { name: "Stop" }));
 		await user.click(screen.getByRole("button", { name: "Play" }));
 		await waitFor(() => {
@@ -786,14 +791,31 @@ describe("explicit MoQ preview", () => {
 			]);
 		});
 	});
-	it("adjusts audio and selects an advertised quality without reconnecting", async () => {
+	it("adjusts audio and follows the full SDK quality catalog without frame telemetry", async () => {
 		vi.useFakeTimers();
-		const low = { name: "360p", width: 640, height: 360 };
-		const high = { name: "720p", width: 1280, height: 720 };
-		const setVideoQuality = vi.fn();
+		const low = { name: "video/360p", width: 640, height: 360 };
+		const high = { name: "video/720p", width: 1280, height: 720 };
+		const qualities = [
+			low,
+			...Array.from({ length: 16 }, (_, index) => ({
+				name: `video/alternate-${index}`,
+				width: 640,
+				height: 360,
+			})),
+			high,
+		];
+		let currentQuality = low;
+		const setVideoQuality = vi.fn((quality: typeof low) => {
+			currentQuality = quality;
+		});
+		// An SDK can render a canvas that this browser cannot mirror for measurement.
+		factory.mockImplementationOnce(({ defaultContainer }) => {
+			defaultContainer.append(document.createElement("canvas"));
+			return player;
+		});
 		Object.assign(source, {
-			getVideoQuality: () => low,
-			getAvailableVideoQualities: () => [low, high],
+			getVideoQuality: () => currentQuality,
+			getAvailableVideoQualities: () => qualities,
 			setVideoQuality,
 		});
 		renderWithQuery(view());
@@ -812,11 +834,20 @@ describe("explicit MoQ preview", () => {
 			target: { value: "35" },
 		});
 		expect(source.setVolume).toHaveBeenLastCalledWith(0.35);
-		fireEvent.change(screen.getByRole("combobox", { name: "Video quality" }), {
-			target: { value: "720p" },
+		const quality = screen.getByRole("combobox", { name: "Video quality" });
+		expect(quality).toHaveValue(low.name);
+		expect(quality.querySelectorAll("option")).toHaveLength(19);
+		fireEvent.change(quality, {
+			target: { value: high.name },
 		});
 		expect(setVideoQuality).toHaveBeenCalledOnce();
 		expect(setVideoQuality.mock.calls[0]?.[0]).toBe(high);
+		expect(quality).toHaveValue(high.name);
+		currentQuality = low;
+		act(() => vi.advanceTimersByTime(1000));
+		expect(quality).toHaveValue(low.name);
+		fireEvent.change(quality, { target: { value: high.name } });
+		expect(setVideoQuality).toHaveBeenCalledTimes(2);
 		expect(source.play).toHaveBeenCalledOnce();
 		expect(player.sources.remove).not.toHaveBeenCalled();
 	});

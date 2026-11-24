@@ -506,6 +506,7 @@ function makeStore(
 							fireAt?: { lte?: Date; gt?: Date };
 							firedAt?: { lt: Date };
 							status?: string | { in: string[] };
+							NOT?: { action: string; outcome: { not: string } };
 							dispatchedAt?: null;
 							insertableContentId?: null;
 							contentClaimedAt?: null;
@@ -593,6 +594,10 @@ function makeStore(
 								store.rows.filter(
 									(row) =>
 										row.status === "FIRED" &&
+										!(
+											row.action === args.where.NOT?.action &&
+											(row.outcome ?? "PENDING") !== args.where.NOT.outcome.not
+										) &&
 										row.dispatchedAt === null &&
 										row.firedAt !== null &&
 										(olderThan === undefined ||
@@ -1856,33 +1861,85 @@ describe("STOP — claims like the route, waits out transitions (review-190 C2)"
 		expect((await sweep()).fired).toBe(1);
 	});
 
-	it("enqueue failure marks the channel (route pattern), RE-ARMS the row, and the NEXT tick self-heals (review-190 C3)", async () => {
+	it("keeps an unconfirmed STOP handoff in the outbox and retries the same job", async () => {
 		const store = makeStore(
 			[makeRow({ action: "STOP" })],
 			[makeChannel({ status: "RUNNING" })],
 		);
-		let calls = 0;
+		let ms = 2_000_000;
+		let reject = true;
 		const { sweep, enqueue } = makeSweep(store, {
+			now: () => new Date(ms),
 			enqueue: async () => {
-				calls += 1;
-				if (calls === 1) {
-					throw new Error("redis gone");
-				}
+				if (reject) throw new Error("lost Redis reply");
 			},
 		});
-		const first = await sweep();
-		expect(first.errors).toBe(1);
-		expect(store.rows[0]).toMatchObject({ status: "ARMED" }); // NOT terminal
-		expect(store.channels[0]).toMatchObject({
-			status: "ERROR",
-			error: "Enqueue failed — stop again",
+		expect((await sweep()).errors).toBe(1);
+		expect(store.rows[0]).toMatchObject({
+			status: "FIRED",
+			dispatchedAt: null,
 		});
-		// Next tick: ERROR is in the stop-claim set — the row fires again.
-		const second = await sweep();
-		expect(second.fired).toBe(1);
-		expect(store.rows[0]).toMatchObject({ status: "FIRED" });
-		expect(store.channels[0]).toMatchObject({ status: "STOPPING" });
-		expect(enqueue).toHaveBeenCalledTimes(2);
+		expect(store.channels[0]).toMatchObject({
+			status: "STOPPING",
+			error: null,
+		});
+		reject = false;
+		ms += 61_000;
+		expect((await sweep()).redispatched).toBe(1);
+		expect(enqueue.mock.calls[1]).toEqual(enqueue.mock.calls[0]);
+		expect(store.rows[0]?.dispatchedAt).toEqual(new Date(ms));
+	});
+
+	it.each([
+		"DELIVERED",
+		"UNKNOWN",
+	])("a lost STOP reply and replay preserve the %s receipt and successor", async (outcome) => {
+		const fired = makeRow({ action: "STOP" });
+		const channel = makeChannel({ status: "RUNNING" });
+		const store = makeStore([fired], [channel]);
+		let ms = 2_000_000;
+		const at = new Date(ms);
+		const receipt = {
+			status: "FIRED" as const,
+			outcome,
+			outcomeNote: "original evidence",
+			outcomeEvidenceAt: at,
+			outcomeEvidenceKind:
+				outcome === "DELIVERED"
+					? "PROVIDER_TERMINAL"
+					: "PROVIDER_STATUS_UNKNOWN",
+		};
+		const { sweep, enqueue } = makeSweep(store, {
+			now: () => new Date(ms),
+			enqueue: async () => {
+				Object.assign(fired, receipt);
+				Object.assign(channel, {
+					status: "RUNNING",
+					bitmovinEncodingId: "next-encoder",
+					liveEffectFenceVersion: 12,
+				});
+				store.runs.push({
+					id: "next-run",
+					liveChannelId: CH,
+					seq: 2,
+					status: "RUNNING",
+					bitmovinEncodingId: "next-encoder",
+				});
+				throw new Error("reply lost after successor started");
+			},
+		});
+		expect((await sweep()).errors).toBe(1);
+		expect(store.rows[0]).toMatchObject(receipt);
+		expect(store.channels[0]).toMatchObject({
+			status: "RUNNING",
+			bitmovinEncodingId: "next-encoder",
+			error: null,
+		});
+		expect(store.runs.at(-1)?.status).toBe("RUNNING");
+		ms += 61_000;
+		await sweep();
+		expect(store.rows[0]).toMatchObject(receipt);
+		expect(enqueue).toHaveBeenCalledTimes(1);
 	});
 });
 
@@ -2956,6 +3013,45 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 			`sched-${ROW_ID}`,
 		);
 		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
+	});
+
+	it.each([
+		"DELIVERED",
+		"UNKNOWN",
+	])("a stale outbox scan cannot overwrite an exact %s receipt committed after its query", async (outcome) => {
+		const old = "11111111-3333-4333-8333-111111111111";
+		const row = makeRow({
+			action: "STOP",
+			status: "FIRED",
+			liveChannelRunId: old,
+			firedAt: new Date(CRASH_AT),
+			outcome: "PENDING",
+		});
+		const store = makeStore([row], [makeChannel({ status: "RUNNING" })]);
+		const scan = store.prisma.liveSchedule.findMany.getMockImplementation();
+		if (!scan) throw new Error("schedule scan fixture missing");
+		store.prisma.liveSchedule.findMany.mockImplementation(async (args) => {
+			const selected = await scan(args);
+			if (args.where.dispatchedAt === null && selected.length) {
+				Object.assign(row, {
+					outcome,
+					outcomeNote: "the actual worker receipt",
+					outcomeEvidenceAt: new Date(CRASH_AT),
+				});
+			}
+			return selected;
+		});
+		const { sweep, enqueue } = makeSweep(store, {
+			now: () => new Date(RECOVERY_AT),
+		});
+		await sweep.dispatchPending();
+		expect(row).toMatchObject({
+			status: "FIRED",
+			outcome,
+			outcomeNote: "the actual worker receipt",
+			outcomeEvidenceAt: new Date(CRASH_AT),
+		});
+		expect(enqueue).not.toHaveBeenCalled();
 	});
 
 	it("SLATE_IN: the lost insert comes back with the duration re-derived at recovery time", async () => {
@@ -4114,18 +4210,24 @@ describe("row #245 review #356 v2 — re-examination never costs the forward sca
 	const VICTIM_CH = "77777777-0000-4000-8000-000000000002";
 	const VICTIM = "88888888-0000-4000-8000-000000000000";
 
-	function stop(id: string, channelId: string, fireAtMs: number): Row {
+	function feeder(id: string, channelId: string, fireAtMs: number): Row {
 		return makeRow({
 			id,
 			liveChannelId: channelId,
-			action: "STOP",
+			action: "FEEDER_START",
+			slateUntil: new Date(3_600_000),
+			feederSource: {
+				credentialId: "00000000-0000-4000-8000-0000000000c1",
+				bucket: "in",
+				key: "filler.mp4",
+			},
 			fireAt: new Date(fireAtMs),
 		});
 	}
 
 	function backlog(count: number, offsetMs: number): Row[] {
 		return Array.from({ length: count }, (_, i) =>
-			stop(
+			feeder(
 				`dddddddd-${String(offsetMs).padStart(4, "0")}-4000-8000-${String(i).padStart(12, "0")}`,
 				BLOCKED,
 				offsetMs + i,
@@ -4133,14 +4235,14 @@ describe("row #245 review #356 v2 — re-examination never costs the forward sca
 		);
 	}
 
-	/** N STOP rows, each on its OWN RUNNING channel, so every one can fire. */
+	/** N feeder rows, each on its OWN RUNNING channel, so every one can fire. */
 	function ownChannelRows(count: number, prefix: string) {
 		const rows: Row[] = [];
 		const channels: Channel[] = [];
 		for (let i = 0; i < count; i++) {
 			const channelId = `${prefix}-0000-4000-8000-${String(i).padStart(12, "0")}`;
 			rows.push(
-				stop(
+				feeder(
 					`${prefix}-1111-4000-8000-${String(i).padStart(12, "0")}`,
 					channelId,
 					1_000_000 + i,
@@ -4155,7 +4257,7 @@ describe("row #245 review #356 v2 — re-examination never costs the forward sca
 		const store = makeStore(
 			[
 				...backlog(10, 1_000_000),
-				stop(VICTIM, VICTIM_CH, 1_100_000),
+				feeder(VICTIM, VICTIM_CH, 1_100_000),
 				...backlog(1000, 1_200_000),
 			],
 			[
@@ -4254,7 +4356,7 @@ describe("row #245 review #356 v2 — re-examination never costs the forward sca
 		// where the tail sits inside one replay-plus-budget allowance.
 		const CH_ONE = "99999999-0000-4000-8000-000000000001";
 		const rows = Array.from({ length: DUE_SCAN_BUDGET + 100 }, (_, i) =>
-			stop(
+			feeder(
 				`ffffffff-0000-4000-8000-${String(i).padStart(12, "0")}`,
 				CH_ONE,
 				1_000_000 + i,

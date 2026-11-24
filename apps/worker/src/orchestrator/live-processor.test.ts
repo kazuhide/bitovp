@@ -5911,6 +5911,39 @@ describe("run-generation fence for queue retries", () => {
 		},
 	];
 
+	it("closes only the legacy queue-id STOP receipt when its planned airing has ended", async () => {
+		const t = setup(plainChannel());
+		t.runRows.push({
+			id: RUN_2,
+			seq: 2,
+			status: "RUNNING",
+			bitmovinEncodingId: "next",
+		});
+		const received = {
+			liveChannelId: CHANNEL_ID,
+			action: "stop",
+			plannedLiveChannelRunId: RUN_1,
+		};
+		const result = await t.rawProcess(received, `sched-${SCHEDULE_ID}`);
+		expect(result.status).toBe("SKIPPED_STALE_GENERATION");
+		expect(t.liveSchedule.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					id: SCHEDULE_ID,
+					action: "STOP",
+					liveChannelId: CHANNEL_ID,
+					liveChannelRunId: RUN_1,
+					outcome: { in: ["PENDING"] },
+				}),
+				data: expect.objectContaining({
+					outcome: "FAILED",
+					outcomeEvidenceKind: "STALE_GENERATION_REFUSAL",
+				}),
+			}),
+		);
+		expect(t.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+	});
+
 	for (const c of CASES) {
 		it(`REFUSES a stale ${c.action} — nothing acts on the new run, and the row is terminated SKIPPED_STALE_GENERATION with a FAILED outcome`, async () => {
 			const t = setup(c.channel());

@@ -22,7 +22,10 @@ export type HandlerDeps = {
 	/** Runs one orchestrator job to completion (resume-aware). */
 	orchestrate(jobData: unknown): Promise<{ status: string }>;
 	/** Provision/action dispatcher for one live channel. */
-	liveChannel(jobData: unknown): Promise<LiveChannelResult>;
+	liveChannel(
+		jobData: unknown,
+		queueJobId?: string,
+	): Promise<LiveChannelResult>;
 	/** Polls heartbeats for every RUNNING channel (repeatable job). */
 	liveHeartbeatSweep(): Promise<unknown>;
 	/**
@@ -76,7 +79,7 @@ export function createHandlers(deps: HandlerDeps): Record<QueueKey, Handler> {
 				await deps.liveHeartbeatSweep();
 				return { acknowledged: true, queue: "liveChannel" };
 			}
-			return deps.liveChannel(job.data);
+			return deps.liveChannel(job.data, job.id);
 		},
 		storageInspect: async (job: Job) => {
 			await deps.storageInspect(job.data);

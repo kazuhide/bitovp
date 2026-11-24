@@ -90,6 +90,8 @@ describe("manual STOP final-delivery projection", () => {
 		};
 		const run = {
 			id: over.runId ?? RUN,
+			status: "STOPPING",
+			endedAt: null,
 			bitmovinEncodingId: over.providerEncodingId ?? "encoding-1",
 		};
 		const claim = over.claim
@@ -107,14 +109,17 @@ describe("manual STOP final-delivery projection", () => {
 				findUnique: vi.fn(async () => channel),
 				updateMany,
 			},
-			liveChannelRun: { findFirst: vi.fn(async () => run) },
+			liveChannelRun: {
+				findFirst: vi.fn(async () => run),
+				updateMany: vi.fn(async () => ({ count: 1 })),
+			},
 			liveEffectClaim: { findUnique: vi.fn(async () => claim) },
 		};
 		const prisma = {
 			...tx,
 			$transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
 		} as unknown as AppPrismaClient;
-		return { prisma, updateMany };
+		return { prisma, updateMany, updateRun: tx.liveChannelRun.updateMany };
 	}
 
 	it("makes a never-claimed exhausted stop visibly retryable under its exact run/fence", async () => {
@@ -132,6 +137,7 @@ describe("manual STOP final-delivery projection", () => {
 			where: {
 				id: CHANNEL,
 				status: { in: ["RUNNING", "STOPPING"] },
+				bitmovinEncodingId: "encoding-1",
 				liveEffectFenceVersion: 7,
 			},
 			data: {
@@ -146,6 +152,38 @@ describe("manual STOP final-delivery projection", () => {
 			error: expect.stringMatching(/stop delivery exhausted.*retry Stop/i),
 			path: `/live/${CHANNEL}`,
 		});
+	});
+
+	it("retires the exact airing together with its channel when scheduled STOP exhausts before claiming", async () => {
+		const t = projectionStore();
+		const intent = {
+			...MANUAL_STOP_JOB.data.effect,
+			scheduleId: SCHEDULE,
+			idempotencyKey: `schedule:${SCHEDULE}:stop`,
+		};
+		expect(
+			await recordFinalStopFailure(
+				t.prisma,
+				{
+					...MANUAL_STOP_JOB,
+					data: { ...MANUAL_STOP_JOB.data, effect: intent },
+				},
+				"lost worker",
+			),
+		).toBe(true);
+		expect(t.updateRun).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					id: RUN,
+					liveChannelId: CHANNEL,
+					bitmovinEncodingId: "encoding-1",
+				}),
+				data: expect.objectContaining({
+					status: "ERROR",
+					endedAt: expect.any(Date),
+				}),
+			}),
+		);
 	});
 
 	it("projects a conclusively FAILED pre-send claim at its claimed generation", async () => {

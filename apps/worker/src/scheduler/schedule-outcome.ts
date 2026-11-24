@@ -19,6 +19,15 @@ import {
  * confirmation, the dead-job handler), so "who wins" cannot live in any one
  * of them.
  */
+/** ID assigned by the scheduler to a retained pre-effect job. */
+export function legacyScheduleId(
+	queueJobId: string | undefined,
+): string | undefined {
+	return /^sched-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(
+		queueJobId ?? "",
+	)?.[1];
+}
+
 export type ScheduleOutcome =
 	| "PENDING"
 	| "PROCESS_PUSHING"
@@ -217,6 +226,7 @@ export async function transitionScheduleToStale(
 	prisma: AppPrismaClient,
 	input: {
 		scheduleId: string;
+		fromStatus?: "FIRED";
 		stop?: { liveChannelId: string; liveChannelRunId: string };
 		note: string;
 		at: Date;
@@ -225,7 +235,7 @@ export async function transitionScheduleToStale(
 	const { count } = await prisma.liveSchedule.updateMany({
 		where: {
 			id: input.scheduleId,
-			status: { in: ["ARMED", "FIRED"] },
+			status: input.fromStatus ?? { in: ["ARMED", "FIRED"] },
 			...(input.stop
 				? { ...input.stop, action: "STOP", outcome: { in: ["PENDING"] } }
 				: {}),

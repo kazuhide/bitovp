@@ -123,6 +123,8 @@ import {
 	type ResetOwnerState,
 } from "../reset/lost-encodings";
 import {
+	legacyScheduleId,
+	recordScheduleOutcome,
 	recordScheduleOutcomeBestEffort,
 	transitionScheduleToStale,
 } from "../scheduler/schedule-outcome";
@@ -6796,7 +6798,13 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 	async function refuseStaleQueuedGeneration(
 		liveChannelId: string,
 		plannedLiveChannelRunId: string | null | undefined,
-		target: { scheduleId: string } | undefined,
+		target:
+			| {
+					scheduleId: string;
+					fromStatus?: "FIRED";
+					stop?: { liveChannelId: string; liveChannelRunId: string };
+			  }
+			| undefined,
 	): Promise<boolean> {
 		if (plannedLiveChannelRunId == null) {
 			return false;
@@ -6819,7 +6827,10 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		return true;
 	}
 
-	return async function process(jobData: unknown): Promise<LiveChannelResult> {
+	return async function process(
+		jobData: unknown,
+		queueJobId?: string,
+	): Promise<LiveChannelResult> {
 		const job = liveChannelJobSchema.parse(jobData);
 		const { liveChannelId } = job;
 		// (row 266): the terminal result a run-acting
@@ -6904,6 +6915,18 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				};
 			}
 			case "stop": {
+				const legacyId = job.effect ? undefined : legacyScheduleId(queueJobId);
+				const legacyTarget =
+					legacyId && job.plannedLiveChannelRunId
+						? {
+								scheduleId: legacyId,
+								fromStatus: "FIRED" as const,
+								stop: {
+									liveChannelId,
+									liveChannelRunId: job.plannedLiveChannelRunId,
+								},
+							}
+						: undefined;
 				// An identified STOP uses beginLiveEffect: it returns the prior ACK even
 				// after re-air, and fences new sends against the exact current run.
 				// Legacy/mismatched jobs must never act on a different airing.
@@ -6913,10 +6936,31 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					(await refuseStaleQueuedGeneration(
 						liveChannelId,
 						job.plannedLiveChannelRunId,
-						undefined,
+						legacyTarget,
 					))
 				) {
 					return staleGenerationResult();
+				}
+				if (job.effect?.action !== "STOP") {
+					if (legacyId) {
+						await recordScheduleOutcome(
+							deps.prisma,
+							{
+								scheduledStop: {
+									id: legacyId,
+									liveChannelId,
+									...(job.plannedLiveChannelRunId
+										? { liveChannelRunId: job.plannedLiveChannelRunId }
+										: {}),
+								},
+							},
+							"UNKNOWN",
+							"Legacy STOP lacks a run-bound provider intent",
+							new Date(deps.now()),
+							"JOB_TERMINAL_UNKNOWN",
+						);
+					}
+					return effectResult(job, "EFFECT_REFUSED");
 				}
 				const prepared = await prepareLiveEffect(
 					job,

@@ -29,6 +29,10 @@ import {
 } from "../orchestrator/live-processor";
 import { recordFinalRestartFailure } from "./dead-job-outcome";
 import {
+	recordDeadJobScheduleOutcomes,
+	recordFinalStopFailure,
+} from "./dead-job-outcome";
+import {
 	createProviderLifecycleReconciler,
 	type RunLifecycleRow,
 } from "./provider-lifecycle";
@@ -1087,6 +1091,193 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					where: { id: unrelated.id },
 				}),
 			).toEqual(unrelated);
+			expect(sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		});
+
+		it("records delivery only for the scheduled STOP whose credential lookup failed and then succeeded on retry", async () => {
+			const f = await fixture("STOPPING", null);
+			const accountId = randomUUID();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { plan: { bitmovin: { accountId } } },
+			});
+			const data = {
+				liveChannelId: f.channel.id,
+				liveChannelRunId: f.run.id,
+				action: "STOP" as const,
+				status: "FIRED" as const,
+				fireAt: lease,
+			};
+			const own = await tenant.liveSchedule.create({ data });
+			const unrelated = await tenant.liveSchedule.create({
+				data: {
+					...data,
+					outcome: "FAILED",
+					outcomeEvidenceKind: "EFFECT_FAILED",
+					outcomeAt: lease,
+				},
+			});
+			const sdk = fakeSdk({
+				getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" as const })),
+			});
+			const process = createLiveChannelProcessor({
+				prisma: tenant,
+				now: () => now.toISOString(),
+				makeSdk: () => sdk,
+				sleep: async () => {},
+				pollIntervalMs: 1,
+				pollTimeoutMs: 100,
+				enqueueFeederJob: async () => {},
+				resolveCredential: async () => {
+					throw new Error("no credential expected");
+				},
+				revealBitmovinAccount: vi
+					.fn(async () => ({ apiKey: "mock", tenantOrgId: null }))
+					.mockRejectedValueOnce(new Error("temporary account lookup failure")),
+			});
+			const job = {
+				liveChannelId: f.channel.id,
+				action: "stop",
+				plannedLiveChannelRunId: f.run.id,
+				effect: {
+					idempotencyKey: `schedule:${own.id}:stop`,
+					action: "STOP",
+					scheduleId: own.id,
+					liveChannelRunId: f.run.id,
+					providerEncodingId: f.encodingId,
+					admissionFenceVersion: f.channel.liveEffectFenceVersion,
+				},
+			};
+			await expect(process(job)).rejects.toThrow(
+				"temporary account lookup failure",
+			);
+			expect(
+				await tenant.liveSchedule.findUnique({ where: { id: own.id } }),
+			).toMatchObject({
+				outcome: "FAILED",
+				outcomeEvidenceKind: "EFFECT_FAILED",
+			});
+			expect(sdk.stopLiveEncoding).not.toHaveBeenCalled();
+			expect(await process(job)).toMatchObject({ status: "STOPPED" });
+			expect(
+				await tenant.liveSchedule.findUnique({ where: { id: own.id } }),
+			).toMatchObject({
+				outcome: "DELIVERED",
+				outcomeEvidenceKind: "PROVIDER_TERMINAL",
+			});
+			expect(
+				await tenant.liveSchedule.findUnique({ where: { id: unrelated.id } }),
+			).toEqual(unrelated);
+			expect(sdk.stopLiveEncoding).toHaveBeenCalledTimes(1);
+		});
+
+		it("retires the bound run on final failure and preserves it when legacy STOP jobs arrive after re-air", async () => {
+			const f = await fixture("STOPPING", null);
+			const plan = {
+				liveChannelId: f.channel.id,
+				liveChannelRunId: f.run.id,
+				fireAt: lease,
+				action: "STOP" as const,
+				status: "FIRED" as const,
+				dispatchedAt: lease,
+			};
+			const scheduled = await tenant.liveSchedule.create({ data: plan });
+			const legacy = await tenant.liveSchedule.create({ data: plan });
+			const job = {
+				id: `sched-${scheduled.id}`,
+				attemptsMade: 5,
+				opts: { attempts: 5 },
+				data: {
+					liveChannelId: f.channel.id,
+					plannedLiveChannelRunId: f.run.id,
+					action: "stop",
+					effect: {
+						action: "STOP",
+						scheduleId: scheduled.id,
+						idempotencyKey: `schedule:${scheduled.id}:stop`,
+						liveChannelRunId: f.run.id,
+						providerEncodingId: f.encodingId,
+						admissionFenceVersion: f.channel.liveEffectFenceVersion,
+					},
+				},
+			};
+			expect(await recordFinalStopFailure(tenant, job, "exhausted")).toBe(true);
+			await recordDeadJobScheduleOutcomes(tenant, job, "exhausted", now);
+			const failed = await tenant.liveChannelRun.findUniqueOrThrow({
+				where: { id: f.run.id },
+			});
+			expect(failed).toMatchObject({
+				status: "ERROR",
+				endedAt: expect.any(Date),
+				error: expect.stringContaining("exhausted"),
+			});
+			const originalReceipt = await tenant.liveSchedule.findUniqueOrThrow({
+				where: { id: scheduled.id },
+			});
+			expect(originalReceipt).toMatchObject({
+				outcome: "UNKNOWN",
+				outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+			});
+			const successor = await tenant.liveChannelRun.create({
+				data: {
+					liveChannelId: f.channel.id,
+					seq: 2,
+					status: "RUNNING",
+					bitmovinEncodingId: randomUUID(),
+					outputPrefix: "",
+				},
+			});
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					status: "RUNNING",
+					error: null,
+					bitmovinEncodingId: successor.bitmovinEncodingId,
+					liveEffectFenceVersion: { increment: 1 },
+				},
+			});
+			expect(await recordFinalStopFailure(tenant, job, "late callback")).toBe(
+				false,
+			);
+			const sdk = fakeSdk();
+			const process = createLiveChannelProcessor({
+				prisma: tenant,
+				now: () => now.toISOString(),
+				makeSdk: () => sdk,
+				sleep: async () => {},
+				pollIntervalMs: 1,
+				pollTimeoutMs: 100,
+				enqueueFeederJob: async () => {},
+				resolveCredential: async () => {
+					throw new Error("no credential expected");
+				},
+				revealBitmovinAccount: async () => {
+					throw new Error("no account expected");
+				},
+			});
+			const old = {
+				liveChannelId: f.channel.id,
+				plannedLiveChannelRunId: f.run.id,
+				action: "stop",
+			};
+			expect(await process(old, `sched-${legacy.id}`)).toMatchObject({
+				status: "SKIPPED_STALE_GENERATION",
+			});
+			expect(await process(old, `sched-${scheduled.id}`)).toMatchObject({
+				status: "SKIPPED_STALE_GENERATION",
+			});
+			expect(
+				await tenant.liveSchedule.findUnique({ where: { id: legacy.id } }),
+			).toMatchObject({
+				outcome: "FAILED",
+				outcomeEvidenceKind: "STALE_GENERATION_REFUSAL",
+			});
+			expect(
+				await tenant.liveSchedule.findUnique({ where: { id: scheduled.id } }),
+			).toEqual(originalReceipt);
+			expect(
+				await tenant.liveChannelRun.findUnique({ where: { id: successor.id } }),
+			).toEqual(successor);
 			expect(sdk.stopLiveEncoding).not.toHaveBeenCalled();
 		});
 

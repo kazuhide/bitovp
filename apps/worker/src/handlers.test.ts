@@ -70,6 +70,14 @@ describe("createHandlers", () => {
 		);
 	});
 
+	it("forwards the retained BullMQ identity to the live processor", async () => {
+		const d = deps();
+		const id = "sched-44444444-4444-4444-8444-444444444444";
+		const data = { liveChannelId: "channel", action: "stop" };
+		await createHandlers(d).liveChannel({ id, data } as Job);
+		expect(d.liveChannel).toHaveBeenCalledWith(data, id);
+	});
+
 	it.each([
 		"FINISHED",
 		"CANCELED",
@@ -107,10 +115,13 @@ describe("createHandlers", () => {
 			action: "stop",
 			status: "STOPPED",
 		});
-		expect(d.liveChannel).toHaveBeenCalledWith({
-			liveChannelId: "x",
-			action: "stop",
-		});
+		expect(d.liveChannel).toHaveBeenCalledWith(
+			{
+				liveChannelId: "x",
+				action: "stop",
+			},
+			"1",
+		);
 		expect(d.liveHeartbeatSweep).not.toHaveBeenCalled();
 	});
 

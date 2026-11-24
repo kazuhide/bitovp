@@ -23,7 +23,12 @@ export async function recordConfirmedStopDelivery(
 				liveChannelRunId,
 				action: "STOP",
 				status: "FIRED",
-				outcome: "PENDING",
+				// The very same effect may have had a conclusively pre-send failure
+				// before its retry. Its terminal proof supersedes that failed attempt.
+				OR: [
+					{ outcome: "PENDING" },
+					{ outcome: "FAILED", outcomeEvidenceKind: "EFFECT_FAILED" },
+				],
 			},
 			data: {
 				outcome: "DELIVERED",
@@ -70,7 +75,14 @@ export async function recordStopScheduleFailure(
 			liveChannelRunId: input.liveChannelRunId,
 			action: "STOP",
 			status: "FIRED",
-			outcome: "PENDING",
+			...(input.state === "AMBIGUOUS"
+				? {
+						OR: [
+							{ outcome: "PENDING" },
+							{ outcome: "FAILED", outcomeEvidenceKind: "EFFECT_FAILED" },
+						],
+					}
+				: { outcome: "PENDING" }),
 		},
 		data: {
 			outcome: input.state === "FAILED" ? "FAILED" : "UNKNOWN",

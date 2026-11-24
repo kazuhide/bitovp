@@ -4,6 +4,7 @@ import { feederLeaseIsFresh } from "../feeder/ownership";
 import { HEARTBEAT_SWEEP_JOB } from "../handlers";
 import type { EmitProductEvent } from "../notify/emitter";
 import {
+	legacyScheduleId,
 	recordScheduleOutcomeBestEffort,
 	type ScheduleOutcome,
 	type ScheduleOutcomeTarget,
@@ -209,7 +210,12 @@ export async function recordFinalStopFailure(
 			tx.liveChannelRun.findFirst({
 				where: { liveChannelId: intent.liveChannelId },
 				orderBy: { seq: "desc" },
-				select: { id: true, bitmovinEncodingId: true },
+				select: {
+					id: true,
+					bitmovinEncodingId: true,
+					status: true,
+					endedAt: true,
+				},
 			}),
 			tx.liveEffectClaim.findUnique({
 				where: { idempotencyKey: intent.idempotencyKey },
@@ -227,6 +233,8 @@ export async function recordFinalStopFailure(
 		if (
 			!channel ||
 			currentRun?.id !== intent.liveChannelRunId ||
+			channel.bitmovinEncodingId !== intent.providerEncodingId ||
+			!["RUNNING", "STOPPING", "ERROR"].includes(currentRun.status) ||
 			(currentRun.bitmovinEncodingId ?? channel.bitmovinEncodingId) !==
 				intent.providerEncodingId
 		) {
@@ -255,6 +263,7 @@ export async function recordFinalStopFailure(
 			where: {
 				id: intent.liveChannelId,
 				status: { in: ["RUNNING", "STOPPING"] },
+				bitmovinEncodingId: intent.providerEncodingId,
 				liveEffectFenceVersion: ownedFence,
 			},
 			data: {
@@ -262,9 +271,26 @@ export async function recordFinalStopFailure(
 				error,
 			},
 		});
-		return projected.count === 1
-			? { projected: true as const, channelName: channel.name }
-			: { projected: false as const };
+		if (projected.count !== 1) return { projected: false as const };
+		const run = await tx.liveChannelRun.updateMany({
+			where: {
+				id: currentRun.id,
+				liveChannelId: intent.liveChannelId,
+				bitmovinEncodingId: currentRun.bitmovinEncodingId,
+				status: currentRun.status,
+				endedAt: currentRun.endedAt,
+			},
+			data: {
+				status: "ERROR",
+				error,
+				endedAt: currentRun.endedAt ?? new Date(),
+			},
+		});
+		if (run.count !== 1)
+			throw new Error(
+				"Live STOP failure lost its exact airing during projection",
+			);
+		return { projected: true as const, channelName: channel.name };
 	});
 	if (!result.projected) return false;
 	await emitEvent?.({
@@ -291,6 +317,7 @@ export type DeadJobScheduleWrite = {
 type LiveJobData = {
 	liveChannelId?: string;
 	action?: string;
+	plannedLiveChannelRunId?: string;
 	params?: { scheduleId?: string };
 	effect?: { action?: string; scheduleId?: string; liveChannelRunId?: string };
 };
@@ -347,11 +374,9 @@ export function deadJobScheduleWrites(
 			if (job?.attemptsMade !== undefined && !isTerminalDelivery(job))
 				return [];
 			// Old scheduler payloads had no effect but their BullMQ id was sched-<row uuid>.
-			const legacyId =
-				/^sched-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(
-					job?.id ?? "",
-				)?.[1];
-			const id = intent?.scheduleId ?? (data.effect ? undefined : legacyId);
+			const id =
+				intent?.scheduleId ??
+				(data.effect ? undefined : legacyScheduleId(job?.id));
 			if (!data.liveChannelId || !id) return [];
 			return [
 				{
@@ -359,8 +384,11 @@ export function deadJobScheduleWrites(
 						scheduledStop: {
 							id,
 							liveChannelId: data.liveChannelId,
-							...(intent?.liveChannelRunId
-								? { liveChannelRunId: intent.liveChannelRunId }
+							...((intent?.liveChannelRunId ?? data.plannedLiveChannelRunId)
+								? {
+										liveChannelRunId:
+											intent?.liveChannelRunId ?? data.plannedLiveChannelRunId,
+									}
 								: {}),
 						},
 					},

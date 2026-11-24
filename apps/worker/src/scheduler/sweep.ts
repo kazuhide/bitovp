@@ -658,7 +658,17 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	/** Release a FIRED claim back to ARMED (enqueue failed / channel moved). */
 	async function rearm(row: ScheduleRow): Promise<void> {
 		const { count } = await deps.prisma.liveSchedule.updateMany({
-			where: { id: row.id, status: "FIRED" },
+			where: {
+				id: row.id,
+				status: "FIRED",
+				...(row.action === "STOP"
+					? {
+							liveChannelRunId: row.liveChannelRunId,
+							dispatchedAt: null,
+							outcome: { in: ["PENDING"] },
+						}
+					: {}),
+			},
 			data: {
 				status: "ARMED",
 				firedAt: null,
@@ -1349,20 +1359,29 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				if (!(await rowTo(row, "FIRED", { firedAt: deps.now() }))) {
 					return;
 				}
-				const claim = await deps.prisma.liveChannel.updateMany({
-					where: {
-						id: row.liveChannelId,
-						status: { in: ["RUNNING", "ERROR"] },
-						liveEffectFenceVersion: effect.admissionFenceVersion - 1,
-					},
-					data: {
-						status: "STOPPING",
-						liveEffectFenceVersion: { increment: 1 },
-					},
+				const claim = await deps.prisma.$transaction(async (tx) => {
+					const changed = await tx.liveChannel.updateMany({
+						where: {
+							id: row.liveChannelId,
+							status: { in: ["RUNNING", "ERROR"] },
+							liveEffectFenceVersion: effect.admissionFenceVersion - 1,
+						},
+						data: {
+							status: "STOPPING",
+							liveEffectFenceVersion: { increment: 1 },
+						},
+					});
+					if (changed.count) {
+						await tx.liveChannelRun.update({
+							where: {
+								id: effect.liveChannelRunId,
+								liveChannelId: row.liveChannelId,
+							},
+							data: { status: "STOPPING" },
+						});
+					}
+					return changed;
 				});
-				if (claim.count > 0) {
-					await runs.mirror(row.liveChannelId, { status: "STOPPING" });
-				}
 				if (claim.count === 0) {
 					await rearm(row);
 					stats.waiting += 1;
@@ -1382,14 +1401,8 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						scheduleJobId(row.id),
 					);
 				} catch {
-					// Channel ERROR (the route's mark) + row back to ARMED:
-					// next tick claims ERROR→STOPPING again (: the
-					// re-arm enrols the id, so the retry is genuinely the next
-					// tick even mid-backlog, and even mid-OUTAGE — the replay
-					// set never competes with forward progress) — self-healing,
-					// and the alarm no longer shares the failed dependency
-					// (review-190 C3).
-					await onEnqueueFailure(row, "Enqueue failed — stop again", true);
+					// A rejected add can already be executing in Redis. Leave FIRED
+					// and its open outbox intact for retry under the original job ID.
 					stats.errors += 1;
 					return;
 				}
@@ -2082,6 +2095,8 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					where: {
 						status: "FIRED",
 						dispatchedAt: null,
+						// A settled receipt already proves that the worker got this STOP.
+						NOT: { action: "STOP", outcome: { not: "PENDING" } },
 						firedAt: { lt: new Date(now.getTime() - DISPATCH_GRACE_MS) },
 						...scanWindow(cursor, replay),
 					},
@@ -2423,7 +2438,12 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		const at = deps.now();
 		const reason = `${label} refused: legacy outbox row has no exact current run/provider identity`;
 		const { count } = await deps.prisma.liveSchedule.updateMany({
-			where: { id: rowId, status: "FIRED", dispatchedAt: null },
+			where: {
+				id: rowId,
+				status: "FIRED",
+				dispatchedAt: null,
+				outcome: { in: ["PENDING"] },
+			},
 			data: {
 				status: "ERROR",
 				error: reason,

@@ -289,6 +289,7 @@ postgres("tenant PostgreSQL reset", () => {
 				bitmovinEncodingId: current,
 				previousProviderEncodingIds: previous,
 				archivedRtmpAttempt: archived,
+				lastHeartbeatAt: new Date("2026-08-01T00:00:00Z"),
 				stepLog,
 			},
 		});
@@ -332,6 +333,12 @@ postgres("tenant PostgreSQL reset", () => {
 			).confirmed,
 		).toHaveLength(1);
 		expect(isIdle(await findActiveWork(prisma))).toBe(true);
+		expect(
+			await prisma.liveChannelRun.findUniqueOrThrow({
+				where: { id: own.run.id },
+				select: { lastHeartbeatAt: true },
+			}),
+		).toEqual({ lastHeartbeatAt: own.run.lastHeartbeatAt });
 		const result = await deleteOperationalData(prisma);
 		expect(result.encoders.pointers.map((p) => p.bitmovinEncodingId)).toEqual([
 			old,

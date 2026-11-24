@@ -140,6 +140,9 @@ describe("run status derivation (ledger #108 §2)", () => {
 		]);
 		expect(directWriters.sort()).toEqual([
 			"web/src/app/api/live-channels/[id]/actions/route.ts",
+			// Reset locks the channel and run, verifies the archived encoder and account,
+			// and appends only its retirement evidence to the observed run.
+			"web/src/lib/server/reset-rtmp-archives.ts",
 			// : the reset's reconcile stamps `encoderStoppedConfirmedFor`
 			// on a run the provider was seen to have stopped — a CAS on that one
 			// NULL column, never lastHeartbeatAt, the anchor this pin protects.

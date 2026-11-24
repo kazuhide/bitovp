@@ -184,8 +184,6 @@ method. Its GUI/JSON reachability figures have not been refreshed and must not
 be compared with the current body-model inventory. The CSV export uses the same
 operation census as this screen, including separate methods sharing one path.
 
-Request-contract and manual-audit files are repository inventories, not GUI percentages.
-
 The manually reviewed audit corrects older unsupported-field claims for H.264
 `autoLevelSetup` and AV1 `maxLevel`. Their form/schema/compiled-request paths
 and SDK serialization have contract tests. This does not qualify all enum
@@ -213,12 +211,8 @@ sweep; they do not implement the provider's native Watch Folders API. Live MSL
 and SFTP mirror authoring remains a GUI gap; primary MSL already has a path and
 valid expert-JSON mirror plans are preserved.
 
-The [Live wizard](./user-guide/LIVE.md#experimental-moq-delivery) lets operators
-choose a saved MoQ relay credential and set the draft and track namespace. The
-credential form stores the publishing URL and optional token settings encrypted.
-The field audit traces these five settings to the SDK request. The
-[historical playback trial](./MOQ-LIVE-ENCODER-TEST-RESULTS.md) used Cloudflare
-draft 16 and encoder 2.294.0.
+The Live wizard uses encrypted MoQ credentials. See the [relay settings](./user-guide/LIVE.md#experimental-moq-delivery)
+and [Cloudflare draft 16 trial](./MOQ-LIVE-ENCODER-TEST-RESULTS.md).
 AV1 Per-Title `targetQualityCrf` is an existing field whose upstream documentation
 changed, not an operation or field newly implemented by this upgrade.
 

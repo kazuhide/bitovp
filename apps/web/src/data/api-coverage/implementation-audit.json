@@ -498,6 +498,14 @@
 				],
 				"payload": [
 					{
+						"file": "apps/worker/src/orchestrator/live-processor.ts",
+						"anchor": "entry.payload.trackNamespace = bindMoqPlaybackNamespace("
+					},
+					{
+						"file": "packages/core/src/live/moq-run-namespace.ts",
+						"anchor": "if (namespace.length !== 1 || !field) return namespace;"
+					},
+					{
 						"file": "apps/worker/src/orchestrator/ops/exec-io.ts",
 						"anchor": "trackNamespace: moqTrackNamespaceSchema.parse(p.trackNamespace),"
 					},
@@ -514,11 +522,15 @@
 					{
 						"file": "apps/worker/src/orchestrator/sdk-ops.moq-output.test.ts",
 						"anchor": "sends MoQ fields to the provider and keeps relay credentials out of the audit trail"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/live-processor.test.ts",
+						"anchor": "writes the effective MoQ namespace to the run before dispatching its output CREATE"
 					}
 				]
 			},
 			"provider": "unverified",
-			"note": "Custom Live output field. The wizard preserves each element of the track namespace.",
+			"note": "The Live wizard stores the configured tuple. On a fresh run the Worker bounds a single component and applies its run-specific -bitovp-<runId> suffix before creating the output. It forwards multi-component tuples unchanged.",
 			"api": {
 				"writeability": "documented-request-field",
 				"reference": {

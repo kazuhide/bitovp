@@ -3,7 +3,12 @@ import {
 	liveChannelJobSchema,
 	redactSecrets,
 } from "@bitovp/core";
-import type { AppPrismaClient } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	beginLiveEffect,
+	liveEffectSendUncertainty,
+	markLiveEffectAmbiguous,
+} from "@bitovp/db";
 import { feederLeaseIsFresh } from "../feeder/ownership";
 import { HEARTBEAT_SWEEP_JOB } from "../handlers";
 import type { EmitProductEvent } from "../notify/emitter";
@@ -13,6 +18,8 @@ import {
 	type ScheduleOutcome,
 	type ScheduleOutcomeTarget,
 } from "../scheduler/schedule-outcome";
+import { recordScheduledStopHandoff } from "../scheduler/stop-handoff";
+import { readLegacyScheduledStop } from "./legacy-scheduled-stop";
 
 /**
  *  — what a liveChannel job that died OUTSIDE its processor means
@@ -560,12 +567,90 @@ export function deadJobScheduleWrites(
  * that must not throw, and the row it could not write stays amber, which is
  * the honest reading of "we do not know".
  */
+async function recordExhaustedScheduledStop(
+	prisma: AppPrismaClient,
+	job: DeadLiveJob,
+	at: Date,
+	message: string,
+) {
+	const parsed = liveChannelJobSchema.safeParse(job?.data);
+	const id = legacyScheduleId(job?.id);
+	if (
+		!id ||
+		!parsed.success ||
+		parsed.data.action !== "stop" ||
+		!isTerminalDelivery(job)
+	)
+		return;
+	const { liveChannelId, plannedLiveChannelRunId, effect } = parsed.data;
+	if (
+		effect &&
+		(effect.action !== "STOP" ||
+			effect.scheduleId !== id ||
+			effect.idempotencyKey !== `schedule:${id}:stop` ||
+			(plannedLiveChannelRunId &&
+				effect.liveChannelRunId !== plannedLiveChannelRunId))
+	)
+		return;
+	const receipt = await prisma.liveSchedule.findFirst({
+		where: {
+			id,
+			liveChannelId,
+			action: "STOP",
+			status: "FIRED",
+			...(effect?.liveChannelRunId || plannedLiveChannelRunId
+				? {
+						liveChannelRunId:
+							effect?.liveChannelRunId ?? plannedLiveChannelRunId,
+					}
+				: {}),
+			OR: [{ dispatchJobId: null }, { dispatchJobId: `sched-${id}` }],
+		},
+		select: { liveChannelRunId: true },
+	});
+	if (!receipt?.liveChannelRunId) return;
+	const liveChannelRunId = receipt.liveChannelRunId;
+	// A native failed event for the exact retained queue ID is a queue receipt,
+	// even when the consumer died before it could create a claim.
+	await recordScheduledStopHandoff(
+		prisma,
+		{ id, liveChannelId, liveChannelRunId },
+		at,
+	);
+	if (effect) return;
+	const legacy = await readLegacyScheduledStop(
+		prisma,
+		id,
+		liveChannelId,
+		liveChannelRunId,
+	);
+	if (!legacy?.effect || legacy.alreadyAdopted) return;
+	const adopted = await beginLiveEffect(prisma, {
+		...legacy.effect,
+		liveChannelId,
+		expectedFenceVersion: legacy.effect.admissionFenceVersion,
+		allowedChannelStatuses: ["STOPPING"],
+		supersedeOpen: true,
+		legacyStopDelivery: "UNKNOWN",
+		ownerId: "exhausted-scheduled-stop",
+		now: at,
+		expiresAt: at,
+	});
+	if (adopted.kind === "EXECUTE")
+		await markLiveEffectAmbiguous(
+			prisma,
+			adopted.claim,
+			liveEffectSendUncertainty(redactSecrets(message)),
+		);
+}
+
 export async function recordDeadJobScheduleOutcomes(
 	prisma: AppPrismaClient,
 	job: DeadLiveJob,
 	message: string,
 	at: Date,
 ): Promise<void> {
+	await recordExhaustedScheduledStop(prisma, job, at, message);
 	for (const write of deadJobScheduleWrites(job, message)) {
 		await recordScheduleOutcomeBestEffort(
 			prisma,

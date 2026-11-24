@@ -43,10 +43,35 @@ export async function readLockedLiveStartState(
 			rtmpRetirementEvidence: true,
 		},
 	});
+	const accountId = liveChannelAccountId(channel);
 	const pending = unconfirmedRtmpEncoders(
 		latest ?? { stepLog: [] },
 		channel,
-		liveChannelAccountId(channel),
+		accountId,
 	);
-	return { channel, latest, archivesRetired: pending?.length === 0 };
+	let archivesRetired = pending?.length === 0;
+	// The channel log mirrors only its latest run. Older unretired rentals must
+	// retain their own evidence, including legacy gaps recorded only in the step log.
+	let before = latest?.seq ?? 0;
+	while (archivesRetired && before > 1) {
+		const prior = await tx.liveChannelRun.findMany({
+			where: { liveChannelId, seq: { lt: before } },
+			orderBy: { seq: "desc" },
+			take: 32,
+			select: {
+				seq: true,
+				stepLog: true,
+				previousProviderEncodingIds: true,
+				archivedRtmpAttempt: true,
+				rtmpRetirementEvidence: true,
+			},
+		});
+		archivesRetired = prior.every(
+			(run) =>
+				unconfirmedRtmpEncoders(run, { stepLog: [] }, accountId)?.length === 0,
+		);
+		if (prior.length < 32) break;
+		before = prior.at(-1)?.seq ?? 0;
+	}
+	return { channel, latest, archivesRetired };
 }

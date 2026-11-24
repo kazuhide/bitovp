@@ -118,12 +118,14 @@ describe("GET /schedules", () => {
 			expect.objectContaining({
 				where: { liveChannelId: CHANNEL_ID, status: "ARMED" },
 				orderBy: { fireAt: "asc" },
+				omit: { stopProviderEncodingId: true, stopAdmissionFenceVersion: true },
 			}),
 		);
 		expect(scheduleFindMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: { liveChannelId: CHANNEL_ID, status: { not: "ARMED" } },
 				orderBy: { fireAt: "desc" },
+				omit: { stopProviderEncodingId: true, stopAdmissionFenceVersion: true },
 			}),
 		);
 	});

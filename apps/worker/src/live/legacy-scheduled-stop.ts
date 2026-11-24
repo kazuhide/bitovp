@@ -18,10 +18,12 @@ export async function readLegacyScheduledStop(
 			liveChannelId,
 			action: "STOP",
 			status: "FIRED",
-			outcome: "PENDING",
+			outcome: { in: ["PENDING", "FAILED"] },
 			OR: [{ dispatchJobId: null }, { dispatchJobId: `sched-${scheduleId}` }],
 		},
 		select: {
+			outcome: true,
+			outcomeEvidenceKind: true,
 			liveChannelRunId: true,
 			liveChannel: {
 				select: {
@@ -40,6 +42,52 @@ export async function readLegacyScheduledStop(
 	if (!receipt?.liveChannelRunId) return null;
 	const { liveChannelRunId, liveChannel: channel } = receipt;
 	const run = channel.runs[0];
+	if (expectedRunId && expectedRunId !== liveChannelRunId)
+		return { liveChannelRunId };
+	// A legacy payload is immutable in BullMQ. After its first worker adopted
+	// the job, its durable pre-send failure is the authority for later retries.
+	if (receipt.outcome === "FAILED") {
+		if (
+			receipt.outcomeEvidenceKind !== "EFFECT_FAILED" ||
+			channel.status !== "ERROR" ||
+			run?.id !== liveChannelRunId ||
+			!channel.bitmovinEncodingId
+		)
+			return { liveChannelRunId };
+		const claim = await prisma.liveEffectClaim.findFirst({
+			where: {
+				idempotencyKey: `schedule:${scheduleId}:stop`,
+				action: "STOP",
+				scheduleId,
+				liveChannelId,
+				liveChannelRunId,
+				providerEncodingId: channel.bitmovinEncodingId,
+				state: "FAILED",
+				generation: channel.liveEffectFenceVersion,
+				stopProtocolVersion: 1,
+				stopSendEncodingIds: { isEmpty: true },
+			},
+			select: {
+				idempotencyKey: true,
+				providerEncodingId: true,
+				generation: true,
+			},
+		});
+		if (!claim || !liveStopRunOwnsEncoding(run, claim.providerEncodingId))
+			return { liveChannelRunId };
+		return {
+			liveChannelRunId,
+			alreadyAdopted: true,
+			effect: {
+				idempotencyKey: claim.idempotencyKey,
+				action: "STOP" as const,
+				scheduleId,
+				liveChannelRunId,
+				providerEncodingId: claim.providerEncodingId,
+				admissionFenceVersion: claim.generation,
+			},
+		};
+	}
 	let effect: LiveEffectIntent | undefined;
 	if (
 		channel.status === "STOPPING" &&

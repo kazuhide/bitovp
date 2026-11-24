@@ -680,6 +680,7 @@ function setup(
 		feederSession,
 		liveHeartbeat,
 		liveSchedule,
+		liveStopNotification: { create: vi.fn(async () => ({})) },
 		liveChannelRun,
 		startupSample,
 		$queryRaw: vi.fn(

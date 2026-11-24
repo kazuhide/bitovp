@@ -7208,7 +7208,6 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					liveChannelRunId: job.plannedLiveChannelRunId,
 				},
 				new Date(deps.now()),
-				deps.emitEvent,
 			);
 		}
 		// (row 266): the terminal result a run-acting
@@ -7341,7 +7340,8 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					legacy.liveChannelRunId === job.plannedLiveChannelRunId
 				) {
 					job.effect = legacy.effect;
-					legacyStopDelivery = firstQueueDelivery ? "FIRST" : "UNKNOWN";
+					if (!legacy.alreadyAdopted)
+						legacyStopDelivery = firstQueueDelivery ? "FIRST" : "UNKNOWN";
 				}
 				if (job.effect?.action !== "STOP") {
 					if (legacyId) {

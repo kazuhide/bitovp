@@ -231,7 +231,8 @@ const EXPECTATIONS: Expectation[] = [
 		// Regular compile failures still use rowTo + emitMissed. The removed
 		// START outbox refusal used strandedRowTo, outside this rowTo pattern.
 		// Emits remain 4 because outcomes still use the existing emit helpers.
-		writeCount: 18,
+		// Ordinary scheduled STOP claims FIRED with its channel/run/envelope transaction.
+		writeCount: 17,
 		// The cap and scheduled STOP share the handoff writer with the queue consumer.
 		emitCount: 3,
 	},
@@ -319,7 +320,7 @@ const EXPECTATIONS: Expectation[] = [
 ];
 
 const EMIT_CALL =
-	/emitEvent\?\.\(|emitChannel\(|await recordConfirmedStopDelivery\(|await deliver\(\{/g;
+	/emitEvent\?\.\(|emitChannel\(|await recordConfirmedStopDelivery\(|await tx\.liveStopNotification\.create\(|await deliver\(\{/g;
 
 describe("every terminal transition emits a product event (ledger #88)", () => {
 	for (const expectation of EXPECTATIONS) {

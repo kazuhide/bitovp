@@ -59,7 +59,9 @@ export function createStopNotificationSweep(
 						kind: row.kind,
 						occurredAt: row.occurredAt.toISOString(),
 						liveChannelId: row.channelId,
-						name: row.channelName,
+						...(row.kind === "SCHEDULE_FIRED"
+							? { scheduleId: row.scheduleId }
+							: { name: row.channelName }),
 						link: `${base}/live/${row.channelId}`,
 						...(row.kind === "CHANNEL_ERROR" && {
 							error: "AISA_LIVE_TERMINAL_FAILURE",
@@ -119,14 +121,15 @@ export function createStopNotificationSweep(
 				});
 				if (!finished.count) return;
 				finishedStates.add(result);
-				await tx.liveChannelRun.updateMany({
-					where: {
-						id: row.id,
-						liveChannelId: row.channelId,
-						stopNotificationState: "PENDING",
-					},
-					data: { stopNotificationState: result },
-				});
+				if (row.kind !== "SCHEDULE_FIRED")
+					await tx.liveChannelRun.updateMany({
+						where: {
+							id: row.id,
+							liveChannelId: row.channelId,
+							stopNotificationState: "PENDING",
+						},
+						data: { stopNotificationState: result },
+					});
 				if (result === "FAILED")
 					console.warn(
 						`[notify] STOP notification failed after ${row.failures + 1} attempts for broadcast ${row.id}`,

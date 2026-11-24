@@ -103,11 +103,13 @@ export async function GET(_req: Request, { params }: RouteParams) {
 				where: { liveChannelId: id, status: "ARMED" },
 				orderBy: { fireAt: "asc" },
 				take: UPCOMING_LIMIT,
+				omit: { stopProviderEncodingId: true, stopAdmissionFenceVersion: true },
 			}),
 			ctx.prisma.liveSchedule.findMany({
 				where: { liveChannelId: id, status: { not: "ARMED" } },
 				orderBy: { fireAt: "desc" },
 				take: HISTORY_LIMIT,
+				omit: { stopProviderEncodingId: true, stopAdmissionFenceVersion: true },
 			}),
 		]);
 		const rows = [...upcoming, ...history];

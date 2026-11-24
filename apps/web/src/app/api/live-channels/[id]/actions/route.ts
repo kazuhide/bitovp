@@ -886,8 +886,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 							row.status === "ERROR" &&
 							latest?.status === "ERROR" &&
 							!latestProviderTerminal;
-						if (!isRevive && !archivesRetired)
-							throw new DisplacedEncoderPending();
+						if (!archivesRetired) throw new DisplacedEncoderPending();
 						// ERROR resume: FAILED/RUNNING steps reset to PENDING;
 						// DONE steps keep their resource ids so the worker
 						// resumes instead of recreating (VOD retry pattern).

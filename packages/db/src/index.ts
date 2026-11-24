@@ -89,6 +89,7 @@ export {
 	assertLiveEffectCurrent,
 	beginLiveEffect,
 	bindArchivedStopTarget,
+	bindArchivedStopTargetInTransaction,
 	bindLiveEffectTarget,
 	canObserveLiveStop,
 	claimLiveStopSend,

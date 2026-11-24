@@ -331,7 +331,7 @@ one broadcast. The worker retains the current encoder until its account reports 
 missing, automatic confirmation stays pending. Check the account's active
 encodings with the operator before re-air.
 
-After an upgrade, a previous broadcast can show STOPPED while a replaced RTMP encoder still needs confirmation. Select Stop on that broadcast before starting a new one. A scheduled start waits within its grace window, and a scheduled stop waits until the earlier encoder is confirmed.
+After an upgrade, a broadcast can show STOPPED or ERROR while a replaced RTMP encoder still needs confirmation. Start and scheduled Start check earlier broadcasts on this channel as well as the current one. Use **Stop** to recover an encoder on the current broadcast. If an older broadcast is missing retirement evidence, check that broadcast's encoder in its provider account before attempting another start. A scheduled start waits within its grace window.
 
 If an encoder still reports `RUNNING` or `QUEUED`, check its ID in the
 provider dashboard. Pressing **Stop** again cannot force another send for the
@@ -341,7 +341,7 @@ stop could not be queued, check that the feeder has actually exited. For AISA,
 retry finalization from the console to refresh the Analysis status and final
 result for that broadcast.
 
-A recovered stop completes its own pending schedule. A schedule already marked
+A scheduled stop keeps its admitted broadcast and encoder through queue retries. Its schedule-fired notification records queue handoff. A recovered stop completes its own pending schedule when the encoder has stopped. A schedule already marked
 unknown keeps its original evidence, including after a subsequent broadcast.
 For new stops, confirmation records one notification per broadcast. The worker
 can finish delivery after the channel is deleted. A network or HTTP failure is

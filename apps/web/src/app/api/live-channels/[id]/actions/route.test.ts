@@ -2903,6 +2903,48 @@ describe("stopping a stop that never confirmed (ledger #130 C-fold)", () => {
 
 describe("displaced RTMP encoders after upgrade", () => {
 	it.each([
+		false,
+		true,
+	])("blocks an ERROR resume with an unretired archived encoder on the current or older airing (older=%s)", async (older) => {
+		findUnique.mockResolvedValue(
+			channel({
+				status: "ERROR",
+				origin: "MANAGED",
+				bitmovinEncodingId: null,
+				error: null,
+				bitmovinAccountId: "account",
+			}),
+		);
+		const old = {
+			id: RUN_ID,
+			seq: 1,
+			status: "ERROR",
+			bitmovinEncodingId: null,
+			stepLog: [],
+			previousProviderEncodingIds: ["displaced"],
+			archivedRtmpAttempt: 1,
+		};
+		runFindFirst.mockResolvedValue(
+			older
+				? {
+						...old,
+						seq: 2,
+						id: "current",
+						previousProviderEncodingIds: [],
+						archivedRtmpAttempt: 0,
+					}
+				: old,
+		);
+		runFindMany.mockResolvedValue(older ? [old] : []);
+		const result = await postAction({ action: "start" });
+		expect(result.status).toBe(409);
+		expect((await result.json()).details.code).toBe(
+			"LIVE_ACTION_PROVIDER_UNKNOWN",
+		);
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it.each([
 		"STOPPED",
 		"ERROR",
 	] as const)("holds %s re-air until the archive has an exact account receipt", async (status) => {

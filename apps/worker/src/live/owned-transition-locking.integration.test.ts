@@ -5,6 +5,7 @@ import {
 	initStepLog,
 	type LiveToVodRecord,
 	liveAutoShutdownUpdateReceiptSchema,
+	productEventSchema,
 	readLiveAutoShutdownUpdate,
 	type StepLogEntry,
 } from "@bitovp/core";
@@ -787,6 +788,303 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				provisionClaimedAt: heldAt,
 			});
 		}
+
+		it("never exposes a scheduled STOP job before its exact STOPPING generation commits", async () => {
+			const f = await dispatchFixture();
+			const original = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "STOP",
+					fireAt: now,
+				},
+			});
+			const reached = barrier(),
+				resume = barrier();
+			const proxy = new Proxy(tenant, {
+				get(target, key) {
+					if (key === "$transaction")
+						return (
+							fn: (
+								client: import("@bitovp/db").AppTransactionClient,
+							) => Promise<unknown>,
+						) =>
+							target.$transaction((tx) =>
+								fn(
+									new Proxy(tx, {
+										get(client, key) {
+											if (key === "liveChannel")
+												return new Proxy(client.liveChannel, {
+													get(delegate, method) {
+														if (method === "updateMany")
+															return async (
+																args: Parameters<typeof delegate.updateMany>[0],
+															) => {
+																if (args?.data?.status === "STOPPING") {
+																	reached.release();
+																	await resume.ready;
+																}
+																return delegate.updateMany(args);
+															};
+														return Reflect.get(delegate, method);
+													},
+												});
+											return Reflect.get(client, key);
+										},
+									}),
+								),
+							);
+					const value = Reflect.get(target, key);
+					return typeof value === "function" ? value.bind(target) : value;
+				},
+			});
+			const retained = new Map<string, import("@bitovp/core").LiveChannelJob>();
+			const enqueue = async (
+				job: import("@bitovp/core").LiveChannelJob,
+				id: string,
+			) => {
+				if (!retained.has(id)) retained.set(id, job);
+			};
+			const pending = createScheduleSweep({
+				prisma: proxy,
+				now: () => now,
+				enqueue,
+			})();
+			try {
+				await reach(reached.ready, pending);
+				await createScheduleSweep({
+					prisma: tenant,
+					now: () => new Date(now.getTime() + 600_000),
+					enqueue,
+				}).dispatchPending();
+			} finally {
+				resume.release();
+			}
+			await pending;
+			const job = retained.get(`sched-${original.id}`);
+			expect(job?.effect?.liveChannelRunId).toBe(f.run.id);
+			const channel = await tenant.liveChannel.findUniqueOrThrow({
+				where: { id: f.channel.id },
+			});
+			expect(job?.effect?.admissionFenceVersion).toBe(
+				channel.liveEffectFenceVersion,
+			);
+			const result = await createLiveChannelProcessor(f.deps)(job);
+			expect(result.status).toBe("STOPPED");
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(
+				f.encodingId,
+			);
+		});
+
+		it.each([
+			"ARMED",
+			"FIRED",
+		] as const)("recovers the archived encoder of an archive-only STOP at %s", async (status) => {
+			const f = await dispatchFixture();
+			const initial = status === "ARMED" ? "ERROR" : "STOPPING";
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: initial, bitmovinEncodingId: null, purpose: "PROBE" },
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: {
+					status: initial,
+					bitmovinEncodingId: null,
+					previousProviderEncodingIds: [f.encodingId],
+				},
+			});
+			const active = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					status,
+					action: "STOP",
+					fireAt: lease,
+					...(status === "FIRED" ? { firedAt: lease } : {}),
+				},
+			});
+			const enqueue = vi.fn(
+				async (_job: import("@bitovp/core").LiveChannelJob, _id: string) => {},
+			);
+			const sweep = createScheduleSweep({
+				prisma: tenant,
+				now: () => new Date(now.getTime() + 600_000),
+				enqueue,
+			});
+			if (status === "ARMED") await sweep();
+			else await sweep.dispatchPending();
+			const job = enqueue.mock.calls.find(
+				([, id]) => id === `sched-${active.id}`,
+			)?.[0];
+			expect(job?.effect?.providerEncodingId).toBe(f.encodingId);
+			expect((await createLiveChannelProcessor(f.deps)(job)).status).toBe(
+				"STOPPED",
+			);
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(
+				f.encodingId,
+			);
+		});
+
+		it.each([
+			"legacy",
+			"fenced",
+		] as const)("records native exhaustion before %s STOP adoption and publishes one exact schedule notification", async (format) => {
+			const f = await dispatchFixture();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "STOPPING" },
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPING" },
+			});
+			const row = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					status: "FIRED",
+					action: "STOP",
+					fireAt: lease,
+				},
+			});
+			const job = {
+				id: `sched-${row.id}`,
+				data: {
+					action: "stop",
+					liveChannelId: f.channel.id,
+					plannedLiveChannelRunId: f.run.id,
+					...(format === "fenced" && {
+						effect: {
+							...f.job.effect,
+							scheduleId: row.id,
+							idempotencyKey: `schedule:${row.id}:stop`,
+						},
+					}),
+				},
+				attemptsMade: 1,
+				opts: { attempts: 3 },
+				finishedOn: now.getTime(),
+			};
+			if (format === "fenced")
+				expect(
+					await recordFinalStopFailure(
+						tenant,
+						job,
+						"exhausted before execution",
+					),
+				).toBe(true);
+			await recordDeadJobScheduleOutcomes(
+				tenant,
+				job,
+				"retained stop exhausted before adoption",
+				now,
+			);
+			await recordDeadJobScheduleOutcomes(
+				tenant,
+				job,
+				"duplicate failed callback",
+				now,
+			);
+			const durableClaim = await tenant.liveEffectClaim.findUnique({
+				where: { idempotencyKey: `schedule:${row.id}:stop` },
+			});
+			if (format === "legacy")
+				expect(durableClaim).toMatchObject({
+					liveChannelRunId: f.run.id,
+					providerEncodingId: f.encodingId,
+					state: "AMBIGUOUS",
+					stopProtocolVersion: null,
+				});
+			else expect(durableClaim).toBeNull();
+			expect(
+				await tenant.liveSchedule.findUnique({ where: { id: row.id } }),
+			).toMatchObject({
+				outcome: "UNKNOWN",
+				dispatchJobId: job.id,
+				dispatchedAt: now,
+			});
+			expect(
+				await tenant.liveStopNotification.count({
+					where: { scheduleId: row.id },
+				}),
+			).toBe(1);
+			const delivered: unknown[] = [];
+			const notify = createStopNotificationSweep(
+				tenant,
+				async ({ data, beforeSend }) => {
+					const event = productEventSchema.parse(data);
+					if (event.kind === "SCHEDULE_FIRED" && event.scheduleId === row.id) {
+						await beforeSend?.();
+						delivered.push(event);
+					}
+					return [{ outcome: "DELIVERED" as const }];
+				},
+				"https://operator.example",
+				() => now,
+			);
+			for (let pass = 0; pass < 20 && !delivered.length; pass++) await notify();
+			await notify();
+			expect(delivered).toEqual([
+				{
+					eventVersion: 1,
+					kind: "SCHEDULE_FIRED",
+					scheduleId: row.id,
+					liveChannelId: f.channel.id,
+					occurredAt: now.toISOString(),
+					link: `https://operator.example/live/${f.channel.id}`,
+				},
+			]);
+			expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		});
+
+		it("blocks both a same-airing resume and a fresh start while any retained broadcast has an unverified displaced encoder", async () => {
+			const f = await dispatchFixture();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "ERROR", bitmovinEncodingId: null },
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: {
+					status: "ERROR",
+					bitmovinEncodingId: null,
+					previousProviderEncodingIds: [f.encodingId],
+				},
+			});
+			const guard = () =>
+				tenant.$transaction((tx) => readLockedLiveStartState(tx, f.channel.id));
+			expect((await guard()).archivesRetired).toBe(false);
+			await tenant.liveChannelRun.create({
+				data: {
+					liveChannelId: f.channel.id,
+					seq: 2,
+					status: "STOPPED",
+					outputPrefix: "",
+				},
+			});
+			expect((await guard()).archivesRetired).toBe(false);
+			const account = (
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				})
+			).plan as { bitmovin: { accountId: string } };
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: {
+					rtmpRetirementEvidence: [
+						{
+							encodingId: f.encodingId,
+							accountId: account.bitmovin.accountId,
+							disposition: "TERMINAL",
+							providerStatus: "FINISHED",
+							observedAt: now.toISOString(),
+						},
+					],
+				},
+			});
+			expect((await guard()).archivesRetired).toBe(true);
+		});
 
 		it("a cap paused after scanning a previous airing leaves its successor on air, then caps it at its own deadline", async () => {
 			const f = await fixture("RUNNING", null);
@@ -2400,13 +2698,17 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				dispatchJobId: id,
 				outcome: "DELIVERED",
 			});
-			expect(emitEvent).toHaveBeenCalledExactlyOnceWith(
+			expect(
+				await tenant.liveStopNotification.findMany({
+					where: { scheduleId: schedule.id },
+				}),
+			).toEqual([
 				expect.objectContaining({
 					kind: "SCHEDULE_FIRED",
-					scheduleId: schedule.id,
+					channelId: f.channel.id,
+					occurredAt: now,
 				}),
-				now,
-			);
+			]);
 		});
 
 		it("delivers the original pending stop after the channel and run have been deleted", async () => {
@@ -2451,7 +2753,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				"https://bitovp.example",
 				() => clock,
 			);
-			await sweep();
+			// Other schedules and broadcasts can precede this event in the bounded tenant queue.
+			for (let pass = 0; pass < 20 && calls.length === 0; pass++) await sweep();
 			expect(
 				await tenant.liveStopNotification.findUnique({ where }),
 			).toMatchObject({ failures: 1, leaseToken: null });
@@ -3117,7 +3420,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			expect(sdk.stopLiveEncoding).not.toHaveBeenCalled();
 		});
 
-		it("records delivery only for the scheduled STOP whose credential lookup failed and then succeeded on retry", async () => {
+		it.each([
+			false,
+			true,
+		])("records exact scheduled STOP delivery after credential lookup recovers (legacy=%s)", async (legacy) => {
 			const f = await fixture("STOPPING", null);
 			const accountId = randomUUID();
 			await tenant.liveChannel.update({
@@ -3171,7 +3477,15 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					admissionFenceVersion: f.channel.liveEffectFenceVersion,
 				},
 			};
-			await expect(process(job)).rejects.toThrow(
+			const dataForQueue = legacy
+				? {
+						liveChannelId: f.channel.id,
+						action: "stop",
+						plannedLiveChannelRunId: f.run.id,
+					}
+				: job;
+			const queueId = `sched-${own.id}`;
+			await expect(process(dataForQueue, queueId, true)).rejects.toThrow(
 				"temporary account lookup failure",
 			);
 			expect(
@@ -3181,7 +3495,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				outcomeEvidenceKind: "EFFECT_FAILED",
 			});
 			expect(sdk.stopLiveEncoding).not.toHaveBeenCalled();
-			expect(await process(job)).toMatchObject({ status: "STOPPED" });
+			expect(await process(dataForQueue, queueId, false)).toMatchObject({
+				status: "STOPPED",
+			});
 			expect(
 				await tenant.liveSchedule.findUnique({ where: { id: own.id } }),
 			).toMatchObject({

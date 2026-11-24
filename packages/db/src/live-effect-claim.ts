@@ -369,47 +369,61 @@ export async function bindArchivedStopTarget(
 	expectedRunId?: string,
 	expectedRevision?: string,
 ): Promise<string | null> {
-	return prisma.$transaction(async (tx) => {
-		const locked = await tx.$queryRaw<
-			{ id: string }[]
-		>`SELECT id FROM "LiveChannel" WHERE id=${liveChannelId}::uuid FOR UPDATE`;
-		if (!locked.length) return null;
-		const channel = await tx.liveChannel.findUnique({
-			where: { id: liveChannelId },
-		});
-		if (!channel) return null;
-		const run = await tx.liveChannelRun.findFirst({
-			where: { liveChannelId },
-			orderBy: { seq: "desc" },
-		});
-		if (!run || (expectedRunId && run.id !== expectedRunId)) return null;
-		if (
-			expectedRevision !== undefined &&
-			archivedStopRevision(channel, run) !== expectedRevision
-		)
-			return null;
-		const target = archivedStopRecoveryTarget(channel, run);
-		if (!target || channel.bitmovinEncodingId === target) return target;
-		await tx.liveChannelRun.update({
-			where: { id: run.id },
-			data: {
-				bitmovinEncodingId: target,
-				providerStatus: null,
-				providerStatusObservedAt: null,
-				providerTerminalAt: null,
-				providerFeederStopsEnqueuedAt: null,
-				providerUnknownSince: null,
-				providerUnknownAlertedAt: null,
-				encoderStoppedConfirmedFor: null,
-				heartbeatPollEpoch: { increment: 1 },
-			},
-		});
-		await tx.liveChannel.update({
-			where: { id: liveChannelId },
-			data: { bitmovinEncodingId: target, encoderStoppedConfirmedFor: null },
-		});
-		return target;
+	return prisma.$transaction((tx) =>
+		bindArchivedStopTargetInTransaction(
+			tx,
+			liveChannelId,
+			expectedRunId,
+			expectedRevision,
+		),
+	);
+}
+
+export async function bindArchivedStopTargetInTransaction(
+	tx: AppTransactionClient,
+	liveChannelId: string,
+	expectedRunId?: string,
+	expectedRevision?: string,
+): Promise<string | null> {
+	const locked = await tx.$queryRaw<
+		{ id: string }[]
+	>`SELECT id FROM "LiveChannel" WHERE id=${liveChannelId}::uuid FOR UPDATE`;
+	if (!locked.length) return null;
+	const channel = await tx.liveChannel.findUnique({
+		where: { id: liveChannelId },
 	});
+	if (!channel) return null;
+	const run = await tx.liveChannelRun.findFirst({
+		where: { liveChannelId },
+		orderBy: { seq: "desc" },
+	});
+	if (!run || (expectedRunId && run.id !== expectedRunId)) return null;
+	if (
+		expectedRevision !== undefined &&
+		archivedStopRevision(channel, run) !== expectedRevision
+	)
+		return null;
+	const target = archivedStopRecoveryTarget(channel, run);
+	if (!target || channel.bitmovinEncodingId === target) return target;
+	await tx.liveChannelRun.update({
+		where: { id: run.id },
+		data: {
+			bitmovinEncodingId: target,
+			providerStatus: null,
+			providerStatusObservedAt: null,
+			providerTerminalAt: null,
+			providerFeederStopsEnqueuedAt: null,
+			providerUnknownSince: null,
+			providerUnknownAlertedAt: null,
+			encoderStoppedConfirmedFor: null,
+			heartbeatPollEpoch: { increment: 1 },
+		},
+	});
+	await tx.liveChannel.update({
+		where: { id: liveChannelId },
+		data: { bitmovinEncodingId: target, encoderStoppedConfirmedFor: null },
+	});
+	return target;
 }
 
 export function collectLiveStopTargets(

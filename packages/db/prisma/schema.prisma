@@ -119,10 +119,11 @@ model LiveStopNotification {
   organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  /// The immutable broadcast run ID. The event can outlive the channel and run.
+  /// Broadcast events use the run ID. Schedule events use their own ID and retain the original schedule.
   id             String @id @db.Uuid
   channelId      String @db.Uuid
   channelName    String
+  scheduleId     String? @unique @db.Uuid
   kind           String
   occurredAt     DateTime
   failures       Int @default(0)
@@ -2274,6 +2275,9 @@ model LiveSchedule {
   /// re-dispatch INPUT, because a crash leaves it null by construction; the
   /// dispatcher always DERIVES the id from the row id.
   dispatchJobId         String?
+  /// The STOP envelope committed with FIRED. Redis retries retain the admitted encoder and generation.
+  stopProviderEncodingId String?
+  stopAdmissionFenceVersion Int?
   note                  String?
   error                 String?
   /// Ledger #238: did the fired action actually land? Written by whoever

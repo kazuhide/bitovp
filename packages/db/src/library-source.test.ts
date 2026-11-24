@@ -82,6 +82,73 @@ function qcOnlyPlan() {
 
 describe("requestLibrarySource", () => {
 	it.each([
+		false,
+		true,
+	])("captures both HDR10+ source objects with ordinary audio present=%s", async (audio) => {
+		const input = "Test S3 Input";
+		const ingest = audio
+			? [
+					{
+						key: "audio",
+						inputKey: "main",
+						selectionMode: "AUTO",
+						inputPath: "audio.wav",
+					},
+				]
+			: [];
+		const plan = {
+			...planFixture,
+			ingest,
+			hdr10PlusStreams: [
+				{
+					key: "hdr",
+					inputKey: "main",
+					videoInputPath: "picture.mxf",
+					metadataInputPath: "scene.json",
+				},
+			],
+			renditions: [
+				{
+					key: "v180",
+					ingestKey: "hdr",
+					codec: "H265",
+					bitrate: 1000000,
+					height: 180,
+				},
+			],
+		};
+		const { job, tx, prisma } = setup({ plan });
+		const source = await requestLibrarySource(prisma, job.id);
+		const ordinary = audio ? [{ name: input, path: "audio.wav" }] : [];
+		const expected = [
+			...ordinary,
+			{
+				name: input,
+				path: "picture.mxf",
+				hdr10Plus: { streamKey: "hdr", inputKey: "main", role: "VIDEO" },
+			},
+			{
+				name: input,
+				path: "scene.json",
+				hdr10Plus: { streamKey: "hdr", inputKey: "main", role: "METADATA" },
+			},
+		];
+		expect(source.snapshot).toHaveProperty("inputs", expected);
+
+		// The previous capture retained only ordinary inputs. Repair once after its active lease ends.
+		const snapshot = source.snapshot as Record<string, unknown>;
+		snapshot.inputs = [...ordinary];
+		source.state = "RUNNING";
+		await requestLibrarySource(prisma, job.id);
+		expect(tx.librarySource.update).not.toHaveBeenCalled();
+		source.state = "READY";
+		const repaired = await requestLibrarySource(prisma, job.id);
+		expect(repaired.snapshot).toHaveProperty("inputs", expected);
+		await requestLibrarySource(prisma, job.id);
+		expect(tx.librarySource.update).toHaveBeenCalledOnce();
+		expect(tx.contentRevision.create).toHaveBeenCalledOnce();
+	});
+	it.each([
 		"READY",
 		"ERROR",
 	])("fills empty same-plan QC snapshots once while preserving %s state and editorial revisions", async (state) => {

@@ -75,6 +75,39 @@ function first<T>(items: T[]): T {
 }
 
 describe("HDR10+ input contract", () => {
+	it.each([
+		"videoInputPath",
+		"metadataInputPath",
+	] as const)("accepts only a storage path in %s", (field) => {
+		const raw = rawPlan();
+		for (const path of [
+			"https://media.example.test/asset",
+			"//media.example.test/asset",
+			"/archive/asset?parameter=example",
+			"/archive/asset#fragment",
+			"https://operator@example.test/asset",
+		]) {
+			const result = encodingPlanSchema.safeParse({
+				...raw,
+				hdr10PlusStreams: [{ ...raw.hdr10PlusStreams[0], [field]: path }],
+			});
+			expect(result.success).toBe(false);
+			if (!result.success) {
+				expect(result.error.issues[0]?.path).toEqual([
+					"hdr10PlusStreams",
+					0,
+					field,
+				]);
+			}
+		}
+		const stored = "/archive/番組 A/metadata.v1+scene.json";
+		const parsed = encodingPlanSchema.parse({
+			...raw,
+			hdr10PlusStreams: [{ ...raw.hdr10PlusStreams[0], [field]: stored }],
+		});
+		expect(parsed.hdr10PlusStreams[0]?.[field]).toBe(stored);
+	});
+
 	it("defaults selection to AUTO without inventing a position", () => {
 		const parsed = plan();
 		expect(parsed.hdr10PlusStreams[0]).toMatchObject({ selectionMode: "AUTO" });

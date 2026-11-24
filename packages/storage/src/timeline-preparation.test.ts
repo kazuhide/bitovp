@@ -185,6 +185,19 @@ describe("prepared input admission before queue/provider", () => {
 		if (change === "expired") f.row.expiresAt = new Date(0);
 		await expect(f.verify()).rejects.toThrow();
 	});
+	it("refuses an unused HDR10+ input even when all renditions consume the verified prepared program", async () => {
+		const f = fixture();
+		f.plan.hdr10PlusStreams.push({
+			key: "unprepared",
+			inputKey: "main",
+			videoInputPath: "masters/picture.mxf",
+			metadataInputPath: "masters/picture.json",
+			selectionMode: "AUTO",
+		});
+		await expect(f.verify()).rejects.toThrow("INPUT_PREPARATION_INVALID");
+		expect(f.browser.headObject).not.toHaveBeenCalled();
+		expect(f.browser.getObject).not.toHaveBeenCalled();
+	});
 	it("rejects a short clean read despite unchanged storage headers", async () => {
 		const f = fixture();
 		f.browser.getObject.mockImplementation(async () =>

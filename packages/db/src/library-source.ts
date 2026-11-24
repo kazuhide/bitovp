@@ -74,6 +74,17 @@ export async function requestLibrarySource(
 			);
 		}
 		const plan = parsed.data;
+		const inputNames = new Map(
+			plan.inputs.map((input) => [input.key, input.name]),
+		);
+		const hdrInputs = plan.hdr10PlusStreams.flatMap((stream) =>
+			(["VIDEO", "METADATA"] as const).map((role) => ({
+				name: inputNames.get(stream.inputKey) ?? stream.key,
+				path:
+					role === "VIDEO" ? stream.videoInputPath : stream.metadataInputPath,
+				hdr10Plus: { streamKey: stream.key, inputKey: stream.inputKey, role },
+			})),
+		);
 		const locales = plan.aiSceneAnalysis
 			? sceneAnalysisLocales(plan.aiSceneAnalysis.outputLanguageCodes)
 			: [];
@@ -163,6 +174,19 @@ export async function requestLibrarySource(
 		};
 		if (existing) {
 			const snapshot = librarySnapshotSchema.parse(existing.snapshot);
+			// Only the identical plan can supply missing historical HDR inputs.
+			const recordedHdr = new Set(
+				snapshot.inputs.flatMap(({ hdr10Plus }) =>
+					hdr10Plus ? [`${hdr10Plus.streamKey}:${hdr10Plus.role}`] : [],
+				),
+			);
+			const missingHdr =
+				snapshot.planHash === planHash
+					? hdrInputs.filter(
+							({ hdr10Plus }) =>
+								!recordedHdr.has(`${hdr10Plus.streamKey}:${hdr10Plus.role}`),
+						)
+					: [];
 			const expectedFiles =
 				snapshot.planHash === planHash ? libraryFileOutputs(plan) : [];
 			const storedFiles = snapshot.fileOutputs ?? [];
@@ -203,6 +227,7 @@ export async function requestLibrarySource(
 				(upgradeAnalysis ||
 					upgradeLocales ||
 					missingFileLink ||
+					missingHdr.length ||
 					fileOutputs?.length) &&
 				existing.state !== "RUNNING"
 			) {
@@ -225,6 +250,9 @@ export async function requestLibrarySource(
 						snapshot: {
 							...(existing.snapshot as Prisma.InputJsonObject),
 							playbackLinks: [...snapshot.playbackLinks, ...additions],
+							...(missingHdr.length
+								? { inputs: [...snapshot.inputs, ...missingHdr] }
+								: {}),
 							...(fileOutputs ? { fileOutputs } : {}),
 							...(upgradeAnalysis ? { analysisOutput } : {}),
 						} as Prisma.InputJsonValue,
@@ -273,14 +301,13 @@ export async function requestLibrarySource(
 			name: job.name,
 			planHash,
 			identity: "UNVERIFIED",
-			inputs: plan.ingest
-				.filter((input) => "inputPath" in input)
-				.map((input) => ({
-					name:
-						plan.inputs.find((item) => item.key === input.inputKey)?.name ??
-						input.key,
+			inputs: [
+				...plan.ingest.map((input) => ({
+					name: inputNames.get(input.inputKey) ?? input.key,
 					path: input.inputPath,
 				})),
+				...hdrInputs,
+			],
 			playbackLinks: await playbackLinks(),
 			fileOutputs: libraryFileOutputs(plan),
 			qcVerdict: redactSecrets(job.qcVerdict),

@@ -432,6 +432,35 @@ describe("POST /api/encoding-jobs", () => {
 		expect(create).not.toHaveBeenCalled();
 	});
 
+	it.each([
+		"videoInputPath",
+		"metadataInputPath",
+	] as const)("refuses a URL in HDR10+ %s before creating a job", async (field) => {
+		const res = await POST(
+			postRequest({
+				plan: {
+					...plan,
+					bitmovin: { ...(plan.bitmovin as object), accountId: ACCOUNT_ID },
+					hdr10PlusStreams: [
+						{
+							key: "hdr",
+							inputKey: "main",
+							videoInputPath: "masters/video.mxf",
+							metadataInputPath: "masters/scene.json",
+							[field]: "https://example.test/path?example=sample",
+						},
+					],
+				},
+			}),
+		);
+		expect(res.status).toBe(400);
+		const body = await res.text();
+		expect(body).toContain("storage object path");
+		expect(body).not.toContain("example.test");
+		expect(create).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
 	it("rejects plans without a bitmovin account id", async () => {
 		const res = await POST(postRequest({ plan }));
 		expect(res.status).toBe(400);

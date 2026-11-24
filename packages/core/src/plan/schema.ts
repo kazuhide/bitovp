@@ -423,13 +423,23 @@ export const dolbyStreamSchema = z.discriminatedUnion("kind", [
 	}),
 ]);
 
+// HDR10+ addresses two objects beneath the plan's declared storage input.
+// Keep URL authority, credentials, queries and fragments out of persisted plans.
+const hdrObjectPath = z.string().refine((value) => {
+	const path = value.trim();
+	return (
+		path.length > 0 &&
+		!/^[a-z][a-z0-9+.-]*:\/\/|^[/\\]{2}|^[^/\s]*:[^/\s]*@|[?#]/i.test(path)
+	);
+}, "Use a storage object path without a URL, embedded login, query or fragment");
+
 /** VOD HDR10+ video and JSON metadata share one input storage resource. */
 export const hdr10PlusStreamSchema = z
 	.strictObject({
 		key: refKey,
 		inputKey: refKey,
-		videoInputPath: z.string().min(1),
-		metadataInputPath: z.string().min(1),
+		videoInputPath: hdrObjectPath,
+		metadataInputPath: hdrObjectPath,
 		selectionMode: z
 			.enum(["AUTO", "POSITION_ABSOLUTE", "VIDEO_RELATIVE"])
 			.default("AUTO"),

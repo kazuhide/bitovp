@@ -331,7 +331,7 @@ one broadcast. The worker retains the current encoder until its account reports 
 missing, automatic confirmation stays pending. Check the account's active
 encodings with the operator before re-air.
 
-After an upgrade, a broadcast can show STOPPED or ERROR while a replaced RTMP encoder still needs confirmation. Start and scheduled Start check earlier broadcasts on this channel as well as the current one. Use **Stop** to recover an encoder on the current broadcast. If an older broadcast is missing retirement evidence, a signed-in administrator can use **Settings → Reset → Check with Bitmovin** (`POST /api/admin/reset/reconcile`). Retry Start after the affected encoder appears in the `confirmed` results. A scheduled start waits within its grace window.
+After an upgrade, a broadcast can show STOPPED or ERROR while a replaced RTMP encoder still needs confirmation. Start and scheduled Start check earlier broadcasts on this channel as well as the current one. Use **Stop** to recover an encoder on the current broadcast. If an older broadcast is missing retirement evidence, a signed-in administrator can request a provider check with `POST /api/admin/reset/reconcile`. Retry Start after the affected encoder appears in the `confirmed` results. A scheduled start waits within its grace window.
 
 If an encoder still reports `RUNNING` or `QUEUED`, check its ID in the
 provider dashboard. Pressing **Stop** again cannot force another send for the

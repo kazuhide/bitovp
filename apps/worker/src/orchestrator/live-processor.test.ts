@@ -215,8 +215,12 @@ function setup(
 					status?: string | { in: string[] } | { not: string };
 					liveEffectFenceVersion?: number;
 					runs?: {
-						some: { id: string; cancelRequested: boolean };
-						none: { seq: { gt: number } };
+						some?: {
+							id: string;
+							cancelRequested?: boolean;
+							status?: { in: string[] };
+						};
+						none?: { seq?: { gt: number } };
 					};
 					provisionClaimedAt?: Date | null;
 					bitmovinEncodingId?: string | null;
@@ -252,16 +256,18 @@ function setup(
 				// The stub ignored this key, so every renewal "succeeded" and
 				// the lease-lost path was unreachable — the same defect the OR
 				// clause had, found the same way.
+				const some = where.runs?.some;
+				const none = where.runs?.none;
 				const cancelRunOk =
-					!where.runs ||
-					(runRows.some(
-						(run) =>
-							run.id === where.runs?.some.id &&
-							run.cancelRequested === where.runs.some.cancelRequested,
-					) &&
-						!runRows.some(
-							(run) => run.seq > (where.runs?.none.seq.gt ?? Infinity),
-						));
+					(!some ||
+						runRows.some(
+							(run) =>
+								run.id === some.id &&
+								(some.cancelRequested === undefined ||
+									run.cancelRequested === some.cancelRequested) &&
+								(!some.status || some.status.in.includes(run.status)),
+						)) &&
+					(!none || !runRows.some((run) => !none.seq || run.seq > none.seq.gt));
 				const held = row.provisionClaimedAt as Date | null | undefined;
 				const casOk =
 					!("provisionClaimedAt" in where) ||
@@ -559,7 +565,7 @@ function setup(
 						liveChannel: {
 							name: "Fixture channel",
 							...structuredClone(row),
-							runs: runRows.slice(-1).map((r) => ({ id: r.id })),
+							runs: structuredClone(runRows.slice(-1)),
 						},
 					};
 				return selected ?? null;
@@ -8063,6 +8069,48 @@ describe("live-to-VOD", () => {
 		claimStoppedChannel(t);
 		return t;
 	}
+
+	it.each([
+		"exact",
+		"latest",
+		"after-create",
+	] as const)("refuses an already queued recording publication protected on the %s run", async (phase) => {
+		const t = stoppedChannel(finishedManifests());
+		const run = t.runRows.at(-1);
+		if (!run) throw new Error("Missing recording run");
+		if (phase === "exact") run.aisaAnalysisId = "protected-analysis";
+		else if (phase === "latest")
+			t.runRows.push({
+				id: "new-run",
+				seq: run.seq + 1,
+				status: "STOPPED",
+				aisaAnalysisId: "protected-analysis",
+			});
+		else
+			vi.mocked(t.sdk.createDefaultHlsManifest).mockImplementationOnce(
+				async () => {
+					run.aisaStatus = "FINISHED";
+					return "bm-vod-hls";
+				},
+			);
+		const record = normalizeLiveToVodRecord(t.row.liveToVod);
+		if (!record?.attemptId) throw new Error("Missing exact attempt");
+		await expect(
+			t.process({
+				liveChannelId: CHANNEL_ID,
+				action: "live-to-vod",
+				attemptId: record.attemptId,
+				liveChannelRunId: run.id,
+				encodingId: "bm-live-enc",
+				params: { manifests: ["HLS"] },
+			}),
+		).rejects.toThrow(/AISA/i);
+		expect(t.sdk.createDefaultHlsManifest).toHaveBeenCalledTimes(
+			phase === "after-create" ? 1 : 0,
+		);
+		expect(t.sdk.startHlsManifest).not.toHaveBeenCalled();
+		expect(t.sdk.deleteHlsManifest).not.toHaveBeenCalled();
+	});
 
 	it("generates BOTH default manifests over the stopped encoding with LEGACY", async () => {
 		const t = stoppedChannel(finishedManifests());

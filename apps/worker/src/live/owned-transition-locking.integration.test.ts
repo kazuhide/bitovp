@@ -2619,6 +2619,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 		it.each([
 			"initialization",
 			"progress",
+			"SDK renewal",
+			"SDK renewal in same generation",
 		] as const)("keeps a successor run intact when a displaced provision resumes during %s", async (phase) => {
 			const f = await dispatchFixture(randomUUID());
 			const plan = JSON.parse(
@@ -2662,6 +2664,17 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			});
 			const entered = barrier(),
 				reply = barrier();
+			const renewal = phase.startsWith("SDK renewal");
+			const secondTick = barrier();
+			let ticks = 0;
+			let displaced = false;
+			if (renewal) {
+				f.deps.leaseRenewalIntervalMs = 5;
+				f.deps.now = () => {
+					if (displaced && ++ticks === 2) secondTick.release();
+					return new Date(now.getTime() + (displaced ? 2000 : 0)).toISOString();
+				};
+			}
 			const pause = async () => {
 				entered.release();
 				await reply.ready;
@@ -2680,7 +2693,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				return reveal(id);
 			};
 			f.sdk.createEncoding = vi.fn(async () => {
-				if (phase === "progress") await pause();
+				if (phase === "progress" || renewal) await pause();
 				return f.encodingId;
 			});
 			const work = Promise.allSettled([
@@ -2711,7 +2724,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						where: { id: f.channel.id },
 						data: {
 							status: "RUNNING",
-							liveEffectFenceVersion: { increment: 1 },
+							liveEffectFenceVersion: {
+								increment: phase === "SDK renewal in same generation" ? 0 : 1,
+							},
 							bitmovinEncodingId: winner,
 							stepLog: [],
 						},
@@ -2732,6 +2747,14 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						},
 					});
 				});
+				if (renewal) {
+					displaced = true;
+					await secondTick.ready;
+					const successor = await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					});
+					expect(successor.provisionClaimedAt).toEqual(now);
+				}
 			} finally {
 				reply.release();
 			}

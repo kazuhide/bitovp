@@ -3657,6 +3657,53 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					`live-to-VOD needs a STOPPED channel (status: ${row.status}) — a running recording would yield a truncated manifest`,
 				);
 			}
+			// A delivery can outlive an upgrade or a change in the recording's binding.
+			// Read both the exact recording and the newest airing, as the public route does.
+			const assertPublishable = async () => {
+				const binding = {
+					stepLog: true,
+					aisaAnalysisId: true,
+					aisaStatus: true,
+					aisaSnapshot: true,
+				} as const;
+				const exact = await deps.prisma.liveChannelRun.findFirst({
+					where: {
+						id: liveChannelRunId,
+						liveChannelId,
+						bitmovinEncodingId: encodingId,
+					},
+					select: {
+						...binding,
+						liveChannel: {
+							select: {
+								origin: true,
+								plan: true,
+								stepLog: true,
+								bitmovinEncodingId: true,
+								status: true,
+								liveToVod: true,
+								runs: { orderBy: { seq: "desc" }, take: 1, select: binding },
+							},
+						},
+					},
+				});
+				if (
+					!exact ||
+					exact.liveChannel.bitmovinEncodingId !== encodingId ||
+					exact.liveChannel.status !== "STOPPED" ||
+					normalizeLiveToVodRecord(exact.liveChannel.liveToVod)?.attemptId !==
+						attemptId
+				)
+					throw new LiveToVodStaleAttemptError();
+				if (
+					hasAisaLiveBinding(exact.liveChannel, exact) ||
+					hasAisaLiveBinding(exact.liveChannel, exact.liveChannel.runs[0])
+				)
+					throw new ChannelStateError(
+						"Live-to-VOD publication is unavailable for an AISA recording",
+					);
+			};
+			await assertPublishable();
 			const plan = liveChannelPlanSchema.parse(row.plan);
 			const outputKey = claimed.outputKey;
 			if (!outputKey) {
@@ -3918,6 +3965,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			const sdk = await sdkFor(row, undefined, {
 				jobId: liveChannelId,
 				currentStep: () => manifestStep,
+				beforeMutation: assertPublishable,
 				adoptWindow: () => manifestRecovery,
 				allowCreate: () => manifestCreateAllowed,
 			});
@@ -4002,6 +4050,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 							},
 						);
 						await save(replaceFamily(i, pendingCleanup));
+						await assertPublishable();
 						const gone = await discardManifest(
 							stale.type,
 							staleId,
@@ -4129,6 +4178,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 										},
 									);
 									await save(replaceFamily(index, pendingCleanup));
+									await assertPublishable();
 									const gone = await discardManifest(
 										family,
 										existingId,
@@ -4249,6 +4299,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						}
 						entry = familyAt(index);
 						if (entry.status === "CREATED") {
+							await assertPublishable();
 							stage = "start";
 							// C3 exception: LEGACY is what can enumerate a live
 							// encoding's recorded muxings.
@@ -4290,7 +4341,11 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 							}),
 						);
 					} catch (err) {
-						if (err instanceof LiveToVodPersistError) {
+						if (
+							err instanceof LiveToVodPersistError ||
+							err instanceof LiveToVodStaleAttemptError ||
+							err instanceof ChannelStateError
+						) {
 							throw err;
 						}
 						// This family failed; the others still run, and whatever it
@@ -5416,14 +5471,12 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		const claimed = await deps.prisma.liveChannel.updateMany({
 			where: {
 				id: liveChannelId,
-				...(plannedGeneration !== undefined
-					? { liveEffectFenceVersion: plannedGeneration }
-					: {}),
+				liveEffectFenceVersion: ownerGeneration,
+				...(!pendingRun ? { runs: { none: {} } } : {}),
 				// A delayed provision job can target the same PROVISIONING row as an
 				// admitted RESTART. Its lease acquisition must lose to that exact run.
 				...(!cancelling && pendingRun
 					? {
-							liveEffectFenceVersion: row.liveEffectFenceVersion,
 							...(plannedRunId
 								? {
 										runs: {
@@ -5448,7 +5501,6 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					: {}),
 				...(cancelling && pendingRun
 					? {
-							liveEffectFenceVersion: row.liveEffectFenceVersion,
 							runs: {
 								some: { id: pendingRun.id, cancelRequested: true },
 								none: { seq: { gt: pendingRun.seq } },
@@ -5498,6 +5550,8 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		if (!claimedRow) {
 			return "MISSING";
 		}
+		if (claimedRow.liveEffectFenceVersion !== ownerGeneration)
+			return "PROVISIONING";
 		row = claimedRow;
 
 		/**
@@ -5508,12 +5562,12 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		 * worker whose lease had already gone stale would happily extend the
 		 * lease of whoever took it, and both would keep working. So the renewal
 		 * is a COMPARE-AND-SWAP — it only matches the row while
-		 * `provisionClaimedAt` is still the value WE last wrote. When it stops
+		 * the admitted airing and generation still own the timestamp we wrote. When it stops
 		 * matching, someone else owns this channel and we stop.
 		 */
 		let heldAt: Date | null = new Date(nowMs);
 		let provisionRunId = pendingRun?.id ?? null;
-		const admissionGeneration = row.liveEffectFenceVersion;
+		const admissionGeneration = ownerGeneration;
 		// Every mutation of the timestamp fence shares one queue. `renewLease`
 		// already coalesced two renewals, but a provider-id persist could still
 		// race a ticker renewal with the same old token: whichever landed first
@@ -5541,14 +5595,22 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				if (heldAt === null) {
 					return false;
 				}
-				const next = new Date(new Date(deps.now()).getTime());
-				const { count } = await deps.prisma.liveChannel.updateMany({
-					where: { id: liveChannelId, provisionClaimedAt: heldAt },
-					data: { provisionClaimedAt: next },
+				const next = new Date(deps.now());
+				const lease = heldAt;
+				const renewed = await deps.prisma.$transaction(async (tx) => {
+					const latest = await lockProvisionAiring(tx, liveChannelId);
+					if ((latest?.id ?? null) !== provisionRunId) return false;
+					const changed = await tx.liveChannel.updateMany({
+						where: {
+							id: liveChannelId,
+							provisionClaimedAt: lease,
+							liveEffectFenceVersion: admissionGeneration,
+						},
+						data: { provisionClaimedAt: next },
+					});
+					return changed.count === 1;
 				});
-				if (count === 0) {
-					return false;
-				}
+				if (!renewed) return false;
 				heldAt = next;
 				resetOwner.ownerToken = next.toISOString();
 				return true;

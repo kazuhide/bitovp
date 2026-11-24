@@ -145,6 +145,8 @@ const sourceChannelId = "70c37149-8ccc-4b3d-bc64-0fa06e49e82b";
 const newChannelId = "fb801929-e7a4-450d-876e-69bf643eaaa0";
 const credentialId = "eee3c000-00e3-4aaa-8aaa-000000000aaa";
 const fixtureAccountId = "5a6ad9b8-2cae-4485-a0b3-99130b771be5";
+const relayFolder =
+	"InterBEE 2026 / Akamai Osaka / OBS RTMP → Cloudflare MoQ/fixture-run";
 
 function moqCopyPlan(kind: "FMP4" | "CMAF") {
 	const plan = JSON.parse(
@@ -200,13 +202,13 @@ function moqCopyPlan(kind: "FMP4" | "CMAF") {
 			kind,
 			segmentLength: kind === "CMAF" ? 0.5 : 1,
 			...(kind === "CMAF" ? { framesPerCmafChunk: 3 } : {}),
-			destination: { outputKey: "relay", path: "custom/video/720p" },
+			destination: { outputKey: "relay", path: `${relayFolder}/video/720p` },
 		},
 		{
 			...plan.muxings[3],
 			kind,
 			segmentLength: kind === "CMAF" ? 0.5 : 1,
-			destination: { outputKey: "relay", path: "custom/audio/128000" },
+			destination: { outputKey: "relay", path: `${relayFolder}/audio/128000` },
 		},
 	];
 	plan.liveManifests = [];

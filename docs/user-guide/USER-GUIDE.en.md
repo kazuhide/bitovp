@@ -909,7 +909,7 @@ The maximum run time is measured in minutes from the point at which the channel 
 3. Confirm the provider's terminal state.
 4. Confirm that output updates have ended. If recording is enabled, check the files for the relevant broadcast run.
 
-The time a stop is requested is different from the time billable processing ends. Cancellation during startup also requires an in-flight start request to settle. Failed responses or status checks can leave termination unconfirmed.
+The time a stop is requested is different from the time billable processing ends. Cancellation during startup also requires an in-flight start request to settle. Failed responses or status checks can leave termination unconfirmed. A recovered STOP checks the current encoder status before sending an outstanding request. For an older confirmed STOP, recovery can send the first request for an active archived encoder when the earlier STOP excluded it. Managed AISA keeps separate records for stopping the Analysis and its Encoding.
 
 Restarting a running encoding interrupts the broadcast until the encoder returns. A terminal Bitmovin encoding cannot be restarted. Broadcasting the same channel again creates a new broadcast run and encoding. Insertable content, including slates, is registered for each broadcast run. “Copy settings and edit” opens the wizard for a new channel; that action alone does not start it.
 

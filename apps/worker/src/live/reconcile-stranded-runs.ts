@@ -1,4 +1,8 @@
-import { type AppPrismaClient, LIVE_EFFECT_OPEN_STATES } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	LIVE_EFFECT_OPEN_STATES,
+	STRANDED_RUN_ERROR,
+} from "@bitovp/db";
 
 /**
  *  — a LiveChannelRun stranded in a transitional state makes its
@@ -29,8 +33,7 @@ import { type AppPrismaClient, LIVE_EFFECT_OPEN_STATES } from "@bitovp/db";
  * PROVISIONING predate the encoder, and a STOPPING run's pointer survives
  * on the ERROR row for the same sweeps.
  */
-export const STRANDED_RUN_ERROR =
-	"The job driving this run died and the channel was marked ERROR; the run row was left mid-transition, which blocked every restart. Retired by the worker's startup sweep — start the channel again.";
+export { STRANDED_RUN_ERROR } from "@bitovp/db";
 
 /**
  * The ONE list of run states the one-live-per-channel index counts as live
@@ -76,6 +79,7 @@ export async function recordExpiredProvisionFailure(
 	error: string,
 	staleBefore: Date,
 	at: Date,
+	admission: { runId: string } | { initial: true },
 ): Promise<boolean> {
 	return prisma.$transaction(async (tx) => {
 		const locked = await tx.$queryRaw<
@@ -85,9 +89,15 @@ export async function recordExpiredProvisionFailure(
 		const run = await tx.liveChannelRun.findFirst({
 			where: { liveChannelId },
 			orderBy: { seq: "desc" },
-			select: { id: true, cancelRequested: true },
+			select: { id: true, seq: true, cancelRequested: true },
 		});
-		if (run?.cancelRequested) return false;
+		if (
+			run?.cancelRequested ||
+			("runId" in admission
+				? run?.id !== admission.runId
+				: !!run && run.seq !== 1)
+		)
+			return false;
 		const { count } = await tx.liveChannel.updateMany({
 			where: {
 				id: liveChannelId,
@@ -129,7 +139,15 @@ export function createStrandedRunReconciler(deps: { prisma: AppPrismaClient }) {
 		const { count } = await deps.prisma.liveChannelRun.updateMany({
 			where: {
 				status: { in: [...TRANSITIONAL_RUN_STATUSES] },
-				liveChannel: { status: "ERROR" },
+				liveChannel: {
+					status: "ERROR",
+					effectClaims: {
+						none: {
+							action: "STOP",
+							state: { in: [...LIVE_EFFECT_OPEN_STATES] },
+						},
+					},
+				},
 			},
 			data: {
 				status: "ERROR",

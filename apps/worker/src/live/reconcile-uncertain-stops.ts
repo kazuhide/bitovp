@@ -6,8 +6,8 @@ import {
 } from "@bitovp/core";
 import {
 	canObserveLiveStop,
+	collectLiveStopTargets,
 	liveChannelAccountId,
-	liveStopKnownTargets,
 	liveStopRunOwnsEncoding,
 	type ResolveLiveEffectsAfterConfirmedStopInput,
 	resolveLiveEffectsAfterConfirmedStop,
@@ -143,18 +143,20 @@ export function createUncertainStopReconciler(
 							failure: true,
 							stopProtocolVersion: true,
 							stopSendEncodingIds: true,
+							legacyUnsentStopIds: true,
 							stopOutcomeEvidence: true,
 						},
 					});
-					const completeTargets = liveStopKnownTargets(
+					const inventory = collectLiveStopTargets(
 						run,
 						channel,
 						history,
 						liveChannelAccountId(channel),
 					);
-					const targets = completeTargets ?? [claim.providerEncodingId];
+					const availableUnsent = unreservedStopTargets(run, channel, history);
+					const targets = inventory.encodingIds;
 					const clean =
-						completeTargets !== null &&
+						inventory.complete &&
 						unconfirmedRtmpEncoders(run, channel, liveChannelAccountId(channel))
 							?.length === 0 &&
 						channel.status === "STOPPED" &&
@@ -185,11 +187,7 @@ export function createUncertainStopReconciler(
 						);
 						const encodings: { id: string; status: string }[] = [];
 						const unsent =
-							resumeUnsent &&
-							claim.stopProtocolVersion === 1 &&
-							claim.expiresAt <= at
-								? unreservedStopTargets(run, channel, history)
-								: [];
+							resumeUnsent && claim.expiresAt <= at ? availableUnsent : [];
 						const activeTargets = new Set<string>();
 						for (const id of targets) {
 							const status =

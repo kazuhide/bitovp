@@ -336,7 +336,7 @@ After an upgrade, a previous broadcast can show STOPPED while a replaced RTMP en
 If an encoder still reports `RUNNING` or `QUEUED`, check its ID in the
 provider dashboard. Pressing **Stop** again cannot force another send for the
 same ambiguous manual stop. The periodic check also reads any additional encoders recorded for this broadcast.
-It can reuse a terminal receipt recorded on the same provider account. After a feeder
+It can reuse a terminal receipt recorded on the same provider account. On an older broadcast with a confirmed stop, the worker can stop a still-active archived encoder when it can establish that the earlier stop excluded that encoder. A missing or inconsistent record keeps the broadcast unconfirmed. For managed AISA, the Analysis and Encoding each have their own stop record. After a feeder
 stop could not be queued, check that the feeder has actually exited. For AISA,
 retry finalization from the console to refresh the Analysis status and final
 result for that broadcast.

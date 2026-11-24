@@ -38,7 +38,15 @@ describe("retiring transitional runs under ERROR channels", () => {
 		]);
 		expect(args.where.status.in).not.toContain("RUNNING");
 		// Only under a channel already marked ERROR — the impossible pairing.
-		expect(args.where.liveChannel).toEqual({ status: "ERROR" });
+		expect(args.where.liveChannel).toEqual({
+			status: "ERROR",
+			effectClaims: {
+				none: {
+					action: "STOP",
+					state: { in: ["CLAIMED", "DISPATCHING", "AMBIGUOUS"] },
+				},
+			},
+		});
 		expect(args.data.status).toBe("ERROR");
 		expect(args.data.error).toBe(STRANDED_RUN_ERROR);
 		// A terminal row gets an end time: null endedAt on a closed run reads
@@ -94,6 +102,7 @@ describe("late provision failure", () => {
 				"old provision failure",
 				staleBefore,
 				at,
+				{ runId: "run" },
 			),
 		).toBe(expected);
 		expect(updateChannel).toHaveBeenCalledWith(

@@ -82,11 +82,11 @@ import {
 	beginLiveEffect,
 	bindLiveEffectTarget,
 	claimLiveStopSend,
+	collectLiveStopTargets,
 	LiveToVodFenceError,
 	liveChannelAccountId,
 	liveEffectSendUncertainty,
 	liveStopFeederWhere,
-	liveStopKnownTargets,
 	liveStopLogEncodings,
 	liveStopRunOwnsEncoding,
 	markLiveEffectAcked,
@@ -924,13 +924,18 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		const account = await deps.revealBitmovinAccount(accountId);
 		monitoringSignal?.throwIfAborted();
 		let aisaLive: AisaLiveControl | undefined;
-		if (isAisaManagedLivePlan(row.plan)) {
-			const run = await deps.prisma.liveChannelRun.findFirst({
-				where: { liveChannelId: row.id },
-				orderBy: { seq: "desc" },
-			});
+		const managedPlan = isAisaManagedLivePlan(row.plan);
+		const run =
+			managedPlan || stopEffect
+				? await deps.prisma.liveChannelRun.findFirst({
+						where: { liveChannelId: row.id },
+						orderBy: { seq: "desc" },
+					})
+				: null;
+		if (managedPlan || run?.aisaAnalysisId) {
 			if (
 				!run?.aisaAnalysisId ||
+				(stopEffect && stopEffect.claim.liveChannelRunId !== run.id) ||
 				run.bitmovinEncodingId !== row.bitmovinEncodingId
 			)
 				throw new ChannelStateError("AISA Live run binding is unavailable");
@@ -1391,6 +1396,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				const ids = new Set(allEncodingIdsOf(row));
 				const observeOnly = new Set<string>();
 				let analysisToRefresh: string | null = null;
+				let managedStop = isAisaManagedLivePlan(row.plan);
 				if (effect) {
 					const [run, history] = await Promise.all([
 						deps.prisma.liveChannelRun.findFirst({
@@ -1417,6 +1423,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 								failure: true,
 								stopProtocolVersion: true,
 								stopSendEncodingIds: true,
+								legacyUnsentStopIds: true,
 								stopAnalysisSendId: true,
 								stopOutcomeEvidence: true,
 							},
@@ -1432,7 +1439,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					])
 						ids.add(id);
 					if (run.bitmovinEncodingId) ids.add(run.bitmovinEncodingId);
-					const targets = liveStopKnownTargets(
+					const inventory = collectLiveStopTargets(
 						run,
 						row,
 						history,
@@ -1440,12 +1447,12 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					);
 					// Corrupt logs with agreeing run/channel columns still authorize STOP
 					// of that exact primary. Settlement independently requires complete logs.
-					const authorized =
-						targets ??
-						(run.bitmovinEncodingId === row.bitmovinEncodingId &&
-						row.bitmovinEncodingId
-							? [...ids]
-							: null);
+					const authorized = inventory.complete
+						? inventory.encodingIds
+						: run.bitmovinEncodingId === row.bitmovinEncodingId &&
+								row.bitmovinEncodingId
+							? inventory.encodingIds
+							: null;
 					if (!authorized)
 						throw new ChannelStateError(
 							"the STOP broadcast has incomplete encoder ownership records",
@@ -1464,15 +1471,31 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						) {
 							// Legacy compound STOP had no per-encoder send reservations; any
 							// target of that broadcast may already have received its POST.
-							for (const id of authorized) observeOnly.add(id);
+							for (const id of authorized)
+								if (!prior.legacyUnsentStopIds?.includes(id))
+									observeOnly.add(id);
 						}
 					}
 					observedPriorSend = observeOnly.has(effect.claim.providerEncodingId);
-					if (observedPriorSend && isAisaManagedLivePlan(row.plan))
-						analysisToRefresh = run.aisaAnalysisId;
-					observedPriorSend ||=
-						!!run.aisaAnalysisId &&
-						history.some((c) => c.stopAnalysisSendId === run.aisaAnalysisId);
+					if (run.aisaAnalysisId) {
+						managedStop = true;
+						const sentAnalysis = history.some(
+							(c) =>
+								c.action === "STOP" &&
+								(c.stopAnalysisSendId === run.aisaAnalysisId ||
+									(c.stopProtocolVersion == null &&
+										["DISPATCHING", "AMBIGUOUS", "ACKED"].includes(c.state) &&
+										(c.id !== effect.claim.id ||
+											!!c.stopSendEncodingIds?.length))),
+						);
+						if (observedPriorSend && sentAnalysis)
+							analysisToRefresh = run.aisaAnalysisId;
+						else if (!sentAnalysis)
+							// The adapter reserves Analysis and Encoding independently, and
+							// observes a previously sent Encoding before any new mutation.
+							observeOnly.delete(effect.claim.providerEncodingId);
+						observedPriorSend ||= sentAnalysis;
+					}
 				}
 				if (activeTargets)
 					for (const id of ids) if (!activeTargets.has(id)) observeOnly.add(id);
@@ -1498,7 +1521,22 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				for (const [index, id] of [...ids].entries()) {
 					if (observeOnly.has(id)) continue;
 					try {
-						if (effect && isAisaManagedLivePlan(row.plan))
+						if (
+							effect?.claim.requireActiveStopReadback &&
+							!managedStop &&
+							!activeTargets
+						) {
+							const status = (await sdk.getEncodingStatus(id)).status;
+							if (STOP_TERMINAL_STATUSES.includes(status)) {
+								terminalReadbacks.set(id, status);
+								continue;
+							}
+							if (!["RUNNING", "QUEUED", "CREATED"].includes(status))
+								throw new ChannelStateError(
+									"The encoder has no confirmed active status for STOP recovery",
+								);
+						}
+						if (effect && managedStop)
 							await effect.assertCurrent("AISA STOP preflight");
 						else await effect?.beforeSend(`Stop encoding ${id}`, id);
 						await sdk.stopLiveEncoding(id);
@@ -5199,14 +5237,23 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 	 * already DONE, so a crash between the last step and the status flip
 	 * cannot strand a provisioned channel.
 	 */
-	async function provision(liveChannelId: string, cancelRunId?: string) {
+	async function provision(
+		liveChannelId: string,
+		cancelRunId?: string,
+		plannedRunId?: string,
+	) {
 		const owner: ResetOwnerState = {
 			entityKey: `liveChannel:${liveChannelId}`,
 			ownerToken: null,
 			entries: [],
 		};
 		try {
-			return await provisionOwned(liveChannelId, owner, cancelRunId);
+			return await provisionOwned(
+				liveChannelId,
+				owner,
+				cancelRunId,
+				plannedRunId,
+			);
 		} finally {
 			await finishResetOwner(
 				deps,
@@ -5223,6 +5270,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		liveChannelId: string,
 		resetOwner: ResetOwnerState,
 		cancelRunId?: string,
+		plannedRunId?: string,
 	): Promise<string | { status: "STOPPED"; canceledRunId: string }> {
 		let row = await deps.prisma.liveChannel.findUnique({
 			where: { id: liveChannelId },
@@ -5237,6 +5285,13 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			where: { liveChannelId },
 			orderBy: { seq: "desc" },
 		});
+		if (
+			plannedRunId &&
+			(pendingRun?.id !== plannedRunId ||
+				(!pendingRun.cancelRequested &&
+					!["CREATED", "PROVISIONING"].includes(pendingRun.status)))
+		)
+			return "STALE_RUN";
 		if (
 			cancelRunId &&
 			(pendingRun?.id !== cancelRunId ||
@@ -5297,6 +5352,19 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				...(!cancelling && pendingRun
 					? {
 							liveEffectFenceVersion: row.liveEffectFenceVersion,
+							...(plannedRunId
+								? {
+										runs: {
+											some: {
+												id: plannedRunId,
+												status: {
+													in: ["CREATED" as const, "PROVISIONING" as const],
+												},
+											},
+											none: { seq: { gt: pendingRun.seq } },
+										},
+									}
+								: {}),
 							effectClaims: {
 								none: {
 									liveChannelRunId: pendingRun.id,
@@ -7164,6 +7232,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					result = await provision(
 						liveChannelId,
 						liveStartupCancelParamsSchema.parse(job.params ?? {}).cancelRunId,
+						job.plannedLiveChannelRunId ?? undefined,
 					);
 				} catch (err) {
 					await recordScheduleOutcomeBestEffort(

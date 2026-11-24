@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
+	compileLiveChannel,
+	initStepLog,
 	type LiveToVodRecord,
 	liveAutoShutdownUpdateReceiptSchema,
 	readLiveAutoShutdownUpdate,
 	type StepLogEntry,
 } from "@bitovp/core";
+import { AisaLiveError } from "@bitovp/core/aisa-live-client";
 import {
 	type AppPrismaClient,
 	type AppTransactionClient,
@@ -44,7 +47,11 @@ import {
 	createProviderLifecycleReconciler,
 	type RunLifecycleRow,
 } from "./provider-lifecycle";
-import { recordExpiredProvisionFailure } from "./reconcile-stranded-runs";
+import {
+	createStrandedRunReconciler,
+	recordExpiredProvisionFailure,
+	STRANDED_RUN_ERROR,
+} from "./reconcile-stranded-runs";
 import { createUncertainStopReconciler } from "./reconcile-uncertain-stops";
 import { createStopNotificationSweep } from "./stop-notifications";
 
@@ -313,6 +320,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						"delayed provision failure",
 						now,
 						now,
+						{ runId: f.run.id },
 					),
 				).toBe(false);
 				expect(
@@ -840,6 +848,339 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			return { ...f, accountId, identity, job, sdk, deps };
 		}
 
+		it.each([
+			"terminal",
+			"active",
+			"unreadable",
+		] as const)("rechecks an unsent encoder on native STOP redelivery: %s", async (providerState) => {
+			const f = await dispatchFixture();
+			const begun = await beginLiveEffect(tenant, {
+				...f.identity,
+				liveChannelId: f.channel.id,
+				idempotencyKey: f.job.effect.idempotencyKey,
+				expectedFenceVersion: 0,
+				supersedeOpen: true,
+				ownerId: "dead",
+				now: lease,
+				expiresAt: lease,
+			});
+			if (begun.kind !== "EXECUTE") throw new Error("missing fixture claim");
+			let posted = false;
+			f.sdk.getEncodingStatus = vi.fn(async () => {
+				if (providerState === "unreadable") throw new Error("read failed");
+				return {
+					status:
+						providerState === "active" && !posted ? "RUNNING" : "FINISHED",
+				};
+			});
+			f.sdk.stopLiveEncoding = vi.fn(async () => {
+				posted = true;
+			});
+			const pending = createLiveChannelProcessor(f.deps)(f.job);
+			if (providerState === "unreadable")
+				await expect(pending).rejects.toThrow();
+			else await expect(pending).resolves.toMatchObject({ status: "STOPPED" });
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledTimes(
+				providerState === "active" ? 1 : 0,
+			);
+		});
+
+		it("recovers the first STOP for an archived live encoder after a pre-journal clean ACK", async () => {
+			const f = await dispatchFixture(),
+				secondary = randomUUID();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "STOPPED", error: null, liveEffectFenceVersion: 1 },
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: {
+					status: "STOPPED",
+					error: null,
+					providerStatus: "FINISHED",
+					providerTerminalAt: lease,
+					providerStatusObservedAt: lease,
+					previousProviderEncodingIds: [secondary],
+				},
+			});
+			await tenant.liveEffectClaim.create({
+				data: {
+					...f.identity,
+					liveChannelId: f.channel.id,
+					generation: 1,
+					ownerId: "legacy",
+					expiresAt: lease,
+					token: randomUUID(),
+					idempotencyKey: f.job.effect.idempotencyKey,
+					state: "ACKED",
+					acknowledgedAt: lease,
+				},
+			});
+			let posted = false;
+			f.sdk.getEncodingStatus = vi.fn(async (id) => ({
+				status: id === secondary && !posted ? "RUNNING" : "FINISHED",
+			}));
+			f.sdk.stopLiveEncoding = vi.fn(async () => {
+				posted = true;
+			});
+			const proc = createLiveChannelProcessor(f.deps);
+			expect(await proc(f.job)).toMatchObject({ status: "STOPPED" });
+			await proc(f.job);
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(secondary);
+			expect(
+				await tenant.liveEffectClaim.findUniqueOrThrow({
+					where: { idempotencyKey: f.job.effect.idempotencyKey },
+				}),
+			).toMatchObject({
+				state: "ACKED",
+				stopProtocolVersion: null,
+				legacyUnsentStopIds: [secondary],
+			});
+		});
+
+		it("retains known unsent archives even when the log cannot establish a complete stop", async () => {
+			const f = await dispatchFixture(),
+				secondary = randomUUID();
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: {
+					stepLog: { malformed: true },
+					previousProviderEncodingIds: [secondary],
+				},
+			});
+			const begun = await beginLiveEffect(tenant, {
+				...f.identity,
+				liveChannelId: f.channel.id,
+				idempotencyKey: f.job.effect.idempotencyKey,
+				expectedFenceVersion: 0,
+				supersedeOpen: true,
+				ownerId: "dead",
+				now: lease,
+				expiresAt: now,
+			});
+			if (begun.kind !== "EXECUTE") throw new Error("missing claim");
+			await tenant.liveEffectClaim.update({
+				where: { id: begun.claim.id },
+				data: { stopSendEncodingIds: [f.encodingId] },
+			});
+			let posted = false;
+			f.sdk.getEncodingStatus = vi.fn(async (id) => ({
+				status: id === secondary && !posted ? "RUNNING" : "FINISHED",
+			}));
+			f.sdk.stopLiveEncoding = vi.fn(async () => {
+				posted = true;
+			});
+			const proc = createLiveChannelProcessor(f.deps);
+			const tick = createUncertainStopReconciler(f.deps, (job, active) =>
+				proc(job, undefined, false, active),
+			);
+			await tick();
+			await tick();
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(secondary);
+			expect(
+				(
+					await tenant.liveEffectClaim.findUniqueOrThrow({
+						where: { id: begun.claim.id },
+					})
+				).state,
+			).not.toBe("ACKED");
+		});
+
+		it("a manual STOP invalidates a provision lease while its last details GET is delayed", async () => {
+			const f = await dispatchFixture(randomUUID());
+			const plan = JSON.parse(
+				readFileSync(
+					new URL(
+						"../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+						import.meta.url,
+					),
+					"utf8",
+				),
+			);
+			await tenant.bitmovinAccount.create({
+				data: {
+					id: f.accountId,
+					label: "offline provision fixture",
+					encryptedApiKey: "fixture-only",
+				},
+			});
+			plan.bitmovin.accountId = f.accountId;
+			const stepLog = JSON.parse(
+				JSON.stringify(
+					initStepLog(compileLiveChannel(plan)).map((e) => ({
+						...e,
+						status: "DONE",
+						resourceId:
+							e.kind === "CREATE_ENCODING" ? f.encodingId : randomUUID(),
+					})),
+				),
+			);
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "PROVISIONING", plan, stepLog },
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "PROVISIONING", stepLog },
+			});
+			const entered = barrier(),
+				reply = barrier();
+			f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
+			f.sdk.getLiveEncodingDetails = vi.fn(async () => {
+				entered.release();
+				await reply.ready;
+				throw new Error("old details request failed");
+			});
+			const proc = createLiveChannelProcessor(f.deps);
+			const provisioning = Promise.allSettled([
+				proc({
+					action: "provision",
+					liveChannelId: f.channel.id,
+					plannedLiveChannelRunId: f.run.id,
+				}),
+			]);
+			try {
+				await Promise.race([
+					entered.ready,
+					provisioning.then(([result]) => {
+						throw new Error(
+							"Provision finished before final details: " +
+								(result?.status === "rejected"
+									? String(result.reason)
+									: JSON.stringify(result)),
+						);
+					}),
+				]);
+				const held = await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				});
+				expect(held.provisionClaimedAt).not.toBeNull();
+				const stop = await beginLiveEffect(tenant, {
+					...f.identity,
+					liveChannelId: f.channel.id,
+					idempotencyKey: f.job.effect.idempotencyKey,
+					expectedFenceVersion: 0,
+					supersedeOpen: true,
+					allowedChannelStatuses: ["RUNNING", "ERROR"],
+					ownerId: "stop",
+					now,
+					expiresAt: new Date(now.getTime() + 60000),
+				});
+				expect(stop.kind).toBe("EXECUTE");
+			} finally {
+				reply.release();
+				await provisioning;
+			}
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({
+				status: "STOPPING",
+				provisionClaimedAt: null,
+				error: null,
+			});
+		});
+
+		it("a callback for a former airing cannot retire an unleased successor", async () => {
+			const f = await fixture("STOPPED", null);
+			const next = await tenant.liveChannelRun.create({
+				data: {
+					liveChannelId: f.channel.id,
+					seq: 2,
+					status: "PROVISIONING",
+					outputPrefix: "two/",
+				},
+			});
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "PROVISIONING", provisionClaimedAt: null },
+			});
+			for (const admission of [{ runId: f.run.id }, { initial: true as const }])
+				expect(
+					await recordExpiredProvisionFailure(
+						tenant,
+						f.channel.id,
+						"old",
+						now,
+						now,
+						admission,
+					),
+				).toBe(false);
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: next.id },
+				}),
+			).toMatchObject({ status: "PROVISIONING" });
+			expect(
+				await recordExpiredProvisionFailure(
+					tenant,
+					f.channel.id,
+					"actual",
+					now,
+					now,
+					{ runId: next.id },
+				),
+			).toBe(true);
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "PROVISIONING" },
+			});
+			const testDeps = (await dispatchFixture()).deps;
+			const makeSdk = vi.fn(testDeps.makeSdk);
+			expect(
+				await createLiveChannelProcessor({ ...testDeps, makeSdk })({
+					action: "provision",
+					liveChannelId: f.channel.id,
+					plannedLiveChannelRunId: next.id,
+				}),
+			).toMatchObject({ status: "STALE_RUN" });
+			expect(makeSdk).not.toHaveBeenCalled();
+		});
+
+		it.each([
+			false,
+			true,
+		])("preserves a legacy partial STOP during startup and after a prior legacy sweep (%s)", async (alreadySwept) => {
+			const f = await stopFixture(),
+				secondary = randomUUID();
+			const error = `stop did not confirm — ${secondary}: response unavailable; try later`;
+			await tenant.liveEffectClaim.update({
+				where: { id: f.claim.id },
+				data: { state: "AMBIGUOUS", failure: liveEffectSendUncertainty(error) },
+			});
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "ERROR", error },
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: alreadySwept
+					? { status: "ERROR", error: STRANDED_RUN_ERROR }
+					: { status: "STOPPING", error: null },
+			});
+			await createStrandedRunReconciler({ prisma: tenant })();
+			const status = vi.fn(async () => ({ status: "FINISHED" as const }));
+			const tick = createUncertainStopReconciler({
+				prisma: tenant,
+				now: () => now.toISOString(),
+				makeSdk: () => fakeSdk({ getEncodingStatus: status }),
+				revealBitmovinAccount: async () => ({
+					apiKey: "unused",
+					tenantOrgId: null,
+				}),
+			});
+			await tick();
+			expect(status).toHaveBeenCalledWith(secondary);
+			expect(
+				(
+					await tenant.liveEffectClaim.findUniqueOrThrow({
+						where: { id: f.claim.id },
+					})
+				).state,
+			).toBe("ACKED");
+		});
+
 		it("stops the agreeing primary despite a corrupt log and retains its incomplete ownership evidence", async () => {
 			const f = await dispatchFixture();
 			await tenant.liveChannelRun.update({
@@ -945,6 +1286,15 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			// Keep the confirmed primary binding and recover only the other encoder.
 			expect(await canReair()).toBe(true);
 			const oldSecondary = randomUUID();
+			vi.mocked(f.sdk.getEncodingStatus).mockImplementation(async (id) => ({
+				status:
+					id === oldSecondary &&
+					!vi
+						.mocked(f.sdk.stopLiveEncoding)
+						.mock.calls.some(([sent]) => sent === id)
+						? "RUNNING"
+						: "FINISHED",
+			}));
 			await tenant.liveChannelRun.update({
 				where: { id: f.run.id },
 				data: { previousProviderEncodingIds: [archive, oldSecondary] },
@@ -1002,6 +1352,15 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					})
 				).status,
 			).toBe("PROVISIONING");
+			const replay = await beginLiveEffect(tenant, {
+				...effect,
+				liveChannelId: f.channel.id,
+				expectedFenceVersion: 0,
+				ownerId: "retry",
+				now: expiresAt,
+				expiresAt: new Date(expiresAt.getTime() + 1000),
+			});
+			expect(replay).toMatchObject({ kind: "BLOCKED", state: "AMBIGUOUS" });
 			await sweep(expiresAt);
 			expect(
 				await tenant.liveChannel.findUniqueOrThrow({
@@ -1071,6 +1430,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 		it.each([
 			"manual-after-schedule",
 			"expired-manual",
+			"encoding-first",
 		] as const)("sends the first Analysis STOP and fences the interrupted binding GET (%s)", async (scenario) => {
 			const f = await dispatchFixture(randomUUID()),
 				analysisId = randomUUID();
@@ -1097,7 +1457,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				data: {
 					plan: {
 						bitmovin: { accountId: f.accountId },
-						start: { aiSceneAnalysisLive: {} },
+						...(scenario === "encoding-first"
+							? {}
+							: { start: { aiSceneAnalysisLive: {} } }),
 					},
 				},
 			});
@@ -1108,6 +1470,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			const client = {
 				get: vi.fn(async () => {
 					const status = stopped ? "FINISHED" : "RUNNING";
+					if (intercept && scenario === "encoding-first") {
+						intercept = false;
+						throw new AisaLiveError(502);
+					}
 					if (intercept) {
 						intercept = false;
 						first.release();
@@ -1132,6 +1498,31 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					f.sdk,
 				),
 			});
+			if (scenario === "encoding-first") {
+				let encoderActive = true;
+				f.sdk.stopLiveEncoding = vi.fn(async () => {
+					encoderActive = false;
+				});
+				f.sdk.getEncodingStatus = vi.fn(async () => ({
+					status: encoderActive ? "RUNNING" : "FINISHED",
+				}));
+				const proc = createLiveChannelProcessor(f.deps);
+				await expect(proc(f.job)).rejects.toThrow();
+				expect(
+					await tenant.liveEffectClaim.findUniqueOrThrow({
+						where: { idempotencyKey: f.job.effect.idempotencyKey },
+					}),
+				).toMatchObject({
+					stopSendEncodingIds: [f.encodingId],
+					stopAnalysisSendId: null,
+				});
+				expect(await proc(f.job)).toMatchObject({ status: "STOPPED" });
+				expect(client.stop).toHaveBeenCalledExactlyOnceWith(analysisId);
+				expect(f.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(
+					f.encodingId,
+				);
+				return;
+			}
 			const schedule =
 				scenario === "manual-after-schedule"
 					? await tenant.liveSchedule.create({
@@ -1842,6 +2233,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 		});
 
 		it("delivers the original pending stop after the channel and run have been deleted", async () => {
+			// Other cases exercise the same organization's dispatcher. This case needs its
+			// own pending row in the first bounded page regardless of generated UUID order.
+			await tenant.liveStopNotification.deleteMany({});
 			const f = await stopFixture();
 			await tenant.liveEffectClaim.update({
 				where: { id: f.claim.id },

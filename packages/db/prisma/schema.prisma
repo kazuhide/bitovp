@@ -2407,6 +2407,8 @@ model LiveEffectClaim {
   /// A pre-upgrade attempt failed before send and may have emitted CHANNEL_ERROR.
   legacyStopErrorNotificationPossible Boolean @default(false)
   stopSendEncodingIds   String[]             @default([])
+  /// Archived IDs outside the earlier confirmed STOP's target set. Null protocol still preserves legacy delivery provenance.
+  legacyUnsentStopIds   String[]             @default([])
   /// Account-bound terminal GETs and the exact failed projection from the original owner.
   stopOutcomeEvidence   Json?
   providerEncodingId    String

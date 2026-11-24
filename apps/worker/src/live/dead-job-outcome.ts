@@ -144,7 +144,7 @@ export function createExpiredRestartReconciler(
 		const claims = await prisma.liveEffectClaim.findMany({
 			where: {
 				action: "RESTART",
-				state: "DISPATCHING",
+				state: { in: ["DISPATCHING", "AMBIGUOUS"] },
 				expiresAt: { lte: at },
 				liveChannel: { status: "PROVISIONING", provisionClaimedAt: null },
 				...(after ? { id: { gt: after } } : {}),
@@ -215,7 +215,7 @@ export async function retireRestartAdmission(
 			expiredClaimId &&
 			(claim?.id !== expiredClaimId ||
 				claim.generation !== effect.admissionFenceVersion ||
-				claim.state !== "DISPATCHING" ||
+				!["DISPATCHING", "AMBIGUOUS"].includes(claim.state) ||
 				claim.expiresAt > at)
 		)
 			return false;

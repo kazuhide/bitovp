@@ -2138,6 +2138,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 							action?: string;
 							attemptId?: string;
 							liveChannelRunId?: string;
+							plannedLiveChannelRunId?: string;
 							encodingId?: string;
 					  }
 					| undefined;
@@ -2150,7 +2151,19 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 					liveAction === "provision"
 				) {
 					const liveChannelId = liveJob?.liveChannelId;
-					if (liveChannelId) {
+					const initial =
+						job?.id === liveChannelId || job?.id === `probe-${liveChannelId}`;
+					const admission = liveJob?.plannedLiveChannelRunId
+						? { runId: liveJob.plannedLiveChannelRunId }
+						: initial
+							? { initial: true as const }
+							: null;
+					if (
+						liveChannelId &&
+						admission &&
+						(job?.finishedOn != null ||
+							(job?.attemptsMade ?? 0) >= (job?.opts.attempts ?? 1))
+					) {
 						const at = new Date();
 						await recordExpiredProvisionFailure(
 							prisma,
@@ -2158,6 +2171,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 							redactSecrets(err.message),
 							new Date(at.getTime() - PROVISION_LEASE_MS),
 							at,
+							admission,
 						).catch((updateErr) =>
 							console.error(
 								"[worker:liveChannel] failed to mark channel/run ERROR:",

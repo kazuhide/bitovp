@@ -2302,6 +2302,7 @@ describe("live channel actions", () => {
 						state: "AMBIGUOUS",
 						stopProtocolVersion: 1,
 						stopSendEncodingIds: [encodingId],
+						stopAnalysisSendId: analysisId,
 					},
 				],
 			});

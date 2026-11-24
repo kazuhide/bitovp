@@ -532,7 +532,8 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 			evaluateRole("OPERATOR", "/api/operation-analytics", "HEAD").allowed,
 		).toBe(false);
 		// Encoding experiments add ten guarded routes with thirteen handlers.
-		expect(guarded.length).toBe(213);
-		expect(methods.length).toBe(295);
+		// Instance Redis memory adds one guarded platform-owner GET.
+		expect(guarded.length).toBe(214);
+		expect(methods.length).toBe(296);
 	});
 });

@@ -24,11 +24,7 @@ import {
 	stepLogSchema,
 } from "@bitovp/core";
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
-import {
-	archivedStopRecoveryTarget,
-	bindArchivedStopTarget,
-	DB_NULL,
-} from "@bitovp/db";
+import {archivedStopRecoveryTarget,bindArchivedStopTarget,DB_NULL,liveStopRunOwnsEncoding} from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -112,7 +108,7 @@ async function effectPlan(
 	prisma: Pick<AppPrismaClient, "liveChannelRun">,
 	liveChannelId: string,
 	channelEncodingId: string | null,
-	target?: FinalizationTarget,
+	stop?: { finalizationTarget?: FinalizationTarget },
 ): Promise<EffectPlan | EffectPlanFailure> {
 	const latest = await prisma.liveChannelRun.findFirst({
 		where: { liveChannelId },
@@ -121,6 +117,7 @@ async function effectPlan(
 			id: true,
 			bitmovinEncodingId: true,
 			cancelRequested: true,
+			...(stop ? { stepLog: true } : {}),
 			...PROVIDER_LIFECYCLE_SELECT,
 		},
 	});
@@ -131,12 +128,18 @@ async function effectPlan(
 		};
 	}
 	const providerEncodingId = latest.bitmovinEncodingId ?? channelEncodingId;
-	if (!providerEncodingId) {
+	if (
+		!providerEncodingId ||
+		(stop &&
+			(channelEncodingId !== providerEncodingId ||
+				!liveStopRunOwnsEncoding(latest, providerEncodingId)))
+	) {
 		return {
 			error: "the current live run has no provider encoding",
 			code: "LIVE_ACTION_PROVIDER_ENCODING_MISSING",
 		};
 	}
+	const target = stop?.finalizationTarget;
 	const lifecycle = deriveProviderLifecycle(latest, Date.now());
 	if (
 		target &&
@@ -1194,7 +1197,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 						ctx.prisma,
 						id,
 						row.bitmovinEncodingId,
-						finalizationTarget,
+						{ finalizationTarget },
 					);
 					if ("error" in replayPlan) {
 						return codedError(
@@ -1253,7 +1256,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 					ctx.prisma,
 					id,
 					row.bitmovinEncodingId,
-					finalizationTarget,
+					{ finalizationTarget },
 				);
 				if ("error" in stopPlan) {
 					return codedError(

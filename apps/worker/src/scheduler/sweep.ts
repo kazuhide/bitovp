@@ -22,7 +22,12 @@ import {
 	slateSourceSchema,
 	stepLogSchema,
 } from "@bitovp/core";
-import { type AppPrismaClient, DB_NULL, type Prisma } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	DB_NULL,
+	liveStopRunOwnsEncoding,
+	type Prisma,
+} from "@bitovp/db";
 import { estimateStageLeadMs, STAGE_LEAD_MAX_MS } from "../feeder/stage-lead";
 import type { EmitProductEvent } from "../notify/emitter";
 import { createRunMirror } from "../orchestrator/run-mirror";
@@ -564,7 +569,11 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 			deps.prisma.liveChannelRun.findFirst({
 				where: { liveChannelId: row.liveChannelId },
 				orderBy: { seq: "desc" },
-				select: { id: true, bitmovinEncodingId: true },
+				select: {
+					id: true,
+					bitmovinEncodingId: true,
+					...(action === "STOP" ? { stepLog: true } : {}),
+				},
 			}),
 		]);
 		const providerEncodingId =
@@ -572,7 +581,10 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		if (
 			!channel ||
 			currentRun?.id !== row.liveChannelRunId ||
-			providerEncodingId === null
+			providerEncodingId === null ||
+			(action === "STOP" &&
+				(providerEncodingId !== channel.bitmovinEncodingId ||
+					!liveStopRunOwnsEncoding(currentRun, providerEncodingId)))
 		) {
 			return null;
 		}
@@ -1318,7 +1330,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		}
 		const channel = await deps.prisma.liveChannel.findUnique({
 			where: { id: row.liveChannelId },
-			select: { status: true },
+			select: { status: true, error: true },
 		});
 		if (!channel) {
 			if (await rowTo(row, "ERROR", { error: "channel no longer exists" })) {
@@ -1330,6 +1342,11 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		switch (channel.status) {
 			case "STOPPED":
 			case "CREATED": {
+				if (channel.status === "STOPPED" && channel.error !== null) {
+					// The previous stop still needs proof. Reconsider this row after reconciliation.
+					stats.waiting += 1;
+					return;
+				}
 				if (
 					await rowTo(row, "COMPLETED", {
 						note: `nothing to stop (channel ${channel.status})`,

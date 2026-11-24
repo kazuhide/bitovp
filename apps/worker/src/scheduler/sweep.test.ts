@@ -389,6 +389,7 @@ function makeStore(
 			heartbeatSummaryAt?: Date | null;
 			bitmovinEncodingId?: string | null;
 			encoderStoppedConfirmedFor?: string | null;
+			stepLog?: unknown;
 		}>,
 		rows,
 		channels,
@@ -1063,6 +1064,7 @@ function makeStore(
 			store.runs.push({
 				id: runId,
 				liveChannelId: running.id,
+				bitmovinEncodingId: running.bitmovinEncodingId,
 				seq: 1,
 				status: "RUNNING",
 				providerStatus: "RUNNING",
@@ -1820,6 +1822,54 @@ describe("STOP — claims like the route, waits out transitions (review-190 C2)"
 			expect.objectContaining({ liveChannelId: CH, action: "stop" }),
 			`sched-${ROW_ID}`,
 		);
+	});
+
+	it.each([
+		"missing",
+		"wrong",
+		"owned",
+	])("requires a run-owned encoder before claiming a legacy scheduled STOP (%s)", async (proof) => {
+		const store = makeStore(
+			[makeRow({ action: "STOP" })],
+			[makeChannel({ status: "RUNNING" })],
+		);
+		const run = store.runs[0];
+		if (!run) throw new Error("expected running fixture");
+		run.bitmovinEncodingId = null;
+		run.stepLog =
+			proof === "missing"
+				? []
+				: [
+						{
+							step: "encoding",
+							kind: "CREATE_ENCODING",
+							status: "DONE",
+							payload: {},
+							refs: {},
+							resourceId: proof === "owned" ? "enc-current" : "other",
+						},
+					];
+		const { sweep, enqueue } = makeSweep(store);
+		await sweep();
+		expect(store.rows[0]?.status).toBe(proof === "owned" ? "FIRED" : "ERROR");
+		expect(run.status).toBe(proof === "owned" ? "STOPPING" : "RUNNING");
+		expect(store.channels[0]?.status).toBe(run.status);
+		expect(enqueue).toHaveBeenCalledTimes(proof === "owned" ? 1 : 0);
+	});
+
+	it("waits for an uncertain earlier stop instead of completing the next scheduled STOP", async () => {
+		const store = makeStore(
+			[makeRow({ action: "STOP" })],
+			[makeChannel({ status: "STOPPED", error: "stop did not confirm" })],
+		);
+		const { sweep, enqueue } = makeSweep(store);
+		expect((await sweep()).waiting).toBe(1);
+		expect(store.rows[0]?.status).toBe("ARMED");
+		expect(enqueue).not.toHaveBeenCalled();
+		const channel = store.channels[0];
+		if (!channel) throw new Error("expected channel");
+		channel.error = null;
+		expect((await sweep()).completed).toBe(1);
 	});
 
 	it("PROVISIONING waits — no unclaimed stop is thrown into a transition", async () => {
@@ -3516,6 +3566,7 @@ describe("row #245 — the due scan cannot starve (paged, resuming cursor)", () 
 			store.runs.push({
 				id: `dddddddd-4444-4444-8444-${String(index + 1).padStart(12, "0")}`,
 				liveChannelId: channel.id,
+				bitmovinEncodingId: channel.bitmovinEncodingId,
 				seq: 1,
 				status: "RUNNING",
 			});
@@ -4773,7 +4824,13 @@ describe("generation bind — a row fires only into the airing it was armed for 
 		);
 		store.runs.push(
 			{ id: RUN_1, seq: 1, status: "RUNNING", outputPrefix: "" },
-			{ id: RUN_2, seq: 2, status: "RUNNING", outputPrefix: "" },
+			{
+				id: RUN_2,
+				seq: 2,
+				status: "RUNNING",
+				outputPrefix: "",
+				bitmovinEncodingId: "enc-current",
+			},
 		);
 		const { sweep, enqueue } = makeSweep(store);
 		const stats = await sweep();
@@ -4903,7 +4960,13 @@ describe("a panel-armed row survives a re-air it never saw (row #241)", () => {
 		// Run 1 ended; the channel re-aired as run 2, which is what is on now.
 		store.runs.push(
 			{ id: RUN_1, seq: 1, status: "STOPPED", outputPrefix: "" },
-			{ id: RUN_2, seq: 2, status: "RUNNING", outputPrefix: "" },
+			{
+				id: RUN_2,
+				seq: 2,
+				status: "RUNNING",
+				outputPrefix: "",
+				bitmovinEncodingId: "enc-current",
+			},
 		);
 		const { sweep, enqueue } = makeSweep(store);
 		const stats = await sweep();

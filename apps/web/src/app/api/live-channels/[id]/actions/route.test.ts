@@ -906,6 +906,7 @@ beforeEach(() => {
 	runFindFirst.mockReset();
 	runFindFirst.mockResolvedValue({
 		id: RUN_ID,
+		bitmovinEncodingId: "bm-live-enc",
 		seq: 1,
 		status: "RUNNING",
 		providerStatus: "RUNNING",
@@ -2034,6 +2035,34 @@ describe("POST /api/live-channels/[id]/actions", () => {
 		expect(updateMany).not.toHaveBeenCalled();
 	});
 
+	it.each([
+		"missing",
+		"owned",
+	])("checks the creation receipt before using a legacy channel encoder for STOP (%s)", async (proof) => {
+		runFindFirst.mockResolvedValue({
+			id: RUN_ID,
+			seq: 1,
+			status: "RUNNING",
+			bitmovinEncodingId: null,
+			stepLog:
+				proof === "owned"
+					? [
+							{
+								step: "encoding",
+								kind: "CREATE_ENCODING",
+								status: "DONE",
+								payload: {},
+								refs: {},
+								resourceId: "bm-live-enc",
+							},
+						]
+					: [],
+		});
+		const response = await postAction({ action: "stop" });
+		expect(response.status).toBe(proof === "owned" ? 202 : 409);
+		expect(queueAdd).toHaveBeenCalledTimes(proof === "owned" ? 1 : 0);
+	});
+
 	it("stop: 409s when the channel has no Bitmovin encoding yet", async () => {
 		findUnique.mockResolvedValueOnce(channel({ bitmovinEncodingId: null }));
 		const res = await postAction({ action: "stop" });
@@ -2659,6 +2688,12 @@ describe("provider lifecycle admission (row #280)", () => {
 
 describe("stopping a stop that never confirmed (ledger #130 C-fold)", () => {
 	async function stopClaim() {
+		runFindFirst.mockResolvedValue({
+			id: RUN_ID,
+			seq: 1,
+			status: "STOPPED",
+			bitmovinEncodingId: "enc-1",
+		});
 		findUnique.mockResolvedValueOnce(
 			channel({
 				status: "STOPPED",

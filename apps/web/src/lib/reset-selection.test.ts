@@ -31,7 +31,7 @@ describe("reset selection", () => {
 		];
 		expect(new Set(classified).size).toBe(classified.length);
 		expect(classified.sort()).toEqual(models.sort());
-		expect(models).toHaveLength(67);
+		expect(models).toHaveLength(68);
 		expect(RESET_PROTECTED_EDITING_MODELS).toContain("libraryFlowEvidencePin");
 		expect(RESET_GLOBAL_MODELS).toEqual([
 			"user",
@@ -62,11 +62,12 @@ describe("reset selection", () => {
 			"librarySource",
 		]);
 	});
-	it("keeps paid create receipts outside every selectable reset category", () => {
-		expect(RESET_INTERNAL_MODELS).toContain("createRequest");
-		expect(RESET_CATALOG.flatMap((entry) => entry.models)).not.toContain(
-			"createRequest",
-		);
+	it.each([
+		"createRequest",
+		"liveStopNotification",
+	])("preserves %s across every selectable reset category", (model) => {
+		expect(RESET_INTERNAL_MODELS).toContain(model);
+		expect(RESET_CATALOG.flatMap((entry) => entry.models)).not.toContain(model);
 	});
 	it("keeps Library-only deletion independent from jobs and settings", () => {
 		expect(requiredResetCategories(["contentLibrary"])).toEqual([

@@ -10,6 +10,7 @@ export const RESET_GLOBAL_MODELS = [
 /** Recovery ownership must outlive deleted customer rows. */
 export const RESET_INTERNAL_MODELS = [
 	"createRequest",
+	"liveStopNotification",
 	"resetCleanupTask",
 	"vmafComputeTask",
 ] as const;

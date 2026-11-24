@@ -2,11 +2,13 @@
 type: plan
 project: BitOVP
 created: 2026-11-17
-status: implementation-approved
+status: implemented
 tags: [bitovp, harness, verification, astro-review]
 ---
 
 # 検証ハーネスとQC実行制御の改善
+
+QC 実行制御は [PR #152](https://github.com/kazuhide/bitovp/pull/152)、検証ハーネスと CI は [PR #153](https://github.com/kazuhide/bitovp/pull/153) で main に統合した。[実測と照合結果](./todo.md)を参照。
 
 ## 目的と根拠
 

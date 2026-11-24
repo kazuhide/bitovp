@@ -365,6 +365,35 @@ describe("the measured 2026-09-02 failure (WP-0 A/B, four arms)", () => {
  */
 describe("a heartbeat-derived reference (rev406 R1)", () => {
 	it.each([
+		"stereo\n",
+		"Stereo",
+		" stereo",
+	])("ignores invalid heartbeat layout %j during slate preflight", (audioChannelFormat) => {
+		const reference = heartbeatIngestMedia({
+			raw: {
+				ingest: {
+					streams: [
+						{
+							mediaType: "audio",
+							rate: 48000,
+							numberOfAudioChannels: 1.5,
+							audioChannelFormat,
+						},
+					],
+				},
+			},
+		});
+		expect(reference?.audio[0]).not.toHaveProperty("channels");
+		expect(
+			compareSlateCompatibility(
+				reference,
+				withAudio({ channels: 6 }),
+			).differences.filter(
+				(d) => d.attribute === MEDIA_ATTRIBUTE.audioChannels,
+			),
+		).toEqual([]);
+	});
+	it.each([
 		{ numberOfAudioChannels: 2 },
 		{ numberOfAudioChannels: null, audioChannelFormat: "stereo" },
 		{ numberOfAudioChannels: 0, audioChannelFormat: "stereo" },

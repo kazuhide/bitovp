@@ -1,5 +1,6 @@
 import {
 	type CompiledOperation,
+	checkHdr10PlusPlan,
 	checkInternalHevcV2Plan,
 	classifyProviderStatusWord,
 	encodingPlanSchema,
@@ -482,6 +483,10 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				throw new Error("Plan carries no Bitmovin account id");
 			}
 			if (!row.cancelRequested) {
+				const invalidHdr = checkHdr10PlusPlan(plan).find(
+					(i) => i.level === "error",
+				);
+				if (invalidHdr) throw new Error(invalidHdr.message);
 				if (checkInternalHevcV2Plan(plan).length)
 					throw new Error("Invalid internal HEVCv2 persisted plan");
 				if (plan.internal?.hevcV2) {

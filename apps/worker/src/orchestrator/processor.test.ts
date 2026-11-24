@@ -1528,6 +1528,34 @@ describe("orchestrator processor", () => {
 	});
 });
 
+it("rejects a queued unsupported HDR10+ trim before provider access", async () => {
+	const p = structuredClone(basePlan);
+	p.bitmovin = {
+		...p.bitmovin,
+		accountId: ACCOUNT_ID,
+		encoderVersion: "2.294.0",
+	};
+	const [input] = p.inputs;
+	if (!input) throw new Error("Missing fixture input");
+	p.hdr10PlusStreams = [
+		{
+			key: "hdr",
+			inputKey: input.key,
+			videoInputPath: "source.mxf",
+			metadataInputPath: "meta.json",
+			selectionMode: "AUTO",
+		},
+	];
+	p.trimmingStreams = [
+		{ key: "trim", kind: "TIME_BASED", sourceKey: "hdr", duration: 3 },
+	];
+	const { processor, row, deps, sdk } = setup({ plan: p });
+	await expect(processor({ encodingJobId: JOB_ID })).rejects.toThrow(/HDR10/);
+	expect(row.status).toBe("ERROR");
+	expect(deps.revealBitmovinAccount).not.toHaveBeenCalled();
+	expect(sdk.createEncoding).not.toHaveBeenCalled();
+});
+
 describe("VMAF model capability — refuse BEFORE any Bitmovin resource (review-234 I1)", () => {
 	const qcPlan = (model: string) => ({
 		plan: (() => {

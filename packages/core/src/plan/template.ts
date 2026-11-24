@@ -8,7 +8,7 @@ import {
 	relativeSegmentPath,
 } from "./compiler";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
-import { hdr10PlusSourceKeys } from "./hdr10-plus";
+import { hdr10PlusTransformIssues } from "./hdr10-plus";
 import { hlsChildEntries, hlsSubtitleGroups } from "./hls-media-defaults";
 import { checkHlsVideoUris } from "./hls-video-uri-validation";
 import { FILTER_ENDPOINTS, filterParameters } from "./media-filters";
@@ -145,6 +145,8 @@ function placeholder(
 }
 
 type Tree = Record<string, unknown>;
+/** Resource names can be any valid plan key, including __proto__. */
+const resourceTable = (): Tree => Object.create(null);
 
 /** Template muxing section per plan muxing kind. */
 const MUXING_SECTION = {
@@ -255,13 +257,13 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		return tree;
 	};
 
-	const inputsS3: Tree = {};
-	const inputsAzure: Tree = {};
-	const inputsHttps: Tree = {};
-	const inputsGenericS3: Tree = {};
-	const inputsGcs: Tree = {};
-	const inputsGcsServiceAccount: Tree = {};
-	const inputsAkamaiNetStorage: Tree = {};
+	const inputsS3: Tree = resourceTable();
+	const inputsAzure: Tree = resourceTable();
+	const inputsHttps: Tree = resourceTable();
+	const inputsGenericS3: Tree = resourceTable();
+	const inputsGcs: Tree = resourceTable();
+	const inputsGcsServiceAccount: Tree = resourceTable();
+	const inputsAkamaiNetStorage: Tree = resourceTable();
 	const inputRef = new Map<string, string>();
 	for (const input of plan.inputs) {
 		if (input.kind === "S3") {
@@ -345,14 +347,14 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		}
 	}
 
-	const outputsS3: Tree = {};
-	const outputsAzure: Tree = {};
-	const outputsSftp: Tree = {};
-	const outputsGenericS3: Tree = {};
-	const outputsGcs: Tree = {};
-	const outputsGcsServiceAccount: Tree = {};
-	const outputsAkamaiMsl: Tree = {};
-	const outputsAkamaiNetStorage: Tree = {};
+	const outputsS3: Tree = resourceTable();
+	const outputsAzure: Tree = resourceTable();
+	const outputsSftp: Tree = resourceTable();
+	const outputsGenericS3: Tree = resourceTable();
+	const outputsGcs: Tree = resourceTable();
+	const outputsGcsServiceAccount: Tree = resourceTable();
+	const outputsAkamaiMsl: Tree = resourceTable();
+	const outputsAkamaiNetStorage: Tree = resourceTable();
 	const outputRef = new Map<string, string>();
 	for (const output of plan.outputs) {
 		if (output.kind === "AZURE") {
@@ -496,19 +498,19 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		}
 	}
 
-	const h264: Tree = {};
-	const h265: Tree = {};
-	const vp9: Tree = {};
-	const av1: Tree = {};
-	const aac: Tree = {};
-	const ac3: Tree = {};
-	const eac3: Tree = {};
-	const opus: Tree = {};
-	const imsc: Tree = {};
-	const dolbyAtmos: Tree = {};
-	const ddPlus: Tree = {};
-	const dd: Tree = {};
-	const webvtt: Tree = {};
+	const h264: Tree = resourceTable();
+	const h265: Tree = resourceTable();
+	const vp9: Tree = resourceTable();
+	const av1: Tree = resourceTable();
+	const aac: Tree = resourceTable();
+	const ac3: Tree = resourceTable();
+	const eac3: Tree = resourceTable();
+	const opus: Tree = resourceTable();
+	const imsc: Tree = resourceTable();
+	const dolbyAtmos: Tree = resourceTable();
+	const ddPlus: Tree = resourceTable();
+	const dd: Tree = resourceTable();
+	const webvtt: Tree = resourceTable();
 	const codecRef = new Map<string, string>();
 	for (const rendition of plan.renditions) {
 		if (rendition.codec === "IMSC") {
@@ -920,7 +922,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	const mixResources = new Map<string, Tree>();
 	const required = new Set<string>(hdr10PlusKeys);
 	const sourceByKey = new Map(
-		(hdr10PlusKeys.size || plan.audioMixStreams.length
+		(plan.audioMixStreams.length
 			? [
 					...plan.ingest,
 					...plan.trimmingStreams,
@@ -1009,11 +1011,6 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			});
 	};
 	for (const mix of plan.audioMixStreams) requireStream(mix.key);
-	// HDR10+ may be reached through a trim or concatenation. Preserve that
-	// source graph, including its video/JSON leaf, in the exported template.
-	if (hdr10PlusKeys.size) {
-		for (const key of hdr10PlusSourceKeys(plan)) requireStream(key);
-	}
 	const streamsByEnc = new Map<string, Tree>();
 	for (const rendition of plan.renditions) {
 		const streams = perEnc(streamsByEnc, encName(rendition.key));
@@ -1093,7 +1090,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				},
 			};
 		}
-		const thumbs: Tree = {};
+		const thumbs: Tree = resourceTable();
 		for (const thumbnail of plan.thumbnails) {
 			if (thumbnail.streamKey !== rendition.key) {
 				continue;
@@ -1122,7 +1119,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		// Trick-play sprites: a streams.<key>.sprites node (sibling of
 		// properties, like thumbnails). Optional grid/dimension fields are
 		// dropped by dense; the destination becomes an EncodingOutput.
-		const sprites: Tree = {};
+		const sprites: Tree = resourceTable();
 		for (const sprite of plan.sprites) {
 			if (sprite.streamKey !== rendition.key) {
 				continue;
@@ -1202,7 +1199,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			}
 			usedFilterInstanceKeys.add(instanceKey);
 			const endpoint = FILTER_ENDPOINTS[filter.kind];
-			filterResources[endpoint] ??= {};
+			filterResources[endpoint] ??= resourceTable();
 			const group = filterResources[endpoint];
 			const properties = filterParameters(filter);
 			if (filter.kind === "WATERMARK") {
@@ -1313,8 +1310,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		};
 		// Muxing-node drm section (sibling of properties, per the official
 		// schema). The content key is vault material → {{PLACEHOLDER}}.
-		const cencEntries: Tree = {};
-		const fairplayEntries: Tree = {};
+		const cencEntries: Tree = resourceTable();
+		const fairplayEntries: Tree = resourceTable();
 		for (const drm of plan.drm) {
 			if (drm.muxingKey !== muxing.key) {
 				continue;
@@ -1463,9 +1460,9 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	}
 
 	const jit = plan.generation.timing === "JUST_IN_TIME";
-	const hlsManifests: Tree = {};
-	const dashManifests: Tree = {};
-	const smoothManifests: Tree = {};
+	const hlsManifests: Tree = resourceTable();
+	const dashManifests: Tree = resourceTable();
+	const smoothManifests: Tree = resourceTable();
 	for (const manifest of plan.manifests) {
 		const manifestOutput = {
 			outputId: outputRef.get(manifest.destination.outputKey),
@@ -1487,9 +1484,9 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			const subtitleReference = subtitleGroup
 				? { subtitles: subtitleGroup }
 				: {};
-			const media: Tree = {};
-			const subtitles: Tree = {};
-			const variantStreams: Tree = {};
+			const media: Tree = resourceTable();
+			const subtitles: Tree = resourceTable();
+			const variantStreams: Tree = resourceTable();
 			for (const muxing of plan.muxings) {
 				const rendition = renditionByKey.get(muxing.streamKey);
 				// Per-title entries expand at run time — not representable
@@ -1679,8 +1676,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 						? "cmaf"
 						: "fmp4";
 			const repsBySet = new Map<string, Tree>();
-			const representations: Tree = {};
-			const subtitleSets: Tree = {};
+			const representations: Tree = resourceTable();
+			const subtitleSets: Tree = resourceTable();
 			for (const muxing of plan.muxings) {
 				const rendition = renditionByKey.get(muxing.streamKey);
 				if (muxing.kind !== "TEXT" || rendition?.codec !== "IMSC") continue;
@@ -1733,7 +1730,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			const subtitleTree = Object.keys(subtitleSets).length
 				? { subtitle: subtitleSets }
 				: {};
-			const audioRepresentations: Tree = {};
+			const audioRepresentations: Tree = resourceTable();
 			for (const muxing of plan.muxings) {
 				const rendition = renditionByKey.get(muxing.streamKey);
 				// Only the selected muxing kind of STANDARD AV renditions
@@ -1814,7 +1811,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			// with `representations` only where routed. Video set nodes take
 			// labels only; audio set nodes also take lang.
 			const setNode = (set: NonNullable<typeof explicitSets>[number]): Tree => {
-				const reps = repsBySet.get(set.key) ?? {};
+				const reps = repsBySet.get(set.key) ?? resourceTable();
 				return {
 					properties: dense({
 						lang: set.type === "AUDIO" ? set.lang : undefined,
@@ -1892,8 +1889,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			// Static (STANDARD) MP4 representations only; per-title entries
 			// expand at run time (header note). drmId refs point into the
 			// muxing's drm node by $/ path.
-			const representations: Tree = {};
-			const contentProtections: Tree = {};
+			const representations: Tree = resourceTable();
+			const contentProtections: Tree = resourceTable();
 			for (const muxing of plan.muxings) {
 				const rendition = renditionByKey.get(muxing.streamKey);
 				if (
@@ -2410,6 +2407,8 @@ export function encodingTemplateExportUnavailableReason(
 }
 
 export function planToEncodingTemplateYaml(plan: EncodingPlan): string {
+	const invalidHdr = hdr10PlusTransformIssues(plan)[0];
+	if (invalidHdr) throw new Error(invalidHdr.message);
 	const unavailable = encodingTemplateExportUnavailableReason(plan);
 	if (unavailable === "MANIFEST_DETAILS")
 		throw new Error(

@@ -341,7 +341,7 @@ export function heartbeatIngestMedia(sample: unknown): MediaAttributes | null {
 				: undefined;
 		const layout =
 			typeof stream.audioChannelFormat === "string"
-				? stream.audioChannelFormat.trim().toLowerCase()
+				? stream.audioChannelFormat
 				: "";
 		const channelCount =
 			heartbeatAudioChannels(stream.numberOfAudioChannels) ??

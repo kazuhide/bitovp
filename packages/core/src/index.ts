@@ -775,7 +775,7 @@ export { VOD_FIXTURES } from "./plan/fixtures";
  * floor. `fixture-registry.test.ts` set-equals this against the `.plan.json`
  * files on disk, so anything that equals it is transitively the whole corpus.
  */
-export { hdr10PlusSourceKeys } from "./plan/hdr10-plus";
+export { checkHdr10PlusPlan, hdr10PlusSourceKeys } from "./plan/hdr10-plus";
 export {
 	inputStreamDependencies,
 	inputStreamLeaves,

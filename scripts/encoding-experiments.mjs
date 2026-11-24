@@ -13,7 +13,8 @@ const idempotencyPattern = /^[A-Za-z0-9._:-]{1,128}$/;
 const usage = `Usage: node scripts/encoding-experiments.mjs COMMAND [CAMPAIGN_ID] [options]
 
 Commands:
-  capabilities | catalog | sources | list
+  capabilities [--backend nvenc|software] | catalog [--backend nvenc|software]
+  sources | list [--cursor CURSOR]
   validate --file trial.json
   create --file campaign.json
   enqueue CAMPAIGN_ID --file batch.json --idempotency-key KEY
@@ -24,6 +25,12 @@ Commands:
 
 Set BITOVP_EXPERIMENTS_URL and BITOVP_API_TOKEN. --url overrides the server origin.
 Use a scoped encoding-experiments token. JSON is the default output.
+Use capabilities --backend software and catalog --backend software to inspect the
+local CPU worker and its encoder-specific options. The default backend is NVENC.
+For CPU trials set software.encoder to libx264, libx265, libvpx-vp9 or libsvtav1,
+pass FFmpeg values in software.options and library values in software.nativeOptions.
+Use the software capability's ID when creating its campaign. Reuse the same
+idempotency key when retrying a batch, and set replicateId for deliberate repeats.
 For direct NVENC settings, use sdk.version, sdk.session and sdk.pictures.
 See capabilities.nvencSdk and catalog.sdkBindings.
 Per-picture records can include fields, qpMap, reconfigure or metadata.
@@ -104,6 +111,7 @@ export async function runExperiments(args, {
 			file: { type: "string" },
 			"idempotency-key": { type: "string" },
 			cursor: { type: "string" },
+			backend: { type: "string" },
 			format: { type: "string" },
 		},
 	});
@@ -127,6 +135,11 @@ export async function runExperiments(args, {
 		(withId && !uuid.test(id))
 	)
 		throw new Error("Expected an experiment command and its campaign ID, if required. See --help");
+	const backend = values.backend;
+	if (backend !== undefined && (
+		!["capabilities", "catalog"].includes(command) || !["nvenc", "software"].includes(backend)
+	))
+		throw new Error("--backend accepts nvenc or software for capabilities and catalog");
 	const inputSize = { validate: trialRequestByteLimit, create: 4096, select: 8192, enqueue: trialRequestByteLimit };
 	const hasFile = Object.hasOwn(inputSize, command);
 	if (hasFile !== Boolean(values.file))
@@ -151,6 +164,7 @@ export async function runExperiments(args, {
 	async function request(path, { method = "GET", body, cursor } = {}) {
 		const url = new URL(prefix + path, origin);
 		if (cursor !== undefined) url.searchParams.set("cursor", cursor);
+		if (backend !== undefined) url.searchParams.set("backend", backend);
 		const response = await fetch(url, {
 			method,
 			headers: {

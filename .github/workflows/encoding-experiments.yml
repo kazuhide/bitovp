@@ -30,6 +30,7 @@ jobs:
         with:
           node-version: "24"
       - run: node --test scripts/encoding-experiments.test.mjs
+      - run: python3 -B native/nvenc-experiments/software_catalog_test.py
       - run: python3 -B native/nvenc-experiments/runner_test.py
       - run: python3 -B native/nvenc-experiments/catalog/test_catalog.py
       - run: python3 -B native/nvenc-experiments/catalog/generate_catalog.py --check

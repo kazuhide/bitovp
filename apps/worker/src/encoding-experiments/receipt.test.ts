@@ -182,3 +182,18 @@ it("requires proof of the exact SDK settings, including typed zero and frame ord
 		expect(call).toThrow("EXPERIMENT_RECEIPT_MISMATCH");
 	}
 });
+
+it("binds the primary score to the CPU worker's scoring profile", () => {
+	const cpu = {
+		...legacyRuntime,
+		scoringProfileId: "official-vmaf-cpu-0.6.1" as const,
+	};
+	const scored = { ...receipt, scoringProfileId: cpu.scoringProfileId };
+	expect(readMeasurement(scored, cpu, 300)).toEqual(scored);
+	expect(() => readMeasurement(receipt, cpu, 300)).toThrow(
+		"EXPERIMENT_RECEIPT_MISMATCH",
+	);
+	expect(() => readMeasurement(scored, legacyRuntime, 300)).toThrow(
+		"EXPERIMENT_RECEIPT_MISMATCH",
+	);
+});

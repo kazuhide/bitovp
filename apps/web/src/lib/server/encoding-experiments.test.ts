@@ -217,6 +217,24 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllEnvs());
 
+it.each([
+	[trial, "a84e0f3cc036796fadc0deaf595993f873e489755d80979ed4ba2969de307c04"],
+	[
+		dualTrial,
+		"9e0d8a0a12b3ec4a0f0d910fa55f8b9a82ecadca0915704d914b170bbe876269",
+	],
+])("preserves an existing NVENC batch replay hash", async (input, storedHash) => {
+	// Exact hashes produced by the pre-software batch schema on main.
+	fake.enqueue.mockResolvedValueOnce({ items: [], nextCursor: null });
+	await enqueueExperimentTrials(
+		ctx,
+		campaign,
+		{ schemaVersion: 1, trials: [input] },
+		"existing",
+	);
+	expect(fake.enqueue.mock.calls[0]?.[3]).toBe(storedHash);
+});
+
 it("admits a primary-only trial without a v1 scorer and rejects a dual trial in both intake paths", async () => {
 	await expect(
 		validateExperimentTrial(ctx.organizationId, trial),
@@ -473,4 +491,352 @@ it("keeps trials without measurements in Lean's projected candidate set", async 
 			scoringProfileId: primaryProfile,
 		})),
 	]);
+});
+
+const cpuProfile = "official-vmaf-cpu-0.6.1";
+const cpuRuntime = {
+	runtimeId,
+	runtimeKind: "software",
+	scoringProfileId: cpuProfile,
+	supportedCodecs: ["VP9"],
+	softwareEncoders: [
+		{
+			encoder: "libvpx-vp9",
+			codec: "VP9",
+			options: [
+				{
+					name: "b",
+					type: "int64",
+					minimum: "0",
+					maximum: "I64_MAX",
+					description: "",
+				},
+
+				{ name: "passes", type: "int", choices: ["1", "2"], description: "" },
+				{
+					name: "level",
+					type: "float",
+					minimum: "-6.2",
+					maximum: "6.2",
+					description: "",
+				},
+				{
+					name: "flags",
+					type: "flags",
+					choices: ["+cgop", "-cgop"],
+					description: "",
+				},
+			],
+			nativeOptions: [{ name: "ts_layer_id", type: "string", description: "" }],
+			limitations: [],
+		},
+	],
+};
+const cpuTrial = {
+	window: trial.window,
+	sourceId: trial.sourceId,
+	codec: "VP9",
+	software: { encoder: "libvpx-vp9", options: { b: "2000000" } },
+};
+
+it.each([
+	["6.2000000000000001", false],
+	["-6.2000000000000001", false],
+	["6.2000000000000000", true],
+	["+.62e1", true],
+	["-62e-1", true],
+	["1e-999", true],
+])("compares fractional software limits exactly for %s", async (level, valid) => {
+	fake.readRuntime.mockResolvedValue(cpuRuntime);
+	const result = validateExperimentTrial(ctx.organizationId, {
+		...cpuTrial,
+		software: { ...cpuTrial.software, options: { level } },
+	});
+	if (valid) await expect(result).resolves.toMatchObject({ valid: true });
+	else
+		await expect(result).rejects.toMatchObject({
+			code: "INVALID_ENCODER_SETTING",
+		});
+});
+
+it("validates software trials against the software worker and its installed catalog", async () => {
+	fake.readRuntime.mockResolvedValue(cpuRuntime);
+	await expect(
+		validateExperimentTrial(ctx.organizationId, cpuTrial),
+	).resolves.toMatchObject({ valid: true });
+	expect(fake.readRuntime).toHaveBeenCalledWith(
+		"/experiment-fixture",
+		expect.any(Number),
+		"software",
+	);
+	await expect(
+		validateExperimentTrial(ctx.organizationId, {
+			...cpuTrial,
+			software: { ...cpuTrial.software, options: { unlisted: "1" } },
+		}),
+	).rejects.toMatchObject({ code: "INVALID_ENCODER_SETTING" });
+	await expect(
+		validateExperimentTrial(ctx.organizationId, trial),
+	).rejects.toMatchObject({ code: "ENCODER_UNAVAILABLE" });
+});
+
+it.each([
+	"fast",
+	"-1",
+	"9223372036854775808",
+])("rejects out-of-catalog bitrates before enqueue (%s)", async (b) => {
+	fake.readRuntime.mockResolvedValue(cpuRuntime);
+	await expect(
+		validateExperimentTrial(ctx.organizationId, {
+			...cpuTrial,
+			software: { ...cpuTrial.software, options: { b } },
+		}),
+	).rejects.toMatchObject({ code: "INVALID_ENCODER_SETTING" });
+});
+
+it.each([
+	{ options: { passes: "3" } },
+	{ options: { flags: "+pass2" } },
+	{ options: {}, nativeOptions: { ts_layer_id: "0,7" } },
+])("rejects invalid managed controls at admission", async (settings) => {
+	fake.readRuntime.mockResolvedValue(cpuRuntime);
+	const input = {
+		...cpuTrial,
+		software: { encoder: "libvpx-vp9", ...settings },
+	};
+	await expect(
+		validateExperimentTrial(ctx.organizationId, input),
+	).rejects.toMatchObject({ code: "INVALID_ENCODER_SETTING" });
+	fake.enqueue.mockImplementationOnce((_ctx, _id, _key, _hash, prepare) =>
+		prepare({ capabilityId: runtimeId, runtime: cpuRuntime }),
+	);
+	await expect(
+		enqueueExperimentTrials(
+			ctx,
+			campaign,
+			{ schemaVersion: 1, trials: [input] },
+			"invalid",
+		),
+	).rejects.toMatchObject({ code: "INVALID_ENCODER_SETTING" });
+});
+
+it.each([
+	["libx264", { bf: "16", g: "17" }, {}, true],
+	["libx264", { profile: "Baseline", bf: "3" }, {}, false],
+	["libx264", { profile: "baseline" }, { bframes: "1" }, false],
+	["libx264", { profile: "baseline", bf: "0" }, {}, true],
+	["libx264", { profile: "main" }, { "8x8dct": "true" }, false],
+	["libx264", { profile: "main" }, { cqm: "jvt" }, false],
+	["libx264", { profile: "baseline" }, { cabac: "1" }, false],
+	["libx264", { profile: "baseline", coder: "default" }, { cabac: "1" }, false],
+	["libx264", { profile: "baseline", wpredp: "0" }, { weightp: "2" }, false],
+	["libx264", { profile: "baseline", wpredp: "0x2" }, {}, false],
+	["libx264", { wpredp: "02" }, {}, false],
+	["libx264", { wpredp: "2" }, {}, true],
+	["libx264", { weightp: "-1" }, {}, true],
+	["libx264", { profile: "baseline", weightp: "none" }, {}, true],
+	["libx264", {}, { weightp: "3" }, false],
+	["libx264", { profile: "Baseline", weightp: "smart" }, {}, false],
+	["libx264", { g: "-1" }, { bframes: "16" }, true],
+	["libx264", { refs: "-1" }, { keyint: "infinite" }, true],
+	["libx264", { g: "16" }, { bframes: "16" }, false],
+	["libx264", { bf: "16" }, { keyint: "16" }, false],
+	["libx264", { bf: "30" }, {}, false],
+	["libx264", { bf: "5" }, { keyint: "0x4" }, false],
+	["libx264", {}, { keyint: "04" }, false],
+	["libx264", {}, { keyint: "+4" }, false],
+	["libx264", {}, { keyint: "1infinite" }, false],
+	["libx264", {}, { keyint: "1073741825" }, false],
+	["libx264", {}, { keyint: "1073741824" }, true],
+	["libx264", { g: "1", refs: "2" }, {}, false],
+	["libx264", {}, { keyint: "1", "dpb-size": "2" }, false],
+	["libx264", {}, { ref: "010" }, false],
+	["libx264", { refs: "-1", bf: "-1" }, { keyint: "1" }, true],
+	["libx264", {}, { ref: "2", frameref: "2" }, false],
+	["libx265", { bf: "-1" }, { bframes: "16" }, false],
+	["libx265", { refs: "2" }, { ref: "3" }, false],
+	["libx265", { g: "30" }, { keyint: "30" }, false],
+	["libx265", { g: "16" }, { bframes: "16" }, true],
+	["libx265", { bf: "16" }, { keyint: "-1" }, true],
+	["libx265", { g: "-1" }, { keyint: "-1" }, false],
+	["libx265", { g: "0" }, { bframes: "1" }, false],
+	["libx265", { g: "1", refs: "2" }, {}, false],
+	["libx265", {}, { keyint: "0", ref: "2" }, false],
+	["libx265", {}, { bframes: "010" }, false],
+] as const)("verifies frame structure for %s, %j, %j", async (encoder, options, nativeOptions, valid) => {
+	const codec = encoder === "libx264" ? "H264" : "HEVC";
+	const field = (name: string, minimum: string) => ({
+		name,
+		type: "int",
+		minimum,
+		maximum: "16",
+		description: "",
+	});
+	fake.readRuntime.mockResolvedValue({
+		...cpuRuntime,
+		supportedCodecs: [codec],
+		softwareEncoders: [
+			{
+				encoder,
+				codec,
+				options: [
+					{ ...field("bf", "0"), choices: ["-1"] },
+					{ ...field("refs", "1"), choices: ["-1"] },
+					{ name: "profile", type: "string", description: "" },
+					{
+						name: "coder",
+						type: "int",
+						choices: ["default", "cavlc", "cabac"],
+						description: "",
+					},
+					{
+						name: "wpredp",
+						type: "int",
+						choices: ["0", "1", "2"],
+						description: "",
+					},
+					{
+						name: "weightp",
+						type: "int",
+						choices: ["-1", "0", "1", "2", "none", "simple", "smart"],
+						description: "",
+					},
+					{
+						name: "g",
+						type: "int",
+						maximum: encoder === "libx264" ? "1073741824" : "INT_MAX",
+						description: "",
+					},
+				],
+				nativeOptions: [
+					field("bframes", "0"),
+					field("ref", "1"),
+					field("frameref", "1"),
+					field("dpb-size", "1"),
+					{ name: "cabac", type: "boolean", description: "" },
+					{
+						name: "weightp",
+						type: "int",
+						choices: ["0", "1", "2"],
+						description: "",
+					},
+					{ name: "8x8dct", type: "boolean", description: "" },
+					{
+						name: "cqm",
+						type: "string",
+						choices: ["flat", "jvt"],
+						description: "",
+					},
+					{
+						name: "keyint",
+						type: "int",
+						description: "",
+						...(encoder === "libx264"
+							? { minimum: "1", maximum: "1073741824", choices: ["infinite"] }
+							: { minimum: "INT_MIN", maximum: "INT_MAX" }),
+					},
+				],
+				limitations: [],
+			},
+		],
+	});
+	const result = validateExperimentTrial(ctx.organizationId, {
+		...cpuTrial,
+		codec,
+		software: { encoder, options, nativeOptions },
+	});
+	if (valid) await expect(result).resolves.toMatchObject({ valid: true });
+	else
+		await expect(result).rejects.toMatchObject({
+			code: "INVALID_ENCODER_SETTING",
+		});
+});
+
+it.each([
+	[{ crf: "0" }, {}],
+	[{ qp: "0" }, {}],
+	[{ crf: "25", qp: "20" }, {}],
+	[{ crf: "20" }, { crf: "45" }],
+	[{ qp: "20" }, { q: "45" }],
+	[{}, { qp: "20", cqp: "45" }],
+])("rejects inactive SVT-AV1 quantizers (%j, %j)", async (options, nativeOptions) => {
+	const encoder = "libsvtav1";
+	const codec = "AV1";
+	fake.readRuntime.mockResolvedValue({
+		...cpuRuntime,
+		supportedCodecs: [codec],
+		softwareEncoders: [
+			{
+				encoder,
+				codec,
+				options: ["crf", "qp"].map((name) => ({
+					name,
+					type: "int",
+					minimum: "1",
+					maximum: "63",
+					description: "",
+				})),
+				nativeOptions: ["crf", "q", "qp", "cqp"].map((name) => ({
+					name,
+					type: "int",
+					description: "",
+				})),
+				limitations: [],
+			},
+		],
+	});
+	await expect(
+		validateExperimentTrial(ctx.organizationId, {
+			...cpuTrial,
+			codec,
+			software: { encoder, options, nativeOptions },
+		}),
+	).rejects.toMatchObject({ code: "INVALID_ENCODER_SETTING" });
+});
+
+it("uses the CPU campaign identity for software batch admission", async () => {
+	fake.enqueue.mockImplementationOnce((_ctx, _id, _key, _hash, prepare) =>
+		prepare({ capabilityId: runtimeId, runtime: cpuRuntime }),
+	);
+	fake.readRuntime.mockResolvedValue(cpuRuntime);
+	await expect(
+		enqueueExperimentTrials(
+			ctx,
+			campaign,
+			{ schemaVersion: 1, trials: [cpuTrial] },
+			"cpu-trial",
+		),
+	).resolves.toMatchObject([{ input: { software: cpuTrial.software } }]);
+});
+
+it("does not reuse a CPU measurement for a requested CUDA profile", async () => {
+	fake.rows.mockResolvedValue([
+		{
+			id: legacyId,
+			codec: "VP9",
+			status: "SUCCEEDED",
+			result: { ...primaryResult, scoringProfileId: cpuProfile },
+			sourceSha256,
+		},
+	]);
+	fake.solve.mockReturnValueOnce({
+		status: "insufficient_evidence",
+		eligibleCount: 0,
+		incompleteCount: 1,
+	});
+	await selectExperimentQuality(ctx, campaign, {
+		...selection,
+		scoringProfileId: primaryProfile,
+	});
+	expect(
+		fake.solve.mock.calls.at(-1)?.[0].candidates[0].scoreMilli,
+	).toBeUndefined();
+	fake.solve.mockReturnValueOnce({ trialId: legacyId, incompleteCount: 0 });
+	await selectExperimentQuality(ctx, campaign, {
+		...selection,
+		scoringProfileId: cpuProfile,
+	});
+	expect(fake.solve.mock.calls.at(-1)?.[0].candidates[0].scoreMilli).toBe(
+		primaryResult.scoreMilli,
+	);
 });

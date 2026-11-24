@@ -141,6 +141,17 @@ export async function experimentCampaignId({ params }: CampaignParams) {
 	return id;
 }
 
+export function experimentBackend(req: Request): "nvenc" | "software" {
+	const values = new URL(req.url).searchParams.getAll("backend");
+	if (values.length === 0) return "nvenc";
+	if (
+		values.length === 1 &&
+		(values[0] === "nvenc" || values[0] === "software")
+	)
+		return values[0];
+	throw new RequestError(422, "INVALID_BACKEND", "Choose nvenc or software");
+}
+
 export function experimentCursor(req: Request): string | undefined {
 	const values = new URL(req.url).searchParams.getAll("cursor");
 	if (

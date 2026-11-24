@@ -87,6 +87,7 @@ export function ChannelLifecycleActions({
 	encodingId,
 	hasError = false,
 	providerTerminal = false,
+	canRecoverArchivedStop = false,
 	canRetryAisaFinalization = false,
 	plan,
 	runId,
@@ -101,6 +102,7 @@ export function ChannelLifecycleActions({
 	encodingId?: string;
 	hasError?: boolean;
 	providerTerminal?: boolean;
+	canRecoverArchivedStop?: boolean;
 	canRetryAisaFinalization?: boolean;
 	plan?: LiveChannelPlan;
 	runId?: string;
@@ -337,10 +339,11 @@ export function ChannelLifecycleActions({
 	const isNewRun =
 		status === "STOPPED" || (status === "ERROR" && providerTerminal);
 	const canStop =
-		!cancellationPending &&
-		hasEncoding &&
-		!providerTerminal &&
-		(status === "RUNNING" || status === "ERROR");
+		canRecoverArchivedStop ||
+		(!cancellationPending &&
+			hasEncoding &&
+			!providerTerminal &&
+			(status === "RUNNING" || status === "ERROR"));
 	/**
 	 * Restart is for an encoding that is STILL UP. A stopped channel's
 	 * encoding is FINISHED (stopChannel calls stopLiveEncoding), and Bitmovin

@@ -107,6 +107,7 @@ import { createEditingWorkQueue } from "./library-editing/runtime-work-queue";
 import { createLibraryEditingSweep } from "./library-editing/sweep";
 import { createShutdown, createSweepLoop } from "./lifecycle";
 import {
+	createExpiredRestartReconciler,
 	isFinalStopFailure,
 	isRunBoundStopJob,
 	recordDeadFeederJob,
@@ -1158,11 +1159,15 @@ const orphanEncodingSweep = () =>
 setTenantInterval(orphanEncodingSweep, 60_000).unref();
 runTenantTick(() => orphanEncodingSweep());
 const reconcileUncertainStops = tenantService(() =>
-	createUncertainStopReconciler(processorDeps),
+	createUncertainStopReconciler(processorDeps, (job) => liveChannel(job)),
+);
+const reconcileExpiredRestarts = tenantService(() =>
+	createExpiredRestartReconciler(processorDeps.prisma, processorDeps.emitEvent),
 );
 const uncertainStopLoop = tenantService(() =>
 	createSweepLoop(async () => {
 		await reconcileUncertainStops();
+		await reconcileExpiredRestarts();
 	}),
 );
 setTenantInterval(() => uncertainStopLoop.run(), 60_000).unref();

@@ -7,6 +7,7 @@ import {
 	aisaStartNotDispatched,
 	bindMoqPlaybackNamespace,
 	classifyProviderLifecycle,
+	classifyProviderStatusWord,
 	deriveFeederRtmpTarget,
 	deriveLiveToVodStatus,
 	FEEDER_ACTIVE_STATUSES,
@@ -91,9 +92,13 @@ import {
 	markLiveEffectAcked,
 	markLiveEffectAmbiguous,
 	markLiveEffectFailed,
+	mergeRtmpRetirementEvidence,
 	persistLiveToVodAttempt,
+	type RtmpRetirementReceipt,
 	recordLiveStopFailure,
+	reserveAisaStop,
 	resolveLiveEffectsAfterConfirmedStop,
+	unconfirmedRtmpEncoders,
 	wasLiveStopAcknowledged,
 } from "@bitovp/db";
 import {
@@ -699,6 +704,7 @@ class LiveEffectFenceLostError extends ChannelStateError {
 type LiveEffectFence = {
 	claim: LiveEffectClaimHandle;
 	readonly crossedSendBoundary: boolean;
+	markSendReserved(): void;
 	assertCurrent(label: string): Promise<void>;
 	beforeSend(label: string, stopEncodingId?: string): Promise<void>;
 };
@@ -711,6 +717,9 @@ function liveEffectFence(
 	let crossedSendBoundary = false;
 	return {
 		claim,
+		markSendReserved() {
+			crossedSendBoundary = true;
+		},
 		get crossedSendBoundary() {
 			return crossedSendBoundary;
 		},
@@ -899,6 +908,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		row: LiveChannelRow,
 		monitoringSignal?: AbortSignal,
 		manifestStamp?: CreateStamp,
+		stopEffect?: LiveEffectFence,
 	): Promise<SdkOps> {
 		const accountId = liveChannelAccountId(row);
 		if (!accountId) {
@@ -923,30 +933,97 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				analysisId: () => analysisId,
 				encodingId: () => run.bitmovinEncodingId ?? undefined,
 				sleep: deps.sleep,
+				...(stopEffect
+					? {
+							reserveStop: async (
+								service: "analysis" | "encoding",
+								id: string,
+							) => {
+								const reservation = await reserveAisaStop(
+									deps.prisma,
+									stopEffect.claim,
+									service,
+									id,
+									new Date(deps.now()),
+								);
+								if (reservation === "LOST")
+									throw new LiveEffectFenceLostError(
+										"AISA STOP lost its exact owner",
+									);
+								if (reservation === "PRIOR") return false;
+								stopEffect.markSendReserved();
+								return true;
+							},
+						}
+					: {}),
 				onObservation: async ({ analysis, snapshot, finalization }) => {
 					if (
 						analysis.analysisId !== analysisId ||
 						analysis.encodingId !== run.bitmovinEncodingId
 					)
 						throw new AisaLiveIdentityError();
-					await deps.prisma.liveChannelRun.updateMany({
-						where: {
-							id: run.id,
-							liveChannelId: row.id,
-							aisaAnalysisId: analysisId,
-							bitmovinEncodingId: analysis.encodingId,
-						},
-						data: {
-							aisaStatus: analysis.status,
-							aisaObservedAt: new Date(deps.now()),
-							...(finalization
-								? { aisaFinalization: finalization as Prisma.InputJsonValue }
-								: {}),
-							...(snapshot
-								? { aisaSnapshot: snapshot as Prisma.InputJsonValue }
-								: {}),
-						},
+					const persisted = await deps.prisma.$transaction(async (tx) => {
+						if (stopEffect) {
+							const c = stopEffect.claim;
+							const owner = await tx.liveChannel.updateMany({
+								where: {
+									id: row.id,
+									liveEffectFenceVersion: c.generation,
+									effectClaims: {
+										some: {
+											id: c.id,
+											token: c.token,
+											state: "DISPATCHING",
+											expiresAt: { gt: new Date(deps.now()) },
+										},
+									},
+								},
+								data: { liveEffectFenceVersion: c.generation },
+							});
+							if (!owner.count) throw new AisaLiveIdentityError();
+						}
+						return tx.liveChannelRun.updateMany({
+							where: {
+								id: run.id,
+								...(![
+									"FINISHED",
+									"ERROR",
+									"CANCELED",
+									"TRANSFER_ERROR",
+								].includes(analysis.status)
+									? {
+											OR: [
+												{ aisaStatus: null },
+												{
+													aisaStatus: {
+														notIn: [
+															"FINISHED",
+															"ERROR",
+															"CANCELED",
+															"TRANSFER_ERROR",
+														],
+													},
+												},
+											],
+										}
+									: {}),
+								liveChannelId: row.id,
+								aisaAnalysisId: analysisId,
+								bitmovinEncodingId: analysis.encodingId,
+							},
+							data: {
+								aisaStatus: analysis.status,
+								aisaObservedAt: new Date(deps.now()),
+								...(finalization
+									? { aisaFinalization: finalization as Prisma.InputJsonValue }
+									: {}),
+								...(snapshot
+									? { aisaSnapshot: snapshot as Prisma.InputJsonValue }
+									: {}),
+							},
+						});
 					});
+					if (!persisted.count) throw new AisaLiveIdentityError();
 				},
 			};
 		}
@@ -1308,7 +1385,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			});
 			let observedPriorSend = false;
 			try {
-				const sdk = await sdkFor(row);
+				const sdk = await sdkFor(row, undefined, undefined, effect);
 				/**
 				 * Stop EVERY encoding this channel knows about, and CONFIRM each one.
 				 *
@@ -1320,6 +1397,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				 * Inline polling is bounded. The observer subsequently uses only provider reads.
 				 */
 				const failures: string[] = [];
+				let primaryFailure: { cause: unknown } | undefined;
 				const ids = new Set(allEncodingIdsOf(row));
 				const observeOnly = new Set<string>();
 				let analysisToRefresh: string | null = null;
@@ -1331,6 +1409,8 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 								stepLog: true,
 								bitmovinEncodingId: true,
 								previousProviderEncodingIds: true,
+								archivedRtmpAttempt: true,
+								rtmpRetirementEvidence: true,
 								aisaAnalysisId: true,
 							},
 						}),
@@ -1347,6 +1427,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 								failure: true,
 								stopProtocolVersion: true,
 								stopSendEncodingIds: true,
+								stopAnalysisSendId: true,
 								stopOutcomeEvidence: true,
 							},
 						}),
@@ -1355,17 +1436,32 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						throw new ChannelStateError("the STOP broadcast disappeared");
 					for (const id of [
 						...(liveStopLogEncodings(run.stepLog) ?? []),
-						...(run.previousProviderEncodingIds ?? []),
+						...(unconfirmedRtmpEncoders(run, row, liveChannelAccountId(row)) ??
+							run.previousProviderEncodingIds ??
+							[]),
 					])
 						ids.add(id);
 					if (run.bitmovinEncodingId) ids.add(run.bitmovinEncodingId);
-					const targets = liveStopKnownTargets(run, row, history);
-					if (!targets)
+					const targets = liveStopKnownTargets(
+						run,
+						row,
+						history,
+						liveChannelAccountId(row),
+					);
+					// Corrupt logs with agreeing run/channel columns still authorize STOP
+					// of that exact primary. Settlement independently requires complete logs.
+					const authorized =
+						targets ??
+						(run.bitmovinEncodingId === row.bitmovinEncodingId &&
+						row.bitmovinEncodingId
+							? [...ids]
+							: null);
+					if (!authorized)
 						throw new ChannelStateError(
 							"the STOP broadcast has incomplete encoder ownership records",
 						);
-					requiredEncodingIds = targets;
-					for (const id of targets) if (!ids.has(id)) observeOnly.add(id);
+					requiredEncodingIds = authorized;
+					for (const id of authorized) if (!ids.has(id)) observeOnly.add(id);
 					for (const prior of history) {
 						if (prior.action !== "STOP") continue;
 						for (const id of prior.stopSendEncodingIds ?? [])
@@ -1378,12 +1474,15 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						) {
 							// Legacy compound STOP had no per-encoder send reservations; any
 							// target of that broadcast may already have received its POST.
-							for (const id of targets) observeOnly.add(id);
+							for (const id of authorized) observeOnly.add(id);
 						}
 					}
 					observedPriorSend = observeOnly.has(effect.claim.providerEncodingId);
 					if (observedPriorSend && isAisaManagedLivePlan(row.plan))
 						analysisToRefresh = run.aisaAnalysisId;
+					observedPriorSend ||=
+						!!run.aisaAnalysisId &&
+						history.some((c) => c.stopAnalysisSendId === run.aisaAnalysisId);
 				}
 				for (const id of observeOnly) {
 					try {
@@ -1407,7 +1506,9 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				for (const [index, id] of [...ids].entries()) {
 					if (observeOnly.has(id)) continue;
 					try {
-						await effect?.beforeSend(`Stop encoding ${id}`, id);
+						if (effect && isAisaManagedLivePlan(row.plan))
+							await effect.assertCurrent("AISA STOP preflight");
+						else await effect?.beforeSend(`Stop encoding ${id}`, id);
 						await sdk.stopLiveEncoding(id);
 					} catch (stopErr) {
 						/**
@@ -1428,7 +1529,9 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 								if (sample && STOP_TERMINAL_STATUSES.includes(sample.status))
 									terminalReadbacks.set(id, sample.status);
 							}
-							throw stopErr;
+							if (stopErr instanceof LiveEffectFenceLostError) throw stopErr;
+							primaryFailure = { cause: stopErr };
+							continue;
 						}
 						failures.push(
 							`${id}: ${stopErr instanceof Error ? stopErr.message : String(stopErr)}`,
@@ -1471,6 +1574,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						terminalReadbacks.set(id, last);
 					}
 				}
+				if (primaryFailure) throw primaryFailure.cause;
 				if (effect) {
 					const providerStatus = terminalReadbacks.get(
 						effect.claim.providerEncodingId,
@@ -5862,6 +5966,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					e.kind === "RESOLVE_AISA_LIVE_ENCODING") &&
 				e.status === "DONE",
 		)?.resourceId;
+		let reviveStatus: string | null = null;
 		if (reviveEncodingId && !(await shouldCancel())) {
 			const reviveRun =
 				await actions.providerLifecycle.loadCurrentRun(liveChannelId);
@@ -5875,6 +5980,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					data: { provisionClaimedAt: null },
 				},
 			});
+			reviveStatus = verdict.status;
 			if (verdict.lifecycle === "TERMINAL" || verdict.lifecycle === "UNKNOWN") {
 				if (verdict.lifecycle === "TERMINAL" && verdict.status === "CANCELED") {
 					if (!verdict.channelLanded) return "PROVISIONING";
@@ -5960,52 +6066,157 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			if (
 				freshRtmpId &&
 				freshRtmpId !== rtmpStep.resourceId &&
-				!(taskHistory.moq && reviveEncodingId)
+				!(taskHistory.moq && reviveEncodingId) &&
+				!(
+					reviveStatus === "RUNNING" &&
+					entries.some(
+						(e) => e.kind === "START_LIVE_ENCODING" && e.status === "DONE",
+					)
+				)
 			) {
-				// Save every encoder of this exact run before replacing the two projected
-				// logs. A crash after this write can repeat the archive safely.
+				// No replacement may discard a potentially billing encoder. A CREATED
+				// encoder is disposable only while durable logs prove START was never attempted.
+				const run = await deps.prisma.liveChannelRun.findFirst({
+					where: { liveChannelId },
+					orderBy: { seq: "desc" },
+				});
+				if (!run || run.id !== currentRunId)
+					throw new ProvisionLeaseLostError(liveChannelId);
+				const runLog = stepLogSchema.safeParse(run.stepLog);
+				const archives = unconfirmedRtmpEncoders(run, row, accountId);
+				const ids = new Set(
+					[
+						...(archives ?? []),
+						...(liveStopLogEncodings(entries) ?? []),
+						...(liveStopLogEncodings(run.stepLog) ?? []),
+						row.bitmovinEncodingId,
+						run.bitmovinEncodingId,
+					].filter((v): v is string => !!v),
+				);
+				const receipts: RtmpRetirementReceipt[] = [];
+				let blocked =
+					archives === null || !runLog.success
+						? "incomplete RTMP ownership history"
+						: null;
+				let retainedId =
+					run.bitmovinEncodingId ?? row.bitmovinEncodingId ?? reviveEncodingId;
+				for (const encodingId of ids) {
+					const status =
+						encodingId === reviveEncodingId && reviveStatus
+							? reviveStatus
+							: await sdk
+									.getEncodingStatus(encodingId)
+									.then((r) => r.status)
+									.catch(() => null);
+					const starts = [
+						...entries,
+						...(runLog.success ? runLog.data : []),
+					].filter((e) => e.kind === "START_LIVE_ENCODING");
+					const neverStarted =
+						status === "CREATED" &&
+						runLog.success &&
+						entries.some(
+							(e) =>
+								e.kind === "CREATE_ENCODING" &&
+								e.status === "DONE" &&
+								e.resourceId === encodingId,
+						) &&
+						entries.some((e) => e.kind === "START_LIVE_ENCODING") &&
+						starts.every(
+							(e) =>
+								e.status === "PENDING" &&
+								!e.startedAt &&
+								!e.finishedAt &&
+								!e.error,
+						);
+					if (
+						status &&
+						(classifyProviderStatusWord(status) === "TERMINAL" || neverStarted)
+					) {
+						receipts.push({
+							accountId,
+							encodingId,
+							providerStatus: status,
+							disposition: neverStarted ? "NEVER_STARTED" : "TERMINAL",
+							observedAt: deps.now(),
+						});
+					} else {
+						blocked = encodingId;
+						retainedId ??= encodingId;
+						break;
+					}
+				}
+				const error = blocked
+					? `RTMP input changed, but the previous encoder needs Stop before a replacement can be created (${blocked})`
+					: null;
 				await deps.prisma.$transaction(async (tx) => {
 					const lock = await tx.liveChannel.updateMany({
-						where: { id: liveChannelId, provisionClaimedAt: heldAt },
+						where: {
+							id: liveChannelId,
+							provisionClaimedAt: heldAt,
+							bitmovinAccountId: accountId,
+						},
 						data: { provisionClaimedAt: heldAt },
 					});
 					if (!lock.count) throw new ProvisionLeaseLostError(liveChannelId);
-					const run = await tx.liveChannelRun.findFirst({
+					const latest = await tx.liveChannelRun.findFirst({
 						where: { liveChannelId },
 						orderBy: { seq: "desc" },
-						select: {
-							id: true,
-							bitmovinEncodingId: true,
-							previousProviderEncodingIds: true,
-							archivedRtmpAttempt: true,
-							stepLog: true,
-						},
 					});
-					if (!run || run.id !== currentRunId)
+					if (
+						!latest ||
+						latest.id !== currentRunId ||
+						latest.bitmovinEncodingId !== run.bitmovinEncodingId ||
+						JSON.stringify(latest.stepLog) !== JSON.stringify(run.stepLog) ||
+						JSON.stringify(latest.previousProviderEncodingIds) !==
+							JSON.stringify(run.previousProviderEncodingIds)
+					)
 						throw new ProvisionLeaseLostError(liveChannelId);
-					const previous = new Set(run.previousProviderEncodingIds ?? []);
-					for (const id of [
-						row?.bitmovinEncodingId,
-						run.bitmovinEncodingId,
-						...(liveStopLogEncodings(entries) ?? []),
-						...(liveStopLogEncodings(run.stepLog) ?? []),
-					])
-						if (id) previous.add(id);
+					if (error) {
+						await tx.liveChannel.update({
+							where: { id: liveChannelId },
+							data: {
+								status: "ERROR",
+								error,
+								provisionClaimedAt: null,
+								...(retainedId ? { bitmovinEncodingId: retainedId } : {}),
+							},
+						});
+						await tx.liveChannelRun.update({
+							where: { id: run.id },
+							data: {
+								status: "ERROR",
+								error,
+								...(retainedId ? { bitmovinEncodingId: retainedId } : {}),
+							},
+						});
+						return;
+					}
 					await tx.liveChannelRun.update({
 						where: { id: run.id },
 						data: {
-							previousProviderEncodingIds: [...previous],
-							...((run.archivedRtmpAttempt ?? 0) >= (rtmpStep.attempt ?? 0)
-								? {
-										archivedRtmpAttempt: Math.max(
-											run.archivedRtmpAttempt ?? 0,
-											(rtmpStep.attempt ?? 0) + 1,
-										),
-									}
-								: {}),
+							previousProviderEncodingIds: [
+								...new Set([
+									...(latest.previousProviderEncodingIds ?? []),
+									...ids,
+								]),
+							],
+							rtmpRetirementEvidence: mergeRtmpRetirementEvidence(
+								latest.rtmpRetirementEvidence,
+								receipts,
+							),
+							archivedRtmpAttempt: Math.max(
+								latest.archivedRtmpAttempt ?? 0,
+								(rtmpStep.attempt ?? 0) + 1,
+							),
 						},
 					});
 				});
+				if (error) {
+					heldAt = null;
+					await emitChannel("CHANNEL_ERROR", liveChannelId, error);
+					throw new ChannelStateError(error);
+				}
 				const from = entries.indexOf(rtmpStep);
 				for (let i = from; i < entries.length; i += 1) {
 					const entry = entries[i];

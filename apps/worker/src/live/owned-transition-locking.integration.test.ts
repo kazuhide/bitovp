@@ -11,6 +11,7 @@ import {
 	type AppTransactionClient,
 	appendLiveEffectStepLogEntry,
 	beginLiveEffect,
+	bindArchivedStopTarget,
 	claimLiveStopSend,
 	createPrismaClient,
 	createTenantPrismaClient,
@@ -21,12 +22,14 @@ import {
 	resolveLiveEffectsAfterConfirmedStop,
 } from "@bitovp/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createAisaLiveOps } from "../orchestrator/aisa-live-ops";
 import { fakeSdk } from "../orchestrator/fake-sdk";
 import {
 	createLiveChannelProcessor,
 	type LiveChannelDeps,
 } from "../orchestrator/live-processor";
 import {
+	createExpiredRestartReconciler,
 	recordDeadJobScheduleOutcomes,
 	recordFinalRestartFailure,
 	recordFinalStopFailure,
@@ -38,6 +41,11 @@ import {
 import { createUncertainStopReconciler } from "./reconcile-uncertain-stops";
 import { createStopNotificationSweep } from "./stop-notifications";
 
+const provider = vi.hoisted(() => ({ aisa: vi.fn() }));
+vi.mock("@bitovp/core/aisa-live-client", async (original) => ({
+	...(await original<typeof import("@bitovp/core/aisa-live-client")>()),
+	createAisaLiveClient: provider.aisa,
+}));
 const runtimeUrl = process.env.BITOVP_MONITORING_TEST_DATABASE_URL;
 const adminUrl = process.env.BITOVP_MONITORING_TEST_ADMIN_URL;
 
@@ -154,8 +162,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 		async function fixture(
 			status: LiveChannelStatus = "PROVISIONING",
 			heldAt: Date | null = lease,
+			encodingId: string = `test-${randomUUID()}`,
 		) {
-			const encodingId = `test-${randomUUID()}`;
 			const channel = await tenant.liveChannel.create({
 				data: {
 					name: "Owned transition lock test",
@@ -496,8 +504,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			return { ...f, fields, claim, proof };
 		}
 
-		async function dispatchFixture() {
-			const f = await fixture("RUNNING", null);
+		async function dispatchFixture(encodingId?: string) {
+			const f = await fixture("RUNNING", null, encodingId);
 			const accountId = randomUUID();
 			await tenant.liveChannel.update({
 				where: { id: f.channel.id },
@@ -538,6 +546,367 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			};
 			return { ...f, accountId, identity, job, sdk, deps };
 		}
+
+		it("stops the agreeing primary despite a corrupt log and retains its incomplete ownership evidence", async () => {
+			const f = await dispatchFixture();
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { stepLog: { unreadable: true } },
+			});
+			expect(await createLiveChannelProcessor(f.deps)(f.job)).toMatchObject({
+				status: "EFFECT_AMBIGUOUS",
+			});
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(
+				f.encodingId,
+			);
+			expect(
+				await tenant.liveEffectClaim.findUniqueOrThrow({
+					where: { idempotencyKey: f.job.effect.idempotencyKey },
+				}),
+			).toMatchObject({
+				state: "AMBIGUOUS",
+				stopSendEncodingIds: [f.encodingId],
+			});
+			expect(
+				(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					})
+				).status,
+			).not.toBe("STOPPED");
+		});
+
+		it("binds only the current unresolved archived encoder for manual Stop under tenant isolation", async () => {
+			const f = await dispatchFixture(),
+				archive = randomUUID();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "ERROR", bitmovinEncodingId: null },
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: {
+					status: "ERROR",
+					bitmovinEncodingId: null,
+					previousProviderEncodingIds: [archive],
+				},
+			});
+			expect(
+				await bindArchivedStopTarget(otherTenant, f.channel.id),
+			).toBeNull();
+			expect(
+				await bindArchivedStopTarget(tenant, f.channel.id, randomUUID()),
+			).toBeNull();
+			expect(await bindArchivedStopTarget(tenant, f.channel.id, f.run.id)).toBe(
+				archive,
+			);
+			const job = {
+				...f.job,
+				effect: { ...f.job.effect, providerEncodingId: archive },
+			};
+			expect(await createLiveChannelProcessor(f.deps)(job)).toMatchObject({
+				status: "STOPPED",
+			});
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(archive);
+		});
+
+		it("retires an exhausted still-current RESTART after lease expiry without touching its provider", async () => {
+			const f = await fixture("PROVISIONING", null);
+			const expiresAt = new Date(now.getTime() + 60_000);
+			const effect = {
+				action: "RESTART" as const,
+				idempotencyKey: "restart:" + randomUUID(),
+				liveChannelRunId: f.run.id,
+				providerEncodingId: f.encodingId,
+				admissionFenceVersion: 0,
+			};
+			const admission = await beginLiveEffect(tenant, {
+				...effect,
+				liveChannelId: f.channel.id,
+				expectedFenceVersion: 0,
+				ownerId: "worker",
+				now,
+				expiresAt,
+			});
+			if (admission.kind !== "EXECUTE") throw new Error("not admitted");
+			const dead = {
+				data: { action: "restart", liveChannelId: f.channel.id, effect },
+				attemptsMade: 3,
+				opts: { attempts: 3 },
+			};
+			expect(
+				await recordFinalRestartFailure(tenant, dead, "worker lost", now),
+			).toBe(false);
+			const sweep = createExpiredRestartReconciler(tenant);
+			await sweep(now);
+			expect(
+				(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					})
+				).status,
+			).toBe("PROVISIONING");
+			await sweep(expiresAt);
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({ status: "ERROR", bitmovinEncodingId: f.encodingId });
+			expect(
+				await tenant.liveEffectClaim.findUniqueOrThrow({
+					where: { id: admission.claim.id },
+				}),
+			).toMatchObject({ state: "AMBIGUOUS", attempt: 1 });
+			expect(await sweep(expiresAt)).toBe(0);
+		});
+
+		it.each([
+			false,
+			true,
+		])("recovers only the original unreserved STOP targets after process death (primary was reserved: %s)", async (primarySent) => {
+			const f = await dispatchFixture(),
+				secondary = randomUUID();
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { previousProviderEncodingIds: [secondary] },
+			});
+			const old = await beginLiveEffect(tenant, {
+				...f.identity,
+				liveChannelId: f.channel.id,
+				idempotencyKey: f.job.effect.idempotencyKey,
+				expectedFenceVersion: 0,
+				supersedeOpen: true,
+				ownerId: "interrupted",
+				now,
+				expiresAt: new Date(now.getTime() + 1000),
+			});
+			if (old.kind !== "EXECUTE") throw new Error("not admitted");
+			if (primarySent)
+				expect(
+					await claimLiveStopSend(tenant, old.claim, f.encodingId, now),
+				).toBe(true);
+			vi.mocked(f.sdk.getEncodingStatus).mockImplementation(async (id) => ({
+				status:
+					(id === f.encodingId && primarySent) ||
+					vi
+						.mocked(f.sdk.stopLiveEncoding)
+						.mock.calls.some(([sent]) => sent === id)
+						? "FINISHED"
+						: "RUNNING",
+			}));
+			f.deps.now = () => new Date(now.getTime() + 2000).toISOString();
+			const process = createLiveChannelProcessor(f.deps);
+			const tick = createUncertainStopReconciler(f.deps, (job) => process(job));
+			for (let i = 0; i < 3; i++) await tick();
+			expect(
+				vi.mocked(f.sdk.stopLiveEncoding).mock.calls.map(([id]) => id),
+			).toEqual(primarySent ? [secondary] : [f.encodingId, secondary]);
+			expect(
+				await tenant.liveEffectClaim.findUniqueOrThrow({
+					where: { id: old.claim.id },
+				}),
+			).toMatchObject({ state: "ACKED", attempt: 2 });
+		});
+
+		it("supersedes during the real AISA binding GET, sends the first Analysis STOP and fences the old observation", async () => {
+			const f = await dispatchFixture(randomUUID()),
+				analysisId = randomUUID();
+			const snapshot = {
+				analysisId,
+				encodingId: f.encodingId,
+				isFinal: true,
+				sequence: 1,
+				producedAt: now.toISOString(),
+				mediaTimeOriginUnixMs: now.getTime(),
+				analyzedStartTimeSeconds: 0,
+				analyzedEndTimeSeconds: 60,
+				metadata: { version: "1", disclaimer: "Preview" },
+				observations: [],
+				keyMoments: [],
+				sourceGaps: [],
+			};
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { aisaAnalysisId: analysisId, aisaStatus: "RUNNING" },
+			});
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					plan: {
+						bitmovin: { accountId: f.accountId },
+						start: { aiSceneAnalysisLive: {} },
+					},
+				},
+			});
+			const first = barrier(),
+				release = barrier();
+			let intercept = true,
+				stopped = false;
+			const client = {
+				get: vi.fn(async () => {
+					const status = stopped ? "FINISHED" : "RUNNING";
+					if (intercept) {
+						intercept = false;
+						first.release();
+						await release.ready;
+					}
+					return { analysisId, encodingId: f.encodingId, status };
+				}),
+				stop: vi.fn(async () => {
+					stopped = true;
+				}),
+				latest: vi.fn(async () => snapshot),
+			};
+			provider.aisa.mockReturnValue(client);
+			f.deps.makeSdk = (options) => ({
+				...f.sdk,
+				...createAisaLiveOps(
+					{
+						options,
+						audited: (_method, _path, _body, fn) => fn(),
+					},
+					f.sdk,
+					f.sdk,
+				),
+			});
+			const schedule = await tenant.liveSchedule.create({
+				data: {
+					action: "STOP",
+					fireAt: lease,
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					status: "FIRED",
+				},
+			});
+			const process = createLiveChannelProcessor(f.deps);
+			const old = Promise.allSettled([
+				process({
+					...f.job,
+					effect: {
+						...f.job.effect,
+						idempotencyKey: "schedule:" + schedule.id + ":stop",
+						scheduleId: schedule.id,
+					},
+				}),
+			]);
+			try {
+				await reach(first.ready, old);
+				expect(await process(f.job)).toMatchObject({ status: "STOPPED" });
+			} finally {
+				release.release();
+				await old;
+			}
+			expect(client.stop).toHaveBeenCalledExactlyOnceWith(analysisId);
+			expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({
+				aisaStatus: "FINISHED",
+				aisaSnapshot: snapshot,
+				status: "STOPPED",
+			});
+			expect(
+				await tenant.liveEffectClaim.findMany({
+					where: { liveChannelRunId: f.run.id, stopAnalysisSendId: analysisId },
+				}),
+			).toHaveLength(1);
+		});
+
+		it("recovers complete managed AISA through readback alone after its final feeder exits", async () => {
+			const f = await dispatchFixture(randomUUID()),
+				analysisId = randomUUID();
+			const snapshot = {
+				analysisId,
+				encodingId: f.encodingId,
+				isFinal: true,
+				sequence: 1,
+				producedAt: now.toISOString(),
+				mediaTimeOriginUnixMs: now.getTime(),
+				analyzedStartTimeSeconds: 0,
+				analyzedEndTimeSeconds: 60,
+				metadata: { version: "1", disclaimer: "Preview" },
+				observations: [],
+				keyMoments: [],
+				sourceGaps: [],
+			};
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					plan: {
+						bitmovin: { accountId: f.accountId },
+						start: { aiSceneAnalysisLive: {} },
+					},
+				},
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: {
+					aisaAnalysisId: analysisId,
+					aisaStatus: "FINISHED",
+					aisaSnapshot: snapshot,
+				},
+			});
+			const stop = await beginLiveEffect(tenant, {
+				...f.identity,
+				liveChannelId: f.channel.id,
+				idempotencyKey: f.job.effect.idempotencyKey,
+				expectedFenceVersion: 0,
+				supersedeOpen: true,
+				ownerId: "owner",
+				now,
+				expiresAt: new Date(now.getTime() + 60000),
+			});
+			if (stop.kind !== "EXECUTE") throw new Error("not admitted");
+			const feeder = await tenant.feederSession.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					sourceCredentialId: randomUUID(),
+					sourceBucket: "fixture",
+					sourceKey: "fixture.mp4",
+					protocol: "RTMP",
+					target: {},
+					status: "PUSHING",
+				},
+			});
+			const error =
+				"stop did not confirm — feeder " +
+				feeder.id +
+				": stop was enqueued but publisher termination was not confirmed";
+			await recordLiveStopFailure(tenant, stop.claim, {
+				status: "STOPPED",
+				state: "AMBIGUOUS",
+				failure: error,
+				error,
+				at: now,
+				accountId: f.accountId,
+				requiredEncodingIds: [f.encodingId],
+				encodings: [{ id: f.encodingId, status: "FINISHED" }],
+			});
+			const tick = createUncertainStopReconciler(f.deps);
+			await tick();
+			expect(
+				(
+					await tenant.liveEffectClaim.findUniqueOrThrow({
+						where: { id: stop.claim.id },
+					})
+				).state,
+			).toBe("AMBIGUOUS");
+			await tenant.feederSession.update({
+				where: { id: feeder.id },
+				data: { status: "STOPPED", stoppedAt: now },
+			});
+			for (let i = 0; i < 3; i++) await tick();
+			expect(
+				await tenant.liveEffectClaim.findUniqueOrThrow({
+					where: { id: stop.claim.id },
+				}),
+			).toMatchObject({ state: "ACKED", attempt: 1 });
+			expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+			expect(f.sdk.stopAisaLiveAnalysis).not.toHaveBeenCalled();
+		});
 
 		it.each([
 			false,

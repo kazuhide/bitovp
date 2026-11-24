@@ -65,6 +65,7 @@ const liveEffectMocks = vi.hoisted(() => ({
 	begin: vi.fn(),
 	assertCurrent: vi.fn(),
 	claimStopSend: vi.fn(),
+	reserveAisa: vi.fn(),
 	bindTarget: vi.fn(),
 	markAcked: vi.fn(),
 	markAmbiguous: vi.fn(),
@@ -80,6 +81,7 @@ vi.mock("@bitovp/db", async (importOriginal) => {
 		beginLiveEffect: liveEffectMocks.begin,
 		assertLiveEffectCurrent: liveEffectMocks.assertCurrent,
 		claimLiveStopSend: liveEffectMocks.claimStopSend,
+		reserveAisaStop: liveEffectMocks.reserveAisa,
 		bindLiveEffectTarget: liveEffectMocks.bindTarget,
 		markLiveEffectAcked: liveEffectMocks.markAcked,
 		markLiveEffectAmbiguous: liveEffectMocks.markAmbiguous,
@@ -626,6 +628,7 @@ function setup(
 		),
 		create: vi.fn(async (args: { data: Record<string, unknown> }) => {
 			const created = {
+				stepLog: [],
 				id: `run-${runRows.length + 1}`,
 				seq: (args.data.seq as number) ?? runRows.length + 1,
 				status: (args.data.status as string) ?? "CREATED",
@@ -892,6 +895,7 @@ beforeEach(() => {
 		}),
 	);
 	liveEffectMocks.assertCurrent.mockResolvedValue(true);
+	liveEffectMocks.reserveAisa.mockResolvedValue("RESERVED");
 	liveEffectMocks.claimStopSend.mockResolvedValue(true);
 	liveEffectMocks.bindTarget.mockResolvedValue(true);
 	liveEffectMocks.markAcked.mockResolvedValue(true);
@@ -1748,6 +1752,9 @@ describe("live channel provisioning", () => {
 		input.resourceId = "bm-stale-rtmp"; // ≠ the account's "bm-rtmp-default"
 		encoding.status = "DONE";
 		encoding.resourceId = "bm-stale-enc";
+		vi.mocked(sdk.getEncodingStatus).mockResolvedValueOnce({
+			status: "CREATED",
+		});
 		await process({ liveChannelId: CHANNEL_ID });
 		// Re-resolved, found stale → the DONE encoding is rebuilt, not reused…
 		expect(sdk.createEncoding).toHaveBeenCalled();
@@ -1764,6 +1771,29 @@ describe("live channel provisioning", () => {
 			(e) => e.kind === "CREATE_INPUT_RTMP",
 		);
 		expect(rebuiltInput?.resourceId).toBe("bm-rtmp-default");
+	});
+
+	it("retains an active displaced RTMP encoder and makes it stoppable before rebuilding", async () => {
+		const { process, row, sdk, runRows } = setup({ status: "PROVISIONING" });
+		const entries = row.stepLog as StepLogEntry[];
+		const input = entries.find((e) => e.kind === "CREATE_INPUT_RTMP"),
+			encoder = entries.find((e) => e.kind === "CREATE_ENCODING");
+		if (!input || !encoder) throw new Error("missing steps");
+		Object.assign(input, { status: "DONE", resourceId: "old-input" });
+		Object.assign(encoder, { status: "DONE", resourceId: "billing-encoder" });
+		await expect(process({ liveChannelId: CHANNEL_ID })).rejects.toThrow(
+			"billing-encoder",
+		);
+		expect(sdk.createEncoding).not.toHaveBeenCalled();
+		expect(row).toMatchObject({
+			status: "ERROR",
+			bitmovinEncodingId: "billing-encoder",
+			provisionClaimedAt: null,
+		});
+		expect(runRows[0]).toMatchObject({
+			status: "ERROR",
+			bitmovinEncodingId: "billing-encoder",
+		});
 	});
 
 	it("provision stamps as the CHANNEL — window opens only for the crash-leftover step", async () => {
@@ -1899,6 +1929,9 @@ describe("live channel provisioning", () => {
 		encoding.resourceId = "bm-stale-enc";
 		encoding.startedAt = "2026-06-11T23:58:00.000Z";
 		encoding.finishedAt = "2026-06-11T23:59:00.000Z";
+		vi.mocked(harness.sdk.getEncodingStatus).mockResolvedValueOnce({
+			status: "CREATED",
+		});
 		await harness.process({ liveChannelId: CHANNEL_ID });
 		// The rebuilt steps stamped with the BUMPED generation…
 		const gen1 = seen.filter(({ step }) => step.endsWith("#1"));
@@ -1992,6 +2025,9 @@ describe("live channel provisioning", () => {
 					}) as StepLogEntry,
 			),
 		);
+		vi.mocked(sdk.getEncodingStatus).mockResolvedValueOnce({
+			status: "CREATED",
+		});
 		await process({ liveChannelId: CHANNEL_ID });
 		// The channel provisions instead of wedging.
 		expect(row.status).toBe("RUNNING");
@@ -2220,6 +2256,13 @@ describe("live channel actions", () => {
 			aisaAnalysisId: analysisId,
 			aisaStatus: "RUNNING",
 			aisaSnapshot: null,
+		});
+		h.deps.makeSdk = (options) => ({
+			...h.sdk,
+			stopLiveEncoding: async (id) => {
+				await options.aisaLive?.reserveStop?.("analysis", analysisId);
+				await h.sdk.stopLiveEncoding(id);
+			},
 		});
 		let attempt = 0;
 		h.sdk.stopLiveEncoding = vi.fn(async () => {
@@ -2596,6 +2639,31 @@ describe("live channel actions", () => {
 		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
 		expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("other");
 		expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("bm-live-enc");
+	});
+	it("sends an archived encoder its first STOP even after the primary response is lost", async () => {
+		const h = setup(runningRow, {
+			stopLiveEncoding: vi.fn(async (id) => {
+				if (id === "bm-live-enc") throw new Error("lost reply");
+			}),
+			getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })),
+		});
+		Object.assign(requiredFixtureRun(h), {
+			previousProviderEncodingIds: ["displaced"],
+		});
+		expect(
+			await h.process({ liveChannelId: CHANNEL_ID, action: "stop" }),
+		).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
+		expect(vi.mocked(h.sdk.stopLiveEncoding).mock.calls).toEqual([
+			["bm-live-enc"],
+			["displaced"],
+		]);
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({
+				encodings: [{ id: "displaced", status: "FINISHED" }],
+			}),
+		);
 	});
 	it("stops a run-log-only encoder and checks the failed restart's historical target without sending it STOP", async () => {
 		const statuses: Record<string, string> = {

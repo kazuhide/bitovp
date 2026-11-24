@@ -475,6 +475,7 @@ function ChannelConsole({
 						cancelRequested={run?.cancelRequested}
 						managedAisa={aisaRow}
 						providerTerminal={providerTerminal}
+						canRecoverArchivedStop={row.canRecoverArchivedStop}
 						canRetryAisaFinalization={row.canRetryAisaFinalization}
 						hasError={row.error != null}
 					>

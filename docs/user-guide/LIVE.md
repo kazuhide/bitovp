@@ -307,7 +307,7 @@ progression ending. Deleting a local row does not by itself establish cloud clea
 
 During the original stop request, a transport failure can cause up to three
 send attempts. After an uncertain response or rate limit, the periodic check
-only reads encoder status. Each worker starts a pass about once a minute and
+reads encoder status for every previously attempted STOP. If the worker died before sending to an encoder, a positive send journal and an active provider readback allow the replacement to finish that original request. Each worker starts a pass about once a minute and
 examines up to four stop records per organization per pass, rotating through longer lists.
 
 For ordinary Live, automatic confirmation requires terminal provider evidence
@@ -319,8 +319,7 @@ claim expires. If the stopped broadcast already has a terminal provider
 receipt, the replacement can finish recording the outcome from that receipt.
 An older broadcast without a stored encoder ID needs its own encoder-creation
 receipt. A change to the account's RTMP input can replace the encoder within
-one broadcast. The worker records the displaced IDs before rebuilding and
-checks each one. If a rebuild predates this recording and the original ID is
+one broadcast. The worker retains the current encoder until its account reports termination or reports CREATED while its startup record proves START was never attempted. A running encoder with a completed start stays on its original input. If startup is uncertain, use Stop on the retained encoder before rebuilding. Older recorded encoders with a missing primary ID can also be stopped from the channel actions. If a rebuild predates this recording and the original ID is
 missing, automatic confirmation stays pending. Check the account's active
 encodings with the operator before re-air.
 
@@ -339,6 +338,8 @@ can finish delivery after the channel is deleted. Five recorded failures end
 delivery. A destination can receive the event again after a retry or worker restart.
 For stops already in progress during upgrade, prior delivery can be unknown.
 In that case recovery records the uncertainty and skips a replacement notification.
+
+If managed AISA already has a final result and a terminal encoder, the worker can finish stop confirmation after the last feeder exits. A RESTART that loses its worker returns an error after its ownership period expires. Check the provider or use Stop on the same encoder.
 
 A START error can leave the provider state uncertain. Startup cancellation
 prevents further START retries once the worker observes it. If a request is

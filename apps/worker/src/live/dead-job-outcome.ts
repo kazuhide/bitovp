@@ -1,4 +1,8 @@
-import { liveChannelJobSchema, redactSecrets } from "@bitovp/core";
+import {
+	type LiveEffectIntent,
+	liveChannelJobSchema,
+	redactSecrets,
+} from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { feederLeaseIsFresh } from "../feeder/ownership";
 import { HEARTBEAT_SWEEP_JOB } from "../handlers";
@@ -119,6 +123,74 @@ export async function recordFinalRestartFailure(
 	)
 		return false;
 	const { liveChannelId, effect } = parsed.data;
+	return retireRestartAdmission(
+		prisma,
+		liveChannelId,
+		effect,
+		message,
+		at,
+		emitEvent,
+	);
+}
+
+/** A queue callback can run before its worker lease expires. Expiry fences
+ * provider work; retire only the same still-unowned provisioning projection. */
+export function createExpiredRestartReconciler(
+	prisma: AppPrismaClient,
+	emitEvent?: EmitProductEvent,
+) {
+	let after: string | undefined;
+	return async (at = new Date()) => {
+		const claims = await prisma.liveEffectClaim.findMany({
+			where: {
+				action: "RESTART",
+				state: "DISPATCHING",
+				expiresAt: { lte: at },
+				liveChannel: { status: "PROVISIONING", provisionClaimedAt: null },
+				...(after ? { id: { gt: after } } : {}),
+			},
+			orderBy: { id: "asc" },
+			take: 4,
+		});
+		after = claims.length === 4 ? claims.at(-1)?.id : undefined;
+		let retired = 0;
+		for (const claim of claims)
+			if (
+				await retireRestartAdmission(
+					prisma,
+					claim.liveChannelId,
+					{
+						liveChannelRunId: claim.liveChannelRunId,
+						providerEncodingId: claim.providerEncodingId,
+						idempotencyKey: claim.idempotencyKey,
+						admissionFenceVersion: claim.generation,
+					},
+					"Restart worker expired without a confirmed provider result. Check the encoder or use Stop.",
+					at,
+					emitEvent,
+					claim.id,
+				)
+			)
+				retired++;
+		return retired;
+	};
+}
+
+async function retireRestartAdmission(
+	prisma: AppPrismaClient,
+	liveChannelId: string,
+	effect: Pick<
+		LiveEffectIntent,
+		| "liveChannelRunId"
+		| "providerEncodingId"
+		| "idempotencyKey"
+		| "admissionFenceVersion"
+	>,
+	message: string,
+	at: Date,
+	emitEvent?: EmitProductEvent,
+	expiredClaimId?: string,
+) {
 	const error = redactSecrets(message);
 	const projected = await prisma.$transaction(async (tx) => {
 		// Lock in the same order as STOP admission and re-air. A run can change
@@ -141,6 +213,14 @@ export async function recordFinalRestartFailure(
 		const claim = await tx.liveEffectClaim.findUnique({
 			where: { idempotencyKey: effect.idempotencyKey },
 		});
+		if (
+			expiredClaimId &&
+			(claim?.id !== expiredClaimId ||
+				claim.generation !== effect.admissionFenceVersion ||
+				claim.state !== "DISPATCHING" ||
+				claim.expiresAt > at)
+		)
+			return false;
 		if (claim) {
 			const canRetire =
 				claim.state === "FAILED" ||
@@ -169,6 +249,21 @@ export async function recordFinalRestartFailure(
 			data: { status: "ERROR", error },
 		});
 		if (projected.count !== 1) return false;
+		if (claim?.state === "DISPATCHING") {
+			const stopped = await tx.liveEffectClaim.updateMany({
+				where: {
+					id: claim.id,
+					token: claim.token,
+					state: "DISPATCHING",
+					expiresAt: { lte: at },
+				},
+				data: { state: "AMBIGUOUS", failure: error },
+			});
+			if (stopped.count !== 1)
+				throw new Error(
+					"RESTART ownership changed while retiring its expired worker",
+				);
+		}
 		// RUNNING describes a possibly billing encoder; keep that historical
 		// state unless this run really remained in its startup transition.
 		const retired = await tx.liveChannelRun.updateMany({

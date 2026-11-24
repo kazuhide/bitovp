@@ -1,6 +1,8 @@
 import {
+	aisaLiveFinalization,
 	classifyProviderStatusWord,
 	isAisaManagedLivePlan,
+	type LiveChannelJob,
 } from "@bitovp/core";
 import {
 	canObserveLiveStop,
@@ -10,6 +12,7 @@ import {
 	type ResolveLiveEffectsAfterConfirmedStopInput,
 	resolveLiveEffectsAfterConfirmedStop,
 	savedStopReadbacks,
+	unreservedStopTargets,
 } from "@bitovp/db";
 import { HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS } from "../heartbeat-cadence";
 import type { LiveChannelDeps } from "../orchestrator/live-processor";
@@ -20,7 +23,10 @@ type Dependencies = Pick<
 >;
 
 /** Revisit durable STOP claims after a worker has exhausted its inline readbacks. */
-export function createUncertainStopReconciler(deps: Dependencies) {
+export function createUncertainStopReconciler(
+	deps: Dependencies,
+	resumeUnsent?: (job: LiveChannelJob) => Promise<unknown>,
+) {
 	const pageSize = 4;
 	let after: string | undefined;
 	let scanning = false;
@@ -49,6 +55,7 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 				select: {
 					id: true,
 					idempotencyKey: true,
+					scheduleId: true,
 					liveChannelId: true,
 					liveChannelRunId: true,
 					providerEncodingId: true,
@@ -76,6 +83,8 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 									id: true,
 									stepLog: true,
 									previousProviderEncodingIds: true,
+									archivedRtmpAttempt: true,
+									rtmpRetirementEvidence: true,
 									status: true,
 									error: true,
 									providerStatus: true,
@@ -83,6 +92,9 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 									providerStatusObservedAt: true,
 									bitmovinEncodingId: true,
 									aisaAnalysisId: true,
+									aisaStatus: true,
+									aisaSnapshot: true,
+									aisaFinalization: true,
 								},
 							},
 						},
@@ -100,8 +112,8 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 					run?.id !== claim.liveChannelRunId ||
 					!liveStopRunOwnsEncoding(run, claim.providerEncodingId) ||
 					channel.origin !== "MANAGED" ||
-					run.aisaAnalysisId ||
-					isAisaManagedLivePlan(channel.plan)
+					((run.aisaAnalysisId || isAisaManagedLivePlan(channel.plan)) &&
+						aisaLiveFinalization(run) !== "COMPLETE")
 				)
 					continue;
 				const identity = {
@@ -122,6 +134,7 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 						},
 						select: {
 							action: true,
+							state: true,
 							providerEncodingId: true,
 							failure: true,
 							stopProtocolVersion: true,
@@ -129,7 +142,12 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 							stopOutcomeEvidence: true,
 						},
 					});
-					const targets = liveStopKnownTargets(run, channel, history);
+					const targets = liveStopKnownTargets(
+						run,
+						channel,
+						history,
+						liveChannelAccountId(channel),
+					);
 					if (!targets) continue;
 					const clean =
 						channel.status === "STOPPED" &&
@@ -159,12 +177,41 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 							]),
 						);
 						const encodings: { id: string; status: string }[] = [];
+						const unsent =
+							resumeUnsent &&
+							claim.stopProtocolVersion === 1 &&
+							claim.expiresAt <= at
+								? unreservedStopTargets(run, channel, history)
+								: [];
+						let needsFirstStop = false;
 						for (const id of targets) {
 							const status =
 								(id !== claim.providerEncodingId && prior.get(id)) ||
 								(await sdk.getEncodingStatus(id)).status;
 							if (classifyProviderStatusWord(status) === "TERMINAL")
 								encodings.push({ id, status });
+							else if (
+								unsent.includes(id) &&
+								["RUNNING", "QUEUED", "CREATED"].includes(status)
+							)
+								needsFirstStop = true;
+						}
+						if (needsFirstStop && resumeUnsent) {
+							// Re-enter the original exact intent. beginLiveEffect fences owner
+							// takeover; the per-ID journal suppresses every prior reservation.
+							await resumeUnsent({
+								liveChannelId: claim.liveChannelId,
+								action: "stop",
+								effect: {
+									action: "STOP",
+									idempotencyKey: claim.idempotencyKey,
+									admissionFenceVersion: claim.generation,
+									liveChannelRunId: run.id,
+									providerEncodingId: claim.providerEncodingId,
+									...(claim.scheduleId ? { scheduleId: claim.scheduleId } : {}),
+								},
+							});
+							continue;
 						}
 						const primary = encodings.find(
 							(r) => r.id === claim.providerEncodingId,

@@ -24,7 +24,11 @@ import {
 	stepLogSchema,
 } from "@bitovp/core";
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
-import { DB_NULL } from "@bitovp/db";
+import {
+	archivedStopRecoveryTarget,
+	bindArchivedStopTarget,
+	DB_NULL,
+} from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -1115,6 +1119,26 @@ export async function POST(req: Request, { params }: RouteParams) {
 			}
 			case "retry-finalization":
 			case "stop": {
+				let recoveredTarget: string | null = null;
+				if (
+					action.action === "stop" &&
+					(!row.bitmovinEncodingId || row.status === "STOPPING") &&
+					!aisaManaged &&
+					["ERROR", "STOPPED", "STOPPING"].includes(row.status)
+				) {
+					const candidate = await ctx.prisma.liveChannelRun.findFirst({
+						where: { liveChannelId: id },
+						orderBy: { seq: "desc" },
+					});
+					if (candidate && archivedStopRecoveryTarget(row, candidate)) {
+						recoveredTarget = await bindArchivedStopTarget(
+							ctx.prisma,
+							id,
+							candidate.id,
+						);
+						if (recoveredTarget) row.bitmovinEncodingId = recoveredTarget;
+					}
+				}
 				if (!row.bitmovinEncodingId) {
 					return codedError(
 						409,
@@ -1165,7 +1189,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 					allowAisaRecovery,
 					allowExpiredAisaDispatch: finalizationTarget !== undefined,
 				};
-				if (row.status === "STOPPING") {
+				if (row.status === "STOPPING" && !recoveredTarget) {
 					const replayPlan = await effectPlan(
 						ctx.prisma,
 						id,
@@ -1215,7 +1239,8 @@ export async function POST(req: Request, { params }: RouteParams) {
 				if (
 					row.status !== "RUNNING" &&
 					row.status !== "ERROR" &&
-					!retryingUnconfirmedStop
+					!retryingUnconfirmedStop &&
+					!recoveredTarget
 				) {
 					return codedError(
 						409,

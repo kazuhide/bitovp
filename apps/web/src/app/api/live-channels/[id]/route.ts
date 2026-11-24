@@ -9,6 +9,7 @@ import {
 	programEndBeyondRunWindow,
 	stepLogSchema,
 } from "@bitovp/core";
+import { archivedStopRecoveryTarget } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { ACTOR_HEADER } from "@/lib/auth/api-token-gate";
@@ -85,6 +86,9 @@ export async function GET(req: Request, { params }: RouteParams) {
 						status: true,
 						cancelRequested: true,
 						bitmovinEncodingId: true,
+						previousProviderEncodingIds: true,
+						archivedRtmpAttempt: true,
+						rtmpRetirementEvidence: true,
 						aisaAnalysisId: true,
 						aisaStatus: true,
 						aisaSnapshot: true,
@@ -163,10 +167,19 @@ export async function GET(req: Request, { params }: RouteParams) {
 		const technicalDetailsAllowed =
 			actor === "session" ||
 			(roleResolvedPrincipal && req.headers.get(ROLE_HEADER) === "ADMIN");
-		const { aisaFinalization: _finalization, ...runFields } = currentRun ?? {
+		const {
+			aisaFinalization: _finalization,
+			previousProviderEncodingIds: _previous,
+			archivedRtmpAttempt: _attempt,
+			rtmpRetirementEvidence: _evidence,
+			...runFields
+		} = currentRun ?? {
 			stepLog: null,
 			error: null,
 			aisaFinalization: null,
+			previousProviderEncodingIds: [],
+			archivedRtmpAttempt: 0,
+			rtmpRetirementEvidence: null,
 		};
 		const currentRunView = currentRun
 			? {
@@ -206,6 +219,9 @@ export async function GET(req: Request, { params }: RouteParams) {
 				liveToVod: liveToVodForRole(channel.liveToVod, technicalDetailsAllowed),
 				liveToVodFamilies,
 				currentRun: currentRunView,
+				...(archivedStopRecoveryTarget(channel, currentRun)
+					? { canRecoverArchivedStop: true }
+					: {}),
 				heartbeatReception,
 				technicalDetailsAllowed,
 				playbackLinks: planForLinks

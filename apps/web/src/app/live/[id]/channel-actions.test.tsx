@@ -82,6 +82,20 @@ describe("ChannelDangerZone — delete", () => {
 });
 
 describe("ChannelLifecycleActions — restart is only offered where it can work (ledger #107)", () => {
+	it("offers Stop for a stranded archived encoder even before its primary pointer is restored", () => {
+		wrap(
+			<ChannelLifecycleActions
+				channelId={CHANNEL_ID}
+				runId={RUN_ID}
+				status="ERROR"
+				hasEncoding={false}
+				hasError
+				canRecoverArchivedStop
+			/>,
+		);
+		expect(screen.getByRole("button", { name: "Stop channel" })).toBeEnabled();
+		expect(screen.queryByRole("button", { name: /restart/i })).toBeNull();
+	});
 	it("groups the re-air and copy buttons without successful preview or pricing banners", async () => {
 		apiFetch.mockImplementation(async (input: string) =>
 			input.startsWith("/api/live-channels/moq-readiness?")

@@ -54,7 +54,7 @@ const paths = (groups) =>
 		Object.keys(group.files).map((file) => join(group.directory, file)),
 	);
 
-const EXPECTED_PLAIN_WORKER_SKIPS = 144;
+const EXPECTED_PLAIN_WORKER_SKIPS = 169;
 
 test("the required Redis run registers the cross-worker/Web clip availability matrix", () => {
 	assert.deepEqual(REDIS.availability, {
@@ -191,7 +191,7 @@ test("a plain run may skip the tests that another job runs", () => {
 		// Includes six favorite-registry, two still-image, two archive/restore and
 		// one WebM recovery case, plus three LOCAL QC cancellation cases and the
 		// retained export, generation history and export re-edit cases.
-		["@bitovp/web", 129],
+		["@bitovp/web", 139],
 	])
 		assert.deepEqual(skipProblems(plainRun(workspace), workspace, root), {
 			problems: [],

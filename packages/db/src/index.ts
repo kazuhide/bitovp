@@ -106,6 +106,7 @@ export {
 	markLiveEffectAmbiguous,
 	markLiveEffectFailed,
 	mergeRtmpRetirementEvidence,
+	outstandingLiveStopTargets,
 	pendingSecondaryStopTargets,
 	readAiringEffectHistory,
 	recordLiveStopFailure,

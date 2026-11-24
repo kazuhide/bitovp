@@ -293,7 +293,7 @@ export function createProviderLifecycleReconciler(deps: {
 		return count === 1;
 	}
 
-	type TerminalRun = Pick<
+	type TerminalRun = { liveChannelId: string; seq: number } & Pick<
 		RunLifecycleRow,
 		| "id"
 		| "bitmovinEncodingId"
@@ -308,19 +308,37 @@ export function createProviderLifecycleReconciler(deps: {
 	 */
 	async function enqueueTerminalFeederStops(
 		run: TerminalRun,
+		legacyOnly = false,
 	): Promise<boolean> {
 		const terminalAt = run.providerTerminalAt;
 		const encodingId = run.bitmovinEncodingId;
 		if (
 			terminalAt === null ||
 			encodingId === null ||
-			run.providerFeederStopsEnqueuedAt !== null
+			(!legacyOnly && run.providerFeederStopsEnqueuedAt !== null)
 		) {
 			return false;
 		}
 		const feeders = await deps.prisma.feederSession.findMany({
 			where: {
-				liveChannelRunId: run.id,
+				AND: [
+					{
+						OR: [
+							...(!legacyOnly ? [{ liveChannelRunId: run.id }] : []),
+							// Legacy publishers have no run pointer. Only the current
+							// terminal airing may shut them down, never a predecessor.
+							{
+								liveChannelRunId: null,
+								liveChannel: {
+									id: run.liveChannelId,
+									bitmovinEncodingId: encodingId,
+									status: { in: ["STOPPED", "ERROR"] },
+									runs: { none: { seq: { gt: run.seq } } },
+								},
+							},
+						],
+					},
+				],
 				OR: [
 					// LC-02: a terminal row may keep the publisher claim even
 					// after its pid pointer is lost. Provider terminalisation must
@@ -350,6 +368,7 @@ export function createProviderLifecycleReconciler(deps: {
 			}
 		}
 		if (failed) return false;
+		if (legacyOnly) return true;
 		const at = new Date(deps.now());
 		const { count } = await deps.prisma.liveChannelRun.updateMany({
 			where: {
@@ -363,30 +382,74 @@ export function createProviderLifecycleReconciler(deps: {
 		return count === 1;
 	}
 
+	let legacyFeederAfter: string | undefined;
 	/** Retry terminal feeder-stop intents even after the channel left RUNNING. */
 	async function retryPendingTerminalFeederStops(): Promise<{
 		pending: number;
 		completed: number;
 		failed: number;
 	}> {
+		const select = {
+			id: true,
+			seq: true,
+			liveChannelId: true,
+			bitmovinEncodingId: true,
+			providerTerminalAt: true,
+			providerFeederStopsEnqueuedAt: true,
+		} as const;
 		const pendingRuns = await deps.prisma.liveChannelRun.findMany({
 			where: {
 				providerTerminalAt: { not: null },
 				providerFeederStopsEnqueuedAt: null,
 			},
+			select,
+			take: 100,
+		});
+		// Pre-upgrade workers could seal the run-bound set while missing a
+		// legacy, unbound publisher. Scan occupied channels, never all airings.
+		const orphanChannels = await deps.prisma.liveChannel.findMany({
+			where: {
+				status: { in: ["ERROR", "STOPPED"] },
+				...(legacyFeederAfter ? { id: { gt: legacyFeederAfter } } : {}),
+				feederSessions: {
+					some: {
+						liveChannelRunId: null,
+						OR: [
+							feederOccupancyWhere(),
+							{ status: { in: [...FEEDER_ACTIVE_STATUSES] } },
+						],
+					},
+				},
+			},
+			orderBy: { id: "asc" },
+			take: 100,
 			select: {
 				id: true,
 				bitmovinEncodingId: true,
-				providerTerminalAt: true,
-				providerFeederStopsEnqueuedAt: true,
+				runs: { orderBy: { seq: "desc" }, take: 1, select },
 			},
-			take: 100,
+		});
+		legacyFeederAfter =
+			orphanChannels.length === 100 ? orphanChannels.at(-1)?.id : undefined;
+		const legacyRuns = orphanChannels.flatMap((c) => {
+			const run = c.runs[0];
+			return run?.providerTerminalAt &&
+				run.providerFeederStopsEnqueuedAt &&
+				c.bitmovinEncodingId === run.bitmovinEncodingId
+				? [run]
+				: [];
 		});
 		let completed = 0;
 		let failed = 0;
-		for (const pendingRun of pendingRuns) {
+		for (const pendingRun of [...pendingRuns, ...legacyRuns]) {
 			try {
-				if (await enqueueTerminalFeederStops(pendingRun)) completed += 1;
+				if (
+					await enqueueTerminalFeederStops(
+						pendingRun,
+						!!pendingRun.providerFeederStopsEnqueuedAt,
+					)
+				)
+					completed += 1;
 				else failed += 1;
 			} catch (err) {
 				failed += 1;
@@ -396,7 +459,11 @@ export function createProviderLifecycleReconciler(deps: {
 				);
 			}
 		}
-		return { pending: pendingRuns.length, completed, failed };
+		return {
+			pending: pendingRuns.length + legacyRuns.length,
+			completed,
+			failed,
+		};
 	}
 
 	/** One readback of the encoding's own status. Never throws. */
@@ -651,7 +718,7 @@ export function createProviderLifecycleReconciler(deps: {
 					runLanded = runWrite.count === 1;
 					if (!runLanded) return;
 				}
-				let polledChannelName: string | undefined;
+				let currentChannelName: string | undefined;
 				let notificationEligible = false;
 				if (args.pollEpoch !== undefined) {
 					// A cached terminal repair skipped the run CAS above. Keep its
@@ -690,7 +757,6 @@ export function createProviderLifecycleReconciler(deps: {
 						select: { name: true },
 					});
 					if (!canProject) throw new PollChannelUnavailableError();
-					polledChannelName = canProject.name;
 				}
 				// New archive entries must invalidate an in-flight primary-only observation.
 				// When history exists, both the current account and every terminal receipt
@@ -699,7 +765,7 @@ export function createProviderLifecycleReconciler(deps: {
 					!!args.run.previousProviderEncodingIds?.length ||
 					!!args.run.archivedRtmpAttempt ||
 					args.displaced.receipts.length > 0;
-				if (archived || args.pollEpoch !== undefined) {
+				{
 					const current = await tx.liveChannelRun.findFirst({
 						where: { id: args.run.id, liveChannelId: args.channelId },
 						select: {
@@ -713,6 +779,12 @@ export function createProviderLifecycleReconciler(deps: {
 							rtmpRetirementEvidence: true,
 							liveChannel: {
 								select: {
+									name: true,
+									runs: {
+										orderBy: { seq: "desc" },
+										take: 1,
+										select: { id: true },
+									},
 									stepLog: true,
 									bitmovinAccountId: true,
 									bitmovinEncodingId: true,
@@ -722,39 +794,51 @@ export function createProviderLifecycleReconciler(deps: {
 							},
 						},
 					});
-					const history =
-						args.pollEpoch === undefined
-							? []
-							: await readAiringEffectHistory(tx, args.channelId, args.run.id);
-					if (current && args.pollEpoch !== undefined) {
-						if (
-							liveChannelAccountId(current.liveChannel) !==
-							args.displaced.accountId
-						)
+					const history = await readAiringEffectHistory(
+						tx,
+						args.channelId,
+						args.run.id,
+					);
+					const owner = current?.liveChannel;
+					if (!owner) throw new RunningCommitFenceLostError();
+					const exact =
+						owner.bitmovinEncodingId === args.encodingId &&
+						owner.runs[0]?.id === args.run.id;
+					if (exact) {
+						if (liveChannelAccountId(owner) !== args.displaced.accountId)
 							throw new RunningCommitFenceLostError();
+						currentChannelName = owner.name;
 						notificationEligible = stopNotificationHistoryEligible(
 							history,
-							current.liveChannel,
+							owner,
 							current,
 							status,
 						);
 					}
-					const write =
-						current &&
-						displacedRetirementWrite(
-							current,
-							current.liveChannel,
-							args.displaced,
-							args.pollEpoch !== undefined
-								? { primary: args.encodingId, history }
-								: undefined,
-						);
+					const write = displacedRetirementWrite(
+						current,
+						exact
+							? owner
+							: {
+									...owner,
+									bitmovinEncodingId: null,
+									error: null,
+									stepLog: [],
+								},
+						args.displaced,
+						{ primary: args.encodingId, history },
+					);
 					if (!write) throw new RunningCommitFenceLostError();
 					if (write.rtmpRetirementEvidence)
 						await tx.liveChannelRun.updateMany({
 							where: { id: args.run.id, liveChannelId: args.channelId },
 							data: write,
 						});
+					if (!exact) {
+						if (args.restartClaim || args.pollEpoch !== undefined)
+							throw new RunningCommitFenceLostError();
+						return;
+					}
 				}
 				args.signal?.throwIfAborted();
 				const channelWrite = await tx.liveChannel.updateMany({
@@ -794,26 +878,24 @@ export function createProviderLifecycleReconciler(deps: {
 				});
 				args.signal?.throwIfAborted();
 				channelLanded = channelWrite.count === 1;
-				if (
-					channelLanded &&
-					status === "STOPPED" &&
-					polledChannelName !== undefined
-				) {
+				if (channelLanded && currentChannelName !== undefined) {
 					const occupied = await tx.feederSession.findMany({
 						where: liveStopFeederWhere(args.channelId),
 						select: { id: true },
 					});
 					if (occupied.length) throw new TerminalFeedersPending(occupied);
-					await recordConfirmedStopDelivery(tx, {
-						liveChannelId: args.channelId,
-						liveChannelRunId: args.run.id,
-						scheduleIds: [],
-						channelName: polledChannelName,
-						notificationEligible,
-						status,
-						at: args.observedAt,
-					});
-					durableNotification = true;
+					if (status === "STOPPED") {
+						await recordConfirmedStopDelivery(tx, {
+							liveChannelId: args.channelId,
+							liveChannelRunId: args.run.id,
+							scheduleIds: [],
+							channelName: currentChannelName,
+							notificationEligible,
+							status,
+							at: args.observedAt,
+						});
+						durableNotification = true;
+					}
 				}
 				if ((args.restartClaim || archived) && !channelLanded)
 					throw new RunningCommitFenceLostError();
@@ -937,24 +1019,26 @@ export function createProviderLifecycleReconciler(deps: {
 		}
 		const displacedPending =
 			"Displaced RTMP encoder retirement is not yet confirmed for this broadcast";
+		const currentChannel =
+			!channel.bitmovinEncodingId || channel.bitmovinEncodingId === encodingId
+				? channel
+				: { ...channel, stepLog: [], error: null, bitmovinEncodingId: null };
 		const observeDisplaced = async () =>
 			readDisplacedEncoders(
 				run,
-				channel,
+				currentChannel,
 				liveChannelAccountId(channel),
 				sdk,
 				deps.now,
 				args.signal,
-				args.fence
-					? {
-							primary: encodingId,
-							history: await readAiringEffectHistory(
-								deps.prisma,
-								channel.id,
-								run.id,
-							),
-						}
-					: undefined,
+				{
+					primary: encodingId,
+					history: await readAiringEffectHistory(
+						deps.prisma,
+						channel.id,
+						run.id,
+					),
+				},
 			);
 		if (
 			deriveProviderLifecycle(run, new Date(observedAt).getTime()) ===
@@ -992,7 +1076,10 @@ export function createProviderLifecycleReconciler(deps: {
 					!run.archivedRtmpAttempt) ||
 					repaired.runLanded)
 			) {
-				await enqueueTerminalFeederStops(run).catch((err) => {
+				await enqueueTerminalFeederStops({
+					...run,
+					liveChannelId: channel.id,
+				}).catch((err) => {
 					console.error(
 						`[live-channel] persisted-terminal feeder-stop attempt for run ${run.id} failed:`,
 						err instanceof Error ? err.message : err,
@@ -1140,6 +1227,8 @@ export function createProviderLifecycleReconciler(deps: {
 		// lifecycle sweep retries it even after this channel has moved to ERROR.
 		await enqueueTerminalFeederStops({
 			id: run.id,
+			seq: run.seq,
+			liveChannelId: channel.id,
 			bitmovinEncodingId: encodingId,
 			providerTerminalAt: now,
 			providerFeederStopsEnqueuedAt: null,

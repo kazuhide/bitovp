@@ -177,19 +177,24 @@ function setup(
 			// limitation).
 			where.id === row.id ? (structuredClone(row) as Row) : null,
 		),
-		findMany: vi.fn(async () => [
-			{
-				id: row.id,
-				purpose: (row.purpose as string | null | undefined) ?? null,
-				updatedAt: new Date("2026-06-11T23:59:30.000Z"),
-				// /review-223 F10: the sweep's own read carries the
-				// program window to the alert engine.
-				programStartAt:
-					(rowOverrides.programStartAt as Date | null | undefined) ?? null,
-				programEndAt:
-					(rowOverrides.programEndAt as Date | null | undefined) ?? null,
-			},
-		]),
+		findMany: vi.fn(async (args?: { where?: { feederSessions?: unknown } }) =>
+			args?.where?.feederSessions
+				? []
+				: [
+						{
+							id: row.id,
+							purpose: (row.purpose as string | null | undefined) ?? null,
+							updatedAt: new Date("2026-06-11T23:59:30.000Z"),
+							// /review-223 F10: the sweep's own read carries the
+							// program window to the alert engine.
+							programStartAt:
+								(rowOverrides.programStartAt as Date | null | undefined) ??
+								null,
+							programEndAt:
+								(rowOverrides.programEndAt as Date | null | undefined) ?? null,
+						},
+					],
+		),
 		update: vi.fn(async ({ data }: { data: Row }) => {
 			// CLONE at push time: persist hands the SAME entries array on
 			// every call, so pushing the reference makes every "snapshot"
@@ -549,7 +554,14 @@ function setup(
 					? pool.find((r) => r.id === args.where?.id)
 					: pool.at(-1);
 				if (selected && args?.select?.liveChannel)
-					return { ...selected, liveChannel: structuredClone(row) };
+					return {
+						...selected,
+						liveChannel: {
+							name: "Fixture channel",
+							...structuredClone(row),
+							runs: runRows.slice(-1).map((r) => ({ id: r.id })),
+						},
+					};
 				return selected ?? null;
 			},
 		),
@@ -1616,9 +1628,16 @@ describe("live channel provisioning", () => {
 			status: "STOPPED",
 			providerStatus: "CANCELED",
 		});
-		expect(h.deps.emitEvent).toHaveBeenCalledWith(
+		expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "CHANNEL_STOPPED" }),
 		);
+		expect(h.deps.prisma.liveStopNotification.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				id: h.runRows[0]?.id,
+				channelId: CHANNEL_ID,
+				kind: "CHANNEL_STOPPED",
+			}),
+		});
 		expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "CHANNEL_ERROR" }),
 		);
@@ -3193,7 +3212,9 @@ describe("live channel actions", () => {
 				{ getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })) },
 			);
 			const run = seedRun(t);
-			t.feederSession.findMany.mockResolvedValueOnce([{ id: "feed-1" }]);
+			t.feederSession.findMany
+				.mockResolvedValueOnce([])
+				.mockResolvedValueOnce([{ id: "feed-1" }]);
 			await expect(
 				t.process({ liveChannelId: CHANNEL_ID, action: "restart" }),
 			).rejects.toThrow(/FINISHED/);
@@ -3224,7 +3245,13 @@ describe("live channel actions", () => {
 			expect(t.feederSession.findMany).toHaveBeenCalledWith(
 				expect.objectContaining({
 					where: expect.objectContaining({
-						liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+						AND: expect.arrayContaining([
+							expect.objectContaining({
+								OR: expect.arrayContaining([
+									{ liveChannelRunId: LIVE_TO_VOD_RUN_ID },
+								]),
+							}),
+						]),
 					}),
 				}),
 			);
@@ -6147,9 +6174,16 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 			error: null,
 			providerStatus: "FINISHED",
 		});
-		expect(h.deps.emitEvent).toHaveBeenCalledWith(
+		expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "CHANNEL_STOPPED" }),
 		);
+		expect(h.deps.prisma.liveStopNotification.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				id: h.runRows[0]?.id,
+				channelId: CHANNEL_ID,
+				kind: "CHANNEL_STOPPED",
+			}),
+		});
 		expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "CHANNEL_ERROR" }),
 		);
@@ -10248,7 +10282,9 @@ describe("provider lifecycle reconciliation — sweep, provision, effects (row #
 		await t.sweep();
 		await t.sweep();
 		expect(run.providerUnknownSince).toEqual(new Date(NOW));
-		t.feederSession.findMany.mockResolvedValueOnce([{ id: "feed-9" }]);
+		t.feederSession.findMany
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([{ id: "feed-9" }]);
 		const heartbeatsBefore = vi.mocked(t.sdk.getLiveHeartbeat).mock.calls
 			.length;
 		await expect(t.sweep()).resolves.toEqual({
@@ -10279,7 +10315,9 @@ describe("provider lifecycle reconciliation — sweep, provision, effects (row #
 			getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })),
 		});
 		const run = seedRun(t);
-		t.feederSession.findMany.mockResolvedValue([{ id: "feed-retry" }]);
+		t.feederSession.findMany
+			.mockResolvedValueOnce([])
+			.mockResolvedValue([{ id: "feed-retry" }]);
 		t.enqueueFeederJob.mockRejectedValueOnce(new Error("redis unavailable"));
 		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		try {
@@ -10294,7 +10332,9 @@ describe("provider lifecycle reconciliation — sweep, provision, effects (row #
 
 			// The production query is RUNNING-only; model the now-STOPPED channel's
 			// absence while the separate terminal-run retry still executes first.
-			t.liveChannel.findMany.mockResolvedValueOnce([]);
+			t.liveChannel.findMany
+				.mockResolvedValueOnce([])
+				.mockResolvedValueOnce([]);
 			await expect(t.sweep()).resolves.toEqual({ polled: 0, failed: 0 });
 			expect(t.enqueueFeederJob).toHaveBeenCalledTimes(2);
 			expect(run.providerFeederStopsEnqueuedAt).toEqual(new Date(NOW));

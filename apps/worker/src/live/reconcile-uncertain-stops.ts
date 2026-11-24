@@ -6,9 +6,9 @@ import {
 } from "@bitovp/core";
 import {
 	canObserveLiveStop,
-	collectLiveStopTargets,
 	liveChannelAccountId,
 	liveStopRunOwnsEncoding,
+	outstandingLiveStopTargets,
 	type ResolveLiveEffectsAfterConfirmedStopInput,
 	resolveLiveEffectsAfterConfirmedStop,
 	savedStopReadbacks,
@@ -147,11 +147,12 @@ export function createUncertainStopReconciler(
 							stopOutcomeEvidence: true,
 						},
 					});
-					const inventory = collectLiveStopTargets(
+					const inventory = outstandingLiveStopTargets(
 						run,
 						channel,
 						history,
 						liveChannelAccountId(channel),
+						claim.providerEncodingId,
 					);
 					const availableUnsent = unreservedStopTargets(run, channel, history);
 					const targets = inventory.encodingIds;

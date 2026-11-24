@@ -126,7 +126,11 @@ vi.mock("@/lib/server/context", () => ({
 			$transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
 				fn({
 					$queryRaw: lockRows,
-					liveEffectClaim: { findFirst: async () => null },
+					liveEffectClaim: {
+						findFirst: async () => null,
+						findMany: async () => [],
+					},
+					feederSession: { findFirst: async () => null },
 					vmafJob: { count: vmafCount, deleteMany: vmafDeleteMany },
 					liveChannel: {
 						findUnique,
@@ -136,7 +140,10 @@ vi.mock("@/lib/server/context", () => ({
 						deleteMany: channelDeleteMany,
 					},
 					liveChannelRun: {
-						findFirst: runFindFirst,
+						findFirst: async (...args: Parameters<typeof runFindFirst>) => {
+							const run = await runFindFirst(...args);
+							return run ? { stepLog: [], ...run } : null;
+						},
 						findMany: runFindMany,
 						create: runCreate,
 						update: runUpdate,

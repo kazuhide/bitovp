@@ -1050,7 +1050,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 					if (err instanceof DisplacedEncoderPending)
 						return codedError(
 							409,
-							"Stop the previous airing and confirm every displaced RTMP encoder before starting a new run",
+							"Confirm that every encoder and publisher from the previous airing has stopped before starting a new run",
 							"LIVE_ACTION_PROVIDER_UNKNOWN",
 						);
 					if (err instanceof AisaFinalizationPending)

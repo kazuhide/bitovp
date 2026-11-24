@@ -509,11 +509,13 @@ function makeStore(
 			 * the sweep selects, honoured by id.
 			 */
 			liveEffectClaim: {
+				findMany: vi.fn(async () => []),
 				findFirst: vi.fn(
 					async (_args: unknown): Promise<{ id: string } | null> => null,
 				),
 			},
 			feederSession: {
+				findFirst: vi.fn(async () => null),
 				findUnique: vi.fn(async (args: { where: { id: string } }) => {
 					const hit = store.sessions.find((s) => s.id === args.where.id);
 					return hit ? { ...hit } : null;
@@ -880,14 +882,16 @@ function makeStore(
 				// reconciler behaviour is unit-tested in startup-sample.test.ts.
 				findMany: vi.fn(async () => []),
 				findFirst: vi.fn(
-					async (args?: { where?: { liveChannelId?: string } }) =>
-						[...store.runs]
+					async (args?: { where?: { liveChannelId?: string } }) => {
+						const row = [...store.runs]
 							.reverse()
 							.find(
 								(run) =>
 									run.liveChannelId === undefined ||
 									run.liveChannelId === args?.where?.liveChannelId,
-							) ?? null,
+							);
+						return row ? { stepLog: [], ...row } : null;
+					},
 				),
 				create: vi.fn(async (args: { data: Record<string, unknown> }) => {
 					guardEscape("liveChannelRun.create");

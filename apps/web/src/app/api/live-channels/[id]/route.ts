@@ -5,7 +5,11 @@ import {
 	programEndBeyondRunWindow,
 	stepLogSchema,
 } from "@bitovp/core";
-import { archivedStopRevision, LIVE_EFFECT_OPEN_STATES } from "@bitovp/db";
+import {
+	archivedStopRevision,
+	LIVE_EFFECT_OPEN_STATES,
+	readAiringEffectHistory,
+} from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { ACTOR_HEADER } from "@/lib/auth/api-token-gate";
@@ -227,7 +231,18 @@ export async function GET(req: Request, { params }: RouteParams) {
 					technicalDetailsAllowed,
 				)
 			: null;
-		const archiveRevision = archivedStopRevision(channel, currentRun);
+		const archiveRevision =
+			currentRun &&
+			channel.origin === "MANAGED" &&
+			["STOPPING", "STOPPED", "ERROR"].includes(channel.status) &&
+			!row.provisionClaimedAt &&
+			!aisaChannel
+				? archivedStopRevision(
+						row,
+						currentRun,
+						await readAiringEffectHistory(ctx.prisma, id, currentRun.id),
+					)
+				: null;
 		// Derived here, not in the browser, for the same reason as the VOD route:
 		// the credential's config never needs to cross .
 		return NextResponse.json(

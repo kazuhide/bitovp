@@ -28,7 +28,7 @@ export type DisplacedReadbacks = {
 };
 
 type AiringTargets = {
-	primary: string;
+	primary: string | null;
 	history: Parameters<typeof pendingSecondaryStopTargets>[2];
 };
 

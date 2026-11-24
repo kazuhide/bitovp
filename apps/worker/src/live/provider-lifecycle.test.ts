@@ -53,7 +53,9 @@ function harness(now: () => string = () => NOW) {
 			name: "Test channel",
 		}),
 	);
-	const feederFindMany = vi.fn(async () => [] as { id: string }[]);
+	const feederFindMany = vi.fn(
+		async (_args?: unknown) => [] as { id: string }[],
+	);
 	const executeRaw = vi.fn(async (..._args: unknown[]) => 1);
 	const queryRaw = vi.fn(async () => [{ id: CHANNEL }]);
 	let prisma: AppPrismaClient;
@@ -65,17 +67,38 @@ function harness(now: () => string = () => NOW) {
 		$queryRaw: queryRaw,
 		$executeRaw: executeRaw,
 		liveChannelRun: {
-			findFirst: runFindFirst,
+			findFirst: async (args: { select?: { liveChannel?: unknown } }) => {
+				const row = await runFindFirst();
+				if (!args.select?.liveChannel) return row;
+				return {
+					...run(),
+					stepLog: [],
+					...row,
+					liveChannel: {
+						name: "Test channel",
+						runs: [{ id: "run-1" }],
+						bitmovinEncodingId: "enc-1",
+						stepLog: [],
+						...(row as { liveChannel?: object } | null)?.liveChannel,
+					},
+				};
+			},
 			findMany: runFindMany,
 			updateMany: runUpdateMany,
 		},
 		liveChannel: {
+			findMany: vi.fn(async () => []),
 			updateMany: channelUpdateMany,
 			findUnique: channelFindUnique,
 		},
 		liveStopNotification: { create: outboxCreate },
 		liveEffectClaim: { findMany: async () => [] },
-		feederSession: { findMany: feederFindMany },
+		feederSession: {
+			findMany: (...args: [{ where: { liveChannelId?: string } }]) =>
+				args[0].where.liveChannelId
+					? Promise.resolve([])
+					: feederFindMany(...args),
+		},
 		$transaction: transaction,
 	} as unknown as AppPrismaClient;
 	const enqueueFeederJob = vi.fn(async () => {});
@@ -228,7 +251,8 @@ describe("reconcile — identity guards", () => {
 				data: expect.objectContaining({ status: "STOPPED", error: null }),
 			}),
 		);
-		expect(h.emitChannel).toHaveBeenCalledWith(CHANNEL, null);
+		expect(h.emitChannel).not.toHaveBeenCalled();
+		expect(h.outboxCreate).toHaveBeenCalledTimes(1);
 	});
 
 	it("repairs a completed STOPPED airing projection without rewriting its retained run", async () => {
@@ -245,14 +269,28 @@ describe("reconcile — identity guards", () => {
 			encodingId: "enc-1",
 			sdk,
 		});
-		expect(h.runUpdateMany).not.toHaveBeenCalled();
+		expect(h.runUpdateMany).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				where: {
+					id: "run-1",
+					liveChannelId: CHANNEL,
+					stopNotificationAt: null,
+				},
+				data: {
+					stopNotificationAt: new Date(NOW),
+					stopNotificationKind: "CHANNEL_STOPPED",
+					stopNotificationState: "PENDING",
+				},
+			}),
+		);
 		expect(sdk.getEncodingStatus).not.toHaveBeenCalled();
 		expect(h.channelUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({ status: "STOPPED", error: null }),
 			}),
 		);
-		expect(h.emitChannel).toHaveBeenCalledWith(CHANNEL, null);
+		expect(h.emitChannel).not.toHaveBeenCalled();
+		expect(h.outboxCreate).toHaveBeenCalledTimes(1);
 	});
 
 	it.each([
@@ -375,13 +413,27 @@ describe("reconcile — identity guards", () => {
 			}),
 		});
 		expect(sdk.getEncodingStatus).not.toHaveBeenCalled();
-		expect(h.runUpdateMany).not.toHaveBeenCalled();
+		expect(h.runUpdateMany).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				where: {
+					id: "run-1",
+					liveChannelId: CHANNEL,
+					stopNotificationAt: null,
+				},
+				data: {
+					stopNotificationAt: new Date(NOW),
+					stopNotificationKind: "CHANNEL_STOPPED",
+					stopNotificationState: "PENDING",
+				},
+			}),
+		);
 		expect(h.channelUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({ status: "STOPPED", error: null }),
 			}),
 		);
-		expect(h.emitChannel).toHaveBeenCalledWith(CHANNEL, null);
+		expect(h.emitChannel).not.toHaveBeenCalled();
+		expect(h.outboxCreate).toHaveBeenCalledTimes(1);
 	});
 
 	it("projects CANCELED as STOPPED while retaining its provider identity and stopping feeders", async () => {
@@ -424,7 +476,8 @@ describe("reconcile — identity guards", () => {
 			feederSessionId: "feed-1",
 			action: "stop",
 		});
-		expect(h.emitChannel).toHaveBeenCalledWith(CHANNEL, null);
+		expect(h.emitChannel).not.toHaveBeenCalled();
+		expect(h.outboxCreate).toHaveBeenCalledTimes(1);
 	});
 
 	it("commits provider evidence, run RUNNING and channel RUNNING in one transaction while clearing absent coordinates", async () => {
@@ -1105,7 +1158,22 @@ describe("reconcile — TERMINAL is reconciled once, onto exactly this run", () 
 		expect(h.feederFindMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: {
-					liveChannelRunId: "run-1",
+					AND: [
+						{
+							OR: [
+								{ liveChannelRunId: "run-1" },
+								{
+									liveChannelRunId: null,
+									liveChannel: {
+										id: CHANNEL,
+										bitmovinEncodingId: "enc-1",
+										status: { in: ["STOPPED", "ERROR"] },
+										runs: { none: { seq: { gt: 1 } } },
+									},
+								},
+							],
+						},
+					],
 					OR: [
 						feederOccupancyWhere(),
 						{ status: { in: [...FEEDER_ACTIVE_STATUSES] } },
@@ -1118,8 +1186,8 @@ describe("reconcile — TERMINAL is reconciled once, onto exactly this run", () 
 			feederSessionId: "feed-1",
 			action: "stop",
 		});
-		expect(h.emitChannel).toHaveBeenCalledTimes(1);
-		expect(h.emitChannel).toHaveBeenCalledWith(CHANNEL, null);
+		expect(h.emitChannel).not.toHaveBeenCalled();
+		expect(h.outboxCreate).toHaveBeenCalledTimes(1);
 	});
 
 	it("a fresh terminal observation whose run CAS loses writes no channel, stops no feeder and emits nothing", async () => {
@@ -1199,7 +1267,8 @@ describe("reconcile — TERMINAL is reconciled once, onto exactly this run", () 
 				expect.stringMatching(/failed to enqueue feeder stop for feed-1/),
 				"redis down",
 			);
-			expect(h.emitChannel).toHaveBeenCalledTimes(1);
+			expect(h.emitChannel).not.toHaveBeenCalled();
+			expect(h.outboxCreate).toHaveBeenCalledTimes(1);
 			expect(h.runUpdateMany).not.toHaveBeenCalledWith(
 				expect.objectContaining({
 					data: expect.objectContaining({

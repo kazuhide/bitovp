@@ -9,6 +9,7 @@ import {
 } from "@bitovp/core";
 import {
 	type AppPrismaClient,
+	bindArchivedStopTargetInTransaction,
 	LIVE_EFFECT_OPEN_STATES,
 	type Prisma,
 } from "@bitovp/db";
@@ -179,7 +180,7 @@ export async function requestProbeStop(
 		if (
 			!run.bitmovinEncodingId &&
 			!channel.bitmovinEncodingId &&
-			!run.previousProviderEncodingIds.length
+			!(await bindArchivedStopTargetInTransaction(tx, channelId, run.id))
 		)
 			return "unconfirmed";
 		const open = await tx.liveEffectClaim.findFirst({
@@ -378,7 +379,13 @@ export function createProbeBatchProcessor(deps: ProbeRunnerDeps) {
 				(existing.status === "ERROR" &&
 					!existing.bitmovinEncodingId &&
 					!existing.runs[0]?.bitmovinEncodingId &&
-					!existing.runs[0]?.previousProviderEncodingIds.length)
+					!existing.runs[0]?.previousProviderEncodingIds.length &&
+					(await requestProbeStop(
+						deps.prisma,
+						existing.id,
+						existing.runs[0]?.id,
+						now(),
+					)) === "unconfirmed")
 			) {
 				// Resume: this probe already ran to a terminal state.
 				return { region, channelId: existing.id, outcome: "SKIPPED" };
@@ -450,7 +457,9 @@ export function createProbeBatchProcessor(deps: ProbeRunnerDeps) {
 				row.status === "ERROR" &&
 				(row.bitmovinEncodingId ||
 					run?.bitmovinEncodingId ||
-					run?.previousProviderEncodingIds.length);
+					run?.previousProviderEncodingIds.length ||
+					(await requestProbeStop(deps.prisma, channelId, run?.id, now())) !==
+						"unconfirmed");
 			if (
 				row.status === "RUNNING" ||
 				row.status === "STOPPING" ||
@@ -579,12 +588,8 @@ export function createAbandonedProbeSweep(prisma: AppPrismaClient) {
 				purpose: "PROBE",
 				...(strandedAfter ? { id: { gt: strandedAfter } } : {}),
 				status: { in: ["ERROR", "STOPPING"] },
-				OR: [
-					{ bitmovinEncodingId: { not: null } },
-					{
-						runs: { some: { previousProviderEncodingIds: { isEmpty: false } } },
-					},
-				],
+				// Legacy rows can retain their only encoder in a run log or a
+				// closed claim. The bounded cursor and exact run check also cover them.
 				updatedAt: { lt: cutoff },
 			},
 			select: { id: true, runs: probeStatusSelect.runs },

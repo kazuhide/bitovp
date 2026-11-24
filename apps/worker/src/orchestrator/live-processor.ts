@@ -82,7 +82,6 @@ import {
 	beginLiveEffect,
 	bindLiveEffectTarget,
 	claimLiveStopSend,
-	collectLiveStopTargets,
 	LiveToVodFenceError,
 	liveChannelAccountId,
 	liveEffectSendUncertainty,
@@ -93,11 +92,15 @@ import {
 	markLiveEffectAmbiguous,
 	markLiveEffectFailed,
 	mergeRtmpRetirementEvidence,
+	outstandingLiveStopTargets,
 	persistLiveToVodAttempt,
 	type RtmpRetirementReceipt,
+	readAiringEffectHistory,
+	recordConfirmedStopDelivery,
 	recordLiveStopFailure,
 	reserveAisaStop,
 	resolveLiveEffectsAfterConfirmedStop,
+	stopNotificationHistoryEligible,
 	unconfirmedRtmpEncoders,
 	wasLiveStopAcknowledged,
 } from "@bitovp/db";
@@ -1444,11 +1447,12 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					])
 						ids.add(id);
 					if (run.bitmovinEncodingId) ids.add(run.bitmovinEncodingId);
-					const inventory = collectLiveStopTargets(
+					const inventory = outstandingLiveStopTargets(
 						run,
 						row,
 						history,
 						liveChannelAccountId(row),
+						effect.claim.providerEncodingId,
 					);
 					// Corrupt logs with agreeing run/channel columns still authorize STOP
 					// of that exact primary. Settlement independently requires complete logs.
@@ -1463,6 +1467,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 							"the STOP broadcast has incomplete encoder ownership records",
 						);
 					requiredEncodingIds = authorized;
+					for (const id of ids) if (!authorized.includes(id)) ids.delete(id);
 					for (const id of authorized) if (!ids.has(id)) observeOnly.add(id);
 					for (const prior of history) {
 						if (prior.action !== "STOP") continue;
@@ -5591,11 +5596,24 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						!run.cancelRequested
 					)
 						throw new ProvisionLeaseLostError(liveChannelId);
+					const history = await readAiringEffectHistory(
+						tx,
+						liveChannelId,
+						runId,
+					);
 					const retirementWrite = displacedRetirementWrite(
 						run,
 						channel,
 						displaced,
+						{ primary: outcome.encodingId ?? null, history },
 					);
+					if (
+						await tx.feederSession.findFirst({
+							where: liveStopFeederWhere(liveChannelId),
+							select: { id: true },
+						})
+					)
+						throw new Error("Feeder termination is not yet confirmed");
 					if (!retirementWrite)
 						throw new Error(
 							"Displaced RTMP encoder retirement is not yet confirmed",
@@ -5664,6 +5682,16 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 							status: outcome.status,
 							error: outcome.error,
 							...retirementWrite,
+							...(displaced.receipts.length
+								? {
+										previousProviderEncodingIds: [
+											...new Set([
+												...run.previousProviderEncodingIds,
+												...displaced.receipts.map((r) => r.encodingId),
+											]),
+										],
+									}
+								: {}),
 							...(isAisaManagedLivePlan(channel.plan)
 								? { cancelRequested: false }
 								: {}),
@@ -5687,6 +5715,21 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					});
 					if (runWrite.count !== 1)
 						throw new ProvisionLeaseLostError(liveChannelId);
+					if (outcome.status === "STOPPED")
+						await recordConfirmedStopDelivery(tx, {
+							liveChannelId,
+							liveChannelRunId: runId,
+							channelName: channel.name,
+							scheduleIds: [],
+							status: "STOPPED",
+							at: new Date(deps.now()),
+							notificationEligible: stopNotificationHistoryEligible(
+								history,
+								channel,
+								run,
+								"STOPPED",
+							),
+						});
 				});
 				fence.setHeld(null);
 			});
@@ -5747,10 +5790,22 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			const untouched = stepLogSchema.parse(row.stepLog);
 			if (
 				!pendingRun.bitmovinEncodingId &&
-				displacedRetirementWrite(pendingRun, row, {
-					accountId: liveChannelAccountId(row),
-					receipts: [],
-				}) &&
+				displacedRetirementWrite(
+					pendingRun,
+					row,
+					{
+						accountId: liveChannelAccountId(row),
+						receipts: [],
+					},
+					{
+						primary: null,
+						history: await readAiringEffectHistory(
+							deps.prisma,
+							liveChannelId,
+							pendingRun.id,
+						),
+					},
+				) &&
 				!untouched.some(
 					(entry) =>
 						(entry.kind === "CREATE_ENCODING" &&
@@ -5816,7 +5871,6 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					);
 				}
 				if (feeders.length) return "STOPPING";
-				await emitChannel("CHANNEL_STOPPED", liveChannelId);
 				return {
 					status: "STOPPED",
 					canceledRunId: pendingRun.id,
@@ -6667,6 +6721,15 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					accountId,
 					sdk,
 					deps.now,
+					undefined,
+					{
+						primary: encodingId ?? null,
+						history: await readAiringEffectHistory(
+							deps.prisma,
+							liveChannelId,
+							currentRunId,
+						),
+					},
 				);
 				if (!displaced)
 					throw new Error(
@@ -6683,11 +6746,12 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					displaced,
 					neverStartedProof,
 				);
-				await emitChannel(
-					aisaFailure ? "CHANNEL_ERROR" : "CHANNEL_STOPPED",
-					liveChannelId,
-					aisaFailure ? "AISA_LIVE_TERMINAL_FAILURE" : undefined,
-				);
+				if (aisaFailure)
+					await emitChannel(
+						"CHANNEL_ERROR",
+						liveChannelId,
+						"AISA_LIVE_TERMINAL_FAILURE",
+					);
 				return aisaFailure
 					? "ERROR"
 					: {

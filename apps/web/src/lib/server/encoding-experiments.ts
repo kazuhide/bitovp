@@ -6,10 +6,12 @@ import {
 	type ExperimentNvencSdkBinding,
 	type ExperimentNvencSdkSettings,
 	type ExperimentRuntime,
+	type ExperimentSoftwareEncoder,
 	type ExperimentTrialInput,
 	experimentBatchSchema,
 	experimentCampaignInputSchema,
 	experimentCodecs,
+	experimentCpuScoringProfile,
 	experimentNvencSdkVersion,
 	experimentQualityRequestSchema,
 	experimentResultSchema,
@@ -48,8 +50,16 @@ export {
 	experimentTrialPage as listExperimentTrials,
 };
 
-export function getExperimentCatalog() {
-	return sdkCatalog;
+export async function getExperimentCatalog(
+	kind: "nvenc" | "software" = "nvenc",
+) {
+	if (kind === "nvenc") return sdkCatalog;
+	const { runtime } = await requireRuntime("software");
+	return {
+		schemaVersion: 1,
+		runtimeId: runtime.runtimeId,
+		softwareEncoders: runtime.softwareEncoders,
+	};
 }
 
 const sdkBindings = new Map(
@@ -90,26 +100,36 @@ function sha(value: unknown): string {
 	return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-async function requireRuntime() {
+async function requireRuntime(kind: "nvenc" | "software") {
 	const root = getExperimentRoot();
-	const runtime = root ? await readExperimentRuntime(root) : null;
+	const runtime = root
+		? await readExperimentRuntime(root, Date.now(), kind)
+		: null;
 	if (!root || !runtime)
 		throw new EncodingExperimentError(
 			503,
-			"GPU_UNAVAILABLE",
-			"The NVIDIA experiment worker is unavailable",
+			kind === "nvenc" ? "GPU_UNAVAILABLE" : "SOFTWARE_UNAVAILABLE",
+			"The selected experiment worker is unavailable",
 		);
 	return { root, runtime };
 }
 
-export async function getExperimentCapabilities() {
+export async function getExperimentCapabilities(
+	kind: "nvenc" | "software" = "nvenc",
+) {
 	const root = getExperimentRoot();
-	const runtime = root ? await readExperimentRuntime(root) : null;
+	const runtime = root
+		? await readExperimentRuntime(root, Date.now(), kind)
+		: null;
 	if (!runtime)
 		return {
 			schemaVersion: 1,
 			available: false,
-			reason: root ? "GPU_UNAVAILABLE" : "NOT_CONFIGURED",
+			reason: !root
+				? "NOT_CONFIGURED"
+				: kind === "nvenc"
+					? "GPU_UNAVAILABLE"
+					: "SOFTWARE_UNAVAILABLE",
 		};
 	const { nvencSdk: _, ...base } = runtime;
 	const nvencSdk = availableNvencSdk(runtime);
@@ -180,13 +200,289 @@ function verifyNvencSdkSettings(
 		}
 }
 
+const softwareNumericBounds: Record<string, string> = {
+	INT_MIN: "-2147483648",
+	INT_MAX: "2147483647",
+	I64_MIN: "-9223372036854775808",
+	I64_MAX: "9223372036854775807",
+	FLT_MAX: "3.40282347e38",
+	"-FLT_MAX": "-3.40282347e38",
+};
+
+// A 64-bit bound or a fractional value just beyond it must survive parsing.
+// The input grammar bounds the exponent to three digits and the value to 4 KiB.
+function decimalParts(text: string) {
+	const match = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d{1,3}))?$/.exec(text);
+	if (!match || !(match[2] || match[3])) return;
+	const [, sign = "", whole = "", fraction = "", exponent = "0"] = match;
+	return {
+		coefficient: BigInt(sign + whole + fraction),
+		exponent: Number(exponent) - fraction.length,
+	};
+}
+
+function compareDecimalBound(
+	actual: NonNullable<ReturnType<typeof decimalParts>>,
+	label?: string,
+) {
+	const bound = label && decimalParts(softwareNumericBounds[label] ?? label);
+	if (!bound) return 0;
+	const exponent = Math.min(actual.exponent, bound.exponent);
+	const left = actual.coefficient * 10n ** BigInt(actual.exponent - exponent);
+	const right = bound.coefficient * 10n ** BigInt(bound.exponent - exponent);
+	return left < right ? -1 : Number(left > right);
+}
+
+// Native libraries can impose extra constraints when opening the encoder.
+function acceptsSoftwareValue(
+	encoder: ExperimentSoftwareEncoder["encoder"],
+	field: ExperimentSoftwareEncoder["options"][number],
+	value: string,
+	native: boolean,
+) {
+	const name = field.name;
+	if (encoder === "libx264" && (name === "wpredp" || name === "weightp"))
+		return field.choices?.includes(value) === true;
+	if (
+		native &&
+		(encoder === "libx264" || encoder === "libx265") &&
+		["bframes", "ref", "frameref", "dpb-size", "keyint"].includes(name) &&
+		!(encoder === "libx264" && name === "keyint" && value === "infinite") &&
+		!/^(?:0|-?[1-9][0-9]*)$/.test(value)
+	)
+		return false;
+	if (native && name === "zones")
+		return value
+			.split("/")
+			.every((zone) =>
+				/^\d+,\d+,(?:q=\d+|b=(?:\d+(?:\.\d*)?|\.\d+))$/.test(zone),
+			);
+	if (value.includes("=") || (value.includes("/") && !/^\d+\/\d+$/.test(value)))
+		return false;
+	if (!native && name === "flags") {
+		const tokens = value.match(/[+-][a-z0-9_]+/g) ?? [];
+		return (
+			tokens.join("") === value &&
+			tokens.every((token) => field.choices?.includes(token))
+		);
+	}
+	if (!native && name === "force_key_frames")
+		return (
+			value === "source" ||
+			value.split(",").every((t) => /^\d+(?:\.\d+)?$/.test(t))
+		);
+	if (native && name === "ts_layering_mode")
+		return ["0", "2", "3", "4"].includes(value);
+	if (
+		native &&
+		["ts_target_bitrate", "ts_rate_decimator", "ts_layer_id"].includes(name)
+	) {
+		const layerId = name === "ts_layer_id";
+		const parts = value.split(",");
+		return (
+			parts.length <= (layerId ? 16 : 5) &&
+			parts.every(
+				(part) =>
+					/^\d{1,10}$/.test(part) &&
+					Number(part) >= (layerId ? 0 : 1) &&
+					Number(part) <= (layerId ? 4 : 0xffffffff),
+			)
+		);
+	}
+	if (
+		field.name === "passes" ||
+		(native && field.type === "string" && field.choices)
+	)
+		return field.choices?.includes(value) === true;
+	if (field.choices?.includes(value)) return true;
+	if (field.type === "boolean")
+		return (
+			["true", "false", "0", "1"].includes(value) ||
+			(!native && ["-1", "auto"].includes(value))
+		);
+	const integer = ["int", "int64", "uint", "uint64"].includes(field.type);
+	if (!integer && !["float", "double"].includes(field.type)) return true;
+	if (integer && !/^[+-]?\d+$/.test(value)) return false;
+	const actual = decimalParts(value);
+	return (
+		actual !== undefined &&
+		compareDecimalBound(actual, field.minimum) >= 0 &&
+		compareDecimalBound(actual, field.maximum) <= 0
+	);
+}
+
+function verifyX26xStructure(
+	settings: NonNullable<ExperimentTrialInput["software"]>,
+) {
+	if (settings.encoder !== "libx264" && settings.encoder !== "libx265") return;
+	const explicit = (option: string, ...aliases: string[]) => {
+		const values = [
+			settings.options[option],
+			...aliases.map((key) => settings.nativeOptions?.[key]),
+		].filter((value) => value !== undefined);
+		if (values.length > 1)
+			throw new EncodingExperimentError(
+				422,
+				"INVALID_ENCODER_SETTING",
+				`Specify only one spelling for ${option}`,
+				"software",
+			);
+		return values[0];
+	};
+	const bframes = explicit("bf", "bframes");
+	const refs = explicit("refs", "ref", "frameref");
+	const keyint = explicit("g", "keyint");
+	if (settings.encoder === "libx264") {
+		explicit("coder", "cabac");
+		const weight = explicit("weightp", "weightp");
+		if (weight !== undefined && settings.options.wpredp !== undefined)
+			throw new EncodingExperimentError(
+				422,
+				"INVALID_ENCODER_SETTING",
+				"Specify only one spelling for weightp",
+				"software",
+			);
+	}
+	const profile = settings.options.profile?.toLowerCase();
+	if (
+		settings.encoder === "libx264" &&
+		(profile === "baseline" || profile === "main")
+	) {
+		const native = settings.nativeOptions ?? {};
+		const transform = settings.options["8x8dct"] ?? native["8x8dct"];
+		const matrix = Object.entries(native).some(
+			([name, value]) =>
+				name.startsWith("cqm") && (name !== "cqm" || value !== "flat"),
+		);
+		const coders = [settings.options.coder, native.cabac];
+		const weights = [
+			settings.options.weightp,
+			settings.options.wpredp,
+			native.weightp,
+		];
+		const positiveInteger = (value: string) =>
+			/^[+-]?\d+$/.test(value) && BigInt(value) > 0n;
+		const baselineConflict =
+			profile === "baseline" &&
+			(Number(bframes) > 0 ||
+				coders.some(
+					(v) =>
+						v !== undefined &&
+						(positiveInteger(v) || ["cabac", "ac", "true"].includes(v)),
+				) ||
+				weights.some(
+					(v) =>
+						v !== undefined &&
+						(positiveInteger(v) || ["simple", "smart"].includes(v)),
+				));
+		if (baselineConflict || matrix || transform === "true" || transform === "1")
+			throw new EncodingExperimentError(
+				422,
+				"INVALID_ENCODER_SETTING",
+				"The selected x264 profile excludes a requested coding tool",
+				"software",
+			);
+	}
+	if (keyint === undefined || keyint === "infinite" || Number(keyint) < 0)
+		return;
+	const interval = Math.max(1, Number(keyint));
+	if (
+		bframes !== undefined &&
+		(settings.encoder === "libx264" || interval === 1) &&
+		Number(bframes) >= interval
+	)
+		throw new EncodingExperimentError(
+			422,
+			"INVALID_ENCODER_SETTING",
+			"Too many B-frames for the keyframe interval",
+			"software",
+		);
+	if (
+		interval === 1 &&
+		(Number(refs) > 1 || Number(settings.nativeOptions?.["dpb-size"]) > 1)
+	)
+		throw new EncodingExperimentError(
+			422,
+			"INVALID_ENCODER_SETTING",
+			"An all-intra GOP requires one reference frame and one DPB slot",
+			"software",
+		);
+}
+
 async function verifyTrial(
 	root: string,
 	organizationId: string,
 	runtime: ExperimentRuntime,
 	trial: ExperimentTrialInput,
 ) {
-	if (!runtime.supportedCodecs.includes(trial.codec))
+	if (Boolean(trial.software) !== (runtime.runtimeKind === "software"))
+		throw new EncodingExperimentError(
+			422,
+			"ENCODER_UNAVAILABLE",
+			"Use a campaign for the requested encoding backend",
+		);
+	if (trial.software) {
+		const settings = trial.software;
+		const encoder = runtime.softwareEncoders?.find(
+			(e) => e.encoder === settings.encoder,
+		);
+		if (!encoder || encoder.codec !== trial.codec)
+			throw new EncodingExperimentError(
+				422,
+				"ENCODER_UNAVAILABLE",
+				"Software encoder is unavailable",
+			);
+		for (const group of ["options", "nativeOptions"] as const) {
+			const fields = new Map(encoder[group].map((f) => [f.name, f]));
+			for (const [key, value] of Object.entries(settings[group] ?? {})) {
+				const field = fields.get(key);
+				if (
+					!field ||
+					!acceptsSoftwareValue(
+						settings.encoder,
+						field,
+						value,
+						group === "nativeOptions",
+					)
+				)
+					throw new EncodingExperimentError(
+						422,
+						"INVALID_ENCODER_SETTING",
+						"Use an available encoder setting and a value within its declared range",
+						`software.${group}.${key}`,
+					);
+			}
+		}
+		verifyX26xStructure(settings);
+		const native = settings.nativeOptions ?? {};
+		if (
+			Object.keys(native).some((name) => Object.hasOwn(settings.options, name))
+		)
+			throw new EncodingExperimentError(
+				422,
+				"INVALID_ENCODER_SETTING",
+				"Specify an encoder control in only one option dictionary",
+				"software",
+			);
+		if (
+			settings.encoder === "libsvtav1" &&
+			[
+				settings.options.crf,
+				settings.options.qp,
+				native.q,
+				native.qp,
+				native.crf,
+				native.cqp,
+			].filter((value) => value !== undefined).length > 1
+		)
+			throw new EncodingExperimentError(
+				422,
+				"INVALID_ENCODER_SETTING",
+				"Specify one SVT-AV1 quantizer across the wrapper and native controls",
+				"software.options",
+			);
+	}
+	if (!runtime.supportedCodecs.some((codec) => codec === trial.codec))
 		throw new EncodingExperimentError(
 			422,
 			"CODEC_UNAVAILABLE",
@@ -226,7 +522,9 @@ export async function validateExperimentTrial(
 	input: unknown,
 ) {
 	const trial = parse(experimentTrialSchema, input);
-	const { root, runtime } = await requireRuntime();
+	const { root, runtime } = await requireRuntime(
+		trial.software ? "software" : "nvenc",
+	);
 	await verifyTrial(root, organizationId, runtime, trial);
 	return { valid: true, trial, capabilityId: runtime.runtimeId };
 }
@@ -246,8 +544,30 @@ export async function createExperimentCampaign(
 	input: unknown,
 ) {
 	const campaign = parse(experimentCampaignInputSchema, input);
-	const { runtime } = await requireRuntime();
-	compareRuntime(campaign.capabilityId, runtime.runtimeId);
+	const root = getExperimentRoot();
+	const [gpu, cpu] = root
+		? await Promise.all([
+				readExperimentRuntime(root, Date.now(), "nvenc"),
+				readExperimentRuntime(root, Date.now(), "software"),
+			])
+		: [];
+	const runtime = [gpu, cpu].find(
+		(r) => r?.runtimeId === campaign.capabilityId,
+	);
+	if (!runtime) {
+		if (!gpu && !cpu)
+			throw new EncodingExperimentError(
+				503,
+				"ENCODER_UNAVAILABLE",
+				"No experiment worker is available",
+			);
+		throw new EncodingExperimentError(
+			409,
+			"CAPABILITY_CHANGED",
+			"Use the current worker identity",
+			"capabilityId",
+		);
+	}
 	return addExperimentCampaign(ctx, {
 		name: campaign.name,
 		capabilityId: runtime.runtimeId,
@@ -274,7 +594,11 @@ export function enqueueExperimentTrials(
 		idempotencyKey,
 		sha(batch),
 		async (campaign) => {
-			const { root, runtime } = await requireRuntime();
+			const kind =
+				z
+					.object({ runtimeKind: z.literal("software").optional() })
+					.parse(campaign.runtime ?? {}).runtimeKind ?? "nvenc";
+			const { root, runtime } = await requireRuntime(kind);
 			compareRuntime(campaign.capabilityId, runtime.runtimeId);
 			const trials = [];
 			for (const input of batch.trials) {
@@ -358,8 +682,17 @@ export async function selectExperimentQuality(
 	input: unknown,
 ) {
 	const request = parse(experimentQualityRequestSchema, input);
-	const { scoringProfileId } = request;
 	const campaign = await experimentCampaignDetail(ctx, id);
+	const cpu = z
+		.object({ runtimeKind: z.literal("software") })
+		.safeParse(campaign.runtime).success;
+	const explicitProfile =
+		typeof input === "object" && input !== null && "scoringProfileId" in input;
+	const scoringProfileId = explicitProfile
+		? request.scoringProfileId
+		: cpu
+			? experimentCpuScoringProfile
+			: experimentScoringProfile;
 	const bin = process.env.BITOVP_EXPERIMENTS_OPTIMIZER;
 	if (!bin || !isAbsolute(bin))
 		throw new EncodingExperimentError(
@@ -399,7 +732,7 @@ export async function selectExperimentQuality(
 			(score) => score.scoringProfileId === scoringProfileId,
 		);
 		const scoreMilli =
-			scoringProfileId === experimentScoringProfile
+			scoringProfileId === result.scoringProfileId
 				? result.scoreMilli
 				: additional?.status === "succeeded"
 					? additional.scoreMilli

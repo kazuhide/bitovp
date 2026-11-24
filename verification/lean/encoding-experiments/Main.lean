@@ -71,7 +71,8 @@ private def parseCodec (value : Json) : Except String Codec := do
   | "H264" => return .H264
   | "HEVC" => return .HEVC
   | "AV1" => return .AV1
-  | _ => throw "expected H264, HEVC, or AV1"
+  | "VP9" => return .VP9
+  | _ => throw "expected H264, HEVC, AV1, or VP9"
 
 private def parseConstraints (value : Json) : Except String Constraints := do
   let object ← readObject value ["codec", "bitrateLimitBps", "encodeTimeLimitMs", "gopFrames"]

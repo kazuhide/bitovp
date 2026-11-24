@@ -27,6 +27,36 @@ const trial = {
 	},
 };
 
+it("gives equivalent software requests one batch identity and preserves explicit repeats", () => {
+	const base = {
+		sourceId: trial.sourceId,
+		window: trial.window,
+		codec: "H264",
+	};
+	const software = {
+		encoder: "libx264",
+		options: { preset: "fast", b: "2000000" },
+	};
+	const input = { ...base, software };
+	const normalized = (row: unknown) =>
+		JSON.stringify(
+			experimentBatchSchema.parse({ schemaVersion: 1, trials: [row] }),
+		);
+	expect(
+		normalized({
+			...base,
+			software: {
+				...software,
+				options: { b: "2000000", passes: "1", preset: "fast" },
+				nativeOptions: {},
+			},
+		}),
+	).toBe(normalized(input));
+	expect(normalized({ ...input, replicateId: "repeat-2" })).not.toBe(
+		normalized(input),
+	);
+});
+
 describe("the NVIDIA experiment request and receipt", () => {
 	it("keeps omission, false, and zero distinct", () => {
 		const raw = {
@@ -48,9 +78,9 @@ describe("the NVIDIA experiment request and receipt", () => {
 				endPtsExclusive: "600",
 			},
 		});
-		expect(experimentTrialSchema.parse(trial).config.rcParams).toEqual(
-			trial.config.rcParams,
-		);
+		expect(
+			(experimentTrialSchema.parse(trial) as typeof trial).config.rcParams,
+		).toEqual(trial.config.rcParams);
 		const equivalent = experimentBatchSchema.parse({
 			schemaVersion: 1,
 			trials: [

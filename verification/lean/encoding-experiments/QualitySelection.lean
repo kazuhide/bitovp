@@ -6,6 +6,7 @@ inductive Codec where
   | H264
   | HEVC
   | AV1
+  | VP9
   deriving BEq
 
 /-- The exact bitrate in bits per second. -/

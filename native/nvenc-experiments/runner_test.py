@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import unittest
@@ -830,6 +831,225 @@ sys.exit(implementation.main(source))
                         capture.assert_not_called()
                     else:
                         self.assertEqual(capture.call_args.kwargs["timeout"], expected_timeout)
+
+
+class SoftwareRunnerTest(unittest.TestCase):
+    def software_request(self, codec="H264", encoder="libx264", options=None):
+        item = request()
+        original = item["trial"]
+        item["trial"] = {
+            "sourceId": original["sourceId"], "window": original["window"], "codec": codec,
+            "software": {"encoder": encoder, "options": options or {}},
+        }
+        return item
+
+    def test_software_codec_and_runtime_must_match(self):
+        for encoder, codec in runner.SOFTWARE_CODECS.items():
+            trial = parse_trial(self.software_request(codec, encoder))
+            self.assertIsInstance(trial, runner.SoftwareTrial)
+            self.assertEqual(trial.frame_count, 3)
+        with self.assertRaisesRegex(RunnerError, "INVALID_REQUEST"):
+            parse_trial(self.software_request("AV1"))
+        mixed = self.software_request()
+        mixed["trial"]["preset"] = "P4"
+        with self.assertRaisesRegex(RunnerError, "INVALID_REQUEST"):
+            parse_trial(mixed)
+        runtime = SimpleNamespace(tool_identities=(), invocation_path=Path(runner.__file__),
+                                  runner_path=Path(runner.__file__), capabilities={"supportedCodecs": ["H264"]})
+        with self.assertRaisesRegex(RunnerError, "UNSUPPORTED_RUNTIME_ENCODER"):
+            runner.measure(runtime, parse_trial(self.software_request()), False)
+
+    def test_soname_retarget_rejects_unchanged_old_library_file(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            old = root / "libx265.so.1.0"
+            new = root / "libx265.so.1.1"
+            old.write_bytes(b"previous")
+            new.write_bytes(b"current")
+            link = root / "libx265.so.1"
+            link.symlink_to(old)
+            binary = root / "ffmpeg"
+            trace = f"libx265.so.1 => {link} (0xabcd)\n"
+            with patch.object(sys, "platform", "linux"), patch.object(runner, "elf_interpreter", return_value=None), \
+                    patch.object(runner, "capture", return_value=(trace, "")):
+                expected = runner.software_dependencies(binary, binary)
+                self.assertEqual(expected[binary], (runner.SoftwareLibrary(link.name, old.resolve()),))
+                identity = runner.runtime_tool_identity(old)
+                link.unlink()
+                link.symlink_to(new)
+                self.assertEqual(identity, runner.runtime_tool_identity(old))
+                with self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
+                    runner.require_software_dependencies(binary, binary, expected)
+
+    def test_ffmpeg_and_ffprobe_cannot_exchange_libraries(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            ffmpeg, ffprobe = root / "ffmpeg", root / "ffprobe"
+            first, second = root / "build-a", root / "build-b"
+            first.touch()
+            second.touch()
+            targets = {ffmpeg: first, ffprobe: second}
+
+            def trace(args, *_args, **_kwargs):
+                return f"libx264.so.1 => {targets[Path(args[0])]} (0xabbc)\n", ""
+
+            with patch.object(sys, "platform", "linux"), patch.object(runner, "elf_interpreter", return_value=None), \
+                    patch.object(runner, "capture", side_effect=trace):
+                pinned = runner.software_dependencies(ffmpeg, ffprobe)
+                targets.update({ffmpeg: second, ffprobe: first})
+                with self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
+                    runner.require_software_dependencies(ffmpeg, ffprobe, pinned)
+
+    def test_absent_loader_trace_only_qualifies_static_elf(self):
+        # One ELF64 little-endian program header, first PT_INTERP then PT_LOAD.
+        elf = bytearray(64 + 56)
+        elf[:6] = b"\x7fELF\x02\x01"
+        elf[32] = 64
+        elf[54] = 56
+        elf[56] = 1
+        with TemporaryDirectory() as directory, patch.object(sys, "platform", "linux"), \
+                patch.object(runner, "capture", return_value=("ffmpeg version 8", "")):
+            program = Path(directory) / "ffmpeg"
+            elf[64] = 3
+            program.write_bytes(elf)
+            with self.assertRaisesRegex(RunnerError, "INCOMPLETE_SOFTWARE_RUNTIME"):
+                runner.software_library_paths(program)
+            interpreter = Path(directory) / "ld-linux"
+            interpreter.touch()
+            path = os.fsencode(interpreter)
+            for padding in (1, 33):
+                segment = path + bytes(padding)
+                elf[72:80] = len(elf).to_bytes(8, "little")
+                elf[96:104] = len(segment).to_bytes(8, "little")
+                program.write_bytes(elf + segment)
+                self.assertEqual(runner.elf_interpreter(program), interpreter.resolve())
+            elf[64] = 1
+            program.write_bytes(elf)
+            self.assertEqual(runner.software_library_paths(program), ())
+
+    @unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("cc"), "requires Linux and a C compiler")
+    def test_pinned_library_retains_its_private_origin_dependency(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            private = root / "private"
+            private.mkdir()
+            program = root / "ffmpeg"
+            # The executable only knows libavcodec. libavcodec alone knows where
+            # its private libopus lives, and no system library provides the symbol.
+            opus = private / "libopus.so.0"
+            codec = private / "libavcodec.so.99"
+            # Private bundles can omit DT_SONAME. Keep the original DT_NEEDED
+            # basename resolvable even when the object was preloaded by descriptor.
+            subprocess.run(["cc", "-x", "c", "-", "-shared", "-fPIC", "-o", opus],
+                           input="int private_opus(void) { return 73; }", text=True, check=True)
+            subprocess.run(["cc", "-x", "c", "-", "-shared", "-fPIC", "-Wl,-soname," + codec.name,
+                            "-Wl,-rpath,$ORIGIN", "-L" + str(private), "-l:" + opus.name, "-o", codec],
+                           input="extern int private_opus(void); int codec(void) { return private_opus(); }",
+                           text=True, check=True)
+            subprocess.run(["cc", "-x", "c", "-", "-Wl,-rpath,$ORIGIN/private", "-L" + str(private),
+                            "-l:" + codec.name, "-o", program], input='#include <stdio.h>\nextern int codec(void);\n'
+                           'int main(void) { printf("%d\\n", codec()); }\n', text=True, check=True)
+            self.assertEqual(subprocess.check_output([program], text=True), "73\n")
+            bindings = runner.software_dependencies(program, program)
+            paths = {program, *(entry.path for entry in bindings[program])}
+            identities = {path: runner.runtime_tool_identity(path) for path in paths}
+            output, _ = runner.capture_software([str(program)], "RUNTIME_PROBE", bindings, identities)
+            self.assertEqual(output, "73\n")
+
+    @unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("cc"), "requires Linux and a C compiler")
+    def test_real_child_uses_pinned_library_across_transient_soname_retarget(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            program, library, alias = root / "tool", root / "old.so", root / "libx264.so.1"
+            newer = root / "new.so"
+            for path, number in ((library, 1), (newer, 2)):
+                subprocess.run(["cc", "-x", "c", "-", "-shared", "-fPIC", "-Wl,-soname," + alias.name, "-o", path],
+                               input=f"int version(void) {{ return {number}; }}", text=True, check=True)
+            alias.symlink_to(library)
+            subprocess.run(["cc", "-x", "c", "-", "-L" + directory, "-l:" + alias.name, "-Wl,-rpath," + directory,
+                            "-o", program], input='#include <stdio.h>\nextern int version(void);\n'
+                            'int main(void) { printf("%d\\n", version()); }\n', text=True, check=True)
+            bindings = runner.software_dependencies(program, program)
+            paths = {program, *(entry.path for entry in bindings[program])}
+            identities = {path: runner.runtime_tool_identity(path) for path in paths}
+            original_capture = runner.capture
+
+            def swap_while_running(*args, **kwargs):
+                alias.unlink()
+                alias.symlink_to(newer)
+                try:
+                    self.assertEqual(subprocess.check_output([program], text=True), "2\n")
+                    return original_capture(*args, **kwargs)
+                finally:
+                    alias.unlink()
+                    alias.symlink_to(library)
+
+            with patch.object(runner, "capture", side_effect=swap_while_running):
+                output, _ = runner.capture_software([str(program)], "ENCODE", bindings, identities)
+            self.assertEqual(output, "1\n")
+            runner.require_software_dependencies(program, program, bindings)
+
+    def test_software_rejects_ignored_native_settings(self):
+        for warning in (
+            "[libx264 @ 0x1] Error parsing option 'b-adapt = xyz'.",
+            "[libx265 @ 0x1] Unknown option: bad-field.",
+            "[libx265 @ 0x1] Invalid value for bframes: 30.",
+            "[libsvtav1 @ 0x1] Error setting option aq-mode to value bad.",
+        ):
+            with self.subTest(warning=warning), self.assertRaisesRegex(RunnerError, "SOFTWARE_SETTING_NOT_APPLIED"):
+                runner.check_software_report(warning)
+        runner.check_software_report("    title: Error parsing option")
+
+    def test_two_pass_requires_nonempty_statistics_before_encoding_output(self):
+        item = self.software_request(options={"passes": "2", "b": "2000000"})
+        runtime = SimpleNamespace(ffmpeg=Path("/ffmpeg"), capabilities={"softwareEncoders": []},
+                                  software_catalog=SimpleNamespace(build_software_options=lambda *_: ["-c:v", "libx264"]))
+        with TemporaryDirectory() as directory, patch.object(runner, "capture", return_value=("", "")) as capture, \
+                patch.object(runner, "validate_timeline"):
+            with self.assertRaisesRegex(RunnerError, "UNSUPPORTED_SOFTWARE_MULTIPASS"):
+                runner.encode(runtime, parse_trial(item), Path("/source"), Fraction(1, 1000), Path(directory))
+            capture.assert_called_once()
+            self.assertIn("-passlogfile:v", capture.call_args.args[0])
+
+    @unittest.skipUnless(os.environ.get("BITOVP_SOFTWARE_E2E") == "1", "requires FFmpeg, four software encoders and a pinned VMAF model")
+    def test_real_cpu_encoder_passes_and_vmaf(self):
+        env = {**os.environ, "BITOVP_EXPERIMENTS_BACKEND": "software"}
+        command = [sys.executable, "-B", runner.__file__]
+        runtime = json.loads(subprocess.check_output([*command, "probe"], env=env))
+        self.assertEqual(runtime["runtimeKind"], "software")
+        self.assertEqual({e["encoder"] for e in runtime["softwareEncoders"]}, set(runner.SOFTWARE_CODECS))
+        env["BITOVP_NVENC_EXPECTED_RUNTIME"] = json.dumps({"runtimeId": runtime["runtimeId"]})
+        with TemporaryDirectory() as folder:
+            source = Path(folder) / "source.mp4"
+            subprocess.run([
+                env.get("BITOVP_SOFTWARE_FFMPEG", "ffmpeg"), "-v", "error", "-f", "lavfi", "-i",
+                "testsrc2=s=1920x1080:r=30", "-vf",
+                "setsar=1,setparams=range=limited:colorspace=bt709:color_trc=bt709:color_primaries=bt709",
+                "-frames:v", "8", "-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709",
+                "-color_trc", "bt709", "-c:v", "libx264", "-preset", "ultrafast", str(source),
+            ], check=True)
+            fast_options = {
+                "libx264": {"preset": "ultrafast"}, "libx265": {"preset": "ultrafast"},
+                "libvpx-vp9": {"deadline": "good", "cpu-used": "8"}, "libsvtav1": {"preset": "8"},
+            }
+            native_options = {
+                "libx264": {"aq-mode": "1"}, "libx265": {"me": "hex"},
+                "libvpx-vp9": {"ts_layering_mode": "0"}, "libsvtav1": {"aq-mode": "2"},
+            }
+            for encoder, codec in runner.SOFTWARE_CODECS.items():
+                for passes in ("1", "2"):
+                    with self.subTest(encoder=encoder, passes=passes):
+                        item = self.software_request(codec, encoder, {"b": "2000000", "passes": passes, **fast_options[encoder]})
+                        item["trial"]["software"]["nativeOptions"] = native_options[encoder]
+                        item["sourcePath"] = str(source)
+                        path = Path(folder) / "request.json"
+                        path.write_text(json.dumps(item))
+                        row = json.loads(subprocess.check_output([*command, "measure", "--request-file", str(path)], env=env))
+                        self.assertEqual(row["runtimeId"], runtime["runtimeId"])
+                        self.assertEqual(row["scoringProfileId"], runner.SOFTWARE_PROFILE_ID)
+                        self.assertEqual(row["frameCount"], 3)
+                        self.assertGreater(int(row["videoBytes"]), 0)
+                        self.assertAlmostEqual(row["meanVmaf"], row["scoreMilli"] / 1000, delta=0.00051)
 
 
 if __name__ == "__main__":

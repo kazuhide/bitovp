@@ -1,10 +1,47 @@
-# Local NVIDIA encoding experiments
+# Local encoding experiments
 
-Encoding experiments run short, repeatable NVENC trials and measure the resulting picture quality. A trial produces VMAF scores, video-packet bytes, display duration, processing time, and runtime identity. Use the campaign export as training input.
+Encoding experiments run short, repeatable trials on local NVENC and software workers and measure the resulting picture quality. A trial produces VMAF scores, video-packet bytes, display duration, processing time, and runtime identity. Use the campaign export as training input.
 
 The first runtime accepts one progressive BT.709 limited-range 1920×1080, 30 fps, 8-bit 4:2:0 video track in MP4 or Matroska. It accepts frame-aligned windows of 1 to 3,600 frames, one of H.264, HEVC, or AV1, and the versioned VBR parameters shown in the app. The CPU may decode the source before uploading it. NVDEC supplies CUDA frames of the encoded output to the official VMAF-CUDA `vmaf_v0.6.1` scorer. The SDK catalog includes inventory entries for settings without a runner binding.
 
-## Prepare the Linux worker
+## Run local software training encodes from the CLI or API
+
+Software trials encode a registered source window, measure its video bitrate and CPU VMAF v0.6.1, and export one training observation. They do not call Bitmovin or train a model automatically. The normal VOD and Live workflows are unchanged.
+
+On a managed Linux host, use the [software training runtime build](../../native/nvenc-experiments/build-software-runtime.sh) or supply FFmpeg and ffprobe with CPU libvmaf and the desired encoder libraries. Use a build with libx264, libx265, libvpx-vp9 and libsvtav1 to run all four. Set the following in the experiment worker environment. Use the official vmaf_v0.6.1.json file from the installed BitOVP model directory. Use the same managed root for registration, web and workers.
+
+```sh
+export BITOVP_EXPERIMENTS_ROOT=/srv/bitovp/experiments
+export BITOVP_EXPERIMENTS_BACKEND=software
+export BITOVP_SOFTWARE_FFMPEG=/srv/bitovp/software-runtime/prefix/bin/ffmpeg
+export BITOVP_SOFTWARE_FFPROBE=/srv/bitovp/software-runtime/prefix/bin/ffprobe
+export BITOVP_SOFTWARE_VMAF_MODEL=/srv/bitovp/software-runtime/prefix/share/encoding-experiments/vmaf_v0.6.1.json
+python3 native/nvenc-experiments/runner.py probe
+pnpm --filter @bitovp/worker experiments:worker
+```
+
+A separate NVENC worker can run alongside the software worker. Each publishes its own capabilities. Authenticate and register a source as described below. Query the software worker with `capabilities --backend software` and `catalog --backend software` (HTTP query `?backend=software`). The default for these two commands is NVENC. Copy the returned capability ID into the campaign create request. Use distinct campaigns for NVENC and CPU workers. A single CPU campaign can mix any of its advertised encoders. The GET catalog contains FFmpeg options, native library options and restrictions for each encoder. File and callback controls requiring unmanaged process resources cannot be passed as CLI arguments. The worker owns the input, output, timing and scoring files.
+
+Example trial file for a ten-second H.264 software encode:
+
+```json
+{
+  "sourceId": "training-source",
+  "window": {"timeBase": {"num": 1, "den": 30}, "startPts": "0", "endPtsExclusive": "300"},
+  "codec": "H264",
+  "software": {"encoder": "libx264", "options": {"b": "2000000", "preset": "fast"}, "nativeOptions": {"aq-mode": "1"}}
+}
+```
+
+Use `H264/libx264`, `HEVC/libx265`, `VP9/libvpx-vp9`, or `AV1/libsvtav1`. Values are strings. Leave out an option to inherit the installed encoder default. Use exact catalog names, including for native library parameters. Validate the trial, submit a batch with a stable idempotency key, and export measurements by campaign. Use a distinct `replicateId` for intentional repeats of identical settings. A CPU result identifies its scoring profile as `official-vmaf-cpu-0.6.1`. A change to the runtime fingerprint requires a new campaign.
+
+In the NDJSON export, `input.software` stores the requested settings. Use each successful row’s `result.videoBytes`, `durationTicks`, `timeBase`, `observedGopFrames` and `meanVmaf` for measured outcomes. Encoder presets and lookahead can affect frame-level decisions, so use the measured outputs as training labels.
+
+For x264 weighted P prediction, choose one control. FFmpeg’s `weightp` accepts `0`, `1`, `2` or the corresponding names `none`, `simple`, `smart`. Omit it or use `-1` to inherit the preset. FFmpeg’s `wpredp` spelling and the native `weightp` parameter accept `0`, `1` or `2`.
+
+For dynamically linked Linux builds, the worker uses glibc loader diagnostics and Linux procfs file descriptors to pin each FFmpeg and ffprobe invocation to its verified media libraries. The managed Debian build supplies this environment.
+
+## Prepare the Linux NVENC worker
 
 Build the [pinned private runtime](../../native/nvenc-experiments/build-runtime.sh) on a Linux system with a compatible NVIDIA driver, CUDA Toolkit, and C/C++ build tools. The build needs Meson, Ninja, NASM, pkg-config, make, curl, and Python. Hold the assets and the worker work directory on the same managed Linux host as the web app, or mount the same directory into both deployments. The Web process needs read access to registrations and the worker health file. Only operators and the worker should have write access to its managed directories.
 
@@ -48,7 +85,7 @@ node scripts/encoding-experiments.mjs watch <campaign-id>
 node scripts/encoding-experiments.mjs export <campaign-id> --format ndjson
 ```
 
-Create inputs carry `schemaVersion: 1`, `name`, and the current `capabilityId`. The queue accepts `{ "schemaVersion": 1, "trials": [...] }` in batches of at most 128. Each trial uses a registered `sourceId`, a time base and start/end PTS, codec, preset, tuning, and typed config. Use distinct `replicateId` values for intentional repeats. Retrying the same batch with the same idempotency key returns the original receipt. Results paginate against a fixed completion sequence.
+Create inputs carry `schemaVersion: 1`, `name`, and the current `capabilityId`. The queue accepts `{ "schemaVersion": 1, "trials": [...] }` in batches of at most 128. Each trial identifies its source, time base, start/end PTS and codec. NVENC trials carry a preset, tuning and typed config. Software trials carry the encoder and its options. Use distinct `replicateId` values for intentional repeats. Retrying the same batch with the same idempotency key returns the original receipt. Results paginate against a fixed completion sequence.
 
 Enable **Also measure VMAF v1.0.16** in the app or include `"additionalScoringProfiles": ["bitovp-vmaf-cuda-1.0.16-3d0h"]` in a trial submitted through the CLI or API. The worker encodes once, then both scorers use that file and the same reference window. Each scorer decodes the encoded frames with NVDEC and processes them on CUDA. The reference may be software-decoded. The result and NDJSON export keep the v0.6.1 score in `scoreMilli` and `meanVmaf`. The `additionalScores` entry contains either the v1.0 score, scoring time, and scorer and model hashes or its failure code. A v1.0 scoring failure preserves a successfully measured v0.6.1 result.
 
@@ -97,4 +134,4 @@ python3 -B test_cli.py
 node scripts/encoding-experiments.mjs select <campaign-id> --file constraints.json
 ```
 
-The request uses `schemaVersion: 1`, the trial's `sourceId` and `window`, and optional `codec`, `bitrateLimitBps`, `encodeTimeLimitMs`, and `gopFrames` in `constraints`. The top-level `scoringProfileId` defaults to `official-vmaf-cuda-0.6.1`. Set it to `bitovp-vmaf-cuda-1.0.16-3d0h` to select by v1.0 scores. Each selection uses a single model. The result records the candidate digest and counts for eligible, ineligible, and incomplete rows. Lean verifies maximum score among the supplied feasible observations. Measured VMAF and timing come from the GPU worker's receipts. The Lean CLI also accepts predicted values from a separate model pipeline.
+The request uses `schemaVersion: 1`, the trial's `sourceId` and `window`, and optional `codec`, `bitrateLimitBps`, `encodeTimeLimitMs`, and `gopFrames` in `constraints`. The top-level `scoringProfileId` defaults to the primary profile of the campaign, `official-vmaf-cuda-0.6.1` for NVENC or `official-vmaf-cpu-0.6.1` for software encoders. Set it to `bitovp-vmaf-cuda-1.0.16-3d0h` to select by v1.0 scores. Each selection uses a single model. The result records the candidate digest and counts for eligible, ineligible, and incomplete rows. Lean verifies maximum score among the supplied feasible observations. Measured VMAF and timing come from the experiment worker's receipts. The Lean CLI also accepts predicted values from a separate model pipeline.

@@ -56,7 +56,7 @@ const EXPECTATIONS: Expectation[] = [
 		// ERROR persist, finalize-RUNNING persist, finalize-catch ERROR.
 		file: "orchestrator/live-processor.ts",
 		writes:
-			/(data:\s*\{[^}]*status:\s*(?:"(ERROR|STOPPED|RUNNING)"|settledStatus|outcome\.status)|persist\((?:liveChannelId, )?(?:entries|untouched)[^;]*?status:\s*(?:"(ERROR|RUNNING|STOPPED)"|feeders\.length\s*\?\s*"STOPPING"\s*:\s*"STOPPED"|aisaFailure\s*\?\s*"ERROR"\s*:\s*"STOPPED"))/gs,
+			/(data:\s*\{\s*status,\s*error\s*\}|data:\s*\{[^}]*status:\s*(?:"(ERROR|STOPPED|RUNNING)"|settledStatus|outcome\.status)|persist\((?:liveChannelId, )?(?:entries|untouched)[^;]*?status:\s*(?:"(ERROR|RUNNING|STOPPED)"|feeders\.length\s*\?\s*"STOPPING"\s*:\s*"STOPPED"|aisaFailure\s*\?\s*"ERROR"\s*:\s*"STOPPED"))/gs,
 		// AISA completion keeps these same two terminal sites and emits. Stop's
 		// settledStatus and cancellation's explicit ERROR/STOPPED branch preserve
 		// terminal failure rather than reporting success. Count both spellings;
@@ -100,6 +100,8 @@ const EXPECTATIONS: Expectation[] = [
 		// 11 -> 13 writes: managed startup cancellation now commits its channel
 		// and run terminal rows explicitly in ONE fenced transaction with the
 		// cancelRequested clear. Both paths retain their existing post-commit emit.
+		// projectRestartState uses the same transaction for PROVISIONING and failure.
+		// Count its { status, error } write; the owned failure emits after commit.
 		writeCount: 13,
 		emitCount: 11,
 	},
@@ -272,10 +274,12 @@ const EXPECTATIONS: Expectation[] = [
 		 * RUNNING/STOPPING -> ERROR write emits CHANNEL_ERROR so a queue handoff
 		 * that exhausts all retries is visible outside the failed-job log.
 		 */
+		// The exhausted STOP also writes its run in the channel transaction. RESTART
+		// writes the still-owned channel and eligible run, then emits once for the channel.
 		file: "live/dead-job-outcome.ts",
 		writes: /data:\s*\{[^}]*status:\s*"ERROR"/gs,
-		writeCount: 2,
-		emitCount: 2,
+		writeCount: 5,
+		emitCount: 3,
 	},
 	{
 		// : the origin observer's own alert lifecycle — one open

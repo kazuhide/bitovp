@@ -108,6 +108,7 @@ export async function recordFinalRestartFailure(
 	job: DeadLiveJob,
 	message: string,
 	at = new Date(),
+	emitEvent?: EmitProductEvent,
 ): Promise<boolean> {
 	const parsed = liveChannelJobSchema.safeParse(job?.data);
 	if (
@@ -119,10 +120,13 @@ export async function recordFinalRestartFailure(
 		return false;
 	const { liveChannelId, effect } = parsed.data;
 	const error = redactSecrets(message);
-	return prisma.$transaction(async (tx) => {
+	const projected = await prisma.$transaction(async (tx) => {
 		// Lock in the same order as STOP admission and re-air. A run can change
 		// while the failed callback is queued, even if the channel ID survives.
-		await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${liveChannelId}::uuid FOR UPDATE`;
+		const [channel] = await tx.$queryRaw<
+			{ name: string }[]
+		>`SELECT name FROM "LiveChannel" WHERE id = ${liveChannelId}::uuid FOR UPDATE`;
+		if (!channel) return false;
 		const latest = await tx.liveChannelRun.findFirst({
 			where: { liveChannelId },
 			orderBy: { seq: "desc" },
@@ -173,8 +177,20 @@ export async function recordFinalRestartFailure(
 				where: { id: latest.id, endedAt: null },
 				data: { endedAt: at },
 			});
-		return true;
+		return channel;
 	});
+	if (!projected) return false;
+	await emitEvent?.(
+		{
+			kind: "CHANNEL_ERROR",
+			liveChannelId,
+			name: projected.name,
+			error,
+			path: `/live/${liveChannelId}`,
+		},
+		at,
+	);
+	return true;
 }
 
 /**

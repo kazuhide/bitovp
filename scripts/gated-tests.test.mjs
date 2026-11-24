@@ -54,6 +54,8 @@ const paths = (groups) =>
 		Object.keys(group.files).map((file) => join(group.directory, file)),
 	);
 
+const EXPECTED_PLAIN_WORKER_SKIPS = 93;
+
 test("the required Redis run registers the cross-worker/Web clip availability matrix", () => {
 	assert.deepEqual(REDIS.availability, {
 		workspace: "@bitovp/web",
@@ -185,7 +187,7 @@ test("a plain run may skip the tests that another job runs", () => {
 	for (const [workspace, skipped] of [
 		["@bitovp/core", 25],
 		["@bitovp/db", 73],
-		["@bitovp/worker", 93],
+		["@bitovp/worker", EXPECTED_PLAIN_WORKER_SKIPS],
 		// Includes six favorite-registry, two still-image, two archive/restore and
 		// one WebM recovery case, plus three LOCAL QC cancellation cases and the
 		// retained export, generation history and export re-edit cases.
@@ -777,7 +779,7 @@ test("the audit keeps each allowance to its own file and list, and treats what i
 					: entry,
 			),
 		),
-		{ problems: [], skipped: 83 - gated.count },
+		{ problems: [], skipped: EXPECTED_PLAIN_WORKER_SKIPS - gated.count },
 	);
 	// The report of a failed run is refused: it lacks the tests of a file that
 	// did not load.
@@ -828,13 +830,17 @@ test("the audit keeps each allowance to its own file and list, and treats what i
 		audit(undefined, (report) => {
 			report.numPendingTests -= 2;
 		}).problems,
-		["the report counts 81 skipped tests but lists 83"],
+		[
+			`the report counts ${EXPECTED_PLAIN_WORKER_SKIPS - 2} skipped tests but lists ${EXPECTED_PLAIN_WORKER_SKIPS}`,
+		],
 	);
 	assert.deepEqual(
 		audit(undefined, (report) => {
 			delete report.numPendingTests;
 		}).problems,
-		["the report counts undefined skipped tests but lists 83"],
+		[
+			`the report counts undefined skipped tests but lists ${EXPECTED_PLAIN_WORKER_SKIPS}`,
+		],
 	);
 	assert.equal(
 		audit(undefined, (report) => {
@@ -1620,7 +1626,7 @@ test("the command reports through its exit status", () => {
 		assert.equal(worker.status, 0, worker.stderr);
 		assert.equal(
 			worker.stdout,
-			"@bitovp/worker: 83 tests skipped by the plain run; another job runs each of them\n",
+			`@bitovp/worker: ${EXPECTED_PLAIN_WORKER_SKIPS} tests skipped by the plain run; another job runs each of them\n`,
 		);
 
 		const hiding = run(

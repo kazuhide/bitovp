@@ -283,6 +283,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						{ data: job, attemptsMade: 3, opts: { attempts: 3 } },
 						"restart failed",
 						now,
+						emitEvent,
 					),
 				).toBe(false);
 				expect(
@@ -319,16 +320,39 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				},
 			};
 			const job = { data, attemptsMade: 1, opts: { attempts: 2 } };
+			const emit = vi.fn(async () => {});
 			expect(
-				await recordFinalRestartFailure(tenant, job, "restart failed", now),
+				await recordFinalRestartFailure(
+					tenant,
+					job,
+					"restart failed",
+					now,
+					emit,
+				),
 			).toBe(false);
+			expect(emit).not.toHaveBeenCalled();
 			job.attemptsMade = 2;
 			expect(
-				await recordFinalRestartFailure(tenant, job, "restart failed", now),
+				await recordFinalRestartFailure(
+					tenant,
+					job,
+					"restart failed",
+					now,
+					emit,
+				),
 			).toBe(true);
 			expect(
-				await recordFinalRestartFailure(tenant, job, "late failure", now),
+				await recordFinalRestartFailure(tenant, job, "late failure", now, emit),
 			).toBe(false);
+			expect(emit).toHaveBeenCalledTimes(1);
+			expect(emit).toHaveBeenCalledWith(
+				expect.objectContaining({
+					kind: "CHANNEL_ERROR",
+					liveChannelId: f.channel.id,
+					error: "restart failed",
+				}),
+				now,
+			);
 			expect(
 				await tenant.liveChannel.findUniqueOrThrow({
 					where: { id: f.channel.id },

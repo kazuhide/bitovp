@@ -2199,7 +2199,18 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 					job?.name !== HEARTBEAT_SWEEP_JOB &&
 					liveAction === "restart"
 				) {
-					await recordFinalRestartFailure(prisma, job, err.message);
+					await recordFinalRestartFailure(
+						prisma,
+						job,
+						err.message,
+						new Date(),
+						emitEvent,
+					).catch((updateErr) =>
+						console.error(
+							"[worker:liveChannel] failed to project exhausted restart:",
+							updateErr,
+						),
+					);
 				}
 				if (key === "liveChannel" && finalStopFailure) {
 					void recordFinalStopFailure(

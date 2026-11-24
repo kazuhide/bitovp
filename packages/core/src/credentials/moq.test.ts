@@ -40,7 +40,7 @@ describe("MoQ relay credentials", () => {
 			secret: {
 				...credential.secret,
 				authToken: "test-token",
-				authTokenType: 1,
+				authTokenType: 2_147_483_647,
 			},
 		};
 		expect(createCredentialSchema.parse(authenticated)).toEqual(authenticated);
@@ -75,7 +75,7 @@ describe("MoQ relay credentials", () => {
 		{ authToken: "" },
 		{ authToken: "token", authTokenType: -1 },
 		{ authToken: "token", authTokenType: 0.5 },
-		{ authToken: "token", authTokenType: Number.MAX_SAFE_INTEGER + 1 },
+		{ authToken: "token", authTokenType: 2_147_483_648 },
 	])("rejects invalid authentication settings: %j", (auth) => {
 		expect(
 			createCredentialSchema.safeParse({

@@ -306,18 +306,291 @@
 				"location": "body",
 				"propertyPath": ["relayUrl"]
 			},
-			"access": "not-implemented-confirmed",
+			"access": "gui-confirmed",
 			"evidence": {
-				"json": [
+				"gui": [
 					{
-						"file": "packages/core/src/plan/schema.ts",
-						"anchor": "export const planOutputSchema = z.discriminatedUnion(\"kind\", ["
+						"file": "apps/web/src/app/settings/credentials/credential-form.tsx",
+						"anchor": "fields.secret.map((def) => renderField(\"secret\", def))"
+					}
+				],
+				"guiControls": [
+					{
+						"file": "apps/web/src/app/settings/credentials/provider-fields.ts",
+						"anchor": "labelKey: \"fields.moqRelayUrl\""
+					}
+				],
+				"validation": [
+					{
+						"file": "packages/core/src/credentials/schemas.ts",
+						"anchor": "relayUrl: moqRelayUrlSchema,"
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/ops/exec-io.ts",
+						"anchor": "relayUrl: secret.relayUrl,"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/ops/io.ts",
+						"anchor": "return api.encoding.outputs.moq"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "apps/web/src/app/settings/credentials/credential-form.moq.test.tsx",
+						"anchor": "relayUrl: \"moqt://relay.example.com:443\","
+					},
+					{
+						"file": "apps/worker/src/orchestrator/sdk-ops.moq-output.test.ts",
+						"anchor": "sends MoQ fields to the provider and keeps relay credentials out of the audit trail"
 					}
 				]
 			},
 			"provider": "unverified",
-			"reason": "Scoped source audit: application planOutputSchema has no MOQ member, destination/credential mapping has no MOQ provider, and no non-test MoqOutput or encoding.outputs.moq calls exist in apps/packages. The new SDK destination is not available through the application's current VOD/Live plans.",
-			"note": "SDK 1.288.0 addition; retain in the denominator. Assess API/encoder/account/relay requirements before implementation."
+			"note": "Publishing relay URL from the encrypted Live delivery credential. The plan stores the credential ID.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
+					"reviewedAt": "2026-11-25"
+				},
+				"conditions": ["Required for a Live MoQ output."]
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.create",
+			"target": {
+				"location": "body",
+				"propertyPath": ["authToken"]
+			},
+			"access": "gui-confirmed",
+			"evidence": {
+				"gui": [
+					{
+						"file": "apps/web/src/app/settings/credentials/credential-form.tsx",
+						"anchor": "fields.secret.map((def) => renderField(\"secret\", def))"
+					}
+				],
+				"guiControls": [
+					{
+						"file": "apps/web/src/app/settings/credentials/provider-fields.ts",
+						"anchor": "labelKey: \"fields.moqAuthToken\""
+					}
+				],
+				"validation": [
+					{
+						"file": "packages/core/src/credentials/schemas.ts",
+						"anchor": "authToken: z.string().min(1).optional(),"
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/ops/exec-io.ts",
+						"anchor": "? { authToken: secret.authToken }"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/ops/io.ts",
+						"anchor": "return api.encoding.outputs.moq"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "apps/web/src/app/settings/credentials/credential-form.moq.test.tsx",
+						"anchor": "authToken: \"publish-secret\","
+					},
+					{
+						"file": "apps/worker/src/orchestrator/sdk-ops.moq-output.test.ts",
+						"anchor": "sends MoQ fields to the provider and keeps relay credentials out of the audit trail"
+					}
+				]
+			},
+			"provider": "unverified",
+			"note": "Optional publishing token from the encrypted relay credential. The Worker omits it when unset.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
+					"reviewedAt": "2026-11-25"
+				},
+				"conditions": ["Optional relay authorization token."]
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.create",
+			"target": {
+				"location": "body",
+				"propertyPath": ["authTokenType"]
+			},
+			"access": "gui-confirmed",
+			"evidence": {
+				"gui": [
+					{
+						"file": "apps/web/src/app/settings/credentials/credential-form.tsx",
+						"anchor": "fields.secret.map((def) => renderField(\"secret\", def))"
+					}
+				],
+				"guiControls": [
+					{
+						"file": "apps/web/src/app/settings/credentials/provider-fields.ts",
+						"anchor": "labelKey: \"fields.moqAuthTokenType\""
+					}
+				],
+				"validation": [
+					{
+						"file": "packages/core/src/credentials/schemas.ts",
+						"anchor": "authTokenType: z.int32().nonnegative().optional(),"
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/ops/exec-io.ts",
+						"anchor": "? { authTokenType: secret.authTokenType }"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/ops/io.ts",
+						"anchor": "return api.encoding.outputs.moq"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "apps/web/src/app/settings/credentials/credential-form.moq.test.tsx",
+						"anchor": "authTokenType: 0,"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/sdk-ops.moq-output.test.ts",
+						"anchor": "sends MoQ fields to the provider and keeps relay credentials out of the audit trail"
+					}
+				]
+			},
+			"provider": "unverified",
+			"note": "Optional token type from the encrypted relay credential. Zero is preserved.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
+					"reviewedAt": "2026-11-25"
+				},
+				"conditions": [
+					"Requires an authorization token. Allowed values range from zero to the signed 32-bit maximum."
+				]
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.create",
+			"target": {
+				"location": "body",
+				"propertyPath": ["trackNamespace"]
+			},
+			"access": "gui-confirmed",
+			"evidence": {
+				"gui": [
+					{
+						"file": "apps/web/src/app/live/new/live-wizard.tsx",
+						"anchor": "id=\"lw-moq-namespace\""
+					}
+				],
+				"json": [
+					{
+						"file": "apps/web/src/app/live/new/build-live-plan.ts",
+						"anchor": "trackNamespace: o.moq?.trackNamespace ?? [],"
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/live-processor.ts",
+						"anchor": "entry.payload.trackNamespace = bindMoqPlaybackNamespace("
+					},
+					{
+						"file": "packages/core/src/live/moq-run-namespace.ts",
+						"anchor": "if (namespace.length !== 1 || !field) return namespace;"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/ops/exec-io.ts",
+						"anchor": "trackNamespace: moqTrackNamespaceSchema.parse(p.trackNamespace),"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/ops/io.ts",
+						"anchor": "return api.encoding.outputs.moq"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "apps/web/src/app/live/new/live-wizard.output.test.tsx",
+						"anchor": "trackNamespace: [\"new-channel\"],"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/sdk-ops.moq-output.test.ts",
+						"anchor": "sends MoQ fields to the provider and keeps relay credentials out of the audit trail"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/live-processor.test.ts",
+						"anchor": "writes the effective MoQ namespace to the run before dispatching its output CREATE"
+					}
+				]
+			},
+			"provider": "unverified",
+			"note": "The Live wizard stores the configured tuple. On a fresh run the Worker bounds a single component and applies its run-specific -bitovp-<runId> suffix before creating the output. It forwards multi-component tuples unchanged.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
+					"reviewedAt": "2026-11-25"
+				},
+				"conditions": ["Required tuple of one to 32 strings."]
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.create",
+			"target": {
+				"location": "body",
+				"propertyPath": ["draftVersion"]
+			},
+			"access": "gui-confirmed",
+			"evidence": {
+				"gui": [
+					{
+						"file": "apps/web/src/app/live/new/live-wizard.tsx",
+						"anchor": "id=\"lw-moq-draft\""
+					}
+				],
+				"json": [
+					{
+						"file": "apps/web/src/app/live/new/build-live-plan.ts",
+						"anchor": "draftVersion: o.moq?.draftVersion ?? \"DRAFT_16\","
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/ops/exec-io.ts",
+						"anchor": "draftVersion: moqDraftVersionSchema.parse(p.draftVersion),"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/ops/io.ts",
+						"anchor": "return api.encoding.outputs.moq"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "apps/web/src/app/live/new/live-wizard.copy.test.tsx",
+						"anchor": "draftVersion: \"DRAFT_18\","
+					},
+					{
+						"file": "apps/worker/src/orchestrator/sdk-ops.moq-output.test.ts",
+						"anchor": "sends MoQ fields to the provider and keeps relay credentials out of the audit trail"
+					}
+				]
+			},
+			"provider": "unverified",
+			"note": "Custom Live output field. Operators select the draft supported by their relay.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
+					"reviewedAt": "2026-11-25"
+				},
+				"conditions": ["Required. The API accepts DRAFT_16 and DRAFT_18."]
+			}
 		}
 	]
 }

@@ -6222,17 +6222,43 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 		});
 	}
 
+	function provisionScheduled(h: ReturnType<typeof setup>) {
+		if (!h.runRows.length)
+			h.runRows.push({
+				id: LIVE_TO_VOD_RUN_ID,
+				seq: 1,
+				status: "PROVISIONING",
+				liveChannelId: CHANNEL_ID,
+			});
+		h.liveSchedule.findFirst.mockResolvedValue({
+			id: SCHEDULE_ID,
+			liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+			startAdmissionFenceVersion: 1,
+		} as never);
+		return h.rawProcess(
+			{
+				liveChannelId: CHANNEL_ID,
+				action: "provision",
+				plannedLiveChannelRunId: LIVE_TO_VOD_RUN_ID,
+				provisionFenceVersion: 1,
+			},
+			`sched-${SCHEDULE_ID}`,
+		);
+	}
+
 	it("preserves delivered START after normal stop and old provision redelivery", async () => {
 		const h = setup();
 		const schedule = {
 			liveChannelId: CHANNEL_ID,
-			liveChannelRunId: "run-1",
+			liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+			id: SCHEDULE_ID,
+			startAdmissionFenceVersion: 1,
 			action: "START",
 			status: "FIRED",
 			outcome: "PENDING",
 		};
 		trackStartOutcomes(h, [schedule]);
-		await h.process({ liveChannelId: CHANNEL_ID });
+		await provisionScheduled(h);
 		expect(schedule.outcome).toBe("DELIVERED");
 		const run = h.runRows[0];
 		if (!run) throw new Error("fixture run missing");
@@ -6256,7 +6282,7 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 		expect(h.row.status).toBe("STOPPED");
 		expect(h.row.error).toBeNull();
 		h.liveSchedule.updateMany.mockClear();
-		await h.process({ liveChannelId: CHANNEL_ID });
+		await provisionScheduled(h);
 		expect(schedule.outcome).toBe("DELIVERED");
 		expect(h.liveSchedule.updateMany).not.toHaveBeenCalled();
 	});
@@ -6269,6 +6295,7 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 		const base = {
 			liveChannelId: CHANNEL_ID,
 			action: "START",
+			startAdmissionFenceVersion: 1,
 			status: "FIRED",
 		};
 		const schedules = [
@@ -6743,20 +6770,18 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 		 * amber.
 		 */
 		const harness = setup();
-		await harness.process({ liveChannelId: CHANNEL_ID });
+		await provisionScheduled(harness);
 		expect(outcomeWrites(harness.liveSchedule)).toEqual([
 			{
 				where: {
 					liveChannelId: CHANNEL_ID,
+					id: SCHEDULE_ID,
+					liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+					startAdmissionFenceVersion: 1,
 					action: "START",
 					status: "FIRED",
 					outcome: {
-						in: [
-							"PENDING",
-							"PROCESS_PUSHING",
-							"INGEST_CONNECTED",
-							"SLATE_ARMED",
-						],
+						in: ["PENDING"],
 					},
 				},
 				data: expect.objectContaining({ outcome: "DELIVERED" }),
@@ -6773,24 +6798,20 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 				),
 			},
 		);
-		await expect(
-			harness.process({ liveChannelId: CHANNEL_ID }),
-		).rejects.toThrow("region rejected");
+		await expect(provisionScheduled(harness)).rejects.toThrow(
+			"region rejected",
+		);
 		expect(outcomeWrites(harness.liveSchedule)).toEqual([
 			{
 				where: {
 					liveChannelId: CHANNEL_ID,
+					id: SCHEDULE_ID,
+					liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+					startAdmissionFenceVersion: 1,
 					action: "START",
 					status: "FIRED",
 					outcome: {
-						in: [
-							"PENDING",
-							"PROCESS_PUSHING",
-							"INGEST_CONNECTED",
-							"SLATE_ARMED",
-							"DELIVERED",
-							"UNKNOWN",
-						],
+						in: ["PENDING"],
 					},
 				},
 				data: expect.objectContaining({

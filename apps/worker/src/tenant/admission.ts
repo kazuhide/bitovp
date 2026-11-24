@@ -10,25 +10,21 @@ import {
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { retireRestartAdmission } from "../live/dead-job-outcome";
+import { resolveProvisionAdmission } from "../live/provision-admission";
+import {
+	hasCommittedStart,
+	suppressInactiveProvision,
+} from "../live/reconcile-stranded-runs";
+import { legacyScheduleId } from "../scheduler/schedule-outcome";
 export const INACTIVE_ORGANIZATION_ERROR =
 	"Organization is inactive; new work was suppressed";
-export function hasCommittedStart(log: unknown, kind: string) {
-	return (
-		Array.isArray(log) &&
-		log.some(
-			(entry) =>
-				entry &&
-				typeof entry === "object" &&
-				entry.kind === kind &&
-				["RUNNING", "DONE"].includes(entry.status),
-		)
-	);
-}
+export { hasCommittedStart } from "../live/reconcile-stranded-runs";
 /** Deactivation blocks fresh work without killing a committed provider run or STOP. */
 export async function admitInactiveOrganization(
 	prisma: AppPrismaClient,
 	key: QueueKey,
 	payload: unknown,
+	delivery: { id?: string; timestamp?: number } = {},
 ): Promise<boolean> {
 	if (key === "notify") return true;
 	if (key === "liveChannel") {
@@ -46,20 +42,27 @@ export async function admitInactiveOrganization(
 				);
 			return false;
 		}
-		const row = await prisma.liveChannel.findUnique({
-			where: { id: data.liveChannelId },
-			select: {
-				status: true,
-				bitmovinEncodingId: true,
-				stepLog: true,
-			},
-		});
-		if (
-			data.action === "provision" &&
-			row?.bitmovinEncodingId &&
-			hasCommittedStart(row.stepLog, "START_LIVE_ENCODING")
-		)
-			return true;
+		if (data.action === "provision") {
+			const params = data.params as { cancelRunId?: string } | undefined;
+			// The processor will require the stored cancellation on this exact run.
+			if (params?.cancelRunId) return true;
+			const admission = await resolveProvisionAdmission(
+				prisma,
+				data.liveChannelId,
+				data,
+				delivery.id,
+				delivery.timestamp,
+			);
+			if (!admission) return false;
+			return await suppressInactiveProvision(
+				prisma,
+				data.liveChannelId,
+				admission,
+				legacyScheduleId(delivery.id),
+				INACTIVE_ORGANIZATION_ERROR,
+				new Date(),
+			);
+		}
 		const scheduleId =
 			data.effect?.scheduleId ??
 			(typeof data.params === "object" && data.params !== null
@@ -74,31 +77,7 @@ export async function admitInactiveOrganization(
 					note: INACTIVE_ORGANIZATION_ERROR,
 				},
 			});
-		if (data.action === "provision") {
-			const changed = await prisma.liveChannel.updateMany({
-				where: {
-					id: data.liveChannelId,
-					status: { in: ["CREATED", "PROVISIONING"] },
-				},
-				data: {
-					status: "ERROR",
-					error: INACTIVE_ORGANIZATION_ERROR,
-					provisionClaimedAt: null,
-				},
-			});
-			if (changed.count > 0)
-				await prisma.liveChannelRun.updateMany({
-					where: {
-						liveChannelId: data.liveChannelId,
-						status: { in: ["CREATED", "PROVISIONING"] },
-					},
-					data: {
-						status: "ERROR",
-						error: INACTIVE_ORGANIZATION_ERROR,
-						endedAt: new Date(),
-					},
-				});
-		}
+
 		return false;
 	}
 	if (key === "orchestrator") {

@@ -37,7 +37,9 @@ import {
 	createLiveChannelProcessor,
 	type LiveChannelDeps,
 } from "../orchestrator/live-processor";
+import { recordScheduleOutcome } from "../scheduler/schedule-outcome";
 import { createScheduleSweep } from "../scheduler/sweep";
+import { admitInactiveOrganization } from "../tenant/admission";
 import { createTenantConsumer } from "../tenant/consumer";
 import {
 	createExpiredRestartReconciler,
@@ -45,12 +47,14 @@ import {
 	recordFinalRestartFailure,
 	recordFinalStopFailure,
 } from "./dead-job-outcome";
+import { createExhaustedLegacyStopRecovery } from "./exhausted-legacy-stops";
 import { requestProbeStop } from "./probe-runner";
 import {
 	createProviderLifecycleReconciler,
 	type RunLifecycleRow,
 } from "./provider-lifecycle";
 import { commitProvisionEnd } from "./provision-outcome";
+import { resolveProvisionAdmission } from "./provision-admission";
 import {
 	createStrandedRunReconciler,
 	recordExpiredProvisionFailure,
@@ -789,6 +793,485 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				provisionClaimedAt: heldAt,
 			});
 		}
+
+		it("snapshots only pending upgrade generations across tenant-scoped START and STOP histories", async () => {
+			const pending = await fixture("PROVISIONING", null);
+			const stopped = await fixture("STOPPED", null);
+			const other = await otherTenant.liveChannel.create({
+				data: {
+					name: "other org pending STOP",
+					plan: {},
+					status: "STOPPING",
+					liveEffectFenceVersion: 8,
+				},
+			});
+			const migration = readFileSync(
+				new URL(
+					"../../../../packages/db/prisma/migrations/20261125133000_live_start_admission/migration.sql",
+					import.meta.url,
+				),
+				"utf8",
+			);
+			const bootstrap = migration.slice(migration.indexOf("DO $$"));
+			await admin.$executeRawUnsafe(bootstrap);
+			expect(
+				(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: pending.channel.id },
+					})
+				).legacyAdmissionFenceVersion,
+			).toBe(0);
+			expect(
+				(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: stopped.channel.id },
+					})
+				).legacyAdmissionFenceVersion,
+			).toBeNull();
+			expect(
+				(
+					await otherTenant.liveChannel.findUniqueOrThrow({
+						where: { id: other.id },
+					})
+				).legacyAdmissionFenceVersion,
+			).toBe(8);
+			expect(
+				await tenant.liveChannel.findUnique({ where: { id: other.id } }),
+			).toBeNull();
+		});
+
+		it("keeps a scheduled re-air invisible to outbox recovery until its new airing and generation commit", async () => {
+			const f = await fixture("STOPPED", null);
+			const plan = JSON.parse(
+				readFileSync(
+					new URL(
+						"../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+						import.meta.url,
+					),
+					"utf8",
+				),
+			);
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { plan },
+			});
+			const row = await tenant.liveSchedule.create({
+				data: {
+					action: "START",
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					fireAt: now,
+				},
+			});
+			const locked = barrier(),
+				resume = barrier();
+			const gated = instrumentTransactions(
+				tenant,
+				async (tx) =>
+					new Proxy(tx, {
+						get(client, key) {
+							if (key === "liveChannel")
+								return new Proxy(client.liveChannel, {
+									get(delegate, prop) {
+										if (prop === "updateMany")
+											return async (
+												args: Parameters<typeof delegate.updateMany>[0],
+											) => {
+												if (args?.data?.status === "PROVISIONING") {
+													locked.release();
+													await resume.ready;
+												}
+												return delegate.updateMany(args);
+											};
+										return Reflect.get(delegate, prop);
+									},
+								});
+							return Reflect.get(client, key);
+						},
+					}),
+			);
+			const enqueue = vi.fn(
+				async (_job: import("@bitovp/core").LiveChannelJob, _id: string) => {},
+			);
+			const original = createScheduleSweep({
+				prisma: gated,
+				now: () => now,
+				enqueue,
+			})();
+			try {
+				await reach(locked.ready, original);
+				expect(
+					await tenant.liveSchedule.findUniqueOrThrow({
+						where: { id: row.id },
+					}),
+				).toMatchObject({ status: "ARMED", startAdmissionFenceVersion: null });
+				await createScheduleSweep({
+					prisma: tenant,
+					now: () => new Date(now.getTime() + 600000),
+					enqueue,
+				}).dispatchPending();
+				expect(enqueue).not.toHaveBeenCalled();
+			} finally {
+				resume.release();
+				await original;
+			}
+			const saved = await tenant.liveSchedule.findUniqueOrThrow({
+				where: { id: row.id },
+			});
+			expect(saved.status).toBe("FIRED");
+			expect(saved.liveChannelRunId).not.toBe(f.run.id);
+			expect(saved.startAdmissionFenceVersion).toBe(1);
+			expect(enqueue).toHaveBeenCalledWith(
+				{
+					action: "provision",
+					liveChannelId: f.channel.id,
+					plannedLiveChannelRunId: saved.liveChannelRunId,
+					provisionFenceVersion: 1,
+				},
+				`sched-${row.id}`,
+			);
+		});
+
+		it("reports an unbound pre-upgrade FIRED start against an ended broadcast as unknown without creating an encoder", async () => {
+			const f = await dispatchFixture();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "STOPPED" },
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPED" },
+			});
+			const createStart = () =>
+				tenant.liveSchedule.create({
+					data: {
+						liveChannelId: f.channel.id,
+						action: "START",
+						fireAt: now,
+						firedAt: now,
+						status: "FIRED",
+					},
+				});
+			const [old, other] = await Promise.all([createStart(), createStart()]);
+			const makeSdk = vi.fn(f.deps.makeSdk);
+			await expect(
+				createLiveChannelProcessor({ ...f.deps, makeSdk })(
+					{ liveChannelId: f.channel.id, action: "provision" },
+					`sched-${old.id}`,
+				),
+			).resolves.toMatchObject({ status: "SKIPPED_STALE_GENERATION" });
+			expect(makeSdk).not.toHaveBeenCalled();
+			expect(
+				(await tenant.liveSchedule.findUniqueOrThrow({ where: { id: old.id } }))
+					.outcome,
+			).toBe("UNKNOWN");
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: other.id },
+				}),
+			).toEqual(other);
+		});
+
+		it("an older scheduled START cannot retire a revived admission or replace another airing's delivery", async () => {
+			const f = await fixture("PROVISIONING", null);
+			const latest = await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { liveEffectFenceVersion: 4 },
+			});
+			const base = {
+				liveChannelId: f.channel.id,
+				liveChannelRunId: f.run.id,
+				action: "START" as const,
+				status: "FIRED" as const,
+				fireAt: now,
+				firedAt: now,
+			};
+			const old = await tenant.liveSchedule.create({
+				data: { ...base, startAdmissionFenceVersion: 3, outcome: "DELIVERED" },
+			});
+			const current = await tenant.liveSchedule.create({
+				data: { ...base, startAdmissionFenceVersion: 4 },
+			});
+			const job = {
+				id: `sched-${old.id}`,
+				data: {
+					liveChannelId: f.channel.id,
+					action: "provision",
+					plannedLiveChannelRunId: f.run.id,
+					provisionFenceVersion: 3,
+				},
+				finishedOn: now.getTime(),
+			};
+			const admission = await resolveProvisionAdmission(
+				tenant,
+				f.channel.id,
+				job.data,
+				job.id,
+			);
+			if (!admission) throw new Error("missing prior START receipt");
+			expect(
+				await recordExpiredProvisionFailure(
+					tenant,
+					f.channel.id,
+					"old failed",
+					now,
+					now,
+					admission,
+				),
+			).toBe(false);
+			await recordDeadJobScheduleOutcomes(tenant, job, "old failed", now);
+			expect(
+				await admitInactiveOrganization(tenant, "liveChannel", job.data, job),
+			).toBe(false);
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toEqual(latest);
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({ where: { id: old.id } }),
+			).toEqual(old);
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: current.id },
+				}),
+			).toEqual(current);
+			await recordScheduleOutcome(
+				tenant,
+				{
+					scheduledStart: {
+						id: current.id,
+						liveChannelId: f.channel.id,
+						liveChannelRunId: f.run.id,
+						startAdmissionFenceVersion: 4,
+					},
+				},
+				"DELIVERED",
+				"current start",
+				now,
+				"PROVIDER_RUNNING",
+			);
+			expect(
+				(
+					await tenant.liveSchedule.findUniqueOrThrow({
+						where: { id: current.id },
+					})
+				).outcome,
+			).toBe("DELIVERED");
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPED" },
+			});
+			const successor = await tenant.liveChannelRun.create({
+				data: {
+					liveChannelId: f.channel.id,
+					seq: 2,
+					status: "PROVISIONING",
+					outputPrefix: "new/",
+				},
+			});
+			const held = new Date();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { liveEffectFenceVersion: 5, provisionClaimedAt: held },
+			});
+			const consumer = createTenantConsumer({
+				prisma: tenant,
+				forEachOrganization: async () => {},
+				isOrganizationActive: async () => false,
+			});
+			const handler = vi.fn();
+			await expect(
+				consumer(
+					"liveChannel",
+					handler,
+				)({
+					...job,
+					data: { organizationId: organizationIds[0], payload: job.data },
+				} as Job),
+			).rejects.toThrow("inactive");
+			expect(handler).not.toHaveBeenCalled();
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({ status: "PROVISIONING", provisionClaimedAt: held });
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: successor.id },
+				}),
+			).toMatchObject({ status: "PROVISIONING" });
+		});
+
+		it.each([
+			"manual",
+			"scheduled",
+		])("recovers a retained %s provision exhausted before its first lease only at its upgrade fence", async (kind) => {
+			const f = await fixture("PROVISIONING", null);
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { legacyAdmissionFenceVersion: 5, liveEffectFenceVersion: 5 },
+			});
+			const at = new Date(Date.now() + 1000);
+			const row = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					action: "START",
+					status: "FIRED",
+					fireAt: now,
+					firedAt: now,
+					dispatchedAt: at,
+				},
+			});
+			const id =
+				kind === "manual"
+					? `${f.channel.id}-provision-${at.getTime()}`
+					: `sched-${row.id}`;
+			const admission = await resolveProvisionAdmission(
+				tenant,
+				f.channel.id,
+				{},
+				id,
+				at.getTime(),
+			);
+			expect(admission).toEqual({ runId: f.run.id, generation: 5 });
+			if (!admission) throw new Error("missing retained job");
+			expect(
+				await recordExpiredProvisionFailure(
+					tenant,
+					f.channel.id,
+					"exhausted",
+					at,
+					at,
+					admission,
+				),
+			).toBe(true);
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({ status: "ERROR", endedAt: at });
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "PROVISIONING", liveEffectFenceVersion: 6 },
+			});
+			const retained = await resolveProvisionAdmission(
+				tenant,
+				f.channel.id,
+				{},
+				id,
+				at.getTime(),
+			);
+			if (kind === "manual") expect(retained).toBeNull();
+			else {
+				expect(retained).toEqual(admission);
+				if (retained)
+					expect(
+						await recordExpiredProvisionFailure(
+							tenant,
+							f.channel.id,
+							"old",
+							at,
+							at,
+							retained,
+						),
+					).toBe(false);
+			}
+		});
+
+		it.each([
+			"unknown",
+			"failed",
+			"purged",
+			"waiting",
+			"successor",
+		] as const)("reconciles only an exhausted legacy STOP by observation (%s)", async (scenario) => {
+			const f = await dispatchFixture();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					status: "STOPPING",
+					legacyAdmissionFenceVersion: 2,
+					liveEffectFenceVersion: 2,
+				},
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPING" },
+			});
+			const row = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "STOP",
+					status: "FIRED",
+					fireAt: now,
+					firedAt: now,
+					outcome: ["unknown", "successor"].includes(scenario)
+						? "UNKNOWN"
+						: "PENDING",
+					dispatchedAt: now,
+				},
+			});
+			await tenant.liveSchedule.update({
+				where: { id: row.id },
+				data: { dispatchJobId: `sched-${row.id}` },
+			});
+			if (scenario === "successor")
+				await tenant.liveChannel.update({
+					where: { id: f.channel.id },
+					data: { liveEffectFenceVersion: 3 },
+				});
+			const queue = vi.fn(async () =>
+				scenario === "purged"
+					? undefined
+					: {
+							data: {
+								liveChannelId: f.channel.id,
+								action: "stop",
+								plannedLiveChannelRunId: f.run.id,
+							},
+							getState: async () =>
+								scenario === "waiting" ? "waiting" : "failed",
+						},
+			);
+			const probe = createExhaustedLegacyStopRecovery(f.deps, queue);
+			await probe();
+			const key = { idempotencyKey: `schedule:${row.id}:stop` };
+			const claim = await tenant.liveEffectClaim.findFirst({ where: key });
+			if (scenario === "waiting" || scenario === "successor") {
+				expect(claim).toBeNull();
+				expect(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					}),
+				).toMatchObject({ status: "STOPPING" });
+				return;
+			}
+			expect(claim).toMatchObject({
+				action: "STOP",
+				liveChannelRunId: f.run.id,
+				providerEncodingId: f.encodingId,
+				state: "DISPATCHING",
+				stopProtocolVersion: null,
+			});
+			const resume = vi.fn();
+			const observe = createUncertainStopReconciler(f.deps, resume);
+			for (let i = 0; i < 5; i++) await observe();
+			expect(resume).not.toHaveBeenCalled();
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({ status: "STOPPED" });
+			expect(
+				await tenant.liveEffectClaim.findFirst({ where: key }),
+			).toMatchObject({ state: "ACKED" });
+			expect(
+				(await tenant.liveSchedule.findUniqueOrThrow({ where: { id: row.id } }))
+					.outcome,
+			).toBe(scenario === "unknown" ? "UNKNOWN" : "DELIVERED");
+		});
 
 		it("never exposes a scheduled STOP job before its exact STOPPING generation commits", async () => {
 			const f = await dispatchFixture();

@@ -37,7 +37,7 @@ export type LiveEffectAction =
 
 export type LiveEffectBeginInput = {
 	/** Retained pre-effect schedule, checked under the channel/schedule locks. */
-	legacyStopDelivery?: "FIRST" | "UNKNOWN";
+	legacyStopDelivery?: "FIRST" | "UNKNOWN" | "EXHAUSTED";
 	idempotencyKey: string;
 	requestSha256?: string;
 	liveChannelId: string;
@@ -777,8 +777,23 @@ export async function beginLiveEffect(
 					liveChannelRunId: input.liveChannelRunId,
 					action: "STOP",
 					status: "FIRED",
-					outcome: "PENDING",
-					liveChannel: { status: "STOPPING" },
+					outcome:
+						input.legacyStopDelivery === "EXHAUSTED"
+							? { in: ["PENDING", "UNKNOWN"] }
+							: "PENDING",
+					liveChannel: {
+						status: "STOPPING",
+						...(input.legacyStopDelivery === "EXHAUSTED"
+							? {
+									legacyAdmissionFenceVersion: input.expectedFenceVersion,
+									liveEffectFenceVersion: input.expectedFenceVersion,
+									bitmovinEncodingId: input.providerEncodingId,
+									runs: {
+										some: { id: input.liveChannelRunId, status: "STOPPING" },
+									},
+								}
+							: {}),
+					},
 					OR: [
 						{ dispatchJobId: null },
 						{ dispatchJobId: `sched-${input.scheduleId}` },
@@ -1232,7 +1247,7 @@ export async function beginLiveEffect(
 						liveChannelRunId: input.liveChannelRunId,
 						...(input.scheduleId ? { scheduleId: input.scheduleId } : {}),
 						action: input.action,
-						...(input.legacyStopDelivery === "UNKNOWN"
+						...(input.legacyStopDelivery && input.legacyStopDelivery !== "FIRST"
 							? // A worker from before the send ledger may have posted for any
 								// encoder in this compound STOP. Reuse its readback-only semantics.
 								{

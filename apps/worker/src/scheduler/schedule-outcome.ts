@@ -125,16 +125,27 @@ const MAY_REPLACE: Record<
  * `status`, so the dead-job handler can flip a row to ERROR and record its
  * outcome in either order without one write silently disqualifying the other.
  *
- * START's legacy job has no schedule id, so it uses the channel and FIRED state.
+ * START and STOP jobs have a stable sched-<row> queue identity.
  * Scheduled STOPs carry their exact row, channel and airing in the durable intent.
  * A manual STOP never owns a schedule.
  */
 export type ScheduleOutcomeTarget =
 	| { scheduleId: string }
 	| { feederSessionId: string }
-	| { channelStart: string }
 	| {
-			canceledChannelStart: { liveChannelId: string; liveChannelRunId: string };
+			scheduledStart: {
+				id: string;
+				liveChannelId: string;
+				liveChannelRunId?: string;
+				startAdmissionFenceVersion?: number | null;
+			};
+	  }
+	| {
+			canceledChannelStart: {
+				liveChannelId: string;
+				liveChannelRunId: string;
+				startAdmissionFenceVersion: number;
+			};
 	  }
 	| {
 			scheduledStop: {
@@ -151,13 +162,8 @@ function whereOf(target: ScheduleOutcomeTarget): Prisma.LiveScheduleWhereInput {
 	if ("feederSessionId" in target) {
 		return { feederSessionId: target.feederSessionId };
 	}
-	if ("channelStart" in target) {
-		return {
-			liveChannelId: target.channelStart,
-			action: "START",
-			status: "FIRED",
-		};
-	}
+	if ("scheduledStart" in target)
+		return { ...target.scheduledStart, action: "START", status: "FIRED" };
 	if ("canceledChannelStart" in target) {
 		return { ...target.canceledChannelStart, action: "START", status: "FIRED" };
 	}
@@ -197,7 +203,7 @@ export async function recordScheduleOutcome(
 			// previously delivered/unknown START (or another run) failed.
 			outcome: {
 				in:
-					canceledStart || scheduledStop
+					canceledStart || scheduledStop || "scheduledStart" in target
 						? ["PENDING"]
 						: [...MAY_REPLACE[outcome]],
 			},

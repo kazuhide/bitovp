@@ -341,6 +341,10 @@ stop could not be queued, check that the feeder has actually exited. For AISA,
 retry finalization from the console to refresh the Analysis status and final
 result for that broadcast.
 
+A scheduled Start records the selected broadcast and its admission generation before dispatch. Retries use that same broadcast. A later manual Start or a revival has its own generation and leaves the earlier schedule's delivery result intact. If a pre-upgrade Start cannot be tied to its original broadcast, its schedule shows an unknown outcome. Check the channel before scheduling another start.
+
+An upgraded worker can reconcile an exhausted scheduled Stop from an older version by checking the recorded broadcast and encoder. After a retained job expires from the queue, an outstanding handoff needs positive terminal provider evidence. A schedule already recorded as unknown keeps its original outcome when the channel is confirmed stopped.
+
 A scheduled stop keeps its admitted broadcast and encoder through queue retries. Its schedule-fired notification records queue handoff. A recovered stop completes its own pending schedule when the encoder has stopped. A schedule already marked
 unknown keeps its original evidence, including after a subsequent broadcast.
 For new stops, confirmation records one notification per broadcast. The worker

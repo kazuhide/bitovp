@@ -40,6 +40,7 @@ type Row = {
 	firedAt: Date | null;
 	/** : the airing this row was armed for (null = not yet bound). */
 	liveChannelRunId: string | null;
+	startAdmissionFenceVersion?: number | null;
 	/** : the queue-handoff outbox stamp. */
 	dispatchedAt: Date | null;
 	dispatchJobId: string | null;
@@ -469,6 +470,11 @@ function makeStore(
 					},
 					liveChannelRun: {
 						...store.prisma.liveChannelRun,
+						updateMany: (
+							args: Parameters<
+								typeof store.prisma.liveChannelRun.updateMany
+							>[0],
+						) => through(() => store.prisma.liveChannelRun.updateMany(args)),
 						create: (args: unknown) =>
 							through(() =>
 								(
@@ -1175,7 +1181,11 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 			recordScheduleOutcome(
 				store.prisma as unknown as AppPrismaClient,
 				{
-					canceledChannelStart: { liveChannelId: CH, liveChannelRunId: run.id },
+					canceledChannelStart: {
+						liveChannelId: CH,
+						liveChannelRunId: run.id,
+						startAdmissionFenceVersion: 1,
+					},
 				},
 				"FAILED",
 				"startup canceled",
@@ -1227,6 +1237,7 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 			{
 				liveChannelId: CH,
 				action: "provision",
+				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
 			`sched-${ROW_ID}`,
@@ -1480,6 +1491,7 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 			{
 				liveChannelId: CH,
 				action: "provision",
+				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
 			`sched-${ROW_ID}`,
@@ -1523,6 +1535,7 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 			{
 				liveChannelId: CH,
 				action: "provision",
+				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
 			`sched-${ROW_ID}`,
@@ -1563,6 +1576,7 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 			{
 				liveChannelId: CH,
 				action: "provision",
+				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
 			`sched-${ROW_ID}`,
@@ -1630,6 +1644,7 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 				{
 					liveChannelId: CH,
 					action: "provision",
+					provisionFenceVersion: 1,
 					plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 				},
 				`sched-${ROW_ID}`,
@@ -1693,6 +1708,7 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 			{
 				liveChannelId: CH,
 				action: "provision",
+				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
 			`sched-${ROW_ID}`,
@@ -1900,6 +1916,7 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 			{
 				liveChannelId: CH,
 				action: "provision",
+				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
 			`sched-${ROW_ID}`,
@@ -3191,6 +3208,7 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 			{
 				liveChannelId: CH,
 				action: "provision",
+				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
 			`sched-${ROW_ID}`,
@@ -3199,7 +3217,7 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 		expect(store.rows[0]?.dispatchJobId).toBe(`sched-${ROW_ID}`);
 	});
 
-	it("re-air START (STOPPED channel): the fresh run row is claimed and the lost provision comes back", async () => {
+	it("re-air START (STOPPED channel): the fresh run row and admission generation survive a lost provision handoff", async () => {
 		const store = makeStore(
 			[makeRow()],
 			[makeChannel({ status: "STOPPED", bitmovinEncodingId: "enc-1" })],
@@ -3212,6 +3230,7 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 		expect(store.runs).toHaveLength(2);
 		expect(store.rows[0]).toMatchObject({
 			status: "FIRED",
+			startAdmissionFenceVersion: 1,
 			dispatchedAt: null,
 		});
 
@@ -3223,6 +3242,7 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 			{
 				liveChannelId: CH,
 				action: "provision",
+				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
 			`sched-${ROW_ID}`,
@@ -3659,6 +3679,7 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 		expect(enqueue).toHaveBeenCalledWith(
 			{
 				action: "provision",
+				provisionFenceVersion: 1,
 				liveChannelId: CH,
 				plannedLiveChannelRunId: run?.id,
 			},
@@ -5147,6 +5168,7 @@ describe("generation bind — a row fires only into the airing it was armed for 
 			{
 				liveChannelId: CH,
 				action: "provision",
+				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
 			`sched-${ROW_ID}`,
@@ -5287,13 +5309,28 @@ it("inactive organization suppresses new ARMED work while STOP schedules remain 
 	).toBe(true);
 });
 it("inactive undispatched START releases its transitional channel instead of leaving an endless handoff", async () => {
-	const row = makeRow({ status: "FIRED", firedAt: new Date(1_800_000) });
+	const runId = "10000000-1111-4111-8111-222222222222";
+	const row = makeRow({
+		status: "FIRED",
+		firedAt: new Date(1_800_000),
+		liveChannelRunId: runId,
+		startAdmissionFenceVersion: 2,
+	});
 	const channel = makeChannel({
 		status: "PROVISIONING",
+		liveEffectFenceVersion: 2,
 		bitmovinEncodingId: null,
 		stepLog: [],
 	});
 	const store = makeStore([row], [channel]);
+	store.runs.push({
+		id: runId,
+		seq: 1,
+		status: "PROVISIONING",
+	});
+	store.prisma.liveSchedule.findFirst.mockImplementationOnce(
+		async () => row as never,
+	);
 	const { sweep, enqueue } = makeSweep(store, {
 		allowNewWork: async () => false,
 	});

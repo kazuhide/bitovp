@@ -853,6 +853,8 @@ model LiveChannel {
   /// transition increments it; an effect may send only while its committed
   /// claim generation is still current.
   liveEffectFenceVersion Int           @default(0)
+  /// Upgrade-only fence for retained START and STOP deliveries without a recorded admission.
+  legacyAdmissionFenceVersion Int?
   /// Ledger #160 PR4: startup probes ride the NORMAL pipeline but are
   /// not operator content — PROBE rows are hidden from the default
   /// channel list (a toggle reveals them) and their finalize sample
@@ -2280,6 +2282,8 @@ model LiveSchedule {
   /// The STOP envelope committed with FIRED. Redis retries retain the admitted encoder and generation.
   stopProviderEncodingId String?
   stopAdmissionFenceVersion Int?
+  /// Exact channel generation committed with a scheduled START and its airing.
+  startAdmissionFenceVersion Int?
   note                  String?
   error                 String?
   /// Ledger #238: did the fired action actually land? Written by whoever

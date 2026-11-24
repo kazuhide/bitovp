@@ -193,7 +193,8 @@ const EXPECTATIONS: Expectation[] = [
 		// COMPLETED deliberately does not notify (nothing happened that an
 		// operator must act on; the row says so in its note).
 		file: "scheduler/sweep.ts",
-		writes: /rowTo\(\s*row,\s*"(FIRED|MISSED|ERROR|COMPLETED)"/g,
+		writes:
+			/rowTo\(\s*row,\s*"(FIRED|MISSED|ERROR|COMPLETED)"|startAdmissionFenceVersion:\s*expectedFenceVersion \+ 1/g,
 		// 12→13 : the slate whose window is already over at fire
 		// time lands MISSED ("program start already passed") — and it emits,
 		// via the same emitMissed as every other MISSED.
@@ -234,7 +235,8 @@ const EXPECTATIONS: Expectation[] = [
 		// START outbox refusal used strandedRowTo, outside this rowTo pattern.
 		// Emits remain 4 because outcomes still use the existing emit helpers.
 		// Ordinary scheduled STOP claims FIRED with its channel/run/envelope transaction.
-		writeCount: 17,
+		// The two scheduled START arms commit FIRED through a single fenced run-admission write.
+		writeCount: 16,
 		// The cap and scheduled STOP share the handoff writer with the queue consumer.
 		emitCount: 3,
 	},

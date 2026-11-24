@@ -36,10 +36,7 @@ import type { EmitProductEvent } from "../notify/emitter";
 import { createRunMirror } from "../orchestrator/run-mirror";
 import { DEFAULT_REGISTRATION_TIMEOUT_MS } from "../orchestrator/slate-register";
 import { reconcileStartupSamples } from "../orchestrator/startup-sample";
-import {
-	admitInactiveOrganization,
-	hasCommittedStart,
-} from "../tenant/admission";
+import { admitInactiveOrganization } from "../tenant/admission";
 import {
 	CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
 	recordScheduleOutcomeBestEffort,
@@ -469,6 +466,7 @@ export type ScheduleSweep = (() => Promise<ScheduleSweepStats>) & {
 };
 
 type SweepDeps = {
+	recoverExhaustedLegacyStops?: () => Promise<void>;
 	prisma: AppPrismaClient;
 	allowNewWork?: () => Promise<boolean>;
 	enqueue(job: LiveChannelJob, dedupeId: string): Promise<void>;
@@ -482,6 +480,7 @@ type ScheduleRow = {
 	liveChannelId: string;
 	/** : the airing this row was armed for (null = not yet bound). */
 	liveChannelRunId: string | null;
+	startAdmissionFenceVersion?: number | null;
 	stopProviderEncodingId?: string | null;
 	stopAdmissionFenceVersion?: number | null;
 	action: "START" | "STOP" | "SLATE_IN" | "FEEDER_START" | "FEEDER_SWITCH";
@@ -520,6 +519,17 @@ function plannedRunStamp(runId: string | null): {
 	plannedLiveChannelRunId?: string;
 } {
 	return runId !== null ? { plannedLiveChannelRunId: runId } : {};
+}
+
+function scheduledProvision(row: ScheduleRow): LiveChannelJob {
+	return {
+		liveChannelId: row.liveChannelId,
+		action: "provision",
+		...plannedRunStamp(row.liveChannelRunId),
+		...(typeof row.startAdmissionFenceVersion === "number"
+			? { provisionFenceVersion: row.startAdmissionFenceVersion }
+			: {}),
+	};
 }
 
 class UnownedScheduledStop extends Error {}
@@ -831,17 +841,8 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	}
 
 	/**
-	 * The channel claim and the run-row write commit or fail TOGETHER
-	 * (review-284 M2→N2, the class-deleting form): the first cut created
-	 * the run row after a committed claim, so a failed create — P2002 race
-	 * or a plain DB blip — left the channel claimed with a step log whose
-	 * rebased paths named a run row that did not exist, and a bare catch
-	 * labelled both causes "a race". With one transaction there is nothing
-	 * to mislabel: any failure rolls the claim back untouched, the schedule
-	 * row re-arms, and the next tick re-decides against the real world (a
-	 * P2002's racing live run is then simply visible to the guard).
-	 * Returns false when the channel claim matched zero rows (caller
-	 * re-arms as WAITING) and throws nothing to the caller's happy path.
+	 * Publish the FIRED outbox row, the channel's next generation and the selected
+	 * airing in one transaction. A failed claim leaves the schedule ARMED.
 	 */
 	async function claimWithRun(
 		row: ScheduleRow,
@@ -856,7 +857,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 			| { kind: "none" },
 	): Promise<boolean> {
 		const liveChannelId = row.liveChannelId;
-		return deps.prisma.$transaction(async (tx) => {
+		const runId = await deps.prisma.$transaction(async (tx) => {
 			{
 				const { latest, archivesRetired } = await readLockedLiveStartState(
 					tx,
@@ -868,7 +869,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						(latest?.seq ?? 0) + 1 !== runWrite.seq) ||
 					(runWrite.kind === "revive" && latest?.id !== runWrite.runId)
 				)
-					return false;
+					return null;
 			}
 			const claimed = await tx.liveChannel.updateMany({
 				where: {
@@ -887,7 +888,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				},
 			});
 			if (claimed.count === 0) {
-				return false;
+				return null;
 			}
 			let runId: string;
 			if (runWrite.kind === "create") {
@@ -942,15 +943,25 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					id: row.id,
 					liveChannelId,
 					action: "START",
-					status: "FIRED",
+					status: "ARMED",
 					liveChannelRunId: row.liveChannelRunId,
 				},
-				data: { liveChannelRunId: runId },
+				data: {
+					status: "FIRED",
+					firedAt: deps.now(),
+					dispatchedAt: null,
+					dispatchJobId: null,
+					liveChannelRunId: runId,
+					startAdmissionFenceVersion: expectedFenceVersion + 1,
+				},
 			});
 			if (bound.count !== 1) throw new Error("START schedule run binding lost");
-			row.liveChannelRunId = runId;
-			return true;
+			return runId;
 		});
+		if (runId === null) return false;
+		row.liveChannelRunId = runId;
+		row.startAdmissionFenceVersion = expectedFenceVersion + 1;
+		return true;
 	}
 
 	async function fireStart(
@@ -1115,9 +1126,6 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						return;
 					}
 				}
-				if (!(await rowTo(row, "FIRED", { firedAt: deps.now() }))) {
-					return; // another sweep claimed the row
-				}
 				let claimed: boolean;
 				try {
 					claimed = await claimWithRun(
@@ -1157,32 +1165,19 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 								: { kind: "none" },
 					);
 				} catch {
-					// Rolled back whole — no claim, no orphan log (N2). The row
-					// re-arms and the next tick re-decides against the world
-					// (: the re-arm enrols the id in the next tick's
-					// query, so "next tick" holds under a backlog too, not only
-					// an empty one).
-					await rearm(row);
+					// An uncommitted START leaves the row ARMED. Revisit it on the next tick.
+					dueRearmed.add(row.id);
 					stats.errors += 1;
 					return;
 				}
 				if (!claimed) {
-					// Channel moved under us; re-dispatched next tick — the
-					// re-arm enrols the id in the next tick's query, so the
-					// backlog ahead of this row cannot defer it .
-					await rearm(row);
+					// The channel moved before commit. Retry the still-armed row on the next tick.
+					dueRearmed.add(row.id);
 					stats.waiting += 1;
 					return;
 				}
 				try {
-					await deps.enqueue(
-						{
-							liveChannelId: row.liveChannelId,
-							action: "provision",
-							...plannedRunStamp(row.liveChannelRunId),
-						},
-						scheduleJobId(row.id),
-					);
+					await deps.enqueue(scheduledProvision(row), scheduleJobId(row.id));
 				} catch {
 					// Redis may have accepted the job. The FIRED outbox owns its retry.
 					stats.errors += 1;
@@ -1236,9 +1231,6 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 								: "channel plan does not compile — cannot re-air",
 						);
 					}
-					return;
-				}
-				if (!(await rowTo(row, "FIRED", { firedAt: deps.now() }))) {
 					return;
 				}
 				let claimed: boolean;
@@ -1298,29 +1290,18 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						},
 					);
 				} catch {
-					// Rolled back whole — no claim, no orphan log (N2). The row
-					// re-arms and the next tick re-decides against the world
-					// (: the re-arm enrols the id in the next tick's
-					// query, so "next tick" holds under a backlog too, not only
-					// an empty one).
-					await rearm(row);
+					// An uncommitted START leaves the row ARMED. Revisit it on the next tick.
+					dueRearmed.add(row.id);
 					stats.errors += 1;
 					return;
 				}
 				if (!claimed) {
-					await rearm(row);
+					dueRearmed.add(row.id);
 					stats.waiting += 1;
 					return;
 				}
 				try {
-					await deps.enqueue(
-						{
-							liveChannelId: row.liveChannelId,
-							action: "provision",
-							...plannedRunStamp(row.liveChannelRunId),
-						},
-						scheduleJobId(row.id),
-					);
+					await deps.enqueue(scheduledProvision(row), scheduleJobId(row.id));
 				} catch {
 					// Redis may have accepted the job. The FIRED outbox owns its retry.
 					stats.errors += 1;
@@ -2184,6 +2165,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	}
 
 	async function dispatchPendingOnce(): Promise<number> {
+		await deps.recoverExhaustedLegacyStops?.();
 		const now = deps.now();
 		let redispatched = 0;
 		// Outbox failures retain their rows. Resume in stable schedule order,
@@ -2213,6 +2195,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					const owned = await deps.prisma.liveEffectClaim.findFirst({
 						where: {
 							action: "STOP",
+							ownerId: { not: "legacy-stop-observer" },
 							scheduleId: row.id,
 							liveChannelId: row.liveChannelId,
 							liveChannelRunId: row.liveChannelRunId,
@@ -2237,22 +2220,20 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					deps.allowNewWork &&
 					!(await deps.allowNewWork())
 				) {
-					const channel =
+					const allowed = await admitInactiveOrganization(
+						deps.prisma,
+						"liveChannel",
 						row.action === "START"
-							? await deps.prisma.liveChannel.findUnique({
-									where: { id: row.liveChannelId },
-									select: { bitmovinEncodingId: true, stepLog: true },
-								})
-							: null;
-					const committed =
-						channel?.bitmovinEncodingId &&
-						hasCommittedStart(channel.stepLog, "START_LIVE_ENCODING");
-					if (!committed) {
-						await admitInactiveOrganization(deps.prisma, "liveChannel", {
-							liveChannelId: row.liveChannelId,
-							action: row.action === "START" ? "provision" : "insert-content",
-							params: { scheduleId: row.id },
-						});
+							? scheduledProvision(row)
+							: {
+									liveChannelId: row.liveChannelId,
+									action: "insert-content",
+									params: { scheduleId: row.id },
+								},
+						{ id: scheduleJobId(row.id) },
+					);
+					if (!allowed) {
+						if (row.action === "START") return;
 						await deps.prisma.liveSchedule.updateMany({
 							where: { id: row.id, status: "FIRED", dispatchedAt: null },
 							data: {
@@ -2414,13 +2395,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		row: ScheduleRow & { note?: string | null },
 		now: Date,
 	): Promise<LiveChannelJob | null> {
-		if (row.action === "START") {
-			return {
-				liveChannelId: row.liveChannelId,
-				action: "provision",
-				...plannedRunStamp(row.liveChannelRunId),
-			};
-		}
+		if (row.action === "START") return scheduledProvision(row);
 		if (row.action === "STOP") {
 			// Includes the runtime cap's synthetic row — same action, same
 			// claim, same recovery. (row 266): a

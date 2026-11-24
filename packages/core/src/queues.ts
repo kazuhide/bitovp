@@ -302,6 +302,8 @@ export const liveChannelJobSchema = z
 		 * claimed again immediately before the external boundary.
 		 */
 		plannedLiveChannelRunId: z.uuid().nullish(),
+		/** Exact admission of a scheduled START (retained pre-upgrade jobs omit it). */
+		provisionFenceVersion: z.number().int().nonnegative().optional(),
 		/** Required for every newly-admitted irreversible provider/ingest effect. */
 		effect: liveEffectIntentSchema.optional(),
 	})

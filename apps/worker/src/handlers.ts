@@ -31,6 +31,8 @@ export type HandlerDeps = {
 		jobData: unknown,
 		queueJobId?: string,
 		firstQueueDelivery?: boolean,
+		activeTargets?: ReadonlySet<string>,
+		queuedAt?: number,
 	): Promise<LiveChannelResult>;
 	/** Polls heartbeats for every RUNNING channel (repeatable job). */
 	liveHeartbeatSweep(): Promise<unknown>;
@@ -106,6 +108,8 @@ export function createHandlers(deps: HandlerDeps): Record<QueueKey, Handler> {
 				job.attemptsStarted === 1 &&
 					job.attemptsMade === 0 &&
 					job.stalledCounter === 0,
+				undefined,
+				job.timestamp,
 			);
 		},
 		storageInspect: async (job: Job) => {

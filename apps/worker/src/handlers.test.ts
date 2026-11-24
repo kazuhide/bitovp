@@ -104,7 +104,13 @@ describe("createHandlers", () => {
 			attemptsMade,
 			stalledCounter,
 		} as Job);
-		expect(d.liveChannel).toHaveBeenCalledWith(data, id, first);
+		expect(d.liveChannel).toHaveBeenCalledWith(
+			data,
+			id,
+			first,
+			undefined,
+			undefined,
+		);
 	});
 
 	it.each([
@@ -151,6 +157,8 @@ describe("createHandlers", () => {
 			},
 			"1",
 			false,
+			undefined,
+			undefined,
 		);
 		expect(d.liveHeartbeatSweep).not.toHaveBeenCalled();
 	});

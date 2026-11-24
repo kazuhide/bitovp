@@ -116,19 +116,20 @@ import {
 	recordFinalStopFailure,
 	releaseDeadStageClaim,
 } from "./live/dead-job-outcome";
+import { createExhaustedLegacyStopRecovery } from "./live/exhausted-legacy-stops";
 import { releaseDeadLiveToVodIfFinal } from "./live/live-to-vod-release";
 import { createOriginObserver } from "./live/origin-observer";
 import {
 	createAbandonedProbeSweep,
 	createProbeBatchProcessor,
 } from "./live/probe-runner";
+import { resolveProvisionAdmission } from "./live/provision-admission";
 import {
 	ABANDONED_LEASE_SWEEP_MS,
 	reconcileAbandonedLeases,
 } from "./live/provision-lease";
 import {
 	createStrandedRunReconciler,
-	provisionJobGeneration,
 	recordExpiredProvisionFailure,
 } from "./live/reconcile-stranded-runs";
 import { createUncertainStopReconciler } from "./live/reconcile-uncertain-stops";
@@ -1860,6 +1861,10 @@ setTenantInterval(() => {
 
 const scheduleSweep = tenantService(() =>
 	createScheduleSweep({
+		recoverExhaustedLegacyStops: createExhaustedLegacyStopRecovery(
+			processorDeps,
+			(id) => liveChannelQueue.getJob(id),
+		),
 		prisma,
 		allowNewWork: isOrganizationActive,
 		enqueue: async (job, dedupeId) => {
@@ -2140,6 +2145,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 							attemptId?: string;
 							liveChannelRunId?: string;
 							plannedLiveChannelRunId?: string;
+							provisionFenceVersion?: number;
 							encodingId?: string;
 					  }
 					| undefined;
@@ -2152,42 +2158,34 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 					liveAction === "provision"
 				) {
 					const liveChannelId = liveJob?.liveChannelId;
-					const initial =
-						job?.id === liveChannelId || job?.id === `probe-${liveChannelId}`;
-					const admission = liveJob?.plannedLiveChannelRunId
-						? {
-								runId: liveJob.plannedLiveChannelRunId,
-								generation: liveChannelId
-									? provisionJobGeneration(
-											liveChannelId,
-											liveJob.plannedLiveChannelRunId,
-											job?.id,
-										)
-									: undefined,
-							}
-						: initial
-							? { initial: true as const }
-							: null;
 					if (
 						liveChannelId &&
-						admission &&
+						liveJob &&
 						(job?.finishedOn != null ||
 							(job?.attemptsMade ?? 0) >= (job?.opts.attempts ?? 1))
 					) {
-						const at = new Date();
-						await recordExpiredProvisionFailure(
+						const admission = await resolveProvisionAdmission(
 							prisma,
 							liveChannelId,
-							redactSecrets(err.message),
-							new Date(at.getTime() - PROVISION_LEASE_MS),
-							at,
-							admission,
-						).catch((updateErr) =>
-							console.error(
-								"[worker:liveChannel] failed to mark channel/run ERROR:",
-								updateErr,
-							),
+							liveJob,
+							job?.id,
+							job?.timestamp,
 						);
+						const at = new Date();
+						if (admission)
+							await recordExpiredProvisionFailure(
+								prisma,
+								liveChannelId,
+								redactSecrets(err.message),
+								new Date(at.getTime() - PROVISION_LEASE_MS),
+								at,
+								admission,
+							).catch((updateErr) =>
+								console.error(
+									"[worker:liveChannel] failed to mark channel/run ERROR:",
+									updateErr,
+								),
+							);
 					}
 				}
 				if (

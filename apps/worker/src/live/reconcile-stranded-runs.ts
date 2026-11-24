@@ -88,20 +88,75 @@ export function provisionJobGeneration(
 		: undefined;
 }
 
-/** A dead provision delivery cannot retire a cancellation, STOP or RESTART that won the channel. */
+export function hasCommittedStart(log: unknown, kind: string) {
+	return (
+		Array.isArray(log) &&
+		log.some(
+			(entry) =>
+				entry &&
+				typeof entry === "object" &&
+				entry.kind === kind &&
+				["RUNNING", "DONE"].includes(entry.status),
+		)
+	);
+}
+type Admission = { runId: string; generation?: number } | { initial: true };
 export async function recordExpiredProvisionFailure(
 	prisma: AppPrismaClient,
 	liveChannelId: string,
 	error: string,
 	staleBefore: Date,
 	at: Date,
-	admission: { runId: string; generation?: number } | { initial: true },
+	admission: Admission,
 ): Promise<boolean> {
+	return (
+		(await projectProvisionFailure(
+			prisma,
+			liveChannelId,
+			error,
+			staleBefore,
+			at,
+			admission,
+		)) === "RETIRED"
+	);
+}
+
+/** Deny a new start without interrupting a committed provider operation or a current worker lease. */
+export async function suppressInactiveProvision(
+	prisma: AppPrismaClient,
+	liveChannelId: string,
+	admission: Admission,
+	scheduleId: string | undefined,
+	error: string,
+	at: Date,
+): Promise<boolean> {
+	return (
+		(await projectProvisionFailure(
+			prisma,
+			liveChannelId,
+			error,
+			new Date(0),
+			at,
+			admission,
+			{ scheduleId },
+		)) === "COMMITTED"
+	);
+}
+/** A dead provision delivery cannot retire a cancellation, STOP or RESTART that won the channel. */
+async function projectProvisionFailure(
+	prisma: AppPrismaClient,
+	liveChannelId: string,
+	error: string,
+	staleBefore: Date,
+	at: Date,
+	admission: Admission,
+	inactive?: { scheduleId?: string },
+): Promise<"RETIRED" | "UNCHANGED" | "COMMITTED"> {
 	return prisma.$transaction(async (tx) => {
 		const locked = await tx.$queryRaw<
 			{ id: string }[]
 		>`SELECT id FROM "LiveChannel" WHERE id=${liveChannelId}::uuid FOR UPDATE`;
-		if (!locked.length) return false;
+		if (!locked.length) return "UNCHANGED";
 		const run = await tx.liveChannelRun.findFirst({
 			where: { liveChannelId },
 			orderBy: { seq: "desc" },
@@ -113,7 +168,28 @@ export async function recordExpiredProvisionFailure(
 				? run?.id !== admission.runId
 				: !!run && run.seq !== 1)
 		)
-			return false;
+			return "UNCHANGED";
+		if (inactive) {
+			const row = await tx.liveChannel.findUnique({
+				where: { id: liveChannelId },
+				select: {
+					liveEffectFenceVersion: true,
+					bitmovinEncodingId: true,
+					stepLog: true,
+				},
+			});
+			if (
+				!row ||
+				row.liveEffectFenceVersion !==
+					("initial" in admission ? 0 : admission.generation)
+			)
+				return "UNCHANGED";
+			if (
+				row.bitmovinEncodingId &&
+				hasCommittedStart(row.stepLog, "START_LIVE_ENCODING")
+			)
+				return "COMMITTED";
+		}
 		const { count } = await tx.liveChannel.updateMany({
 			where: {
 				id: liveChannelId,
@@ -141,7 +217,7 @@ export async function recordExpiredProvisionFailure(
 			},
 			data: { status: "ERROR", error, provisionClaimedAt: null },
 		});
-		if (!count) return false;
+		if (!count) return "UNCHANGED";
 		if (run)
 			await tx.liveChannelRun.updateMany({
 				where: {
@@ -151,7 +227,20 @@ export async function recordExpiredProvisionFailure(
 				},
 				data: { status: "ERROR", error, endedAt: at },
 			});
-		return true;
+		if (inactive?.scheduleId && "runId" in admission) {
+			await tx.liveSchedule.updateMany({
+				where: {
+					id: inactive.scheduleId,
+					liveChannelId,
+					liveChannelRunId: admission.runId,
+					action: "START",
+					status: "FIRED",
+					outcome: { in: ["PENDING"] },
+				},
+				data: { status: "CANCELED", note: error },
+			});
+		}
+		return "RETIRED";
 	});
 }
 

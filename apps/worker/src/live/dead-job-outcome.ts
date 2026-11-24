@@ -438,6 +438,7 @@ type LiveJobData = {
 	liveChannelId?: string;
 	action?: string;
 	plannedLiveChannelRunId?: string;
+	provisionFenceVersion?: number;
 	params?: { scheduleId?: string };
 	effect?: { action?: string; scheduleId?: string; liveChannelRunId?: string };
 };
@@ -476,15 +477,22 @@ export function deadJobScheduleWrites(
 
 	switch (action) {
 		case "provision": {
-			// A scheduled START enqueues `action: "provision"` with no params
-			// (sweep.ts, both the first-start and the re-air site), so the FIRED
-			// START row is found by reverse lookup.
-			if (!data.liveChannelId) {
-				return [];
-			}
+			const id = legacyScheduleId(job?.id);
+			if (!data.liveChannelId || !id || !isTerminalDelivery(job)) return [];
 			return [
 				{
-					target: { channelStart: data.liveChannelId },
+					target: {
+						scheduledStart: {
+							id,
+							liveChannelId: data.liveChannelId,
+							...(data.plannedLiveChannelRunId
+								? { liveChannelRunId: data.plannedLiveChannelRunId }
+								: {}),
+							...(data.provisionFenceVersion !== undefined
+								? { startAdmissionFenceVersion: data.provisionFenceVersion }
+								: {}),
+						},
+					},
 					outcome: "UNKNOWN",
 					note: `the scheduled start's job died before it could report a result: ${message}`,
 				},

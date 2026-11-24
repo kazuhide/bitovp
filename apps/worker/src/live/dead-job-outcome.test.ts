@@ -219,15 +219,31 @@ describe("manual STOP final-delivery projection", () => {
 });
 
 describe("deadJobScheduleWrites (ledger #238)", () => {
-	it("a dead provision closes the channel's FIRED START row as UNKNOWN", () => {
+	it("a terminal provision closes only its recorded schedule row as UNKNOWN", () => {
 		expect(
 			deadJobScheduleWrites(
-				{ name: "live-channel", data: { liveChannelId: CHANNEL } },
+				{
+					id: `sched-${SCHEDULE}`,
+					attemptsMade: 1,
+					name: "live-channel",
+					data: {
+						liveChannelId: CHANNEL,
+						plannedLiveChannelRunId: RUN,
+						provisionFenceVersion: 9,
+					},
+				},
 				"lock lost",
 			),
 		).toEqual([
 			{
-				target: { channelStart: CHANNEL },
+				target: {
+					scheduledStart: {
+						id: SCHEDULE,
+						liveChannelId: CHANNEL,
+						liveChannelRunId: RUN,
+						startAdmissionFenceVersion: 9,
+					},
+				},
 				outcome: "UNKNOWN",
 				note: expect.stringContaining("lock lost"),
 			},
@@ -242,7 +258,18 @@ describe("deadJobScheduleWrites (ledger #238)", () => {
 			{ data: { liveChannelId: CHANNEL } },
 			"boom",
 		);
-		expect(write?.target).toEqual({ channelStart: CHANNEL });
+		expect(write).toBeUndefined();
+		expect(
+			deadJobScheduleWrites(
+				{
+					id: `sched-${SCHEDULE}`,
+					attemptsMade: 1,
+					opts: { attempts: 3 },
+					data: { liveChannelId: CHANNEL },
+				},
+				"retry",
+			),
+		).toEqual([]);
 	});
 
 	it("a dead stop closes the channel's FIRED STOP row as UNKNOWN — not FAILED", () => {

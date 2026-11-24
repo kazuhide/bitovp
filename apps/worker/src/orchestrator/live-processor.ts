@@ -126,12 +126,12 @@ import {
 	createProviderLifecycleReconciler,
 	type RunLifecycleRow,
 } from "../live/provider-lifecycle";
+import { resolveProvisionAdmission } from "../live/provision-admission";
 import { PROVISION_LEASE_MS } from "../live/provision-lease";
 import {
 	commitProvisionEnd,
 	type ProvisionEnd,
 } from "../live/provision-outcome";
-import { provisionJobGeneration } from "../live/reconcile-stranded-runs";
 import type { EmitProductEvent } from "../notify/emitter";
 import {
 	finishResetOwner,
@@ -5279,7 +5279,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		cancelRunId?: string,
 		plannedRunId?: string,
 		plannedGeneration?: number,
-	): Promise<string | { status: "STOPPED"; canceledRunId: string }> {
+	): Promise<
+		string | { status: "STOPPED"; canceledRunId: string; generation: number }
+	> {
 		let row = await deps.prisma.liveChannel.findUnique({
 			where: { id: liveChannelId },
 		});
@@ -5294,10 +5296,19 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			(row.liveEffectFenceVersion ?? 0) !== plannedGeneration
 		)
 			return "STALE_RUN";
+		const ownerGeneration = row.liveEffectFenceVersion ?? 0;
 		const pendingRun = await deps.prisma.liveChannelRun.findFirst({
 			where: { liveChannelId },
 			orderBy: { seq: "desc" },
 		});
+		if (
+			plannedRunId &&
+			pendingRun?.id === plannedRunId &&
+			plannedGeneration === ownerGeneration &&
+			row.status === "RUNNING" &&
+			pendingRun.status === "RUNNING"
+		)
+			return "RUNNING";
 		if (
 			plannedRunId &&
 			(pendingRun?.id !== plannedRunId ||
@@ -5806,7 +5817,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				}
 				if (feeders.length) return "STOPPING";
 				await emitChannel("CHANNEL_STOPPED", liveChannelId);
-				return { status: "STOPPED", canceledRunId: pendingRun.id };
+				return {
+					status: "STOPPED",
+					canceledRunId: pendingRun.id,
+					generation: ownerGeneration,
+				};
 			}
 		}
 
@@ -6109,7 +6124,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				if (verdict.lifecycle === "TERMINAL" && verdict.status === "CANCELED") {
 					if (!verdict.channelLanded) return "PROVISIONING";
 					heldAt = null;
-					return { status: "STOPPED", canceledRunId: currentRunId };
+					return {
+						status: "STOPPED",
+						canceledRunId: currentRunId,
+						generation: ownerGeneration,
+					};
 				}
 				const reason =
 					verdict.lifecycle === "TERMINAL"
@@ -6408,7 +6427,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		};
 
 		const finishCancellation = async (): Promise<
-			string | { status: "STOPPED"; canceledRunId: string }
+			string | { status: "STOPPED"; canceledRunId: string; generation: number }
 		> => {
 			try {
 				if (!(await shouldCancel()) || !(await renewLease()))
@@ -6671,7 +6690,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				);
 				return aisaFailure
 					? "ERROR"
-					: { status: "STOPPED", canceledRunId: currentRunId };
+					: {
+							status: "STOPPED",
+							canceledRunId: currentRunId,
+							generation: ownerGeneration,
+						};
 			} catch (error) {
 				if (error instanceof ProvisionLeaseLostError) return "STOPPING";
 				const pending = {
@@ -6871,7 +6894,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						if (!verdict.channelLanded)
 							throw new ProvisionLeaseLostError(liveChannelId);
 						heldAt = null;
-						return { status: "STOPPED", canceledRunId: currentRunId };
+						return {
+							status: "STOPPED",
+							canceledRunId: currentRunId,
+							generation: ownerGeneration,
+						};
 					}
 					if (err instanceof VerificationProviderIdPersistenceError) {
 						// Preserve the exact provider id and structured compensation
@@ -6974,7 +7001,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				if (verdict.channelLanded) {
 					heldAt = null;
 					if (verdict.status === "CANCELED")
-						return { status: "STOPPED", canceledRunId: currentRunId };
+						return {
+							status: "STOPPED",
+							canceledRunId: currentRunId,
+							generation: ownerGeneration,
+						};
 					throw new ProviderLifecycleRefusal(reason);
 				}
 				// Not terminalised here (already stamped, or the pointer drifted):
@@ -7029,7 +7060,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				if (verdict.lifecycle === "TERMINAL" && verdict.channelLanded) {
 					heldAt = null;
 					if (verdict.status === "CANCELED")
-						return { status: "STOPPED", canceledRunId: currentRunId };
+						return {
+							status: "STOPPED",
+							canceledRunId: currentRunId,
+							generation: ownerGeneration,
+						};
 					throw new ProviderLifecycleRefusal(reason);
 				}
 				if (verdict.lifecycle === "TERMINAL" && verdict.status === "CANCELED")
@@ -7179,6 +7214,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		queueJobId?: string,
 		firstQueueDelivery = false,
 		activeTargets?: ReadonlySet<string>,
+		queuedAt?: number,
 	): Promise<LiveChannelResult> {
 		const job = liveChannelJobSchema.parse(jobData);
 		const { liveChannelId } = job;
@@ -7230,36 +7266,90 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				 * writes NOTHING — it means the lease was lost to another worker,
 				 * and that worker's own return is what will answer for this row.
 				 */
+				const cancelRunId = liveStartupCancelParamsSchema.parse(
+					job.params ?? {},
+				).cancelRunId;
+				const admission =
+					queueJobId && !cancelRunId
+						? await resolveProvisionAdmission(
+								deps.prisma,
+								liveChannelId,
+								job,
+								queueJobId,
+								queuedAt,
+							)
+						: null;
+				if (queueJobId && !cancelRunId && !admission) {
+					if (scheduleId && job.provisionFenceVersion === undefined) {
+						await recordScheduleOutcomeBestEffort(
+							deps.prisma,
+							{
+								scheduledStart: {
+									id: scheduleId,
+									liveChannelId,
+									startAdmissionFenceVersion: null,
+									...(job.plannedLiveChannelRunId
+										? { liveChannelRunId: job.plannedLiveChannelRunId }
+										: {}),
+								},
+							},
+							"UNKNOWN",
+							"The pre-upgrade START could not be tied to its admission. Check the broadcast before scheduling another start.",
+							new Date(deps.now()),
+							"JOB_TERMINAL_UNKNOWN",
+						);
+					}
+					return staleGenerationResult();
+				}
+				const runId =
+					admission && "runId" in admission
+						? admission.runId
+						: (job.plannedLiveChannelRunId ?? undefined);
+				const generation = admission
+					? "initial" in admission
+						? 0
+						: admission.generation
+					: job.provisionFenceVersion;
+				const target =
+					scheduleId && runId
+						? {
+								scheduledStart: {
+									id: scheduleId,
+									liveChannelId,
+									liveChannelRunId: runId,
+									...(job.provisionFenceVersion !== undefined
+										? { startAdmissionFenceVersion: generation }
+										: {}),
+								},
+							}
+						: null;
 				let result: Awaited<ReturnType<typeof provision>>;
 				try {
 					result = await provision(
 						liveChannelId,
-						liveStartupCancelParamsSchema.parse(job.params ?? {}).cancelRunId,
-						job.plannedLiveChannelRunId ?? undefined,
-						provisionJobGeneration(
-							liveChannelId,
-							job.plannedLiveChannelRunId,
-							queueJobId,
-						),
+						cancelRunId,
+						runId,
+						generation,
 					);
 				} catch (err) {
-					await recordScheduleOutcomeBestEffort(
-						deps.prisma,
-						{ channelStart: liveChannelId },
-						"FAILED",
-						redactSecrets(
-							err instanceof Error ? err.message : "provision failed",
-						),
-						new Date(deps.now()),
-						"EFFECT_FAILED",
-					);
+					if (target)
+						await recordScheduleOutcomeBestEffort(
+							deps.prisma,
+							target,
+							"FAILED",
+							redactSecrets(
+								err instanceof Error ? err.message : "provision failed",
+							),
+							new Date(deps.now()),
+							"EFFECT_FAILED",
+						);
 					throw err;
 				}
 				const status = typeof result === "string" ? result : result.status;
-				if (status === "RUNNING") {
+				if (status === "RUNNING" && target) {
 					await recordScheduleOutcomeBestEffort(
 						deps.prisma,
-						{ channelStart: liveChannelId },
+						target,
 						"DELIVERED",
 						`the channel reached RUNNING`,
 						new Date(deps.now()),
@@ -7274,6 +7364,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 							canceledChannelStart: {
 								liveChannelId,
 								liveChannelRunId: result.canceledRunId,
+								startAdmissionFenceVersion: result.generation,
 							},
 						},
 						"FAILED",

@@ -333,10 +333,10 @@ const softwareTrialSchema = z
 				return settings;
 			}),
 			nativeOptions: softwareValues
-				.optional()
 				.transform((values) =>
-					values && Object.keys(values).length ? values : undefined,
-				),
+					Object.keys(values).length ? values : undefined,
+				)
+				.optional(),
 		}),
 		additionalScoringProfiles: z.never().optional(),
 		sdk: z.never().optional(),

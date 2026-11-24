@@ -2988,7 +2988,7 @@ export const ja = {
 		frameRangeOutOfBounds: "{min}〜{max} の範囲で指定してください。",
 	},
 	notif: {
-		unconfirmed: "送信結果未確認",
+		unconfirmed: "送信結果を確認できません",
 		deleteConfirm: "通知チャネル「{name}」を削除しますか？",
 
 		// Page-level heading (E2E 2026-08-14: the one screen without an h1).
@@ -4603,7 +4603,7 @@ export const ja = {
 		resetSelectionKept:
 			"未選択の種類、保存済みメディア、環境設定ファイル（.env）は保持します。配信の停止に必要な情報は後処理の完了まで一時的に保持します。",
 		resetLiveOwnershipPending:
-			"対象のライブ配信のエンコーダーと解析の終了、または送信プロセスの停止を確認してからデータを削除してください。",
+			"対象のライブ配信のエンコーダと解析の終了、または送信プロセスの停止を確認してからデータを削除してください。",
 		resetEditingDataProtected:
 			"{count} 件の編集用メディアと履歴を保護しています。これらがある間は、コンテンツライブラリと関連する認証情報をリセットできません。ほかのデータをリセットする場合は、コンテンツライブラリの選択を外してください。",
 		resetDependenciesAdded: "関連する種類も選択しました：{categories}。",

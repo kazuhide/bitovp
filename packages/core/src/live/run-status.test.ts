@@ -209,8 +209,6 @@ describe("run status derivation (ledger #108 §2)", () => {
 			// the RUNNING transition, pinned in startup-sample.test.ts).
 			"worker/src/orchestrator/startup-sample.ts",
 			"worker/src/scheduler/sweep.ts",
-			// Organization deactivation refuses an unstarted run without changing heartbeat anchors.
-			"worker/src/tenant/admission.ts",
 		]);
 	});
 });

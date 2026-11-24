@@ -108,6 +108,13 @@ const request = (method: string, body?: unknown) =>
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	mocks.transaction.mockImplementation(
+		async (run: (tx: unknown) => Promise<unknown>) =>
+			run({
+				$queryRaw: vi.fn(),
+				liveChannel: { findUnique: mocks.channel, update: mocks.update },
+			}),
+	);
 	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
 	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", ownerId);
 	mocks.tenant = {
@@ -149,7 +156,6 @@ beforeEach(() => {
 	]);
 	mocks.preset.mockResolvedValue({ id, kind: "LIVE_PLAN", body: plan });
 	mocks.replay.mockResolvedValue(null);
-	mocks.transaction.mockResolvedValue(0);
 });
 afterEach(() => vi.unstubAllEnvs());
 

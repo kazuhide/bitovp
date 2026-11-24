@@ -29,7 +29,7 @@ const REPO = join(__dirname, "../../../..");
  *   - `live-channels/[id]/actions/route.test.ts` — the web start action
  *   - `scheduler/sweep.test.ts` — both scheduler arms, asserted on the CHANNEL
  *     after a sweep rather than on payload text
- *   - `live/provision-lease.test.ts` — the EXIT door (review-336 I1): the
+ *   - `live/provision-lease.test.ts` — the abandoned lease exit, now committed through provision-outcome.ts: the
  *     abandoned-lease sweep matches `status: "PROVISIONING"` in a WHERE, never
  *     writes it, and moves the row OUT (→ ERROR, lease released, run retired)
  *     by an exact-token compare-and-swap; its arms assert the flip, the
@@ -76,7 +76,7 @@ describe("channel provisioning admission and exit paths", () => {
 			"apps/web/src/app/api/live-channels/[id]/actions/route.ts",
 			// Both exit paths match through their PROVISIONING predicates.
 			"apps/worker/src/live/dead-job-outcome.ts",
-			"apps/worker/src/live/provision-lease.ts",
+			"apps/worker/src/live/provision-outcome.ts",
 			"apps/worker/src/orchestrator/live-processor.ts",
 			"apps/worker/src/scheduler/sweep.ts",
 		]);

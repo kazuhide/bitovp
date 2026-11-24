@@ -136,11 +136,27 @@ export async function replaceLiveRunStepLogSnapshot(
 	if (!Array.isArray(snapshot))
 		throw new Error("A live run step-log snapshot must be an array");
 	return prisma.$executeRaw`
-		UPDATE "LiveChannelRun" AS run
-		SET "stepLog" =
+		WITH supplied AS (SELECT ${JSON.stringify(snapshot)}::jsonb AS entries)
+        UPDATE "LiveChannelRun" AS run
+		SET "previousProviderEncodingIds" = run."previousProviderEncodingIds" || ARRAY(
+            SELECT DISTINCT prior.entry->>'resourceId'
+            FROM jsonb_array_elements(run."stepLog") AS prior(entry)
+            WHERE prior.entry->>'kind' IN ('CREATE_ENCODING', 'RESOLVE_AISA_LIVE_ENCODING')
+                AND jsonb_typeof(prior.entry->'resourceId') = 'string'
+                AND prior.entry->>'resourceId' <> ''
+                AND prior.entry->>'resourceId' IS DISTINCT FROM run."bitmovinEncodingId"
+                AND NOT (prior.entry->>'resourceId' = ANY(run."previousProviderEncodingIds"))
+                AND NOT EXISTS (
+                    SELECT 1 FROM jsonb_array_elements((SELECT entries FROM supplied)) AS replacement(entry)
+                    WHERE replacement.entry->>'kind' IN ('CREATE_ENCODING', 'RESOLVE_AISA_LIVE_ENCODING')
+                        AND replacement.entry->>'resourceId' = prior.entry->>'resourceId'
+                )
+            ORDER BY 1
+        ),
+        "stepLog" =
 			COALESCE((
 				SELECT jsonb_agg(incoming.entry ORDER BY incoming.ord)
-				FROM jsonb_array_elements(${JSON.stringify(snapshot)}::jsonb)
+				FROM jsonb_array_elements((SELECT entries FROM supplied))
 					WITH ORDINALITY AS incoming(entry, ord)
 				WHERE incoming.entry->>'kind' IS DISTINCT FROM 'LIVE_AUTO_SHUTDOWN_UPDATE'
 			), '[]'::jsonb)

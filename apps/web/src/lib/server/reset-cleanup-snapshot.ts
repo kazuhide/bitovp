@@ -5,6 +5,7 @@ import {
 	liveChannelAccountId,
 	type Prisma,
 	type ResetCleanupPayload,
+	readVerificationCleanupWork,
 } from "@bitovp/db";
 import type { ResetCategory } from "@/lib/reset-selection";
 import {
@@ -271,147 +272,16 @@ export async function snapshotResetCleanup(
 		const rows = await tx.verificationResourceIntent.findMany({
 			include: { verificationRun: { select: { bitmovinAccountId: true } } },
 		});
-		// An intent can learn provider IDs before local adoption. Protect retained
-		// owners by canonical local key, verification key, and exact encoder refs.
-		const [jobs, channels, runsWithOwners] = await Promise.all([
-			selected.has("vodJobs")
-				? []
-				: tx.encodingJob.findMany({
-						select: {
-							id: true,
-							verificationKey: true,
-							bitmovinEncodingId: true,
-							bitmovinAccountId: true,
-							stepLog: true,
-						},
-					}),
-			selected.has("liveChannels")
-				? []
-				: tx.liveChannel.findMany({
-						select: {
-							id: true,
-							verificationKey: true,
-							bitmovinEncodingId: true,
-							bitmovinAccountId: true,
-							stepLog: true,
-							plan: true,
-						},
-					}),
-			selected.has("liveChannels")
-				? []
-				: tx.liveChannelRun.findMany({
-						select: {
-							id: true,
-							bitmovinEncodingId: true,
-							stepLog: true,
-							previousProviderEncodingIds: true,
-							liveChannel: { select: { bitmovinAccountId: true, plan: true } },
-						},
-					}),
-		]);
-		const retainedArchive = selected.has("liveChannels")
-			? null
-			: await readResetRtmpArchives(tx);
-		const retainedIds = retainedArchive?.ownedIds;
-		const retained = [
-			...jobs.map((row) => ({
-				...row,
-				previousProviderEncodingIds: [] as string[],
-				kind: "VOD_JOB",
-			})),
-			...channels.map((row) => ({
-				...row,
-				bitmovinAccountId: liveChannelAccountId(row),
-				previousProviderEncodingIds: [] as string[],
-				kind: "LIVE_CHANNEL",
-			})),
-			...runsWithOwners.map((row) => ({
-				...row,
-				kind: "LIVE_RUN",
-				verificationKey: null,
-				bitmovinAccountId: liveChannelAccountId(row.liveChannel),
-			})),
-		];
-		const stepEncodingIds = (stepLog: Prisma.JsonValue | undefined) =>
-			Array.isArray(stepLog)
-				? stepLog.flatMap((step) =>
-						step &&
-						typeof step === "object" &&
-						!Array.isArray(step) &&
-						step.kind === "CREATE_ENCODING" &&
-						typeof step.resourceId === "string"
-							? [step.resourceId]
-							: [],
-					)
-				: [];
-		for (const intent of rows) {
-			const accountId = intent.verificationRun.bitmovinAccountId;
-			if (!accountId) continue;
-			const kind =
-				intent.kind === "VOD_JOB"
-					? "encodingJob"
-					: intent.kind === "LIVE_CHANNEL"
-						? "liveChannel"
-						: null;
-			if (!kind) continue;
-			const localPrefix = `local:${intent.kind}:`;
-			const localIds = new Set([
-				...(intent.localId ? [intent.localId] : []),
-				...(intent.possiblyCreatedKeys ?? [])
-					.filter(
-						(key) =>
-							key.startsWith(localPrefix) && key.length > localPrefix.length,
-					)
-					.map((key) => key.slice(localPrefix.length)),
-			]);
-			if (
-				retained.some(
-					(row) =>
-						row.kind === intent.kind &&
-						(localIds.has(row.id) ||
-							(typeof intent.verificationKey === "string" &&
-								row.verificationKey === intent.verificationKey)),
-				)
-			)
-				continue;
-			const providerPrefix = "provider:BITMOVIN_ENCODING:";
-			const providerIds = new Set([
-				...intent.providerIds,
-				...(intent.providerId ? [intent.providerId] : []),
-				...(intent.possiblyCreatedKeys ?? [])
-					.filter(
-						(key) =>
-							key.startsWith(providerPrefix) &&
-							key.length > providerPrefix.length,
-					)
-					.map((key) => key.slice(providerPrefix.length)),
-			]);
-			const localId =
-				intent.localId ?? (localIds.size === 1 ? [...localIds][0] : undefined);
-			const entityKey = `${kind}:${localId ?? `verification-intent:${intent.id}`}`;
-			for (const encodingId of providerIds) {
-				if (
-					retainedIds?.has(encodingId) ||
-					retainedArchive?.incompleteAccounts.has(null) ||
-					retainedArchive?.incompleteAccounts.has(accountId)
-				)
-					continue;
-				if (
-					retained.some(
-						(row) =>
-							(row.bitmovinAccountId == null ||
-								row.bitmovinAccountId === accountId) &&
-							(row.bitmovinEncodingId === encodingId ||
-								stepEncodingIds(row.stepLog).includes(encodingId) ||
-								row.previousProviderEncodingIds.includes(encodingId)),
-					)
-				)
-					continue;
-				entityKeys.push(entityKey);
-				accountIds.add(accountId);
-				payload.encodings.push({ entityKey, accountId, encodingId });
-			}
+		const work = await readVerificationCleanupWork(tx, rows, {
+			vod: selected.has("vodJobs"),
+			live: selected.has("liveChannels"),
+		});
+		for (const candidate of work.candidates) {
+			entityKeys.push(candidate.entityKey);
+			if (candidate.accountId) accountIds.add(candidate.accountId);
+			payload.encodings.push(candidate);
 		}
+		payload.verificationWorklistMaterialized = true;
 		payload.verificationIntents = JSON.parse(
 			JSON.stringify(rows),
 		) as Prisma.JsonObject[];

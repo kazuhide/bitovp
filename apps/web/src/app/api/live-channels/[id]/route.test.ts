@@ -34,6 +34,7 @@ const lockRows = vi.fn();
 // to destroy a PENDING report mid-write while DELETE /api/vmaf-jobs/{id}
 // answered 409 for the same row.
 const tx = {
+	feederSession: { findFirst: vi.fn(async () => null) },
 	vmafJob: { deleteMany: vmafDeleteMany, count: vmafCount },
 	liveChannel: {
 		findUnique: lockedChannel,
@@ -662,6 +663,12 @@ describe("DELETE /api/live-channels/[id]", () => {
 			where: {
 				liveChannelId: CHANNEL_ID,
 				action: "STOP",
+				OR: [
+					{ liveChannelRunId: { in: [] } },
+					{ state: "CLAIMED" },
+					{ state: "DISPATCHING", expiresAt: { gt: expect.any(Date) } },
+					{ stopAnalysisSendId: { not: null } },
+				],
 				state: {
 					in: expect.arrayContaining(["CLAIMED", "DISPATCHING", "AMBIGUOUS"]),
 				},

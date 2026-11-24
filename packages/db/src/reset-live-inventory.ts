@@ -1,10 +1,11 @@
-import { stepLogSchema } from "@bitovp/core";
+import { aisaLiveNeverStarted, stepLogSchema } from "@bitovp/core";
 import type { AppPrismaClient, AppTransactionClient } from "./client";
 import {
 	collectLiveStopTargets,
 	liveChannelAccountId,
-	mergeRtmpRetirementEvidence,
 	unconfirmedRtmpEncoders,
+	unresolvedOrphanLiveClaimTargets,
+	validLiveRetirementReceipts,
 } from "./live-effect-claim";
 
 type ResetLivePointer = {
@@ -66,6 +67,7 @@ export async function readResetRtmpArchives(
 			stepLog: true,
 			provisionClaimedAt: true,
 			resetOrphanEncoderEvidence: true,
+			encoderStoppedConfirmedFor: true,
 			bitmovinEncodingId: true,
 			bitmovinAccountId: true,
 			plan: true,
@@ -74,12 +76,18 @@ export async function readResetRtmpArchives(
 				select: {
 					id: true,
 					status: true,
+					error: true,
 					createdAt: true,
 					stepLog: true,
 					bitmovinEncodingId: true,
 					previousProviderEncodingIds: true,
 					archivedRtmpAttempt: true,
 					rtmpRetirementEvidence: true,
+					encoderStoppedConfirmedFor: true,
+					aisaAnalysisId: true,
+					aisaFinalization: true,
+					aisaStatus: true,
+					providerStatus: true,
 				},
 			},
 			effectClaims: {
@@ -88,6 +96,7 @@ export async function readResetRtmpArchives(
 					action: true,
 					providerEncodingId: true,
 					stopSendEncodingIds: true,
+					legacyUnsentStopIds: true,
 					stopOutcomeEvidence: true,
 					stopProtocolVersion: true,
 					failure: true,
@@ -147,6 +156,61 @@ export async function readResetRtmpArchives(
 						id !== projection.bitmovinEncodingId,
 				),
 			]);
+			// A STOPPED row only describes its own primary. A mismatch between mirrors
+			// must be resolved against both upstream identities before either is erased.
+			if (
+				latest &&
+				run?.bitmovinEncodingId &&
+				channel.bitmovinEncodingId &&
+				run.bitmovinEncodingId !== channel.bitmovinEncodingId
+			) {
+				if (run.status === "STOPPED" && !run.error)
+					secondary.add(run.bitmovinEncodingId);
+				if (channel.status === "STOPPED" && !channel.error)
+					secondary.add(channel.bitmovinEncodingId);
+			}
+			// A discarded logical run has no independent NEVER_STARTED journal. The same
+			// terminal-only orphan inventory also governs a successor's admission.
+			const orphan = run
+				? []
+				: unresolvedOrphanLiveClaimTargets(
+						history,
+						channel.resetOrphanEncoderEvidence,
+						accountId,
+					);
+			if (!run)
+				for (const id of orphan ?? targets.encodingIds) secondary.add(id);
+			const aisaOwner = latest ? channel : run;
+			if (
+				run?.bitmovinEncodingId &&
+				aisaOwner &&
+				accountId &&
+				aisaLiveNeverStarted(run, aisaOwner) &&
+				!channel.provisionClaimedAt &&
+				!history.some(
+					(c) =>
+						c.action === "RESTART" &&
+						c.providerEncodingId === run.bitmovinEncodingId,
+				)
+			) {
+				neverStarted.add(
+					JSON.stringify([
+						"liveChannelRun",
+						run.id,
+						accountId,
+						run.bitmovinEncodingId,
+					]),
+				);
+				if (latest)
+					neverStarted.add(
+						JSON.stringify([
+							"liveChannel",
+							channel.id,
+							accountId,
+							run.bitmovinEncodingId,
+						]),
+					);
+			}
 			const uncertainStarts = new Set<string>();
 			const logs = [owner.stepLog, projection.stepLog].map((log) =>
 				stepLogSchema.safeParse(log),
@@ -206,19 +270,26 @@ export async function readResetRtmpArchives(
 				// Older reset versions accepted CREATED even after an inconclusive START.
 				// A late START is possible until a terminal receipt covers this exact encoder.
 				if (
-					starts.some((e) => e.status === "RUNNING" || e.status === "FAILED") &&
-					((run?.status ?? channel.status) === "ERROR" || channel.error)
+					starts.some(
+						(e) =>
+							e.status === "RUNNING" ||
+							e.status === "FAILED" ||
+							e.status === "DONE",
+					) &&
+					(run?.status === "ERROR" ||
+						run?.error ||
+						(latest && (channel.status === "ERROR" || channel.error)))
 				) {
 					secondary.add(id);
 					uncertainStarts.add(id);
 				}
 			}
 			const retired = new Set<string>();
-			for (const receipt of mergeRtmpRetirementEvidence(
-				run ? run.rtmpRetirementEvidence : channel.resetOrphanEncoderEvidence,
-				[],
+			for (const receipt of validLiveRetirementReceipts(
+				run ?? { rtmpRetirementEvidence: channel.resetOrphanEncoderEvidence },
+				history,
+				accountId,
 			)) {
-				if (receipt.accountId !== accountId) continue;
 				if (receipt.disposition === "NEVER_STARTED") {
 					if (uncertainStarts.has(receipt.encodingId)) continue;
 					if (run?.previousProviderEncodingIds.includes(receipt.encodingId))

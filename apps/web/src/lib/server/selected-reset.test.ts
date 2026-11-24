@@ -249,6 +249,7 @@ describe("selected reset", () => {
 				entityKey: "encodingJob:verification-intent:orphan",
 				accountId: "account",
 				encodingId: "orphan-canonical",
+				verificationOwnerCheck: true,
 			},
 		]);
 		expect(saved.verificationIntents).toHaveLength(4);
@@ -260,6 +261,7 @@ describe("selected reset", () => {
 		f.tables.verificationResourceIntent?.findMany.mockResolvedValue([
 			{
 				id: "intent-retained",
+				verificationKey: "fixture:retained",
 				kind: "VOD_JOB",
 				localId: "retained",
 				providerId: "retained-provider",
@@ -268,6 +270,7 @@ describe("selected reset", () => {
 			},
 			{
 				id: "intent-orphan",
+				verificationKey: "fixture:orphan",
 				kind: "VOD_JOB",
 				localId: "orphan",
 				providerId: "orphan-provider",
@@ -276,6 +279,7 @@ describe("selected reset", () => {
 			},
 			{
 				id: "intent-ambiguous",
+				verificationKey: "fixture:ambiguous",
 				kind: "VOD_JOB",
 				localId: null,
 				providerId: "unbound-provider",

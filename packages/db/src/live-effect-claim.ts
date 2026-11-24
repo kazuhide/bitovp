@@ -489,8 +489,14 @@ export function collectLiveStopTargets(
 		...(archive ?? run.previousProviderEncodingIds ?? []),
 	]);
 	for (const claim of history) {
-		ids.add(claim.providerEncodingId);
-		for (const id of claim.stopSendEncodingIds ?? []) ids.add(id);
+		for (const id of [
+			claim.providerEncodingId,
+			...(claim.stopSendEncodingIds ?? []),
+			...(claim.legacyUnsentStopIds ?? []),
+		]) {
+			if (typeof id === "string" && id) ids.add(id);
+			else complete = false;
+		}
 		const required = (
 			claim.stopOutcomeEvidence as { requiredEncodingIds?: unknown } | null
 		)?.requiredEncodingIds;
@@ -648,6 +654,7 @@ export function readAiringEffectHistory(
 			attempt: true,
 			stopProtocolVersion: true,
 			stopSendEncodingIds: true,
+			legacyUnsentStopIds: true,
 			stopAnalysisSendId: true,
 			stopOutcomeEvidence: true,
 			legacyStopErrorNotificationPossible: true,
@@ -1559,6 +1566,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						legacyStopErrorNotificationPossible: true,
 						attempt: true,
 						stopSendEncodingIds: true,
+						legacyUnsentStopIds: true,
 						stopAnalysisSendId: true,
 						stopOutcomeEvidence: true,
 					},

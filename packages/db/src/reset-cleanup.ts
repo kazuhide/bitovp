@@ -10,6 +10,8 @@ export type ResetCleanupAccount = {
 	tenantOrgId: string | null;
 };
 export type ResetCleanupEncoding = {
+	/** Verify retained owners on each retry, including after the originating intent seals. */
+	verificationOwnerCheck?: true;
 	/** The snapshotted account credentials predate this source's original binding. */
 	allowVerifiedMissing?: true;
 	/** Displaced encoders with unknown start history need terminal readback. */
@@ -36,6 +38,7 @@ export type ResetCleanupWebhook = {
 };
 export type ResetCleanupPayload = {
 	v: 1;
+	verificationWorklistMaterialized?: true;
 	organizationId?: string;
 	accounts: ResetCleanupAccount[];
 	encodings: ResetCleanupEncoding[];

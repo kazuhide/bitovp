@@ -8,10 +8,12 @@ import {
 	type AppPrismaClient,
 	mutateResetCleanupTask,
 	type ResetCleanupAccount,
+	type ResetCleanupEncoding,
 	type ResetCleanupPayload,
 	type ResetCleanupWebhook,
 	readResetCleanupTask,
 	readResetRtmpArchives,
+	readVerificationCleanupWork,
 } from "@bitovp/db";
 
 export const RESET_ENCODING_ABSENT = Symbol("verified encoding absence");
@@ -118,6 +120,9 @@ export async function cleanResetPayload(
 	return { encodings, webhooks };
 }
 
+const cleanupOwnershipKey = (row: ResetCleanupEncoding) =>
+	JSON.stringify([row.entityKey, row.accountId, row.encodingId]);
+
 export function createResetCleanupSweep(deps: {
 	prisma: AppPrismaClient;
 	cipher: SecretCipher;
@@ -135,23 +140,73 @@ export function createResetCleanupSweep(deps: {
 				take: 20,
 			});
 			for (const task of tasks) {
-				const current = await readResetCleanupTask(
+				let current = await readResetCleanupTask(
 					deps.prisma,
 					deps.cipher,
 					task.id,
 				);
 				if (!current) continue;
+				const work =
+					current.payload.verificationIntents.length &&
+					(!current.payload.verificationWorklistMaterialized ||
+						current.payload.encodings.length)
+						? await readVerificationCleanupWork(
+								deps.prisma,
+								current.payload.verificationIntents,
+							)
+						: null;
+				const eligible = new Set(work?.candidates.map(cleanupOwnershipKey));
+
+				if (
+					current.payload.verificationIntents.length &&
+					!current.payload.verificationWorklistMaterialized
+				) {
+					const migrated = await mutateResetCleanupTask(
+						deps.prisma,
+						deps.cipher,
+						task.id,
+						(payload) => {
+							const rows = new Map(
+								payload.encodings.map((row) => [cleanupOwnershipKey(row), row]),
+							);
+							for (const candidate of work?.candidates ?? []) {
+								const existing = rows.get(cleanupOwnershipKey(candidate));
+								if (existing) existing.verificationOwnerCheck = true;
+								else {
+									payload.encodings.push(candidate);
+									rows.set(cleanupOwnershipKey(candidate), candidate);
+								}
+							}
+							payload.verificationWorklistMaterialized = true;
+						},
+						current.revision,
+					);
+					if (!migrated) continue;
+					current = await readResetCleanupTask(
+						deps.prisma,
+						deps.cipher,
+						task.id,
+					);
+					if (!current) continue;
+				}
 				// Older receipts can contain a verification intent's provider ID even though
 				// another airing retained it in an effect journal. Recheck before any STOP.
 				const snapshot = current.payload;
 				const inventory =
-					snapshot.verificationIntents.length && snapshot.encodings.length
-						? await readResetRtmpArchives(deps.prisma)
+					(snapshot.verificationIntents.length ||
+						snapshot.encodings.some((e) => e.verificationOwnerCheck)) &&
+					snapshot.encodings.length
+						? (work?.archive ?? (await readResetRtmpArchives(deps.prisma)))
 						: null;
 				const retained = new Set<string>();
 				const encodings = snapshot.encodings.filter((row) => {
 					if (!inventory) return true;
-					if (inventory.ownedIds.has(row.encodingId)) {
+					if (
+						inventory.ownedIds.has(row.encodingId) ||
+						(row.verificationOwnerCheck &&
+							work &&
+							!eligible.has(cleanupOwnershipKey(row)))
+					) {
 						retained.add(
 							JSON.stringify([row.entityKey, row.accountId, row.encodingId]),
 						);
@@ -171,9 +226,6 @@ export function createResetCleanupSweep(deps: {
 					deps.cipher,
 					task.id,
 					(payload) => {
-						payload.verificationIntents = payload.verificationIntents.filter(
-							(intent) => !closedVerificationIntent(intent),
-						);
 						// Do not consume a late append or a worker's remaining in-flight operation.
 						payload.encodings = payload.encodings.filter(
 							(row) =>
@@ -189,6 +241,12 @@ export function createResetCleanupSweep(deps: {
 									(pending) => pending.entityKey === row.entityKey,
 								),
 						);
+						// Keep original verification identities while a deferred target awaits
+						// classification; another live run or VOD job can adopt it between ticks.
+						if (!payload.encodings.length)
+							payload.verificationIntents = payload.verificationIntents.filter(
+								(intent) => !closedVerificationIntent(intent),
+							);
 						payload.webhooks = payload.webhooks.filter(
 							(row) =>
 								!done.webhooks.has(row.id) ||

@@ -58,6 +58,7 @@ import {
 } from "@/lib/server/moq-observations";
 import { publicMoqHistory } from "@/lib/server/moq-public-history";
 import { playbackLinksForLivePlan } from "@/lib/server/playback-links";
+import { resetBlockingFeederWhere } from "@/lib/server/reset";
 import {
 	AISA_FINALIZATION_REQUIRED_MESSAGE,
 	AisaFinalizationNotConfirmed,
@@ -155,6 +156,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 		const {
 			runs,
 			provisionClaimedAt: _lease,
+			resetOrphanEncoderEvidence: _orphanEvidence,
 			...channel
 		} = row as typeof row & {
 			runs?: unknown[];
@@ -298,6 +300,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 
 /** Sentinel: the atomic terminal-guard matched 0 rows → roll back, return 409. */
 class ChannelNotDeletable extends Error {}
+class PublisherStillPresent extends Error {}
 class AisaDeleteForbidden extends Error {}
 
 /**
@@ -412,6 +415,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 			// deletion of a later run or an Analysis created before Encoding binding.
 			await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${id}::uuid FOR UPDATE`;
 			await tx.$queryRaw`SELECT id FROM "LiveChannelRun" WHERE "liveChannelId" = ${id}::uuid ORDER BY seq DESC FOR UPDATE`;
+			await tx.$queryRaw`SELECT id FROM "FeederSession" WHERE "liveChannelId"=${id}::uuid ORDER BY id FOR UPDATE`;
 			const current = await tx.liveChannel.findUnique({
 				where: { id },
 				select: {
@@ -443,11 +447,26 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 				)
 			)
 				throw new ChannelNotDeletable();
+			if (
+				await tx.feederSession.findFirst({
+					where: { liveChannelId: id, ...resetBlockingFeederWhere() },
+					select: { id: true },
+				})
+			)
+				throw new PublisherStillPresent();
 			const openStop = await tx.liveEffectClaim.findFirst({
 				where: {
 					liveChannelId: id,
 					action: "STOP",
 					state: { in: [...LIVE_EFFECT_OPEN_STATES] },
+					// A missing run cannot close its STOP claim. Still require the shared
+					// orphan inventory below to confirm each encoder before deleting.
+					OR: [
+						{ liveChannelRunId: { in: runs.map((r) => r.id) } },
+						{ state: "CLAIMED" },
+						{ state: "DISPATCHING", expiresAt: { gt: new Date() } },
+						{ stopAnalysisSendId: { not: null } },
+					],
 				},
 				select: { id: true },
 			});
@@ -543,6 +562,12 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 		return NextResponse.json({ id, deleted: true });
 	} catch (err) {
 		if (err instanceof AisaDeleteForbidden) return jsonError(404, "Not found");
+		if (err instanceof PublisherStillPresent)
+			return jsonError(
+				409,
+				"Stop the channel's publisher and confirm its process has exited before deleting the channel.",
+				customerErrorDetails("FEEDER_CHANNEL_OCCUPIED"),
+			);
 		if (err instanceof MoqObservationError) return moqHistoryError(err);
 		if (err instanceof UnconfirmedLiveStop)
 			return jsonError(

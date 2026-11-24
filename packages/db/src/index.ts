@@ -149,6 +149,7 @@ export {
 	revealResetCleanupAccount,
 } from "./reset-cleanup";
 export { readResetRtmpArchives } from "./reset-live-inventory";
+export { readVerificationCleanupWork } from "./reset-verification-encodings";
 export {
 	appendLiveChannelStepLogEntry,
 	appendLiveEffectStepLogEntry,

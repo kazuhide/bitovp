@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one local NVENC encoding and a frame-checked VMAF-CUDA comparison."""
+"""Run one managed encoding trial and a frame-checked VMAF comparison."""
 
 import argparse
 import ctypes
@@ -11,6 +11,7 @@ import selectors
 import shutil
 import subprocess
 import sys
+from contextlib import ExitStack
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from fractions import Fraction
@@ -24,6 +25,7 @@ from typing import Optional
 from uuid import UUID
 
 PROFILE_ID = "official-vmaf-cuda-0.6.1"
+SOFTWARE_PROFILE_ID = "official-vmaf-cpu-0.6.1"
 MODEL_NAME = "vmaf_v0.6.1.json"
 MODEL_SHA256 = "5950d61fa1f861bd45d8149d80539ed9f3376cfc2495b8f0fa8e9f57cb131ee3"
 VMAF_V1_PROFILE_ID = "bitovp-vmaf-cuda-1.0.16-3d0h"
@@ -32,6 +34,11 @@ VMAF_V1_MODEL_SHA256 = "e4cf8c147e1368b35497d772920bc92f98c1ad7853c1033d8a836947
 VMAF_V1_PROBE_RECEIPT_MARGIN_SECONDS = 2
 VMAF_V1_RECEIPT_MARGIN_SECONDS = 15
 CODECS = {"H264": "h264", "HEVC": "hevc", "AV1": "av1"}
+SOFTWARE_CODECS = {"libx264": "H264", "libx265": "HEVC", "libvpx-vp9": "VP9", "libsvtav1": "AV1"}
+SOFTWARE_DECODERS = {
+    "H264": ("h264",), "HEVC": ("hevc",), "VP9": ("vp9", "libvpx-vp9"), "AV1": ("libdav1d", "libaom-av1"),
+}
+MEDIA_LIBRARY = re.compile(r"lib(?:avcodec|avdevice|avformat|avfilter|avutil|swresample|swscale|x264|x265|vpx|svtav1enc|vmaf|dav1d|aom)[.-]", re.I)
 MAX_CAPTURE = 12 * 1024 * 1024
 MAX_REQUEST = 272 * 1024
 MAX_FRAMES = 3600
@@ -107,6 +114,17 @@ class Trial:
 
 
 @dataclass(frozen=True)
+class SoftwareTrial:
+    source_path: Path
+    start_frame: int
+    frame_count: int
+    codec: str
+    software: dict
+    measure_vmaf_v1 = False
+    sdk = None
+
+
+@dataclass(frozen=True)
 class RunnerSource:
     """Snapshot passed from the launcher to the compiled implementation."""
 
@@ -126,17 +144,27 @@ class OwnedVmafV1:
     profile: dict
 
 
+@dataclass(frozen=True, order=True)
+class SoftwareLibrary:
+    name: str
+    path: Path
+    image_uuid: str = ""
+
+
 @dataclass(frozen=True)
 class Runtime:
     ffmpeg: Path
     ffprobe: Path
-    gpu_index: int
+    gpu_index: Optional[int]
     model_bytes: bytes
     capabilities: dict
     tool_identities: tuple
     invocation_path: Path
     runner_path: Path
     vmaf_v1: Optional[OwnedVmafV1]
+    software_catalog: Optional[ModuleType] = None
+    software_decoders: Optional[dict] = None
+    software_libraries: Optional[dict] = None
 
 
 def fields(value, required, optional=frozenset()):
@@ -251,10 +279,12 @@ def parse_trial(request):
     source = request["sourcePath"]
     if not isinstance(source, str) or not Path(source).is_absolute() or "\0" in source:
         raise RunnerError("INVALID_REQUEST")
-    row = fields(
-        request["trial"], {"sourceId", "window", "codec", "preset", "tuning", "config"},
-        {"additionalScoringProfiles", "sdk"},
-    )
+    row = request["trial"]
+    if isinstance(row, dict) and "software" in row:
+        fields(row, {"sourceId", "window", "codec", "software"})
+    else:
+        fields(row, {"sourceId", "window", "codec", "preset", "tuning", "config"},
+               {"additionalScoringProfiles", "sdk"})
     measure_vmaf_v1 = "additionalScoringProfiles" in row
     if measure_vmaf_v1 and row["additionalScoringProfiles"] != [VMAF_V1_PROFILE_ID]:
         raise RunnerError("INVALID_REQUEST")
@@ -270,6 +300,12 @@ def parse_trial(request):
         raise RunnerError("UNSUPPORTED_WINDOW")
     if end > INT32_MAX:
         raise RunnerError("UNSUPPORTED_WINDOW")
+    if "software" in row:
+        software = fields(row["software"], {"encoder", "options"}, {"nativeOptions"})
+        encoder = choice(software["encoder"], SOFTWARE_CODECS)
+        if row["codec"] != SOFTWARE_CODECS[encoder]:
+            raise RunnerError("INVALID_REQUEST")
+        return SoftwareTrial(Path(source), int(start), int(count), row["codec"], software)
     codec = choice(row["codec"], CODECS)
     preset = choice(row["preset"], {"P1", "P2", "P3", "P4", "P5", "P6", "P7"})
     choice(row["tuning"], {"HIGH_QUALITY"})
@@ -345,13 +381,14 @@ def encode_options(trial):
     return args
 
 
-def capture(args, stage, cwd=None, timeout=15):
+def capture(args, stage, cwd=None, timeout=15, env=None, pass_fds=(), executable=None):
     """Read both pipes to a fixed limit and kill a stalled or oversized subprocess."""
     deadline = monotonic() + timeout
     chunks = {"stdout": bytearray(), "stderr": bytearray()}
     try:
         with subprocess.Popen(
-            args, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            args, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            pass_fds=pass_fds, executable=executable,
         ) as process, selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ, "stdout")
             selector.register(process.stderr, selectors.EVENT_READ, "stderr")
@@ -727,10 +764,232 @@ def discover_sdk_settings(ffmpeg, codecs):
     return None
 
 
+def dyld_media_libraries(trace):
+    images = re.findall(r"^dyld\[\d+\]: <([^>]+)> (/[^\n]+)$", trace, re.M)
+    if not images:
+        raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+    return tuple(sorted(SoftwareLibrary(Path(path).name, Path(path).resolve(strict=True), image_uuid)
+                        for image_uuid, path in images if MEDIA_LIBRARY.match(Path(path).name)))
+
+
+def elf_interpreter(program):
+    """The kernel opens PT_INTERP itself. Only DT_NEEDED dependencies can be preloaded."""
+    with os.fdopen(os.open(program, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as binary:
+        regular_file_identity(os.fstat(binary.fileno()))
+        header = binary.read(64)
+        if len(header) != 64 or header[:4] != b"\x7fELF" or header[4] not in (1, 2) or header[5] not in (1, 2):
+            raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+        order = "little" if header[5] == 1 else "big"
+        wide = header[4] == 2
+        table = int.from_bytes(header[32:40] if wide else header[28:32], order)
+        size = int.from_bytes(header[54:56] if wide else header[42:44], order)
+        count = int.from_bytes(header[56:58] if wide else header[44:46], order)
+        if size != (56 if wide else 32) or not 0 < count < 65535:
+            raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+        binary.seek(table)
+        entries = binary.read(size * count)
+        if len(entries) != size * count:
+            raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+        for index in range(0, len(entries), size):
+            entry = entries[index:index + size]
+            if int.from_bytes(entry[:4], order) == 3:  # PT_INTERP
+                offset = int.from_bytes(entry[8:16] if wide else entry[4:8], order)
+                length = int.from_bytes(entry[32:40] if wide else entry[16:20], order)
+                if not 2 <= length <= 4096:
+                    raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+                binary.seek(offset)
+                segment = binary.read(length)
+                if len(segment) != length or not segment.startswith(b"/") or not segment.endswith(b"\0"):
+                    raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+                # Linux reads the interpreter as a C string. Relocatable SDKs
+                # can reserve extra bytes after its terminator.
+                path = segment.split(b"\0", 1)[0]
+                return Path(os.fsdecode(path)).resolve(strict=True)
+    return None
+
+
+def software_library_paths(program):
+    """Keep the dependency name and the file selected by this executable's loader."""
+    if sys.platform == "darwin":
+        env = {**os.environ, "DYLD_PRINT_LIBRARIES": "1"}
+        _, trace = capture([str(program), "-version"], "SOFTWARE_LIBRARY_PROBE", env=env)
+        return dyld_media_libraries(trace)
+    env = {**os.environ, "LD_TRACE_LOADED_OBJECTS": "1"}
+    trace, _ = capture([str(program), "-version"], "SOFTWARE_LIBRARY_PROBE", env=env)
+    if "=> not found" in trace:
+        raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+    bindings = re.findall(r"^\s*(?:(\S+) => )?(/[^\n]+?) \(0x", trace, re.M)
+    interpreter = elf_interpreter(program)
+    if not bindings and interpreter is not None:
+        raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+    # A preloaded codec's $ORIGIN is /proc/self/fd. Pin the original resolved
+    # dependency closure, including private libraries reached through its RUNPATH.
+    return tuple(SoftwareLibrary(name or path, target) for name, path in bindings
+                 if (target := Path(path).resolve(strict=True)) != interpreter)
+
+
+def software_dependencies(ffmpeg, ffprobe):
+    return {program: software_library_paths(program) for program in (ffmpeg, ffprobe)}
+
+
+def require_software_dependencies(ffmpeg, ffprobe, expected):
+    if expected != software_dependencies(ffmpeg, ffprobe):
+        raise RunnerError("RUNTIME_TOOL_CHANGED")
+
+
+def capture_software(args, stage, libraries, identities, cwd=None, timeout=15):
+    """Bind Linux stages to open files and verify the images loaded by each child."""
+    program = Path(args[0])
+    dependencies = libraries[program]
+    darwin = sys.platform == "darwin"
+    with ExitStack() as stack:
+        descriptors = {}
+        for path in (program, *(entry.path for entry in dependencies)):
+            if path not in descriptors:
+                try:
+                    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                except OSError as error:
+                    raise RunnerError("RUNTIME_TOOL_CHANGED") from error
+                stack.callback(os.close, fd)
+                if regular_file_identity(os.fstat(fd)) != identities[path]:
+                    raise RunnerError("RUNTIME_TOOL_CHANGED")
+                descriptors[path] = fd
+        pinned = list(dict.fromkeys(f"/proc/self/fd/{descriptors[entry.path]}" for entry in dependencies))
+        inherited = list(descriptors.values())
+        env = dict(os.environ)
+        if darwin:
+            env["DYLD_PRINT_LIBRARIES"] = "1"
+        else:
+            if pinned:
+                env["LD_PRELOAD"] = ":".join(pinned + ([env["LD_PRELOAD"]] if env.get("LD_PRELOAD") else []))
+                # A private DSO without DT_SONAME must also be discoverable by
+                # its requested basename. These aliases lead to the same open files.
+                directory = Path(stack.enter_context(TemporaryDirectory(prefix="bitovp-libs-")))
+                for entry in dependencies:
+                    if "/" not in entry.name:
+                        (directory / entry.name).symlink_to(f"/proc/self/fd/{descriptors[entry.path]}")
+                directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+                stack.callback(os.close, directory_fd)
+                inherited.append(directory_fd)
+                env["LD_LIBRARY_PATH"] = f"/proc/self/fd/{directory_fd}" + (
+                    ":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else ""
+                )
+            env["LD_DEBUG"] = "files"
+            env.pop("LD_DEBUG_OUTPUT", None)
+        executable = str(program) if darwin else f"/proc/self/fd/{descriptors[program]}"
+        stdout, stderr = capture(args, stage, cwd, timeout, env=env, pass_fds=tuple(inherited),
+                                 executable=executable)
+        if darwin:
+            # dyld reports canonical paths and the UUID of each image actually mapped.
+            if dyld_media_libraries(stderr) != dependencies:
+                raise RunnerError("RUNTIME_TOOL_CHANGED")
+            stderr = re.sub(r"^dyld\[\d+\]: <[^>]+> /[^\n]*\n", "", stderr, flags=re.M)
+        else:
+            # glibc names preloads by their inherited descriptor. Reject an unpinned
+            # codec too, including an extra dependency loaded after program startup.
+            loaded = re.findall(r"^\s*\d+:\s+calling init: ([^\n]+)$", stderr, re.M)
+            names = {Path(entry.name).name for entry in dependencies}
+            if not set(pinned).issubset(loaded) or any(
+                Path(path).name in names or MEDIA_LIBRARY.match(Path(path).name) for path in loaded if path not in pinned
+            ):
+                raise RunnerError("RUNTIME_TOOL_CHANGED")
+            stderr = re.sub(r"^[ \t]*\d+:\t[^\n]*\n", "", stderr, flags=re.M)
+        # A package may unlink or overwrite an open inode during the command.
+        if any(regular_file_identity(os.fstat(fd)) != identities[path] for path, fd in descriptors.items()):
+            raise RunnerError("RUNTIME_TOOL_CHANGED")
+        return stdout, stderr
+
+
+def capture_media(runtime, args, stage, cwd=None, timeout=15):
+    if getattr(runtime, "software_libraries", None) is None:
+        return capture(args, stage, cwd, timeout=timeout)
+    return capture_software(args, stage, runtime.software_libraries, dict(runtime.tool_identities), cwd, timeout)
+
+
+def verify_runtime_tools(runtime):
+    require_unchanged_tools(runtime.tool_identities, runtime.invocation_path, runtime.runner_path)
+    if runtime.capabilities.get("runtimeKind") == "software":
+        # A package upgrade may retain the old inode and change which library
+        # the next FFmpeg subprocess will load through its soname alias.
+        require_software_dependencies(runtime.ffmpeg, runtime.ffprobe, runtime.software_libraries)
+
+
+def resolve_software_runtime(runner_source, invocation_path, expected_runtime):
+    ffmpeg = executable("BITOVP_SOFTWARE_FFMPEG", "ffmpeg")
+    ffprobe = executable("BITOVP_SOFTWARE_FFPROBE", "ffprobe")
+    runner_path = runner_source.path
+    catalog = read_runner_source(runner_path.with_name("software_catalog.py"))
+    # Compile the exact option validation and command-generation bytes we attest.
+    module = ModuleType("_bitovp_software_catalog")
+    module.__file__ = str(catalog.path)
+    exec(compile(catalog.contents, str(catalog.path), "exec", dont_inherit=True), module.__dict__)
+    libraries = software_dependencies(ffmpeg, ffprobe)
+    paths = {ffmpeg, ffprobe, *(entry.path for group in libraries.values() for entry in group)}
+    identities = {path: runtime_tool_identity(path) for path in sorted(paths)}
+    hashes = {path: sha256_file(path, identity) for path, identity in identities.items()}
+    identities[runner_path] = runner_source.identity
+    identities[catalog.path] = catalog.identity
+    model_path = Path(os.environ.get("BITOVP_SOFTWARE_VMAF_MODEL",
+                                      Path(os.environ.get("VMAF_MODEL_DIR", "/opt/vmaf/model")) / MODEL_NAME))
+    model_bytes = read_file(model_path, 2 * 1024 * 1024, "MODEL", require_regular=True)
+    if hashlib.sha256(model_bytes).hexdigest() != MODEL_SHA256:
+        raise RunnerError("UNEXPECTED_VMAF_MODEL")
+    filters, _ = capture_software([str(ffmpeg), "-hide_banner", "-filters"], "RUNTIME_PROBE", libraries, identities)
+    filter_names = {parts[1] for line in filters.splitlines() if len(parts := line.split()) >= 2}
+    if not {"libvmaf", "showinfo", "trim", "setpts", "settb"} <= filter_names:
+        raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+
+    def help_text(args):
+        stdout, stderr = capture_software(args, "SOFTWARE_ENCODER_PROBE", libraries, identities)
+        return stdout + "\n" + stderr
+
+    encoders = module.discover_software_encoders(ffmpeg, capture_help=help_text)
+    decoders, _ = capture_software([str(ffmpeg), "-hide_banner", "-decoders"], "RUNTIME_PROBE", libraries, identities)
+    decode_names = set(re.findall(r"^\s*V\S*\s+(\S+)", decoders, re.M))
+    decode_by_codec = {codec: next((name for name in names if name in decode_names), None)
+                       for codec, names in SOFTWARE_DECODERS.items()}
+    encoders = [entry for entry in encoders if decode_by_codec[entry["codec"]]]
+    if not encoders:
+        raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+    capabilities = {
+        "schemaVersion": 1, "runtimeKind": "software", "softwareEncoders": encoders,
+        "supportedCodecs": [entry["codec"] for entry in encoders], "scoringProfileId": SOFTWARE_PROFILE_ID,
+        "ffmpegSha256": hashes[ffmpeg], "ffprobeSha256": hashes[ffprobe], "modelSha256": MODEL_SHA256,
+        "runnerSha256": hashlib.sha256(runner_source.contents).hexdigest(),
+    }
+    if sys.platform == "darwin":
+        cpu = capture(["/usr/sbin/sysctl", "-n", "machdep.cpu.brand_string"], "SOFTWARE_CPU_PROBE")[0].strip()
+    else:
+        with open("/proc/cpuinfo", encoding="utf-8", errors="replace") as info:
+            cpu = next((line.strip() for line in info if line.startswith(("model name", "CPU part"))), os.uname().machine)
+    fingerprint = {
+        "capabilities": capabilities, "decoders": decode_by_codec,
+        "catalogImplementationSha256": hashlib.sha256(catalog.contents).hexdigest(),
+        "libraries": {
+            role: [(entry.name, entry.path.name, hashes[entry.path]) for entry in libraries[program]]
+            for role, program in (("ffmpeg", ffmpeg), ("ffprobe", ffprobe))
+        },
+        "cpu": cpu, "threads": len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count(),
+    }
+    require_software_dependencies(ffmpeg, ffprobe, libraries)
+    require_unchanged_tools(identities.items(), invocation_path, runner_path)
+    runtime_id = hashlib.sha256(json.dumps(fingerprint, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    if expected_runtime is not None and expected_runtime != {"runtimeId": runtime_id}:
+        raise RunnerError("EXPERIMENT_RUNTIME_CHANGED")
+    capabilities["runtimeId"] = runtime_id
+    return Runtime(ffmpeg, ffprobe, None, model_bytes, capabilities, tuple(identities.items()),
+                   invocation_path, runner_path, None, module, decode_by_codec, libraries)
+
+
 def resolve_runtime(runner_source, invocation_path, *, expected_runtime=None, probe_vmaf_v1=True):
     invocation_path = invocation_path.absolute()
     runner_path = runner_source.path
     require_unchanged_tools(((runner_path, runner_source.identity),), invocation_path, runner_path)
+    backend = os.environ.get("BITOVP_EXPERIMENTS_BACKEND", "nvenc")
+    if backend == "software":
+        return resolve_software_runtime(runner_source, invocation_path, expected_runtime)
+    if backend != "nvenc":
+        raise RunnerError("INVALID_EXPERIMENTS_BACKEND")
     ffmpeg = executable("BITOVP_NVENC_FFMPEG", "ffmpeg")
     ffprobe = executable("BITOVP_NVENC_FFPROBE", "ffprobe")
     sdk_probe = executable("BITOVP_NVENC_SDK_PROBE", str(ffmpeg.with_name("sdk-probe")))
@@ -806,7 +1065,7 @@ def resolve_runtime(runner_source, invocation_path, *, expected_runtime=None, pr
 
 
 def probe_media(runtime, path, options):
-    output, _ = capture(
+    output, _ = capture_media(runtime,
         [str(runtime.ffprobe), "-v", "error", "-print_format", "json", *options, *LOCAL_INPUT, str(path)],
         "MEDIA_PROBE", timeout=45,
     )
@@ -829,24 +1088,76 @@ def cuda_args(runtime):
     return ["-init_hw_device", "cuda=experiment:" + str(runtime.gpu_index), "-filter_hw_device", "experiment"]
 
 
+def check_software_report(log):
+    # Some wrappers report rejected native settings as warnings and return success.
+    diagnostics = "\n".join(line for line in log.splitlines()
+                            if re.match(r"^(?:\[(?:libx26[45]|libvpx-vp9|libsvtav1|out#|vost#)|x265 \[|Svt\[)", line))
+    if re.search(
+        r"(?:unknown (?:option|parameter)|error (?:parsing|setting) (?:option|parameter)|"
+        r"has not been used for any stream|ignoring (?:invalid|unknown|option|parameter)|"
+        r"invalid (?:option|parameter|value for)|failed to set (?:option|parameter|\S+ codec control))", diagnostics, re.I,
+    ):
+        raise RunnerError("SOFTWARE_SETTING_NOT_APPLIED")
+
+
+def software_pass_options(argv, encoder, number):
+    if encoder != "libx265":
+        return [*argv, "-passlogfile:v", "pass", "-pass:v", str(number)]
+    # Older FFmpeg x265 wrappers expose native params but no -x265-stats AVOption.
+    # Merge into the one dictionary: supplying it twice would drop user settings.
+    option = "-x265-params:v"
+    managed = f"pass={number}:stats=x265-stats"
+    if option not in argv:
+        return [*argv, option, managed]
+    result = list(argv)
+    index = result.index(option) + 1
+    result[index] += ":" + managed
+    return result
+
+
 def encode(runtime, trial, source, source_time_base, work):
     started = perf_counter_ns()
     output = work / "encoded.mkv"
-    options = encode_options(trial)
+    input_devices = []
+    filters = reference_filter(trial, source_time_base, "encode_ref")
+    if isinstance(trial, SoftwareTrial):
+        try:
+            options = runtime.software_catalog.build_software_options(
+                trial.software, trial.codec, runtime.capabilities["softwareEncoders"],
+            )
+        except ValueError as error:
+            raise RunnerError("INVALID_SOFTWARE_SETTING") from error
+    else:
+        input_devices = cuda_args(runtime)
+        filters += ",scale=out_range=limited,format=nv12,hwupload"
+        options = encode_options(trial)
     if trial.sdk is not None:
         manifest = work / SDK_SETTINGS_FILE
         manifest.write_bytes(trial.sdk.manifest_bytes())
         options.extend([SDK_SETTINGS_OPTION, str(manifest)])
-    _, log = capture(
-        [str(runtime.ffmpeg), *FFMPEG_ARGS, "-copyts", *cuda_args(runtime), *LOCAL_INPUT, "-noautorotate", "-i", str(source),
-         "-map", "0:v:0", "-an", "-sn", "-dn", "-vf",
-         reference_filter(trial, source_time_base, "encode_ref") + ",scale=out_range=limited,format=nv12,hwupload",
-         *options, "-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709",
-         "-color_trc", "bt709", "-fps_mode", "passthrough", "-avoid_negative_ts", "disabled",
-         "-frames:v", str(trial.frame_count + 1), "-fs", "1073741824", str(output)],
-        "ENCODE", work, timeout=300,
-    )
+    argv = [
+        str(runtime.ffmpeg), *FFMPEG_ARGS, "-copyts", *input_devices, *LOCAL_INPUT, "-noautorotate", "-i", str(source),
+        "-map", "0:v:0", "-an", "-sn", "-dn", "-vf", filters,
+        *options, "-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709",
+        "-color_trc", "bt709", "-fps_mode", "passthrough", "-avoid_negative_ts", "disabled",
+        "-frames:v", str(trial.frame_count + 1), "-fs", "1073741824",
+    ]
+    software = isinstance(trial, SoftwareTrial)
+    two_pass = software and trial.software["options"].get("passes") == "2"
+    if two_pass:
+        encoder = trial.software["encoder"]
+        stats = work / ("x265-stats" if encoder == "libx265" else "pass-0.log")
+        first_pass = software_pass_options(argv, encoder, 1)
+        _, first_log = capture_media(runtime, [*first_pass, "-f", "null", "-"], "ENCODE_FIRST_PASS", work, timeout=300)
+        check_software_report(first_log)
+        validate_timeline(first_log, "encode_ref", trial.start_frame, trial.frame_count, "yuv420p")
+        if not stats.is_file() or stats.stat().st_size == 0:
+            raise RunnerError("UNSUPPORTED_SOFTWARE_MULTIPASS")
+        argv = software_pass_options(argv, encoder, 2)
+    _, log = capture_media(runtime, [*argv, str(output)], "ENCODE", work, timeout=300)
     elapsed_ms = (perf_counter_ns() - started) // 1000000
+    if software:
+        check_software_report(log)
     if trial.sdk is not None:
         expected = trial.sdk.expected_receipt()
         try:
@@ -860,14 +1171,18 @@ def encode(runtime, trial, source, source_time_base, work):
     return output, elapsed_ms
 
 
-def score(runtime, trial, source, source_time_base, encoded, work, cuda=True):
+def score(runtime, trial, source, source_time_base, encoded, work, cuda=None):
+    if cuda is None:
+        cuda = not isinstance(trial, SoftwareTrial)
     started = perf_counter_ns()
     name = "cuda-score.json" if cuda else "cpu-score.json"
     reference = reference_filter(trial, source_time_base, "score_ref")
-    gpu_input = [
+    decoder_input = [
         "-hwaccel", "cuda", "-hwaccel_device", "experiment", "-hwaccel_output_format", "cuda",
         "-c:v", CODECS[trial.codec] + "_cuvid",
     ] if cuda else []
+    if isinstance(trial, SoftwareTrial):
+        decoder_input = ["-c:v", runtime.software_decoders[trial.codec]]
     distorted = "showinfo@distorted=checksum=0,settb=1/30,setpts=N"
     if cuda:
         reference += ",scale=out_range=limited,format=nv12,hwupload,scale_cuda=format=yuv420p"
@@ -878,9 +1193,9 @@ def score(runtime, trial, source, source_time_base, encoded, work, cuda=True):
         f"[dist][ref]{filter_name}=model=path={MODEL_NAME}:log_fmt=json:log_path={name}:n_subsample=1:"
         "shortest=1:repeatlast=0[out]"
     )
-    _, log = capture(
+    _, log = capture_media(runtime,
         [str(runtime.ffmpeg), *FFMPEG_ARGS, "-copyts", *(cuda_args(runtime) if cuda else []),
-         *LOCAL_INPUT, *gpu_input, "-i", str(encoded), *LOCAL_INPUT, "-noautorotate", "-i", str(source),
+         *LOCAL_INPUT, *decoder_input, "-i", str(encoded), *LOCAL_INPUT, "-noautorotate", "-i", str(source),
          "-filter_complex", graph, "-map", "[out]", "-an", "-sn", "-dn",
          "-fps_mode", "passthrough", "-c:v", "wrapped_avframe", "-f", "null", "-"],
         "CUDA_SCORE" if cuda else "CPU_SCORE", work, timeout=300,
@@ -976,7 +1291,12 @@ def score_vmaf_v1(runtime, trial, source, encoded, work, cpu_audit):
 
 
 def measure(runtime, trial, cpu_audit):
-    require_unchanged_tools(runtime.tool_identities, runtime.invocation_path, runtime.runner_path)
+    verify_runtime_tools(runtime)
+    software = isinstance(trial, SoftwareTrial)
+    if software != (runtime.capabilities.get("runtimeKind") == "software"):
+        raise RunnerError("UNSUPPORTED_RUNTIME_ENCODER")
+    if software and cpu_audit:
+        raise RunnerError("UNSUPPORTED_SCORING_PROFILE")
     if trial.codec not in runtime.capabilities["supportedCodecs"]:
         raise RunnerError("UNSUPPORTED_RUNTIME_CODEC")
     if trial.sdk is not None and "nvencSdk" not in runtime.capabilities:
@@ -993,12 +1313,12 @@ def measure(runtime, trial, cpu_audit):
             "-select_streams", "v:0", "-show_packets", "-show_streams",
             "-show_entries", "stream=codec_name,time_base:packet=pts,size,flags",
         ])
-        if [stream.get("codec_name") for stream in packet_probe.get("streams", [])] != [CODECS[trial.codec]]:
+        if [stream.get("codec_name") for stream in packet_probe.get("streams", [])] != [trial.codec.lower()]:
             raise RunnerError("ENCODED_CODEC_MISMATCH")
         video_bytes = parse_packet_sizes(packet_probe)
         mean, milli, scores, score_ms = score(runtime, trial, source, source_clock, encoded, work)
         result = {
-            "schemaVersion": 1, "runtimeId": runtime.capabilities["runtimeId"], "scoringProfileId": PROFILE_ID,
+            "schemaVersion": 1, "runtimeId": runtime.capabilities["runtimeId"], "scoringProfileId": runtime.capabilities["scoringProfileId"],
             "scoreMilli": milli, "meanVmaf": mean, "frameCount": trial.frame_count, "videoBytes": str(video_bytes),
             "durationTicks": str(trial.frame_count), "timeBase": {"num": 1, "den": 30},
             "encodeMs": encode_ms, "scoreMs": score_ms,
@@ -1016,7 +1336,7 @@ def measure(runtime, trial, cpu_audit):
                 "meanVmaf": cpu_mean, "scoreMs": cpu_ms,
                 "gpuMinusCpuPerFrame": [float(gpu - cpu) for gpu, cpu in zip(scores, cpu_scores)],
             }
-        require_unchanged_tools(runtime.tool_identities, runtime.invocation_path, runtime.runner_path)
+        verify_runtime_tools(runtime)
         return result
 
 

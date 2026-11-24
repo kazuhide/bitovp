@@ -9,6 +9,7 @@ import { DB_NULL } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
+const channelArchives = vi.fn(async (): Promise<unknown[]> => []);
 const aisaOwnerId = "00000000-0000-4000-8000-0000000000a2";
 const runFindFirst = vi.fn(
 	async (): Promise<{
@@ -129,6 +130,7 @@ vi.mock("@/lib/server/context", () => ({
 					vmafJob: { count: vmafCount, deleteMany: vmafDeleteMany },
 					liveChannel: {
 						findUnique,
+						findMany: channelArchives,
 						update,
 						updateMany,
 						deleteMany: channelDeleteMany,
@@ -374,6 +376,13 @@ describe("AISA lifecycle admission", () => {
 							: {}),
 					};
 		findUnique.mockImplementation(async () => storedChannel);
+		channelArchives.mockImplementationOnce(async () => [
+			{
+				...storedChannel,
+				runs: storedRun ? [storedRun] : [],
+				effectClaims: [],
+			},
+		]);
 		runFindFirst.mockImplementation(async () => storedRun);
 		runFindMany.mockImplementation(async () =>
 			storedRun

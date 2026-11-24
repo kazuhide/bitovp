@@ -94,6 +94,8 @@ export type ResolveLiveEffectsAfterConfirmedStopInput = {
 	stopClaimId: string;
 	stopIdempotencyKey: string;
 	at: Date;
+	/** Periodic recovery after the original worker committed a clean STOP projection. */
+	interruptedAckGeneration?: number;
 	/** Fresh provider GET issued for this generation after its owner recorded ambiguity. */
 	terminalReadback?: {
 		generation: number;
@@ -104,6 +106,17 @@ export type ResolveLiveEffectsAfterConfirmedStopInput = {
 
 export function liveEffectSendUncertainty(reason: string): string {
 	return `${reason}; the provider/process call crossed its send boundary, so exact readback or operator resolution is required before retry`;
+}
+
+export function liveChannelAccountId(row: {
+	bitmovinAccountId?: string | null;
+	plan?: unknown;
+}): string | null {
+	const account =
+		row.bitmovinAccountId ??
+		(row.plan as { bitmovin?: { accountId?: unknown } } | null)?.bitmovin
+			?.accountId;
+	return typeof account === "string" && account.length > 0 ? account : null;
 }
 
 /** Match the projections written by a finished STOP attempt, including pre-upgrade records. */
@@ -123,7 +136,13 @@ export function matchesRecordedStopFailure(
 	return error
 		.slice(prefix.length)
 		.split("; ")
-		.every((fault) => fault.startsWith(`${encodingId}: `));
+		.every(
+			(fault) =>
+				fault.startsWith(`${encodingId}: `) ||
+				/^feeder [0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}: stop was enqueued but publisher termination was not confirmed$/i.test(
+					fault,
+				),
+		);
 }
 
 function hasOnlyClaimedEncoding(log: unknown, encodingId: string): boolean {
@@ -139,7 +158,7 @@ function hasOnlyClaimedEncoding(log: unknown, encodingId: string): boolean {
 }
 
 export type ResolveLiveEffectsAfterConfirmedStopResult =
-	| { kind: "RESOLVED"; count: number }
+	| { kind: "RESOLVED"; count: number; recoveredFromError?: true }
 	| { kind: "BLOCKED"; reason: string };
 
 function handleOf(row: {
@@ -494,6 +513,8 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 	return prisma.$transaction(
 		async (tx) => {
 			const proof = input.terminalReadback;
+			const periodic =
+				proof !== undefined || input.interruptedAckGeneration !== undefined;
 			const [channel, run, feeder, stopClaim] = await Promise.all([
 				tx.liveChannel.findUnique({
 					where: { id: input.liveChannelId },
@@ -502,7 +523,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						error: true,
 						liveEffectFenceVersion: true,
 						bitmovinEncodingId: true,
-						...(proof && {
+						...(periodic && {
 							bitmovinAccountId: true,
 							origin: true,
 							plan: true,
@@ -525,11 +546,11 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						aisaStatus: true,
 						aisaSnapshot: true,
 						aisaFinalization: true,
-						...(proof && { stepLog: true, endedAt: true }),
+						...(periodic && { stepLog: true, endedAt: true }),
 					},
 				}),
 				tx.feederSession.findFirst({
-					where: proof
+					where: periodic
 						? {
 								liveChannelId: input.liveChannelId,
 								OR: [
@@ -553,7 +574,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						action: true,
 						generation: true,
 						state: true,
-						...(proof && { failure: true }),
+						...(periodic && { failure: true, expiresAt: true }),
 					},
 				}),
 			]);
@@ -611,16 +632,35 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 			}
 			const stopGeneration = stopClaim.generation;
 			if (
+				periodic &&
+				(channel.origin !== "MANAGED" ||
+					isAisaManagedLivePlan(channel.plan) ||
+					run.aisaAnalysisId ||
+					!hasOnlyClaimedEncoding(channel.stepLog, input.providerEncodingId) ||
+					!hasOnlyClaimedEncoding(run.stepLog, input.providerEncodingId))
+			)
+				return {
+					kind: "BLOCKED",
+					reason:
+						"periodic STOP reconciliation requires one ordinary encoder in both broadcast logs",
+				};
+			if (
+				input.interruptedAckGeneration !== undefined &&
+				(input.interruptedAckGeneration !== stopGeneration ||
+					(stopClaim.state === "DISPATCHING" &&
+						(!stopClaim.expiresAt || stopClaim.expiresAt > input.at)))
+			)
+				return {
+					kind: "BLOCKED",
+					reason:
+						"the interrupted STOP is not the expired owner or ambiguous claim that was scanned",
+				};
+			if (
 				proof &&
 				(proof.generation !== stopGeneration ||
 					stopClaim.state !== "AMBIGUOUS" ||
 					classifyProviderStatusWord(proof.providerStatus) !== "TERMINAL" ||
-					channel.origin !== "MANAGED" ||
-					channel.bitmovinAccountId !== proof.bitmovinAccountId ||
-					isAisaManagedLivePlan(channel.plan) ||
-					run.aisaAnalysisId ||
-					!hasOnlyClaimedEncoding(channel.stepLog, input.providerEncodingId) ||
-					!hasOnlyClaimedEncoding(run.stepLog, input.providerEncodingId) ||
+					liveChannelAccountId(channel) !== proof.bitmovinAccountId ||
 					channel.error !== run.error ||
 					channel.status !== run.status ||
 					!matchesRecordedStopFailure(
@@ -642,6 +682,24 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					reason: "a feeder still occupies the ended live run",
 				};
 			}
+			// A superseded STOP can be the only record of a second encoder.
+			// Preserve that evidence on initial ACK, redelivery and periodic recovery.
+			const otherStop = await tx.liveEffectClaim.findFirst({
+				where: {
+					id: { not: input.stopClaimId },
+					liveChannelId: input.liveChannelId,
+					liveChannelRunId: input.liveChannelRunId,
+					action: "STOP",
+					state: { in: [...LIVE_EFFECT_OPEN_STATES] },
+				},
+				select: { id: true },
+			});
+			if (otherStop)
+				return {
+					kind: "BLOCKED",
+					reason:
+						"another unresolved STOP on this run needs independent target verification",
+				};
 			// Advance the same CAS that beginLiveEffect uses. A stale admission that
 			// read the pre-reconciliation fence must lose even if it resumes only after
 			// this transaction commits; a no-op row lock would not invalidate it.
@@ -723,7 +781,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				data: {
 					state: "ACKED",
 					acknowledgedAt: input.at,
-					failure: confirmedError,
+					...(periodic ? {} : { failure: confirmedError }),
 				},
 			});
 			if (acknowledged.count !== 1) {
@@ -734,6 +792,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 			const { count } = await tx.liveEffectClaim.updateMany({
 				where: {
 					id: { not: input.stopClaimId },
+					action: { not: "STOP" },
 					liveChannelId: input.liveChannelId,
 					liveChannelRunId: input.liveChannelRunId,
 					providerEncodingId: input.providerEncodingId,
@@ -742,11 +801,21 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				data: {
 					state: "RESOLVED",
 					acknowledgedAt: input.at,
-					failure:
-						"resolved by authoritative provider-terminal and feeder-stop readback",
+					...(periodic
+						? {}
+						: {
+								failure:
+									"resolved by authoritative provider-terminal and feeder-stop readback",
+							}),
 				},
 			});
-			return { kind: "RESOLVED", count };
+			return {
+				kind: "RESOLVED",
+				count,
+				...(proof && channel.status === "ERROR"
+					? { recoveredFromError: true as const }
+					: {}),
+			};
 		},
 		{ isolationLevel: "Serializable" },
 	);

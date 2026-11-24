@@ -88,6 +88,10 @@ describe("ordinary Live STOP reconciliation", () => {
 		Object.assign(f.candidate.liveChannel, { status: "STOPPED", error: null });
 		await f.tick();
 		expect(f.getEncodingStatus).not.toHaveBeenCalled();
+		expect(db.resolve.mock.calls[0]?.[1]).toHaveProperty(
+			"interruptedAckGeneration",
+			4,
+		);
 		expect(db.resolve.mock.calls[0]?.[1]).not.toHaveProperty(
 			"terminalReadback",
 		);
@@ -97,6 +101,18 @@ describe("ordinary Live STOP reconciliation", () => {
 				expiresAt: { lte: expect.any(Date) },
 			}),
 		);
+	});
+
+	it("reads with the plan-only account used by the original dispatch", async () => {
+		const f = setup();
+		Object.assign(f.candidate.liveChannel, {
+			bitmovinAccountId: null,
+			plan: { bitmovin: { accountId: "legacy-account" } },
+		});
+		await f.tick();
+		expect(
+			db.resolve.mock.calls[0]?.[1]?.terminalReadback.bitmovinAccountId,
+		).toBe("legacy-account");
 	});
 
 	it("skips stale runs, generations, AISA and uncompleted dispatches before provider I/O", async () => {

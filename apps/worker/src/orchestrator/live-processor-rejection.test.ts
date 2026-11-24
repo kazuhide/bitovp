@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { liveEffectSendUncertainty } from "@bitovp/db";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
@@ -90,6 +91,7 @@ const deps = {
   } } },
 };
 const redactSecrets = value => value;
+const liveEffectSendUncertainty = ${liveEffectSendUncertainty.toString()};
 const markLiveEffectAmbiguous = async () => {
   await Promise.resolve();
   state.claim = "AMBIGUOUS";

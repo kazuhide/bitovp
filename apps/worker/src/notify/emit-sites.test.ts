@@ -25,6 +25,13 @@ type Expectation = {
 
 const EXPECTATIONS: Expectation[] = [
 	{
+		// Only the observer whose transaction actually moved ERROR to STOPPED emits.
+		file: "live/reconcile-uncertain-stops.ts",
+		writes: /if \(outcome\.recoveredFromError\)/g,
+		writeCount: 1,
+		emitCount: 1,
+	},
+	{
 		// setup-catch ERROR, step-loop ERROR, CANCELED finalize, FINISHED —
 		// plus #86 PR2's two: the QC boundary's QC_FAILED (emits
 		// JOB_QC_FAILED) and the trigger-failure ERROR (emits JOB_ERROR; a

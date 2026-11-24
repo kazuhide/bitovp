@@ -15,7 +15,7 @@ function setup() {
 		origin: "MANAGED",
 		plan: {} as unknown,
 		stepLog: [] as unknown,
-		bitmovinAccountId: "account-1",
+		bitmovinAccountId: "account-1" as string | null,
 		status: "STOPPED",
 		error: null as string | null,
 		liveEffectFenceVersion: 8,
@@ -51,6 +51,7 @@ function setup() {
 		},
 		{
 			id: "stop-claim",
+			expiresAt: new Date("2026-09-01T00:00:00.000Z"),
 			idempotencyKey: "manual:stop:channel-1:run-1:7",
 			action: "STOP",
 			liveChannelId: "channel-1",
@@ -127,11 +128,22 @@ function setup() {
 			}),
 		},
 		feederSession: {
-			findFirst: vi.fn(async () =>
+			findFirst: vi.fn(async (_args: { where: Record<string, unknown> }) =>
 				feederOccupiesRun ? { id: "feeder-1" } : null,
 			),
 		},
 		liveEffectClaim: {
+			findFirst: vi.fn(
+				async ({ where }) =>
+					claims.find(
+						(c) =>
+							c.id !== where.id.not &&
+							c.liveChannelId === where.liveChannelId &&
+							c.liveChannelRunId === where.liveChannelRunId &&
+							c.action === where.action &&
+							where.state.in.includes(c.state),
+					) ?? null,
+			),
 			findUnique: vi.fn(
 				async ({ where }: { where: { id: string } }) =>
 					claims.find((claim) => claim.id === where.id) ?? null,
@@ -170,7 +182,10 @@ function setup() {
 								(typeof id === "string"
 									? claim.id === id
 									: claim.id !== id.not)) &&
-							(where.action === undefined || claim.action === where.action) &&
+							(where.action === undefined ||
+								(typeof where.action === "string"
+									? claim.action === where.action
+									: claim.action !== (where.action as { not: string }).not)) &&
 							(where.idempotencyKey === undefined ||
 								claim.idempotencyKey === where.idempotencyKey) &&
 							(where.generation === undefined ||
@@ -228,6 +243,7 @@ function setup() {
 
 	return {
 		prisma,
+		feederLookup: tx.feederSession.findFirst,
 		channel,
 		run,
 		claims,
@@ -285,6 +301,45 @@ describe("resolveLiveEffectsAfterConfirmedStop", () => {
 		},
 	};
 
+	it("does not acknowledge a clean interrupted STOP when the run log alone names a second encoding", async () => {
+		const f = setup();
+		f.run.stepLog = [
+			{
+				step: "secondary",
+				kind: "CREATE_ENCODING",
+				status: "DONE",
+				resourceId: "other",
+				refs: {},
+				payload: {},
+			},
+		];
+		const interrupted = { ...input, interruptedAckGeneration: 8 };
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, interrupted),
+		).resolves.toMatchObject({ kind: "BLOCKED" });
+		expect(f.claims[1]?.state).toBe("DISPATCHING");
+	});
+
+	it("requires all channel feeders to release their claims before acknowledging a clean interrupted STOP", async () => {
+		const f = setup();
+		const interrupted = { ...input, interruptedAckGeneration: 8 };
+		const finder = f.feederLookup;
+		finder.mockImplementation(async ({ where }) =>
+			"liveChannelRunId" in where ? null : { id: "legacy-held-feeder" },
+		);
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, interrupted),
+		).resolves.toMatchObject({ kind: "BLOCKED" });
+		expect(finder.mock.calls[0]?.[0]?.where).toMatchObject({
+			liveChannelId: input.liveChannelId,
+			OR: expect.any(Array),
+		});
+		finder.mockResolvedValueOnce(null);
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, interrupted),
+		).resolves.toMatchObject({ kind: "RESOLVED" });
+	});
+
 	it("settles a recorded STOP response loss on a fresh read of the exact terminal encoding", async () => {
 		const f = ambiguousStop();
 		const terminalAt = f.run.providerTerminalAt;
@@ -292,7 +347,7 @@ describe("resolveLiveEffectsAfterConfirmedStop", () => {
 		f.run.endedAt = endedAt;
 		await expect(
 			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
-		).resolves.toMatchObject({ kind: "RESOLVED" });
+		).resolves.toMatchObject({ kind: "RESOLVED", recoveredFromError: true });
 		expect(f.channel).toMatchObject({
 			status: "STOPPED",
 			error: null,
@@ -307,6 +362,55 @@ describe("resolveLiveEffectsAfterConfirmedStop", () => {
 			endedAt,
 		});
 		expect(f.claims[1]?.state).toBe("ACKED");
+		expect(f.stopClaim.failure).toContain("stop response lost");
+		expect(f.claims[0]?.failure).toBe("response lost");
+	});
+
+	it.each([
+		"clean interrupted ACK",
+		"new terminal GET",
+		"inline ACK",
+		"job redelivery",
+	])("preserves a previous STOP's second-encoding evidence during %s", async (mode) => {
+		const f = ambiguousStop();
+		const previous = f.claims[0];
+		if (!previous) throw new Error("missing earlier claim");
+		const evidence =
+			"stop did not confirm — encoding-B: still RUNNING after the stop was accepted";
+		Object.assign(previous, { action: "STOP", failure: evidence });
+		if (mode !== "new terminal GET") {
+			f.channel.status = f.run.status = "STOPPED";
+			f.channel.error = f.run.error = null;
+			f.run.providerStatus = "FINISHED";
+		}
+		if (mode === "inline ACK") f.stopClaim.state = "DISPATCHING";
+		const request =
+			mode === "new terminal GET"
+				? observedStop
+				: mode === "clean interrupted ACK"
+					? { ...input, interruptedAckGeneration: 8 }
+					: input;
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, request),
+		).resolves.toMatchObject({ kind: "BLOCKED" });
+		expect(previous).toMatchObject({ state: "AMBIGUOUS", failure: evidence });
+		expect(f.stopClaim.state).toBe(
+			mode === "inline ACK" ? "DISPATCHING" : "AMBIGUOUS",
+		);
+		expect(f.channel.liveEffectFenceVersion).toBe(8);
+	});
+
+	it("matches and rechecks the tenant credential recorded only in a legacy plan", async () => {
+		const f = ambiguousStop();
+		f.channel.bitmovinAccountId = null;
+		f.channel.plan = { bitmovin: { accountId: "other-account" } };
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "BLOCKED" });
+		f.channel.plan = { bitmovin: { accountId: "account-1" } };
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "RESOLVED" });
 	});
 
 	it.each([
@@ -384,6 +488,25 @@ describe("resolveLiveEffectsAfterConfirmedStop", () => {
 			providerTerminalAt: input.at,
 			error: null,
 		});
+	});
+	it("retains a slow feeder until it drains, including after a simultaneous encoder timeout", async () => {
+		const f = ambiguousStop();
+		f.channel.status = f.run.status = "STOPPED";
+		f.channel.error =
+			f.run.error =
+			f.stopClaim.failure =
+				"stop did not confirm — encoding-1: still RUNNING after the stop was accepted; encoding-1: the exact claimed encoding has no terminal readback; feeder bbb08c73-7de4-4c1b-86f3-f6c27e8847bf: stop was enqueued but publisher termination was not confirmed";
+		f.setFeederOccupiesRun(true);
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "BLOCKED" });
+		f.setFeederOccupiesRun(false);
+		const settled = await resolveLiveEffectsAfterConfirmedStop(
+			f.prisma,
+			observedStop,
+		);
+		expect(settled).toMatchObject({ kind: "RESOLVED" });
+		expect(settled).not.toHaveProperty("recoveredFromError");
 	});
 	it("cannot acknowledge an Encoder-only stop while its Analysis finalization is unproven", async () => {
 		const f = setup();

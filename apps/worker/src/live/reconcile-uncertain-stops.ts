@@ -3,6 +3,7 @@ import {
 	isAisaManagedLivePlan,
 } from "@bitovp/core";
 import {
+	liveChannelAccountId,
 	matchesRecordedStopFailure,
 	type ResolveLiveEffectsAfterConfirmedStopInput,
 	resolveLiveEffectsAfterConfirmedStop,
@@ -12,7 +13,7 @@ import type { LiveChannelDeps } from "../orchestrator/live-processor";
 
 type Dependencies = Pick<
 	LiveChannelDeps,
-	"prisma" | "now" | "revealBitmovinAccount" | "makeSdk"
+	"prisma" | "now" | "revealBitmovinAccount" | "makeSdk" | "emitEvent"
 >;
 
 /** Revisit durable STOP claims after a worker has exhausted its inline readbacks. */
@@ -54,6 +55,7 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 					liveChannel: {
 						select: {
 							origin: true,
+							name: true,
 							status: true,
 							error: true,
 							bitmovinAccountId: true,
@@ -98,9 +100,10 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 				try {
 					let terminalReadback: ResolveLiveEffectsAfterConfirmedStopInput["terminalReadback"];
 					if (channel.status !== "STOPPED" || channel.error !== null) {
+						const bitmovinAccountId = liveChannelAccountId(channel);
 						if (
 							claim.state !== "AMBIGUOUS" ||
-							!channel.bitmovinAccountId ||
+							!bitmovinAccountId ||
 							!matchesRecordedStopFailure(
 								channel.status,
 								channel.error,
@@ -109,7 +112,6 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 							)
 						)
 							continue;
-						const bitmovinAccountId = channel.bitmovinAccountId;
 						const credentials =
 							await deps.revealBitmovinAccount(bitmovinAccountId);
 						const sdk = deps.makeSdk({
@@ -134,10 +136,21 @@ export function createUncertainStopReconciler(deps: Dependencies) {
 						{
 							...identity,
 							at: new Date(deps.now()),
-							...(terminalReadback && { terminalReadback }),
+							...(terminalReadback
+								? { terminalReadback }
+								: { interruptedAckGeneration: claim.generation }),
 						},
 					);
-					if (outcome.kind === "RESOLVED") resolved++;
+					if (outcome.kind === "RESOLVED") {
+						resolved++;
+						if (outcome.recoveredFromError)
+							await deps.emitEvent?.({
+								kind: "CHANNEL_STOPPED",
+								liveChannelId: claim.liveChannelId,
+								name: channel.name,
+								path: `/live/${claim.liveChannelId}`,
+							});
+					}
 				} catch {
 					// One unavailable account, readback or transaction must not starve the next claim.
 					console.warn(

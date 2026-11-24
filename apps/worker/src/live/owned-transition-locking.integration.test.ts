@@ -205,7 +205,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			});
 			await tenant.liveChannel.update({
 				where: { id: f.channel.id },
-				data: { bitmovinAccountId: account.id, error },
+				data: { plan: { bitmovin: { accountId: account.id } }, error },
 			});
 			await tenant.liveChannelRun.update({
 				where: { id: f.run.id },
@@ -234,13 +234,15 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				return { status: "FINISHED" };
 			});
 			const sdk = fakeSdk({ getEncodingStatus });
+			const emitEvent = vi.fn(async () => {});
 			const deps = {
 				prisma: tenant,
+				emitEvent,
 				now: () => now.toISOString(),
-				revealBitmovinAccount: async () => ({
-					apiKey: "mock",
-					tenantOrgId: null,
-				}),
+				revealBitmovinAccount: async (id: string) => {
+					expect(id).toBe(account.id);
+					return { apiKey: "mock", tenantOrgId: null };
+				},
 				makeSdk: () => sdk,
 			};
 			const results = await Promise.all([
@@ -248,6 +250,16 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				createUncertainStopReconciler(deps)(),
 			]);
 			expect(results.sort()).toEqual([0, 1]);
+			expect(emitEvent.mock.calls).toEqual([
+				[
+					{
+						kind: "CHANNEL_STOPPED",
+						name: f.channel.name,
+						liveChannelId: f.channel.id,
+						path: `/live/${f.channel.id}`,
+					},
+				],
+			]);
 			expect(getEncodingStatus.mock.calls).toEqual([
 				[f.encodingId],
 				[f.encodingId],
@@ -277,7 +289,11 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				await tenant.liveEffectClaim.findUniqueOrThrow({
 					where: { id: claim.id },
 				}),
-			).toMatchObject({ state: "ACKED", acknowledgedAt: now });
+			).toMatchObject({
+				state: "ACKED",
+				acknowledgedAt: now,
+				failure: liveEffectSendUncertainty(error),
+			});
 		}, 15_000);
 
 		function terminal(

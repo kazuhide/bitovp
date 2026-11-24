@@ -305,18 +305,23 @@ each broadcast and confirm that no previous publisher is active.
 Stop the feeder, stop the channel, and confirm provider termination and output
 progression ending. Deleting a local row does not by itself establish cloud cleanup.
 
-If a stop response is lost or the encoder is still stopping at the last check,
-the worker checks the same broadcast again. Each minute it checks up to four
-unresolved stop records per organization, rotating through longer lists. For ordinary Live with
-one known encoding, a terminal provider status and the end of all feeder
-activity clear the recorded stop error. These checks only read encoder status.
-If it still reports `RUNNING` or `QUEUED`, check that exact encoding in the
-provider dashboard. The worker does not automatically retry an uncertain STOP,
-including when the first call reported a rate limit. With an ambiguous manual
-stop, pressing **Stop** again cannot force a second provider request. Multiple encoding IDs,
-AISA finalization and a worker interruption before the stop outcome was
-recorded require separate verification. A fired schedule whose delivery was
-recorded as unknown retains that history after an encoder is confirmed terminal.
+During the original stop request, a transport failure can cause up to three
+send attempts. Once the worker records an uncertain result, the periodic check
+only reads encoder status. Each worker examines up to four stop records per minute per
+organization and rotates through longer lists. For ordinary Live with one known
+encoding and one unresolved stop, a terminal provider status and the end of all
+feeder activity can clear a lost response or a timeout waiting for the encoder
+or feeder to stop.
+
+If the encoder still reports `RUNNING` or `QUEUED`, verify its ID in the
+provider dashboard. The periodic check also remains read-only after a rate
+limit. Pressing **Stop** again cannot force a new request for an ambiguous
+manual stop. When more than one STOP remains unresolved for a broadcast, an operator
+must verify each attempt and its target, including when the normal worker or a
+redelivered job processes a later STOP. Multiple encoding IDs, feeder enqueue
+failures, AISA finalization and an interruption before the worker recorded the
+stop outcome also require separate verification. A schedule recorded as unknown
+keeps that delivery history after the encoder is confirmed terminal.
 
 A START error can leave the provider state uncertain. Startup cancellation
 prevents further START retries once the worker observes it. If a request is

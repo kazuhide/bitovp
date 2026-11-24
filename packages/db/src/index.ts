@@ -87,6 +87,7 @@ export {
 	beginLiveEffect,
 	bindLiveEffectTarget,
 	LIVE_EFFECT_OPEN_STATES,
+	liveChannelAccountId,
 	liveEffectSendUncertainty,
 	loadLiveEffectTargetClaim,
 	markLiveEffectAcked,

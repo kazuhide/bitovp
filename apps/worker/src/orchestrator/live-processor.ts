@@ -81,6 +81,7 @@ import {
 	beginLiveEffect,
 	bindLiveEffectTarget,
 	LiveToVodFenceError,
+	liveChannelAccountId,
 	liveEffectSendUncertainty,
 	markLiveEffectAcked,
 	markLiveEffectAmbiguous,
@@ -878,10 +879,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		monitoringSignal?: AbortSignal,
 		manifestStamp?: CreateStamp,
 	): Promise<SdkOps> {
-		const accountId =
-			row.bitmovinAccountId ??
-			(row.plan as { bitmovin?: { accountId?: string } } | null)?.bitmovin
-				?.accountId;
+		const accountId = liveChannelAccountId(row);
 		if (!accountId) {
 			throw new ChannelStateError("Channel carries no Bitmovin account id");
 		}

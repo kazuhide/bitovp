@@ -1,6 +1,7 @@
 import type { SecretCipher } from "@bitovp/core";
 import { expect, it, vi } from "vitest";
 import type { BitmovinApi } from "../bitmovin/sdk-ctor";
+import { RESET_ENCODING_ABSENT } from "./cleanup";
 import { resetCleanupProvider } from "./provider";
 
 async function fixture() {
@@ -69,6 +70,15 @@ it("clears historical unknown hooks only after an empty list and terminal parent
 	await expect(f.provider.removeWebhook(f.hook)).resolves.toBe(true);
 	f.encodings.status.mockResolvedValue({ status: "RUNNING" });
 	await expect(f.provider.removeWebhook(f.hook)).resolves.toBe(false);
+});
+it("keeps account-local absence separate from a terminal encoder observation", async () => {
+	const f = await fixture();
+	const missing = { httpStatusCode: 404, errorCode: 1001 };
+	f.encodings.get.mockRejectedValue(missing);
+	f.encodings.status.mockRejectedValue(missing);
+	expect(await f.provider.status("wrong-account-or-purged")).toBe(
+		RESET_ENCODING_ABSENT,
+	);
 });
 it("retains an in-flight create despite an empty list", async () => {
 	const f = await fixture();

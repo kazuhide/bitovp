@@ -6,7 +6,15 @@ import {
 	createTenantPrismaClient,
 	readResetCleanupTask,
 } from "@bitovp/db";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+	afterAll,
+	afterEach,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from "vitest";
 import {
 	RESET_CATEGORIES,
 	RESET_GLOBAL_MODELS,
@@ -259,7 +267,11 @@ postgres("tenant PostgreSQL reset", () => {
 		archived = 1,
 	) {
 		const account = await db.bitmovinAccount.create({
-			data: { label: "Fixture", encryptedApiKey: "fixture-only" },
+			data: {
+				label: "Fixture",
+				encryptedApiKey: "fixture-only",
+				updatedAt: new Date("2025-01-01T00:00:00Z"),
+			},
 		});
 		const stepLog = [
 			{
@@ -296,6 +308,153 @@ postgres("tenant PostgreSQL reset", () => {
 		return { account, channel, run };
 	}
 
+	async function claimFixture(
+		channelId: string,
+		runId: string,
+		primary: string,
+		secondary: string[],
+	) {
+		return prisma.liveEffectClaim.create({
+			data: {
+				liveChannelId: channelId,
+				liveChannelRunId: runId,
+				providerEncodingId: primary,
+				action: "STOP",
+				state: "FAILED",
+				idempotencyKey: randomUUID(),
+				token: randomUUID(),
+				ownerId: "test",
+				expiresAt: new Date(),
+				generation: 1,
+				stopSendEncodingIds: secondary,
+			},
+		});
+	}
+
+	it("keeps an ordinary STOP claim when only Live schedules are cleared", async () => {
+		const primary = randomUUID();
+		const { channel, run } = await archiveFixture(prisma, primary, []);
+		const claim = await claimFixture(channel.id, run.id, primary, []);
+		await deleteSelectedData(
+			prisma,
+			["liveSchedules"],
+			new AesGcmCipher(randomBytes(32)),
+		);
+		expect(
+			await prisma.liveEffectClaim.findUnique({ where: { id: claim.id } }),
+		).not.toBeNull();
+	});
+
+	it("preserves an active persisted Analysis on selected and full reset until its final result is captured", async () => {
+		const { channel, run } = await archiveFixture(prisma, null, []);
+		await prisma.liveChannelRun.update({
+			where: { id: run.id },
+			data: { aisaAnalysisId: randomUUID(), aisaStatus: "RUNNING" },
+		});
+		await expect(
+			deleteSelectedData(
+				prisma,
+				requiredResetCategories(["liveChannels"]),
+				new AesGcmCipher(randomBytes(32)),
+			),
+		).rejects.toThrow(/Analysis/i);
+		await expect(deleteOperationalData(prisma)).rejects.toThrow(
+			/Analysis|work started/i,
+		);
+		expect(
+			await prisma.liveChannel.findUnique({ where: { id: channel.id } }),
+		).not.toBeNull();
+	});
+
+	it("checks the plan-only primary and both log-only and journal-only secondary encoders before full reset", async () => {
+		const [primary, logged, journal] = [
+			randomUUID(),
+			randomUUID(),
+			randomUUID(),
+		];
+		const { channel, run, account } = await archiveFixture(prisma, primary, []);
+		const create = {
+			step: "encoding",
+			kind: "CREATE_ENCODING",
+			status: "DONE",
+			refs: {},
+			payload: {},
+			resourceId: logged,
+		};
+		await prisma.liveChannelRun.update({
+			where: { id: run.id },
+			data: { stepLog: [create] },
+		});
+		await prisma.liveChannel.update({
+			where: { id: channel.id },
+			data: { bitmovinEncodingId: primary },
+		});
+		await claimFixture(channel.id, run.id, primary, [journal]);
+		const report = await reconcileEncoderPointers(prisma, async (ac, id) => {
+			expect(ac).toBe(account.id);
+			return id === primary
+				? { kind: "stopped", providerStatus: "FINISHED" }
+				: { kind: "running", providerStatus: "RUNNING" };
+		});
+		expect(report.confirmed.map((p) => p.bitmovinEncodingId)).toEqual([
+			primary,
+			primary,
+		]);
+		expect(report.running.map((p) => p.bitmovinEncodingId).sort()).toEqual(
+			[logged, journal].sort(),
+		);
+		await expect(deleteOperationalData(prisma)).rejects.toThrow();
+		await reconcileEncoderPointers(prisma, async () => ({
+			kind: "stopped",
+			providerStatus: "FINISHED",
+		}));
+		const outcome = await deleteOperationalData(prisma);
+		expect(
+			new Set(outcome.encoders.pointers.map((p) => p.bitmovinEncodingId)),
+		).toEqual(new Set([primary, logged, journal]));
+	});
+
+	it("checks the exact account version under lock before recording missing plan-only encoder pointers", async () => {
+		const encodingId = randomUUID();
+		const { channel, run, account } = await archiveFixture(
+			prisma,
+			encodingId,
+			[],
+		);
+		await prisma.liveChannel.update({
+			where: { id: channel.id },
+			data: { bitmovinEncodingId: encodingId },
+		});
+		const version = {
+			id: account.id,
+			updatedAt: account.updatedAt,
+			encryptedApiKey: "fixture-only",
+			tenantOrgId: null,
+		};
+		const changed = await reconcileEncoderPointers(prisma, async () => {
+			await prisma.bitmovinAccount.update({
+				where: { id: account.id },
+				data: {
+					encryptedApiKey: "new-key",
+					updatedAt: new Date(channel.createdAt.getTime() + 60000),
+				},
+			});
+			return { kind: "missing", account: version };
+		});
+		expect(changed.confirmed).toHaveLength(0);
+		expect(changed.unverified).toHaveLength(2);
+		expect(
+			await prisma.liveChannelRun.findUnique({
+				where: { id: run.id },
+				select: { encoderStoppedConfirmedFor: true },
+			}),
+		).toEqual({ encoderStoppedConfirmedFor: null });
+		const positive = await reconcileEncoderPointers(prisma, async () => ({
+			kind: "stopped",
+			providerStatus: "FINISHED",
+		}));
+		expect(positive.confirmed).toHaveLength(2);
+	});
 	it("keeps archive-only encoders for bulk reset until an exact terminal read and returns the archived identity in the deletion receipt", async () => {
 		const old = randomUUID();
 		const foreign = randomUUID();
@@ -379,16 +538,165 @@ postgres("tenant PostgreSQL reset", () => {
 					entityKey: `liveChannelRun:${run.id}`,
 					accountId: account.id,
 					encodingId: old,
+					allowVerifiedMissing: true,
 					requireTerminal: true,
 				},
 				{
 					entityKey: `liveChannelRun:${run.id}`,
 					accountId: account.id,
 					encodingId: fresh,
+					allowVerifiedMissing: true,
 				},
 			]),
 		);
 		expect(task?.payload.encodings).toHaveLength(2);
+	});
+
+	it("retains the rotated selected account and journal-only encoder for cleanup without treating its missing response as terminal", async () => {
+		const [primary, secondary] = [randomUUID(), randomUUID()];
+		const { account, run, channel } = await archiveFixture(prisma, primary, []);
+		await claimFixture(channel.id, run.id, primary, [secondary]);
+		await prisma.bitmovinAccount.update({
+			where: { id: account.id },
+			data: {
+				encryptedApiKey: "different-scope",
+				updatedAt: new Date(channel.createdAt.getTime() + 60000),
+			},
+		});
+		const cipher = new AesGcmCipher(randomBytes(32));
+		const result = await deleteSelectedData(
+			prisma,
+			requiredResetCategories(["liveChannels"]),
+			cipher,
+		);
+		expect(result.encoders.providerIdentityTotal).toBe(2);
+		if (!result.cleanupTaskId) throw new Error("Missing cleanup task");
+		const task = await readResetCleanupTask(
+			prisma,
+			cipher,
+			result.cleanupTaskId,
+		);
+		expect(task?.payload.accounts).toEqual([
+			{ id: account.id, encryptedApiKey: "different-scope", tenantOrgId: null },
+		]);
+		expect(task?.payload.encodings).toEqual(
+			expect.arrayContaining([
+				{
+					entityKey: `liveChannelRun:${run.id}`,
+					accountId: account.id,
+					encodingId: primary,
+				},
+				{
+					entityKey: `liveChannelRun:${run.id}`,
+					accountId: account.id,
+					encodingId: secondary,
+					requireTerminal: true,
+				},
+			]),
+		);
+	});
+
+	it("keeps the legacy Analysis route private across tenants and deletes only after finalization by its preview owner", async () => {
+		const context = await import("./context");
+		const { DELETE } = await import("../../app/api/live-channels/[id]/route");
+		const hook = vi.spyOn(context, "getServerContext");
+		const owner = randomUUID(),
+			analysisId = randomUUID(),
+			encodingId = randomUUID();
+		const { channel, run } = await archiveFixture(prisma, encodingId, []);
+		const b = createTenantPrismaClient(runtime, organizationIds[1]);
+		await prisma.liveChannel.update({
+			where: { id: channel.id },
+			data: { bitmovinEncodingId: encodingId },
+		});
+		await prisma.liveChannelRun.update({
+			where: { id: run.id },
+			data: { aisaAnalysisId: analysisId, aisaStatus: "RUNNING" },
+		});
+		const request = async (
+			client: AppPrismaClient,
+			user: string,
+			role: "ADMIN" | "VIEWER",
+		) => {
+			hook.mockResolvedValue({
+				prisma: client,
+				tenant: {
+					actor: `user:${user}`,
+					actorUserId: user,
+					effectiveUserId: user,
+					role,
+					actorRole: role,
+					isImpersonating: false,
+				},
+			} as import("./context").ServerContext);
+			return DELETE(
+				new Request(`http://test/api/live-channels/${channel.id}`, {
+					method: "DELETE",
+				}),
+				{ params: Promise.resolve({ id: channel.id }) },
+			);
+		};
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", owner);
+		try {
+			expect((await request(b, owner, "ADMIN")).status).toBe(404);
+			expect((await request(prisma, randomUUID(), "ADMIN")).status).toBe(404);
+			expect((await request(prisma, owner, "VIEWER")).status).toBe(404);
+			expect((await request(prisma, owner, "ADMIN")).status).toBe(409);
+			expect(await prisma.liveChannelRun.count({ where: { id: run.id } })).toBe(
+				1,
+			);
+			await prisma.liveChannelRun.update({
+				where: { id: run.id },
+				data: {
+					providerStatus: "ERROR",
+					aisaStatus: "ERROR",
+					aisaFinalization: {
+						analysisId,
+						encodingId,
+						status: "ERROR",
+						result: "UNAVAILABLE_TERMINAL_FAILURE",
+						observedAt: new Date().toISOString(),
+					},
+				},
+			});
+			expect((await request(prisma, owner, "ADMIN")).status).toBe(200);
+			expect(await prisma.liveChannelRun.count({ where: { id: run.id } })).toBe(
+				0,
+			);
+		} finally {
+			hook.mockRestore();
+			vi.unstubAllEnvs();
+		}
+	});
+	it("retains a claim whose logical run is gone and can transfer its exact encoder to selected cleanup", async () => {
+		const primary = randomUUID(),
+			secondary = randomUUID();
+		const { channel, run, account } = await archiveFixture(prisma, null, []);
+		await claimFixture(channel.id, randomUUID(), primary, [secondary]);
+		await prisma.liveChannelRun.delete({ where: { id: run.id } });
+		await prisma.liveChannel.update({
+			where: { id: channel.id },
+			data: { stepLog: [] },
+		});
+		await expect(deleteOperationalData(prisma)).rejects.toThrow();
+		const cipher = new AesGcmCipher(randomBytes(32));
+		const r = await deleteSelectedData(
+			prisma,
+			requiredResetCategories(["liveChannels"]),
+			cipher,
+		);
+		if (!r.cleanupTaskId) throw new Error("Missing cleanup task");
+		const task = await readResetCleanupTask(prisma, cipher, r.cleanupTaskId);
+		expect(
+			task?.payload.encodings
+				.map((e) => [e.entityKey, e.accountId, e.encodingId])
+				.sort(),
+		).toEqual(
+			[primary, secondary]
+				.map((id) => [`liveChannel:${channel.id}`, account.id, id])
+				.sort(),
+		);
 	});
 
 	it("preserves the run and provider account when a legacy RTMP rebuild lost an unknown encoder identity", async () => {

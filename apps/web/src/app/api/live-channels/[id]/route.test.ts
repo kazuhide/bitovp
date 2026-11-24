@@ -23,7 +23,7 @@ const heartbeatEvents = vi.fn().mockResolvedValue([]);
 const latestRun = vi.fn().mockResolvedValue(null);
 const lockedChannel = vi.fn();
 const lockedRun = vi.fn();
-const archivedRuns = vi.fn();
+const archivedChannels = vi.fn();
 const openStop = vi.fn();
 const lockRows = vi.fn();
 
@@ -35,9 +35,13 @@ const lockRows = vi.fn();
 // answered 409 for the same row.
 const tx = {
 	vmafJob: { deleteMany: vmafDeleteMany, count: vmafCount },
-	liveChannel: { findUnique: lockedChannel, deleteMany: channelDeleteMany },
-	liveChannelRun: { findFirst: lockedRun, findMany: archivedRuns },
-	liveEffectClaim: { findFirst: openStop },
+	liveChannel: {
+		findUnique: lockedChannel,
+		findMany: archivedChannels,
+		deleteMany: channelDeleteMany,
+	},
+	liveChannelRun: { findFirst: lockedRun },
+	liveEffectClaim: { findFirst: openStop, findMany: vi.fn(async () => []) },
 	$queryRaw: lockRows,
 };
 const $transaction = vi.fn((cb: (t: typeof tx) => Promise<unknown>) => cb(tx));
@@ -94,7 +98,7 @@ beforeEach(() => {
 		.mockReset()
 		.mockImplementation(() => findUnique.mock.results.at(-1)?.value);
 	openStop.mockReset().mockResolvedValue(null);
-	archivedRuns.mockReset().mockResolvedValue([]);
+	archivedChannels.mockReset().mockResolvedValue([]);
 	lockedRun.mockReset().mockImplementation((args) => latestRun(args));
 	lockRows.mockResolvedValue([]);
 	// Ordering is cosmetic here, and my earlier comment claiming otherwise was
@@ -598,6 +602,46 @@ describe("DELETE /api/live-channels/[id] — the live VMAF guard", () => {
 });
 
 describe("DELETE /api/live-channels/[id]", () => {
+	it("retains an ERROR encoder after a pre-send STOP failure until its own terminal status is confirmed", async () => {
+		findUnique.mockResolvedValue({
+			id: CHANNEL_ID,
+			status: "ERROR",
+			stepLog: [],
+			plan: {},
+			bitmovinEncodingId: "encoder-a",
+			encoderStoppedConfirmedFor: null,
+		});
+		lockedRun.mockResolvedValue({
+			id: "run",
+			status: "ERROR",
+			bitmovinEncodingId: "encoder-a",
+			encoderStoppedConfirmedFor: null,
+			stepLog: [],
+		});
+		expect((await DELETE(delReq(), ctx(CHANNEL_ID))).status).toBe(409);
+		expect(channelDeleteMany).not.toHaveBeenCalled();
+	});
+	it("uses a persisted Analysis binding without a plan marker for DELETE owner authorization", async () => {
+		vi.stubEnv(
+			"BITOVP_AISA_LIVE_PREVIEW_USER_ID",
+			"00000000-0000-4000-8000-000000000099",
+		);
+		const run = {
+			id: "run",
+			aisaAnalysisId: "analysis",
+			aisaStatus: "RUNNING",
+		};
+		findUnique.mockResolvedValue({
+			id: CHANNEL_ID,
+			status: "STOPPED",
+			plan: {},
+			stepLog: [],
+			runs: [run],
+		});
+		lockedRun.mockResolvedValue(run);
+		expect((await DELETE(delReq(), ctx(CHANNEL_ID))).status).toBe(404);
+		expect(channelDeleteMany).not.toHaveBeenCalled();
+	});
 	it("retains an unresolved STOP on a locally stopped channel", async () => {
 		findUnique.mockResolvedValue({
 			id: CHANNEL_ID,
@@ -631,27 +675,31 @@ describe("DELETE /api/live-channels/[id]", () => {
 			plan: {},
 			stepLog: [],
 		});
-		archivedRuns.mockResolvedValue([
+		archivedChannels.mockResolvedValue([
 			{
-				id: "previous-run",
-				status: "ERROR",
-				previousProviderEncodingIds: ["old-encoder"],
+				id: CHANNEL_ID,
+				name: "Channel",
+				status: "STOPPED",
+				bitmovinAccountId: "account",
 				stepLog: [],
-				liveChannel: {
-					id: CHANNEL_ID,
-					name: "Channel",
-					status: "STOPPED",
-					bitmovinAccountId: "account",
-					runs: [{ id: "new-run" }],
-				},
+				effectClaims: [],
+				runs: [
+					{ id: "new-run", stepLog: [] },
+					{
+						id: "previous-run",
+						status: "ERROR",
+						previousProviderEncodingIds: ["old-encoder"],
+						stepLog: [],
+					},
+				],
 			},
 		]);
 		const result = await DELETE(delReq(), ctx(CHANNEL_ID));
 		expect(result.status).toBe(409);
 		expect((await result.json()).error).toContain("displaced encoders");
-		expect(archivedRuns).toHaveBeenCalledWith(
+		expect(archivedChannels).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: expect.objectContaining({ liveChannelId: CHANNEL_ID }),
+				where: expect.objectContaining({ id: CHANNEL_ID }),
 			}),
 		);
 		expect(channelDeleteMany).not.toHaveBeenCalled();

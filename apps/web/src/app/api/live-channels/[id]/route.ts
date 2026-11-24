@@ -1,7 +1,4 @@
 import {
-	aisaCreateNotDispatched,
-	aisaLiveFinalization,
-	aisaLiveNeverStarted,
 	effectiveLivePlanForRun,
 	isAisaManagedLivePlan,
 	liveRunWindow,
@@ -53,6 +50,12 @@ import {
 } from "@/lib/server/moq-observations";
 import { publicMoqHistory } from "@/lib/server/moq-public-history";
 import { playbackLinksForLivePlan } from "@/lib/server/playback-links";
+import {
+	AISA_FINALIZATION_REQUIRED_MESSAGE,
+	AisaFinalizationNotConfirmed,
+	aisaRunCanBeRemoved,
+	analysisBindingSelect,
+} from "@/lib/server/reset-live-analyses";
 import {
 	INCOMPLETE_RTMP_ARCHIVE_MESSAGE,
 	IncompleteRtmpArchive,
@@ -272,7 +275,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 
 /** Sentinel: the atomic terminal-guard matched 0 rows → roll back, return 409. */
 class ChannelNotDeletable extends Error {}
-class AisaFinalizationNotConfirmed extends Error {}
+class AisaDeleteForbidden extends Error {}
 
 /**
  * Delete a non-running live channel and ITS local dependents — LOCAL records
@@ -317,6 +320,15 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 				id: true,
 				status: true,
 				origin: true,
+				runs: {
+					orderBy: { seq: "desc" },
+					take: 1,
+					select: {
+						aisaAnalysisId: true,
+						aisaStatus: true,
+						aisaSnapshot: true,
+					},
+				},
 				bitmovinAccountId: true,
 				plan: true,
 				bitmovinEncodingId: true,
@@ -327,7 +339,10 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 		if (!row) {
 			return jsonError(404, "Not found");
 		}
-		if (isAisaLiveChannelView(row, null) && !aisaLiveAccessAllowed(ctx.tenant))
+		if (
+			isAisaLiveChannelView(row, row.runs?.[0]) &&
+			!aisaLiveAccessAllowed(ctx.tenant)
+		)
 			return jsonError(404, "Not found");
 		if (
 			row.status === "PROVISIONING" ||
@@ -373,20 +388,29 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 			// Match Start/provision lock order. The outer read cannot authorize
 			// deletion of a later run or an Analysis created before Encoding binding.
 			await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${id}::uuid FOR UPDATE`;
+			await tx.$queryRaw`SELECT id FROM "LiveChannelRun" WHERE "liveChannelId" = ${id}::uuid ORDER BY seq DESC FOR UPDATE`;
 			const current = await tx.liveChannel.findUnique({
 				where: { id },
 				select: {
 					status: true,
+					error: true,
+					origin: true,
+					runs: analysisBindingSelect,
 					plan: true,
 					bitmovinEncodingId: true,
 					stepLog: true,
 					encoderStoppedConfirmedFor: true,
 				},
 			});
+			if (!current) throw new ChannelNotDeletable();
+			const runs = current.runs ?? [];
 			if (
-				!current ||
-				["PROVISIONING", "RUNNING", "STOPPING"].includes(current.status)
+				(isAisaLiveChannelView(current, runs[0]) ||
+					runs.some((r) => isAisaLiveChannelView(current, r))) &&
+				!aisaLiveAccessAllowed(ctx.tenant)
 			)
+				throw new AisaDeleteForbidden();
+			if (["PROVISIONING", "RUNNING", "STOPPING"].includes(current.status))
 				throw new ChannelNotDeletable();
 			const openStop = await tx.liveEffectClaim.findFirst({
 				where: {
@@ -400,41 +424,43 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 			const archive = await readResetRtmpArchives(tx, id);
 			if (archive.incomplete.length) throw new IncompleteRtmpArchive();
 			if (archive.pointers.length) throw new ArchivedEncoderStillOpen();
-			if (isAisaManagedLivePlan(current.plan)) {
-				await tx.$queryRaw`SELECT id FROM "LiveChannelRun" WHERE "liveChannelId" = ${id}::uuid ORDER BY seq DESC LIMIT 1 FOR UPDATE`;
-				const run = await tx.liveChannelRun.findFirst({
-					where: { liveChannelId: id },
-					orderBy: { seq: "desc" },
-				});
-				// POST can fail to enqueue before the worker creates its first run.
-				// A locked empty run query plus an untouched canonical log is proof
-				// of no provider work; absence of a run alone is never sufficient.
-				const noRunNoCreate =
-					run === null &&
-					["CREATED", "ERROR"].includes(current.status) &&
-					!current.bitmovinEncodingId &&
-					aisaCreateNotDispatched(current.stepLog);
-				const noCreateError =
-					run?.status === "ERROR" &&
-					current.status === "ERROR" &&
-					!run.cancelRequested &&
-					!run.aisaAnalysisId &&
-					!run.bitmovinEncodingId &&
-					!current.bitmovinEncodingId &&
-					aisaCreateNotDispatched(run.stepLog) &&
-					aisaCreateNotDispatched(current.stepLog);
-				const finalized =
-					run &&
-					run.bitmovinEncodingId === current.bitmovinEncodingId &&
-					["COMPLETE", "FAILED"].includes(aisaLiveFinalization(run));
-				if (
-					!noRunNoCreate &&
-					(!run ||
-						(!noCreateError &&
-							!finalized &&
-							!aisaLiveNeverStarted(run, current)))
-				)
+
+			const run = await tx.liveChannelRun.findFirst({
+				where: { liveChannelId: id },
+				orderBy: { seq: "desc" },
+			});
+			const bound = isAisaLiveChannelView(current, run);
+			if (bound && !aisaLiveAccessAllowed(ctx.tenant))
+				throw new AisaDeleteForbidden();
+			if (current.origin !== "AISA_IMPORTED") {
+				if (bound && !aisaRunCanBeRemoved(current, run))
 					throw new AisaFinalizationNotConfirmed();
+				for (const historical of runs) {
+					if (
+						historical.id !== run?.id &&
+						isAisaLiveChannelView(current, historical) &&
+						!aisaRunCanBeRemoved(historical, historical)
+					)
+						throw new AisaFinalizationNotConfirmed();
+				}
+				const ordinaryRows = [
+					...(!bound ? [current, ...(run ? [run] : [])] : []),
+					...runs.filter(
+						(historical) =>
+							historical.id !== run?.id &&
+							!isAisaLiveChannelView(current, historical),
+					),
+				];
+				if (
+					ordinaryRows.some(
+						(row) =>
+							(row.status === "ERROR" ||
+								(row.status === "STOPPED" && row.error)) &&
+							row.bitmovinEncodingId &&
+							row.encoderStoppedConfirmedFor !== row.bitmovinEncodingId,
+					)
+				)
+					throw new UnconfirmedLiveStop();
 			}
 			// Re-assert inside the tx: one that entered PENDING since the read above
 			// must not be deleted out from under the scorer.
@@ -480,6 +506,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 		);
 		return NextResponse.json({ id, deleted: true });
 	} catch (err) {
+		if (err instanceof AisaDeleteForbidden) return jsonError(404, "Not found");
 		if (err instanceof MoqObservationError) return moqHistoryError(err);
 		if (err instanceof UnconfirmedLiveStop)
 			return jsonError(
@@ -491,14 +518,12 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 		if (err instanceof ArchivedEncoderStillOpen)
 			return jsonError(
 				409,
-				"Verify the displaced encoders from earlier RTMP attempts before deleting this channel.",
+				"Verify the displaced encoders recorded in this broadcast before deleting the channel.",
 			);
 		if (err instanceof AisaFinalizationNotConfirmed) {
-			return jsonError(
-				409,
-				"Analysis finalization must be confirmed before deleting this channel",
-				{ code: "AISA_FINALIZATION_PENDING" },
-			);
+			return jsonError(409, AISA_FINALIZATION_REQUIRED_MESSAGE, {
+				code: "AISA_FINALIZATION_PENDING",
+			});
 		}
 		if (err instanceof ChannelNotDeletable) {
 			return jsonError(

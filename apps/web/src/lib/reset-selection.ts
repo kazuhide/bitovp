@@ -72,7 +72,7 @@ export const RESET_CATALOG = [
 	},
 	{
 		category: "liveSchedules",
-		models: ["slateNormalization", "liveSchedule", "liveEffectClaim"],
+		models: ["slateNormalization", "liveSchedule"],
 	},
 	{ category: "pseudoLiveFeeds", models: ["feederSession"] },
 	{ category: "vmafMeasurements", models: ["vmafResult", "vmafJob"] },
@@ -89,7 +89,13 @@ export const RESET_CATALOG = [
 	},
 	{
 		category: "liveChannels",
-		models: ["liveHeartbeat", "startupSample", "liveChannelRun", "liveChannel"],
+		models: [
+			"liveEffectClaim",
+			"liveHeartbeat",
+			"startupSample",
+			"liveChannelRun",
+			"liveChannel",
+		],
 	},
 	{ category: "vodJobs", models: ["manifestJob", "encodingJob"] },
 	{ category: "watchFolders", models: ["watchRule"] },

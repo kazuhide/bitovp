@@ -10,6 +10,8 @@ export type ResetCleanupAccount = {
 	tenantOrgId: string | null;
 };
 export type ResetCleanupEncoding = {
+	/** The snapshotted account credentials predate this source's original binding. */
+	allowVerifiedMissing?: true;
 	/** Displaced encoders with unknown start history need terminal readback. */
 	requireTerminal?: true;
 	entityKey: string;

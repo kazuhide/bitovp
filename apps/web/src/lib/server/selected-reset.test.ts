@@ -548,7 +548,7 @@ describe("selected reset", () => {
 		["verificationHistory", "verificationRun"],
 		["storageChecks", "storageInspection"],
 		["liveSchedules", "slateNormalization"],
-		["liveSchedules", "liveEffectClaim"],
+		["liveSchedules", "liveSchedule"],
 	] as const)("deletes selected %s even when work remains", async (category, model) => {
 		const f = fixture();
 		f.tables[model]?.count.mockResolvedValue(1);

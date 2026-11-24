@@ -256,8 +256,11 @@ function findManyFor(
 				plan?: boolean;
 				previousProviderEncodingIds?: boolean;
 				rtmpRetirementEvidence?: boolean;
+				effectClaims?: unknown;
+				runs?: unknown;
 			};
 		}) => {
+			if (name === "liveChannel" && args?.select?.runs) return [];
 			if (
 				name === "liveChannelRun" &&
 				args?.select?.previousProviderEncodingIds

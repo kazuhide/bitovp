@@ -13,8 +13,9 @@ import {
 	readResetCleanupTask,
 } from "@bitovp/db";
 
+export const RESET_ENCODING_ABSENT = Symbol("verified encoding absence");
 export type ResetCleanupProvider = {
-	status(id: string): Promise<string>;
+	status(id: string): Promise<string | typeof RESET_ENCODING_ABSENT>;
 	stop(id: string): Promise<void>;
 	releaseTemporaryKeys(id: string): Promise<void>;
 	/** True only after an exact owned hook is deleted (including 404). */
@@ -44,26 +45,41 @@ export async function cleanResetPayload(
 			.filter((row) => row.requireTerminal)
 			.map((row) => `${row.accountId}:${row.encodingId}`),
 	);
+	const pendingEntities = new Set(
+		payload.pendingEntities.map((p) => p.entityKey),
+	);
+	const unsettled = new Set(
+		payload.encodings
+			.filter((e) => pendingEntities.has(e.entityKey))
+			.map((e) => `${e.accountId}:${e.encodingId}`),
+	);
+	const unprovenAccount = new Set(
+		payload.encodings
+			.filter((e) => !e.allowVerifiedMissing)
+			.map((e) => `${e.accountId}:${e.encodingId}`),
+	);
 	for (const row of payload.encodings) {
 		try {
+			const key = `${row.accountId}:${row.encodingId}`;
 			const api = await provider(row.accountId);
 			let status = await api.status(row.encodingId);
 			if (
+				status !== RESET_ENCODING_ABSENT &&
 				classifyProviderStatusWord(status) !== "TERMINAL" &&
 				status !== "CREATED"
 			) {
 				await api.stop(row.encodingId);
 				status = await api.status(row.encodingId);
 			}
-			// A CREATED resource is safe only when no dispatched owner can still START it.
-			if (
-				classifyProviderStatusWord(status) === "TERMINAL" ||
-				(status === "CREATED" &&
-					!requireTerminal.has(`${row.accountId}:${row.encodingId}`) &&
-					!payload.pendingEntities.some(
-						(pending) => pending.entityKey === row.entityKey,
-					))
-			) {
+			// A healthy replacement credential can see both exact endpoints as absent.
+			const safe =
+				status === RESET_ENCODING_ABSENT
+					? !unprovenAccount.has(key) && !unsettled.has(key)
+					: classifyProviderStatusWord(status) === "TERMINAL" ||
+						(status === "CREATED" &&
+							!requireTerminal.has(key) &&
+							!unsettled.has(key));
+			if (safe) {
 				if (
 					row.entityKey.startsWith("liveChannel") ||
 					row.entityKey.startsWith("liveEffectClaim:")

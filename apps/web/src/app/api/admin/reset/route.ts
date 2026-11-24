@@ -52,6 +52,10 @@ import {
 } from "@/lib/server/reset";
 import { tokenActorRefusal } from "@/lib/server/reset-actor";
 import {
+	AISA_FINALIZATION_REQUIRED_MESSAGE,
+	AisaFinalizationNotConfirmed,
+} from "@/lib/server/reset-live-analyses";
+import {
 	INCOMPLETE_RTMP_ARCHIVE_MESSAGE,
 	IncompleteRtmpArchive,
 } from "@/lib/server/reset-rtmp-archives";
@@ -411,6 +415,10 @@ export async function POST(req: Request) {
 			if (err instanceof ResetRaceLost) {
 				return resetConflict("RESET_STATE_CHANGED");
 			}
+			if (err instanceof AisaFinalizationNotConfirmed)
+				return jsonError(409, AISA_FINALIZATION_REQUIRED_MESSAGE, {
+					code: "AISA_FINALIZATION_PENDING",
+				});
 			if (err instanceof IncompleteRtmpArchive)
 				return jsonError(
 					409,

@@ -27,12 +27,14 @@ export async function snapshotResetCleanup(
 		pendingEntities: [],
 	};
 	const entityKeys: string[] = [];
+	const ownerSince = new Map<string, Date>();
 	const accountIds = new Set<string>();
 	const requireTerminal = new Set<string>();
 	function entity(
 		kind: string,
 		row: {
 			id: string;
+			createdAt?: Date;
 			status: string;
 			bitmovinAccountId: string | null;
 			bitmovinEncodingId?: string | null;
@@ -44,6 +46,7 @@ export async function snapshotResetCleanup(
 		},
 	) {
 		const entityKey = `${kind}:${row.id}`;
+		if (row.createdAt) ownerSince.set(entityKey, row.createdAt);
 		entityKeys.push(entityKey);
 		if (row.bitmovinAccountId) accountIds.add(row.bitmovinAccountId);
 		const ids = new Set(row.previousProviderEncodingIds ?? []);
@@ -100,6 +103,7 @@ export async function snapshotResetCleanup(
 				id: true,
 				status: true,
 				attemptClaimedAt: true,
+				createdAt: true,
 				bitmovinAccountId: true,
 				bitmovinEncodingId: true,
 				stepLog: true,
@@ -118,6 +122,7 @@ export async function snapshotResetCleanup(
 				id: true,
 				status: true,
 				provisionClaimedAt: true,
+				createdAt: true,
 				bitmovinAccountId: true,
 				bitmovinEncodingId: true,
 				stepLog: true,
@@ -135,13 +140,39 @@ export async function snapshotResetCleanup(
 				bitmovinEncodingId: true,
 				stepLog: true,
 				previousProviderEncodingIds: true,
-				liveChannel: { select: { bitmovinAccountId: true, plan: true } },
+				liveChannel: {
+					select: { bitmovinAccountId: true, plan: true, createdAt: true },
+				},
 			},
 		}))
 			entity("liveChannelRun", {
 				...row,
+				createdAt: row.liveChannel.createdAt,
 				bitmovinAccountId: liveChannelAccountId(row.liveChannel),
 			});
+		const recorded = new Set(
+			payload.encodings.map((e) =>
+				JSON.stringify([e.entityKey, e.accountId, e.encodingId]),
+			),
+		);
+		for (const p of archive.pointers) {
+			const entityKey = `${p.kind}:${p.id}`;
+			if (
+				!recorded.has(
+					JSON.stringify([
+						entityKey,
+						p.bitmovinAccountId,
+						p.bitmovinEncodingId,
+					]),
+				)
+			)
+				payload.encodings.push({
+					entityKey,
+					accountId: p.bitmovinAccountId,
+					encodingId: p.bitmovinEncodingId,
+					requireTerminal: true,
+				});
+		}
 		for (const effect of await tx.liveEffectClaim.findMany({
 			where: { state: { in: ["CLAIMED", "DISPATCHING", "AMBIGUOUS"] } },
 			select: {
@@ -369,9 +400,24 @@ export async function snapshotResetCleanup(
 		) as Prisma.JsonObject[];
 	}
 	if (!entityKeys.length && !payload.verificationIntents.length) return null;
-	payload.accounts = await tx.bitmovinAccount.findMany({
+	const accounts = await tx.bitmovinAccount.findMany({
 		where: { id: { in: [...accountIds] } },
-		select: { id: true, encryptedApiKey: true, tenantOrgId: true },
+		select: {
+			id: true,
+			encryptedApiKey: true,
+			tenantOrgId: true,
+			updatedAt: true,
+		},
 	});
+	const versions = new Map(accounts.map((a) => [a.id, a.updatedAt]));
+	for (const pointer of payload.encodings) {
+		const version = pointer.accountId && versions.get(pointer.accountId);
+		const origin = ownerSince.get(pointer.entityKey);
+		if (version && origin && version < origin)
+			pointer.allowVerifiedMissing = true;
+	}
+	payload.accounts = accounts.map(
+		({ updatedAt: _updatedAt, ...account }) => account,
+	);
 	return createResetCleanupTask(tx, cipher, payload, entityKeys);
 }

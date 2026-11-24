@@ -25,6 +25,7 @@ import {
 } from "./moq-archive-cleanup";
 import { collectEncoderPointers, type ResetOutcome } from "./reset";
 import { snapshotResetCleanup } from "./reset-cleanup-snapshot";
+import { assertResetLiveAnalyses } from "./reset-live-analyses";
 
 type ResetClient = AppPrismaClient | AppTransactionClient;
 type Count = {
@@ -159,6 +160,7 @@ export async function deleteSelectedData(
 						// Snapshot ownership and delete children under the same channel-first
 						// order as owned finalizers, including delayed provider responses.
 						await tx.$queryRaw`SELECT id FROM "LiveChannel" ORDER BY id FOR UPDATE`;
+						await assertResetLiveAnalyses(tx);
 					}
 					if (selected.has("contentLibrary")) {
 						await tx.$queryRaw`SELECT id FROM "LibrarySource" ORDER BY id FOR UPDATE`;

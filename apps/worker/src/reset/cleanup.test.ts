@@ -5,6 +5,7 @@ import { expect, it, vi } from "vitest";
 import {
 	cleanResetPayload,
 	createResetCleanupSweep,
+	RESET_ENCODING_ABSENT,
 	type ResetCleanupProvider,
 } from "./cleanup";
 
@@ -87,6 +88,50 @@ it("settles CREATED once the owning worker has acknowledged its fence", async ()
 	expect(
 		(await cleanResetPayload(payload, async () => provider)).encodings.size,
 	).toBe(1);
+});
+it("retains a rotated or unbound account on verified absence and accepts an exact terminal result", async () => {
+	const { payload, provider } = fixture();
+	vi.mocked(provider.status).mockResolvedValue(RESET_ENCODING_ABSENT);
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(0);
+	expect(provider.releaseTemporaryKeys).not.toHaveBeenCalled();
+	const row = payload.encodings[0];
+	if (!row) throw new Error("Missing encoder fixture");
+	row.allowVerifiedMissing = true;
+	payload.encodings.push({
+		...row,
+		entityKey: "liveChannelRun:old",
+		allowVerifiedMissing: undefined,
+	});
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(0);
+	vi.mocked(provider.status).mockResolvedValue("FINISHED");
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(1);
+});
+it("accepts verified absence using the bound credential only after every mirrored writer closes", async () => {
+	const { payload, provider } = fixture();
+	const row = payload.encodings[0];
+	if (!row) throw new Error("Missing encoder fixture");
+	row.allowVerifiedMissing = true;
+	payload.encodings.push({ ...row, entityKey: "liveChannelRun:other" });
+	payload.pendingEntities.push({
+		entityKey: "liveChannelRun:other",
+		accountId: "account",
+		status: "PROVISIONING",
+	});
+	vi.mocked(provider.status).mockResolvedValue(RESET_ENCODING_ABSENT);
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(0);
+	payload.pendingEntities = [];
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(1);
+	expect(provider.stop).not.toHaveBeenCalled();
 });
 it("never calls a provider without the saved selected account", async () => {
 	const { payload, provider } = fixture();

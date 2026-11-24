@@ -4,7 +4,7 @@ import {
 	revealResetCleanupAccount,
 } from "@bitovp/db";
 import { BitmovinApi } from "../bitmovin/sdk-ctor";
-import type { ResetCleanupProvider } from "./cleanup";
+import { RESET_ENCODING_ABSENT, type ResetCleanupProvider } from "./cleanup";
 
 type Hooks = {
 	listByEncodingId(
@@ -46,8 +46,13 @@ export function resetCleanupProvider(
 			} catch (error) {
 				if (!is404(error)) throw error;
 				// A wrong tenant/denied account can mimic a missing resource.
-				await api.encoding.encodings.list({ limit: 1 });
-				return true;
+				const page = await api.encoding.encodings.list({ limit: 1 });
+				return (
+					Array.isArray(page.items) &&
+					page.items.every(
+						(item) => typeof item.id === "string" && item.id !== id,
+					)
+				);
 			}
 		};
 		return {
@@ -57,7 +62,8 @@ export function resetCleanupProvider(
 						(await api.encoding.encodings.status(id)).status ?? "UNKNOWN",
 					);
 				} catch (error) {
-					if (is404(error) && (await encodingAbsent(id))) return "FINISHED";
+					if (is404(error) && (await encodingAbsent(id)))
+						return RESET_ENCODING_ABSENT;
 					throw error;
 				}
 			},

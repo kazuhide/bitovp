@@ -71,6 +71,9 @@ function setup() {
 	let transactionOptions: unknown;
 
 	const tx = {
+		liveStopNotification: {
+			create: vi.fn(async (args: { data: unknown }) => args.data),
+		},
 		liveChannel: {
 			findUnique: vi.fn(async () => ({ ...channel })),
 			updateMany: vi.fn(
@@ -246,6 +249,7 @@ function setup() {
 	return {
 		prisma,
 		feederLookup: tx.feederSession.findFirst,
+		createNotification: tx.liveStopNotification.create,
 		channel,
 		run,
 		claims,
@@ -336,6 +340,7 @@ describe("resolveLiveEffectsAfterConfirmedStop", () => {
 		"late feeder",
 		"previous run error",
 		"lost pre-upgrade dispatch",
+		"redelivered pre-upgrade dispatch",
 	] as const)("recovers a fenced terminal observation after %s", async (kind) => {
 		const f = ambiguousStop();
 		if (kind === "late feeder") {
@@ -348,6 +353,9 @@ describe("resolveLiveEffectsAfterConfirmedStop", () => {
 		} else if (kind === "previous run error") {
 			f.channel.status = "STOPPING";
 			f.stopClaim.state = "DISPATCHING";
+		} else if (kind === "redelivered pre-upgrade dispatch") {
+			f.stopClaim.failure =
+				"effect owner expired after DISPATCHING; exact readback is required before retry";
 		} else {
 			f.stopClaim.state = "DISPATCHING";
 			f.stopClaim.failure = null;
@@ -355,6 +363,15 @@ describe("resolveLiveEffectsAfterConfirmedStop", () => {
 		await expect(
 			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
 		).resolves.toMatchObject({ kind: "RESOLVED" });
+		if (kind === "late feeder")
+			expect(f.createNotification).toHaveBeenCalledOnce();
+		if (kind.includes("pre-upgrade"))
+			expect(f.stopClaim).toMatchObject({
+				stopOutcomeEvidence: {
+					error: "stop response lost",
+					accountId: "account-1",
+				},
+			});
 	});
 	it("accepts a drained feeder enqueue failure only after exact terminal target and channel-wide release", async () => {
 		const f = ambiguousStop();

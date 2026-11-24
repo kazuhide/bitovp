@@ -768,7 +768,6 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					select: {
 						id: true,
 						idempotencyKey: true,
-						stopProtocolVersion: true,
 						scheduleId: true,
 						providerEncodingId: true,
 						action: true,
@@ -944,6 +943,16 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				)
 					return blocked("the interrupted STOP owner has not expired");
 			}
+			const legacyFailure =
+				proof && stopClaim.stopProtocolVersion == null && channel.error
+					? {
+							accountId: proof.bitmovinAccountId,
+							status: channel.status,
+							error: channel.error,
+							requiredEncodingIds: targets,
+							encodings: [...terminal].map(([id, status]) => ({ id, status })),
+						}
+					: null;
 			// Advance the same CAS that beginLiveEffect uses. A stale admission that
 			// read the pre-reconciliation fence must lose even if it resumes only after
 			// this transaction commits; a no-op row lock would not invalidate it.
@@ -1030,6 +1039,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				},
 				data: {
 					state: "ACKED",
+					...(legacyFailure ? { stopOutcomeEvidence: legacyFailure } : {}),
 					acknowledgedAt: input.at,
 					...(proof && !stopClaim.failure && channel.error
 						? { failure: channel.error }

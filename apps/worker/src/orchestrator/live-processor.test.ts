@@ -2574,6 +2574,29 @@ describe("live channel actions", () => {
 		expect(row.error).toBeNull();
 	});
 
+	it("only reads both encoders after an interrupted legacy compound STOP", async () => {
+		const h = setup(
+			{ ...runningRow, stepLog: stepLogNaming("other") },
+			{ getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })) },
+		);
+		Object.assign(h.deps.prisma.liveEffectClaim, {
+			findMany: async () => [
+				{
+					id: "legacy",
+					action: "STOP",
+					state: "AMBIGUOUS",
+					providerEncodingId: "bm-live-enc",
+					stopProtocolVersion: null,
+				},
+			],
+		});
+		expect(
+			await h.process({ liveChannelId: CHANNEL_ID, action: "stop" }),
+		).toMatchObject({ status: "STOPPED" });
+		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("other");
+		expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("bm-live-enc");
+	});
 	it("stops a run-log-only encoder and checks the failed restart's historical target without sending it STOP", async () => {
 		const statuses: Record<string, string> = {
 			"bm-live-enc": "FINISHED",

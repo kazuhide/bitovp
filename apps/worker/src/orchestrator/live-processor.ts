@@ -1371,11 +1371,15 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						for (const id of prior.stopSendEncodingIds ?? [])
 							observeOnly.add(id);
 						if (
-							prior.id !== effect.claim.id &&
+							(prior.id !== effect.claim.id ||
+								prior.stopSendEncodingIds?.length) &&
 							prior.stopProtocolVersion == null &&
 							["DISPATCHING", "AMBIGUOUS", "ACKED"].includes(prior.state)
-						)
-							observeOnly.add(prior.providerEncodingId);
+						) {
+							// Legacy compound STOP had no per-encoder send reservations; any
+							// target of that broadcast may already have received its POST.
+							for (const id of targets) observeOnly.add(id);
+						}
 					}
 					observedPriorSend = observeOnly.has(effect.claim.providerEncodingId);
 					if (observedPriorSend && isAisaManagedLivePlan(row.plan))

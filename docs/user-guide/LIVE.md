@@ -318,14 +318,19 @@ during shutdown, its replacement can read the encoder after the old worker's
 claim expires. If the stopped broadcast already has a terminal provider
 receipt, the replacement can finish recording the outcome from that receipt.
 An older broadcast without a stored encoder ID needs its own encoder-creation
-receipt.
+receipt. A change to the account's RTMP input can replace the encoder within
+one broadcast. The worker records the displaced IDs before rebuilding and
+checks each one. If a rebuild predates this recording and the original ID is
+missing, automatic confirmation stays pending. Check the account's active
+encodings with the operator before re-air.
 
 If an encoder still reports `RUNNING` or `QUEUED`, check its ID in the
 provider dashboard. Pressing **Stop** again cannot force another send for the
-same ambiguous manual stop. When the history identifies another encoder, an
-explicit stop can check that historical ID. Automatic recovery waits for proof
-that every target has ended. Feeder enqueue failures and pending AISA
-finalization also need separate verification.
+same ambiguous manual stop. The periodic check also reads any additional encoders recorded for this broadcast.
+It can reuse a terminal receipt recorded on the same provider account. After a feeder
+stop could not be queued, check that the feeder has actually exited. For AISA,
+retry finalization from the console to refresh the Analysis status and final
+result for that broadcast.
 
 A recovered stop completes its own pending schedule. A schedule already marked
 unknown keeps its original evidence, including after a subsequent broadcast.

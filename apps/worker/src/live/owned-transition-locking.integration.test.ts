@@ -26,9 +26,9 @@ import {
 	createLiveChannelProcessor,
 	type LiveChannelDeps,
 } from "../orchestrator/live-processor";
-import { recordFinalRestartFailure } from "./dead-job-outcome";
 import {
 	recordDeadJobScheduleOutcomes,
+	recordFinalRestartFailure,
 	recordFinalStopFailure,
 } from "./dead-job-outcome";
 import {
@@ -942,16 +942,31 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					generation: f.channel.liveEffectFenceVersion,
 					action: "STOP",
 					stopProtocolVersion: 1,
-					state: "AMBIGUOUS",
+					state: "DISPATCHING",
+					stopSendEncodingIds: [f.encodingId],
 					scheduleId: scheduled.id,
 					idempotencyKey: `schedule:${scheduled.id}:stop`,
 					token: randomUUID(),
 					ownerId: "synthetic",
 					dispatchedAt: lease,
 					expiresAt: now,
-					failure: liveEffectSendUncertainty(error),
 				},
 			});
+			expect(
+				await recordLiveStopFailure(
+					tenant,
+					{ ...claim, action: "STOP" },
+					{
+						status: "ERROR",
+						state: "AMBIGUOUS",
+						error,
+						failure: liveEffectSendUncertainty(error),
+						accountId: account.id,
+						requiredEncodingIds: [f.encodingId],
+						at: now,
+					},
+				),
+			).toBe("RECORDED");
 			const bothRead = barrier();
 			const getEncodingStatus = vi.fn(async () => {
 				if (getEncodingStatus.mock.calls.length === 2) bothRead.release();

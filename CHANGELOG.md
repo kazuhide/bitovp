@@ -10,6 +10,10 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 - Optionally score an NVENC experiment with BitOVP CUDA VMAF v1.0.16 alongside v0.6.1, export both measurements, and choose a scoring model for Lean selection.
 
+### Fixed
+
+- Periodically confirm an uncertain ordinary Live channel stop when the exact encoder has ended and every feeder has released the channel. A lost stop response can now clear automatically without sending another stop.
+
 ## [1.3.4] - 2026-11-22
 
 ### Added

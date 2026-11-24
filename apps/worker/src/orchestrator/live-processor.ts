@@ -81,6 +81,7 @@ import {
 	beginLiveEffect,
 	bindLiveEffectTarget,
 	LiveToVodFenceError,
+	liveEffectSendUncertainty,
 	markLiveEffectAcked,
 	markLiveEffectAmbiguous,
 	markLiveEffectFailed,
@@ -4767,7 +4768,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		await markLiveEffectAmbiguous(
 			deps.prisma,
 			fence.claim,
-			`${reason}; the provider/process call crossed its send boundary, so exact readback or operator resolution is required before retry`,
+			liveEffectSendUncertainty(reason),
 		);
 		if (err instanceof AisaLiveFinalizationPendingError) throw err;
 		if (job.effect?.scheduleId) {

@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import {
 	aisaLiveFinalization,
 	classifyProviderStatusWord,
+	FEEDER_ACTIVE_STATUSES,
 	feederOccupancyWhere,
+	isAisaManagedLivePlan,
+	stepLogSchema,
 } from "@bitovp/core";
 import type { AppPrismaClient } from "./client";
 
@@ -91,7 +94,49 @@ export type ResolveLiveEffectsAfterConfirmedStopInput = {
 	stopClaimId: string;
 	stopIdempotencyKey: string;
 	at: Date;
+	/** Fresh provider GET issued for this generation after its owner recorded ambiguity. */
+	terminalReadback?: {
+		generation: number;
+		bitmovinAccountId: string;
+		providerStatus: string;
+	};
 };
+
+export function liveEffectSendUncertainty(reason: string): string {
+	return `${reason}; the provider/process call crossed its send boundary, so exact readback or operator resolution is required before retry`;
+}
+
+/** Match the projections written by a finished STOP attempt, including pre-upgrade records. */
+export function matchesRecordedStopFailure(
+	status: string,
+	error: string | null,
+	failure: string | null | undefined,
+	encodingId: string,
+): boolean {
+	if (!error) return false;
+	if (status === "ERROR") return failure === liveEffectSendUncertainty(error);
+	const prefix = "stop did not confirm — ";
+	if (status !== "STOPPED" || !error.startsWith(prefix) || failure !== error)
+		return false;
+	// A historic error can be the last remaining mention of a second encoder.
+	// A read of the primary must never erase that evidence.
+	return error
+		.slice(prefix.length)
+		.split("; ")
+		.every((fault) => fault.startsWith(`${encodingId}: `));
+}
+
+function hasOnlyClaimedEncoding(log: unknown, encodingId: string): boolean {
+	const parsed = stepLogSchema.safeParse(log);
+	return (
+		parsed.success &&
+		parsed.data.every(
+			(entry) =>
+				entry.kind !== "RESOLVE_AISA_LIVE_ENCODING" &&
+				(entry.kind !== "CREATE_ENCODING" || entry.resourceId === encodingId),
+		)
+	);
+}
 
 export type ResolveLiveEffectsAfterConfirmedStopResult =
 	| { kind: "RESOLVED"; count: number }
@@ -448,6 +493,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 ): Promise<ResolveLiveEffectsAfterConfirmedStopResult> {
 	return prisma.$transaction(
 		async (tx) => {
+			const proof = input.terminalReadback;
 			const [channel, run, feeder, stopClaim] = await Promise.all([
 				tx.liveChannel.findUnique({
 					where: { id: input.liveChannelId },
@@ -456,6 +502,12 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						error: true,
 						liveEffectFenceVersion: true,
 						bitmovinEncodingId: true,
+						...(proof && {
+							bitmovinAccountId: true,
+							origin: true,
+							plan: true,
+							stepLog: true,
+						}),
 					},
 				}),
 				tx.liveChannelRun.findFirst({
@@ -473,13 +525,22 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						aisaStatus: true,
 						aisaSnapshot: true,
 						aisaFinalization: true,
+						...(proof && { stepLog: true, endedAt: true }),
 					},
 				}),
 				tx.feederSession.findFirst({
-					where: {
-						...feederOccupancyWhere(input.liveChannelId),
-						liveChannelRunId: input.liveChannelRunId,
-					},
+					where: proof
+						? {
+								liveChannelId: input.liveChannelId,
+								OR: [
+									feederOccupancyWhere(),
+									{ status: { in: [...FEEDER_ACTIVE_STATUSES] } },
+								],
+							}
+						: {
+								...feederOccupancyWhere(input.liveChannelId),
+								liveChannelRunId: input.liveChannelRunId,
+							},
 					select: { id: true },
 				}),
 				tx.liveEffectClaim.findUnique({
@@ -492,6 +553,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						action: true,
 						generation: true,
 						state: true,
+						...(proof && { failure: true }),
 					},
 				}),
 			]);
@@ -505,9 +567,11 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 			const confirmedError =
 				aisa === "FAILED" ? "AISA_LIVE_TERMINAL_FAILURE" : null;
 			if (
-				channel?.status !== confirmedStatus ||
-				channel.error !== confirmedError ||
-				channel.bitmovinEncodingId !== input.providerEncodingId
+				!channel ||
+				channel.bitmovinEncodingId !== input.providerEncodingId ||
+				(!proof &&
+					(channel.status !== confirmedStatus ||
+						channel.error !== confirmedError))
 			) {
 				return {
 					kind: "BLOCKED",
@@ -516,12 +580,13 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 			}
 			if (
 				run?.id !== input.liveChannelRunId ||
-				run.status !== confirmedStatus ||
-				run.error !== confirmedError ||
 				run.bitmovinEncodingId !== input.providerEncodingId ||
-				!run.providerStatusObservedAt ||
-				!run.providerTerminalAt ||
-				classifyProviderStatusWord(run.providerStatus) !== "TERMINAL"
+				(!proof &&
+					(run.status !== confirmedStatus ||
+						run.error !== confirmedError ||
+						!run.providerStatusObservedAt ||
+						!run.providerTerminalAt ||
+						classifyProviderStatusWord(run.providerStatus) !== "TERMINAL"))
 			) {
 				return {
 					kind: "BLOCKED",
@@ -545,6 +610,32 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				};
 			}
 			const stopGeneration = stopClaim.generation;
+			if (
+				proof &&
+				(proof.generation !== stopGeneration ||
+					stopClaim.state !== "AMBIGUOUS" ||
+					classifyProviderStatusWord(proof.providerStatus) !== "TERMINAL" ||
+					channel.origin !== "MANAGED" ||
+					channel.bitmovinAccountId !== proof.bitmovinAccountId ||
+					isAisaManagedLivePlan(channel.plan) ||
+					run.aisaAnalysisId ||
+					!hasOnlyClaimedEncoding(channel.stepLog, input.providerEncodingId) ||
+					!hasOnlyClaimedEncoding(run.stepLog, input.providerEncodingId) ||
+					channel.error !== run.error ||
+					channel.status !== run.status ||
+					!matchesRecordedStopFailure(
+						channel.status,
+						channel.error,
+						stopClaim.failure,
+						input.providerEncodingId,
+					))
+			) {
+				return {
+					kind: "BLOCKED",
+					reason:
+						"the readback does not match a completed uncertain STOP of one ordinary live encoding",
+				};
+			}
 			if (feeder) {
 				return {
 					kind: "BLOCKED",
@@ -557,8 +648,8 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 			const locked = await tx.liveChannel.updateMany({
 				where: {
 					id: input.liveChannelId,
-					status: confirmedStatus,
-					error: confirmedError,
+					status: channel.status,
+					error: channel.error,
 					bitmovinEncodingId: input.providerEncodingId,
 					liveEffectFenceVersion: stopGeneration,
 					effectClaims: {
@@ -569,17 +660,44 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 							providerEncodingId: input.providerEncodingId,
 							action: "STOP",
 							generation: stopGeneration,
-							state: { in: ["DISPATCHING", "AMBIGUOUS"] },
+							state: {
+								in: proof ? ["AMBIGUOUS"] : ["DISPATCHING", "AMBIGUOUS"],
+							},
 						},
 					},
 				},
-				data: { liveEffectFenceVersion: { increment: 1 } },
+				data: {
+					liveEffectFenceVersion: { increment: 1 },
+					...(proof && { status: confirmedStatus, error: confirmedError }),
+				},
 			});
 			if (locked.count !== 1) {
 				return {
 					kind: "BLOCKED",
 					reason: "the exact channel STOP changed during reconciliation",
 				};
+			}
+			if (proof) {
+				const projected = await tx.liveChannelRun.updateMany({
+					where: {
+						id: run.id,
+						liveChannelId: input.liveChannelId,
+						bitmovinEncodingId: input.providerEncodingId,
+						status: run.status,
+						error: run.error,
+					},
+					data: {
+						status: confirmedStatus,
+						error: confirmedError,
+						endedAt: run.endedAt ?? input.at,
+						providerStatus: proof.providerStatus,
+						providerStatusObservedAt: input.at,
+						providerUnknownSince: null,
+						providerTerminalAt: run.providerTerminalAt ?? input.at,
+					},
+				});
+				if (projected.count !== 1)
+					throw new Error("LIVE_STOP_RECONCILIATION_RUN_FENCE_LOST");
 			}
 			const acknowledged = await tx.liveEffectClaim.updateMany({
 				where: {
@@ -590,7 +708,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					providerEncodingId: input.providerEncodingId,
 					action: "STOP",
 					generation: stopGeneration,
-					state: { in: ["DISPATCHING", "AMBIGUOUS"] },
+					state: { in: proof ? ["AMBIGUOUS"] : ["DISPATCHING", "AMBIGUOUS"] },
 					// Keep the ownership predicate on the ACK itself as a second fence. The
 					// channel row is already write-locked above against re-air admission.
 					liveChannel: {

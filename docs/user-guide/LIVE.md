@@ -301,6 +301,19 @@ each broadcast and confirm that no previous publisher is active.
 Stop the feeder, stop the channel, and confirm provider termination and output
 progression ending. Deleting a local row does not by itself establish cloud cleanup.
 
+If a stop response is lost or the encoder is still stopping at the last check,
+the worker checks the same broadcast again. Each minute it checks up to four
+unresolved stop records per organization, rotating through longer lists. For ordinary Live with
+one known encoding, a terminal provider status and the end of all feeder
+activity clear the recorded stop error. These checks only read encoder status.
+If it still reports `RUNNING` or `QUEUED`, check that exact encoding in the
+provider dashboard. The worker does not automatically retry an uncertain STOP,
+including when the first call reported a rate limit. With an ambiguous manual
+stop, pressing **Stop** again cannot force a second provider request. Multiple encoding IDs,
+AISA finalization and a worker interruption before the stop outcome was
+recorded require separate verification. A fired schedule whose delivery was
+recorded as unknown retains that history after an encoder is confirmed terminal.
+
 A START error can leave the provider state uncertain. Startup cancellation
 prevents further START retries once the worker observes it. If a request is
 already in flight, the worker waits for its outcome, then checks and stops that

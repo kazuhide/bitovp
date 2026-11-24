@@ -12,6 +12,7 @@ import {
 	createPrismaClient,
 	createTenantPrismaClient,
 	type LiveChannelStatus,
+	liveEffectSendUncertainty,
 	persistLiveToVodAttempt,
 } from "@bitovp/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -20,6 +21,7 @@ import {
 	createProviderLifecycleReconciler,
 	type RunLifecycleRow,
 } from "./provider-lifecycle";
+import { createUncertainStopReconciler } from "./reconcile-uncertain-stops";
 
 const runtimeUrl = process.env.BITOVP_MONITORING_TEST_DATABASE_URL;
 const adminUrl = process.env.BITOVP_MONITORING_TEST_ADMIN_URL;
@@ -121,6 +123,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					await admin.liveChannel.deleteMany({
 						where: { organizationId: { in: organizationIds } },
 					});
+					await admin.bitmovinAccount.deleteMany({
+						where: { organizationId: { in: organizationIds } },
+					});
 					await admin.organization.deleteMany({
 						where: { id: { in: organizationIds } },
 					});
@@ -191,6 +196,89 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				provisionClaimedAt: heldAt,
 			});
 		}
+
+		it("two periodic observers acknowledge the exact uncertain STOP once after both read its terminal encoder", async () => {
+			const f = await fixture("ERROR", null);
+			const error = "provider response lost";
+			const account = await tenant.bitmovinAccount.create({
+				data: { label: "Synthetic STOP readback", encryptedApiKey: "unused" },
+			});
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { bitmovinAccountId: account.id, error },
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { error },
+			});
+			const claim = await tenant.liveEffectClaim.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					providerEncodingId: f.encodingId,
+					generation: f.channel.liveEffectFenceVersion,
+					action: "STOP",
+					state: "AMBIGUOUS",
+					idempotencyKey: randomUUID(),
+					token: randomUUID(),
+					ownerId: "synthetic",
+					dispatchedAt: lease,
+					expiresAt: now,
+					failure: liveEffectSendUncertainty(error),
+				},
+			});
+			const bothRead = barrier();
+			const getEncodingStatus = vi.fn(async () => {
+				if (getEncodingStatus.mock.calls.length === 2) bothRead.release();
+				await bothRead.ready;
+				return { status: "FINISHED" };
+			});
+			const sdk = fakeSdk({ getEncodingStatus });
+			const deps = {
+				prisma: tenant,
+				now: () => now.toISOString(),
+				revealBitmovinAccount: async () => ({
+					apiKey: "mock",
+					tenantOrgId: null,
+				}),
+				makeSdk: () => sdk,
+			};
+			const results = await Promise.all([
+				createUncertainStopReconciler(deps)(),
+				createUncertainStopReconciler(deps)(),
+			]);
+			expect(results.sort()).toEqual([0, 1]);
+			expect(getEncodingStatus.mock.calls).toEqual([
+				[f.encodingId],
+				[f.encodingId],
+			]);
+			expect(sdk.stopLiveEncoding).not.toHaveBeenCalled();
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({
+				status: "STOPPED",
+				error: null,
+				liveEffectFenceVersion: f.channel.liveEffectFenceVersion + 1,
+			});
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({
+				status: "STOPPED",
+				error: null,
+				providerStatus: "FINISHED",
+				providerTerminalAt: now,
+				providerStatusObservedAt: now,
+			});
+			expect(
+				await tenant.liveEffectClaim.findUniqueOrThrow({
+					where: { id: claim.id },
+				}),
+			).toMatchObject({ state: "ACKED", acknowledgedAt: now });
+		}, 15_000);
 
 		function terminal(
 			door: ReturnType<typeof reconciler>["door"],

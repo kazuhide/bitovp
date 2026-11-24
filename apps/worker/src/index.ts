@@ -128,6 +128,7 @@ import {
 	createStrandedRunReconciler,
 	retireTransitionalRuns,
 } from "./live/reconcile-stranded-runs";
+import { createUncertainStopReconciler } from "./live/reconcile-uncertain-stops";
 import { createRunHeartbeatSummarizer } from "./live/run-heartbeat-summary";
 import { reconcileStartupCancellations } from "./live/startup-cancel";
 import {
@@ -1149,6 +1150,11 @@ const orphanEncodingSweep = () =>
 		);
 setTenantInterval(orphanEncodingSweep, 60_000).unref();
 runTenantTick(() => orphanEncodingSweep());
+const reconcileUncertainStops = tenantService(() =>
+	createUncertainStopReconciler(processorDeps),
+);
+setTenantInterval(reconcileUncertainStops, 60_000).unref();
+runTenantTick(reconcileUncertainStops);
 // : the SAME stranding, storage-inspection pipeline — same
 // claim shape (PENDING → RUNNING), same queue discriminator (jobId = row
 // id), no DELETE route and a status-blind 30-day prune as the only exit.

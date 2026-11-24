@@ -12,12 +12,18 @@ type ClaimState =
 
 function setup() {
 	const channel = {
+		origin: "MANAGED",
+		plan: {} as unknown,
+		stepLog: [] as unknown,
+		bitmovinAccountId: "account-1",
 		status: "STOPPED",
 		error: null as string | null,
 		liveEffectFenceVersion: 8,
 		bitmovinEncodingId: "encoding-1",
 	};
 	const run = {
+		stepLog: [] as unknown,
+		endedAt: null as Date | null,
 		aisaAnalysisId: null as string | null,
 		aisaStatus: null as string | null,
 		aisaSnapshot: null as unknown,
@@ -98,6 +104,8 @@ function setup() {
 						where.liveEffectFenceVersion === channel.liveEffectFenceVersion &&
 						stopMatches;
 					if (matches) {
+						if ("status" in data) channel.status = String(data.status);
+						if ("error" in data) channel.error = data.error as string | null;
 						channel.liveEffectFenceVersion += (
 							data.liveEffectFenceVersion as { increment: number }
 						).increment;
@@ -106,7 +114,18 @@ function setup() {
 				},
 			),
 		},
-		liveChannelRun: { findFirst: vi.fn(async () => ({ ...run })) },
+		liveChannelRun: {
+			findFirst: vi.fn(async () => ({ ...run })),
+			updateMany: vi.fn(async ({ where, data }) => {
+				if (
+					where.id !== run.id ||
+					where.bitmovinEncodingId !== run.bitmovinEncodingId
+				)
+					return { count: 0 };
+				Object.assign(run, data);
+				return { count: 1 };
+			}),
+		},
 		feederSession: {
 			findFirst: vi.fn(async () =>
 				feederOccupiesRun ? { id: "feeder-1" } : null,
@@ -192,11 +211,13 @@ function setup() {
 				});
 			}
 			const channelSnapshot = { ...channel };
+			const runSnapshot = { ...run };
 			const claimSnapshots = claims.map((claim) => ({ ...claim }));
 			try {
 				return await fn(tx);
 			} catch (error) {
 				Object.assign(channel, channelSnapshot);
+				Object.assign(run, runSnapshot);
 				for (const [index, snapshot] of claimSnapshots.entries()) {
 					if (claims[index]) Object.assign(claims[index], snapshot);
 				}
@@ -237,6 +258,133 @@ const input = {
 };
 
 describe("resolveLiveEffectsAfterConfirmedStop", () => {
+	function ambiguousStop() {
+		const f = setup();
+		Object.assign(f.channel, { status: "ERROR", error: "stop response lost" });
+		Object.assign(f.run, {
+			status: "ERROR",
+			error: "stop response lost",
+			providerStatus: "RUNNING",
+		});
+		const stopClaim = f.claims[1];
+		if (!stopClaim) throw new Error("missing STOP fixture");
+		Object.assign(stopClaim, {
+			state: "AMBIGUOUS",
+			failure:
+				"stop response lost; the provider/process call crossed its send boundary, so exact readback or operator resolution is required before retry",
+		});
+		return { ...f, stopClaim };
+	}
+
+	const observedStop = {
+		...input,
+		terminalReadback: {
+			generation: 8,
+			bitmovinAccountId: "account-1",
+			providerStatus: "FINISHED",
+		},
+	};
+
+	it("settles a recorded STOP response loss on a fresh read of the exact terminal encoding", async () => {
+		const f = ambiguousStop();
+		const terminalAt = f.run.providerTerminalAt;
+		const endedAt = new Date("2026-09-01T00:00:00.000Z");
+		f.run.endedAt = endedAt;
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "RESOLVED" });
+		expect(f.channel).toMatchObject({
+			status: "STOPPED",
+			error: null,
+			liveEffectFenceVersion: 9,
+		});
+		expect(f.run).toMatchObject({
+			status: "STOPPED",
+			error: null,
+			providerStatus: "FINISHED",
+			providerStatusObservedAt: input.at,
+			providerTerminalAt: terminalAt,
+			endedAt,
+		});
+		expect(f.claims[1]?.state).toBe("ACKED");
+	});
+
+	it.each([
+		"live status",
+		"account changed",
+		"stale run",
+		"new generation",
+		"unrelated error",
+		"unexpired dispatch",
+		"managed Analysis",
+		"bound Analysis",
+		"unreadable log",
+		"conflicting encoding",
+		"held feeder",
+		"historic second encoding",
+	])("keeps a recorded STOP unresolved on %s", async (reason) => {
+		const f = ambiguousStop();
+		const request = {
+			...observedStop,
+			terminalReadback: { ...observedStop.terminalReadback },
+		};
+		if (reason === "live status")
+			request.terminalReadback.providerStatus = "RUNNING";
+		if (reason === "account changed") f.channel.bitmovinAccountId = "account-2";
+		if (reason === "stale run") f.run.id = "later-run";
+		if (reason === "new generation") f.channel.liveEffectFenceVersion++;
+		if (reason === "unrelated error")
+			f.channel.error = f.run.error = "disk full";
+		if (reason === "unexpired dispatch") f.stopClaim.state = "DISPATCHING";
+		if (reason === "managed Analysis")
+			f.channel.plan = { start: { aiSceneAnalysisLive: {} } };
+		if (reason === "bound Analysis") f.run.aisaAnalysisId = "analysis";
+		if (reason === "unreadable log") f.run.stepLog = "unreadable";
+		if (reason === "conflicting encoding")
+			f.channel.stepLog = [
+				{
+					step: "create",
+					kind: "CREATE_ENCODING",
+					resourceId: "another",
+					payload: {},
+					refs: {},
+					status: "DONE",
+				},
+			];
+		if (reason === "held feeder") f.setFeederOccupiesRun(true);
+		if (reason === "historic second encoding") {
+			f.channel.status = f.run.status = "STOPPED";
+			f.channel.error =
+				f.run.error =
+				f.stopClaim.failure =
+					"stop did not confirm — other-encoding: still RUNNING after the stop was accepted";
+		}
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, request),
+		).resolves.toMatchObject({ kind: "BLOCKED" });
+		expect(f.channel.status).toBe(
+			reason === "historic second encoding" ? "STOPPED" : "ERROR",
+		);
+		expect(f.run.providerStatus).toBe("RUNNING");
+		expect(f.claims[1]?.state).not.toBe("ACKED");
+	});
+	it("recovers a completed inline poll that still saw the claimed encoder running", async () => {
+		const f = ambiguousStop();
+		f.channel.status = f.run.status = "STOPPED";
+		f.channel.error =
+			f.run.error =
+			f.stopClaim.failure =
+				"stop did not confirm — encoding-1: still RUNNING after the stop was accepted; encoding-1: the exact claimed encoding has no terminal readback";
+		f.run.providerTerminalAt = null;
+		await expect(
+			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).resolves.toMatchObject({ kind: "RESOLVED" });
+		expect(f.run).toMatchObject({
+			endedAt: input.at,
+			providerTerminalAt: input.at,
+			error: null,
+		});
+	});
 	it("cannot acknowledge an Encoder-only stop while its Analysis finalization is unproven", async () => {
 		const f = setup();
 		f.run.aisaAnalysisId = "analysis-1";

@@ -87,10 +87,12 @@ export {
 	beginLiveEffect,
 	bindLiveEffectTarget,
 	LIVE_EFFECT_OPEN_STATES,
+	liveEffectSendUncertainty,
 	loadLiveEffectTargetClaim,
 	markLiveEffectAcked,
 	markLiveEffectAmbiguous,
 	markLiveEffectFailed,
+	matchesRecordedStopFailure,
 	resolveLiveEffectsAfterConfirmedStop,
 } from "./live-effect-claim";
 export {

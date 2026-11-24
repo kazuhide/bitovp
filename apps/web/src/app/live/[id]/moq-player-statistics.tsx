@@ -79,7 +79,6 @@ export function MoqPlayerStatistics({
 								{row(t("moqPlayback.namespace"), configuration.namespace)}
 								{row(t("moqPlayback.draft"), configuration.draftVersion)}
 								{row(t("moqPlayback.catalog"), configuration.catalogTrackName)}
-								{row(t("moqPlayback.targetBuffer"), "2.00 s")}
 							</>
 						) : null}
 						{row(

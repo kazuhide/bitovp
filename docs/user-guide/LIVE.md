@@ -102,8 +102,12 @@ readiness beside the start button. It checks the saved credential, namespace,
 organization Player license and verified Web X bundle. Publishing-only plans
 can proceed. Relay connectivity and playback are checked once the run starts.
 
-Use **Play** in the Live playback panel to start muted MoQ playback, and **Stop**
-to release the player. Frame progress indicates received video; a successful
+Use **Play** to start MoQ playback and **Stop** to release the player. Playback
+starts muted by default. Open **Playback settings** to adjust the target buffer in
+milliseconds or the volume. Apply the buffer before or during playback. The
+video quality selector appears when the player offers another video track.
+The buffer target and volume carry over when restarting playback on the same
+page. Frame progress indicates received video; a successful
 start request alone does not. Preview supports one namespace component and
 draft16/18. Missing configuration, a changed credential, or unavailable video
 remains explicit. Publisher tokens are never used as browser playback tokens.

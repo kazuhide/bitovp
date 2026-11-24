@@ -277,6 +277,63 @@ describe("HDR10+ input contract", () => {
 		expect(errors(value)).toEqual([]);
 	});
 
+	it.each([
+		"trim",
+		"concat",
+	] as const)("requires the %s and its HDR10+ source to share an encoding", (kind) => {
+		const value = plan();
+		value.encodings = [
+			{ key: "a", name: "A" },
+			{ key: "b", name: "B" },
+		];
+		value.generation.timing = "POST_ENCODING";
+		first(value.hdr10PlusStreams).encodingKey = "b";
+		if (kind === "trim")
+			value.trimmingStreams = [
+				{
+					key: "wrapped",
+					kind: "TIME_BASED",
+					sourceKey: "picture",
+					duration: 3,
+					encodingKey: "a",
+				},
+			];
+		else
+			value.concatenationStreams = [
+				{
+					key: "wrapped",
+					sources: [{ sourceKey: "picture", position: 0, isMain: true }],
+					encodingKey: "a",
+				},
+			];
+		Object.assign(first(value.renditions), {
+			encodingKey: "a",
+			ingestKey: "wrapped",
+		});
+		expect(errors(value)).toContainEqual(
+			expect.objectContaining({
+				code: "PLAN_ENCODING_SOURCE_MISMATCH",
+				path:
+					kind === "trim"
+						? "trimmingStreams[0].sourceKey"
+						: "concatenationStreams[0].sources[0].sourceKey",
+			}),
+		);
+		first(value.hdr10PlusStreams).encodingKey = "a";
+		expect(errors(value)).toEqual([]);
+	});
+	it("exports every schema-valid HDR10+ resource key as an own YAML entry", () => {
+		const value = plan();
+		first(value.hdr10PlusStreams).key = "__proto__";
+		first(value.renditions).ingestKey = "__proto__";
+		expect(errors(value)).toEqual([]);
+		const tree = parse(planToEncodingTemplateYaml(value)).encodings.main;
+		expect(Object.hasOwn(tree.inputStreams.hdr10Plus, "__proto__")).toBe(true);
+		expect(tree.streams.v.properties.inputStreams[0].inputStreamId).toBe(
+			"$/encodings/main/inputStreams/hdr10Plus/__proto__",
+		);
+	});
+
 	it("uses each source encoding override and rejects cross-encoding consumption", () => {
 		const value = plan();
 		value.encodings = [

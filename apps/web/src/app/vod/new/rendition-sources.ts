@@ -1,3 +1,4 @@
+import { hdr10PlusSourceKeys } from "@bitovp/core";
 import type { Translator } from "@/lib/i18n/context";
 import type { WizardState } from "./build-plan";
 import type { SourceOption } from "./rendition-editors";
@@ -13,9 +14,7 @@ export function renditionSourceOptions(
 	t: Translator,
 ): { video: SourceOption[]; audio: SourceOption[] } {
 	const sources = state.sources ?? {};
-	const hdr10PlusKeys = new Set(
-		(sources.hdr10PlusStreams ?? []).map((stream) => stream.key),
-	);
+	const hdr10PlusKeys = hdr10PlusSourceKeys(sources);
 	const named: SourceOption[] = [
 		// WEBVTT streams feed subtitles only.
 		...flattenStreams(sources)
@@ -44,10 +43,12 @@ export function renditionSourceOptions(
 			...named,
 		],
 		audio: [
-			...(sources.audioMixStreams ?? []).map((mix) => ({
-				value: mix.key,
-				label: `${t("audioMix.title")} · ${mix.key}`,
-			})),
+			...(sources.audioMixStreams ?? [])
+				.filter((mix) => !hdr10PlusKeys.has(mix.key))
+				.map((mix) => ({
+					value: mix.key,
+					label: `${t("audioMix.title")} · ${mix.key}`,
+				})),
 			{ value: "", label: t("wizard.inputAudioTrackImplicit") },
 			...named.filter((option) => !hdr10PlusKeys.has(option.value)),
 		],

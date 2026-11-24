@@ -204,6 +204,24 @@ describe("HDR10+ source authoring", () => {
 		);
 	});
 
+	it("keeps wrappers of HDR10+ media out of the audio picker and audio mix inputs", () => {
+		const state = validState();
+		state.sources = {
+			...state.sources,
+			trimmingStreams: [
+				{ key: "cut", kind: "TIME_BASED", sourceKey: "hdr-plus", duration: 3 },
+			],
+			concatenationStreams: [
+				{ key: "joined", sources: [{ sourceKey: "cut", position: 0 }] },
+			],
+		};
+		const options = renditionSourceOptions(state, (key) => key);
+		for (const key of ["hdr-plus", "cut", "joined"]) {
+			expect(options.video.some((option) => option.value === key)).toBe(true);
+			expect(options.audio.some((option) => option.value === key)).toBe(false);
+		}
+	});
+
 	it.each([
 		"ladder",
 		"file",

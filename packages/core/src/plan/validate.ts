@@ -622,8 +622,41 @@ export function validatePlan(
 	}
 	issues.push(...checkHdr10PlusPlan(plan));
 
+	const allInputStreams = [
+		...plan.ingest,
+		...plan.fileStreams,
+		...plan.dolbyStreams,
+		...plan.hdr10PlusStreams,
+		...plan.trimmingStreams,
+		...plan.concatenationStreams,
+		...plan.audioMixStreams,
+	];
+	const owners = new Map(
+		allInputStreams.map((stream) => [stream.key, stream.encodingKey]),
+	);
+	function checkSourceOwner(
+		key: string,
+		encodingKey: string | undefined,
+		sourceKey: string,
+		path: string,
+	) {
+		const owner = owners.get(sourceKey);
+		if (owner && encodingKey && owner !== encodingKey)
+			issues.push({
+				code: "PLAN_ENCODING_SOURCE_MISMATCH",
+				level: "error",
+				path,
+				message: `input stream "${key}" (encoding "${encodingKey}") references "${sourceKey}" owned by encoding "${owner}"`,
+			});
+	}
 	// Trimming input streams wrap another declared input stream by sourceKey.
 	for (const [index, trim] of plan.trimmingStreams.entries()) {
+		checkSourceOwner(
+			trim.key,
+			trim.encodingKey,
+			trim.sourceKey,
+			`trimmingStreams[${index}].sourceKey`,
+		);
 		if (trim.sourceKey === trim.key || !inputStreamKeys.has(trim.sourceKey)) {
 			issues.push({
 				code: "PLAN_TRIMMING_UNRESOLVED_SOURCE",
@@ -639,6 +672,12 @@ export function validatePlan(
 		let mainCount = 0;
 		const seenPositions = new Set<number>();
 		for (const [sIndex, source] of concat.sources.entries()) {
+			checkSourceOwner(
+				concat.key,
+				concat.encodingKey,
+				source.sourceKey,
+				`concatenationStreams[${index}].sources[${sIndex}].sourceKey`,
+			);
 			if (
 				source.sourceKey === concat.key ||
 				!inputStreamKeys.has(source.sourceKey)
@@ -729,15 +768,6 @@ export function validatePlan(
 		}
 	}
 
-	const allInputStreams = [
-		...plan.ingest,
-		...plan.fileStreams,
-		...plan.dolbyStreams,
-		...plan.hdr10PlusStreams,
-		...plan.trimmingStreams,
-		...plan.concatenationStreams,
-		...plan.audioMixStreams,
-	];
 	for (const [index, mix] of plan.audioMixStreams.entries()) {
 		for (const [i, channel] of mix.audioMixChannels.entries()) {
 			const path = `audioMixStreams[${index}].audioMixChannels[${i}].sourceKey`;

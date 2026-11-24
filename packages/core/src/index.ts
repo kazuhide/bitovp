@@ -386,6 +386,7 @@ export {
 	evaluateMediaAttributes,
 	FRAME_RATE_EPSILON,
 	formatFrameRate,
+	heartbeatAudioChannels,
 	heartbeatIngestMedia,
 	MEDIA_ATTRIBUTE,
 	MEDIA_ATTRIBUTE_NAMES,
@@ -767,13 +768,14 @@ export {
 	SecretEgressConfigError,
 	StorageEndpointBlockedError,
 } from "./plan/egress";
+export { VOD_FIXTURES } from "./plan/fixtures";
 /**
  * The VOD acceptance corpus, exported so a test OUTSIDE this package can derive
  * its population from the registry instead of from a directory listing plus a
  * floor. `fixture-registry.test.ts` set-equals this against the `.plan.json`
  * files on disk, so anything that equals it is transitively the whole corpus.
  */
-export { VOD_FIXTURES } from "./plan/fixtures";
+export { hdr10PlusSourceKeys } from "./plan/hdr10-plus";
 export {
 	inputStreamDependencies,
 	inputStreamLeaves,

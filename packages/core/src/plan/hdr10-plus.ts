@@ -1,13 +1,49 @@
-import { inputStreamAncestry } from "./input-stream-graph";
 import type { EncodingPlan } from "./schema";
 import type { PlanIssue } from "./validate";
+
+type SourceLinks = {
+	hdr10PlusStreams?: readonly { key: string }[];
+	trimmingStreams?: readonly { key: string; sourceKey: string }[];
+	concatenationStreams?: readonly {
+		key: string;
+		sources: readonly { sourceKey: string }[];
+	}[];
+	audioMixStreams?: readonly {
+		key: string;
+		audioMixChannels: readonly { sourceKey: string }[];
+	}[];
+};
+
+/** Includes derived streams so every consumer observes the same media type. */
+export function hdr10PlusSourceKeys(sources: SourceLinks): Set<string> {
+	const keys = new Set(
+		(sources.hdr10PlusStreams ?? []).map((stream) => stream.key),
+	);
+	if (!keys.size) return keys;
+	const dependents = new Map<string, string[]>();
+	function add(sourceKey: string, key: string) {
+		const children = dependents.get(sourceKey);
+		if (children) children.push(key);
+		else dependents.set(sourceKey, [key]);
+	}
+	for (const trim of sources.trimmingStreams ?? [])
+		add(trim.sourceKey, trim.key);
+	for (const concat of sources.concatenationStreams ?? [])
+		for (const source of concat.sources) add(source.sourceKey, concat.key);
+	for (const mix of sources.audioMixStreams ?? [])
+		for (const channel of mix.audioMixChannels) add(channel.sourceKey, mix.key);
+	// Set iterators also visit newly added entries. Each key is expanded once.
+	for (const key of keys)
+		for (const child of dependents.get(key) ?? []) keys.add(child);
+	return keys;
+}
 
 /** REST 1.289.0 / Encoder 2.294.0 introduce HDR10+ for HEVC VOD.
  * The public contract adds no profile, container or pass-mode restriction. */
 export function checkHdr10PlusPlan(plan: EncodingPlan): PlanIssue[] {
 	if (!plan.hdr10PlusStreams.length) return [];
 	const issues: PlanIssue[] = [];
-	const keys = new Set(plan.hdr10PlusStreams.map((stream) => stream.key));
+	const keys = hdr10PlusSourceKeys(plan);
 	for (const [index, stream] of plan.hdr10PlusStreams.entries()) {
 		const owner =
 			plan.encodings?.find((encoding) => encoding.key === stream.encodingKey) ??
@@ -34,12 +70,7 @@ export function checkHdr10PlusPlan(plan: EncodingPlan): PlanIssue[] {
 		});
 	}
 	for (const [index, rendition] of plan.renditions.entries()) {
-		if (
-			!inputStreamAncestry(plan, rendition.ingestKey)?.some((key) =>
-				keys.has(key),
-			)
-		)
-			continue;
+		if (!keys.has(rendition.ingestKey)) continue;
 		if (rendition.codec !== "H265") {
 			issues.push({
 				code: "PLAN_HDR10_PLUS_CODEC",

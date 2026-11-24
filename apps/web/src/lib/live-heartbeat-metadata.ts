@@ -13,11 +13,7 @@ export function heartbeatAspectRatio(value: unknown): string | undefined {
 		: undefined;
 }
 
-export function heartbeatAudioChannels(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isSafeInteger(value) && value > 0
-		? value
-		: undefined;
-}
+export { heartbeatAudioChannels } from "@bitovp/core";
 
 // Standard labels only; custom channel names and unknown labels stay withheld.
 // https://ffmpeg.org/ffmpeg-utils.html#Channel-Layout

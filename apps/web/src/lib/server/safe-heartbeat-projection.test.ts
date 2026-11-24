@@ -85,6 +85,24 @@ describe("safe heartbeat projection", () => {
 		).toEqual(streams);
 	});
 
+	it("retains the largest REST int32 channel count", () => {
+		const projected = projectSafeHeartbeat(
+			{
+				at,
+				raw: {
+					ingest: {
+						status: "CONNECTED",
+						streams: [{ numberOfAudioChannels: 2_147_483_647 }],
+					},
+				},
+			},
+			now,
+			born,
+		);
+		expect(projected?.raw.ingest?.streams?.[0]?.numberOfAudioChannels).toBe(
+			2_147_483_647,
+		);
+	});
 	it.each([
 		{
 			aspectRatio: null,
@@ -123,7 +141,7 @@ describe("safe heartbeat projection", () => {
 		},
 		{
 			aspectRatio: "16:9 private",
-			numberOfAudioChannels: Number.MAX_SAFE_INTEGER + 1,
+			numberOfAudioChannels: 2_147_483_648,
 			audioChannelFormat: "FL@private+FR",
 		},
 	])("withholds malformed or unrecognized first-connection metadata %#", (metadata) => {

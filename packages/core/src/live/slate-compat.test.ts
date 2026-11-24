@@ -367,6 +367,9 @@ describe("a heartbeat-derived reference (rev406 R1)", () => {
 	it.each([
 		{ numberOfAudioChannels: 2 },
 		{ numberOfAudioChannels: null, audioChannelFormat: "stereo" },
+		{ numberOfAudioChannels: 0, audioChannelFormat: "stereo" },
+		{ numberOfAudioChannels: 2_147_483_648, audioChannelFormat: "stereo" },
+		{ numberOfAudioChannels: 1.5, audioChannelFormat: "stereo" },
 	])("compares channel counts when the initial-connection heartbeat metadata is populated: %j", (metadata) => {
 		const reference = heartbeatIngestMedia({
 			raw: {

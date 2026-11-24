@@ -249,7 +249,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	const perEnc = <T extends Tree>(store: Map<string, T>, name: string): T => {
 		let tree = store.get(name);
 		if (!tree) {
-			tree = {} as T;
+			tree = Object.create(null) as T;
 			store.set(name, tree);
 		}
 		return tree;

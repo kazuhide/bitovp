@@ -53,8 +53,8 @@ import {
 	createProviderLifecycleReconciler,
 	type RunLifecycleRow,
 } from "./provider-lifecycle";
-import { commitProvisionEnd } from "./provision-outcome";
 import { resolveProvisionAdmission } from "./provision-admission";
+import { commitProvisionEnd } from "./provision-outcome";
 import {
 	createStrandedRunReconciler,
 	recordExpiredProvisionFailure,

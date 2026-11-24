@@ -29,7 +29,11 @@ import {
 import { trackMoqPlaybackOperation } from "@/lib/moq-player/operation-analytics";
 import { createMoqPreviewArchive } from "@/lib/moq-player/preview-archive";
 import type { MoqRecordingState } from "@/lib/moq-player/recording";
-import { createMoqPlayback } from "@/lib/moq-player/session";
+import {
+	createMoqPlayback,
+	DEFAULT_MOQ_PLAYBACK_SETTINGS,
+	type MoqPlaybackSettings,
+} from "@/lib/moq-player/session";
 import {
 	type MoqPlaybackDescriptor,
 	parseMoqPlaybackDescriptor,
@@ -42,6 +46,7 @@ import { MOQ_ARCHIVE_SAVE_TIMEOUT_MS } from "../../../../config/moq-policy";
 import { MoqClientPlaybackClock } from "./moq-client-playback-clock";
 import { MoqEncoderHistory } from "./moq-encoder-history";
 import { type MoqArchiveSave, MoqHistoryPanel } from "./moq-history-panel";
+import { MoqPlaybackControls } from "./moq-playback-controls";
 import { MoqPlaybackStages } from "./moq-playback-stages";
 import { MoqPlayerStatistics } from "./moq-player-statistics";
 import { MoqViewerMetrics } from "./moq-viewer-metrics";
@@ -133,6 +138,10 @@ function MoqPlaybackAttempt({
 	const [statistics, setStatistics] = useState<MoqVideoStatistics>(
 		EMPTY_MOQ_VIDEO_STATISTICS,
 	);
+	const [settings, setSettings] = useState(DEFAULT_MOQ_PLAYBACK_SETTINGS);
+	const latestSettings = useRef(settings);
+	const [canSelectQuality, setCanSelectQuality] = useState(false);
+	const [requestedQuality, setRequestedQuality] = useState<string>();
 	const [configuration, setConfiguration] = useState<
 		MoqPlaybackDescriptor["resource"]["metadata"] | null
 	>(null);
@@ -193,6 +202,20 @@ function MoqPlaybackAttempt({
 			void close().catch(() => {});
 		};
 	}, [active, channelId, close, queryClient, runId]);
+	function updateSetting(key: keyof MoqPlaybackSettings, value: number) {
+		const session = current.current?.session;
+		if (phase !== "failed" && session && !session.updateSetting(key, value))
+			return false;
+		const next = { ...latestSettings.current, [key]: value };
+		latestSettings.current = next;
+		setSettings(next);
+		return true;
+	}
+	function selectQuality(name: string) {
+		if (!current.current?.session?.selectVideoQuality(name)) return false;
+		setRequestedQuality(name);
+		return true;
+	}
 	async function play() {
 		if (!active || !host.current || closing.current) return;
 		const startedAt = performance.now();
@@ -223,6 +246,8 @@ function MoqPlaybackAttempt({
 			mounted.current && archiveGeneration.current === archiveEpoch;
 		setStatistics(EMPTY_MOQ_VIDEO_STATISTICS);
 		setSamples([]);
+		setCanSelectQuality(false);
+		setRequestedQuality(undefined);
 		setConfiguration(null);
 		setRelay(undefined);
 		setRecordingState("idle");
@@ -358,6 +383,9 @@ function MoqPlaybackAttempt({
 								Math.round(performance.now() - startedAt),
 							);
 							setStatistics(value);
+							setCanSelectQuality(
+								attempt.session?.canSelectVideoQuality() ?? false,
+							);
 							setSamples((series) =>
 								appendMoqLiveSample(series, {
 									elapsedMs,
@@ -375,6 +403,7 @@ function MoqPlaybackAttempt({
 						}
 					},
 				},
+				() => latestSettings.current,
 			);
 			await attempt.session.ready;
 			if (owned())
@@ -524,8 +553,21 @@ function MoqPlaybackAttempt({
 								</Link>
 							) : null}
 						</div>
+						{active ? (
+							<MoqPlaybackControls
+								settings={settings}
+								updateSetting={updateSetting}
+								qualities={
+									canSelectQuality ? statistics.availableQualities : null
+								}
+								selectedQuality={
+									requestedQuality ?? statistics.currentQuality?.name
+								}
+								selectQuality={selectQuality}
+							/>
+						) : null}
 						{active && phase === "frames" ? (
-							<div className="col-span-full row-start-3 border-t border-zinc-800 px-3 py-2">
+							<div className="col-span-full row-start-4 border-t border-zinc-800 px-3 py-2">
 								<MoqClientPlaybackClock mode="live" active />
 							</div>
 						) : null}

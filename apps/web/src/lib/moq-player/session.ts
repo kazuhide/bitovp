@@ -12,6 +12,15 @@ import type {
 import { observeMoqVideo } from "./video-progress";
 import type { MoqVideoStatistics } from "./video-statistics";
 
+export type MoqPlaybackSettings = {
+	targetBufferMs: number;
+	volumePercent: number;
+};
+export const DEFAULT_MOQ_PLAYBACK_SETTINGS: MoqPlaybackSettings = {
+	targetBufferMs: 2000,
+	volumePercent: 0,
+};
+
 /** Each attempt owns a separate host, including constructors resolving after Stop. */
 export function createMoqPlayback(
 	factory: MoqPlayerFactory,
@@ -27,6 +36,7 @@ export function createMoqPlayback(
 		onVideo?(video: HTMLVideoElement): void;
 		beforeDispose?(): Promise<void>;
 	},
+	readSettings: () => MoqPlaybackSettings = () => DEFAULT_MOQ_PLAYBACK_SETTINGS,
 ) {
 	const host = document.createElement("div");
 	host.className = "h-full w-full";
@@ -59,6 +69,42 @@ export function createMoqPlayback(
 		fail,
 		telemetry ? { ...telemetry, source: () => source } : undefined,
 	);
+	function updateSetting(key: keyof MoqPlaybackSettings, value: number) {
+		if (closed) return false;
+		try {
+			// An in-flight constructor reads the latest settings before playing.
+			if (key === "targetBufferMs") source?.setTargetBufferLevel(value / 1000);
+			else source?.setVolume(value / 100);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+	function canSelectVideoQuality() {
+		return (
+			!closed &&
+			typeof source?.setVideoQuality === "function" &&
+			typeof source.getAvailableVideoQualities === "function"
+		);
+	}
+	function selectVideoQuality(name: string) {
+		if (!canSelectVideoQuality() || !source) return false;
+		try {
+			const available = source.getAvailableVideoQualities?.();
+			if (!Array.isArray(available)) return false;
+			const matches = available.filter(
+				(quality: unknown) =>
+					quality !== null &&
+					typeof quality === "object" &&
+					Reflect.get(quality, "name") === name,
+			);
+			if (matches.length !== 1) return false;
+			source.setVideoQuality?.(matches[0]);
+			return true;
+		} catch {
+			return false;
+		}
+	}
 	function dispose(): Promise<void> {
 		closed = true;
 		stopObserving.stop();
@@ -168,8 +214,9 @@ export function createMoqPlayback(
 				{ attach: false },
 			);
 			source.logLevel = 0;
-			source.setTargetBufferLevel(2);
-			source.setVolume(0);
+			const settings = readSettings();
+			source.setTargetBufferLevel(settings.targetBufferMs / 1000);
+			source.setVolume(settings.volumePercent / 100);
 			telemetry?.onStage?.("subscribe-requested");
 			await source.play();
 		} catch {
@@ -178,5 +225,12 @@ export function createMoqPlayback(
 			throw new Error("MoQ playback failed");
 		}
 	})();
-	return { ready, dispose, released };
+	return {
+		ready,
+		dispose,
+		released,
+		updateSetting,
+		canSelectVideoQuality,
+		selectVideoQuality,
+	};
 }

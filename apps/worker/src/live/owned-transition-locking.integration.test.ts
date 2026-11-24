@@ -913,6 +913,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 
 		it("records a terminal failed delivery after five known failures", async () => {
 			const f = await stopFixture();
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { lastHeartbeatAt: lease },
+			});
 			await tenant.liveEffectClaim.update({
 				where: { id: f.claim.id },
 				data: { stopProtocolVersion: 1 },
@@ -948,7 +952,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				await tenant.liveChannelRun.findUniqueOrThrow({
 					where: { id: f.run.id },
 				}),
-			).toMatchObject({ stopNotificationState: "FAILED" });
+			).toMatchObject({
+				stopNotificationState: "FAILED",
+				lastHeartbeatAt: lease,
+			});
 		});
 
 		it("returns the durable winner when the late owner tries to report failure, even after re-air", async () => {
@@ -1409,6 +1416,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 
 		it("retires the bound run on final failure and preserves it when legacy STOP jobs arrive after re-air", async () => {
 			const f = await fixture("STOPPING", null);
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { lastHeartbeatAt: lease },
+			});
 			const plan = {
 				liveChannelId: f.channel.id,
 				liveChannelRunId: f.run.id,
@@ -1446,6 +1457,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				status: "ERROR",
 				endedAt: expect.any(Date),
 				error: expect.stringContaining("exhausted"),
+				lastHeartbeatAt: lease,
 			});
 			const originalReceipt = await tenant.liveSchedule.findUniqueOrThrow({
 				where: { id: scheduled.id },

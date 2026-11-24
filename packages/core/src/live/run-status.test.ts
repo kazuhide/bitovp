@@ -159,6 +159,8 @@ describe("run status derivation (ledger #108 §2)", () => {
 			// unconditional pick, and this write must name ONE run and land
 			// only while that run has no reference yet.
 			"worker/src/feeder/processor.ts",
+			// An exhausted STOP or RESTART records the bound run's error and end time.
+			"worker/src/live/dead-job-outcome.ts",
 			// : the SIXTH named writer — the origin observer
 			// persists its per-run cursor (originObservation ONLY, never
 			// lastHeartbeatAt, the anchor this pin protects; the cursor
@@ -182,6 +184,8 @@ describe("run status derivation (ledger #108 §2)", () => {
 			// never lastHeartbeatAt — it READS the anchor to tell "rows pruned"
 			// from "never polled".
 			"worker/src/live/run-heartbeat-summary.ts",
+			// The notification lease owner settles only the run's pending delivery.
+			"worker/src/live/stop-notifications.ts",
 			// A confirmed manual STOP binds the provider-terminal word and its
 			// timestamp to the exact claimed run before resolving older ambiguous
 			// effects. This writer is CAS-scoped by run id + channel id + encoding

@@ -178,14 +178,14 @@ test("every listed file exists once, and every FFmpeg, Redis or script test file
 	assert.equal(total(NATIVE_MEDIA), 33);
 	assert.equal(WORKER_SCRIPTS.tests, 43);
 	assert.equal(total([REDIS.leases]), 29);
-	assert.equal(total([REDIS.queues]), 3);
+	assert.equal(total([REDIS.queues]), 4);
 });
 
 test("a plain run may skip the tests that another job runs", () => {
 	for (const [workspace, skipped] of [
 		["@bitovp/core", 25],
 		["@bitovp/db", 73],
-		["@bitovp/worker", 70],
+		["@bitovp/worker", 71],
 		// Includes six favorite-registry, two still-image, two archive/restore and
 		// one WebM recovery case, plus three LOCAL QC cancellation cases and the
 		// retained export, generation history and export re-edit cases.
@@ -777,7 +777,7 @@ test("the audit keeps each allowance to its own file and list, and treats what i
 					: entry,
 			),
 		),
-		{ problems: [], skipped: 70 - gated.count },
+		{ problems: [], skipped: 71 - gated.count },
 	);
 	// The report of a failed run is refused: it lacks the tests of a file that
 	// did not load.
@@ -828,13 +828,13 @@ test("the audit keeps each allowance to its own file and list, and treats what i
 		audit(undefined, (report) => {
 			report.numPendingTests -= 2;
 		}).problems,
-		["the report counts 68 skipped tests but lists 70"],
+		["the report counts 69 skipped tests but lists 71"],
 	);
 	assert.deepEqual(
 		audit(undefined, (report) => {
 			delete report.numPendingTests;
 		}).problems,
-		["the report counts undefined skipped tests but lists 70"],
+		["the report counts undefined skipped tests but lists 71"],
 	);
 	assert.equal(
 		audit(undefined, (report) => {
@@ -969,7 +969,7 @@ test("a Redis run passes only when every lease and queue test ran and passed", a
 	assert.deepEqual(passed.notes, [
 		"Redis server 8.10.3",
 		"@bitovp/worker: 29 resource lease tests passed, 0 skipped",
-		"@bitovp/worker: 3 queue tests passed against Redis and PostgreSQL, 0 skipped",
+		"@bitovp/worker: 4 queue tests passed against Redis and PostgreSQL, 0 skipped",
 		"@bitovp/web: 8 clip availability tests passed against Redis, 0 skipped",
 	]);
 	const child = {
@@ -1004,6 +1004,7 @@ test("a Redis run passes only when every lease and queue test ran and passed", a
 				"src/handlers.redis.integration.test.ts",
 				"src/live-capacity.redis.integration.test.ts",
 				"src/tenant/redis.integration.test.ts",
+				"src/system-sweeps.redis.integration.test.ts",
 				"--maxWorkers=2",
 				"--reporter=json",
 			],
@@ -1031,7 +1032,7 @@ test("a Redis run passes only when every lease and queue test ran and passed", a
 		signal: controller.signal,
 		timeout: 300_000,
 	});
-	// The queue tests get the three addresses and the credentials file, and no
+	// The queue tests get the server addresses and the credentials file, and no
 	// database URL or token in their environment.
 	assert.deepEqual(passed.calls[2].options, {
 		cwd: root,
@@ -1043,6 +1044,7 @@ test("a Redis run passes only when every lease and queue test ran and passed", a
 			VOD_REDELIVERY_TEST_REDIS_URL: "redis://127.0.0.1:16380",
 			LIVE_CAPACITY_TEST_REDIS_URL: "redis://127.0.0.1:16381",
 			CLIP_AVAILABILITY_TEST_REDIS_URL: "redis://127.0.0.1:16382",
+			SWEEP_HISTORY_TEST_REDIS_URL: "redis://127.0.0.1:16384",
 		},
 	});
 	assert.deepEqual(JSON.parse(seen.database), {
@@ -1062,7 +1064,7 @@ test("a Redis run passes only when every lease and queue test ran and passed", a
 			mode,
 			stopped,
 		})),
-		[16379, 16380, 16381, 16382].map((port) => ({
+		[16379, 16380, 16381, 16382, 16384].map((port) => ({
 			program: "redis-server",
 			port,
 			directory: join(seen.directory, `redis-${port}`),
@@ -1088,7 +1090,7 @@ test("a Redis run passes only when every lease and queue test ran and passed", a
 	);
 	assert.deepEqual(
 		named.servers.map(({ program }) => program),
-		Array.from({ length: 4 }, () => "/redis/bin/redis-server"),
+		Object.values(REDIS.servers).map(() => "/redis/bin/redis-server"),
 	);
 });
 
@@ -1120,7 +1122,7 @@ test("the required Redis run rejects a skipped or missing clip availability matr
 				note.includes("clip availability tests passed"),
 			),
 		);
-		assert.equal(result.servers.length, 4);
+		assert.equal(result.servers.length, Object.keys(REDIS.servers).length);
 		assert(result.servers.every((server) => server.stopped));
 	}
 });
@@ -1227,7 +1229,7 @@ test("a Redis run names the part that did not run, and stops the servers it star
 		"Step: running the queue tests that need Redis",
 		"Reason: Redis tests must all run and pass",
 		"  - skipped tests: 1, required 0",
-		"  - tests passed: 2, required 3",
+		"  - tests passed: 3, required 4",
 		"  - src/tenant/redis.integration.test.ts: 0 of 1 tests passed, 1 required",
 		'  - "skipped": apps/worker/src/tenant/redis.integration.test.ts > test 1',
 	]);
@@ -1237,7 +1239,7 @@ test("a Redis run names the part that did not run, and stops the servers it star
 	]);
 	assert.deepEqual(
 		skippedQueue.servers.map(({ stopped }) => stopped),
-		[true, true, true, true],
+		[true, true, true, true, true],
 	);
 	// No report at all, with and without a failed command.
 	const silent = await redisRun({
@@ -1249,7 +1251,7 @@ test("a Redis run names the part that did not run, and stops the servers it star
 	]);
 	assert.deepEqual(
 		silent.servers.map(({ stopped }) => stopped),
-		[true, true, true, true],
+		[true, true, true, true, true],
 	);
 	const failed = await redisRun({
 		vitest: (group) => {
@@ -1266,7 +1268,7 @@ test("a Redis run names the part that did not run, and stops the servers it star
 	]);
 	assert.deepEqual(
 		failed.servers.map(({ stopped }) => stopped),
-		[true, true, true, true],
+		[true, true, true, true, true],
 	);
 
 	// A server that does not start: the ones before it are stopped, no test runs.
@@ -1618,7 +1620,7 @@ test("the command reports through its exit status", () => {
 		assert.equal(worker.status, 0, worker.stderr);
 		assert.equal(
 			worker.stdout,
-			"@bitovp/worker: 70 tests skipped by the plain run; another job runs each of them\n",
+			"@bitovp/worker: 71 tests skipped by the plain run; another job runs each of them\n",
 		);
 
 		const hiding = run(

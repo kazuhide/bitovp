@@ -10,6 +10,10 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 - Optionally score an NVENC experiment with BitOVP CUDA VMAF v1.0.16 alongside v0.6.1, export both measurements, and choose a scoring model for Lean selection.
 
+### Fixed
+
+- Remove completed and failed Live heartbeat and slate promotion ticks from Redis, including older ticks left by previous workers. Standard and customer Compose installations can set a Redis memory budget.
+
 ## [1.3.4] - 2026-11-22
 
 ### Added

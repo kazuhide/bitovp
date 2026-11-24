@@ -427,10 +427,11 @@ def validate_x26x_structure(encoder, options, native):
     if encoder == "libx264" and profile in {"baseline", "main"}:
         transform = options.get("8x8dct", native.get("8x8dct"))
         matrix = any(k.startswith("cqm") and (k != "cqm" or v != "flat") for k, v in native.items())
-        coder = options.get("coder", native.get("cabac", ""))
-        weight = options.get("weightp", options.get("wpredp", native.get("weightp", "")))
-        cabac = coder in {"cabac", "ac", "true"} or (INTEGER.fullmatch(coder) and int(coder) > 0)
-        weighted = weight in {"simple", "smart"} or (INTEGER.fullmatch(weight) and int(weight) > 0)
+        def enabled(values, names):
+            return any(v is not None and (v in names or (INTEGER.fullmatch(v) and int(v) > 0)) for v in values)
+
+        cabac = enabled((options.get("coder"), native.get("cabac")), {"cabac", "ac", "true"})
+        weighted = enabled((options.get("weightp"), options.get("wpredp"), native.get("weightp")), {"simple", "smart"})
         if matrix or transform in {"true", "1"} or (profile == "baseline" and (int(bframes or "-1") > 0 or cabac or weighted)):
             raise ValueError("The selected x264 profile excludes a requested coding tool")
     if keyint is None or keyint == "infinite" or int(keyint) < 0:

@@ -219,11 +219,19 @@ afterEach(() => vi.unstubAllEnvs());
 
 it.each([
 	[trial, "a84e0f3cc036796fadc0deaf595993f873e489755d80979ed4ba2969de307c04"],
-	[dualTrial, "9e0d8a0a12b3ec4a0f0d910fa55f8b9a82ecadca0915704d914b170bbe876269"],
+	[
+		dualTrial,
+		"9e0d8a0a12b3ec4a0f0d910fa55f8b9a82ecadca0915704d914b170bbe876269",
+	],
 ])("preserves an existing NVENC batch replay hash", async (input, storedHash) => {
 	// Exact hashes produced by the pre-software batch schema on main.
 	fake.enqueue.mockResolvedValueOnce({ items: [], nextCursor: null });
-	await enqueueExperimentTrials(ctx, campaign, { schemaVersion: 1, trials: [input] }, "existing");
+	await enqueueExperimentTrials(
+		ctx,
+		campaign,
+		{ schemaVersion: 1, trials: [input] },
+		"existing",
+	);
 	expect(fake.enqueue.mock.calls[0]?.[3]).toBe(storedHash);
 });
 
@@ -505,7 +513,13 @@ const cpuRuntime = {
 				},
 
 				{ name: "passes", type: "int", choices: ["1", "2"], description: "" },
-				{ name: "level", type: "float", minimum: "-6.2", maximum: "6.2", description: "" },
+				{
+					name: "level",
+					type: "float",
+					minimum: "-6.2",
+					maximum: "6.2",
+					description: "",
+				},
 				{
 					name: "flags",
 					type: "flags",
@@ -535,10 +549,14 @@ it.each([
 ])("compares fractional software limits exactly for %s", async (level, valid) => {
 	fake.readRuntime.mockResolvedValue(cpuRuntime);
 	const result = validateExperimentTrial(ctx.organizationId, {
-		...cpuTrial, software: { ...cpuTrial.software, options: { level } },
+		...cpuTrial,
+		software: { ...cpuTrial.software, options: { level } },
 	});
 	if (valid) await expect(result).resolves.toMatchObject({ valid: true });
-	else await expect(result).rejects.toMatchObject({ code: "INVALID_ENCODER_SETTING" });
+	else
+		await expect(result).rejects.toMatchObject({
+			code: "INVALID_ENCODER_SETTING",
+		});
 });
 
 it("validates software trials against the software worker and its installed catalog", async () => {
@@ -610,6 +628,8 @@ it.each([
 	["libx264", { profile: "main" }, { "8x8dct": "true" }, false],
 	["libx264", { profile: "main" }, { cqm: "jvt" }, false],
 	["libx264", { profile: "baseline" }, { cabac: "1" }, false],
+	["libx264", { profile: "baseline", coder: "default" }, { cabac: "1" }, false],
+	["libx264", { profile: "baseline", wpredp: "0" }, { weightp: "2" }, false],
 	["libx264", { profile: "Baseline", weightp: "smart" }, {}, false],
 	["libx264", { g: "-1" }, { bframes: "16" }, true],
 	["libx264", { refs: "-1" }, { keyint: "infinite" }, true],
@@ -657,7 +677,19 @@ it.each([
 					{ ...field("bf", "0"), choices: ["-1"] },
 					{ ...field("refs", "1"), choices: ["-1"] },
 					{ name: "profile", type: "string", description: "" },
-					{ name: "weightp", type: "int", choices: ["none", "simple", "smart"], description: "" },
+					{
+						name: "coder",
+						type: "int",
+						choices: ["default", "cavlc", "cabac"],
+						description: "",
+					},
+					{ name: "wpredp", type: "string", description: "" },
+					{
+						name: "weightp",
+						type: "int",
+						choices: ["none", "simple", "smart"],
+						description: "",
+					},
 					{
 						name: "g",
 						type: "int",
@@ -671,8 +703,14 @@ it.each([
 					field("frameref", "1"),
 					field("dpb-size", "1"),
 					{ name: "cabac", type: "boolean", description: "" },
+					{ name: "weightp", type: "int", description: "" },
 					{ name: "8x8dct", type: "boolean", description: "" },
-					{ name: "cqm", type: "string", choices: ["flat", "jvt"], description: "" },
+					{
+						name: "cqm",
+						type: "string",
+						choices: ["flat", "jvt"],
+						description: "",
+					},
 					{
 						name: "keyint",
 						type: "int",
@@ -723,7 +761,9 @@ it.each([
 					description: "",
 				})),
 				nativeOptions: ["crf", "q", "qp", "cqp"].map((name) => ({
-					name, type: "int", description: "",
+					name,
+					type: "int",
+					description: "",
 				})),
 				limitations: [],
 			},

@@ -107,10 +107,11 @@ class CatalogTest(unittest.TestCase):
 
     def test_baseline_profile_excludes_requested_bframes_in_both_namespaces(self):
         x264 = next(row for row in self.encoders if row["encoder"] == "libx264")
-        x264["options"].append({"name": "profile", "type": "string", "description": ""})
+        x264["options"].extend({"name": name, "type": "string", "description": ""} for name in ("profile", "coder", "wpredp"))
         for options, native in [({"profile": "Baseline", "bf": "3"}, {}), ({"profile": "baseline"}, {"bframes": "1"}),
                                 ({"profile": "main"}, {"8x8dct": "true"}), ({"profile": "main"}, {"cqm": "jvt"}),
-                                ({"profile": "baseline"}, {"cabac": "1"}), ({"profile": "Baseline"}, {"weightp": "2"})]:
+                                ({"profile": "baseline", "coder": "default"}, {"cabac": "1"}),
+                                ({"profile": "Baseline", "wpredp": "0"}, {"weightp": "2"})]:
             with self.subTest(options=options, native=native), self.assertRaisesRegex(ValueError, "profile"):
                 self.encode("libx264", options, native)
         self.encode("libx264", {"profile": "baseline", "bf": "0"})

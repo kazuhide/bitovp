@@ -37,7 +37,7 @@ Use `H264/libx264`, `HEVC/libx265`, `VP9/libvpx-vp9`, or `AV1/libsvtav1`. Values
 
 In the NDJSON export, `input.software` stores the requested settings. Use each successful row’s `result.videoBytes`, `durationTicks`, `timeBase`, `observedGopFrames` and `meanVmaf` for measured outcomes. Encoder presets and lookahead can affect frame-level decisions, so use the measured outputs as training labels.
 
-For dynamically linked Linux builds, the worker uses glibc loader diagnostics and `/proc/self/fd` to pin each FFmpeg and ffprobe invocation to its verified media libraries. The managed Debian build supplies this environment.
+For dynamically linked Linux builds, the worker uses glibc loader diagnostics and Linux procfs file descriptors to pin each FFmpeg and ffprobe invocation to its verified media libraries. The managed Debian build supplies this environment.
 
 ## Prepare the Linux NVENC worker
 

@@ -212,8 +212,7 @@ const softwareNumericBounds: Record<string, string> = {
 // A 64-bit bound or a fractional value just beyond it must survive parsing.
 // The input grammar bounds the exponent to three digits and the value to 4 KiB.
 function decimalParts(text: string) {
-	const match =
-		/^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d{1,3}))?$/.exec(text);
+	const match = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d{1,3}))?$/.exec(text);
 	if (!match || !(match[2] || match[3])) return;
 	const [, sign = "", whole = "", fraction = "", exponent = "0"] = match;
 	return {
@@ -339,16 +338,30 @@ function verifyX26xStructure(
 		const native = settings.nativeOptions ?? {};
 		const transform = settings.options["8x8dct"] ?? native["8x8dct"];
 		const matrix = Object.entries(native).some(
-			([name, value]) => name.startsWith("cqm") && (name !== "cqm" || value !== "flat"),
+			([name, value]) =>
+				name.startsWith("cqm") && (name !== "cqm" || value !== "flat"),
 		);
-		const coder = settings.options.coder ?? native.cabac ?? "";
-		const weight =
-			settings.options.weightp ?? settings.options.wpredp ?? native.weightp ?? "";
+		const coders = [settings.options.coder, native.cabac];
+		const weights = [
+			settings.options.weightp,
+			settings.options.wpredp,
+			native.weightp,
+		];
 		const positiveInteger = (value: string) =>
 			/^[+-]?\d+$/.test(value) && BigInt(value) > 0n;
-		const baselineConflict = profile === "baseline" &&
-			(Number(bframes) > 0 || positiveInteger(coder) || ["cabac", "ac", "true"].includes(coder) ||
-				positiveInteger(weight) || ["simple", "smart"].includes(weight));
+		const baselineConflict =
+			profile === "baseline" &&
+			(Number(bframes) > 0 ||
+				coders.some(
+					(v) =>
+						v !== undefined &&
+						(positiveInteger(v) || ["cabac", "ac", "true"].includes(v)),
+				) ||
+				weights.some(
+					(v) =>
+						v !== undefined &&
+						(positiveInteger(v) || ["simple", "smart"].includes(v)),
+				));
 		if (baselineConflict || matrix || transform === "true" || transform === "1")
 			throw new EncodingExperimentError(
 				422,
@@ -429,7 +442,9 @@ async function verifyTrial(
 		}
 		verifyX26xStructure(settings);
 		const native = settings.nativeOptions ?? {};
-		if (Object.keys(native).some((name) => Object.hasOwn(settings.options, name)))
+		if (
+			Object.keys(native).some((name) => Object.hasOwn(settings.options, name))
+		)
 			throw new EncodingExperimentError(
 				422,
 				"INVALID_ENCODER_SETTING",
@@ -438,8 +453,14 @@ async function verifyTrial(
 			);
 		if (
 			settings.encoder === "libsvtav1" &&
-			[settings.options.crf, settings.options.qp, native.q, native.qp, native.crf, native.cqp]
-				.filter((value) => value !== undefined).length > 1
+			[
+				settings.options.crf,
+				settings.options.qp,
+				native.q,
+				native.qp,
+				native.crf,
+				native.cqp,
+			].filter((value) => value !== undefined).length > 1
 		)
 			throw new EncodingExperimentError(
 				422,

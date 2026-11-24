@@ -966,6 +966,8 @@ model LiveChannelRun {
   status                        LiveChannelStatus @default(CREATED)
   /// Durable cooperative startup cancellation; kept on the exact airing across retries.
   cancelRequested               Boolean           @default(false)
+  /// Encoder IDs removed when this broadcast's RTMP provisioning graph was rebuilt.
+  previousProviderEncodingIds   String[]          @default([])
   /// Unique across ALL runs; null only until CREATE_ENCODING lands.
   bitmovinEncodingId            String?           @unique
   /// Provider Analysis identity belongs to this exact airing, never the channel.
@@ -2373,6 +2375,11 @@ model LiveEffectClaim {
   idempotencyKey        String               @unique
   requestSha256         String?
   providerResultId      String?
+  /// NULL marks a legacy STOP with no per-encoder send journal.
+  stopProtocolVersion   Int?
+  stopSendEncodingIds   String[]             @default([])
+  /// Account-bound terminal GETs and the exact failed projection from the original owner.
+  stopOutcomeEvidence   Json?
   providerEncodingId    String
   targetId              String?
   generation            Int

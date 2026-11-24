@@ -1712,6 +1712,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			const restartClaim = effect?.claim;
 			const claimWhere = {
 				status: "PROVISIONING" as const,
+				provisionClaimedAt: null,
 				...(restartClaim
 					? {
 							liveEffectFenceVersion: restartClaim.generation,
@@ -5193,6 +5194,20 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		const claimed = await deps.prisma.liveChannel.updateMany({
 			where: {
 				id: liveChannelId,
+				// A delayed provision job can target the same PROVISIONING row as an
+				// admitted RESTART. Its lease acquisition must lose to that exact run.
+				...(!cancelling && pendingRun
+					? {
+							liveEffectFenceVersion: row.liveEffectFenceVersion,
+							effectClaims: {
+								none: {
+									liveChannelRunId: pendingRun.id,
+									action: "RESTART",
+									state: { in: ["CLAIMED", "DISPATCHING", "AMBIGUOUS"] },
+								},
+							},
+						}
+					: {}),
 				...(cancelling && pendingRun
 					? {
 							liveEffectFenceVersion: row.liveEffectFenceVersion,

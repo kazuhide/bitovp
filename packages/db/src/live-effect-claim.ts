@@ -600,6 +600,7 @@ export async function beginLiveEffect(
 			where: {
 				id: input.liveChannelId,
 				liveEffectFenceVersion: claimedFromGeneration,
+				...(input.action === "RESTART" ? { provisionClaimedAt: null } : {}),
 			},
 			data: {
 				liveEffectFenceVersion: { increment: 1 },
@@ -1188,6 +1189,7 @@ export async function assertLiveEffectCurrent(
 			where: { id: claim.liveChannelId },
 			select: {
 				liveEffectFenceVersion: true,
+				provisionClaimedAt: true,
 				bitmovinEncodingId: true,
 			},
 		}),
@@ -1203,6 +1205,7 @@ export async function assertLiveEffectCurrent(
 		held.state === "DISPATCHING" &&
 		held.expiresAt.getTime() > now.getTime() &&
 		channel?.liveEffectFenceVersion === claim.generation &&
+		(claim.action !== "RESTART" || channel.provisionClaimedAt == null) &&
 		currentRun?.id === claim.liveChannelRunId &&
 		(currentRun.bitmovinEncodingId ?? channel?.bitmovinEncodingId) ===
 			claim.providerEncodingId

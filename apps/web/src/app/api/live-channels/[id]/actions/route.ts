@@ -1411,6 +1411,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 						where: {
 							id,
 							status: "PROVISIONING",
+							provisionClaimedAt: null,
 							liveEffectFenceVersion: (row.liveEffectFenceVersion ?? 0) + 1,
 						},
 						data: { status: "ERROR", error: "Enqueue failed — restart again" },

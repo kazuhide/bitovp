@@ -251,6 +251,20 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			const processing = Promise.allSettled([process(job)]);
 			try {
 				await reach(reading.ready, processing);
+				// A duplicate provision delivery while RESTART owns the run must
+				// return before creating an SDK or changing the null lease.
+				expect(
+					await process({ liveChannelId: f.channel.id, action: "provision" }),
+				).toMatchObject({ status: "PROVISIONING" });
+				expect(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					}),
+				).toMatchObject({
+					provisionClaimedAt: null,
+					liveEffectFenceVersion: 1,
+				});
+				expect(sdk.createEncoding).not.toHaveBeenCalled();
 				const stop = await beginLiveEffect(tenant, {
 					idempotencyKey: `manual:stop:${f.channel.id}:${f.run.id}`,
 					liveChannelId: f.channel.id,
@@ -332,6 +346,56 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			).toBe(false);
 			expect(emit).not.toHaveBeenCalled();
 			job.attemptsMade = 2;
+			// Provisioning may claim the same channel, run, encoder and generation
+			// while the queue-failure callback waits. Its token is its write authority.
+			for (const token of [
+				now,
+				new Date(now.getTime() - 24 * 60 * 60 * 1000),
+			]) {
+				const leased = await tenant.liveChannel.update({
+					where: { id: f.channel.id },
+					data: { provisionClaimedAt: token },
+				});
+				const previousRun = await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				});
+				expect(
+					await beginLiveEffect(tenant, {
+						...data.effect,
+						action: "RESTART",
+						liveChannelId: f.channel.id,
+						expectedFenceVersion: 0,
+						ownerId: "delayed",
+						now,
+						expiresAt: new Date(now.getTime() + 60000),
+					}),
+				).toMatchObject({ kind: "STALE" });
+				expect(
+					await recordFinalRestartFailure(
+						tenant,
+						job,
+						"restart failed",
+						now,
+						emit,
+					),
+				).toBe(false);
+				expect(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					}),
+				).toEqual(leased);
+				expect(
+					await tenant.liveChannelRun.findUniqueOrThrow({
+						where: { id: f.run.id },
+					}),
+				).toEqual(previousRun);
+			}
+			expect(emit).not.toHaveBeenCalled();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { provisionClaimedAt: null },
+			});
+
 			expect(
 				await recordFinalRestartFailure(
 					tenant,
@@ -357,7 +421,11 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				await tenant.liveChannel.findUniqueOrThrow({
 					where: { id: f.channel.id },
 				}),
-			).toMatchObject({ status: "ERROR", error: "restart failed" });
+			).toMatchObject({
+				status: "ERROR",
+				error: "restart failed",
+				provisionClaimedAt: null,
+			});
 			expect(
 				await tenant.liveChannelRun.findUniqueOrThrow({
 					where: { id: f.run.id },

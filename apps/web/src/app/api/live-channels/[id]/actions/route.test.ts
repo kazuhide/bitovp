@@ -2079,26 +2079,44 @@ describe("POST /api/live-channels/[id]/actions", () => {
 		expect((await postAction({ action: "restart" })).status).toBe(409);
 	});
 
-	it("restart: a delayed enqueue failure preserves the newer STOP generation", async () => {
+	it.each([
+		"STOP",
+		"provision",
+	] as const)("restart: a delayed enqueue failure preserves the newer %s owner", async (winner) => {
 		findUnique.mockResolvedValueOnce(
 			channel({ status: "RUNNING", liveEffectFenceVersion: 4 }),
 		);
-		const state = { status: "RUNNING", generation: 4 };
+		const state = {
+			status: "RUNNING",
+			generation: 4,
+			provisionClaimedAt: null as Date | null,
+		};
 		updateMany.mockImplementation(async ({ where, data }) => {
 			const matchingStatus =
 				typeof where.status === "string"
 					? where.status === state.status
 					: where.status.in.includes(state.status);
-			if (!matchingStatus || where.liveEffectFenceVersion !== state.generation)
+			if (
+				!matchingStatus ||
+				where.liveEffectFenceVersion !== state.generation ||
+				("provisionClaimedAt" in where &&
+					where.provisionClaimedAt !== state.provisionClaimedAt)
+			)
 				return { count: 0 };
 			state.status = data.status;
 			state.generation += data.liveEffectFenceVersion?.increment ?? 0;
 			return { count: 1 };
 		});
 		queueAdd.mockImplementationOnce(async () => {
-			expect(state).toEqual({ status: "PROVISIONING", generation: 5 });
-			state.status = "STOPPING";
-			state.generation++;
+			expect(state).toEqual({
+				status: "PROVISIONING",
+				generation: 5,
+				provisionClaimedAt: null,
+			});
+			if (winner === "STOP") {
+				state.status = "STOPPING";
+				state.generation++;
+			} else state.provisionClaimedAt = new Date(0);
 			throw new Error("Redis response lost");
 		});
 		expect((await postAction({ action: "restart" })).status).toBe(500);
@@ -2107,11 +2125,20 @@ describe("POST /api/live-channels/[id]/actions", () => {
 			where: {
 				id: CHANNEL_ID,
 				status: "PROVISIONING",
+				provisionClaimedAt: null,
 				liveEffectFenceVersion: 5,
 			},
 			data: { status: "ERROR", error: "Enqueue failed — restart again" },
 		});
-		expect(state).toEqual({ status: "STOPPING", generation: 6 });
+		expect(state).toEqual(
+			winner === "STOP"
+				? { status: "STOPPING", generation: 6, provisionClaimedAt: null }
+				: {
+						status: "PROVISIONING",
+						generation: 5,
+						provisionClaimedAt: new Date(0),
+					},
+		);
 	});
 
 	it("restart: a STOPPED channel is refused, naming the real recovery (ledger #107)", async () => {

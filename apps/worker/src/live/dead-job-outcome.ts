@@ -159,6 +159,9 @@ export async function recordFinalRestartFailure(
 			where: {
 				id: liveChannelId,
 				status: "PROVISIONING",
+				// RESTART owns the route's null lease. A non-null token belongs to a
+				// provision worker or to the separate exact-token expiry sweep.
+				provisionClaimedAt: null,
 				bitmovinEncodingId: effect.providerEncodingId,
 				liveEffectFenceVersion:
 					claim?.generation ?? effect.admissionFenceVersion,

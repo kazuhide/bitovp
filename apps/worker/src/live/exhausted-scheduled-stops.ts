@@ -148,8 +148,7 @@ export function createExhaustedScheduledStopRecovery(
 				// Still older bare jobs may only observe their own migrated airing.
 				if (
 					job &&
-					(!found ||
-						found.action !== "stop" ||
+					(found?.action !== "stop" ||
 						found.params !== undefined ||
 						found.attemptId !== undefined ||
 						found.liveChannelRunId !== undefined ||

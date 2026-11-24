@@ -67,7 +67,9 @@ form can reproduce the plan. Other valid plans remain editable as JSON.
 The credential's encrypted secret holds a
 `moqt://host[:port][/path]` relay URL and an optional authorization token/type;
 userinfo, query strings, and fragments are rejected. Keep the token out of the
-plan. `authTokenType` requires a token.
+plan. When a token is present, its optional type accepts integers from 0 to
+2,147,483,647. To correct an older credential with a larger value, edit the
+credential and re-enter the relay settings with the assigned token type.
 
 Use one `MOQ` output referencing that credential, `trackNamespace` as a tuple of
 1–32 nonempty strings, and `draftVersion` as `DRAFT_16` or `DRAFT_18`. Each H264

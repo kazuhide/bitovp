@@ -343,6 +343,11 @@ describe("MoQ compiled operation execution", () => {
 			path: ["authTokenType"],
 		},
 		{
+			label: "a token type above the provider int32 limit",
+			patch: { authTokenType: 2_147_483_648 },
+			path: ["authTokenType"],
+		},
+		{
 			label: "an unexpected field",
 			patch: { unexpected: true },
 			path: [],

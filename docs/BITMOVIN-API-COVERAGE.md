@@ -213,8 +213,12 @@ sweep; they do not implement the provider's native Watch Folders API. Live MSL
 and SFTP mirror authoring remains a GUI gap; primary MSL already has a path and
 valid expert-JSON mirror plans are preserved.
 
-MoQ Live supports expert JSON and encrypted credentials. The [historical
-playback trial](./MOQ-LIVE-ENCODER-TEST-RESULTS.md) used Cloudflare draft 16.
+The [Live wizard](./user-guide/LIVE.md#experimental-moq-delivery) lets operators
+choose a saved MoQ relay credential and set the draft and track namespace. The
+credential form stores the publishing URL and optional token settings encrypted.
+The field audit traces these five settings to the SDK request. The
+[historical playback trial](./MOQ-LIVE-ENCODER-TEST-RESULTS.md) used Cloudflare
+draft 16 and encoder 2.294.0.
 AV1 Per-Title `targetQualityCrf` is an existing field whose upstream documentation
 changed, not an operation or field newly implemented by this upgrade.
 

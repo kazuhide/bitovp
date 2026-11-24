@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AppPrismaClient } from "./client";
 import {
+	collectLiveStopTargets,
 	mergeRtmpRetirementEvidence,
 	resolveLiveEffectsAfterConfirmedStop,
 	unconfirmedRtmpEncoders,
@@ -319,6 +320,16 @@ describe("displaced RTMP encoder retirement", () => {
 			},
 		];
 		expect(unconfirmedRtmpEncoders(run, { stepLog: [] }, "a")).toBeNull();
+		const partial = collectLiveStopTargets(
+			{ ...run, bitmovinEncodingId: "primary" },
+			{ bitmovinEncodingId: "primary", stepLog: [] },
+			[],
+			"a",
+		);
+		expect(partial.complete).toBe(false);
+		expect(partial.encodingIds).toEqual(
+			expect.arrayContaining(["primary", ...run.previousProviderEncodingIds]),
+		);
 	});
 });
 

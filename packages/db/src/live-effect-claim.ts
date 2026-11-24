@@ -431,17 +431,14 @@ export function collectLiveStopTargets(
 ): { encodingIds: string[]; complete: boolean } {
 	const channelIds = liveStopLogEncodings(channel.stepLog);
 	const runIds = liveStopLogEncodings(run.stepLog);
-	let complete = !!channelIds && !!runIds;
+	const archive = unconfirmedRtmpEncoders(run, channel, accountId ?? null);
+	let complete = !!channelIds && !!runIds && archive !== null;
 	const ids = new Set([
 		...(run.bitmovinEncodingId ? [run.bitmovinEncodingId] : []),
 		...(channel.bitmovinEncodingId ? [channel.bitmovinEncodingId] : []),
 		...(channelIds ?? []),
 		...(runIds ?? []),
-		...(accountId
-			? (unconfirmedRtmpEncoders(run, channel, accountId) ??
-				run.previousProviderEncodingIds ??
-				[])
-			: (run.previousProviderEncodingIds ?? [])),
+		...(archive ?? run.previousProviderEncodingIds ?? []),
 	]);
 	for (const claim of history) {
 		ids.add(claim.providerEncodingId);

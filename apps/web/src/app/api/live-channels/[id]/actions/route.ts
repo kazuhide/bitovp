@@ -25,7 +25,6 @@ import {
 } from "@bitovp/core";
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
 import {
-	archivedStopRecoveryTarget,
 	bindArchivedStopTarget,
 	DB_NULL,
 	liveStopRunOwnsEncoding,
@@ -640,9 +639,17 @@ const actionSchema = z.discriminatedUnion("action", [
 		action: z.literal("stop"),
 		// Reject the earlier scoped request rather than stripping its run binding.
 		finalizationRunId: z.never().optional(),
-		recoveryTarget: z
-			.strictObject({ runId: z.uuid(), encodingId: z.string().min(1) })
-			.optional(),
+		recoveryTarget: z.never().optional(),
+	}),
+	z.strictObject({
+		action: z.literal("recover-archived-stop"),
+		runId: z.uuid(),
+		revision: z.string().regex(/^[a-f0-9]{64}$/),
+	}),
+	z.strictObject({
+		action: z.literal("retry-aisa-stop"),
+		runId: z.uuid(),
+		encodingId: z.string().min(1),
 	}),
 	z.strictObject({
 		action: z.literal("retry-finalization"),
@@ -741,9 +748,13 @@ export async function POST(req: Request, { params }: RouteParams) {
 		}
 		if (
 			aisaManaged &&
-			!["start", "stop", "cancel-start", "retry-finalization"].includes(
-				action.action,
-			)
+			![
+				"start",
+				"stop",
+				"cancel-start",
+				"retry-finalization",
+				"retry-aisa-stop",
+			].includes(action.action)
 		) {
 			return jsonError(
 				409,
@@ -1143,26 +1154,24 @@ export async function POST(req: Request, { params }: RouteParams) {
 				);
 			}
 			case "retry-finalization":
+			case "recover-archived-stop":
+			case "retry-aisa-stop":
 			case "stop": {
 				let recoveredTarget: string | null = null;
-				if (
-					action.action === "stop" &&
-					!action.recoveryTarget &&
-					!aisaManaged &&
-					["ERROR", "STOPPED", "STOPPING"].includes(row.status)
-				) {
-					const candidate = await ctx.prisma.liveChannelRun.findFirst({
-						where: { liveChannelId: id },
-						orderBy: { seq: "desc" },
-					});
-					if (candidate && archivedStopRecoveryTarget(row, candidate)) {
-						recoveredTarget = await bindArchivedStopTarget(
-							ctx.prisma,
-							id,
-							candidate.id,
+				if (action.action === "recover-archived-stop") {
+					recoveredTarget = await bindArchivedStopTarget(
+						ctx.prisma,
+						id,
+						action.runId,
+						action.revision,
+					);
+					if (!recoveredTarget)
+						return codedError(
+							409,
+							"The selected archive changed before stop recovery",
+							"LIVE_ACTION_STATE_CHANGED",
 						);
-						if (recoveredTarget) row.bitmovinEncodingId = recoveredTarget;
-					}
+					row.bitmovinEncodingId = recoveredTarget;
 				}
 				if (!row.bitmovinEncodingId) {
 					return codedError(
@@ -1197,7 +1206,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 					);
 				}
 				const activeTarget =
-					action.action === "stop" ? action.recoveryTarget : undefined;
+					action.action === "retry-aisa-stop" ? action : undefined;
 				if (
 					activeTarget &&
 					(latestAisaRun?.id !== activeTarget.runId ||
@@ -1323,6 +1332,18 @@ export async function POST(req: Request, { params }: RouteParams) {
 						stopPlan.code,
 					);
 				}
+				if (
+					action.action === "recover-archived-stop" &&
+					(stopPlan.runId !== action.runId ||
+						stopPlan.providerEncodingId !== recoveredTarget)
+				) {
+					return codedError(
+						409,
+						"The selected airing changed before stop recovery",
+						"LIVE_ACTION_STATE_CHANGED",
+					);
+				}
+
 				/**
 				 * Queue FIRST. The former ordering committed STOPPING and advanced
 				 * the fence before `queue.add`; a process death in that gap left no

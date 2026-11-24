@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
 	aisaLiveFinalization,
 	classifyProviderStatusWord,
@@ -301,12 +301,42 @@ export function archivedStopRecoveryTarget(
 		: null;
 }
 
+/** Identify the archive displayed to the operator without exposing historical provider IDs. */
+export function archivedStopRevision(
+	channel: Parameters<typeof archivedStopRecoveryTarget>[0] & {
+		id: string;
+		liveEffectFenceVersion: number;
+	},
+	run:
+		| (NonNullable<Parameters<typeof archivedStopRecoveryTarget>[1]> & {
+				id: string;
+		  })
+		| null,
+): string | null {
+	const target = archivedStopRecoveryTarget(channel, run);
+	if (!run || !target) return null;
+	const accountId = liveChannelAccountId(channel);
+	return createHash("sha256")
+		.update(
+			JSON.stringify([
+				channel.id,
+				run.id,
+				channel.liveEffectFenceVersion,
+				accountId,
+				target,
+				unconfirmedRtmpEncoders(run, channel, accountId),
+			]),
+		)
+		.digest("hex");
+}
+
 /** Restore a lost primary only from this current run's durable RTMP archive.
  * Called by an explicit stop. Normal provisioning and heartbeat never rebind a target. */
 export async function bindArchivedStopTarget(
 	prisma: AppPrismaClient,
 	liveChannelId: string,
 	expectedRunId?: string,
+	expectedRevision?: string,
 ): Promise<string | null> {
 	return prisma.$transaction(async (tx) => {
 		const locked = await tx.$queryRaw<
@@ -322,6 +352,11 @@ export async function bindArchivedStopTarget(
 			orderBy: { seq: "desc" },
 		});
 		if (!run || (expectedRunId && run.id !== expectedRunId)) return null;
+		if (
+			expectedRevision !== undefined &&
+			archivedStopRevision(channel, run) !== expectedRevision
+		)
+			return null;
 		const target = archivedStopRecoveryTarget(channel, run);
 		if (!target || channel.bitmovinEncodingId === target) return target;
 		await tx.liveChannelRun.update({

@@ -750,12 +750,9 @@ describe("AISA lifecycle admission", () => {
 		if (condition !== "missing-job")
 			retainQueuedJob(jobId, manualStopJobData(), "failed");
 		const result = await postAction({
-			action: "stop",
-			recoveryTarget: {
-				runId: condition === "wrong-run" ? REQUEST_ID : RUN_ID,
-				encodingId:
-					condition === "wrong-encoder" ? "old-encoder" : "bm-live-enc",
-			},
+			action: "retry-aisa-stop",
+			runId: condition === "wrong-run" ? REQUEST_ID : RUN_ID,
+			encodingId: condition === "wrong-encoder" ? "old-encoder" : "bm-live-enc",
 		});
 		expect(result.status).toBe(status);
 		expect(queueAdd).toHaveBeenCalledTimes(status === 202 ? 1 : 0);
@@ -2852,6 +2849,33 @@ describe("displaced RTMP encoders after upgrade", () => {
 		expect((await postAction({ action: "start" })).status).toBe(200);
 		expect(runCreate).toHaveBeenCalledOnce();
 	});
+	it("refuses the archive confirmation after the displayed airing has been replaced", async () => {
+		findUnique.mockResolvedValue(
+			channel({
+				origin: "MANAGED",
+				status: "RUNNING",
+				bitmovinEncodingId: "successor",
+				liveEffectFenceVersion: 3,
+			}),
+		);
+		runFindFirst.mockResolvedValue({
+			id: REQUEST_ID,
+			seq: 2,
+			status: "RUNNING",
+			bitmovinEncodingId: "successor",
+			stepLog: [],
+		});
+		lockRows.mockResolvedValue([{ id: CHANNEL_ID }]);
+		const res = await postAction({
+			action: "recover-archived-stop",
+			runId: RUN_ID,
+			revision: "a".repeat(64),
+		});
+		expect(res.status).toBe(409);
+		expect(queueAdd).not.toHaveBeenCalled();
+		expect(runUpdate).not.toHaveBeenCalled();
+		expect(update).not.toHaveBeenCalled();
+	});
 	it("requeues an exact acknowledged clean STOPPED archive without replacing the current primary", async () => {
 		findUnique.mockResolvedValue(
 			channel({
@@ -2882,7 +2906,16 @@ describe("displaced RTMP encoders after upgrade", () => {
 			manualStopSuccess(),
 		);
 		const remove = vi.spyOn(retained, "remove");
-		const res = await postAction({ action: "stop" });
+		const { archivedStopRevision } = await import("@bitovp/db");
+		const revision = archivedStopRevision(
+			await findUnique(),
+			await runFindFirst(),
+		);
+		const res = await postAction({
+			action: "recover-archived-stop",
+			runId: RUN_ID,
+			revision,
+		});
 		expect(res.status).toBe(202);
 		expect(remove).toHaveBeenCalledOnce();
 		expect(queueAdd).toHaveBeenCalledWith(

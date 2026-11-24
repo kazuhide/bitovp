@@ -13,6 +13,7 @@ import {
 	type AppPrismaClient,
 	type AppTransactionClient,
 	appendLiveEffectStepLogEntry,
+	archivedStopRevision,
 	beginLiveEffect,
 	bindArchivedStopTarget,
 	claimLiveStopSend,
@@ -1241,9 +1242,30 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			expect(
 				await bindArchivedStopTarget(tenant, f.channel.id, randomUUID()),
 			).toBeNull();
-			expect(await bindArchivedStopTarget(tenant, f.channel.id, f.run.id)).toBe(
-				archive,
-			);
+			const [displayedChannel, displayedRun] = await Promise.all([
+				tenant.liveChannel.findUniqueOrThrow({ where: { id: f.channel.id } }),
+				tenant.liveChannelRun.findUniqueOrThrow({ where: { id: f.run.id } }),
+			]);
+			const revision = archivedStopRevision(displayedChannel, displayedRun);
+			if (!revision) throw new Error("expected a displayed archive");
+			expect(
+				await bindArchivedStopTarget(
+					tenant,
+					f.channel.id,
+					f.run.id,
+					"0".repeat(64),
+				),
+			).toBeNull();
+			expect(
+				(
+					await tenant.liveChannelRun.findUniqueOrThrow({
+						where: { id: f.run.id },
+					})
+				).bitmovinEncodingId,
+			).toBeNull();
+			expect(
+				await bindArchivedStopTarget(tenant, f.channel.id, f.run.id, revision),
+			).toBe(archive);
 			expect(
 				await tenant.liveChannelRun.findUniqueOrThrow({
 					where: { id: f.run.id },

@@ -9,10 +9,7 @@ import {
 	programEndBeyondRunWindow,
 	stepLogSchema,
 } from "@bitovp/core";
-import {
-	archivedStopRecoveryTarget,
-	LIVE_EFFECT_OPEN_STATES,
-} from "@bitovp/db";
+import { archivedStopRevision, LIVE_EFFECT_OPEN_STATES } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { ACTOR_HEADER } from "@/lib/auth/api-token-gate";
@@ -223,6 +220,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 					technicalDetailsAllowed,
 				)
 			: null;
+		const archiveRevision = archivedStopRevision(channel, currentRun);
 		// Derived here, not in the browser, for the same reason as the VOD route:
 		// the credential's config never needs to cross .
 		return NextResponse.json(
@@ -231,9 +229,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 				liveToVod: liveToVodForRole(channel.liveToVod, technicalDetailsAllowed),
 				liveToVodFamilies,
 				currentRun: currentRunView,
-				...(archivedStopRecoveryTarget(channel, currentRun)
-					? { canRecoverArchivedStop: true }
-					: {}),
+				...(archiveRevision ? { archivedStopRevision: archiveRevision } : {}),
 				heartbeatReception,
 				technicalDetailsAllowed,
 				playbackLinks: planForLinks

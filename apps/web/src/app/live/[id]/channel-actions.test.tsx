@@ -82,7 +82,7 @@ describe("ChannelDangerZone — delete", () => {
 });
 
 describe("ChannelLifecycleActions — restart is only offered where it can work (ledger #107)", () => {
-	it("offers Stop for a stranded archived encoder even before its primary pointer is restored", () => {
+	it("confirms the displayed archived encoder even before its primary pointer is restored", async () => {
 		wrap(
 			<ChannelLifecycleActions
 				channelId={CHANNEL_ID}
@@ -90,11 +90,56 @@ describe("ChannelLifecycleActions — restart is only offered where it can work 
 				status="ERROR"
 				hasEncoding={false}
 				hasError
-				canRecoverArchivedStop
+				archivedStopRevision={"a".repeat(64)}
 			/>,
 		);
 		expect(screen.getByRole("button", { name: "Stop channel" })).toBeEnabled();
 		expect(screen.queryByRole("button", { name: /restart/i })).toBeNull();
+		await userEvent.click(screen.getByRole("button", { name: "Stop channel" }));
+		await userEvent.click(
+			within(screen.getByRole("dialog")).getByRole("button", {
+				name: "Stop channel",
+			}),
+		);
+		await waitFor(() =>
+			expect(apiFetch).toHaveBeenCalledWith(
+				`/api/live-channels/${CHANNEL_ID}/actions`,
+				{
+					method: "POST",
+					body: JSON.stringify({
+						action: "recover-archived-stop",
+						runId: RUN_ID,
+						revision: "a".repeat(64),
+					}),
+				},
+			),
+		);
+	});
+	it("closes an open Stop confirmation if the selected archive changes", async () => {
+		const props = {
+			channelId: CHANNEL_ID,
+			runId: RUN_ID,
+			status: "STOPPED" as const,
+			hasEncoding: false,
+		};
+		const view = wrap(
+			<ChannelLifecycleActions
+				{...props}
+				archivedStopRevision={"1".repeat(64)}
+			/>,
+		);
+		await userEvent.click(screen.getByRole("button", { name: "Stop channel" }));
+		expect(screen.getByRole("dialog")).toBeInTheDocument();
+		view.rerender(
+			<ChannelLifecycleActions
+				{...props}
+				archivedStopRevision={"2".repeat(64)}
+			/>,
+		);
+		expect(screen.queryByRole("dialog")).toBeNull();
+		expect(
+			apiFetch.mock.calls.some(([, init]) => init?.method === "POST"),
+		).toBe(false);
 	});
 	it("groups the re-air and copy buttons without successful preview or pricing banners", async () => {
 		apiFetch.mockImplementation(async (input: string) =>
@@ -217,8 +262,9 @@ describe("ChannelLifecycleActions — restart is only offered where it can work 
 				{
 					method: "POST",
 					body: JSON.stringify({
-						action: "stop",
-						recoveryTarget: { runId: RUN_ID, encodingId: "encoder-1" },
+						action: "retry-aisa-stop",
+						runId: RUN_ID,
+						encodingId: "encoder-1",
 					}),
 				},
 			),

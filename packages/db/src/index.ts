@@ -85,6 +85,7 @@ export type {
 } from "./live-effect-claim";
 export {
 	archivedStopRecoveryTarget,
+	archivedStopRevision,
 	assertLiveEffectCurrent,
 	beginLiveEffect,
 	bindArchivedStopTarget,

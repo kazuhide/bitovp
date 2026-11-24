@@ -223,7 +223,7 @@ export type HeartbeatReception =
 export type LiveChannelDetailRow = LiveChannelListItem & {
 	/** Server-authorized AISA capability; absent is denied. */
 	aisaFeatureAllowed?: boolean;
-	canRecoverArchivedStop?: boolean;
+	archivedStopRevision?: string;
 	canResumeAisaStop?: boolean;
 	canRetryAisaFinalization?: boolean;
 	liveEffectFenceVersion?: number;

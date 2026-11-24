@@ -185,7 +185,7 @@ test("a plain run may skip the tests that another job runs", () => {
 	for (const [workspace, skipped] of [
 		["@bitovp/core", 25],
 		["@bitovp/db", 73],
-		["@bitovp/worker", 81],
+		["@bitovp/worker", 84],
 		// Includes six favorite-registry, two still-image, two archive/restore and
 		// one WebM recovery case, plus three LOCAL QC cancellation cases and the
 		// retained export, generation history and export re-edit cases.

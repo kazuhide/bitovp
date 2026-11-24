@@ -1152,7 +1152,10 @@ export async function resolveLiveEffectsAfterConfirmedStop(
 
 /** Re-check the exact token/run/encoding/generation immediately pre-send. */
 export async function assertLiveEffectCurrent(
-	prisma: AppPrismaClient,
+	prisma: Pick<
+		AppPrismaClient,
+		"liveChannel" | "liveChannelRun" | "liveEffectClaim"
+	>,
 	claim: LiveEffectClaimHandle,
 	now: Date,
 ): Promise<boolean> {

@@ -1703,6 +1703,32 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			if (fallbackError) throw new ChannelStateError(fallbackError);
 			const encodingId = encodingIdOf(row);
 			let resetSdk: SdkOps | undefined;
+			const restartClaim = effect?.claim;
+			const claimWhere = {
+				status: "PROVISIONING" as const,
+				...(restartClaim
+					? {
+							liveEffectFenceVersion: restartClaim.generation,
+							bitmovinEncodingId: encodingId,
+						}
+					: {}),
+			};
+			const projectRestartState = (error: string | null) =>
+				deps.prisma.$transaction(async (tx) => {
+					const status = error === null ? "PROVISIONING" : "ERROR";
+					const write = await tx.liveChannel.updateMany({
+						where: { id: liveChannelId, ...claimWhere },
+						data: { status, error },
+					});
+					if (write.count !== 1) return false;
+					// The channel lock also serializes re-air/run replacement; a later
+					// STOP cannot slip between this write and its run projection.
+					await createRunMirror(tx).mirror(liveChannelId, {
+						error,
+						...(error !== null ? { status: "ERROR" } : {}),
+					});
+					return true;
+				});
 			const restartEffectIsCurrent = async (): Promise<boolean> => {
 				if (!effect) return true;
 				try {
@@ -1722,42 +1748,19 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				message: string,
 			): Promise<boolean> => {
 				if (!(await restartEffectIsCurrent())) return false;
-				if (!effect) {
-					await markError(liveChannelId, message);
-					return true;
-				}
 				const error = redactSecrets(message);
 				// The assertion above checks the claim token/run/provider/expiry. This
 				// write is the second, atomic half: STOP may win immediately after that
 				// read, so ERROR itself must CAS the exact generation and restart state.
-				const projected = await deps.prisma.liveChannel.updateMany({
-					where: {
-						id: liveChannelId,
-						status: "PROVISIONING",
-						liveEffectFenceVersion: effect.claim.generation,
-					},
-					data: { status: "ERROR", error },
-				});
-				if (projected.count !== 1) return false;
-				await runs.mirror(liveChannelId, { status: "ERROR", error });
+				if (!(await projectRestartState(error))) return false;
 				await emitChannel("CHANNEL_ERROR", liveChannelId, error);
 				return true;
 			};
-			const { count } = await deps.prisma.liveChannel.updateMany({
-				where: {
-					id: liveChannelId,
-					status: { in: ["PROVISIONING"] },
-				},
-				data: { status: "PROVISIONING", error: null },
-			});
-			if (count === 0) {
+			if (!(await projectRestartState(null))) {
 				throw new ChannelStateError(
 					`Channel is not claimed for restart (status ${row.status})`,
 				);
 			}
-			// review-242 A1: without this the run kept a stale error after a
-			// successful restart claim.
-			await runs.mirror(liveChannelId, { error: null });
 			try {
 				const sdk = await sdkFor(row);
 				resetSdk = sdk;
@@ -1775,6 +1778,8 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				const run = await providerLifecycle.loadCurrentRun(liveChannelId);
 				const before = await providerLifecycle.reconcile({
 					channel: row,
+					restartClaim,
+					channelWrite: { where: claimWhere },
 					run,
 					encodingId,
 					sdk,
@@ -1795,6 +1800,11 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					await markRestartErrorIfCurrent(reason);
 					throw new ProviderLifecycleRefusal(reason);
 				}
+				if (restartClaim && !before.landed) {
+					throw new ProviderLifecycleRefusal(
+						"Restart refused: the exact run no longer accepts the provider observation",
+					);
+				}
 				await effect?.beforeSend("Restart encoding");
 				await sdk.restartLiveEncoding(encodingId);
 				/**
@@ -1814,6 +1824,8 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					// route-admission race). Reconcile it exactly as the entry does.
 					const after = await providerLifecycle.reconcile({
 						channel: row,
+						restartClaim,
+						channelWrite: { where: claimWhere },
 						run,
 						encodingId,
 						sdk,
@@ -1856,12 +1868,13 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				if (finalLifecycle !== "RUNNING") {
 					const afterDetails = await providerLifecycle.reconcile({
 						channel: row,
+						restartClaim,
 						run,
 						encodingId,
 						sdk,
 						observation: finalObservation,
 						channelWrite: {
-							where: { status: { in: ["PROVISIONING"] } },
+							where: claimWhere,
 						},
 					});
 					const reason =
@@ -1879,6 +1892,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				}
 				const committed = await providerLifecycle.commitRunning({
 					channel: row,
+					restartClaim,
 					run,
 					encodingId,
 					observation: finalObservation,

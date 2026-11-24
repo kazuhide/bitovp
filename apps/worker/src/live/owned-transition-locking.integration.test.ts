@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
 	type LiveToVodRecord,
 	liveAutoShutdownUpdateReceiptSchema,
@@ -26,6 +27,7 @@ import {
 	createLiveChannelProcessor,
 	type LiveChannelDeps,
 } from "../orchestrator/live-processor";
+import { recordFinalRestartFailure } from "./dead-job-outcome";
 import {
 	createProviderLifecycleReconciler,
 	type RunLifecycleRow,
@@ -190,6 +192,158 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				enqueueFeederJob,
 			};
 		}
+
+		it.each([
+			"CANCELED",
+			"RUNNING",
+		] as const)("a RESTART preflight returning %s and its failed callback both yield to the exact STOP owner", async (status) => {
+			const f = await fixture("PROVISIONING", null);
+			const plan = JSON.parse(
+				readFileSync(
+					new URL(
+						"../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+						import.meta.url,
+					),
+					"utf8",
+				),
+			);
+			plan.bitmovin.accountId = randomUUID();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { plan },
+			});
+			const reading = barrier();
+			const reply = barrier();
+			const sdk = fakeSdk({
+				getEncodingStatus: vi.fn(async () => {
+					reading.release();
+					await reply.ready;
+					return { status };
+				}),
+			});
+			const emitEvent = vi.fn(async () => {});
+			const enqueueFeederJob = vi.fn(async () => {});
+			const process = createLiveChannelProcessor({
+				prisma: tenant,
+				now: () => now.toISOString(),
+				makeSdk: () => sdk,
+				sleep: async () => {},
+				pollIntervalMs: 10,
+				pollTimeoutMs: 250,
+				enqueueFeederJob,
+				emitEvent,
+				resolveCredential: async () => {
+					throw new Error("no storage credential required");
+				},
+				revealBitmovinAccount: async () => ({
+					apiKey: "offline",
+					tenantOrgId: null,
+				}),
+			});
+			const effect = {
+				idempotencyKey: `manual:restart:${randomUUID()}`,
+				action: "RESTART" as const,
+				liveChannelRunId: f.run.id,
+				providerEncodingId: f.encodingId,
+				admissionFenceVersion: 0,
+			};
+			const job = { liveChannelId: f.channel.id, action: "restart", effect };
+			const processing = Promise.allSettled([process(job)]);
+			try {
+				await reach(reading.ready, processing);
+				const stop = await beginLiveEffect(tenant, {
+					idempotencyKey: `manual:stop:${f.channel.id}:${f.run.id}`,
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					providerEncodingId: f.encodingId,
+					action: "STOP",
+					expectedFenceVersion: 0,
+					supersedeOpen: true,
+					allowedChannelStatuses: ["RUNNING"],
+					ownerId: "stop-owner",
+					now,
+					expiresAt: new Date(now.getTime() + 60_000),
+				});
+				expect(stop.kind).toBe("EXECUTE");
+				const channel = await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				});
+				const run = await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				});
+				expect(channel).toMatchObject({
+					status: "STOPPING",
+					liveEffectFenceVersion: 2,
+				});
+				reply.release();
+				expect((await processing)[0]?.status).toBe("rejected");
+				expect(
+					await recordFinalRestartFailure(
+						tenant,
+						{ data: job, attemptsMade: 3, opts: { attempts: 3 } },
+						"restart failed",
+						now,
+					),
+				).toBe(false);
+				expect(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: channel.id },
+					}),
+				).toEqual(channel);
+				expect(
+					await tenant.liveChannelRun.findUniqueOrThrow({
+						where: { id: run.id },
+					}),
+				).toEqual(run);
+				expect(sdk.getEncodingStatus).toHaveBeenCalledOnce();
+				expect(sdk.restartLiveEncoding).not.toHaveBeenCalled();
+				expect(emitEvent).not.toHaveBeenCalled();
+				expect(enqueueFeederJob).not.toHaveBeenCalled();
+			} finally {
+				reply.release();
+				await processing;
+			}
+		}, 15_000);
+
+		it("retires a stranded RESTART admission only on final delivery and only once", async () => {
+			const f = await fixture("PROVISIONING", null);
+			const data = {
+				liveChannelId: f.channel.id,
+				action: "restart",
+				effect: {
+					idempotencyKey: `manual:restart:${randomUUID()}`,
+					action: "RESTART",
+					liveChannelRunId: f.run.id,
+					providerEncodingId: f.encodingId,
+					admissionFenceVersion: 0,
+				},
+			};
+			const job = { data, attemptsMade: 1, opts: { attempts: 2 } };
+			expect(
+				await recordFinalRestartFailure(tenant, job, "restart failed", now),
+			).toBe(false);
+			job.attemptsMade = 2;
+			expect(
+				await recordFinalRestartFailure(tenant, job, "restart failed", now),
+			).toBe(true);
+			expect(
+				await recordFinalRestartFailure(tenant, job, "late failure", now),
+			).toBe(false);
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({ status: "ERROR", error: "restart failed" });
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({
+				status: "ERROR",
+				error: "restart failed",
+				endedAt: now,
+			});
+		});
 
 		function running(
 			door: ReturnType<typeof reconciler>["door"],

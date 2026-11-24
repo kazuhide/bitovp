@@ -101,6 +101,81 @@ function isTerminalDelivery(job: DeadLiveJob): boolean {
 	return (job?.attemptsMade ?? 0) >= attempts;
 }
 
+/** RESTART may only retire the exact PROVISIONING admission it stranded. */
+export async function recordFinalRestartFailure(
+	prisma: AppPrismaClient,
+	job: DeadLiveJob,
+	message: string,
+	at = new Date(),
+): Promise<boolean> {
+	const parsed = liveChannelJobSchema.safeParse(job?.data);
+	if (
+		!isTerminalDelivery(job) ||
+		!parsed.success ||
+		parsed.data.action !== "restart" ||
+		parsed.data.effect?.action !== "RESTART"
+	)
+		return false;
+	const { liveChannelId, effect } = parsed.data;
+	const error = redactSecrets(message);
+	return prisma.$transaction(async (tx) => {
+		// Lock in the same order as STOP admission and re-air. A run can change
+		// while the failed callback is queued, even if the channel ID survives.
+		await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${liveChannelId}::uuid FOR UPDATE`;
+		const latest = await tx.liveChannelRun.findFirst({
+			where: { liveChannelId },
+			orderBy: { seq: "desc" },
+			select: { id: true, bitmovinEncodingId: true },
+		});
+		if (
+			latest?.id !== effect.liveChannelRunId ||
+			(latest.bitmovinEncodingId !== null &&
+				latest.bitmovinEncodingId !== effect.providerEncodingId)
+		)
+			return false;
+		const claim = await tx.liveEffectClaim.findUnique({
+			where: { idempotencyKey: effect.idempotencyKey },
+		});
+		if (claim) {
+			const canRetire =
+				claim.state === "FAILED" ||
+				claim.state === "AMBIGUOUS" ||
+				(claim.state === "DISPATCHING" && claim.expiresAt <= at);
+			if (
+				!canRetire ||
+				claim.action !== "RESTART" ||
+				claim.liveChannelId !== liveChannelId ||
+				claim.liveChannelRunId !== latest.id ||
+				claim.providerEncodingId !== effect.providerEncodingId
+			)
+				return false;
+		}
+		const projected = await tx.liveChannel.updateMany({
+			where: {
+				id: liveChannelId,
+				status: "PROVISIONING",
+				bitmovinEncodingId: effect.providerEncodingId,
+				liveEffectFenceVersion:
+					claim?.generation ?? effect.admissionFenceVersion,
+			},
+			data: { status: "ERROR", error },
+		});
+		if (projected.count !== 1) return false;
+		// RUNNING describes a possibly billing encoder; keep that historical
+		// state unless this run really remained in its startup transition.
+		const retired = await tx.liveChannelRun.updateMany({
+			where: { id: latest.id, status: { in: ["CREATED", "PROVISIONING"] } },
+			data: { status: "ERROR", error },
+		});
+		if (retired.count)
+			await tx.liveChannelRun.updateMany({
+				where: { id: latest.id, endedAt: null },
+				data: { endedAt: at },
+			});
+		return true;
+	});
+}
+
 /**
  * A run-bound STOP that exhausts every delivery before crossing the provider
  * boundary must not disappear behind the route's earlier 202. Project an

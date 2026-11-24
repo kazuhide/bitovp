@@ -2840,7 +2840,7 @@ describe("live channel actions", () => {
 		over: Partial<(typeof t.runRows)[number]> = {},
 	) => {
 		t.runRows.push({
-			id: "run-1",
+			id: LIVE_TO_VOD_RUN_ID,
 			seq: 1,
 			status: "RUNNING",
 			bitmovinEncodingId: "bm-live-enc",
@@ -2863,12 +2863,15 @@ describe("live channel actions", () => {
 			liveEffectFenceVersion: 1,
 		});
 		seedRun(t);
-		liveEffectMocks.assertCurrent.mockImplementation(async () => {
-			// The same-run manual STOP atomically superseded this restart.
+		t.sdk.getEncodingStatus = vi.fn(async () => {
+			// The same-run manual STOP wins while the provider read is in flight.
 			t.row.status = "STOPPING";
 			t.row.liveEffectFenceVersion = 2;
-			return false;
+			return { status: "RUNNING" };
 		});
+		liveEffectMocks.assertCurrent.mockImplementation(
+			async () => t.row.liveEffectFenceVersion === 1,
+		);
 
 		await expect(
 			t.process({ liveChannelId: CHANNEL_ID, action: "restart" }),
@@ -2878,7 +2881,7 @@ describe("live channel actions", () => {
 		expect(t.updates).not.toEqual(
 			expect.arrayContaining([expect.objectContaining({ status: "ERROR" })]),
 		);
-		expect(liveEffectMocks.assertCurrent).toHaveBeenCalledTimes(2);
+		expect(t.runRows[0]?.providerStatus).toBeNull();
 	});
 
 	it("a restart response that loses to STOP cannot late-mark the channel ERROR", async () => {
@@ -2888,19 +2891,10 @@ describe("live channel actions", () => {
 			liveEffectFenceVersion: 1,
 		});
 		seedRun(t);
-		let fenceChecks = 0;
-		liveEffectMocks.assertCurrent.mockImplementation(async () => {
-			fenceChecks += 1;
-			if (fenceChecks === 1) return true;
-			// Simulate STOP committing immediately after the catch's claim read.
-			// Returning the now-stale true snapshot forces the ERROR write's own
-			// generation CAS—not a check-then-write—to preserve STOPPING.
-			t.row.status = "STOPPING";
-			t.row.liveEffectFenceVersion = 2;
-			return true;
-		});
 		vi.mocked(t.sdk.restartLiveEncoding).mockImplementation(async () => {
 			// The request crossed its send boundary before its response was lost.
+			t.row.status = "STOPPING";
+			t.row.liveEffectFenceVersion = 2;
 			throw new Error("restart response was lost");
 		});
 
@@ -2912,7 +2906,7 @@ describe("live channel actions", () => {
 		expect(t.updates).not.toEqual(
 			expect.arrayContaining([expect.objectContaining({ status: "ERROR" })]),
 		);
-		expect(liveEffectMocks.assertCurrent).toHaveBeenCalledTimes(2);
+		expect(t.runRows[0]?.status).toBe("RUNNING");
 		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalled();
 	});
 
@@ -3128,7 +3122,9 @@ describe("live channel actions", () => {
 			});
 			expect(t.feederSession.findMany).toHaveBeenCalledWith(
 				expect.objectContaining({
-					where: expect.objectContaining({ liveChannelRunId: "run-1" }),
+					where: expect.objectContaining({
+						liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+					}),
 				}),
 			);
 		});
@@ -10798,7 +10794,7 @@ it("journals and stops a deferred RESTART after reset, then acknowledges its exa
 		{ restartLiveEncoding: restart },
 	);
 	t.runRows.push({
-		id: "run-1",
+		id: LIVE_TO_VOD_RUN_ID,
 		seq: 1,
 		status: "RUNNING",
 		bitmovinEncodingId: "bm-live-enc",
@@ -11756,7 +11752,10 @@ describe("cooperative startup cancellation", () => {
 		let cancelled = false;
 		Object.assign(h.deps.prisma, {
 			$transaction: async <T>(fn: (tx: AppTransactionClient) => Promise<T>) => {
-				if (!cancelled) {
+				if (
+					!cancelled &&
+					vi.mocked(h.sdk.getLiveEncodingDetails).mock.calls.length > 0
+				) {
 					cancelled = true;
 					h.row.status = "STOPPING";
 					run.status = "STOPPING";

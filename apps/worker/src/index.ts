@@ -111,6 +111,7 @@ import {
 	isRunBoundStopJob,
 	recordDeadFeederJob,
 	recordDeadJobScheduleOutcomes,
+	recordFinalRestartFailure,
 	recordFinalStopFailure,
 	releaseDeadStageClaim,
 } from "./live/dead-job-outcome";
@@ -2146,7 +2147,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 				if (
 					key === "liveChannel" &&
 					job?.name !== HEARTBEAT_SWEEP_JOB &&
-					(liveAction === "provision" || liveAction === "restart")
+					liveAction === "provision"
 				) {
 					const liveChannelId = liveJob?.liveChannelId;
 					if (liveChannelId) {
@@ -2203,6 +2204,13 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 								),
 							);
 					}
+				}
+				if (
+					key === "liveChannel" &&
+					job?.name !== HEARTBEAT_SWEEP_JOB &&
+					liveAction === "restart"
+				) {
+					await recordFinalRestartFailure(prisma, job, err.message);
 				}
 				if (key === "liveChannel" && finalStopFailure) {
 					void recordFinalStopFailure(

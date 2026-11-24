@@ -1407,8 +1407,12 @@ export async function POST(req: Request, { params }: RouteParams) {
 						),
 					);
 				} catch (enqueueErr) {
-					await ctx.prisma.liveChannel.update({
-						where: { id },
+					await ctx.prisma.liveChannel.updateMany({
+						where: {
+							id,
+							status: "PROVISIONING",
+							liveEffectFenceVersion: (row.liveEffectFenceVersion ?? 0) + 1,
+						},
 						data: { status: "ERROR", error: "Enqueue failed — restart again" },
 					});
 					throw enqueueErr;

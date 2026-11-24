@@ -2079,6 +2079,41 @@ describe("POST /api/live-channels/[id]/actions", () => {
 		expect((await postAction({ action: "restart" })).status).toBe(409);
 	});
 
+	it("restart: a delayed enqueue failure preserves the newer STOP generation", async () => {
+		findUnique.mockResolvedValueOnce(
+			channel({ status: "RUNNING", liveEffectFenceVersion: 4 }),
+		);
+		const state = { status: "RUNNING", generation: 4 };
+		updateMany.mockImplementation(async ({ where, data }) => {
+			const matchingStatus =
+				typeof where.status === "string"
+					? where.status === state.status
+					: where.status.in.includes(state.status);
+			if (!matchingStatus || where.liveEffectFenceVersion !== state.generation)
+				return { count: 0 };
+			state.status = data.status;
+			state.generation += data.liveEffectFenceVersion?.increment ?? 0;
+			return { count: 1 };
+		});
+		queueAdd.mockImplementationOnce(async () => {
+			expect(state).toEqual({ status: "PROVISIONING", generation: 5 });
+			state.status = "STOPPING";
+			state.generation++;
+			throw new Error("Redis response lost");
+		});
+		expect((await postAction({ action: "restart" })).status).toBe(500);
+		expect(update).not.toHaveBeenCalled();
+		expect(updateMany).toHaveBeenLastCalledWith({
+			where: {
+				id: CHANNEL_ID,
+				status: "PROVISIONING",
+				liveEffectFenceVersion: 5,
+			},
+			data: { status: "ERROR", error: "Enqueue failed — restart again" },
+		});
+		expect(state).toEqual({ status: "STOPPING", generation: 6 });
+	});
+
 	it("restart: a STOPPED channel is refused, naming the real recovery (ledger #107)", async () => {
 		// An operator hit this for real on 2026-08-16: the button was offered
 		// on a stopped channel and Bitmovin answered

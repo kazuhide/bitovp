@@ -11,8 +11,14 @@ import {
 	providerEffectRefusal,
 	redactSecrets,
 } from "@bitovp/core";
-import type { AppPrismaClient, AppTransactionClient, Prisma } from "@bitovp/db";
+import type {
+	AppPrismaClient,
+	AppTransactionClient,
+	LiveEffectClaimHandle,
+	Prisma,
+} from "@bitovp/db";
 import {
+	assertLiveEffectCurrent,
 	DB_NULL,
 	LIVE_EFFECT_OPEN_STATES,
 	replaceLiveRunStepLogSnapshot,
@@ -405,6 +411,7 @@ export function createProviderLifecycleReconciler(deps: {
 		coordinates: { streamKey?: string | null; encoderIp?: string | null };
 		/** Restart expects null; provision finalize expects and releases its Date. */
 		provisionClaimedAt?: Date | null;
+		restartClaim?: LiveEffectClaimHandle;
 		/** Provision's redacted snapshot; the run also retains canonical receipts. */
 		stepLog?: Prisma.InputJsonValue;
 	}): Promise<boolean> {
@@ -425,6 +432,8 @@ export function createProviderLifecycleReconciler(deps: {
 		try {
 			await deps.prisma.$transaction(async (tx) => {
 				await lockOwnedChannel(tx, args.channel.id);
+				if (args.restartClaim)
+					await assertRestartOwner(tx, args.restartClaim, run.id);
 				const latest = await tx.liveChannelRun.findFirst({
 					where: { liveChannelId: args.channel.id },
 					orderBy: { seq: "desc" },
@@ -521,6 +530,7 @@ export function createProviderLifecycleReconciler(deps: {
 		persistRun: boolean;
 		/** Only a fenced background observation may discard its whole transaction. */
 		pollEpoch?: number;
+		restartClaim?: LiveEffectClaimHandle;
 		signal?: AbortSignal;
 	}): Promise<{ runLanded: boolean; channelLanded: boolean }> {
 		const aisa = aisaLiveFinalization({
@@ -531,19 +541,24 @@ export function createProviderLifecycleReconciler(deps: {
 			// The persisted encoder result is already sufficient while Analysis
 			// drains. Replaying it could replace a newer observation timestamp.
 			if (!args.persistRun) return { runLanded: false, channelLanded: false };
-			await deps.prisma.liveChannelRun.updateMany({
-				where: {
-					...(args.fenceWhere ?? {
-						id: args.run.id,
-						bitmovinEncodingId: args.encodingId,
-					}),
-					providerTerminalAt: null,
+			await recordRunObservation(
+				{
+					where: {
+						...(args.fenceWhere ?? {
+							id: args.run.id,
+							bitmovinEncodingId: args.encodingId,
+						}),
+						providerTerminalAt: null,
+					},
+					data: {
+						providerStatus: args.status,
+						providerStatusObservedAt: args.observedAt,
+					},
 				},
-				data: {
-					providerStatus: args.status,
-					providerStatusObservedAt: args.observedAt,
-				},
-			});
+				args.run.id,
+				args.restartClaim,
+				args.signal,
+			);
 			return { runLanded: false, channelLanded: false };
 		}
 		const finishedNormally =
@@ -564,6 +579,8 @@ export function createProviderLifecycleReconciler(deps: {
 					// Keep old-run terminal facts even after a re-air: lock by channel
 					// identity only, then preserve the exact run/projection CAS below.
 					await lockOwnedChannel(tx, args.channelId);
+					if (args.restartClaim)
+						await assertRestartOwner(tx, args.restartClaim, args.run.id);
 					args.signal?.throwIfAborted();
 				}
 				if (args.persistRun) {
@@ -658,14 +675,54 @@ export function createProviderLifecycleReconciler(deps: {
 				});
 				args.signal?.throwIfAborted();
 				channelLanded = channelWrite.count === 1;
+				if (args.restartClaim && !channelLanded)
+					throw new RunningCommitFenceLostError();
 			});
 		} catch (error) {
-			if (error instanceof PollChannelUnavailableError) {
+			if (
+				error instanceof PollChannelUnavailableError ||
+				error instanceof RunningCommitFenceLostError
+			) {
 				return { runLanded: false, channelLanded: false };
 			}
 			throw error;
 		}
 		return { runLanded, channelLanded };
+	}
+
+	async function assertRestartOwner(
+		tx: AppTransactionClient,
+		claim: LiveEffectClaimHandle,
+		runId: string,
+	) {
+		if (
+			runId !== claim.liveChannelRunId ||
+			!(await assertLiveEffectCurrent(tx, claim, new Date(deps.now())))
+		) {
+			throw new RunningCommitFenceLostError(
+				"Restart refused: its exact run/generation fence is no longer current",
+			);
+		}
+	}
+
+	async function recordRunObservation(
+		query: Prisma.LiveChannelRunUpdateManyArgs,
+		runId: string,
+		restartClaim?: LiveEffectClaimHandle,
+		signal?: AbortSignal,
+	) {
+		if (!restartClaim && !signal)
+			return deps.prisma.liveChannelRun.updateMany(query);
+		return deps.prisma.$transaction(async (tx) => {
+			signal?.throwIfAborted();
+			if (restartClaim) {
+				await lockOwnedChannel(tx, restartClaim.liveChannelId);
+				await assertRestartOwner(tx, restartClaim, runId);
+			}
+			const result = await tx.liveChannelRun.updateMany(query);
+			signal?.throwIfAborted();
+			return result;
+		});
 	}
 
 	async function reconcile(args: {
@@ -676,6 +733,7 @@ export function createProviderLifecycleReconciler(deps: {
 		sdk: SdkOps;
 		/** The sweep's poll token — every run write then CASes on it too. */
 		fence?: { epoch: number };
+		restartClaim?: LiveEffectClaimHandle;
 		/** The monitoring attempt may no longer persist after its deadline. */
 		signal?: AbortSignal;
 		/**
@@ -694,17 +752,6 @@ export function createProviderLifecycleReconciler(deps: {
 	}): Promise<ReconcileOutcome> {
 		const { channel, run, encodingId, sdk } = args;
 		args.signal?.throwIfAborted();
-		const recordObservation = async (
-			query: Prisma.LiveChannelRunUpdateManyArgs,
-		) => {
-			if (!args.signal) return deps.prisma.liveChannelRun.updateMany(query);
-			return deps.prisma.$transaction(async (tx) => {
-				args.signal?.throwIfAborted();
-				const result = await tx.liveChannelRun.updateMany(query);
-				args.signal?.throwIfAborted();
-				return result;
-			});
-		};
 		let observedAt = deps.now();
 		const unknown = (reason: string): ReconcileOutcome => ({
 			lifecycle: "UNKNOWN",
@@ -752,13 +799,15 @@ export function createProviderLifecycleReconciler(deps: {
 				message,
 				channelWrite: args.channelWrite,
 				persistRun: false,
+				restartClaim: args.restartClaim,
 				pollEpoch: args.fence?.epoch,
 				signal: args.signal,
 			});
 			args.signal?.throwIfAborted();
 			if (
 				run.providerFeederStopsEnqueuedAt === null &&
-				(args.fence === undefined || repaired.runLanded)
+				((args.fence === undefined && args.restartClaim === undefined) ||
+					repaired.runLanded)
 			) {
 				await enqueueTerminalFeederStops(run).catch((err) => {
 					console.error(
@@ -807,18 +856,23 @@ export function createProviderLifecycleReconciler(deps: {
 			// First writer opens the window; a later failure keeps the original
 			// start, so grace and the customer strip measure from the first loss.
 			const existingUnknownSince = run.providerUnknownSince;
-			const { count } = await recordObservation({
-				where:
-					existingUnknownSince === null
-						? { ...fenceWhere, providerUnknownSince: null }
-						: fenceWhere,
-				data: {
-					providerUnknownSince: existingUnknownSince ?? now,
-					...(existingUnknownSince === null
-						? { providerUnknownAlertedAt: null }
-						: {}),
+			const { count } = await recordRunObservation(
+				{
+					where:
+						existingUnknownSince === null
+							? { ...fenceWhere, providerUnknownSince: null }
+							: fenceWhere,
+					data: {
+						providerUnknownSince: existingUnknownSince ?? now,
+						...(existingUnknownSince === null
+							? { providerUnknownAlertedAt: null }
+							: {}),
+					},
 				},
-			});
+				run.id,
+				args.restartClaim,
+				args.signal,
+			);
 			return {
 				...unknown(reason),
 				landed: count > 0,
@@ -828,15 +882,20 @@ export function createProviderLifecycleReconciler(deps: {
 
 		const status = observation.ok ? observation.status : null;
 		if (lifecycle === "RUNNING" || lifecycle === "TRANSITIONAL") {
-			const { count } = await recordObservation({
-				where: fenceWhere,
-				data: {
-					providerStatus: status,
-					providerStatusObservedAt: now,
-					providerUnknownSince: null,
-					providerUnknownAlertedAt: null,
+			const { count } = await recordRunObservation(
+				{
+					where: fenceWhere,
+					data: {
+						providerStatus: status,
+						providerStatusObservedAt: now,
+						providerUnknownSince: null,
+						providerUnknownAlertedAt: null,
+					},
 				},
-			});
+				run.id,
+				args.restartClaim,
+				args.signal,
+			);
 			return {
 				lifecycle,
 				status,
@@ -862,6 +921,7 @@ export function createProviderLifecycleReconciler(deps: {
 			fenceWhere,
 			channelWrite: args.channelWrite,
 			persistRun: true,
+			restartClaim: args.restartClaim,
 			pollEpoch: args.fence?.epoch,
 			signal: args.signal,
 		});

@@ -58,6 +58,22 @@ describe("createNotifyProcessor", () => {
 		vi.clearAllMocks();
 	});
 
+	it("checks the durable delivery owner before posting to each subscribed destination", async () => {
+		const { deps, fetchImpl } = makeDeps();
+		vi.mocked(deps.prisma.notificationChannel.findMany).mockResolvedValue([
+			channelRow(),
+			channelRow({ id: "second-channel" }),
+		]);
+		const beforeSend = vi
+			.fn()
+			.mockResolvedValueOnce(undefined)
+			.mockRejectedValueOnce(new Error("lease lost"));
+		await expect(
+			createNotifyProcessor(deps)({ data: event(), beforeSend }),
+		).rejects.toThrow("lease lost");
+		expect(beforeSend).toHaveBeenCalledTimes(2);
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+	});
 	it("POSTs the event verbatim with the kind header to a matching channel", async () => {
 		const { deps, fetchImpl } = makeDeps();
 		const results = await createNotifyProcessor(deps)({ data: event() });

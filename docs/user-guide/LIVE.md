@@ -329,8 +329,11 @@ finalization also need separate verification.
 
 A recovered stop completes its own pending schedule. A schedule already marked
 unknown keeps its original evidence, including after a subsequent broadcast.
-The worker records one notification for the confirmed stop of that broadcast and retries handing
-it to the notification queue. Webhook retries can deliver the event to a destination more than once.
+For new stops, confirmation records one notification per broadcast. The worker
+can finish delivery after the channel is deleted. Five recorded failures end
+delivery. A destination can receive the event again after a retry or worker restart.
+For stops already in progress during upgrade, prior delivery can be unknown.
+In that case recovery records the uncertainty and skips a replacement notification.
 
 A START error can leave the provider state uncertain. Startup cancellation
 prevents further START retries once the worker observes it. If a request is

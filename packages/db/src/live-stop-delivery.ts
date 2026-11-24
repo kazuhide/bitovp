@@ -10,6 +10,8 @@ export async function recordConfirmedStopDelivery(
 		liveChannelId: string;
 		liveChannelRunId: string;
 		scheduleIds: readonly string[];
+		channelName: string;
+		notificationEligible: boolean;
 		status: "STOPPED" | "ERROR";
 		at: Date;
 	},
@@ -40,14 +42,29 @@ export async function recordConfirmedStopDelivery(
 			},
 		});
 	}
-	await tx.liveChannelRun.updateMany({
+	const kind = input.status === "ERROR" ? "CHANNEL_ERROR" : "CHANNEL_STOPPED";
+	const first = await tx.liveChannelRun.updateMany({
 		where: { id: liveChannelRunId, liveChannelId, stopNotificationAt: null },
 		data: {
 			stopNotificationAt: at,
-			stopNotificationKind:
-				input.status === "ERROR" ? "CHANNEL_ERROR" : "CHANNEL_STOPPED",
+			stopNotificationKind: kind,
+			stopNotificationState: input.notificationEligible
+				? "PENDING"
+				: "LEGACY_UNKNOWN",
 		},
 	});
+	if (first.count === 1 && input.notificationEligible) {
+		await tx.liveStopNotification.create({
+			data: {
+				id: liveChannelRunId,
+				channelId: liveChannelId,
+				channelName: input.channelName,
+				kind,
+				occurredAt: at,
+				nextAttemptAt: at,
+			},
+		});
+	}
 }
 
 /** Record what the scheduled STOP knew at its own failure boundary, before another observer can win. */

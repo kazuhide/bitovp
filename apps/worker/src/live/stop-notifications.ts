@@ -1,100 +1,110 @@
+import { randomUUID } from "node:crypto";
+import { EVENT_VERSION } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
-import type { createEventEnqueuer } from "../notify/emitter";
 
-const jobPrefix = "live-stop-notification-";
+type Deliver = (job: {
+	data: unknown;
+	beforeSend?: () => Promise<void>;
+}) => Promise<unknown>;
 
-/** If the producer lost the enqueue response, the consumer itself witnesses handoff before BullMQ can retire its job. */
-export async function witnessStopNotificationQueue(
-	prisma: AppPrismaClient,
-	jobId: string | undefined,
-) {
-	if (!jobId?.startsWith(jobPrefix)) return;
-	const id = jobId.slice(jobPrefix.length);
-	if (
-		!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
-	)
-		return;
-	await prisma.liveChannelRun.updateMany({
-		where: {
-			id,
-			stopNotificationAt: { not: null },
-			stopNotificationQueuedAt: null,
-		},
-		data: { stopNotificationQueuedAt: new Date() },
-	});
-}
+const leaseMs = 60_000;
+const maxAttempts = 5;
+class DeliveryLeaseLost extends Error {}
 
-/** Replay committed STOP notifications independently of claim state and current channel generation. */
+/** The transaction that confirms STOP inserts the notification itself into this work queue. */
 export function createStopNotificationSweep(
 	prisma: AppPrismaClient,
-	enqueue: ReturnType<typeof createEventEnqueuer>,
+	deliver: Deliver,
+	publicBaseUrl?: string,
+	now: () => Date = () => new Date(),
 ) {
-	const pageSize = 16;
-	let after: string | undefined;
+	const base = (publicBaseUrl || "http://localhost:3000").replace(/\/$/, "");
 	return async () => {
-		const runs = await prisma.liveChannelRun.findMany({
-			where: {
-				stopNotificationAt: { not: null },
-				stopNotificationQueuedAt: null,
-				...(after ? { id: { gt: after } } : {}),
-			},
-			orderBy: { id: "asc" },
-			take: pageSize,
-			select: {
-				id: true,
-				liveChannelId: true,
-				liveChannel: { select: { name: true } },
-				stopNotificationKind: true,
-				stopNotificationAt: true,
-			},
+		const pending = await prisma.liveStopNotification.findMany({
+			where: { nextAttemptAt: { lte: now() } },
+			orderBy: [{ nextAttemptAt: "asc" }, { id: "asc" }],
+			take: 16,
 		});
-		after = runs.length === pageSize ? runs.at(-1)?.id : undefined;
-		for (const run of runs) {
-			const {
-				stopNotificationKind: kind,
-				stopNotificationAt: occurredAt,
-				liveChannelId,
-			} = run;
-			if (
-				!occurredAt ||
-				(kind !== "CHANNEL_STOPPED" && kind !== "CHANNEL_ERROR")
-			)
-				continue;
+		for (const row of pending) {
+			const token = randomUUID();
+			const owner = { id: row.id, leaseToken: token };
+			const at = now();
+			const claimed = await prisma.liveStopNotification.updateMany({
+				where: {
+					id: row.id,
+					nextAttemptAt: { lte: at },
+					failures: row.failures,
+					leaseToken: row.leaseToken,
+				},
+				data: {
+					leaseToken: token,
+					nextAttemptAt: new Date(at.getTime() + leaseMs),
+				},
+			});
+			if (!claimed.count) continue;
+
+			let result: "PROCESSED" | "FAILED" = "PROCESSED";
 			try {
-				const common = {
-					liveChannelId,
-					name: run.liveChannel.name,
-					path: `/live/${liveChannelId}`,
-				};
-				const event =
-					kind === "CHANNEL_ERROR"
-						? ({
-								...common,
-								kind,
-								error: "AISA_LIVE_TERMINAL_FAILURE",
-							} as const)
-						: ({ ...common, kind } as const);
-				await prisma.$transaction(async (tx) => {
-					// Competing workers share this row lock. Queue failure rolls the stamp back.
-					const claimed = await tx.liveChannelRun.updateMany({
-						where: {
-							id: run.id,
-							stopNotificationQueuedAt: null,
-							stopNotificationAt: occurredAt,
-						},
-						data: { stopNotificationQueuedAt: new Date() },
-					});
-					if (claimed.count === 1)
-						await enqueue(event, {
-							jobId: `${jobPrefix}${run.id}`,
-							occurredAt,
+				await deliver({
+					data: {
+						eventVersion: EVENT_VERSION,
+						kind: row.kind,
+						occurredAt: row.occurredAt.toISOString(),
+						liveChannelId: row.channelId,
+						name: row.channelName,
+						link: `${base}/live/${row.channelId}`,
+						...(row.kind === "CHANNEL_ERROR" && {
+							error: "AISA_LIVE_TERMINAL_FAILURE",
+						}),
+					},
+					// Each destination has a ten-second HTTP timeout. Refresh the lease at
+					// each send so fan-out to many destinations can outlive the initial lease.
+					beforeSend: async () => {
+						const at = now();
+						const renewed = await prisma.liveStopNotification.updateMany({
+							where: { ...owner, nextAttemptAt: { gt: at } },
+							data: { nextAttemptAt: new Date(at.getTime() + leaseMs) },
 						});
+						if (!renewed.count) throw new DeliveryLeaseLost();
+					},
 				});
-			} catch {
-				console.warn(
-					`[notify] STOP event remains pending for broadcast ${run.id}`,
-				);
+			} catch (error) {
+				if (error instanceof DeliveryLeaseLost) continue;
+				result = "FAILED";
 			}
+
+			if (result === "FAILED" && row.failures + 1 < maxAttempts) {
+				await prisma.liveStopNotification.updateMany({
+					where: owner,
+					data: {
+						leaseToken: null,
+						failures: { increment: 1 },
+						nextAttemptAt: new Date(
+							now().getTime() + 1_000 * 2 ** row.failures,
+						),
+					},
+				});
+				continue;
+			}
+
+			await prisma.$transaction(async (tx) => {
+				const finished = await tx.liveStopNotification.deleteMany({
+					where: owner,
+				});
+				if (!finished.count) return;
+				await tx.liveChannelRun.updateMany({
+					where: {
+						id: row.id,
+						liveChannelId: row.channelId,
+						stopNotificationState: "PENDING",
+					},
+					data: { stopNotificationState: result },
+				});
+				if (result === "FAILED")
+					console.warn(
+						`[notify] STOP notification failed after ${maxAttempts} attempts for broadcast ${row.id}`,
+					);
+			});
 		}
 	};
 }

@@ -13,7 +13,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ### Fixed
 
 - Open compatible FMP4 and CMAF MoQ channel copies in the Live wizard with their relay and encoding settings populated.
-- Recover an uncertain Live stop after verifying the affected encoders and feeder shutdown. The worker records the exact broadcast outcome and queues its terminal notification together without resending a stop during background recovery.
+- Recover an uncertain Live stop after verifying the affected encoders and feeder shutdown. A confirmed stop records the broadcast outcome and a pending notification. Delivery can continue after channel deletion. Background recovery checks provider status.
 - Remove completed and failed Live heartbeat and slate promotion ticks from Redis, including older ticks left by previous workers. Standard and customer Compose installations can set a Redis memory budget.
 
 ## [1.3.4] - 2026-11-22

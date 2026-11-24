@@ -723,6 +723,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				tx.liveChannel.findUnique({
 					where: { id: input.liveChannelId },
 					select: {
+						name: true,
 						status: true,
 						error: true,
 						liveEffectFenceVersion: true,
@@ -767,6 +768,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					select: {
 						id: true,
 						idempotencyKey: true,
+						stopProtocolVersion: true,
 						scheduleId: true,
 						providerEncodingId: true,
 						action: true,
@@ -1057,6 +1059,14 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					throw new Error("LIVE_STOP_RECONCILIATION_SIBLING_FENCE_LOST");
 			}
 			await recordConfirmedStopDelivery(tx, {
+				channelName: channel.name,
+				// Older workers could emit an unkeyed notification before persisting the ACK.
+				notificationEligible:
+					stopClaim.stopProtocolVersion === 1 &&
+					history.every(
+						(claim) =>
+							claim.action !== "STOP" || claim.stopProtocolVersion === 1,
+					),
 				liveChannelId: input.liveChannelId,
 				liveChannelRunId: run.id,
 				status: confirmedStatus,

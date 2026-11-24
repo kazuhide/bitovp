@@ -39,53 +39,48 @@ type NotifyQueueLike = {
 	): Promise<unknown>;
 };
 
-type EmitterDeps = {
+export function createEventEmitter(deps: {
 	queue: NotifyQueueLike;
+	/** PUBLIC_BASE_URL; undefined ⇒ links fall back to the bare path. */
 	publicBaseUrl?: string;
 	now?: () => Date;
-};
-
-/** A durable producer must observe enqueue failure before acknowledging its outbox row. */
-export function createEventEnqueuer(deps: EmitterDeps) {
+}): EmitProductEvent {
 	const base = (deps.publicBaseUrl ?? "").replace(/\/$/, "");
-	return async (
-		input: EmitInput,
-		delivery?: { jobId?: string; occurredAt: Date },
-	): Promise<void> => {
-		const { path, ...event } = input;
-		const parsed = productEventSchema.parse({
-			...event,
-			eventVersion: EVENT_VERSION,
-			occurredAt: (
-				delivery?.occurredAt ??
-				deps.now?.() ??
-				new Date()
-			).toISOString(),
-			link: `${base || "http://localhost:3000"}${path}`,
-		});
-		await deps.queue.add(QUEUE_NAMES.notify, parsed, {
-			...(delivery?.jobId ? { jobId: delivery.jobId } : {}),
-			attempts: 5,
-			backoff: { type: "exponential", delay: 1_000 },
-			removeOnComplete: 1000,
-			removeOnFail: 5000,
-		});
-	};
-}
-
-export function createEventEmitter(deps: EmitterDeps): EmitProductEvent {
-	const enqueue = createEventEnqueuer(deps);
 	return async (input, occurredAt) => {
 		try {
-			await enqueue(input, occurredAt ? { occurredAt } : undefined);
-		} catch (err) {
-			if (err instanceof Error && err.name === "ZodError") {
+			const { path, ...event } = input;
+			const candidate = {
+				...event,
+				eventVersion: EVENT_VERSION,
+				occurredAt: (occurredAt ?? deps.now?.() ?? new Date()).toISOString(),
+				// Without PUBLIC_BASE_URL the link is not a valid URL; use a
+				// placeholder origin so the schema holds and the path survives —
+				// the operator-facing fix is setting the variable.
+				link: `${base || "http://localhost:3000"}${path}`,
+			};
+			const parsed = productEventSchema.safeParse(candidate);
+			if (!parsed.success) {
 				console.error(
-					`[notify] DROPPED schema-invalid ${input.kind} event (emit-site bug):`,
-					err.message,
+					`[notify] DROPPED schema-invalid ${String(input.kind)} event (emit-site bug):`,
+					parsed.error.issues
+						.map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+						.join("; "),
 				);
 				return;
 			}
+			await deps.queue.add(QUEUE_NAMES.notify, parsed.data, {
+				// review-183 C1: WITHOUT attempts, BullMQ's default is 0 and a
+				// thrown delivery is gone permanently — the bus was at-MOST-once
+				// while three artefacts (the processor comment, the retry test's
+				// name, ) claimed at-least-once. These two lines are
+				// what makes the claim true; duplicate-on-retry to already-
+				// delivered channels is the genuine trade #89 records.
+				attempts: 5,
+				backoff: { type: "exponential", delay: 1_000 },
+				removeOnComplete: 1000,
+				removeOnFail: 5000,
+			});
+		} catch (err) {
 			console.error(
 				"[notify] emit failed (event dropped, job unaffected):",
 				err instanceof Error ? err.message : err,

@@ -132,17 +132,14 @@ import {
 import { createUncertainStopReconciler } from "./live/reconcile-uncertain-stops";
 import { createRunHeartbeatSummarizer } from "./live/run-heartbeat-summary";
 import { reconcileStartupCancellations } from "./live/startup-cancel";
-import {
-	createStopNotificationSweep,
-	witnessStopNotificationQueue,
-} from "./live/stop-notifications";
+import { createStopNotificationSweep } from "./live/stop-notifications";
 import {
 	LIVE_HEARTBEAT_SLOTS,
 	liveChannelConcurrency,
 	reserveLiveStopCapacity,
 } from "./live-capacity";
 import { createInboundDispatcher } from "./notify/dispatcher";
-import { createEventEmitter, createEventEnqueuer } from "./notify/emitter";
+import { createEventEmitter } from "./notify/emitter";
 import { createNotifyProcessor } from "./notify/processor";
 import { createWakeBus } from "./notify/wake-bus";
 import { pruneOperationAttempts } from "./operation-analytics/retention";
@@ -1168,21 +1165,8 @@ const uncertainStopLoop = tenantService(() =>
 		await reconcileUncertainStops();
 	}),
 );
-const stopNotificationLoop = tenantService(() =>
-	createSweepLoop(
-		createStopNotificationSweep(
-			prisma,
-			createEventEnqueuer({
-				queue: notifyQueue,
-				publicBaseUrl: env.PUBLIC_BASE_URL,
-			}),
-		),
-	),
-);
 setTenantInterval(() => uncertainStopLoop.run(), 60_000).unref();
-setTenantInterval(() => stopNotificationLoop.run(), 5_000).unref();
 runTenantTick(() => uncertainStopLoop.run());
-runTenantTick(() => stopNotificationLoop.run());
 // : the SAME stranding, storage-inspection pipeline — same
 // claim shape (PENDING → RUNNING), same queue discriminator (jobId = row
 // id), no DELETE route and a status-blind 30-day prune as the only exit.
@@ -1703,6 +1687,14 @@ const notifyProcessor = tenantService(() =>
 	}),
 );
 
+const stopNotificationLoop = tenantService(() =>
+	createSweepLoop(
+		createStopNotificationSweep(prisma, notifyProcessor, env.PUBLIC_BASE_URL),
+	),
+);
+setTenantInterval(() => stopNotificationLoop.run(), 5_000).unref();
+runTenantTick(() => stopNotificationLoop.run());
+
 //  PR4 — startup-probe batches. Probes ride the NORMAL live
 // queue for provision/stop; this processor only orchestrates around them.
 const enqueueLiveJob = async (
@@ -1739,10 +1731,7 @@ const handlers = createHandlers({
 	vmaf: dispatchVmaf,
 	storageInspect: (jobData) => storageInspectProcessor(jobData),
 	vodInputPreview: (jobData) => vodInputPreviewProcessor(jobData),
-	notify: async (jobData, jobId) => {
-		await witnessStopNotificationQueue(prisma, jobId);
-		return notifyProcessor({ data: jobData });
-	},
+	notify: (jobData) => notifyProcessor({ data: jobData }),
 	startupProbe: (jobData) => processProbeBatch(jobData),
 	slateNormalize: (job) =>
 		job.name === SLATE_NORMALIZE_PROMOTE_JOB
@@ -2383,7 +2372,7 @@ const shutdown = createShutdown({
 		{
 			name: "live STOP notification",
 			run: () => drainTenantLoop(stopNotificationLoop),
-			recovery: "unacknowledged STOP notifications are queued after restart",
+			recovery: "pending STOP notifications resume after restart",
 		},
 		{
 			name: "VOD input preview recovery",
@@ -2471,14 +2460,20 @@ const shutdown = createShutdown({
 	],
 	closables: [
 		...workers,
-		notifyQueue,
 		liveChannelQueue,
 		feederQueue,
 		vmafQueue,
 		orchestratorProducerQueue,
 		vodInputPreviewQueue,
 	],
-	disconnect: () => basePrisma.$disconnect(),
+	disconnect: async () => {
+		// Active workers can emit ordinary product events until their close completes.
+		try {
+			await notifyQueue.close();
+		} finally {
+			await basePrisma.$disconnect();
+		}
+	},
 	exit: (code) => process.exit(code),
 });
 

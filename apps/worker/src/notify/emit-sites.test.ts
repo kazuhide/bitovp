@@ -25,9 +25,9 @@ type Expectation = {
 
 const EXPECTATIONS: Expectation[] = [
 	{
-		// Committed STOP events are queued by the dedicated outbox sweep.
+		// Each claimed STOP notification uses the usual notification delivery rules.
 		file: "live/stop-notifications.ts",
-		writes: /const claimed = await tx\.liveChannelRun\.updateMany/g,
+		writes: /const claimed = await prisma\.liveStopNotification\.updateMany/g,
 		writeCount: 1,
 		emitCount: 1,
 	},
@@ -302,7 +302,7 @@ const EXPECTATIONS: Expectation[] = [
 	},
 ];
 
-const EMIT_CALL = /emitEvent\?\.\(|emitChannel\(|enqueue\(event, \{\s*jobId/g;
+const EMIT_CALL = /emitEvent\?\.\(|emitChannel\(|await deliver\(\{/g;
 
 describe("every terminal transition emits a product event (ledger #88)", () => {
 	for (const expectation of EXPECTATIONS) {

@@ -8,6 +8,7 @@ import { apiFetch } from "@/lib/api";
 import { useSession } from "@/lib/auth/use-session";
 import { useT } from "@/lib/i18n/context";
 import { reloadAfterOrganizationChange } from "@/lib/tenant-fetch";
+import { PlatformRedisMemory } from "../redis-memory";
 import { SettingsBreadcrumb } from "../settings-breadcrumb";
 import { IpPolicy, type Organization } from "./ip-policy";
 import { ViewAs } from "./view-as";
@@ -205,6 +206,7 @@ export function Organizations() {
 							)}
 						/>
 					) : null}
+					{session.data?.organizationUnavailable && <PlatformRedisMemory />}
 				</>
 			) : (
 				<p className="mt-6 text-sm text-zinc-400">{t("tenant.ownerOnly")}</p>

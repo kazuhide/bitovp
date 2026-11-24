@@ -283,6 +283,83 @@ describe("owned MoQ source lifecycle", () => {
 		expect(player.dispose).toHaveBeenCalledOnce();
 		host.remove();
 	});
+	it.each([
+		{ boundary: "source add", bufferCalls: 0, volumeCalls: [], stages: 0 },
+		{
+			boundary: "target buffer",
+			bufferCalls: 1,
+			volumeCalls: [[0]],
+			stages: 0,
+		},
+		{
+			boundary: "volume",
+			bufferCalls: 1,
+			volumeCalls: [[0.4], [0]],
+			stages: 0,
+		},
+		{
+			boundary: "telemetry",
+			bufferCalls: 1,
+			volumeCalls: [[0.4], [0]],
+			stages: 1,
+		},
+	])("stops startup after a synchronous source failure from $boundary", async ({
+		boundary,
+		bufferCalls,
+		volumeCalls,
+		stages,
+	}) => {
+		const { source, player, host } = fixture();
+		let onSourceError: () => void = () => {};
+		const events = {
+			Type: { SourceError: "source-error" },
+			on: vi.fn((_type: string, listener: () => void) => {
+				onSourceError = listener;
+			}),
+			off: vi.fn(),
+		};
+		if (boundary === "source add") {
+			player.sources.add.mockImplementationOnce(() => {
+				onSourceError();
+				return source;
+			});
+		} else if (boundary === "target buffer") {
+			source.setTargetBufferLevel.mockImplementationOnce(() => onSourceError());
+		} else if (boundary === "volume") {
+			source.setVolume.mockImplementationOnce(() => onSourceError());
+		}
+		const onStage = vi.fn(() => {
+			if (boundary === "telemetry") onSourceError();
+		});
+		const onFailure = vi.fn();
+		const session = createMoqPlayback(
+			() => ({ ...player, events }),
+			descriptor,
+			host,
+			vi.fn(),
+			onFailure,
+			{ startedAt: performance.now(), onStatistics: vi.fn(), onStage },
+			() => ({ targetBufferMs: 750, volumePercent: 40 }),
+		);
+		try {
+			await session.ready;
+			expect(onFailure).toHaveBeenCalledOnce();
+			expect(source.setTargetBufferLevel).toHaveBeenCalledTimes(bufferCalls);
+			expect(source.setVolume.mock.calls).toEqual(volumeCalls);
+			expect(onStage).toHaveBeenCalledTimes(stages);
+			expect(source.play).not.toHaveBeenCalled();
+			await session.released;
+			expect(events.off).toHaveBeenCalledExactlyOnceWith(
+				"source-error",
+				onSourceError,
+			);
+			expect(player.sources.remove).toHaveBeenCalledExactlyOnceWith(source);
+			expect(player.dispose).toHaveBeenCalledOnce();
+		} finally {
+			await session.dispose();
+			host.remove();
+		}
+	});
 	it("cleans up on source failure and withholds the SDK error text", async () => {
 		const { source, player, host } = fixture();
 		source.play.mockRejectedValue(new Error(descriptor.resource.url));

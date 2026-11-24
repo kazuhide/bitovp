@@ -31,6 +31,12 @@ export function MoqPlaybackControls({
 		"invalidTargetBuffer" | "settingFailed"
 	>();
 	const [adjustmentFailed, setAdjustmentFailed] = useState(false);
+	const currentQuality = qualitySelection?.current;
+	const currentNotAdvertised =
+		currentQuality &&
+		!qualitySelection?.options.some(
+			(quality) => quality.name === currentQuality,
+		);
 
 	return (
 		<details className="col-span-full row-start-3 min-w-0 border-t border-zinc-800 px-3 py-2">
@@ -120,6 +126,11 @@ export function MoqPlaybackControls({
 							<option value="" disabled>
 								{t("moqPlayback.chooseQuality")}
 							</option>
+							{currentNotAdvertised ? (
+								<option value={currentQuality} disabled>
+									{currentQuality}
+								</option>
+							) : null}
 							{qualitySelection.options.map(({ name, width, height }) => (
 								<option key={name} value={name}>
 									{name}

@@ -101,7 +101,7 @@ can proceed. Relay connectivity and playback are checked once the run starts.
 Use **Play** to start MoQ playback and **Stop** to release the player. Playback
 starts muted by default. Open **Playback settings** to adjust the target buffer in
 milliseconds or the volume. Apply the buffer before or during playback. The
-video quality selector appears when the player offers multiple video tracks.
+video quality selector appears when the player offers another video track.
 The buffer target and volume carry over when restarting playback on the same
 page. Frame progress indicates received video; a successful
 start request alone does not. Preview supports one namespace component and

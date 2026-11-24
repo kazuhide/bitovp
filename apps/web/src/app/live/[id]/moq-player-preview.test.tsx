@@ -805,6 +805,7 @@ describe("explicit MoQ preview", () => {
 			high,
 		];
 		let currentQuality = low;
+		let advertised: unknown[] = qualities;
 		const setVideoQuality = vi.fn((quality: typeof low) => {
 			currentQuality = quality;
 		});
@@ -815,7 +816,7 @@ describe("explicit MoQ preview", () => {
 		});
 		Object.assign(source, {
 			getVideoQuality: () => currentQuality,
-			getAvailableVideoQualities: () => qualities,
+			getAvailableVideoQualities: () => advertised,
 			setVideoQuality,
 		});
 		renderWithQuery(view());
@@ -846,6 +847,18 @@ describe("explicit MoQ preview", () => {
 		currentQuality = low;
 		act(() => vi.advanceTimersByTime(1000));
 		expect(quality).toHaveValue(low.name);
+		advertised = [
+			{
+				get name() {
+					throw new Error("Catalog entry is no longer available");
+				},
+			},
+			...qualities.slice(1),
+		];
+		act(() => vi.advanceTimersByTime(1000));
+		expect(quality).toHaveValue(low.name);
+		expect(screen.getByRole("option", { name: low.name })).toBeDisabled();
+		expect(quality.querySelectorAll("option")).toHaveLength(19);
 		fireEvent.change(quality, { target: { value: high.name } });
 		expect(setVideoQuality).toHaveBeenCalledTimes(2);
 		expect(source.play).toHaveBeenCalledOnce();

@@ -27,8 +27,12 @@ export type MoqVideoQualitySelection = {
 
 function qualityName(quality: unknown): string | null {
 	if (typeof quality !== "object" || quality === null) return null;
-	const name: unknown = Reflect.get(quality, "name");
-	return typeof name === "string" && name.length > 0 ? name : null;
+	try {
+		const name: unknown = Reflect.get(quality, "name");
+		return typeof name === "string" && name.length > 0 ? name : null;
+	} catch {
+		return null;
+	}
 }
 
 function qualityDimension(quality: object, key: "width" | "height") {
@@ -120,14 +124,15 @@ export function createMoqPlayback(
 	}
 	function readVideoQualitySelection(): MoqVideoQualitySelection | null {
 		const qualities = videoQualities();
-		if (qualities.size < 2) return null;
+		if (qualities.size === 0) return null;
 		let current: string | null = null;
 		try {
-			const name = qualityName(source?.getVideoQuality?.());
-			if (name && qualities.has(name)) current = name;
+			current = qualityName(source?.getVideoQuality?.());
 		} catch {
 			// Keep the choices visible while the SDK has no active video track.
 		}
+		if (qualities.size === 1 && (!current || qualities.has(current)))
+			return null;
 		return {
 			current,
 			options: Array.from(qualities, ([name, quality]) => ({
@@ -256,18 +261,24 @@ export function createMoqPlayback(
 					if (!type) continue;
 					events.on(type, fail);
 					listeners.push(() => events.off(type, fail));
+					if (closed) return;
 				}
 			}
 			source = player.sources.add(
 				{ resources: [descriptor.resource] },
 				{ attach: false },
 			);
+			// The SDK can report a source error synchronously during startup.
+			if (closed) return;
 			source.logLevel = 0;
 			const settings = readSettings();
+			if (closed) return;
 			source.setTargetBufferLevel(settings.targetBufferMs / 1000);
+			if (closed) return;
 			source.setVolume(settings.volumePercent / 100);
+			if (closed) return;
 			telemetry?.onStage?.("subscribe-requested");
-			await source.play();
+			if (!closed) await source.play();
 		} catch {
 			if (!closed) onFailure();
 			await dispose().catch(() => {});

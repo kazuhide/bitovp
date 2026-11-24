@@ -2126,6 +2126,10 @@ export const ja = {
 		"player-bundle-unavailable": "Player Web X バンドルを確認してください。",
 	},
 	liveWizard: {
+		moqDraft: "MoQT ドラフト",
+		moqNamespace: "トラック名前空間",
+		moqNamespaceHelp: "名前空間の要素を1行ずつ入力します。",
+		moqCatalog: "MoQ のカタログはリレー経由で配信されます。",
 		outputWidth: "幅（px）",
 		outputWidthHint:
 			"空欄は入力の縦横比を継承します。幅と高さの両方を指定すると出力サイズを固定します。片方だけの指定は 16:9 として Live HD の範囲を判定します。",

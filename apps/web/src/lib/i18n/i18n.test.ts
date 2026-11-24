@@ -157,8 +157,9 @@ describe("catalogue parity", () => {
 		// Encoding experiments add campaign, trial, and token controls (3486).
 		// Measuring and selecting the additional VMAF profile add two labels.
 		// NVENC settings add picker labels and a load error (runtime measured: 3498).
+		// The Live wizard adds four MoQ labels and descriptions (runtime measured: 3502).
 		// Three short labels cover instance Redis usage and availability.
-		pinWithDriftAid(short.size, 3501, "short");
+		pinWithDriftAid(short.size, 3505, "short");
 	});
 
 	/**

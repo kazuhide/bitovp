@@ -207,6 +207,7 @@ describe("Live rendition input and storage options", () => {
 	it.each([
 		{ path: "../outside" },
 		{ path: "folder/%2e%2e/other" },
+		{ path: "storage folder/video" },
 		{ segmentNaming: "../segment_%number%.m4s" },
 		{ segmentNaming: "same.m4s" },
 		{ segmentNaming: "video_%unknown%.m4s" },

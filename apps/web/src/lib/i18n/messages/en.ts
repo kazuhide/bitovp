@@ -2160,6 +2160,10 @@ export const en = {
 		"player-bundle-unavailable": "Verify the Player Web X bundle.",
 	},
 	liveWizard: {
+		moqDraft: "MoQT draft",
+		moqNamespace: "Track namespace",
+		moqNamespaceHelp: "Enter one namespace component per line.",
+		moqCatalog: "MoQ publishes a catalog through the relay.",
 		outputWidth: "Width (px)",
 		outputWidthHint:
 			"Blank inherits the input aspect ratio; specifying both dimensions fixes the output size. A single dimension is judged for Live HD at 16:9.",

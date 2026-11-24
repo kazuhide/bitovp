@@ -9,6 +9,7 @@ import {
 	vodInputPreviewJobSchema,
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
+import { retireRestartAdmission } from "../live/dead-job-outcome";
 export const INACTIVE_ORGANIZATION_ERROR =
 	"Organization is inactive; new work was suppressed";
 export function hasCommittedStart(log: unknown, kind: string) {
@@ -33,6 +34,18 @@ export async function admitInactiveOrganization(
 	if (key === "liveChannel") {
 		const data = liveChannelJobSchema.parse(payload);
 		if (data.action === "stop" || data.action === "heartbeat") return true;
+		if (data.action === "restart") {
+			if (data.effect?.action === "RESTART")
+				await retireRestartAdmission(
+					prisma,
+					data.liveChannelId,
+					data.effect,
+					"INACTIVE_ORGANIZATION",
+					INACTIVE_ORGANIZATION_ERROR,
+					new Date(),
+				);
+			return false;
+		}
 		const row = await prisma.liveChannel.findUnique({
 			where: { id: data.liveChannelId },
 			select: {
@@ -61,7 +74,7 @@ export async function admitInactiveOrganization(
 					note: INACTIVE_ORGANIZATION_ERROR,
 				},
 			});
-		if (data.action === "provision" || data.action === "restart") {
+		if (data.action === "provision") {
 			const changed = await prisma.liveChannel.updateMany({
 				where: {
 					id: data.liveChannelId,

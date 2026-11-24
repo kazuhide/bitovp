@@ -9753,26 +9753,9 @@ describe("the provisioning lease is a WRITE fence (ledger #216, re-audit BLOCKER
 	});
 
 	it("the live `failed` handler flips only a row whose lease is stale or absent, and releases it", () => {
-		// Pinned by shape, like #200's VOD twin: a redelivered failure must not
-		// mark a channel another worker is still renewing.
 		const index = readFileSync(join(__dirname, "../index.ts"), "utf8");
-		const handler = index.slice(
-			index.indexOf('status: { in: ["CREATED", "PROVISIONING", "STOPPING"] }'),
-		);
-		expect(handler.slice(0, 900)).toMatch(/\{ provisionClaimedAt: null \}/);
-		expect(handler.slice(0, 900)).toMatch(
-			/lt: new Date\(Date\.now\(\) - PROVISION_LEASE_MS\)/,
-		);
-		expect(handler.slice(0, 1200)).toContain("provisionClaimedAt: null,");
-		// review-336 C3: the run retirement rides the channel flip's count —
-		// a loser that did not win the flip must not retire the winner's run.
-		const gated = handler.slice(0, 3200);
-		expect(gated).toMatch(
-			/\.then\(\(\{ count \}\) => \{[\s\S]*?if \(count === 0\) \{\s*return;\s*\}[\s\S]*?retireTransitionalRuns\(/,
-		);
-		expect(gated.indexOf("retireTransitionalRuns(")).toBeGreaterThan(
-			gated.indexOf(".then(({ count })"),
-		);
+		expect(index).toMatch(/await recordExpiredProvisionFailure\(/);
+		expect(index).toMatch(/at.getTime\(\) - PROVISION_LEASE_MS/);
 	});
 });
 
@@ -12030,6 +12013,66 @@ describe("startup cancellation races and redelivery", () => {
 		).resolves.toMatchObject({ status: "STOPPED" });
 		expect(h.row.bitmovinEncodingId).toBe("adopted-original");
 		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+	});
+	it("keeps a rental with only an archived encoder recoverable during startup cancellation", async () => {
+		const h = setup();
+		h.runRows.push({
+			id: LIVE_TO_VOD_RUN_ID,
+			seq: 1,
+			status: "CREATED",
+			cancelRequested: true,
+			previousProviderEncodingIds: ["previous"],
+			archivedRtmpAttempt: 1,
+		});
+		let status: "RUNNING" | "FINISHED" = "RUNNING";
+		h.sdk.getEncodingStatus = vi.fn(async () => ({ status }));
+		const cancel = () =>
+			h.process({
+				liveChannelId: CHANNEL_ID,
+				params: { cancelRunId: LIVE_TO_VOD_RUN_ID },
+			});
+		await expect(cancel()).resolves.toMatchObject({ status: "STOPPING" });
+		expect(h.runRows[0]?.cancelRequested).toBe(true);
+		expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("previous");
+		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		status = "FINISHED";
+		await expect(cancel()).resolves.toMatchObject({ status: "STOPPED" });
+		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+	});
+	it("keeps startup cancellation pending until the displaced encoder is terminal and then completes", async () => {
+		const h = setup();
+		h.deps.emitEvent = vi.fn(async () => {});
+		h.runRows.push({
+			id: LIVE_TO_VOD_RUN_ID,
+			seq: 1,
+			status: "CREATED",
+			previousProviderEncodingIds: ["previous"],
+			archivedRtmpAttempt: 1,
+		});
+		h.sdk.startLiveEncoding = vi.fn(async () => {
+			cancelCurrentRun(h);
+		});
+		let archivedStatus: "RUNNING" | "FINISHED" = "RUNNING";
+		h.sdk.getEncodingStatus = vi.fn(async (id) => ({
+			status: id === "previous" ? archivedStatus : "FINISHED",
+		}));
+		await expect(
+			h.process({ liveChannelId: CHANNEL_ID }),
+		).resolves.toMatchObject({ status: "STOPPING" });
+		expect(h.row.status).toBe("STOPPING");
+		expect(h.runRows[0]?.cancelRequested).toBe(true);
+		expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "CHANNEL_STOPPED" }),
+		);
+		archivedStatus = "FINISHED";
+		await expect(
+			h.process({
+				liveChannelId: CHANNEL_ID,
+				params: { cancelRunId: LIVE_TO_VOD_RUN_ID },
+			}),
+		).resolves.toMatchObject({ status: "STOPPED" });
+		expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("previous");
 	});
 	it("keeps failed stop pending for automatic retry, never false STOPPED", async () => {
 		const h = setup();

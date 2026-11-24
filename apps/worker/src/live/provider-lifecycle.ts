@@ -21,9 +21,18 @@ import {
 	assertLiveEffectCurrent,
 	DB_NULL,
 	LIVE_EFFECT_OPEN_STATES,
+	liveChannelAccountId,
+	recordConfirmedStopDelivery,
 	replaceLiveRunStepLogSnapshot,
 } from "@bitovp/db";
 import type { SdkOps } from "../orchestrator/sdk-ops";
+import {
+	type DisplacedReadbacks,
+	displacedRetirementWrite,
+	type RtmpChannelSnapshot,
+	type RtmpRunSnapshot,
+	readDisplacedEncoders,
+} from "./displaced-encoders";
 import { tryLockCurrentPollChannel } from "./poll-channel-lock";
 
 /**
@@ -65,7 +74,7 @@ import { tryLockCurrentPollChannel } from "./poll-channel-lock";
  * (MEDIUM-1).
  */
 
-export type RunLifecycleRow = {
+export type RunLifecycleRow = RtmpRunSnapshot & {
 	aisaAnalysisId?: string | null;
 	aisaStatus?: string | null;
 	aisaSnapshot?: unknown;
@@ -154,6 +163,10 @@ const TERMINAL_RECONCILABLE_CHANNEL_STATUSES = [
 ] as const;
 
 const RUN_SELECT = {
+	stepLog: true,
+	previousProviderEncodingIds: true,
+	archivedRtmpAttempt: true,
+	rtmpRetirementEvidence: true,
 	aisaAnalysisId: true,
 	aisaStatus: true,
 	aisaSnapshot: true,
@@ -205,6 +218,10 @@ export function createProviderLifecycleReconciler(deps: {
 			return null;
 		}
 		return {
+			stepLog: run.stepLog,
+			previousProviderEncodingIds: run.previousProviderEncodingIds,
+			archivedRtmpAttempt: run.archivedRtmpAttempt,
+			rtmpRetirementEvidence: run.rtmpRetirementEvidence,
 			aisaAnalysisId: run.aisaAnalysisId ?? null,
 			aisaStatus: run.aisaStatus ?? null,
 			aisaSnapshot: run.aisaSnapshot,
@@ -516,6 +533,7 @@ export function createProviderLifecycleReconciler(deps: {
 	 * without asking the provider again or emitting twice for an ERROR row.
 	 */
 	async function commitTerminal(args: {
+		displaced: DisplacedReadbacks;
 		channelId: string;
 		run: RunLifecycleRow;
 		encodingId: string;
@@ -532,7 +550,11 @@ export function createProviderLifecycleReconciler(deps: {
 		pollEpoch?: number;
 		restartClaim?: LiveEffectClaimHandle;
 		signal?: AbortSignal;
-	}): Promise<{ runLanded: boolean; channelLanded: boolean }> {
+	}): Promise<{
+		runLanded: boolean;
+		channelLanded: boolean;
+		durableNotification?: boolean;
+	}> {
 		const aisa = aisaLiveFinalization({
 			...args.run,
 			providerStatus: args.status,
@@ -572,6 +594,7 @@ export function createProviderLifecycleReconciler(deps: {
 		const status = error === null ? "STOPPED" : "ERROR";
 		let runLanded = !args.persistRun;
 		let channelLanded = false;
+		let durableNotification = false;
 		try {
 			await deps.prisma.$transaction(async (tx) => {
 				args.signal?.throwIfAborted();
@@ -590,6 +613,14 @@ export function createProviderLifecycleReconciler(deps: {
 								id: args.run.id,
 								bitmovinEncodingId: args.encodingId,
 							}),
+							...(args.run.previousProviderEncodingIds !== undefined
+								? {
+										previousProviderEncodingIds: {
+											equals: [...args.run.previousProviderEncodingIds],
+										},
+										archivedRtmpAttempt: args.run.archivedRtmpAttempt ?? 0,
+									}
+								: {}),
 							providerTerminalAt: null,
 							// A late FINISHED observation cannot erase an intervening
 							// failure, even while the exact encoding ID remains unchanged.
@@ -612,6 +643,7 @@ export function createProviderLifecycleReconciler(deps: {
 					runLanded = runWrite.count === 1;
 					if (!runLanded) return;
 				}
+				let polledChannelName: string | undefined;
 				if (args.pollEpoch !== undefined) {
 					// A cached terminal repair skipped the run CAS above. Keep its
 					// exact epoch locked through the projection just like a fresh poll.
@@ -646,9 +678,44 @@ export function createProviderLifecycleReconciler(deps: {
 								},
 							},
 						},
-						select: { id: true },
+						select: { name: true },
 					});
 					if (!canProject) throw new PollChannelUnavailableError();
+					polledChannelName = canProject.name;
+				}
+				// New archive entries must invalidate an in-flight primary-only observation.
+				// When history exists, both the current account and every terminal receipt
+				// are rechecked under the same locks as the broadcast projection.
+				const archived =
+					!!args.run.previousProviderEncodingIds?.length ||
+					!!args.run.archivedRtmpAttempt ||
+					args.displaced.receipts.length > 0;
+				if (archived) {
+					const current = await tx.liveChannelRun.findFirst({
+						where: { id: args.run.id, liveChannelId: args.channelId },
+						select: {
+							stepLog: true,
+							previousProviderEncodingIds: true,
+							archivedRtmpAttempt: true,
+							rtmpRetirementEvidence: true,
+							liveChannel: {
+								select: { stepLog: true, bitmovinAccountId: true, plan: true },
+							},
+						},
+					});
+					const write =
+						current &&
+						displacedRetirementWrite(
+							current,
+							current.liveChannel,
+							args.displaced,
+						);
+					if (!write) throw new RunningCommitFenceLostError();
+					if (write.rtmpRetirementEvidence)
+						await tx.liveChannelRun.updateMany({
+							where: { id: args.run.id, liveChannelId: args.channelId },
+							data: write,
+						});
 				}
 				args.signal?.throwIfAborted();
 				const channelWrite = await tx.liveChannel.updateMany({
@@ -656,6 +723,19 @@ export function createProviderLifecycleReconciler(deps: {
 						id: args.channelId,
 						bitmovinEncodingId: args.encodingId,
 						status: { in: [...TERMINAL_RECONCILABLE_CHANNEL_STATUSES] },
+						...(args.run.previousProviderEncodingIds !== undefined
+							? {
+									runs: {
+										some: {
+											id: args.run.id,
+											previousProviderEncodingIds: {
+												equals: [...args.run.previousProviderEncodingIds],
+											},
+											archivedRtmpAttempt: args.run.archivedRtmpAttempt ?? 0,
+										},
+									},
+								}
+							: {}),
 						...(args.channelWrite?.where ?? {}),
 						...(finishedNormally ? { error: null } : {}),
 					},
@@ -675,7 +755,23 @@ export function createProviderLifecycleReconciler(deps: {
 				});
 				args.signal?.throwIfAborted();
 				channelLanded = channelWrite.count === 1;
-				if (args.restartClaim && !channelLanded)
+				if (
+					channelLanded &&
+					status === "STOPPED" &&
+					polledChannelName !== undefined
+				) {
+					await recordConfirmedStopDelivery(tx, {
+						liveChannelId: args.channelId,
+						liveChannelRunId: args.run.id,
+						scheduleIds: [],
+						channelName: polledChannelName,
+						notificationEligible: true,
+						status,
+						at: args.observedAt,
+					});
+					durableNotification = true;
+				}
+				if ((args.restartClaim || archived) && !channelLanded)
 					throw new RunningCommitFenceLostError();
 			});
 		} catch (error) {
@@ -687,7 +783,7 @@ export function createProviderLifecycleReconciler(deps: {
 			}
 			throw error;
 		}
-		return { runLanded, channelLanded };
+		return { runLanded, channelLanded, durableNotification };
 	}
 
 	async function assertRestartOwner(
@@ -726,7 +822,7 @@ export function createProviderLifecycleReconciler(deps: {
 	}
 
 	async function reconcile(args: {
-		channel: { id: string };
+		channel: { id: string } & RtmpChannelSnapshot;
 		run: RunLifecycleRow | null;
 		/** The EXACT encoding the caller is about to act on or trust. */
 		encodingId: string;
@@ -779,6 +875,17 @@ export function createProviderLifecycleReconciler(deps: {
 				`run ${run.id} carries encoding ${run.bitmovinEncodingId}, not ${encodingId} — refusing to reconcile across identities`,
 			);
 		}
+		const displacedPending =
+			"Displaced RTMP encoder retirement is not yet confirmed for this broadcast";
+		const observeDisplaced = () =>
+			readDisplacedEncoders(
+				run,
+				channel,
+				liveChannelAccountId(channel),
+				sdk,
+				deps.now,
+				args.signal,
+			);
 		if (
 			deriveProviderLifecycle(run, new Date(observedAt).getTime()) ===
 			"TERMINAL"
@@ -790,7 +897,10 @@ export function createProviderLifecycleReconciler(deps: {
 				new Date(observedAt);
 			const persistedObservedAt = persistedAt.toISOString();
 			const message = providerTerminalMessage(status, persistedObservedAt);
+			const displaced = await observeDisplaced();
+			if (!displaced) return unknown(displacedPending);
 			const repaired = await commitTerminal({
+				displaced,
 				channelId: channel.id,
 				run,
 				encodingId,
@@ -806,7 +916,10 @@ export function createProviderLifecycleReconciler(deps: {
 			args.signal?.throwIfAborted();
 			if (
 				run.providerFeederStopsEnqueuedAt === null &&
-				((args.fence === undefined && args.restartClaim === undefined) ||
+				((args.fence === undefined &&
+					args.restartClaim === undefined &&
+					!run.previousProviderEncodingIds?.length &&
+					!run.archivedRtmpAttempt) ||
 					repaired.runLanded)
 			) {
 				await enqueueTerminalFeederStops(run).catch((err) => {
@@ -816,7 +929,7 @@ export function createProviderLifecycleReconciler(deps: {
 					);
 				});
 			}
-			if (repaired.channelLanded) {
+			if (repaired.channelLanded && !repaired.durableNotification) {
 				await deps.emitChannel(channel.id, terminalError(status, run, message));
 			}
 			return {
@@ -831,10 +944,19 @@ export function createProviderLifecycleReconciler(deps: {
 				unknownSince: null,
 			};
 		}
-		const observation = args.observation ?? (await observe(sdk, encodingId));
+		let observation = args.observation ?? (await observe(sdk, encodingId));
 		args.signal?.throwIfAborted();
 		observedAt = observation.observedAt;
 		const nowMs = new Date(deps.now()).getTime();
+		let displaced: DisplacedReadbacks = {
+			accountId: liveChannelAccountId(channel),
+			receipts: [],
+		};
+		if (classifyProviderLifecycle(observation, nowMs) === "TERMINAL") {
+			const proof = await observeDisplaced();
+			if (proof) displaced = proof;
+			else observation = { ok: false, error: displacedPending, observedAt };
+		}
 		const lifecycle = classifyProviderLifecycle(observation, nowMs);
 		const now = new Date(observedAt);
 		const fenceWhere = {
@@ -912,6 +1034,7 @@ export function createProviderLifecycleReconciler(deps: {
 		// TERMINAL — reconcile it onto exactly this run, once.
 		const message = providerTerminalMessage(status ?? "ended", observedAt);
 		const committed = await commitTerminal({
+			displaced,
 			channelId: channel.id,
 			run,
 			encodingId,
@@ -956,7 +1079,7 @@ export function createProviderLifecycleReconciler(deps: {
 				err instanceof Error ? err.message : err,
 			);
 		});
-		if (terminal.channelLanded) {
+		if (terminal.channelLanded && !committed.durableNotification) {
 			await deps.emitChannel(channel.id, terminalError(status, run, message));
 		}
 		return terminal;

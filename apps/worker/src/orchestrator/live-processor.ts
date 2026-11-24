@@ -112,6 +112,11 @@ import {
 } from "../heartbeat-cadence";
 import type { BoundedObjectProbe } from "../inspect/processor";
 import {
+	type DisplacedReadbacks,
+	displacedRetirementWrite,
+	readDisplacedEncoders,
+} from "../live/displaced-encoders";
+import {
 	heartbeatSampleRef,
 	logHeartbeatStateChanges,
 } from "../live/heartbeat-state-log";
@@ -5442,8 +5447,8 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				throw new ProvisionLeaseLostError(liveChannelId);
 			}
 		};
-		/** Terminal cancellation and removal of its durable wake flag are one fact. */
-		const commitAisaCancellation = async (
+		/** Project cancellation and its exact encoder evidence under the same lease. */
+		const commitStartupCancellation = async (
 			entries: StepLogEntry[],
 			runId: string,
 			outcome: {
@@ -5451,6 +5456,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				error: string | null;
 				encodingId?: string;
 			},
+			displaced: DisplacedReadbacks,
 			proof?: AisaNeverStartedProof,
 		) =>
 			withFenceWrite(async () => {
@@ -5473,6 +5479,23 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						!run.cancelRequested
 					)
 						throw new ProvisionLeaseLostError(liveChannelId);
+					const retirementWrite = displacedRetirementWrite(
+						run,
+						channel,
+						displaced,
+					);
+					if (!retirementWrite)
+						throw new Error(
+							"Displaced RTMP encoder retirement is not yet confirmed",
+						);
+					if (
+						(channel.bitmovinEncodingId ?? null) !==
+							(outcome.encodingId ?? null) ||
+						(outcome.encodingId
+							? !liveStopRunOwnsEncoding(run, outcome.encodingId)
+							: !!run.bitmovinEncodingId)
+					)
+						throw new ProvisionLeaseLostError(liveChannelId);
 					const createdProof =
 						proof?.basis === "BOUND_CREATED_NOT_STARTED" ? proof : undefined;
 					const prospective = {
@@ -5487,14 +5510,15 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 							: {}),
 					};
 					if (
-						proof
+						isAisaManagedLivePlan(channel.plan) &&
+						(proof
 							? !aisaLiveNeverStarted(prospective, {
 									...channel,
 									...(outcome.encodingId
 										? { encoderStoppedConfirmedFor: outcome.encodingId }
 										: {}),
 								})
-							: !["COMPLETE", "FAILED"].includes(aisaLiveFinalization(run))
+							: !["COMPLETE", "FAILED"].includes(aisaLiveFinalization(run)))
 					)
 						throw new AisaLiveFinalizationPendingError();
 					const channelWrite = await tx.liveChannel.updateMany({
@@ -5527,7 +5551,10 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						data: {
 							status: outcome.status,
 							error: outcome.error,
-							cancelRequested: false,
+							...retirementWrite,
+							...(isAisaManagedLivePlan(channel.plan)
+								? { cancelRequested: false }
+								: {}),
 							endedAt: run.endedAt ?? new Date(deps.now()),
 							stepLog: entries as unknown as Prisma.InputJsonValue,
 							...(proof
@@ -5607,6 +5634,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		if (cancelling && pendingRun && !row.bitmovinEncodingId) {
 			const untouched = stepLogSchema.parse(row.stepLog);
 			if (
+				!pendingRun.bitmovinEncodingId &&
+				displacedRetirementWrite(pendingRun, row, {
+					accountId: liveChannelAccountId(row),
+					receipts: [],
+				}) &&
 				!untouched.some(
 					(entry) =>
 						(entry.kind === "CREATE_ENCODING" &&
@@ -5641,10 +5673,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					aisaCreateNotDispatched(untouched)
 				) {
 					try {
-						await commitAisaCancellation(
+						await commitStartupCancellation(
 							untouched,
 							current.id,
 							{ status: "STOPPED", error: null },
+							{ accountId: liveChannelAccountId(row), receipts: [] },
 							{
 								kind: "NEVER_STARTED",
 								basis: "CREATE_NOT_DISPATCHED",
@@ -5660,11 +5693,16 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						});
 						return "STOPPING";
 					}
-				} else
-					await persist(untouched, {
-						status: feeders.length ? "STOPPING" : "STOPPED",
-						error: null,
-					});
+				} else if (feeders.length) {
+					await persist(untouched, { status: "STOPPING", error: null });
+				} else {
+					await commitStartupCancellation(
+						untouched,
+						current.id,
+						{ status: "STOPPED", error: null },
+						{ accountId: liveChannelAccountId(row), receipts: [] },
+					);
+				}
 				if (feeders.length) return "STOPPING";
 				await emitChannel("CHANNEL_STOPPED", liveChannelId);
 				return { status: "STOPPED", canceledRunId: pendingRun.id };
@@ -6516,23 +6554,41 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						throw new AisaLiveFinalizationPendingError();
 					aisaFailure = proof === "FAILED";
 				}
-				if (isAisaManagedLivePlan(row.plan))
-					await commitAisaCancellation(
-						entries,
-						currentRunId,
-						{
-							status: aisaFailure ? "ERROR" : "STOPPED",
-							error: aisaFailure ? "AISA_LIVE_TERMINAL_FAILURE" : null,
-							...(encodingId ? { encodingId } : {}),
-						},
-						neverStartedProof,
+				const [retiring, retiringChannel] = await Promise.all([
+					deps.prisma.liveChannelRun.findFirst({
+						where: { liveChannelId },
+						orderBy: { seq: "desc" },
+					}),
+					deps.prisma.liveChannel.findUnique({ where: { id: liveChannelId } }),
+				]);
+				if (
+					retiring?.id !== currentRunId ||
+					!retiring.cancelRequested ||
+					!retiringChannel
+				)
+					throw new ProvisionLeaseLostError(liveChannelId);
+				const displaced = await readDisplacedEncoders(
+					retiring,
+					retiringChannel,
+					accountId,
+					sdk,
+					deps.now,
+				);
+				if (!displaced)
+					throw new Error(
+						"Displaced RTMP encoder retirement is not yet confirmed",
 					);
-				else
-					await persist(entries, {
+				await commitStartupCancellation(
+					entries,
+					currentRunId,
+					{
 						status: aisaFailure ? "ERROR" : "STOPPED",
 						error: aisaFailure ? "AISA_LIVE_TERMINAL_FAILURE" : null,
-						...(encodingId ? { encoderStoppedConfirmedFor: encodingId } : {}),
-					});
+						...(encodingId ? { encodingId } : {}),
+					},
+					displaced,
+					neverStartedProof,
+				);
 				await emitChannel(
 					aisaFailure ? "CHANNEL_ERROR" : "CHANNEL_STOPPED",
 					liveChannelId,

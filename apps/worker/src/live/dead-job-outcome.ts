@@ -122,11 +122,11 @@ export async function recordFinalRestartFailure(
 		parsed.data.effect?.action !== "RESTART"
 	)
 		return false;
-	const { liveChannelId, effect } = parsed.data;
 	return retireRestartAdmission(
 		prisma,
-		liveChannelId,
-		effect,
+		parsed.data.liveChannelId,
+		parsed.data.effect,
+		"FINAL_FAILURE",
 		message,
 		at,
 		emitEvent,
@@ -160,11 +160,13 @@ export function createExpiredRestartReconciler(
 					prisma,
 					claim.liveChannelId,
 					{
+						action:"RESTART",
 						liveChannelRunId: claim.liveChannelRunId,
 						providerEncodingId: claim.providerEncodingId,
 						idempotencyKey: claim.idempotencyKey,
 						admissionFenceVersion: claim.generation,
 					},
+					"FINAL_FAILURE",
 					"Restart worker expired without a confirmed provider result. Check the encoder or use Stop.",
 					at,
 					emitEvent,
@@ -176,21 +178,17 @@ export function createExpiredRestartReconciler(
 	};
 }
 
-async function retireRestartAdmission(
+export async function retireRestartAdmission(
 	prisma: AppPrismaClient,
 	liveChannelId: string,
-	effect: Pick<
-		LiveEffectIntent,
-		| "liveChannelRunId"
-		| "providerEncodingId"
-		| "idempotencyKey"
-		| "admissionFenceVersion"
-	>,
+	effect: LiveEffectIntent,
+	cause: "FINAL_FAILURE" | "INACTIVE_ORGANIZATION",
 	message: string,
 	at: Date,
 	emitEvent?: EmitProductEvent,
-	expiredClaimId?: string,
-) {
+	expiredClaimId?:string,
+): Promise<boolean> {
+	if (effect.action !== "RESTART") return false;
 	const error = redactSecrets(message);
 	const projected = await prisma.$transaction(async (tx) => {
 		// Lock in the same order as STOP admission and re-air. A run can change
@@ -222,6 +220,7 @@ async function retireRestartAdmission(
 		)
 			return false;
 		if (claim) {
+			if (cause === "INACTIVE_ORGANIZATION") return false;
 			const canRetire =
 				claim.state === "FAILED" ||
 				claim.state === "AMBIGUOUS" ||

@@ -128,7 +128,7 @@ import {
 } from "./live/provision-lease";
 import {
 	createStrandedRunReconciler,
-	retireTransitionalRuns,
+	recordExpiredProvisionFailure,
 } from "./live/reconcile-stranded-runs";
 import { createUncertainStopReconciler } from "./live/reconcile-uncertain-stops";
 import { createRunHeartbeatSummarizer } from "./live/run-heartbeat-summary";
@@ -2146,58 +2146,19 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 				) {
 					const liveChannelId = liveJob?.liveChannelId;
 					if (liveChannelId) {
-						await prisma.liveChannel
-							.updateMany({
-								where: {
-									id: liveChannelId,
-									status: { in: ["CREATED", "PROVISIONING", "STOPPING"] },
-									// Staleness guard :
-									// a row whose lease is still being renewed belongs to a
-									// live worker — this dead job's failure must not flip
-									// the winner's channel to ERROR. A stale or absent lease
-									// is the wedge this handler exists to clear.
-									OR: [
-										{ provisionClaimedAt: null },
-										{
-											provisionClaimedAt: {
-												lt: new Date(Date.now() - PROVISION_LEASE_MS),
-											},
-										},
-									],
-								},
-								data: {
-									status: "ERROR",
-									error: redactSecrets(err.message),
-									provisionClaimedAt: null,
-								},
-							})
-							.then(({ count }) => {
-								// review-336 C3: the run follows the CHANNEL verdict. A dead
-								// loser whose failure did not win the flip (a live lease, or
-								// a row already terminal) must not retire the WINNER's run —
-								// this was the one unfenced write left after .
-								if (count === 0) {
-									return;
-								}
-								// : the run dies WITH its job, or the partial unique
-								// index (one live run per channel) rejects every future start
-								// with RunAlreadyLiveError — thrown before the channel claim,
-								// so the channel is permanently unstartable. The status trio
-								// and endedAt semantics live in ONE module shared with the
-								// boot sweep (a RUNNING run is left alone — its encoder may
-								// genuinely be live at Bitmovin).
-								return retireTransitionalRuns(
-									prisma,
-									liveChannelId,
-									redactSecrets(err.message),
-								).then(() => undefined);
-							})
-							.catch((updateErr) =>
-								console.error(
-									"[worker:liveChannel] failed to mark channel/run ERROR:",
-									updateErr,
-								),
-							);
+						const at = new Date();
+						await recordExpiredProvisionFailure(
+							prisma,
+							liveChannelId,
+							redactSecrets(err.message),
+							new Date(at.getTime() - PROVISION_LEASE_MS),
+							at,
+						).catch((updateErr) =>
+							console.error(
+								"[worker:liveChannel] failed to mark channel/run ERROR:",
+								updateErr,
+							),
+						);
 					}
 				}
 				if (

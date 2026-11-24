@@ -744,6 +744,10 @@ export async function beginLiveEffect(
 				where: { id: input.liveChannelId },
 				select: {
 					status: true,
+					error: true,
+					plan: true,
+					stepLog: true,
+					bitmovinAccountId: true,
 					liveEffectFenceVersion: true,
 					bitmovinEncodingId: true,
 				},
@@ -751,7 +755,20 @@ export async function beginLiveEffect(
 			tx.liveChannelRun.findFirst({
 				where: { liveChannelId: input.liveChannelId },
 				orderBy: { seq: "desc" },
-				select: { id: true, bitmovinEncodingId: true, stepLog: true },
+				select: {
+					id: true,
+					bitmovinEncodingId: true,
+					stepLog: true,
+					status: true,
+					error: true,
+					providerStatus: true,
+					providerTerminalAt: true,
+					stopNotificationAt: true,
+					stopNotificationKind: true,
+					archivedRtmpAttempt: true,
+					previousProviderEncodingIds: true,
+					rtmpRetirementEvidence: true,
+				},
 			}),
 			tx.liveEffectClaim.findFirst({
 				where: {
@@ -788,6 +805,30 @@ export async function beginLiveEffect(
 				kind: "STALE",
 				reason:
 					"the planned live run or provider encoding is no longer current",
+			};
+		}
+		// A heartbeat may have completed this exact airing after the UI queued STOP.
+		// Its durable completion also owns the notification for the manual request.
+		if (
+			durableManualStop &&
+			!open &&
+			channel.status === "STOPPED" &&
+			channel.error === null &&
+			currentRun.status === "STOPPED" &&
+			currentRun.error === null &&
+			currentRun.providerTerminalAt &&
+			classifyProviderStatusWord(currentRun.providerStatus) === "TERMINAL" &&
+			currentRun.stopNotificationAt &&
+			currentRun.stopNotificationKind === "CHANNEL_STOPPED" &&
+			unconfirmedRtmpEncoders(
+				currentRun,
+				channel,
+				liveChannelAccountId(channel),
+			)?.length === 0
+		) {
+			return {
+				kind: "STALE",
+				reason: "the airing was already confirmed stopped",
 			};
 		}
 		// A queue-first manual STOP is the cost-safety override. Its run/provider

@@ -1,4 +1,4 @@
-import type { AppPrismaClient } from "@bitovp/db";
+import { type AppPrismaClient, LIVE_EFFECT_OPEN_STATES } from "@bitovp/db";
 
 /**
  *  — a LiveChannelRun stranded in a transitional state makes its
@@ -67,6 +67,61 @@ export async function retireTransitionalRuns(
 		},
 	});
 	return count;
+}
+
+/** A dead provision delivery cannot retire a cancellation, STOP or RESTART that won the channel. */
+export async function recordExpiredProvisionFailure(
+	prisma: AppPrismaClient,
+	liveChannelId: string,
+	error: string,
+	staleBefore: Date,
+	at: Date,
+): Promise<boolean> {
+	return prisma.$transaction(async (tx) => {
+		const locked = await tx.$queryRaw<
+			{ id: string }[]
+		>`SELECT id FROM "LiveChannel" WHERE id=${liveChannelId}::uuid FOR UPDATE`;
+		if (!locked.length) return false;
+		const run = await tx.liveChannelRun.findFirst({
+			where: { liveChannelId },
+			orderBy: { seq: "desc" },
+			select: { id: true, cancelRequested: true },
+		});
+		if (run?.cancelRequested) return false;
+		const { count } = await tx.liveChannel.updateMany({
+			where: {
+				id: liveChannelId,
+				status: { in: ["CREATED", "PROVISIONING"] },
+				OR: [
+					{ provisionClaimedAt: null },
+					{ provisionClaimedAt: { lt: staleBefore } },
+				],
+				...(run
+					? {
+							effectClaims: {
+								none: {
+									liveChannelRunId: run.id,
+									action: { in: ["STOP", "RESTART"] },
+									state: { in: [...LIVE_EFFECT_OPEN_STATES] },
+								},
+							},
+						}
+					: {}),
+			},
+			data: { status: "ERROR", error, provisionClaimedAt: null },
+		});
+		if (!count) return false;
+		if (run)
+			await tx.liveChannelRun.updateMany({
+				where: {
+					id: run.id,
+					liveChannelId,
+					status: { in: ["CREATED", "PROVISIONING"] },
+				},
+				data: { status: "ERROR", error, endedAt: at },
+			});
+		return true;
+	});
 }
 
 export function createStrandedRunReconciler(deps: { prisma: AppPrismaClient }) {

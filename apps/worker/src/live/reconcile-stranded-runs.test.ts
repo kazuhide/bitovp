@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	createStrandedRunReconciler,
+	recordExpiredProvisionFailure,
 	retireTransitionalRuns,
 	STRANDED_RUN_ERROR,
 	TRANSITIONAL_RUN_STATUSES,
@@ -61,5 +62,62 @@ describe("retiring transitional runs under ERROR channels", () => {
 		expect(args.where.status.in).toEqual([...TRANSITIONAL_RUN_STATUSES]);
 		expect(args.data).toMatchObject({ status: "ERROR", error: "job died" });
 		expect(args.data.endedAt).toBeInstanceOf(Date);
+	});
+});
+
+describe("late provision failure", () => {
+	it.each([
+		["STOPPING", false],
+		["PROVISIONING", true],
+	] as const)("retires only its provisioning channel and exact run from %s", async (status, expected) => {
+		const at = new Date("2026-11-25T14:00:00Z");
+		const staleBefore = new Date(at.getTime() - 120000);
+		const updateRun = vi.fn(async () => ({ count: 1 }));
+		const updateChannel = vi.fn(async ({ where }) => ({
+			count: where.status.in.includes(status) ? 1 : 0,
+		}));
+		const tx = {
+			$queryRaw: vi.fn(async () => [{ id: "channel" }]),
+			liveChannelRun: {
+				findFirst: vi.fn(async () => ({ id: "run", cancelRequested: false })),
+				updateMany: updateRun,
+			},
+			liveChannel: { updateMany: updateChannel },
+		};
+		const prisma = {
+			$transaction: vi.fn(async (fn) => fn(tx)),
+		} as unknown as Parameters<typeof recordExpiredProvisionFailure>[0];
+		expect(
+			await recordExpiredProvisionFailure(
+				prisma,
+				"channel",
+				"old provision failure",
+				staleBefore,
+				at,
+			),
+		).toBe(expected);
+		expect(updateChannel).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					OR: [
+						{ provisionClaimedAt: null },
+						{ provisionClaimedAt: { lt: staleBefore } },
+					],
+					effectClaims: {
+						none: expect.objectContaining({ liveChannelRunId: "run" }),
+					},
+				}),
+			}),
+		);
+		if (expected)
+			expect(updateRun).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: expect.objectContaining({
+						id: "run",
+						liveChannelId: "channel",
+					}),
+				}),
+			);
+		else expect(updateRun).not.toHaveBeenCalled();
 	});
 });

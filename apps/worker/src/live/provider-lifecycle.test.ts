@@ -46,9 +46,11 @@ function harness(now: () => string = () => NOW) {
 		async (): Promise<Partial<RunLifecycleRow>[]> => [],
 	);
 	const channelUpdateMany = vi.fn(async (_args?: unknown) => ({ count: 1 }));
+	const outboxCreate = vi.fn(async () => ({}));
 	const channelFindUnique = vi.fn(
-		async (_args?: unknown): Promise<{ id: string } | null> => ({
+		async (_args?: unknown): Promise<{ id: string; name?: string } | null> => ({
 			id: CHANNEL,
+			name: "Test channel",
 		}),
 	);
 	const feederFindMany = vi.fn(async () => [] as { id: string }[]);
@@ -71,6 +73,7 @@ function harness(now: () => string = () => NOW) {
 			updateMany: channelUpdateMany,
 			findUnique: channelFindUnique,
 		},
+		liveStopNotification: { create: outboxCreate },
 		feederSession: { findMany: feederFindMany },
 		$transaction: transaction,
 	} as unknown as AppPrismaClient;
@@ -84,6 +87,7 @@ function harness(now: () => string = () => NOW) {
 	});
 	return {
 		reconciler,
+		outboxCreate,
 		runFindFirst,
 		runFindMany,
 		runUpdateMany,
@@ -159,6 +163,45 @@ describe("reconcile — identity guards", () => {
 		expect(h.emitChannel).not.toHaveBeenCalled();
 	});
 
+	it.each([
+		"RUNNING",
+		"FINISHED",
+	] as const)("checks every displaced encoder before completing a broadcast with archived status %s", async (archivedStatus) => {
+		const h = harness();
+		const getEncodingStatus = vi.fn(async (id: string) => ({
+			status: id === "previous" ? archivedStatus : ("FINISHED" as const),
+		}));
+		const current = {
+			...run(),
+			previousProviderEncodingIds: ["previous"],
+			archivedRtmpAttempt: 1,
+			stepLog: [],
+		};
+		h.runFindFirst.mockResolvedValue({
+			...current,
+			liveChannel: { bitmovinAccountId: "fixture-account", stepLog: [] },
+		} as RunLifecycleRow);
+		const result = await h.reconciler.reconcile({
+			channel: {
+				id: CHANNEL,
+				bitmovinAccountId: "fixture-account",
+				stepLog: [],
+			},
+			run: current,
+			encodingId: "enc-1",
+			sdk: fakeSdk({ getEncodingStatus }),
+			fence: { epoch: 3 },
+		});
+		expect(getEncodingStatus.mock.calls.map(([id]) => id)).toEqual([
+			"enc-1",
+			"previous",
+		]);
+		expect(result.terminalised).toBe(archivedStatus === "FINISHED");
+		expect(h.emitChannel).not.toHaveBeenCalled();
+		expect(h.outboxCreate).toHaveBeenCalledTimes(
+			archivedStatus === "FINISHED" ? 1 : 0,
+		);
+	});
 	it("projects a completed RUNNING airing as STOPPED, not an encoding error", async () => {
 		const h = harness();
 		await h.reconciler.reconcile({

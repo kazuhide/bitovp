@@ -102,7 +102,9 @@ const EXPECTATIONS: Expectation[] = [
 		// cancelRequested clear. Both paths retain their existing post-commit emit.
 		// projectRestartState uses the same transaction for PROVISIONING and failure.
 		// Count its { status, error } write; the owned failure emits after commit.
-		writeCount: 13,
+		// Ordinary cancellation now shares the same two atomic terminal writes.
+		// The two former standalone persists disappear; both call sites still emit.
+		writeCount: 11,
 		emitCount: 11,
 	},
 	{
@@ -124,8 +126,9 @@ const EXPECTATIONS: Expectation[] = [
 		// Count their `status` shorthand too; the dual-write/emit total is unchanged.
 		file: "live/provider-lifecycle.ts",
 		writes: /data:\s*\{[^}]*\n\s*status(?::\s*"(ERROR|RUNNING)"|,)/gs,
+		// A clean heartbeat claims its durable per-airing notification in this transaction.
 		writeCount: 4,
-		emitCount: 2,
+		emitCount: 3,
 	},
 	{
 		// markTerminal's single write (STOPPED and ERROR share it; the emit
@@ -306,7 +309,8 @@ const EXPECTATIONS: Expectation[] = [
 	},
 ];
 
-const EMIT_CALL = /emitEvent\?\.\(|emitChannel\(|await deliver\(\{/g;
+const EMIT_CALL =
+	/emitEvent\?\.\(|emitChannel\(|await recordConfirmedStopDelivery\(|await deliver\(\{/g;
 
 describe("every terminal transition emits a product event (ledger #88)", () => {
 	for (const expectation of EXPECTATIONS) {

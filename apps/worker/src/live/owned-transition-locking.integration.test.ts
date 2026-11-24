@@ -21,6 +21,7 @@ import {
 	recordLiveStopFailure,
 	resolveLiveEffectsAfterConfirmedStop,
 } from "@bitovp/db";
+import type { Job } from "bullmq";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createAisaLiveOps } from "../orchestrator/aisa-live-ops";
 import { fakeSdk } from "../orchestrator/fake-sdk";
@@ -29,6 +30,7 @@ import {
 	type LiveChannelDeps,
 } from "../orchestrator/live-processor";
 import { createScheduleSweep } from "../scheduler/sweep";
+import { createTenantConsumer } from "../tenant/consumer";
 import {
 	createExpiredRestartReconciler,
 	recordDeadJobScheduleOutcomes,
@@ -39,6 +41,7 @@ import {
 	createProviderLifecycleReconciler,
 	type RunLifecycleRow,
 } from "./provider-lifecycle";
+import { recordExpiredProvisionFailure } from "./reconcile-stranded-runs";
 import { createUncertainStopReconciler } from "./reconcile-uncertain-stops";
 import { createStopNotificationSweep } from "./stop-notifications";
 
@@ -301,6 +304,15 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				reply.release();
 				expect((await processing)[0]?.status).toBe("rejected");
 				expect(
+					await recordExpiredProvisionFailure(
+						tenant,
+						f.channel.id,
+						"delayed provision failure",
+						now,
+						now,
+					),
+				).toBe(false);
+				expect(
 					await recordFinalRestartFailure(
 						tenant,
 						{ data: job, attemptsMade: 3, opts: { attempts: 3 } },
@@ -444,6 +456,184 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				error: "restart failed",
 				endedAt: now,
 			});
+		});
+
+		it("suppresses an inactive RESTART only for its own undispatched airing and generation", async () => {
+			const f = await fixture("PROVISIONING", lease);
+			const old = await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPED" },
+			});
+			const successor = await tenant.liveChannelRun.create({
+				data: {
+					liveChannelId: f.channel.id,
+					seq: 2,
+					status: "PROVISIONING",
+					bitmovinEncodingId: "successor",
+					outputPrefix: "",
+				},
+			});
+			const channel = await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					bitmovinEncodingId: "successor",
+					liveEffectFenceVersion: 1,
+					stepLog: [{ kind: "START_LIVE_ENCODING", status: "DONE" }],
+				},
+			});
+			const handler = vi.fn(async () => ({}));
+			const consume = createTenantConsumer({
+				prisma: tenant,
+				forEachOrganization: async () => {},
+				isOrganizationActive: async () => false,
+			})("liveChannel", handler);
+			const deliver = (runId: string, encodingId: string, generation: number) =>
+				consume({
+					data: {
+						organizationId: organizationIds[0],
+						payload: {
+							liveChannelId: channel.id,
+							action: "restart",
+							effect: {
+								action: "RESTART",
+								idempotencyKey: "manual:restart:" + randomUUID(),
+								liveChannelRunId: runId,
+								providerEncodingId: encodingId,
+								admissionFenceVersion: generation,
+							},
+						},
+					},
+				} as Job);
+			await expect(deliver(old.id, f.encodingId, 0)).rejects.toThrow(
+				"Organization is inactive",
+			);
+			await expect(deliver(successor.id, "successor", 0)).rejects.toThrow(
+				"Organization is inactive",
+			);
+			await expect(deliver(successor.id, "successor", 1)).rejects.toThrow(
+				"Organization is inactive",
+			);
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: channel.id },
+				}),
+			).toEqual(channel);
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: successor.id },
+				}),
+			).toEqual(successor);
+			await tenant.liveChannel.update({
+				where: { id: channel.id },
+				data: { provisionClaimedAt: null },
+			});
+			await expect(deliver(successor.id, "successor", 1)).rejects.toThrow(
+				"Organization is inactive",
+			);
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: channel.id },
+				}),
+			).toMatchObject({ status: "ERROR" });
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: successor.id },
+				}),
+			).toMatchObject({ status: "ERROR" });
+			expect(handler).not.toHaveBeenCalled();
+		});
+
+		it("a heartbeat verifies the whole rental, commits one notification and retires a queued manual STOP", async () => {
+			const f = await fixture("RUNNING", null);
+			const accountId = randomUUID();
+			const previous = "retained-" + randomUUID();
+			const channel = await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { plan: { bitmovin: { accountId } } },
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: {
+					previousProviderEncodingIds: [previous],
+					archivedRtmpAttempt: 1,
+				},
+			});
+			const h = reconciler();
+			let archivedStatus: "RUNNING" | "FINISHED" = "RUNNING";
+			const sdk = fakeSdk({
+				getEncodingStatus: vi.fn(async (id: string) => ({
+					status: id === previous ? archivedStatus : "FINISHED",
+				})),
+			});
+			const tick = async () =>
+				h.door.reconcile({
+					channel,
+					run: await h.door.loadCurrentRun(channel.id),
+					encodingId: f.encodingId,
+					sdk,
+					fence: { epoch: 7 },
+				});
+			expect(await tick()).toMatchObject({
+				lifecycle: "UNKNOWN",
+				channelLanded: false,
+			});
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: channel.id },
+				}),
+			).toMatchObject({ status: "RUNNING" });
+			expect(
+				await tenant.liveStopNotification.count({ where: { id: f.run.id } }),
+			).toBe(0);
+			archivedStatus = "FINISHED";
+			expect(await tick()).toMatchObject({
+				lifecycle: "TERMINAL",
+				channelLanded: true,
+			});
+			const run = await tenant.liveChannelRun.findUniqueOrThrow({
+				where: { id: f.run.id },
+			});
+			expect(run).toMatchObject({
+				status: "STOPPED",
+				providerStatus: "FINISHED",
+				stopNotificationKind: "CHANNEL_STOPPED",
+				stopNotificationAt: now,
+				stopNotificationState: "PENDING",
+				rtmpRetirementEvidence: [
+					{
+						accountId,
+						encodingId: previous,
+						disposition: "TERMINAL",
+						providerStatus: "FINISHED",
+					},
+				],
+			});
+			const effect = await beginLiveEffect(tenant, {
+				liveChannelId: channel.id,
+				liveChannelRunId: run.id,
+				providerEncodingId: f.encodingId,
+				idempotencyKey: "manual:stop:" + run.id,
+				ownerId: "delayed-queued-job",
+				expectedFenceVersion: 0,
+				action: "STOP",
+				supersedeOpen: true,
+				allowedChannelStatuses: ["RUNNING", "STOPPED"],
+				now,
+				expiresAt: new Date(now.getTime() + 60_000),
+			});
+			expect(effect.kind).toBe("STALE");
+			expect(
+				await tenant.liveEffectClaim.count({
+					where: { liveChannelRunId: run.id },
+				}),
+			).toBe(0);
+			expect(
+				await tenant.liveStopNotification.findMany({ where: { id: run.id } }),
+			).toMatchObject([
+				{ channelId: channel.id, kind: "CHANNEL_STOPPED", occurredAt: now },
+			]);
+			expect(h.emitChannel).not.toHaveBeenCalled();
+			expect(sdk.stopLiveEncoding).not.toHaveBeenCalled();
 		});
 
 		function running(

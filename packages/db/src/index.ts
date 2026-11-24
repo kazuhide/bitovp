@@ -117,6 +117,8 @@ export {
 	stopNotificationHistoryEligible,
 	unconfirmedRtmpEncoders,
 	unreservedStopTargets,
+	unresolvedOrphanLiveClaimTargets,
+	validLiveRetirementReceipts,
 	wasLiveStopAcknowledged,
 } from "./live-effect-claim";
 export { readLockedLiveStartState } from "./live-reair-guard";

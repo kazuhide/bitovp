@@ -528,6 +528,45 @@ export function liveStopKnownTargets(
 	return targets.complete ? targets.encodingIds : null;
 }
 
+/** A never-started archive receipt no longer applies after a RESTART targets the same encoder. */
+export function validLiveRetirementReceipts(
+	run: {
+		rtmpRetirementEvidence?: unknown;
+		previousProviderEncodingIds?: readonly string[];
+	},
+	history: readonly StopHistory[],
+	accountId: string | null,
+) {
+	return mergeRtmpRetirementEvidence(run.rtmpRetirementEvidence, []).filter(
+		(receipt) =>
+			receipt.accountId === accountId &&
+			(receipt.disposition === "TERMINAL" ||
+				(run.previousProviderEncodingIds?.includes(receipt.encodingId) &&
+					!history.some(
+						(claim) =>
+							claim.action === "RESTART" &&
+							claim.providerEncodingId === receipt.encodingId,
+					))),
+	);
+}
+
+/** Claims may outlive their run. Only exact terminal evidence on the surviving channel retires them. */
+export function unresolvedOrphanLiveClaimTargets(
+	history: readonly StopHistory[],
+	evidence: unknown,
+	accountId: string | null,
+) {
+	const empty = { stepLog: [], bitmovinEncodingId: null };
+	const inventory = outstandingLiveStopTargets(
+		{ ...empty, rtmpRetirementEvidence: evidence },
+		empty,
+		history,
+		accountId,
+		null,
+	);
+	return inventory.complete ? inventory.encodingIds : null;
+}
+
 /** All identities whose retirement still needs a readback on this account. */
 export function outstandingLiveStopTargets(
 	run: Parameters<typeof collectLiveStopTargets>[0],
@@ -538,19 +577,9 @@ export function outstandingLiveStopTargets(
 ) {
 	const inventory = collectLiveStopTargets(run, channel, history, accountId);
 	const retired = new Set(
-		mergeRtmpRetirementEvidence(run.rtmpRetirementEvidence, [])
-			.filter(
-				(r) =>
-					r.accountId === accountId &&
-					(r.disposition === "TERMINAL" ||
-						(run.previousProviderEncodingIds?.includes(r.encodingId) &&
-							!history.some(
-								(c) =>
-									c.providerEncodingId === r.encodingId &&
-									c.action === "RESTART",
-							))),
-			)
-			.map((r) => r.encodingId),
+		validLiveRetirementReceipts(run, history, accountId).map(
+			(r) => r.encodingId,
+		),
 	);
 	return {
 		complete: inventory.complete,

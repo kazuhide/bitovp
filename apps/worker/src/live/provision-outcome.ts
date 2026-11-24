@@ -12,7 +12,13 @@ export async function lockProvisionAiring(
 	return tx.liveChannelRun.findFirst({
 		where: { liveChannelId },
 		orderBy: { seq: "desc" },
-		select: { id: true, status: true, cancelRequested: true, stepLog:true, bitmovinEncodingId:true },
+		select: {
+			id: true,
+			status: true,
+			cancelRequested: true,
+			stepLog: true,
+			bitmovinEncodingId: true,
+		},
 	});
 }
 

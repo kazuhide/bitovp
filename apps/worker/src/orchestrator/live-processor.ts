@@ -5219,6 +5219,21 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				return await deps.prisma.$transaction(async (tx) => {
 					const latest = await lockProvisionAiring(tx, liveChannelId);
 					if ((latest?.id ?? null) !== runId) return false;
+					// An Analysis dispatch recorded by another callback on this exact run
+					// must survive even if our in-memory step snapshot predates its receipt.
+					if (latest && hasAisaLiveStepLog(latest.stepLog)) {
+						const restored = restoreLiveProvisionEvidence(
+							entries,
+							latest.stepLog,
+							latest.bitmovinEncodingId,
+						);
+						if (
+							!restored ||
+							JSON.stringify(restored) !==
+								JSON.stringify(stepLogSchema.parse(entries))
+						)
+							return false;
+					}
 					const log = entries as unknown as Prisma.InputJsonValue;
 					const changed = await tx.liveChannel.updateMany({
 						where: {

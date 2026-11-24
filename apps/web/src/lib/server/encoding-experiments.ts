@@ -287,6 +287,47 @@ function acceptsSoftwareValue(
 	);
 }
 
+function verifyX26xStructure(
+	settings: NonNullable<ExperimentTrialInput["software"]>,
+) {
+	if (settings.encoder !== "libx264" && settings.encoder !== "libx265") return;
+	const explicit = (option: string, ...aliases: string[]) => {
+		const values = [
+			settings.options[option],
+			...aliases.map((key) => settings.nativeOptions?.[key]),
+		].filter((value) => value !== undefined);
+		if (values.length > 1)
+			throw new EncodingExperimentError(
+				422,
+				"INVALID_ENCODER_SETTING",
+				`Specify only one spelling for ${option}`,
+				"software",
+			);
+		return values[0];
+	};
+	const bframes = explicit("bf", "bframes");
+	explicit("refs", "ref", "frameref");
+	const keyint = explicit("g", "keyint");
+	if (
+		settings.encoder === "libx264" &&
+		bframes !== undefined &&
+		keyint !== undefined &&
+		/^[+-]?\d+$/.test(keyint)
+	) {
+		const interval = BigInt(keyint);
+		if (
+			(settings.nativeOptions?.keyint !== undefined || interval >= 0n) &&
+			BigInt(bframes) >= (interval < 1n ? 1n : interval)
+		)
+			throw new EncodingExperimentError(
+				422,
+				"INVALID_ENCODER_SETTING",
+				"libx264 requires fewer B-frames than the keyframe interval",
+				"software",
+			);
+	}
+}
+
 async function verifyTrial(
 	root: string,
 	organizationId: string,
@@ -326,6 +367,7 @@ async function verifyTrial(
 					);
 			}
 		}
+		verifyX26xStructure(settings);
 	}
 	if (!runtime.supportedCodecs.some((codec) => codec === trial.codec))
 		throw new EncodingExperimentError(

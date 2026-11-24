@@ -575,6 +575,61 @@ it.each([
 	).rejects.toMatchObject({ code: "INVALID_ENCODER_SETTING" });
 });
 
+it.each([
+	["libx264", { bf: "16", g: "17" }, {}, true],
+	["libx264", { g: "-1" }, { bframes: "16" }, true],
+	["libx264", { refs: "-1" }, { keyint: "infinite" }, true],
+	["libx264", { g: "16" }, { bframes: "16" }, false],
+	["libx264", { bf: "16" }, { keyint: "16" }, false],
+	["libx264", { bf: "30" }, {}, false],
+	["libx264", {}, { ref: "2", frameref: "2" }, false],
+	["libx265", { bf: "-1" }, { bframes: "16" }, false],
+	["libx265", { refs: "2" }, { ref: "3" }, false],
+	["libx265", { g: "30" }, { keyint: "30" }, false],
+	["libx265", { g: "16" }, { bframes: "16" }, true],
+] as const)("verifies frame structure for %s, %j, %j", async (encoder, options, nativeOptions, valid) => {
+	const codec = encoder === "libx264" ? "H264" : "HEVC";
+	const field = (name: string, minimum: string) => ({
+		name,
+		type: "int",
+		minimum,
+		maximum: "16",
+		description: "",
+	});
+	fake.readRuntime.mockResolvedValue({
+		...cpuRuntime,
+		supportedCodecs: [codec],
+		softwareEncoders: [
+			{
+				encoder,
+				codec,
+				options: [
+					{ ...field("bf", "0"), choices: ["-1"] },
+					{ ...field("refs", "1"), choices: ["-1"] },
+					{ name: "g", type: "int", description: "" },
+				],
+				nativeOptions: [
+					field("bframes", "0"),
+					field("ref", "1"),
+					field("frameref", "1"),
+					{ name: "keyint", type: "string", description: "" },
+				],
+				limitations: [],
+			},
+		],
+	});
+	const result = validateExperimentTrial(ctx.organizationId, {
+		...cpuTrial,
+		codec,
+		software: { encoder, options, nativeOptions },
+	});
+	if (valid) await expect(result).resolves.toMatchObject({ valid: true });
+	else
+		await expect(result).rejects.toMatchObject({
+			code: "INVALID_ENCODER_SETTING",
+		});
+});
+
 it("uses the CPU campaign identity for software batch admission", async () => {
 	fake.enqueue.mockImplementationOnce((_ctx, _id, _key, _hash, prepare) =>
 		prepare({ capabilityId: runtimeId, runtime: cpuRuntime }),

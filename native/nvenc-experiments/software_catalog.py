@@ -300,6 +300,17 @@ def encoder_catalog(encoder, private, generic):
     options["passes"] = {"name": "passes", "type": "int", "minimum": "1", "maximum": "2",
                          "default": "1", "choices": ["1", "2"],
                          "description": "Managed encoding passes; two-pass support depends on the installed library."}
+    if encoder in {"libx264", "libx265"}:
+        # x264 encoder_validate_parameters() silently clips these; x265_check_params()
+        # uses the same B-frame and reference limits. AVCodecContext int ranges
+        # alone do not describe either encoder's effective range.
+        for name, lower in (("bf", "0"), ("refs", "1")):
+            if name in options:
+                options[name].update(minimum=lower, maximum="16", choices=["-1"])
+                options[name]["description"] += " Use -1 to inherit the encoder default."
+        for name, lower in (("bframes", "0"), ("ref", "1"), ("frameref", "1"), ("dpb-size", "1")):
+            if name in native:
+                native[name].update(type="int", minimum=lower, maximum="16")
     return {"encoder": encoder, "codec": codec, "options": [options[k] for k in sorted(options)],
             "nativeOptions": [native[k] for k in sorted(native)],
             "limitations": [{"name": k, "reason": v} for k, v in sorted(limitations.items())]}
@@ -383,6 +394,23 @@ def validate_value(encoder, field, value, *, native):
                 raise ValueError("Out of range: " + name)
 
 
+def validate_x26x_structure(encoder, options, native):
+    def explicit(option, *aliases):
+        values = ([options[option]] if option in options else []) + [native[k] for k in aliases if k in native]
+        if len(values) > 1:
+            raise ValueError("Specify only one spelling for " + option)
+        return values[0] if values else None
+
+    bframes = explicit("bf", "bframes")
+    explicit("refs", "ref", "frameref")
+    keyint = explicit("g", "keyint")
+    if encoder == "libx264" and bframes is not None and keyint is not None and INTEGER.fullmatch(keyint):
+        # FFmpeg g < 0 preserves the preset; libx264 clips native keyint to at least one.
+        interval = int(keyint)
+        if ("keyint" in native or interval >= 0) and int(bframes) > max(interval, 1) - 1:
+            raise ValueError("libx264 requires fewer B-frames than the keyframe interval")
+
+
 def build_software_options(software, codec, encoders):
     if not isinstance(software, dict) or not {"encoder", "options"} <= software.keys() <= {
             "encoder", "options", "nativeOptions"}:
@@ -409,4 +437,6 @@ def build_software_options(software, codec, encoders):
                 args.extend(["-" + name + ":v", value])
         if entries:
             args.extend(["-" + ENCODERS[encoder][1] + ":v", ":".join(entries)])
+    if encoder in {"libx264", "libx265"}:
+        validate_x26x_structure(encoder, software["options"], software.get("nativeOptions", {}))
     return args

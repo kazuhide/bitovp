@@ -35,6 +35,8 @@ Example trial file for a ten-second H.264 software encode:
 
 Use `H264/libx264`, `HEVC/libx265`, `VP9/libvpx-vp9`, or `AV1/libsvtav1`. Values are strings. Leave out an option to inherit the installed encoder default. Use exact catalog names, including for native library parameters. Validate the trial, submit a batch with a stable idempotency key, and export measurements by campaign. Use a distinct `replicateId` for intentional repeats of identical settings. A CPU result identifies its scoring profile as `official-vmaf-cpu-0.6.1`. A change to the runtime fingerprint requires a new campaign.
 
+In the NDJSON export, `input.software` stores the requested settings. Use each successful row’s `result.videoBytes`, `durationTicks`, `timeBase`, `observedGopFrames` and `meanVmaf` for measured outcomes. Encoder presets and lookahead can affect frame-level decisions, so use the measured outputs as training labels.
+
 ## Prepare the Linux NVENC worker
 
 Build the [pinned private runtime](../../native/nvenc-experiments/build-runtime.sh) on a Linux system with a compatible NVIDIA driver, CUDA Toolkit, and C/C++ build tools. The build needs Meson, Ninja, NASM, pkg-config, make, curl, and Python. Hold the assets and the worker work directory on the same managed Linux host as the web app, or mount the same directory into both deployments. The Web process needs read access to registrations and the worker health file. Only operators and the worker should have write access to its managed directories.

@@ -11,6 +11,8 @@ def help_for(args):
 AVCodecContext AVOptions:
   -b                 <int64>      E..VA...... set bitrate (in bits/s) (from 0 to I64_MAX) (default 200000)
   -g                 <int>        E..V....... GOP length (from INT_MIN to INT_MAX) (default 12)
+  -bf                <int>        E..V....... B frames (from -1 to INT_MAX)
+  -refs              <int>        E..V....... Reference pictures (from -1 to INT_MAX)
 
 other AVOptions:
   -threads           <int>        E..V....... Unrelated section
@@ -41,7 +43,7 @@ class CatalogTest(unittest.TestCase):
         self.assertEqual([r["encoder"] for r in self.encoders], ["libx264", "libvpx-vp9", "libsvtav1"])
         catalog = self.encoders[0]
         fields = {f["name"]: f for f in catalog["options"]}
-        self.assertEqual(set(fields), {"b", "g", "passes", "flags", "force_key_frames", "quality"})
+        self.assertEqual(set(fields), {"b", "bf", "refs", "g", "passes", "flags", "force_key_frames", "quality"})
         self.assertEqual(fields["quality"], {"name": "quality", "type": "int", "choices": ["good"],
                          "description": "Quality", "minimum": "-1", "maximum": "INT_MAX", "default": "good"})
         self.assertNotIn("default", fields["b"])
@@ -81,6 +83,29 @@ class CatalogTest(unittest.TestCase):
                          ("ts_periodicity", "17"), ("ts_target_bitrate", "20,abc")]:
             with self.subTest(key=key), self.assertRaises(ValueError):
                 self.encode("libvpx-vp9", {}, {key: bad})
+
+    def test_x26x_structure_values_match_encoder_limits_in_both_namespaces(self):
+        def all_help(args):
+            if args[-1] == "encoder=libx265":
+                return help_for([*args[:-1], "encoder=libx264"]).replace("libx264", "libx265").replace("x264-params", "x265-params")
+            return help_for(args)
+
+        self.encoders = discover_software_encoders("ffmpeg", capture_help=all_help)
+        for encoder in ("libx264", "libx265"):
+            for options, native in [({"bf": "30"}, {}), ({}, {"bframes": "17"}), ({"refs": "0"}, {}),
+                                    ({"refs": "17"}, {}), ({}, {"ref": "17"}), ({}, {"ref": "0"}),
+                                    ({"bf": "3"}, {"bframes": "4"}), ({"refs": "4"}, {"ref": "3"}),
+                                    ({"g": "30"}, {"keyint": "60"})]:
+                with self.subTest(encoder=encoder, options=options, native=native), self.assertRaises(ValueError):
+                    self.encode(encoder, options, native)
+            self.encode(encoder, {"bf": "-1", "refs": "-1"})
+            self.encode(encoder, {"bf": "16", "refs": "16"})
+        for options, native in [({}, {"dpb-size": "17"}), ({}, {"ref": "2", "frameref": "3"}),
+                                ({"g": "4"}, {"bframes": "4"}), ({"bf": "4"}, {"keyint": "4"})]:
+            with self.subTest(options=options, native=native), self.assertRaises(ValueError):
+                self.encode("libx264", options, native)
+        self.encode("libx264", {"bf": "3"}, {"keyint": "4"})
+        self.encode("libx264", {"bf": "16"}, {"keyint": "infinite"})
 
     @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg is unavailable")
     def test_installed_encoders_accept_native_settings(self):

@@ -214,6 +214,45 @@ function optionFor(
 	return option;
 }
 
+it("creates a manifest-free plan when a MoQ relay is chosen in the Live wizard", async () => {
+	const credential = {
+		id: "77000000-0000-4000-8000-000000000001",
+		label: "Test relay",
+		provider: "MOQ",
+	};
+	apiFetch.mockImplementation(async (url: string) => {
+		if (url === "/api/credentials") return [...CREDENTIALS, credential];
+		if (url.startsWith("/api/live-channels/moq-readiness?"))
+			return { status: "ready", issues: [] };
+		return [];
+	});
+	const select = await outputCredentialSelect();
+	const option = await screen.findByRole("option", { name: /Test relay/ });
+	expect(option).toBeEnabled();
+	await userEvent.selectOptions(select, credential.id);
+	expect(screen.queryByLabelText("Bucket")).not.toBeInTheDocument();
+	fireEvent.change(screen.getByLabelText("Track namespace"), {
+		target: { value: "new-channel" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "1. Basics" }));
+	fireEvent.change(screen.getByLabelText("Channel name"), {
+		target: { value: "New MoQ channel" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Plan JSON" }));
+	const json = document.querySelector("aside pre")?.textContent;
+	const plan = liveChannelPlanSchema.parse(JSON.parse(json ?? "null"));
+	expect(plan.outputs).toEqual([
+		expect.objectContaining({
+			kind: "MOQ",
+			credentialId: credential.id,
+			draftVersion: "DRAFT_16",
+			trackNamespace: ["new-channel"],
+		}),
+	]);
+	expect(plan.liveManifests).toEqual([]);
+	expect(plan.muxings.every((muxing) => muxing.kind === "FMP4")).toBe(true);
+});
+
 it.each([
 	["en", "Output destination", "Access permissions"],
 	["ja", "\u51fa\u529b\u5148", "\u30a2\u30af\u30bb\u30b9\u6a29"],

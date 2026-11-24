@@ -6,6 +6,7 @@ import {
 	type CredentialProviderId,
 	type CredentialSummaryWire,
 	isAisaManagedLivePlan,
+	moqDraftVersionSchema,
 } from "@bitovp/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
@@ -283,6 +284,7 @@ export function LiveWizard({
 		featureSession.fetchStatus,
 	]);
 	const allCredentials = credentials.data ?? [];
+	const isMoq = state.output.kind === "MOQ";
 	const validationOptions = {
 		credentialProviders: new Map(
 			(credentials.data ?? []).map((c) => [c.id, c.provider]),
@@ -308,10 +310,9 @@ export function LiveWizard({
 			}
 		: rawEvaluation;
 	const planAccount = imported ? importedAccountId(imported) : undefined;
-	const moqOutput =
-		imported && evaluation.ok
-			? evaluation.plan.outputs.find((output) => output.kind === "MOQ")
-			: undefined;
+	const moqOutput = evaluation.ok
+		? evaluation.plan.outputs.find((output) => output.kind === "MOQ")
+		: undefined;
 	const moqReadiness = useMoqPreviewReadiness(
 		moqOutput
 			? {
@@ -426,6 +427,23 @@ export function LiveWizard({
 	const outputSelectable = (provider: string) =>
 		liveOutputKindForProvider(provider) !== null;
 
+	function patchMoqOutput(
+		partial: Partial<NonNullable<LiveWizardState["output"]["moq"]>>,
+	) {
+		patch({
+			output: {
+				...state.output,
+				moq: {
+					key: "origin",
+					draftVersion: "DRAFT_16",
+					trackNamespace: [],
+					...state.output.moq,
+					...partial,
+				},
+			},
+		});
+	}
+
 	function selectOutputCredential(id: string) {
 		if (!id) {
 			setState((prev) => ({
@@ -463,6 +481,9 @@ export function LiveWizard({
 					...(kind === "AKAMAI_MSL"
 						? {}
 						: { mslStreamFormat: undefined, mslVersion: undefined }),
+					...(kind === "MOQ" && prev.output.kind !== "MOQ"
+						? { publicRead: false, explicitPrivateAcl: undefined }
+						: {}),
 				},
 			};
 			/*
@@ -952,7 +973,9 @@ export function LiveWizard({
 							<Field
 								label={t("wizard.credential")}
 								htmlFor="lw-out-cred"
-								help={t("ui.s3AzureBlobSftpLiveSegmentsAnd")}
+								help={
+									isMoq ? undefined : t("ui.s3AzureBlobSftpLiveSegmentsAnd")
+								}
 							>
 								<SelectNative
 									id="lw-out-cred"
@@ -990,6 +1013,48 @@ export function LiveWizard({
 								</SelectNative>
 							</Field>
 							<NewCredentialLink />
+							{isMoq ? (
+								<>
+									<Field
+										label={t("liveWizard.moqDraft")}
+										htmlFor="lw-moq-draft"
+									>
+										<SelectNative
+											id="lw-moq-draft"
+											value={state.output.moq?.draftVersion ?? "DRAFT_16"}
+											onChange={(e) => {
+												const draft = moqDraftVersionSchema.safeParse(
+													e.target.value,
+												);
+												if (draft.success)
+													patchMoqOutput({ draftVersion: draft.data });
+											}}
+										>
+											{moqDraftVersionSchema.options.map((draft) => (
+												<option key={draft} value={draft}>
+													{draft}
+												</option>
+											))}
+										</SelectNative>
+									</Field>
+									<Field
+										label={t("liveWizard.moqNamespace")}
+										htmlFor="lw-moq-namespace"
+										tooltip={t("liveWizard.moqNamespaceHelp")}
+									>
+										<Textarea
+											id="lw-moq-namespace"
+											rows={2}
+											value={state.output.moq?.trackNamespace?.join("\n") ?? ""}
+											onChange={(e) =>
+												patchMoqOutput({
+													trackNamespace: e.target.value.split("\n"),
+												})
+											}
+										/>
+									</Field>
+								</>
+							) : null}
 							{state.output.kind === "LIVE_MEDIA_INGEST" ? (
 								<Field
 									label={t("fields.lmiScte35Passthrough")}
@@ -1104,7 +1169,8 @@ export function LiveWizard({
 							 * credential and a streamFormat and NO bucket, so asking for one
 							 * invites a value the plan has no field to put it in. Only the
 							    Browse BUTTON was guarded — the box itself still rendered. */}
-							{state.output.kind !== "SFTP" &&
+							{!isMoq &&
+							state.output.kind !== "SFTP" &&
 							state.output.kind !== "AKAMAI_MSL" &&
 							state.output.kind !== "LIVE_MEDIA_INGEST" &&
 							state.output.kind !== "AKAMAI_NETSTORAGE" ? (
@@ -1143,32 +1209,35 @@ export function LiveWizard({
 									</div>
 								</Field>
 							) : null}
-							<Field
-								label={t("uiX.outputFolderLabel")}
-								htmlFor="lw-out-base"
-								help={t("ui.theChannelNameIsAppendedAutomaticallyOutputs", {
-									heightToken: "{height}",
-									bitrateToken: "{bitrate}",
-								})}
-							>
-								<Input
-									id="lw-out-base"
-									placeholder="output"
-									value={
-										splitOutputFolder(state.output.basePath, state.name) ??
-										state.output.basePath
-									}
-									onChange={(e) =>
-										patch({
-											output: {
-												...state.output,
-												basePath: joinOutputName(e.target.value, state.name),
-											},
-										})
-									}
-								/>
-							</Field>
-							{state.output.kind !== "SFTP" &&
+							{!isMoq ? (
+								<Field
+									label={t("uiX.outputFolderLabel")}
+									htmlFor="lw-out-base"
+									help={t("ui.theChannelNameIsAppendedAutomaticallyOutputs", {
+										heightToken: "{height}",
+										bitrateToken: "{bitrate}",
+									})}
+								>
+									<Input
+										id="lw-out-base"
+										placeholder="output"
+										value={
+											splitOutputFolder(state.output.basePath, state.name) ??
+											state.output.basePath
+										}
+										onChange={(e) =>
+											patch({
+												output: {
+													...state.output,
+													basePath: joinOutputName(e.target.value, state.name),
+												},
+											})
+										}
+									/>
+								</Field>
+							) : null}
+							{!isMoq &&
+							state.output.kind !== "SFTP" &&
 							state.output.kind !== "LIVE_MEDIA_INGEST" &&
 							state.output.kind !== "AKAMAI_NETSTORAGE" ? (
 								<label
@@ -1195,7 +1264,9 @@ export function LiveWizard({
 						</>
 					) : null}
 
-					{step === 3 && !aisaEnabled ? (
+					{step === 3 &&
+					!aisaEnabled &&
+					(!isMoq || state.mirror || state.additionalMirrors?.length) ? (
 						<LiveMirrorListSection
 							state={state}
 							credentials={allCredentials}
@@ -1210,7 +1281,13 @@ export function LiveWizard({
 						/>
 					) : null}
 					{step === 6 && !aisaEnabled ? (
-						<LiveManifestListSection state={state} onPatch={patch} />
+						isMoq ? (
+							<p className="text-sm text-zinc-400">
+								{t("liveWizard.moqCatalog")}
+							</p>
+						) : (
+							<LiveManifestListSection state={state} onPatch={patch} />
+						)
 					) : null}
 
 					{step === 5 && aisaPreviewEnabled ? (
@@ -1272,6 +1349,7 @@ export function LiveWizard({
 					) : null}
 					{step === 8 ? (
 						<div className="space-y-3">
+							{moqOutput ? <MoqPreviewReadiness {...moqReadiness} /> : null}
 							<p className="text-sm text-zinc-400">
 								{t("ui.reviewThePlanOnTheRightThe")}
 							</p>

@@ -138,7 +138,7 @@ it("loads a channel into editable fields without creation and keeps edits on cac
 it.each([
 	"FMP4",
 	"CMAF",
-] as const)("copies a %s MoQ plan as editable JSON and preserves its settings on explicit creation", async (kind) => {
+] as const)("copies a %s MoQ channel into the wizard and preserves its settings on creation", async (kind) => {
 	const id = "70c37149-8ccc-4b3d-bc64-0fa06e49e82b";
 	const newChannelId = "fb801929-e7a4-450d-876e-69bf643eaaa0";
 	const credentialId = "eee3c000-00e3-4aaa-8aaa-000000000aaa";
@@ -155,11 +155,11 @@ it.each([
 	plan.bitmovin = {
 		accountId: "5a6ad9b8-2cae-4485-a0b3-99130b771be5",
 		cloudRegion: "AKAMAI_JP_OSA",
-		encoderVersion: "BETA",
+		encoderVersion: "2.294.0",
 		labels: ["moq-example"],
 	};
 	plan.liveInput = {
-		key: "primary",
+		key: "contribution",
 		kind: "REDUNDANT_RTMP",
 		name: "Primary RTMP input",
 		ingestPoints: [{ applicationName: "live", streamKey: "ExampleStream" }],
@@ -174,24 +174,47 @@ it.each([
 			trackNamespace: ["sample-broadcast"],
 		},
 	];
-	plan.renditions = [plan.renditions[1], plan.renditions[3]];
+	plan.renditions = [
+		{
+			...plan.renditions[1],
+			bitrate: 2_500_000,
+			rate: 30,
+			presetConfiguration: "LIVE_LOW_LATENCY",
+			minGop: 30,
+			maxGop: 30,
+			rcLookahead: 1,
+			bframes: 0,
+			openGop: false,
+			sceneCutThreshold: 0,
+		},
+		plan.renditions[3],
+	];
 	plan.muxings = [
 		{
 			...plan.muxings[1],
 			kind,
 			segmentLength: kind === "CMAF" ? 0.5 : 1,
 			...(kind === "CMAF" ? { framesPerCmafChunk: 3 } : {}),
-			destination: { outputKey: "relay", path: "test/video" },
+			destination: { outputKey: "relay", path: "video" },
 		},
 		{
 			...plan.muxings[3],
 			kind,
 			segmentLength: kind === "CMAF" ? 0.5 : 1,
-			destination: { outputKey: "relay", path: "test/audio" },
+			destination: { outputKey: "relay", path: "audio" },
 		},
 	];
 	plan.liveManifests = [];
-	plan.start = { encodingOption: "CUSTOM", streamKey: "ExampleStream" };
+	plan.start = {
+		encodingOption: "CUSTOM",
+		streamKey: "ExampleStream",
+		autoRestart: { restartOnEncoderError: false },
+		autoShutdown: {
+			bytesReadTimeoutSeconds: 60,
+			streamTimeoutMinutes: 10,
+			waitingForFirstConnectTimeoutMinutes: 10,
+		},
+	};
 	expect(
 		validateLiveChannel(liveChannelPlanSchema.parse(plan)).filter(
 			(issue) => issue.level === "error",
@@ -217,20 +240,34 @@ it.each([
 		return [];
 	});
 	renderWithQuery(<LiveWizard duplicateFrom={id} />);
-	fireEvent.click(await screen.findByRole("button", { name: "Edit JSON" }));
-	const editor = screen.getByLabelText("Live channel plan JSON");
-	expect(editor).toHaveValue(JSON.stringify(plan, null, 2));
-	expect(screen.queryByRole("textbox", { name: "Channel name" })).toBeNull();
-	expect(
-		screen.queryByRole("button", { name: "Create channel (imported plan)" }),
-	).toBeNull();
-	const edited = { ...plan, name: "Edited MoQ channel" };
-	fireEvent.change(editor, { target: { value: JSON.stringify(edited) } });
-	fireEvent.click(screen.getByRole("button", { name: "Load plan" }));
-	const create = await screen.findByRole("button", {
-		name: "Create channel (imported plan)",
+	const name = await screen.findByRole("textbox", { name: "Channel name" });
+	expect(name).toHaveValue(plan.name);
+	expect(screen.queryByRole("button", { name: "Edit JSON" })).toBeNull();
+	fireEvent.change(name, { target: { value: "Edited MoQ channel" } });
+	fireEvent.click(screen.getByRole("button", { name: "4. Output" }));
+	expect(screen.getByRole("combobox", { name: "Credential" })).toHaveValue(
+		credentialId,
+	);
+	const draft = screen.getByRole("combobox", { name: "MoQT draft" });
+	expect(draft).toHaveValue("DRAFT_16");
+	fireEvent.change(draft, { target: { value: "DRAFT_18" } });
+	const namespace = screen.getByRole("textbox", { name: "Track namespace" });
+	expect(namespace).toHaveValue("sample-broadcast");
+	fireEvent.change(namespace, { target: { value: "edited-broadcast\nwide" } });
+	fireEvent.click(screen.getByRole("button", { name: "9. Review" }));
+	const create = screen.getByRole("button", {
+		name: "Create live channel",
 	});
 	await waitFor(() => expect(create).toBeEnabled());
+	const readiness = new URLSearchParams({
+		credentialId,
+		draftVersion: "DRAFT_18",
+		namespaceComponents: "2",
+	});
+	expect(apiFetch).toHaveBeenCalledWith(
+		`/api/live-channels/moq-readiness?${readiness}`,
+		expect.objectContaining({ cache: "no-store" }),
+	);
 
 	const writes = () =>
 		apiFetch.mock.calls.filter(([, init]) =>
@@ -250,7 +287,20 @@ it.each([
 			}),
 		],
 	]);
-	expect(JSON.parse(writes()[0]?.[1].body)).toEqual({ plan: edited });
+	const submitted = JSON.parse(writes()[0]?.[1].body).plan;
+	expect(liveChannelPlanSchema.parse(submitted)).toEqual(
+		liveChannelPlanSchema.parse({
+			...plan,
+			name: "Edited MoQ channel",
+			outputs: [
+				{
+					...plan.outputs[0],
+					draftVersion: "DRAFT_18",
+					trackNamespace: ["edited-broadcast", "wide"],
+				},
+			],
+		}),
+	);
 });
 
 it("does not expose a blank editable form while copying or after a source failure", async () => {

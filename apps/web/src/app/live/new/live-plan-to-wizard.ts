@@ -425,7 +425,23 @@ function outputState(
 		return { ...D.output, basePath: base, publicRead, ...privateAcl };
 	}
 	if (o.kind === "MOQ") {
-		throw new Error("MoQ outputs require expert JSON import");
+		if (o.trackNamespace.some((part) => /[\r\n]/u.test(part))) {
+			throw new Error("A MoQ namespace component must fit on one line");
+		}
+		return {
+			...D.output,
+			basePath: base,
+			publicRead,
+			...privateAcl,
+			kind: o.kind,
+			credentialId: o.credentialId,
+			name: o.name,
+			moq: {
+				key: o.key,
+				draftVersion: o.draftVersion,
+				trackNamespace: o.trackNamespace,
+			},
+		};
 	}
 	/**
 	 * AKAMAI_MSL  is carried through verbatim and re-emitted by
@@ -567,10 +583,11 @@ function inputState(
 	D: LiveWizardState,
 ): Pick<
 	LiveWizardState,
-	"inputKind" | "rtmp" | "redundantRtmp" | "srt" | "zixi" | "hlsIn"
+	"inputKind" | "inputKey" | "rtmp" | "redundantRtmp" | "srt" | "zixi" | "hlsIn"
 > {
 	const slice = {
 		inputKind: li.kind as LiveInputKind,
+		...(li.key !== "main" ? { inputKey: li.key } : {}),
 		rtmp: D.rtmp,
 		redundantRtmp: D.redundantRtmp,
 		srt: D.srt,

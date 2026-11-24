@@ -40,6 +40,10 @@ import { applyLiveMuxingOptions } from "./live-rendition-options";
  */
 
 export type LiveInputKind = "RTMP" | "REDUNDANT_RTMP" | "SRT" | "ZIXI" | "HLS";
+type LiveMoqOutput = Extract<
+	LiveChannelPlanInput["outputs"][number],
+	{ kind: "MOQ" }
+>;
 
 /**
  * P5 PR-3 long-tail groups (ESAM/POIS, Cache-Control, ad insertion, HLS
@@ -318,6 +322,8 @@ export type LiveWizardState = {
 	/** Encoding.infrastructure — Cloud Connect (BYOC) pinning. */
 	infrastructure?: { infrastructureId: string; cloudRegion: string };
 	inputKind: LiveInputKind;
+	/** Keep the resource key of an imported input. */
+	inputKey?: string;
 	/**
 	 * Account-default RTMP input. : an empty id keeps the
 	 * resolve-by-list contract (which refuses ambiguity); a pinned id is used
@@ -382,7 +388,9 @@ export type LiveWizardState = {
 			| "GCS_SERVICE_ACCOUNT"
 			| "AKAMAI_NETSTORAGE"
 			| "AKAMAI_MSL"
-			| "LIVE_MEDIA_INGEST";
+			| "LIVE_MEDIA_INGEST"
+			| "MOQ";
+		moq?: Pick<LiveMoqOutput, "key" | "draftVersion" | "trackNamespace">;
 		/** S3/GenericS3/GCS bucket / Azure container. */
 		bucket: string;
 		basePath: string;
@@ -695,19 +703,20 @@ function buildIngest(
 }
 
 function buildLiveInput(state: LiveWizardState): LivePlanInputUnion {
+	const key = state.inputKey ?? "main";
 	switch (state.inputKind) {
 		case "RTMP":
 			// : an empty id emits NO inputId key, keeping the
 			// resolve-by-list payload ({}) byte-identical.
 			return prune({
-				key: "main",
+				key,
 				kind: "RTMP" as const,
 				inputId: str(state.rtmp.inputId),
 			});
 		case "REDUNDANT_RTMP": {
 			const r = state.redundantRtmp;
 			return prune({
-				key: "main",
+				key,
 				kind: "REDUNDANT_RTMP" as const,
 				name: str(r.name),
 				delayThreshold: r.delayThreshold,
@@ -774,7 +783,7 @@ function buildLiveInput(state: LiveWizardState): LivePlanInputUnion {
 					keyLength: str(row.credentialId) ? row.keyLength : undefined,
 				});
 			return prune({
-				key: "main",
+				key,
 				kind: "SRT" as const,
 				name: str(s.name),
 				...connection({
@@ -808,7 +817,7 @@ function buildLiveInput(state: LiveWizardState): LivePlanInputUnion {
 		case "ZIXI": {
 			const z = state.zixi;
 			return prune({
-				key: "main",
+				key,
 				kind: "ZIXI" as const,
 				name: str(z.name),
 				host: z.host,
@@ -823,7 +832,7 @@ function buildLiveInput(state: LiveWizardState): LivePlanInputUnion {
 		case "HLS": {
 			const h = state.hlsIn;
 			return prune({
-				key: "main",
+				key,
 				kind: "HLS" as const,
 				name: str(h.name),
 				url: str(h.url),
@@ -939,10 +948,6 @@ export function staticPointFallbackName(index: number): string {
 			: `ingest-${index + 1}`;
 }
 
-function buildOutput(state: LiveWizardState): LiveOutputInput {
-	return buildOutputFrom(state.output, "origin");
-}
-
 /**
  * One destination → one plan output. Parameterized by KEY (2026-08-23): the
  * mirror destination (live deliveryMirrors — the Akamai MSL4+storage case)
@@ -952,6 +957,15 @@ function buildOutputFrom(
 	o: LiveWizardState["output"],
 	key: string,
 ): LiveOutputInput {
+	if (o.kind === "MOQ")
+		return prune({
+			key,
+			kind: o.kind,
+			credentialId: o.credentialId,
+			name: str(o.name),
+			draftVersion: o.moq?.draftVersion ?? "DRAFT_16",
+			trackNamespace: o.moq?.trackNamespace ?? [],
+		});
 	if (o.kind === "LIVE_MEDIA_INGEST")
 		return prune({
 			key,
@@ -1176,8 +1190,7 @@ function muxing(
 	key: string,
 	container: "FMP4" | "CMAF" | "TS",
 	segmentLength: number,
-	path: string,
-	acl?: "PUBLIC_READ" | "PRIVATE",
+	destination: NonNullable<LiveMuxingInput["destination"]>,
 	/**
 	 * Akamai MSL refuses `live/start` unless every segment name matches
 	 * `[prefix]-{rand_chars[:number]}-%number%.[extension]` (code 2025,
@@ -1196,9 +1209,6 @@ function muxing(
 	muxedIn?: readonly string[],
 	cmaf?: LiveCmafOptions,
 ): LiveMuxingInput {
-	// Segments need the ACL as much as the manifest does: a player that can read
-	// stream.m3u8 and not its .m4s files fails after the manifest loads.
-	const destination = { outputKey: "origin", path, ...(acl ? { acl } : {}) };
 	/*
 	 * The LITERAL field, token verbatim — because it is the only configuration
 	 * Bitmovin's MSL live/start accepts. Full matrix, all measured against the
@@ -1372,6 +1382,7 @@ export function liveManifestDestination(state: LiveWizardState) {
 }
 
 function buildManifests(state: LiveWizardState): LiveManifestInput[] {
+	if (state.output.kind === "MOQ") return [];
 	const destination = liveManifestDestination(state);
 	// The receiving Origin generates its own manifests. Keep their drafts in
 	// state, while still allowing manifests addressed to a storage mirror.
@@ -1507,7 +1518,17 @@ export function buildLiveChannelPlan(
 		),
 	];
 
+	const output = buildOutputFrom(
+		state.output,
+		state.output.kind === "MOQ"
+			? (state.output.moq?.key ?? "origin")
+			: "origin",
+	);
 	const segmentAcl = outputAcl(state.output);
+	const segmentDestination = {
+		outputKey: output.key,
+		...(segmentAcl ? { acl: segmentAcl } : {}),
+	};
 	// MSL's naming grammar is required whenever MSL is ANY destination — the
 	// mirror included (2026-08-23): a deliveryMirror writes the same segment
 	// names to the MSL side, so a storage-primary + MSL-mirror channel must
@@ -1546,11 +1567,13 @@ export function buildLiveChannelPlan(
 					key,
 					container,
 					state.segmentLength,
-					joinPath(
-						base,
-						videoMuxingRelPath({ ...video, extras: undefined }, key),
-					),
-					segmentAcl,
+					{
+						...segmentDestination,
+						path: joinPath(
+							base,
+							videoMuxingRelPath({ ...video, extras: undefined }, key),
+						),
+					},
 					mslNaming,
 					mslVersion,
 					carriedPerRung[index],
@@ -1576,11 +1599,13 @@ export function buildLiveChannelPlan(
 						key,
 						audio.container ?? "FMP4",
 						state.segmentLength,
-						joinPath(
-							base,
-							audioMuxingRelPath({ ...audio, extras: undefined }, key),
-						),
-						segmentAcl,
+						{
+							...segmentDestination,
+							path: joinPath(
+								base,
+								audioMuxingRelPath({ ...audio, extras: undefined }, key),
+							),
+						},
 						mslNaming,
 						mslVersion,
 						undefined,
@@ -1599,7 +1624,7 @@ export function buildLiveChannelPlan(
 		)
 			delete muxing.destination;
 	}
-	const outputs = [buildOutput(state)];
+	const outputs = [output];
 	for (const mirror of mirrors)
 		outputs.push(buildOutputFrom(mirror.output, mirror.key));
 	if (state.archive?.output) {

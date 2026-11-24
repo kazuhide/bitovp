@@ -231,6 +231,7 @@ it("submits an MoQ-only plan from expert JSON without converting it to storage o
 	raw.start.encodingOption = "CUSTOM";
 	raw.muxings = raw.muxings.map((muxing: { destination: object }) => ({
 		...muxing,
+		name: "Imported muxing name",
 		segmentLength: 1,
 		destination: { ...muxing.destination, outputKey: "relay" },
 	}));

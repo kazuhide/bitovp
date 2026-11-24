@@ -568,11 +568,18 @@ const liveDrm = z.discriminatedUnion("kind", [
 	}),
 ]);
 const live = fields(
-	"name accountId cloudRegion encoderVersion staticIpId inputKind mirrorKey",
+	"name accountId cloudRegion encoderVersion staticIpId inputKind inputKey mirrorKey",
 	"segmentLength",
 	"scte35AdMarkers",
 	{
 		...common,
+		output: group(
+			location.extend({
+				moq: group(
+					fields("key draftVersion", "", "", { trackNamespace: strings }),
+				),
+			}),
+		),
 		aisaLive: group(
 			fields(
 				"outputId recordingPath analysisPath esVersion aicaVersion",

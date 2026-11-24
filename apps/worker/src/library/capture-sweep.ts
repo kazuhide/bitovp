@@ -2,19 +2,23 @@ import { createHash } from "node:crypto";
 import {
 	encodingPlanSchema,
 	libraryFileOutputs,
+	libraryHdr10PlusInputs,
+	missingLibraryHdrInputs,
 	librarySnapshotSchema,
 } from "@bitovp/core";
 import { type AppPrismaClient, requestLibrarySource } from "@bitovp/db";
 
-function needsFileMetadataUpgrade(
+function needsMetadataUpgrade(
 	value: unknown,
 	planHash: string,
 	expected: ReturnType<typeof libraryFileOutputs>,
+	hdrInputs: ReturnType<typeof libraryHdr10PlusInputs>,
 ) {
-	if (!expected.length) return false;
+	if (!expected.length && !hdrInputs.length) return false;
 	const parsed = librarySnapshotSchema.safeParse(value);
 	if (!parsed.success || parsed.data.planHash !== planHash) return false;
 	const snapshot = parsed.data;
+	if (missingLibraryHdrInputs(snapshot.inputs, hdrInputs).length) return true;
 	const stored = snapshot.fileOutputs ?? [];
 	if (
 		stored.length < 100 &&
@@ -74,6 +78,9 @@ export function createLibraryCaptureSweep(deps: {
 			const expectedFiles = parsedPlan.success
 				? libraryFileOutputs(parsedPlan.data)
 				: [];
+			const hdrInputs = parsedPlan.success
+				? libraryHdr10PlusInputs(parsedPlan.data)
+				: [];
 			const aisa =
 				job.plan &&
 				typeof job.plan === "object" &&
@@ -85,10 +92,11 @@ export function createLibraryCaptureSweep(deps: {
 						source.sourceKey === key &&
 						source.revisions.length &&
 						(source.state === "RUNNING" ||
-							!needsFileMetadataUpgrade(
+							!needsMetadataUpgrade(
 								source.snapshot,
 								planHash,
 								expectedFiles,
+								hdrInputs,
 							)) &&
 						(!aisa ||
 							(source.snapshot &&

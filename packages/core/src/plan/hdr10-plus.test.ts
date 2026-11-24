@@ -396,6 +396,16 @@ describe("HDR10+ input contract", () => {
 		]);
 		expect(() => planToEncodingTemplateYaml(value)).toThrow(/HDR10/);
 	});
+	it("requires replacing a retained signed HDR object before generating executable YAML", () => {
+		const old = plan();
+		const stream = old.hdr10PlusStreams[0];
+		if (!stream) throw new Error("Missing fixture stream");
+		stream.metadataInputPath =
+			"//fixture:FIXTURE_PRIVATE@fixture.invalid/sidecar.json";
+		expect(() => planToEncodingTemplateYaml(old)).toThrow(
+			"Re-select the HDR10+ video and metadata objects",
+		);
+	});
 	it("exports every schema-valid HDR10+ resource key as an own YAML entry", () => {
 		const value = plan();
 		first(value.hdr10PlusStreams).key = "__proto__";

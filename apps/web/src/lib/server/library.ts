@@ -11,6 +11,8 @@ import {
 	normalizeSceneAnalysis,
 	type ProviderAnalysisView,
 	publicLibraryQcEvidence,
+	publicHdrSourceProjection,
+	publicStorageDiagnostic,
 	redactSecrets,
 	sceneAnalysisDocumentSchema,
 	sceneAnalysisLocales,
@@ -109,7 +111,9 @@ export async function sourceView(
 		take: 100,
 		select: { content: { select: { id: true, title: true, archived: true } } },
 	});
-	const parsedSnapshot = librarySourceSnapshotSchema.parse(source.snapshot);
+	const parsedSnapshot = librarySourceSnapshotSchema.parse(
+		publicHdrSourceProjection(source.snapshot),
+	);
 	const {
 		analysisOutput: _privateLocator,
 		fileOutputs,
@@ -146,7 +150,7 @@ export async function sourceView(
 					? "ERROR"
 					: source.state,
 			),
-		error: source.error,
+		error: publicStorageDiagnostic(source.error),
 		locales,
 		snapshot: {
 			...snapshot,

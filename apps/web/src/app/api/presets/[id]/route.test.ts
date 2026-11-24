@@ -34,6 +34,29 @@ function withId(id: string) {
 }
 
 describe("GET /api/presets/[id]", () => {
+	it("withholds old HDR source locations from a saved template download without changing the editable body", async () => {
+		const body = {
+			hdr10PlusStreams: [
+				{
+					key: "hdr",
+					videoInputPath: "input/main.mxf",
+					metadataInputPath:
+						"//legacy.invalid/sidecar.json?token=PRESET_PRIVATE_FIXTURE",
+				},
+			],
+		};
+		findFirst.mockResolvedValueOnce({ id: ID, kind: "FULL_PLAN", body });
+		const res = await GET(new Request("http://test"), withId(ID));
+		expect(res.status).toBe(200);
+		expect((await res.json()).body).toEqual({
+			hdr10PlusStreams: [
+				{ key: "hdr", videoInputPath: "input/main.mxf", metadataInputPath: "" },
+			],
+		});
+		expect(body.hdr10PlusStreams[0]?.metadataInputPath).toContain(
+			"PRESET_PRIVATE_FIXTURE",
+		);
+	});
 	it("returns the full preset including the plan body", async () => {
 		const body = samplePresetPlan("fixed-bitrate-hls-on-aws");
 		findFirst.mockResolvedValueOnce({

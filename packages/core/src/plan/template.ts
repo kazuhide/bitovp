@@ -1,3 +1,4 @@
+import { isHdr10PlusObjectPath } from "./hdr-source-paths";
 import { stringify } from "yaml";
 import { h26xPictureControls } from "./codec-controls";
 import { codecDetailWireControls } from "./codec-detail-controls";
@@ -2409,6 +2410,16 @@ export function encodingTemplateExportUnavailableReason(
 export function planToEncodingTemplateYaml(plan: EncodingPlan): string {
 	const invalidHdr = hdr10PlusTransformIssues(plan)[0];
 	if (invalidHdr) throw new Error(invalidHdr.message);
+	if (
+		plan.hdr10PlusStreams?.some(
+			(stream) =>
+				!isHdr10PlusObjectPath(stream.videoInputPath) ||
+				!isHdr10PlusObjectPath(stream.metadataInputPath),
+		)
+	)
+		throw new Error(
+			"Re-select the HDR10+ video and metadata objects before exporting the template.",
+		);
 	const unavailable = encodingTemplateExportUnavailableReason(plan);
 	if (unavailable === "MANIFEST_DETAILS")
 		throw new Error(

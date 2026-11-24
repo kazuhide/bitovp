@@ -107,6 +107,46 @@ function database(
 }
 
 describe("Library source detail retained-raw projection", () => {
+	it("withholds legacy signed storage paths with and without HDR input provenance after the job was deleted", async () => {
+		const inputs = [
+			{ name: "Ordinary", path: "assets/audio.wav" },
+			{
+				name: "Old capture",
+				path: "//fixture:LIBRARY_CREDENTIAL@fixture.invalid/picture.mxf",
+			},
+			{
+				name: "Bound HDR",
+				path: "assets/scene.json?token=LIBRARY_SIGNATURE",
+				hdr10Plus: { streamKey: "hdr", inputKey: "main", role: "METADATA" },
+			},
+		];
+		const { db } = database(raw, stored, {
+			snapshot: {
+				schemaVersion: 1,
+				kind: "VOD_JOB",
+				name: "Asset",
+				planHash: "hash",
+				identity: "UNVERIFIED",
+				inputs,
+				playbackLinks: [],
+				qcVerdict: null,
+				qcOverriddenAt: null,
+			},
+		});
+		const result = await sourceView(
+			db,
+			"source-1",
+			"00000000-0000-4000-8000-000000000001",
+		);
+		expect(JSON.stringify(result)).not.toMatch(
+			/LIBRARY_CREDENTIAL|LIBRARY_SIGNATURE/,
+		);
+		expect(result?.snapshot.inputs.map((i) => i.path)).toEqual([
+			"assets/audio.wav",
+			"",
+			"",
+		]);
+	});
 	it("includes default English on legacy sources without inventing its analysis or import success", async () => {
 		const { db, row } = database(raw, stored, { locales: ["ja"] });
 		row.locale = "ja";

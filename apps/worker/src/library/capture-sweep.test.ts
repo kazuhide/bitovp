@@ -260,3 +260,47 @@ it.each([
 	await tick();
 	expect(capture).not.toHaveBeenCalled();
 });
+
+it("revisits a registered HDR source with a missing sidecar once its lease ends", async () => {
+	const plan = qcPlan();
+	plan.hdr10PlusStreams = [
+		{
+			key: "hdr",
+			inputKey: "main",
+			videoInputPath: "picture.mxf",
+			metadataInputPath: "scene.json",
+			selectionMode: "AUTO",
+		},
+	];
+	const job = registered(plan);
+	const source = job.librarySources[0];
+	if (!source) throw new Error("Expected captured source");
+	source.snapshot.fileOutputs = libraryFileOutputs(plan);
+	source.snapshot.playbackLinks = libraryPlaybackLinks(plan, []);
+	const input = {
+		name: "Input",
+		path: "picture.mxf",
+		hdr10Plus: { streamKey: "hdr", inputKey: "main", role: "VIDEO" as const },
+	};
+	source.snapshot.inputs = [input];
+	const capture = vi.fn(async () => {
+		source.snapshot.inputs.push({
+			...input,
+			path: "scene.json",
+			hdr10Plus: { ...input.hdr10Plus, role: "METADATA" },
+		});
+	});
+	const test = sweep(job, capture);
+	source.state = "RUNNING";
+	await test.tick();
+	expect(capture).not.toHaveBeenCalled();
+	source.state = "READY";
+	test.findMany.mockResolvedValueOnce([]);
+	await test.tick();
+	await test.tick();
+	expect(capture).toHaveBeenCalledTimes(1);
+	test.findMany.mockResolvedValueOnce([]);
+	await test.tick();
+	await test.tick();
+	expect(capture).toHaveBeenCalledTimes(1);
+});

@@ -70,6 +70,7 @@ export const GROUPS = [
 		workspace: "@bitovp/worker",
 		directory: "apps/worker",
 		files: {
+			"src/library/capture-sweep.integration.test.ts": 1,
 			"src/alerts/engine-locking.integration.test.ts": 3,
 			"src/live/poll-transition-locking.integration.test.ts": 4,
 			"src/live/owned-transition-locking.integration.test.ts": 10,

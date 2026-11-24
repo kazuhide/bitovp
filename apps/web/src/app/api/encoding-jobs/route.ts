@@ -1,3 +1,4 @@
+import { publicStorageDiagnostic } from "@bitovp/core";
 import {
 	masterKeyFromEnv,
 	submitEncodingJob,
@@ -179,6 +180,7 @@ export async function GET(req: Request) {
 		});
 		const items = rows.slice(0, limit).map((row) => ({
 			...row,
+			error: publicStorageDiagnostic(row.error),
 			// Projection, not the whole verdict (review-202 N3).
 			qcVerdict: row.qcVerdict
 				? { pass: (row.qcVerdict as { pass?: unknown }).pass === true }
@@ -217,7 +219,12 @@ function verificationKeyResponse(
 		// The resource the caller already paid for, not a twin. 200, not 201:
 		// nothing was created by THIS request.
 		return NextResponse.json(
-			{ ...verdict.row, issues: [], replayed: true },
+			{
+				...verdict.row,
+				error: publicStorageDiagnostic(verdict.row.error),
+				issues: [],
+				replayed: true,
+			},
 			{ status: 200 },
 		);
 	}
@@ -245,7 +252,12 @@ async function ordinaryCreateReplay(
 	});
 	if (!row) return createRequestGoneResponse();
 	return NextResponse.json(
-		{ ...row, issues: [], replayed: true },
+		{
+			...row,
+			error: publicStorageDiagnostic(row.error),
+			issues: [],
+			replayed: true,
+		},
 		{ status: 200 },
 	);
 }
@@ -459,7 +471,11 @@ export async function POST(req: Request) {
 			select: LIST_SELECT,
 		});
 		return NextResponse.json(
-			{ ...row, issues: outcome.issues },
+			{
+				...row,
+				error: publicStorageDiagnostic(row.error),
+				issues: outcome.issues,
+			},
 			{
 				status: 201,
 			},

@@ -1,3 +1,13 @@
+export {
+	libraryHdr10PlusInputs,
+	missingLibraryHdrInputs,
+} from "./content-library/hdr-inputs";
+export {
+	isHdr10PlusAuditPath,
+	isHdr10PlusObjectPath,
+	publicHdrSourceProjection,
+	publicStorageDiagnostic,
+} from "./plan/hdr-source-paths";
 export { hashApiTokenSecret } from "./auth/api-token-hash";
 export * from "./banding";
 export {

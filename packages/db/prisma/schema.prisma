@@ -855,6 +855,8 @@ model LiveChannel {
   liveEffectFenceVersion Int           @default(0)
   /// Upgrade-only fence for retained START and STOP deliveries without a recorded admission.
   legacyAdmissionFenceVersion Int?
+  /// Generation claimed by the public manual START transaction.
+  manualProvisionAdmissionFenceVersion Int?
   /// Ledger #160 PR4: startup probes ride the NORMAL pipeline but are
   /// not operator content — PROBE rows are hidden from the default
   /// channel list (a toggle reveals them) and their finalize sample

@@ -21,6 +21,22 @@ type ReadJob = (
 	id: string,
 ) => Promise<{ data: unknown; getState(): Promise<string> } | undefined>;
 
+function sameScheduledStop(
+	actual: NonNullable<LiveChannelJob["effect"]>,
+	expected: NonNullable<LiveChannelJob["effect"]>,
+) {
+	return (
+		actual.action === "STOP" &&
+		actual.targetId === undefined &&
+		actual.requestSha256 === undefined &&
+		actual.idempotencyKey === expected.idempotencyKey &&
+		actual.scheduleId === expected.scheduleId &&
+		actual.liveChannelRunId === expected.liveChannelRunId &&
+		actual.providerEncodingId === expected.providerEncodingId &&
+		actual.admissionFenceVersion === expected.admissionFenceVersion
+	);
+}
+
 /** Recover both pre-journal observation and the original handoff of a fenced scheduled STOP. */
 export function createExhaustedScheduledStopRecovery(
 	deps: Deps,
@@ -102,73 +118,88 @@ export function createExhaustedScheduledStopRecovery(
 			)
 				continue;
 			try {
-				// A stranded pre-upgrade STOP can acquire a fenced payload on
-				// redispatch. Its migration generation still identifies the
-				// original unjournaled airing, so recovery remains read-only.
+				const originalFence =
+					row.stopAdmissionFenceVersion ?? channel.legacyAdmissionFenceVersion;
 				if (
-					row.stopAdmissionFenceVersion !== null &&
-					row.stopAdmissionFenceVersion !== channel.legacyAdmissionFenceVersion
-				) {
+					originalFence === null ||
+					(row.stopProviderEncodingId &&
+						row.stopProviderEncodingId !== encodingId)
+				)
+					continue;
+				const effect = {
+					action: "STOP" as const,
+					idempotencyKey: `schedule:${row.id}:stop`,
+					scheduleId: row.id,
+					liveChannelRunId: run.id,
+					providerEncodingId: encodingId,
+					admissionFenceVersion: originalFence,
+				};
+				const original: LiveChannelJob = {
+					liveChannelId: row.liveChannelId,
+					action: "stop",
+					plannedLiveChannelRunId: run.id,
+					effect,
+				};
+				const job = await readJob(jobId);
+				const retained = job ? liveChannelJobSchema.safeParse(job.data) : null;
+				const found = retained?.success ? retained.data : undefined;
+				const legacy = originalFence === channel.legacyAdmissionFenceVersion;
+				// Both the base release and the upgraded redispatch emit fenced STOPs.
+				// Still older bare jobs may only observe their own migrated airing.
+				if (
+					job &&
+					(!found ||
+						found.action !== "stop" ||
+						found.params !== undefined ||
+						found.attemptId !== undefined ||
+						found.liveChannelRunId !== undefined ||
+						found.encodingId !== undefined ||
+						found.provisionFenceVersion !== undefined ||
+						found.liveChannelId !== row.liveChannelId ||
+						(found.plannedLiveChannelRunId &&
+							found.plannedLiveChannelRunId !== run.id) ||
+						(found.effect
+							? !sameScheduledStop(found.effect, effect)
+							: !legacy) ||
+						(row.outcome === "PENDING" && (await job.getState()) !== "failed"))
+				)
+					continue;
+				if (!legacy) {
 					if (
 						row.dispatchJobId !== jobId ||
-						row.stopProviderEncodingId !== encodingId ||
-						row.stopAdmissionFenceVersion !== channel.liveEffectFenceVersion
+						row.stopProviderEncodingId !== encodingId
 					)
 						continue;
-					const effect = {
-						action: "STOP" as const,
-						idempotencyKey: `schedule:${row.id}:stop`,
-						scheduleId: row.id,
-						liveChannelRunId: run.id,
-						providerEncodingId: encodingId,
-						admissionFenceVersion: row.stopAdmissionFenceVersion,
-					};
-					const job = await readJob(jobId);
-					if (!job) {
-						// A purged queue record says nothing about external delivery.
-						// Current workers journal before every send. Only an untouched
-						// admission may be queued again, under its original fence/key.
+					if (
+						!job &&
+						row.outcome === "PENDING" &&
+						originalFence === channel.liveEffectFenceVersion
+					) {
 						const claim = await deps.prisma.liveEffectClaim.findUnique({
 							where: { idempotencyKey: effect.idempotencyKey },
 							select: { id: true },
 						});
-						if (!claim && row.outcome === "PENDING")
-							await reenqueue?.(
-								{
-									liveChannelId: row.liveChannelId,
-									action: "stop",
-									plannedLiveChannelRunId: run.id,
-									effect,
-								},
-								jobId,
-							);
-						continue;
+						if (!claim) {
+							await reenqueue?.(original, jobId);
+							continue;
+						}
 					}
-					const parsed = liveChannelJobSchema.safeParse(job.data);
-					const found = parsed.success ? parsed.data : null;
-					if (
-						found?.action !== "stop" ||
-						found.liveChannelId !== row.liveChannelId ||
-						(found.plannedLiveChannelRunId &&
-							found.plannedLiveChannelRunId !== run.id) ||
-						found.effect?.action !== "STOP" ||
-						found.effect.idempotencyKey !== effect.idempotencyKey ||
-						found.effect.scheduleId !== row.id ||
-						found.effect.liveChannelRunId !== run.id ||
-						found.effect.providerEncodingId !== encodingId ||
-						found.effect.admissionFenceVersion !==
-							effect.admissionFenceVersion ||
-						(await job.getState()) !== "failed"
-					)
+					// A pre-send FAILED claim holds a newer generation than its enqueue.
+					// The transaction rechecks that claim, its exact target and the channel fence.
+					// With an evicted job only durable FAILED can authorize that projection.
+					if (!job && originalFence === channel.liveEffectFenceVersion)
 						continue;
+					if (job && (await job.getState()) !== "failed") continue;
 					await recordFinalStopFailure(
 						deps.prisma,
 						{
 							id: jobId,
-							data: found,
+							data: original,
 							finishedOn: new Date(deps.now()).getTime(),
 						},
-						"The original scheduled job is in the failed queue.",
+						job
+							? "The original scheduled job is in the failed queue."
+							: "The original delivery is missing after its pre-send claim failed.",
 						deps.emitEvent,
 					);
 					continue;
@@ -177,39 +208,23 @@ export function createExhaustedScheduledStopRecovery(
 					channel.legacyAdmissionFenceVersion !== channel.liveEffectFenceVersion
 				)
 					continue;
-				if (row.outcome === "PENDING") {
-					const job = await readJob(jobId);
-					if (job) {
-						const parsed = liveChannelJobSchema.safeParse(job.data);
-						if (
-							!parsed.success ||
-							parsed.data.action !== "stop" ||
-							parsed.data.liveChannelId !== row.liveChannelId ||
-							(parsed.data.plannedLiveChannelRunId &&
-								parsed.data.plannedLiveChannelRunId !== run.id) ||
-							parsed.data.effect ||
-							(await job.getState()) !== "failed"
-						)
-							continue;
-					} else {
-						// A purged job is not proof of exhaustion. Only its own observed
-						// terminal encoder permits read-only reconciliation of that pending receipt.
-						const bitmovinAccountId = liveChannelAccountId(channel);
-						if (row.dispatchJobId !== jobId || !bitmovinAccountId) continue;
-						const sdk = deps.makeSdk({
-							...(await deps.revealBitmovinAccount(bitmovinAccountId)),
-							bitmovinAccountId,
-							monitoringSignal: AbortSignal.timeout(
-								HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS,
-							),
-						});
-						if (
-							classifyProviderStatusWord(
-								(await sdk.getEncodingStatus(encodingId)).status,
-							) !== "TERMINAL"
-						)
-							continue;
-					}
+				if (row.outcome === "PENDING" && !job) {
+					// A purged legacy job alone says nothing about the provider.
+					const bitmovinAccountId = liveChannelAccountId(channel);
+					if (row.dispatchJobId !== jobId || !bitmovinAccountId) continue;
+					const sdk = deps.makeSdk({
+						...(await deps.revealBitmovinAccount(bitmovinAccountId)),
+						bitmovinAccountId,
+						monitoringSignal: AbortSignal.timeout(
+							HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS,
+						),
+					});
+					if (
+						classifyProviderStatusWord(
+							(await sdk.getEncodingStatus(encodingId)).status,
+						) !== "TERMINAL"
+					)
+						continue;
 				}
 				const at = new Date(deps.now());
 				await beginLiveEffect(deps.prisma, {

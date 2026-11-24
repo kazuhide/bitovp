@@ -10,6 +10,7 @@ import {
 	DEFAULT_SCHEDULE_START_GRACE_MINUTES,
 	deriveProviderLifecycle,
 	feederErrorEnglish,
+	hasAisaLiveBinding,
 	ingestConnectedFresh,
 	isLiveRunStatus,
 	isStaleGeneration,
@@ -859,10 +860,23 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		const liveChannelId = row.liveChannelId;
 		const runId = await deps.prisma.$transaction(async (tx) => {
 			{
-				const { latest, archivesRetired } = await readLockedLiveStartState(
-					tx,
-					liveChannelId,
-				);
+				const { channel, latest, archivesRetired } =
+					await readLockedLiveStartState(tx, liveChannelId);
+				if (hasAisaLiveBinding(channel, latest)) {
+					await tx.liveSchedule.updateMany({
+						where: {
+							id: row.id,
+							liveChannelId,
+							action: "START",
+							status: "ARMED",
+						},
+						data: {
+							status: "CANCELED",
+							note: "A scheduled START cannot re-air an AISA Live Preview channel.",
+						},
+					});
+					return null;
+				}
 				if (
 					!archivesRetired ||
 					(runWrite.kind === "create" &&

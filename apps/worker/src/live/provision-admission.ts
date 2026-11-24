@@ -1,3 +1,4 @@
+import { hasAisaLiveBinding } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { legacyScheduleId } from "../scheduler/schedule-outcome";
 import { provisionJobGeneration } from "./reconcile-stranded-runs";
@@ -11,6 +12,24 @@ type ProvisionDelivery = {
 	provisionFenceVersion?: number;
 };
 
+const bindingSelect = {
+	origin: true,
+	plan: true,
+	stepLog: true,
+	runs: {
+		orderBy: { seq: "desc" },
+		take: 1,
+		select: {
+			id: true,
+			legacyProvisionAdmissionAt: true,
+			aisaAnalysisId: true,
+			aisaStatus: true,
+			aisaSnapshot: true,
+			stepLog: true,
+		},
+	},
+} as const;
+
 /** Recover the original producer's identity. An arbitrary older job cannot adopt the current airing. */
 export async function resolveProvisionAdmission(
 	prisma: AppPrismaClient,
@@ -23,30 +42,71 @@ export async function resolveProvisionAdmission(
 		return { initial: true };
 	const runId = delivery.plannedLiveChannelRunId;
 	const manualGeneration = provisionJobGeneration(channelId, runId, jobId);
-	if (runId && manualGeneration !== undefined)
-		return { runId, generation: manualGeneration };
-	const scheduleId = legacyScheduleId(jobId);
-	const manualPrefix = `${channelId}-provision-`;
-	const legacyManual =
-		jobId?.startsWith(manualPrefix) &&
-		/^\d+$/.test(jobId.slice(manualPrefix.length));
-	if (!scheduleId && !legacyManual) return null;
-	const row = scheduleId
-		? await prisma.liveSchedule.findFirst({
+	if (runId && manualGeneration !== undefined) {
+		if (
+			delivery.provisionFenceVersion !== undefined &&
+			delivery.provisionFenceVersion !== manualGeneration
+		)
+			return null;
+		if (jobId?.startsWith("resume-provision-")) {
+			// A generation-addressed upgrade ticket exists only for an ordinary,
+			// already-admitted airing whose original producer could not be proved.
+			const channel = await prisma.liveChannel.findFirst({
 				where: {
-					id: scheduleId,
-					liveChannelId: channelId,
-					action: "START",
-					status: "FIRED",
+					id: channelId,
+					status: "PROVISIONING",
+					liveEffectFenceVersion: manualGeneration,
+					legacyAdmissionFenceVersion: manualGeneration,
+					effectClaims: {
+						none: {
+							liveChannelRunId: runId,
+							action: "RESTART",
+							generation: manualGeneration,
+						},
+					},
+					schedules: {
+						none: {
+							action: "START",
+							status: "FIRED",
+							liveChannelRunId: runId,
+							startAdmissionFenceVersion: manualGeneration,
+						},
+					},
 				},
-				select: {
-					liveChannelRunId: true,
-					startAdmissionFenceVersion: true,
-				},
-			})
-		: null;
-	if (scheduleId && !row) return null;
-	if (row?.startAdmissionFenceVersion != null) {
+				select: bindingSelect,
+			});
+			const run = channel?.runs[0];
+			if (
+				!channel ||
+				run?.id !== runId ||
+				!run.legacyProvisionAdmissionAt ||
+				hasAisaLiveBinding(channel, run)
+			)
+				return null;
+		}
+		return { runId, generation: manualGeneration };
+	}
+	const scheduleId = legacyScheduleId(jobId);
+	// Old manual IDs contain only a producer clock, which may be sampled
+	// after a later same-run revival. The SQL sweeper resumes the frozen
+	// airing under a new generation-addressed job instead.
+	if (!scheduleId) return null;
+	const row = await prisma.liveSchedule.findFirst({
+		where: {
+			id: scheduleId,
+			liveChannelId: channelId,
+			action: "START",
+			status: "FIRED",
+		},
+		select: {
+			liveChannelRunId: true,
+			startAdmissionFenceVersion: true,
+			liveChannel: { select: bindingSelect },
+		},
+	});
+	if (!row || hasAisaLiveBinding(row.liveChannel, row.liveChannel?.runs[0]))
+		return null;
+	if (row.startAdmissionFenceVersion != null) {
 		if (
 			!row.liveChannelRunId ||
 			(runId && row.liveChannelRunId !== runId) ||
@@ -75,43 +135,5 @@ export async function resolveProvisionAdmission(
 			generation: row.startAdmissionFenceVersion,
 		};
 	}
-	// The migration pins legacy scheduled admissions to their actual run. A
-	// fresh Redis timestamp cannot supply the binding an old schedule lacked.
-	if (scheduleId || delivery.provisionFenceVersion !== undefined) return null;
-	const time = Number(jobId?.slice(manualPrefix.length));
-	if (!Number.isSafeInteger(time) || time <= 0) return null;
-	const channel = await prisma.liveChannel.findUnique({
-		where: { id: channelId },
-		select: {
-			liveEffectFenceVersion: true,
-			legacyAdmissionFenceVersion: true,
-			runs: {
-				orderBy: { seq: "desc" },
-				take: 1,
-				select: { id: true, legacyProvisionAdmissionAt: true },
-			},
-		},
-	});
-	const run = channel?.runs[0];
-	if (
-		!channel ||
-		channel.legacyAdmissionFenceVersion !== channel.liveEffectFenceVersion ||
-		!run?.legacyProvisionAdmissionAt ||
-		run.legacyProvisionAdmissionAt.getTime() >
-			Math.min(time, queuedAt ?? time) ||
-		(runId && runId !== run.id)
-	)
-		return null;
-	const scheduledOwner = await prisma.liveSchedule.findFirst({
-		where: {
-			liveChannelId: channelId,
-			liveChannelRunId: run.id,
-			action: "START",
-			status: "FIRED",
-			startAdmissionFenceVersion: channel.liveEffectFenceVersion,
-		},
-		select: { id: true },
-	});
-	if (scheduledOwner) return null;
-	return { runId: run.id, generation: channel.liveEffectFenceVersion };
+	return null;
 }

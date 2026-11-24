@@ -972,6 +972,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 							data: {
 								status: "PROVISIONING",
 								liveEffectFenceVersion: { increment: 1 },
+								manualProvisionAdmissionFenceVersion: (row.liveEffectFenceVersion ?? 0) + 1,
 								error: null,
 								// Release any previous run's provisioning lease in
 								// the SAME atomic claim (AKR-E57-003). One shared

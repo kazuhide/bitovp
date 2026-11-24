@@ -1884,9 +1884,8 @@ const scheduleSweep = tenantService(() => {
 	);
 	const recoverStarts = createExhaustedProvisionRecovery(
 		prisma,
-		(offset, limit) =>
-			liveChannelQueue.getRanges(["failed"], offset, offset + limit - 1, true),
 		readJob,
+		enqueueScheduledLiveJob,
 	);
 	return createScheduleSweep({
 		recoverExhaustedDeliveries: async () => {

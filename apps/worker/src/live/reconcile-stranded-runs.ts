@@ -73,14 +73,15 @@ export async function retireTransitionalRuns(
 	return count;
 }
 
-/** Manual START encodes its generation in the retained BullMQ identity. */
+/** Manual START and the migration recovery ticket carry the exact airing and fence. */
 export function provisionJobGeneration(
 	channelId: string,
 	runId: string | null | undefined,
 	jobId?: string,
 ): number | undefined {
 	if (jobId === channelId || jobId === `probe-${channelId}`) return 0;
-	const prefix = `manual-provision-${channelId}-${runId}-`;
+	const source = jobId?.startsWith("resume-provision-") ? "resume" : "manual";
+	const prefix = `${source}-provision-${channelId}-${runId}-`;
 	if (!runId || !jobId?.startsWith(prefix)) return undefined;
 	const suffix = jobId.slice(prefix.length);
 	const generation = Number(suffix);

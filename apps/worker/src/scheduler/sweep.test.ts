@@ -1299,7 +1299,7 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 		expect(store.rows[0]?.status).toBe("ARMED");
 		expect(store.runs).toHaveLength(1);
 		expect(enqueue).not.toHaveBeenCalled();
-		store.runs[0]!.rtmpRetirementEvidence = [
+		run.rtmpRetirementEvidence = [
 			{
 				accountId,
 				encodingId: "previous",

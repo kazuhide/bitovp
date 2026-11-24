@@ -933,6 +933,15 @@ export async function beginLiveEffect(
 						)
 							? { stopSendEncodingIds: { push: input.providerEncodingId } }
 							: {}),
+						...(input.action === "STOP" &&
+						retryingFailed.stopProtocolVersion == null &&
+						retryingFailed.state === "FAILED" &&
+						retryingFailed.attempt === 1
+							? {
+									stopProtocolVersion: 1,
+									legacyStopErrorNotificationPossible: true,
+								}
+							: {}),
 						attempt: { increment: 1 },
 					},
 				})
@@ -956,6 +965,33 @@ export async function beginLiveEffect(
 						expiresAt: input.expiresAt,
 					},
 				});
+		if (
+			retryingFailed?.state === "FAILED" &&
+			input.action === "STOP" &&
+			input.scheduleId
+		) {
+			// A new attempt is underway. A crash or its final callback must never inherit
+			// a definitive pre-send failure from the previous attempt.
+			await tx.liveSchedule.updateMany({
+				where: {
+					id: input.scheduleId,
+					liveChannelId: input.liveChannelId,
+					liveChannelRunId: input.liveChannelRunId,
+					action: "STOP",
+					status: "FIRED",
+					outcome: "FAILED",
+					outcomeEvidenceKind: "EFFECT_FAILED",
+				},
+				data: {
+					outcome: "PENDING",
+					outcomeAt: null,
+					outcomeNote: null,
+					outcomeEvidenceAt: null,
+					outcomeEvidenceKind: null,
+					outcomeEvidenceVersion: null,
+				},
+			});
+		}
 		await hooks.afterClaimed?.();
 		const intent = await tx.liveEffectClaim.updateMany({
 			where: { id: created.id, token, state: "CLAIMED" },
@@ -1042,6 +1078,8 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						token: true,
 						failure: true,
 						stopProtocolVersion: true,
+						legacyStopErrorNotificationPossible: true,
+						attempt: true,
 						stopSendEncodingIds: true,
 						stopOutcomeEvidence: true,
 					},
@@ -1346,7 +1384,13 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					stopClaim.stopProtocolVersion === 1 &&
 					history.every(
 						(claim) =>
-							claim.action !== "STOP" || claim.stopProtocolVersion === 1,
+							claim.action !== "STOP" ||
+							(claim.stopProtocolVersion === 1
+								? confirmedStatus === "STOPPED" ||
+									!claim.legacyStopErrorNotificationPossible
+								: confirmedStatus === "STOPPED" &&
+									claim.state === "FAILED" &&
+									claim.attempt === 1),
 					),
 				liveChannelId: input.liveChannelId,
 				liveChannelRunId: run.id,
@@ -1722,6 +1766,24 @@ export async function markLiveEffectAmbiguous(
 	claim: LiveEffectClaimHandle,
 	reason: string,
 ): Promise<boolean> {
+	if (claim.action === "STOP" && claim.scheduleId) {
+		return prisma.$transaction(async (tx) => {
+			const changed = await tx.liveEffectClaim.updateMany({
+				where: { id: claim.id, token: claim.token, state: "DISPATCHING" },
+				data: { state: "AMBIGUOUS", failure: reason },
+			});
+			if (!changed.count) return false;
+			await recordStopScheduleFailure(tx, claim.id, {
+				liveChannelId: claim.liveChannelId,
+				liveChannelRunId: claim.liveChannelRunId,
+				state: "AMBIGUOUS",
+				status: "ERROR",
+				error: reason,
+				at: new Date(),
+			});
+			return true;
+		});
+	}
 	const { count } = await prisma.liveEffectClaim.updateMany({
 		where: { id: claim.id, token: claim.token, state: "DISPATCHING" },
 		data: { state: "AMBIGUOUS", failure: reason },

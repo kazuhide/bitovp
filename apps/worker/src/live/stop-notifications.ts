@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { EVENT_VERSION } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 
+import { NotificationDeliveryError } from "../notify/processor";
+
 type Deliver = (job: {
 	data: unknown;
 	beforeSend?: () => Promise<void>;
@@ -25,6 +27,7 @@ export function createStopNotificationSweep(
 			orderBy: [{ nextAttemptAt: "asc" }, { id: "asc" }],
 			take: 16,
 		});
+		const finishedStates = new Set<"PROCESSED" | "FAILED">();
 		for (const row of pending) {
 			const token = randomUUID();
 			const owner = { id: row.id, leaseToken: token };
@@ -44,6 +47,7 @@ export function createStopNotificationSweep(
 			if (!claimed.count) continue;
 
 			let result: "PROCESSED" | "FAILED" = "PROCESSED";
+			let failureReason: string | null = null;
 			try {
 				await deliver({
 					data: {
@@ -71,6 +75,10 @@ export function createStopNotificationSweep(
 			} catch (error) {
 				if (error instanceof DeliveryLeaseLost) continue;
 				result = "FAILED";
+				failureReason =
+					error instanceof NotificationDeliveryError
+						? error.publicReason
+						: "Notification processing failed";
 			}
 
 			if (result === "FAILED" && row.failures + 1 < maxAttempts) {
@@ -88,10 +96,18 @@ export function createStopNotificationSweep(
 			}
 
 			await prisma.$transaction(async (tx) => {
-				const finished = await tx.liveStopNotification.deleteMany({
+				const finished = await tx.liveStopNotification.updateMany({
 					where: owner,
+					data: {
+						leaseToken: null,
+						nextAttemptAt: null,
+						finishedAt: now(),
+						failureReason,
+						failures: row.failures + (result === "FAILED" ? 1 : 0),
+					},
 				});
 				if (!finished.count) return;
+				finishedStates.add(result);
 				await tx.liveChannelRun.updateMany({
 					where: {
 						id: row.id,
@@ -105,6 +121,25 @@ export function createStopNotificationSweep(
 						`[notify] STOP notification failed after ${maxAttempts} attempts for broadcast ${row.id}`,
 					);
 			});
+		}
+		// Match the existing notification queue retention per tenant. A pass settles at
+		// most sixteen items, so pruning the same bound keeps this work independent of age.
+		for (const state of finishedStates) {
+			const where = {
+				finishedAt: { not: null },
+				failureReason: state === "FAILED" ? { not: null } : null,
+			};
+			const expired = await prisma.liveStopNotification.findMany({
+				where,
+				orderBy: [{ finishedAt: "desc" }, { id: "desc" }],
+				select: { id: true },
+				skip: state === "FAILED" ? 5000 : 1000,
+				take: 16,
+			});
+			if (expired.length)
+				await prisma.liveStopNotification.deleteMany({
+					where: { ...where, id: { in: expired.map((row) => row.id) } },
+				});
 		}
 	};
 }

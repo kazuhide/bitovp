@@ -222,6 +222,9 @@ describe("createNotifyProcessor", () => {
 		fetchImpl.mockResolvedValue({ ok: false, status: 500 });
 		const failure = createNotifyProcessor(deps)({ data: event() });
 		await expect(failure).rejects.toThrow(/ops hook \(HTTP 500\)/);
+		await expect(failure).rejects.toMatchObject({
+			publicReason: "Notification delivery failed (HTTP 500)",
+		});
 		// review-185 N5's residual, made structural: the thrown message is
 		// what BullMQ persists as failedReason and the deliveries route
 		// echoes — the vault URL must never ride it (today guaranteed by

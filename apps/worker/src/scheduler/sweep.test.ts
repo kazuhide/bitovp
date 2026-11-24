@@ -195,6 +195,7 @@ function makeRow(over: Partial<Row> = {}): Row {
 		insertableContentId: null,
 		slateDurationSeconds: null,
 		status: "ARMED",
+		outcome: "PENDING",
 		firedAt: null,
 		liveChannelRunId: null,
 		dispatchedAt: null,
@@ -494,6 +495,11 @@ function makeStore(
 			 * the SESSION the commit gate reads. Only the projection
 			 * the sweep selects, honoured by id.
 			 */
+			liveEffectClaim: {
+				findFirst: vi.fn(
+					async (_args: unknown): Promise<{ id: string } | null> => null,
+				),
+			},
 			feederSession: {
 				findUnique: vi.fn(async (args: { where: { id: string } }) => {
 					const hit = store.sessions.find((s) => s.id === args.where.id);
@@ -1979,10 +1985,13 @@ describe("STOP — claims like the route, waits out transitions (review-190 C2)"
 					? "PROVIDER_TERMINAL"
 					: "PROVIDER_STATUS_UNKNOWN",
 		};
-		const { sweep, enqueue } = makeSweep(store, {
+		const { sweep, enqueue, emitEvent } = makeSweep(store, {
 			now: () => new Date(ms),
 			enqueue: async () => {
 				Object.assign(fired, receipt);
+				store.prisma.liveEffectClaim.findFirst.mockResolvedValue({
+					id: "original-claim",
+				});
 				Object.assign(channel, {
 					status: "RUNNING",
 					bitmovinEncodingId: "next-encoder",
@@ -2010,6 +2019,18 @@ describe("STOP — claims like the route, waits out transitions (review-190 C2)"
 		await sweep();
 		expect(store.rows[0]).toMatchObject(receipt);
 		expect(enqueue).toHaveBeenCalledTimes(1);
+		expect(fired.dispatchJobId).toBe(`sched-${fired.id}`);
+		expect(store.prisma.liveEffectClaim.findFirst).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					scheduleId: fired.id,
+					liveChannelRunId: store.runs[0]?.id,
+				}),
+			}),
+		);
+		expect(
+			emitEvent.mock.calls.filter(([event]) => event.kind === "SCHEDULE_FIRED"),
+		).toHaveLength(1);
 	});
 });
 
@@ -2567,6 +2588,7 @@ describe("maxRunMinutes cap (runningSince column, atomic claim)", () => {
 		expect(store.rows[0]?.fireAt.getTime()).toBe(deadline);
 		expect(emitEvent).toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "SCHEDULE_FIRED" }),
+			new Date(T0 + 61 * 60_000),
 		);
 		// Second tick: channel is STOPPING — the claim is the lock, nothing
 		// doubles.

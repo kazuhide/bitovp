@@ -230,7 +230,14 @@ const EXPECTATIONS: Expectation[] = [
 		// START outbox refusal used strandedRowTo, outside this rowTo pattern.
 		// Emits remain 4 because outcomes still use the existing emit helpers.
 		writeCount: 18,
-		emitCount: 4,
+		// The cap and scheduled STOP share the handoff writer with the queue consumer.
+		emitCount: 3,
+	},
+	{
+		file: "scheduler/stop-handoff.ts",
+		writes: /dispatchedAt: at/g,
+		writeCount: 1,
+		emitCount: 1,
 	},
 	{
 		// : the watch sweep's notified transitions — the

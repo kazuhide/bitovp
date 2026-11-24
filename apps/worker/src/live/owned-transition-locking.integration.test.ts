@@ -17,6 +17,7 @@ import {
 	createTenantPrismaClient,
 	type LiveChannelStatus,
 	liveEffectSendUncertainty,
+	markLiveEffectAmbiguous,
 	persistLiveToVodAttempt,
 	recordLiveStopFailure,
 	resolveLiveEffectsAfterConfirmedStop,
@@ -1455,6 +1456,170 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			});
 		});
 
+		it.each([
+			"FAILED",
+			"AMBIGUOUS",
+		] as const)("only a positively pre-send legacy failure permits a new STOPPED notification (%s)", async (state) => {
+			const f = await stopFixture();
+			await tenant.liveEffectClaim.update({
+				where: { id: f.claim.id },
+				data: { stopProtocolVersion: 1 },
+			});
+			await tenant.liveEffectClaim.create({
+				data: {
+					...f.fields,
+					action: "STOP",
+					state,
+					token: randomUUID(),
+					idempotencyKey: randomUUID(),
+					generation: 1,
+					failure: "prior credentials unavailable",
+				},
+			});
+			expect(
+				await resolveLiveEffectsAfterConfirmedStop(tenant, f.proof),
+			).toMatchObject({ kind: "RESOLVED" });
+			expect(
+				await tenant.liveStopNotification.count({ where: { id: f.run.id } }),
+			).toBe(state === "FAILED" ? 1 : 0);
+		});
+
+		it("upgrades the same pre-send legacy STOP key and commits its CHANNEL_STOPPED work", async () => {
+			const f = await dispatchFixture();
+			await tenant.liveEffectClaim.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					providerEncodingId: f.encodingId,
+					action: "STOP",
+					state: "FAILED",
+					token: randomUUID(),
+					generation: 0,
+					ownerId: "legacy",
+					idempotencyKey: f.job.effect.idempotencyKey,
+					expiresAt: lease,
+					dispatchedAt: lease,
+					failure: "no credentials",
+				},
+			});
+			const result = await createLiveChannelProcessor(f.deps)(f.job);
+			expect(result.status).toBe("STOPPED");
+			expect(
+				await tenant.liveStopNotification.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({ kind: "CHANNEL_STOPPED" });
+		});
+
+		it("records an ambiguous scheduled retry over its own earlier failed receipt in the same transaction", async () => {
+			const f = await dispatchFixture();
+			const schedule = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "STOP",
+					status: "FIRED",
+					fireAt: lease,
+					outcome: "FAILED",
+					outcomeEvidenceKind: "EFFECT_FAILED",
+				},
+			});
+			await tenant.liveEffectClaim.create({
+				data: {
+					...f.identity,
+					liveChannelId: f.channel.id,
+					state: "FAILED",
+					token: randomUUID(),
+					generation: 0,
+					ownerId: "legacy",
+					scheduleId: schedule.id,
+					idempotencyKey: `schedule:${schedule.id}:stop`,
+					expiresAt: lease,
+				},
+			});
+			const claim = await beginLiveEffect(tenant, {
+				...f.identity,
+				liveChannelId: f.channel.id,
+				expectedFenceVersion: 0,
+				idempotencyKey: `schedule:${schedule.id}:stop`,
+				scheduleId: schedule.id,
+				ownerId: "retry",
+				now,
+				expiresAt: new Date(now.getTime() + 60000),
+			});
+			if (claim.kind !== "EXECUTE") throw new Error("expected retry claim");
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: schedule.id },
+				}),
+			).toMatchObject({ outcome: "PENDING" });
+			await claimLiveStopSend(tenant, claim.claim, f.encodingId, now);
+			expect(
+				await markLiveEffectAmbiguous(
+					tenant,
+					claim.claim,
+					"archive proof unavailable",
+				),
+			).toBe(true);
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: schedule.id },
+				}),
+			).toMatchObject({
+				outcome: "UNKNOWN",
+				outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+			});
+			expect(
+				await tenant.liveEffectClaim.findUniqueOrThrow({
+					where: { id: claim.claim.id },
+				}),
+			).toMatchObject({ state: "AMBIGUOUS" });
+		});
+
+		it("a worker that wins the race with the enqueue reply records one schedule handoff and one fired event", async () => {
+			const f = await dispatchFixture();
+			const schedule = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "STOP",
+					status: "FIRED",
+					fireAt: lease,
+					firedAt: lease,
+				},
+			});
+			const emitEvent = vi.fn(async () => {});
+			const process = createLiveChannelProcessor({ ...f.deps, emitEvent });
+			const job = {
+				...f.job,
+				plannedLiveChannelRunId: f.run.id,
+				effect: {
+					...f.job.effect,
+					scheduleId: schedule.id,
+					idempotencyKey: `schedule:${schedule.id}:stop`,
+				},
+			};
+			const id = `sched-${schedule.id}`;
+			await process(job, id);
+			await process(job, id);
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: schedule.id },
+				}),
+			).toMatchObject({
+				dispatchedAt: now,
+				dispatchJobId: id,
+				outcome: "DELIVERED",
+			});
+			expect(emitEvent).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					kind: "SCHEDULE_FIRED",
+					scheduleId: schedule.id,
+				}),
+				now,
+			);
+		});
+
 		it("delivers the original pending stop after the channel and run have been deleted", async () => {
 			const f = await stopFixture();
 			await tenant.liveEffectClaim.update({
@@ -1511,6 +1676,16 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			]);
 			expect(
 				await tenant.liveStopNotification.findUnique({ where }),
+			).toMatchObject({
+				failures: 1,
+				nextAttemptAt: null,
+				finishedAt: clock,
+				failureReason: null,
+			});
+			await sweep();
+			expect(calls).toHaveLength(2);
+			expect(
+				await otherTenant.liveStopNotification.findUnique({ where }),
 			).toBeNull();
 		});
 
@@ -1570,6 +1745,74 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			).toMatchObject({ stopNotificationState: "PROCESSED" });
 		});
 
+		it("keeps the newest completed and failed STOP delivery histories for each tenant", async () => {
+			const channelId = randomUUID();
+			const base = {
+				channelId,
+				channelName: "retention",
+				kind: "CHANNEL_STOPPED",
+				occurredAt: lease,
+			};
+			try {
+				for (const [failures, limit] of [
+					[0, 1000],
+					[5, 5000],
+				] as const) {
+					await otherTenant.liveStopNotification.createMany({
+						data: Array.from({ length: limit }, () => ({
+							...base,
+							id: randomUUID(),
+							failures,
+							finishedAt: lease,
+							nextAttemptAt: null,
+							failureReason: failures ? "expired" : null,
+						})),
+					});
+					await otherTenant.liveStopNotification.create({
+						data: {
+							...base,
+							id: randomUUID(),
+							failures: failures ? 4 : 0,
+							kind: failures ? "CHANNEL_ERROR" : "CHANNEL_STOPPED",
+							nextAttemptAt: now,
+						},
+					});
+				}
+				await createStopNotificationSweep(
+					otherTenant,
+					async ({ data }) => {
+						if ((data as { kind: string }).kind === "CHANNEL_ERROR")
+							throw new Error("private destination");
+					},
+					undefined,
+					() => now,
+				)();
+				for (const [reason, limit] of [
+					[false, 1000],
+					[true, 5000],
+				] as const) {
+					const where = {
+						channelId,
+						finishedAt: { not: null },
+						failureReason: reason ? { not: null } : null,
+					};
+					expect(await otherTenant.liveStopNotification.count({ where })).toBe(
+						limit,
+					);
+					expect(await tenant.liveStopNotification.count({ where })).toBe(0);
+					expect(
+						await otherTenant.liveStopNotification.count({
+							where: { ...where, finishedAt: now },
+						}),
+					).toBe(1);
+				}
+			} finally {
+				await otherTenant.liveStopNotification.deleteMany({
+					where: { channelId },
+				});
+			}
+		});
+
 		it("records a terminal failed delivery after five known failures", async () => {
 			const f = await stopFixture();
 			await tenant.liveChannelRun.update({
@@ -1605,8 +1848,14 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			}
 			expect(attempts).toBe(5);
 			expect(
-				await tenant.liveStopNotification.count({ where: { id: f.run.id } }),
-			).toBe(0);
+				await tenant.liveStopNotification.findUnique({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({
+				failures: 5,
+				nextAttemptAt: null,
+				failureReason: "Notification processing failed",
+			});
 			expect(
 				await tenant.liveChannelRun.findUniqueOrThrow({
 					where: { id: f.run.id },

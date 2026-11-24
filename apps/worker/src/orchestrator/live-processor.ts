@@ -138,6 +138,7 @@ import {
 	recordScheduleOutcomeBestEffort,
 	transitionScheduleToStale,
 } from "../scheduler/schedule-outcome";
+import { recordScheduledStopHandoff } from "../scheduler/stop-handoff";
 import type { SlatePreparer } from "../slate/prepare";
 import {
 	type AisaLiveControl,
@@ -1265,23 +1266,6 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				where: liveStopFeederWhere(liveChannelId),
 				select: { id: true },
 			} as const;
-			const ambiguousReceipt = async (reason: string) => {
-				if (!effect?.claim.scheduleId) return;
-				await recordScheduleOutcomeBestEffort(
-					deps.prisma,
-					{
-						scheduledStop: {
-							id: effect.claim.scheduleId,
-							liveChannelId,
-							liveChannelRunId: effect.claim.liveChannelRunId,
-						},
-					},
-					"UNKNOWN",
-					reason,
-					new Date(deps.now()),
-					"JOB_TERMINAL_UNKNOWN",
-				);
-			};
 			let feeders: { id: string }[];
 			if (effect) {
 				const { claim } = effect;
@@ -1331,7 +1315,6 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					const reason =
 						"the exact broadcast does not own this encoder; no STOP was sent";
 					await markLiveEffectAmbiguous(deps.prisma, claim, reason);
-					await ambiguousReceipt(reason);
 					return "EFFECT_AMBIGUOUS";
 				}
 				feeders = captured;
@@ -1709,7 +1692,6 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						(await wasLiveStopAcknowledged(deps.prisma, effect.claim))
 					)
 						return "EFFECT_ALREADY_ACKNOWLEDGED";
-					await ambiguousReceipt(settled.reason);
 					return "EFFECT_AMBIGUOUS";
 				}
 				if (effect && unconfirmed) {
@@ -7119,6 +7101,27 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 	): Promise<LiveChannelResult> {
 		const job = liveChannelJobSchema.parse(jobData);
 		const { liveChannelId } = job;
+		const scheduleId = legacyScheduleId(queueJobId);
+		if (
+			job.action === "stop" &&
+			scheduleId &&
+			job.plannedLiveChannelRunId &&
+			(!job.effect ||
+				(job.effect.action === "STOP" &&
+					job.effect.scheduleId === scheduleId &&
+					job.effect.liveChannelRunId === job.plannedLiveChannelRunId))
+		) {
+			await recordScheduledStopHandoff(
+				deps.prisma,
+				{
+					id: scheduleId,
+					liveChannelId,
+					liveChannelRunId: job.plannedLiveChannelRunId,
+				},
+				new Date(deps.now()),
+				deps.emitEvent,
+			);
+		}
 		// (row 266): the terminal result a run-acting
 		// action returns when the fence refuses it — the job is acknowledged
 		// (BullMQ must not retry a correct refusal) but nothing was done.

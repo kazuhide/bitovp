@@ -114,7 +114,7 @@ model ResetCleanupTask {
   @@index([organizationId])
 }
 
-/// One pending terminal product event per broadcast. Channel deletion keeps its delivery work.
+/// A terminal product event and its bounded delivery history survive deletion of the broadcast.
 model LiveStopNotification {
   organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -126,10 +126,13 @@ model LiveStopNotification {
   kind           String
   occurredAt     DateTime
   failures       Int @default(0)
-  nextAttemptAt  DateTime @default(now())
+  nextAttemptAt  DateTime? @default(now())
   leaseToken     String? @db.Uuid
+  finishedAt     DateTime?
+  failureReason  String?
 
   @@index([organizationId, nextAttemptAt, id])
+  @@index([organizationId, finishedAt, id])
 }
 
 model BitmovinAccount {
@@ -2401,6 +2404,8 @@ model LiveEffectClaim {
   stopAnalysisSendId    String?
   /// NULL marks a legacy STOP with no per-encoder send journal.
   stopProtocolVersion   Int?
+  /// A pre-upgrade attempt failed before send and may have emitted CHANNEL_ERROR.
+  legacyStopErrorNotificationPossible Boolean @default(false)
   stopSendEncodingIds   String[]             @default([])
   /// Account-bound terminal GETs and the exact failed projection from the original owner.
   stopOutcomeEvidence   Json?

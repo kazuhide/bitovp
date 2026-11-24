@@ -17,13 +17,20 @@ CREATE TABLE "LiveStopNotification" (
   "channelName" TEXT NOT NULL,
   "kind" TEXT NOT NULL CHECK ("kind" IN ('CHANNEL_STOPPED','CHANNEL_ERROR')),
   "occurredAt" TIMESTAMP(3) NOT NULL,
-  "failures" INTEGER NOT NULL DEFAULT 0 CHECK ("failures" BETWEEN 0 AND 4),
-  "nextAttemptAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "leaseToken" UUID
+  "failures" INTEGER NOT NULL DEFAULT 0 CHECK ("failures" BETWEEN 0 AND 5),
+  "nextAttemptAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
+  "leaseToken" UUID,
+  "finishedAt" TIMESTAMP(3),
+  "failureReason" TEXT,
+  CHECK (("finishedAt" IS NULL AND "nextAttemptAt" IS NOT NULL AND "failureReason" IS NULL AND "failures" < 5)
+    OR ("finishedAt" IS NOT NULL AND "nextAttemptAt" IS NULL AND "leaseToken" IS NULL AND
+        (("failureReason" IS NULL AND "failures" < 5) OR ("failureReason" IS NOT NULL AND "failures" = 5))))
 );
 
 CREATE INDEX "LiveStopNotification_organizationId_nextAttemptAt_id_idx"
   ON "LiveStopNotification" ("organizationId", "nextAttemptAt", "id");
+CREATE INDEX "LiveStopNotification_organizationId_finishedAt_id_idx"
+  ON "LiveStopNotification" ("organizationId", "finishedAt", "id");
 CREATE TRIGGER "organization_immutable" BEFORE UPDATE ON "LiveStopNotification"
   FOR EACH ROW EXECUTE FUNCTION bitovp_keep_organization();
 ALTER TABLE "LiveStopNotification" ENABLE ROW LEVEL SECURITY;

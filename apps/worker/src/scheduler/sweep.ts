@@ -42,6 +42,7 @@ import {
 	recordScheduleOutcomeBestEffort,
 	transitionScheduleToStale,
 } from "./schedule-outcome";
+import { recordScheduledStopHandoff } from "./stop-handoff";
 
 /**
  * Live schedule sweep . Fires
@@ -1423,9 +1424,17 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					stats.errors += 1;
 					return;
 				}
-				await markDispatched(row.id, scheduleJobId(row.id));
+				await recordScheduledStopHandoff(
+					deps.prisma,
+					{
+						id: row.id,
+						liveChannelId: row.liveChannelId,
+						liveChannelRunId: effect.liveChannelRunId,
+					},
+					deps.now(),
+					deps.emitEvent,
+				);
 				stats.fired += 1;
-				await emitFired(row);
 				return;
 			}
 			default:
@@ -2112,8 +2121,6 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					where: {
 						status: "FIRED",
 						dispatchedAt: null,
-						// A settled receipt already proves that the worker got this STOP.
-						NOT: { action: "STOP", outcome: { not: "PENDING" } },
 						firedAt: { lt: new Date(now.getTime() - DISPATCH_GRACE_MS) },
 						...scanWindow(cursor, replay),
 					},
@@ -2121,6 +2128,33 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					take,
 				}),
 			handle: async (row) => {
+				if (row.action === "STOP" && row.outcome !== "PENDING") {
+					if (!row.liveChannelRunId) return;
+					// Older workers could mark every FIRED stop on a channel. Only the
+					// original run's exact effect proves delivery after Redis job retention.
+					const owned = await deps.prisma.liveEffectClaim.findFirst({
+						where: {
+							action: "STOP",
+							scheduleId: row.id,
+							liveChannelId: row.liveChannelId,
+							liveChannelRunId: row.liveChannelRunId,
+							idempotencyKey: `schedule:${row.id}:stop`,
+						},
+						select: { id: true },
+					});
+					if (owned)
+						await recordScheduledStopHandoff(
+							deps.prisma,
+							{
+								id: row.id,
+								liveChannelId: row.liveChannelId,
+								liveChannelRunId: row.liveChannelRunId,
+							},
+							deps.now(),
+							deps.emitEvent,
+						);
+					return;
+				}
 				if (
 					row.action !== "STOP" &&
 					deps.allowNewWork &&
@@ -2170,6 +2204,20 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						`[scheduler] re-dispatch of schedule ${row.id} failed (next scan lap retries):`,
 						err instanceof Error ? err.message : err,
 					);
+					return;
+				}
+				if (row.action === "STOP" && row.liveChannelRunId) {
+					await recordScheduledStopHandoff(
+						deps.prisma,
+						{
+							id: row.id,
+							liveChannelId: row.liveChannelId,
+							liveChannelRunId: row.liveChannelRunId,
+						},
+						deps.now(),
+						deps.emitEvent,
+					);
+					redispatched += 1;
 					return;
 				}
 				await markDispatched(row.id, jobId);
@@ -2625,7 +2673,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				runs: {
 					orderBy: { seq: "desc" },
 					take: 1,
-					select: { id: true, bitmovinEncodingId: true, stepLog: true },
+					select: { id: true },
 				},
 			},
 		});
@@ -2638,11 +2686,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 			if (now < deadline) continue;
 			const run = channel.runs[0];
 			const providerEncodingId = channel.bitmovinEncodingId;
-			if (
-				!run ||
-				!providerEncodingId ||
-				!liveStopRunOwnsEncoding(run, providerEncodingId)
-			) {
+			if (!run || !providerEncodingId) {
 				stats.errors += 1;
 				continue;
 			}
@@ -2735,7 +2779,16 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					},
 					jobId,
 				);
-				await markDispatched(scheduleId, jobId);
+				await recordScheduledStopHandoff(
+					deps.prisma,
+					{
+						id: scheduleId,
+						liveChannelId: channel.id,
+						liveChannelRunId: run.id,
+					},
+					deps.now(),
+					deps.emitEvent,
+				);
 			} catch (err) {
 				const reason = `runtime-cap STOP handoff failed: ${err instanceof Error ? err.message : String(err)}`;
 				if (scheduleId) {
@@ -2751,7 +2804,6 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				continue;
 			}
 			stats.capStops += 1;
-			await emitFired({ id: scheduleId, liveChannelId: channel.id });
 		}
 	}
 

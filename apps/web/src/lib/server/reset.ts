@@ -19,7 +19,11 @@ import {
 	type MoqArchiveCleanupSnapshot,
 	snapshotMoqArchiveCleanup,
 } from "./moq-archive-cleanup";
-import { assertResetLiveAnalyses } from "./reset-live-analyses";
+import {
+	assertResetLiveAnalyses,
+	resetLiveAnalysisBlockers,
+} from "./reset-live-analyses";
+import { lockResetAccount } from "./reset-provider";
 import {
 	confirmArchivedRtmpEncoding,
 	readResetRtmpArchives,
@@ -343,7 +347,7 @@ export const RESET_BLOCKING_FEEDER_STATUSES = [
  * only durable pointer to a publisher. Active staged holds remain blocking
  * too even though they deliberately do not occupy the publisher slot.
  */
-function resetBlockingFeederWhere() {
+export function resetBlockingFeederWhere() {
 	return {
 		OR: [
 			{ status: { in: [...RESET_BLOCKING_FEEDER_STATUSES] } },
@@ -485,7 +489,11 @@ export type ProviderEncoderState =
 			kind: "missing";
 			account: import("./reset-provider").ResetAccountSnapshot;
 	  }
-	| { kind: "stopped"; providerStatus: string }
+	| {
+			kind: "stopped";
+			providerStatus: string;
+			account?: import("./reset-provider").ResetAccountSnapshot;
+	  }
 	| { kind: "running"; providerStatus: string }
 	| { kind: "unverified"; message: string };
 
@@ -612,8 +620,8 @@ export async function listEncoderPointers(
 
 /**
  * : ask the provider about every unconfirmed encoder pointer and
- * stamp the rows whose encoding is TERMINAL — or CREATED, never started
- * (rev431) — with that encoding's id. A row whose encoding is
+ * stamp the rows whose encoding is TERMINAL, or CREATED with the required
+ * never-started evidence for Live, with that encoding's id. A row whose encoding is
  * QUEUED/RUNNING is reported and left alone: that is the population the
  * refusal exists for. Failed/ambiguous reads remain unverified. Exact entity
  * absence can clear a historical pointer only under the account fence. The
@@ -662,6 +670,7 @@ export async function reconcileEncoderPointers(
 					prisma,
 					pointer,
 					state.providerStatus,
+					state.account,
 				))
 			) {
 				report.confirmed.push(pointer);
@@ -769,39 +778,72 @@ export async function reconcileEncoderPointers(
 							},
 							data,
 						});
+		const liveCreated =
+			pointer.kind !== "encodingJob" &&
+			state.kind === "stopped" &&
+			state.providerStatus === "CREATED";
 		const { count } =
-			state.kind === "missing"
-				? await prisma
-						.$transaction(async (tx) => {
-							// A relation predicate alone does not lock its parent. Keep the
-							// account version and run-parent binding stable through commit.
-							const accounts = await tx.$queryRaw<
-								{ id: string }[]
-							>`SELECT id FROM "BitmovinAccount" WHERE id = ${pointer.bitmovinAccountId}::uuid FOR UPDATE`;
-							if (accounts.length !== 1) return { count: 0 };
-							if (
-								pointer.planAccount &&
-								!(await tx.bitmovinAccount.findFirst({
-									where: state.account,
-									select: { id: true },
-								}))
+			state.kind === "stopped" &&
+			pointer.kind !== "encodingJob" &&
+			(liveCreated || state.account)
+				? await prisma.$transaction(async (tx) => {
+						if (
+							state.account &&
+							(state.account.id !== pointer.bitmovinAccountId ||
+								!(await lockResetAccount(tx, state.account)))
+						)
+							return { count: 0 };
+						const channelId = pointer.liveChannelId ?? pointer.id;
+						await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${channelId}::uuid FOR UPDATE`;
+						await tx.$queryRaw`SELECT id FROM "LiveChannelRun" WHERE "liveChannelId" = ${channelId}::uuid ORDER BY seq DESC FOR UPDATE`;
+						if (!liveCreated) return stamp(tx);
+						const proof = await readResetRtmpArchives(tx, channelId);
+						if (
+							!proof.neverStarted.has(
+								JSON.stringify([
+									pointer.kind,
+									pointer.id,
+									pointer.bitmovinAccountId,
+									pointer.bitmovinEncodingId,
+								]),
 							)
-								return { count: 0 };
-							if (pointer.kind === "liveChannelRun") {
-								const channels = await tx.$queryRaw<
+						)
+							return { count: 0 };
+						return stamp(tx);
+					})
+				: state.kind === "missing"
+					? await prisma
+							.$transaction(async (tx) => {
+								// A relation predicate alone does not lock its parent. Keep the
+								// account version and run-parent binding stable through commit.
+								const accounts = await tx.$queryRaw<
 									{ id: string }[]
-								>`SELECT id FROM "LiveChannel" WHERE id = ${pointer.liveChannelId}::uuid FOR UPDATE`;
-								if (channels.length !== 1) return { count: 0 };
-							}
-							return stamp(tx);
-						})
-						.catch(() => ({ count: 0 }))
-				: await stamp(prisma);
+								>`SELECT id FROM "BitmovinAccount" WHERE id = ${pointer.bitmovinAccountId}::uuid FOR UPDATE`;
+								if (accounts.length !== 1) return { count: 0 };
+								if (
+									pointer.planAccount &&
+									!(await tx.bitmovinAccount.findFirst({
+										where: state.account,
+										select: { id: true },
+									}))
+								)
+									return { count: 0 };
+								if (pointer.kind === "liveChannelRun") {
+									const channels = await tx.$queryRaw<
+										{ id: string }[]
+									>`SELECT id FROM "LiveChannel" WHERE id = ${pointer.liveChannelId}::uuid FOR UPDATE`;
+									if (channels.length !== 1) return { count: 0 };
+								}
+								return stamp(tx);
+							})
+							.catch(() => ({ count: 0 }))
+					: await stamp(prisma);
 		if (count === 0) {
 			report.unverified.push({
 				...pointer,
-				message:
-					state.kind === "missing"
+				message: liveCreated
+					? "Live START was not proven unsent for this encoding; check again for a terminal provider status"
+					: state.kind === "missing"
 						? "The row or account changed, or the reset confirmation could not be saved; check again"
 						: "the row was pointed at another encoding or changed state while Bitmovin was being read; check again",
 			});
@@ -810,6 +852,52 @@ export async function reconcileEncoderPointers(
 		report.confirmed.push(pointer);
 	}
 	return report;
+}
+
+export async function resetFeederBlockers(
+	prisma: Pick<AppPrismaClient, "feederSession">,
+) {
+	const where = resetBlockingFeederWhere();
+	const [rows, total] = await Promise.all([
+		prisma.feederSession.findMany({
+			where,
+			select: {
+				id: true,
+				status: true,
+				sourceKey: true,
+				createdAt: true,
+				liveChannel: { select: { name: true } },
+			},
+			take: 50,
+			orderBy: { id: "asc" },
+		}),
+		prisma.feederSession.count({ where }),
+	]);
+	return { rows: visibleResetFeeders(rows), total };
+}
+
+function visibleResetFeeders<
+	T extends {
+		id: string;
+		status: string;
+		sourceKey: string;
+		createdAt: Date;
+		liveChannel: { name: string };
+	},
+>(feederRows: T[]) {
+	const sourceName = (sourceKey: string) => {
+		const trimmed = sourceKey.endsWith("/")
+			? sourceKey.slice(0, -1)
+			: sourceKey;
+		return trimmed.slice(trimmed.lastIndexOf("/") + 1) || sourceKey;
+	};
+	return feederRows.map((row) => ({
+		id: row.id,
+		status: row.status,
+		channelName: row.liveChannel.name,
+		sourceName: sourceName(row.sourceKey),
+		createdAt: row.createdAt,
+	}));
 }
 
 export async function findActiveWork(
@@ -828,6 +916,7 @@ export async function findActiveWork(
 		pointerRunIdentities,
 		intentRows,
 		archives,
+		analyses,
 	] = await Promise.all([
 		prisma.encodingJob.findMany({
 			where: { status: { in: [...RESET_BLOCKING_JOB_STATUSES] } },
@@ -942,20 +1031,10 @@ export async function findActiveWork(
 			},
 		}),
 		readResetRtmpArchives(prisma),
+		resetLiveAnalysisBlockers(prisma),
 	]);
-	const sourceName = (sourceKey: string) => {
-		const trimmed = sourceKey.endsWith("/")
-			? sourceKey.slice(0, -1)
-			: sourceKey;
-		return trimmed.slice(trimmed.lastIndexOf("/") + 1) || sourceKey;
-	};
-	const feederSessions = feederRows.map((row) => ({
-		id: row.id,
-		status: row.status,
-		channelName: row.liveChannel.name,
-		sourceName: sourceName(row.sourceKey),
-		createdAt: row.createdAt,
-	}));
+
+	const feederSessions = visibleResetFeeders(feederRows);
 	const vmafJobs = vmafRows.map((row) => ({
 		id: row.id,
 		status: row.status,
@@ -1036,7 +1115,11 @@ export async function findActiveWork(
 		prisma.liveChannel.count({ where: pointerChannelWhere(prisma) }),
 		prisma.liveChannelRun.count({ where: pointerRunWhere(prisma) }),
 	]);
-	const incomplete = archives.incomplete.filter(
+	const incomplete = [
+		...new Map(
+			[...archives.incomplete, ...analyses].map((c) => [c.id, c]),
+		).values(),
+	].filter(
 		(channel) =>
 			!RESET_BLOCKING_CHANNEL_STATUSES.some(
 				(status) => status === channel.status,

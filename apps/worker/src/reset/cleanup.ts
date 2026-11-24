@@ -11,6 +11,7 @@ import {
 	type ResetCleanupPayload,
 	type ResetCleanupWebhook,
 	readResetCleanupTask,
+	readResetRtmpArchives,
 } from "@bitovp/db";
 
 export const RESET_ENCODING_ABSENT = Symbol("verified encoding absence");
@@ -42,7 +43,13 @@ export async function cleanResetPayload(
 	};
 	const requireTerminal = new Set(
 		payload.encodings
-			.filter((row) => row.requireTerminal)
+			.filter(
+				(row) =>
+					row.requireTerminal ||
+					((row.entityKey.startsWith("liveChannel") ||
+						row.entityKey.startsWith("liveEffectClaim:")) &&
+						!row.allowCreated),
+			)
 			.map((row) => `${row.accountId}:${row.encodingId}`),
 	);
 	const pendingEntities = new Set(
@@ -134,7 +141,31 @@ export function createResetCleanupSweep(deps: {
 					task.id,
 				);
 				if (!current) continue;
-				const done = await cleanResetPayload(current.payload, deps.providerFor);
+				// Older receipts can contain a verification intent's provider ID even though
+				// another airing retained it in an effect journal. Recheck before any STOP.
+				const snapshot = current.payload;
+				const inventory =
+					snapshot.verificationIntents.length && snapshot.encodings.length
+						? await readResetRtmpArchives(deps.prisma)
+						: null;
+				const retained = new Set<string>();
+				const encodings = snapshot.encodings.filter((row) => {
+					if (!inventory) return true;
+					if (inventory.ownedIds.has(row.encodingId)) {
+						retained.add(
+							JSON.stringify([row.entityKey, row.accountId, row.encodingId]),
+						);
+						return false;
+					}
+					return (
+						!inventory.incompleteAccounts.has(null) &&
+						!inventory.incompleteAccounts.has(row.accountId)
+					);
+				});
+				const done = await cleanResetPayload(
+					{ ...snapshot, encodings },
+					deps.providerFor,
+				);
 				const applied = await mutateResetCleanupTask(
 					deps.prisma,
 					deps.cipher,
@@ -146,7 +177,14 @@ export function createResetCleanupSweep(deps: {
 						// Do not consume a late append or a worker's remaining in-flight operation.
 						payload.encodings = payload.encodings.filter(
 							(row) =>
-								!done.encodings.has(`${row.accountId}:${row.encodingId}`) ||
+								(!done.encodings.has(`${row.accountId}:${row.encodingId}`) &&
+									!retained.has(
+										JSON.stringify([
+											row.entityKey,
+											row.accountId,
+											row.encodingId,
+										]),
+									)) ||
 								payload.pendingEntities.some(
 									(pending) => pending.entityKey === row.entityKey,
 								),

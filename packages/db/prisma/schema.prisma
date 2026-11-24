@@ -888,6 +888,8 @@ model LiveChannel {
   /// or verified absent by reset-only account/provenance checks and locked CAS.
   /// Exempts only the current bitmovinEncodingId; every (re)start clears it.
   /// Unknown/ambiguous reads remain blocking. Absence never changes lifecycle.
+  /// Exact account/encoding terminal reads for surviving claims whose owning run no longer exists.
+  resetOrphanEncoderEvidence Json?
   encoderStoppedConfirmedFor String?
   bitmovinAccountId  String?           @db.Uuid
   bitmovinAccount    BitmovinAccount?  @relation(fields: [bitmovinAccountId], references: [id], onDelete: SetNull)

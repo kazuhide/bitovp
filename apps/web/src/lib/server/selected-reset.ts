@@ -23,7 +23,11 @@ import {
 	type MoqArchiveCleanupSnapshot,
 	snapshotMoqArchiveCleanup,
 } from "./moq-archive-cleanup";
-import { collectEncoderPointers, type ResetOutcome } from "./reset";
+import {
+	collectEncoderPointers,
+	type ResetOutcome,
+	resetBlockingFeederWhere,
+} from "./reset";
 import { snapshotResetCleanup } from "./reset-cleanup-snapshot";
 import { assertResetLiveAnalyses } from "./reset-live-analyses";
 
@@ -43,6 +47,14 @@ function delegate(prisma: ResetClient, model: ResetTable) {
 	};
 }
 
+export class SelectedResetPublisherActive extends Error {
+	constructor() {
+		super(
+			"Confirm that the pseudo-live publisher has stopped before clearing its operating history",
+		);
+	}
+}
+
 export class SelectedResetBlocked extends Error {
 	constructor() {
 		super("Reset selection is missing required categories");
@@ -58,6 +70,13 @@ export class SelectedResetLibraryEditingBlocked extends Error {
 	}
 }
 
+// The scheduler recovers a lost queue acknowledgement from this exact row.
+const pendingScheduledStop = {
+	action: "STOP",
+	status: "FIRED",
+	outcome: "PENDING",
+} as const;
+
 async function countProtectedEditing(prisma: ResetClient): Promise<number> {
 	return (
 		await Promise.all(
@@ -71,6 +90,7 @@ async function countProtectedEditing(prisma: ResetClient): Promise<number> {
 /** All choices are counted, including choices currently left unchecked. */
 export async function countResetCategories(
 	prisma: ResetClient,
+	categories?: ReadonlySet<ResetCategory>,
 ): Promise<Count[]> {
 	return Promise.all(
 		RESET_CATALOG.map(async (entry) => {
@@ -78,13 +98,17 @@ export async function countResetCategories(
 				entry.models.map((model) =>
 					delegate(prisma, model)
 						.count(
-							model === "vmafComputeCredential"
-								? { where: { disabledAt: null } }
-								: model === "vmafExecutionProfile"
-									? { where: { resetAt: null } }
-									: "where" in entry
-										? { where: entry.where }
-										: {},
+							model === "liveSchedule" &&
+								categories &&
+								!categories.has("liveChannels")
+								? { where: { NOT: pendingScheduledStop } }
+								: model === "vmafComputeCredential"
+									? { where: { disabledAt: null } }
+									: model === "vmafExecutionProfile"
+										? { where: { resetAt: null } }
+										: "where" in entry
+											? { where: entry.where }
+											: {},
 						)
 						.then((count) => ({ model, count })),
 				),
@@ -156,11 +180,23 @@ export async function deleteSelectedData(
 					// Same lock order as capture: job, then source. A late capture cannot
 					// resurrect erased library data from retained FINISHED history.
 					await tx.$queryRaw`SELECT id FROM "EncodingJob" ORDER BY id FOR UPDATE`;
-					if (selected.has("liveChannels")) {
+					if (
+						selected.has("liveChannels") ||
+						selected.has("verificationHistory")
+					) {
 						// Snapshot ownership and delete children under the same channel-first
 						// order as owned finalizers, including delayed provider responses.
 						await tx.$queryRaw`SELECT id FROM "LiveChannel" ORDER BY id FOR UPDATE`;
-						await assertResetLiveAnalyses(tx);
+						if (selected.has("liveChannels")) await assertResetLiveAnalyses(tx);
+					}
+					if (selected.has("pseudoLiveFeeds")) {
+						await tx.$queryRaw`SELECT id FROM "FeederSession" ORDER BY id FOR UPDATE`;
+						if (
+							await tx.feederSession.count({
+								where: resetBlockingFeederWhere(),
+							})
+						)
+							throw new SelectedResetPublisherActive();
 					}
 					if (selected.has("contentLibrary")) {
 						await tx.$queryRaw`SELECT id FROM "LibrarySource" ORDER BY id FOR UPDATE`;
@@ -233,23 +269,27 @@ export async function deleteSelectedData(
 							// Erase the selectable credential immediately; immutable material
 							// remains private so task snapshots can still tear down cloud resources.
 							const deleted =
-								model === "vmafComputeCredential"
-									? await delegate(tx, model).updateMany({
-											where: { disabledAt: null },
-											data: { disabledAt: new Date() },
+								model === "liveSchedule" && !selected.has("liveChannels")
+									? await tx.liveSchedule.deleteMany({
+											where: { NOT: pendingScheduledStop },
 										})
-									: model === "vmafExecutionProfile"
+									: model === "vmafComputeCredential"
 										? await delegate(tx, model).updateMany({
-												where: { resetAt: null },
-												data: {
-													enabled: false,
-													resetAt: new Date(),
-													version: { increment: 1 },
-												},
+												where: { disabledAt: null },
+												data: { disabledAt: new Date() },
 											})
-										: await delegate(tx, model).deleteMany(
-												"where" in entry ? { where: entry.where } : {},
-											);
+										: model === "vmafExecutionProfile"
+											? await delegate(tx, model).updateMany({
+													where: { resetAt: null },
+													data: {
+														enabled: false,
+														resetAt: new Date(),
+														version: { increment: 1 },
+													},
+												})
+											: await delegate(tx, model).deleteMany(
+													"where" in entry ? { where: entry.where } : {},
+												);
 							// Disjoint halves of alertRule must retain separate audit counts.
 							counts[model === "alertRule" ? entry.category : model] =
 								deleted.count;

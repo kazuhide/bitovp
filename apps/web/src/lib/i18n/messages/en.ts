@@ -4667,6 +4667,8 @@ export const en = {
 			"This resets only the current organization. User accounts, memberships, other organizations, and platform settings are kept.",
 		resetSelectionKept:
 			"Unchecked categories are kept, along with stored media and environment files (.env). Information needed to stop delivery is retained temporarily until cleanup finishes.",
+		resetLiveOwnershipPending:
+			"Confirm Live encoder and Analysis shutdown or stop the listed publishers before clearing this data.",
 		resetEditingDataProtected:
 			"{count} editing media and history records are protected. Content Library and its related credentials cannot be reset while these records exist. Clear Content Library from the selection to reset other data.",
 		resetDependenciesAdded: "Related categories also selected: {categories}.",

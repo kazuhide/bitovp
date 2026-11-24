@@ -1,8 +1,8 @@
 import {
+	AISA_LIVE_STEP_KINDS,
 	aisaCreateNotDispatched,
 	aisaLiveFinalization,
 	aisaLiveNeverStarted,
-	isAisaManagedLivePlan,
 } from "@bitovp/core";
 import {
 	type AppTransactionClient,
@@ -75,15 +75,27 @@ export const analysisBindingSelect = {
 export async function assertResetLiveAnalyses(tx: AppTransactionClient) {
 	// Provider readback may update a run while its channel projection stays unchanged.
 	await tx.$queryRaw`SELECT id FROM "LiveChannelRun" ORDER BY "liveChannelId", seq DESC FOR UPDATE`;
+	if ((await resetLiveAnalysisBlockers(tx)).length)
+		throw new AisaFinalizationNotConfirmed();
+}
+
+export async function resetLiveAnalysisBlockers(
+	tx: Pick<AppTransactionClient, "liveChannel">,
+) {
+	const logBindings = AISA_LIVE_STEP_KINDS.map((kind) => ({
+		stepLog: { array_contains: [{ kind }] },
+	}));
 	const channels = await tx.liveChannel.findMany({
 		where: {
 			origin: { not: "AISA_IMPORTED" },
 			OR: [
+				...logBindings,
 				{ plan: { path: ["start", "aiSceneAnalysisLive"], not: DB_NULL } },
 				{
 					runs: {
 						some: {
 							OR: [
+								...logBindings,
 								{ aisaAnalysisId: { not: null } },
 								{ aisaStatus: { not: null } },
 								{ aisaSnapshot: { not: DB_NULL } },
@@ -95,6 +107,7 @@ export async function assertResetLiveAnalyses(tx: AppTransactionClient) {
 		},
 		select: {
 			id: true,
+			name: true,
 			status: true,
 			origin: true,
 			plan: true,
@@ -104,19 +117,20 @@ export async function assertResetLiveAnalyses(tx: AppTransactionClient) {
 			runs: analysisBindingSelect,
 		},
 	});
-	for (const channel of channels) {
-		const runs = channel.runs;
-
-		if (
-			!runs.length &&
-			isAisaManagedLivePlan(channel.plan) &&
-			!aisaRunCanBeRemoved(channel, null)
-		)
-			throw new AisaFinalizationNotConfirmed();
-		for (const [index, run] of runs.entries()) {
-			if (!isAisaLiveChannelView(channel, run)) continue;
-			if (!aisaRunCanBeRemoved(index === 0 ? channel : run, run))
-				throw new AisaFinalizationNotConfirmed();
-		}
-	}
+	return channels
+		.filter((channel) => {
+			if (!channel.runs.length)
+				return (
+					isAisaLiveChannelView(channel, null) &&
+					!aisaRunCanBeRemoved(channel, null)
+				);
+			return channel.runs.some((run, index) => {
+				const projection = index === 0 ? channel : { ...channel, stepLog: [] };
+				return (
+					isAisaLiveChannelView(projection, run) &&
+					!aisaRunCanBeRemoved(index === 0 ? channel : run, run)
+				);
+			});
+		})
+		.map(({ id, name, status }) => ({ id, name, status }));
 }

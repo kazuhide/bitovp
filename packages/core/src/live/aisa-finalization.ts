@@ -21,14 +21,27 @@ export const aisaNeverStartedProofSchema = z.discriminatedUnion("basis", [
 	}),
 ]);
 export type AisaNeverStartedProof = z.infer<typeof aisaNeverStartedProofSchema>;
+export const AISA_LIVE_STEP_KINDS = [
+	"CREATE_AISA_LIVE_ANALYSIS",
+	"RESOLVE_AISA_LIVE_ENCODING",
+	"START_AISA_LIVE_ANALYSIS",
+] as const;
+
+/** An interrupted create can leave only its compiler step, before any provider ID exists. */
+export function hasAisaLiveStepLog(log: unknown): boolean {
+	return (
+		Array.isArray(log) &&
+		log.some(
+			(entry) =>
+				entry !== null &&
+				typeof entry === "object" &&
+				AISA_LIVE_STEP_KINDS.some((kind) => entry.kind === kind),
+		)
+	);
+}
 function managedEntries(log: unknown): StepLogEntry[] | null {
 	const parsed = stepLogSchema.safeParse(log);
-	const kinds = [
-		"CREATE_AISA_LIVE_ANALYSIS",
-		"RESOLVE_AISA_LIVE_ENCODING",
-		"START_AISA_LIVE_ANALYSIS",
-		"AWAIT_LIVE_RUNNING",
-	];
+	const kinds = [...AISA_LIVE_STEP_KINDS, "AWAIT_LIVE_RUNNING"];
 	return parsed.success &&
 		parsed.data.length === kinds.length &&
 		parsed.data.every((entry, index) => entry.kind === kinds[index])

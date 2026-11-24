@@ -145,6 +145,7 @@ export {
 	recordResetCleanupWebhookResult,
 	revealResetCleanupAccount,
 } from "./reset-cleanup";
+export { readResetRtmpArchives } from "./reset-live-inventory";
 export {
 	appendLiveChannelStepLogEntry,
 	appendLiveEffectStepLogEntry,

@@ -228,6 +228,7 @@ export {
 	validateAisaManagedLivePlan,
 } from "./live/aisa";
 export {
+	AISA_LIVE_STEP_KINDS,
 	type AisaFinalizationProof,
 	type AisaFinalizationRun,
 	type AisaNeverStartedProof,
@@ -237,6 +238,7 @@ export {
 	aisaLiveNeverStarted,
 	aisaNeverStartedProofSchema,
 	aisaStartNotDispatched,
+	hasAisaLiveStepLog,
 } from "./live/aisa-finalization";
 export {
 	type AisaLiveResultSnapshot,

@@ -504,6 +504,11 @@ beforeEach(() => {
 	}
 	wireFindMany();
 	wirePointerCounts();
+	(
+		prisma.feederSession as { count: ReturnType<typeof vi.fn> }
+	).count.mockImplementation(async (args?: { where?: unknown }) =>
+		args?.where ? active.feederSessions.length : 1,
+	);
 });
 
 describe("POST /api/admin/reset (ledger #130)", () => {

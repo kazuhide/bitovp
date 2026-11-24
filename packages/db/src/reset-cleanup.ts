@@ -14,6 +14,8 @@ export type ResetCleanupEncoding = {
 	allowVerifiedMissing?: true;
 	/** Displaced encoders with unknown start history need terminal readback. */
 	requireTerminal?: true;
+	/** The locked Live journal proves START was never dispatched for this exact encoder. */
+	allowCreated?: true;
 	entityKey: string;
 	encodingId: string;
 	accountId: string | null;

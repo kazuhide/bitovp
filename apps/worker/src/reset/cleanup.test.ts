@@ -82,8 +82,11 @@ it("keeps the displaced encoder across a CREATED read through either of its mirr
 		(await cleanResetPayload(payload, async () => provider)).encodings.size,
 	).toBe(1);
 });
-it("settles CREATED once the owning worker has acknowledged its fence", async () => {
+it("settles CREATED with positive never-started evidence and no owner in flight", async () => {
 	const { payload, provider } = fixture();
+	const [row] = payload.encodings;
+	if (!row) throw new Error("Missing test encoder");
+	row.allowCreated = true;
 	vi.mocked(provider.status).mockResolvedValue("CREATED");
 	expect(
 		(await cleanResetPayload(payload, async () => provider)).encodings.size,

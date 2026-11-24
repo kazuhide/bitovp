@@ -139,14 +139,13 @@ describe("POST /api/admin/reset/reconcile (row #313)", () => {
 					read("missing-account", "enc-x"),
 				]);
 				expect(states).toEqual([
-					{ kind: "stopped", providerStatus: "CANCELED" },
-					{ kind: "stopped", providerStatus: "ERROR" },
+					{ kind: "stopped", providerStatus: "CANCELED", account },
+					{ kind: "stopped", providerStatus: "ERROR", account },
 					{ kind: "running", providerStatus: "RUNNING" },
 					// rev425 R4: QUEUED is not stopped
 					{ kind: "running", providerStatus: "QUEUED" },
-					// rev431 (owner 2026-09-07): CREATED was never started — nothing to
-					// stop, so it is confirmed; a retry that resumes it clears the stamp
-					{ kind: "stopped", providerStatus: "CREATED" },
+					// The reset reconciler still requires an unsent START journal before a Live stamp.
+					{ kind: "stopped", providerStatus: "CREATED", account },
 					// rev425 R3: no status / an unclassified word / a 404 stay closed
 					{
 						kind: "unverified",

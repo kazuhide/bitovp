@@ -3,6 +3,7 @@ import {
 	type AisaFinalizationRun,
 	aisaLiveFinalization,
 	deriveProviderLifecycle,
+	hasAisaLiveStepLog,
 	isAisaManagedLivePlan,
 	type PersistedProviderState,
 } from "@bitovp/core";
@@ -26,6 +27,8 @@ export function isAisaLiveChannelView(channel: unknown, run: unknown): boolean {
 	return (
 		row?.origin === "AISA_IMPORTED" ||
 		isAisaManagedLivePlan(row?.plan) ||
+		hasAisaLiveStepLog(row?.stepLog) ||
+		hasAisaLiveStepLog(binding?.stepLog) ||
 		(binding !== null &&
 			["aisaAnalysisId", "aisaStatus", "aisaSnapshot"].some(
 				(key) => binding[key] !== null && binding[key] !== undefined,

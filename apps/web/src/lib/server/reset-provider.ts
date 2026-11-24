@@ -1,4 +1,5 @@
 import { classifyProviderStatusWord } from "@bitovp/core";
+import type { AppTransactionClient } from "@bitovp/db";
 import type { ProviderEncoderState } from "./reset";
 
 export type ResetAccountSnapshot = {
@@ -45,7 +46,7 @@ export async function readResetEncoding(
 		const { status } = await api.encoding.encodings.status(encodingId);
 		const state = classifyProviderStatusWord(status);
 		if (state === "TERMINAL" || status === "CREATED")
-			return { kind: "stopped", providerStatus: String(status) };
+			return { kind: "stopped", providerStatus: String(status), account };
 		if (state !== "UNKNOWN")
 			return { kind: "running", providerStatus: String(status) };
 		return {
@@ -82,4 +83,21 @@ export async function readResetEncoding(
 			message: "Bitmovin encoding status could not be verified",
 		};
 	}
+}
+
+/** Keep the credential used for a GET stable until the local confirmation commits. */
+export async function lockResetAccount(
+	tx: AppTransactionClient,
+	account: ResetAccountSnapshot,
+) {
+	const rows = await tx.$queryRaw<
+		{ id: string }[]
+	>`SELECT id FROM "BitmovinAccount" WHERE id=${account.id}::uuid FOR UPDATE`;
+	return (
+		rows.length === 1 &&
+		!!(await tx.bitmovinAccount.findFirst({
+			where: account,
+			select: { id: true },
+		}))
+	);
 }

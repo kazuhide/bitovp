@@ -30,6 +30,7 @@ export async function snapshotResetCleanup(
 	const ownerSince = new Map<string, Date>();
 	const accountIds = new Set<string>();
 	const requireTerminal = new Set<string>();
+	let neverStarted = new Set<string>();
 	function entity(
 		kind: string,
 		row: {
@@ -67,6 +68,11 @@ export async function snapshotResetCleanup(
 				entityKey,
 				encodingId,
 				accountId: row.bitmovinAccountId,
+				...(neverStarted.has(
+					JSON.stringify([kind, row.id, row.bitmovinAccountId, encodingId]),
+				)
+					? { allowCreated: true as const }
+					: {}),
 				...(requireTerminal.has(`${row.bitmovinAccountId}:${encodingId}`)
 					? { requireTerminal: true }
 					: {}),
@@ -113,6 +119,7 @@ export async function snapshotResetCleanup(
 	if (selected.has("liveChannels")) {
 		const archive = await readResetRtmpArchives(tx);
 		if (archive.incomplete.length) throw new IncompleteRtmpArchive();
+		neverStarted = archive.neverStarted;
 		for (const pointer of archive.pointers)
 			requireTerminal.add(
 				`${pointer.bitmovinAccountId}:${pointer.bitmovinEncodingId}`,
@@ -302,6 +309,10 @@ export async function snapshotResetCleanup(
 						},
 					}),
 		]);
+		const retainedArchive = selected.has("liveChannels")
+			? null
+			: await readResetRtmpArchives(tx);
+		const retainedIds = retainedArchive?.ownedIds;
 		const retained = [
 			...jobs.map((row) => ({
 				...row,
@@ -379,6 +390,12 @@ export async function snapshotResetCleanup(
 				intent.localId ?? (localIds.size === 1 ? [...localIds][0] : undefined);
 			const entityKey = `${kind}:${localId ?? `verification-intent:${intent.id}`}`;
 			for (const encodingId of providerIds) {
+				if (
+					retainedIds?.has(encodingId) ||
+					retainedArchive?.incompleteAccounts.has(null) ||
+					retainedArchive?.incompleteAccounts.has(accountId)
+				)
+					continue;
 				if (
 					retained.some(
 						(row) =>

@@ -11,6 +11,7 @@ import selectors
 import shutil
 import subprocess
 import sys
+from contextlib import ExitStack
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from fractions import Fraction
@@ -37,6 +38,7 @@ SOFTWARE_CODECS = {"libx264": "H264", "libx265": "HEVC", "libvpx-vp9": "VP9", "l
 SOFTWARE_DECODERS = {
     "H264": ("h264",), "HEVC": ("hevc",), "VP9": ("vp9", "libvpx-vp9"), "AV1": ("libdav1d", "libaom-av1"),
 }
+MEDIA_LIBRARY = re.compile(r"lib(?:avcodec|avdevice|avformat|avfilter|avutil|swresample|swscale|x264|x265|vpx|svtav1enc|vmaf|dav1d|aom)[.-]", re.I)
 MAX_CAPTURE = 12 * 1024 * 1024
 MAX_REQUEST = 272 * 1024
 MAX_FRAMES = 3600
@@ -142,6 +144,13 @@ class OwnedVmafV1:
     profile: dict
 
 
+@dataclass(frozen=True, order=True)
+class SoftwareLibrary:
+    name: str
+    path: Path
+    image_uuid: str = ""
+
+
 @dataclass(frozen=True)
 class Runtime:
     ffmpeg: Path
@@ -155,7 +164,7 @@ class Runtime:
     vmaf_v1: Optional[OwnedVmafV1]
     software_catalog: Optional[ModuleType] = None
     software_decoders: Optional[dict] = None
-    software_libraries: Optional[tuple] = None
+    software_libraries: Optional[dict] = None
 
 
 def fields(value, required, optional=frozenset()):
@@ -372,13 +381,14 @@ def encode_options(trial):
     return args
 
 
-def capture(args, stage, cwd=None, timeout=15, env=None):
+def capture(args, stage, cwd=None, timeout=15, env=None, pass_fds=(), executable=None):
     """Read both pipes to a fixed limit and kill a stalled or oversized subprocess."""
     deadline = monotonic() + timeout
     chunks = {"stdout": bytearray(), "stderr": bytearray()}
     try:
         with subprocess.Popen(
             args, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            pass_fds=pass_fds, executable=executable,
         ) as process, selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ, "stdout")
             selector.register(process.stderr, selectors.EVENT_READ, "stderr")
@@ -754,29 +764,112 @@ def discover_sdk_settings(ffmpeg, codecs):
     return None
 
 
+def dyld_media_libraries(trace):
+    images = re.findall(r"^dyld\[\d+\]: <([^>]+)> (/[^\n]+)$", trace, re.M)
+    if not images:
+        raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+    return tuple(sorted(SoftwareLibrary(Path(path).name, Path(path).resolve(strict=True), image_uuid)
+                        for image_uuid, path in images if MEDIA_LIBRARY.match(Path(path).name)))
+
+
+def static_elf(program):
+    """An ELF without an interpreter does not have an initial loader trace."""
+    with os.fdopen(os.open(program, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as binary:
+        regular_file_identity(os.fstat(binary.fileno()))
+        header = binary.read(64)
+        if len(header) != 64 or header[:4] != b"\x7fELF" or header[4] not in (1, 2) or header[5] not in (1, 2):
+            return False
+        order = "little" if header[5] == 1 else "big"
+        wide = header[4] == 2
+        table = int.from_bytes(header[32:40] if wide else header[28:32], order)
+        size = int.from_bytes(header[54:56] if wide else header[42:44], order)
+        count = int.from_bytes(header[56:58] if wide else header[44:46], order)
+        if size != (56 if wide else 32) or not 0 < count < 65535:
+            return False
+        binary.seek(table)
+        entries = binary.read(size * count)
+    return len(entries) == size * count and all(
+        int.from_bytes(entries[i:i + 4], order) != 3 for i in range(0, len(entries), size)  # PT_INTERP
+    )
+
+
 def software_library_paths(program):
-    """Identify dynamically loaded codec, scorer, decoder and FFmpeg binaries."""
+    """Keep the dependency name and the file selected by this executable's loader."""
     if sys.platform == "darwin":
         env = {**os.environ, "DYLD_PRINT_LIBRARIES": "1"}
         _, trace = capture([str(program), "-version"], "SOFTWARE_LIBRARY_PROBE", env=env)
-        paths = re.findall(r"^dyld\[\d+\]: <[^>]+> (/[^\n]+)$", trace, re.M)
-    else:
-        env = {**os.environ, "LD_TRACE_LOADED_OBJECTS": "1"}
-        trace, _ = capture([str(program), "-version"], "SOFTWARE_LIBRARY_PROBE", env=env)
-        if "=> not found" in trace:
-            raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
-        paths = re.findall(r"(?:=> |^\s*)(/[^\n]+?) \(0x", trace, re.M)
-    libraries = re.compile(r"lib(?:avcodec|avformat|avfilter|avutil|swscale|x264|x265|vpx|svtav1enc|vmaf|dav1d|aom)[.-]", re.I)
-    return sorted({Path(path).resolve(strict=True) for path in paths if libraries.match(Path(path).name)})
+        return dyld_media_libraries(trace)
+    env = {**os.environ, "LD_TRACE_LOADED_OBJECTS": "1"}
+    trace, _ = capture([str(program), "-version"], "SOFTWARE_LIBRARY_PROBE", env=env)
+    if "=> not found" in trace:
+        raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+    bindings = re.findall(r"^\s*(?:(\S+) => )?(/[^\n]+?) \(0x", trace, re.M)
+    if not bindings and not static_elf(program):
+        raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+    return tuple(SoftwareLibrary(name or path, Path(path).resolve(strict=True))
+                 for name, path in bindings if MEDIA_LIBRARY.match(Path(name or path).name))
 
 
 def software_dependencies(ffmpeg, ffprobe):
-    return tuple(sorted(set(software_library_paths(ffmpeg)) | set(software_library_paths(ffprobe))))
+    return {program: software_library_paths(program) for program in (ffmpeg, ffprobe)}
 
 
 def require_software_dependencies(ffmpeg, ffprobe, expected):
     if expected != software_dependencies(ffmpeg, ffprobe):
         raise RunnerError("RUNTIME_TOOL_CHANGED")
+
+
+def capture_software(args, stage, libraries, identities, cwd=None, timeout=15):
+    """Bind Linux stages to open files and verify the images loaded by each child."""
+    program = Path(args[0])
+    dependencies = libraries[program]
+    darwin = sys.platform == "darwin"
+    with ExitStack() as stack:
+        descriptors = {}
+        for path in (program, *(entry.path for entry in dependencies)):
+            if path not in descriptors:
+                try:
+                    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                except OSError as error:
+                    raise RunnerError("RUNTIME_TOOL_CHANGED") from error
+                stack.callback(os.close, fd)
+                if regular_file_identity(os.fstat(fd)) != identities[path]:
+                    raise RunnerError("RUNTIME_TOOL_CHANGED")
+                descriptors[path] = fd
+        pinned = list(dict.fromkeys(f"/proc/self/fd/{descriptors[entry.path]}" for entry in dependencies))
+        env = dict(os.environ)
+        if darwin:
+            env["DYLD_PRINT_LIBRARIES"] = "1"
+        else:
+            if pinned:
+                env["LD_PRELOAD"] = ":".join(pinned + ([env["LD_PRELOAD"]] if env.get("LD_PRELOAD") else []))
+            env["LD_DEBUG"] = "files"
+            env.pop("LD_DEBUG_OUTPUT", None)
+        executable = str(program) if darwin else f"/proc/self/fd/{descriptors[program]}"
+        stdout, stderr = capture(args, stage, cwd, timeout, env=env, pass_fds=tuple(descriptors.values()),
+                                 executable=executable)
+        if darwin:
+            # dyld reports canonical paths and the UUID of each image actually mapped.
+            if dyld_media_libraries(stderr) != dependencies:
+                raise RunnerError("RUNTIME_TOOL_CHANGED")
+            stderr = re.sub(r"^dyld\[\d+\]: <[^>]+> /[^\n]*\n", "", stderr, flags=re.M)
+        else:
+            # glibc names preloads by their inherited descriptor. Reject an unpinned
+            # codec too, including an extra dependency loaded after program startup.
+            loaded = re.findall(r"^\s*\d+:\s+calling init: ([^\n]+)$", stderr, re.M)
+            if not set(pinned).issubset(loaded) or any(MEDIA_LIBRARY.match(Path(path).name) for path in loaded):
+                raise RunnerError("RUNTIME_TOOL_CHANGED")
+            stderr = re.sub(r"^[ \t]*\d+:\t[^\n]*\n", "", stderr, flags=re.M)
+        # A package may unlink or overwrite an open inode during the command.
+        if any(regular_file_identity(os.fstat(fd)) != identities[path] for path, fd in descriptors.items()):
+            raise RunnerError("RUNTIME_TOOL_CHANGED")
+        return stdout, stderr
+
+
+def capture_media(runtime, args, stage, cwd=None, timeout=15):
+    if getattr(runtime, "software_libraries", None) is None:
+        return capture(args, stage, cwd, timeout=timeout)
+    return capture_software(args, stage, runtime.software_libraries, dict(runtime.tool_identities), cwd, timeout)
 
 
 def verify_runtime_tools(runtime):
@@ -797,7 +890,7 @@ def resolve_software_runtime(runner_source, invocation_path, expected_runtime):
     module.__file__ = str(catalog.path)
     exec(compile(catalog.contents, str(catalog.path), "exec", dont_inherit=True), module.__dict__)
     libraries = software_dependencies(ffmpeg, ffprobe)
-    paths = {ffmpeg, ffprobe, *libraries}
+    paths = {ffmpeg, ffprobe, *(entry.path for group in libraries.values() for entry in group)}
     identities = {path: runtime_tool_identity(path) for path in sorted(paths)}
     hashes = {path: sha256_file(path, identity) for path, identity in identities.items()}
     identities[runner_path] = runner_source.identity
@@ -807,17 +900,17 @@ def resolve_software_runtime(runner_source, invocation_path, expected_runtime):
     model_bytes = read_file(model_path, 2 * 1024 * 1024, "MODEL", require_regular=True)
     if hashlib.sha256(model_bytes).hexdigest() != MODEL_SHA256:
         raise RunnerError("UNEXPECTED_VMAF_MODEL")
-    filters, _ = capture([str(ffmpeg), "-hide_banner", "-filters"], "RUNTIME_PROBE")
+    filters, _ = capture_software([str(ffmpeg), "-hide_banner", "-filters"], "RUNTIME_PROBE", libraries, identities)
     filter_names = {parts[1] for line in filters.splitlines() if len(parts := line.split()) >= 2}
     if not {"libvmaf", "showinfo", "trim", "setpts", "settb"} <= filter_names:
         raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
 
     def help_text(args):
-        stdout, stderr = capture(args, "SOFTWARE_ENCODER_PROBE")
+        stdout, stderr = capture_software(args, "SOFTWARE_ENCODER_PROBE", libraries, identities)
         return stdout + "\n" + stderr
 
     encoders = module.discover_software_encoders(ffmpeg, capture_help=help_text)
-    decoders, _ = capture([str(ffmpeg), "-hide_banner", "-decoders"], "RUNTIME_PROBE")
+    decoders, _ = capture_software([str(ffmpeg), "-hide_banner", "-decoders"], "RUNTIME_PROBE", libraries, identities)
     decode_names = set(re.findall(r"^\s*V\S*\s+(\S+)", decoders, re.M))
     decode_by_codec = {codec: next((name for name in names if name in decode_names), None)
                        for codec, names in SOFTWARE_DECODERS.items()}
@@ -838,7 +931,10 @@ def resolve_software_runtime(runner_source, invocation_path, expected_runtime):
     fingerprint = {
         "capabilities": capabilities, "decoders": decode_by_codec,
         "catalogImplementationSha256": hashlib.sha256(catalog.contents).hexdigest(),
-        "libraries": sorted((path.name, sha) for path, sha in hashes.items() if path not in (ffmpeg, ffprobe)),
+        "libraries": {
+            role: [(entry.name, entry.path.name, hashes[entry.path]) for entry in libraries[program]]
+            for role, program in (("ffmpeg", ffmpeg), ("ffprobe", ffprobe))
+        },
         "cpu": cpu, "threads": len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count(),
     }
     require_software_dependencies(ffmpeg, ffprobe, libraries)
@@ -935,7 +1031,7 @@ def resolve_runtime(runner_source, invocation_path, *, expected_runtime=None, pr
 
 
 def probe_media(runtime, path, options):
-    output, _ = capture(
+    output, _ = capture_media(runtime,
         [str(runtime.ffprobe), "-v", "error", "-print_format", "json", *options, *LOCAL_INPUT, str(path)],
         "MEDIA_PROBE", timeout=45,
     )
@@ -1018,13 +1114,13 @@ def encode(runtime, trial, source, source_time_base, work):
         encoder = trial.software["encoder"]
         stats = work / ("x265-stats" if encoder == "libx265" else "pass-0.log")
         first_pass = software_pass_options(argv, encoder, 1)
-        _, first_log = capture([*first_pass, "-f", "null", "-"], "ENCODE_FIRST_PASS", work, timeout=300)
+        _, first_log = capture_media(runtime, [*first_pass, "-f", "null", "-"], "ENCODE_FIRST_PASS", work, timeout=300)
         check_software_report(first_log)
         validate_timeline(first_log, "encode_ref", trial.start_frame, trial.frame_count, "yuv420p")
         if not stats.is_file() or stats.stat().st_size == 0:
             raise RunnerError("UNSUPPORTED_SOFTWARE_MULTIPASS")
         argv = software_pass_options(argv, encoder, 2)
-    _, log = capture([*argv, str(output)], "ENCODE", work, timeout=300)
+    _, log = capture_media(runtime, [*argv, str(output)], "ENCODE", work, timeout=300)
     elapsed_ms = (perf_counter_ns() - started) // 1000000
     if software:
         check_software_report(log)
@@ -1063,7 +1159,7 @@ def score(runtime, trial, source, source_time_base, encoded, work, cuda=None):
         f"[dist][ref]{filter_name}=model=path={MODEL_NAME}:log_fmt=json:log_path={name}:n_subsample=1:"
         "shortest=1:repeatlast=0[out]"
     )
-    _, log = capture(
+    _, log = capture_media(runtime,
         [str(runtime.ffmpeg), *FFMPEG_ARGS, "-copyts", *(cuda_args(runtime) if cuda else []),
          *LOCAL_INPUT, *decoder_input, "-i", str(encoded), *LOCAL_INPUT, "-noautorotate", "-i", str(source),
          "-filter_complex", graph, "-map", "[out]", "-an", "-sn", "-dn",

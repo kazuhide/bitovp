@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import unittest
@@ -871,13 +872,81 @@ class SoftwareRunnerTest(unittest.TestCase):
             trace = f"libx265.so.1 => {link} (0xabcd)\n"
             with patch.object(sys, "platform", "linux"), patch.object(runner, "capture", return_value=(trace, "")):
                 expected = runner.software_dependencies(binary, binary)
-                self.assertEqual(expected, (old.resolve(),))
+                self.assertEqual(expected[binary], (runner.SoftwareLibrary(link.name, old.resolve()),))
                 identity = runner.runtime_tool_identity(old)
                 link.unlink()
                 link.symlink_to(new)
                 self.assertEqual(identity, runner.runtime_tool_identity(old))
                 with self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
                     runner.require_software_dependencies(binary, binary, expected)
+
+    def test_ffmpeg_and_ffprobe_cannot_exchange_libraries(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            ffmpeg, ffprobe = root / "ffmpeg", root / "ffprobe"
+            first, second = root / "build-a", root / "build-b"
+            first.touch()
+            second.touch()
+            targets = {ffmpeg: first, ffprobe: second}
+
+            def trace(args, *_args, **_kwargs):
+                return f"libx264.so.1 => {targets[Path(args[0])]} (0xabbc)\n", ""
+
+            with patch.object(sys, "platform", "linux"), patch.object(runner, "capture", side_effect=trace):
+                pinned = runner.software_dependencies(ffmpeg, ffprobe)
+                targets.update({ffmpeg: second, ffprobe: first})
+                with self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
+                    runner.require_software_dependencies(ffmpeg, ffprobe, pinned)
+
+    def test_absent_loader_trace_only_qualifies_static_elf(self):
+        # One ELF64 little-endian program header, first PT_INTERP then PT_LOAD.
+        elf = bytearray(64 + 56)
+        elf[:6] = b"\x7fELF\x02\x01"
+        elf[32] = 64
+        elf[54] = 56
+        elf[56] = 1
+        with TemporaryDirectory() as directory, patch.object(sys, "platform", "linux"), \
+                patch.object(runner, "capture", return_value=("ffmpeg version 8", "")):
+            program = Path(directory) / "ffmpeg"
+            elf[64] = 3
+            program.write_bytes(elf)
+            with self.assertRaisesRegex(RunnerError, "INCOMPLETE_SOFTWARE_RUNTIME"):
+                runner.software_library_paths(program)
+            elf[64] = 1
+            program.write_bytes(elf)
+            self.assertEqual(runner.software_library_paths(program), ())
+
+    @unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("cc"), "requires Linux and a C compiler")
+    def test_real_child_uses_pinned_library_across_transient_soname_retarget(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            program, library, alias = root / "tool", root / "old.so", root / "libx264.so.1"
+            newer = root / "new.so"
+            for path, number in ((library, 1), (newer, 2)):
+                subprocess.run(["cc", "-x", "c", "-", "-shared", "-fPIC", "-Wl,-soname," + alias.name, "-o", path],
+                               input=f"int version(void) {{ return {number}; }}", text=True, check=True)
+            alias.symlink_to(library)
+            subprocess.run(["cc", "-x", "c", "-", "-L" + directory, "-l:" + alias.name, "-Wl,-rpath," + directory,
+                            "-o", program], input='#include <stdio.h>\nextern int version(void);\n'
+                            'int main(void) { printf("%d\\n", version()); }\n', text=True, check=True)
+            bindings = runner.software_dependencies(program, program)
+            identities = {path: runner.runtime_tool_identity(path) for path in (program, library)}
+            original_capture = runner.capture
+
+            def swap_while_running(*args, **kwargs):
+                alias.unlink()
+                alias.symlink_to(newer)
+                try:
+                    self.assertEqual(subprocess.check_output([program], text=True), "2\n")
+                    return original_capture(*args, **kwargs)
+                finally:
+                    alias.unlink()
+                    alias.symlink_to(library)
+
+            with patch.object(runner, "capture", side_effect=swap_while_running):
+                output, _ = runner.capture_software([str(program)], "ENCODE", bindings, identities)
+            self.assertEqual(output, "1\n")
+            runner.require_software_dependencies(program, program, bindings)
 
     def test_software_rejects_ignored_native_settings(self):
         for warning in (

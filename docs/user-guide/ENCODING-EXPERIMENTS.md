@@ -37,6 +37,8 @@ Use `H264/libx264`, `HEVC/libx265`, `VP9/libvpx-vp9`, or `AV1/libsvtav1`. Values
 
 In the NDJSON export, `input.software` stores the requested settings. Use each successful row’s `result.videoBytes`, `durationTicks`, `timeBase`, `observedGopFrames` and `meanVmaf` for measured outcomes. Encoder presets and lookahead can affect frame-level decisions, so use the measured outputs as training labels.
 
+For dynamically linked Linux builds, the worker uses glibc loader diagnostics and `/proc/self/fd` to pin each FFmpeg and ffprobe invocation to its verified media libraries. The managed Debian build supplies this environment.
+
 ## Prepare the Linux NVENC worker
 
 Build the [pinned private runtime](../../native/nvenc-experiments/build-runtime.sh) on a Linux system with a compatible NVIDIA driver, CUDA Toolkit, and C/C++ build tools. The build needs Meson, Ninja, NASM, pkg-config, make, curl, and Python. Hold the assets and the worker work directory on the same managed Linux host as the web app, or mount the same directory into both deployments. The Web process needs read access to registrations and the worker health file. Only operators and the worker should have write access to its managed directories.

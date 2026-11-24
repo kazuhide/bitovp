@@ -1,6 +1,6 @@
 {
 	"schemaVersion": 1,
-	"sdkVersion": "1.288.0",
+	"sdkVersion": "1.289.0",
 	"entries": [
 		{
 			"sdkMethod": "encoding.configurations.video.h264.create",

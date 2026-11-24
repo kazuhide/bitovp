@@ -1378,7 +1378,8 @@
 					"CAPTION_CEA708",
 					"DVB_SUBTITLE",
 					"DOLBY_ATMOS",
-					"DOLBY_VISION"
+					"DOLBY_VISION",
+					"HDR10_PLUS"
 				],
 				"sdkEvidence": { "file": "models/InputStreamType.d.ts", "line": 5 }
 			}

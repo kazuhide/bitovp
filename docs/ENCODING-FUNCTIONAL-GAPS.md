@@ -5,6 +5,14 @@ Bitmovin JavaScript SDK: **1.288.0**. This is a bounded source audit of encoding
 creation and configuration, following the Error Definitions integration.
 No paid encoding was started for this audit.
 
+The November 25 follow-up uses the published JavaScript SDK 1.289.0.
+Its Encoding surface has 1,098 operations. The four additions are the HDR10+
+input-stream create, get, list and delete operations. The VOD wizard
+and Worker now use create; the other three lack a confirmed application call.
+The separate cross-service inventory includes 84 notification operations
+(76 Encoding-specific and eight shared) for a total of 1,182. Notification
+operations are outside the application's Encoding-only census.
+
 ## How to read the results
 
 The audit follows **form → validated plan → compiled operation → Worker → SDK**.
@@ -35,7 +43,7 @@ An absent AudioMix **filter** API is not a missing mixing capability: the app
 already uses AudioMixInputStream. Adding a second mixing mechanism is not a
 priority.
 
-The compared SDK operations are reproducible from
+The November 16 operation counts use the baseline revision's
 `apps/web/src/data/api-coverage/current.json`, selecting each family's direct
 resource-type `create` methods. For muxings, use
 `encoding.encodings.muxings.<type>.create`; nested DRM and ID3 frame creation
@@ -139,10 +147,12 @@ VOD input plans currently support S3, HTTPS, Akamai NetStorage, Azure,
 GenericS3 and the two GCS credential variants. FTP/SFTP/Aspera/direct-upload/
 local/S3-role-based inputs need their own end-to-end audit, including stored
 credentials, browser access and output inspection. Output support for a
-protocol does not imply input support. MoQ output remains Beta/account-gated;
-an experimental Live expert-JSON path now resolves encrypted relay credentials
-and creates the output through the Worker. This addition is independent of the
-SDK upgrade and does not qualify a relay or Player Web X playback.
+protocol does not imply input support. MoQ output still requires account-level Beta access. The Live wizard
+can now author compatible Custom Live plans using a stored MoQ relay credential.
+A documented Cloudflare draft 16 trial with Encoder 2.294.0 observed moving
+640×360 video in Player Web X. Draft 18 interoperability and other relays require
+their own verification. See the [Live wizard guide](user-guide/LIVE.md#experimental-moq-delivery)
+and [trial conditions and results](MOQ-LIVE-ENCODER-TEST-RESULTS.md).
 
 Native Templates, Native Watch Folders and resource CRUD/custom-data/query
 controls belong to a separate management lane. Existing app presets and watch

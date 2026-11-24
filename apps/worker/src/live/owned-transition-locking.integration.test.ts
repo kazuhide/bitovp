@@ -916,11 +916,18 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			true,
 			"word-only",
 			"channel-only",
+			"run-only-open",
+			"run-only-sealed",
 		] as const)("recovers an unbound legacy publisher on the current terminal ERROR before permitting another airing (sealed=%s)", async (sealed) => {
 			const f = await dispatchFixture();
 			await tenant.liveChannel.update({
 				where: { id: f.channel.id },
-				data: { status: "ERROR" },
+				data: {
+					status: "ERROR",
+					...(sealed === "run-only-open" || sealed === "run-only-sealed"
+						? { bitmovinEncodingId: null }
+						: {}),
+				},
 			});
 			await tenant.liveChannelRun.update({
 				where: { id: f.run.id },
@@ -928,7 +935,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					status: "ERROR",
 					providerTerminalAt: sealed === "word-only" ? null : lease,
 					...(sealed === "channel-only" ? { bitmovinEncodingId: null } : {}),
-					providerFeederStopsEnqueuedAt: sealed ? lease : null,
+					providerFeederStopsEnqueuedAt:
+						sealed && sealed !== "run-only-open" ? lease : null,
 					providerStatus: "ERROR",
 					providerStatusObservedAt: lease,
 				},
@@ -2815,6 +2823,104 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			});
 		});
 
+		it.each([
+			null,
+			1,
+		])("sends only the first STOP for a promoted secondary after an older manual ACK on another target (protocol %s)", async (version) => {
+			const f = await dispatchFixture(),
+				secondary = randomUUID();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					status: "STOPPED",
+					error: null,
+					bitmovinEncodingId: null,
+					encoderStoppedConfirmedFor: version === null ? f.encodingId : null,
+				},
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: {
+					status: "STOPPED",
+					error: null,
+					bitmovinEncodingId: null,
+					previousProviderEncodingIds: [secondary],
+					...(version === null
+						? {
+								encoderStoppedConfirmedFor: f.encodingId,
+								providerTerminalAt: lease,
+								providerStatus: "FINISHED",
+								providerStatusObservedAt: lease,
+							}
+						: {}),
+					rtmpRetirementEvidence:
+						version === null
+							? []
+							: [
+									{
+										encodingId: f.encodingId,
+										accountId: f.accountId,
+										observedAt: lease.toISOString(),
+										providerStatus: "FINISHED",
+										disposition: "TERMINAL",
+									},
+								],
+				},
+			});
+			await tenant.liveEffectClaim.create({
+				data: {
+					...f.identity,
+					liveChannelId: f.channel.id,
+					idempotencyKey: f.job.effect.idempotencyKey,
+					state: "ACKED",
+					generation: 0,
+					ownerId: "old",
+					token: randomUUID(),
+					expiresAt: lease,
+					acknowledgedAt: lease,
+					stopProtocolVersion: version,
+					stopSendEncodingIds: version === 1 ? [f.encodingId] : [],
+				},
+			});
+			expect(await bindArchivedStopTarget(tenant, f.channel.id, f.run.id)).toBe(
+				secondary,
+			);
+			const job = {
+				...f.job,
+				effect: {
+					...f.job.effect,
+					idempotencyKey: `manual:stop:${f.channel.id}:${f.run.id}:archive:${secondary}`,
+					providerEncodingId: secondary,
+				},
+			};
+			let stopped = false;
+			f.sdk.getEncodingStatus = vi.fn(async (id) => ({
+				status: id === secondary && !stopped ? "RUNNING" : "FINISHED",
+			}));
+			f.sdk.stopLiveEncoding = vi.fn(async (id) => {
+				expect(id).toBe(secondary);
+				stopped = true;
+			});
+			const proc = createLiveChannelProcessor(f.deps);
+			expect(await proc(job)).toMatchObject({ status: "STOPPED" });
+			await proc(job);
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(secondary);
+			expect(
+				(
+					await tenant.liveEffectClaim.findUniqueOrThrow({
+						where: { idempotencyKey: f.job.effect.idempotencyKey },
+					})
+				).providerEncodingId,
+			).toBe(f.encodingId);
+			expect(
+				(
+					await tenant.$transaction((tx) =>
+						readLockedLiveStartState(tx, f.channel.id),
+					)
+				).archivesRetired,
+			).toBe(true);
+		});
+
 		it("retains known unsent archives even when the log cannot establish a complete stop", async () => {
 			const f = await dispatchFixture(),
 				secondary = randomUUID();
@@ -3469,7 +3575,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 		it.each([
 			true,
 			false,
-		])("retains a run-only Analysis dispatch with an empty provider listing (cancelling=%s)", async (cancelRequested) => {
+			"normal",
+		] as const)("runs managed Analysis provisioning against both durable mirrors (%s)", async (mode) => {
+			const cancelRequested = mode === true;
 			vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
 			try {
 				const f = await dispatchFixture();
@@ -3506,8 +3614,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				const clean = initStepLog(compileAisaManagedLiveChannel(plan)),
 					journal = structuredClone(clean);
 				if (!journal[0]) throw new Error("missing managed create");
-				journal[0].response = { aisaCreateDispatched: true };
-				journal[0].status = "RUNNING";
+				if (mode !== "normal") {
+					journal[0].response = { aisaCreateDispatched: true };
+					journal[0].status = "RUNNING";
+				}
 				await tenant.liveChannel.update({
 					where: { id: f.channel.id },
 					data: {
@@ -3526,12 +3636,24 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						stepLog: JSON.parse(JSON.stringify(journal)),
 					},
 				});
+				const analysis = {
+					analysisId: randomUUID(),
+					encodingId: randomUUID(),
+					status: "CREATED",
+				};
 				const client = {
 					list: vi.fn(async () => ({ items: [], totalCount: 0 })),
 					create: vi.fn(async () => {
-						throw new Error("unexpected duplicate create");
+						if (mode !== "normal")
+							throw new Error("unexpected duplicate create");
+						return analysis;
+					}),
+					get: vi.fn(async () => ({ ...analysis })),
+					start: vi.fn(async () => {
+						analysis.status = "RUNNING";
 					}),
 				};
+				f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
 				provider.aisa.mockReturnValue(client);
 				f.deps.makeSdk = (options) => ({
 					...f.sdk,
@@ -3546,6 +3668,29 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					action: "provision",
 					params: cancelRequested ? { cancelRunId: f.run.id } : {},
 				});
+				if (mode === "normal") {
+					expect(await outcome).toMatchObject({ status: "RUNNING" });
+					expect(client.create).toHaveBeenCalledTimes(1);
+					expect(client.start).toHaveBeenCalledTimes(1);
+					const run = await tenant.liveChannelRun.findUniqueOrThrow({
+						where: { id: f.run.id },
+					});
+					expect(run).toMatchObject({
+						status: "RUNNING",
+						aisaAnalysisId: analysis.analysisId,
+						bitmovinEncodingId: analysis.encodingId,
+					});
+					expect(run.stepLog).toEqual(
+						expect.arrayContaining([
+							expect.objectContaining({
+								kind: "START_AISA_LIVE_ANALYSIS",
+								status: "DONE",
+								response: expect.objectContaining({ started: true }),
+							}),
+						]),
+					);
+					return;
+				}
 				if (cancelRequested)
 					expect(await outcome).toMatchObject({ status: "STOPPING" });
 				else await expect(outcome).rejects.toThrow();
@@ -3561,7 +3706,181 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				vi.unstubAllEnvs();
 			}
 		});
-		it("reads a run-only native CREATE before replay and preserves the existing primary", async () => {
+		it.each([
+			"accepted-start",
+			"uncertain-start",
+			"lost-create",
+			"unlocated-create",
+			"late-create",
+			"late-start",
+			"analysis-only",
+		] as const)("requires affirmative provider facts for a cancellation with run-only %s evidence", async (mode) => {
+			const f = await dispatchFixture(randomUUID());
+			const plan = JSON.parse(
+				readFileSync(
+					new URL(
+						"../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+						import.meta.url,
+					),
+					"utf8",
+				),
+			);
+			plan.bitmovin.accountId = f.accountId;
+			await tenant.bitmovinAccount.create({
+				data: {
+					id: f.accountId,
+					label: "fixture",
+					encryptedApiKey: "local-only",
+				},
+			});
+			const clean = initStepLog(compileLiveChannel(plan)),
+				saved = structuredClone(clean);
+			const create = saved.find((e) => e.kind === "CREATE_ENCODING"),
+				start = saved.find((e) => e.kind === "START_LIVE_ENCODING");
+			if (!create || !start) throw new Error("missing native steps");
+			const wasStarted =
+				mode === "accepted-start" ||
+				mode === "uncertain-start" ||
+				mode === "late-start";
+			const late = mode === "late-start" || mode === "late-create";
+			if (wasStarted) {
+				const publicCreate = clean.find((e) => e.kind === "CREATE_ENCODING");
+				if (!publicCreate) throw new Error("missing channel CREATE");
+				for (const entry of [create, publicCreate]) {
+					entry.status = "DONE";
+					entry.resourceId = f.encodingId;
+				}
+				start.status = mode === "accepted-start" ? "DONE" : "RUNNING";
+				start.startedAt = lease.toISOString();
+				if (mode === "accepted-start") start.response = { started: true };
+			} else if (mode !== "analysis-only") {
+				create.status = "RUNNING";
+				create.startedAt = lease.toISOString();
+			}
+			const primary = wasStarted ? f.encodingId : null;
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					plan,
+					stepLog: JSON.parse(JSON.stringify(clean)),
+					status: "STOPPING",
+					bitmovinEncodingId: primary,
+				},
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: {
+					stepLog: JSON.parse(JSON.stringify(late ? clean : saved)),
+					status: "STOPPING",
+					cancelRequested: true,
+					bitmovinEncodingId: primary,
+					...(mode === "analysis-only" ? { aisaAnalysisId: randomUUID() } : {}),
+				},
+			});
+			let stopped = false;
+			f.sdk.getEncodingStatus = vi.fn(async () => ({
+				status: stopped ? "CANCELED" : wasStarted ? "CREATED" : "RUNNING",
+			}));
+			f.sdk.stopLiveEncoding = vi.fn(async () => {
+				stopped = true;
+			});
+			const recover = vi.fn((options: Parameters<typeof f.deps.makeSdk>[0]) => {
+				expect(options.stamp?.adoptWindow?.()).toBe(true);
+				expect(options.stamp?.allowCreate?.()).toBe(false);
+				expect(options.stamp?.currentStep()).toBe(create.step);
+				if (mode === "unlocated-create")
+					throw new Error("Provider stamp not found");
+				return Promise.resolve(f.encodingId);
+			});
+			f.deps.makeSdk = (options) => ({
+				...f.sdk,
+				createEncoding: () => recover(options),
+			});
+			if (late) {
+				const publish = () =>
+					tenant.liveChannelRun.update({
+						where: { id: f.run.id },
+						data: { stepLog: JSON.parse(JSON.stringify(saved)) },
+					});
+				// The journal arrives after first admission but before the final locked projection.
+				if (mode === "late-start")
+					f.sdk.getEncodingStatus = vi.fn(async () => {
+						await publish();
+						return { status: "CREATED" };
+					});
+				else
+					f.deps.prisma = new Proxy(tenant, {
+						get(client, key) {
+							if (key !== "feederSession") return Reflect.get(client, key);
+							return new Proxy(client.feederSession, {
+								get(delegate, k) {
+									if (k === "findMany")
+										return async (
+											...args: Parameters<typeof delegate.findMany>
+										) => {
+											await publish();
+											return delegate.findMany(...args);
+										};
+									return Reflect.get(delegate, k);
+								},
+							});
+						},
+					});
+			}
+			const held =
+				late || mode === "analysis-only" || mode === "unlocated-create";
+			expect(
+				await createLiveChannelProcessor(f.deps)({
+					liveChannelId: f.channel.id,
+					action: "provision",
+					params: { cancelRunId: f.run.id },
+				}),
+			).toMatchObject({ status: held ? "STOPPING" : "STOPPED" });
+			expect(recover).toHaveBeenCalledTimes(
+				mode === "lost-create" || mode === "unlocated-create" ? 1 : 0,
+			);
+			expect(f.sdk.startLiveEncoding).not.toHaveBeenCalled();
+			expect(vi.mocked(f.sdk.stopLiveEncoding).mock.calls).toEqual(
+				held ? [] : [[f.encodingId]],
+			);
+			const run = await tenant.liveChannelRun.findUniqueOrThrow({
+				where: { id: f.run.id },
+			});
+			expect(run.status).toBe(held ? "STOPPING" : "STOPPED");
+			expect(run.stopNotificationAt === null).toBe(held);
+			if (late) {
+				expect(
+					(
+						await tenant.liveChannel.findUniqueOrThrow({
+							where: { id: f.channel.id },
+						})
+					).provisionClaimedAt,
+				).toBeNull();
+				expect(run.stepLog).toEqual(
+					expect.arrayContaining([
+						expect.objectContaining({
+							kind: wasStarted ? "START_LIVE_ENCODING" : "CREATE_ENCODING",
+							startedAt: lease.toISOString(),
+						}),
+					]),
+				);
+			}
+			if (mode === "analysis-only") expect(run.aisaAnalysisId).not.toBeNull();
+			if (mode === "unlocated-create")
+				expect(run.stepLog).toEqual(
+					expect.arrayContaining([
+						expect.objectContaining({
+							kind: "CREATE_ENCODING",
+							startedAt: lease.toISOString(),
+						}),
+					]),
+				);
+		});
+		it.each([
+			false,
+			true,
+			"scheduled",
+		] as const)("reads a run-only native CREATE before replay and preserves the existing primary (nullable run=%s)", async (nullable) => {
 			const f = await dispatchFixture();
 			await tenant.bitmovinAccount.create({
 				data: {
@@ -3587,20 +3906,67 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			creation.resourceId = f.encodingId;
 			await tenant.liveChannel.update({
 				where: { id: f.channel.id },
-				data: { plan, stepLog: [], status: "PROVISIONING" },
+				data: {
+					plan,
+					stepLog: nullable
+						? JSON.parse(JSON.stringify(initStepLog(compileLiveChannel(plan))))
+						: [],
+					status: nullable === "scheduled" ? "ERROR" : "PROVISIONING",
+				},
 			});
 			await tenant.liveChannelRun.update({
 				where: { id: f.run.id },
 				data: {
+					...(nullable ? { bitmovinEncodingId: null } : {}),
 					stepLog: JSON.parse(JSON.stringify(entries)),
-					status: "PROVISIONING",
+					status: nullable === "scheduled" ? "ERROR" : "PROVISIONING",
 				},
 			});
-			f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "CANCELED" }));
-			await createLiveChannelProcessor(f.deps)({
+			let job: import("@bitovp/core").LiveChannelJob = {
 				liveChannelId: f.channel.id,
 				action: "provision",
-			});
+			};
+			if (nullable === "scheduled") {
+				await tenant.liveSchedule.create({
+					data: {
+						action: "START",
+						liveChannelId: f.channel.id,
+						liveChannelRunId: f.run.id,
+						fireAt: now,
+					},
+				});
+				const enqueue = vi.fn(
+					async (
+						_job: import("@bitovp/core").LiveChannelJob,
+						_id: string,
+					) => {},
+				);
+				await createScheduleSweep({
+					prisma: tenant,
+					now: () => now,
+					enqueue,
+				})();
+				const own = enqueue.mock.calls.find(
+					([value]) => value.liveChannelId === f.channel.id,
+				);
+				if (!own)
+					throw new Error("Expected the bound scheduled revival to dispatch");
+				job = own[0];
+				const channel = await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				});
+				expect(channel.stepLog).toEqual(
+					expect.arrayContaining([
+						expect.objectContaining({
+							kind: "CREATE_ENCODING",
+							status: "DONE",
+							resourceId: f.encodingId,
+						}),
+					]),
+				);
+			}
+			f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "CANCELED" }));
+			await createLiveChannelProcessor(f.deps)(job);
 			expect(f.sdk.getEncodingStatus).toHaveBeenCalledWith(f.encodingId);
 			expect(f.sdk.createEncoding).not.toHaveBeenCalled();
 			expect(
@@ -3930,6 +4296,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			false,
 			true,
 			"scte",
+			"restart-after-created",
 		] as const)("recovers only the original unreserved STOP targets after process death (primary was reserved: %s)", async (primarySent) => {
 			const f = await dispatchFixture(),
 				secondary = randomUUID(),
@@ -3938,17 +4305,34 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				where: { id: f.run.id },
 				data: {
 					previousProviderEncodingIds:
-						primarySent === "scte" ? [finished] : [secondary, finished],
+						primarySent === "scte"
+							? []
+							: primarySent === "restart-after-created"
+								? [secondary]
+								: [secondary, finished],
+					...(primarySent === "restart-after-created"
+						? {
+								rtmpRetirementEvidence: [
+									{
+										encodingId: secondary,
+										accountId: f.accountId,
+										disposition: "NEVER_STARTED",
+										providerStatus: "CREATED",
+										observedAt: lease.toISOString(),
+									},
+								],
+							}
+						: {}),
 				},
 			});
-			if (primarySent === "scte")
+			if (primarySent === "scte" || primarySent === "restart-after-created")
 				await tenant.liveEffectClaim.create({
 					data: {
 						...f.identity,
 						liveChannelId: f.channel.id,
 						providerEncodingId: secondary,
-						action: "SCTE35",
-						state: "ACKED",
+						action: primarySent === "scte" ? "SCTE35" : "RESTART",
+						state: primarySent === "scte" ? "ACKED" : "AMBIGUOUS",
 						generation: 0,
 						token: randomUUID(),
 						idempotencyKey: randomUUID(),

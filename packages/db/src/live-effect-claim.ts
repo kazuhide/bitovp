@@ -442,6 +442,42 @@ export async function bindArchivedStopTargetInTransaction(
 	// Rebinding cannot retroactively validate an old CREATED observation. Only an ID
 	// previously indexed by the retirement writer qualified for that disposition.
 	const receipts = mergeRtmpRetirementEvidence(run.rtmpRetirementEvidence, []);
+	// Older clean STOPs can predate per-target receipts. Before moving the
+	// primary, materialize the old paired confirmation on its own account/ID.
+	const priorId = run.encoderStoppedConfirmedFor;
+	const accountId = liveChannelAccountId(channel);
+	const priorTerminal =
+		priorId &&
+		priorId !== target &&
+		accountId &&
+		channel.encoderStoppedConfirmedFor === priorId &&
+		(!run.bitmovinEncodingId || run.bitmovinEncodingId === priorId) &&
+		run.status === "STOPPED" &&
+		!run.error &&
+		channel.status === "STOPPED" &&
+		!channel.error &&
+		run.providerTerminalAt &&
+		run.providerStatus &&
+		classifyProviderStatusWord(run.providerStatus) === "TERMINAL" &&
+		history.some(
+			(claim) =>
+				claim.action === "STOP" &&
+				claim.state === "ACKED" &&
+				!claim.failure &&
+				claim.providerEncodingId === priorId,
+		)
+			? [
+					{
+						accountId,
+						encodingId: priorId,
+						providerStatus: run.providerStatus,
+						observedAt: (
+							run.providerStatusObservedAt ?? run.providerTerminalAt
+						).toISOString(),
+						disposition: "TERMINAL" as const,
+					},
+				]
+			: [];
 	const retained = receipts.filter(
 		(r) =>
 			r.encodingId !== target ||
@@ -452,8 +488,13 @@ export async function bindArchivedStopTargetInTransaction(
 		where: { id: run.id },
 		data: {
 			bitmovinEncodingId: target,
-			...(retained.length !== receipts.length
-				? { rtmpRetirementEvidence: retained }
+			...(retained.length !== receipts.length || priorTerminal.length
+				? {
+						rtmpRetirementEvidence: mergeRtmpRetirementEvidence(
+							retained,
+							priorTerminal,
+						),
+					}
 				: {}),
 			// The rebound primary remains an outstanding archive until its own receipt lands.
 			previousProviderEncodingIds: [
@@ -740,6 +781,23 @@ export function acknowledgedProviderTargets(
 		)
 		.map((c) => c.providerEncodingId);
 }
+/** Identities proved to belong to the airing, distinct from IDs mentioned only by a diagnostic. */
+export function ownedLiveStopEncoders(
+	run: Parameters<typeof liveStopKnownTargets>[0],
+	channel: Parameters<typeof liveStopKnownTargets>[1],
+	history: readonly (StopHistory & { state: string })[],
+): Set<string> {
+	return new Set(
+		[
+			...acknowledgedProviderTargets(history),
+			run.bitmovinEncodingId,
+			...(liveStopLogEncodings(run.stepLog) ?? []),
+			...(liveStopLogEncodings(channel.stepLog) ?? []),
+			...(run.previousProviderEncodingIds ?? []),
+		].filter((id): id is string => Boolean(id)),
+	);
+}
+
 /** Targets with affirmative run ownership and no historical STOP reservation.
  * Legacy dispatches cannot distinguish an attempted encoding from an untouched one. */
 export function unreservedStopTargets(
@@ -757,18 +815,17 @@ export function unreservedStopTargets(
 	const reservations = new Set(
 		stops.flatMap((c) => c.stopSendEncodingIds ?? []),
 	);
-	const owned = new Set([
-		...acknowledgedProviderTargets(history),
-		run.bitmovinEncodingId,
-		...(liveStopLogEncodings(run.stepLog) ?? []),
-		...(liveStopLogEncodings(channel.stepLog) ?? []),
-		...(unconfirmedRtmpEncoders(run, channel, account) ??
-			run.previousProviderEncodingIds ??
-			[]),
-	]);
-	return [...owned].filter(
-		(id): id is string =>
-			!!id &&
+	const outstanding = outstandingLiveStopTargets(
+		run,
+		channel,
+		history,
+		account,
+		run.bitmovinEncodingId ?? null,
+	);
+	const owned = ownedLiveStopEncoders(run, channel, history);
+	return outstanding.encodingIds.filter(
+		(id) =>
+			owned.has(id) &&
 			!reservations.has(id) &&
 			stops.every(
 				(c) =>
@@ -966,17 +1023,26 @@ async function recoverAcknowledgedStop(
 	if (!target || target !== input.providerEncodingId) return null;
 
 	const result: { requireReadback: boolean; existingUnsent?: string[] } = {
-		requireReadback: false,
+		requireReadback: history.some(
+			(c) =>
+				c.action === "STOP" &&
+				c.state === "ACKED" &&
+				c.providerEncodingId !== target,
+		),
 	};
 	const channelLog = liveStopLogEncodings(channel.stepLog);
+	if (!channelLog || run.status !== "STOPPED" || run.error) return result;
+	const terminalIds = new Set(
+		validLiveRetirementReceipts(run, history, liveChannelAccountId(channel))
+			.filter((r) => r.disposition === "TERMINAL")
+			.map((r) => r.encodingId),
+	);
 	if (
-		!channelLog ||
-		run.status !== "STOPPED" ||
-		run.error ||
-		!run.providerTerminalAt ||
-		classifyProviderStatusWord(run.providerStatus) !== "TERMINAL"
+		run.bitmovinEncodingId &&
+		run.providerTerminalAt &&
+		classifyProviderStatusWord(run.providerStatus) === "TERMINAL"
 	)
-		return result;
+		terminalIds.add(run.bitmovinEncodingId);
 	const pending =
 		pendingAiringRetirement(
 			run,
@@ -989,12 +1055,12 @@ async function recoverAcknowledgedStop(
 			claim.action !== "STOP" ||
 			claim.state !== "ACKED" ||
 			claim.stopProtocolVersion !== null ||
-			claim.failure ||
-			claim.providerEncodingId !== target
+			!terminalIds.has(claim.providerEncodingId) ||
+			claim.failure
 		)
 			continue;
 		const covered = new Set([
-			target,
+			claim.providerEncodingId,
 			...channelLog,
 			...claim.stopSendEncodingIds,
 		]);
@@ -1110,13 +1176,11 @@ export async function beginLiveEffect(
 					where: { liveChannelId: input.liveChannelId },
 					orderBy: { seq: "desc" },
 				}),
-				tx.liveEffectClaim.findMany({
-					where: {
-						liveChannelId: input.liveChannelId,
-						liveChannelRunId: input.liveChannelRunId,
-						action: "STOP",
-					},
-				}),
+				readAiringEffectHistory(
+					tx,
+					input.liveChannelId,
+					input.liveChannelRunId,
+				),
 			]);
 			if (
 				channel &&

@@ -77,6 +77,7 @@ const PROVIDER_LIFECYCLE_SELECT = {
  * in PROVISIONING and enqueues nothing.
  */
 type EffectPlan = {
+	archiveHandoff?: boolean;
 	cancelRequested?: boolean;
 	runId: string;
 	providerEncodingId: string;
@@ -236,7 +237,11 @@ type ManualStopClaimInspection =
 	| { kind: "NONE" | "FAILED" }
 	| { kind: "OPEN"; state: "CLAIMED" | "DISPATCHING" }
 	| { kind: "ACKED" }
-	| { kind: "REFUSED"; reason: string };
+	| { kind: "REFUSED"; reason: string; otherAcknowledgedTarget?: boolean };
+
+function manualStopKey(liveChannelId: string, plan: EffectPlan) {
+	return `manual:stop:${liveChannelId}:${plan.runId}${plan.archiveHandoff ? `:archive:${plan.providerEncodingId}` : ""}`;
+}
 
 function hasExactManualStopIdentity(
 	data: unknown,
@@ -269,7 +274,7 @@ function hasExactManualStopIdentity(
 		queuedData.liveChannelRunId === undefined &&
 		queuedData.encodingId === undefined &&
 		queuedData.plannedLiveChannelRunId === undefined &&
-		effect.idempotencyKey === `manual:stop:${liveChannelId}:${plan.runId}` &&
+		effect.idempotencyKey === manualStopKey(liveChannelId, plan) &&
 		effect.liveChannelRunId === plan.runId &&
 		effect.providerEncodingId === plan.providerEncodingId &&
 		effect.action === "STOP" &&
@@ -293,7 +298,7 @@ async function inspectManualStopClaim(
 ): Promise<ManualStopClaimInspection> {
 	const claim = await prisma.liveEffectClaim.findUnique({
 		where: {
-			idempotencyKey: `manual:stop:${liveChannelId}:${plan.runId}`,
+			idempotencyKey: manualStopKey(liveChannelId, plan),
 		},
 		select: {
 			liveChannelId: true,
@@ -314,7 +319,6 @@ async function inspectManualStopClaim(
 		claim.liveChannelId !== liveChannelId ||
 		claim.requestSha256 !== null ||
 		claim.liveChannelRunId !== plan.runId ||
-		claim.providerEncodingId !== plan.providerEncodingId ||
 		claim.action !== "STOP" ||
 		claim.scheduleId !== null ||
 		claim.targetId !== null
@@ -325,6 +329,12 @@ async function inspectManualStopClaim(
 				"the durable claim does not match the current manual stop identity",
 		};
 	}
+	if (claim.providerEncodingId !== plan.providerEncodingId)
+		return {
+			kind: "REFUSED",
+			reason: "the durable claim is for another encoding of this airing",
+			otherAcknowledgedTarget: claim.state === "ACKED",
+		};
 	// Only an explicit run-bound AISA retry can requeue an expired
 	// dispatch. The worker still checks claim ownership before sending.
 	if (
@@ -416,13 +426,22 @@ async function admitManualStop(
 	recovery: ManualStopRecovery,
 ): Promise<ManualStopAdmission> {
 	const queue = getLiveChannelQueue();
-	const jobId = `manual-stop-${liveChannelId}-${plan.runId}`;
-	const claim = await inspectManualStopClaim(
+	let claim = await inspectManualStopClaim(
 		prisma,
 		liveChannelId,
 		plan,
 		recovery,
 	);
+	if (
+		claim.kind === "REFUSED" &&
+		claim.otherAcknowledgedTarget &&
+		recovery.allowArchiveRecovery
+	) {
+		// Keep the retired encoder's claim and retained queue result intact.
+		plan = { ...plan, archiveHandoff: true };
+		claim = await inspectManualStopClaim(prisma, liveChannelId, plan, recovery);
+	}
+	const jobId = `manual-stop-${liveChannelId}-${plan.runId}${plan.archiveHandoff ? `-archive-${plan.providerEncodingId}` : ""}`;
 	if (claim.kind === "REFUSED") {
 		return claim;
 	}
@@ -514,7 +533,7 @@ async function admitManualStop(
 		"STOP",
 		admissionFenceVersion,
 		undefined,
-		`manual:stop:${liveChannelId}:${plan.runId}`,
+		manualStopKey(liveChannelId, plan),
 	);
 	await queue.add(
 		"live-channel",
@@ -915,7 +934,9 @@ export async function POST(req: Request, { params }: RouteParams) {
 								? restoreLiveProvisionEvidence(
 										sourceLog,
 										latest.stepLog,
-										latest.bitmovinEncodingId,
+										latest.bitmovinEncodingId ??
+											lockedChannel?.bitmovinEncodingId ??
+											row.bitmovinEncodingId,
 									)
 								: stepLogSchema.parse(sourceLog);
 						if (!restored) throw new StartNotClaimableError();

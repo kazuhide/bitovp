@@ -446,8 +446,9 @@ export function createProviderLifecycleReconciler(deps: {
 			return run &&
 				deriveProviderLifecycle(run, Date.now()) === "TERMINAL" &&
 				(run.providerFeederStopsEnqueuedAt ||
-					run.bitmovinEncodingId === null) &&
-				(run.bitmovinEncodingId === null ||
+					c.bitmovinEncodingId !== run.bitmovinEncodingId) &&
+				(!run.bitmovinEncodingId ||
+					!c.bitmovinEncodingId ||
 					c.bitmovinEncodingId === run.bitmovinEncodingId)
 				? [
 						{

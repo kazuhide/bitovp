@@ -19,6 +19,7 @@ import {
 	MslEncoderVersionError,
 	PROVISION_LEASE_RELEASE,
 	reseedFailedSteps,
+	restoreLiveProvisionEvidence,
 	sealedFeederSourceSchema,
 	slateSourceSchema,
 	stepLogSchema,
@@ -884,6 +885,33 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					(runWrite.kind === "revive" && latest?.id !== runWrite.runId)
 				)
 					return null;
+				if (
+					latest &&
+					channel &&
+					runWrite.kind !== "create" &&
+					claim.data.stepLog
+				) {
+					const primary =
+						latest.bitmovinEncodingId ?? channel.bitmovinEncodingId;
+					const saved = restoreLiveProvisionEvidence(
+						channel.stepLog,
+						latest.stepLog,
+						primary,
+					);
+					const restored =
+						saved &&
+						restoreLiveProvisionEvidence(claim.data.stepLog, saved, primary);
+					if (
+						!restored ||
+						(channel.bitmovinEncodingId &&
+							latest.bitmovinEncodingId &&
+							channel.bitmovinEncodingId !== latest.bitmovinEncodingId)
+					)
+						return null;
+					claim.data.stepLog = reseedFailedSteps(
+						restored,
+					) as unknown as Prisma.InputJsonValue;
+				}
 			}
 			const claimed = await tx.liveChannel.updateMany({
 				where: {

@@ -108,6 +108,7 @@ export {
 	markLiveEffectFailed,
 	mergeRtmpRetirementEvidence,
 	outstandingLiveStopTargets,
+	ownedLiveStopEncoders,
 	pendingSecondaryStopTargets,
 	readAiringEffectHistory,
 	recordLiveStopFailure,

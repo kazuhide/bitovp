@@ -52,20 +52,20 @@ export async function commitProvisionEnd(
 		if (latest && outcome.stepLog !== undefined) {
 			const channel = await tx.liveChannel.findUnique({
 				where: { id: liveChannelId },
-				select: { stepLog: true },
+				select: { stepLog: true, bitmovinEncodingId: true },
 			});
 			if (!channel) return false;
 			const saved = restoreLiveProvisionEvidence(
 				channel.stepLog,
 				latest.stepLog,
-				latest.bitmovinEncodingId,
+				latest.bitmovinEncodingId ?? channel.bitmovinEncodingId,
 			);
 			const restored =
 				saved &&
 				restoreLiveProvisionEvidence(
 					outcome.stepLog,
 					saved,
-					latest.bitmovinEncodingId,
+					latest.bitmovinEncodingId ?? channel.bitmovinEncodingId,
 				);
 			projection = {
 				status: outcome.status,

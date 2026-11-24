@@ -1373,11 +1373,11 @@ describe("POST /api/live-channels/[id]/actions", () => {
 		);
 	});
 
-	it("revives a native encoder whose completed CREATE is retained only on its own run", async () => {
+	it.each([
+		false,
+		true,
+	])("revives a native encoder whose completed CREATE is retained only on its own run (nullable run pointer %s)", async (nullable) => {
 		const primary = "same-encoder";
-		findUnique.mockResolvedValueOnce(
-			channel({ status: "ERROR", stepLog: [], bitmovinEncodingId: primary }),
-		);
 		const step = {
 			kind: "CREATE_ENCODING",
 			step: "encoding",
@@ -1386,11 +1386,28 @@ describe("POST /api/live-channels/[id]/actions", () => {
 			status: "DONE",
 			resourceId: primary,
 		};
+		findUnique.mockResolvedValueOnce(
+			channel({
+				status: "ERROR",
+				stepLog: nullable
+					? [
+							{
+								kind: step.kind,
+								step: step.step,
+								payload: {},
+								refs: {},
+								status: "PENDING",
+							},
+						]
+					: [],
+				bitmovinEncodingId: primary,
+			}),
+		);
 		runFindFirst.mockResolvedValueOnce({
 			id: RUN_ID,
 			seq: 1,
 			status: "ERROR",
-			bitmovinEncodingId: primary,
+			bitmovinEncodingId: nullable ? null : primary,
 			stepLog: [step],
 		});
 		updateMany.mockResolvedValueOnce({ count: 1 });
@@ -3080,7 +3097,10 @@ describe("displaced RTMP encoders after upgrade", () => {
 		expect(runUpdate).not.toHaveBeenCalled();
 		expect(update).not.toHaveBeenCalled();
 	});
-	it("requeues an exact acknowledged clean STOPPED archive without replacing the current primary", async () => {
+	it.each([
+		false,
+		true,
+	])("requeues a confirmed STOP archive for the selected encoding without changing earlier acknowledgements (promoted=%s)", async (promoted) => {
 		findUnique.mockResolvedValue(
 			channel({
 				origin: "MANAGED",
@@ -3103,7 +3123,14 @@ describe("displaced RTMP encoders after upgrade", () => {
 		};
 		runFindFirst.mockResolvedValue(selectedRun);
 		lockRows.mockResolvedValue([{ id: CHANNEL_ID }]);
-		effectClaimFindUnique.mockResolvedValue(manualStopClaim("ACKED"));
+		effectClaimFindUnique.mockImplementation(async ({ where }) =>
+			where.idempotencyKey === `manual:stop:${CHANNEL_ID}:${RUN_ID}`
+				? manualStopClaim(
+						"ACKED",
+						promoted ? { providerEncodingId: "retired-primary" } : {},
+					)
+				: null,
+		);
 		const retained = retainQueuedJob(
 			`manual-stop-${CHANNEL_ID}-${RUN_ID}`,
 			manualStopJobData(),
@@ -3119,13 +3146,14 @@ describe("displaced RTMP encoders after upgrade", () => {
 			revision,
 		});
 		expect(res.status).toBe(202);
-		expect(remove).toHaveBeenCalledOnce();
+		expect(remove).toHaveBeenCalledTimes(promoted ? 0 : 1);
 		expect(queueAdd).toHaveBeenCalledWith(
 			"live-channel",
 			expect.objectContaining({
 				effect: expect.objectContaining({
 					providerEncodingId: "bm-live-enc",
 					liveChannelRunId: RUN_ID,
+					idempotencyKey: `manual:stop:${CHANNEL_ID}:${RUN_ID}${promoted ? ":archive:bm-live-enc" : ""}`,
 				}),
 			}),
 			expect.anything(),

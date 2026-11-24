@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
 	type AisaNeverStartedProof,
 	aisaCreateNotDispatched,
@@ -57,6 +58,7 @@ import {
 	liveToVodParamsSchema,
 	MIN_SLATE_FIRE_SECONDS,
 	moqTrackNamespaceSchema,
+	nativeProvisionMayHaveSent,
 	normalizeLiveToVodRecord,
 	PROVIDER_UNKNOWN_GRACE_MS,
 	type ProviderLifecycle,
@@ -79,7 +81,6 @@ import type {
 	Prisma,
 } from "@bitovp/db";
 import {
-	acknowledgedProviderTargets,
 	appendLiveChannelStepLogEntry,
 	appendLiveEffectStepLogEntry,
 	assertLiveEffectCurrent,
@@ -97,6 +98,7 @@ import {
 	markLiveEffectFailed,
 	mergeRtmpRetirementEvidence,
 	outstandingLiveStopTargets,
+	ownedLiveStopEncoders,
 	persistLiveToVodAttempt,
 	type RtmpRetirementReceipt,
 	readAiringEffectHistory,
@@ -1445,15 +1447,8 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					]);
 					if (!run)
 						throw new ChannelStateError("the STOP broadcast disappeared");
-					for (const id of [
-						...acknowledgedProviderTargets(history),
-						...(liveStopLogEncodings(run.stepLog) ?? []),
-						...(unconfirmedRtmpEncoders(run, row, liveChannelAccountId(row)) ??
-							run.previousProviderEncodingIds ??
-							[]),
-					])
+					for (const id of ownedLiveStopEncoders(run, row, history))
 						ids.add(id);
-					if (run.bitmovinEncodingId) ids.add(run.bitmovinEncodingId);
 					const inventory = outstandingLiveStopTargets(
 						run,
 						row,
@@ -5276,7 +5271,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					if ((latest?.id ?? null) !== runId) return false;
 					// An Analysis dispatch recorded by another callback on this exact run
 					// must survive even if our in-memory step snapshot predates its receipt.
-					if (latest && hasAisaLiveStepLog(latest.stepLog)) {
+					if (latest) {
 						const restored = restoreLiveProvisionEvidence(
 							entries,
 							latest.stepLog,
@@ -5284,8 +5279,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						);
 						if (
 							!restored ||
-							JSON.stringify(restored) !==
-								JSON.stringify(stepLogSchema.parse(entries))
+							!isDeepStrictEqual(restored, stepLogSchema.parse(entries))
 						)
 							return false;
 					}
@@ -5750,6 +5744,19 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 							run.bitmovinEncodingId,
 						);
 					if (!provenLog) throw new AisaLiveFinalizationPendingError();
+					if (
+						(!outcome.encodingId &&
+							provenLog.some(nativeProvisionMayHaveSent)) ||
+						(classifyProviderStatusWord(run.providerStatus) !== "TERMINAL" &&
+							provenLog.some(
+								(e) =>
+									e.kind === "START_LIVE_ENCODING" &&
+									nativeProvisionMayHaveSent(e),
+							))
+					)
+						throw new Error(
+							"Native encoder operation still requires terminal readback",
+						);
 					const prospective = {
 						...run,
 						stepLog: provenLog,
@@ -5762,7 +5769,8 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 							: {}),
 					};
 					if (
-						(isAisaManagedLivePlan(channel.plan) ||
+						(run.aisaAnalysisId ||
+							isAisaManagedLivePlan(channel.plan) ||
 							hasAisaLiveStepLog(provenLog)) &&
 						(proof
 							? !aisaLiveNeverStarted(prospective, {
@@ -5918,14 +5926,21 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			: null;
 		if (claimedRun?.id !== pendingRun?.id)
 			throw new ProvisionLeaseLostError(liveChannelId);
+		const divergentPrimaries =
+			row.bitmovinEncodingId &&
+			claimedRun?.bitmovinEncodingId &&
+			row.bitmovinEncodingId !== claimedRun.bitmovinEncodingId;
 		const provisionLog = restoreLiveProvisionEvidence(
 			row.stepLog,
 			claimedRun?.stepLog,
-			claimedRun?.bitmovinEncodingId,
+			claimedRun?.bitmovinEncodingId ?? row.bitmovinEncodingId,
 		);
 		if (
 			!provisionLog ||
-			(hasAisaLiveStepLog(provisionLog) && !isAisaManagedLivePlan(row.plan))
+			(!cancelling && divergentPrimaries) ||
+			(hasAisaLiveStepLog(provisionLog) && !isAisaManagedLivePlan(row.plan)) ||
+			(claimedRun?.aisaAnalysisId &&
+				(!isAisaManagedLivePlan(row.plan) || !hasAisaLiveStepLog(provisionLog)))
 		) {
 			const status = cancelling ? "STOPPING" : "ERROR";
 			await projectProvisionEnd({
@@ -5959,8 +5974,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				) &&
 				!untouched.some(
 					(entry) =>
-						(entry.kind === "CREATE_ENCODING" &&
-							(entry.startedAt || entry.resourceId)) ||
+						nativeProvisionMayHaveSent(entry) ||
 						(entry.kind === "CREATE_AISA_LIVE_ANALYSIS" &&
 							(entry.resourceId ||
 								(entry.response &&
@@ -5983,45 +5997,38 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						feederSessionId: feeder.id,
 						action: "stop",
 					});
-				if (
-					!feeders.length &&
+				if (feeders.length) {
+					await projectProvisionEnd({ status: "STOPPING", error: null });
+					return "STOPPING";
+				}
+				const neverStarted: AisaNeverStartedProof | undefined =
 					isAisaManagedLivePlan(row.plan) &&
 					!current.aisaAnalysisId &&
 					!current.bitmovinEncodingId &&
 					aisaCreateNotDispatched(untouched)
-				) {
-					try {
-						await commitStartupCancellation(
-							untouched,
-							current.id,
-							{ status: "STOPPED", error: null },
-							{ accountId: liveChannelAccountId(row), receipts: [] },
-							{
+						? {
 								kind: "NEVER_STARTED",
 								basis: "CREATE_NOT_DISPATCHED",
 								runId: current.id,
 								observedAt: deps.now(),
-							},
-						);
-					} catch (error) {
-						if (error instanceof ProvisionLeaseLostError) throw error;
-						await persist(untouched, {
-							status: "STOPPING",
-							error: "Cancellation terminal commit is pending",
-						});
-						return "STOPPING";
-					}
-				} else if (feeders.length) {
-					await persist(untouched, { status: "STOPPING", error: null });
-				} else {
+							}
+						: undefined;
+				try {
 					await commitStartupCancellation(
 						untouched,
 						current.id,
 						{ status: "STOPPED", error: null },
 						{ accountId: liveChannelAccountId(row), receipts: [] },
+						neverStarted,
 					);
+				} catch (error) {
+					if (error instanceof ProvisionLeaseLostError) throw error;
+					await projectProvisionEnd({
+						status: "STOPPING",
+						error: "Cancellation terminal commit is pending",
+					});
+					return "STOPPING";
 				}
-				if (feeders.length) return "STOPPING";
 				return {
 					status: "STOPPED",
 					canceledRunId: pendingRun.id,
@@ -6238,12 +6245,53 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		// the one-live-per-channel index two modules away), and the attempt
 		// clock anchors totalSeconds to THIS attempt (#3 — a resume keeps the
 		// prior attempt's DONE stamps, so entries[0] is a cross-attempt clock).
+		const reviveEncodingId = entries.find(
+			(e) =>
+				(e.kind === "CREATE_ENCODING" ||
+					e.kind === "RESOLVE_AISA_LIVE_ENCODING") &&
+				e.status === "DONE",
+		)?.resourceId;
 		const initializedRunId = await withFenceWrite(async () => {
 			const lease = heldAt;
 			if (!lease) return null;
 			return deps.prisma.$transaction(async (tx) => {
 				const latest = await lockProvisionAiring(tx, liveChannelId);
 				if ((latest?.id ?? null) !== provisionRunId) return null;
+				let restoredPrimary: string | undefined;
+				if (
+					reviveEncodingId &&
+					latest &&
+					(!latest.bitmovinEncodingId || !row.bitmovinEncodingId)
+				) {
+					const current = await tx.liveChannel.findUnique({
+						where: { id: liveChannelId },
+						select: { bitmovinEncodingId: true, stepLog: true },
+					});
+					if (
+						!current ||
+						(latest.bitmovinEncodingId &&
+							latest.bitmovinEncodingId !== reviveEncodingId) ||
+						(current.bitmovinEncodingId &&
+							current.bitmovinEncodingId !== reviveEncodingId)
+					)
+						return null;
+					const journal = restoreLiveProvisionEvidence(
+						current.stepLog,
+						latest.stepLog,
+						reviveEncodingId,
+					);
+					if (
+						!journal?.some(
+							(e) =>
+								(e.kind === "CREATE_ENCODING" ||
+									e.kind === "RESOLVE_AISA_LIVE_ENCODING") &&
+								e.status === "DONE" &&
+								e.resourceId === reviveEncodingId,
+						)
+					)
+						return null;
+					restoredPrimary = reviveEncodingId;
+				}
 				const changed = await tx.liveChannel.updateMany({
 					where: {
 						id: liveChannelId,
@@ -6252,6 +6300,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					},
 					data: {
 						status: "PROVISIONING",
+						...(restoredPrimary ? { bitmovinEncodingId: restoredPrimary } : {}),
 						bitmovinAccountId: accountId,
 						error: null,
 					},
@@ -6264,6 +6313,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						: await mirror.ensureCurrentRun(liveChannelId);
 				await mirror.mirror(liveChannelId, {
 					status: "PROVISIONING",
+					...(restoredPrimary ? { bitmovinEncodingId: restoredPrimary } : {}),
 					...(!cancelling ? { encoderStoppedConfirmedFor: null } : {}),
 				});
 				return id;
@@ -6302,18 +6352,12 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		 *
 		 * A first provision (no DONE CREATE_ENCODING) has nothing to ask about.
 		 */
-		const reviveEncodingId = entries.find(
-			(e) =>
-				(e.kind === "CREATE_ENCODING" ||
-					e.kind === "RESOLVE_AISA_LIVE_ENCODING") &&
-				e.status === "DONE",
-		)?.resourceId;
 		let reviveStatus: string | null = null;
 		if (reviveEncodingId && !(await shouldCancel())) {
 			const reviveRun =
 				await actions.providerLifecycle.loadCurrentRun(liveChannelId);
 			const verdict = await actions.providerLifecycle.reconcile({
-				channel: row,
+				channel: { ...row, bitmovinEncodingId: reviveEncodingId },
 				run: reviveRun,
 				encodingId: reviveEncodingId,
 				sdk,
@@ -6563,6 +6607,8 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 							error: undefined,
 							startedAt: undefined,
 							finishedAt: undefined,
+							response: undefined,
+							request: undefined,
 							// New stamp generation: the abandoned resources keep the
 							// old `step#attempt` identity and can never be adopted
 							// by this rebuild's re-looks .
@@ -6639,6 +6685,36 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				// every CREATE remains forbidden. A normal START cancellation gate
 				// would otherwise reject the Analysis stop and its Encoder fallback.
 				cancelRecovery = true;
+				if (
+					divergentPrimaries &&
+					row.bitmovinEncodingId &&
+					claimedRun?.bitmovinEncodingId
+				) {
+					const observations = await Promise.allSettled(
+						[row.bitmovinEncodingId, claimedRun.bitmovinEncodingId].map((id) =>
+							sdk.getEncodingStatus(id),
+						),
+					);
+					const feeders = await deps.prisma.feederSession.findMany({
+						where: liveStopFeederWhere(liveChannelId),
+						select: { id: true },
+					});
+					for (const feeder of feeders)
+						await deps.enqueueFeederJob({
+							feederSessionId: feeder.id,
+							action: "stop",
+						});
+					const states = observations.map((r) =>
+						r.status === "fulfilled"
+							? classifyProviderStatusWord(r.value.status)
+							: "UNKNOWN",
+					);
+					await projectProvisionEnd({
+						status: "STOPPING",
+						error: `Cancellation pending: channel and run name different encoders (${states.join(", ")}). Reconcile both encoder IDs.`,
+					});
+					return "STOPPING";
+				}
 				const encoding = entries.find(
 					(e) =>
 						e.kind === "CREATE_ENCODING" ||
@@ -6682,7 +6758,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				if (
 					encoding?.kind === "CREATE_ENCODING" &&
 					!encoding.resourceId &&
-					encoding.startedAt
+					nativeProvisionMayHaveSent(encoding)
 				) {
 					// A response-lost CREATE may exist remotely. Reconcile its stamp;
 					// allowCreate=false forbids accidentally creating during teardown.
@@ -6735,6 +6811,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 								id: true,
 								cancelRequested: true,
 								bitmovinEncodingId: true,
+								providerStatus: true,
 								encoderStoppedConfirmedFor: true,
 							},
 						}),
@@ -6752,6 +6829,13 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						current?.id === currentRunId &&
 						current.cancelRequested &&
 						current.bitmovinEncodingId === encodingId &&
+						(classifyProviderStatusWord(current.providerStatus) ===
+							"TERMINAL" ||
+							!entries.some(
+								(e) =>
+									e.kind === "START_LIVE_ENCODING" &&
+									nativeProvisionMayHaveSent(e),
+							)) &&
 						current.encoderStoppedConfirmedFor === encodingId &&
 						channel?.bitmovinEncodingId === encodingId &&
 						channel.encoderStoppedConfirmedFor === encodingId &&
@@ -6798,9 +6882,10 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					let task = await sdk.getEncodingStatus(encodingId);
 					const startAttempted = entries.some(
 						(e) =>
-							(e.kind === "START_LIVE_ENCODING" ||
-								e.kind === "START_AISA_LIVE_ANALYSIS") &&
-							e.startedAt,
+							(e.kind === "START_LIVE_ENCODING" &&
+								nativeProvisionMayHaveSent(e)) ||
+							(e.kind === "START_AISA_LIVE_ANALYSIS" &&
+								(e.startedAt || e.status === "DONE")),
 					);
 					if (
 						!neverStartedProof &&
@@ -6947,7 +7032,8 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				// RUNNING = a previous attempt crashed between the SDK call and
 				// the DONE write; START_LIVE_ENCODING then verifies the encoding
 				// status before re-starting (same wedge prevention as VOD).
-				const wasRunning = entry.status === "RUNNING";
+				const wasRunning =
+					entry.status === "RUNNING" || nativeProvisionMayHaveSent(entry);
 				const hadStartAttempt = entry.startedAt !== undefined;
 				if (
 					entry.kind === "CREATE_OUTPUT_MOQ" &&
@@ -7053,6 +7139,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 							err.beforeSend &&
 							!hadStartAttempt
 						) {
+							if (
+								entry.kind === "CREATE_ENCODING" ||
+								entry.kind === "START_LIVE_ENCODING"
+							)
+								entry.response = { cancelledBeforeSendAt: entry.startedAt };
 							entry.startedAt = undefined;
 							entry.status = "PENDING";
 						}

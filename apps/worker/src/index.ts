@@ -179,7 +179,12 @@ import {
 	DEFAULT_LONG_JOB_MAX_STALLED_COUNT,
 	stallOptionsFor,
 } from "./stall-policy";
-import { createTenantConsumer } from "./tenant/consumer";
+import {
+	pruneSystemSweepHistory,
+	scheduleSystemSweep,
+	systemSweeps,
+} from "./system-sweeps";
+import { createTenantConsumer, isTenantSystemSweep } from "./tenant/consumer";
 import { createTenantDispatcher } from "./tenant/dispatch";
 import { tenantQueue } from "./tenant/queue";
 import {
@@ -1779,33 +1784,29 @@ setTenantInterval(
 ).unref();
 runTenantTick(() => startupCancellationLoop.run());
 
-liveChannelQueue
-	.upsertJobScheduler(
-		"live-heartbeat-sweep",
-		{ every: HEARTBEAT_SWEEP_INTERVAL_MS },
-		{ name: HEARTBEAT_SWEEP_JOB, data: { systemSweep: "heartbeat" } },
-	)
-	.catch((err) =>
-		console.error(
-			"[worker:liveChannel] failed to schedule heartbeat sweep:",
-			err,
-		),
-	);
+scheduleSystemSweep(
+	liveChannelQueue,
+	systemSweeps.liveChannel,
+	HEARTBEAT_SWEEP_INTERVAL_MS,
+).catch((err) =>
+	console.error(
+		"[worker:liveChannel] failed to schedule heartbeat sweep:",
+		err,
+	),
+);
 
 // : the slate promoter — re-queues rows that waited for the live
 // input once the channel reports stream attributes. upsert = idempotent.
-slateNormalizeQueue
-	.upsertJobScheduler(
-		SLATE_NORMALIZE_PROMOTE_JOB,
-		{ every: SLATE_NORMALIZE_PROMOTE_INTERVAL_MS },
-		{ name: SLATE_NORMALIZE_PROMOTE_JOB, data: { systemSweep: "slate" } },
-	)
-	.catch((err) =>
-		console.error(
-			"[worker:slateNormalize] failed to schedule the promoter:",
-			err,
-		),
-	);
+scheduleSystemSweep(
+	slateNormalizeQueue,
+	systemSweeps.slateNormalize,
+	SLATE_NORMALIZE_PROMOTE_INTERVAL_MS,
+).catch((err) =>
+	console.error(
+		"[worker:slateNormalize] failed to schedule the promoter:",
+		err,
+	),
+);
 
 // Live schedule sweep : fires ARMED LiveSchedule rows through
 // the queue actions above — dispatcher idiom (in-process interval,
@@ -2027,6 +2028,26 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 			...(key === "vmafRunner" ? { concurrency: VMAF_JOB_CONCURRENCY } : {}),
 		},
 	);
+	if (key === "liveChannel" || key === "slateNormalize") {
+		const queue =
+			key === "liveChannel" ? liveChannelQueue : slateNormalizeQueue;
+		const pruneAfterSweep = (job: Job | undefined) => {
+			if (job && isTenantSystemSweep(key, job)) {
+				void pruneSystemSweepHistory(
+					wakePublisher,
+					queue,
+					systemSweeps[key],
+				).catch((error) =>
+					console.error(
+						`[worker:${key}] failed to prune sweep history:`,
+						error,
+					),
+				);
+			}
+		};
+		worker.on("completed", pruneAfterSweep);
+		worker.on("failed", pruneAfterSweep);
+	}
 	worker.on("ready", () => {
 		// The concurrency is part of the line because it is otherwise invisible: the orchestrator
 		// ran at BullMQ's default of 1 for the project's whole life, and the only symptom was

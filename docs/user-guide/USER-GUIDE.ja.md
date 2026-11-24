@@ -434,6 +434,11 @@ NexGuard はレンディションごと、Kantar はエンコーディング単�
 | 音量・EBU R128 | 音量、ラウドネス、ピークの目標値。%・dB・LUFS・dBTP を区別 |
 | HQDN3D | 輝度・色差、空間方向・時間方向のノイズ低減 |
 | Unsharp | 処理範囲と強さによるシャープ化・ぼかし |
+| Enhanced Deinterlace / Interlace | フィールド順と出力モードを選択。Interlace では垂直ローパスフィルターも指定可能 |
+| Conform | 変換後のフレームレート（fps）。小数に対応 |
+| Enhanced Watermark | 入力ストレージの画像、配置、幅、高さ、不透明度（0〜1） |
+| Audio Mix | 出力チャンネルごとに入力の番号または位置とゲインを指定 |
+| Dolby Loudness | 対応音声の目標ラウドネス（LKFS）、最大トゥルーピーク（dBTP）、台詞検出 |
 
 Scaleは片方の寸法だけを指定すると元の縦横比を保ち、両方を空欄にすると元の寸法を使います。画素の縦横比は分子・分母を両方指定するか、両方を空欄にします。ここで選ぶアルゴリズムは、このフィルターの処理に適用されます。レンディションの出力寸法は別の設定です。[Scaleフィルターの仕様](https://developer.bitmovin.com/encoding/reference/postencodingfiltersscale)も参照できます。
 

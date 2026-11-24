@@ -40,7 +40,7 @@ import {
 } from "./input-stream-graph";
 import { checkInternalHevcV2Plan } from "./internal-hevc-v2";
 import { validateManifestDetails } from "./manifest-detail-validation";
-import { filterFamily } from "./media-filters";
+import { filterFamily, supportsDolbyLoudness } from "./media-filters";
 import {
 	hasMuxedInAudio,
 	isFileOnlyMuxingKind,
@@ -1216,6 +1216,8 @@ export function validatePlan(
 				filter &&
 				(rendition.codec === "WEBVTT" ||
 					rendition.codec === "IMSC" ||
+					(filter.kind === "DOLBY_LOUDNESS" &&
+						!supportsDolbyLoudness(rendition.codec)) ||
 					filterFamily(filter.kind) !==
 						(AUDIO_CODECS.has(rendition.codec) ? "audio" : "video"))
 			)
@@ -2626,7 +2628,7 @@ export function validatePlan(
 		plan.renditions.flatMap((r) => (r.filters ?? []).map((a) => a.filterKey)),
 	);
 	for (const filter of plan.filters) {
-		if (filter.kind === "WATERMARK") {
+		if (filter.kind === "WATERMARK" || filter.kind === "ENHANCED_WATERMARK") {
 			const input = plan.inputs.find((i) => i.key === filter.inputKey);
 			if (!input || !["S3", "GENERIC_S3", "GCS"].includes(input.kind))
 				issues.push({

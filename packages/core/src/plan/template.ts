@@ -1174,7 +1174,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			filterResources[endpoint] ??= {};
 			const group = filterResources[endpoint];
 			const properties = filterParameters(filter);
-			if (filter.kind === "WATERMARK") {
+			if (filter.kind === "WATERMARK" || filter.kind === "ENHANCED_WATERMARK") {
 				delete properties.inputKey;
 				delete properties.imagePath;
 				properties.image = placeholder(
@@ -2404,7 +2404,9 @@ export function planToEncodingTemplateYaml(plan: EncodingPlan): string {
 		"# schema: https://raw.githubusercontent.com/bitmovin/bitmovin-api-sdk-examples/main/bitmovin-encoding-template.json",
 		"# Secrets are exported as {{PLACEHOLDER}} variables (vault never leaves this app).",
 		"# Numeric substitutions (e.g. the SFTP port) must be unquoted numbers.",
-		...(plan.filters.some((f) => f.kind === "WATERMARK")
+		...(plan.filters.some(
+			(f) => f.kind === "WATERMARK" || f.kind === "ENHANCED_WATERMARK",
+		)
 			? [
 					"# NOTE: watermark image URL placeholders require a fresh signed URL for the referenced input object.",
 				]

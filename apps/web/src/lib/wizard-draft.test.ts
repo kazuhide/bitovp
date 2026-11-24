@@ -94,6 +94,68 @@ it("restores a fixed output logo with its image-only source and rendition attach
 	);
 });
 
+it("restores authored broadcast filter parameters and their video and audio attachment positions", () => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	state.filters = [
+		{
+			key: "watermark",
+			kind: "ENHANCED_WATERMARK",
+			inputKey: "main",
+			imagePath: "logos/logo.png",
+			left: 0,
+			width: 4.5,
+			opacity: 0,
+		},
+		{ key: "field", kind: "ENHANCED_DEINTERLACE", mode: "FIELD" },
+		{ key: "rate", kind: "CONFORM", targetFps: 24000 / 1001 },
+		{
+			key: "interlace",
+			kind: "INTERLACE",
+			mode: "TOP",
+			verticalLowPassFilteringMode: "LOW_PASS",
+		},
+		{
+			key: "mix",
+			kind: "AUDIO_MIX",
+			channelLayout: "MONO",
+			audioMixChannels: [
+				{
+					channelNumber: 0,
+					sourceChannels: [
+						{ type: "FRONT_RIGHT", gain: -0.5 },
+						{ type: "FRONT_LEFT", gain: 0 },
+					],
+				},
+			],
+		},
+		{
+			key: "levels",
+			kind: "DOLBY_LOUDNESS",
+			speechDetectionThreshold: 0,
+			maximumTruePeakLevel: -2,
+			targetLoudness: -23,
+		},
+	];
+	const attachments = (keys: string[]) =>
+		keys.map((filterKey, position) => ({ filterKey, position }));
+	state.videos = state.videos.map((video) => ({
+		...video,
+		extras: {
+			filters: attachments(["field", "rate", "interlace", "watermark"]),
+		},
+	}));
+	state.audios = state.audios.map((audio) => ({
+		...audio,
+		extras: { filters: attachments(["mix", "levels"]) },
+	}));
+	const draft = projectWizardDraft("vod", state);
+	const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, draft, "vod");
+	expect(restored.filters).toEqual(state.filters);
+	expect(buildPlan(restored).renditions.map((row) => row.filters)).toEqual(
+		buildPlan(state).renditions.map((row) => row.filters),
+	);
+});
+
 it("does not persist image URLs, unknown filter JSON or dangling logo attachments", () => {
 	const state = structuredClone(DEFAULT_WIZARD_STATE);
 	const value = projectWizardDraft("vod", {

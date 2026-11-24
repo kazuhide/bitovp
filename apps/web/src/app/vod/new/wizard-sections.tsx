@@ -6,6 +6,7 @@ import {
 	INTERNAL_HEVC_V2_BCF_VERSION,
 	QC_GATE_METRICS,
 	qcRuleSeverity,
+	supportsDolbyLoudness,
 } from "@bitovp/core";
 import { useEffect, useId } from "react";
 import { InfrastructureIdPicker } from "@/components/infrastructure-pickers";
@@ -935,7 +936,10 @@ export function LadderSection({
 									encodingKeys={encodingKeys}
 									filterKeys={filters
 										.filter(
-											(f) => filterFamily(f.kind ?? "DEINTERLACE") === "audio",
+											(f) =>
+												filterFamily(f.kind ?? "DEINTERLACE") === "audio" &&
+												(f.kind !== "DOLBY_LOUDNESS" ||
+													supportsDolbyLoudness(codec)),
 										)
 										.map((f) => f.key)}
 									nexguardCredentials={nexguardCredentials}
@@ -1169,7 +1173,7 @@ export function LadderSection({
 											label: streamReferenceLabel(state, s),
 										}))}
 									encodingKeys={encodingKeys}
-									filterKeys={filterKeys}
+									filterKeys={[]}
 									nexguardCredentials={nexguardCredentials}
 									onChange={(extras) => patchSubtitle(index, { extras })}
 								/>

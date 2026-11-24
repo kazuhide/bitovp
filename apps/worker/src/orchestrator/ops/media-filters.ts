@@ -1,10 +1,16 @@
 import {
+	AudioMixFilter,
 	AudioVolumeFilter,
 	AudioVolumeFormat,
 	AudioVolumeUnit,
+	ConformFilter,
 	CropFilter,
 	DenoiseHqdn3dFilter,
+	DolbyLoudnessFilter,
 	EbuR128SinglePassFilter,
+	EnhancedDeinterlaceFilter,
+	EnhancedWatermarkFilter,
+	InterlaceFilter,
 	PositionUnit,
 	RotateFilter,
 	ScaleFilter,
@@ -19,7 +25,7 @@ import type { OpsContext } from "./context";
 import { optStr } from "./exec-shared";
 import { optEnum } from "./shared";
 
-/** SDK 1.285.0 boundary. Snapshot only the resource id: image URLs are capabilities. */
+/** SDK media filter boundary. Snapshot only the resource id: image URLs are capabilities. */
 export async function createMediaFilter(
 	ctx: OpsContext,
 	kind: MediaFilter["kind"],
@@ -29,6 +35,12 @@ export async function createMediaFilter(
 	const endpoints = {
 		CROP: "crop",
 		SCALE: "scale",
+		ENHANCED_DEINTERLACE: "enhanced-deinterlace",
+		CONFORM: "conform",
+		INTERLACE: "interlace",
+		ENHANCED_WATERMARK: "enhanced-watermark",
+		DOLBY_LOUDNESS: "dolby-loudness",
+		AUDIO_MIX: "audio-mix",
 		DENOISE_HQDN3D: "denoise-hqdn3d",
 		UNSHARP: "unsharp",
 		ROTATE: "rotate",
@@ -39,6 +51,24 @@ export async function createMediaFilter(
 	};
 	const create = async () => {
 		switch (kind) {
+			case "ENHANCED_DEINTERLACE":
+				return api.encoding.filters.enhancedDeinterlace.create(
+					new EnhancedDeinterlaceFilter(p),
+				);
+			case "CONFORM":
+				return api.encoding.filters.conform.create(new ConformFilter(p));
+			case "INTERLACE":
+				return api.encoding.filters.interlace.create(new InterlaceFilter(p));
+			case "ENHANCED_WATERMARK":
+				return api.encoding.filters.enhancedWatermark.create(
+					new EnhancedWatermarkFilter(p),
+				);
+			case "DOLBY_LOUDNESS":
+				return api.encoding.filters.dolbyLoudness.create(
+					new DolbyLoudnessFilter(p),
+				);
+			case "AUDIO_MIX":
+				return api.encoding.filters.audioMix.create(new AudioMixFilter(p));
 			case "DENOISE_HQDN3D":
 				return api.encoding.filters.denoiseHqdn3d.create(
 					new DenoiseHqdn3dFilter(p),
@@ -100,13 +130,15 @@ export async function createMediaFilter(
 	return audited(
 		"POST",
 		`/encoding/filters/${endpoints[kind]}`,
-		kind === "WATERMARK" ? { ...p, image: "[REDACTED]" } : p,
+		kind === "WATERMARK" || kind === "ENHANCED_WATERMARK"
+			? { ...p, image: "[REDACTED]" }
+			: p,
 		async () => {
 			try {
 				return await create();
 			} catch (error) {
 				// Provider errors may echo the capability URL; no raw message/cause crosses the boundary.
-				if (kind === "WATERMARK")
+				if (kind === "WATERMARK" || kind === "ENHANCED_WATERMARK")
 					throw new Error("Watermark filter creation failed");
 				throw error;
 			}

@@ -17,17 +17,7 @@ import {
 	defaultDashPeriodSchema,
 	hlsDetailedOptionsSchema,
 } from "./manifest-options";
-import {
-	audioVolumeFilterSchema,
-	cropFilterSchema,
-	denoiseHqdn3dFilterSchema,
-	ebuR128FilterSchema,
-	rotateFilterSchema,
-	scaleFilterSchema,
-	textFilterSchema,
-	unsharpFilterSchema,
-	watermarkFilterSchema,
-} from "./media-filters";
+import { mediaFilterSchema } from "./media-filters";
 import { qcGateSchema } from "./qc-gate";
 import { SRT_CHARACTER_ENCODINGS } from "./srt-character-encodings";
 
@@ -1346,15 +1336,7 @@ export const deinterlaceFilterSchema = z.strictObject({
 
 export const planFilterSchema = z.discriminatedUnion("kind", [
 	deinterlaceFilterSchema,
-	scaleFilterSchema,
-	cropFilterSchema,
-	rotateFilterSchema,
-	watermarkFilterSchema,
-	textFilterSchema,
-	audioVolumeFilterSchema,
-	ebuR128FilterSchema,
-	denoiseHqdn3dFilterSchema,
-	unsharpFilterSchema,
+	...mediaFilterSchema.options,
 ]);
 
 /**

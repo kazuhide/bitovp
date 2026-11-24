@@ -430,6 +430,11 @@ Define a filter with "Add filter", then assign it to the target rendition with "
 | Volume and EBU R128 | Volume, loudness, and peak targets. Distinguish %, dB, LUFS, and dBTP. |
 | HQDN3D | Luma and chroma noise reduction in the spatial and temporal dimensions |
 | Unsharp | Sharpening or blurring through processing area and strength |
+| Enhanced Deinterlace and Interlace | Field order and output mode, with optional vertical low-pass filtering for Interlace |
+| Conform | Target frame rate in fps, including fractional rates |
+| Enhanced Watermark | Image from input storage, position, dimensions, and opacity from 0 to 1 |
+| Audio Mix | A layout and a set of input channel numbers or speaker positions and gains for each output channel |
+| Dolby Loudness | Target loudness in LKFS, maximum true peak in dBTP, and dialogue detection for supported audio codecs |
 
 The Scale filter preserves the source aspect ratio when only one dimension is set, and the source dimensions when both are blank. Set both parts of the pixel aspect ratio or leave both blank. Its algorithm controls this filter's scaling; rendition output dimensions remain a separate setting. See the [Scale filter reference](https://developer.bitmovin.com/encoding/reference/postencodingfiltersscale).
 

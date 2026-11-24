@@ -9,6 +9,7 @@ import {
 	hlsStreamOptionsSchema,
 	liveDashDetailedOptionsSchema,
 	liveHlsDetailedOptionsSchema,
+	mediaFilterSchema,
 	watermarkFilterSchema,
 } from "@bitovp/core";
 import {
@@ -184,12 +185,18 @@ const watermarkDraft = fields(
 	"kind key inputKey imagePath unit",
 	"left right top bottom",
 ).pipe(watermarkFilterSchema);
-const watermarkDrafts = z
+const vodFilterDrafts = z
 	.array(z.unknown())
 	.max(100)
 	.transform((items) =>
 		items.flatMap((item) => {
-			const parsed = watermarkDraft.safeParse(item);
+			// TEXT has free-form expressions and overlay content. The numeric,
+			// enumerated and storage-reference schemas are safe to retain locally.
+			const parsed =
+				draftRecord(item) && item.kind === "WATERMARK"
+					? watermarkDraft.safeParse(item)
+					: mediaFilterSchema.safeParse(item);
+			if (parsed.success && parsed.data.kind === "TEXT") return [];
 			return parsed.success ? [parsed.data] : [];
 		}),
 	)
@@ -361,7 +368,8 @@ const vod = fields(
 	{
 		...common,
 		videos: rows(vodRendition),
-		filters: watermarkDrafts,
+		audios: rows(vodRendition),
+		filters: vodFilterDrafts,
 		inputTimeline: vodInputTimelineDocumentSchema.optional(),
 		inputTimelinePreparation:
 			vodInputTimelinePreparationReferenceSchema.optional(),
@@ -767,14 +775,15 @@ export function projectWizardDraft(
 ): DraftValue {
 	const projected = (kind === "vod" ? vod : live).parse(value);
 	if (kind === "vod") {
-		const filters = watermarkDrafts.parse(projected.filters) ?? [];
+		const filters = vodFilterDrafts.parse(projected.filters) ?? [];
 		const keys = new Set(filters.map((filter) => filter.key));
-		if (Array.isArray(projected.videos)) {
-			for (const video of projected.videos) {
-				if (!draftRecord(video) || !draftRecord(video.extras)) continue;
-				const attachments = video.extras.filters;
+		for (const renditions of [projected.videos, projected.audios]) {
+			if (!Array.isArray(renditions)) continue;
+			for (const row of renditions) {
+				if (!draftRecord(row) || !draftRecord(row.extras)) continue;
+				const attachments = row.extras.filters;
 				if (!Array.isArray(attachments)) continue;
-				video.extras.filters = attachments.filter(
+				row.extras.filters = attachments.filter(
 					(item) =>
 						draftRecord(item) &&
 						typeof item.filterKey === "string" &&

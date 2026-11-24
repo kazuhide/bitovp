@@ -1,50 +1,19 @@
 "use client";
 import {
-	AUDIO_MIX_CHANNEL_TYPES,
 	AUDIO_MIX_LAYOUTS,
 	type AudioMixChannel,
 	type AudioMixStream,
 	audioMixPreset,
 } from "@bitovp/core";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
 import type { WizardState } from "./build-plan";
+import { ChannelTypeOptions, MixSources } from "./mix-sources";
 import type { SourceOption } from "./rendition-editors";
 import { Collapsible } from "./wizard-fields";
 
-/** Keep intermediate decimals and empty values intact while editing. */
-function Gain({
-	value,
-	onChange,
-	id,
-}: {
-	value: number | undefined;
-	onChange: (value: number | undefined) => void;
-	id: string;
-}) {
-	const [draft, setDraft] = useState<string>();
-	return (
-		<Input
-			id={id}
-			type="text"
-			inputMode="decimal"
-			value={draft ?? (value === undefined ? "" : String(value))}
-			placeholder="1"
-			onChange={(e) => setDraft(e.target.value)}
-			onBlur={() => {
-				if (draft !== undefined) {
-					const text = draft.trim();
-					const next = Number(text);
-					if (!text || Number.isFinite(next)) onChange(text ? next : undefined);
-				}
-				setDraft(undefined);
-			}}
-		/>
-	);
-}
 export function AudioMixEditor({
 	state,
 	index,
@@ -107,18 +76,6 @@ export function AudioMixEditor({
 			});
 	};
 	const id = `wz-a-${index}-mix`;
-	const types = (value: string) => (
-		<>
-			{!AUDIO_MIX_CHANNEL_TYPES.includes(
-				value as (typeof AUDIO_MIX_CHANNEL_TYPES)[number],
-			) && <option value={value}>{value}</option>}
-			{AUDIO_MIX_CHANNEL_TYPES.map((type) => (
-				<option key={type} value={type}>
-					{type}
-				</option>
-			))}
-		</>
-	);
 	const start = (preset: "swap" | "mono" | "downmix" | "custom") => {
 		if (preset === "mono" && options.length < 2) return;
 		const keys = [
@@ -222,7 +179,7 @@ export function AudioMixEditor({
 											})
 										}
 									>
-										{types(channel.outputChannelType)}
+										<ChannelTypeOptions value={channel.outputChannelType} />
 									</SelectNative>
 								</Field>
 								<Field
@@ -271,104 +228,14 @@ export function AudioMixEditor({
 									</Field>
 								)}
 							</div>
-							{channel.sourceChannels.map((source, j) => {
-								const patch = (next: Partial<typeof source>) =>
-									patchChannel(i, {
-										sourceChannels: channel.sourceChannels.map((s, k) =>
-											k === j ? { ...s, ...next } : s,
-										),
-									});
-								return (
-									<div
-										key={j}
-										className="grid grid-cols-2 gap-2 sm:grid-cols-4"
-									>
-										<Field
-											label={t("audioMix.channel")}
-											htmlFor={`${id}-${i}-${j}-type`}
-										>
-											<SelectNative
-												id={`${id}-${i}-${j}-type`}
-												value={source.type}
-												onChange={(e) =>
-													patch({
-														type: e.target.value as typeof source.type,
-														channelNumber:
-															e.target.value === "CHANNEL_NUMBER"
-																? 0
-																: undefined,
-													})
-												}
-											>
-												{types(source.type)}
-											</SelectNative>
-										</Field>
-										{source.type === "CHANNEL_NUMBER" && (
-											<Field
-												label={t("audioMix.number")}
-												htmlFor={`${id}-${i}-${j}-number`}
-											>
-												<Input
-													id={`${id}-${i}-${j}-number`}
-													type="number"
-													min={0}
-													step={1}
-													value={source.channelNumber ?? ""}
-													onChange={(e) =>
-														patch({
-															channelNumber:
-																e.target.value === ""
-																	? undefined
-																	: Number(e.target.value),
-														})
-													}
-												/>
-											</Field>
-										)}
-										<Field
-											label={t("audioMix.gain")}
-											htmlFor={`${id}-${i}-${j}-gain`}
-										>
-											<Gain
-												id={`${id}-${i}-${j}-gain`}
-												value={source.gain}
-												onChange={(gain) => patch({ gain })}
-											/>
-										</Field>
-										<Button
-											variant="ghost"
-											size="sm"
-											disabled={channel.sourceChannels.length === 1}
-											onClick={() =>
-												patchChannel(i, {
-													sourceChannels: channel.sourceChannels.filter(
-														(_, k) => k !== j,
-													),
-												})
-											}
-										>
-											{t("audioMix.remove")}
-										</Button>
-									</div>
-								);
-							})}
+							<MixSources
+								id={`${id}-${i}`}
+								values={channel.sourceChannels}
+								onChange={(sourceChannels) =>
+									patchChannel(i, { sourceChannels })
+								}
+							/>
 							<div className="flex flex-wrap gap-2">
-								<Button
-									variant="secondary"
-									size="sm"
-									onClick={() =>
-										patchChannel(i, {
-											sourceChannels: [
-												...channel.sourceChannels,
-												channel.sourceChannels[0]?.type === "CHANNEL_NUMBER"
-													? { type: "CHANNEL_NUMBER", channelNumber: 0 }
-													: { type: "CENTER" },
-											],
-										})
-									}
-								>
-									{t("audioMix.addSource")}
-								</Button>
 								<Button
 									variant="ghost"
 									size="sm"

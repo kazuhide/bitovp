@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-21T22:03:50.909Z",
-		"sourceCommit": "0165d35e647f3ff48077930d3e5980a09770c1c3",
-		"sourceFingerprint": "ea26013358d372b4c1d19b591c470c2f389eb11951e73236775c064e995b8ce0",
+		"generatedAt": "2026-11-24T19:20:11.218Z",
+		"sourceCommit": "bd0e19d6327a84edcdd60dbcd6f579b889743d6d",
+		"sourceFingerprint": "3da5d846045734c73b818b536ba0bc4560ee98064e80f120c8722d411621d455",
 		"sdkVersion": "1.288.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "062c5c8a30072d4d3330028f0cab877d9f7183138b08fa4a7de22f4b69853f04",
@@ -12,10 +12,10 @@
 	},
 	"summary": {
 		"totalOperations": 1094,
-		"sourceConfirmed": 286,
-		"unconfirmed": 808,
+		"sourceConfirmed": 292,
+		"unconfirmed": 802,
 		"createTotal": 218,
-		"createSourceConfirmed": 130
+		"createSourceConfirmed": 136
 	},
 	"families": [
 		{
@@ -39,8 +39,8 @@
 		{
 			"family": "filters",
 			"total": 88,
-			"sourceConfirmed": 10,
-			"unconfirmed": 78
+			"sourceConfirmed": 16,
+			"unconfirmed": 72
 		},
 		{
 			"family": "infrastructure",
@@ -5916,8 +5916,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.filters.audioMix.create",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/media-filters.ts",
+					"line": 71
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/audio-mix/{filter_id}",
@@ -5965,7 +5970,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media-filters.ts",
-					"line": 83
+					"line": 113
 				}
 			]
 		},
@@ -6056,8 +6061,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.filters.conform.create",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/media-filters.ts",
+					"line": 59
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/conform/{filter_id}",
@@ -6105,7 +6115,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media-filters.ts",
-					"line": 49
+					"line": 79
 				}
 			]
 		},
@@ -6205,7 +6215,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media-filters.ts",
-					"line": 43
+					"line": 73
 				}
 			]
 		},
@@ -6251,8 +6261,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.filters.dolbyLoudness.create",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/media-filters.ts",
+					"line": 67
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/dolby-loudness/{filter_id}",
@@ -6300,7 +6315,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media-filters.ts",
-					"line": 95
+					"line": 125
 				}
 			]
 		},
@@ -6346,8 +6361,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.filters.enhancedDeinterlace.create",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/media-filters.ts",
+					"line": 55
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/enhanced-deinterlace/{filter_id}",
@@ -6391,8 +6411,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.filters.enhancedWatermark.create",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/media-filters.ts",
+					"line": 63
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/enhanced-watermark/{filter_id}",
@@ -6436,8 +6461,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.filters.interlace.create",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/media-filters.ts",
+					"line": 61
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/interlace/{filter_id}",
@@ -6485,7 +6515,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media-filters.ts",
-					"line": 67
+					"line": 97
 				}
 			]
 		},
@@ -6535,7 +6565,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media-filters.ts",
-					"line": 56
+					"line": 86
 				}
 			]
 		},
@@ -6585,7 +6615,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media-filters.ts",
-					"line": 76
+					"line": 106
 				}
 			]
 		},
@@ -6644,7 +6674,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media-filters.ts",
-					"line": 47
+					"line": 77
 				}
 			]
 		},
@@ -6694,7 +6724,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/media-filters.ts",
-					"line": 69
+					"line": 99
 				}
 			]
 		},

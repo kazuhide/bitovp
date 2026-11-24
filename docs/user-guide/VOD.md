@@ -111,7 +111,11 @@ remove them and pass validation.
 - **Opus audio:** package as WebM for compatible DASH playback. Use a separate
   compatible audio rendition when also producing HLS.
 - **Filters:** add a filter and assign it to the intended stream's filter chain.
-  HQDN3D removes noise; Unsharp sharpens or blurs.
+  Enhanced Deinterlace, Conform and Interlace control field processing and frame rate.
+  Enhanced Watermark takes an image from input storage, with optional size and opacity.
+  On audio renditions, Audio Mix maps input channels and gains to numbered outputs.
+  Dolby Loudness controls the programme loudness and true peak on supported audio codecs.
+  HQDN3D removes noise and Unsharp sharpens or blurs.
 - **CMAF muxing:** the dedicated muxing supports H.264/AAC with DASH
   TEMPLATE/TIMELINE. Choose fMP4 for HLS and the supported DRM paths.
 

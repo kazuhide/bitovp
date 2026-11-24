@@ -189,6 +189,30 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 		template:
 			"/encoding/manifests/dash/:manifestId/periods/:periodId/adaptationsets/:adaptationSetId/representations/imsc",
 	},
+	CREATE_FILTER_ENHANCED_DEINTERLACE: {
+		method: "POST",
+		template: "/encoding/filters/enhanced-deinterlace",
+	},
+	CREATE_FILTER_CONFORM: {
+		method: "POST",
+		template: "/encoding/filters/conform",
+	},
+	CREATE_FILTER_INTERLACE: {
+		method: "POST",
+		template: "/encoding/filters/interlace",
+	},
+	CREATE_FILTER_ENHANCED_WATERMARK: {
+		method: "POST",
+		template: "/encoding/filters/enhanced-watermark",
+	},
+	CREATE_FILTER_DOLBY_LOUDNESS: {
+		method: "POST",
+		template: "/encoding/filters/dolby-loudness",
+	},
+	CREATE_FILTER_AUDIO_MIX: {
+		method: "POST",
+		template: "/encoding/filters/audio-mix",
+	},
 	CREATE_FILTER_DENOISE_HQDN3D: {
 		method: "POST",
 		template: "/encoding/filters/denoise-hqdn3d",
@@ -880,7 +904,8 @@ export function curlForStep(
 		? curlBody(
 				request,
 				entry.kind === "START_LIVE_ENCODING",
-				entry.kind === "CREATE_FILTER_WATERMARK",
+				entry.kind === "CREATE_FILTER_WATERMARK" ||
+					entry.kind === "CREATE_FILTER_ENHANCED_WATERMARK",
 			)
 		: undefined;
 	if (body !== undefined) {

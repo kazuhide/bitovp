@@ -8,6 +8,7 @@ import {
 import { Field } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
+import { AudioMixFilterEditor } from "./audio-mix-filter-editor";
 import type { WizardFilter, WizardInputFile } from "./build-plan";
 
 export const FILTER_KINDS = [
@@ -16,9 +17,15 @@ export const FILTER_KINDS = [
 	"CROP",
 	"ROTATE",
 	"WATERMARK",
+	"ENHANCED_WATERMARK",
+	"DOLBY_LOUDNESS",
+	"AUDIO_MIX",
 	"TEXT",
 	"AUDIO_VOLUME",
 	"EBU_R128_SINGLE_PASS",
+	"ENHANCED_DEINTERLACE",
+	"CONFORM",
+	"INTERLACE",
 	"DENOISE_HQDN3D",
 	"UNSHARP",
 ] as const;
@@ -34,6 +41,7 @@ export function newFilter(
 			return { key, kind, left: 0, top: 0 };
 		case "ROTATE":
 			return { key, kind, rotation: 90 };
+		case "ENHANCED_WATERMARK":
 		case "WATERMARK":
 			return { key, kind, inputKey, imagePath: "", left: 0, top: 0 };
 		case "TEXT":
@@ -46,10 +54,27 @@ export function newFilter(
 				font: "DEJAVUSANS",
 				fontSize: 24,
 			};
+		case "AUDIO_MIX":
+			return {
+				key,
+				kind,
+				channelLayout: "MONO",
+				audioMixChannels: [
+					{
+						channelNumber: 0,
+						sourceChannels: [{ type: "CHANNEL_NUMBER", channelNumber: 0 }],
+					},
+				],
+			};
 		case "AUDIO_VOLUME":
 			return { key, kind, volume: 100, unit: "PERCENT" };
+		case "CONFORM":
+			return { key, kind, targetFps: 25 };
+		case "INTERLACE":
+		case "ENHANCED_DEINTERLACE":
 		case "DENOISE_HQDN3D":
 		case "SCALE":
+		case "DOLBY_LOUDNESS":
 		case "UNSHARP":
 		case "EBU_R128_SINGLE_PASS":
 			return { key, kind };
@@ -85,6 +110,52 @@ const fields: Partial<Record<(typeof FILTER_KINDS)[number], Spec[]>> = {
 			"Pixel aspect ratio denominator",
 			"画素の縦横比（分母）",
 			"number",
+		],
+	],
+	ENHANCED_DEINTERLACE: [
+		["mode", "Output frames", "出力フレーム", ["FRAME", "FIELD"]],
+		[
+			"parity",
+			"Field order",
+			"フィールド順",
+			["TOP_FIELD_FIRST", "BOTTOM_FIELD_FIRST"],
+		],
+		[
+			"autoEnable",
+			"Apply filter",
+			"フィルターの適用条件",
+			["ALWAYS_ON", "META_DATA_BASED"],
+		],
+	],
+	CONFORM: [
+		[
+			"targetFps",
+			"Target frame rate (fps)",
+			"変換後のフレームレート（fps）",
+			"number",
+		],
+	],
+	INTERLACE: [
+		[
+			"mode",
+			"Interlace mode",
+			"インターレースモード",
+			[
+				"TOP",
+				"BOTTOM",
+				"DROP_EVEN",
+				"DROP_ODD",
+				"PAD",
+				"INTERLACE_X2",
+				"MERGE",
+				"MERGE_X2",
+			],
+		],
+		[
+			"verticalLowPassFilteringMode",
+			"Vertical low-pass filter",
+			"垂直ローパスフィルター",
+			["DISABLED", "LOW_PASS", "COMPLEX"],
 		],
 	],
 	DENOISE_HQDN3D: [
@@ -126,6 +197,45 @@ const fields: Partial<Record<(typeof FILTER_KINDS)[number], Spec[]>> = {
 	WATERMARK: [
 		["imagePath", "Image object path", "画像ファイルのパス", "text"],
 		...edges,
+	],
+	ENHANCED_WATERMARK: [
+		["imagePath", "Image object path", "画像ファイルのパス", "text"],
+		...edges,
+		["width", "Watermark width", "透かし画像の幅", "number"],
+		["height", "Watermark height", "透かし画像の高さ", "number"],
+		["opacity", "Opacity (0–1)", "不透明度（0〜1）", "number"],
+	],
+	DOLBY_LOUDNESS: [
+		[
+			"targetLoudness",
+			"Target loudness (LKFS)",
+			"目標ラウドネス（LKFS）",
+			"number",
+		],
+		[
+			"maximumTruePeakLevel",
+			"Maximum true peak (dBTP)",
+			"最大トゥルーピーク（dBTP）",
+			"number",
+		],
+		[
+			"dialogueIntelligence",
+			"Dialogue Intelligence",
+			"台詞の自動判定",
+			["ENABLED", "DISABLED"],
+		],
+		[
+			"speechDetectionThreshold",
+			"Speech detection threshold (%)",
+			"音声検出のしきい値（%）",
+			"number",
+		],
+		[
+			"contentForm",
+			"Content length",
+			"番組の長さ",
+			["AUTO_DETECT", "LONG", "SHORT"],
+		],
 	],
 	AUDIO_VOLUME: [
 		["volume", "Volume", "音量", "number"],
@@ -213,7 +323,7 @@ export function MediaFilterEditor({
 					))}
 				</SelectNative>
 			</Field>
-			{filter.kind === "WATERMARK" ? (
+			{filter.kind === "WATERMARK" || filter.kind === "ENHANCED_WATERMARK" ? (
 				<Field
 					label={ja ? "画像の入力ストレージ" : "Image input storage"}
 					htmlFor={`${idBase}-input`}
@@ -243,6 +353,9 @@ export function MediaFilterEditor({
 					</SelectNative>
 				</Field>
 			) : null}
+			{filter.kind === "AUDIO_MIX" && (
+				<AudioMixFilterEditor id={idBase} filter={filter} onChange={onChange} />
+			)}
 			{(fields[filter.kind ?? "DEINTERLACE"] ?? []).map(
 				([key, en, jp, control]) => {
 					const value = (filter as unknown as Record<string, unknown>)[key];

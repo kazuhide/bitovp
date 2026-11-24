@@ -119,11 +119,11 @@ subtitle extraction requires changes beyond the VOD input-stream union.
 
 ### E05–E07 · P2 · Purpose-specific extensions
 
-- **Filters:** prioritize EnhancedWatermark for logo size/opacity, then qualify
-  EnhancedDeinterlace and Conform with suitable sources. Existing Watermark,
-  ordinary deinterlace and frame-rate settings are not equivalent mechanisms.
-  Live validation explicitly rejects filters today; investigate provider
-  support before enabling individual filters there.
+- **Filters:** The VOD wizard supports EnhancedWatermark, EnhancedDeinterlace,
+  Conform and Interlace for video, plus AudioMix and DolbyLoudness on compatible
+  audio renditions. Operators can save the filters and their application order.
+  Provider output and visual or loudness measurements require a matching source
+  and an encoding run. Live speech-to-captions remains a separate workflow.
 - **Broadcast delivery:** Broadcast TS/MXF with H.262/MP2/PCM, driven by a
   specific delivery specification. Progressive TS does not expose the same
   PCR/PID/PAT/PMT controls. MJPEG, VP8, MP3, Vorbis and DTS need an identified

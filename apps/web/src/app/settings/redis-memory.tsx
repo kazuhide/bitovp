@@ -1,29 +1,48 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { RedisMemory } from "@/app/api/platform/redis-memory/route";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
+import { useSession } from "@/lib/auth/use-session";
 import { formatBytes } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
+import { redisMemorySchema } from "@/lib/platform-redis-memory";
 
-export function InstanceRedisMemory() {
+export function PlatformRedisMemory() {
+	const session = useSession();
+	if (
+		session.status !== "success" ||
+		session.data.mode !== "users" ||
+		!session.data.authenticated ||
+		session.data.platformOwner !== true ||
+		session.data.isImpersonating ||
+		session.data.mustChangePassword
+	)
+		return null;
+	return <InstanceRedisMemory />;
+}
+
+function InstanceRedisMemory() {
 	const { t } = useT();
 	const query = useQuery({
 		queryKey: ["platform", "redis-memory"],
-		queryFn: ({ signal }) =>
-			apiFetch<RedisMemory>("/api/platform/redis-memory", {
-				signal,
-				cache: "no-store",
-			}),
+		queryFn: async ({ signal }) =>
+			redisMemorySchema.parse(
+				await apiFetch<unknown>("/api/platform/redis-memory", {
+					signal,
+					cache: "no-store",
+				}),
+			),
 		gcTime: 0,
 		staleTime: 0,
 		retry: false,
+		// Allow an offline refresh to reject instead of pausing on cached data.
+		networkMode: "always",
 	});
 	let reading = t("common.loading");
 	if (query.isError) {
 		reading = t("tenant.redisUnavailable");
-	} else if (query.isSuccess) {
+	} else if (query.isSuccess && !query.isFetching) {
 		const used = formatBytes(query.data.usedBytes);
 		reading =
 			query.data.limitBytes === null

@@ -1362,7 +1362,7 @@ With individual user authentication, check the current organization and your rol
 
 The platform owner has administrative authority separate from an organization's ADMIN role. The owner can create and disable organizations and manage users across the platform. An ordinary ADMIN does not automatically have authority over every organization.
 
-In **Settings → Organizations**, the platform owner can refresh **Instance Redis memory** to see current usage and the Redis memory limit for the whole installation. If the Redis limit is unset, the host or container can still impose its own limit.
+In **Settings**, the platform owner can refresh **Instance Redis memory** to see current usage and the Redis memory limit for the whole installation. Owners without an available organization can find the same reading on the **Organizations** recovery page. If the Redis limit is unset, the host or container can still impose its own limit.
 
 Check the target under "Organizations". Switching to an organization you belong to is different from the owner's View-as function. View-as opens another organization as VIEWER. While viewing it this way, you cannot create jobs or change settings. To make changes, leave that view and return through the appropriate membership. Reusing the same external account or credentials across app organizations can still give access to the same external resources. Separation within the app does not itself separate permissions in storage or Bitmovin accounts.
 

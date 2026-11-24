@@ -3,10 +3,9 @@ import { Redis } from "ioredis";
 import { NextResponse } from "next/server";
 import { authError } from "@/lib/auth/route-context";
 import { requirePlatformOwner } from "@/lib/auth/tenancy";
+import { redisMemorySchema } from "@/lib/platform-redis-memory";
 
-export type RedisMemory = { usedBytes: number; limitBytes: number | null };
-
-async function readMemory(): Promise<RedisMemory> {
+async function readMemory() {
 	const redis = new Redis(loadEnv().REDIS_URL, {
 		lazyConnect: true,
 		enableReadyCheck: false,
@@ -28,9 +27,10 @@ async function readMemory(): Promise<RedisMemory> {
 		]);
 		const usedBytes = Number(/^used_memory:(\d+)\r?$/m.exec(info)?.[1]);
 		const maxBytes = Number(/^maxmemory:(\d+)\r?$/m.exec(info)?.[1]);
-		if (!Number.isSafeInteger(usedBytes) || !Number.isSafeInteger(maxBytes))
-			throw new Error("Missing Redis memory counters");
-		return { usedBytes, limitBytes: maxBytes === 0 ? null : maxBytes };
+		return redisMemorySchema.parse({
+			usedBytes,
+			limitBytes: maxBytes === 0 ? null : maxBytes,
+		});
 	} finally {
 		clearTimeout(deadline);
 		redis.disconnect();

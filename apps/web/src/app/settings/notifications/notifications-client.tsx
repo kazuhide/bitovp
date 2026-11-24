@@ -403,6 +403,10 @@ export function NotificationsClient() {
 									{delivery.failedReason} ({delivery.attemptsMade}{" "}
 									{t("notif.attempts")})
 								</span>
+							) : delivery.attemptsMade > 1 ? (
+								<span className="text-zinc-500">
+									{delivery.attemptsMade} {t("notif.attempts")}
+								</span>
 							) : null}
 						</li>
 					))}

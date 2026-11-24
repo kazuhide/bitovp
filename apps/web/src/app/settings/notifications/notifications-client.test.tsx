@@ -46,7 +46,17 @@ function route(url: string): unknown {
 					failedReason: "HTTP 500",
 				},
 			],
-			completed: [],
+			completed: [
+				{
+					id: "stop-run",
+					state: "DELIVERED",
+					kind: "CHANNEL_STOPPED",
+					occurredAt: "2026-08-13T00:00:00.000Z",
+					link: "/live/ch",
+					attemptsMade: 3,
+					failedReason: null,
+				},
+			],
 		};
 	}
 	return {};
@@ -171,4 +181,10 @@ it("keeps failed channel actions visible and requires delete confirmation", asyn
 	await userEvent.click(screen.getByRole("button", { name: "Disable" }));
 	expect(await screen.findByRole("alert")).toBeInTheDocument();
 	confirm.mockRestore();
+});
+
+it("shows successful retry counts beside the delivered event", async () => {
+	renderWithQuery(<NotificationsClient />);
+	const event = await screen.findByText("DELIVERED");
+	expect(event.closest("li")).toHaveTextContent("3 attempts");
 });

@@ -9,11 +9,12 @@ import {
 } from "@bitovp/db";
 import type { EncoderPointer } from "./reset";
 
+export const INCOMPLETE_RTMP_ARCHIVE_MESSAGE =
+	"An earlier RTMP rebuild has missing encoder identities. Verify the provider account before deleting this broadcast.";
+
 export class IncompleteRtmpArchive extends Error {
 	constructor() {
-		super(
-			"An earlier RTMP rebuild has missing encoder identities. Verify the provider account before deleting this broadcast.",
-		);
+		super(INCOMPLETE_RTMP_ARCHIVE_MESSAGE);
 	}
 }
 

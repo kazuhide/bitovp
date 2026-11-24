@@ -607,7 +607,11 @@ describe("DELETE /api/live-channels/[id]", () => {
 			stepLog: [],
 		});
 		openStop.mockResolvedValue({ id: "uncertain" });
-		expect((await DELETE(delReq(), ctx(CHANNEL_ID))).status).toBe(409);
+		const result = await DELETE(delReq(), ctx(CHANNEL_ID));
+		expect(result.status).toBe(409);
+		expect((await result.json()).error).toContain(
+			"stop for this broadcast is still unconfirmed",
+		);
 		expect(openStop).toHaveBeenCalledWith({
 			where: {
 				liveChannelId: CHANNEL_ID,
@@ -644,6 +648,7 @@ describe("DELETE /api/live-channels/[id]", () => {
 		]);
 		const result = await DELETE(delReq(), ctx(CHANNEL_ID));
 		expect(result.status).toBe(409);
+		expect((await result.json()).error).toContain("displaced encoders");
 		expect(archivedRuns).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: expect.objectContaining({ liveChannelId: CHANNEL_ID }),

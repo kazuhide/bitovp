@@ -57,25 +57,13 @@ import {
 import { publicMoqHistory } from "@/lib/server/moq-public-history";
 import { playbackLinksForLivePlan } from "@/lib/server/playback-links";
 import {
+	INCOMPLETE_RTMP_ARCHIVE_MESSAGE,
 	IncompleteRtmpArchive,
 	readResetRtmpArchives,
 } from "@/lib/server/reset-rtmp-archives";
 
-class UnconfirmedLiveStop extends Error {
-	constructor() {
-		super(
-			"The stop for this broadcast is still unconfirmed. Keep the channel until its provider outcome is known.",
-		);
-	}
-}
-
-class ArchivedEncoderStillOpen extends Error {
-	constructor() {
-		super(
-			"Verify the displaced encoders from earlier RTMP attempts before deleting this channel.",
-		);
-	}
-}
+class UnconfirmedLiveStop extends Error {}
+class ArchivedEncoderStillOpen extends Error {}
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -497,12 +485,18 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 		return NextResponse.json({ id, deleted: true });
 	} catch (err) {
 		if (err instanceof MoqObservationError) return moqHistoryError(err);
-		if (
-			err instanceof UnconfirmedLiveStop ||
-			err instanceof IncompleteRtmpArchive ||
-			err instanceof ArchivedEncoderStillOpen
-		)
-			return jsonError(409, err.message);
+		if (err instanceof UnconfirmedLiveStop)
+			return jsonError(
+				409,
+				"The stop for this broadcast is still unconfirmed. Keep the channel until its provider outcome is known.",
+			);
+		if (err instanceof IncompleteRtmpArchive)
+			return jsonError(409, INCOMPLETE_RTMP_ARCHIVE_MESSAGE);
+		if (err instanceof ArchivedEncoderStillOpen)
+			return jsonError(
+				409,
+				"Verify the displaced encoders from earlier RTMP attempts before deleting this channel.",
+			);
 		if (err instanceof AisaFinalizationNotConfirmed) {
 			return jsonError(
 				409,

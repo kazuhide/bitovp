@@ -51,7 +51,10 @@ import {
 	uniqueEncoderPointers,
 } from "@/lib/server/reset";
 import { tokenActorRefusal } from "@/lib/server/reset-actor";
-import { IncompleteRtmpArchive } from "@/lib/server/reset-rtmp-archives";
+import {
+	INCOMPLETE_RTMP_ARCHIVE_MESSAGE,
+	IncompleteRtmpArchive,
+} from "@/lib/server/reset-rtmp-archives";
 import {
 	countResetCategories,
 	deleteSelectedData,
@@ -411,7 +414,7 @@ export async function POST(req: Request) {
 			if (err instanceof IncompleteRtmpArchive)
 				return jsonError(
 					409,
-					err.message,
+					INCOMPLETE_RTMP_ARCHIVE_MESSAGE,
 					customerErrorDetails("RESET_PROVIDER_RESOURCES_UNCONFIRMED"),
 				);
 			if (err instanceof SelectedResetBlocked) {

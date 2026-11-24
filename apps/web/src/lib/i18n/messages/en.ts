@@ -3032,6 +3032,7 @@ export const en = {
 		frameRangeOutOfBounds: "Choose frames between {min} and {max}.",
 	},
 	notif: {
+		unconfirmed: "Delivery unconfirmed",
 		deleteConfirm: "Delete notification channel “{name}”?",
 
 		// Page-level heading (E2E 2026-08-14: the one screen without an h1).

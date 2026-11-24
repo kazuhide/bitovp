@@ -56,7 +56,7 @@ const EXPECTATIONS: Expectation[] = [
 		// ERROR persist, finalize-RUNNING persist, finalize-catch ERROR.
 		file: "orchestrator/live-processor.ts",
 		writes:
-			/(data:\s*\{\s*status,\s*error\s*\}|data:\s*\{[^}]*status:\s*(?:"(ERROR|STOPPED|RUNNING)"|settledStatus|outcome\.status)|persist\((?:liveChannelId, )?(?:entries|untouched)[^;]*?status:\s*(?:"(ERROR|RUNNING|STOPPED)"|feeders\.length\s*\?\s*"STOPPING"\s*:\s*"STOPPED"|aisaFailure\s*\?\s*"ERROR"\s*:\s*"STOPPED"))/gs,
+			/(projectProvisionEnd\(failed\)|data:\s*\{\s*status,\s*error\s*\}|data:\s*\{[^}]*status:\s*(?:"(ERROR|STOPPED|RUNNING)"|settledStatus|outcome\.status)|persist\((?:liveChannelId, )?(?:entries|untouched)[^;]*?status:\s*(?:"(ERROR|RUNNING|STOPPED)"|feeders\.length\s*\?\s*"STOPPING"\s*:\s*"STOPPED"|aisaFailure\s*\?\s*"ERROR"\s*:\s*"STOPPED"))/gs,
 		// AISA completion keeps these same two terminal sites and emits. Stop's
 		// settledStatus and cancellation's explicit ERROR/STOPPED branch preserve
 		// terminal failure rather than reporting success. Count both spellings;
@@ -102,6 +102,8 @@ const EXPECTATIONS: Expectation[] = [
 		// cancelRequested clear. Both paths retain their existing post-commit emit.
 		// projectRestartState uses the same transaction for PROVISIONING and failure.
 		// Count its { status, error } write; the owned failure emits after commit.
+		// Setup, revival and finalize failures now call projectProvisionEnd(failed).
+		// Each still emits only after its atomic run/channel update succeeds.
 		// Ordinary cancellation now shares the same two atomic terminal writes.
 		// The two former standalone persists disappear; both call sites still emit.
 		// An unsafe RTMP replacement marks both the channel and its run ERROR

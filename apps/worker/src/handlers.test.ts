@@ -25,6 +25,24 @@ function deps() {
 	};
 }
 
+it("records confirmed notification deliveries and terminates refused or partially delivered fan-out", async () => {
+	const d = deps(),
+		handler = createHandlers(d).notify;
+	const job = { data: {} } as Job;
+	await expect(handler(job)).resolves.toMatchObject({
+		delivery: "NO_DESTINATION",
+	});
+	d.notify.mockResolvedValue([{ outcome: "DELIVERED" }]);
+	await expect(handler(job)).resolves.toMatchObject({ delivery: "DELIVERED" });
+	d.notify.mockResolvedValue([
+		{ outcome: "DELIVERED" },
+		{ outcome: "REFUSED_CONFIG" },
+	]);
+	await expect(handler(job)).rejects.toMatchObject({
+		name: "UnrecoverableError",
+	});
+});
+
 describe("createHandlers", () => {
 	it("registers a handler for every queue", () => {
 		const handlers = createHandlers(deps());

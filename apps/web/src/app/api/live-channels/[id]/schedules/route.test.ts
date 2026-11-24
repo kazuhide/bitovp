@@ -25,6 +25,13 @@ vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
 		tenant,
 		prisma: {
+			$transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+				fn({
+					$queryRaw: vi.fn().mockResolvedValue([]),
+					liveChannel: { findUnique: channelFindUnique },
+					liveChannelRun: { findFirst: runFindFirst },
+					liveSchedule: { create: scheduleCreate },
+				}),
 			liveChannel: { findUnique: channelFindUnique },
 			liveChannelRun: { findFirst: runFindFirst },
 			liveSchedule: { findMany: scheduleFindMany, create: scheduleCreate },
@@ -1226,6 +1233,22 @@ describe("POST /schedules — AISA encoding operations", () => {
 		expect(scheduleCreate).not.toHaveBeenCalled();
 	});
 
+	it("hides a protected airing when only the run retains its Analysis binding", async () => {
+		tenant = otherAdmin;
+		channelFindUnique.mockResolvedValue({
+			...channel(),
+			plan: {},
+			runs: [{ aisaAnalysisId: "analysis" }],
+		});
+		runFindFirst.mockResolvedValue({
+			...currentRun,
+			aisaAnalysisId: "analysis",
+		});
+		expect(
+			(await POST(post({ action: "STOP", fireAt: FUTURE }), ctx())).status,
+		).toBe(404);
+		expect(scheduleCreate).not.toHaveBeenCalled();
+	});
 	it("keeps the runtime-cap boundary for a managed STOP", async () => {
 		channelFindUnique.mockResolvedValue({ ...channel(), maxRunMinutes: 1 });
 		const res = await POST(post({ action: "STOP", fireAt: FUTURE }), ctx());

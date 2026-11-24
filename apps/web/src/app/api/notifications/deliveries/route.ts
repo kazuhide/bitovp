@@ -11,12 +11,26 @@ export async function GET() {
 	try {
 		const { prisma } = await getServerContext();
 		const queue = getNotifyQueue();
+		async function completedDeliveries() {
+			const first = await queue.getCompleted(0, PAGE_SIZE - 1);
+			const visible = first.filter(
+				(job) => job.returnvalue?.delivery !== "NO_DESTINATION",
+			);
+			if (first.length < PAGE_SIZE || visible.length >= PAGE_SIZE)
+				return visible;
+			// Ordinary notification jobs retain at most 1,000 completions.
+			const remaining = await queue.getCompleted(PAGE_SIZE, 999);
+			return [
+				...visible,
+				...remaining.filter(
+					(job) => job.returnvalue?.delivery !== "NO_DESTINATION",
+				),
+			].slice(0, PAGE_SIZE);
+		}
 		async function recent(state: State) {
 			const failed = state === "FAILED";
 			const [jobs, stops] = await Promise.all([
-				failed
-					? queue.getFailed(0, PAGE_SIZE - 1)
-					: queue.getCompleted(0, PAGE_SIZE - 1),
+				failed ? queue.getFailed(0, PAGE_SIZE - 1) : completedDeliveries(),
 				prisma.liveStopNotification.findMany({
 					where: {
 						finishedAt: { not: null },
@@ -39,7 +53,11 @@ export async function GET() {
 			const rows = [
 				...jobs.map((job) => ({
 					id: job.id ?? "",
-					state,
+					state: failed
+						? "FAILED"
+						: job.returnvalue?.delivery === "DELIVERED"
+							? "DELIVERED"
+							: "UNCONFIRMED",
 					kind: job.data?.kind ?? "UNKNOWN",
 					occurredAt: job.data?.occurredAt ?? null,
 					link: job.data?.link ?? null,

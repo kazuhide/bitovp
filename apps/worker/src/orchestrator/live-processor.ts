@@ -127,6 +127,10 @@ import {
 	type RunLifecycleRow,
 } from "../live/provider-lifecycle";
 import { PROVISION_LEASE_MS } from "../live/provision-lease";
+import {
+	commitProvisionEnd,
+	type ProvisionEnd,
+} from "../live/provision-outcome";
 import { provisionJobGeneration } from "../live/reconcile-stranded-runs";
 import type { EmitProductEvent } from "../notify/emitter";
 import {
@@ -5452,6 +5456,8 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		 * matching, someone else owns this channel and we stop.
 		 */
 		let heldAt: Date | null = new Date(nowMs);
+		let provisionRunId = pendingRun?.id ?? null;
+		const admissionGeneration = row.liveEffectFenceVersion;
 		// Every mutation of the timestamp fence shares one queue. `renewLease`
 		// already coalesced two renewals, but a provider-id persist could still
 		// race a ticker renewal with the same old token: whichever landed first
@@ -5504,10 +5510,36 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				if (next) resetOwner.ownerToken = next.toISOString();
 			},
 		};
+		// A competing STOP or re-air must see both rows before it can acquire
+		// the released lease. A legacy channel can still have no current run.
+		const projectProvisionEnd = (outcome: ProvisionEnd) =>
+			withFenceWrite(async () => {
+				if (!heldAt) return false;
+				const landed = await commitProvisionEnd(
+					deps.prisma,
+					{
+						liveChannelId,
+						runId: provisionRunId,
+						generation: admissionGeneration,
+						lease: heldAt,
+					},
+					outcome,
+				);
+				if (landed) heldAt = null;
+				return landed;
+			});
 		const persist = async (
 			entries: StepLogEntry[],
 			extra: Record<string, unknown> = {},
 		): Promise<void> => {
+			if (extra.status === "ERROR" || extra.status === "STOPPING") {
+				const log = entries as unknown as Prisma.InputJsonValue;
+				const error = typeof extra.error === "string" ? extra.error : null;
+				const facts = { status: extra.status, error, stepLog: log } as const;
+				if (!(await projectProvisionEnd(facts)))
+					throw new ProvisionLeaseLostError(liveChannelId);
+				return;
+			}
 			if (
 				!(await withFenceWrite(() =>
 					persistFenced(liveChannelId, entries, extra, fence),
@@ -5982,27 +6014,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			// window and then failed must not stamp its stale ERROR over a
 			// channel another worker has since driven to RUNNING. The lease is
 			// released in the same write, exactly as the finalize-ERROR path.
-			const marked = await deps.prisma.liveChannel.updateMany({
-				where: { id: liveChannelId, provisionClaimedAt: heldAt },
-				data: {
-					status: "ERROR",
-					error: redactSecrets(message),
-					provisionClaimedAt: null,
-				},
-			});
-			if (marked.count === 0) {
-				console.warn(new ProvisionLeaseLostError(liveChannelId).message);
-				return "PROVISIONING";
-			}
-			heldAt = null;
-			// The run dies with its setup . The dead-job reaper
-			// retires runs only for a channel whose flip it WON (review-336 C3),
-			// and this path already moved the channel, so it mirrors the
-			// terminal state itself.
-			await runs.mirror(liveChannelId, {
+			const failed = {
 				status: "ERROR",
 				error: redactSecrets(message),
-			});
+			} as const;
+			if (!(await projectProvisionEnd(failed))) return "PROVISIONING";
 			await emitChannel("CHANNEL_ERROR", liveChannelId, redactSecrets(message));
 			throw err;
 		}
@@ -6018,6 +6034,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			cancelling && pendingRun
 				? pendingRun.id
 				: await runs.ensureCurrentRun(liveChannelId);
+		provisionRunId = currentRunId;
 		const shouldCancel = async () => {
 			const current = await deps.prisma.liveChannelRun.findFirst({
 				where: { liveChannelId },
@@ -6103,22 +6120,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					// that drifted: the channel still holds this lease, so it
 					// leaves PROVISIONING through the same fenced ERROR write the
 					// setup and finalize failures use — the lease released with it.
-					const marked = await deps.prisma.liveChannel.updateMany({
-						where: { id: liveChannelId, provisionClaimedAt: heldAt },
-						data: {
-							status: "ERROR",
-							error: redactSecrets(reason),
-							provisionClaimedAt: null,
-						},
-					});
-					if (marked.count === 0) {
-						console.warn(new ProvisionLeaseLostError(liveChannelId).message);
-						return "PROVISIONING";
-					}
-					await runs.mirror(liveChannelId, {
+					const failed = {
 						status: "ERROR",
 						error: redactSecrets(reason),
-					});
+					} as const;
+					if (!(await projectProvisionEnd(failed))) return "PROVISIONING";
 					if (!verdict.terminalised) {
 						// The reconciler emits when IT terminalises; this arm is the
 						// one with no emit yet.
@@ -6668,12 +6674,14 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					: { status: "STOPPED", canceledRunId: currentRunId };
 			} catch (error) {
 				if (error instanceof ProvisionLeaseLostError) return "STOPPING";
-				await persist(entries, {
+				const pending = {
 					status: "STOPPING",
 					error: redactSecrets(
 						`Cancellation pending: ${error instanceof Error ? error.message : "cleanup is not yet confirmed"}`,
 					),
-				});
+					stepLog: entries as unknown as Prisma.InputJsonValue,
+				} as const;
+				await projectProvisionEnd(pending);
 				return "STOPPING";
 			} finally {
 				stampStep = undefined;
@@ -7094,27 +7102,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				throw err;
 			}
 			const message = err instanceof Error ? err.message : "finalize failed";
-			const marked = await deps.prisma.liveChannel.updateMany({
-				where: { id: liveChannelId, provisionClaimedAt: heldAt },
-				data: {
-					status: "ERROR",
-					error: redactSecrets(message),
-					provisionClaimedAt: null,
-				},
-			});
-			if (marked.count === 0) {
-				console.warn(new ProvisionLeaseLostError(liveChannelId).message);
-				return "PROVISIONING";
-			}
-			heldAt = null;
-			// review-242 A1: THE terminal mirror. Unmirrored, the run stayed
-			// non-terminal forever — permanently occupying the one-live-run
-			// index, so ensureCurrentRun returns it for every later start and
-			// PR3's re-airs would merge onto the old row (seq never advances).
-			await runs.mirror(liveChannelId, {
+			const failed = {
 				status: "ERROR",
 				error: redactSecrets(message),
-			});
+			} as const;
+			if (!(await projectProvisionEnd(failed))) return "PROVISIONING";
 			//  PR1: finalize deaths are startup failures too.
 			await recordFailedStartupSample(
 				deps.prisma,

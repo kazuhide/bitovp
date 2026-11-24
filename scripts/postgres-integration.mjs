@@ -38,7 +38,7 @@ export const GROUPS = [
 			"src/tenant-legacy-migration.integration.test.ts": 1,
 			"src/create-request.integration.test.ts": 7,
 			"src/transaction-options.integration.test.ts": 6,
-			"src/live-run-step-log.integration.test.ts": 4,
+			"src/live-run-step-log.integration.test.ts": 5,
 			"src/library-editing-db.integration.test.ts": 12,
 			"src/library-production.integration.test.ts": 19,
 			"src/library-flow-evidence-pins.integration.test.ts": 12,
@@ -72,7 +72,7 @@ export const GROUPS = [
 		files: {
 			"src/alerts/engine-locking.integration.test.ts": 3,
 			"src/live/poll-transition-locking.integration.test.ts": 10,
-			"src/live/owned-transition-locking.integration.test.ts": 76,
+			"src/live/owned-transition-locking.integration.test.ts": 77,
 			"src/watch/sweep.capacity.integration.test.ts": 12,
 			"src/library-editing/derivatives.integration.test.ts": 8,
 			"src/library-editing/media-task-sweep.integration.test.ts": 5,

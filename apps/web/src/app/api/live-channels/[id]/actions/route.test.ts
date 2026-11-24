@@ -1995,6 +1995,22 @@ describe("POST /api/live-channels/[id]/actions", () => {
 		expect(res.status).toBe(409);
 	});
 
+	it.each([
+		"RUNNING",
+		"STOPPING",
+	])("rejects the displayed previous airing before enqueue or replay while %s", async (status) => {
+		findUnique.mockResolvedValueOnce(channel({ status }));
+		const res = await postAction({
+			action: "stop",
+			target: {
+				runId: "24bcb108-9040-4961-af6f-d4fc45b482bc",
+				encodingId: "bm-live-enc",
+				generation: 0,
+			},
+		});
+		expect(res.status).toBe(409);
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
 	it("stop: concurrent exact admissions retain one executable provider effect", async () => {
 		let initialReads = 0;
 		let releaseInitialReads: (() => void) | undefined;

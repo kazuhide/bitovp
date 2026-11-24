@@ -1,5 +1,4 @@
 import {
-	isAisaManagedLivePlan,
 	isLiveRunStatus,
 	liveChannelPlanSchema,
 	liveRunWindow,
@@ -18,7 +17,6 @@ import {
 	LIST_LIMIT_MAX,
 	liveScheduleArmSchema,
 } from "@/lib/live-runtime/schemas";
-import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
 import { bitmovinProxyError } from "@/lib/server/bitmovin";
 import { getServerContext } from "@/lib/server/context";
 import {
@@ -30,8 +28,9 @@ import {
 } from "@/lib/server/http";
 import { resolveLiveEncoding } from "@/lib/server/live-channel-encoding";
 import {
-	rejectAisaGraphMutation,
-	rejectImportedAisaMutation,
+	latestScheduleBinding,
+	lockLiveScheduleTarget,
+	rejectLiveScheduleMutation,
 } from "@/lib/server/live-channel-mutation-guard";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -191,6 +190,8 @@ export async function POST(req: Request, { params }: RouteParams) {
 			select: {
 				id: true,
 				origin: true,
+				stepLog: true,
+				runs: latestScheduleBinding,
 				plan: true,
 				bitmovinEncodingId: true,
 				maxRunMinutes: true,
@@ -201,16 +202,11 @@ export async function POST(req: Request, { params }: RouteParams) {
 		if (!channel) {
 			return jsonError(404, "Not found");
 		}
-		if (
-			isAisaManagedLivePlan(channel.plan) &&
-			!aisaLiveAccessAllowed(ctx.tenant)
-		) {
-			return jsonError(404, "Not found");
-		}
-		const refusal =
-			body.action === "STOP" || body.action === "SLATE_IN"
-				? rejectImportedAisaMutation(channel)
-				: rejectAisaGraphMutation(channel);
+		const refusal = rejectLiveScheduleMutation(
+			channel,
+			ctx.tenant,
+			body.action,
+		);
 		if (refusal) return refusal;
 		// #160 PR3 — arm-time auto-lead: fireAt = airAt − (P90 + margin) from
 		// the channel's resolved region profile, ONCE, here (never in the
@@ -426,79 +422,113 @@ export async function POST(req: Request, { params }: RouteParams) {
 		 * to the airing that already ended would refuse the very run it is
 		 * meant to stop.
 		 */
-		const currentRun = await ctx.prisma.liveChannelRun.findFirst({
-			where: { liveChannelId: id },
-			orderBy: { seq: "desc" },
-			select: {
-				id: true,
-				status: true,
-				bitmovinEncodingId: true,
-				stepLog: true,
-			},
-		});
-		if (
-			(currentRun?.id ?? null) !== (windowRun?.id ?? null) ||
-			(currentRun?.bitmovinEncodingId ?? null) !==
-				(windowRun?.bitmovinEncodingId ?? null) ||
-			(currentRun !== null && isLiveRunStatus(currentRun.status)) !==
-				windowRunIsLive
-		)
-			return jsonError(
-				409,
-				"The current live run changed while this schedule was prepared; reload before arming it",
+		return await ctx.prisma.$transaction(async (tx) => {
+			await lockLiveScheduleTarget(tx, id);
+			const locked = await tx.liveChannel.findUnique({
+				where: { id },
+				select: {
+					origin: true,
+					plan: true,
+					stepLog: true,
+					runs: latestScheduleBinding,
+					bitmovinEncodingId: true,
+					maxRunMinutes: true,
+					runningSince: true,
+					createdAt: true,
+				},
+			});
+			if (!locked) return jsonError(404, "Not found");
+			const denied = rejectLiveScheduleMutation(
+				locked,
+				ctx.tenant,
+				body.action,
 			);
-		const currentAutoShutdownUpdate =
-			currentRun && isLiveRunStatus(currentRun.status)
-				? readLiveAutoShutdownUpdate(currentRun.stepLog)
-				: null;
-		if (
-			JSON.stringify(currentAutoShutdownUpdate) !==
-			JSON.stringify(autoShutdownUpdate)
-		)
-			return jsonError(
-				409,
-				"Automatic stop settings changed while this schedule was prepared; reload before arming it",
+			if (denied) return denied;
+			if (
+				locked.bitmovinEncodingId !== channel.bitmovinEncodingId ||
+				locked.maxRunMinutes !== channel.maxRunMinutes ||
+				locked.runningSince?.getTime() !== channel.runningSince?.getTime() ||
+				JSON.stringify(locked.plan) !== JSON.stringify(channel.plan)
+			) {
+				return jsonError(
+					409,
+					"The channel settings changed; reload before arming a schedule",
+				);
+			}
+			const currentRun = await tx.liveChannelRun.findFirst({
+				where: { liveChannelId: id },
+				orderBy: { seq: "desc" },
+				select: {
+					id: true,
+					status: true,
+					bitmovinEncodingId: true,
+					stepLog: true,
+				},
+			});
+			if (
+				(currentRun?.id ?? null) !== (windowRun?.id ?? null) ||
+				(currentRun?.bitmovinEncodingId ?? null) !==
+					(windowRun?.bitmovinEncodingId ?? null) ||
+				(currentRun !== null && isLiveRunStatus(currentRun.status)) !==
+					windowRunIsLive
+			)
+				return jsonError(
+					409,
+					"The current live run changed while this schedule was prepared; reload before arming it",
+				);
+			const currentAutoShutdownUpdate =
+				currentRun && isLiveRunStatus(currentRun.status)
+					? readLiveAutoShutdownUpdate(currentRun.stepLog)
+					: null;
+			if (
+				JSON.stringify(currentAutoShutdownUpdate) !==
+				JSON.stringify(autoShutdownUpdate)
+			)
+				return jsonError(
+					409,
+					"Automatic stop settings changed while this schedule was prepared; reload before arming it",
+				);
+			const armedForRun =
+				currentRun && isLiveRunStatus(currentRun.status) ? currentRun.id : null;
+			const row = await tx.liveSchedule.create({
+				data: {
+					liveChannelId: id,
+					liveChannelRunId: armedForRun,
+					action: body.action,
+					fireAt,
+					insertableContentId: body.insertableContentId ?? null,
+					slateDurationSeconds: body.slateDurationSeconds ?? null,
+					// #160 PR2: the air-time deadline pair (margin defaults in the DB).
+					airAt: body.airAt ? new Date(body.airAt) : null,
+					...(body.deadlineMarginSeconds !== undefined
+						? { deadlineMarginSeconds: body.deadlineMarginSeconds }
+						: {}),
+					...(autoLead
+						? {
+								autoLeadTime: true,
+								// The stored resolution (raw values, note-precedent
+								// mechanical English): re-arming re-resolves.
+								note:
+									autoLead.source === "P90"
+										? `auto-lead: P90 ${autoLead.p90Seconds}s + margin -> lead ${autoLead.leadSeconds}s (n=${autoLead.n} CHANNEL)`
+										: `auto-lead: default ${autoLead.leadSeconds}s (insufficient data, n=${autoLead.n} CHANNEL)`,
+							}
+						: {}),
+				},
+			});
+			return NextResponse.json(
+				{
+					...row,
+					...(autoLead ? { autoLead } : {}),
+					// #247: the knobs that CAN still end this run early but cannot
+					// be checked against a clock — named, never refused on.
+					...(runWindow.conditional.length > 0
+						? { autoShutdownWarnings: runWindow.conditional }
+						: {}),
+				},
+				{ status: 201 },
 			);
-		const armedForRun =
-			currentRun && isLiveRunStatus(currentRun.status) ? currentRun.id : null;
-		const row = await ctx.prisma.liveSchedule.create({
-			data: {
-				liveChannelId: id,
-				liveChannelRunId: armedForRun,
-				action: body.action,
-				fireAt,
-				insertableContentId: body.insertableContentId ?? null,
-				slateDurationSeconds: body.slateDurationSeconds ?? null,
-				// #160 PR2: the air-time deadline pair (margin defaults in the DB).
-				airAt: body.airAt ? new Date(body.airAt) : null,
-				...(body.deadlineMarginSeconds !== undefined
-					? { deadlineMarginSeconds: body.deadlineMarginSeconds }
-					: {}),
-				...(autoLead
-					? {
-							autoLeadTime: true,
-							// The stored resolution (raw values, note-precedent
-							// mechanical English): re-arming re-resolves.
-							note:
-								autoLead.source === "P90"
-									? `auto-lead: P90 ${autoLead.p90Seconds}s + margin -> lead ${autoLead.leadSeconds}s (n=${autoLead.n} CHANNEL)`
-									: `auto-lead: default ${autoLead.leadSeconds}s (insufficient data, n=${autoLead.n} CHANNEL)`,
-						}
-					: {}),
-			},
 		});
-		return NextResponse.json(
-			{
-				...row,
-				...(autoLead ? { autoLead } : {}),
-				// #247: the knobs that CAN still end this run early but cannot
-				// be checked against a clock — named, never refused on.
-				...(runWindow.conditional.length > 0
-					? { autoShutdownWarnings: runWindow.conditional }
-					: {}),
-			},
-			{ status: 201 },
-		);
 	} catch (err) {
 		return routeError(err);
 	}

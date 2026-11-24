@@ -82,6 +82,40 @@ describe("ChannelDangerZone — delete", () => {
 });
 
 describe("ChannelLifecycleActions — restart is only offered where it can work (ledger #107)", () => {
+	it("sends the airing, encoding and generation displayed by the ordinary Stop confirmation", async () => {
+		wrap(
+			<ChannelLifecycleActions
+				channelId={CHANNEL_ID}
+				runId={RUN_ID}
+				encodingId="view-encoder"
+				generation={9}
+				status="RUNNING"
+				hasEncoding
+			/>,
+		);
+		await userEvent.click(screen.getByRole("button", { name: "Stop channel" }));
+		await userEvent.click(
+			within(screen.getByRole("dialog")).getByRole("button", {
+				name: "Stop channel",
+			}),
+		);
+		await waitFor(() =>
+			expect(apiFetch).toHaveBeenCalledWith(
+				`/api/live-channels/${CHANNEL_ID}/actions`,
+				{
+					method: "POST",
+					body: JSON.stringify({
+						action: "stop",
+						target: {
+							runId: RUN_ID,
+							encodingId: "view-encoder",
+							generation: 9,
+						},
+					}),
+				},
+			),
+		);
+	});
 	it("confirms the displayed archived encoder even before its primary pointer is restored", async () => {
 		wrap(
 			<ChannelLifecycleActions

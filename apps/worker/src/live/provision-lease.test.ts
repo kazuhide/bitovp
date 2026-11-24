@@ -37,7 +37,12 @@ function fake(rows: Row[]) {
 							r.provisionClaimedAt.getTime() <
 								where.provisionClaimedAt.lt.getTime(),
 					)
-					.map((r) => ({ id: r.id, provisionClaimedAt: r.provisionClaimedAt })),
+					.map((r) => ({
+						id: r.id,
+						provisionClaimedAt: r.provisionClaimedAt,
+						liveEffectFenceVersion: 0,
+						runs: [{ id: r.id }],
+					})),
 		),
 		updateMany: vi.fn(
 			async ({
@@ -62,15 +67,23 @@ function fake(rows: Row[]) {
 		),
 	};
 	const liveChannelRun = {
-		updateMany: vi.fn(
-			async ({ where }: { where: { liveChannelId: string } }) => {
-				retired.push(where.liveChannelId);
-				return { count: 1 };
-			},
+		findFirst: vi.fn(
+			async ({ where }: { where: { liveChannelId: string } }) => ({
+				id: where.liveChannelId,
+				status: "PROVISIONING",
+			}),
 		),
+		update: vi.fn(async ({ where }: { where: { id: string } }) => {
+			retired.push(where.id);
+		}),
+		updateMany: vi.fn(async () => ({ count: 1 })),
 	};
+	const tx = { liveChannel, liveChannelRun, $queryRaw: vi.fn() };
 	return {
-		prisma: { liveChannel, liveChannelRun } as unknown as AppPrismaClient,
+		prisma: {
+			...tx,
+			$transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
+		} as unknown as AppPrismaClient,
 		liveChannel,
 		rows,
 		retired,

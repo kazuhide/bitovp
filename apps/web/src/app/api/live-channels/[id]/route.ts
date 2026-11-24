@@ -1,6 +1,5 @@
 import {
 	effectiveLivePlanForRun,
-	isAisaManagedLivePlan,
 	liveRunWindow,
 	liveToVodFamilySupport,
 	programEndBeyondRunWindow,
@@ -34,6 +33,11 @@ import {
 	canRetryEndedAisaFinalization,
 	isAisaLiveChannelView,
 } from "@/lib/server/live-channel-aisa-view";
+import {
+	latestScheduleBinding,
+	lockLiveScheduleTarget,
+	rejectLiveScheduleMutation,
+} from "@/lib/server/live-channel-mutation-guard";
 import { readHeartbeatReception } from "@/lib/server/live-heartbeat-reception";
 import {
 	liveToVodFamiliesForRole,
@@ -410,7 +414,15 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 				!aisaLiveAccessAllowed(ctx.tenant)
 			)
 				throw new AisaDeleteForbidden();
-			if (["PROVISIONING", "RUNNING", "STOPPING"].includes(current.status))
+			if (
+				["PROVISIONING", "RUNNING", "STOPPING"].includes(current.status) ||
+				runs.some(
+					(r) =>
+						["CREATED", "PROVISIONING", "RUNNING", "STOPPING"].includes(
+							r.status,
+						) && !!r.bitmovinEncodingId,
+				)
+			)
 				throw new ChannelNotDeletable();
 			const openStop = await tx.liveEffectClaim.findFirst({
 				where: {
@@ -429,6 +441,11 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 				where: { liveChannelId: id },
 				orderBy: { seq: "desc" },
 			});
+			if (
+				run?.bitmovinEncodingId &&
+				["CREATED", "PROVISIONING", "RUNNING", "STOPPING"].includes(run.status)
+			)
+				throw new ChannelNotDeletable();
 			const bound = isAisaLiveChannelView(current, run);
 			if (bound && !aisaLiveAccessAllowed(ctx.tenant))
 				throw new AisaDeleteForbidden();
@@ -574,73 +591,71 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 	}
 	try {
 		const ctx = await getServerContext();
-		const existing = await ctx.prisma.liveChannel.findUnique({
-			where: { id },
-			// : the cap is the BACKSTOP and programEndAt is the
-			// intent, so a new cap has to be measured against the window it
-			// would cut short.
-			select: {
-				id: true,
-				origin: true,
-				plan: true,
-				bitmovinAccountId: true,
-				programEndAt: true,
-				runningSince: true,
-				createdAt: true,
-			},
-		});
-		if (!existing) {
-			return jsonError(404, "Not found");
-		}
-		if (
-			existing.origin === "AISA_IMPORTED" ||
-			isAisaManagedLivePlan(existing.plan)
-		) {
-			if (!aisaLiveAccessAllowed(ctx.tenant))
+		const result = await ctx.prisma.$transaction(async (tx) => {
+			await lockLiveScheduleTarget(tx, id);
+			const existing = await tx.liveChannel.findUnique({
+				where: { id },
+				// : the cap is the BACKSTOP and programEndAt is the
+				// intent, so a new cap has to be measured against the window it
+				// would cut short.
+				select: {
+					id: true,
+					origin: true,
+					plan: true,
+					stepLog: true,
+					runs: latestScheduleBinding,
+					bitmovinAccountId: true,
+					programEndAt: true,
+					runningSince: true,
+					createdAt: true,
+				},
+			});
+			if (!existing) {
 				return jsonError(404, "Not found");
-			return jsonError(
-				409,
-				"Runtime-cap updates are unavailable for AISA Live Preview",
-				{ code: "AISA_ACTION_UNSUPPORTED" },
-			);
-		}
-		/**
-		 *  — a runtime cap shorter than the scheduled program.
-		 * `program-schedule.ts` states the precedence: "the STOP row is the
-		 * intended end; maxRunMinutes is the backstop", so a backstop that
-		 * lands first is the misconfiguration and gets refused here rather
-		 * than silently stopping the airing mid-program on the sweep's next
-		 * tick. Only the knob this request changes is measured (plan `null`) —
-		 * a PATCH that touches the cap must not fail over an unrelated
-		 * auto-shutdown setting the operator did not just edit.
-		 */
-		if (parsed.data.maxRunMinutes !== null && existing.programEndAt) {
-			const capRefusal = programEndBeyondRunWindow(
-				liveRunWindow(null, existing.runningSince ?? existing.createdAt, {
-					maxRunMinutes: parsed.data.maxRunMinutes,
-				}),
-				existing.programEndAt.getTime(),
-			);
-			if (capRefusal) {
-				return jsonError(
-					422,
-					capRefusal,
-					customerErrorDetails("LIVE_CHANNEL_RUNTIME_CAP_BEFORE_PROGRAM_END"),
-				);
 			}
-		}
-		const row = await ctx.prisma.liveChannel.update({
-			where: { id },
-			data: { maxRunMinutes: parsed.data.maxRunMinutes },
-			select: { id: true, maxRunMinutes: true },
+			const refused = rejectLiveScheduleMutation(existing, ctx.tenant, "CAP");
+			if (refused) return refused;
+			/**
+			 *  — a runtime cap shorter than the scheduled program.
+			 * `program-schedule.ts` states the precedence: "the STOP row is the
+			 * intended end; maxRunMinutes is the backstop", so a backstop that
+			 * lands first is the misconfiguration and gets refused here rather
+			 * than silently stopping the airing mid-program on the sweep's next
+			 * tick. Only the knob this request changes is measured (plan `null`) —
+			 * a PATCH that touches the cap must not fail over an unrelated
+			 * auto-shutdown setting the operator did not just edit.
+			 */
+			if (parsed.data.maxRunMinutes !== null && existing.programEndAt) {
+				const capRefusal = programEndBeyondRunWindow(
+					liveRunWindow(null, existing.runningSince ?? existing.createdAt, {
+						maxRunMinutes: parsed.data.maxRunMinutes,
+					}),
+					existing.programEndAt.getTime(),
+				);
+				if (capRefusal) {
+					return jsonError(
+						422,
+						capRefusal,
+						customerErrorDetails("LIVE_CHANNEL_RUNTIME_CAP_BEFORE_PROGRAM_END"),
+					);
+				}
+			}
+			const row = await tx.liveChannel.update({
+				where: { id },
+				data: { maxRunMinutes: parsed.data.maxRunMinutes },
+				select: { id: true, maxRunMinutes: true },
+			});
+			return { row, accountId: existing.bitmovinAccountId ?? undefined };
 		});
+		if (result instanceof Response) return result;
+		const { row, accountId } = result;
 		await writeAuditLog(
 			ctx,
 			{
 				method: "PATCH",
 				path: `/api/live-channels/${id}`,
 				statusCode: 200,
-				bitmovinAccountId: existing.bitmovinAccountId ?? undefined,
+				bitmovinAccountId: accountId,
 				request: parsed.data,
 				response: row,
 			},

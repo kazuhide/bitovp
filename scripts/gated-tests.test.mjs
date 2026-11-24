@@ -54,7 +54,7 @@ const paths = (groups) =>
 		Object.keys(group.files).map((file) => join(group.directory, file)),
 	);
 
-const EXPECTED_PLAIN_WORKER_SKIPS = 143;
+const EXPECTED_PLAIN_WORKER_SKIPS = 144;
 
 test("the required Redis run registers the cross-worker/Web clip availability matrix", () => {
 	assert.deepEqual(REDIS.availability, {
@@ -186,7 +186,7 @@ test("every listed file exists once, and every FFmpeg, Redis or script test file
 test("a plain run may skip the tests that another job runs", () => {
 	for (const [workspace, skipped] of [
 		["@bitovp/core", 25],
-		["@bitovp/db", 73],
+		["@bitovp/db", 74],
 		["@bitovp/worker", EXPECTED_PLAIN_WORKER_SKIPS],
 		// Includes six favorite-registry, two still-image, two archive/restore and
 		// one WebM recovery case, plus three LOCAL QC cancellation cases and the

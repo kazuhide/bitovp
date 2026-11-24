@@ -11319,8 +11319,7 @@ describe("confirmed encoding cancellation", () => {
 				});
 		});
 		const pending = h.process(cancel);
-		if (kind === "lease") await expect(pending).rejects.toThrow("lease lost");
-		else expect((await pending).status).not.toBe("STOPPED");
+		expect((await pending).status).toBe("STOPPING");
 		expect(h.row.status).not.toBe("STOPPED");
 		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
 		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();

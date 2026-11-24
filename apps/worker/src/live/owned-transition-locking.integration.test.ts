@@ -50,6 +50,7 @@ import {
 	createProviderLifecycleReconciler,
 	type RunLifecycleRow,
 } from "./provider-lifecycle";
+import { commitProvisionEnd } from "./provision-outcome";
 import {
 	createStrandedRunReconciler,
 	recordExpiredProvisionFailure,
@@ -1183,6 +1184,69 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				}),
 				`sched-${row.id}`,
 			);
+		});
+
+		it("releases a failed provision with its own run and rejects the lease after a successor appears", async () => {
+			const f = await fixture();
+			const target = {
+				liveChannelId: f.channel.id,
+				runId: f.run.id,
+				generation: f.channel.liveEffectFenceVersion,
+				lease,
+			};
+			const outcome = { status: "ERROR", error: "finalize failed" } as const;
+			expect(await commitProvisionEnd(tenant, target, outcome)).toBe(true);
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({ ...outcome, provisionClaimedAt: null });
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({ ...outcome, endedAt: expect.any(Date) });
+			const successor = await tenant.$transaction(async (tx) => {
+				await tx.liveChannel.update({
+					where: { id: f.channel.id },
+					data: {
+						status: "PROVISIONING",
+						error: null,
+						provisionClaimedAt: lease,
+						liveEffectFenceVersion: { increment: 1 },
+					},
+				});
+				return tx.liveChannelRun.create({
+					data: {
+						liveChannelId: f.channel.id,
+						seq: 2,
+						status: "PROVISIONING",
+						outputPrefix: "next",
+					},
+				});
+			});
+			expect(await commitProvisionEnd(tenant, target, outcome)).toBe(false);
+			expect(
+				await commitProvisionEnd(
+					tenant,
+					{ ...target, generation: target.generation + 1 },
+					outcome,
+				),
+			).toBe(false);
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: successor.id },
+				}),
+			).toMatchObject({ status: "PROVISIONING", error: null, endedAt: null });
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({
+				status: "PROVISIONING",
+				error: null,
+				provisionClaimedAt: lease,
+			});
 		});
 
 		async function stopFixture() {

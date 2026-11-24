@@ -2988,6 +2988,7 @@ export const ja = {
 		frameRangeOutOfBounds: "{min}〜{max} の範囲で指定してください。",
 	},
 	notif: {
+		unconfirmed: "送信結果未確認",
 		deleteConfirm: "通知チャネル「{name}」を削除しますか？",
 
 		// Page-level heading (E2E 2026-08-14: the one screen without an h1).

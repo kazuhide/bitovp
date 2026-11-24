@@ -37,6 +37,7 @@ const tx = {
 	vmafJob: { deleteMany: vmafDeleteMany, count: vmafCount },
 	liveChannel: {
 		findUnique: lockedChannel,
+		update,
 		findMany: archivedChannels,
 		deleteMany: channelDeleteMany,
 	},
@@ -1068,6 +1069,23 @@ describe("DELETE /api/live-channels/[id]", () => {
 		expect(channelDeleteMany).not.toHaveBeenCalled();
 	});
 
+	it("keeps an active run when the channel has already lost its primary", async () => {
+		findUnique.mockResolvedValue({
+			id: CHANNEL_ID,
+			status: "ERROR",
+			bitmovinEncodingId: null,
+			stepLog: [],
+			plan: {},
+		});
+		lockedRun.mockResolvedValue({
+			id: "run",
+			status: "RUNNING",
+			bitmovinEncodingId: "still-active",
+			stepLog: [],
+		});
+		expect((await DELETE(delReq(), ctx(CHANNEL_ID))).status).toBe(409);
+		expect(channelDeleteMany).not.toHaveBeenCalled();
+	});
 	it.each([
 		"PROVISIONING",
 		"RUNNING",
@@ -1177,6 +1195,7 @@ describe("PATCH /api/live-channels/[id] — the cap against the program window",
 	}
 
 	beforeEach(() => {
+		lockedChannel.mockImplementation((args) => findUnique(args));
 		update.mockImplementation(
 			async ({ data }: { data: { maxRunMinutes: number | null } }) => ({
 				id: CHANNEL_ID,
@@ -1185,6 +1204,26 @@ describe("PATCH /api/live-channels/[id] — the cap against the program window",
 		);
 	});
 
+	it("hides a runtime-cap edit when only the airing retains an Analysis binding", async () => {
+		const row = {
+			id: CHANNEL_ID,
+			origin: "MANAGED",
+			plan: {},
+			runs: [{ aisaStatus: "RUNNING" }],
+			programEndAt: null,
+		};
+		findUnique.mockResolvedValue(row);
+		lockedChannel.mockResolvedValue(row);
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "false");
+		try {
+			expect(
+				(await PATCH(patchReq({ maxRunMinutes: 1 }), ctx(CHANNEL_ID))).status,
+			).toBe(404);
+			expect(update).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
 	it("refuses a cap that would stop the channel before its program ends", async () => {
 		findUnique.mockResolvedValueOnce({
 			id: CHANNEL_ID,

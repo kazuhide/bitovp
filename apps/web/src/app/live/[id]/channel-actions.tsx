@@ -198,7 +198,15 @@ export function ChannelLifecycleActions({
 						runId: string;
 						encodingId: string;
 				  }
-				| { action: "recover-archived-stop"; runId: string; revision: string };
+				| { action: "recover-archived-stop"; runId: string; revision: string }
+				| {
+						action: "stop";
+						target: {
+							runId: string | null;
+							encodingId: string | null;
+							generation: number;
+						};
+				  };
 		}) =>
 			apiFetch(`/api/live-channels/${channelId}/actions`, {
 				method: "POST",
@@ -545,6 +553,18 @@ export function ChannelLifecycleActions({
 												: "retry-aisa-stop",
 										runId,
 										encodingId,
+									},
+								});
+							} else if (confirmation === "stop" && confirming) {
+								act.mutate({
+									action: "stop",
+									scopedStop: {
+										action: "stop",
+										target: {
+											runId: confirming.runId ?? null,
+											encodingId: confirming.encodingId ?? null,
+											generation: confirming.generation,
+										},
 									},
 								});
 							} else act.mutate({ action: dialogCopy.action });

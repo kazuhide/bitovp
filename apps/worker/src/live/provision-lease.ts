@@ -1,5 +1,5 @@
 import type { AppPrismaClient } from "@bitovp/db";
-import { retireTransitionalRuns } from "./reconcile-stranded-runs";
+import { commitProvisionEnd } from "./provision-outcome";
 
 /**
  * How long a provisioning lease
@@ -42,33 +42,30 @@ export async function reconcileAbandonedLeases(
 	const cutoff = new Date(now.getTime() - PROVISION_LEASE_MS);
 	const stale = await prisma.liveChannel.findMany({
 		where: { status: "PROVISIONING", provisionClaimedAt: { lt: cutoff } },
-		select: { id: true, provisionClaimedAt: true },
+		select: {
+			id: true,
+			provisionClaimedAt: true,
+			liveEffectFenceVersion: true,
+			runs: { orderBy: { seq: "desc" }, take: 1, select: { id: true } },
+		},
 	});
 	let flipped = 0;
 	for (const row of stale) {
 		if (row.provisionClaimedAt === null) {
 			continue;
 		}
-		const { count } = await prisma.liveChannel.updateMany({
-			where: {
-				id: row.id,
-				status: "PROVISIONING",
-				provisionClaimedAt: row.provisionClaimedAt,
+		const changed = await commitProvisionEnd(
+			prisma,
+			{
+				liveChannelId: row.id,
+				runId: row.runs[0]?.id ?? null,
+				generation: row.liveEffectFenceVersion,
+				lease: row.provisionClaimedAt,
+				requireProvisioning: true,
 			},
-			data: {
-				status: "ERROR",
-				error: ABANDONED_LEASE_ERROR,
-				provisionClaimedAt: null,
-			},
-		});
-		if (count === 0) {
-			// Renewed or taken over since the read — a live holder owns it.
-			continue;
-		}
-		flipped += 1;
-		// The run follows the channel , or the one-live-run index
-		// rejects every later start.
-		await retireTransitionalRuns(prisma, row.id, ABANDONED_LEASE_ERROR);
+			{ status: "ERROR", error: ABANDONED_LEASE_ERROR },
+		);
+		if (changed) flipped++;
 	}
 	return flipped;
 }

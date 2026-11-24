@@ -639,6 +639,13 @@ const actionSchema = z.discriminatedUnion("action", [
 	}),
 	z.object({
 		action: z.literal("stop"),
+		target: z
+			.strictObject({
+				runId: z.uuid().nullable(),
+				encodingId: z.string().min(1).nullable(),
+				generation: z.number().int().min(0),
+			})
+			.optional(),
 		// Reject the earlier scoped request rather than stripping its run binding.
 		finalizationRunId: z.never().optional(),
 		recoveryTarget: z.never().optional(),
@@ -743,6 +750,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 						aisaAnalysisId: true,
 						aisaStatus: true,
 						aisaSnapshot: true,
+						stepLog: true,
 					},
 				},
 			},
@@ -1243,6 +1251,18 @@ export async function POST(req: Request, { params }: RouteParams) {
 			case "retry-aisa-stop":
 			case "stop": {
 				let recoveredTarget: string | null = null;
+				const displayed = action.action === "stop" ? action.target : undefined;
+				if (
+					displayed &&
+					((row.liveEffectFenceVersion ?? 0) !== displayed.generation ||
+						row.bitmovinEncodingId !== displayed.encodingId)
+				) {
+					return codedError(
+						409,
+						"The displayed airing changed before Stop",
+						"LIVE_ACTION_STATE_CHANGED",
+					);
+				}
 				if (action.action === "recover-archived-stop") {
 					recoveredTarget = await bindArchivedStopTarget(
 						ctx.prisma,
@@ -1370,6 +1390,16 @@ export async function POST(req: Request, { params }: RouteParams) {
 							replayPlan.code,
 						);
 					}
+					if (
+						displayed &&
+						(replayPlan.runId !== displayed.runId ||
+							replayPlan.providerEncodingId !== displayed.encodingId)
+					)
+						return codedError(
+							409,
+							"The displayed airing changed before Stop",
+							"LIVE_ACTION_STATE_CHANGED",
+						);
 					if (persistedAisa && replayPlan.runId !== latestBinding?.id)
 						return codedError(
 							409,
@@ -1435,6 +1465,16 @@ export async function POST(req: Request, { params }: RouteParams) {
 						stopPlan.code,
 					);
 				}
+				if (
+					displayed &&
+					(stopPlan.runId !== displayed.runId ||
+						stopPlan.providerEncodingId !== displayed.encodingId)
+				)
+					return codedError(
+						409,
+						"The displayed airing changed before Stop",
+						"LIVE_ACTION_STATE_CHANGED",
+					);
 				if (persistedAisa && stopPlan.runId !== latestBinding?.id)
 					return codedError(
 						409,

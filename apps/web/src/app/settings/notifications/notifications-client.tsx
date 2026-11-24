@@ -34,7 +34,7 @@ type CredentialWire = { id: string; label: string; provider: string };
 
 type DeliveryWire = {
 	id: string;
-	state: "FAILED" | "DELIVERED";
+	state: "FAILED" | "DELIVERED" | "UNCONFIRMED";
 	kind: string;
 	occurredAt: string | null;
 	link: string | null;
@@ -393,8 +393,18 @@ export function NotificationsClient() {
 							key={`${delivery.state}-${delivery.id}`}
 							className="flex flex-wrap items-center gap-2 text-xs"
 						>
-							<Badge tone={delivery.state === "FAILED" ? "error" : "ok"}>
-								{delivery.state}
+							<Badge
+								tone={
+									delivery.state === "FAILED"
+										? "error"
+										: delivery.state === "DELIVERED"
+											? "ok"
+											: "neutral"
+								}
+							>
+								{delivery.state === "UNCONFIRMED"
+									? t("notif.unconfirmed")
+									: delivery.state}
 							</Badge>
 							<span className="font-mono">{delivery.kind}</span>
 							<span className="text-zinc-500">{delivery.occurredAt}</span>

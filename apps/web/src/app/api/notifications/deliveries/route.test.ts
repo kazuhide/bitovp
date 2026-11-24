@@ -44,6 +44,7 @@ beforeEach(() => {
 	getCompleted.mockResolvedValue([
 		{
 			id: "j2",
+			returnvalue: { delivery: "DELIVERED" },
 			data: { kind: "JOB_FINISHED", occurredAt: "t", link: "l" },
 			attemptsMade: 1,
 		},
@@ -80,6 +81,41 @@ describe("GET /api/notifications/deliveries", () => {
 		expect(JSON.stringify(body)).not.toContain("hooks.example.com");
 	});
 
+	it("keeps old queue acknowledgements unconfirmed and omits events with no subscription", async () => {
+		getCompleted.mockResolvedValue([
+			{
+				id: "legacy",
+				data: { kind: "CHANNEL_STOPPED" },
+				returnvalue: { acknowledged: true, queue: "notify" },
+			},
+			{
+				id: "skipped",
+				data: { kind: "CHANNEL_STOPPED" },
+				returnvalue: { delivery: "NO_DESTINATION" },
+			},
+		]);
+		const { completed } = await (await GET()).json();
+		expect(completed).toMatchObject([{ id: "legacy", state: "UNCONFIRMED" }]);
+	});
+	it("keeps a prior delivery visible after a page with only unmatched subscriptions", async () => {
+		getCompleted
+			.mockResolvedValueOnce(
+				Array.from({ length: 20 }, (_, i) => ({
+					id: "skip" + i,
+					returnvalue: { delivery: "NO_DESTINATION" },
+				})),
+			)
+			.mockResolvedValueOnce([
+				{
+					id: "prior",
+					returnvalue: { delivery: "DELIVERED" },
+					data: { kind: "CHANNEL_STOPPED" },
+				},
+			]);
+		expect((await (await GET()).json()).completed).toMatchObject([
+			{ id: "prior", state: "DELIVERED" },
+		]);
+	});
 	it("requests the newest 20 of each state", async () => {
 		await GET();
 		expect(getFailed).toHaveBeenCalledWith(0, 19);

@@ -16,28 +16,18 @@ import {
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { DelayedError, type Job } from "bullmq";
+import { systemSweeps } from "../system-sweeps";
 import {
 	admitInactiveOrganization,
 	INACTIVE_ORGANIZATION_ERROR,
 } from "./admission";
 import { runInOrganization } from "./scope";
 
-const sweeps = {
-	liveChannel: {
-		name: "heartbeat-sweep",
-		id: "live-heartbeat-sweep",
-		marker: "heartbeat",
-	},
-	slateNormalize: {
-		name: "slate-normalize-promote",
-		id: "slate-normalize-promote",
-		marker: "slate",
-	},
-} as const;
-
 export function isTenantSystemSweep(key: QueueKey, job: Job): boolean {
 	const sweep =
-		key === "liveChannel" || key === "slateNormalize" ? sweeps[key] : undefined;
+		key === "liveChannel" || key === "slateNormalize"
+			? systemSweeps[key]
+			: undefined;
 	if (!sweep || job.name !== sweep.name || job.repeatJobKey !== sweep.id) {
 		return false;
 	}

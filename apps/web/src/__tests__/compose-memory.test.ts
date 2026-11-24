@@ -40,6 +40,7 @@ function memoryConfig(
 		services: Record<
 			string,
 			{
+				command?: string[];
 				mem_limit?: string;
 				memswap_limit?: string;
 				environment?: Record<string, string>;
@@ -82,6 +83,24 @@ describe("Compose memory containment (row #93)", () => {
 			total += Number(service.mem_limit);
 		}
 		expect(total).toBeLessThanOrEqual(7 * 1024 ** 3);
+	});
+
+	it("uses the fresh-install Redis budget and preserves upgrades with an unset budget", () => {
+		for (const [redis, budget] of [
+			[memoryConfig().redis, "0"],
+			[memoryConfig({}, join(root, ".env.example")).redis, "128mb"],
+			[memoryConfig({ REDIS_MAXMEMORY: "80mb" }).redis, "80mb"],
+		] as const) {
+			expect(redis?.command).toEqual([
+				"redis-server",
+				"--appendonly",
+				"yes",
+				"--maxmemory",
+				budget,
+				"--maxmemory-policy",
+				"noeviction",
+			]);
+		}
 	});
 
 	it("keeps the worker memory and swap ceiling consistent when explicitly sized", () => {

@@ -329,7 +329,7 @@ finalization also need separate verification.
 
 A recovered stop completes its own pending schedule. A schedule already marked
 unknown keeps its original evidence, including after a subsequent broadcast.
-The worker records one terminal notification per broadcast and retries handing
+The worker records one notification for the confirmed stop of that broadcast and retries handing
 it to the notification queue. Webhook retries can deliver the event to a destination more than once.
 
 A START error can leave the provider state uncertain. Startup cancellation

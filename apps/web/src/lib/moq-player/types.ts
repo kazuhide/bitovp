@@ -69,6 +69,7 @@ export type MoqSource = {
 	getBufferLevel?(): number;
 	getVideoQuality?(): unknown;
 	getAvailableVideoQualities?(): unknown;
+	setVideoQuality?(quality: unknown): void;
 };
 export type MoqPlayer = {
 	sources: {

@@ -29,7 +29,12 @@ import {
 import { trackMoqPlaybackOperation } from "@/lib/moq-player/operation-analytics";
 import { createMoqPreviewArchive } from "@/lib/moq-player/preview-archive";
 import type { MoqRecordingState } from "@/lib/moq-player/recording";
-import { createMoqPlayback } from "@/lib/moq-player/session";
+import {
+	createMoqPlayback,
+	DEFAULT_MOQ_PLAYBACK_SETTINGS,
+	type MoqPlaybackSettings,
+	type MoqVideoQualitySelection,
+} from "@/lib/moq-player/session";
 import {
 	type MoqPlaybackDescriptor,
 	parseMoqPlaybackDescriptor,
@@ -42,6 +47,7 @@ import { MOQ_ARCHIVE_SAVE_TIMEOUT_MS } from "../../../../config/moq-policy";
 import { MoqClientPlaybackClock } from "./moq-client-playback-clock";
 import { MoqEncoderHistory } from "./moq-encoder-history";
 import { type MoqArchiveSave, MoqHistoryPanel } from "./moq-history-panel";
+import { MoqPlaybackControls } from "./moq-playback-controls";
 import { MoqPlaybackStages } from "./moq-playback-stages";
 import { MoqPlayerStatistics } from "./moq-player-statistics";
 import { MoqViewerMetrics } from "./moq-viewer-metrics";
@@ -133,6 +139,10 @@ function MoqPlaybackAttempt({
 	const [statistics, setStatistics] = useState<MoqVideoStatistics>(
 		EMPTY_MOQ_VIDEO_STATISTICS,
 	);
+	const [settings, setSettings] = useState(DEFAULT_MOQ_PLAYBACK_SETTINGS);
+	const latestSettings = useRef(settings);
+	const [qualitySelection, setQualitySelection] =
+		useState<MoqVideoQualitySelection | null>(null);
 	const [configuration, setConfiguration] = useState<
 		MoqPlaybackDescriptor["resource"]["metadata"] | null
 	>(null);
@@ -152,6 +162,7 @@ function MoqPlaybackAttempt({
 		const attempt = current.current;
 		if (!attempt) return Promise.resolve();
 		current.current = undefined;
+		if (mounted.current) setQualitySelection(null);
 		attempt.noteStage(attempt.reason);
 		attempt.abort.abort();
 		const disposal =
@@ -193,6 +204,21 @@ function MoqPlaybackAttempt({
 			void close().catch(() => {});
 		};
 	}, [active, channelId, close, queryClient, runId]);
+	function updateSetting(key: keyof MoqPlaybackSettings, value: number) {
+		const session = current.current?.session;
+		if (phase !== "failed" && session && !session.updateSetting(key, value))
+			return false;
+		const next = { ...latestSettings.current, [key]: value };
+		latestSettings.current = next;
+		setSettings(next);
+		return true;
+	}
+	function selectQuality(name: string) {
+		const session = current.current?.session;
+		if (!session?.selectVideoQuality(name)) return false;
+		setQualitySelection(session.readVideoQualitySelection());
+		return true;
+	}
 	async function play() {
 		if (!active || !host.current || closing.current) return;
 		const startedAt = performance.now();
@@ -335,6 +361,7 @@ function MoqPlaybackAttempt({
 						attempt.noteStage("failed");
 						setPhase("failed");
 						setStatistics(EMPTY_MOQ_VIDEO_STATISTICS);
+						setQualitySelection(null);
 						setSamples([]);
 					}
 				},
@@ -358,6 +385,9 @@ function MoqPlaybackAttempt({
 								Math.round(performance.now() - startedAt),
 							);
 							setStatistics(value);
+							setQualitySelection(
+								attempt.session?.readVideoQualitySelection() ?? null,
+							);
 							setSamples((series) =>
 								appendMoqLiveSample(series, {
 									elapsedMs,
@@ -375,12 +405,15 @@ function MoqPlaybackAttempt({
 						}
 					},
 				},
+				() => latestSettings.current,
 			);
 			await attempt.session.ready;
-			if (owned())
+			if (owned()) {
+				setQualitySelection(attempt.session.readVideoQualitySelection());
 				setPhase((value) =>
 					value === "frames" || value === "failed" ? value : "waiting",
 				);
+			}
 		} catch (error) {
 			if (!owned()) return;
 			attempt.reason = "failed";
@@ -524,8 +557,16 @@ function MoqPlaybackAttempt({
 								</Link>
 							) : null}
 						</div>
+						{active ? (
+							<MoqPlaybackControls
+								settings={settings}
+								updateSetting={updateSetting}
+								qualitySelection={qualitySelection}
+								selectQuality={selectQuality}
+							/>
+						) : null}
 						{active && phase === "frames" ? (
-							<div className="col-span-full row-start-3 border-t border-zinc-800 px-3 py-2">
+							<div className="col-span-full row-start-4 border-t border-zinc-800 px-3 py-2">
 								<MoqClientPlaybackClock mode="live" active />
 							</div>
 						) : null}

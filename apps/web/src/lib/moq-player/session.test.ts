@@ -164,6 +164,49 @@ describe("owned MoQ source lifecycle", () => {
 		expect(player.dispose).toHaveBeenCalledOnce();
 		host.remove();
 	});
+	it.each([
+		false,
+		true,
+	])("requests silence once before recording finalization (setter throws: %s)", async (setterThrows) => {
+		const { source, player, host } = fixture();
+		let finishRecording!: () => void;
+		const recording = new Promise<void>((resolve) => {
+			finishRecording = resolve;
+		});
+		const beforeDispose = vi.fn(() => recording);
+		const settings = { targetBufferMs: 750, volumePercent: 40 };
+		const session = createMoqPlayback(
+			() => player,
+			descriptor,
+			host,
+			vi.fn(),
+			vi.fn(),
+			{ startedAt: performance.now(), onStatistics: vi.fn(), beforeDispose },
+			() => settings,
+		);
+		try {
+			await session.ready;
+			if (setterThrows) {
+				source.setVolume.mockImplementationOnce(() => {
+					throw new Error("source already closed");
+				});
+			}
+			const stopping = session.dispose();
+			expect(session.dispose()).toBe(stopping);
+			expect(source.setVolume.mock.calls).toEqual([[0.4], [0]]);
+			await Promise.resolve();
+			expect(beforeDispose).toHaveBeenCalledOnce();
+			expect(player.sources.remove).not.toHaveBeenCalled();
+			expect(settings.volumePercent).toBe(40);
+		} finally {
+			finishRecording();
+			await session.dispose();
+			host.remove();
+		}
+		expect(player.sources.remove).toHaveBeenCalledExactlyOnceWith(source);
+		expect(player.dispose).toHaveBeenCalledOnce();
+		expect(source.setVolume).toHaveBeenCalledTimes(2);
+	});
 	it("starts one muted source with the exact descriptor, then removes and disposes it once", async () => {
 		const { source, player, host } = fixture();
 		const factory = vi.fn(() => player);
@@ -239,6 +282,83 @@ describe("owned MoQ source lifecycle", () => {
 		await session.ready;
 		expect(player.dispose).toHaveBeenCalledOnce();
 		host.remove();
+	});
+	it.each([
+		{ boundary: "source add", bufferCalls: 0, volumeCalls: [], stages: 0 },
+		{
+			boundary: "target buffer",
+			bufferCalls: 1,
+			volumeCalls: [[0]],
+			stages: 0,
+		},
+		{
+			boundary: "volume",
+			bufferCalls: 1,
+			volumeCalls: [[0.4], [0]],
+			stages: 0,
+		},
+		{
+			boundary: "telemetry",
+			bufferCalls: 1,
+			volumeCalls: [[0.4], [0]],
+			stages: 1,
+		},
+	])("stops startup after a synchronous source failure from $boundary", async ({
+		boundary,
+		bufferCalls,
+		volumeCalls,
+		stages,
+	}) => {
+		const { source, player, host } = fixture();
+		let onSourceError: () => void = () => {};
+		const events = {
+			Type: { SourceError: "source-error" },
+			on: vi.fn((_type: string, listener: () => void) => {
+				onSourceError = listener;
+			}),
+			off: vi.fn(),
+		};
+		if (boundary === "source add") {
+			player.sources.add.mockImplementationOnce(() => {
+				onSourceError();
+				return source;
+			});
+		} else if (boundary === "target buffer") {
+			source.setTargetBufferLevel.mockImplementationOnce(() => onSourceError());
+		} else if (boundary === "volume") {
+			source.setVolume.mockImplementationOnce(() => onSourceError());
+		}
+		const onStage = vi.fn(() => {
+			if (boundary === "telemetry") onSourceError();
+		});
+		const onFailure = vi.fn();
+		const session = createMoqPlayback(
+			() => ({ ...player, events }),
+			descriptor,
+			host,
+			vi.fn(),
+			onFailure,
+			{ startedAt: performance.now(), onStatistics: vi.fn(), onStage },
+			() => ({ targetBufferMs: 750, volumePercent: 40 }),
+		);
+		try {
+			await session.ready;
+			expect(onFailure).toHaveBeenCalledOnce();
+			expect(source.setTargetBufferLevel).toHaveBeenCalledTimes(bufferCalls);
+			expect(source.setVolume.mock.calls).toEqual(volumeCalls);
+			expect(onStage).toHaveBeenCalledTimes(stages);
+			expect(source.play).not.toHaveBeenCalled();
+			await session.released;
+			expect(events.off).toHaveBeenCalledExactlyOnceWith(
+				"source-error",
+				onSourceError,
+			);
+			expect(player.sources.remove).toHaveBeenCalledExactlyOnceWith(source);
+			expect(player.dispose).toHaveBeenCalledOnce();
+		} finally {
+			await session.dispose();
+			host.remove();
+		}
 	});
 	it("cleans up on source failure and withholds the SDK error text", async () => {
 		const { source, player, host } = fixture();

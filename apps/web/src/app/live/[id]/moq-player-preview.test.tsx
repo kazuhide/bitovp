@@ -121,6 +121,7 @@ beforeEach(() => {
 		"getBufferLevel",
 		"getVideoQuality",
 		"getAvailableVideoQualities",
+		"setVideoQuality",
 	])
 		Reflect.deleteProperty(source, key);
 	vi.stubGlobal("WebTransport", class {});
@@ -737,9 +738,7 @@ describe("explicit MoQ preview", () => {
 				'[data-moq-live-metrics] [data-moq-chart="bufferSeconds"]',
 			),
 		).toHaveTextContent("1.50 s");
-		expect(
-			screen.getByText("Target buffer").nextElementSibling,
-		).toHaveTextContent("2.00 s");
+		expect(screen.getByLabelText("Target buffer (ms)")).toHaveValue(2000);
 		await act(async () => {
 			fireEvent.click(screen.getByRole("button", { name: "Stop" }));
 		});
@@ -748,6 +747,122 @@ describe("explicit MoQ preview", () => {
 			document.querySelector("[data-moq-viewer-metrics] figure"),
 		).toBeNull();
 		expect(document.body.innerHTML).not.toContain("SYNTHETIC_");
+	});
+	it("applies a target before Play and changes it on the same source during playback", async () => {
+		const user = userEvent.setup();
+		renderWithQuery(view());
+		await user.click(screen.getByText("Playback settings", { exact: false }));
+		const target = screen.getByRole("spinbutton", {
+			name: "Target buffer (ms)",
+		});
+		const apply = screen.getByRole("button", { name: "Apply" });
+		await user.clear(target);
+		await user.type(target, "750");
+		await user.click(apply);
+		expect(source.setTargetBufferLevel).not.toHaveBeenCalled();
+		await user.click(screen.getByRole("button", { name: "Play" }));
+		await waitFor(() => {
+			expect(source.setTargetBufferLevel).toHaveBeenCalledExactlyOnceWith(0.75);
+		});
+		expect(source.setTargetBufferLevel).toHaveBeenCalledBefore(source.play);
+		await user.clear(target);
+		await user.type(target, "1250");
+		await user.click(apply);
+		expect(source.setTargetBufferLevel).toHaveBeenLastCalledWith(1.25);
+		expect(factory).toHaveBeenCalledOnce();
+		expect(player.sources.remove).not.toHaveBeenCalled();
+		expect(source.play).toHaveBeenCalledOnce();
+		await user.clear(target);
+		await user.click(apply);
+		expect(source.setTargetBufferLevel).toHaveBeenCalledTimes(2);
+		expect(screen.getByRole("alert")).toHaveTextContent("whole number");
+		fireEvent.change(screen.getByRole("slider", { name: "Volume" }), {
+			target: { value: "50" },
+		});
+		expect(target).toHaveAttribute("aria-invalid", "true");
+		expect(screen.getByRole("alert")).toHaveTextContent("whole number");
+		await user.click(screen.getByRole("button", { name: "Stop" }));
+		await user.click(screen.getByRole("button", { name: "Play" }));
+		await waitFor(() => {
+			expect(source.setTargetBufferLevel.mock.calls).toEqual([
+				[0.75],
+				[1.25],
+				[1.25],
+			]);
+		});
+	});
+	it("adjusts audio and follows the full SDK quality catalog without frame telemetry", async () => {
+		vi.useFakeTimers();
+		const low = { name: "video/360p", width: 640, height: 360 };
+		const high = { name: "video/720p", width: 1280, height: 720 };
+		const qualities = [
+			low,
+			...Array.from({ length: 16 }, (_, index) => ({
+				name: `video/alternate-${index}`,
+				width: 640,
+				height: 360,
+			})),
+			high,
+		];
+		let currentQuality = low;
+		let advertised: unknown[] = qualities;
+		const setVideoQuality = vi.fn((quality: typeof low) => {
+			currentQuality = quality;
+		});
+		// An SDK can render a canvas that this browser cannot mirror for measurement.
+		factory.mockImplementationOnce(({ defaultContainer }) => {
+			defaultContainer.append(document.createElement("canvas"));
+			return player;
+		});
+		Object.assign(source, {
+			getVideoQuality: () => currentQuality,
+			getAvailableVideoQualities: () => advertised,
+			setVideoQuality,
+		});
+		renderWithQuery(view());
+		fireEvent.click(screen.getByText("Playback settings", { exact: false }));
+		expect(
+			screen.queryByRole("combobox", { name: "Video quality" }),
+		).toBeNull();
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", { name: "Play" }));
+		});
+		expect(source.setVolume).toHaveBeenCalledExactlyOnceWith(0);
+		act(() => {
+			vi.advanceTimersByTime(1000);
+		});
+		fireEvent.change(screen.getByRole("slider", { name: "Volume" }), {
+			target: { value: "35" },
+		});
+		expect(source.setVolume).toHaveBeenLastCalledWith(0.35);
+		const quality = screen.getByRole("combobox", { name: "Video quality" });
+		expect(quality).toHaveValue(low.name);
+		expect(quality.querySelectorAll("option")).toHaveLength(19);
+		fireEvent.change(quality, {
+			target: { value: high.name },
+		});
+		expect(setVideoQuality).toHaveBeenCalledOnce();
+		expect(setVideoQuality.mock.calls[0]?.[0]).toBe(high);
+		expect(quality).toHaveValue(high.name);
+		currentQuality = low;
+		act(() => vi.advanceTimersByTime(1000));
+		expect(quality).toHaveValue(low.name);
+		advertised = [
+			{
+				get name() {
+					throw new Error("Catalog entry is no longer available");
+				},
+			},
+			...qualities.slice(1),
+		];
+		act(() => vi.advanceTimersByTime(1000));
+		expect(quality).toHaveValue(low.name);
+		expect(screen.getByRole("option", { name: low.name })).toBeDisabled();
+		expect(quality.querySelectorAll("option")).toHaveLength(19);
+		fireEvent.change(quality, { target: { value: high.name } });
+		expect(setVideoQuality).toHaveBeenCalledTimes(2);
+		expect(source.play).toHaveBeenCalledOnce();
+		expect(player.sources.remove).not.toHaveBeenCalled();
 	});
 	it("starts rendering while the first history receipt and Analytics collector are pending", async () => {
 		let acknowledge!: () => void;

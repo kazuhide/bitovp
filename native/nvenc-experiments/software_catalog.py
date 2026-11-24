@@ -423,6 +423,16 @@ def validate_x26x_structure(encoder, options, native):
     bframes = explicit("bf", "bframes")
     refs = explicit("refs", "ref", "frameref")
     keyint = explicit("g", "keyint")
+    profile = options.get("profile", "").lower()
+    if encoder == "libx264" and profile in {"baseline", "main"}:
+        transform = options.get("8x8dct", native.get("8x8dct"))
+        matrix = any(k.startswith("cqm") and (k != "cqm" or v != "flat") for k, v in native.items())
+        coder = options.get("coder", native.get("cabac", ""))
+        weight = options.get("weightp", options.get("wpredp", native.get("weightp", "")))
+        cabac = coder in {"cabac", "ac", "true"} or (INTEGER.fullmatch(coder) and int(coder) > 0)
+        weighted = weight in {"simple", "smart"} or (INTEGER.fullmatch(weight) and int(weight) > 0)
+        if matrix or transform in {"true", "1"} or (profile == "baseline" and (int(bframes or "-1") > 0 or cabac or weighted)):
+            raise ValueError("The selected x264 profile excludes a requested coding tool")
     if keyint is None or keyint == "infinite" or int(keyint) < 0:
         return  # FFmpeg retains the preset; native negative x265 keyint means infinite GOP.
     interval = max(1, int(keyint))
@@ -458,8 +468,11 @@ def build_software_options(software, codec, encoders):
                 args.extend(["-" + name + ":v", value])
         if entries:
             args.extend(["-" + ENCODERS[encoder][1] + ":v", ":".join(entries)])
+    options, native = software["options"], software.get("nativeOptions", {})
+    if options.keys() & native.keys():
+        raise ValueError("Specify an encoder control in only one option dictionary")
     if encoder in {"libx264", "libx265"}:
-        validate_x26x_structure(encoder, software["options"], software.get("nativeOptions", {}))
-    if encoder == "libsvtav1" and {"crf", "qp"} <= software["options"].keys():
-        raise ValueError("FFmpeg uses only one of the libsvtav1 crf and qp controls")
+        validate_x26x_structure(encoder, options, native)
+    if encoder == "libsvtav1" and len({"crf", "qp"} & options.keys()) + len({"q", "qp", "crf", "cqp"} & native.keys()) > 1:
+        raise ValueError("Specify one SVT-AV1 quantizer across the wrapper and native controls")
     return args

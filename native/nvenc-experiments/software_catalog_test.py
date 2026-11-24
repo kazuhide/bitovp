@@ -100,6 +100,21 @@ class CatalogTest(unittest.TestCase):
         self.encode("libsvtav1", {"crf": "1"})
         self.encode("libsvtav1", {"qp": "1"})
         self.encode("libsvtav1", {}, {"crf": "0"})
+        for options, native in [({"crf": "20"}, {"crf": "45"}), ({"qp": "20"}, {"q": "45"}),
+                                ({}, {"qp": "20", "cqp": "45"})]:
+            with self.subTest(options=options, native=native), self.assertRaisesRegex(ValueError, "only one|one SVT"):
+                self.encode("libsvtav1", options, native)
+
+    def test_baseline_profile_excludes_requested_bframes_in_both_namespaces(self):
+        x264 = next(row for row in self.encoders if row["encoder"] == "libx264")
+        x264["options"].append({"name": "profile", "type": "string", "description": ""})
+        for options, native in [({"profile": "Baseline", "bf": "3"}, {}), ({"profile": "baseline"}, {"bframes": "1"}),
+                                ({"profile": "main"}, {"8x8dct": "true"}), ({"profile": "main"}, {"cqm": "jvt"}),
+                                ({"profile": "baseline"}, {"cabac": "1"}), ({"profile": "Baseline"}, {"weightp": "2"})]:
+            with self.subTest(options=options, native=native), self.assertRaisesRegex(ValueError, "profile"):
+                self.encode("libx264", options, native)
+        self.encode("libx264", {"profile": "baseline", "bf": "0"})
+        self.encode("libx264", {"profile": "main", "bf": "3"}, {"cabac": "1"})
 
     def test_x26x_structure_values_match_encoder_limits_in_both_namespaces(self):
         def all_help(args):

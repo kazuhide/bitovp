@@ -217,6 +217,16 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllEnvs());
 
+it.each([
+	[trial, "a84e0f3cc036796fadc0deaf595993f873e489755d80979ed4ba2969de307c04"],
+	[dualTrial, "9e0d8a0a12b3ec4a0f0d910fa55f8b9a82ecadca0915704d914b170bbe876269"],
+])("preserves an existing NVENC batch replay hash", async (input, storedHash) => {
+	// Exact hashes produced by the pre-software batch schema on main.
+	fake.enqueue.mockResolvedValueOnce({ items: [], nextCursor: null });
+	await enqueueExperimentTrials(ctx, campaign, { schemaVersion: 1, trials: [input] }, "existing");
+	expect(fake.enqueue.mock.calls[0]?.[3]).toBe(storedHash);
+});
+
 it("admits a primary-only trial without a v1 scorer and rejects a dual trial in both intake paths", async () => {
 	await expect(
 		validateExperimentTrial(ctx.organizationId, trial),
@@ -495,6 +505,7 @@ const cpuRuntime = {
 				},
 
 				{ name: "passes", type: "int", choices: ["1", "2"], description: "" },
+				{ name: "level", type: "float", minimum: "-6.2", maximum: "6.2", description: "" },
 				{
 					name: "flags",
 					type: "flags",
@@ -513,6 +524,22 @@ const cpuTrial = {
 	codec: "VP9",
 	software: { encoder: "libvpx-vp9", options: { b: "2000000" } },
 };
+
+it.each([
+	["6.2000000000000001", false],
+	["-6.2000000000000001", false],
+	["6.2000000000000000", true],
+	["+.62e1", true],
+	["-62e-1", true],
+	["1e-999", true],
+])("compares fractional software limits exactly for %s", async (level, valid) => {
+	fake.readRuntime.mockResolvedValue(cpuRuntime);
+	const result = validateExperimentTrial(ctx.organizationId, {
+		...cpuTrial, software: { ...cpuTrial.software, options: { level } },
+	});
+	if (valid) await expect(result).resolves.toMatchObject({ valid: true });
+	else await expect(result).rejects.toMatchObject({ code: "INVALID_ENCODER_SETTING" });
+});
 
 it("validates software trials against the software worker and its installed catalog", async () => {
 	fake.readRuntime.mockResolvedValue(cpuRuntime);
@@ -577,6 +604,13 @@ it.each([
 
 it.each([
 	["libx264", { bf: "16", g: "17" }, {}, true],
+	["libx264", { profile: "Baseline", bf: "3" }, {}, false],
+	["libx264", { profile: "baseline" }, { bframes: "1" }, false],
+	["libx264", { profile: "baseline", bf: "0" }, {}, true],
+	["libx264", { profile: "main" }, { "8x8dct": "true" }, false],
+	["libx264", { profile: "main" }, { cqm: "jvt" }, false],
+	["libx264", { profile: "baseline" }, { cabac: "1" }, false],
+	["libx264", { profile: "Baseline", weightp: "smart" }, {}, false],
 	["libx264", { g: "-1" }, { bframes: "16" }, true],
 	["libx264", { refs: "-1" }, { keyint: "infinite" }, true],
 	["libx264", { g: "16" }, { bframes: "16" }, false],
@@ -622,6 +656,8 @@ it.each([
 				options: [
 					{ ...field("bf", "0"), choices: ["-1"] },
 					{ ...field("refs", "1"), choices: ["-1"] },
+					{ name: "profile", type: "string", description: "" },
+					{ name: "weightp", type: "int", choices: ["none", "simple", "smart"], description: "" },
 					{
 						name: "g",
 						type: "int",
@@ -634,6 +670,9 @@ it.each([
 					field("ref", "1"),
 					field("frameref", "1"),
 					field("dpb-size", "1"),
+					{ name: "cabac", type: "boolean", description: "" },
+					{ name: "8x8dct", type: "boolean", description: "" },
+					{ name: "cqm", type: "string", choices: ["flat", "jvt"], description: "" },
 					{
 						name: "keyint",
 						type: "int",
@@ -660,10 +699,13 @@ it.each([
 });
 
 it.each([
-	{ crf: "0" },
-	{ qp: "0" },
-	{ crf: "25", qp: "20" },
-])("rejects inactive SVT-AV1 wrapper quantizers (%j)", async (options) => {
+	[{ crf: "0" }, {}],
+	[{ qp: "0" }, {}],
+	[{ crf: "25", qp: "20" }, {}],
+	[{ crf: "20" }, { crf: "45" }],
+	[{ qp: "20" }, { q: "45" }],
+	[{}, { qp: "20", cqp: "45" }],
+])("rejects inactive SVT-AV1 quantizers (%j, %j)", async (options, nativeOptions) => {
 	const encoder = "libsvtav1";
 	const codec = "AV1";
 	fake.readRuntime.mockResolvedValue({
@@ -680,7 +722,9 @@ it.each([
 					maximum: "63",
 					description: "",
 				})),
-				nativeOptions: [],
+				nativeOptions: ["crf", "q", "qp", "cqp"].map((name) => ({
+					name, type: "int", description: "",
+				})),
 				limitations: [],
 			},
 		],
@@ -689,7 +733,7 @@ it.each([
 		validateExperimentTrial(ctx.organizationId, {
 			...cpuTrial,
 			codec,
-			software: { encoder, options },
+			software: { encoder, options, nativeOptions },
 		}),
 	).rejects.toMatchObject({ code: "INVALID_ENCODER_SETTING" });
 });

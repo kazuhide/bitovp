@@ -209,6 +209,31 @@ const softwareNumericBounds: Record<string, string> = {
 	"-FLT_MAX": "-3.40282347e38",
 };
 
+// A 64-bit bound or a fractional value just beyond it must survive parsing.
+// The input grammar bounds the exponent to three digits and the value to 4 KiB.
+function decimalParts(text: string) {
+	const match =
+		/^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d{1,3}))?$/.exec(text);
+	if (!match || !(match[2] || match[3])) return;
+	const [, sign = "", whole = "", fraction = "", exponent = "0"] = match;
+	return {
+		coefficient: BigInt(sign + whole + fraction),
+		exponent: Number(exponent) - fraction.length,
+	};
+}
+
+function compareDecimalBound(
+	actual: NonNullable<ReturnType<typeof decimalParts>>,
+	label?: string,
+) {
+	const bound = label && decimalParts(softwareNumericBounds[label] ?? label);
+	if (!bound) return 0;
+	const exponent = Math.min(actual.exponent, bound.exponent);
+	const left = actual.coefficient * 10n ** BigInt(actual.exponent - exponent);
+	const right = bound.coefficient * 10n ** BigInt(bound.exponent - exponent);
+	return left < right ? -1 : Number(left > right);
+}
+
 // Native libraries can impose extra constraints when opening the encoder.
 function acceptsSoftwareValue(
 	encoder: ExperimentSoftwareEncoder["encoder"],
@@ -276,23 +301,12 @@ function acceptsSoftwareValue(
 		);
 	const integer = ["int", "int64", "uint", "uint64"].includes(field.type);
 	if (!integer && !["float", "double"].includes(field.type)) return true;
-	const syntax = integer
-		? /^[+-]?\d+$/
-		: /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d{1,3})?$/;
-	if (!syntax.test(value)) return false;
-	const numeric = (text: string) =>
-		integer && /^[+-]?\d+$/.test(text) ? BigInt(text) : Number(text);
-	const actual = numeric(value);
-	const min =
-		field.minimum === undefined
-			? undefined
-			: numeric(softwareNumericBounds[field.minimum] ?? field.minimum);
-	const max =
-		field.maximum === undefined
-			? undefined
-			: numeric(softwareNumericBounds[field.maximum] ?? field.maximum);
+	if (integer && !/^[+-]?\d+$/.test(value)) return false;
+	const actual = decimalParts(value);
 	return (
-		!(min !== undefined && actual < min) && !(max !== undefined && actual > max)
+		actual !== undefined &&
+		compareDecimalBound(actual, field.minimum) >= 0 &&
+		compareDecimalBound(actual, field.maximum) <= 0
 	);
 }
 
@@ -317,6 +331,32 @@ function verifyX26xStructure(
 	const bframes = explicit("bf", "bframes");
 	const refs = explicit("refs", "ref", "frameref");
 	const keyint = explicit("g", "keyint");
+	const profile = settings.options.profile?.toLowerCase();
+	if (
+		settings.encoder === "libx264" &&
+		(profile === "baseline" || profile === "main")
+	) {
+		const native = settings.nativeOptions ?? {};
+		const transform = settings.options["8x8dct"] ?? native["8x8dct"];
+		const matrix = Object.entries(native).some(
+			([name, value]) => name.startsWith("cqm") && (name !== "cqm" || value !== "flat"),
+		);
+		const coder = settings.options.coder ?? native.cabac ?? "";
+		const weight =
+			settings.options.weightp ?? settings.options.wpredp ?? native.weightp ?? "";
+		const positiveInteger = (value: string) =>
+			/^[+-]?\d+$/.test(value) && BigInt(value) > 0n;
+		const baselineConflict = profile === "baseline" &&
+			(Number(bframes) > 0 || positiveInteger(coder) || ["cabac", "ac", "true"].includes(coder) ||
+				positiveInteger(weight) || ["simple", "smart"].includes(weight));
+		if (baselineConflict || matrix || transform === "true" || transform === "1")
+			throw new EncodingExperimentError(
+				422,
+				"INVALID_ENCODER_SETTING",
+				"The selected x264 profile excludes a requested coding tool",
+				"software",
+			);
+	}
 	if (keyint === undefined || keyint === "infinite" || Number(keyint) < 0)
 		return;
 	const interval = Math.max(1, Number(keyint));
@@ -388,15 +428,23 @@ async function verifyTrial(
 			}
 		}
 		verifyX26xStructure(settings);
+		const native = settings.nativeOptions ?? {};
+		if (Object.keys(native).some((name) => Object.hasOwn(settings.options, name)))
+			throw new EncodingExperimentError(
+				422,
+				"INVALID_ENCODER_SETTING",
+				"Specify an encoder control in only one option dictionary",
+				"software",
+			);
 		if (
 			settings.encoder === "libsvtav1" &&
-			settings.options.crf !== undefined &&
-			settings.options.qp !== undefined
+			[settings.options.crf, settings.options.qp, native.q, native.qp, native.crf, native.cqp]
+				.filter((value) => value !== undefined).length > 1
 		)
 			throw new EncodingExperimentError(
 				422,
 				"INVALID_ENCODER_SETTING",
-				"FFmpeg uses only one of the libsvtav1 crf and qp controls",
+				"Specify one SVT-AV1 quantizer across the wrapper and native controls",
 				"software.options",
 			);
 	}

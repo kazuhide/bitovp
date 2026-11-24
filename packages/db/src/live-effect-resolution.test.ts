@@ -416,13 +416,32 @@ describe("resolveLiveEffectsAfterConfirmedStop", () => {
 				},
 			});
 	});
+	it.each([
+		"ERROR",
+		"STOPPED",
+	] as const)("recovers a legacy %s projection interrupted before it mirrored the run", async (status) => {
+		const f = ambiguousStop();
+		Object.assign(f.channel, {
+			status,
+			error:
+				status === "ERROR"
+					? "could not read provider"
+					: "stop did not confirm — encoding-1: still RUNNING",
+		});
+		Object.assign(f.run, { status: "STOPPING", error: null });
+		Object.assign(f.stopClaim, { state: "DISPATCHING", failure: null });
+		expect(
+			await resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),
+		).toMatchObject({ kind: "RESOLVED" });
+		expect(f.run.status).toBe("STOPPED");
+	});
 	it("accepts a drained feeder enqueue failure only after exact terminal target and channel-wide release", async () => {
 		const f = ambiguousStop();
 		f.channel.status = f.run.status = "STOPPED";
 		f.channel.error =
 			f.run.error =
 			f.stopClaim.failure =
-				"stop did not confirm — feeder stop could not be enqueued (legacy-feeder: queue unavailable) — its push may still be running";
+				"stop did not confirm — feeder stop could not be enqueued (legacy-feeder: queue unavailable; disconnect during write) — its push may still be running";
 		f.setFeederOccupiesRun(true);
 		await expect(
 			resolveLiveEffectsAfterConfirmedStop(f.prisma, observedStop),

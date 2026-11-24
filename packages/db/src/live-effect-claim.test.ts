@@ -104,6 +104,24 @@ function fakePrisma() {
 			findFirst: vi.fn(async () => ({ ...run })),
 		},
 		liveEffectClaim: {
+			findMany: vi.fn(
+				async ({
+					where,
+				}: {
+					where: {
+						liveChannelId: string;
+						liveChannelRunId: string;
+						action: string;
+					};
+				}) =>
+					claims.filter(
+						(c) =>
+							c.liveChannelId === where.liveChannelId &&
+							c.liveChannelRunId === where.liveChannelRunId &&
+							c.action === where.action,
+					),
+			),
+
 			findUnique: vi.fn(
 				async ({ where }: { where: { idempotencyKey: string } }) => {
 					const row = claims.find(

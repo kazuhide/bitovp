@@ -84,8 +84,10 @@ export type {
 	RtmpRetirementReceipt,
 } from "./live-effect-claim";
 export {
+	archivedStopRecoveryTarget,
 	assertLiveEffectCurrent,
 	beginLiveEffect,
+	bindArchivedStopTarget,
 	bindLiveEffectTarget,
 	canObserveLiveStop,
 	claimLiveStopSend,
@@ -102,9 +104,11 @@ export {
 	markLiveEffectFailed,
 	mergeRtmpRetirementEvidence,
 	recordLiveStopFailure,
+	reserveAisaStop,
 	resolveLiveEffectsAfterConfirmedStop,
 	savedStopReadbacks,
 	unconfirmedRtmpEncoders,
+	unreservedStopTargets,
 	wasLiveStopAcknowledged,
 } from "./live-effect-claim";
 export { CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION } from "./live-stop-delivery";

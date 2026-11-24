@@ -2397,6 +2397,8 @@ model LiveEffectClaim {
   idempotencyKey        String               @unique
   requestSha256         String?
   providerResultId      String?
+  /// Analysis STOP is reserved at its independent provider boundary.
+  stopAnalysisSendId    String?
   /// NULL marks a legacy STOP with no per-encoder send journal.
   stopProtocolVersion   Int?
   stopSendEncodingIds   String[]             @default([])

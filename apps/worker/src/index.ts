@@ -105,7 +105,7 @@ import {
 } from "./library-editing/runtime-heartbeat";
 import { createEditingWorkQueue } from "./library-editing/runtime-work-queue";
 import { createLibraryEditingSweep } from "./library-editing/sweep";
-import { createShutdown, createSweepLoop } from "./lifecycle";
+import { createShutdown, createSweepLoop, createWorkDrain } from "./lifecycle";
 import {
 	createExpiredRestartReconciler,
 	isFinalStopFailure,
@@ -1996,6 +1996,7 @@ const queuedVmafParents = queueExcessVmafJobs({
 	process: handlers.vmafRunner,
 });
 
+const failedJobWrites = createWorkDrain();
 const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 	const consume = consumeTenantJob(
 		key,
@@ -2055,7 +2056,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 	});
 	worker.on("failed", (job, err) => {
 		if (!job) return;
-		void consumeTenantJob(
+		const handled = consumeTenantJob(
 			key,
 			async (job) => {
 				console.error(`[worker:${key}] job ${job?.id} failed:`, err.message);
@@ -2065,7 +2066,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 					const encodingJobId = (job?.data as { encodingJobId?: string })
 						?.encodingJobId;
 					if (encodingJobId) {
-						prisma.encodingJob
+						await prisma.encodingJob
 							.updateMany({
 								// Only a row nobody holds — or one whose holder stopped
 								// renewing a lease window ago. BullMQ raises `failed` for a
@@ -2145,7 +2146,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 				) {
 					const liveChannelId = liveJob?.liveChannelId;
 					if (liveChannelId) {
-						prisma.liveChannel
+						await prisma.liveChannel
 							.updateMany({
 								where: {
 									id: liveChannelId,
@@ -2218,7 +2219,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 					);
 				}
 				if (key === "liveChannel" && finalStopFailure) {
-					void recordFinalStopFailure(
+					await recordFinalStopFailure(
 						prisma,
 						job,
 						err.message,
@@ -2243,7 +2244,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 				// : a dead pre-stage releases its claim instead — the row has
 				// not fired, and the next tick can stage it again while the lead lasts.
 				if (key === "liveChannel" && liveAction === "feeder-stage") {
-					void releaseDeadStageClaim(prisma, job);
+					await releaseDeadStageClaim(prisma, job);
 				}
 				if (
 					key === "liveChannel" &&
@@ -2254,7 +2255,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 					const scheduleId = (liveJob as { params?: { scheduleId?: string } })
 						?.params?.scheduleId;
 					if (scheduleId) {
-						prisma.liveSchedule
+						await prisma.liveSchedule
 							.updateMany({
 								where: { id: scheduleId, status: "FIRED" },
 								data: {
@@ -2291,7 +2292,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 				 * there where the two copies can drift.
 				 */
 				if (key === "liveChannel" && (!boundStopJob || finalStopFailure)) {
-					void recordDeadJobScheduleOutcomes(
+					await recordDeadJobScheduleOutcomes(
 						prisma,
 						job,
 						err.message,
@@ -2318,7 +2319,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 						attemptId &&
 						job
 					) {
-						releaseDeadLiveToVodIfFinal(
+						await releaseDeadLiveToVodIfFinal(
 							prisma,
 							{ liveChannelId, liveChannelRunId, encodingId, attemptId },
 							err.message,
@@ -2338,7 +2339,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 				// trigger of the orphan-ffmpeg case, and 's emit instrument
 				// could not see that because its population never included this file.
 				if (key === "feederManager") {
-					void recordDeadFeederJob({ prisma, emitEvent }, job, err.message);
+					await recordDeadFeederJob({ prisma, emitEvent }, job, err.message);
 				}
 			},
 			{ reserveFeederStopSlot: false, enforceActive: false },
@@ -2347,6 +2348,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 				"[tenant] failed-job ownership unavailable; recovery remains scoped",
 			),
 		);
+		failedJobWrites.track(handled);
 	});
 	worker.on("error", (err) => {
 		console.error(`[worker:${key}] error:`, err);
@@ -2483,7 +2485,8 @@ const shutdown = createShutdown({
 		vodInputPreviewQueue,
 	],
 	disconnect: async () => {
-		// Active workers can emit ordinary product events until their close completes.
+		// Worker.close has ended new deliveries. BullMQ does not await its failed listeners.
+		await failedJobWrites.drain();
 		try {
 			await notifyQueue.close();
 		} finally {

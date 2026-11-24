@@ -21,6 +21,23 @@ export type SweepLoop = {
 	stop(): void;
 };
 
+/** Track asynchronous event handlers whose emitter does not await their results. */
+export function createWorkDrain() {
+	const pending = new Set<Promise<unknown>>();
+	return {
+		track(task: Promise<unknown>) {
+			pending.add(task);
+			const remove = () => {
+				pending.delete(task);
+			};
+			void task.then(remove, remove);
+		},
+		async drain() {
+			while (pending.size) await Promise.allSettled([...pending]);
+		},
+	};
+}
+
 /**
  * A `setInterval` sweep whose in-flight tick can be AWAITED.
  *
@@ -36,7 +53,7 @@ export function createSweepLoop(
 	tick: () => Promise<unknown>,
 	onError: (err: unknown) => void = () => {},
 ): SweepLoop {
-	const pending = new Set<Promise<void>>();
+	const work = createWorkDrain();
 	let stopped = false;
 	return {
 		run() {
@@ -54,19 +71,9 @@ export function createSweepLoop(
 						onError(err);
 					},
 				);
-			pending.add(settled);
-			void settled.finally(() => {
-				pending.delete(settled);
-			});
+			work.track(settled);
 		},
-		async drain() {
-			// A loop, not one allSettled: a tick that starts another tick (or
-			// an interval that fires once more before `stop` lands) must not
-			// escape the drain.
-			while (pending.size > 0) {
-				await Promise.allSettled([...pending]);
-			}
-		},
+		drain: work.drain,
 		stop() {
 			stopped = true;
 		},

@@ -870,7 +870,8 @@ class SoftwareRunnerTest(unittest.TestCase):
             link.symlink_to(old)
             binary = root / "ffmpeg"
             trace = f"libx265.so.1 => {link} (0xabcd)\n"
-            with patch.object(sys, "platform", "linux"), patch.object(runner, "capture", return_value=(trace, "")):
+            with patch.object(sys, "platform", "linux"), patch.object(runner, "elf_interpreter", return_value=None), \
+                    patch.object(runner, "capture", return_value=(trace, "")):
                 expected = runner.software_dependencies(binary, binary)
                 self.assertEqual(expected[binary], (runner.SoftwareLibrary(link.name, old.resolve()),))
                 identity = runner.runtime_tool_identity(old)
@@ -892,7 +893,8 @@ class SoftwareRunnerTest(unittest.TestCase):
             def trace(args, *_args, **_kwargs):
                 return f"libx264.so.1 => {targets[Path(args[0])]} (0xabbc)\n", ""
 
-            with patch.object(sys, "platform", "linux"), patch.object(runner, "capture", side_effect=trace):
+            with patch.object(sys, "platform", "linux"), patch.object(runner, "elf_interpreter", return_value=None), \
+                    patch.object(runner, "capture", side_effect=trace):
                 pinned = runner.software_dependencies(ffmpeg, ffprobe)
                 targets.update({ffmpeg: second, ffprobe: first})
                 with self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
@@ -917,6 +919,35 @@ class SoftwareRunnerTest(unittest.TestCase):
             self.assertEqual(runner.software_library_paths(program), ())
 
     @unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("cc"), "requires Linux and a C compiler")
+    def test_pinned_library_retains_its_private_origin_dependency(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            private = root / "private"
+            private.mkdir()
+            program = root / "ffmpeg"
+            # The executable only knows libavcodec. libavcodec alone knows where
+            # its private libopus lives, and no system library provides the symbol.
+            opus = private / "libopus.so.0"
+            codec = private / "libavcodec.so.99"
+            # Private bundles can omit DT_SONAME. Keep the original DT_NEEDED
+            # basename resolvable even when the object was preloaded by descriptor.
+            subprocess.run(["cc", "-x", "c", "-", "-shared", "-fPIC", "-o", opus],
+                           input="int private_opus(void) { return 73; }", text=True, check=True)
+            subprocess.run(["cc", "-x", "c", "-", "-shared", "-fPIC", "-Wl,-soname," + codec.name,
+                            "-Wl,-rpath,$ORIGIN", "-L" + str(private), "-l:" + opus.name, "-o", codec],
+                           input="extern int private_opus(void); int codec(void) { return private_opus(); }",
+                           text=True, check=True)
+            subprocess.run(["cc", "-x", "c", "-", "-Wl,-rpath,$ORIGIN/private", "-L" + str(private),
+                            "-l:" + codec.name, "-o", program], input='#include <stdio.h>\nextern int codec(void);\n'
+                           'int main(void) { printf("%d\\n", codec()); }\n', text=True, check=True)
+            self.assertEqual(subprocess.check_output([program], text=True), "73\n")
+            bindings = runner.software_dependencies(program, program)
+            paths = {program, *(entry.path for entry in bindings[program])}
+            identities = {path: runner.runtime_tool_identity(path) for path in paths}
+            output, _ = runner.capture_software([str(program)], "RUNTIME_PROBE", bindings, identities)
+            self.assertEqual(output, "73\n")
+
+    @unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("cc"), "requires Linux and a C compiler")
     def test_real_child_uses_pinned_library_across_transient_soname_retarget(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -930,7 +961,8 @@ class SoftwareRunnerTest(unittest.TestCase):
                             "-o", program], input='#include <stdio.h>\nextern int version(void);\n'
                             'int main(void) { printf("%d\\n", version()); }\n', text=True, check=True)
             bindings = runner.software_dependencies(program, program)
-            identities = {path: runner.runtime_tool_identity(path) for path in (program, library)}
+            paths = {program, *(entry.path for entry in bindings[program])}
+            identities = {path: runner.runtime_tool_identity(path) for path in paths}
             original_capture = runner.capture
 
             def swap_while_running(*args, **kwargs):

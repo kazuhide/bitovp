@@ -772,25 +772,37 @@ def dyld_media_libraries(trace):
                         for image_uuid, path in images if MEDIA_LIBRARY.match(Path(path).name)))
 
 
-def static_elf(program):
-    """An ELF without an interpreter does not have an initial loader trace."""
+def elf_interpreter(program):
+    """The kernel opens PT_INTERP itself. Only DT_NEEDED dependencies can be preloaded."""
     with os.fdopen(os.open(program, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as binary:
         regular_file_identity(os.fstat(binary.fileno()))
         header = binary.read(64)
         if len(header) != 64 or header[:4] != b"\x7fELF" or header[4] not in (1, 2) or header[5] not in (1, 2):
-            return False
+            raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
         order = "little" if header[5] == 1 else "big"
         wide = header[4] == 2
         table = int.from_bytes(header[32:40] if wide else header[28:32], order)
         size = int.from_bytes(header[54:56] if wide else header[42:44], order)
         count = int.from_bytes(header[56:58] if wide else header[44:46], order)
         if size != (56 if wide else 32) or not 0 < count < 65535:
-            return False
+            raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
         binary.seek(table)
         entries = binary.read(size * count)
-    return len(entries) == size * count and all(
-        int.from_bytes(entries[i:i + 4], order) != 3 for i in range(0, len(entries), size)  # PT_INTERP
-    )
+        if len(entries) != size * count:
+            raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+        for index in range(0, len(entries), size):
+            entry = entries[index:index + size]
+            if int.from_bytes(entry[:4], order) == 3:  # PT_INTERP
+                offset = int.from_bytes(entry[8:16] if wide else entry[4:8], order)
+                length = int.from_bytes(entry[32:40] if wide else entry[16:20], order)
+                if not 2 <= length <= 4096:
+                    raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+                binary.seek(offset)
+                path = binary.read(length)
+                if len(path) != length or not path.startswith(b"/") or path.find(b"\0") != length - 1:
+                    raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
+                return Path(os.fsdecode(path[:-1])).resolve(strict=True)
+    return None
 
 
 def software_library_paths(program):
@@ -804,10 +816,13 @@ def software_library_paths(program):
     if "=> not found" in trace:
         raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
     bindings = re.findall(r"^\s*(?:(\S+) => )?(/[^\n]+?) \(0x", trace, re.M)
-    if not bindings and not static_elf(program):
+    interpreter = elf_interpreter(program)
+    if not bindings and interpreter is not None:
         raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
-    return tuple(SoftwareLibrary(name or path, Path(path).resolve(strict=True))
-                 for name, path in bindings if MEDIA_LIBRARY.match(Path(name or path).name))
+    # A preloaded codec's $ORIGIN is /proc/self/fd. Pin the original resolved
+    # dependency closure, including private libraries reached through its RUNPATH.
+    return tuple(SoftwareLibrary(name or path, target) for name, path in bindings
+                 if (target := Path(path).resolve(strict=True)) != interpreter)
 
 
 def software_dependencies(ffmpeg, ffprobe):
@@ -837,16 +852,29 @@ def capture_software(args, stage, libraries, identities, cwd=None, timeout=15):
                     raise RunnerError("RUNTIME_TOOL_CHANGED")
                 descriptors[path] = fd
         pinned = list(dict.fromkeys(f"/proc/self/fd/{descriptors[entry.path]}" for entry in dependencies))
+        inherited = list(descriptors.values())
         env = dict(os.environ)
         if darwin:
             env["DYLD_PRINT_LIBRARIES"] = "1"
         else:
             if pinned:
                 env["LD_PRELOAD"] = ":".join(pinned + ([env["LD_PRELOAD"]] if env.get("LD_PRELOAD") else []))
+                # A private DSO without DT_SONAME must also be discoverable by
+                # its requested basename. These aliases lead to the same open files.
+                directory = Path(stack.enter_context(TemporaryDirectory(prefix="bitovp-libs-")))
+                for entry in dependencies:
+                    if "/" not in entry.name:
+                        (directory / entry.name).symlink_to(f"/proc/self/fd/{descriptors[entry.path]}")
+                directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+                stack.callback(os.close, directory_fd)
+                inherited.append(directory_fd)
+                env["LD_LIBRARY_PATH"] = f"/proc/self/fd/{directory_fd}" + (
+                    ":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else ""
+                )
             env["LD_DEBUG"] = "files"
             env.pop("LD_DEBUG_OUTPUT", None)
         executable = str(program) if darwin else f"/proc/self/fd/{descriptors[program]}"
-        stdout, stderr = capture(args, stage, cwd, timeout, env=env, pass_fds=tuple(descriptors.values()),
+        stdout, stderr = capture(args, stage, cwd, timeout, env=env, pass_fds=tuple(inherited),
                                  executable=executable)
         if darwin:
             # dyld reports canonical paths and the UUID of each image actually mapped.
@@ -857,7 +885,10 @@ def capture_software(args, stage, libraries, identities, cwd=None, timeout=15):
             # glibc names preloads by their inherited descriptor. Reject an unpinned
             # codec too, including an extra dependency loaded after program startup.
             loaded = re.findall(r"^\s*\d+:\s+calling init: ([^\n]+)$", stderr, re.M)
-            if not set(pinned).issubset(loaded) or any(MEDIA_LIBRARY.match(Path(path).name) for path in loaded):
+            names = {Path(entry.name).name for entry in dependencies}
+            if not set(pinned).issubset(loaded) or any(
+                Path(path).name in names or MEDIA_LIBRARY.match(Path(path).name) for path in loaded if path not in pinned
+            ):
                 raise RunnerError("RUNTIME_TOOL_CHANGED")
             stderr = re.sub(r"^[ \t]*\d+:\t[^\n]*\n", "", stderr, flags=re.M)
         # A package may unlink or overwrite an open inode during the command.

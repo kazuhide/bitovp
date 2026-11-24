@@ -10,6 +10,7 @@ vi.mock("./build-info-panel", () => ({ BuildInfoPanel: () => null }));
 
 import { BuildInfoPanel } from "./build-info-panel";
 import SettingsPage, { dynamic } from "./page";
+import { PlatformRedisMemory } from "./redis-memory";
 import { SettingsAreas } from "./settings-areas";
 
 beforeEach(() => getWebBuildInfo.mockReset());
@@ -23,10 +24,11 @@ describe("Settings page build-info boundary", () => {
 		});
 		expect(dynamic).toBe("force-dynamic");
 		const children = SettingsPage().props.children;
-		expect(children).toHaveLength(2);
+		expect(children).toHaveLength(3);
 		expect(children[0].type).toBe(SettingsAreas);
-		expect(children[1].type).toBe(BuildInfoPanel);
-		expect(children[1].props).toEqual({
+		expect(children[1].type).toBe(PlatformRedisMemory);
+		expect(children[2].type).toBe(BuildInfoPanel);
+		expect(children[2].props).toEqual({
 			version: "0.1.0",
 			commit: "a".repeat(40),
 		});
@@ -42,7 +44,7 @@ describe("Settings page build-info boundary", () => {
 				version: "0.1.0",
 				commit: "b".repeat(40),
 			});
-		expect(SettingsPage().props.children[1].props.commit).toBeNull();
-		expect(SettingsPage().props.children[1].props.commit).toBe("b".repeat(40));
+		expect(SettingsPage().props.children[2].props.commit).toBeNull();
+		expect(SettingsPage().props.children[2].props.commit).toBe("b".repeat(40));
 	});
 });

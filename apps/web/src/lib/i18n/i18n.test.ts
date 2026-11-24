@@ -157,7 +157,8 @@ describe("catalogue parity", () => {
 		// Measuring and selecting the additional VMAF profile add two labels.
 		// NVENC settings add picker labels and a load error (runtime measured: 3498).
 		// The Live wizard adds four MoQ labels and descriptions (runtime measured: 3502).
-		pinWithDriftAid(short.size, 3502, "short");
+		// Four short labels cover instance queue usage and availability.
+		pinWithDriftAid(short.size, 3506, "short");
 	});
 
 	/**

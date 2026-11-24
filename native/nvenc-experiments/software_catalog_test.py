@@ -107,15 +107,34 @@ class CatalogTest(unittest.TestCase):
 
     def test_baseline_profile_excludes_requested_bframes_in_both_namespaces(self):
         x264 = next(row for row in self.encoders if row["encoder"] == "libx264")
-        x264["options"].extend({"name": name, "type": "string", "description": ""} for name in ("profile", "coder", "wpredp"))
+        x264["options"].extend({"name": name, "type": "string", "description": ""} for name in ("profile", "coder"))
+        x264["options"].append({"name": "wpredp", "type": "int", "choices": ["0", "1", "2"]})
         for options, native in [({"profile": "Baseline", "bf": "3"}, {}), ({"profile": "baseline"}, {"bframes": "1"}),
                                 ({"profile": "main"}, {"8x8dct": "true"}), ({"profile": "main"}, {"cqm": "jvt"}),
                                 ({"profile": "baseline", "coder": "default"}, {"cabac": "1"}),
                                 ({"profile": "Baseline", "wpredp": "0"}, {"weightp": "2"})]:
-            with self.subTest(options=options, native=native), self.assertRaisesRegex(ValueError, "profile"):
+            with self.subTest(options=options, native=native), self.assertRaisesRegex(ValueError, "profile|one spelling"):
                 self.encode("libx264", options, native)
         self.encode("libx264", {"profile": "baseline", "bf": "0"})
         self.encode("libx264", {"profile": "main", "bf": "3"}, {"cabac": "1"})
+
+    def test_x264_weighted_prediction_catalog_only_accepts_effective_modes(self):
+        def aliases(args):
+            text = help_for(args)
+            if args[-1] == "encoder=libx264":
+                text += "  -wpredp             <string>     E..V....... Weighted prediction\n"
+                text += "  -weightp            <int>        E..V....... Weighted prediction (from -1 to INT_MAX)\n"
+            return text
+        self.encoders = discover_software_encoders("ffmpeg", capture_help=aliases)
+        for value in ("0", "1", "2"):
+            self.encode("libx264", {"wpredp": value})
+            self.encode("libx264", {}, {"weightp": value})
+        for value in ("-1", "none", "simple", "smart"):
+            self.encode("libx264", {"weightp": value})
+        for value in ("0x2", "02", "+2", "3"):
+            for option, native in [({"wpredp": value}, {}), ({"weightp": value}, {}), ({}, {"weightp": value})]:
+                with self.subTest(option=option, native=native), self.assertRaises(ValueError):
+                    self.encode("libx264", option, native)
 
     def test_x26x_structure_values_match_encoder_limits_in_both_namespaces(self):
         def all_help(args):

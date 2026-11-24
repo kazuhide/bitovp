@@ -798,10 +798,13 @@ def elf_interpreter(program):
                 if not 2 <= length <= 4096:
                     raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
                 binary.seek(offset)
-                path = binary.read(length)
-                if len(path) != length or not path.startswith(b"/") or path.find(b"\0") != length - 1:
+                segment = binary.read(length)
+                if len(segment) != length or not segment.startswith(b"/") or not segment.endswith(b"\0"):
                     raise RunnerError("INCOMPLETE_SOFTWARE_RUNTIME")
-                return Path(os.fsdecode(path[:-1])).resolve(strict=True)
+                # Linux reads the interpreter as a C string. Relocatable SDKs
+                # can reserve extra bytes after its terminator.
+                path = segment.split(b"\0", 1)[0]
+                return Path(os.fsdecode(path)).resolve(strict=True)
     return None
 
 

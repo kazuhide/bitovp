@@ -241,6 +241,8 @@ function acceptsSoftwareValue(
 	native: boolean,
 ) {
 	const name = field.name;
+	if (encoder === "libx264" && (name === "wpredp" || name === "weightp"))
+		return field.choices?.includes(value) === true;
 	if (
 		native &&
 		(encoder === "libx264" || encoder === "libx265") &&
@@ -330,6 +332,17 @@ function verifyX26xStructure(
 	const bframes = explicit("bf", "bframes");
 	const refs = explicit("refs", "ref", "frameref");
 	const keyint = explicit("g", "keyint");
+	if (settings.encoder === "libx264") {
+		explicit("coder", "cabac");
+		const weight = explicit("weightp", "weightp");
+		if (weight !== undefined && settings.options.wpredp !== undefined)
+			throw new EncodingExperimentError(
+				422,
+				"INVALID_ENCODER_SETTING",
+				"Specify only one spelling for weightp",
+				"software",
+			);
+	}
 	const profile = settings.options.profile?.toLowerCase();
 	if (
 		settings.encoder === "libx264" &&

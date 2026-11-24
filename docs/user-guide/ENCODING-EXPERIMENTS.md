@@ -37,6 +37,8 @@ Use `H264/libx264`, `HEVC/libx265`, `VP9/libvpx-vp9`, or `AV1/libsvtav1`. Values
 
 In the NDJSON export, `input.software` stores the requested settings. Use each successful row’s `result.videoBytes`, `durationTicks`, `timeBase`, `observedGopFrames` and `meanVmaf` for measured outcomes. Encoder presets and lookahead can affect frame-level decisions, so use the measured outputs as training labels.
 
+For x264 weighted P prediction, choose one control. FFmpeg’s `weightp` accepts `0`, `1`, `2` or the corresponding names `none`, `simple`, `smart`. Omit it or use `-1` to inherit the preset. FFmpeg’s `wpredp` spelling and the native `weightp` parameter accept `0`, `1` or `2`.
+
 For dynamically linked Linux builds, the worker uses glibc loader diagnostics and Linux procfs file descriptors to pin each FFmpeg and ffprobe invocation to its verified media libraries. The managed Debian build supplies this environment.
 
 ## Prepare the Linux NVENC worker

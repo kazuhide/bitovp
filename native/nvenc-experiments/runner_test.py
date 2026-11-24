@@ -914,6 +914,15 @@ class SoftwareRunnerTest(unittest.TestCase):
             program.write_bytes(elf)
             with self.assertRaisesRegex(RunnerError, "INCOMPLETE_SOFTWARE_RUNTIME"):
                 runner.software_library_paths(program)
+            interpreter = Path(directory) / "ld-linux"
+            interpreter.touch()
+            path = os.fsencode(interpreter)
+            for padding in (1, 33):
+                segment = path + bytes(padding)
+                elf[72:80] = len(elf).to_bytes(8, "little")
+                elf[96:104] = len(segment).to_bytes(8, "little")
+                program.write_bytes(elf + segment)
+                self.assertEqual(runner.elf_interpreter(program), interpreter.resolve())
             elf[64] = 1
             program.write_bytes(elf)
             self.assertEqual(runner.software_library_paths(program), ())

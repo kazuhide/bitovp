@@ -324,8 +324,17 @@ def encoder_catalog(encoder, private, generic):
                 native["keyint"].update(type="int", minimum="1", maximum=str(1 << 30), choices=["infinite"])
             else:
                 native["keyint"].update(type="int", minimum="INT_MIN", maximum="INT_MAX")
-        if encoder == "libx264" and "g" in options:
-            options["g"]["maximum"] = str(1 << 30)
+        if encoder == "libx264":
+            if "g" in options:
+                options["g"]["maximum"] = str(1 << 30)
+            # wpredp is a string forwarded to x264's base-0 integer parser.
+            # Expose its effective modes, with the FFmpeg-only inheritance sentinel
+            # and named modes on the AVOption that actually understands them.
+            for field, named in ((options.get("wpredp"), False), (native.get("weightp"), False),
+                                 (options.get("weightp"), True)):
+                if field is not None:
+                    field.update(type="int", minimum="-1" if named else "0", maximum="2",
+                                 choices=(["-1", "none", "simple", "smart"] if named else []) + ["0", "1", "2"])
     return {"encoder": encoder, "codec": codec, "options": [options[k] for k in sorted(options)],
             "nativeOptions": [native[k] for k in sorted(native)],
             "limitations": [{"name": k, "reason": v} for k, v in sorted(limitations.items())]}
@@ -364,6 +373,8 @@ def validate_value(encoder, field, value, *, native):
         raise ValueError("Invalid software option value: " + name)
     if name == "passes" and value not in {"1", "2"}:
         raise ValueError("Use 1 or 2 managed passes")
+    if encoder == "libx264" and name in {"wpredp", "weightp"} and value not in field["choices"]:
+        raise ValueError("Use a weighted prediction mode from the catalog")
     if not native and name == "flags":
         tokens = re.findall(r"[+-][a-z0-9_]+", value)
         if "".join(tokens) != value or any(token[1:] not in BITSTREAM_FLAGS[encoder] for token in tokens):
@@ -423,6 +434,11 @@ def validate_x26x_structure(encoder, options, native):
     bframes = explicit("bf", "bframes")
     refs = explicit("refs", "ref", "frameref")
     keyint = explicit("g", "keyint")
+    if encoder == "libx264":
+        explicit("coder", "cabac")
+        weight = explicit("weightp", "weightp")
+        if weight is not None and "wpredp" in options:
+            raise ValueError("Specify only one spelling for weightp")
     profile = options.get("profile", "").lower()
     if encoder == "libx264" and profile in {"baseline", "main"}:
         transform = options.get("8x8dct", native.get("8x8dct"))

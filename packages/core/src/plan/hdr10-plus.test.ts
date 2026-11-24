@@ -11,6 +11,7 @@ import { initStepLog, stepLogEntrySchema } from "./steplog";
 import { planToEncodingTemplateYaml } from "./template";
 import {
 	instantiateTemplatePlan,
+	type TemplateSourceParam,
 	templateSourceSites,
 } from "./template-instantiate";
 import { validatePlan } from "./validate";
@@ -591,6 +592,73 @@ describe("HDR10+ input contract", () => {
 			);
 	});
 
+	it.each([
+		"same bucket",
+		"move bucket",
+		"shared input move",
+	])("requires an explicitly selected HDR10+ pair when the picture changes (%s)", (mode) => {
+		const value = plan();
+		const resource = {
+			kind: "S3" as const,
+			key: "in",
+			name: "storage",
+			bucket: "original",
+			credentialId: "00000000-0000-4000-8000-000000000222",
+		};
+		value.inputs = [resource];
+		const move = { bucket: "next", credentialId: resource.credentialId };
+		if (mode === "shared input move")
+			value.ingest.push({
+				key: "other",
+				inputKey: "in",
+				inputPath: "other.mp4",
+				selectionMode: "AUTO",
+				position: 0,
+			});
+		const params = {
+			presetBody: value,
+			outputPrefixTemplate: "runs/new",
+			name: "replacement",
+			templateName: "HDR10+",
+			now: new Date(0),
+			uuid: "abc",
+		};
+		const changed: Record<string, TemplateSourceParam> =
+			mode === "shared input move"
+				? { other: { objectKey: "other.mp4", ...move } }
+				: {
+						picture: {
+							objectKey:
+								mode === "move bucket" ? "hdr/video.mp4" : "cut-two.mp4",
+							...(mode === "move bucket" ? move : {}),
+						},
+					};
+		expect(
+			instantiateTemplatePlan({ ...params, sources: changed }),
+		).toMatchObject({
+			ok: false,
+			issues: [{ code: "HDR10PLUS_PAIR_REQUIRED" }],
+		});
+		expect(
+			instantiateTemplatePlan({
+				...params,
+				sources: {
+					...changed,
+					picture: {
+						objectKey: "new.mp4",
+						...(mode === "same bucket" ? {} : move),
+					},
+					"picture:metadata": {
+						objectKey: "new.json",
+						...(mode === "same bucket" ? {} : move),
+					},
+				},
+			}),
+		).toMatchObject({ ok: true });
+		expect(instantiateTemplatePlan({ ...params, sources: {} })).toMatchObject({
+			ok: true,
+		});
+	});
 	it("lists both video and metadata as independently substitutable files", () => {
 		const value = plan();
 		expect(

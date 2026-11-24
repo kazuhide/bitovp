@@ -71,13 +71,17 @@ export async function lookupCreateRequest(
 	prisma: ReceiptClient,
 	kind: CreateRequestKind,
 	identity: CreateRequestIdentity,
+	equivalentDigest?: () => string | undefined,
 ) {
 	const receipt = await prisma.createRequest.findFirst({
 		where: { kind, requestKey: identity.requestKey },
 		select: { requestSha256: true, resourceId: true },
 	});
 	if (!receipt) return { kind: "none" } as const;
-	if (receipt.requestSha256 !== identity.requestSha256)
+	if (
+		receipt.requestSha256 !== identity.requestSha256 &&
+		receipt.requestSha256 !== equivalentDigest?.()
+	)
 		return { kind: "conflict" } as const;
 	return { kind: "existing", resourceId: receipt.resourceId } as const;
 }

@@ -83,6 +83,56 @@ export function LaunchDialog({
 
 	const sites = useMemo(() => (plan ? templateSourceSites(plan) : []), [plan]);
 
+	function changeSource(siteId: string, next: TemplateSourceParam) {
+		setOverrides((previous) => {
+			const updates = { ...previous, [siteId]: next };
+			const site = sites.find((item) => item.siteId === siteId);
+			if (!site || !plan?.hdr10PlusStreams.length) return updates;
+			const input = plan.inputs.find((entry) => entry.key === site.inputKey);
+			const originalLocation =
+				input && "bucket" in input && "credentialId" in input
+					? input
+					: undefined;
+			const location =
+				Object.entries(previous).find(
+					([key, value]) =>
+						value.bucket !== undefined &&
+						sites.some(
+							(other) =>
+								other.siteId === key && other.inputKey === site.inputKey,
+						),
+				)?.[1] ?? originalLocation;
+			const moved =
+				next.bucket !== undefined &&
+				(next.bucket !== location?.bucket ||
+					next.credentialId !== location?.credentialId);
+			for (const stream of plan.hdr10PlusStreams) {
+				if (stream.inputKey !== site.inputKey) continue;
+				const metadataId = `${stream.key}:metadata`;
+				if (moved && siteId !== stream.key)
+					updates[stream.key] = { objectKey: "" };
+				if (
+					metadataId !== siteId &&
+					(moved ||
+						(siteId === stream.key &&
+							previous[siteId]?.objectKey !== "" &&
+							next.objectKey !==
+								(previous[siteId]?.objectKey ?? site.currentPath)))
+				) {
+					const original =
+						next.objectKey === stream.videoInputPath &&
+						!moved &&
+						(!next.bucket ||
+							(next.bucket === originalLocation?.bucket &&
+								next.credentialId === originalLocation?.credentialId));
+					if (original) delete updates[metadataId];
+					else updates[metadataId] = { objectKey: "" };
+				}
+			}
+			return updates;
+		});
+	}
+
 	// Seed the form ONCE per opened template, after the async load lands —
 	// state initializers cannot see it (the dialog mounts before the fetch).
 	useEffect(() => {
@@ -144,7 +194,13 @@ export function LaunchDialog({
 				uuid: "xxxxxxxx",
 			});
 			if (!result.ok) {
-				setIssues(result.issues.map((i) => i.message));
+				setIssues(
+					result.issues.map((i) =>
+						i.code === "HDR10PLUS_PAIR_REQUIRED"
+							? t("templates.hdrPairRequired")
+							: i.message,
+					),
+				);
 				return null;
 			}
 			setIssues([]);
@@ -272,9 +328,12 @@ export function LaunchDialog({
 										htmlFor={`tpl-src-${site.siteId}`}
 										label={site.siteId}
 										hint={
-											override
-												? t("templates.sourceMoved")
-												: t("templates.sourceOriginal")
+											override?.objectKey === "" &&
+											site.list === "hdr10PlusStreams"
+												? t("templates.hdrPairRequired")
+												: override
+													? t("templates.sourceMoved")
+													: t("templates.sourceOriginal")
 										}
 										trailing={
 											providersForSite(site.inputKey).length > 0 ? (
@@ -292,13 +351,10 @@ export function LaunchDialog({
 											id={`tpl-src-${site.siteId}`}
 											value={override?.objectKey ?? site.currentPath}
 											onChange={(e) =>
-												setOverrides((prev) => ({
-													...prev,
-													[site.siteId]: {
-														...prev[site.siteId],
-														objectKey: e.target.value,
-													},
-												}))
+												changeSource(site.siteId, {
+													...overrides[site.siteId],
+													objectKey: e.target.value,
+												})
 											}
 										/>
 									</Field>
@@ -373,10 +429,11 @@ export function LaunchDialog({
 				onClose={() => setPickingSite(null)}
 				onSelect={({ credentialId, bucket, path }) => {
 					if (pickingSite !== null) {
-						setOverrides((prev) => ({
-							...prev,
-							[pickingSite]: { objectKey: path, bucket, credentialId },
-						}));
+						changeSource(pickingSite, {
+							objectKey: path,
+							bucket,
+							credentialId,
+						});
 					}
 					setPickingSite(null);
 				}}

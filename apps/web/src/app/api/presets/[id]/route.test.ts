@@ -504,6 +504,25 @@ describe("PATCH /api/presets/[id]", () => {
 		expect(call.data.body).toBeDefined();
 	});
 
+	it("preserves the revision and saved body of an unchanged pre-HDR preset", async () => {
+		const { hdr10PlusStreams: _unused, ...stored } = encodingPlanSchema.parse(
+			plan(),
+		);
+		findFirst
+			.mockResolvedValueOnce({ body: stored, kind: "FULL_PLAN" })
+			.mockResolvedValueOnce({ id: ID, revision: 7 });
+		updateMany.mockResolvedValueOnce({ count: 1 });
+		expect(
+			(
+				await PATCH(
+					patchRequest({ plan: stored, expectedUpdatedAt: WHEN }),
+					withId(ID),
+				)
+			).status,
+		).toBe(200);
+		expect(updateManyArg().data).not.toHaveProperty("revision");
+		expect(updateManyArg().data.body).toEqual(stored);
+	});
 	it("an IDENTICAL body — even key-order permuted, as jsonb returns it — does not bump", async () => {
 		// The stored body round-tripped through jsonb (key order normalized);
 		// the client resubmits the same plan in authored order. Equality must

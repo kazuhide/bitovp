@@ -1081,6 +1081,36 @@ describe("ordinary GUI create retries", () => {
 			body: JSON.stringify(body),
 		});
 	}
+	it("recognizes a pre-HDR Quick Launch on retry without accepting a differently edited plan", async () => {
+		presetFindFirst.mockResolvedValueOnce({ id: PRESET_ID });
+		const previous = {
+			plan: planWithAccount(),
+			presetId: PRESET_ID,
+			presetRevision: 3,
+		};
+		const first = await POST(keyedRequest(previous));
+		expect(first.status).toBe(201);
+		findUnique.mockResolvedValue({
+			id: "00000000-0000-4000-8000-0000000000aa",
+			status: "QUEUED",
+		});
+		const restored = {
+			...previous,
+			plan: { ...previous.plan, hdr10PlusStreams: [] },
+		};
+		const same = await POST(keyedRequest(restored));
+		expect(same.status).toBe(200);
+		expect(await same.json()).toMatchObject({ replayed: true });
+		for (const plan of [
+			{ ...restored.plan, name: "another cut" },
+			{ ...restored.plan, hdr10PlusStreams: [{ key: "different" }] },
+		]) {
+			expect((await POST(keyedRequest({ ...restored, plan }))).status).toBe(
+				409,
+			);
+		}
+		expect(queueAdd).toHaveBeenCalledTimes(1);
+	});
 	it("recovers a lost create response without creating or enqueuing a second resource", async () => {
 		const body = { plan: planWithAccount() };
 		await POST(keyedRequest(body));

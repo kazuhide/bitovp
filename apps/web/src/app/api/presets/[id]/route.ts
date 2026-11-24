@@ -21,6 +21,7 @@ import {
 	validationError,
 } from "@/lib/server/http";
 import { serverPlanValidationOptions } from "@/lib/server/plan-validation";
+import { equivalentHdrDefault } from "@/lib/server/vod-hdr-default";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -230,9 +231,15 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 		// The bump decision reads the CURRENT body outside the write — safe
 		// because the CAS below closes the window: if the body changed after
 		// this read, updatedAt moved too and the update matches zero rows.
+		const savedPlan = parsed.data.plan;
+		const sameLegacyPlan =
+			savedPlan !== undefined &&
+			current.kind === "FULL_PLAN" &&
+			jsonStructuralEqual(current.body, equivalentHdrDefault(savedPlan));
 		const bump =
-			parsed.data.plan !== undefined &&
-			!jsonStructuralEqual(current.body, parsed.data.plan);
+			savedPlan !== undefined &&
+			!sameLegacyPlan &&
+			!jsonStructuralEqual(current.body, savedPlan);
 		const result = await ctx.prisma.preset.updateMany({
 			where: {
 				id,
@@ -244,7 +251,13 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 				...(parsed.data.description !== undefined
 					? { description: parsed.data.description }
 					: {}),
-				...(parsed.data.plan !== undefined ? { body: parsed.data.plan } : {}),
+				...(savedPlan !== undefined
+					? {
+							body: sameLegacyPlan
+								? (current.body as Prisma.InputJsonValue)
+								: savedPlan,
+						}
+					: {}),
 				...(parsed.data.launchDefaults !== undefined
 					? {
 							launchDefaults:

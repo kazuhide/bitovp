@@ -63,6 +63,24 @@ it("does not clear CREATED while a late START can still return", async () => {
 	).toBe(0);
 	expect(provider.releaseTemporaryKeys).not.toHaveBeenCalled();
 });
+it("keeps the displaced encoder across a CREATED read through either of its mirrored ownership records", async () => {
+	const { payload, provider } = fixture();
+	payload.encodings.push({
+		entityKey: "liveChannelRun:historical",
+		accountId: "account",
+		encodingId: "encoding",
+		requireTerminal: true,
+	});
+	vi.mocked(provider.status).mockResolvedValue("CREATED");
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(0);
+	expect(provider.releaseTemporaryKeys).not.toHaveBeenCalled();
+	vi.mocked(provider.status).mockResolvedValue("FINISHED");
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(1);
+});
 it("settles CREATED once the owning worker has acknowledged its fence", async () => {
 	const { payload, provider } = fixture();
 	vi.mocked(provider.status).mockResolvedValue("CREATED");

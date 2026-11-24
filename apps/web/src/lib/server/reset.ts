@@ -15,6 +15,10 @@ import {
 	type MoqArchiveCleanupSnapshot,
 	snapshotMoqArchiveCleanup,
 } from "./moq-archive-cleanup";
+import {
+	confirmArchivedRtmpEncoding,
+	readResetRtmpArchives,
+} from "./reset-rtmp-archives";
 
 /**
  *  — "reset the data and start over".
@@ -277,6 +281,7 @@ export type VerificationIntentBlocker = {
 
 /** A row that is the only local record of a Bitmovin encoding resource. */
 export type EncoderPointer = {
+	archivedRtmp?: true;
 	/** Available for reset reconcile; not needed by post-reset cleanup pointers. */
 	createdAt?: Date;
 	liveChannelId?: string;
@@ -499,7 +504,7 @@ export type ReconcileReport = {
 export async function listEncoderPointers(
 	prisma: AppPrismaClient,
 ): Promise<EncoderPointer[]> {
-	const [jobs, channels, runs] = await Promise.all([
+	const [jobs, channels, runs, archives] = await Promise.all([
 		prisma.encodingJob.findMany({
 			where: {
 				...pointerJobWhere(prisma),
@@ -547,8 +552,13 @@ export async function listEncoderPointers(
 				liveChannel: { select: { bitmovinAccountId: true, createdAt: true } },
 			},
 		}),
+		readResetRtmpArchives(prisma),
 	]);
 	return [
+		...archives.pointers.filter(
+			(p) =>
+				!RESET_BLOCKING_CHANNEL_STATUSES.some((status) => status === p.status),
+		),
 		...jobs.map((r) => ({
 			createdAt: r.createdAt,
 			kind: "encodingJob" as const,
@@ -624,6 +634,25 @@ export async function reconcileEncoderPointers(
 		}
 		if (state.kind === "unverified") {
 			report.unverified.push({ ...pointer, message: state.message });
+			continue;
+		}
+		if (pointer.archivedRtmp) {
+			if (
+				state.kind === "stopped" &&
+				(await confirmArchivedRtmpEncoding(
+					prisma,
+					pointer,
+					state.providerStatus,
+				))
+			) {
+				report.confirmed.push(pointer);
+			} else {
+				report.unverified.push({
+					...pointer,
+					message:
+						"A terminal status for this archived encoding and its recorded account could not be confirmed",
+				});
+			}
 			continue;
 		}
 		// Resource absence is a reset-only disposition, never a terminal
@@ -762,6 +791,7 @@ export async function findActiveWork(
 		pointerChannelIdentities,
 		pointerRunIdentities,
 		intentRows,
+		archives,
 	] = await Promise.all([
 		prisma.encodingJob.findMany({
 			where: { status: { in: [...RESET_BLOCKING_JOB_STATUSES] } },
@@ -875,6 +905,7 @@ export async function findActiveWork(
 				closureDigest: true,
 			},
 		}),
+		readResetRtmpArchives(prisma),
 	]);
 	const sourceName = (sourceKey: string) => {
 		const trimmed = sourceKey.endsWith("/")
@@ -932,12 +963,14 @@ export async function findActiveWork(
 		...pointerJobs.flatMap((r) => pointer("encodingJob", r)),
 		...pointerChannels.flatMap((r) => pointer("liveChannel", r)),
 		...pointerRuns.flatMap((r) => pointer("liveChannelRun", r)),
+		...archives.pointers.slice(0, 50),
 	];
 	const providerIdentityIds = new Set(
 		[
 			...pointerJobIdentities,
 			...pointerChannelIdentities,
 			...pointerRunIdentities,
+			...archives.pointers,
 		].flatMap((row) =>
 			row.bitmovinEncodingId ? [row.bitmovinEncodingId] : [],
 		),
@@ -967,21 +1000,30 @@ export async function findActiveWork(
 		prisma.liveChannel.count({ where: pointerChannelWhere(prisma) }),
 		prisma.liveChannelRun.count({ where: pointerRunWhere(prisma) }),
 	]);
+	const incomplete = archives.incomplete.filter(
+		(channel) =>
+			!RESET_BLOCKING_CHANNEL_STATUSES.some(
+				(status) => status === channel.status,
+			),
+	);
 	return {
 		encodingJobs,
-		liveChannels,
+		liveChannels: [...liveChannels, ...incomplete].slice(0, 50),
 		feederSessions,
 		vmafJobs,
 		verificationIntents,
 		unstoppedEncoders,
 		totals: {
 			encodingJobs: jobTotal,
-			liveChannels: channelTotal,
+			liveChannels: channelTotal + incomplete.length,
 			feederSessions: feederTotal,
 			vmafJobs: vmafTotal,
 			verificationIntents: unresolvedIntents.length,
 			unstoppedEncoderPointers:
-				pointerJobTotal + pointerChannelTotal + pointerRunTotal,
+				pointerJobTotal +
+				pointerChannelTotal +
+				pointerRunTotal +
+				archives.pointers.length,
 			unstoppedEncoders: providerIdentityIds.size,
 		},
 	};
@@ -1045,13 +1087,19 @@ export async function collectEncoderPointers(
 			: [],
 		selected.liveChannels
 			? prisma.liveChannelRun.findMany({
-					where: { bitmovinEncodingId: { not: null } },
+					where: {
+						OR: [
+							{ bitmovinEncodingId: { not: null } },
+							{ previousProviderEncodingIds: { isEmpty: false } },
+						],
+					},
 					// The run has no account column of its own; its channel (still
 					// alive inside this transaction) does.
 					select: {
 						id: true,
 						status: true,
 						bitmovinEncodingId: true,
+						previousProviderEncodingIds: true,
 						liveChannel: { select: { bitmovinAccountId: true } },
 					},
 				})
@@ -1074,14 +1122,23 @@ export async function collectEncoderPointers(
 			bitmovinEncodingId: r.bitmovinEncodingId as string,
 			bitmovinAccountId: r.bitmovinAccountId ?? null,
 		})),
-		...runs.map((r) => ({
-			kind: "liveChannelRun" as const,
-			id: r.id,
-			name: null,
-			status: r.status,
-			bitmovinEncodingId: r.bitmovinEncodingId as string,
-			bitmovinAccountId: r.liveChannel?.bitmovinAccountId ?? null,
-		})),
+		...runs.flatMap((r) =>
+			[
+				...new Set([
+					r.bitmovinEncodingId,
+					...(r.previousProviderEncodingIds ?? []),
+				]),
+			]
+				.filter((id): id is string => !!id)
+				.map((encodingId) => ({
+					kind: "liveChannelRun" as const,
+					id: r.id,
+					name: null,
+					status: r.status,
+					bitmovinEncodingId: encodingId,
+					bitmovinAccountId: r.liveChannel?.bitmovinAccountId ?? null,
+				})),
+		),
 	];
 	// One audit row holds this as JSON, and a long-lived install can carry
 	// thousands of finished encodes. Capped — but the total and the flag ride

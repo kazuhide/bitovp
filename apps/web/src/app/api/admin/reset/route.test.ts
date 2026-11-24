@@ -252,8 +252,17 @@ function findManyFor(
 		async (args?: {
 			where?: { bitmovinEncodingId?: unknown; status?: unknown; NOT?: unknown };
 			distinct?: string[];
-			select?: { plan?: boolean };
+			select?: {
+				plan?: boolean;
+				previousProviderEncodingIds?: boolean;
+				rtmpRetirementEvidence?: boolean;
+			};
 		}) => {
+			if (
+				name === "liveChannelRun" &&
+				args?.select?.previousProviderEncodingIds
+			)
+				return args.select.rtmpRetirementEvidence ? [] : allPointers();
 			if (name === "encodingJob" && args?.select?.plan) return finishedAisaJobs;
 			const where = args?.where ?? {};
 			if (where.bitmovinEncodingId) {

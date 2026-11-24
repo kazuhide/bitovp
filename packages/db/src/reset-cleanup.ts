@@ -10,6 +10,8 @@ export type ResetCleanupAccount = {
 	tenantOrgId: string | null;
 };
 export type ResetCleanupEncoding = {
+	/** Displaced encoders with unknown start history need terminal readback. */
+	requireTerminal?: true;
 	entityKey: string;
 	encodingId: string;
 	accountId: string | null;

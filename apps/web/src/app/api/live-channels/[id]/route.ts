@@ -9,7 +9,7 @@ import {
 	programEndBeyondRunWindow,
 	stepLogSchema,
 } from "@bitovp/core";
-import { archivedStopRecoveryTarget } from "@bitovp/db";
+import {archivedStopRecoveryTarget,LIVE_EFFECT_OPEN_STATES} from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { ACTOR_HEADER } from "@/lib/auth/api-token-gate";
@@ -52,6 +52,26 @@ import {
 } from "@/lib/server/moq-observations";
 import { publicMoqHistory } from "@/lib/server/moq-public-history";
 import { playbackLinksForLivePlan } from "@/lib/server/playback-links";
+import {
+	IncompleteRtmpArchive,
+	readResetRtmpArchives,
+} from "@/lib/server/reset-rtmp-archives";
+
+class UnconfirmedLiveStop extends Error {
+	constructor() {
+		super(
+			"The stop for this broadcast is still unconfirmed. Keep the channel until its provider outcome is known.",
+		);
+	}
+}
+
+class ArchivedEncoderStillOpen extends Error {
+	constructor() {
+		super(
+			"Verify the displaced encoders from earlier RTMP attempts before deleting this channel.",
+		);
+	}
+}
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -372,6 +392,18 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 				["PROVISIONING", "RUNNING", "STOPPING"].includes(current.status)
 			)
 				throw new ChannelNotDeletable();
+			const openStop = await tx.liveEffectClaim.findFirst({
+				where: {
+					liveChannelId: id,
+					action: "STOP",
+					state: { in: [...LIVE_EFFECT_OPEN_STATES] },
+				},
+				select: { id: true },
+			});
+			if (openStop) throw new UnconfirmedLiveStop();
+			const archive = await readResetRtmpArchives(tx, id);
+			if (archive.incomplete.length) throw new IncompleteRtmpArchive();
+			if (archive.pointers.length) throw new ArchivedEncoderStillOpen();
 			if (isAisaManagedLivePlan(current.plan)) {
 				await tx.$queryRaw`SELECT id FROM "LiveChannelRun" WHERE "liveChannelId" = ${id}::uuid ORDER BY seq DESC LIMIT 1 FOR UPDATE`;
 				const run = await tx.liveChannelRun.findFirst({
@@ -453,6 +485,12 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 		return NextResponse.json({ id, deleted: true });
 	} catch (err) {
 		if (err instanceof MoqObservationError) return moqHistoryError(err);
+		if (
+			err instanceof UnconfirmedLiveStop ||
+			err instanceof IncompleteRtmpArchive ||
+			err instanceof ArchivedEncoderStillOpen
+		)
+			return jsonError(409, err.message);
 		if (err instanceof AisaFinalizationNotConfirmed) {
 			return jsonError(
 				409,

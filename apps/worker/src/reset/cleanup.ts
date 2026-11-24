@@ -39,6 +39,11 @@ export async function cleanResetPayload(
 		}
 		return api;
 	};
+	const requireTerminal = new Set(
+		payload.encodings
+			.filter((row) => row.requireTerminal)
+			.map((row) => `${row.accountId}:${row.encodingId}`),
+	);
 	for (const row of payload.encodings) {
 		try {
 			const api = await provider(row.accountId);
@@ -54,6 +59,7 @@ export async function cleanResetPayload(
 			if (
 				classifyProviderStatusWord(status) === "TERMINAL" ||
 				(status === "CREATED" &&
+					!requireTerminal.has(`${row.accountId}:${row.encodingId}`) &&
 					!payload.pendingEntities.some(
 						(pending) => pending.entityKey === row.entityKey,
 					))

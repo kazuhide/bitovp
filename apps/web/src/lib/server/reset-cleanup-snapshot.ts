@@ -6,6 +6,10 @@ import {
 	type ResetCleanupPayload,
 } from "@bitovp/db";
 import type { ResetCategory } from "@/lib/reset-selection";
+import {
+	IncompleteRtmpArchive,
+	readResetRtmpArchives,
+} from "./reset-rtmp-archives";
 
 /** Unbounded ownership snapshot; the bounded customer report is not a cleanup index. */
 export async function snapshotResetCleanup(
@@ -23,6 +27,7 @@ export async function snapshotResetCleanup(
 	};
 	const entityKeys: string[] = [];
 	const accountIds = new Set<string>();
+	const requireTerminal = new Set<string>();
 	function entity(
 		kind: string,
 		row: {
@@ -31,6 +36,7 @@ export async function snapshotResetCleanup(
 			bitmovinAccountId: string | null;
 			bitmovinEncodingId?: string | null;
 			stepLog?: Prisma.JsonValue;
+			previousProviderEncodingIds?: string[];
 			attemptClaimedAt?: Date | null;
 			provisionClaimedAt?: Date | null;
 			recoveryLeaseUntil?: Date | null;
@@ -39,7 +45,7 @@ export async function snapshotResetCleanup(
 		const entityKey = `${kind}:${row.id}`;
 		entityKeys.push(entityKey);
 		if (row.bitmovinAccountId) accountIds.add(row.bitmovinAccountId);
-		const ids = new Set<string>();
+		const ids = new Set(row.previousProviderEncodingIds ?? []);
 		if (row.bitmovinEncodingId) ids.add(row.bitmovinEncodingId);
 		if (Array.isArray(row.stepLog))
 			for (const step of row.stepLog) {
@@ -57,6 +63,9 @@ export async function snapshotResetCleanup(
 				entityKey,
 				encodingId,
 				accountId: row.bitmovinAccountId,
+				...(requireTerminal.has(`${row.bitmovinAccountId}:${encodingId}`)
+					? { requireTerminal: true }
+					: {}),
 			});
 		if (
 			row.attemptClaimedAt ||
@@ -97,6 +106,12 @@ export async function snapshotResetCleanup(
 		}))
 			entity("encodingJob", row);
 	if (selected.has("liveChannels")) {
+		const archive = await readResetRtmpArchives(tx);
+		if (archive.incomplete.length) throw new IncompleteRtmpArchive();
+		for (const pointer of archive.pointers)
+			requireTerminal.add(
+				`${pointer.bitmovinAccountId}:${pointer.bitmovinEncodingId}`,
+			);
 		for (const row of await tx.liveChannel.findMany({
 			select: {
 				id: true,
@@ -114,6 +129,7 @@ export async function snapshotResetCleanup(
 				status: true,
 				bitmovinEncodingId: true,
 				stepLog: true,
+				previousProviderEncodingIds: true,
 				liveChannel: { select: { bitmovinAccountId: true } },
 			},
 		}))
@@ -244,13 +260,22 @@ export async function snapshotResetCleanup(
 							id: true,
 							bitmovinEncodingId: true,
 							stepLog: true,
+							previousProviderEncodingIds: true,
 							liveChannel: { select: { bitmovinAccountId: true } },
 						},
 					}),
 		]);
 		const retained = [
-			...jobs.map((row) => ({ ...row, kind: "VOD_JOB" })),
-			...channels.map((row) => ({ ...row, kind: "LIVE_CHANNEL" })),
+			...jobs.map((row) => ({
+				...row,
+				previousProviderEncodingIds: [] as string[],
+				kind: "VOD_JOB",
+			})),
+			...channels.map((row) => ({
+				...row,
+				previousProviderEncodingIds: [] as string[],
+				kind: "LIVE_CHANNEL",
+			})),
 			...runsWithOwners.map((row) => ({
 				...row,
 				kind: "LIVE_RUN",
@@ -322,7 +347,8 @@ export async function snapshotResetCleanup(
 							(row.bitmovinAccountId == null ||
 								row.bitmovinAccountId === accountId) &&
 							(row.bitmovinEncodingId === encodingId ||
-								stepEncodingIds(row.stepLog).includes(encodingId)),
+								stepEncodingIds(row.stepLog).includes(encodingId) ||
+								row.previousProviderEncodingIds.includes(encodingId)),
 					)
 				)
 					continue;

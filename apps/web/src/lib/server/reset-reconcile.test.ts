@@ -36,7 +36,7 @@ function fakePrisma(seed: {
 	) => ({
 		fields: fieldRefs(modelName, ["bitmovinEncodingId"]),
 		findMany: async (args: { where?: Row; select?: Row; take?: number }) =>
-			rows
+			(args.select?.rtmpRetirementEvidence ? [] : rows)
 				.filter((r) => matchesWhere(r, args.where, rel))
 				.slice(0, args.take ?? rows.length)
 				.map((r) => projectSelect(r, args.select, rel)),

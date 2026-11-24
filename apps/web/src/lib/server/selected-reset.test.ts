@@ -209,6 +209,14 @@ describe("selected reset", () => {
 				stepLog: [{ kind: "CREATE_ENCODING", resourceId: "sibling" }],
 			},
 		]);
+		f.tables.liveChannelRun?.findMany.mockResolvedValue([
+			{
+				id: "retained-run",
+				previousProviderEncodingIds: ["rtmp-older"],
+				liveChannel: { bitmovinAccountId: "account" },
+				stepLog: [],
+			},
+		]);
 		const intent = (id: string, providerIds: string[], extra = {}) => ({
 			id,
 			kind: "VOD_JOB",
@@ -225,7 +233,7 @@ describe("selected reset", () => {
 			intent("canonical", ["canonical-owned"], {
 				possiblyCreatedKeys: ["local:VOD_JOB:by-canonical"],
 			}),
-			intent("direct", ["direct", "sibling"]),
+			intent("direct", ["direct", "sibling", "rtmp-older"]),
 			intent("orphan", [], {
 				possiblyCreatedKeys: ["provider:BITMOVIN_ENCODING:orphan-canonical"],
 			}),

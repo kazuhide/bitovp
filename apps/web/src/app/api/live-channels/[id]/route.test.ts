@@ -23,6 +23,8 @@ const heartbeatEvents = vi.fn().mockResolvedValue([]);
 const latestRun = vi.fn().mockResolvedValue(null);
 const lockedChannel = vi.fn();
 const lockedRun = vi.fn();
+const archivedRuns = vi.fn();
+const openStop = vi.fn();
 const lockRows = vi.fn();
 
 // Interactive $transaction: invoke the callback with a tx exposing the model
@@ -34,7 +36,8 @@ const lockRows = vi.fn();
 const tx = {
 	vmafJob: { deleteMany: vmafDeleteMany, count: vmafCount },
 	liveChannel: { findUnique: lockedChannel, deleteMany: channelDeleteMany },
-	liveChannelRun: { findFirst: lockedRun },
+	liveChannelRun: { findFirst: lockedRun, findMany: archivedRuns },
+	liveEffectClaim: { findFirst: openStop },
 	$queryRaw: lockRows,
 };
 const $transaction = vi.fn((cb: (t: typeof tx) => Promise<unknown>) => cb(tx));
@@ -90,6 +93,8 @@ beforeEach(() => {
 	lockedChannel
 		.mockReset()
 		.mockImplementation(() => findUnique.mock.results.at(-1)?.value);
+	openStop.mockReset().mockResolvedValue(null);
+	archivedRuns.mockReset().mockResolvedValue([]);
 	lockedRun.mockReset().mockImplementation((args) => latestRun(args));
 	lockRows.mockResolvedValue([]);
 	// Ordering is cosmetic here, and my earlier comment claiming otherwise was
@@ -593,6 +598,60 @@ describe("DELETE /api/live-channels/[id] — the live VMAF guard", () => {
 });
 
 describe("DELETE /api/live-channels/[id]", () => {
+	it("retains an unresolved STOP on a locally stopped channel", async () => {
+		findUnique.mockResolvedValue({
+			id: CHANNEL_ID,
+			status: "STOPPED",
+			error: "Unconfirmed",
+			plan: {},
+			stepLog: [],
+		});
+		openStop.mockResolvedValue({ id: "uncertain" });
+		expect((await DELETE(delReq(), ctx(CHANNEL_ID))).status).toBe(409);
+		expect(openStop).toHaveBeenCalledWith({
+			where: {
+				liveChannelId: CHANNEL_ID,
+				action: "STOP",
+				state: {
+					in: expect.arrayContaining(["CLAIMED", "DISPATCHING", "AMBIGUOUS"]),
+				},
+			},
+			select: { id: true },
+		});
+		expect(channelDeleteMany).not.toHaveBeenCalled();
+	});
+	it("retains a displaced encoder on an older airing even when the current airing is clean", async () => {
+		findUnique.mockResolvedValue({
+			id: CHANNEL_ID,
+			status: "STOPPED",
+			plan: {},
+			stepLog: [],
+		});
+		archivedRuns.mockResolvedValue([
+			{
+				id: "previous-run",
+				status: "ERROR",
+				previousProviderEncodingIds: ["old-encoder"],
+				stepLog: [],
+				liveChannel: {
+					id: CHANNEL_ID,
+					name: "Channel",
+					status: "STOPPED",
+					bitmovinAccountId: "account",
+					runs: [{ id: "new-run" }],
+				},
+			},
+		]);
+		const result = await DELETE(delReq(), ctx(CHANNEL_ID));
+		expect(result.status).toBe(409);
+		expect(archivedRuns).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ liveChannelId: CHANNEL_ID }),
+			}),
+		);
+		expect(channelDeleteMany).not.toHaveBeenCalled();
+	});
+
 	const managedPlan = { start: { aiSceneAnalysisLive: {} } };
 	const analysisId = "a0000000-0000-4000-8000-000000000002";
 	const runId = "a0000000-0000-4000-8000-000000000001";

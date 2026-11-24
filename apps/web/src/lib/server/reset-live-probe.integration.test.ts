@@ -7,7 +7,11 @@ import {
 	readResetCleanupTask,
 } from "@bitovp/db";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { RESET_CATEGORIES, RESET_GLOBAL_MODELS } from "@/lib/reset-selection";
+import {
+	RESET_CATEGORIES,
+	RESET_GLOBAL_MODELS,
+	requiredResetCategories,
+} from "@/lib/reset-selection";
 import {
 	collectEncoderPointers,
 	deleteOperationalData,
@@ -245,6 +249,158 @@ postgres("tenant PostgreSQL reset", () => {
 		expect(
 			await readResetCleanupTask(b, cipher, result.cleanupTaskId),
 		).toBeNull();
+	});
+
+	async function archiveFixture(
+		db: AppPrismaClient,
+		current: string | null,
+		previous: string[],
+		attempt = 1,
+		archived = 1,
+	) {
+		const account = await db.bitmovinAccount.create({
+			data: { label: "Fixture", encryptedApiKey: "fixture-only" },
+		});
+		const stepLog = [
+			{
+				step: "input",
+				kind: "CREATE_INPUT_RTMP",
+				refs: {},
+				payload: {},
+				status: "DONE",
+				attempt,
+			},
+		];
+		const channel = await db.liveChannel.create({
+			data: {
+				name: "RTMP archive",
+				plan: {},
+				bitmovinAccountId: account.id,
+				status: "ERROR",
+				stepLog,
+			},
+		});
+		const run = await db.liveChannelRun.create({
+			data: {
+				liveChannelId: channel.id,
+				seq: 1,
+				status: "ERROR",
+				outputPrefix: "",
+				bitmovinEncodingId: current,
+				previousProviderEncodingIds: previous,
+				archivedRtmpAttempt: archived,
+				stepLog,
+			},
+		});
+		return { account, channel, run };
+	}
+
+	it("keeps archive-only encoders for bulk reset until an exact terminal read and returns the archived identity in the deletion receipt", async () => {
+		const old = randomUUID();
+		const foreign = randomUUID();
+		const own = await archiveFixture(prisma, null, [old]);
+		const b = createTenantPrismaClient(runtime, organizationIds[1]);
+		await archiveFixture(b, null, [foreign]);
+		const active = await findActiveWork(prisma);
+		expect(active.totals.unstoppedEncoders).toBe(1);
+		expect(active.unstoppedEncoders.map((p) => p.bitmovinEncodingId)).toEqual([
+			old,
+		]);
+		await expect(deleteOperationalData(prisma)).rejects.toThrow();
+		expect(
+			(
+				await reconcileEncoderPointers(prisma, async (account, id) => {
+					expect([account, id]).toEqual([own.account.id, old]);
+					return { kind: "running", providerStatus: "RUNNING" };
+				})
+			).running,
+		).toHaveLength(1);
+		expect(
+			(
+				await reconcileEncoderPointers(prisma, async () => ({
+					kind: "stopped",
+					providerStatus: "CREATED",
+				}))
+			).unverified,
+		).toHaveLength(1);
+		expect(
+			(
+				await reconcileEncoderPointers(prisma, async () => ({
+					kind: "stopped",
+					providerStatus: "FINISHED",
+				}))
+			).confirmed,
+		).toHaveLength(1);
+		expect(isIdle(await findActiveWork(prisma))).toBe(true);
+		const result = await deleteOperationalData(prisma);
+		expect(result.encoders.pointers.map((p) => p.bitmovinEncodingId)).toEqual([
+			old,
+		]);
+		expect(
+			(await findActiveWork(b)).unstoppedEncoders.map(
+				(p) => p.bitmovinEncodingId,
+			),
+		).toEqual([foreign]);
+	});
+
+	it("moves every known RTMP identity into tenant-bound selected cleanup before deleting a run", async () => {
+		const old = randomUUID(),
+			fresh = randomUUID();
+		const { account, run } = await archiveFixture(prisma, fresh, [old, old]);
+		const cipher = new AesGcmCipher(randomBytes(32));
+		const result = await deleteSelectedData(
+			prisma,
+			requiredResetCategories(["liveChannels"]),
+			cipher,
+		);
+		expect(result.encoders.providerIdentityTotal).toBe(2);
+		expect(
+			result.encoders.pointers.map((p) => p.bitmovinEncodingId).sort(),
+		).toEqual([old, fresh].sort());
+		expect(
+			await prisma.liveChannelRun.findUnique({ where: { id: run.id } }),
+		).toBeNull();
+		if (!result.cleanupTaskId) throw new Error("Missing cleanup task");
+		const task = await readResetCleanupTask(
+			prisma,
+			cipher,
+			result.cleanupTaskId,
+		);
+		expect(task?.payload.encodings).toEqual(
+			expect.arrayContaining([
+				{
+					entityKey: `liveChannelRun:${run.id}`,
+					accountId: account.id,
+					encodingId: old,
+					requireTerminal: true,
+				},
+				{
+					entityKey: `liveChannelRun:${run.id}`,
+					accountId: account.id,
+					encodingId: fresh,
+				},
+			]),
+		);
+		expect(task?.payload.encodings).toHaveLength(2);
+	});
+
+	it("preserves the run and provider account when a legacy RTMP rebuild lost an unknown encoder identity", async () => {
+		const { channel, run } = await archiveFixture(prisma, null, [], 1, 0);
+		expect(
+			(await findActiveWork(prisma)).liveChannels.map((c) => c.id),
+		).toEqual([channel.id]);
+		await expect(deleteOperationalData(prisma)).rejects.toThrow();
+		await expect(
+			deleteSelectedData(
+				prisma,
+				requiredResetCategories(["liveChannels"]),
+				new AesGcmCipher(randomBytes(32)),
+			),
+		).rejects.toThrow(/missing encoder identities/);
+		expect(
+			await prisma.liveChannelRun.findUnique({ where: { id: run.id } }),
+		).not.toBeNull();
+		expect(await prisma.resetCleanupTask.count()).toBe(0);
 	});
 	afterAll(async () => {
 		await admin.$disconnect();

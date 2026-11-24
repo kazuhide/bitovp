@@ -51,6 +51,7 @@ import {
 	uniqueEncoderPointers,
 } from "@/lib/server/reset";
 import { tokenActorRefusal } from "@/lib/server/reset-actor";
+import { IncompleteRtmpArchive } from "@/lib/server/reset-rtmp-archives";
 import {
 	countResetCategories,
 	deleteSelectedData,
@@ -407,6 +408,12 @@ export async function POST(req: Request) {
 			if (err instanceof ResetRaceLost) {
 				return resetConflict("RESET_STATE_CHANGED");
 			}
+			if (err instanceof IncompleteRtmpArchive)
+				return jsonError(
+					409,
+					err.message,
+					customerErrorDetails("RESET_PROVIDER_RESOURCES_UNCONFIRMED"),
+				);
 			if (err instanceof SelectedResetBlocked) {
 				return jsonError(400, "Reset selection is missing required categories");
 			}

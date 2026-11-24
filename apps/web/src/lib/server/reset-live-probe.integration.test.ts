@@ -274,8 +274,8 @@ postgres("tenant PostgreSQL reset", () => {
 		const channel = await db.liveChannel.create({
 			data: {
 				name: "RTMP archive",
-				plan: {},
-				bitmovinAccountId: account.id,
+				plan: { bitmovin: { accountId: account.id } },
+				bitmovinAccountId: null,
 				status: "ERROR",
 				stepLog,
 			},

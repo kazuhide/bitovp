@@ -3,7 +3,11 @@ import {
 	feederOccupancyWhere,
 	verificationIntentsSealable,
 } from "@bitovp/core";
-import type { AppPrismaClient, Prisma } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	liveChannelAccountId,
+	type Prisma,
+} from "@bitovp/db";
 import { RESET_RETAINED_EXPERIMENT_MODELS } from "@/lib/reset-selection";
 import { assertAisaSnapshotCaptured } from "./delete-jobs";
 import {
@@ -1082,6 +1086,7 @@ export async function collectEncoderPointers(
 						status: true,
 						bitmovinEncodingId: true,
 						bitmovinAccountId: true,
+						plan: true,
 					},
 				})
 			: [],
@@ -1100,7 +1105,7 @@ export async function collectEncoderPointers(
 						status: true,
 						bitmovinEncodingId: true,
 						previousProviderEncodingIds: true,
-						liveChannel: { select: { bitmovinAccountId: true } },
+						liveChannel: { select: { bitmovinAccountId: true, plan: true } },
 					},
 				})
 			: [],
@@ -1120,7 +1125,7 @@ export async function collectEncoderPointers(
 			name: r.name,
 			status: r.status,
 			bitmovinEncodingId: r.bitmovinEncodingId as string,
-			bitmovinAccountId: r.bitmovinAccountId ?? null,
+			bitmovinAccountId: liveChannelAccountId(r),
 		})),
 		...runs.flatMap((r) =>
 			[
@@ -1136,7 +1141,9 @@ export async function collectEncoderPointers(
 					name: null,
 					status: r.status,
 					bitmovinEncodingId: encodingId,
-					bitmovinAccountId: r.liveChannel?.bitmovinAccountId ?? null,
+					bitmovinAccountId: r.liveChannel
+						? liveChannelAccountId(r.liveChannel)
+						: null,
 				})),
 		),
 	];

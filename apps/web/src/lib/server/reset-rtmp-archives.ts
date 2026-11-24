@@ -2,6 +2,7 @@ import { classifyProviderStatusWord } from "@bitovp/core";
 import {
 	type AppPrismaClient,
 	type AppTransactionClient,
+	liveChannelAccountId,
 	mergeRtmpRetirementEvidence,
 	type Prisma,
 	unconfirmedRtmpEncoders,
@@ -50,6 +51,7 @@ export async function readResetRtmpArchives(
 					createdAt: true,
 					stepLog: true,
 					bitmovinAccountId: true,
+					plan: true,
 					runs: { orderBy: { seq: "desc" }, take: 1, select: { id: true } },
 				},
 			},
@@ -62,10 +64,11 @@ export async function readResetRtmpArchives(
 	>();
 	for (const row of rows) {
 		const channel = row.liveChannel;
+		const accountId = liveChannelAccountId(channel);
 		const open = unconfirmedRtmpEncoders(
 			row,
 			channel.runs[0]?.id === row.id ? channel : { stepLog: [] },
-			channel.bitmovinAccountId,
+			accountId,
 		);
 		if (open === null)
 			incomplete.set(channel.id, {
@@ -79,7 +82,7 @@ export async function readResetRtmpArchives(
 				unconfirmedRtmpEncoders(
 					{ ...row, stepLog: [] },
 					{ stepLog: [] },
-					channel.bitmovinAccountId,
+					accountId,
 				) ??
 				[],
 		)) {
@@ -93,7 +96,7 @@ export async function readResetRtmpArchives(
 				name: channel.name,
 				status: row.status,
 				bitmovinEncodingId: encodingId,
-				bitmovinAccountId: channel.bitmovinAccountId,
+				bitmovinAccountId: accountId,
 			});
 		}
 	}
@@ -123,11 +126,14 @@ export async function confirmArchivedRtmpEncoding(
 				createdAt: pointer.createdAt,
 				status: pointer.status as Prisma.LiveChannelRunWhereInput["status"],
 				previousProviderEncodingIds: { has: pointer.bitmovinEncodingId },
-				liveChannel: { bitmovinAccountId: accountId },
 			},
-			select: { rtmpRetirementEvidence: true },
+			select: {
+				rtmpRetirementEvidence: true,
+				liveChannel: { select: { bitmovinAccountId: true, plan: true } },
+			},
 		});
-		if (!run) return false;
+		if (!run || liveChannelAccountId(run.liveChannel) !== accountId)
+			return false;
 		await tx.liveChannelRun.update({
 			where: { id: pointer.id },
 			data: {

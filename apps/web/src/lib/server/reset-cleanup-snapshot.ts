@@ -2,6 +2,7 @@ import type { SecretCipher } from "@bitovp/core";
 import {
 	type AppTransactionClient,
 	createResetCleanupTask,
+	liveChannelAccountId,
 	type Prisma,
 	type ResetCleanupPayload,
 } from "@bitovp/db";
@@ -120,9 +121,13 @@ export async function snapshotResetCleanup(
 				bitmovinAccountId: true,
 				bitmovinEncodingId: true,
 				stepLog: true,
+				plan: true,
 			},
 		}))
-			entity("liveChannel", row);
+			entity("liveChannel", {
+				...row,
+				bitmovinAccountId: liveChannelAccountId(row),
+			});
 		for (const row of await tx.liveChannelRun.findMany({
 			select: {
 				id: true,
@@ -130,12 +135,12 @@ export async function snapshotResetCleanup(
 				bitmovinEncodingId: true,
 				stepLog: true,
 				previousProviderEncodingIds: true,
-				liveChannel: { select: { bitmovinAccountId: true } },
+				liveChannel: { select: { bitmovinAccountId: true, plan: true } },
 			},
 		}))
 			entity("liveChannelRun", {
 				...row,
-				bitmovinAccountId: row.liveChannel.bitmovinAccountId,
+				bitmovinAccountId: liveChannelAccountId(row.liveChannel),
 			});
 		for (const effect of await tx.liveEffectClaim.findMany({
 			where: { state: { in: ["CLAIMED", "DISPATCHING", "AMBIGUOUS"] } },
@@ -145,11 +150,11 @@ export async function snapshotResetCleanup(
 				state: true,
 				attempt: true,
 				providerEncodingId: true,
-				liveChannel: { select: { bitmovinAccountId: true } },
+				liveChannel: { select: { bitmovinAccountId: true, plan: true } },
 			},
 		})) {
 			const entityKey = `liveEffectClaim:${effect.id}`;
-			const accountId = effect.liveChannel.bitmovinAccountId;
+			const accountId = liveChannelAccountId(effect.liveChannel);
 			entityKeys.push(entityKey);
 			if (accountId) accountIds.add(accountId);
 			payload.pendingEntities.push({
@@ -251,6 +256,7 @@ export async function snapshotResetCleanup(
 							bitmovinEncodingId: true,
 							bitmovinAccountId: true,
 							stepLog: true,
+							plan: true,
 						},
 					}),
 			selected.has("liveChannels")
@@ -261,7 +267,7 @@ export async function snapshotResetCleanup(
 							bitmovinEncodingId: true,
 							stepLog: true,
 							previousProviderEncodingIds: true,
-							liveChannel: { select: { bitmovinAccountId: true } },
+							liveChannel: { select: { bitmovinAccountId: true, plan: true } },
 						},
 					}),
 		]);
@@ -273,6 +279,7 @@ export async function snapshotResetCleanup(
 			})),
 			...channels.map((row) => ({
 				...row,
+				bitmovinAccountId: liveChannelAccountId(row),
 				previousProviderEncodingIds: [] as string[],
 				kind: "LIVE_CHANNEL",
 			})),
@@ -280,7 +287,7 @@ export async function snapshotResetCleanup(
 				...row,
 				kind: "LIVE_RUN",
 				verificationKey: null,
-				bitmovinAccountId: row.liveChannel.bitmovinAccountId,
+				bitmovinAccountId: liveChannelAccountId(row.liveChannel),
 			})),
 		];
 		const stepEncodingIds = (stepLog: Prisma.JsonValue | undefined) =>

@@ -127,6 +127,7 @@ import {
 	type RunLifecycleRow,
 } from "../live/provider-lifecycle";
 import { PROVISION_LEASE_MS } from "../live/provision-lease";
+import { provisionJobGeneration } from "../live/reconcile-stranded-runs";
 import type { EmitProductEvent } from "../notify/emitter";
 import {
 	finishResetOwner,
@@ -5241,6 +5242,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		liveChannelId: string,
 		cancelRunId?: string,
 		plannedRunId?: string,
+		plannedGeneration?: number,
 	) {
 		const owner: ResetOwnerState = {
 			entityKey: `liveChannel:${liveChannelId}`,
@@ -5253,6 +5255,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				owner,
 				cancelRunId,
 				plannedRunId,
+				plannedGeneration,
 			);
 		} finally {
 			await finishResetOwner(
@@ -5271,6 +5274,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		resetOwner: ResetOwnerState,
 		cancelRunId?: string,
 		plannedRunId?: string,
+		plannedGeneration?: number,
 	): Promise<string | { status: "STOPPED"; canceledRunId: string }> {
 		let row = await deps.prisma.liveChannel.findUnique({
 			where: { id: liveChannelId },
@@ -5281,6 +5285,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			);
 			return "MISSING";
 		}
+		if (
+			plannedGeneration !== undefined &&
+			(row.liveEffectFenceVersion ?? 0) !== plannedGeneration
+		)
+			return "STALE_RUN";
 		const pendingRun = await deps.prisma.liveChannelRun.findFirst({
 			where: { liveChannelId },
 			orderBy: { seq: "desc" },
@@ -5347,6 +5356,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		const claimed = await deps.prisma.liveChannel.updateMany({
 			where: {
 				id: liveChannelId,
+				...(plannedGeneration !== undefined
+					? { liveEffectFenceVersion: plannedGeneration }
+					: {}),
 				// A delayed provision job can target the same PROVISIONING row as an
 				// admitted RESTART. Its lease acquisition must lose to that exact run.
 				...(!cancelling && pendingRun
@@ -7233,6 +7245,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						liveChannelId,
 						liveStartupCancelParamsSchema.parse(job.params ?? {}).cancelRunId,
 						job.plannedLiveChannelRunId ?? undefined,
+						provisionJobGeneration(
+							liveChannelId,
+							job.plannedLiveChannelRunId,
+							queueJobId,
+						),
 					);
 				} catch (err) {
 					await recordScheduleOutcomeBestEffort(

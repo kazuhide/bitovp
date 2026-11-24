@@ -72,6 +72,22 @@ export async function retireTransitionalRuns(
 	return count;
 }
 
+/** Manual START encodes its generation in the retained BullMQ identity. */
+export function provisionJobGeneration(
+	channelId: string,
+	runId: string | null | undefined,
+	jobId?: string,
+): number | undefined {
+	if (jobId === channelId || jobId === `probe-${channelId}`) return 0;
+	const prefix = `manual-provision-${channelId}-${runId}-`;
+	if (!runId || !jobId?.startsWith(prefix)) return undefined;
+	const suffix = jobId.slice(prefix.length);
+	const generation = Number(suffix);
+	return /^\d+$/.test(suffix) && Number.isSafeInteger(generation)
+		? generation
+		: undefined;
+}
+
 /** A dead provision delivery cannot retire a cancellation, STOP or RESTART that won the channel. */
 export async function recordExpiredProvisionFailure(
 	prisma: AppPrismaClient,
@@ -79,7 +95,7 @@ export async function recordExpiredProvisionFailure(
 	error: string,
 	staleBefore: Date,
 	at: Date,
-	admission: { runId: string } | { initial: true },
+	admission: { runId: string; generation?: number } | { initial: true },
 ): Promise<boolean> {
 	return prisma.$transaction(async (tx) => {
 		const locked = await tx.$queryRaw<
@@ -101,6 +117,11 @@ export async function recordExpiredProvisionFailure(
 		const { count } = await tx.liveChannel.updateMany({
 			where: {
 				id: liveChannelId,
+				...("initial" in admission
+					? { liveEffectFenceVersion: 0 }
+					: admission.generation !== undefined
+						? { liveEffectFenceVersion: admission.generation }
+						: {}),
 				status: { in: ["CREATED", "PROVISIONING"] },
 				OR: [
 					{ provisionClaimedAt: null },

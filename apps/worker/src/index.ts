@@ -128,6 +128,7 @@ import {
 } from "./live/provision-lease";
 import {
 	createStrandedRunReconciler,
+	provisionJobGeneration,
 	recordExpiredProvisionFailure,
 } from "./live/reconcile-stranded-runs";
 import { createUncertainStopReconciler } from "./live/reconcile-uncertain-stops";
@@ -2154,7 +2155,16 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 					const initial =
 						job?.id === liveChannelId || job?.id === `probe-${liveChannelId}`;
 					const admission = liveJob?.plannedLiveChannelRunId
-						? { runId: liveJob.plannedLiveChannelRunId }
+						? {
+								runId: liveJob.plannedLiveChannelRunId,
+								generation: liveChannelId
+									? provisionJobGeneration(
+											liveChannelId,
+											liveJob.plannedLiveChannelRunId,
+											job?.id,
+										)
+									: undefined,
+							}
 						: initial
 							? { initial: true as const }
 							: null;

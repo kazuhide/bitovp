@@ -1218,6 +1218,37 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				where: { id: f.channel.id },
 				data: { status: "PROVISIONING", provisionClaimedAt: null },
 			});
+			const staleId = `manual-provision-${f.channel.id}-${next.id}-0`;
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { liveEffectFenceVersion: 1 },
+			});
+			const offlineDeps = (await dispatchFixture()).deps;
+			const sdkForStale = vi.fn(offlineDeps.makeSdk);
+			expect(
+				await createLiveChannelProcessor({
+					...offlineDeps,
+					makeSdk: sdkForStale,
+				})(
+					{
+						action: "provision",
+						liveChannelId: f.channel.id,
+						plannedLiveChannelRunId: next.id,
+					},
+					staleId,
+				),
+			).toMatchObject({ status: "STALE_RUN" });
+			expect(sdkForStale).not.toHaveBeenCalled();
+			expect(
+				await recordExpiredProvisionFailure(
+					tenant,
+					f.channel.id,
+					"old generation",
+					now,
+					now,
+					{ runId: next.id, generation: 0 },
+				),
+			).toBe(false);
 			for (const admission of [{ runId: f.run.id }, { initial: true as const }])
 				expect(
 					await recordExpiredProvisionFailure(

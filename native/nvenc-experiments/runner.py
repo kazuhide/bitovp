@@ -155,6 +155,7 @@ class Runtime:
     vmaf_v1: Optional[OwnedVmafV1]
     software_catalog: Optional[ModuleType] = None
     software_decoders: Optional[dict] = None
+    software_libraries: Optional[tuple] = None
 
 
 def fields(value, required, optional=frozenset()):
@@ -769,6 +770,23 @@ def software_library_paths(program):
     return sorted({Path(path).resolve(strict=True) for path in paths if libraries.match(Path(path).name)})
 
 
+def software_dependencies(ffmpeg, ffprobe):
+    return tuple(sorted(set(software_library_paths(ffmpeg)) | set(software_library_paths(ffprobe))))
+
+
+def require_software_dependencies(ffmpeg, ffprobe, expected):
+    if expected != software_dependencies(ffmpeg, ffprobe):
+        raise RunnerError("RUNTIME_TOOL_CHANGED")
+
+
+def verify_runtime_tools(runtime):
+    require_unchanged_tools(runtime.tool_identities, runtime.invocation_path, runtime.runner_path)
+    if runtime.capabilities.get("runtimeKind") == "software":
+        # A package upgrade may retain the old inode and change which library
+        # the next FFmpeg subprocess will load through its soname alias.
+        require_software_dependencies(runtime.ffmpeg, runtime.ffprobe, runtime.software_libraries)
+
+
 def resolve_software_runtime(runner_source, invocation_path, expected_runtime):
     ffmpeg = executable("BITOVP_SOFTWARE_FFMPEG", "ffmpeg")
     ffprobe = executable("BITOVP_SOFTWARE_FFPROBE", "ffprobe")
@@ -778,7 +796,8 @@ def resolve_software_runtime(runner_source, invocation_path, expected_runtime):
     module = ModuleType("_bitovp_software_catalog")
     module.__file__ = str(catalog.path)
     exec(compile(catalog.contents, str(catalog.path), "exec", dont_inherit=True), module.__dict__)
-    paths = {ffmpeg, ffprobe, *software_library_paths(ffmpeg), *software_library_paths(ffprobe)}
+    libraries = software_dependencies(ffmpeg, ffprobe)
+    paths = {ffmpeg, ffprobe, *libraries}
     identities = {path: runtime_tool_identity(path) for path in sorted(paths)}
     hashes = {path: sha256_file(path, identity) for path, identity in identities.items()}
     identities[runner_path] = runner_source.identity
@@ -822,13 +841,14 @@ def resolve_software_runtime(runner_source, invocation_path, expected_runtime):
         "libraries": sorted((path.name, sha) for path, sha in hashes.items() if path not in (ffmpeg, ffprobe)),
         "cpu": cpu, "threads": len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count(),
     }
+    require_software_dependencies(ffmpeg, ffprobe, libraries)
     require_unchanged_tools(identities.items(), invocation_path, runner_path)
     runtime_id = hashlib.sha256(json.dumps(fingerprint, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     if expected_runtime is not None and expected_runtime != {"runtimeId": runtime_id}:
         raise RunnerError("EXPERIMENT_RUNTIME_CHANGED")
     capabilities["runtimeId"] = runtime_id
     return Runtime(ffmpeg, ffprobe, None, model_bytes, capabilities, tuple(identities.items()),
-                   invocation_path, runner_path, None, module, decode_by_codec)
+                   invocation_path, runner_path, None, module, decode_by_codec, libraries)
 
 
 def resolve_runtime(runner_source, invocation_path, *, expected_runtime=None, probe_vmaf_v1=True):
@@ -1141,7 +1161,7 @@ def score_vmaf_v1(runtime, trial, source, encoded, work, cpu_audit):
 
 
 def measure(runtime, trial, cpu_audit):
-    require_unchanged_tools(runtime.tool_identities, runtime.invocation_path, runtime.runner_path)
+    verify_runtime_tools(runtime)
     software = isinstance(trial, SoftwareTrial)
     if software != (runtime.capabilities.get("runtimeKind") == "software"):
         raise RunnerError("UNSUPPORTED_RUNTIME_ENCODER")
@@ -1186,7 +1206,7 @@ def measure(runtime, trial, cpu_audit):
                 "meanVmaf": cpu_mean, "scoreMs": cpu_ms,
                 "gpuMinusCpuPerFrame": [float(gpu - cpu) for gpu, cpu in zip(scores, cpu_scores)],
             }
-        require_unchanged_tools(runtime.tool_identities, runtime.invocation_path, runtime.runner_path)
+        verify_runtime_tools(runtime)
         return result
 
 

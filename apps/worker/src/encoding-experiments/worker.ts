@@ -25,12 +25,14 @@ import {
 	renewExperimentTrial,
 } from "@bitovp/db";
 import { readMeasurement } from "./receipt";
-import { ExperimentRunnerError, runExperimentProcess } from "./runner-process";
+import {
+	ExperimentRunnerError,
+	experimentMeasurementTimeoutMs,
+	runExperimentProcess,
+} from "./runner-process";
 
 const leaseMs = 30_000;
 const probeEveryMs = 30_000;
-const measurementTimeoutMs = 750_000;
-const secondaryScoringTimeoutMs = 300_000;
 const localMedia = new Map<string, { stamp: string; digest: string }>();
 type Claim = NonNullable<Awaited<ReturnType<typeof claimExperimentTrial>>>;
 
@@ -116,9 +118,6 @@ async function runTrial(
 			JSON.stringify({ schemaVersion: 1, sourcePath, trial }),
 			{ mode: 0o600 },
 		);
-		const timeoutMs = trial.additionalScoringProfiles
-			? measurementTimeoutMs + secondaryScoringTimeoutMs
-			: measurementTimeoutMs;
 		const output = await runExperimentProcess(
 			"flock",
 			[
@@ -141,7 +140,7 @@ async function runTrial(
 				request,
 			],
 			{
-				timeoutMs,
+				timeoutMs: experimentMeasurementTimeoutMs(trial),
 				signal,
 				tmpDir: scratch,
 				expectedRuntime: {

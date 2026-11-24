@@ -858,6 +858,27 @@ class SoftwareRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(RunnerError, "UNSUPPORTED_RUNTIME_ENCODER"):
             runner.measure(runtime, parse_trial(self.software_request()), False)
 
+    def test_soname_retarget_rejects_unchanged_old_library_file(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            old = root / "libx265.so.1.0"
+            new = root / "libx265.so.1.1"
+            old.write_bytes(b"previous")
+            new.write_bytes(b"current")
+            link = root / "libx265.so.1"
+            link.symlink_to(old)
+            binary = root / "ffmpeg"
+            trace = f"libx265.so.1 => {link} (0xabcd)\n"
+            with patch.object(sys, "platform", "linux"), patch.object(runner, "capture", return_value=(trace, "")):
+                expected = runner.software_dependencies(binary, binary)
+                self.assertEqual(expected, (old.resolve(),))
+                identity = runner.runtime_tool_identity(old)
+                link.unlink()
+                link.symlink_to(new)
+                self.assertEqual(identity, runner.runtime_tool_identity(old))
+                with self.assertRaisesRegex(RunnerError, "RUNTIME_TOOL_CHANGED"):
+                    runner.require_software_dependencies(binary, binary, expected)
+
     def test_software_rejects_ignored_native_settings(self):
         for warning in (
             "[libx264 @ 0x1] Error parsing option 'b-adapt = xyz'.",

@@ -6,6 +6,7 @@ import {
 	type ExperimentNvencSdkBinding,
 	type ExperimentNvencSdkSettings,
 	type ExperimentRuntime,
+	type ExperimentSoftwareEncoder,
 	type ExperimentTrialInput,
 	experimentBatchSchema,
 	experimentCampaignInputSchema,
@@ -199,6 +200,93 @@ function verifyNvencSdkSettings(
 		}
 }
 
+const softwareNumericBounds: Record<string, string> = {
+	INT_MIN: "-2147483648",
+	INT_MAX: "2147483647",
+	I64_MIN: "-9223372036854775808",
+	I64_MAX: "9223372036854775807",
+	FLT_MAX: "3.40282347e38",
+	"-FLT_MAX": "-3.40282347e38",
+};
+
+// Native libraries can impose extra constraints when opening the encoder.
+function acceptsSoftwareValue(
+	field: ExperimentSoftwareEncoder["options"][number],
+	value: string,
+	native: boolean,
+) {
+	const name = field.name;
+	if (native && name === "zones")
+		return value
+			.split("/")
+			.every((zone) =>
+				/^\d+,\d+,(?:q=\d+|b=(?:\d+(?:\.\d*)?|\.\d+))$/.test(zone),
+			);
+	if (value.includes("=") || (value.includes("/") && !/^\d+\/\d+$/.test(value)))
+		return false;
+	if (!native && name === "flags") {
+		const tokens = value.match(/[+-][a-z0-9_]+/g) ?? [];
+		return (
+			tokens.join("") === value &&
+			tokens.every((token) => field.choices?.includes(token))
+		);
+	}
+	if (!native && name === "force_key_frames")
+		return (
+			value === "source" ||
+			value.split(",").every((t) => /^\d+(?:\.\d+)?$/.test(t))
+		);
+	if (native && name === "ts_layering_mode")
+		return ["0", "2", "3", "4"].includes(value);
+	if (
+		native &&
+		["ts_target_bitrate", "ts_rate_decimator", "ts_layer_id"].includes(name)
+	) {
+		const layerId = name === "ts_layer_id";
+		const parts = value.split(",");
+		return (
+			parts.length <= (layerId ? 16 : 5) &&
+			parts.every(
+				(part) =>
+					/^\d{1,10}$/.test(part) &&
+					Number(part) >= (layerId ? 0 : 1) &&
+					Number(part) <= (layerId ? 4 : 0xffffffff),
+			)
+		);
+	}
+	if (
+		field.name === "passes" ||
+		(native && field.type === "string" && field.choices)
+	)
+		return field.choices?.includes(value) === true;
+	if (field.choices?.includes(value)) return true;
+	if (field.type === "boolean")
+		return (
+			["true", "false", "0", "1"].includes(value) ||
+			(!native && ["-1", "auto"].includes(value))
+		);
+	const integer = ["int", "int64", "uint", "uint64"].includes(field.type);
+	if (!integer && !["float", "double"].includes(field.type)) return true;
+	const syntax = integer
+		? /^[+-]?\d+$/
+		: /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d{1,3})?$/;
+	if (!syntax.test(value)) return false;
+	const numeric = (text: string) =>
+		integer && /^[+-]?\d+$/.test(text) ? BigInt(text) : Number(text);
+	const actual = numeric(value);
+	const min =
+		field.minimum === undefined
+			? undefined
+			: numeric(softwareNumericBounds[field.minimum] ?? field.minimum);
+	const max =
+		field.maximum === undefined
+			? undefined
+			: numeric(softwareNumericBounds[field.maximum] ?? field.maximum);
+	return (
+		!(min !== undefined && actual < min) && !(max !== undefined && actual > max)
+	);
+}
+
 async function verifyTrial(
 	root: string,
 	organizationId: string,
@@ -223,13 +311,17 @@ async function verifyTrial(
 				"Software encoder is unavailable",
 			);
 		for (const group of ["options", "nativeOptions"] as const) {
-			const names = new Set(encoder[group].map((f) => f.name));
-			for (const key of Object.keys(settings[group] ?? {})) {
-				if (!names.has(key))
+			const fields = new Map(encoder[group].map((f) => [f.name, f]));
+			for (const [key, value] of Object.entries(settings[group] ?? {})) {
+				const field = fields.get(key);
+				if (
+					!field ||
+					!acceptsSoftwareValue(field, value, group === "nativeOptions")
+				)
 					throw new EncodingExperimentError(
 						422,
 						"INVALID_ENCODER_SETTING",
-						"Setting is not available on this encoder",
+						"Use an available encoder setting and a value within its declared range",
 						`software.${group}.${key}`,
 					);
 			}

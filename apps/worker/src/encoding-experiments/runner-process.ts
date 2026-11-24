@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
-import type { ExperimentRuntime } from "@bitovp/core/encoding-experiments";
+import type {
+	ExperimentRuntime,
+	ExperimentTrialInput,
+} from "@bitovp/core/encoding-experiments";
 import { experimentCapabilityByteLimit } from "@bitovp/core/encoding-experiments-files";
 
 export class ExperimentRunnerError extends Error {
@@ -7,6 +10,17 @@ export class ExperimentRunnerError extends Error {
 		super(code);
 		this.name = "ExperimentRunnerError";
 	}
+}
+
+export function experimentMeasurementTimeoutMs(
+	trial: Pick<ExperimentTrialInput, "software" | "additionalScoringProfiles">,
+) {
+	// One pass, primary scoring, lock acquisition and runtime checks.
+	const baselineMs = 750_000;
+	const extraStage =
+		trial.software?.options.passes === "2" ||
+		trial.additionalScoringProfiles?.length;
+	return extraStage ? baselineMs + 300_000 : baselineMs;
 }
 
 /** The runner and its FFmpeg children inherit this dedicated Linux process group. */

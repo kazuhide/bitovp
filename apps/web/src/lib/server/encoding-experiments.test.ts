@@ -485,8 +485,24 @@ const cpuRuntime = {
 		{
 			encoder: "libvpx-vp9",
 			codec: "VP9",
-			options: [{ name: "b", type: "int", description: "" }],
-			nativeOptions: [],
+			options: [
+				{
+					name: "b",
+					type: "int64",
+					minimum: "0",
+					maximum: "I64_MAX",
+					description: "",
+				},
+
+				{ name: "passes", type: "int", choices: ["1", "2"], description: "" },
+				{
+					name: "flags",
+					type: "flags",
+					choices: ["+cgop", "-cgop"],
+					description: "",
+				},
+			],
+			nativeOptions: [{ name: "ts_layer_id", type: "string", description: "" }],
 			limitations: [],
 		},
 	],
@@ -517,6 +533,46 @@ it("validates software trials against the software worker and its installed cata
 	await expect(
 		validateExperimentTrial(ctx.organizationId, trial),
 	).rejects.toMatchObject({ code: "ENCODER_UNAVAILABLE" });
+});
+
+it.each([
+	"fast",
+	"-1",
+	"9223372036854775808",
+])("rejects out-of-catalog bitrates before enqueue (%s)", async (b) => {
+	fake.readRuntime.mockResolvedValue(cpuRuntime);
+	await expect(
+		validateExperimentTrial(ctx.organizationId, {
+			...cpuTrial,
+			software: { ...cpuTrial.software, options: { b } },
+		}),
+	).rejects.toMatchObject({ code: "INVALID_ENCODER_SETTING" });
+});
+
+it.each([
+	{ options: { passes: "3" } },
+	{ options: { flags: "+pass2" } },
+	{ options: {}, nativeOptions: { ts_layer_id: "0,7" } },
+])("rejects invalid managed controls at admission", async (settings) => {
+	fake.readRuntime.mockResolvedValue(cpuRuntime);
+	const input = {
+		...cpuTrial,
+		software: { encoder: "libvpx-vp9", ...settings },
+	};
+	await expect(
+		validateExperimentTrial(ctx.organizationId, input),
+	).rejects.toMatchObject({ code: "INVALID_ENCODER_SETTING" });
+	fake.enqueue.mockImplementationOnce((_ctx, _id, _key, _hash, prepare) =>
+		prepare({ capabilityId: runtimeId, runtime: cpuRuntime }),
+	);
+	await expect(
+		enqueueExperimentTrials(
+			ctx,
+			campaign,
+			{ schemaVersion: 1, trials: [input] },
+			"invalid",
+		),
+	).rejects.toMatchObject({ code: "INVALID_ENCODER_SETTING" });
 });
 
 it("uses the CPU campaign identity for software batch admission", async () => {

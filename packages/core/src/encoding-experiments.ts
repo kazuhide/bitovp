@@ -327,8 +327,16 @@ const softwareTrialSchema = z
 		codec: z.enum(experimentCodecs),
 		software: z.strictObject({
 			encoder: softwareEncoderId,
-			options: softwareValues,
-			nativeOptions: softwareValues.optional(),
+			options: softwareValues.transform((values) => {
+				if (values.passes !== "1") return values;
+				const { passes: _, ...settings } = values;
+				return settings;
+			}),
+			nativeOptions: softwareValues
+				.optional()
+				.transform((values) =>
+					values && Object.keys(values).length ? values : undefined,
+				),
 		}),
 		additionalScoringProfiles: z.never().optional(),
 		sdk: z.never().optional(),

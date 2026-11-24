@@ -331,6 +331,8 @@ one broadcast. The worker retains the current encoder until its account reports 
 missing, automatic confirmation stays pending. Check the account's active
 encodings with the operator before re-air.
 
+After an upgrade, a previous broadcast can show STOPPED while a replaced RTMP encoder still needs confirmation. Select Stop on that broadcast before starting a new one. A scheduled start waits within its grace window, and a scheduled stop waits until the earlier encoder is confirmed.
+
 If an encoder still reports `RUNNING` or `QUEUED`, check its ID in the
 provider dashboard. Pressing **Stop** again cannot force another send for the
 same ambiguous manual stop. The periodic check also reads any additional encoders recorded for this broadcast.

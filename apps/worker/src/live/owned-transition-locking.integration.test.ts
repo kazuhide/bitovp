@@ -19,6 +19,7 @@ import {
 	liveEffectSendUncertainty,
 	markLiveEffectAmbiguous,
 	persistLiveToVodAttempt,
+	readLockedLiveStartState,
 	recordLiveStopFailure,
 	resolveLiveEffectsAfterConfirmedStop,
 } from "@bitovp/db";
@@ -887,6 +888,12 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					encoderStoppedConfirmedFor: f.encodingId,
 				},
 			});
+			const canReair = () =>
+				tenant.$transaction(
+					async (tx) =>
+						(await readLockedLiveStartState(tx, f.channel.id)).archivesRetired,
+				);
+			expect(await canReair()).toBe(false);
 			expect(
 				await bindArchivedStopTarget(otherTenant, f.channel.id),
 			).toBeNull();
@@ -936,6 +943,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			).toBeNull();
 			// An upgraded ACKED run may lack the second encoder's retirement receipt.
 			// Keep the confirmed primary binding and recover only the other encoder.
+			expect(await canReair()).toBe(true);
 			const oldSecondary = randomUUID();
 			await tenant.liveChannelRun.update({
 				where: { id: f.run.id },

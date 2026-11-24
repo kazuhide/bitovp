@@ -23,6 +23,9 @@ const runFindFirst = vi.fn(
 		aisaSnapshot?: unknown;
 		aisaFinalization?: unknown;
 		stepLog?: unknown;
+		previousProviderEncodingIds?: string[];
+		archivedRtmpAttempt?: number;
+		rtmpRetirementEvidence?: unknown;
 		encoderStoppedConfirmedFor?: string | null;
 		/** : the provider-lifecycle columns the route now reads. */
 		providerStatus?: string | null;
@@ -122,6 +125,7 @@ vi.mock("@/lib/server/context", () => ({
 			$transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
 				fn({
 					$queryRaw: lockRows,
+					liveEffectClaim: { findFirst: async () => null },
 					vmafJob: { count: vmafCount, deleteMany: vmafDeleteMany },
 					liveChannel: {
 						findUnique,
@@ -376,6 +380,9 @@ describe("AISA lifecycle admission", () => {
 				? [
 						{
 							...storedRun,
+							liveChannel: { ...storedChannel, runs: [{ id: storedRun.id }] },
+							previousProviderEncodingIds: [],
+							archivedRtmpAttempt: 0,
 							organizationId: "00000000-0000-4000-8000-000000000001",
 							liveChannelId: CHANNEL_ID,
 							moqObservations: { version: 1, sessions: [] },
@@ -431,7 +438,11 @@ describe("AISA lifecycle admission", () => {
 		if (phase === "dispatched-revive") {
 			expect(JSON.stringify(startedRunLog)).toContain("aisaCreateDispatched");
 			expect(channelDeleteMany).not.toHaveBeenCalled();
-			expect(runFindMany).not.toHaveBeenCalled();
+			expect(runFindMany).not.toHaveBeenCalledWith(
+				expect.objectContaining({
+					select: expect.objectContaining({ moqObservations: true }),
+				}),
+			);
 		} else {
 			expect(channelDeleteMany).toHaveBeenCalledTimes(1);
 			expect(runFindMany).toHaveBeenCalledWith(
@@ -947,7 +958,11 @@ beforeEach(() => {
 	vmafCount.mockResolvedValue(0);
 	vmafDeleteMany.mockResolvedValue({ count: 0 });
 	auditCreate.mockResolvedValue({});
-	lockRows.mockResolvedValue([]);
+	lockRows.mockImplementation(async (sql: TemplateStringsArray) =>
+		sql[0]?.includes('SELECT "stepLog", plan')
+			? [await (findUnique.mock.results.at(-1)?.value ?? channel())]
+			: [],
+	);
 	queuedJobs.clear();
 	effectClaimFindUnique.mockReset();
 	effectClaimFindUnique.mockResolvedValue(null);
@@ -2791,6 +2806,97 @@ describe("stopping a stop that never confirmed (ledger #130 C-fold)", () => {
 		expect(res.status).toBe(409);
 		expect(queueAdd).not.toHaveBeenCalled();
 		expect(updateMany).not.toHaveBeenCalled();
+	});
+});
+
+describe("displaced RTMP encoders after upgrade", () => {
+	it.each([
+		"STOPPED",
+		"ERROR",
+	] as const)("holds %s re-air until the archive has an exact account receipt", async (status) => {
+		const current = channel({
+			origin: "MANAGED",
+			status,
+			error: null,
+			bitmovinAccountId: "account",
+		});
+		findUnique.mockResolvedValue(current);
+		const run = {
+			id: RUN_ID,
+			seq: 1,
+			status,
+			bitmovinEncodingId: "bm-live-enc",
+			previousProviderEncodingIds: ["old"],
+			archivedRtmpAttempt: 1,
+			stepLog: [],
+			providerStatus: "FINISHED",
+			providerTerminalAt: new Date(),
+			providerStatusObservedAt: new Date(),
+		};
+		runFindFirst.mockResolvedValue({ ...run, rtmpRetirementEvidence: [] });
+		expect((await postAction({ action: "start" })).status).toBe(409);
+		expect(runCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+		runFindFirst.mockResolvedValue({
+			...run,
+			rtmpRetirementEvidence: [
+				{
+					accountId: "account",
+					encodingId: "old",
+					disposition: "TERMINAL",
+					providerStatus: "FINISHED",
+					observedAt: new Date().toISOString(),
+				},
+			],
+		});
+		expect((await postAction({ action: "start" })).status).toBe(200);
+		expect(runCreate).toHaveBeenCalledOnce();
+	});
+	it("requeues an exact acknowledged clean STOPPED archive without replacing the current primary", async () => {
+		findUnique.mockResolvedValue(
+			channel({
+				origin: "MANAGED",
+				status: "STOPPED",
+				error: null,
+				bitmovinAccountId: "account",
+				provisionClaimedAt: null,
+			}),
+		);
+		runFindFirst.mockResolvedValue({
+			id: RUN_ID,
+			seq: 1,
+			status: "STOPPED",
+			bitmovinEncodingId: "bm-live-enc",
+			stepLog: [],
+			previousProviderEncodingIds: ["previous"],
+			archivedRtmpAttempt: 1,
+			providerStatus: "FINISHED",
+			providerTerminalAt: new Date(),
+		});
+		lockRows.mockResolvedValue([{ id: CHANNEL_ID }]);
+		effectClaimFindUnique.mockResolvedValue(manualStopClaim("ACKED"));
+		const retained = retainQueuedJob(
+			`manual-stop-${CHANNEL_ID}-${RUN_ID}`,
+			manualStopJobData(),
+			"completed",
+			manualStopSuccess(),
+		);
+		const remove = vi.spyOn(retained, "remove");
+		const res = await postAction({ action: "stop" });
+		expect(res.status).toBe(202);
+		expect(remove).toHaveBeenCalledOnce();
+		expect(queueAdd).toHaveBeenCalledWith(
+			"live-channel",
+			expect.objectContaining({
+				effect: expect.objectContaining({
+					providerEncodingId: "bm-live-enc",
+					liveChannelRunId: RUN_ID,
+				}),
+			}),
+			expect.anything(),
+		);
+		expect(update).not.toHaveBeenCalled();
+		expect(runUpdate).not.toHaveBeenCalled();
 	});
 });
 

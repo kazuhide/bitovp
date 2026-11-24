@@ -29,6 +29,7 @@ import {
 	bindArchivedStopTarget,
 	DB_NULL,
 	liveStopRunOwnsEncoding,
+	readLockedLiveStartState,
 } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -188,6 +189,7 @@ function effectIntent(
 }
 
 /** Sentinels for the start transaction . */
+class DisplacedEncoderPending extends Error {}
 class StartNotClaimableError extends Error {}
 class RunAlreadyLiveError extends Error {}
 const SETTLED_QUEUE_JOB_STATES = new Set(["failed", "completed"]);
@@ -277,6 +279,7 @@ function hasExactManualStopIdentity(
 
 type ManualStopRecovery = {
 	allowAisaRecovery: boolean;
+	allowArchiveRecovery: boolean;
 	allowExpiredAisaDispatch: boolean;
 };
 
@@ -335,7 +338,8 @@ async function inspectManualStopClaim(
 		case "DISPATCHING":
 			return { kind: "OPEN", state: claim.state };
 		case "ACKED":
-			if (recovery.allowAisaRecovery) return { kind: "FAILED" };
+			if (recovery.allowAisaRecovery || recovery.allowArchiveRecovery)
+				return { kind: "FAILED" };
 			return { kind: "ACKED" };
 		case "AMBIGUOUS":
 			if (recovery.allowAisaRecovery) return { kind: "FAILED" };
@@ -463,13 +467,22 @@ async function admitManualStop(
 		if (inspection.kind === "REFUSED") {
 			return inspection;
 		}
+		if (recovery.allowArchiveRecovery && !inspection.exactIdentity)
+			return {
+				kind: "REFUSED",
+				reason: "the settled job does not match this airing and encoder",
+			};
 		if (claim.kind === "OPEN") {
 			return {
 				kind: "REFUSED",
 				reason: `the durable stop claim is ${claim.state.toLowerCase()} but its exact in-progress queue job is missing`,
 			};
 		}
-		if (mode === "REPLAY_ONLY" && !recovery.allowAisaRecovery) {
+		if (
+			mode === "REPLAY_ONLY" &&
+			!recovery.allowAisaRecovery &&
+			!recovery.allowArchiveRecovery
+		) {
 			return {
 				kind: "REFUSED",
 				reason: "the matching handoff is no longer in progress",
@@ -483,7 +496,11 @@ async function admitManualStop(
 			kind: "REFUSED",
 			reason: `the durable stop claim is ${claim.state.toLowerCase()} but its exact in-progress queue job is missing`,
 		};
-	} else if (mode === "REPLAY_ONLY" && !recovery.allowAisaRecovery) {
+	} else if (
+		mode === "REPLAY_ONLY" &&
+		!recovery.allowAisaRecovery &&
+		!recovery.allowArchiveRecovery
+	) {
 		return {
 			kind: "REFUSED",
 			reason: "no matching in-progress handoff exists",
@@ -525,7 +542,9 @@ async function admitManualStop(
 		prisma,
 		liveChannelId,
 		plan,
-		recovery,
+		winnerInspection.kind === "SETTLED"
+			? { ...recovery, allowArchiveRecovery: false }
+			: recovery,
 	);
 	if (winnerClaim.kind === "REFUSED") {
 		return winnerClaim;
@@ -773,24 +792,10 @@ export async function POST(req: Request, { params }: RouteParams) {
 						// keeps the (channel ERROR × latest STOPPED) cell from
 						// reseeding a FINISHED encoding's step log (review-244
 						// K3 — unreachable as traced, moot by construction).
-						const latest = await tx.liveChannelRun.findFirst({
-							where: { liveChannelId: id },
-							orderBy: { seq: "desc" },
-							select: {
-								id: true,
-								seq: true,
-								status: true,
-								cancelRequested: true,
-								aisaAnalysisId: true,
-								aisaStatus: true,
-								aisaSnapshot: true,
-								aisaFinalization: true,
-								bitmovinEncodingId: true,
-								stepLog: true,
-								encoderStoppedConfirmedFor: true,
-								...PROVIDER_LIFECYCLE_SELECT,
-							},
-						});
+						const { latest, archivesRetired } = await readLockedLiveStartState(
+							tx,
+							id,
+						);
 						// K2: ONE definition of "live" — core's, pinned to the
 						// migration's index predicate by #240's test.
 						if (latest?.cancelRequested && latest.status !== "STOPPED")
@@ -838,6 +843,8 @@ export async function POST(req: Request, { params }: RouteParams) {
 							row.status === "ERROR" &&
 							latest?.status === "ERROR" &&
 							!latestProviderTerminal;
+						if (!isRevive && !archivesRetired)
+							throw new DisplacedEncoderPending();
 						// ERROR resume: FAILED/RUNNING steps reset to PENDING;
 						// DONE steps keep their resource ids so the worker
 						// resumes instead of recreating (VOD retry pattern).
@@ -989,6 +996,12 @@ export async function POST(req: Request, { params }: RouteParams) {
 						}
 					});
 				} catch (err) {
+					if (err instanceof DisplacedEncoderPending)
+						return codedError(
+							409,
+							"Stop the previous airing and confirm every displaced RTMP encoder before starting a new run",
+							"LIVE_ACTION_PROVIDER_UNKNOWN",
+						);
 					if (err instanceof AisaFinalizationPending)
 						return jsonError(
 							409,
@@ -1135,7 +1148,6 @@ export async function POST(req: Request, { params }: RouteParams) {
 				if (
 					action.action === "stop" &&
 					!action.recoveryTarget &&
-					(!row.bitmovinEncodingId || row.status === "STOPPING") &&
 					!aisaManaged &&
 					["ERROR", "STOPPED", "STOPPING"].includes(row.status)
 				) {
@@ -1218,6 +1230,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 						row.error !== null &&
 						row.error !== undefined);
 				const recovery = {
+					allowArchiveRecovery: !!recoveredTarget,
 					allowAisaRecovery,
 					allowExpiredAisaDispatch:
 						finalizationTarget !== undefined || activeTarget !== undefined,

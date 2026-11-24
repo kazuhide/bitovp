@@ -27,6 +27,7 @@ import {
 	DB_NULL,
 	liveStopRunOwnsEncoding,
 	type Prisma,
+	readLockedLiveStartState,
 } from "@bitovp/db";
 import { estimateStageLeadMs, STAGE_LEAD_MAX_MS } from "../feeder/stage-lead";
 import type { EmitProductEvent } from "../notify/emitter";
@@ -611,8 +612,9 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 			| "COMPLETED"
 			| "SKIPPED_STALE_GENERATION",
 		extra: { note?: string; error?: string; firedAt?: Date } = {},
+		store: Pick<AppPrismaClient, "liveSchedule"> = deps.prisma,
 	): Promise<boolean> {
-		const { count } = await deps.prisma.liveSchedule.updateMany({
+		const { count } = await store.liveSchedule.updateMany({
 			where: { id: row.id, status: "ARMED" },
 			data: {
 				status,
@@ -863,6 +865,14 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	): Promise<boolean> {
 		const liveChannelId = row.liveChannelId;
 		return deps.prisma.$transaction(async (tx) => {
+			if (runWrite.kind === "create") {
+				const { latest, archivesRetired } = await readLockedLiveStartState(
+					tx,
+					liveChannelId,
+				);
+				if (!archivesRetired || (latest?.seq ?? 0) + 1 !== runWrite.seq)
+					return false;
+			}
 			const claimed = await tx.liveChannel.updateMany({
 				where: {
 					...claim.where,
@@ -1343,16 +1353,34 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		switch (channel.status) {
 			case "STOPPED":
 			case "CREATED": {
-				if (channel.status === "STOPPED" && channel.error !== null) {
-					// The previous stop still needs proof. Reconsider this row after reconciliation.
-					stats.waiting += 1;
-					return;
-				}
-				if (
-					await rowTo(row, "COMPLETED", {
-						note: `nothing to stop (channel ${channel.status})`,
-					})
-				) {
+				const complete = (store: Pick<AppPrismaClient, "liveSchedule">) =>
+					rowTo(
+						row,
+						"COMPLETED",
+						{
+							note: `nothing to stop (channel ${channel.status})`,
+						},
+						store,
+					);
+				if (channel.status === "STOPPED") {
+					const completed = await deps.prisma.$transaction(async (tx) => {
+						const locked = await readLockedLiveStartState(
+							tx,
+							row.liveChannelId,
+						);
+						if (
+							locked.channel?.status !== "STOPPED" ||
+							locked.channel.error !== null ||
+							!locked.archivesRetired ||
+							(row.liveChannelRunId &&
+								locked.latest?.id !== row.liveChannelRunId)
+						)
+							return false;
+						return complete(tx);
+					});
+					if (completed) stats.completed += 1;
+					else stats.waiting += 1;
+				} else if (await complete(deps.prisma)) {
 					stats.completed += 1;
 				}
 				return;

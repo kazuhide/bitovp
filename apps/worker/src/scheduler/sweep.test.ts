@@ -391,6 +391,9 @@ function makeStore(
 			bitmovinEncodingId?: string | null;
 			encoderStoppedConfirmedFor?: string | null;
 			stepLog?: unknown;
+			previousProviderEncodingIds?: string[];
+			archivedRtmpAttempt?: number;
+			rtmpRetirementEvidence?: unknown;
 		}>,
 		rows,
 		channels,
@@ -438,6 +441,8 @@ function makeStore(
 				inTx = true;
 				const tx = {
 					...store.prisma,
+					$queryRaw: async (_sql: TemplateStringsArray, id: string) =>
+						store.channels.filter((channel) => channel.id === id),
 					liveSchedule: {
 						...store.prisma.liveSchedule,
 						updateMany: (args: unknown) =>
@@ -1262,6 +1267,52 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 		);
 	});
 
+	it.each([
+		["START", "STOPPED"],
+		["START", "ERROR"],
+		["STOP", "STOPPED"],
+	] as const)("holds scheduled %s on %s until the archived encoder is confirmed", async (action, status) => {
+		const current = makeChannel({
+			status,
+			error: null,
+			bitmovinEncodingId: "primary",
+		});
+		const accountId = (current.plan as { bitmovin: { accountId: string } })
+			.bitmovin.accountId;
+		const store = makeStore([makeRow({ action })], [current]);
+		const run = {
+			id: "run-1",
+			seq: 1,
+			status,
+			bitmovinEncodingId: "primary",
+			providerStatus: "FINISHED",
+			providerTerminalAt: new Date(),
+			providerStatusObservedAt: new Date(),
+			previousProviderEncodingIds: ["previous"],
+			archivedRtmpAttempt: 1,
+			rtmpRetirementEvidence: [] as unknown[],
+		};
+		store.runs.push(run);
+		const { sweep, enqueue } = makeSweep(store);
+		const stats = await sweep();
+		expect(stats.waiting).toBeGreaterThan(0);
+		expect(store.rows[0]?.status).toBe("ARMED");
+		expect(store.runs).toHaveLength(1);
+		expect(enqueue).not.toHaveBeenCalled();
+		store.runs[0]!.rtmpRetirementEvidence = [
+			{
+				accountId,
+				encodingId: "previous",
+				disposition: "TERMINAL",
+				providerStatus: "FINISHED",
+				observedAt: new Date().toISOString(),
+			},
+		];
+		await sweep();
+		expect(store.rows[0]?.status).toBe(
+			action === "START" ? "FIRED" : "COMPLETED",
+		);
+	});
 	it("does NOT re-air a stop that never confirmed — unattended is the dangerous half (ledger #130 C-fold)", async () => {
 		// The channel says STOPPED and carries the evidence that Bitmovin never
 		// confirmed it. Re-airing would clear that error, the encoder pointer

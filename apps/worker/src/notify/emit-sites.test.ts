@@ -191,7 +191,7 @@ const EXPECTATIONS: Expectation[] = [
 		// COMPLETED deliberately does not notify (nothing happened that an
 		// operator must act on; the row says so in its note).
 		file: "scheduler/sweep.ts",
-		writes: /rowTo\(row, "(FIRED|MISSED|ERROR|COMPLETED)"/g,
+		writes: /rowTo\(\s*row,\s*"(FIRED|MISSED|ERROR|COMPLETED)"/g,
 		// 12→13 : the slate whose window is already over at fire
 		// time lands MISSED ("program start already passed") — and it emits,
 		// via the same emitMissed as every other MISSED.

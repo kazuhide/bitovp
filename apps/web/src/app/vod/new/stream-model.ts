@@ -453,11 +453,59 @@ export function removeStream(
 	};
 }
 
+/** A JSON sidecar belongs to the chosen video object. Re-select it after moving the video. */
+export function reconcileHdr10PlusSidecars(
+	previous: WizardState,
+	next: WizardState,
+): WizardState {
+	const streams = next.sources?.hdr10PlusStreams;
+	if (
+		!streams?.length ||
+		(previous.inputFiles === next.inputFiles &&
+			previous.sources === next.sources)
+	)
+		return next;
+	const changed = streams.map((stream) => {
+		const old = previous.sources?.hdr10PlusStreams?.find(
+			(row) => row.key === stream.key,
+		);
+		if (
+			!stream.metadataInputPath ||
+			old?.metadataInputPath !== stream.metadataInputPath
+		)
+			return stream;
+		const before = previous.inputFiles.find(
+			(file) => file.key === old.videoInputFile,
+		);
+		const after = next.inputFiles.find(
+			(file) => file.key === stream.videoInputFile,
+		);
+		if (
+			before &&
+			after &&
+			before.kind === after.kind &&
+			before.credentialId === after.credentialId &&
+			before.bucket === after.bucket &&
+			before.path === after.path &&
+			before.region === after.region
+		)
+			return stream;
+		return { ...stream, metadataInputPath: "" };
+	});
+	return changed.some((row, index) => row !== streams[index])
+		? { ...next, sources: { ...next.sources, hdr10PlusStreams: changed } }
+		: next;
+}
+
 /** Auto-generate a unique, hidden resource key across every stream array. */
 export function nextStreamKey(
 	sources: WizardSources,
 	type: UnifiedStreamType,
 ): string {
+	return nextSharedKey(sources, KEY_PREFIXES[type]);
+}
+
+export function nextSharedKey(sources: WizardSources, prefix: string): string {
 	const taken = new Set<string>([
 		...(sources.tracks ?? []).map((t) => t.key),
 		...(sources.fileStreams ?? []).map((s) => s.key),
@@ -467,7 +515,6 @@ export function nextStreamKey(
 		...(sources.concatenationStreams ?? []).map((s) => s.key),
 		...(sources.audioMixStreams ?? []).map((s) => s.key),
 	]);
-	const prefix = KEY_PREFIXES[type];
 	let n = 1;
 	while (taken.has(`${prefix}${n}`)) {
 		n += 1;

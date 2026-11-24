@@ -177,6 +177,42 @@ describe("HDR10+ input contract", () => {
 		expect(ops[streamIndex]?.refs.inputStreamId).toBe("hdr10-plus:picture");
 	});
 
+	it("visits shared concatenation edges once and skips HDR traversal in ordinary template previews", () => {
+		const value = plan();
+		value.hdr10PlusStreams = [];
+		value.ingest = [
+			{
+				key: "picture",
+				inputKey: "in",
+				inputPath: "plain.mov",
+				selectionMode: "VIDEO_RELATIVE",
+				position: 0,
+			},
+		];
+		let reads = 0;
+		let parent = "picture";
+		for (let i = 0; i < 12; i++) {
+			const previous = parent;
+			parent = `concat${i}`;
+			value.concatenationStreams.push({
+				key: parent,
+				sources: [0, 1].map((position) => ({
+					get sourceKey() {
+						reads++;
+						return previous;
+					},
+					position,
+					isMain: position === 0,
+				})),
+			});
+		}
+		expect(inputStreamLeaves(value, parent)).toEqual(["picture"]);
+		expect(reads).toBeLessThanOrEqual(24);
+		reads = 0;
+		expect(planToEncodingTemplateYaml(value)).toContain("plain.mov");
+		expect(reads).toBe(0);
+	});
+
 	it("resolves descendants and compiles their reference to the HDR10+ leaf", () => {
 		const value = plan();
 		value.trimmingStreams = [
@@ -452,6 +488,26 @@ describe("HDR10+ input contract", () => {
 		]);
 	});
 
+	it("retains a derived HDR stream under every legal resource key", () => {
+		const value = plan();
+		value.trimmingStreams = [
+			{
+				key: "__proto__",
+				kind: "TIME_BASED",
+				sourceKey: "picture",
+				duration: 2,
+			},
+		];
+		first(value.renditions).ingestKey = "__proto__";
+		const encoding = parse(planToEncodingTemplateYaml(value)).encodings.main;
+		expect(
+			Object.hasOwn(encoding.inputStreams.trimming.timeBased, "__proto__"),
+		).toBe(true);
+		expect(encoding.streams.v.properties.inputStreams[0].inputStreamId).toBe(
+			"$/encodings/main/inputStreams/trimming/timeBased/__proto__",
+		);
+	});
+
 	it("exports nested sources through the named HDR10+ template resource", () => {
 		const value = plan();
 		value.trimmingStreams = [
@@ -496,10 +552,31 @@ describe("HDR10+ input contract", () => {
 				kind: "CREATE_HDR10_PLUS_INPUT_STREAM",
 			}),
 		);
-		const curl = curlForStep({
-			...source,
+		const request = {
+			...source.payload,
 			refs: { encodingId: "encoding-id", inputId: "input-id" },
+		};
+		expect(curlForStep(source)).toMatchObject({
+			ok: false,
+			code: "UNRESOLVED_PATH_PARAMS",
 		});
+		expect(
+			curlForStep({
+				...source,
+				request: { ...request, refs: { encodingId: "encoding-id" } },
+			}),
+		).toMatchObject({ ok: false, code: "UNRESOLVED_PATH_PARAMS" });
+		const curl = curlForStep({ ...source, request });
+		if (curl.ok) {
+			const body = curl.command.split("--data '")[1]?.slice(0, -1);
+			expect(JSON.parse(body ?? "{}")).toEqual({
+				type: "HDR10_PLUS",
+				inputId: "input-id",
+				videoInputPath: "hdr/video.mp4",
+				metadataInputPath: "hdr/metadata.json",
+				selectionMode: "AUTO",
+			});
+		}
 		expect(curl.ok).toBe(true);
 		if (curl.ok)
 			expect(curl.command).toContain(

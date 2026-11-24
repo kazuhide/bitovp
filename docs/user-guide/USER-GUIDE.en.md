@@ -373,6 +373,8 @@ Check the concatenation order, the units for padding before and after each sourc
 
 **HDR10+ for VOD HEVC:** In Sources, select the HDR10 video file and choose **Add HDR10+ video**. Enter the matching **HDR10+ metadata JSON path** on the video's same input storage and bucket. The JSON belongs in that field, not as a second video input. In Ladder, select the new HDR10+ stream as the source of an H.265 rendition. The application's input timeline cannot currently be combined with this source; use the video directly. HDR10+ is not a Live input option or a dynamic-range dropdown value.
 
+When you change the video file or its storage, select the matching JSON again. For HDR10+ jobs, use the VOD wizard to submit both files together. Watch folders discover one object at a time.
+
 HDR10+ requires Encoder `2.294.0` (Beta) or later and public API SDK `1.289.0` or later for the [REST API `1.289.0` input-stream feature](https://developer.bitmovin.com/encoding/docs/rest-api-services-12500-12990#12890). See the [input-stream reference](https://developer.bitmovin.com/encoding/reference/postencodingencodingsinputstreamshdr10plusbyencodingid) and [Encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
 
 ### Video codecs and quality settings

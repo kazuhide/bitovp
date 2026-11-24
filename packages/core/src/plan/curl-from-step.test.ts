@@ -463,6 +463,7 @@ describe("every operation kind is classified", () => {
 	const stub = (kind: string): StepLogEntry => {
 		const refs = {
 			encodingId: "enc",
+			inputId: "input",
 			manifestId: "man",
 			streamId: "str",
 			streamInfoId: "sinf",
@@ -483,6 +484,13 @@ describe("every operation kind is classified", () => {
 			request: {
 				type: "SEGMENT_BASE",
 				filePath: "video.mp4",
+				...(kind === "CREATE_HDR10_PLUS_INPUT_STREAM"
+					? {
+							videoInputPath: "video.mp4",
+							metadataInputPath: "video.json",
+							selectionMode: "AUTO",
+						}
+					: {}),
 				...(kind === "CREATE_HLS_VTT_MEDIA" ||
 				kind === "CREATE_DASH_REPRESENTATION_VTT"
 					? { vttUrl: "https://cdn.example.test/sub.vtt" }

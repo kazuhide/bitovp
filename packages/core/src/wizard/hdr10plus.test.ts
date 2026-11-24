@@ -60,6 +60,46 @@ function hdr10PlusSource(value: WizardState) {
 }
 
 describe("HDR10+ wizard source", () => {
+	it("splits a copied shared input when the picture and JSON move to another store", () => {
+		const original = state();
+		const base = original.inputFiles[0];
+		if (!base) throw new Error("missing input");
+		original.inputFiles.push({
+			...base,
+			key: "picture-file",
+			path: "old-picture.mov",
+		});
+		hdr10PlusSource(original).videoInputFile = "picture-file";
+		const copied = planToWizardState(
+			encodingPlanSchema.parse(buildPlan(original)),
+		);
+		const picture = copied.inputFiles.find(
+			(file) => file.path === "old-picture.mov",
+		);
+		if (!picture) throw new Error("missing copied picture");
+		picture.bucket = "new-bucket";
+		picture.credentialId = "22222222-2222-4222-8222-222222222222";
+		picture.path = "new-picture.mov";
+		hdr10PlusSource(copied).metadataInputPath = "new-picture.json";
+		const built = encodingPlanSchema.parse(buildPlan(copied));
+		const source = built.hdr10PlusStreams[0];
+		expect(source).toMatchObject({
+			videoInputPath: "new-picture.mov",
+			metadataInputPath: "new-picture.json",
+		});
+		expect(
+			built.inputs.find((input) => input.key === source?.inputKey),
+		).toMatchObject({
+			bucket: "new-bucket",
+			credentialId: picture.credentialId,
+		});
+		expect(
+			built.inputs.find((input) => input.key === built.ingest[0]?.inputKey),
+		).toMatchObject({ bucket: "input", credentialId: base.credentialId });
+		expect(
+			encodingPlanSchema.parse(buildPlan(planToWizardState(built))),
+		).toEqual(built);
+	});
 	it.each([
 		{ selectionMode: "AUTO" as const },
 		{ selectionMode: "VIDEO_RELATIVE" as const },

@@ -1542,6 +1542,39 @@ export function wizardUsesCodecEncodingMode(
 		})
 	);
 }
+/** Keep imported input IDs while their rows still describe the same provider input. */
+function resolveWizardInputFiles(files: WizardInputFile[]): WizardInputFile[] {
+	const reserved = new Set(files.map((file) => file.inputKey));
+	const groups = new Map<string, Map<string, string>>();
+	let nextId = 1;
+	return files.map((file) => {
+		let locations = groups.get(file.inputKey);
+		if (!locations) {
+			locations = new Map();
+			groups.set(file.inputKey, locations);
+		}
+		const location = JSON.stringify([
+			file.kind,
+			file.kind === "HTTPS" ? null : file.credentialId,
+			file.kind === "AKAMAI_NETSTORAGE" ? null : file.bucket,
+			file.kind === "GCS" || file.kind === "GCS_SERVICE_ACCOUNT"
+				? str(file.region)
+				: null,
+		]);
+		let key = locations.get(location);
+		if (key === undefined) {
+			key = file.inputKey;
+			if (locations.size) {
+				while (reserved.has(`input${nextId}`)) nextId++;
+				key = `input${nextId++}`;
+				reserved.add(key);
+			}
+			locations.set(location, key);
+		}
+		return key === file.inputKey ? file : { ...file, inputKey: key };
+	});
+}
+
 export function buildPlan(state: WizardState): EncodingPlanInput {
 	if (state.inputTimeline) return buildPlan(applyVodInputTimeline(state));
 	if (hasInvalidHevcV2Ladder(state)) throw new WizardCodecError();
@@ -1563,8 +1596,9 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	const qcOnly = isQcOnly(state);
 	// Input files (objects). A stream references one by key; its Bitmovin input
 	// id + object path come from the file. The implicit video reads inputFiles[0].
-	const fileByKey = new Map(state.inputFiles.map((f) => [f.key, f]));
-	const primaryFile = state.inputFiles[0];
+	const inputFiles = resolveWizardInputFiles(state.inputFiles);
+	const fileByKey = new Map(inputFiles.map((f) => [f.key, f]));
+	const primaryFile = inputFiles[0];
 	const ref = (key: string) => {
 		const f = fileByKey.get(key) ?? primaryFile;
 		return { inputKey: f?.inputKey ?? "main", inputPath: f?.path ?? "" };
@@ -1573,7 +1607,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	const inputDecls = (): EncodingPlanInput["inputs"] => {
 		const seen = new Set<string>();
 		const decls: EncodingPlanInput["inputs"] = [];
-		for (const f of state.inputFiles) {
+		for (const f of inputFiles) {
 			if (seen.has(f.inputKey)) {
 				continue;
 			}

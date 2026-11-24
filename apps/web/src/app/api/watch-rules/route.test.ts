@@ -83,6 +83,29 @@ describe("POST /api/watch-rules", () => {
 		});
 	});
 
+	it("refuses a watch preset with fixed HDR10+ video and JSON before saving the rule", async () => {
+		presetFindUnique.mockResolvedValue({
+			kind: "FULL_PLAN",
+			body: {
+				...VALID_PLAN,
+				hdr10PlusStreams: [
+					{
+						key: "picture",
+						inputKey: "main",
+						videoInputPath: "old.mov",
+						metadataInputPath: "old.json",
+					},
+				],
+			},
+		});
+		const res = await POST(post(body()));
+		expect(res.status).toBe(422);
+		expect(await res.json()).toMatchObject({
+			details: { issues: [{ code: "HDR10_PLUS_SIDECAR" }] },
+		});
+		expect(ruleCreate).not.toHaveBeenCalled();
+	});
+
 	it("refuses a credential whose provider cannot back the template's input", async () => {
 		// The fixture's sole input is S3, so an Azure credential cannot back it.
 		// Before this check the rule saved happily, claimed objects, and failed

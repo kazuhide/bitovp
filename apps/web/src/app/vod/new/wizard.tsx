@@ -103,6 +103,7 @@ import {
 	outputKindHasAcl,
 	outputKindIsBrowsable,
 	outputNameForKind,
+	reconcileHdr10PlusSidecars,
 } from "./stream-model";
 import { ThumbnailsSection } from "./thumbnails-section";
 import { useVmafExecutionValidation } from "./vmaf-execution-settings";
@@ -739,7 +740,7 @@ export function VodWizard({
 			}
 			Object.assign(next, followRenamedAudioKeys(prev, next));
 			next.audios = reconcileAutomaticAudioPackaging(next);
-			return next;
+			return reconcileHdr10PlusSidecars(prev, next);
 		});
 
 	const collapse = () => {
@@ -2254,7 +2255,10 @@ export function VodWizard({
 								// Keep the row's kind in sync with the picked credential.
 								...(kind !== null ? { kind } : {}),
 							};
-							return { ...prev, inputFiles: files };
+							return reconcileHdr10PlusSidecars(prev, {
+								...prev,
+								inputFiles: files,
+							});
 						});
 					}
 				}}

@@ -19,25 +19,58 @@ export function inputStreamAncestry(
 	key: string,
 	seen = new Set<string>(),
 ): string[] | undefined {
-	if (seen.has(key)) return undefined;
-	if (
+	const leaves = new Set(
 		[
 			...plan.ingest,
 			...plan.fileStreams,
 			...plan.dolbyStreams,
 			...plan.hdr10PlusStreams,
-		].some((s) => s.key === key)
-	)
-		return [key];
-	const parents = inputStreamDependencies(plan, key);
-	if (!parents.length) return undefined;
-	const next = new Set(seen).add(key);
-	const leaves = parents.map((parent) =>
-		inputStreamAncestry(plan, parent, next),
+		].map((stream) => stream.key),
 	);
-	return leaves.some((v) => v === undefined)
-		? undefined
-		: [key, ...new Set(leaves.flatMap((v) => v ?? []))];
+	if (seen.has(key)) return undefined;
+	if (leaves.has(key)) return [key];
+	const derived = new Map(
+		[
+			...plan.trimmingStreams,
+			...plan.concatenationStreams,
+			...plan.audioMixStreams,
+		].map((stream) => [stream.key, stream] as const),
+	);
+	const visiting = new Set(seen);
+	const visited = new Set<string>();
+	const order: string[] = [];
+	const stack = [{ key, exit: false }];
+	while (stack.length) {
+		const frame = stack.pop();
+		if (!frame) break;
+		const id = frame.key;
+		if (frame.exit) {
+			visiting.delete(id);
+			visited.add(id);
+			continue;
+		}
+		if (visiting.has(id)) return undefined;
+		if (visited.has(id)) continue;
+		order.push(id);
+		if (leaves.has(id)) {
+			visited.add(id);
+			continue;
+		}
+		const stream = derived.get(id);
+		if (!stream) return undefined;
+		const parents =
+			"sourceKey" in stream
+				? [stream.sourceKey]
+				: ("sources" in stream ? stream.sources : stream.audioMixChannels).map(
+						(parent) => parent.sourceKey,
+					);
+		if (!parents.length) return undefined;
+		visiting.add(id);
+		stack.push({ key: id, exit: true });
+		for (const parent of parents.reverse())
+			stack.push({ key: parent, exit: false });
+	}
+	return order;
 }
 
 /** Leaves only, retaining unknown/cycle semantics of the complete ancestry. */

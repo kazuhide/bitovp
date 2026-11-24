@@ -13,6 +13,7 @@ import { Input, SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
 import type { WizardState } from "./build-plan";
 import type { SourceOption } from "./rendition-editors";
+import { nextSharedKey } from "./stream-model";
 import { Collapsible } from "./wizard-fields";
 
 /** Keep intermediate decimals and empty values intact while editing. */
@@ -121,21 +122,9 @@ export function AudioMixEditor({
 	);
 	const start = (preset: "swap" | "mono" | "downmix" | "custom") => {
 		if (preset === "mono" && options.length < 2) return;
-		const keys = [
-			"video",
-			"audio",
-			...(sources.tracks ?? []).map((s) => s.key),
-			...(sources.fileStreams ?? []).map((s) => s.key),
-			...(sources.dolbyStreams ?? []).map((s) => s.key),
-			...(sources.trimmingStreams ?? []).map((s) => s.key),
-			...(sources.concatenationStreams ?? []).map((s) => s.key),
-			...mixes.map((s) => s.key),
-		];
-		let n = 1;
-		while (keys.includes(`audioMix${n}`)) n++;
 		save(
 			{
-				key: mix?.key ?? `audioMix${n}`,
+				key: mix?.key ?? nextSharedKey(sources, "audioMix"),
 				channelLayout: "STEREO",
 				audioMixChannels: audioMixPreset(
 					preset,

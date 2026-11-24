@@ -25,6 +25,7 @@ import {
 	type InputFileOption,
 	inputFileOptions,
 	inputKindForProvider,
+	nextSharedKey,
 	removeStream,
 	sourceStreamKeys,
 	streamTypeLabel,
@@ -145,24 +146,6 @@ const HTTPS_SOURCE = "__https__";
 /** Whether an input kind's location can be browsed via the StoragePicker. */
 function inputKindIsBrowsable(kind: WizardInputFile["kind"]): boolean {
 	return kind !== "AZURE" && kind !== "HTTPS";
-}
-
-/** Next free `<prefix>N` key across the whole shared input-stream namespace. */
-function nextSharedKey(sources: WizardSources, prefix: string): string {
-	const taken = new Set<string>([
-		...(sources.tracks ?? []).map((t) => t.key),
-		...(sources.fileStreams ?? []).map((s) => s.key),
-		...(sources.dolbyStreams ?? []).map((s) => s.key),
-		...(sources.hdr10PlusStreams ?? []).map((s) => s.key),
-		...(sources.trimmingStreams ?? []).map((s) => s.key),
-		...(sources.audioMixStreams ?? []).map((s) => s.key),
-		...(sources.concatenationStreams ?? []).map((s) => s.key),
-	]);
-	let n = 1;
-	while (taken.has(`${prefix}${n}`)) {
-		n += 1;
-	}
-	return `${prefix}${n}`;
 }
 
 /** "Bucket" / "Container" / "Host" depending on the input storage kind. */

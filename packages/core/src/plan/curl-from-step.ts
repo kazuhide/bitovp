@@ -6,6 +6,7 @@ import { CODEC_ENUM_VALUES, codecEnumSchema } from "./codec-enums";
 import type { OperationKind } from "./compiler";
 import { manifestCurlSnapshot } from "./manifest-curl";
 import { externalVttUrlSchema } from "./manifest-options";
+import { hdr10PlusStreamSchema } from "./schema";
 import type { StepLogEntry } from "./steplog";
 
 /**
@@ -712,6 +713,38 @@ export function curlForStep(
 		return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 	}
 	let request = entry.request;
+	if (entry.kind === "CREATE_HDR10_PLUS_INPUT_STREAM") {
+		const snapshot = request as Record<string, unknown> | null | undefined;
+		const refs = snapshot?.refs as Record<string, unknown> | undefined;
+		if (
+			typeof refs?.encodingId !== "string" ||
+			!refs.encodingId.trim() ||
+			typeof refs.inputId !== "string" ||
+			!refs.inputId.trim()
+		)
+			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+		const source = hdr10PlusStreamSchema.safeParse({
+			key: "source",
+			inputKey: "input",
+			videoInputPath: snapshot?.videoInputPath,
+			metadataInputPath: snapshot?.metadataInputPath,
+			selectionMode: snapshot?.selectionMode,
+			position: snapshot?.position,
+		});
+		if (!source.success)
+			return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
+		const { videoInputPath, metadataInputPath, selectionMode, position } =
+			source.data;
+		entry = { ...entry, refs: { encodingId: refs.encodingId } };
+		request = {
+			type: "HDR10_PLUS",
+			inputId: refs.inputId,
+			videoInputPath,
+			metadataInputPath,
+			selectionMode,
+			position,
+		};
+	}
 	const manifestSnapshot = manifestCurlSnapshot(entry);
 	if (manifestSnapshot === false)
 		return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };

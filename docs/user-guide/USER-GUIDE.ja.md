@@ -373,6 +373,8 @@ DRM、字幕、フィルター、サムネイル、Per-Title、「ソース」�
 
 **VOD・HEVC向けのHDR10+:** 「ソース」でHDR10の動画ファイルを選び、「HDR10+ 動画を追加」を押します。「HDR10+ メタデータ JSON パス」に、動画と同じ入力ストレージ・バケットに置いた対応するJSONを指定します。JSONを別の動画入力ファイルとして追加する必要はありません。「ラダー」で、追加したHDR10+ストリームをH.265レンディションのソースに選びます。このアプリでは入力タイムラインと併用できないため、動画ソースを直接使います。HDR10+はLiveの入力種別や、ダイナミックレンジの選択肢ではありません。
 
+動画ファイルや保存先を変更したときは、対応するJSONを選び直してください。監視フォルダーはオブジェクトを1件ずつ検出するため、HDR10+ジョブはVODウィザードから動画とJSONを組み合わせて登録してください。
+
 HDR10+にはEncoder `2.294.0`（Beta）以降と、[REST API `1.289.0` の入力ストリーム機能](https://developer.bitmovin.com/encoding/docs/rest-api-services-12500-12990#12890)に対応した公開API SDK `1.289.0` 以降が必要です。[入力ストリームの仕様](https://developer.bitmovin.com/encoding/reference/postencodingencodingsinputstreamshdr10plusbyencodingid)と[Encoderリリースノート](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta)を参照してください。
 
 ### 映像コーデックと画質設定

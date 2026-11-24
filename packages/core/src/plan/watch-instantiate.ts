@@ -31,6 +31,7 @@ export type WatchTemplateIssue = {
 		| "NOT_A_PLAN"
 		| "INPUT_COUNT"
 		| "NO_INGEST"
+		| "HDR10_PLUS_SIDECAR"
 		| "SELF_INTERSECTION"
 		| "INPUT_KIND"
 		| "CREDENTIAL_PROVIDER";
@@ -201,6 +202,13 @@ export function watchTemplateIssues(
 		issues.push({
 			code: "INPUT_COUNT",
 			message: `Watch templates need exactly ONE input (found ${parsed.data.inputs.length}) — substitution has no unambiguous target otherwise`,
+		});
+	}
+	if (parsed.data.hdr10PlusStreams.length) {
+		issues.push({
+			code: "HDR10_PLUS_SIDECAR",
+			message:
+				"Watch discovery supplies a single object. Submit HDR10+ video and its matching metadata JSON together in a VOD job.",
 		});
 	}
 	if (parsed.data.ingest.length === 0) {

@@ -45,7 +45,10 @@ beforeEach(() => {
 });
 
 describe("VodWizard — the first mount (ledger #91)", () => {
-	it("updates only the HDR10+ JSON path from the constrained storage picker", async () => {
+	it.each([
+		false,
+		true,
+	])("pairs the HDR10+ JSON with the selected video's actual input after moving it: %s", async (moveVideo) => {
 		const credentialId = "11111111-1111-4111-8111-111111111111";
 		apiFetch.mockImplementation(async (url: string) => {
 			if (url === "/api/credentials")
@@ -67,6 +70,12 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 			bucket: "input",
 			path: "hdr10.mov",
 		};
+		if (moveVideo) {
+			const primary = value.inputFiles[0];
+			if (!primary) throw new Error("missing copied input");
+			value.inputFiles.push({ ...primary, key: "picture-file" });
+			primary.path = "audio.wav";
+		}
 		value.output = {
 			...value.output,
 			credentialId,
@@ -77,7 +86,7 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 			hdr10PlusStreams: [
 				{
 					key: "hdr-plus",
-					videoInputFile: "main",
+					videoInputFile: moveVideo ? "picture-file" : "main",
 					metadataInputPath: "metadata/original.json",
 					selectionMode: "AUTO",
 				},
@@ -102,6 +111,17 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 		);
 		fireEvent.click(screen.getByRole("button", { name: /^2\. Sources$/ }));
 		const path = await screen.findByLabelText("HDR10+ metadata JSON path");
+		if (moveVideo) {
+			const location = screen.getByTitle("input / hdr10.mov").parentElement;
+			if (!location) throw new Error("missing copied storage row");
+			fireEvent.click(
+				within(location).getByRole("button", { name: /enter manually/i }),
+			);
+			const bucket = document.getElementById("wz-in-1-bucket");
+			if (!bucket) throw new Error("missing copied video bucket");
+			fireEvent.change(bucket, { target: { value: "video-store" } });
+			expect(path).toHaveValue("");
+		}
 		const source = path.closest(".space-y-3");
 		if (!source) throw new Error("Missing source editor");
 		fireEvent.click(
@@ -112,7 +132,9 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 		const dialog = await screen.findByRole("dialog");
 		await within(dialog).findByText("selected.json");
 		expect(within(dialog).getByLabelText("Credential")).toBeDisabled();
-		expect(within(dialog).getByLabelText("Bucket")).toHaveValue("input");
+		expect(within(dialog).getByLabelText("Bucket")).toHaveValue(
+			moveVideo ? "video-store" : "input",
+		);
 		fireEvent.click(
 			within(dialog).getByRole("button", { name: "Use as input" }),
 		);
@@ -125,7 +147,13 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 			videoInputPath: "hdr10.mov",
 			metadataInputPath: "metadata/selected.json",
 		});
-		expect(plan.inputs).toHaveLength(1);
+		expect(plan.inputs).toHaveLength(moveVideo ? 2 : 1);
+		expect(
+			plan.inputs.find(
+				(input: { key: string }) =>
+					input.key === plan.hdr10PlusStreams[0].inputKey,
+			)?.bucket,
+		).toBe(moveVideo ? "video-store" : "input");
 		expect(
 			screen.getByRole("button", { name: "Edit on timeline" }),
 		).toBeDisabled();

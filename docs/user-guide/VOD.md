@@ -88,6 +88,8 @@ later, which exposes the HDR10+ input-stream API.
    rendition. Keep `AUTO` for automatic video-track selection, or choose an
    explicit supported selection mode and position.
 
+When you change the video file or its storage, select the matching JSON again. Watch folders discover one object at a time. Submit paired HDR10+ assets through the VOD wizard.
+
 The input timeline cannot currently be combined with HDR10+ in this application;
 use the video source directly. This is an application limitation, not a general
 Bitmovin restriction. HDR10+ is not a Live input option or an H.265 dynamic-range

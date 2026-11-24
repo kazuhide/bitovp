@@ -1,4 +1,4 @@
-import type { CompiledOperation } from "@bitovp/core";
+import { type CompiledOperation, curlForStep, initStepLog } from "@bitovp/core";
 import { afterEach, expect, it, vi } from "vitest";
 import { executeStep } from "./executor";
 import { createBitmovinSdkOps } from "./sdk-ops";
@@ -57,6 +57,14 @@ it.each([
 		metadataInputPath: "feature/hdr10plus.json",
 		...selection,
 	});
+	const entry = initStepLog([operation])[0];
+	if (!entry) throw new Error("missing log entry");
+	const curl = curlForStep({ ...entry, request: result.request });
+	if (!curl.ok) throw new Error(curl.code);
+	expect(curl.command).toContain(url);
+	expect(
+		JSON.parse(curl.command.split("--data '")[1]?.slice(0, -1) ?? "{}"),
+	).toEqual(JSON.parse(init.body as string));
 	expect(audit).toHaveBeenCalled();
 });
 

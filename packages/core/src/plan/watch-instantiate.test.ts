@@ -81,6 +81,31 @@ describe("renderWatchOutputPrefix", () => {
 });
 
 describe("instantiateWatchPlan", () => {
+	it("refuses fixed HDR10+ video and JSON when a watch discovery only replaces ingest", () => {
+		const template = {
+			...TEMPLATE,
+			hdr10PlusStreams: [
+				{
+					key: "sidecar",
+					inputKey: "main",
+					videoInputPath: "old.mov",
+					metadataInputPath: "old.json",
+				},
+			],
+		};
+		expect(watchTemplateIssues(template)).toMatchObject([
+			{ code: "HDR10_PLUS_SIDECAR" },
+		]);
+		expect(
+			instantiateWatchPlan({
+				presetBody: template,
+				objectKey: "new.mov",
+				rule: RULE,
+				now: NOW,
+				uuid: UUID,
+			}),
+		).toMatchObject({ ok: false, issues: [{ code: "HDR10_PLUS_SIDECAR" }] });
+	});
 	it("substitutes the input, every ingest path, the name and the labels", () => {
 		const result = instantiate();
 		expect(result.ok).toBe(true);

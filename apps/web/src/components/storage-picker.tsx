@@ -6,7 +6,7 @@ import type {
 	StoragePresetWire,
 } from "@bitovp/core";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
 	InspectDialog,
 	type InspectTarget,
@@ -53,7 +53,20 @@ type ObjectsPage = {
 };
 
 /** UI-DESIGN §3: the storage browser reused as a modal inside wizards. */
-export function StoragePicker({
+export function StoragePicker(props: StoragePickerProps) {
+	if (!props.open) return null;
+	const location = props.fixedLocation;
+	return (
+		<OpenStoragePicker
+			key={JSON.stringify(
+				location ? [location.credentialId, location.bucket] : null,
+			)}
+			{...props}
+		/>
+	);
+}
+
+function OpenStoragePicker({
 	open,
 	mode,
 	providers,
@@ -65,46 +78,17 @@ export function StoragePicker({
 }: StoragePickerProps) {
 	const { t } = useT();
 	const errorText = useStorageErrorText();
-	const [credentialId, setCredentialId] = useState("");
+	const [credentialId, setCredentialId] = useState(
+		fixedLocation?.credentialId ?? initialCredentialId ?? "",
+	);
 	// : Inspect from the picker - the browser and job-detail cards
 	// had it, the wizard picker did not.
 	const [inspecting, setInspecting] = useState<InspectTarget | null>(null);
-	const [bucket, setBucket] = useState("");
+	const [bucket, setBucket] = useState(
+		fixedLocation?.bucket ?? initialBucket ?? "",
+	);
 	const [bucketInput, setBucketInput] = useState("");
 	const [prefix, setPrefix] = useState("");
-
-	// Seed from the field's existing location when the modal OPENS, so "Change"
-	// continues from where the user is instead of re-asking the credential. The
-	// wasOpen ref makes this fire only on the false→true edge, so in-modal
-	// navigation is never reset even if the seed props change mid-browse.
-	const wasOpen = useRef(false);
-	useEffect(() => {
-		if (
-			open &&
-			(!wasOpen.current ||
-				(fixedLocation &&
-					(credentialId !== fixedLocation.credentialId ||
-						bucket !== fixedLocation.bucket)))
-		) {
-			setCredentialId(fixedLocation?.credentialId ?? initialCredentialId ?? "");
-			setBucket(fixedLocation?.bucket ?? initialBucket ?? "");
-			setBucketInput("");
-			setPrefix("");
-			// Review of PR #175, I1: without this, reopening the picker
-			// resurrects the PREVIOUS session's Inspect modal over the browse
-			// UI — and where the prior row was not adoptable, re-fires an
-			// unrequested bounded read of customer storage.
-			setInspecting(null);
-		}
-		wasOpen.current = open;
-	}, [
-		open,
-		initialCredentialId,
-		initialBucket,
-		fixedLocation,
-		credentialId,
-		bucket,
-	]);
 
 	const credentials = useQuery({
 		queryKey: ["credentials"],

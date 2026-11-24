@@ -8,9 +8,9 @@ import {
 	relativeSegmentPath,
 } from "./compiler";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
+import { hdr10PlusSourceKeys } from "./hdr10-plus";
 import { hlsChildEntries, hlsSubtitleGroups } from "./hls-media-defaults";
 import { checkHlsVideoUris } from "./hls-video-uri-validation";
-import { inputStreamAncestry } from "./input-stream-graph";
 import { FILTER_ENDPOINTS, filterParameters } from "./media-filters";
 import { isFileOnlyMuxingKind, muxingStreamKeys } from "./muxing-streams";
 import { streamPerTitleSettings } from "./per-title-settings";
@@ -919,38 +919,45 @@ function buildTemplate(plan: EncodingPlan): Tree {
 
 	const mixResources = new Map<string, Tree>();
 	const required = new Set<string>(hdr10PlusKeys);
+	const sourceByKey = new Map(
+		(hdr10PlusKeys.size || plan.audioMixStreams.length
+			? [
+					...plan.ingest,
+					...plan.trimmingStreams,
+					...plan.concatenationStreams,
+					...plan.audioMixStreams,
+				]
+			: []
+		).map((stream) => [stream.key, stream] as const),
+	);
 	const streamRef = (owner: string, key: string): string => {
 		if (dolbyByKey.has(key)) return dolbyStreamRef(owner, key);
 		if (hdr10PlusKeys.has(key))
 			return `$/encodings/${owner}/inputStreams/hdr10Plus/${key}`;
-		const trim = plan.trimmingStreams.find((s) => s.key === key);
-		const section = trim
-			? `trimming/${trim.kind === "TIME_BASED" ? "timeBased" : trim.kind === "TIMECODE_TRACK" ? "timecodeTrack" : "h264PictureTiming"}`
-			: plan.audioMixStreams.some((s) => s.key === key)
-				? "audioMix"
-				: plan.concatenationStreams.some((s) => s.key === key)
-					? "concatenation"
-					: fileByKey.has(key)
-						? "file"
-						: "ingest";
+		const stream = sourceByKey.get(key);
+		const section =
+			stream && "sourceKey" in stream
+				? `trimming/${stream.kind === "TIME_BASED" ? "timeBased" : stream.kind === "TIMECODE_TRACK" ? "timecodeTrack" : "h264PictureTiming"}`
+				: stream && "audioMixChannels" in stream
+					? "audioMix"
+					: stream && "sources" in stream
+						? "concatenation"
+						: fileByKey.has(key)
+							? "file"
+							: "ingest";
 		return `$/encodings/${owner}/inputStreams/${section}/${key}`;
 	};
 	const requireStream = (key: string): void => {
 		if (required.has(key)) return;
 		required.add(key);
-		const stream = [
-			...plan.ingest,
-			...plan.trimmingStreams,
-			...plan.concatenationStreams,
-			...plan.audioMixStreams,
-		].find((s) => s.key === key);
+		const stream = sourceByKey.get(key);
 		if (!stream) return;
 		const owner = plan.encodings?.length
 			? (stream.encodingKey ?? encNames[0] ?? ENCODING_NAME)
 			: ENCODING_NAME;
 		const node = perEnc(mixResources, owner);
 		const add = (section: string, properties: Tree) => {
-			node[section] ??= {};
+			node[section] ??= Object.create(null);
 			const entries = node[section] as Tree;
 			entries[key] = { properties };
 		};
@@ -980,7 +987,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 						: "h264PictureTiming";
 			node.trimming ??= {};
 			const trims = node.trimming as Tree;
-			trims[section] ??= {};
+			trims[section] ??= Object.create(null);
 			const entries = trims[section] as Tree;
 			entries[key] = {
 				properties: { ...rest, inputStreamId: streamRef(owner, sourceKey) },
@@ -1004,17 +1011,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	for (const mix of plan.audioMixStreams) requireStream(mix.key);
 	// HDR10+ may be reached through a trim or concatenation. Preserve that
 	// source graph, including its video/JSON leaf, in the exported template.
-	for (const stream of [
-		...plan.trimmingStreams,
-		...plan.concatenationStreams,
-	]) {
-		if (
-			inputStreamAncestry(plan, stream.key)?.some((key) =>
-				hdr10PlusKeys.has(key),
-			)
-		) {
-			requireStream(stream.key);
-		}
+	if (hdr10PlusKeys.size) {
+		for (const key of hdr10PlusSourceKeys(plan)) requireStream(key);
 	}
 	const streamsByEnc = new Map<string, Tree>();
 	for (const rendition of plan.renditions) {

@@ -78,6 +78,31 @@ function renderPicker(
 }
 
 describe("StoragePicker — seed on open", () => {
+	it("lists only the new fixed location on reopen with a stale cache", async () => {
+		const { apiFetch } = await import("@/lib/api");
+		const picker = (open: boolean, bucket: string) => (
+			<StoragePicker
+				open={open}
+				mode="object"
+				providers={["AWS_S3"]}
+				fixedLocation={{ credentialId: "s3-1", bucket }}
+				onSelect={vi.fn()}
+				onClose={vi.fn()}
+			/>
+		);
+		const view = renderWithQuery(picker(true, "previous"));
+		await screen.findByText("movie.mp4");
+		view.rerender(picker(false, "previous"));
+		vi.mocked(apiFetch).mockClear();
+		view.rerender(picker(true, "current"));
+		await screen.findByText("movie.mp4");
+		expect(
+			vi
+				.mocked(apiFetch)
+				.mock.calls.map(([url]) => url)
+				.filter((url) => url.includes("/storage/objects")),
+		).toEqual(["/api/credentials/s3-1/storage/objects?bucket=current"]);
+	});
 	it("locks metadata browsing to the video's existing input location", async () => {
 		const onSelect = vi.fn();
 		const { apiFetch } = await import("@/lib/api");

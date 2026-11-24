@@ -7,10 +7,22 @@ import { DEFAULT_WIZARD_STATE, type WizardState } from "./build-plan";
 import { LadderSection } from "./wizard-sections";
 
 let current: WizardState;
-function Harness() {
+function Harness({ hdrKey }: { hdrKey?: string } = {}) {
 	const [state, setState] = useState<WizardState>({
 		...DEFAULT_WIZARD_STATE,
 		sources: {
+			...(hdrKey
+				? {
+						hdr10PlusStreams: [
+							{
+								key: hdrKey,
+								videoInputFile: "main",
+								metadataInputPath: "picture.json",
+								selectionMode: "AUTO" as const,
+							},
+						],
+					}
+				: {}),
 			tracks: [
 				{
 					key: "mono2",
@@ -34,6 +46,16 @@ function Harness() {
 		/>
 	);
 }
+it("allocates a preset mix key alongside an HDR10+ source with the same prefix", () => {
+	render(<Harness hdrKey="audioMix1" />);
+	fireEvent.click(screen.getByText("Audio channel mix"));
+	fireEvent.change(screen.getByLabelText("Start from a preset"), {
+		target: { value: "mono" },
+	});
+	expect(current.sources?.audioMixStreams?.[0]?.key).toBe("audioMix2");
+	expect(current.audios[0]?.extras?.source).toBe("audioMix2");
+});
+
 it("creates mix with existing source refs, edits decimal and zero gain, clears optional gain, detaches", () => {
 	render(<Harness />);
 	fireEvent.click(screen.getByText("Audio channel mix"));

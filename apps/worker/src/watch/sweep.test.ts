@@ -641,6 +641,44 @@ describe("backpressure + pagination + backoff", () => {
 		expect(later).toHaveBeenCalledTimes(1);
 	});
 
+	it("stops a retained HDR10+ watch rule before the discovered object can submit", async () => {
+		const store = makeStore([
+			makeRule({
+				stabilityChecks: 1,
+				preset: {
+					revision: 1,
+					body: {
+						...PRESET_BODY,
+						hdr10PlusStreams: [
+							{
+								key: "picture",
+								inputKey: "main",
+								videoInputPath: "old.mov",
+								metadataInputPath: "old.json",
+							},
+						],
+					},
+				},
+			}),
+		]);
+		const { sweep, submitPlan, emitEvent } = makeSweep(store, {
+			pages: [{ objects: [MP4("in/new.mp4")] }],
+		});
+		await sweep();
+		const rule = store.rules[0];
+		if (!rule) throw new Error("missing rule");
+		rule.lastSweepAt = new Date("2026-08-13T11:00:00Z");
+		await sweep();
+		expect(submitPlan).not.toHaveBeenCalled();
+		expect(store.objects[0]).toMatchObject({
+			state: "ERROR",
+			error: expect.stringContaining("HDR10+"),
+		});
+		expect(emitEvent).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "WATCH_ERROR" }),
+		);
+	});
+
 	it("a mismatched credential provider ERRORs BEFORE any submit", async () => {
 		/**
 		 * The wiring, not the rule (review-299 F2, in the code that cites it).

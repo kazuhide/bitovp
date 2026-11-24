@@ -357,13 +357,17 @@ it.each([
 	);
 });
 
-it("reuses the pending expert request when an unchanged MoQ copy opens in the form", async () => {
+it.each([
+	"channel copy",
+	"JSON import",
+] as const)("reuses the pending expert request after loading through %s", async (entry) => {
 	const plan = moqCopyPlan("FMP4");
+	const duplicateFrom = entry === "channel copy" ? sourceChannelId : undefined;
 	const lostResponse =
 		vi.fn<(path: string, init: RequestInit) => Promise<unknown>>();
 	lostResponse.mockRejectedValue(new Error("Connection closed after creation"));
 	const legacy = createSubmissionClient(
-		["org", "user", "live", `wizard:${sourceChannelId}`],
+		["org", "user", "live", `wizard:${duplicateFrom ?? "new"}`],
 		{ storage: sessionStorage, send: lostResponse },
 	);
 	await expect(legacy.submit({ plan })).rejects.toThrow(
@@ -371,8 +375,19 @@ it("reuses the pending expert request when an unchanged MoQ copy opens in the fo
 	);
 
 	mockMoqCopy(plan);
-	renderWithQuery(<LiveWizard duplicateFrom={sourceChannelId} />);
-	await screen.findByRole("textbox", { name: "Channel name" });
+	renderWithQuery(<LiveWizard duplicateFrom={duplicateFrom} />);
+	if (entry === "JSON import") {
+		fireEvent.click(
+			await screen.findByRole("button", { name: /Import plan JSON/i }),
+		);
+		fireEvent.change(screen.getByLabelText("Live channel plan JSON"), {
+			target: { value: JSON.stringify(plan) },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Load plan" }));
+	}
+	expect(
+		await screen.findByRole("textbox", { name: "Channel name" }),
+	).toHaveValue(plan.name);
 	fireEvent.click(screen.getByRole("button", { name: "9. Review" }));
 	const create = screen.getByRole("button", { name: "Create live channel" });
 	await waitFor(() => expect(create).toBeEnabled());

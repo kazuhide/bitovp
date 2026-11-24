@@ -214,7 +214,7 @@ function optionFor(
 	return option;
 }
 
-it("switches to a manifest-free MoQ plan and retains the storage ACL when switching back", async () => {
+it("switches to a manifest-free MoQ plan and keeps storage ACL and name-based folder when switching back", async () => {
 	const credential = {
 		id: "77000000-0000-4000-8000-000000000001",
 		label: "Test relay",
@@ -229,6 +229,14 @@ it("switches to a manifest-free MoQ plan and retains the storage ACL when switch
 	await outputCredentialSelect();
 	const option = await screen.findByRole("option", { name: /Test relay/ });
 	expect(option).toBeEnabled();
+	fireEvent.click(screen.getByRole("button", { name: "1. Basics" }));
+	fireEvent.change(screen.getByLabelText("Channel name"), {
+		target: { value: "old" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "4. Output" }));
+	fireEvent.change(screen.getByLabelText("Output folder"), {
+		target: { value: "events" },
+	});
 	fireEvent.click(
 		screen.getByLabelText("ACL PUBLIC_READ (request public read access)"),
 	);
@@ -292,6 +300,7 @@ it("switches to a manifest-free MoQ plan and retains the storage ACL when switch
 	expect(
 		screen.getByLabelText("ACL PUBLIC_READ (request public read access)"),
 	).toBeChecked();
+	expect(screen.getByLabelText("Output folder")).toHaveValue("events");
 });
 
 it.each([

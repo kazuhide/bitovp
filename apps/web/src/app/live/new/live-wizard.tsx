@@ -182,8 +182,8 @@ export function LiveWizard({
 	// Duplicate: ?from=<id> prefills the form from an existing channel's plan
 	// (the clean retry for a failed channel — a fresh provision, no stale ids).
 	const [appliedDuplicate, setAppliedDuplicate] = useState<string | null>(null);
-	const copiedMoqSource = useRef<{
-		channelId: string;
+	const moqFormSource = useRef<{
+		duplicateFrom: string | undefined;
 		raw: Record<string, unknown>;
 	} | null>(null);
 	const [duplicatedFrom, setDuplicatedFrom] = useState<string | null>(null);
@@ -248,12 +248,13 @@ export function LiveWizard({
 		const name = duplicate.data.name ?? duplicateFrom;
 		const form = tryImportLiveChannelIntoWizard(duplicate.data.plan);
 		if (form.ok) {
-			if (form.state.output.kind === "MOQ") {
-				copiedMoqSource.current = {
-					channelId: duplicateFrom,
-					raw: duplicate.data.plan as Record<string, unknown>,
-				};
-			}
+			moqFormSource.current =
+				form.state.output.kind === "MOQ"
+					? {
+							duplicateFrom,
+							raw: duplicate.data.plan as Record<string, unknown>,
+						}
+					: null;
 			setState(form.state);
 			draftBase.current = form.state;
 			setAppliedDraftContext(
@@ -406,9 +407,9 @@ export function LiveWizard({
 			let plan = imported
 				? buildSubmissionPlan(imported, state.accountId)
 				: buildLiveChannelPlan(state);
-			const source = copiedMoqSource.current;
-			if (!imported && source && source.channelId === duplicateFrom) {
-				// An unchanged copy must replay an outstanding expert-mode
+			const source = moqFormSource.current;
+			if (!imported && source && source.duplicateFrom === duplicateFrom) {
+				// An unchanged plan must replay an outstanding expert-mode
 				// request with the same body and idempotency key.
 				const original = buildSubmissionPlan(source, state.accountId);
 				const parsed = liveChannelPlanSchema.safeParse(original);
@@ -701,6 +702,10 @@ export function LiveWizard({
 									result.imported.raw,
 								);
 								if (editable.ok) {
+									moqFormSource.current =
+										editable.state.output.kind === "MOQ"
+											? { duplicateFrom, raw: result.imported.raw }
+											: null;
 									setState(editable.state);
 									draftBase.current = editable.state;
 									setScheduleDraft(EMPTY_SCHEDULE_DRAFT);
@@ -865,14 +870,11 @@ export function LiveWizard({
 											// unless the base still follows the folder/name shape).
 											output: {
 												...prev.output,
-												basePath:
-													prev.output.kind === "MOQ"
-														? prev.output.basePath
-														: renameOutputBase(
-																prev.output.basePath,
-																prev.name,
-																e.target.value,
-															),
+												basePath: renameOutputBase(
+													prev.output.basePath,
+													prev.name,
+													e.target.value,
+												),
 											},
 										}))
 									}

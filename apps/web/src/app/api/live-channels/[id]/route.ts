@@ -64,6 +64,8 @@ import {
 	AisaFinalizationNotConfirmed,
 	aisaRunCanBeRemoved,
 	analysisBindingSelect,
+	hasUnfinalizedStopAnalysis,
+	stopAnalysisBindingSelect,
 } from "@/lib/server/reset-live-analyses";
 import {
 	INCOMPLETE_RTMP_ARCHIVE_MESSAGE,
@@ -423,6 +425,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 					error: true,
 					origin: true,
 					runs: analysisBindingSelect,
+					effectClaims: stopAnalysisBindingSelect,
 					plan: true,
 					bitmovinEncodingId: true,
 					stepLog: true,
@@ -471,6 +474,8 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 				select: { id: true },
 			});
 			if (openStop) throw new UnconfirmedLiveStop();
+			if (hasUnfinalizedStopAnalysis(current, runs, current.effectClaims ?? []))
+				throw new AisaFinalizationNotConfirmed();
 			const archive = await readResetRtmpArchives(tx, id);
 			if (archive.incomplete.length) throw new IncompleteRtmpArchive();
 			if (archive.pointers.length) throw new ArchivedEncoderStillOpen();

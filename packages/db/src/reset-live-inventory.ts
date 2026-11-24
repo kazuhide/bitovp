@@ -2,6 +2,7 @@ import { aisaLiveNeverStarted, stepLogSchema } from "@bitovp/core";
 import type { AppPrismaClient, AppTransactionClient } from "./client";
 import {
 	collectLiveStopTargets,
+	divergentLivePrimaries,
 	liveChannelAccountId,
 	unconfirmedRtmpEncoders,
 	unresolvedOrphanLiveClaimTargets,
@@ -106,6 +107,7 @@ export async function readResetRtmpArchives(
 	});
 	const allPointers: ResetLivePointer[] = [];
 	const ownedIds = new Set<string>();
+	const ownedProviderKeys = new Set<string>();
 	const neverStarted = new Set<string>();
 	const incompleteAccounts = new Set<string | null>();
 	const pointers: ResetLivePointer[] = [];
@@ -135,8 +137,13 @@ export async function readResetRtmpArchives(
 				history,
 				accountId,
 			);
-			for (const id of targets.encodingIds) ownedIds.add(id);
-			for (const id of run?.previousProviderEncodingIds ?? []) ownedIds.add(id);
+			for (const id of [
+				...targets.encodingIds,
+				...(run?.previousProviderEncodingIds ?? []),
+			]) {
+				ownedIds.add(id);
+				ownedProviderKeys.add(JSON.stringify([accountId, id]));
+			}
 			if (
 				!targets.complete ||
 				unconfirmedRtmpEncoders(owner, projection, accountId) === null
@@ -158,17 +165,8 @@ export async function readResetRtmpArchives(
 			]);
 			// A STOPPED row only describes its own primary. A mismatch between mirrors
 			// must be resolved against both upstream identities before either is erased.
-			if (
-				latest &&
-				run?.bitmovinEncodingId &&
-				channel.bitmovinEncodingId &&
-				run.bitmovinEncodingId !== channel.bitmovinEncodingId
-			) {
-				if (run.status === "STOPPED" && !run.error)
-					secondary.add(run.bitmovinEncodingId);
-				if (channel.status === "STOPPED" && !channel.error)
-					secondary.add(channel.bitmovinEncodingId);
-			}
+			const divergent = divergentLivePrimaries(owner, projection);
+			for (const id of divergent) secondary.add(id);
 			// A discarded logical run has no independent NEVER_STARTED journal. The same
 			// terminal-only orphan inventory also governs a successor's admission.
 			const orphan = run
@@ -291,7 +289,11 @@ export async function readResetRtmpArchives(
 				accountId,
 			)) {
 				if (receipt.disposition === "NEVER_STARTED") {
-					if (uncertainStarts.has(receipt.encodingId)) continue;
+					if (
+						uncertainStarts.has(receipt.encodingId) ||
+						divergent.includes(receipt.encodingId)
+					)
+						continue;
 					if (run?.previousProviderEncodingIds.includes(receipt.encodingId))
 						neverStarted.add(
 							JSON.stringify([
@@ -331,6 +333,7 @@ export async function readResetRtmpArchives(
 	}
 	return {
 		ownedIds,
+		ownedProviderKeys,
 		allPointers,
 		pointers,
 		neverStarted,

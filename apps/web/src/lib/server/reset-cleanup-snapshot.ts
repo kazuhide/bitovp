@@ -272,14 +272,30 @@ export async function snapshotResetCleanup(
 		const rows = await tx.verificationResourceIntent.findMany({
 			include: { verificationRun: { select: { bitmovinAccountId: true } } },
 		});
-		const work = await readVerificationCleanupWork(tx, rows, {
-			vod: selected.has("vodJobs"),
-			live: selected.has("liveChannels"),
-		});
-		for (const candidate of work.candidates) {
+		const candidates = rows.length
+			? (
+					await readVerificationCleanupWork(tx, rows, {
+						vod: selected.has("vodJobs"),
+						live: selected.has("liveChannels"),
+					})
+				).candidates
+			: [];
+		// An intent names the same physical encoder as the selected Live owner.
+		// Its identity remains in verificationIntents; the direct row carries the signed proof.
+		const directlyProven = new Set(
+			payload.encodings
+				.filter((e) => e.allowCreated)
+				.map((e) => JSON.stringify([e.accountId, e.encodingId])),
+		);
+		for (const candidate of candidates) {
 			entityKeys.push(candidate.entityKey);
 			if (candidate.accountId) accountIds.add(candidate.accountId);
-			payload.encodings.push(candidate);
+			if (
+				!directlyProven.has(
+					JSON.stringify([candidate.accountId, candidate.encodingId]),
+				)
+			)
+				payload.encodings.push(candidate);
 		}
 		payload.verificationWorklistMaterialized = true;
 		payload.verificationIntents = JSON.parse(

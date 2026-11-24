@@ -52,8 +52,8 @@ export async function readVerificationCleanupWork(
 		const parsed = parseIntent(r);
 		return parsed ? [parsed] : [];
 	});
-	if (!rows.length)
-		return { candidates: [] as ResetCleanupEncoding[], archive: null };
+	const protectedWorkKeys = new Set<string>();
+	const ownedProviderKeys = new Set<string>();
 	const candidates: ResetCleanupEncoding[] = [];
 	// An intent can learn provider IDs before local adoption. Protect retained
 	// owners by canonical local key, verification key, and exact encoder refs.
@@ -64,6 +64,7 @@ export async function readVerificationCleanupWork(
 					select: {
 						id: true,
 						verificationKey: true,
+						plan: true,
 						bitmovinEncodingId: true,
 						bitmovinAccountId: true,
 						stepLog: true,
@@ -94,10 +95,15 @@ export async function readVerificationCleanupWork(
 				}),
 	]);
 	const retainedArchive = removed.live ? null : await readResetRtmpArchives(tx);
-	const retainedIds = retainedArchive?.ownedIds;
+	for (const key of retainedArchive?.ownedProviderKeys ?? [])
+		ownedProviderKeys.add(key);
+	const owned = (accountId: string | null, encodingId: string) =>
+		ownedProviderKeys.has(JSON.stringify([accountId, encodingId])) ||
+		ownedProviderKeys.has(JSON.stringify([null, encodingId]));
 	const retained = [
 		...jobs.map((row) => ({
 			...row,
+			bitmovinAccountId: liveChannelAccountId(row),
 			previousProviderEncodingIds: [] as string[],
 			kind: "VOD_JOB",
 		})),
@@ -126,6 +132,16 @@ export async function readVerificationCleanupWork(
 						: [],
 				)
 			: [];
+	for (const owner of retained) {
+		for (const id of [
+			owner.bitmovinEncodingId,
+			...stepEncodingIds(owner.stepLog),
+			...owner.previousProviderEncodingIds,
+		]) {
+			if (id)
+				ownedProviderKeys.add(JSON.stringify([owner.bitmovinAccountId, id]));
+		}
+	}
 	for (const intent of rows) {
 		const accountId = intent.verificationRun.bitmovinAccountId;
 		if (!accountId) continue;
@@ -146,16 +162,12 @@ export async function readVerificationCleanupWork(
 				)
 				.map((key) => key.slice(localPrefix.length)),
 		]);
-		if (
-			retained.some(
-				(row) =>
-					row.kind === intent.kind &&
-					(localIds.has(row.id) ||
-						(typeof intent.verificationKey === "string" &&
-							row.verificationKey === intent.verificationKey)),
-			)
-		)
-			continue;
+		const localOwner = retained.some(
+			(row) =>
+				row.kind === intent.kind &&
+				(localIds.has(row.id) ||
+					row.verificationKey === intent.verificationKey),
+		);
 		const providerPrefix = "provider:BITMOVIN_ENCODING:";
 		const providerIds = new Set([
 			...intent.providerIds,
@@ -172,18 +184,12 @@ export async function readVerificationCleanupWork(
 			intent.localId ?? (localIds.size === 1 ? [...localIds][0] : undefined);
 		const entityKey = `${kind}:${localId ?? `verification-intent:${intent.id}`}`;
 		for (const encodingId of providerIds) {
-			if (retainedIds?.has(encodingId)) continue;
-			if (
-				retained.some(
-					(row) =>
-						(row.bitmovinAccountId == null ||
-							row.bitmovinAccountId === accountId) &&
-						(row.bitmovinEncodingId === encodingId ||
-							stepEncodingIds(row.stepLog).includes(encodingId) ||
-							row.previousProviderEncodingIds.includes(encodingId)),
-				)
-			)
+			if (localOwner || owned(accountId, encodingId)) {
+				protectedWorkKeys.add(
+					JSON.stringify([entityKey, accountId, encodingId]),
+				);
 				continue;
+			}
 			candidates.push({
 				entityKey,
 				accountId,
@@ -192,5 +198,10 @@ export async function readVerificationCleanupWork(
 			});
 		}
 	}
-	return { candidates, archive: retainedArchive };
+	return {
+		candidates,
+		archive: retainedArchive,
+		protectedWorkKeys,
+		owned,
+	};
 }

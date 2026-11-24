@@ -71,6 +71,30 @@ export const analysisBindingSelect = {
 	select: analysisRunFields,
 } satisfies Prisma.LiveChannel$runsArgs;
 
+export const stopAnalysisBindingSelect = {
+	where: { action: "STOP", stopAnalysisSendId: { not: null } },
+	select: { liveChannelRunId: true, stopAnalysisSendId: true },
+} satisfies Prisma.LiveChannel$effectClaimsArgs;
+
+/** A provider STOP journal can outlive its run or either cached Analysis projection. */
+export function hasUnfinalizedStopAnalysis(
+	channel: Channel,
+	runs: readonly Pick<LiveChannelRun, keyof typeof analysisRunFields>[],
+	claims: readonly {
+		liveChannelRunId: string;
+		stopAnalysisSendId: string | null;
+	}[],
+) {
+	return claims.some((claim) => {
+		const run = runs.find((r) => r.id === claim.liveChannelRunId);
+		return (
+			!run ||
+			run.aisaAnalysisId !== claim.stopAnalysisSendId ||
+			!aisaRunCanBeRemoved(run.id === runs[0]?.id ? channel : run, run)
+		);
+	});
+}
+
 /** Called under the channel locks before removing the only Analysis or finalization handle. */
 export async function assertResetLiveAnalyses(tx: AppTransactionClient) {
 	// Provider readback may update a run while its channel projection stays unchanged.
@@ -87,21 +111,26 @@ export async function resetLiveAnalysisBlockers(
 	}));
 	const channels = await tx.liveChannel.findMany({
 		where: {
-			origin: { not: "AISA_IMPORTED" },
 			OR: [
-				...logBindings,
-				{ plan: { path: ["start", "aiSceneAnalysisLive"], not: DB_NULL } },
+				{ effectClaims: { some: stopAnalysisBindingSelect.where } },
 				{
-					runs: {
-						some: {
-							OR: [
-								...logBindings,
-								{ aisaAnalysisId: { not: null } },
-								{ aisaStatus: { not: null } },
-								{ aisaSnapshot: { not: DB_NULL } },
-							],
+					origin: { not: "AISA_IMPORTED" },
+					OR: [
+						...logBindings,
+						{ plan: { path: ["start", "aiSceneAnalysisLive"], not: DB_NULL } },
+						{
+							runs: {
+								some: {
+									OR: [
+										...logBindings,
+										{ aisaAnalysisId: { not: null } },
+										{ aisaStatus: { not: null } },
+										{ aisaSnapshot: { not: DB_NULL } },
+									],
+								},
+							},
 						},
-					},
+					],
 				},
 			],
 		},
@@ -115,10 +144,16 @@ export async function resetLiveAnalysisBlockers(
 			encoderStoppedConfirmedFor: true,
 			stepLog: true,
 			runs: analysisBindingSelect,
+			effectClaims: stopAnalysisBindingSelect,
 		},
 	});
 	return channels
 		.filter((channel) => {
+			if (
+				hasUnfinalizedStopAnalysis(channel, channel.runs, channel.effectClaims)
+			)
+				return true;
+			if (channel.origin === "AISA_IMPORTED") return false;
 			if (!channel.runs.length)
 				return (
 					isAisaLiveChannelView(channel, null) &&

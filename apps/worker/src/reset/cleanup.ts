@@ -12,7 +12,6 @@ import {
 	type ResetCleanupPayload,
 	type ResetCleanupWebhook,
 	readResetCleanupTask,
-	readResetRtmpArchives,
 	readVerificationCleanupWork,
 } from "@bitovp/db";
 
@@ -29,6 +28,7 @@ export type ResetCleanupProvider = {
 export async function cleanResetPayload(
 	payload: ResetCleanupPayload,
 	providerFor: (account: ResetCleanupAccount) => Promise<ResetCleanupProvider>,
+	canMutate?: (row: ResetCleanupEncoding) => Promise<boolean>,
 ) {
 	const encodings = new Set<string>();
 	const webhooks = new Set<string>();
@@ -43,6 +43,22 @@ export async function cleanResetPayload(
 		}
 		return api;
 	};
+	// Old combined selections could store an additional verification alias for
+	// an encoder already covered by the direct owner's never-started proof.
+	const proven = new Set(
+		payload.encodings
+			.filter((e) => e.allowCreated)
+			.map((e) => JSON.stringify([e.accountId, e.encodingId])),
+	);
+	const provedOwnerRows = new Set(
+		payload.encodings.filter((e) => e.allowCreated).map(cleanupOwnershipKey),
+	);
+	const isVerificationAlias = (row: ResetCleanupEncoding) =>
+		!row.allowCreated &&
+		(row.entityKey.includes(":verification-intent:") ||
+			(row.verificationOwnerCheck &&
+				provedOwnerRows.has(cleanupOwnershipKey(row)))) &&
+		proven.has(JSON.stringify([row.accountId, row.encodingId]));
 	const requireTerminal = new Set(
 		payload.encodings
 			.filter(
@@ -50,7 +66,8 @@ export async function cleanResetPayload(
 					row.requireTerminal ||
 					((row.entityKey.startsWith("liveChannel") ||
 						row.entityKey.startsWith("liveEffectClaim:")) &&
-						!row.allowCreated),
+						!row.allowCreated &&
+						!isVerificationAlias(row)),
 			)
 			.map((row) => `${row.accountId}:${row.encodingId}`),
 	);
@@ -64,12 +81,22 @@ export async function cleanResetPayload(
 	);
 	const unprovenAccount = new Set(
 		payload.encodings
-			.filter((e) => !e.allowVerifiedMissing)
+			.filter((e) => !e.allowVerifiedMissing && !isVerificationAlias(e))
 			.map((e) => `${e.accountId}:${e.encodingId}`),
+	);
+	const withTemporaryKeys = new Set(
+		payload.encodings
+			.filter(
+				(row) =>
+					row.entityKey.startsWith("liveChannel") ||
+					row.entityKey.startsWith("liveEffectClaim:"),
+			)
+			.map((row) => `${row.accountId}:${row.encodingId}`),
 	);
 	for (const row of payload.encodings) {
 		try {
 			const key = `${row.accountId}:${row.encodingId}`;
+			if (encodings.has(key)) continue;
 			const api = await provider(row.accountId);
 			let status = await api.status(row.encodingId);
 			if (
@@ -77,6 +104,7 @@ export async function cleanResetPayload(
 				classifyProviderStatusWord(status) !== "TERMINAL" &&
 				status !== "CREATED"
 			) {
+				if (canMutate && !(await canMutate(row))) continue;
 				await api.stop(row.encodingId);
 				status = await api.status(row.encodingId);
 			}
@@ -89,11 +117,10 @@ export async function cleanResetPayload(
 							!requireTerminal.has(key) &&
 							!unsettled.has(key));
 			if (safe) {
-				if (
-					row.entityKey.startsWith("liveChannel") ||
-					row.entityKey.startsWith("liveEffectClaim:")
-				)
+				if (withTemporaryKeys.has(key)) {
+					if (canMutate && !(await canMutate(row))) continue;
 					await api.releaseTemporaryKeys(row.encodingId);
+				}
 				encodings.add(`${row.accountId}:${row.encodingId}`);
 			}
 		} catch {
@@ -146,16 +173,17 @@ export function createResetCleanupSweep(deps: {
 					task.id,
 				);
 				if (!current) continue;
-				const work =
-					current.payload.verificationIntents.length &&
-					(!current.payload.verificationWorklistMaterialized ||
-						current.payload.encodings.length)
-						? await readVerificationCleanupWork(
-								deps.prisma,
-								current.payload.verificationIntents,
-							)
-						: null;
-				const eligible = new Set(work?.candidates.map(cleanupOwnershipKey));
+				const checkedWorklist =
+					current.payload.verificationIntents.length > 0 ||
+					current.payload.encodings.some(
+						(row) =>
+							row.verificationOwnerCheck ||
+							row.entityKey.includes(":verification-intent:"),
+					);
+				const verificationIntents = current.payload.verificationIntents;
+				const readWork = () =>
+					readVerificationCleanupWork(deps.prisma, verificationIntents);
+				const work = checkedWorklist ? await readWork() : null;
 
 				if (
 					current.payload.verificationIntents.length &&
@@ -192,34 +220,31 @@ export function createResetCleanupSweep(deps: {
 				// Older receipts can contain a verification intent's provider ID even though
 				// another airing retained it in an effect journal. Recheck before any STOP.
 				const snapshot = current.payload;
-				const inventory =
-					(snapshot.verificationIntents.length ||
-						snapshot.encodings.some((e) => e.verificationOwnerCheck)) &&
-					snapshot.encodings.length
-						? (work?.archive ?? (await readResetRtmpArchives(deps.prisma)))
-						: null;
 				const retained = new Set<string>();
-				const encodings = snapshot.encodings.filter((row) => {
-					if (!inventory) return true;
+				function permitted(
+					row: ResetCleanupEncoding,
+					currentWork: Awaited<ReturnType<typeof readWork>> | null,
+				) {
+					if (!currentWork) return true;
+					const key = cleanupOwnershipKey(row);
 					if (
-						inventory.ownedIds.has(row.encodingId) ||
-						(row.verificationOwnerCheck &&
-							work &&
-							!eligible.has(cleanupOwnershipKey(row)))
+						currentWork.owned(row.accountId, row.encodingId) ||
+						currentWork.protectedWorkKeys.has(key)
 					) {
-						retained.add(
-							JSON.stringify([row.entityKey, row.accountId, row.encodingId]),
-						);
+						retained.add(key);
 						return false;
 					}
-					return (
-						!inventory.incompleteAccounts.has(null) &&
-						!inventory.incompleteAccounts.has(row.accountId)
-					);
-				});
+					const incomplete = currentWork.archive?.incompleteAccounts;
+					return !incomplete?.has(null) && !incomplete?.has(row.accountId);
+				}
+				const encodings = snapshot.encodings.filter((row) =>
+					permitted(row, work),
+				);
 				const done = await cleanResetPayload(
 					{ ...snapshot, encodings },
 					deps.providerFor,
+					// A retained job can adopt a verification asset during the provider GET.
+					work ? async (row) => permitted(row, await readWork()) : undefined,
 				);
 				const applied = await mutateResetCleanupTask(
 					deps.prisma,

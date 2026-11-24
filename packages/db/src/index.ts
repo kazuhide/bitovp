@@ -122,7 +122,10 @@ export {
 	validLiveRetirementReceipts,
 	wasLiveStopAcknowledged,
 } from "./live-effect-claim";
-export { readLockedLiveStartState } from "./live-reair-guard";
+export {
+	readLockedLiveStartState,
+	reconcileOrphanLiveStops,
+} from "./live-reair-guard";
 export {
 	CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
 	recordConfirmedStopDelivery,

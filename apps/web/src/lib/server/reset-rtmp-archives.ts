@@ -5,6 +5,7 @@ import {
 	mergeRtmpRetirementEvidence,
 	type Prisma,
 	readResetRtmpArchives,
+	reconcileOrphanLiveStops,
 } from "@bitovp/db";
 import type { EncoderPointer } from "./reset";
 import { lockResetAccount, type ResetAccountSnapshot } from "./reset-provider";
@@ -50,6 +51,18 @@ export async function confirmArchivedRtmpEncoding(
 					status: pointer.status as Prisma.LiveChannelWhereInput["status"],
 				},
 				select: {
+					origin: true,
+					stepLog: true,
+					runs: {
+						orderBy: { seq: "desc" },
+						take: 1,
+						select: {
+							stepLog: true,
+							aisaAnalysisId: true,
+							aisaStatus: true,
+							aisaSnapshot: true,
+						},
+					},
 					plan: true,
 					bitmovinAccountId: true,
 					resetOrphanEncoderEvidence: true,
@@ -67,7 +80,8 @@ export async function confirmArchivedRtmpEncoding(
 				)
 			)
 				return false;
-			await tx.liveChannel.update({
+			const updated = await tx.liveChannel.update({
+				select: { resetOrphanEncoderEvidence: true },
 				where: { id: pointer.id },
 				data: {
 					resetOrphanEncoderEvidence: mergeRtmpRetirementEvidence(
@@ -84,6 +98,12 @@ export async function confirmArchivedRtmpEncoding(
 					),
 				},
 			});
+			await reconcileOrphanLiveStops(
+				tx,
+				pointer.id,
+				{ ...channel, ...updated },
+				channel.runs[0],
+			);
 			return true;
 		}
 		await tx.$queryRaw`SELECT id FROM "LiveChannelRun" WHERE id = ${pointer.id}::uuid FOR UPDATE`;

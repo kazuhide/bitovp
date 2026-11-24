@@ -92,6 +92,34 @@ it("settles CREATED with positive never-started evidence and no owner in flight"
 		(await cleanResetPayload(payload, async () => provider)).encodings.size,
 	).toBe(1);
 });
+it("settles a saved verification alias using the exact native proof without downgrading a second owner's terminal requirement", async () => {
+	const { payload, provider } = fixture();
+	const row = payload.encodings[0];
+	if (!row) throw new Error("Missing encoder fixture");
+	row.allowCreated = true;
+	payload.encodings.unshift({
+		...row,
+		entityKey: "liveChannel:verification-intent:legacy",
+		allowCreated: undefined,
+		verificationOwnerCheck: true,
+	});
+	vi.mocked(provider.status).mockResolvedValue("CREATED");
+	const independent = {
+		...row,
+		entityKey: "liveChannelRun:other",
+		allowCreated: undefined,
+	};
+	payload.encodings.push(independent);
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(0);
+	expect(provider.releaseTemporaryKeys).not.toHaveBeenCalled();
+	payload.encodings.pop();
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(1);
+	expect(provider.releaseTemporaryKeys).toHaveBeenCalledTimes(1);
+});
 it("retains a rotated or unbound account on verified absence and accepts an exact terminal result", async () => {
 	const { payload, provider } = fixture();
 	vi.mocked(provider.status).mockResolvedValue(RESET_ENCODING_ABSENT);

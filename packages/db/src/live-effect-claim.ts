@@ -628,6 +628,15 @@ export function pendingSecondaryStopTargets(
 		? inventory.encodingIds.filter((id) => id !== primary)
 		: null;
 }
+/** A lifecycle observation on one primary cannot retire a different primary on the other mirror. */
+export function divergentLivePrimaries(
+	run: { bitmovinEncodingId?: string | null },
+	channel: { bitmovinEncodingId?: string | null },
+): string[] {
+	const a = run.bitmovinEncodingId,
+		b = channel.bitmovinEncodingId;
+	return a && b && a !== b ? [a, b] : [];
+}
 /** The primary has its own lifecycle guard. If its column was lost, every surviving ID needs retirement. */
 export function pendingAiringRetirement(
 	run: Parameters<typeof unconfirmedRtmpEncoders>[0] & {
@@ -652,15 +661,20 @@ export function pendingAiringRetirement(
 	if (!pending) return null;
 	// An explicitly indexed encoder can itself have been rebound as the primary of
 	// an archive-only STOP. Its positive receipt is still required before re-air.
-	const valid = new Set(
-		validLiveRetirementReceipts(run, history, accountId).map(
-			(receipt) => receipt.encodingId,
-		),
+	const receipts = validLiveRetirementReceipts(run, history, accountId);
+	const valid = new Set(receipts.map((receipt) => receipt.encodingId));
+	const terminal = new Set(
+		receipts
+			.filter((receipt) => receipt.disposition === "TERMINAL")
+			.map((receipt) => receipt.encodingId),
+	);
+	const divergent = divergentLivePrimaries(run, channel).filter(
+		(id) => !terminal.has(id),
 	);
 	const indexed = (run.previousProviderEncodingIds ?? []).filter(
 		(id) => !valid.has(id),
 	);
-	return [...new Set([...pending, ...indexed])].sort();
+	return [...new Set([...pending, ...indexed, ...divergent])].sort();
 }
 export function readAiringEffectHistory(
 	tx: Pick<AppTransactionClient, "liveEffectClaim">,

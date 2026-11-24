@@ -1,4 +1,5 @@
-import { deriveProviderLifecycle } from "@bitovp/core";
+import { deriveProviderLifecycle, hasAisaLiveBinding } from "@bitovp/core";
+import type { LiveEffectClaim } from "../generated/client";
 import type { AppTransactionClient } from "./client";
 import {
 	liveChannelAccountId,
@@ -17,13 +18,14 @@ export async function readLockedLiveStartState(
 		{
 			resetOrphanEncoderEvidence: unknown;
 			status: string;
+			origin: string;
 			error: string | null;
 			stepLog: unknown;
 			plan: unknown;
 			bitmovinAccountId: string | null;
 			bitmovinEncodingId: string | null;
 		}[]
-	>`SELECT "stepLog", plan, status, error, "bitmovinAccountId", "bitmovinEncodingId", "resetOrphanEncoderEvidence" FROM "LiveChannel" WHERE id = ${liveChannelId}::uuid FOR UPDATE`;
+	>`SELECT "stepLog", plan, origin, status, error, "bitmovinAccountId", "bitmovinEncodingId", "resetOrphanEncoderEvidence" FROM "LiveChannel" WHERE id = ${liveChannelId}::uuid FOR UPDATE`;
 	if (!channel) return { channel: null, latest: null, archivesRetired: false };
 	const latest = await tx.liveChannelRun.findFirst({
 		where: { liveChannelId },
@@ -64,33 +66,13 @@ export async function readLockedLiveStartState(
 		accountId,
 	);
 	let archivesRetired = pending?.length === 0;
-	if (archivesRetired) {
-		// Read after the channel lock was acquired. Old claims have no run FK;
-		// their surviving identity can be on a channel with no runs at all.
-		const orphanClaims = await tx.$queryRaw<
-			(Parameters<typeof unresolvedOrphanLiveClaimTargets>[0][number] & {
-				liveChannelRunId: string;
-			})[]
-		>`
-			SELECT c."liveChannelRunId", c.action, c."providerEncodingId", c.failure, c."stopProtocolVersion", c."stopOutcomeEvidence", c."stopSendEncodingIds", c."legacyUnsentStopIds"
-			FROM "LiveEffectClaim" c WHERE c."liveChannelId" = ${liveChannelId}::uuid
-			AND NOT EXISTS (SELECT 1 FROM "LiveChannelRun" r WHERE r.id = c."liveChannelRunId" AND r."liveChannelId" = c."liveChannelId")
-		`;
-		const byRun = new Map<string, typeof orphanClaims>();
-		for (const claim of orphanClaims) {
-			const sameRun = byRun.get(claim.liveChannelRunId);
-			if (sameRun) sameRun.push(claim);
-			else byRun.set(claim.liveChannelRunId, [claim]);
-		}
-		archivesRetired = [...byRun.values()].every(
-			(history) =>
-				unresolvedOrphanLiveClaimTargets(
-					history,
-					channel.resetOrphanEncoderEvidence,
-					accountId,
-				)?.length === 0,
+	if (archivesRetired)
+		archivesRetired = await reconcileOrphanLiveStops(
+			tx,
+			liveChannelId,
+			channel,
+			latest,
 		);
-	}
 	// Rows completed by an older worker can still have a publisher. Do not
 	// transfer its ingest coordinates to the next airing before it drains.
 	if (
@@ -142,4 +124,88 @@ export async function readLockedLiveStartState(
 		before = prior.at(-1)?.seq ?? 0;
 	}
 	return { channel, latest, archivesRetired };
+}
+
+/** Caller holds the channel lock. Closing an abandoned native STOP requires a complete
+ * original-account terminal inventory; it records administrative resolution only. */
+export async function reconcileOrphanLiveStops(
+	tx: AppTransactionClient,
+	liveChannelId: string,
+	channel: {
+		resetOrphanEncoderEvidence: unknown;
+		plan: unknown;
+		bitmovinAccountId: string | null;
+		origin: string;
+		stepLog: unknown;
+	},
+	latest: unknown,
+): Promise<boolean> {
+	const accountId = liveChannelAccountId(channel);
+	const orphanClaims = await tx.$queryRaw<
+		(Parameters<typeof unresolvedOrphanLiveClaimTargets>[0][number] & {
+			liveChannelRunId: string;
+		} & Pick<
+				LiveEffectClaim,
+				"id" | "token" | "state" | "expiresAt" | "stopAnalysisSendId"
+			>)[]
+	>`
+			SELECT c.id, c.token, c.state, c."expiresAt", c."stopAnalysisSendId", c."liveChannelRunId", c.action, c."providerEncodingId", c.failure, c."stopProtocolVersion", c."stopOutcomeEvidence", c."stopSendEncodingIds", c."legacyUnsentStopIds"
+			FROM "LiveEffectClaim" c WHERE c."liveChannelId" = ${liveChannelId}::uuid
+			AND NOT EXISTS (SELECT 1 FROM "LiveChannelRun" r WHERE r.id = c."liveChannelRunId" AND r."liveChannelId" = c."liveChannelId")
+		`;
+	const byRun = new Map<string, typeof orphanClaims>();
+	for (const claim of orphanClaims) {
+		const sameRun = byRun.get(claim.liveChannelRunId);
+		if (sameRun) sameRun.push(claim);
+		else byRun.set(claim.liveChannelRunId, [claim]);
+	}
+
+	const now = new Date();
+	let allRetired = true;
+	for (const history of byRun.values()) {
+		const targets = unresolvedOrphanLiveClaimTargets(
+			history,
+			channel.resetOrphanEncoderEvidence,
+			accountId,
+		);
+		if (targets?.length !== 0) {
+			allRetired = false;
+			continue;
+		}
+		const open = history.filter(
+			(c) =>
+				c.state === "AMBIGUOUS" ||
+				c.state === "DISPATCHING" ||
+				c.state === "CLAIMED",
+		);
+		if (
+			!accountId ||
+			!open.length ||
+			hasAisaLiveBinding(channel, latest) ||
+			history.some((c) => c.stopAnalysisSendId) ||
+			open.some(
+				(c) =>
+					c.action !== "STOP" ||
+					c.state === "CLAIMED" ||
+					(c.state === "DISPATCHING" && c.expiresAt > now),
+			)
+		)
+			continue;
+		for (const c of open) {
+			await tx.liveEffectClaim.updateMany({
+				where: {
+					id: c.id,
+					liveChannelId,
+					liveChannelRunId: c.liveChannelRunId,
+					token: c.token,
+					action: "STOP",
+					state: c.state,
+					stopAnalysisSendId: null,
+					...(c.state === "DISPATCHING" ? { expiresAt: { lte: now } } : {}),
+				},
+				data: { state: "RESOLVED", acknowledgedAt: now },
+			});
+		}
+	}
+	return allRetired;
 }

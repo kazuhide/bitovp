@@ -214,6 +214,95 @@ function optionFor(
 	return option;
 }
 
+it("switches to a manifest-free MoQ plan and keeps storage ACL and name-based folder when switching back", async () => {
+	const credential = {
+		id: "77000000-0000-4000-8000-000000000001",
+		label: "Test relay",
+		provider: "MOQ",
+	};
+	apiFetch.mockImplementation(async (url: string) => {
+		if (url === "/api/credentials") return [...CREDENTIALS, credential];
+		if (url.startsWith("/api/live-channels/moq-readiness?"))
+			return { status: "ready", issues: [] };
+		return [];
+	});
+	await outputCredentialSelect();
+	const option = await screen.findByRole("option", { name: /Test relay/ });
+	expect(option).toBeEnabled();
+	fireEvent.click(screen.getByRole("button", { name: "1. Basics" }));
+	fireEvent.change(screen.getByLabelText("Channel name"), {
+		target: { value: "old" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "4. Output" }));
+	fireEvent.change(screen.getByLabelText("Output folder"), {
+		target: { value: "events" },
+	});
+	fireEvent.click(
+		screen.getByLabelText("ACL PUBLIC_READ (request public read access)"),
+	);
+	fireEvent.click(
+		screen.getByRole("checkbox", { name: "Also deliver to storage" }),
+	);
+	fireEvent.click(screen.getByRole("button", { name: "7. Manifests" }));
+	fireEvent.change(screen.getByLabelText("Output destination"), {
+		target: { value: "mirror-1" },
+	});
+	fireEvent.click(screen.getByRole("checkbox", { name: /Enable SCTE-35/i }));
+	fireEvent.click(screen.getByRole("button", { name: "4. Output" }));
+	fireEvent.change(
+		screen.getByLabelText("Credential", { selector: "#lw-out-cred" }),
+		{
+			target: { value: credential.id },
+		},
+	);
+	expect(document.getElementById("lw-out-bucket")).toBeNull();
+	fireEvent.change(screen.getByLabelText("Track namespace"), {
+		target: { value: "new-channel" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "7. Manifests" }));
+	fireEvent.change(screen.getByLabelText("Output destination"), {
+		target: { value: "origin" },
+	});
+	fireEvent.click(screen.getByRole("checkbox", { name: /Enable SCTE-35/i }));
+	fireEvent.click(screen.getByRole("button", { name: "4. Output" }));
+	fireEvent.click(
+		screen.getByRole("checkbox", { name: "Also deliver to storage" }),
+	);
+	fireEvent.click(screen.getByRole("button", { name: "1. Basics" }));
+	fireEvent.change(screen.getByLabelText("Channel name"), {
+		target: { value: "New MoQ channel" },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Plan JSON" }));
+	const json = document.querySelector("aside pre")?.textContent;
+	const plan = liveChannelPlanSchema.parse(JSON.parse(json ?? "null"));
+	expect(plan.outputs).toEqual([
+		expect.objectContaining({
+			kind: "MOQ",
+			credentialId: credential.id,
+			draftVersion: "DRAFT_16",
+			trackNamespace: ["new-channel"],
+		}),
+	]);
+	expect(plan.liveManifests).toEqual([]);
+	expect(plan.adMarkers).toBeUndefined();
+	expect(
+		plan.muxings.every(
+			(muxing) => muxing.kind === "FMP4" && !muxing.destination?.acl,
+		),
+	).toBe(true);
+	fireEvent.click(screen.getByRole("button", { name: "4. Output" }));
+	fireEvent.change(
+		screen.getByLabelText("Credential", { selector: "#lw-out-cred" }),
+		{
+			target: { value: "cred-s3" },
+		},
+	);
+	expect(
+		screen.getByLabelText("ACL PUBLIC_READ (request public read access)"),
+	).toBeChecked();
+	expect(screen.getByLabelText("Output folder")).toHaveValue("events");
+});
+
 it.each([
 	["en", "Output destination", "Access permissions"],
 	["ja", "\u51fa\u529b\u5148", "\u30a2\u30af\u30bb\u30b9\u6a29"],

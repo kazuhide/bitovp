@@ -94,14 +94,20 @@ function assertLiveMuxingOptions(
 				"Use a flat init filename without directory or URL characters.",
 			);
 	}
+	// Stored MoQ relay paths can include the channel title.
+	const moqPath = state.output.kind === "MOQ";
 	if (
 		options.path !== undefined &&
 		(!options.path ||
 			/[\\%?#]/.test(options.path) ||
 			Array.from(options.path).some(
-				(character) => character.charCodeAt(0) <= 32,
+				(character) =>
+					character.charCodeAt(0) < 32 || (character === " " && !moqPath),
 			) ||
-			options.path.split("/").some((part) => part === "." || part === ".."))
+			options.path.split("/").some((part) => {
+				const component = moqPath ? part.trim() : part;
+				return component === "." || component === "..";
+			}))
 	)
 		throw new LiveOptionsError(
 			"liveRendition.invalidOutputPath",

@@ -29,6 +29,29 @@ import {
 
 beforeEach(() => localStorage.clear());
 
+it("restores an edited MoQ copy without erasing a namespace excluded from local storage", () => {
+	const source: LiveWizardState = {
+		...DEFAULT_LIVE_WIZARD_STATE,
+		output: {
+			...DEFAULT_LIVE_WIZARD_STATE.output,
+			kind: "MOQ",
+			moq: {
+				key: "relay",
+				draftVersion: "DRAFT_16",
+				trackNamespace: ["sports#2", "secondary"],
+			},
+		},
+	};
+	const saved = projectWizardDraft("live", {
+		...source,
+		name: "Edited live copy",
+	});
+	expect(JSON.stringify(saved)).not.toContain("sports#2");
+	const restored = mergeWizardDraft(source, saved, "live");
+	expect(restored.name).toBe("Edited live copy");
+	expect(restored.output.moq).toEqual(source.output.moq);
+});
+
 it("restores a fixed output logo with its image-only source and rendition attachments", () => {
 	const base = structuredClone(DEFAULT_WIZARD_STATE);
 	base.inputFiles[0] = {

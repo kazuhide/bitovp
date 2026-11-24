@@ -59,8 +59,12 @@ manifest-element budget is checked rather than silently clamped.
 
 ## Experimental MoQ delivery
 
-MoQ relay output is available through an imported expert JSON Live plan. Create a
-**MoQ relay (live delivery)** credential first. Its encrypted secret holds a
+Create a **MoQ relay (live delivery)** credential first. In the Live wizard,
+select it under **Output** and set the MoQT draft and track namespace.
+**Copy settings and edit** opens the saved settings in the wizard when the
+form can reproduce the plan. Other valid plans remain editable as JSON.
+
+The credential's encrypted secret holds a
 `moqt://host[:port][/path]` relay URL and an optional authorization token/type;
 userinfo, query strings, and fragments are rejected. Keep the token out of the
 plan. `authTokenType` requires a token.
@@ -69,9 +73,9 @@ Use one `MOQ` output referencing that credential, `trackNamespace` as a tuple of
 1–32 nonempty strings, and `draftVersion` as `DRAFT_16` or `DRAFT_18`. Each H264
 video or AAC audio rendition needs one FMP4 or CMAF muxing directed to that
 output. A CMAF muxing can specify `framesPerCmafChunk`.
-Set `liveManifests` to an empty array. Storage outputs/mirrors, DRM, SCTE-35,
-and ad insertion are not supported in this evaluation path. The plan is kept in
-expert mode so conversion to the ordinary wizard cannot discard MoQ settings.
+The relay publishes a catalog. Set `liveManifests` to an empty array when
+authoring expert JSON. Keep storage outputs and mirrors, DRM, SCTE-35, and ad
+insertion off in the MoQ plan.
 
 This uses Custom Live and requires Bitmovin's account-level MoQ Beta access.
 Relay interoperability and Player Web X playback need independent verification;

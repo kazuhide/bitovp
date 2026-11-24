@@ -807,7 +807,7 @@ function makeStore(
 								row.note === args.where.note &&
 								row.fireAt.getTime() === args.where.fireAt.getTime(),
 						);
-						return hit ? { id: hit.id } : null;
+						return hit ? { ...hit } : null;
 					},
 				),
 				create: vi.fn(async (args: { data: Partial<Row> }) => {
@@ -979,6 +979,12 @@ function makeStore(
 						.map((channel) => ({
 							id: channel.id,
 							maxRunMinutes: channel.maxRunMinutes,
+							bitmovinEncodingId: channel.bitmovinEncodingId,
+							runs: structuredClone(
+								store.runs
+									.filter((run) => run.liveChannelId === channel.id)
+									.slice(-1),
+							),
 							runningSince: channel.runningSince,
 							liveEffectFenceVersion: channel.liveEffectFenceVersion,
 						})),
@@ -990,6 +996,9 @@ function makeStore(
 							status?: string | { in: string[] };
 							error?: null;
 							liveEffectFenceVersion?: number;
+							runningSince?: Date;
+							bitmovinEncodingId?: string;
+							maxRunMinutes?: number;
 						};
 						data: Partial<Channel>;
 					}) => {
@@ -999,6 +1008,17 @@ function makeStore(
 							if (channel.id !== args.where.id) {
 								continue;
 							}
+							if (
+								(args.where.runningSince &&
+									args.where.runningSince.getTime() !==
+										channel.runningSince?.getTime()) ||
+								(args.where.bitmovinEncodingId !== undefined &&
+									args.where.bitmovinEncodingId !==
+										channel.bitmovinEncodingId) ||
+								(args.where.maxRunMinutes !== undefined &&
+									args.where.maxRunMinutes !== channel.maxRunMinutes)
+							)
+								continue;
 							if (
 								args.where.liveEffectFenceVersion !== undefined &&
 								channel.liveEffectFenceVersion !==
@@ -2555,6 +2575,39 @@ describe("maxRunMinutes cap (runningSince column, atomic claim)", () => {
 		expect(enqueue).toHaveBeenCalledTimes(1);
 	});
 
+	it("a captured deadline cannot stop a successor airing or ignore a changed cap", async () => {
+		for (const change of ["airing", "duration"]) {
+			const current = runningChannel();
+			const store = makeStore([], [current]);
+			const list = store.prisma.liveChannel.findMany.getMockImplementation();
+			if (!list) throw new Error("expected cap scan fixture");
+			store.prisma.liveChannel.findMany.mockImplementationOnce(async () => {
+				const original = await list();
+				if (change === "duration") current.maxRunMinutes = 120;
+				else {
+					current.runningSince = new Date(T0 + 60 * 60_000);
+					current.bitmovinEncodingId = "successor";
+					store.runs.push({
+						id: "successor-run",
+						seq: 2,
+						liveChannelId: CH,
+						status: "RUNNING",
+						bitmovinEncodingId: "successor",
+					});
+				}
+				return original;
+			});
+			const { sweep, enqueue } = makeSweep(store, {
+				now: () => new Date(T0 + 61 * 60_000),
+			});
+			expect((await sweep()).capStops).toBe(0);
+			expect(current.status).toBe("RUNNING");
+			expect(store.runs.at(-1)?.status).toBe("RUNNING");
+			expect(store.rows).toHaveLength(0);
+			expect(enqueue).not.toHaveBeenCalled();
+		}
+	});
+
 	it("TWO racing cap sweeps: the channel claim admits exactly one (review-190 I1)", async () => {
 		const store = makeStore([], [runningChannel()]);
 		const first = makeSweep(store, { now: () => new Date(T0 + 61 * 60_000) });
@@ -2585,6 +2638,8 @@ describe("maxRunMinutes cap (runningSince column, atomic claim)", () => {
 				fireAt: new Date(deadline),
 				status: "FIRED",
 				note: "max-run-cap",
+				liveChannelRunId: store.runs[0]?.id ?? null,
+				outcome: "PENDING",
 			}),
 		);
 		const { sweep, enqueue } = makeSweep(store, {
@@ -2620,10 +2675,7 @@ describe("maxRunMinutes cap (runningSince column, atomic claim)", () => {
 		expect(enqueue).not.toHaveBeenCalled();
 	});
 
-	it("a NON-P2002 create failure fails closed — it never fabricates RUNNING without a provider observation", async () => {
-		// There is no durable STOP row to recover here. ERROR is the honest
-		// state: the provider may still be running, while RUNNING would be an
-		// invented lifecycle observation.
+	it("rolls the whole cap claim back when the schedule cannot be persisted and retries the same epoch", async () => {
 		const store = makeStore([], [runningChannel()]);
 		let creates = 0;
 		const originalCreate = store.prisma.liveSchedule.create;
@@ -2642,16 +2694,12 @@ describe("maxRunMinutes cap (runningSince column, atomic claim)", () => {
 		const first = await sweep();
 		expect(first.errors).toBe(1);
 		expect(first.capStops).toBe(0);
-		expect(store.channels[0]).toMatchObject({
-			status: "ERROR",
-			error: expect.stringContaining("runtime-cap STOP handoff failed"),
-		});
+		expect(store.channels[0]?.status).toBe("RUNNING");
+		expect(store.runs[0]?.status).toBe("RUNNING");
+		expect(store.rows).toHaveLength(0);
 		expect(enqueue).not.toHaveBeenCalled();
-		// ERROR is not silently promoted back to RUNNING on the next tick.
-		const second = await sweep();
-		expect(second.capStops).toBe(0);
-		expect(store.channels[0]).toMatchObject({ status: "ERROR" });
-		expect(enqueue).not.toHaveBeenCalled();
+		expect((await sweep()).capStops).toBe(1);
+		expect(enqueue).toHaveBeenCalledTimes(1);
 	});
 
 	it("cap enqueue failure keeps STOPPING and its durable outbox; the next tick re-dispatches it", async () => {
@@ -2673,7 +2721,8 @@ describe("maxRunMinutes cap (runningSince column, atomic claim)", () => {
 		expect(store.rows[0]).toMatchObject({
 			status: "FIRED",
 			dispatchedAt: null,
-			note: expect.stringContaining("runtime-cap STOP handoff failed"),
+			note: "max-run-cap",
+			error: expect.stringContaining("runtime-cap STOP handoff failed"),
 		});
 		nowMs += 61_000;
 		const second = await sweep();

@@ -28,6 +28,7 @@ import {
 	createLiveChannelProcessor,
 	type LiveChannelDeps,
 } from "../orchestrator/live-processor";
+import { createScheduleSweep } from "../scheduler/sweep";
 import {
 	createExpiredRestartReconciler,
 	recordDeadJobScheduleOutcomes,
@@ -463,6 +464,105 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				provisionClaimedAt: heldAt,
 			});
 		}
+
+		it("a cap paused after scanning a previous airing leaves its successor on air, then caps it at its own deadline", async () => {
+			const f = await fixture("RUNNING", null);
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					runningSince: new Date(now.getTime() - 120000),
+					maxRunMinutes: 1,
+				},
+			});
+			const scanned = barrier(),
+				resume = barrier();
+			const paused = new Proxy(tenant, {
+				get(target, key) {
+					if (key === "liveChannel")
+						return new Proxy(target.liveChannel, {
+							get(channels, method) {
+								if (method === "findMany")
+									return async (
+										args: Parameters<typeof channels.findMany>[0],
+									) => {
+										const rows = await channels.findMany(args);
+										scanned.release();
+										await resume.ready;
+										return rows;
+									};
+								return Reflect.get(channels, method);
+							},
+						});
+					const value = Reflect.get(target, key);
+					return typeof value === "function" ? value.bind(target) : value;
+				},
+			});
+			let at = now;
+			const enqueue = vi.fn(async () => {});
+			const sweep = createScheduleSweep({
+				prisma: paused,
+				now: () => at,
+				enqueue,
+			});
+			const previous = sweep();
+			let successorId: string;
+			try {
+				await scanned.ready;
+				const next = await tenant.$transaction(async (tx) => {
+					await tx.liveChannel.update({
+						where: { id: f.channel.id },
+						data: {
+							runningSince: now,
+							bitmovinEncodingId: "next-cap-encoder",
+							liveEffectFenceVersion: { increment: 1 },
+						},
+					});
+					await tx.liveChannelRun.update({
+						where: { id: f.run.id },
+						data: { status: "STOPPED", endedAt: now },
+					});
+					return tx.liveChannelRun.create({
+						data: {
+							liveChannelId: f.channel.id,
+							seq: 2,
+							outputPrefix: "",
+							status: "RUNNING",
+							bitmovinEncodingId: "next-cap-encoder",
+						},
+					});
+				});
+				successorId = next.id;
+			} finally {
+				resume.release();
+			}
+			await previous;
+			expect(enqueue).not.toHaveBeenCalled();
+			expect(
+				await tenant.liveSchedule.count({
+					where: { liveChannelId: f.channel.id },
+				}),
+			).toBe(0);
+			at = new Date(now.getTime() + 61000);
+			expect((await sweep()).capStops).toBe(1);
+			const row = await tenant.liveSchedule.findFirstOrThrow({
+				where: { liveChannelId: f.channel.id },
+			});
+			expect(row).toMatchObject({
+				status: "FIRED",
+				liveChannelRunId: successorId,
+				dispatchJobId: `sched-${row.id}`,
+			});
+			expect(enqueue).toHaveBeenCalledWith(
+				expect.objectContaining({
+					effect: expect.objectContaining({
+						liveChannelRunId: successorId,
+						providerEncodingId: "next-cap-encoder",
+						scheduleId: row.id,
+					}),
+				}),
+				`sched-${row.id}`,
+			);
+		});
 
 		async function stopFixture() {
 			const f = await fixture("STOPPING", null);

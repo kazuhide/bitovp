@@ -2607,15 +2607,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		}
 	}
 
-	/**
-	 * The runtime cap: RUNNING longer than maxRunMinutes ⇒ stop, once per
-	 * epoch. Atomicity is layered (review-190 I1 proved the first cut's
-	 * check-then-create raced): the channel claim RUNNING→STOPPING is the
-	 * lock; the synthetic row's fireAt IS the epoch deadline (deterministic
-	 * across workers) under a partial unique index, so a second creator
-	 * loses on P2002; and the queue jobId derives from the same deadline,
-	 * so a crash-retry re-enqueue dedupes instead of double-stopping.
-	 */
+	/** Commit the exact airing's cap and its durable STOP together before touching Redis. */
 	async function enforceCaps(stats: ScheduleSweepStats): Promise<void> {
 		const now = deps.now();
 		const capped = await deps.prisma.liveChannel.findMany({
@@ -2628,167 +2620,138 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				id: true,
 				maxRunMinutes: true,
 				runningSince: true,
+				bitmovinEncodingId: true,
 				liveEffectFenceVersion: true,
+				runs: {
+					orderBy: { seq: "desc" },
+					take: 1,
+					select: { id: true, bitmovinEncodingId: true, stepLog: true },
+				},
 			},
 		});
 		for (const channel of capped) {
-			if (channel.maxRunMinutes === null || channel.runningSince === null) {
+			if (channel.maxRunMinutes === null || channel.runningSince === null)
 				continue;
-			}
 			const deadline = new Date(
 				channel.runningSince.getTime() + channel.maxRunMinutes * 60_000,
 			);
-			if (now.getTime() < deadline.getTime()) {
+			if (now < deadline) continue;
+			const run = channel.runs[0];
+			const providerEncodingId = channel.bitmovinEncodingId;
+			if (
+				!run ||
+				!providerEncodingId ||
+				!liveStopRunOwnsEncoding(run, providerEncodingId)
+			) {
+				stats.errors += 1;
 				continue;
 			}
-			// The lock: only one actor can move RUNNING→STOPPING.
-			const claim = await deps.prisma.liveChannel.updateMany({
-				where: {
-					id: channel.id,
-					status: "RUNNING",
-					liveEffectFenceVersion: channel.liveEffectFenceVersion,
-				},
-				data: {
-					status: "STOPPING",
-					liveEffectFenceVersion: { increment: 1 },
-				},
-			});
-			if (claim.count === 0) {
-				continue;
-			}
-			await runs.mirror(channel.id, { status: "STOPPING" });
-			// The cap's synthetic row records WHICH airing it capped.
-			// Provenance only  — the row is born FIRED and dispatched
-			// in the same breath, so it never passes the generation guard that
-			// the ARMED fire paths run.
-			const cappedRun = await runs.latest(channel.id);
-			// EVERYTHING after the claim sits in ONE try whose catch releases
-			// it (review-190 re-verify I1: the first cut released only around
-			// the enqueue, so a non-P2002 create failure — pool exhaustion, a
-			// statement timeout — threw with the channel wedged STOPPING and
-			// NO way out: no job exists for the dead-job reaper, stop/restart
-			// routes 409 on STOPPING, and the next tick selects RUNNING only.
-			// Probed by the reviewer: the channel stayed STOPPING forever
-			// while the encoding billed).
-			let rowId: string | null = null;
+			let scheduleId: string | null = null;
 			try {
-				try {
-					const created = await deps.prisma.liveSchedule.create({
+				scheduleId = await deps.prisma.$transaction(async (tx) => {
+					const locked = await tx.liveChannel.updateMany({
+						where: {
+							id: channel.id,
+							status: "RUNNING",
+							runningSince: channel.runningSince,
+							maxRunMinutes: channel.maxRunMinutes,
+							bitmovinEncodingId: providerEncodingId,
+							liveEffectFenceVersion: channel.liveEffectFenceVersion,
+						},
 						data: {
-							liveChannelId: channel.id,
-							...(cappedRun ? { liveChannelRunId: cappedRun.id } : {}),
-							action: "STOP",
-							fireAt: deadline,
-							status: "FIRED",
-							firedAt: now,
-							// : the cap's synthetic row is born with an
-							// OPEN outbox exactly like an armed row's claim — the
-							// channel is already STOPPING here, so a death before
-							// the add below is the billing-forever case.
-							dispatchedAt: null,
-							note: CAP_NOTE,
+							status: "STOPPING",
+							liveEffectFenceVersion: { increment: 1 },
 						},
 					});
-					rowId = created.id;
-				} catch (err) {
-					// P2002 on the epoch index: BACKSTOP, not a live path — both
-					// RUNNING writers rewrite runningSince, so a RUNNING channel
-					// with an epoch row at the SAME deadline cannot occur today
-					// (review-190 re-verify I2 corrected the first story here,
-					// which claimed crash-healing through this branch). It
-					// guards a future writer that sets RUNNING without touching
-					// runningSince.
+					if (!locked.count) return null;
+					const latest = await tx.liveChannelRun.findFirst({
+						where: { liveChannelId: channel.id },
+						orderBy: { seq: "desc" },
+						select: { id: true, bitmovinEncodingId: true, stepLog: true },
+					});
 					if (
-						typeof err === "object" &&
-						err !== null &&
-						(err as { code?: string }).code === "P2002"
-					) {
-						const existing = await deps.prisma.liveSchedule.findFirst({
-							where: {
-								liveChannelId: channel.id,
-								note: CAP_NOTE,
-								fireAt: deadline,
+						latest?.id !== run.id ||
+						!liveStopRunOwnsEncoding(latest, providerEncodingId)
+					)
+						throw new Error("runtime cap no longer owns this broadcast");
+					const epoch = {
+						liveChannelId: channel.id,
+						note: CAP_NOTE,
+						fireAt: deadline,
+					};
+					const prior = await tx.liveSchedule.findFirst({
+						where: epoch,
+						select: {
+							id: true,
+							liveChannelRunId: true,
+							status: true,
+							outcome: true,
+							dispatchedAt: true,
+						},
+					});
+					if (
+						prior &&
+						(prior.liveChannelRunId !== run.id ||
+							prior.status !== "FIRED" ||
+							prior.outcome !== "PENDING" ||
+							prior.dispatchedAt !== null)
+					)
+						throw new Error(
+							"runtime cap found a different or already dispatched schedule for this deadline",
+						);
+					const row =
+						prior ??
+						(await tx.liveSchedule.create({
+							data: {
+								...epoch,
+								liveChannelRunId: run.id,
+								action: "STOP",
+								status: "FIRED",
+								firedAt: now,
 							},
 							select: { id: true },
-						});
-						rowId = existing?.id ?? null;
-					} else {
-						throw err;
-					}
-				}
-				// : ONE id rule for every scheduled action — derived
-				// from the row, so the dispatcher can rebuild it after a crash
-				// without re-reading a stamp the crash never wrote. The epoch
-				// id below survives only for the P2002 backstop's torn read,
-				// where there is no row to derive from AND no outbox record to
-				// keep, so it behaves exactly as it did before this change.
-				const effect =
-					rowId && cappedRun
-						? await effectIntentFor(
-								{
-									id: rowId,
-									liveChannelId: channel.id,
-									liveChannelRunId: cappedRun.id,
-								},
-								"STOP",
-							)
-						: null;
-				if (!effect) {
-					throw new Error(
-						"runtime-cap STOP has no exact run/provider effect identity",
-					);
-				}
+						}));
+					await tx.liveChannelRun.update({
+						where: { id: run.id, liveChannelId: channel.id },
+						data: { status: "STOPPING" },
+					});
+					return row.id;
+				});
+				if (!scheduleId) continue;
+				const jobId = scheduleJobId(scheduleId);
 				await deps.enqueue(
 					{
 						liveChannelId: channel.id,
 						action: "stop",
-						// (row 266): the run this cap is
-						// stopping. If the cap-stop job is re-delivered after a
-						// re-air, the fence refuses it rather than cutting the
-						// new airing off at the old one's deadline.
-						...plannedRunStamp(cappedRun?.id ?? null),
-						effect,
+						plannedLiveChannelRunId: run.id,
+						effect: {
+							action: "STOP",
+							scheduleId,
+							liveChannelRunId: run.id,
+							providerEncodingId,
+							idempotencyKey: `schedule:${scheduleId}:stop`,
+							admissionFenceVersion: channel.liveEffectFenceVersion + 1,
+						},
 					},
-					rowId
-						? scheduleJobId(rowId)
-						: `sched-cap-${channel.id}-${deadline.getTime()}`,
+					jobId,
 				);
-				if (rowId) {
-					await markDispatched(rowId, scheduleJobId(rowId));
-				}
+				await markDispatched(scheduleId, jobId);
 			} catch (err) {
 				const reason = `runtime-cap STOP handoff failed: ${err instanceof Error ? err.message : String(err)}`;
-				if (rowId) {
-					// A durable FIRED STOP intent exists. Leave STOPPING and its
-					// open outbox intact; dispatchPending will recover it. Minting
-					// RUNNING here without a fresh provider observation was the
-					// false-green rollback from audit SC-01.
+				if (scheduleId) {
 					await deps.prisma.liveSchedule.updateMany({
-						where: { id: rowId, status: "FIRED", dispatchedAt: null },
-						data: { note: reason },
+						where: { id: scheduleId, status: "FIRED", dispatchedAt: null },
+						data: { error: reason },
 					});
 				} else {
-					// No durable stop intent exists, so fail closed. The provider may
-					// still be running; ERROR says exactly that and never fabricates a
-					// RUNNING observation.
-					await deps.prisma.liveChannel.updateMany({
-						where: { id: channel.id, status: "STOPPING" },
-						data: { status: "ERROR", error: reason },
-					});
-					await runs.mirror(channel.id, { status: "ERROR", error: reason });
+					// The transaction rolled back. The qualifying RUNNING epoch will be retried.
+					console.error("[scheduler]", reason);
 				}
 				stats.errors += 1;
 				continue;
 			}
 			stats.capStops += 1;
-			if (rowId) {
-				await deps.emitEvent?.({
-					kind: "SCHEDULE_FIRED",
-					scheduleId: rowId,
-					liveChannelId: channel.id,
-					path: `/live/${channel.id}`,
-				});
-			}
+			await emitFired({ id: scheduleId, liveChannelId: channel.id });
 		}
 	}
 

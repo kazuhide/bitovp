@@ -13,6 +13,7 @@ AVCodecContext AVOptions:
   -g                 <int>        E..V....... GOP length (from INT_MIN to INT_MAX) (default 12)
   -bf                <int>        E..V....... B frames (from -1 to INT_MAX)
   -refs              <int>        E..V....... Reference pictures (from -1 to INT_MAX)
+  -slices            <int>        E..V....... Number of slices (from 0 to INT_MAX)
 
 other AVOptions:
   -threads           <int>        E..V....... Unrelated section
@@ -21,6 +22,10 @@ other AVOptions:
     if name == "libx265":
         return "Codec 'libx265' is not recognized by FFmpeg."
     report = f"Encoder {name} [test]:\n"
+    if name == "libsvtav1":
+        report += """  -crf               <int>        E..V....... CRF (from 0 to 63) (default 0)
+  -qp                <int>        E..V....... QP (from 0 to 63) (default 0)
+"""
     return report + f"""
   -quality           <int>        E..V....... Quality (from -1 to INT_MAX) (default good)
      good            1            E..V....... Good quality
@@ -43,7 +48,7 @@ class CatalogTest(unittest.TestCase):
         self.assertEqual([r["encoder"] for r in self.encoders], ["libx264", "libvpx-vp9", "libsvtav1"])
         catalog = self.encoders[0]
         fields = {f["name"]: f for f in catalog["options"]}
-        self.assertEqual(set(fields), {"b", "bf", "refs", "g", "passes", "flags", "force_key_frames", "quality"})
+        self.assertEqual(set(fields), {"b", "bf", "refs", "g", "passes", "flags", "force_key_frames", "quality", "slices"})
         self.assertEqual(fields["quality"], {"name": "quality", "type": "int", "choices": ["good"],
                          "description": "Quality", "minimum": "-1", "maximum": "INT_MAX", "default": "good"})
         self.assertNotIn("default", fields["b"])
@@ -84,6 +89,18 @@ class CatalogTest(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 self.encode("libvpx-vp9", {}, {key: bad})
 
+    def test_ignored_vp9_and_svt_wrapper_controls_are_not_admitted(self):
+        vp9 = next(row for row in self.encoders if row["encoder"] == "libvpx-vp9")
+        self.assertIn("slices", {field["name"] for field in vp9["limitations"]})
+        with self.assertRaises(ValueError):
+            self.encode("libvpx-vp9", {"slices": "4"})
+        for options in ({"crf": "0"}, {"qp": "0"}, {"crf": "25", "qp": "20"}):
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                self.encode("libsvtav1", options)
+        self.encode("libsvtav1", {"crf": "1"})
+        self.encode("libsvtav1", {"qp": "1"})
+        self.encode("libsvtav1", {}, {"crf": "0"})
+
     def test_x26x_structure_values_match_encoder_limits_in_both_namespaces(self):
         def all_help(args):
             if args[-1] == "encoder=libx265":
@@ -100,12 +117,27 @@ class CatalogTest(unittest.TestCase):
                     self.encode(encoder, options, native)
             self.encode(encoder, {"bf": "-1", "refs": "-1"})
             self.encode(encoder, {"bf": "16", "refs": "16"})
+            for options, native in [({"g": "1", "refs": "2"}, {}), ({"bf": "1"}, {"keyint": "1"}),
+                                    ({"g": "-1"}, {"keyint": "4"}), ({}, {"keyint": "0x4"}),
+                                    ({}, {"keyint": "+4"}), ({}, {"keyint": "04"}),
+                                    ({}, {"ref": "010"}), ({}, {"bframes": "010"})]:
+                with self.subTest(encoder=encoder, options=options, native=native), self.assertRaises(ValueError):
+                    self.encode(encoder, options, native)
+            self.encode(encoder, {"g": "0", "bf": "-1", "refs": "-1"})
         for options, native in [({}, {"dpb-size": "17"}), ({}, {"ref": "2", "frameref": "3"}),
-                                ({"g": "4"}, {"bframes": "4"}), ({"bf": "4"}, {"keyint": "4"})]:
+                                ({"g": "4"}, {"bframes": "4"}), ({"bf": "4"}, {"keyint": "4"}),
+                                ({"g": "0"}, {"dpb-size": "2"}), ({}, {"keyint": "1", "frameref": "2"}),
+                                ({}, {"keyint": "0"}), ({}, {"keyint": "-1"}), ({}, {"keyint": "1infinite"}),
+                                ({}, {"keyint": str((1 << 30) + 1)}), ({"g": str((1 << 30) + 1)}, {})]:
             with self.subTest(options=options, native=native), self.assertRaises(ValueError):
                 self.encode("libx264", options, native)
         self.encode("libx264", {"bf": "3"}, {"keyint": "4"})
         self.encode("libx264", {"bf": "16"}, {"keyint": "infinite"})
+        self.encode("libx264", {}, {"keyint": str(1 << 30)})
+        self.encode("libx265", {"bf": "16"}, {"keyint": "-1"})
+        self.encode("libx265", {"bf": "16"}, {"keyint": "16"})
+        with self.assertRaises(ValueError):
+            self.encode("libx265", {}, {"keyint": "0", "ref": "2"})
 
     @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg is unavailable")
     def test_installed_encoders_accept_native_settings(self):

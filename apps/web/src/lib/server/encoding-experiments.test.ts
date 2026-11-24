@@ -582,11 +582,27 @@ it.each([
 	["libx264", { g: "16" }, { bframes: "16" }, false],
 	["libx264", { bf: "16" }, { keyint: "16" }, false],
 	["libx264", { bf: "30" }, {}, false],
+	["libx264", { bf: "5" }, { keyint: "0x4" }, false],
+	["libx264", {}, { keyint: "04" }, false],
+	["libx264", {}, { keyint: "+4" }, false],
+	["libx264", {}, { keyint: "1infinite" }, false],
+	["libx264", {}, { keyint: "1073741825" }, false],
+	["libx264", {}, { keyint: "1073741824" }, true],
+	["libx264", { g: "1", refs: "2" }, {}, false],
+	["libx264", {}, { keyint: "1", "dpb-size": "2" }, false],
+	["libx264", {}, { ref: "010" }, false],
+	["libx264", { refs: "-1", bf: "-1" }, { keyint: "1" }, true],
 	["libx264", {}, { ref: "2", frameref: "2" }, false],
 	["libx265", { bf: "-1" }, { bframes: "16" }, false],
 	["libx265", { refs: "2" }, { ref: "3" }, false],
 	["libx265", { g: "30" }, { keyint: "30" }, false],
 	["libx265", { g: "16" }, { bframes: "16" }, true],
+	["libx265", { bf: "16" }, { keyint: "-1" }, true],
+	["libx265", { g: "-1" }, { keyint: "-1" }, false],
+	["libx265", { g: "0" }, { bframes: "1" }, false],
+	["libx265", { g: "1", refs: "2" }, {}, false],
+	["libx265", {}, { keyint: "0", ref: "2" }, false],
+	["libx265", {}, { bframes: "010" }, false],
 ] as const)("verifies frame structure for %s, %j, %j", async (encoder, options, nativeOptions, valid) => {
 	const codec = encoder === "libx264" ? "H264" : "HEVC";
 	const field = (name: string, minimum: string) => ({
@@ -606,13 +622,26 @@ it.each([
 				options: [
 					{ ...field("bf", "0"), choices: ["-1"] },
 					{ ...field("refs", "1"), choices: ["-1"] },
-					{ name: "g", type: "int", description: "" },
+					{
+						name: "g",
+						type: "int",
+						maximum: encoder === "libx264" ? "1073741824" : "INT_MAX",
+						description: "",
+					},
 				],
 				nativeOptions: [
 					field("bframes", "0"),
 					field("ref", "1"),
 					field("frameref", "1"),
-					{ name: "keyint", type: "string", description: "" },
+					field("dpb-size", "1"),
+					{
+						name: "keyint",
+						type: "int",
+						description: "",
+						...(encoder === "libx264"
+							? { minimum: "1", maximum: "1073741824", choices: ["infinite"] }
+							: { minimum: "INT_MIN", maximum: "INT_MAX" }),
+					},
 				],
 				limitations: [],
 			},
@@ -628,6 +657,41 @@ it.each([
 		await expect(result).rejects.toMatchObject({
 			code: "INVALID_ENCODER_SETTING",
 		});
+});
+
+it.each([
+	{ crf: "0" },
+	{ qp: "0" },
+	{ crf: "25", qp: "20" },
+])("rejects inactive SVT-AV1 wrapper quantizers (%j)", async (options) => {
+	const encoder = "libsvtav1";
+	const codec = "AV1";
+	fake.readRuntime.mockResolvedValue({
+		...cpuRuntime,
+		supportedCodecs: [codec],
+		softwareEncoders: [
+			{
+				encoder,
+				codec,
+				options: ["crf", "qp"].map((name) => ({
+					name,
+					type: "int",
+					minimum: "1",
+					maximum: "63",
+					description: "",
+				})),
+				nativeOptions: [],
+				limitations: [],
+			},
+		],
+	});
+	await expect(
+		validateExperimentTrial(ctx.organizationId, {
+			...cpuTrial,
+			codec,
+			software: { encoder, options },
+		}),
+	).rejects.toMatchObject({ code: "INVALID_ENCODER_SETTING" });
 });
 
 it("uses the CPU campaign identity for software batch admission", async () => {

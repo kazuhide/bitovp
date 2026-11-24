@@ -211,11 +211,20 @@ const softwareNumericBounds: Record<string, string> = {
 
 // Native libraries can impose extra constraints when opening the encoder.
 function acceptsSoftwareValue(
+	encoder: ExperimentSoftwareEncoder["encoder"],
 	field: ExperimentSoftwareEncoder["options"][number],
 	value: string,
 	native: boolean,
 ) {
 	const name = field.name;
+	if (
+		native &&
+		(encoder === "libx264" || encoder === "libx265") &&
+		["bframes", "ref", "frameref", "dpb-size", "keyint"].includes(name) &&
+		!(encoder === "libx264" && name === "keyint" && value === "infinite") &&
+		!/^(?:0|-?[1-9][0-9]*)$/.test(value)
+	)
+		return false;
 	if (native && name === "zones")
 		return value
 			.split("/")
@@ -306,26 +315,32 @@ function verifyX26xStructure(
 		return values[0];
 	};
 	const bframes = explicit("bf", "bframes");
-	explicit("refs", "ref", "frameref");
+	const refs = explicit("refs", "ref", "frameref");
 	const keyint = explicit("g", "keyint");
+	if (keyint === undefined || keyint === "infinite" || Number(keyint) < 0)
+		return;
+	const interval = Math.max(1, Number(keyint));
 	if (
-		settings.encoder === "libx264" &&
 		bframes !== undefined &&
-		keyint !== undefined &&
-		/^[+-]?\d+$/.test(keyint)
-	) {
-		const interval = BigInt(keyint);
-		if (
-			(settings.nativeOptions?.keyint !== undefined || interval >= 0n) &&
-			BigInt(bframes) >= (interval < 1n ? 1n : interval)
-		)
-			throw new EncodingExperimentError(
-				422,
-				"INVALID_ENCODER_SETTING",
-				"libx264 requires fewer B-frames than the keyframe interval",
-				"software",
-			);
-	}
+		(settings.encoder === "libx264" || interval === 1) &&
+		Number(bframes) >= interval
+	)
+		throw new EncodingExperimentError(
+			422,
+			"INVALID_ENCODER_SETTING",
+			"Too many B-frames for the keyframe interval",
+			"software",
+		);
+	if (
+		interval === 1 &&
+		(Number(refs) > 1 || Number(settings.nativeOptions?.["dpb-size"]) > 1)
+	)
+		throw new EncodingExperimentError(
+			422,
+			"INVALID_ENCODER_SETTING",
+			"An all-intra GOP requires one reference frame and one DPB slot",
+			"software",
+		);
 }
 
 async function verifyTrial(
@@ -357,7 +372,12 @@ async function verifyTrial(
 				const field = fields.get(key);
 				if (
 					!field ||
-					!acceptsSoftwareValue(field, value, group === "nativeOptions")
+					!acceptsSoftwareValue(
+						settings.encoder,
+						field,
+						value,
+						group === "nativeOptions",
+					)
 				)
 					throw new EncodingExperimentError(
 						422,
@@ -368,6 +388,17 @@ async function verifyTrial(
 			}
 		}
 		verifyX26xStructure(settings);
+		if (
+			settings.encoder === "libsvtav1" &&
+			settings.options.crf !== undefined &&
+			settings.options.qp !== undefined
+		)
+			throw new EncodingExperimentError(
+				422,
+				"INVALID_ENCODER_SETTING",
+				"FFmpeg uses only one of the libsvtav1 crf and qp controls",
+				"software.options",
+			);
 	}
 	if (!runtime.supportedCodecs.some((codec) => codec === trial.codec))
 		throw new EncodingExperimentError(

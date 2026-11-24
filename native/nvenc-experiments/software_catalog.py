@@ -24,7 +24,7 @@ COMMON = {
                "threads thread_type keyint_min refs slices trellis subq me_range cmp level",
     "libx265": "b g qcomp qblur qmin qmax qdiff bf b_qfactor i_qfactor maxrate bufsize rc_init_occupancy "
                "threads keyint_min refs",
-    "libvpx-vp9": "b g qcomp qmin qmax minrate maxrate bufsize rc_init_occupancy threads keyint_min slices profile",
+    "libvpx-vp9": "b g qcomp qmin qmax minrate maxrate bufsize rc_init_occupancy threads keyint_min profile",
     "libsvtav1": "b g qmin qmax maxrate bufsize profile level",
 }
 
@@ -253,6 +253,8 @@ def encoder_catalog(encoder, private, generic):
         if name in options:
             options[name].pop("choices", None)
     limitations = {}
+    if encoder == "libvpx-vp9":
+        limitations["slices"] = "The FFmpeg libvpx wrapper applies slices only when encoding VP8."
     native = {}
     for name, field in private.items():
         if name in {dictionary, "x264opts"}:
@@ -300,6 +302,12 @@ def encoder_catalog(encoder, private, generic):
     options["passes"] = {"name": "passes", "type": "int", "minimum": "1", "maximum": "2",
                          "default": "1", "choices": ["1", "2"],
                          "description": "Managed encoding passes; two-pass support depends on the installed library."}
+    if encoder == "libsvtav1":
+        for name in ("crf", "qp"):
+            if name in options:
+                options[name]["minimum"] = "1"
+                options[name].pop("default", None)
+                options[name]["description"] += " FFmpeg applies positive values; omit to inherit."
     if encoder in {"libx264", "libx265"}:
         # x264 encoder_validate_parameters() silently clips these; x265_check_params()
         # uses the same B-frame and reference limits. AVCodecContext int ranges
@@ -311,6 +319,13 @@ def encoder_catalog(encoder, private, generic):
         for name, lower in (("bframes", "0"), ("ref", "1"), ("frameref", "1"), ("dpb-size", "1")):
             if name in native:
                 native[name].update(type="int", minimum=lower, maximum="16")
+        if "keyint" in native:
+            if encoder == "libx264":
+                native["keyint"].update(type="int", minimum="1", maximum=str(1 << 30), choices=["infinite"])
+            else:
+                native["keyint"].update(type="int", minimum="INT_MIN", maximum="INT_MAX")
+        if encoder == "libx264" and "g" in options:
+            options["g"]["maximum"] = str(1 << 30)
     return {"encoder": encoder, "codec": codec, "options": [options[k] for k in sorted(options)],
             "nativeOptions": [native[k] for k in sorted(native)],
             "limitations": [{"name": k, "reason": v} for k, v in sorted(limitations.items())]}
@@ -358,6 +373,10 @@ def validate_value(encoder, field, value, *, native):
             raise ValueError("Use source or comma-separated key frame times in seconds")
     if native and (encoder, name) in VALUE_CHOICES and value not in VALUE_CHOICES[encoder, name]:
         raise ValueError("Invalid builtin matrix: " + name)
+    if native and encoder in {"libx264", "libx265"} and name in {"bframes", "ref", "frameref", "dpb-size", "keyint"}:
+        # Both libraries read base-0 integers; leading zeroes would turn decimal input into octal.
+        if (encoder, name, value) != ("libx264", "keyint", "infinite") and not re.fullmatch(r"0|-?[1-9][0-9]*", value):
+            raise ValueError("Use canonical decimal notation: " + name)
     if native and name == "zones":
         if not all(ZONE.fullmatch(zone) for zone in value.split("/")):
             raise ValueError("Specify QP or bitrate zones")
@@ -402,13 +421,15 @@ def validate_x26x_structure(encoder, options, native):
         return values[0] if values else None
 
     bframes = explicit("bf", "bframes")
-    explicit("refs", "ref", "frameref")
+    refs = explicit("refs", "ref", "frameref")
     keyint = explicit("g", "keyint")
-    if encoder == "libx264" and bframes is not None and keyint is not None and INTEGER.fullmatch(keyint):
-        # FFmpeg g < 0 preserves the preset; libx264 clips native keyint to at least one.
-        interval = int(keyint)
-        if ("keyint" in native or interval >= 0) and int(bframes) > max(interval, 1) - 1:
-            raise ValueError("libx264 requires fewer B-frames than the keyframe interval")
+    if keyint is None or keyint == "infinite" or int(keyint) < 0:
+        return  # FFmpeg retains the preset; native negative x265 keyint means infinite GOP.
+    interval = max(1, int(keyint))
+    if bframes is not None and (encoder == "libx264" or interval == 1) and int(bframes) >= interval:
+        raise ValueError("Too many B-frames for the keyframe interval")
+    if interval == 1 and (int(refs or "-1") > 1 or int(native.get("dpb-size", "1")) > 1):
+        raise ValueError("An all-intra GOP requires one reference frame and one DPB slot")
 
 
 def build_software_options(software, codec, encoders):
@@ -439,4 +460,6 @@ def build_software_options(software, codec, encoders):
             args.extend(["-" + ENCODERS[encoder][1] + ":v", ":".join(entries)])
     if encoder in {"libx264", "libx265"}:
         validate_x26x_structure(encoder, software["options"], software.get("nativeOptions", {}))
+    if encoder == "libsvtav1" and {"crf", "qp"} <= software["options"].keys():
+        raise ValueError("FFmpeg uses only one of the libsvtav1 crf and qp controls")
     return args

@@ -25,12 +25,14 @@ import {
 	renewExperimentTrial,
 } from "@bitovp/db";
 import { readMeasurement } from "./receipt";
-import { ExperimentRunnerError, runExperimentProcess } from "./runner-process";
+import {
+	ExperimentRunnerError,
+	experimentMeasurementTimeoutMs,
+	runExperimentProcess,
+} from "./runner-process";
 
 const leaseMs = 30_000;
 const probeEveryMs = 30_000;
-const measurementTimeoutMs = 750_000;
-const secondaryScoringTimeoutMs = 300_000;
 const localMedia = new Map<string, { stamp: string; digest: string }>();
 type Claim = NonNullable<Awaited<ReturnType<typeof claimExperimentTrial>>>;
 
@@ -116,9 +118,6 @@ async function runTrial(
 			JSON.stringify({ schemaVersion: 1, sourcePath, trial }),
 			{ mode: 0o600 },
 		);
-		const timeoutMs = trial.additionalScoringProfiles
-			? measurementTimeoutMs + secondaryScoringTimeoutMs
-			: measurementTimeoutMs;
 		const output = await runExperimentProcess(
 			"flock",
 			[
@@ -128,7 +127,12 @@ async function runTrial(
 				"30",
 				"--conflict-exit-code",
 				"75",
-				join(root, `${runtime.gpuUuid}.lock`),
+				join(
+					root,
+					runtime.runtimeKind === "software"
+						? "software.lock"
+						: `${runtime.gpuUuid}.lock`,
+				),
 				"python3",
 				runner,
 				"measure",
@@ -136,7 +140,7 @@ async function runTrial(
 				request,
 			],
 			{
-				timeoutMs,
+				timeoutMs: experimentMeasurementTimeoutMs(trial),
 				signal,
 				tmpDir: scratch,
 				expectedRuntime: {
@@ -196,7 +200,15 @@ async function publishHealth(root: string, runtime: ExperimentRuntime) {
 			flag: "wx",
 			mode: 0o640,
 		});
-		await rename(temp, join(root, "runtime.json"));
+		await rename(
+			temp,
+			join(
+				root,
+				runtime.runtimeKind === "software"
+					? "software-runtime.json"
+					: "runtime.json",
+			),
+		);
 	} finally {
 		await rm(temp, { force: true });
 	}
@@ -224,6 +236,7 @@ async function main() {
 	const runProbe = async () =>
 		experimentRuntimeSchema.parse(
 			await runExperimentProcess("python3", [runner, "probe"], {
+				probe: true,
 				timeoutMs: 40_000,
 				signal,
 			}),
@@ -242,7 +255,7 @@ async function main() {
 				.catch(() => {
 					available = false;
 					if (!signal.aborted)
-						console.error("[encoding-experiments] GPU probe unavailable");
+						console.error("[encoding-experiments] runtime probe unavailable");
 				})
 				.finally(() => {
 					refresh = undefined;

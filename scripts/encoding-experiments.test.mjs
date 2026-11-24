@@ -148,3 +148,70 @@ test("fails a remote response with a public code and avoids reflecting its messa
 	});
 	assert.deepEqual(io.items, []);
 });
+
+test("targets the selected runtime for capability and parameter discovery only", async () => {
+	const catalog = { softwareEncoders: [{ encoder: "libvpx-vp9", codec: "VP9" }] };
+	for (const command of ["capabilities", "catalog"]) {
+		for (const backend of ["nvenc", "software"]) {
+			const io = fixture(() => Response.json(catalog));
+			await runExperiments([command, "--backend", backend], io.api);
+			assert.equal(io.calls[0].url.pathname, `/api/encoding-experiments/v1/${command}`);
+			assert.equal(io.calls[0].url.search, `?backend=${backend}`);
+			assert.deepEqual(io.items, [catalog]);
+		}
+		const legacy = fixture(() => Response.json({}));
+		await runExperiments([command], legacy.api);
+		assert.equal(legacy.calls[0].url.search, "");
+	}
+	for (const args of [["capabilities", "--backend", "cloud"], ["sources", "--backend", "software"]]) {
+		const io = fixture(() => Response.json({}));
+		await assert.rejects(runExperiments(args, io.api), /--backend/);
+		assert.equal(io.calls.length, 0);
+	}
+});
+
+test("forwards software parameters and preserves all four encoders across validation, retries and export", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "bitovp-software-cli-"));
+	try {
+		const file = join(dir, "request.json");
+		const trials = [
+			["libx264", "H264"], ["libx265", "HEVC"], ["libvpx-vp9", "VP9"], ["libsvtav1", "AV1"],
+		].map(([encoder, codec]) => ({
+			sourceId: "sample", codec,
+			window: { timeBase: { num: 1, den: 30 }, startPts: "0", endPtsExclusive: "60" },
+			software: {
+				encoder,
+				options: { b: "3500000", g: "60" },
+				...(encoder === "libx264" && { nativeOptions: { "aq-mode": "0" } }),
+			},
+		}));
+		for (const trial of trials) {
+			await writeFile(file, JSON.stringify(trial));
+			const io = fixture(() => Response.json({ valid: true, trial }));
+			await runExperiments(["validate", "--file", file], io.api);
+			assert.equal(io.calls[0].url.pathname, "/api/encoding-experiments/v1/validate");
+			assert.deepEqual(JSON.parse(io.calls[0].init.body), trial);
+		}
+		const batch = { schemaVersion: 1, trials: [...trials, { ...trials[0], replicateId: "repeat-2" }] };
+		await writeFile(file, JSON.stringify(batch));
+		const submit = fixture(() => Response.json({ accepted: batch.trials.length }, { status: 202 }));
+		const command = ["enqueue", id, "--file", file, "--idempotency-key", "software-batch-1"];
+		await runExperiments(command, submit.api);
+		await runExperiments(command, submit.api);
+		assert.equal(submit.calls.length, 2);
+		for (const { url, init } of submit.calls) {
+			assert.equal(url.pathname, `/api/encoding-experiments/v1/campaigns/${id}/trials`);
+			assert.equal(new Headers(init.headers).get("Idempotency-Key"), "software-batch-1");
+			assert.deepEqual(JSON.parse(init.body), batch);
+		}
+		const rows = trials.map(input => ({
+			input, status: "SUCCEEDED", result: { scoringProfileId: "official-vmaf-cpu-0.6.1", scoreMilli: 90000 },
+		}));
+		const exported = fixture(() => Response.json({ items: rows, nextCursor: null }));
+		await runExperiments(["export", id, "--format", "ndjson"], exported.api);
+		assert.equal(exported.calls[0].url.pathname, `/api/encoding-experiments/v1/campaigns/${id}/results`);
+		assert.deepEqual(exported.items, rows);
+	} finally {
+		await rm(dir, { force: true, recursive: true });
+	}
+});

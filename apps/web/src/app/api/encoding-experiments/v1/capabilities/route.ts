@@ -1,6 +1,11 @@
 import { getExperimentCapabilities } from "@/lib/server/encoding-experiments";
-import { experimentRoute } from "@/lib/server/encoding-experiments-http";
+import {
+	experimentBackend,
+	experimentRoute,
+} from "@/lib/server/encoding-experiments-http";
 
 export function GET(req: Request) {
-	return experimentRoute(req, "VIEWER", () => getExperimentCapabilities());
+	return experimentRoute(req, "VIEWER", () =>
+		getExperimentCapabilities(experimentBackend(req)),
+	);
 }

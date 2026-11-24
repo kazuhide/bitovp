@@ -10,7 +10,8 @@ import {
 } from "./encoding-experiments";
 
 export const experimentHealthWindowMs = 90_000;
-const fileLimit = 8_192;
+export const experimentCapabilityByteLimit = 1024 * 1024;
+const registrationByteLimit = 8_192;
 const organizationSchema = z.uuid();
 
 export function getExperimentRoot(): string | null {
@@ -38,7 +39,10 @@ export function experimentMediaPath(
 	);
 }
 
-async function readRegistration(path: string): Promise<unknown> {
+async function readRegistration(
+	path: string,
+	fileLimit = registrationByteLimit,
+): Promise<unknown> {
 	try {
 		const file = await open(
 			path,
@@ -47,7 +51,7 @@ async function readRegistration(path: string): Promise<unknown> {
 		try {
 			const info = await file.stat();
 			if (!info.isFile() || info.size > fileLimit) return null;
-			const buffer = Buffer.alloc(fileLimit + 1);
+			const buffer = Buffer.alloc(info.size + 1);
 			const { bytesRead } = await file.read(buffer);
 			if (bytesRead > fileLimit) return null;
 			return JSON.parse(buffer.subarray(0, bytesRead).toString("utf8"));
@@ -59,11 +63,22 @@ async function readRegistration(path: string): Promise<unknown> {
 	}
 }
 
-export async function readExperimentRuntime(root: string, now = Date.now()) {
+export async function readExperimentRuntime(
+	root: string,
+	now = Date.now(),
+	kind: "nvenc" | "software" = "nvenc",
+) {
 	const parsed = experimentWorkerHealthSchema.safeParse(
-		await readRegistration(join(root, "runtime.json")),
+		await readRegistration(
+			join(
+				root,
+				kind === "software" ? "software-runtime.json" : "runtime.json",
+			),
+			experimentCapabilityByteLimit,
+		),
 	);
-	if (!parsed.success) return null;
+	if (!parsed.success || (parsed.data.runtime.runtimeKind ?? "nvenc") !== kind)
+		return null;
 	const age = now - parsed.data.checkedAt;
 	return age >= 0 && age < experimentHealthWindowMs
 		? parsed.data.runtime

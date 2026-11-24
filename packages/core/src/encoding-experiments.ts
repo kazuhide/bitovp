@@ -1,11 +1,26 @@
 import { z } from "zod";
 
-export const experimentCodecs = ["H264", "HEVC", "AV1"] as const;
+const nvencCodecs = ["H264", "HEVC", "AV1"] as const;
+export const experimentCodecs = [...nvencCodecs, "VP9"] as const;
+export const softwareEncoderCodecs = {
+	libx264: "H264",
+	libx265: "HEVC",
+	"libvpx-vp9": "VP9",
+	libsvtav1: "AV1",
+} as const;
+const softwareEncoderId = z.enum([
+	"libx264",
+	"libx265",
+	"libvpx-vp9",
+	"libsvtav1",
+]);
+export const experimentCpuScoringProfile = "official-vmaf-cpu-0.6.1";
 export const experimentScoringProfile = "official-vmaf-cuda-0.6.1";
 export const experimentVmafV1Profile = "bitovp-vmaf-cuda-1.0.16-3d0h";
 export const experimentScoringProfiles = [
 	experimentScoringProfile,
 	experimentVmafV1Profile,
+	experimentCpuScoringProfile,
 ] as const;
 export const experimentScope = "encoding-experiments";
 export const experimentBatchLimit = 128;
@@ -191,12 +206,13 @@ export function isExperimentNvencSdkFieldValue(
 	);
 }
 
-export const experimentTrialSchema = z
+const nvencTrialSchema = z
 	.strictObject({
 		sourceId: experimentSourceId,
 		replicateId: experimentSourceId.optional(),
 		window: windowSchema,
-		codec: z.enum(experimentCodecs),
+		codec: z.enum(nvencCodecs),
+		software: z.never().optional(),
 		preset: z.enum(["P1", "P2", "P3", "P4", "P5", "P6", "P7"]),
 		tuning: z.literal("HIGH_QUALITY"),
 		additionalScoringProfiles: z.tuple([vmafV1Profile]).optional(),
@@ -283,6 +299,64 @@ export const experimentTrialSchema = z
 		}
 		return trial;
 	});
+const softwareKey = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$/);
+const softwareValues = z
+	.record(
+		softwareKey,
+		z
+			.string()
+			.min(1)
+			.max(4096)
+			.regex(/^[A-Za-z0-9._+(),:[\]/=-]+(?![\s\S])/),
+	)
+	.refine(
+		(values) => Object.keys(values).length <= 1024,
+		"Too many encoder settings",
+	)
+	.transform((values) =>
+		Object.fromEntries(
+			Object.entries(values).sort(([a], [b]) => (a < b ? -1 : Number(a > b))),
+		),
+	);
+
+const softwareTrialSchema = z
+	.strictObject({
+		sourceId: experimentSourceId,
+		replicateId: experimentSourceId.optional(),
+		window: windowSchema,
+		codec: z.enum(experimentCodecs),
+		software: z.strictObject({
+			encoder: softwareEncoderId,
+			options: softwareValues.transform((values) => {
+				if (values.passes !== "1") return values;
+				const { passes: _, ...settings } = values;
+				return settings;
+			}),
+			nativeOptions: softwareValues
+				.transform((values) =>
+					Object.keys(values).length ? values : undefined,
+				)
+				.optional(),
+		}),
+		additionalScoringProfiles: z.never().optional(),
+		sdk: z.never().optional(),
+	})
+	.refine((t) => softwareEncoderCodecs[t.software.encoder] === t.codec, {
+		path: ["codec"],
+		message: "Codec does not match the software encoder",
+	});
+
+export const experimentTrialSchema = z.unknown().transform((input, ctx) => {
+	const schema =
+		typeof input === "object" && input !== null && "software" in input
+			? softwareTrialSchema
+			: nvencTrialSchema;
+	const result = schema.safeParse(input);
+	if (result.success) return result.data;
+	for (const issue of result.error.issues)
+		ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+	return z.NEVER;
+});
 export type ExperimentTrialInput = z.infer<typeof experimentTrialSchema>;
 
 export const experimentBatchSchema = z.strictObject({
@@ -330,7 +404,10 @@ const vmafV1Score = z.discriminatedUnion("status", [
 
 export const experimentResultSchema = z.strictObject({
 	schemaVersion: z.literal(1),
-	scoringProfileId: z.literal(experimentScoringProfile),
+	scoringProfileId: z.enum([
+		experimentScoringProfile,
+		experimentCpuScoringProfile,
+	]),
 	runtimeId: experimentDigest,
 	scoreMilli: z.number().int(),
 	meanVmaf: z.number(),
@@ -359,13 +436,15 @@ const vmafV1Runtime = z.strictObject({
 	decoderRuntimeSha256: experimentDigest,
 });
 
-export const experimentRuntimeSchema = z.strictObject({
+const nvencRuntimeSchema = z.strictObject({
+	runtimeKind: z.never().optional(),
+	softwareEncoders: z.never().optional(),
 	schemaVersion: z.literal(1),
 	runtimeId: experimentDigest,
 	gpuUuid: z.string().regex(/^GPU-[0-9a-fA-F-]{36}$/),
 	gpuName: z.string().min(1).max(128),
 	driverVersion: z.string().regex(/^[0-9.]{1,32}$/),
-	supportedCodecs: z.array(z.enum(experimentCodecs)).min(1).max(3),
+	supportedCodecs: z.array(z.enum(nvencCodecs)).min(1).max(3),
 	scoringProfileId: z.literal(experimentScoringProfile),
 	ffmpegSha256: experimentDigest,
 	ffprobeSha256: experimentDigest,
@@ -381,6 +460,64 @@ export const experimentRuntimeSchema = z.strictObject({
 		})
 		.optional(),
 });
+
+const softwareField = z.strictObject({
+	name: softwareKey,
+	type: z.string().min(1).max(64),
+	description: z.string().max(4096),
+	default: z.string().max(4096).optional(),
+	minimum: z.string().max(128).optional(),
+	maximum: z.string().max(128).optional(),
+	choices: z.array(z.string().max(256)).max(512).optional(),
+});
+const softwareEncoder = z
+	.strictObject({
+		encoder: softwareEncoderId,
+		codec: z.enum(experimentCodecs),
+		options: z.array(softwareField).max(1024),
+		nativeOptions: z.array(softwareField).max(1024),
+		limitations: z
+			.array(
+				z.strictObject({
+					name: z.string().max(128),
+					reason: z.string().max(2048),
+				}),
+			)
+			.max(1024),
+	})
+	.refine((e) => softwareEncoderCodecs[e.encoder] === e.codec);
+export type ExperimentSoftwareEncoder = z.infer<typeof softwareEncoder>;
+
+const softwareRuntimeSchema = z
+	.strictObject({
+		schemaVersion: z.literal(1),
+		runtimeKind: z.literal("software"),
+		runtimeId: experimentDigest,
+		supportedCodecs: z.array(z.enum(experimentCodecs)).min(1).max(4),
+		softwareEncoders: z.array(softwareEncoder).min(1).max(4),
+		scoringProfileId: z.literal(experimentCpuScoringProfile),
+		ffmpegSha256: experimentDigest,
+		ffprobeSha256: experimentDigest,
+		modelSha256: experimentDigest,
+		runnerSha256: experimentDigest,
+		nvencSdk: z.never().optional(),
+		additionalScoringProfiles: z.never().optional(),
+		gpuUuid: z.never().optional(),
+		gpuName: z.never().optional(),
+		driverVersion: z.never().optional(),
+	})
+	.refine((runtime) => {
+		const ids = new Set(runtime.softwareEncoders.map((e) => e.codec));
+		return (
+			ids.size === runtime.softwareEncoders.length &&
+			ids.size === runtime.supportedCodecs.length &&
+			Array.from(ids).every((id) => runtime.supportedCodecs.includes(id))
+		);
+	});
+export const experimentRuntimeSchema = z.union([
+	nvencRuntimeSchema,
+	softwareRuntimeSchema,
+]);
 
 export const experimentWorkerHealthSchema = z.strictObject({
 	checkedAt: z.number().int().nonnegative(),

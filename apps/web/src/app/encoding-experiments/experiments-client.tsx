@@ -67,7 +67,10 @@ type Capabilities = Pick<
 	capabilityId?: string;
 	gpuName?: string;
 	driverVersion?: string;
-	supportedCodecs?: ExperimentTrialInput["codec"][];
+	supportedCodecs?: Extract<
+		ExperimentRuntime,
+		{ gpuUuid: string }
+	>["supportedCodecs"];
 	scoringProfileId?: string;
 	reason?: string;
 };

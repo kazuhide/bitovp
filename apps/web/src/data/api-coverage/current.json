@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-25T01:33:02.149Z",
-		"sourceCommit": "d9a42cefde45a910591c3d1bcc68ff7b0dce4089",
-		"sourceFingerprint": "a81400ce6d4c2ba6749ed2d27ea8b98dc9738c55ad92ff41b73e9ca32307f245",
+		"generatedAt": "2026-11-25T01:41:32.812Z",
+		"sourceCommit": "ec108b71cc2e8f5757a894ba2d08a2a0ee684cf5",
+		"sourceFingerprint": "b99e9a0a47969b6140577baeb5c6dfe16825d9b3fd0a7a76bb051d693cc96f02",
 		"sdkVersion": "1.289.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "a564d4fbedc0bf9cc7ef9116c730c60f33183e2fc16b886221e02a67b029d7e5",
@@ -1696,11 +1696,11 @@
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 65
+					"line": 44
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 93
+					"line": 66
 				},
 				{
 					"file": "apps/worker/src/webhooks/provider.ts",
@@ -1743,7 +1743,7 @@
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 70
+					"line": 49
 				}
 			]
 		},
@@ -1823,11 +1823,11 @@
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 83
+					"line": 57
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 190
+					"line": 155
 				},
 				{
 					"file": "apps/worker/src/verify/live-archive-runtime.ts",
@@ -1853,7 +1853,7 @@
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 99
+					"line": 70
 				}
 			]
 		},
@@ -2833,7 +2833,7 @@
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 98
+					"line": 68
 				}
 			]
 		},
@@ -10323,7 +10323,7 @@
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 123
+					"line": 91
 				}
 			]
 		},
@@ -10359,7 +10359,7 @@
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 110
+					"line": 79
 				}
 			]
 		},

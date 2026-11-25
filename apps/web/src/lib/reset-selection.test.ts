@@ -65,7 +65,6 @@ describe("reset selection", () => {
 	it.each([
 		"encodingResourceRemoval",
 		"createRequest",
-
 	])("preserves %s across every selectable reset category", (model) => {
 		expect(RESET_INTERNAL_MODELS).toContain(model);
 		expect(RESET_CATALOG.flatMap((entry) => entry.models)).not.toContain(model);

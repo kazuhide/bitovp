@@ -830,13 +830,17 @@ test("the audit keeps each allowance to its own file and list, and treats what i
 		audit(undefined, (report) => {
 			report.numPendingTests -= 2;
 		}).problems,
-		[`the report counts ${EXPECTED_PLAIN_WORKER_SKIPS - 2} skipped tests but lists ${EXPECTED_PLAIN_WORKER_SKIPS}`],
+		[
+			`the report counts ${EXPECTED_PLAIN_WORKER_SKIPS - 2} skipped tests but lists ${EXPECTED_PLAIN_WORKER_SKIPS}`,
+		],
 	);
 	assert.deepEqual(
 		audit(undefined, (report) => {
 			delete report.numPendingTests;
 		}).problems,
-		[`the report counts undefined skipped tests but lists ${EXPECTED_PLAIN_WORKER_SKIPS}`],
+		[
+			`the report counts undefined skipped tests but lists ${EXPECTED_PLAIN_WORKER_SKIPS}`,
+		],
 	);
 	assert.equal(
 		audit(undefined, (report) => {

@@ -38,6 +38,23 @@ describe("writeAuditLog — actor persistence (the headline of #81 PR2)", () => 
 			error: "[withheld]",
 		});
 	});
+	it("retains literal Dolby Vision object keys in request and response", async () => {
+		const { prisma, create } = fakePrisma();
+		const request = {
+			videoInputPath: "reels/Scene#2.mxf",
+			metadataInputPath: "dv/meta?2.xml",
+		};
+		await writeAuditLog(prisma, {
+			method: "POST",
+			path: "/encoding/encodings/demo/input-streams/dolby-vision",
+			request,
+			response: request,
+		});
+		expect(create.mock.calls[0]?.[0].data).toMatchObject({
+			request,
+			response: request,
+		});
+	});
 	it("a provided actor reaches prisma.auditLog.create verbatim", async () => {
 		const { prisma, create } = fakePrisma();
 		await writeAuditLog(prisma, {

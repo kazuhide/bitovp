@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { REDACTED } from "../crypto/redact";
+import { REDACTED, redactSecrets } from "../crypto/redact";
 import { canCurlStep, curlForStep } from "./curl-from-step";
 import { OPERATION_KINDS, type StepLogEntry } from "./steplog";
 
@@ -29,6 +29,22 @@ function step(
 }
 
 describe("curlForStep — endpoint mapping", () => {
+	it("copies literal Dolby Vision media keys from the persisted request", () => {
+		const request = redactSecrets({
+			videoInputPath: "reels/Scene#2.mxf",
+			metadataInputPath: "dv/meta?2.xml",
+		});
+		const result = curlForStep(
+			step({
+				kind: "CREATE_DOLBY_VISION_INPUT_STREAM",
+				refs: { encodingId: "encoding" },
+				request,
+			}),
+		);
+		if (!result.ok) throw Error(result.code);
+		expect(result.command).toContain("reels/Scene#2.mxf");
+		expect(result.command).toContain("dv/meta?2.xml");
+	});
 	it.each([
 		"CREATE_HLS_AUDIO_MEDIA",
 		"CREATE_HLS_STREAM_INFO",

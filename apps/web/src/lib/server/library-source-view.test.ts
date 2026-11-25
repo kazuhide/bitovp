@@ -109,7 +109,7 @@ function database(
 describe("Library source detail retained-raw projection", () => {
 	it("withholds legacy signed storage paths with and without HDR input provenance after the job was deleted", async () => {
 		const inputs = [
-			{ name: "Ordinary", path: "assets/audio.wav" },
+			{ name: "Ordinary", path: "media/take?2.mxf" },
 			{
 				name: "Old capture",
 				path: "//fixture:LIBRARY_CREDENTIAL@fixture.invalid/picture.mxf",
@@ -142,7 +142,7 @@ describe("Library source detail retained-raw projection", () => {
 			/LIBRARY_CREDENTIAL|LIBRARY_SIGNATURE/,
 		);
 		expect(result?.snapshot.inputs.map((i) => i.path)).toEqual([
-			"assets/audio.wav",
+			"media/take?2.mxf",
 			"",
 			"",
 		]);

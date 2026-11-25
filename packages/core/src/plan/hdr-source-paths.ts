@@ -18,7 +18,7 @@ export function isHdr10PlusObjectPath(value: string) {
 export const isHdr10PlusAuditPath = (path: unknown) =>
 	typeof path === "string" && /\/input-streams\/hdr10-plus(?:\/|$)/.test(path);
 
-function hasPrivateLocator(value: string): boolean {
+export function hasPrivateStorageLocator(value: string): boolean {
 	const location = value.trim();
 	if (location.includes("@")) {
 		try {
@@ -31,12 +31,20 @@ function hasPrivateLocator(value: string): boolean {
 		} catch {
 			// An incomplete authority may still contain recognizable credentials.
 		}
-		if (/^(?:[a-z][a-z\d+.-]*:[/\\]*)?[^/\\:\s]+:[^/\\]*@/iu.test(location))
-			return true;
+		const authority = location.replace(
+			/^(?:[a-z][a-z\d+.-]*:)?[/\\]{2,}/iu,
+			"",
+		);
+		if (/^[^/\\:\s]+:[^/\\]*@/u.test(authority)) return true;
 	}
+	// Literal punctuation is allowed in an ordinary storage object. An
+	// absolute locator or an attached credential parameter carries private data.
 	return (
-		(/[?][^\s]+/.test(location) && /[/\\.]|[?&][^=]+=/u.test(location)) ||
-		(uriScheme.test(location) && location.includes("#"))
+		((uriScheme.test(location) || /^[/\\]{2}/u.test(location)) &&
+			/[?#].+/u.test(location)) ||
+		/[?&](?:[^=&\s]*(?:token|credential|signature|password|secret)|sig|key|key-pair-id|policy|awsaccesskeyid|googleaccessid)=/iu.test(
+			location,
+		)
 	);
 }
 
@@ -50,7 +58,10 @@ export function publicStorageDiagnostic<T extends string | null | undefined>(
 	// contains a potential storage credential.
 	// Any unescaped userinfo contains an at-sign. The original URL may span
 	// whitespace or punctuation in a provider's formatted error.
-	return value.includes("@") || hasPrivateLocator(value.replace(/\s+/gu, ""))
+	const compact = value.replace(/\s+/gu, "");
+	return value.includes("@") ||
+		(/[?].+/u.test(compact) && /[/\\.]|[?&][^=]+=/u.test(compact)) ||
+		hasPrivateStorageLocator(compact)
 		? ("[withheld]" as T)
 		: value;
 }
@@ -77,10 +88,23 @@ export function publicHdrSourceProjection<T>(
 		replace(row, key, "");
 		hidden.add(path);
 	}
-	function scan(input: unknown, hdr: boolean, libraryInputs = false) {
+	function scan(
+		input: unknown,
+		hdr: boolean,
+		libraryInputs = false,
+		diagnostics = false,
+	) {
 		if (!input || typeof input !== "object" || input instanceof Date) return;
 		if (Array.isArray(input)) {
-			for (const item of input) scan(item, hdr, libraryInputs);
+			for (const [index, item] of input.entries()) {
+				if (
+					diagnostics &&
+					typeof item === "string" &&
+					publicStorageDiagnostic(item) !== item
+				)
+					replace(input, String(index), "[withheld]");
+				else scan(item, hdr, libraryInputs, diagnostics);
+			}
 			return;
 		}
 		const row = input as Record<string, unknown>;
@@ -115,8 +139,11 @@ export function publicHdrSourceProjection<T>(
 				purpose === "record" &&
 				typeof item === "string" &&
 				(key === "error" ||
-					(scope &&
-						(key === "message" || key === "reason" || key === "detail"))) &&
+					((scope || diagnostics) &&
+						(key === "message" ||
+							key === "reason" ||
+							key === "detail" ||
+							key === "text"))) &&
 				publicStorageDiagnostic(item) !== item
 			) {
 				replace(row, key, "[withheld]");
@@ -127,7 +154,8 @@ export function publicHdrSourceProjection<T>(
 				item.trim().length &&
 				((scope && (key === "videoInputPath" || key === "metadataInputPath")) ||
 					(key === "path" &&
-						(row.hdr10Plus || (libraryInputs && hasPrivateLocator(item))))) &&
+						(row.hdr10Plus ||
+							(libraryInputs && hasPrivateStorageLocator(item))))) &&
 				!isHdr10PlusObjectPath(item)
 			)
 				mark(row, key, item);
@@ -136,6 +164,8 @@ export function publicHdrSourceProjection<T>(
 					item,
 					scope || key === "hdr10PlusStreams",
 					row.kind === "VOD_JOB" && key === "inputs",
+					purpose === "record" &&
+						(diagnostics || key === "messages" || key === "warnings"),
 				);
 		}
 	}
@@ -144,7 +174,7 @@ export function publicHdrSourceProjection<T>(
 	const locators = [...hidden]
 		.filter(
 			(path) =>
-				hasPrivateLocator(path) ||
+				hasPrivateStorageLocator(path) ||
 				(purpose === "record" &&
 					/^(?:https?|s?ftp|s3|gs|azure):[/\\]+.+|^(?:[a-z][a-z0-9+.-]*:)?[/\\]{2}.+|^[^?#]+[?#].+/i.test(
 						path.trim(),
@@ -160,7 +190,10 @@ export function publicHdrSourceProjection<T>(
 					result = result.replaceAll(path, "[withheld]");
 			return result;
 		}
-		if (Array.isArray(input)) return input.map(project);
+		if (Array.isArray(input))
+			return input.map(
+				(item, index) => fields.get(input)?.get(String(index)) ?? project(item),
+			);
 		if (!input || typeof input !== "object" || input instanceof Date)
 			return input;
 		return Object.fromEntries(

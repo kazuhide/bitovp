@@ -80,6 +80,16 @@ it.each([
 				error:
 					"Reader failed https://fixture.invalid/different?\nkey=STEP_FIXTURE",
 			},
+			{
+				kind: "WAIT_FOR_ENCODING",
+				response: {
+					messages: [
+						"Ready",
+						"See https://fixture.invalid/log?sig=WARNING_FIXTURE",
+						{ text: "See https://fixture.invalid/other?sig=OBJECT_FIXTURE" },
+					],
+				},
+			},
 		],
 		snapshots: { debug: metadata },
 		error: "Could not read " + video,
@@ -92,8 +102,13 @@ it.each([
 	expect(res.status).toBe(200);
 	const body = await res.json();
 	expect(JSON.stringify(body)).not.toMatch(
-		/URL_FIXTURE_PRIVATE|LOGIN_FIXTURE_PRIVATE|STEP_FIXTURE|NESTED_FIXTURE/,
+		/URL_FIXTURE_PRIVATE|LOGIN_FIXTURE_PRIVATE|STEP_FIXTURE|NESTED_FIXTURE|WARNING_FIXTURE|OBJECT_FIXTURE/,
 	);
+	expect(body.stepLog[1].response.messages).toEqual([
+		"Ready",
+		"[withheld]",
+		{ text: "[withheld]" },
+	]);
 	expect(body.plan.hdr10PlusStreams[0]).toMatchObject({
 		key: "hdr-key",
 		videoInputPath: "",

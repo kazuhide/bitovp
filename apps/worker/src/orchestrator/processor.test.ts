@@ -825,6 +825,26 @@ describe("orchestrator processor", () => {
 		expect(errorUpdate?.doneSteps).toBeGreaterThan(0);
 	});
 
+	it("persists useful task warnings while withholding private storage locations from finished step snapshots", async () => {
+		const { processor, row } = setup(
+			{},
+			{
+				getEncodingStatus: async () => ({
+					status: "FINISHED",
+					messages: [
+						"Local warning",
+						"Diagnostics at https://fixture.invalid/encoder?sig=FIXTURE_WARNING_VALUE",
+					],
+				}),
+			},
+		);
+		await processor({ encodingJobId: JOB_ID });
+		const entries = row.stepLog as StepLogEntry[];
+		const snapshots = JSON.stringify(entries.map((e) => e.response));
+		expect(snapshots).toContain("Local warning");
+		expect(snapshots).toContain("[withheld]");
+		expect(snapshots).not.toContain("FIXTURE_WARNING_VALUE");
+	});
 	it("invokes the onVodFinished hook once after FINISHED with the parsed plan", async () => {
 		const onVodFinished = vi.fn(async () => {});
 		const { processor, row } = setup({}, {}, onVodFinished);

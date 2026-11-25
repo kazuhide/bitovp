@@ -423,3 +423,43 @@ it("clears the submitted form when its pending autosave finishes during the requ
 	act(() => complete?.());
 	expect(readWizardDraft(key, "vod")).toBeNull();
 });
+
+it("ignores a queued discard from an offer replaced by an earlier queued restore", () => {
+	writeWizardDraft(key, "vod", value, 0);
+	const mount = () =>
+		renderHook(
+			({ form }) =>
+				useWizardDraft({
+					kind: "vod",
+					context: "new",
+					value: form,
+					step: 0,
+					onRestore: vi.fn(),
+				}),
+			{ initialProps: { form: value } },
+		);
+	const a = mount(),
+		b = mount();
+	act(() => b.result.current.restore());
+	act(() => b.rerender({ form: { ...value, name: "Saved elsewhere" } }));
+	act(() => vi.advanceTimersByTime(301));
+	const waiting: (() => void)[] = [];
+	const request = vi.spyOn(navigator.locks, "request").mockImplementation(((
+		_slot: string,
+		callback: () => void,
+	) => {
+		waiting.push(callback);
+		return Promise.resolve();
+	}) as LockManager["request"]);
+	try {
+		act(() => a.result.current.restore());
+		act(() => a.result.current.discard());
+		expect(waiting).toHaveLength(2);
+		act(() => waiting[0]?.());
+		act(() => waiting[1]?.());
+		expect(readWizardDraft(key, "vod")?.value.name).toBe("Saved elsewhere");
+		expect(a.result.current.pending?.value.name).toBe("Saved elsewhere");
+	} finally {
+		request.mockRestore();
+	}
+});

@@ -32,7 +32,7 @@ const SENSITIVE_EXACT =
 	/^(ask|serviceaccountjson|username|login|publishingpoint|relayurl|playbackurl)$/i;
 
 /** Masks the password of URL userinfo: `scheme://user:pass@host`. */
-const URL_USERINFO = /(\/\/[^/\s:@]+:)[^@/\s]+@/g;
+const URL_USERINFO = /([/\\]{2}[^/\\:@]+:)[^/\\]*@/g;
 
 /**
  * Header-tuple detection for the ["name", "value"] array shape. Deliberately

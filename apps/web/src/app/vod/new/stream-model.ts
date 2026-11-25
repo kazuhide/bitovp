@@ -1,13 +1,14 @@
 import type { CredentialSummaryWire } from "@bitovp/core";
-import type {
-	WizardDolbyStream,
-	WizardFileStream,
-	WizardHdr10PlusStream,
-	WizardIngestTrack,
-	WizardInputFile,
-	WizardSources,
-	WizardState,
-	WizardStreamSelectionMode,
+import {
+	implicitTrackKeys,
+	type WizardDolbyStream,
+	type WizardFileStream,
+	type WizardHdr10PlusStream,
+	type WizardIngestTrack,
+	type WizardInputFile,
+	type WizardSources,
+	type WizardState,
+	type WizardStreamSelectionMode,
 } from "./build-plan";
 
 /**
@@ -660,12 +661,13 @@ export function sourceStreamKeys(
 	} = {},
 ): string[] {
 	const sources = state.sources ?? {};
+	const implicit = implicitTrackKeys(sources);
 	const keys: string[] = [];
 	if (state.videos.length > 0) {
-		keys.push("video");
+		keys.push(implicit.video);
 	}
 	if (state.audios.length > 0) {
-		keys.push("audio");
+		keys.push(implicit.audio);
 	}
 	for (const t of sources.tracks ?? []) {
 		keys.push(t.key);

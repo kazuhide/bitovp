@@ -575,13 +575,15 @@ describe("POST /api/encoding-jobs", () => {
 });
 
 describe("GET /api/encoding-jobs", () => {
-	it("withholds complete private provider diagnostics in the job list", async () => {
+	it.each([
+		"https:/fixture:synthetic'quote@fixture.invalid/picture",
+		"//fixture:synthetic space@fixture.invalid/picture",
+	])("withholds complete private provider diagnostic %s in the job list", async (path) => {
 		findMany.mockResolvedValueOnce([
 			{
 				id: "1",
 				status: "ERROR",
-				error:
-					"Could not read https:/fixture:synthetic'quote@fixture.invalid/picture",
+				error: "Could not read " + path,
 			},
 			{ id: "2", status: "ERROR", error: "Encoder could not start" },
 		]);

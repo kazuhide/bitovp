@@ -174,6 +174,62 @@ describe("copied picture and storage identities", () => {
 			encodingPlanSchema.parse(buildPlan(planToWizardState(switched))),
 		).toEqual(switched);
 	});
+	it.each([
+		false,
+		true,
+	])("uses the first rendition's wrapped picture on a copied plan with another HDR picture (concat %s)", (concat) => {
+		const source = copiedSource();
+		const video = source.renditions.find((r) => r.codec === "H265");
+		if (!video) throw new Error("missing video");
+		const raw = encodingPlanSchema.parse({
+			...source,
+			ingest: [
+				...source.ingest,
+				{
+					key: "master",
+					inputKey: "main",
+					inputPath: "ordinary.mxf",
+					selectionMode: "VIDEO_RELATIVE",
+					position: 0,
+				},
+			],
+			trimmingStreams: [
+				{
+					key: "clipped",
+					kind: "TIME_BASED",
+					sourceKey: "master",
+					offset: 0,
+					duration: 1,
+				},
+			],
+			...(concat
+				? {
+						concatenationStreams: [
+							{
+								key: "joined",
+								sources: [{ sourceKey: "clipped", isMain: true, position: 0 }],
+							},
+						],
+					}
+				: {}),
+			renditions: [
+				{ ...video, key: "first", ingestKey: concat ? "joined" : "clipped" },
+				...source.renditions,
+			],
+		});
+		const state = planToWizardState(raw);
+		for (const [i, rendition] of state.videos.entries())
+			if (i === 0)
+				rendition.extras = { ...rendition.extras, source: undefined };
+		const rebuilt = encodingPlanSchema.parse(buildPlan(state));
+		expect(
+			rebuilt.ingest.find(
+				(r) =>
+					r.key ===
+					rebuilt.renditions.find((r) => r.key === "first")?.ingestKey,
+			)?.inputPath,
+		).toBe("ordinary.mxf");
+	});
 	it("adds implicit audio to an HDR master named audio without changing its video binding", () => {
 		const source = copiedSource();
 		const native = encodingPlanSchema.parse({

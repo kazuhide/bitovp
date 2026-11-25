@@ -1918,16 +1918,37 @@ export function planToWizardState(
 		const pictured = renditions.find((r) =>
 			["H264", "H265", "AV1", "VP9"].includes(String(r.codec)),
 		);
-		const native =
-			videoIngest ?? ingest.find((row) => row.key === pictured?.ingestKey);
-		const hdr =
-			hdr10PlusStreamsRaw.find((row) => row.key === pictured?.ingestKey) ??
-			hdr10PlusStreamsRaw[0];
-		const picture = native
-			? { input: native.inputKey, path: native.inputPath }
-			: { input: hdr?.inputKey, path: hdr?.videoInputPath };
-		if (typeof picture.input === "string" && typeof picture.path === "string") {
-			const pictureKey = fileKeyFor(picture.input, picture.path);
+		// The ordinary picture belongs to the first video rendition, even if an
+		// unrelated rendition uses HDR. Follow its trim or main concat source.
+		const upstream = new Map<unknown, unknown>();
+		for (const trim of asArray(raw.trimmingStreams).filter(isRecord))
+			upstream.set(trim.key, trim.sourceKey);
+		for (const concat of asArray(raw.concatenationStreams).filter(isRecord)) {
+			const parts = asArray(concat.sources).filter(isRecord);
+			upstream.set(
+				concat.key,
+				(parts.find((part) => part.isMain === true) ?? parts[0])?.sourceKey,
+			);
+		}
+		const seen = new Set<unknown>();
+		let key = pictured?.ingestKey;
+		while (typeof key === "string" && upstream.has(key) && !seen.has(key)) {
+			seen.add(key);
+			key = upstream.get(key);
+		}
+		const source =
+			[
+				...ingest,
+				...fileStreams,
+				...dolbyStreamsRaw,
+				...hdr10PlusStreamsRaw,
+			].find((row) => row.key === key) ?? videoIngest;
+		const picturePath = source?.videoInputPath ?? source?.inputPath;
+		if (
+			typeof source?.inputKey === "string" &&
+			typeof picturePath === "string"
+		) {
+			const pictureKey = fileKeyFor(source.inputKey, picturePath);
 			const index = inputFiles.findIndex((file) => file.key === pictureKey);
 			const primary = inputFiles[index];
 			if (index > 0 && primary) {

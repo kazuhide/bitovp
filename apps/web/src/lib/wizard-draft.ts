@@ -1162,7 +1162,49 @@ export function mergeWizardDraft<T>(
 		kind === "vod" && value.encoderVersion === undefined
 			? { ...value, encoderVersion: "STABLE" }
 			: value;
-	return merge(base, snapshot, projectWizardDraft(kind, base)) as T;
+	const baseDraft = projectWizardDraft(kind, base);
+	const restored =
+		kind === "vod" ? restoreCopiedHdrInputs(snapshot, baseDraft) : snapshot;
+	return merge(base, restored, baseDraft) as T;
+}
+
+/** Old copies used the provider declaration order as the implicit video input. */
+function restoreCopiedHdrInputs(
+	snapshot: DraftValue,
+	base: DraftValue,
+): DraftValue {
+	if (
+		!draftRecord(base.sources) ||
+		!Array.isArray(base.sources.hdr10PlusStreams) ||
+		!base.sources.hdr10PlusStreams.length ||
+		!Array.isArray(base.inputFiles) ||
+		!Array.isArray(snapshot.inputFiles)
+	)
+		return snapshot;
+	const primary = base.inputFiles[0];
+	const first = snapshot.inputFiles[0];
+	if (!draftRecord(primary) || !draftRecord(first) || first.key === primary.key)
+		return snapshot;
+	const index = snapshot.inputFiles.findIndex(
+		(f) => draftRecord(f) && f.key === primary.key,
+	);
+	if (index < 1) return snapshot;
+	const byKey = new Map(
+		base.inputFiles.filter(draftRecord).map((f) => [f.key, f]),
+	);
+	const files = snapshot.inputFiles.map((f) => {
+		if (!draftRecord(f)) return f;
+		const rank = byKey.get(f.key)?.inputDeclarationIndex;
+		return rank === undefined ? f : { inputDeclarationIndex: rank, ...f };
+	});
+	files.unshift(...files.splice(index, 1));
+	// The old draft omitted audioInputFile when the first row was its audio master.
+	const audioInputFile = snapshot.audioInputFile ?? base.audioInputFile;
+	return {
+		...snapshot,
+		...(audioInputFile !== undefined ? { audioInputFile } : {}),
+		inputFiles: files,
+	};
 }
 
 export type WizardDraft = { step: number; value: DraftValue };
@@ -1200,7 +1242,10 @@ export function writeWizardDraft(
 			kind,
 			savedAt: now,
 			step,
-			value: projectWizardDraft(kind, publicHdrSourceProjection(value)),
+			value: projectWizardDraft(
+				kind,
+				publicHdrSourceProjection(value, "draft"),
+			),
 		});
 		const serialized = JSON.stringify(record);
 		if (serialized.length <= WIZARD_DRAFT_MAX_SIZE)
@@ -1231,7 +1276,7 @@ export function readWizardDraft(
 				? LEGACY_LIVE_STEPS[record.step]
 				: record.step;
 		if (step === undefined) throw new Error("step");
-		const safeValue = publicHdrSourceProjection(record.value);
+		const safeValue = publicHdrSourceProjection(record.value, "draft");
 		if (safeValue !== record.value)
 			(storage ?? localStorage).setItem(
 				key,

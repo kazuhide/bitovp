@@ -3,7 +3,11 @@ import { useState } from "react";
 import { expect, it } from "vitest";
 import { renderWithQuery as render } from "@/test/render";
 import { AudioMixEditor } from "./audio-mix-editor";
-import { DEFAULT_WIZARD_STATE, type WizardState } from "./build-plan";
+import {
+	buildPlan,
+	DEFAULT_WIZARD_STATE,
+	type WizardState,
+} from "./build-plan";
 import { LadderSection } from "./wizard-sections";
 
 let current: WizardState;
@@ -46,6 +50,20 @@ function Harness({ hdrKey }: { hdrKey?: string } = {}) {
 		/>
 	);
 }
+it("mixes the ordinary audio track when a named HDR stream already uses audio", () => {
+	render(<Harness hdrKey="audio" />);
+	fireEvent.click(screen.getByText("Audio channel mix"));
+	fireEvent.change(screen.getByLabelText("Start from a preset"), {
+		target: { value: "swap" },
+	});
+	const result = buildPlan(current);
+	const source =
+		current.sources?.audioMixStreams?.[0]?.audioMixChannels[0]?.sourceKey;
+	expect(source).not.toBe("audio");
+	expect(result.ingest).toContainEqual(
+		expect.objectContaining({ key: source, selectionMode: "AUDIO_RELATIVE" }),
+	);
+});
 it("allocates a preset mix key alongside an HDR10+ source with the same prefix", () => {
 	render(<Harness hdrKey="audioMix1" />);
 	fireEvent.click(screen.getByText("Audio channel mix"));

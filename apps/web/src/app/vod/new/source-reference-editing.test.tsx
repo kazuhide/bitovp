@@ -36,6 +36,32 @@ function mount(
 	}
 	return render(<Harness />, locale);
 }
+it("adds a trim from ordinary video beside a named HDR video", () => {
+	mount({
+		...DEFAULT_WIZARD_STATE,
+		sources: {
+			hdr10PlusStreams: [
+				{
+					key: "video",
+					videoInputFile: "main",
+					metadataInputPath: "metadata.json",
+					selectionMode: "AUTO",
+				},
+			],
+		},
+	});
+	fireEvent.click(screen.getByText("Add input clip"));
+	const trim = stateNow().sources?.trimmingStreams?.[0];
+	expect(trim?.sourceKey).toBe("video-input-1");
+	const source = document.getElementById("wz-trim-0-src") as HTMLSelectElement;
+	expect(Array.from(source.options, (o) => o.value)).toContain(trim?.sourceKey);
+	expect(buildPlan(stateNow()).ingest).toContainEqual(
+		expect.objectContaining({
+			key: trim?.sourceKey,
+			selectionMode: "VIDEO_RELATIVE",
+		}),
+	);
+});
 const stateNow = () =>
 	JSON.parse(screen.getByTestId("state").textContent ?? "{}") as WizardState;
 const base: WizardState = {
@@ -151,6 +177,47 @@ describe("source resource editing", () => {
 	it("keeps encoder override controls out of ordinary single-encoding sources", () => {
 		mount(base);
 		expect(screen.queryByLabelText("Encoder version")).not.toBeInTheDocument();
+	});
+
+	it("keeps the ordinary track and the named clip separate when a copied clip releases its reserved key", () => {
+		mount({
+			...DEFAULT_WIZARD_STATE,
+			videos: [{ height: 720, bitrate: 1000000, extras: { source: "video" } }],
+			sources: {
+				trimmingStreams: [
+					{
+						kind: "TIME_BASED",
+						key: "video",
+						sourceKey: "video-input-1",
+						duration: 3,
+					},
+				],
+				concatenationStreams: [
+					{
+						key: "cut",
+						sources: [{ sourceKey: "video", position: 0, isMain: true }],
+					},
+				],
+			},
+		});
+		const key = document.getElementById("wz-trim-0-key") as HTMLInputElement;
+		fireEvent.change(key, { target: { value: "video-input-1" } });
+		fireEvent.blur(key);
+		expect(stateNow().sources?.trimmingStreams?.[0]?.key).toBe("video");
+		fireEvent.change(key, { target: { value: "picture-cut" } });
+		fireEvent.blur(key);
+		const saved = stateNow();
+		expect(saved.videos[0]?.extras?.source).toBe("picture-cut");
+		expect(
+			saved.sources?.concatenationStreams?.[0]?.sources[0]?.sourceKey,
+		).toBe("picture-cut");
+		expect(saved.sources?.trimmingStreams?.[0]?.sourceKey).toBe("video");
+		expect(buildPlan(saved).ingest).toContainEqual(
+			expect.objectContaining({
+				key: "video",
+				selectionMode: "VIDEO_RELATIVE",
+			}),
+		);
 	});
 
 	it("allows a complete trim rename without losing focus and preserves references", async () => {

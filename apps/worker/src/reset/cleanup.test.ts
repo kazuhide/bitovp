@@ -38,8 +38,11 @@ it("requires terminal readback after STOP and releases exact encoding keys", asy
 	const { payload, provider } = fixture();
 	vi.mocked(provider.status).mockResolvedValueOnce("RUNNING");
 	const result = await cleanResetPayload(payload, async () => provider);
-	expect(provider.stop).toHaveBeenCalledWith("encoding");
-	expect(provider.releaseTemporaryKeys).toHaveBeenCalledWith("encoding");
+	expect(provider.stop).toHaveBeenCalledWith("encoding", undefined);
+	expect(provider.releaseTemporaryKeys).toHaveBeenCalledWith(
+		"encoding",
+		undefined,
+	);
 	expect([...result.encodings]).toEqual(["account:encoding"]);
 });
 it("keeps failed provider cleanup and key release durable", async () => {

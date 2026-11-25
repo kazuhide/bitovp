@@ -18,8 +18,11 @@ import {
 export const RESET_ENCODING_ABSENT = Symbol("verified encoding absence");
 export type ResetCleanupProvider = {
 	status(id: string): Promise<string | typeof RESET_ENCODING_ABSENT>;
-	stop(id: string): Promise<void>;
-	releaseTemporaryKeys(id: string): Promise<void>;
+	stop(id: string, canMutate?: () => Promise<boolean>): Promise<void | false>;
+	releaseTemporaryKeys(
+		id: string,
+		canMutate?: () => Promise<boolean>,
+	): Promise<void | false>;
 	/** True only after an exact owned hook is deleted (including 404). */
 	removeWebhook(hook: ResetCleanupWebhook): Promise<boolean>;
 };
@@ -98,14 +101,15 @@ export async function cleanResetPayload(
 			const key = `${row.accountId}:${row.encodingId}`;
 			if (encodings.has(key)) continue;
 			const api = await provider(row.accountId);
+			const authorized = canMutate ? () => canMutate(row) : undefined;
 			let status = await api.status(row.encodingId);
 			if (
 				status !== RESET_ENCODING_ABSENT &&
 				classifyProviderStatusWord(status) !== "TERMINAL" &&
 				status !== "CREATED"
 			) {
-				if (canMutate && !(await canMutate(row))) continue;
-				await api.stop(row.encodingId);
+				if (authorized && !(await authorized())) continue;
+				if ((await api.stop(row.encodingId, authorized)) === false) continue;
 				status = await api.status(row.encodingId);
 			}
 			// A healthy replacement credential can see both exact endpoints as absent.
@@ -118,8 +122,12 @@ export async function cleanResetPayload(
 							!unsettled.has(key));
 			if (safe) {
 				if (withTemporaryKeys.has(key)) {
-					if (canMutate && !(await canMutate(row))) continue;
-					await api.releaseTemporaryKeys(row.encodingId);
+					if (authorized && !(await authorized())) continue;
+					if (
+						(await api.releaseTemporaryKeys(row.encodingId, authorized)) ===
+						false
+					)
+						continue;
 				}
 				encodings.add(`${row.accountId}:${row.encodingId}`);
 			}
@@ -181,8 +189,14 @@ export function createResetCleanupSweep(deps: {
 							row.entityKey.includes(":verification-intent:"),
 					);
 				const verificationIntents = current.payload.verificationIntents;
+				const cleanupAccounts = current.payload.accounts;
 				const readWork = () =>
-					readVerificationCleanupWork(deps.prisma, verificationIntents);
+					readVerificationCleanupWork(
+						deps.prisma,
+						verificationIntents,
+						undefined,
+						cleanupAccounts,
+					);
 				const work = checkedWorklist ? await readWork() : null;
 
 				if (

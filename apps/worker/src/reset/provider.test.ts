@@ -65,6 +65,30 @@ it("stops live and VOD resources through their distinct provider endpoints", asy
 	expect(f.encodings.stop).toHaveBeenCalledTimes(1);
 	expect(f.encodings.live.stop).toHaveBeenCalledTimes(1);
 });
+it("rechecks current ownership after resolving the encoder type and before each key removal", async () => {
+	const f = await fixture();
+	let retained = false;
+	f.encodings.get.mockImplementation(async () => {
+		retained = true;
+		return { id: "encoding", type: "VOD" };
+	});
+	const authorized = async () => !retained;
+	await f.provider.stop("encoding", authorized);
+	expect(f.encodings.stop).not.toHaveBeenCalled();
+	expect(f.encodings.live.stop).not.toHaveBeenCalled();
+	retained = false;
+	f.keys.list.mockResolvedValue({
+		items: [
+			{ id: "first", assignedEncodingId: "encoding" },
+			{ id: "second", assignedEncodingId: "encoding" },
+		],
+	});
+	f.keys.delete.mockImplementation(async () => {
+		retained = true;
+	});
+	await f.provider.releaseTemporaryKeys("encoding", authorized);
+	expect(f.keys.delete.mock.calls).toEqual([["first"]]);
+});
 it("clears historical unknown hooks only after an empty list and terminal parent", async () => {
 	const f = await fixture();
 	await expect(f.provider.removeWebhook(f.hook)).resolves.toBe(true);

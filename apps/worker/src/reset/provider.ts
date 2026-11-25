@@ -67,9 +67,10 @@ export function resetCleanupProvider(
 					throw error;
 				}
 			},
-			async stop(id) {
+			async stop(id, canMutate) {
 				try {
 					const encoding = await api.encoding.encodings.get(id);
+					if (canMutate && !(await canMutate())) return false;
 					if (encoding.type === "LIVE")
 						await api.encoding.encodings.live.stop(id);
 					else if (encoding.type === "VOD")
@@ -79,7 +80,7 @@ export function resetCleanupProvider(
 					if (!is404(error)) throw error;
 				}
 			},
-			async releaseTemporaryKeys(encodingId) {
+			async releaseTemporaryKeys(encodingId, canMutate) {
 				const ids: string[] = [];
 				for (let offset = 0; ; offset += 100) {
 					const page = await api.encoding.live.streamKeys.list({
@@ -94,6 +95,7 @@ export function resetCleanupProvider(
 				}
 				for (const id of ids)
 					try {
+						if (canMutate && !(await canMutate())) return false;
 						await api.encoding.live.streamKeys.delete(id);
 					} catch (error) {
 						if (!is404(error)) throw error;

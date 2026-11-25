@@ -47,13 +47,13 @@ export async function readVerificationCleanupWork(
 	tx: AppPrismaClient | AppTransactionClient,
 	raw: readonly unknown[],
 	removed = { vod: false, live: false },
+	cleanupAccounts?: readonly { id: string; tenantOrgId: string | null }[],
 ) {
 	const rows = raw.flatMap((r) => {
 		const parsed = parseIntent(r);
 		return parsed ? [parsed] : [];
 	});
 	const protectedWorkKeys = new Set<string>();
-	const ownedProviderKeys = new Set<string>();
 	const candidates: ResetCleanupEncoding[] = [];
 	// An intent can learn provider IDs before local adoption. Protect retained
 	// owners by canonical local key, verification key, and exact encoder refs.
@@ -95,11 +95,8 @@ export async function readVerificationCleanupWork(
 				}),
 	]);
 	const retainedArchive = removed.live ? null : await readResetRtmpArchives(tx);
-	for (const key of retainedArchive?.ownedProviderKeys ?? [])
-		ownedProviderKeys.add(key);
-	const owned = (accountId: string | null, encodingId: string) =>
-		ownedProviderKeys.has(JSON.stringify([accountId, encodingId])) ||
-		ownedProviderKeys.has(JSON.stringify([null, encodingId]));
+	const ownedEncodings =
+		retainedArchive?.ownedEncodings ?? new Map<string, Set<string | null>>();
 	const retained = [
 		...jobs.map((row) => ({
 			...row,
@@ -138,10 +135,36 @@ export async function readVerificationCleanupWork(
 			...stepEncodingIds(owner.stepLog),
 			...owner.previousProviderEncodingIds,
 		]) {
-			if (id)
-				ownedProviderKeys.add(JSON.stringify([owner.bitmovinAccountId, id]));
+			if (!id) continue;
+			const owners = ownedEncodings.get(id) ?? new Set<string | null>();
+			owners.add(owner.bitmovinAccountId);
+			ownedEncodings.set(id, owners);
 		}
 	}
+	// A local account ID identifies a credential record, not a provider tenant.
+	// Only two explicit, different provider organization headers prove disjoint scope.
+	const accounts = ownedEncodings.size
+		? await tx.bitmovinAccount.findMany({
+				select: { id: true, tenantOrgId: true },
+			})
+		: [];
+	const currentScope = new Map(
+		accounts.map((account) => [account.id, account.tenantOrgId]),
+	);
+	const cleanupScope = cleanupAccounts
+		? new Map(
+				cleanupAccounts.map((account) => [account.id, account.tenantOrgId]),
+			)
+		: currentScope;
+	const owned = (accountId: string | null, encodingId: string) => {
+		const scope = accountId && cleanupScope.get(accountId);
+		for (const owner of ownedEncodings.get(encodingId) ?? []) {
+			const ownerScope = owner && currentScope.get(owner);
+			if (owner === accountId || !scope || !ownerScope || scope === ownerScope)
+				return true;
+		}
+		return false;
+	};
 	for (const intent of rows) {
 		const accountId = intent.verificationRun.bitmovinAccountId;
 		if (!accountId) continue;

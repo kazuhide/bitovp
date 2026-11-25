@@ -107,7 +107,7 @@ export async function readResetRtmpArchives(
 	});
 	const allPointers: ResetLivePointer[] = [];
 	const ownedIds = new Set<string>();
-	const ownedProviderKeys = new Set<string>();
+	const ownedEncodings = new Map<string, Set<string | null>>();
 	const neverStarted = new Set<string>();
 	const incompleteAccounts = new Set<string | null>();
 	const pointers: ResetLivePointer[] = [];
@@ -142,7 +142,9 @@ export async function readResetRtmpArchives(
 				...(run?.previousProviderEncodingIds ?? []),
 			]) {
 				ownedIds.add(id);
-				ownedProviderKeys.add(JSON.stringify([accountId, id]));
+				const owners = ownedEncodings.get(id) ?? new Set<string | null>();
+				owners.add(accountId);
+				ownedEncodings.set(id, owners);
 			}
 			if (
 				!targets.complete ||
@@ -333,7 +335,7 @@ export async function readResetRtmpArchives(
 	}
 	return {
 		ownedIds,
-		ownedProviderKeys,
+		ownedEncodings,
 		allPointers,
 		pointers,
 		neverStarted,

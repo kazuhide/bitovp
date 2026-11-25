@@ -33,6 +33,7 @@ export async function readLockedLiveStartState(
 		select: {
 			id: true,
 			seq: true,
+			outputPrefix: true,
 			status: true,
 			cancelRequested: true,
 			aisaAnalysisId: true,

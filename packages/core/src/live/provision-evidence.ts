@@ -34,6 +34,69 @@ export function nativeProvisionMayHaveSent(entry: StepLogEntry): boolean {
 			response(entry).started === true)
 	);
 }
+/** Stream, muxing and DRM children use adoptOrCreateStamped under their
+ * exact parent. An older reseed can have kept only the original start time. */
+export function interruptedLiveChildCreate(entry: StepLogEntry): boolean {
+	return (
+		(entry.kind === "CREATE_STREAM" ||
+			entry.kind.startsWith("CREATE_MUXING_") ||
+			entry.kind.startsWith("CREATE_DRM_")) &&
+		entry.status !== "DONE" &&
+		(entry.adoptExistingOnly === true ||
+			entry.status === "RUNNING" ||
+			(entry.status === "PENDING" && !!entry.startedAt && !entry.finishedAt))
+	);
+}
+
+function runtimeIdentity(entry: StepLogEntry): string {
+	const { status: _status, error: _error, ...record } = entry;
+	return JSON.stringify(record, (_key, value: unknown) =>
+		value && typeof value === "object" && !Array.isArray(value)
+			? Object.fromEntries(
+					Object.entries(value).sort(([left], [right]) =>
+						left < right ? -1 : left > right ? 1 : 0,
+					),
+				)
+			: value,
+	);
+}
+
+/** Runtime rows are event occurrences. Their historical timestamp-based keys
+ * can coincide. Match occurrences between mirrors, including repeated identical
+ * events, while preserving the order of each journal's missing history. */
+function restoreRuntimeHistory(
+	current: StepLogEntry[],
+	saved: StepLogEntry[],
+): boolean {
+	const executable = new Set(
+		[...current, ...saved]
+			.filter((row) => !isRuntimeRecordKind(row.kind))
+			.map((row) => row.step),
+	);
+	const occurrences = new Map<
+		string,
+		{ rows: StepLogEntry[]; consumed: number }
+	>();
+	for (const row of current) {
+		if (!isRuntimeRecordKind(row.kind)) continue;
+		if (executable.has(row.step)) return false;
+		const identity = runtimeIdentity(row);
+		const group = occurrences.get(identity);
+		if (group) group.rows.push(row);
+		else occurrences.set(identity, { rows: [row], consumed: 0 });
+	}
+	for (const row of saved) {
+		if (!isRuntimeRecordKind(row.kind)) continue;
+		if (executable.has(row.step)) return false;
+		const group = occurrences.get(runtimeIdentity(row));
+		const mirror = group?.rows[group.consumed++];
+		if (!mirror) current.push(row);
+		else if (row.status === "DONE" && mirror.status !== "DONE")
+			Object.assign(mirror, row);
+	}
+	return true;
+}
+
 function evidence(entry: StepLogEntry) {
 	return (
 		paidSteps.has(entry.kind) &&
@@ -75,9 +138,12 @@ export function restoreCompiledLiveProvisionGraph(
 		)
 	)
 		return null;
-	const byStep = new Map(run.data.map((entry) => [entry.step, entry]));
+	const executable = run.data.filter(
+		(entry) => !isRuntimeRecordKind(entry.kind),
+	);
+	const byStep = new Map(executable.map((entry) => [entry.step, entry]));
 	if (
-		byStep.size !== run.data.length ||
+		byStep.size !== executable.length ||
 		(primary &&
 			run.data.some(
 				(entry) =>
@@ -135,7 +201,9 @@ export function restoreLiveProvisionEvidence(
 		(step) =>
 			evidence(step) ||
 			(restoreCompletedGraph &&
-				(step.status === "DONE" || isRuntimeRecordKind(step.kind))),
+				(step.status === "DONE" ||
+					isRuntimeRecordKind(step.kind) ||
+					interruptedLiveChildCreate(step))),
 	);
 	if (!current.data.length) {
 		if (
@@ -153,19 +221,10 @@ export function restoreLiveProvisionEvidence(
 			? prior.data
 			: current.data;
 	}
-	const byStep = new Map(current.data.map((entry) => [entry.step, entry]));
+	if (restoreCompletedGraph && !restoreRuntimeHistory(current.data, prior.data))
+		return null;
 	for (const saved of receipts) {
-		if (restoreCompletedGraph && isRuntimeRecordKind(saved.kind)) {
-			// These records are appended after deployment and never executable.
-			const currentRecord = byStep.get(saved.step);
-			if (currentRecord && currentRecord.kind !== saved.kind) return null;
-			if (!currentRecord) {
-				current.data.push(saved);
-				byStep.set(saved.step, saved);
-			} else if (saved.status === "DONE" && currentRecord.status !== "DONE")
-				Object.assign(currentRecord, saved);
-			continue;
-		}
+		if (isRuntimeRecordKind(saved.kind)) continue;
 		const target = current.data.find(
 			(e) => e.kind === saved.kind && e.step === saved.step,
 		);
@@ -203,6 +262,13 @@ export function restoreLiveProvisionEvidence(
 			// manifest or other step from this generation, including its payload.
 			if (target.status !== "DONE") Object.assign(target, saved);
 			continue;
+		}
+		if (
+			restoreCompletedGraph &&
+			interruptedLiveChildCreate(saved) &&
+			target.status !== "DONE"
+		) {
+			target.adoptExistingOnly = true;
 		}
 		if (saved.resourceId && !target.resourceId)
 			target.resourceId = saved.resourceId;

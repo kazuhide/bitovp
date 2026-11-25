@@ -447,6 +447,9 @@ export const stepLogEntrySchema = z.strictObject({
 	 * and for never-re-seeded live steps.
 	 */
 	attempt: z.number().int().positive().optional(),
+	/** This generation's stamped child CREATE may have reached the provider.
+	 * Recover it by exact marker until a positive result is available. */
+	adoptExistingOnly: z.literal(true).optional(),
 	/** Redacted request/response snapshots (C7). */
 	request: z.unknown().optional(),
 	response: z.unknown().optional(),

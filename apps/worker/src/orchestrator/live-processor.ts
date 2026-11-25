@@ -17,6 +17,7 @@ import {
 	feederOccupancyWhere,
 	hasAisaLiveBinding,
 	hasAisaLiveStepLog,
+	interruptedLiveChildCreate,
 	isAisaManagedLivePlan,
 	isRuntimeRecordKind,
 	isStaleGeneration,
@@ -6257,7 +6258,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					jobId: liveChannelId,
 					currentStep: () => stampStep,
 					adoptWindow: () => stampAdopt,
-					allowCreate: () => !cancelRecovery,
+					allowCreate: () => !cancelRecovery && !activeEntry?.adoptExistingOnly,
 					...(verification
 						? {
 								verification,
@@ -6686,6 +6687,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						entries[i] = {
 							...entry,
 							status: "PENDING",
+							adoptExistingOnly: undefined,
 							resourceId: undefined,
 							error: undefined,
 							startedAt: undefined,
@@ -7172,6 +7174,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				// status before re-starting (same wedge prevention as VOD).
 				const wasRunning =
 					entry.status === "RUNNING" || nativeProvisionMayHaveSent(entry);
+				if (interruptedLiveChildCreate(entry)) entry.adoptExistingOnly = true;
 				const hadStartAttempt = entry.startedAt !== undefined;
 				if (
 					entry.kind === "CREATE_OUTPUT_MOQ" &&
@@ -7208,7 +7211,10 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					// ERROR-resume reseeds FAILED/RUNNING to PENDING while retaining
 					// timing. A verification CREATE with that history may already
 					// exist at the provider and must reconcile by exact marker first.
-					stampAdopt = wasRunning || wasVerificationCreateAttempt;
+					stampAdopt =
+						wasRunning ||
+						wasVerificationCreateAttempt ||
+						entry.adoptExistingOnly === true;
 					const ticker = startLeaseTicker();
 					activeLeaseTicker = ticker;
 					let result: Awaited<ReturnType<typeof executeStep>>;
@@ -7238,6 +7244,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					entry.status = "DONE";
 					entry.finishedAt = deps.now();
 					entry.resourceId = result.resourceId;
+					delete entry.adoptExistingOnly;
 					entry.request = redactSecrets(result.request);
 					const providerBarrierEvidence =
 						typeof entry.response === "object" &&

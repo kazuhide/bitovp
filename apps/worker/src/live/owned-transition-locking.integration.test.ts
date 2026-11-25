@@ -41,6 +41,7 @@ import {
 	createLiveChannelProcessor,
 	type LiveChannelDeps,
 } from "../orchestrator/live-processor";
+import { adoptOrCreateStamped } from "../orchestrator/ops/shared";
 import { recordScheduleOutcome } from "../scheduler/schedule-outcome";
 import { createScheduleSweep } from "../scheduler/sweep";
 import { admitInactiveOrganization } from "../tenant/admission";
@@ -4083,6 +4084,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			"scheduled",
 			"scheduled-rebuild",
 			"scheduled-runtime",
+			"scheduled-prefix",
+			"scheduled-adopt",
+			"scheduled-miss",
 		] as const)("reads a run-only native CREATE before replay and preserves the existing primary (nullable run=%s)", async (nullable) => {
 			const scheduled = typeof nullable === "string";
 			const f = await dispatchFixture();
@@ -4130,8 +4134,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				for (const step of entries.slice(from)) step.attempt = 1;
 			}
 			const runtime: StepLogEntry = {
-				step: randomUUID(),
-				kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+				step: "esam-media-point-1795564800000",
+				kind: "ESAM_MEDIA_POINT",
 				status: "DONE",
 				refs: {},
 				payload: {
@@ -4140,7 +4144,30 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				},
 				finishedAt: now.toISOString(),
 			};
-			if (nullable === "scheduled-runtime") entries.push(runtime);
+			const secondRuntime = {
+				...runtime,
+				payload: {
+					requestId: "concurrent-operation",
+					configuration: { streamTimeoutMinutes: 15 },
+				},
+			};
+			if (nullable === "scheduled-runtime")
+				entries.push(runtime, secondRuntime);
+			const childRecovery =
+				nullable === "scheduled-adopt" || nullable === "scheduled-miss";
+			const child = graph.find((entry) => entry.kind === "CREATE_STREAM");
+			if (!child) throw new Error("missing compiled stream");
+			const providerStreamId = child.resourceId;
+			if (childRecovery) {
+				child.status = "RUNNING";
+				child.startedAt = lease.toISOString();
+				delete child.resourceId;
+			}
+			const omitted =
+				nullable === "scheduled-prefix"
+					? graph.find((step) => step.kind === "CREATE_MUXING_FMP4")
+					: undefined;
+			if (omitted) entries.splice(entries.indexOf(omitted), 1);
 
 			await tenant.liveChannel.update({
 				where: { id: f.channel.id },
@@ -4159,6 +4186,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				where: { id: f.run.id },
 				data: {
 					...(nullable ? { bitmovinEncodingId: null } : {}),
+					...(nullable === "scheduled-prefix" ? { seq: 2 } : {}),
 					...(nullable === "scheduled-rebuild"
 						? {
 								archivedRtmpAttempt: 1,
@@ -4216,7 +4244,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						(channel.stepLog as unknown as StepLogEntry[]).filter(
 							(e) => e.step === runtime.step,
 						),
-					).toEqual([runtime]);
+					).toEqual([runtime, secondRuntime]);
 				}
 				if (nullable === "scheduled-rebuild") {
 					expect(
@@ -4226,7 +4254,20 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					).toEqual(entries.map((e) => e.attempt ?? 0));
 				}
 
+				if (omitted) {
+					const run = await tenant.liveChannelRun.findUniqueOrThrow({
+						where: { id: f.run.id },
+					});
+					expect(run.outputPrefix).toBe("");
+					expect(
+						(channel.stepLog as unknown as StepLogEntry[]).find(
+							(step) => step.step === omitted.step,
+						)?.payload,
+					).toEqual(omitted.payload);
+					return;
+				}
 				for (const entry of graph) {
+					if (childRecovery && entry === child) continue;
 					expect(channel.stepLog).toEqual(
 						expect.arrayContaining([
 							expect.objectContaining({
@@ -4250,7 +4291,47 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			f.sdk.getEncodingStatus = vi.fn(async () => ({
 				status: scheduled ? "RUNNING" : "CANCELED",
 			}));
-			await createLiveChannelProcessor(f.deps)(job);
+			const create = vi.fn(async () => "duplicate-stream");
+			const lookup = vi.fn(async () =>
+				nullable === "scheduled-miss" ? undefined : providerStreamId,
+			);
+			if (childRecovery)
+				f.deps.makeSdk = (options) => ({
+					...f.sdk,
+					createStream: async (encodingId) => {
+						expect(encodingId).toBe(f.encodingId);
+						return adoptOrCreateStamped({
+							label: "stream",
+							stamp: options.stamp,
+							lookup,
+							create,
+							auditAdopt: async () => {},
+						});
+					},
+				});
+			const result = createLiveChannelProcessor(f.deps)(job);
+			if (nullable === "scheduled-miss")
+				await expect(result).rejects.toThrow("remains unresolved");
+			else await result;
+			if (childRecovery) {
+				expect(lookup).toHaveBeenCalledWith({
+					job: f.channel.id,
+					step: child.step,
+				});
+				expect(create).not.toHaveBeenCalled();
+				const ch = await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				});
+				const step = (ch.stepLog as unknown as StepLogEntry[]).find(
+					(item) => item.step === child.step,
+				);
+				if (nullable === "scheduled-miss") {
+					expect(step?.status).toBe("FAILED");
+					expect(ch.status).toBe("ERROR");
+					return;
+				}
+				expect(step?.resourceId).toBe(providerStreamId);
+			}
 			expect(f.sdk.getEncodingStatus).toHaveBeenCalledWith(f.encodingId);
 			if (scheduled) {
 				expect(f.sdk.createStream).not.toHaveBeenCalled();
@@ -4265,7 +4346,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					(run.stepLog as unknown as StepLogEntry[]).filter(
 						(e) => e.step === runtime.step,
 					),
-				).toEqual([runtime]);
+				).toEqual([runtime, secondRuntime]);
 			}
 			expect(
 				(

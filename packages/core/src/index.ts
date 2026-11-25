@@ -501,6 +501,7 @@ export {
 	providerUnknownPastGrace,
 } from "./live/provider-lifecycle";
 export {
+	interruptedLiveChildCreate,
 	nativeProvisionMayHaveSent,
 	restoreCompiledLiveProvisionGraph,
 	restoreLiveProvisionEvidence,

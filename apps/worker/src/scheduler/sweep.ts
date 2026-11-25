@@ -7,12 +7,15 @@ import type {
 	StepLogEntry,
 } from "@bitovp/core";
 import {
+	compileLiveChannel,
 	compileLiveRunStepLog,
 	DEFAULT_SCHEDULE_START_GRACE_MINUTES,
 	deriveProviderLifecycle,
+	effectiveLivePlanForRun,
 	feederErrorEnglish,
 	hasAisaLiveBinding,
 	ingestConnectedFresh,
+	initStepLog,
 	isLiveRunStatus,
 	isStaleGeneration,
 	liveChannelPlanSchema,
@@ -904,8 +907,18 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						// log was empty. Recheck under the actual airing lock.
 						if (!Array.isArray(channel.stepLog) || channel.stepLog.length)
 							return null;
+						// A journal from before per-run rebasing can own output at
+						// the plan paths even when seq >= 2. Recompile missing steps
+						// against that recorded layout before restoring its receipts.
+						let compiled: unknown = claim.data.stepLog;
+						if (Array.isArray(latest.stepLog) && latest.stepLog.length) {
+							const effective = effectiveLivePlanForRun(channel.plan, latest);
+							if (!effective) return null;
+							compiled = initStepLog(compileLiveChannel(effective));
+							runWrite.outputPrefix = latest.outputPrefix;
+						}
 						restored = restoreCompiledLiveProvisionGraph(
-							claim.data.stepLog,
+							compiled,
 							latest.stepLog,
 							primary,
 							latest.archivedRtmpAttempt ?? 0,

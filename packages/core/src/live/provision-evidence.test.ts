@@ -191,3 +191,74 @@ it("keeps each saved runtime record once without turning it into a provision ste
 		),
 	).toBeNull();
 });
+
+it("matches concurrent same-key runtime events by occurrence across both mirrors", () => {
+	const graph = pending("CREATE_MUXING_FMP4");
+	const event = {
+		...pending("ESAM_MEDIA_POINT"),
+		step: "esam-123",
+		status: "DONE" as const,
+		finishedAt: at,
+		request: { matchTime: "00:00:01", signals: [{ offset: 1 }] },
+	};
+	const other = {
+		...event,
+		request: { signals: [{ offset: 2 }], matchTime: "00:00:01" },
+	};
+	const channel = [graph, event];
+	const history = [
+		graph,
+		{ ...event, request: { signals: [{ offset: 1 }], matchTime: "00:00:01" } },
+		other,
+		event,
+	];
+	const expected = [graph, event, other, event];
+	expect(restoreLiveProvisionEvidence(channel, history, null, true)).toEqual(
+		expected,
+	);
+	expect(restoreLiveProvisionEvidence(expected, history, null, true)).toEqual(
+		expected,
+	);
+	expect(restoreCompiledLiveProvisionGraph([graph], history, null, 0)).toEqual(
+		expected,
+	);
+	expect(
+		restoreCompiledLiveProvisionGraph(
+			[graph],
+			[graph, { ...event, step: graph.step }],
+			null,
+			0,
+		),
+	).toBeNull();
+});
+
+it("retains child adoption after a failed lookup or a prior reseed, only for its recorded generation", () => {
+	const child = pending("CREATE_MUXING_FMP4");
+	const started = { ...child, startedAt: at, status: "RUNNING" as const };
+	const expected = { ...child, startedAt: at, adoptExistingOnly: true };
+	expect(restoreLiveProvisionEvidence([child], [started], null, true)).toEqual([
+		expected,
+	]);
+	const failed = {
+		...expected,
+		adoptExistingOnly: true as const,
+		finishedAt: at,
+		status: "FAILED" as const,
+	};
+	expect(
+		restoreLiveProvisionEvidence(
+			[child],
+			reseedFailedSteps([failed]),
+			null,
+			true,
+		),
+	).toEqual([expected]);
+	expect(
+		restoreLiveProvisionEvidence(
+			[{ ...child, attempt: 1 }],
+			[started],
+			null,
+			true,
+		),
+	).toEqual([{ ...child, attempt: 1 }]);
+});

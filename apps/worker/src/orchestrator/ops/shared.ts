@@ -922,7 +922,7 @@ export async function adoptOrCreateStamped(args: {
 	}
 	if (args.stamp?.allowCreate?.() === false)
 		throw new Error(
-			"Cancelled startup CREATE remains unresolved; no new resource was created",
+			"The existing CREATE remains unresolved; no new resource was created",
 		);
 	let created: string;
 	try {

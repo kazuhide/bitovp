@@ -1099,9 +1099,19 @@ export function competingScheduledStop(
 		action: "STOP",
 		status: "FIRED",
 		outcome: { in: ["PENDING", "UNKNOWN"] },
-		OR: [
-			{ stopAdmissionFenceVersion: null },
-			{ stopAdmissionFenceVersion: fence },
+		AND: [
+			{
+				OR: [
+					{ stopAdmissionFenceVersion: null },
+					{ stopAdmissionFenceVersion: fence },
+				],
+			},
+			{
+				OR: [
+					{ legacyStopExhaustedFence: null },
+					{ legacyStopExhaustedFence: { not: fence } },
+				],
+			},
 		],
 	};
 }

@@ -15,7 +15,6 @@ import {
 import { HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS } from "../heartbeat-cadence";
 import type { LiveChannelDeps } from "../orchestrator/live-processor";
 
-import { CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION } from "../scheduler/schedule-outcome";
 import { recordFinalStopFailure } from "./dead-job-outcome";
 
 type Deps = Pick<
@@ -26,7 +25,7 @@ type ReadJob = (
 	id: string,
 ) => Promise<{ data: unknown; getState(): Promise<string> } | undefined>;
 
-function sameScheduledStop(
+function sameScheduledStopTarget(
 	actual: NonNullable<LiveChannelJob["effect"]>,
 	expected: NonNullable<LiveChannelJob["effect"]>,
 ) {
@@ -37,8 +36,7 @@ function sameScheduledStop(
 		actual.idempotencyKey === expected.idempotencyKey &&
 		actual.scheduleId === expected.scheduleId &&
 		actual.liveChannelRunId === expected.liveChannelRunId &&
-		actual.providerEncodingId === expected.providerEncodingId &&
-		actual.admissionFenceVersion === expected.admissionFenceVersion
+		actual.providerEncodingId === expected.providerEncodingId
 	);
 }
 
@@ -89,6 +87,7 @@ export function createExhaustedScheduledStopRecovery(
 				outcome: true,
 				dispatchJobId: true,
 				stopAdmissionFenceVersion: true,
+				legacyStopExhaustedFence: true,
 				stopProviderEncodingId: true,
 				liveChannel: {
 					select: {
@@ -163,15 +162,8 @@ export function createExhaustedScheduledStopRecovery(
 				const retained = job ? liveChannelJobSchema.safeParse(job.data) : null;
 				const found = retained?.success ? retained.data : undefined;
 				const legacy = originalFence === channel.legacyAdmissionFenceVersion;
-				const jobState = job && (await job.getState());
-				if (
-					job &&
-					jobState !== "failed" &&
-					!(row.outcome === "UNKNOWN" && jobState === "completed")
-				)
-					continue;
-				// Both the base release and the upgraded redispatch emit fenced STOPs.
-				// Still older bare jobs may only observe their own migrated airing.
+				// The deterministic job must belong to this exact schedule and airing.
+				// Its original fence, when present, is stronger than the channel-wide migration snapshot.
 				if (
 					job &&
 					(found?.action !== "stop" ||
@@ -183,25 +175,50 @@ export function createExhaustedScheduledStopRecovery(
 						found.liveChannelId !== row.liveChannelId ||
 						(found.plannedLiveChannelRunId &&
 							found.plannedLiveChannelRunId !== run.id) ||
-						(found.effect ? !sameScheduledStop(found.effect, effect) : !legacy))
+						(found.effect
+							? !sameScheduledStopTarget(found.effect, effect)
+							: !legacy))
+				)
+					continue;
+				const legacyRow =
+					row.stopProviderEncodingId === null &&
+					row.stopAdmissionFenceVersion === null;
+				if (
+					found?.effect &&
+					found.effect.admissionFenceVersion !== originalFence
+				) {
+					if (legacyRow && found.effect.admissionFenceVersion < originalFence) {
+						await deps.prisma.liveSchedule.updateMany({
+							where: {
+								id: row.id,
+								liveChannelId: row.liveChannelId,
+								liveChannelRunId: run.id,
+								action: "STOP",
+								status: "FIRED",
+								stopProviderEncodingId: null,
+								stopAdmissionFenceVersion: null,
+							},
+							data: {
+								stopProviderEncodingId: found.effect.providerEncodingId,
+								stopAdmissionFenceVersion: found.effect.admissionFenceVersion,
+							},
+						});
+					}
+					continue;
+				}
+				const jobState = job && (await job.getState());
+				if (
+					job &&
+					jobState !== "failed" &&
+					!(row.outcome === "UNKNOWN" && jobState === "completed")
 				)
 					continue;
 				const advancedFence = originalFence !== channel.liveEffectFenceVersion;
-				if (
-					legacy &&
-					!advancedFence &&
-					!row.stopProviderEncodingId &&
-					row.stopAdmissionFenceVersion === null
-				) {
-					// No schedule-specific generation was recorded. A terminal or evicted job
-					// cannot claim a sibling's handoff. Retire only this schedule if another
-					// remains; serializing contenders leaves one actionable after a total loss.
-					const parked = await deps.prisma.$transaction(async (tx) => {
-						await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${row.liveChannelId}::uuid FOR UPDATE`;
-						const at = new Date(deps.now());
-						const note =
-							"This exhausted STOP has no recorded admission generation. Another STOP was recorded for the same airing.";
-						return tx.liveSchedule.updateMany({
+				if (legacy && !advancedFence && legacyRow) {
+					// A lost or terminal job has no runnable handoff. Keep its schedule available
+					// for fallback if every other handoff also proves exhausted.
+					if (row.legacyStopExhaustedFence !== originalFence) {
+						await deps.prisma.liveSchedule.updateMany({
 							where: {
 								id: row.id,
 								liveChannelId: row.liveChannelId,
@@ -222,25 +239,21 @@ export function createExhaustedScheduledStopRecovery(
 									effectClaims: {
 										none: { idempotencyKey: effect.idempotencyKey },
 									},
-									schedules: {
-										some: competingScheduledStop(row.id, run.id, originalFence),
-									},
 								},
 							},
-							data: {
-								status: "ERROR",
-								error: note,
-								outcome: "UNKNOWN",
-								outcomeAt: at,
-								outcomeNote: note,
-								outcomeEvidenceAt: at,
-								outcomeEvidenceVersion:
-									CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
-								outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
-							},
+							data: { legacyStopExhaustedFence: originalFence },
 						});
-					});
-					if (parked.count) continue;
+					}
+					if (
+						await deps.prisma.liveSchedule.findFirst({
+							where: {
+								liveChannelId: row.liveChannelId,
+								...competingScheduledStop(row.id, run.id, originalFence),
+							},
+							select: { id: true },
+						})
+					)
+						continue;
 				}
 				let failedFencedDelivery = false;
 				if (legacy && !advancedFence && (!job || found?.effect)) {

@@ -2288,6 +2288,9 @@ model LiveSchedule {
   /// The STOP envelope committed with FIRED. Redis retries retain the admitted encoder and generation.
   stopProviderEncodingId String?
   stopAdmissionFenceVersion Int?
+  /// No queue delivery remains for this schedule at the sampled legacy channel fence.
+  /// This observation does not identify which schedule originally admitted the channel.
+  legacyStopExhaustedFence Int?
   /// Exact channel generation committed with a scheduled START and its airing.
   startAdmissionFenceVersion Int?
   note                  String?

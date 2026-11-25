@@ -2518,6 +2518,99 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				);
 			}
 		});
+		it.each([
+			"evicted",
+			"failed",
+		] as const)("keeps the current exhausted STOP recoverable alongside an older fenced queue receipt (%s)", async (currentDelivery) => {
+			const f = await dispatchFixture();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					status: "STOPPING",
+					liveEffectFenceVersion: 2,
+					legacyAdmissionFenceVersion: 2,
+				},
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPING" },
+			});
+			const common = {
+				liveChannelId: f.channel.id,
+				liveChannelRunId: f.run.id,
+				action: "STOP",
+				status: "FIRED",
+				fireAt: now,
+				firedAt: now,
+				dispatchedAt: now,
+			} as const;
+			const earlier = await tenant.liveSchedule.create({
+				data: { ...common, outcome: "UNKNOWN" },
+			});
+			const current = await tenant.liveSchedule.create({
+				data: {
+					...common,
+					outcome: currentDelivery === "failed" ? "PENDING" : "UNKNOWN",
+				},
+			});
+			const queueReceipt = (id: string, fence: number, state: string) => ({
+				data: {
+					action: "stop",
+					liveChannelId: f.channel.id,
+					plannedLiveChannelRunId: f.run.id,
+					effect: {
+						...f.identity,
+						idempotencyKey: `schedule:${id}:stop`,
+						scheduleId: id,
+						admissionFenceVersion: fence,
+					},
+				},
+				getState: async () => state,
+			});
+			const jobs = new Map([
+				[
+					`sched-${earlier.id}`,
+					queueReceipt(
+						earlier.id,
+						1,
+						currentDelivery === "failed" ? "failed" : "completed",
+					),
+				],
+			]);
+			if (currentDelivery === "failed")
+				jobs.set(`sched-${current.id}`, queueReceipt(current.id, 2, "failed"));
+			f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
+			const recover = createExhaustedScheduledStopRecovery(
+				f.deps,
+				async (id) => jobs.get(id),
+				vi.fn(),
+			);
+			for (let i = 0; i < 4; i++) await recover();
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({ status: "ERROR", liveEffectFenceVersion: 2 });
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: earlier.id },
+				}),
+			).toMatchObject({
+				outcome: "UNKNOWN",
+				stopAdmissionFenceVersion: 1,
+				stopProviderEncodingId: f.encodingId,
+			});
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: current.id },
+				}),
+			).toMatchObject({ outcome: "UNKNOWN", legacyStopExhaustedFence: 2 });
+			expect(
+				await tenant.liveEffectClaim.count({
+					where: { liveChannelId: f.channel.id },
+				}),
+			).toBe(0);
+		});
 		it("finishes a pre-upgrade STOP admission interrupted after FIRED only for unchanged airing owners", async () => {
 			const migration = readFileSync(
 				new URL(

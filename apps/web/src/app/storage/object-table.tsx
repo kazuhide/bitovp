@@ -46,6 +46,7 @@ type ObjectTableProps = {
 	onOpenPrefix: (prefix: string) => void;
 	/** Optional actions — absent callbacks render no button (picker mode). */
 	onUseAsInput?: (key: string) => void;
+	inputDisabled?: (key: string) => boolean;
 	onUseAsOutput?: (prefix: string) => void;
 	onCopyUri?: (path: string) => void;
 	/** ffprobe preview of one object (browser only, not the wizard picker). */
@@ -63,6 +64,7 @@ export function ObjectTable({
 	onFetchNextPage,
 	onOpenPrefix,
 	onUseAsInput,
+	inputDisabled,
 	onUseAsOutput,
 	onCopyUri,
 	onInspect,
@@ -214,6 +216,7 @@ export function ObjectTable({
 											<Button
 												variant="ghost"
 												size="sm"
+												disabled={inputDisabled?.(obj.key)}
 												onClick={() => onUseAsInput(obj.key)}
 											>
 												<Download aria-hidden className="h-3.5 w-3.5" />

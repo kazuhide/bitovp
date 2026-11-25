@@ -56,7 +56,10 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 			if (url.includes("/storage/objects"))
 				return {
 					prefixes: [],
-					objects: [{ key: "metadata/selected.json", size: 100 }],
+					objects: [
+						{ key: "metadata/selected.json", size: 100 },
+						{ key: "hdr10.mov", size: 300 },
+					],
 				};
 			return [];
 		});
@@ -85,7 +88,7 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 		value.sources = {
 			hdr10PlusStreams: [
 				{
-					key: "hdr-plus",
+					key: moveVideo ? "video" : "hdr-plus",
 					videoInputFile: moveVideo ? "picture-file" : "main",
 					metadataInputPath: "metadata/original.json",
 					selectionMode: "AUTO",
@@ -98,7 +101,7 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 				height: 1080,
 				bitrate: 5_000_000,
 				h265: { profile: "MAIN10", dynamicRangeFormat: "HDR10" },
-				extras: { source: "hdr-plus" },
+				extras: { source: moveVideo ? "video" : "hdr-plus" },
 			},
 		];
 		renderWithQuery(
@@ -135,8 +138,14 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 		expect(within(dialog).getByLabelText("Bucket")).toHaveValue(
 			moveVideo ? "video-store" : "input",
 		);
+		const pictureRow = within(dialog).getByText("hdr10.mov").closest("tr");
+		const jsonRow = within(dialog).getByText("selected.json").closest("tr");
+		if (!pictureRow || !jsonRow) throw new Error("missing picker row");
+		expect(
+			within(pictureRow).getByRole("button", { name: "Use as input" }),
+		).toBeDisabled();
 		fireEvent.click(
-			within(dialog).getByRole("button", { name: "Use as input" }),
+			within(jsonRow).getByRole("button", { name: "Use as input" }),
 		);
 		expect(path).toHaveValue("metadata/selected.json");
 		fireEvent.click(screen.getByRole("button", { name: "Plan JSON" }));

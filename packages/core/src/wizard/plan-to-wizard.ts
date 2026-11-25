@@ -1683,6 +1683,7 @@ function collectInputFiles(
 	fileStreams: Record<string, unknown>[],
 	dolbyStreams: Record<string, unknown>[],
 	hdr10PlusStreams: Record<string, unknown>[],
+	watermarks: Record<string, unknown>[],
 ): { inputFiles: WizardInputFile[]; fileKeyFor: FileKeyFor } {
 	// Canonical (inputKey, path) order: implicit video, implicit audio, other
 	// ingest, fileStreams, dolby (vision: video then metadata).
@@ -1719,8 +1720,16 @@ function collectInputFiles(
 		push(asString(stream.inputKey), asString(stream.videoInputPath));
 	}
 
+	const mediaPairs = new Set(
+		pairs.map((p) => JSON.stringify([p.inputKey, p.path])),
+	);
+	for (const filter of watermarks)
+		push(asString(filter.inputKey), asString(filter.imagePath));
 	const inputFiles: WizardInputFile[] = [];
 	const keyMap = new Map<string, string>();
+	const reservedFileKeys = new Set(
+		inputs.map((input) => asString(input.key) ?? "main"),
+	);
 	const mapKey = (ik: string, p: string) => `${ik}\u0000${p}`;
 	// Process inputs[] in order so inputFiles' inputKey first-occurrence order
 	// matches inputs[] — buildPlan re-derives the same Bitmovin input order.
@@ -1757,9 +1766,19 @@ function collectInputFiles(
 				continue;
 			}
 			seen.add(pair.path);
-			const fileKey = n === 0 ? ik : `${ik}-${n + 1}`;
-			n += 1;
-			inputFiles.push(make(fileKey, pair.path));
+			let fileKey = ik;
+			if (n > 0) {
+				do {
+					fileKey = `${ik}-${++n}`;
+				} while (reservedFileKeys.has(fileKey));
+				reservedFileKeys.add(fileKey);
+			} else {
+				n = 1;
+			}
+			const file = make(fileKey, pair.path);
+			if (!mediaPairs.has(JSON.stringify([ik, pair.path])))
+				file.purpose = "FILTER_IMAGE";
+			inputFiles.push(file);
 			keyMap.set(mapKey(ik, pair.path), fileKey);
 		}
 		// Input declared but read at no path (rare) — keep a path-less file so
@@ -1860,6 +1879,9 @@ export function planToWizardState(
 		],
 		dolbyStreamsRaw,
 		hdr10PlusStreamsRaw,
+		asArray(raw.filters)
+			.filter(isRecord)
+			.filter((f) => f.kind === "WATERMARK"),
 	);
 	// Separate A/V: the implicit audio reads a different input file than the
 	// video (inputFiles[0]); absent = the same object.
@@ -1897,6 +1919,11 @@ export function planToWizardState(
 			codec === "AV1"
 		) {
 			const video = readVideo(r);
+			if (
+				r.ingestKey === "video" &&
+				hdr10PlusStreamsRaw.some((s) => s.key === "video")
+			)
+				video.extras = { ...video.extras, source: "video" };
 			if (isRecord(r.burnInSrt)) {
 				video.extras = {
 					...video.extras,
@@ -2249,7 +2276,16 @@ export function planToWizardState(
 				if (asString(f.kind) === "DEINTERLACE")
 					return deinterlace.filter((d) => d.key === f.key).slice(0, 1);
 				const result = mediaFilterSchema.safeParse(f);
-				return result.success ? [result.data] : [];
+				if (!result.success) return [];
+				const filter = result.data;
+				return [
+					filter.kind === "WATERMARK"
+						? {
+								...filter,
+								inputKey: fileKeyFor(filter.inputKey, filter.imagePath),
+							}
+						: filter,
+				];
 			},
 		);
 	}

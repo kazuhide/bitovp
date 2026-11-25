@@ -1,7 +1,8 @@
-import type {
-	WizardFilter,
-	WizardRenditionExtras,
-	WizardState,
+import {
+	type WizardFilter,
+	type WizardRenditionExtras,
+	type WizardState,
+	wizardWatermarkFile,
 } from "./build-plan";
 
 /** Change a definition and its references in a single state update. */
@@ -62,7 +63,38 @@ export function editFilter(
 					},
 				}
 			: row;
+	let inputFiles = state.inputFiles;
+	if (
+		previous.kind === "WATERMARK" &&
+		next.kind === "WATERMARK" &&
+		previous.inputKey === next.inputKey &&
+		previous.imagePath !== next.imagePath
+	) {
+		const image = wizardWatermarkFile(inputFiles, previous);
+		if (image?.purpose === "FILTER_IMAGE") {
+			const edited = { ...image, path: next.imagePath };
+			const shared = filters.some(
+				(row, i) =>
+					i !== index &&
+					row.kind === "WATERMARK" &&
+					wizardWatermarkFile(inputFiles, row)?.key === image.key,
+			);
+			if (shared) {
+				let suffix = 2;
+				while (inputFiles.some((file) => file.key === `${image.key}-${suffix}`))
+					suffix++;
+				edited.key = `${image.key}-${suffix}`;
+				inputFiles = [...inputFiles, edited];
+			} else {
+				inputFiles = inputFiles.map((file) =>
+					file.key === image.key ? edited : file,
+				);
+			}
+			next = { ...next, inputKey: edited.key };
+		}
+	}
 	return {
+		...(inputFiles !== state.inputFiles ? { inputFiles } : {}),
 		filters: filters.map((row, i) => (i === index ? next : row)),
 		...(manualKey ? { manualFilterKeys: [...manual] } : {}),
 		...(canRename

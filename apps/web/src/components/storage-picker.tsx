@@ -40,8 +40,10 @@ type StoragePickerProps = {
 	 *  picker straight at its bucket instead of a blank credential step. */
 	initialCredentialId?: string;
 	initialBucket?: string;
-	/** Metadata must remain on the same input storage as its video. */
-	fixedLocation?: Pick<StoragePickerSelection, "credentialId" | "bucket">;
+	/** Metadata must remain on its video's input and select a different object. */
+	fixedLocation?: Pick<StoragePickerSelection, "credentialId" | "bucket"> & {
+		excludeObject?: string;
+	};
 	onClose: () => void;
 	onSelect: (selection: StoragePickerSelection) => void;
 };
@@ -143,7 +145,11 @@ function OpenStoragePicker({
 	const pages = objects.data?.pages ?? [];
 	const crumbs = prefixCrumbs(prefix);
 
+	const excludedInput = (key: string) =>
+		!!fixedLocation?.excludeObject &&
+		fixedLocation.excludeObject.replace(/^\//, "") === key.replace(/^\//, "");
 	function finish(selection: StoragePickerSelection) {
+		if (mode === "object" && excludedInput(selection.path)) return;
 		if (
 			fixedLocation &&
 			(selection.credentialId !== fixedLocation.credentialId ||
@@ -383,6 +389,9 @@ function OpenStoragePicker({
 								onFetchNextPage={() => objects.fetchNextPage()}
 								onOpenPrefix={(p) => setPrefix(p)}
 								onUseAsInput={mode === "object" ? pick : undefined}
+								inputDisabled={
+									fixedLocation?.excludeObject ? excludedInput : undefined
+								}
 								onUseAsOutput={mode === "prefix" ? pick : undefined}
 								onInspect={(key, size) =>
 									setInspecting({

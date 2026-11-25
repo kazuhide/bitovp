@@ -5776,7 +5776,7 @@ export const en = {
 			"Selecting an S3 credential opens the browser",
 		selectionMode: "Selection mode",
 		separateDolbyVisionMetadataSidecarEmptyEmbed:
-			"Separate Dolby Vision metadata sidecar; empty = embedded",
+			"Select a Dolby Vision XML file on the same input storage as the video. Leave blank for embedded metadata.",
 		serverManifest: "Server manifest",
 		serverUrl: "Server URL",
 		set: "set",

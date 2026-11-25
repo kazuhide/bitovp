@@ -1,6 +1,8 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { renderWithQuery as render } from "@/test/render";
+import { DEFAULT_WIZARD_STATE, type WizardFilter } from "./build-plan";
+import { editFilter } from "./filter-editing";
 import { MediaFilterEditor, newFilter } from "./media-filter-editor";
 
 describe("media filter editor", () => {
@@ -75,6 +77,36 @@ describe("media filter editor", () => {
 			format: "FLT",
 		});
 	});
+	it("changes one of two filters sharing a copied logo without replacing the other image", () => {
+		const form = structuredClone(DEFAULT_WIZARD_STATE);
+		const media = form.inputFiles[0];
+		if (!media) throw new Error("missing input");
+		const image = {
+			...media,
+			key: "logo",
+			purpose: "FILTER_IMAGE" as const,
+			path: "old.png",
+		};
+		form.inputFiles.push(image);
+		const previous: WizardFilter = {
+			key: "left",
+			kind: "WATERMARK",
+			inputKey: image.key,
+			imagePath: image.path,
+		};
+		form.filters = [previous, { ...previous, key: "right" }];
+		const next = editFilter(form, 0, { ...previous, imagePath: "new.png" });
+		expect(next.filters).toMatchObject([
+			{ inputKey: "logo-2", imagePath: "new.png" },
+			{ inputKey: "logo", imagePath: "old.png" },
+		]);
+		expect(
+			next.inputFiles?.filter((f) => f.purpose === "FILTER_IMAGE"),
+		).toMatchObject([
+			{ key: "logo", path: "old.png" },
+			{ key: "logo-2", path: "new.png" },
+		]);
+	});
 	it("selects credential-backed storage references and preserves a missing selection", () => {
 		const onChange = vi.fn();
 		render(
@@ -101,10 +133,10 @@ describe("media filter editor", () => {
 		);
 		expect(screen.getByLabelText("Image input storage")).toHaveValue("missing");
 		fireEvent.change(screen.getByLabelText("Image input storage"), {
-			target: { value: "storage" },
+			target: { value: "file" },
 		});
 		expect(onChange).toHaveBeenLastCalledWith(
-			expect.objectContaining({ inputKey: "storage", imagePath: "logo.png" }),
+			expect.objectContaining({ inputKey: "file", imagePath: "logo.png" }),
 		);
 	});
 });

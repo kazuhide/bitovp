@@ -1542,6 +1542,35 @@ export function wizardUsesCodecEncodingMode(
 		})
 	);
 }
+/** Storage location represented by a single native input (object paths are per file). */
+export function wizardInputStorage(file: WizardInputFile) {
+	return JSON.stringify([
+		file.kind,
+		file.kind === "HTTPS" ? null : file.credentialId,
+		file.kind === "AKAMAI_NETSTORAGE" ? null : file.bucket,
+		file.kind === "GCS" || file.kind === "GCS_SERVICE_ACCOUNT"
+			? str(file.region)
+			: null,
+	]);
+}
+
+/** Watermark selection uses a stable file key in the wizard. Older favorites
+ * stored a shared native input key, together with a dedicated image row. */
+export function wizardWatermarkFile(
+	files: WizardInputFile[],
+	filter: { inputKey: string; imagePath: string },
+) {
+	const selected = files.find((f) => f.key === filter.inputKey);
+	if (selected?.purpose === "FILTER_IMAGE") return selected;
+	const legacy = files.filter((f) => f.inputKey === filter.inputKey);
+	const images = legacy.filter(
+		(f) => f.purpose === "FILTER_IMAGE" && f.path === filter.imagePath,
+	);
+	const candidates = images.length ? images : selected ? [selected] : legacy;
+	return new Set(candidates.map(wizardInputStorage)).size === 1
+		? candidates[0]
+		: undefined;
+}
 /** Keep imported input IDs while their rows still describe the same provider input. */
 function resolveWizardInputFiles(files: WizardInputFile[]): WizardInputFile[] {
 	const reserved = new Set(files.map((file) => file.inputKey));
@@ -1553,14 +1582,7 @@ function resolveWizardInputFiles(files: WizardInputFile[]): WizardInputFile[] {
 			locations = new Map();
 			groups.set(file.inputKey, locations);
 		}
-		const location = JSON.stringify([
-			file.kind,
-			file.kind === "HTTPS" ? null : file.credentialId,
-			file.kind === "AKAMAI_NETSTORAGE" ? null : file.bucket,
-			file.kind === "GCS" || file.kind === "GCS_SERVICE_ACCOUNT"
-				? str(file.region)
-				: null,
-		]);
+		const location = wizardInputStorage(file);
 		let key = locations.get(location);
 		if (key === undefined) {
 			key = file.inputKey;
@@ -1773,8 +1795,9 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 		),
 	]);
 	const useVideoIngest =
-		state.videos.some((v) => usesImplicit(v.extras, "video")) ||
-		wrappedSourceKeys.has("video");
+		!sources.hdr10PlusStreams?.some((s) => s.key === "video") &&
+		(state.videos.some((v) => usesImplicit(v.extras, "video")) ||
+			wrappedSourceKeys.has("video"));
 	// A QC-only encode emits no audio rendition (below), so none reads the implicit
 	// audio track: left in, the plan would ask for a track of the source that nothing
 	// encodes, and would not load back into the form that built it.
@@ -2684,14 +2707,21 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 							});
 						}
 						if (stream.kind === "VISION") {
-							const video = ref(stream.videoInputFile);
+							const video = fileByKey.get(stream.videoInputFile);
+							const xml = stream.metadataInputFile
+								? fileByKey.get(stream.metadataInputFile)
+								: undefined;
 							return prune({
 								key: stream.key,
 								kind: "VISION" as const,
-								inputKey: video.inputKey,
-								videoInputPath: video.inputPath,
+								inputKey: video?.inputKey ?? "",
+								videoInputPath: video?.path ?? "",
 								metadataInputPath: stream.metadataInputFile
-									? ref(stream.metadataInputFile).inputPath
+									? xml &&
+										video &&
+										wizardInputStorage(xml) === wizardInputStorage(video)
+										? xml.path
+										: ""
 									: undefined,
 								encodingKey: str(stream.encodingKey),
 							});
@@ -2766,11 +2796,23 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 			: {}),
 		...(filters.length > 0
 			? {
-					filters: filters.map((filter) =>
-						isMediaFilter(filter)
+					filters: filters.map((filter) => {
+						if (filter.kind === "WATERMARK") {
+							const selected = wizardWatermarkFile(state.inputFiles, filter);
+							const file = selected && fileByKey.get(selected.key);
+							return prune({
+								...filter,
+								inputKey: file?.inputKey ?? "",
+								imagePath:
+									file?.purpose === "FILTER_IMAGE"
+										? file.path
+										: filter.imagePath,
+							});
+						}
+						return isMediaFilter(filter)
 							? prune(filter)
-							: prune({ ...filter, kind: "DEINTERLACE" as const }),
-					),
+							: prune({ ...filter, kind: "DEINTERLACE" as const });
+					}),
 				}
 			: {}),
 		renditions: [

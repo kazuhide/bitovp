@@ -412,7 +412,13 @@ export const dolbyStreamSchema = z.discriminatedUnion("kind", [
 		inputKey: refKey,
 		videoInputPath: z.string().min(1),
 		/** Absent = metadata embedded in the container. */
-		metadataInputPath: z.string().min(1).optional(),
+		metadataInputPath: z
+			.string()
+			.min(
+				1,
+				"Select a Dolby Vision XML file on the same storage input as its video",
+			)
+			.optional(),
 		encodingKey: refKey.optional(),
 	}),
 	z.strictObject({
@@ -449,6 +455,15 @@ export const hdr10PlusStreamSchema = z
 		encodingKey: refKey.optional(),
 	})
 	.superRefine((stream, ctx) => {
+		if (
+			stream.videoInputPath.replace(/^\//, "") ===
+			stream.metadataInputPath.replace(/^\//, "")
+		)
+			ctx.addIssue({
+				code: "custom",
+				path: ["metadataInputPath"],
+				message: "Choose a separate HDR10+ JSON metadata object for this video",
+			});
 		if (stream.selectionMode === "AUTO" && stream.position !== undefined) {
 			ctx.addIssue({
 				code: "custom",

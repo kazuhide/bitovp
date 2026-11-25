@@ -2105,6 +2105,8 @@ export function VodWizard({
 						? {
 								credentialId: pickerSeed.credentialId,
 								bucket: pickerSeed.bucket,
+								excludeObject:
+									"path" in pickerSeed ? pickerSeed.path : undefined,
 							}
 						: undefined
 				}

@@ -430,10 +430,24 @@ async function main() {
 		]);
 		await prepareRuntimeRole(current, fixtureRuntime.username);
 		const upgraded = await snapshotModule.snapshotDatabase(compose, database);
+		// Historical account credentials acquire an unknown prior scope during migration.
+		// Check that marker independently and preserve the digest of every original field.
+		const [legacyAccounts] = await current.$queryRaw<
+			{ name: string; rows: number; sha256: string }[]
+		>`
+			WITH legacy AS (SELECT to_jsonb(a) - 'resetPriorTenantScopes' AS content FROM "BitmovinAccount" a)
+			SELECT 'BitmovinAccount' AS name, count(*)::int AS rows,
+				encode(sha256(convert_to(coalesce(jsonb_agg(content ORDER BY content::text), '[]'::jsonb)::text, 'UTF8')), 'hex') AS sha256
+			FROM legacy`;
+		const [priorScopes] = await current.$queryRaw<{ valid: boolean }[]>`
+			SELECT bool_and("resetPriorTenantScopes" IS NOT DISTINCT FROM ARRAY['']::text[]) AS valid FROM "BitmovinAccount"`;
+		assert.equal(priorScopes?.valid, true);
 		for (const table of before.tables)
 			if (table.name !== "_prisma_migrations")
 				assert.deepEqual(
-					upgraded.tables.find((row) => row.name === table.name),
+					table.name === "BitmovinAccount"
+						? legacyAccounts
+						: upgraded.tables.find((row) => row.name === table.name),
 					table,
 					`Changed preserved table ${table.name}`,
 				);

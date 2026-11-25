@@ -6141,6 +6141,8 @@ export const en = {
 		removeKeyframeN: "Remove keyframe {n}",
 		removeManifestN: "Remove manifest {n}",
 		removeSourceN: "Remove source {n}",
+		sourceUsedBeforeRemoval:
+			"Choose another source before removing this stream.",
 		removeStreamKey: "Remove stream {key}",
 		removeSubtitleN: "Remove subtitle {n}",
 		removeTrimmingStreamN: "Remove input clip {n}",

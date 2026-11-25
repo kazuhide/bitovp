@@ -6,7 +6,7 @@ import {
 	DEFAULT_WIZARD_STATE,
 	type WizardState,
 } from "./build-plan";
-import { planToWizardState } from "./plan-to-wizard";
+import { planToWizardState, tryImportPresetIntoWizard } from "./plan-to-wizard";
 
 function copiedSource() {
 	const state: WizardState = structuredClone(DEFAULT_WIZARD_STATE);
@@ -229,6 +229,45 @@ describe("copied picture and storage identities", () => {
 					rebuilt.renditions.find((r) => r.key === "first")?.ingestKey,
 			)?.inputPath,
 		).toBe("ordinary.mxf");
+	});
+	it.each([
+		false,
+		true,
+	])("opens a mixed copy on the ordinary video file even when the first rendition uses HDR (wrapped %s)", (wrapped) => {
+		const state = planToWizardState(copiedSource());
+		const accountCredential = crypto.randomUUID();
+		for (const row of state.inputFiles) row.credentialId = accountCredential;
+		state.output.credentialId = accountCredential;
+		const picture = state.inputFiles[0],
+			hdr = state.videos[0];
+		if (!picture || !hdr) throw new Error("missing HDR picture");
+		state.inputFiles.unshift({
+			...picture,
+			key: "ordinary-master",
+			path: "ordinary-master.mov",
+		});
+		if (wrapped) {
+			state.sources = {
+				...state.sources,
+				trimmingStreams: [
+					{
+						kind: "TIME_BASED",
+						key: "trimmed",
+						sourceKey: "hdr",
+						offset: 0,
+						duration: 1,
+					},
+				],
+			};
+			hdr.extras = { ...hdr.extras, source: "trimmed" };
+		}
+		state.videos.push({ ...hdr, height: 720, extras: undefined });
+		const plan = encodingPlanSchema.parse(buildPlan(state));
+		const copied = tryImportPresetIntoWizard(plan);
+		expect(copied.ok).toBe(true);
+		if (!copied.ok) return;
+		expect(copied.state.inputFiles[0]?.path).toBe("ordinary-master.mov");
+		expect(encodingPlanSchema.parse(buildPlan(copied.state))).toEqual(plan);
 	});
 	it("adds implicit audio to an HDR master named audio without changing its video binding", () => {
 		const source = copiedSource();

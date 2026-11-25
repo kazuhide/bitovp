@@ -12,7 +12,7 @@ import { useT } from "@/lib/i18n/context";
 import { implicitTrackKeys, type WizardState } from "./build-plan";
 import { ChannelTypeOptions, MixSources } from "./mix-sources";
 import type { SourceOption } from "./rendition-editors";
-import { nextSharedKey } from "./stream-model";
+import { nextSharedKey, sourceGraphPatch } from "./stream-model";
 import { Collapsible } from "./wizard-fields";
 
 export function AudioMixEditor({
@@ -52,23 +52,25 @@ export function AudioMixEditor({
 		options[0]?.value ??
 		implicitAudio;
 	const save = (next: AudioMixStream, stereo = false) =>
-		onPatch({
-			sources: {
-				...sources,
-				audioMixStreams: mix
-					? mixes.map((s) => (s.key === mix.key ? next : s))
-					: [...mixes, next],
-			},
-			audios: state.audios.map((a, i) =>
-				i === index
-					? {
-							...a,
-							...(stereo ? { channelLayout: "CL_STEREO" } : {}),
-							extras: { ...a.extras, source: next.key },
-						}
-					: a,
-			),
-		});
+		onPatch(
+			sourceGraphPatch(state, {
+				sources: {
+					...sources,
+					audioMixStreams: mix
+						? mixes.map((s) => (s.key === mix.key ? next : s))
+						: [...mixes, next],
+				},
+				audios: state.audios.map((a, i) =>
+					i === index
+						? {
+								...a,
+								...(stereo ? { channelLayout: "CL_STEREO" } : {}),
+								extras: { ...a.extras, source: next.key },
+							}
+						: a,
+				),
+			}),
+		);
 	const patchChannel = (i: number, patch: Partial<AudioMixChannel>) => {
 		if (mix)
 			save({
@@ -289,25 +291,27 @@ export function AudioMixEditor({
 											s.key !== mix.key &&
 											s.audioMixChannels.some((c) => c.sourceKey === mix.key),
 									);
-								onPatch({
-									sources: {
-										...sources,
-										audioMixStreams: referenced
-											? mixes
-											: mixes.filter((s) => s.key !== mix.key),
-									},
-									audios: state.audios.map((a, i) =>
-										i === index
-											? {
-													...a,
-													extras: {
-														...a.extras,
-														source: mix.audioMixChannels[0]?.sourceKey,
-													},
-												}
-											: a,
-									),
-								});
+								onPatch(
+									sourceGraphPatch(state, {
+										sources: {
+											...sources,
+											audioMixStreams: referenced
+												? mixes
+												: mixes.filter((s) => s.key !== mix.key),
+										},
+										audios: state.audios.map((a, i) =>
+											i === index
+												? {
+														...a,
+														extras: {
+															...a.extras,
+															source: mix.audioMixChannels[0]?.sourceKey,
+														},
+													}
+												: a,
+										),
+									}),
+								);
 							}}
 						>
 							{t("audioMix.disable")}

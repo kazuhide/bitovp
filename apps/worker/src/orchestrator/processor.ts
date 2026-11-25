@@ -5,6 +5,7 @@ import {
 	classifyProviderStatusWord,
 	encodingPlanSchema,
 	orchestratorJobSchema,
+	publicStorageDiagnostic,
 	type QcVerdict,
 	redactSecrets,
 	type StepLogEntry,
@@ -636,7 +637,9 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				resetOwner.sdk = sdk;
 				break;
 			} catch (err) {
-				const message = err instanceof Error ? err.message : "setup failed";
+				const message = publicStorageDiagnostic(
+					redactSecrets(err instanceof Error ? err.message : "setup failed"),
+				);
 				// Fenced and RELEASED like every other leaving write: a retry after
 				// this ERROR must be able to claim immediately.
 				const failed = await deps.prisma.encodingJob.updateMany({
@@ -647,7 +650,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 					},
 					data: {
 						status: "ERROR",
-						error: redactSecrets(message),
+						error: message,
 						attemptClaimedAt: null,
 					},
 				});
@@ -667,9 +670,11 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 					jobId: encodingJobId,
 					name: row.name,
 					labels: row.labels,
-					error: redactSecrets(message),
+					error: message,
 					path: `/vod/jobs/${encodingJobId}`,
 				});
+				if (err instanceof Error && message !== err.message)
+					throw new Error(message);
 				throw err;
 			}
 		}
@@ -1186,7 +1191,9 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 						entry.error = undefined;
 						return await finalizeCancel();
 					}
-					const message = err instanceof Error ? err.message : "step failed";
+					const message = publicStorageDiagnostic(
+						redactSecrets(err instanceof Error ? err.message : "step failed"),
+					);
 					if (err instanceof VerificationProviderIdPersistenceError) {
 						// The callback learned this id directly from the CREATE response.
 						// Its first durable write failed, but the failure-path write below
@@ -1204,7 +1211,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 					}
 					entry.status = "FAILED";
 					entry.finishedAt = deps.now();
-					entry.error = redactSecrets(message);
+					entry.error = message;
 					// ORCHESTRATOR CONTRACT (compiler await-emission site): when one
 					// AWAIT_ENCODING fails, sibling encodings of the same plan are
 					// still RUNNING (and billing) — stop them before failing the
@@ -1223,16 +1230,18 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 					}
 					await persist(encodingJobId, entries, {
 						status: "ERROR",
-						error: redactSecrets(message),
+						error: message,
 					});
 					await deps.emitEvent?.({
 						kind: "JOB_ERROR",
 						jobId: encodingJobId,
 						name: row.name,
 						labels: row.labels,
-						error: redactSecrets(message),
+						error: message,
 						path: `/vod/jobs/${encodingJobId}`,
 					});
+					if (err instanceof Error && message !== err.message)
+						throw new Error(message);
 					throw err;
 				}
 			}

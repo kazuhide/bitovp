@@ -284,16 +284,20 @@ export function CodesInput({
 export function RowRemoveButton({
 	label,
 	onClick,
+	disabledReason,
 }: {
 	label: string;
 	onClick: () => void;
+	disabledReason?: string;
 }) {
 	const { t } = useT();
 	return (
 		<button
 			type="button"
 			aria-label={label}
-			className="rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-400 hover:border-red-900 hover:text-red-400"
+			disabled={!!disabledReason}
+			title={disabledReason}
+			className="rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-400 hover:border-red-900 hover:text-red-400 disabled:opacity-50"
 			onClick={onClick}
 		>
 			{t("wizard.remove")}

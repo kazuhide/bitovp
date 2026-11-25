@@ -27,6 +27,7 @@ import {
 } from "@bitovp/core/vod-input-timeline";
 import {
 	audioKeys,
+	mainPictureSourceKey,
 	videoKeys,
 	type WizardRenditionExtras,
 	type WizardState,
@@ -958,6 +959,7 @@ export function mergeWizardDraft<T>(
 	base: T,
 	value: DraftValue,
 	kind: WizardDraftKind,
+	vodInputOrder?: "authored",
 ): T {
 	// Required form leaves retain the fresh base if a stored snapshot is damaged.
 	// Every other allowlisted leaf has snapshot semantics: absent means cleared.
@@ -1181,7 +1183,9 @@ export function mergeWizardDraft<T>(
 			: value;
 	const baseDraft = projectWizardDraft(kind, base);
 	const restored =
-		kind === "vod" ? restoreCopiedHdrInputs(snapshot, baseDraft) : snapshot;
+		kind === "vod" && vodInputOrder !== "authored"
+			? restoreCopiedHdrInputs(snapshot, baseDraft)
+			: snapshot;
 	return merge(base, restored, baseDraft) as T;
 }
 
@@ -1202,8 +1206,37 @@ function restoreCopiedHdrInputs(
 	const first = snapshot.inputFiles[0];
 	if (!draftRecord(primary) || !draftRecord(first) || first.key === primary.key)
 		return snapshot;
+	const records = (value: unknown) =>
+		Array.isArray(value) ? value.filter(draftRecord) : [];
+	const filesInDraft = records(snapshot.inputFiles);
+	const exists = (key: unknown) =>
+		filesInDraft.some((file) => file.key === key);
+	let primaryKey = primary.key;
+	if (!exists(primaryKey) && draftRecord(snapshot.sources)) {
+		const sources = snapshot.sources;
+		const declarations = [
+			"tracks",
+			"fileStreams",
+			"dolbyStreams",
+			"hdr10PlusStreams",
+		].flatMap((name) => records(sources[name]));
+		const firstVideo = records(snapshot.videos)[0];
+		const sourceKey = mainPictureSourceKey(
+			draftRecord(firstVideo?.extras) ? firstVideo.extras.source : undefined,
+			sources,
+		);
+		// A v1 draft can replace the original file row. Follow the saved
+		// rendition or the edited binding of the original picture source.
+		const original = records(base.sources.hdr10PlusStreams).find(
+			(s) => s.videoInputFile === primary.key,
+		);
+		const edited =
+			(sourceKey && declarations.find((s) => s.key === sourceKey)) ||
+			(original && declarations.find((s) => s.key === original.key));
+		primaryKey = edited?.videoInputFile ?? edited?.inputFile;
+	}
 	const index = snapshot.inputFiles.findIndex(
-		(f) => draftRecord(f) && f.key === primary.key,
+		(f) => draftRecord(f) && f.key === primaryKey,
 	);
 	if (index < 1) return snapshot;
 	const byKey = new Map(
@@ -1216,7 +1249,9 @@ function restoreCopiedHdrInputs(
 	});
 	files.unshift(...files.splice(index, 1));
 	// The old draft omitted audioInputFile when the first row was its audio master.
-	const audioInputFile = snapshot.audioInputFile ?? base.audioInputFile;
+	const audioInputFile =
+		snapshot.audioInputFile ??
+		(first.key === base.audioInputFile ? first.key : undefined);
 	return {
 		...snapshot,
 		...(audioInputFile !== undefined ? { audioInputFile } : {}),
@@ -1227,6 +1262,7 @@ function restoreCopiedHdrInputs(
 export type WizardDraft = {
 	step: number;
 	value: DraftValue;
+	vodInputOrder?: "authored";
 	legacyVodFilters?: true;
 };
 
@@ -1237,7 +1273,12 @@ export function restoreVodWizardDraft(
 	draft: WizardDraft,
 	onUnmatchedRenditions?: () => void,
 ): WizardState {
-	const restored = mergeWizardDraft(base, draft.value, "vod");
+	const restored = mergeWizardDraft(
+		base,
+		draft.value,
+		"vod",
+		draft.vodInputOrder,
+	);
 	if (!draft.legacyVodFilters) return restored;
 	const represented = new Set(restored.filters?.map((filter) => filter.key));
 	const omitted = (base.filters ?? []).filter(
@@ -1317,6 +1358,7 @@ export function restoreVodWizardDraft(
 const envelope = z
 	.object({
 		version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+		vodInputOrder: z.literal("authored").optional(),
 		kind: z.enum(["vod", "live"]),
 		savedAt: z.number().finite(),
 		step: z.number().int().min(0).max(8),
@@ -1345,15 +1387,18 @@ export function writeWizardDraft(
 	now = Date.now(),
 ) {
 	try {
+		const projected = projectWizardDraft(
+			kind,
+			publicHdrSourceProjection(value, "draft"),
+		);
+		const hasInputOrder = kind === "vod" && Array.isArray(projected.inputFiles);
 		const record = envelope.parse({
 			version: kind === "live" ? 2 : 3,
+			...(hasInputOrder ? { vodInputOrder: "authored" } : {}),
 			kind,
 			savedAt: now,
 			step,
-			value: projectWizardDraft(
-				kind,
-				publicHdrSourceProjection(value, "draft"),
-			),
+			value: projected,
 		});
 		const serialized = JSON.stringify(record);
 		if (serialized.length <= WIZARD_DRAFT_MAX_SIZE)
@@ -1393,6 +1438,9 @@ export function readWizardDraft(
 		return {
 			step,
 			value: projectWizardDraft(kind, safeValue),
+			...(kind === "vod" && record.vodInputOrder
+				? { vodInputOrder: record.vodInputOrder }
+				: {}),
 			...(kind === "vod" && record.version === 1
 				? { legacyVodFilters: true as const }
 				: {}),

@@ -19,15 +19,24 @@ export const isHdr10PlusAuditPath = (path: unknown) =>
 	typeof path === "string" && /\/input-streams\/hdr10-plus(?:\/|$)/.test(path);
 
 function hasPrivateLocator(value: string): boolean {
-	// A fragment in a relative object key is ordinary storage data. Query
-	// parameters and URL authorities, including normalized HTTP authorities,
-	// can contain credentials in old snapshots that lack a typed source marker.
+	const location = value.trim();
+	if (location.includes("@")) {
+		try {
+			// A single slash after a storage scheme can be an unfinished object
+			// path. Only URL authority userinfo establishes a credential.
+			const parsed = uriScheme.test(location)
+				? new URL(location)
+				: new URL(location, "https://storage.invalid");
+			if (parsed.username || parsed.password) return true;
+		} catch {
+			// An incomplete authority may still contain recognizable credentials.
+		}
+		if (/^(?:[a-z][a-z\d+.-]*:[/\\]*)?[^/\\:\s]+:[^/\\]*@/iu.test(location))
+			return true;
+	}
 	return (
-		(value.includes("@") &&
-			(/[a-z][a-z\d+.-]*:/i.test(value) ||
-				/[/\\]{2}|^[^/\s]*:[^/\s]*@/u.test(value))) ||
-		(/[?][^\s]+/.test(value) && /[/\\.]|[?&][^=]+=/u.test(value)) ||
-		(uriScheme.test(value) && value.includes("#"))
+		(/[?][^\s]+/.test(location) && /[/\\.]|[?&][^=]+=/u.test(location)) ||
+		(uriScheme.test(location) && location.includes("#"))
 	);
 }
 
@@ -41,7 +50,7 @@ export function publicStorageDiagnostic<T extends string | null | undefined>(
 	// contains a potential storage credential.
 	// Any unescaped userinfo contains an at-sign. The original URL may span
 	// whitespace or punctuation in a provider's formatted error.
-	return value.includes("@") || hasPrivateLocator(value)
+	return value.includes("@") || hasPrivateLocator(value.replace(/\s+/gu, ""))
 		? ("[withheld]" as T)
 		: value;
 }
@@ -53,14 +62,19 @@ export function publicHdrSourceProjection<T>(
 	purpose: "record" | "draft" = "record",
 ): T {
 	const hidden = new Set<string>();
-	const fields = new WeakMap<object, Set<string>>();
-	function mark(row: Record<string, unknown>, key: string, path: string) {
-		let names = fields.get(row);
-		if (!names) {
-			names = new Set();
-			fields.set(row, names);
+	const fields = new WeakMap<object, Map<string, string>>();
+	let changed = false;
+	function replace(row: object, key: string, replacement: string) {
+		let values = fields.get(row);
+		if (!values) {
+			values = new Map();
+			fields.set(row, values);
 		}
-		names.add(key);
+		values.set(key, replacement);
+		changed = true;
+	}
+	function mark(row: object, key: string, path: string) {
+		replace(row, key, "");
 		hidden.add(path);
 	}
 	function scan(input: unknown, hdr: boolean, libraryInputs = false) {
@@ -98,6 +112,17 @@ export function publicHdrSourceProjection<T>(
 			isHdr10PlusAuditPath(row.path);
 		for (const [key, item] of Object.entries(row)) {
 			if (
+				purpose === "record" &&
+				typeof item === "string" &&
+				(key === "error" ||
+					(scope &&
+						(key === "message" || key === "reason" || key === "detail"))) &&
+				publicStorageDiagnostic(item) !== item
+			) {
+				replace(row, key, "[withheld]");
+			}
+
+			if (
 				typeof item === "string" &&
 				item.trim().length &&
 				((scope && (key === "videoInputPath" || key === "metadataInputPath")) ||
@@ -115,7 +140,7 @@ export function publicHdrSourceProjection<T>(
 		}
 	}
 	scan(value, false);
-	if (!hidden.size) return value;
+	if (!changed) return value;
 	const locators = [...hidden]
 		.filter(
 			(path) =>
@@ -141,7 +166,7 @@ export function publicHdrSourceProjection<T>(
 		return Object.fromEntries(
 			Object.entries(input).map(([key, item]) => [
 				key,
-				fields.get(input)?.has(key) ? "" : project(item),
+				fields.get(input)?.get(key) ?? project(item),
 			]),
 		);
 	}

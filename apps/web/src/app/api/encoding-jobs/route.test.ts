@@ -586,12 +586,19 @@ describe("GET /api/encoding-jobs", () => {
 				error: "Could not read " + path,
 			},
 			{ id: "2", status: "ERROR", error: "Encoder could not start" },
+			{
+				id: "3",
+				status: "ERROR",
+				error:
+					"Could not read https://fixture.invalid/video?\nkey=PRIVATE_LIST_SAMPLE",
+			},
 		]);
 		const res = await GET(new Request("http://test/api/encoding-jobs"));
 		expect(res.status).toBe(200);
 		expect((await res.json()).items).toMatchObject([
 			{ id: "1", error: "[withheld]" },
 			{ id: "2", error: "Encoder could not start" },
+			{ id: "3", error: "[withheld]" },
 		]);
 	});
 	it("returns a lean paginated projection (incl. the new list columns)", async () => {

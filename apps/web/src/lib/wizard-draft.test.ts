@@ -110,6 +110,7 @@ it.each([
 	"show:shot.mxf",
 	"s3:scene",
 	"s3:/media/scene",
+	"s3:/media/scene@take",
 ])("retains unrelated object paths and names containing a partial HDR path %s", (partial) => {
 	const state = structuredClone(DEFAULT_WIZARD_STATE);
 	const media = state.inputFiles[0];
@@ -1388,4 +1389,65 @@ it("restores a copied HDR picture and the original audio master from audio-first
 			}),
 		]),
 	);
+});
+
+it.each([
+	"replaced-picture",
+	"same-object",
+	"authored-order",
+	"removed-hdr",
+] as const)("retains edited picture and audio semantics for a copied HDR draft (%s)", (edit) => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const input = base.inputFiles[0];
+	if (!input) throw new Error("missing input");
+	const file = (key: string, path: string) => ({ ...input, key, path });
+	const sound = file("sound", "program.wav"),
+		primary = file("picture", "master.mxf"),
+		alternate = file("alternate", "secondary.mxf");
+	base.inputFiles = [primary, sound, alternate];
+	base.audioInputFile = sound.key;
+	base.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				videoInputFile: primary.key,
+				metadataInputPath: "meta.json",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	const saved = structuredClone(base);
+	if (edit === "replaced-picture") {
+		saved.inputFiles = [sound, alternate];
+		const stream = saved.sources?.hdr10PlusStreams?.[0];
+		if (!stream) throw new Error("missing HDR stream");
+		stream.videoInputFile = alternate.key;
+	} else saved.inputFiles = [alternate, primary, sound];
+	if (edit === "removed-hdr") delete saved.sources;
+	delete saved.audioInputFile;
+	writeWizardDraft("copy-order", "vod", saved, 1, localStorage, 100);
+	if (edit === "same-object" || edit === "replaced-picture") {
+		const value = projectWizardDraft("vod", saved);
+		localStorage.setItem(
+			"copy-order",
+			JSON.stringify({ kind: "vod", version: 1, savedAt: 100, step: 1, value }),
+		);
+	}
+	const draft = readWizardDraft("copy-order", "vod", localStorage, 101);
+	if (!draft) throw new Error("missing saved draft");
+	const restored = restoreVodWizardDraft(base, draft);
+	const picture = edit === "same-object" ? primary : alternate;
+	expect(restored.inputFiles[0]?.key).toBe(picture.key);
+	expect(restored.audioInputFile).toBe(
+		edit === "replaced-picture" ? sound.key : undefined,
+	);
+	const compiled = buildPlan(restored);
+	expect(
+		compiled.ingest?.find((row) => row.selectionMode === "VIDEO_RELATIVE")
+			?.inputPath,
+	).toBe(picture.path);
+	expect(
+		compiled.ingest?.find((row) => row.selectionMode === "AUDIO_RELATIVE")
+			?.inputPath,
+	).toBe(edit === "replaced-picture" ? sound.path : picture.path);
 });

@@ -1,3 +1,5 @@
+import { isHdr10PlusObjectPath } from "../plan/hdr-source-paths";
+
 /**
  * Suffix-anchored so reference fields stay readable: `credentialId`,
  * `keyframes` etc. do NOT match, while `apiKey`, `streamKey`,
@@ -70,8 +72,15 @@ export function redactSecrets<T>(value: T): T {
 	return walk(value, new WeakSet()) as T;
 }
 
-function walk(value: unknown, ancestors: WeakSet<object>): unknown {
+function walk(
+	value: unknown,
+	ancestors: WeakSet<object>,
+	key?: string,
+): unknown {
 	if (typeof value === "string") {
+		if (key === "videoInputPath" || key === "metadataInputPath") {
+			return isHdr10PlusObjectPath(value) ? value : REDACTED;
+		}
 		return value.replace(URL_USERINFO, `$1${REDACTED}@`);
 	}
 	if (value === null || typeof value !== "object") {
@@ -99,7 +108,7 @@ function walk(value: unknown, ancestors: WeakSet<object>): unknown {
 		const obj: Record<string, unknown> = {};
 		for (const [key, item] of Object.entries(value)) {
 			Object.defineProperty(obj, key, {
-				value: isSensitiveKey(key) ? REDACTED : walk(item, ancestors),
+				value: isSensitiveKey(key) ? REDACTED : walk(item, ancestors, key),
 				enumerable: true,
 				writable: true,
 				configurable: true,

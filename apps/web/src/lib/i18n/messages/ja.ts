@@ -6082,6 +6082,8 @@ export const ja = {
 		removeKeyframeN: "キーフレーム {n} を削除",
 		removeManifestN: "マニフェスト {n} を削除",
 		removeSourceN: "ソース {n} を削除",
+		sourceUsedBeforeRemoval:
+			"このストリームを参照している項目で別の入力を選んでください。",
 		removeStreamKey: "ストリーム {key} を削除",
 		removeSubtitleN: "字幕 {n} を削除",
 		removeTrimmingStreamN: "入力クリップ {n} を削除",

@@ -285,7 +285,11 @@ export function VodWizard({
 	// The file flow opens on its short view; every step stays one click away.
 	const [expanded, setExpanded] = useState(false);
 	const simple = fileFlow && !expanded;
-	const visibleSteps = simple ? FILE_STEPS : ALL_STEPS;
+	const visibleSteps = state.audioFile
+		? FILE_STEPS.filter((s) => s.step !== 5)
+		: simple
+			? FILE_STEPS
+			: ALL_STEPS;
 	const position = Math.max(
 		0,
 		visibleSteps.findIndex((item) => item.step === step),
@@ -737,6 +741,17 @@ export function VodWizard({
 						next.startOptions.encodingMode === "SMART_PASS"))
 			) {
 				next.startOptions = { ...next.startOptions, encodingMode: undefined };
+			}
+			if (partial.inputFiles && next.audioFile?.mode === "COPY") {
+				const before = prev.inputFiles[0],
+					after = next.inputFiles[0];
+				if (
+					before?.credentialId !== after?.credentialId ||
+					before?.kind !== after?.kind ||
+					before?.bucket !== after?.bucket ||
+					before?.path !== after?.path
+				)
+					next.audioFile = { ...next.audioFile, inspectionId: "" };
 			}
 			Object.assign(next, followRenamedAudioKeys(prev, next));
 			next.audios = reconcileAutomaticAudioPackaging(next);
@@ -1265,7 +1280,7 @@ export function VodWizard({
 							</button>
 						))}
 					</nav>
-					{simple ? (
+					{state.audioFile ? null : simple ? (
 						<Button
 							variant="ghost"
 							size="sm"
@@ -1483,7 +1498,15 @@ export function VodWizard({
 						</>
 					) : null}
 
-					{step === 1 ? (
+					{step === 1 && state.audioFile ? (
+						<InputFilesEditor
+							state={state}
+							credentials={allCredentials}
+							onPatch={patch}
+							onBrowse={(index) => setPicker({ file: index })}
+						/>
+					) : null}
+					{step === 1 && !state.audioFile ? (
 						<>
 							<div className="flex flex-wrap items-center justify-between gap-3">
 								<div className="flex items-center gap-2">
@@ -1625,7 +1648,7 @@ export function VodWizard({
 						</>
 					) : null}
 
-					{step === 2 && simple ? (
+					{step === 2 && (simple || state.audioFile) ? (
 						<>
 							{/* The files stay editable: their height, bitrate and codec
 							    are what gets measured. */}
@@ -1644,7 +1667,7 @@ export function VodWizard({
 						</>
 					) : null}
 
-					{step === 2 && !simple ? (
+					{step === 2 && !simple && !state.audioFile ? (
 						<>
 							<LadderSection
 								hevcV2Available={internalAllowed}
@@ -2255,9 +2278,18 @@ export function VodWizard({
 								// Keep the row's kind in sync with the picked credential.
 								...(kind !== null ? { kind } : {}),
 							};
+							const sourceChanged =
+								current.credentialId !== credentialId ||
+								current.bucket !== bucket ||
+								current.path !== path ||
+								(kind && kind !== current.kind);
 							return reconcileHdr10PlusSidecars(prev, {
 								...prev,
 								inputFiles: files,
+								...(sourceChanged &&
+									prev.audioFile?.mode === "COPY" && {
+										audioFile: { ...prev.audioFile, inspectionId: "" },
+									}),
 							});
 						});
 					}

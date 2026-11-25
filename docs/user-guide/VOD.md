@@ -73,6 +73,20 @@ Drafts are saved in this browser for seven days, separately by user, organizatio
 and creation source. Secret values, URLs, DRM settings, filters, and imported JSON
 are excluded. Review omitted settings and output destinations after restoring.
 
+## Audio-only files
+
+In **Export files**, select one source file. Open **Format → Export audio only** and choose the track you want to deliver. Track 1 is the first audio track in the source.
+
+| Format | Source and output | Minimum Encoder version |
+|---|---|---|
+| Convert to PCM WAV | Select the track, sample rate, mono or stereo, and 16-, 24- or 32-bit signed little-endian samples. | 2.203.0 |
+| Copy original AAC | Progressive MP4/M4A or MOV | 2.200.0 for MP4, 2.201.0 for MOV |
+| Copy original PCM | Progressive MOV or WAV, for 16-, 24- or 32-bit signed little-endian PCM | 2.200.0 for MOV, 2.202.0 for WAV |
+
+For copying, choose **Inspect source tracks** and select a verified track. Choose a versioned S3-compatible or GCS object of up to 4 GiB. Changing the input requires a new inspection. The Encoder reads the same inspected version even if another object is uploaded to that key. Copies take a single unedited track. Trimming, concatenation, filters and mixing require re-encoding. **Review** shows the output filename and destination. Plan JSON retains the track selection for this source.
+
+Administrators must configure the same `BITOVP_CAPTURE_INPUT_SECRET` of at least 32 characters and an Encoder-reachable `BITOVP_CAPTURE_INPUT_BASE_URL` on Web and Worker for audio copying. [Encoder release history](https://developer.bitmovin.com/encoding/docs/encoder-22000-22490)
+
 ## HDR10+ input for HEVC
 
 HDR10+ is a VOD HEVC (H.265) feature introduced in Encoder `2.294.0` (Beta) and

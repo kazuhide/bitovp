@@ -34,6 +34,7 @@ function setup() {
 	};
 	const receipts: Array<Record<string, unknown>> = [];
 	const prisma = {
+		storageInspection: { findFirst: vi.fn() },
 		encodingJob: { findUnique: vi.fn(async () => job) },
 		libraryEvidenceReceipt: {
 			findMany: vi.fn(async () => receipts),
@@ -102,6 +103,112 @@ function setup() {
 	return { bytes, job, receipts, prisma, browser, source, sdk, input, make };
 }
 describe("actual version-pinned encoding input capture", () => {
+	it("binds the inspected second audio track to a signed input, including after the current object or inspection disappears", async () => {
+		const f = setup();
+		const filename = "source.mov",
+			inspectionId = id(11);
+		Object.assign(f.job.plan, {
+			aiSceneAnalysis: undefined,
+			ingest: [
+				{
+					key: "audio",
+					inputKey: "main",
+					inputPath: filename,
+					selectionMode: "AUDIO_RELATIVE",
+					position: 1,
+				},
+			],
+			renditions: [
+				{
+					key: "original",
+					ingestKey: "audio",
+					codec: "AUDIO_PASSTHROUGH",
+					name: "Original",
+					sourceCodec: "PCM",
+					inspectionId,
+				},
+			],
+			muxings: [
+				{
+					key: "file",
+					streamKey: "original",
+					kind: "PROGRESSIVE_WAV",
+					filename: "sound.wav",
+					destination: { outputKey: "origin", path: "exports/" },
+				},
+			],
+			manifests: [],
+		});
+		const input = {
+			...f.input,
+			operation: {
+				...f.input.operation,
+				step: "ingest:audio",
+				payload: {
+					requireAudioCapture: true,
+					inputPath: filename,
+					selectionMode: "AUDIO_RELATIVE",
+					position: 1,
+				},
+			},
+		};
+		const evidence = {
+			sourceIdentity: { versionId: "fixed", size: 5000 },
+			probe: {
+				streams: [
+					{ index: 0, codec_type: "audio", codec_name: "mp3" },
+					{ index: 1, codec_type: "video", codec_name: "h264" },
+					{ index: 2, codec_type: "audio", codec_name: "pcm_s24le" },
+				],
+			},
+		};
+		f.prisma.storageInspection.findFirst.mockResolvedValue(evidence);
+		const capture = f.make();
+		await expect(capture(input)).resolves.toMatchObject({
+			inputId: id(7),
+			inputReceiptId: id(9),
+		});
+		expect(f.prisma.storageInspection.findFirst).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					id: inspectionId,
+					organizationId: id(1),
+					credentialId: id(1),
+					bucket: "sample-input-bucket",
+					objectKey: filename,
+					status: "FINISHED",
+					verifyAudioCopy: true,
+				},
+			}),
+		);
+		expect(f.receipts[0]?.proof).toMatchObject({
+			profile: "PINNED_AUDIO_INPUT_V1",
+			track: { position: 1, sourceCodec: "PCM" },
+			storage: { key: filename, expect: { versionId: "fixed" } },
+		});
+		expect(f.receipts[0]?.proof).not.toHaveProperty("sha256");
+		f.prisma.storageInspection.findFirst.mockResolvedValue(null);
+		await expect(capture(input)).resolves.toMatchObject({
+			inputReceiptId: id(9),
+		});
+		expect(f.prisma.storageInspection.findFirst).toHaveBeenCalledTimes(1);
+		expect(f.browser.headObject).not.toHaveBeenCalled();
+		expect(f.browser.getObject).not.toHaveBeenCalled();
+		f.receipts.length = 0;
+		f.sdk.createHttpsInput.mockClear();
+		await expect(capture(input)).rejects.toThrow("AUDIO_COPY_INPUT_UNVERIFIED");
+		f.prisma.storageInspection.findFirst.mockResolvedValue({
+			...evidence,
+			probe: {
+				streams: [
+					{ index: 0, codec_type: "audio", codec_name: "pcm_s24le" },
+					{ index: 1, codec_type: "audio", codec_name: "aac" },
+				],
+			},
+		});
+		await expect(capture(input)).rejects.toThrow("AUDIO_COPY_INPUT_UNVERIFIED");
+		expect(f.sdk.createHttpsInput).not.toHaveBeenCalled();
+	});
 	it("creates immutable evidence before the provider receives its gateway input", async () => {
 		const f = setup();
 		f.sdk.createHttpsInput.mockImplementation(async () => {

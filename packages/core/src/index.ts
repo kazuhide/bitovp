@@ -679,6 +679,7 @@ export {
 	akamaiMsl5InitSegmentName,
 	akamaiMslSegmentNaming,
 } from "./plan/akamai-msl-constraint";
+export * from "./plan/audio-file-source";
 export {
 	AUDIO_MIX_CHANNEL_TYPES,
 	AUDIO_MIX_LAYOUTS,

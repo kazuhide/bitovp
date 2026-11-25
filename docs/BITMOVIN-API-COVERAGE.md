@@ -200,8 +200,7 @@ details. It searches the selected account's generic error catalogue; it is not
 a failure-history viewer and never restarts a job.
 
 The [functional gap audit](ENCODING-FUNCTIONAL-GAPS.md) prioritizes actual encoding
-capabilities including PCM/WAV and
-bounded audio passthrough, followed by embedded-caption extraction. It traces
+capabilities, including embedded caption extraction. The VOD [audio file workflow](user-guide/VOD.md#audio-only-files) supports PCM/WAV and bounded audio copying. The audit traces
 closed plan unions and execution paths instead of treating unconfirmed SDK
 calls as missing features. Per-rendition Stream Conditions and AND/OR groups are
 available in the VOD and Live editors on the existing stream-create operation.

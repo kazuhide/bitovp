@@ -53,6 +53,11 @@ import {
 	MvPredictionMode,
 	OpusAudioConfiguration,
 	OpusChannelLayout,
+	PassthroughAudioConfiguration,
+	PcmAudioConfiguration,
+	PcmChannelLayout,
+	PcmPresetConfiguration,
+	PcmSampleFormat,
 	PixelFormat,
 	PresetConfiguration,
 	ProfileH264,
@@ -98,6 +103,8 @@ export function createConfigOps(
 	| "createDolbyDigitalPlusConfig"
 	| "createDolbyDigitalConfig"
 	| "createWebVttConfig"
+	| "createPcmConfig"
+	| "createPassthroughAudioConfig"
 	| "createOpusConfig"
 	| "createImscConfig"
 	| "getCodecConfigDetail"
@@ -644,6 +651,45 @@ export function createConfigOps(
 				(r) => ({ id: r.id }),
 			).then(id),
 
+		createPcmConfig: (p) =>
+			audited(
+				"POST",
+				"/encoding/configurations/audio/pcm",
+				p,
+				() =>
+					api.encoding.configurations.audio.pcm.create(
+						new PcmAudioConfiguration({
+							...p,
+							sampleFormat: optEnum(
+								PcmSampleFormat,
+								p.sampleFormat,
+								"PcmSampleFormat",
+							),
+							channelLayout: optEnum(
+								PcmChannelLayout,
+								p.channelLayout,
+								"PcmChannelLayout",
+							),
+							presetConfiguration: optEnum(
+								PcmPresetConfiguration,
+								p.presetConfiguration,
+								"PcmPresetConfiguration",
+							),
+						}),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+		createPassthroughAudioConfig: (p) =>
+			audited(
+				"POST",
+				"/encoding/configurations/audio/passthrough",
+				p,
+				() =>
+					api.encoding.configurations.audio.passthrough.create(
+						new PassthroughAudioConfiguration({ name: p.name }),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
 		createOpusConfig: (p) =>
 			audited(
 				"POST",

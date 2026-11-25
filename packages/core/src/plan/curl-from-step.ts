@@ -181,6 +181,14 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 		method: "POST",
 		template: "/encoding/configurations/audio/opus",
 	},
+	CREATE_CODEC_PCM: {
+		method: "POST",
+		template: "/encoding/configurations/audio/pcm",
+	},
+	CREATE_CODEC_AUDIO_PASSTHROUGH: {
+		method: "POST",
+		template: "/encoding/configurations/audio/passthrough",
+	},
 	CREATE_CODEC_IMSC: {
 		method: "POST",
 		template: "/encoding/configurations/subtitles/imsc",
@@ -335,6 +343,10 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 	CREATE_MUXING_PROGRESSIVE_MOV: {
 		method: "POST",
 		template: "/encoding/encodings/:encodingId/muxings/progressive-mov",
+	},
+	CREATE_MUXING_PROGRESSIVE_WAV: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/muxings/progressive-wav",
 	},
 	CREATE_MUXING_TS: {
 		method: "POST",

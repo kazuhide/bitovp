@@ -338,6 +338,7 @@ export function InputFilesEditor({
 			<Button
 				variant="secondary"
 				size="sm"
+				hidden={Boolean(state.audioFile)}
 				onClick={() => {
 					const key = freshKey();
 					onPatch({

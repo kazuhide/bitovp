@@ -3,14 +3,20 @@ import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	audioCopyRendition,
 	type CompiledOperation,
 	createInputCaptureCredentials,
 	encodingPlanSchema,
 	hashEditingEvidence,
-	type PinnedInputCapture,
+	pinnedAudioInputSchema,
 	pinnedInputCaptureSchema,
+	providerInputCaptureSchema,
 } from "@bitovp/core";
-import type { AppPrismaClient, Prisma } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	type Prisma,
+	resolveInspectedAudioSource,
+} from "@bitovp/db";
 import type { ObjectStorageBrowser } from "@bitovp/storage";
 import { downloadPinnedEditingMedia } from "../library-editing/media";
 import { probeEditingNormalizationSource } from "../library-editing/normalization";
@@ -75,8 +81,14 @@ export function createEncodingInputCapture(deps: {
 		const parsed = encodingPlanSchema.safeParse(job.plan);
 		if (!parsed.success) return null;
 		const plan = parsed.data;
+		const copy = audioCopyRendition(plan);
 		if (
-			!plan.aiSceneAnalysis ||
+			Boolean(copy) !==
+			(input.operation.payload.requireAudioCapture === true)
+		)
+			return null;
+		if (
+			(!copy && !plan.aiSceneAnalysis) ||
 			plan.ingest.length !== 1 ||
 			(plan.encodings?.length ?? 1) !== 1 ||
 			plan.trimmingStreams.length ||
@@ -90,8 +102,11 @@ export function createEncodingInputCapture(deps: {
 			return null;
 		const ingest = plan.ingest[0];
 		if (
-			ingest?.selectionMode !== "VIDEO_RELATIVE" ||
-			ingest.position !== 0 ||
+			!ingest ||
+			(copy
+				? ingest.selectionMode !== "AUDIO_RELATIVE" ||
+					ingest.key !== copy.ingestKey
+				: ingest.selectionMode !== "VIDEO_RELATIVE" || ingest.position !== 0) ||
 			input.operation.step !== `ingest:${ingest.key}` ||
 			input.operation.payload.inputPath !== ingest.inputPath ||
 			input.operation.payload.selectionMode !== ingest.selectionMode ||
@@ -114,10 +129,10 @@ export function createEncodingInputCapture(deps: {
 		});
 		if (receipts.length > 100) throw new Error("INPUT_CAPTURE_LIMIT");
 		let receiptId: string;
-		let proof: PinnedInputCapture;
+		let proof: ReturnType<typeof providerInputCaptureSchema.parse>;
 		const prior = receipts[0];
 		if (prior) {
-			proof = pinnedInputCaptureSchema.parse(prior.proof);
+			proof = providerInputCaptureSchema.parse(prior.proof);
 			if (
 				prior.organizationId !== input.organizationId ||
 				prior.jobId !== job.id ||
@@ -127,10 +142,53 @@ export function createEncodingInputCapture(deps: {
 				proof.jobId !== job.id ||
 				proof.encodingId !== input.encodingId ||
 				proof.planHash !== planHash ||
-				proof.ingestKey !== ingest.key
+				proof.ingestKey !== ingest.key ||
+				(copy
+					? proof.profile !== "PINNED_AUDIO_INPUT_V1" ||
+						proof.inspectionId !== copy.inspectionId ||
+						proof.track.position !== ingest.position ||
+						proof.track.sourceCodec !== copy.sourceCodec
+					: proof.profile !== "PINNED_HTTP_INPUT_V1")
 			)
 				throw new Error("INPUT_CAPTURE_WAS_CHANGED");
 			receiptId = prior.id;
+		} else if (copy) {
+			const selected = await resolveInspectedAudioSource(
+				deps.prisma,
+				input.organizationId,
+				plan,
+			);
+			await input.checkpoint();
+			receiptId = (deps.uuid ?? randomUUID)();
+			proof = pinnedAudioInputSchema.parse({
+				schemaVersion: 1,
+				profile: "PINNED_AUDIO_INPUT_V1",
+				organizationId: input.organizationId,
+				jobId: job.id,
+				encodingId: input.encodingId,
+				expiresAt:
+					Math.floor((deps.now?.() ?? new Date()).getTime() / 1000) + 7 * 86400,
+				ingestKey: ingest.key,
+				planHash,
+				...selected,
+			});
+			const stored = await deps.prisma.libraryEvidenceReceipt.create({
+				data: {
+					id: receiptId,
+					organizationId: input.organizationId,
+					sourceId: null,
+					jobId: job.id,
+					encodingId: input.encodingId,
+					kind: "INPUT_CAPTURE",
+					proof: json(proof),
+					proofHash: hashEditingEvidence(proof),
+				},
+			});
+			if (
+				stored.proofHash !== hashEditingEvidence(proof) ||
+				stored.proofHash !== hashEditingEvidence(stored.proof)
+			)
+				throw new Error("INPUT_CAPTURE_WAS_CHANGED");
 		} else {
 			const directory = await mkdtemp(join(tmpdir(), "bitovp-input-capture-"));
 			let browser: ObjectStorageBrowser | undefined;

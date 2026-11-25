@@ -10,6 +10,12 @@
  * dialog can import it (the `@/app/qc/vmaf-shared` precedent).
  */
 
+import {
+	type AudioCopyTrack,
+	audioCopyIdentitySchema,
+	verifiedAudioTracks,
+} from "@bitovp/core/audio-file-source";
+
 /** StorageInspection.status — mirrors the Prisma enum. */
 export const STORAGE_INSPECTION_STATUSES = [
 	"PENDING",
@@ -43,6 +49,8 @@ export function isInspectionRunning(status: StorageInspectionStatus): boolean {
 export type StorageInspectionDto = {
 	id: string;
 	status: StorageInspectionStatus;
+	verifiedAudioTracks?: AudioCopyTrack[];
+	verifiedCredentialId?: string;
 	bucket: string;
 	objectKey: string;
 	/** Raw ffprobe JSON (`-show_format -show_streams`); null until FINISHED. */
@@ -57,10 +65,13 @@ export type StorageInspectionDto = {
 /** Prisma select for the projection above — keeps both routes in lock-step. */
 export const INSPECTION_SELECT = {
 	id: true,
+	credentialId:true,
 	status: true,
 	bucket: true,
 	objectKey: true,
 	probe: true,
+	sourceIdentity: true,
+	verifyAudioCopy: true,
 	bytesRead: true,
 	error: true,
 	createdAt: true,
@@ -71,6 +82,9 @@ export const INSPECTION_SELECT = {
 export type StorageInspectionRow = {
 	id: string;
 	status: string;
+	verifyAudioCopy?: boolean;
+	credentialId?:string;
+	sourceIdentity?: unknown;
 	bucket: string;
 	objectKey: string;
 	probe: unknown;
@@ -85,6 +99,12 @@ export function toInspectionDto(
 ): StorageInspectionDto {
 	return {
 		id: row.id,
+		...(row.status === "FINISHED" &&
+			row.verifyAudioCopy &&
+			audioCopyIdentitySchema.safeParse(row.sourceIdentity).success && {
+				verifiedAudioTracks: verifiedAudioTracks(row.probe),
+				verifiedCredentialId: row.credentialId,
+			}),
 		status: row.status as StorageInspectionStatus,
 		bucket: row.bucket,
 		objectKey: row.objectKey,

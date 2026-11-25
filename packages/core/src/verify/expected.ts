@@ -97,6 +97,7 @@ export type ContainerKind =
 	| "MP4_FRAGMENTED"
 	| "PROGRESSIVE_TS"
 	| "PROGRESSIVE_MOV"
+	| "PROGRESSIVE_WAV"
 	| "PROGRESSIVE_WEBM";
 
 /** What one muxing must have written. */
@@ -140,8 +141,10 @@ export type ExpectedMuxing = {
 	};
 	audio?: {
 		codec: PlanRendition["codec"];
-		bitrate: number;
+		bitrate?: number;
 		sampleRate?: number;
+		sampleFormat?: "S16LE" | "S24LE" | "S32LE";
+		singleTrackFile?: true;
 		channelLayout?: string;
 	};
 	text?: { language?: string };
@@ -598,6 +601,7 @@ function containerOf(muxing: PlanMuxing): ContainerKind {
 				? "MP4_PROGRESSIVE"
 				: "MP4_FRAGMENTED";
 		case "PROGRESSIVE_TS":
+		case "PROGRESSIVE_WAV":
 		case "PROGRESSIVE_MOV":
 		case "PROGRESSIVE_WEBM":
 			return muxing.kind;
@@ -765,6 +769,17 @@ export function compileExpectedArtefacts(
 					...(v.profile ? { profile: v.profile } : {}),
 					...(typeof v.rate === "number" ? { fps: v.rate } : {}),
 				};
+			} else if (packaged.codec === "AUDIO_PASSTHROUGH") {
+				expected.audio = { codec: packaged.sourceCodec, singleTrackFile: true };
+			} else if (packaged.codec === "PCM") {
+				expected.audio = {
+					codec: "PCM",
+					bitrate: packaged.bitrate,
+					sampleRate: packaged.rate,
+					channelLayout: packaged.channelLayout,
+					sampleFormat: packaged.sampleFormat,
+					singleTrackFile: true,
+				};
 			} else if (
 				packagedCodec !== undefined &&
 				AUDIO_CODECS.has(packagedCodec)
@@ -930,7 +945,12 @@ export function compileExpectedArtefacts(
 				].sort();
 				const seenAudio = new Set<string>();
 				const audio = audioMuxes.flatMap((m) => {
-					if (!m.audio || seenAudio.has(m.renditionKey)) {
+					if (
+						!m.audio ||
+						m.audio.bitrate === undefined ||
+						m.audio.singleTrackFile ||
+						seenAudio.has(m.renditionKey)
+					) {
 						return [];
 					}
 					seenAudio.add(m.renditionKey);
@@ -1024,6 +1044,8 @@ export function compileExpectedArtefacts(
 						const uri = mediaUri.get(entry.renditionKey);
 						if (
 							!m?.audio ||
+							m.audio.bitrate === undefined ||
+							m.audio.singleTrackFile ||
 							uri === undefined ||
 							seen.has(entry.renditionKey)
 						) {

@@ -462,7 +462,12 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		let accountId: string;
 		try {
 			plan = encodingPlanSchema.parse(row.plan);
-			if (!row.cancelRequested && plan.inputTimelinePreparation) {
+			if (
+				!row.cancelRequested &&
+				(plan.inputTimelinePreparation ||
+					(!row.bitmovinEncodingId &&
+						plan.renditions.some((r) => r.codec === "AUDIO_PASSTHROUGH")))
+			) {
 				if (!deps.validateInputPreparation)
 					throw new Error("INPUT_PREPARATION_VALIDATOR_REQUIRED");
 				await deps.validateInputPreparation(plan);

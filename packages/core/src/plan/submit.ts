@@ -244,7 +244,8 @@ export async function submitEncodingJob(
 		};
 	}
 	const rawPlan = parsed.data;
-	if (rawPlan.inputTimelinePreparation) {
+	const copy = rawPlan.renditions.some((r) => r.codec === "AUDIO_PASSTHROUGH");
+	if (rawPlan.inputTimelinePreparation || copy) {
 		try {
 			if (!deps.validateInputPreparation)
 				throw new Error("INPUT_PREPARATION_VALIDATOR_REQUIRED");
@@ -253,8 +254,9 @@ export async function submitEncodingJob(
 			return {
 				ok: false,
 				code: "INPUT_PREPARATION_INVALID",
-				message:
-					"The prepared timeline is unavailable or changed. Prepare the timeline again before starting a new job.",
+				message: copy
+					? "Audio copy requires a configured version-pinned input gateway and an inspection of the selected audio track. Inspect the source again."
+					: "The prepared timeline is unavailable or changed. Prepare the timeline again before starting a new job.",
 			};
 		}
 	}

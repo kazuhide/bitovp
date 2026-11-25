@@ -41,6 +41,7 @@ import {
 	getIdentityPrisma,
 	listVmafCloudProfiles,
 	recordUnrestrictedEgress,
+	resolveInspectedAudioSource,
 	TENANT_ORGANIZATION,
 } from "@bitovp/db";
 import type { BrowserCredential } from "@bitovp/storage";
@@ -982,8 +983,21 @@ const processorDeps: LiveChannelDeps = {
 const orchestrate = tenantService(() =>
 	createOrchestratorProcessor({
 		...processorDeps,
-		validateInputPreparation: (plan) =>
-			verifyInputTimelinePreparation({
+		validateInputPreparation: async (plan) => {
+			if (plan.renditions.some((r) => r.codec === "AUDIO_PASSTHROUGH")) {
+				if (
+					!process.env.BITOVP_CAPTURE_INPUT_BASE_URL ||
+					(process.env.BITOVP_CAPTURE_INPUT_SECRET?.length ?? 0) < 32
+				)
+					throw new Error("INPUT_CAPTURE_CONFIGURATION_INVALID");
+				await resolveInspectedAudioSource(
+					prisma,
+					requireOrganizationId(),
+					plan,
+				);
+				return;
+			}
+			await verifyInputTimelinePreparation({
 				plan,
 				organizationId: requireOrganizationId(),
 				allowExpired: true,
@@ -994,7 +1008,8 @@ const orchestrate = tenantService(() =>
 					editingShutdownController.signal,
 					AbortSignal.timeout(120_000),
 				]),
-			}),
+			});
+		},
 		captureIngestInput: createEncodingInputCapture({
 			prisma,
 			browserFor: editingBrowserFor,

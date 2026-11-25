@@ -174,6 +174,7 @@ export type MediaProbe = {
 	bitrateBps?: number;
 	audioCodec?: string;
 	audioProfile?: string;
+	audioStreamCount?: number;
 	audioChannels?: number;
 	audioSampleRate?: number;
 	/** The AUDIO stream's own bitrate in bps — for the exact-topology check (row 272). */
@@ -631,6 +632,9 @@ async function verifyMuxing(
 	const wholeFile =
 		muxing.container === "PROGRESSIVE_TS" ||
 		muxing.container === "PROGRESSIVE_MOV" ||
+		muxing.container === "PROGRESSIVE_WAV" ||
+		(muxing.container === "MP4_PROGRESSIVE" &&
+			muxing.audio?.singleTrackFile === true) ||
 		muxing.container === "PROGRESSIVE_WEBM";
 	const single =
 		wholeFile ||
@@ -1437,6 +1441,8 @@ function ffprobeAudioCodecsOf(codec: string): string[] | undefined {
 		case "HE_AAC_V2":
 		case "AAC":
 			return ["aac"];
+		case "PCM":
+			return ["pcm_s16le", "pcm_s24le", "pcm_s32le"];
 		case "DD":
 		case "AC3":
 			return ["ac3"];
@@ -1463,6 +1469,7 @@ function channelCountFor(layout: string): number | undefined {
 		MONO: 1,
 		CL_MONO: 1,
 		CL_STEREO: 2,
+		STEREO: 2,
 		CL_SURROUND: 3,
 		CL_4_0: 4,
 		CL_5_0_BACK: 5,
@@ -1633,6 +1640,21 @@ async function verifyMediaProperties(
 
 	if (muxing.audio) {
 		const audio = muxing.audio;
+		if (audio.singleTrackFile) {
+			if (probe.audioStreamCount === undefined)
+				report.skip(
+					`${id}:audio-stream-count`,
+					"rendition",
+					"Audio stream count is unavailable",
+				);
+			else
+				report.assert(
+					`${id}:audio-stream-count`,
+					"rendition",
+					probe.audioStreamCount === 1 && !probe.videoCodec,
+					`Expected one audio stream and no video; found ${probe.audioStreamCount} audio stream(s), video ${probe.videoCodec ?? "absent"}`,
+				);
+		}
 		report.assert(
 			`${id}:audio-present`,
 			"rendition",
@@ -1644,7 +1666,9 @@ async function verifyMediaProperties(
 		// alone. Emitted as assert-or-skip so the id is a function of the plan, not
 		// of what ffprobe happened to read.
 		{
-			const want = ffprobeAudioCodecsOf(audio.codec);
+			const want = audio.sampleFormat
+				? [`pcm_${audio.sampleFormat.toLowerCase()}`]
+				: ffprobeAudioCodecsOf(audio.codec);
 			if (probe.audioCodec === undefined) {
 				report.skip(
 					`${id}:audio-codec`,
@@ -1687,20 +1711,22 @@ async function verifyMediaProperties(
 		}
 		// BITRATE within a band, a FAIL outside it (row 272). 128k delivered at
 		// 64k is ratio 0.5 — below AUDIO_BITRATE_LOW.
-		if (probe.audioBitrateBps === undefined) {
-			report.skip(
-				`${id}:audio-bitrate`,
-				"rendition",
-				`the plan targets ${audio.bitrate} bps but ffprobe reported no audio bitrate, so it could not be scored`,
-			);
-		} else {
-			const ratio = probe.audioBitrateBps / audio.bitrate;
-			report.assert(
-				`${id}:audio-bitrate`,
-				"rendition",
-				ratio >= AUDIO_BITRATE_LOW && ratio <= AUDIO_BITRATE_HIGH,
-				`audio bitrate within [${AUDIO_BITRATE_LOW}×, ${AUDIO_BITRATE_HIGH}×] of ${audio.bitrate} — measured ${probe.audioBitrateBps} (${ratio.toFixed(2)}×)`,
-			);
+		if (audio.bitrate !== undefined) {
+			if (probe.audioBitrateBps === undefined) {
+				report.skip(
+					`${id}:audio-bitrate`,
+					"rendition",
+					`the plan targets ${audio.bitrate} bps but ffprobe reported no audio bitrate, so it could not be scored`,
+				);
+			} else {
+				const ratio = probe.audioBitrateBps / audio.bitrate;
+				report.assert(
+					`${id}:audio-bitrate`,
+					"rendition",
+					ratio >= AUDIO_BITRATE_LOW && ratio <= AUDIO_BITRATE_HIGH,
+					`audio bitrate within [${AUDIO_BITRATE_LOW}×, ${AUDIO_BITRATE_HIGH}×] of ${audio.bitrate} — measured ${probe.audioBitrateBps} (${ratio.toFixed(2)}×)`,
+				);
+			}
 		}
 		if (audio.sampleRate !== undefined && probe.audioSampleRate !== undefined) {
 			report.assert(

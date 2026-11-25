@@ -34,7 +34,7 @@ export const GROUPS = [
 		directory: "packages/db",
 		files: {
 			"src/runtime-role.integration.test.ts": 1,
-			"src/tenant-db.integration.test.ts": 9,
+			"src/tenant-db.integration.test.ts": 10,
 			"src/tenant-legacy-migration.integration.test.ts": 1,
 			"src/create-request.integration.test.ts": 7,
 			"src/transaction-options.integration.test.ts": 6,

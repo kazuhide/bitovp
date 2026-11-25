@@ -1,5 +1,5 @@
 import "server-only";
-import { hashEditingEvidence, pinnedInputCaptureSchema } from "@bitovp/core";
+import { hashEditingEvidence, providerInputCaptureSchema } from "@bitovp/core";
 import {
 	authorizeInputCaptureRequest,
 	inputCaptureUnauthorized,
@@ -50,7 +50,7 @@ export async function servePinnedInputCapture(
 			row.proofHash !== hashEditingEvidence(row.proof)
 		)
 			return head(hidden());
-		const result = pinnedInputCaptureSchema.safeParse(row.proof);
+		const result = providerInputCaptureSchema.safeParse(row.proof);
 		if (!result.success) return head(hidden());
 		const proof = result.data;
 		if (

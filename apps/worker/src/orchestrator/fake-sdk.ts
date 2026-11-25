@@ -69,6 +69,8 @@ export function fakeSdk(overrides: Partial<SdkOps> = {}): SdkOps {
 		createAc3Config: vi.fn(nextId),
 		createEac3Config: vi.fn(nextId),
 		createOpusConfig: vi.fn(nextId),
+		createPcmConfig: vi.fn(nextId),
+		createPassthroughAudioConfig: vi.fn(nextId),
 		createImscConfig: vi.fn(nextId),
 
 		createDolbyAtmosConfig: vi.fn(nextId),
@@ -93,6 +95,7 @@ export function fakeSdk(overrides: Partial<SdkOps> = {}): SdkOps {
 		createFmp4Muxing: vi.fn(nextId),
 		createMp4Muxing: vi.fn(nextId),
 		createProgressiveMovMuxing: vi.fn(nextId),
+		createProgressiveWavMuxing: vi.fn(nextId),
 		createProgressiveTsMuxing: vi.fn(nextId),
 		createProgressiveWebmMuxing: vi.fn(nextId),
 		createTsMuxing: vi.fn(nextId),

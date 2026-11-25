@@ -7,6 +7,7 @@ import {
 	enumerateQcTargets,
 } from "../vmaf/targets";
 import { checkAkamaiMslConstraints } from "./akamai-msl-constraint";
+import { checkAudioFileOutputs } from "./audio-file-output";
 import {
 	checkAv1CodecControls,
 	checkH26xCodecControls,
@@ -125,6 +126,7 @@ export const MUXING_CODEC_MATRIX: Record<
 	],
 	CMAF: ["H264", "AAC"],
 	MP4: [
+		"AUDIO_PASSTHROUGH",
 		"H264",
 		"H265",
 		"AV1",
@@ -141,7 +143,8 @@ export const MUXING_CODEC_MATRIX: Record<
 	TEXT: ["IMSC"],
 	CHUNKED_TEXT: ["WEBVTT"],
 	PROGRESSIVE_TS: ["H264", "H265", "AAC", "DDPLUS", "DD", "AC3", "EAC3"],
-	PROGRESSIVE_MOV: ["H264", "H265", "AAC", "DD", "AC3"],
+	PROGRESSIVE_MOV: ["H264", "H265", "AAC", "DD", "AC3", "AUDIO_PASSTHROUGH"],
+	PROGRESSIVE_WAV: ["PCM", "AUDIO_PASSTHROUGH"],
 	PROGRESSIVE_WEBM: ["VP9", "AV1", "OPUS"],
 };
 
@@ -391,6 +394,7 @@ export function validatePlan(
 	options: PlanValidationOptions = {},
 ): PlanIssue[] {
 	const issues: PlanIssue[] = checkInternalHevcV2Plan(plan);
+	issues.push(...checkAudioFileOutputs(plan));
 	issues.push(...checkH26xCodecControls(plan.renditions));
 	issues.push(...checkStreamConditions(plan.renditions, false));
 	issues.push(...checkAv1CodecControls(plan.renditions));

@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { editingObjectSchema } from "../content-library/editing-storage";
+import { audioCopyTrackSchema } from "../plan/audio-file-source";
 import { canonicalEditingJson } from "./automatic-binding";
 import { editingNormalizationSourceSchema } from "./normalization-evidence";
 
@@ -26,6 +27,18 @@ export const pinnedInputCaptureSchema = z.strictObject({
 	planHash: sha,
 });
 export type PinnedInputCapture = z.infer<typeof pinnedInputCaptureSchema>;
+
+export const pinnedAudioInputSchema = pinnedInputCaptureSchema
+	.omit({ sourceFacts: true, sha256: true })
+	.extend({
+		profile: z.literal("PINNED_AUDIO_INPUT_V1"),
+		inspectionId: z.uuid(),
+		track: audioCopyTrackSchema,
+	});
+export const providerInputCaptureSchema = z.discriminatedUnion("profile", [
+	pinnedInputCaptureSchema,
+	pinnedAudioInputSchema,
+]);
 
 /** A successful provider GET captured by the importer, never metadata supplied by a client. */
 export const authoritativeAnalysisCaptureSchema = z.strictObject({

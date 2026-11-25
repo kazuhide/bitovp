@@ -835,6 +835,27 @@ export const ja = {
 		hint: "このブラウザに保存されます。",
 	},
 	vodFlow: {
+		audioTemplateUnavailable:
+			"検査済みの入力と音声トラックを保持するには、プラン JSON を書き出してください。",
+		exportAudio: "音声のみ書き出す",
+		returnVideo: "映像ファイルに戻る",
+		audioFileFormat: "音声ファイル形式",
+		convertPcm: "PCM WAV に変換",
+		copyAudio: "元の音声をそのままコピー",
+		audioTrack: "音声トラック",
+		audioRate: "サンプリング周波数（Hz）",
+		audioChannels: "チャンネル",
+		sampleFormat: "サンプル形式",
+		audioContainer: "音声コンテナ",
+		audioFilename: "音声ファイル名",
+		inspectAudio: "入力の音声トラックを検査",
+		chooseAudioTrack: "音声トラックを選択",
+		audioNeedsStorage:
+			"入力に、バージョンが有効な S3 または GCS のオブジェクトを選択してください。",
+		audioInspectionFailed:
+			"入力を確認できませんでした。オブジェクトのバージョンを確認し、再度検査してください。",
+		audioNoTracks:
+			"対応する AAC または PCM の音声トラックが見つかりませんでした。",
 		label: "作成するもの",
 		streaming: "配信用にパッケージする",
 		file: "ファイルを書き出す",

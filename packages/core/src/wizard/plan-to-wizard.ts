@@ -2455,6 +2455,47 @@ export function planToWizardState(
 			manifest.dash = inheritAcl(manifest.dash);
 		else inheritAcl(manifest);
 	}
+	const audio = renditions.length === 1 ? renditions[0] : undefined;
+	const file = muxings.length === 1 ? muxings[0] : undefined;
+	if (
+		audio &&
+		file &&
+		audioIngest &&
+		typeof file.filename === "string" &&
+		typeof audioIngest.position === "number"
+	) {
+		const common = { position: audioIngest.position, filename: file.filename };
+		if (
+			audio.codec === "PCM" &&
+			typeof audio.rate === "number" &&
+			(audio.channelLayout === "MONO" || audio.channelLayout === "STEREO") &&
+			(audio.sampleFormat === "S16LE" ||
+				audio.sampleFormat === "S24LE" ||
+				audio.sampleFormat === "S32LE")
+		)
+			state.audioFile = {
+				...common,
+				mode: "PCM",
+				rate: audio.rate,
+				channelLayout: audio.channelLayout,
+				sampleFormat: audio.sampleFormat,
+			};
+		if (
+			audio.codec === "AUDIO_PASSTHROUGH" &&
+			typeof audio.inspectionId === "string" &&
+			(audio.sourceCodec === "AAC" || audio.sourceCodec === "PCM") &&
+			(file.kind === "MP4" ||
+				file.kind === "PROGRESSIVE_MOV" ||
+				file.kind === "PROGRESSIVE_WAV")
+		)
+			state.audioFile = {
+				...common,
+				mode: "COPY",
+				container: file.kind,
+				sourceCodec: audio.sourceCodec,
+				inspectionId: audio.inspectionId,
+			};
+	}
 	return state;
 }
 

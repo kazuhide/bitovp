@@ -40,6 +40,8 @@ export async function executeMediaStep(
 				operation: op,
 				encodingId,
 			});
+			if (p.requireAudioCapture === true && !captured)
+				throw new Error("AUDIO_COPY_INPUT_UNVERIFIED");
 			const resourceId = await ctx.sdk.createIngestInputStream(encodingId, {
 				inputId: captured?.inputId ?? refId(op, ctx, "inputId"),
 				inputPath: captured?.inputPath ?? str(p.inputPath),
@@ -48,7 +50,16 @@ export async function executeMediaStep(
 			});
 			return {
 				resourceId,
-				request,
+				request:
+					p.requireAudioCapture && captured
+						? {
+								inputPath: captured.inputPath,
+								inputId: captured.inputId,
+								selectionMode: p.selectionMode,
+								position: p.position,
+								refs: { encodingId },
+							}
+						: request,
 				response: {
 					id: resourceId,
 					...(captured
@@ -479,6 +490,19 @@ export async function executeMediaStep(
 				{
 					streamId: refId(op, ctx, "streamId"),
 					additionalStreamIds: refIdList(op, ctx, "additionalStreamIds"),
+					filename: str(p.filename),
+					destination: destinationOf(op, ctx),
+					name: optStr(p.name),
+				},
+			);
+			return { resourceId, request, response: { id: resourceId } };
+		}
+
+		case "CREATE_MUXING_PROGRESSIVE_WAV": {
+			const resourceId = await ctx.sdk.createProgressiveWavMuxing(
+				refId(op, ctx, "encodingId"),
+				{
+					streamId: refId(op, ctx, "streamId"),
 					filename: str(p.filename),
 					destination: destinationOf(op, ctx),
 					name: optStr(p.name),

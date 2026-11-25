@@ -209,6 +209,8 @@ export async function probeFile(
 		...(num(parsed.format?.bit_rate) !== undefined
 			? { bitrateBps: num(parsed.format?.bit_rate) as number }
 			: {}),
+		audioStreamCount: streams.filter((stream) => stream.codec_type === "audio")
+			.length,
 		...(a?.codec_name ? { audioCodec: a.codec_name as string } : {}),
 		...(typeof a?.profile === "string" ? { audioProfile: a.profile } : {}),
 		...(a?.channels !== undefined

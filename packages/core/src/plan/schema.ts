@@ -64,6 +64,8 @@ export const AUDIO_CODECS = new Set([
 	"AAC",
 	...HE_AAC_CODECS,
 	"OPUS",
+	"PCM",
+	"AUDIO_PASSTHROUGH",
 	"DOLBY_ATMOS",
 	"DDPLUS",
 	"DD",
@@ -988,6 +990,24 @@ export const OPUS_CHANNEL_LAYOUTS = [
 	"CL_6_1",
 	"CL_7_1",
 ] as const;
+export const pcmRenditionSchema = z.strictObject({
+	...renditionBase,
+	codec: z.literal("PCM"),
+	name: z.string().min(1),
+	bitrate: z.number().int().positive(),
+	rate: z.number().positive().optional(),
+	channelLayout: z.enum(["MONO", "STEREO"]).optional(),
+	sampleFormat: z.enum(["S16LE", "S24LE", "S32LE"]).optional(),
+	presetConfiguration: z.literal("XDCAM").optional(),
+});
+export const passthroughAudioRenditionSchema = z.strictObject({
+	...renditionBase,
+	codec: z.literal("AUDIO_PASSTHROUGH"),
+	name: z.string().min(1),
+	/** Expected format of the selected source track, checked by the worker. */
+	sourceCodec: z.enum(["AAC", "PCM"]),
+	inspectionId: z.uuid(),
+});
 export const opusRenditionSchema = z.strictObject({
 	...renditionBase,
 	codec: z.literal("OPUS"),
@@ -1041,6 +1061,8 @@ export const renditionSchema = z.discriminatedUnion("codec", [
 	z.strictObject({ ...renditionBase, ...heAacV1Fields }),
 	z.strictObject({ ...renditionBase, ...heAacV2Fields }),
 	opusRenditionSchema,
+	pcmRenditionSchema,
+	passthroughAudioRenditionSchema,
 	imscRenditionSchema,
 	atmosRenditionSchema,
 	ddPlusRenditionSchema,
@@ -1340,6 +1362,9 @@ export const planMuxingSchema = z.discriminatedUnion("kind", [
 	webmMuxingSchema,
 	progressiveTsMuxingSchema,
 	progressiveMovMuxingSchema,
+	progressiveMovMuxingSchema
+		.omit({ additionalStreamKeys: true })
+		.extend({ kind: z.literal("PROGRESSIVE_WAV") }),
 	progressiveWebmMuxingSchema,
 ]);
 

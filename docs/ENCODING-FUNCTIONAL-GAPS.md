@@ -28,6 +28,8 @@ families below. Neither table is a full-field GUI coverage percentage.
 
 ## Creation families checked
 
+The following counts describe the November 16 baseline. The individual entries below record subsequent implementations.
+
 | SDK create family | SDK types | Existing creation paths | Gaps checked against the plan and Worker |
 |---|---:|---:|---|
 | Video configurations | 8 | 5 | H.262, MJPEG, VP8 |
@@ -90,16 +92,9 @@ See the [official Stream Conditions guide](https://developer.bitmovin.com/encodi
 
 ### E03 · P1 · PCM/WAV, then bounded audio passthrough
 
-PCM configuration, audio passthrough and Progressive WAV are absent from the
-plan, forms and Worker. Existing MOV output does not supply these audio paths.
-They directly extend mezzanine and editing deliverables.
+The VOD file wizard can now convert a selected audio track to PCM/WAV. It can also copy one inspected AAC track to MP4 or MOV, or one signed-integer PCM track to MOV or WAV. The Worker binds the selected track and immutable object version before creating its input stream. Editing, mixing, filtering and streaming manifests are outside the copy workflow.
 
-Start with PCM/WAV, then permit passthrough only for documented combinations.
-Cover sample formats, channels, rates, container compatibility, multiple audio
-tracks, trimming/concatenation and filter/mix conflicts. Do not assume arbitrary
-HLS/DASH audio copying is valid. The
-[official audio guide](https://developer.bitmovin.com/encoding/docs/separating-and-combining-audio-streams)
-describes mixing and passthrough constraints.
+Tests cover the installed SDK's request bodies, plan round trips, tenant-scoped evidence and output-file verification. The local media fixture produced all five combinations and preserved the selected audio payload in the four copy cases. Provider execution remains unverified. [VOD file workflow](user-guide/VOD.md#audio-only-files) · [Encoder release history](https://developer.bitmovin.com/encoding/docs/encoder-22000-22490)
 
 ### E04 · P1 · Embedded caption extraction
 

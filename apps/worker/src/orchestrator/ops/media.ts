@@ -47,6 +47,7 @@ import {
 	PictureFieldParity,
 	ProgressiveMovMuxing,
 	ProgressiveTsMuxing,
+	ProgressiveWavMuxing,
 	ProgressiveWebmMuxing,
 	Sprite,
 	SpriteCreationMode,
@@ -103,6 +104,7 @@ export function createMediaOps(
 	| "createCmafMuxing"
 	| "createFmp4Muxing"
 	| "createMp4Muxing"
+	| "createProgressiveWavMuxing"
 	| "createProgressiveMovMuxing"
 	| "createProgressiveTsMuxing"
 	| "createProgressiveWebmMuxing"
@@ -806,6 +808,44 @@ export function createMediaOps(
 							muxings().progressiveMov.create(
 								encodingId,
 								new ProgressiveMovMuxing({
+									filename: p.filename,
+									streams: muxingStreams(p),
+									outputs: outputs(p.destination),
+									name: p.name,
+								}),
+							),
+						(r) => ({ id: r.id }),
+					).then(id),
+			}),
+
+		createProgressiveWavMuxing: (encodingId, p) =>
+			adoptOrCreateStamped({
+				label: "progressive wav muxing",
+				stamp: options.stamp,
+				lookup: (expect) =>
+					findStampedResource({
+						label: "progressive wav muxing",
+						expect,
+						list: (q) => muxings().progressiveWav.list(encodingId, q),
+						customData: (rid) =>
+							muxings().progressiveWav.customdata.get(encodingId, rid),
+					}),
+				auditAdopt: stampAuditAdopt(
+					`/encoding/encodings/${encodingId}/muxings/progressive-wav`,
+				),
+				create: () =>
+					audited(
+						"POST",
+						`/encoding/encodings/${encodingId}/muxings/progressive-wav`,
+						{
+							name: p.name,
+							filename: p.filename,
+							outputPath: p.destination?.outputPath,
+						},
+						() =>
+							muxings().progressiveWav.create(
+								encodingId,
+								new ProgressiveWavMuxing({
 									filename: p.filename,
 									streams: muxingStreams(p),
 									outputs: outputs(p.destination),

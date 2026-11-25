@@ -987,7 +987,36 @@ export type WizardKantar = {
 	reportPrivate?: boolean;
 };
 
+export type WizardAudioFile =
+	| {
+			mode: "PCM";
+			position: number;
+			filename: string;
+			rate: number;
+			sampleFormat: "S16LE" | "S24LE" | "S32LE";
+			channelLayout: "MONO" | "STEREO";
+	  }
+	| {
+			mode: "COPY";
+			position: number;
+			filename: string;
+			container: "MP4" | "PROGRESSIVE_MOV" | "PROGRESSIVE_WAV";
+			sourceCodec: "AAC" | "PCM";
+			inspectionId: string;
+	  };
+
+export const defaultWizardAudioFile: Extract<WizardAudioFile, { mode: "PCM" }> =
+	{
+		mode: "PCM",
+		position: 0,
+		filename: "audio.wav",
+		rate: 48000,
+		sampleFormat: "S24LE",
+		channelLayout: "STEREO",
+	};
+
 export type WizardState = {
+	audioFile?: WizardAudioFile;
 	/** Manual, CPU-previewed input sequence. Absent preserves the ordinary wizard graph. */
 	inputTimeline?: import("../vod-input-timeline/contracts").VodInputTimelineDocument;
 	inputTimelinePreparation?: { taskId: string; requestHash: string };
@@ -1756,6 +1785,77 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 			: {}),
 	});
 
+	if (state.audioFile) {
+		const audio = state.audioFile;
+		const common = {
+			key: "audio-file",
+			ingestKey: "audio",
+			name: audio.mode === "PCM" ? "PCM audio" : "Original audio",
+		};
+		const bitDepth = { S16LE: 16, S24LE: 24, S32LE: 32 };
+		const input = primaryFile;
+		return {
+			planVersion: 1,
+			name: state.name,
+			bitmovin: {
+				accountId: state.accountId || undefined,
+				cloudRegion: state.cloudRegion,
+				encoderVersion: state.encoderVersion,
+				...(state.labels?.length && { labels: state.labels }),
+				...(state.infrastructure && { infrastructure: state.infrastructure }),
+				...(state.prewarmedEncoderPoolIds && {
+					prewarmedEncoderPoolIds: state.prewarmedEncoderPoolIds,
+				}),
+			},
+			inputs: inputDecls(),
+			outputs: outputDecls(),
+			...(state.additionalOutputs.length > 0 && {
+				deliveryMirrors: state.additionalOutputs.map((_, i) => ({
+					outputKey: `mirror-${i + 1}`,
+				})),
+			}),
+			ingest: [
+				{
+					key: "audio",
+					inputKey: input?.inputKey ?? "",
+					inputPath: input?.path ?? "",
+					selectionMode: "AUDIO_RELATIVE",
+					position: audio.position,
+				},
+			],
+			renditions: [
+				audio.mode === "PCM"
+					? {
+							...common,
+							codec: "PCM",
+							sampleFormat: audio.sampleFormat,
+							rate: audio.rate,
+							channelLayout: audio.channelLayout,
+							bitrate:
+								audio.rate *
+								bitDepth[audio.sampleFormat] *
+								(audio.channelLayout === "MONO" ? 1 : 2),
+						}
+					: {
+							...common,
+							codec: "AUDIO_PASSTHROUGH",
+							inspectionId: audio.inspectionId,
+							sourceCodec: audio.sourceCodec,
+						},
+			],
+			muxings: [
+				{
+					key: "file",
+					kind: audio.mode === "PCM" ? "PROGRESSIVE_WAV" : audio.container,
+					streamKey: "audio-file",
+					filename: audio.filename,
+					destination: destination(base),
+				},
+			],
+			manifests: [],
+			generation: { timing: "POST_ENCODING" },
+		};
+	}
 	const relPathByKey = new Map<string, string>();
 	state.videos.forEach((video, index) => {
 		const key = vKeys[index] ?? `v${video.height}`;

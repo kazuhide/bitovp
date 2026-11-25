@@ -361,6 +361,26 @@ const vod = fields(
 	{
 		...common,
 		videos: rows(vodRendition),
+		audioFile: group(
+			z.discriminatedUnion("mode", [
+				z.object({
+					mode: z.literal("PCM"),
+					position: z.number().int().nonnegative(),
+					filename: text,
+					rate: z.number().positive(),
+					channelLayout: z.enum(["MONO", "STEREO"]),
+					sampleFormat: z.enum(["S16LE", "S24LE", "S32LE"]),
+				}),
+				z.object({
+					mode: z.literal("COPY"),
+					position: z.number().int().nonnegative(),
+					filename: text,
+					container: z.enum(["MP4", "PROGRESSIVE_MOV", "PROGRESSIVE_WAV"]),
+					sourceCodec: z.enum(["AAC", "PCM"]),
+					inspectionId: z.union([z.uuid(), z.literal("")]),
+				}),
+			]),
+		),
 		filters: watermarkDrafts,
 		inputTimeline: vodInputTimelineDocumentSchema.optional(),
 		inputTimelinePreparation:

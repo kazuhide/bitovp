@@ -64,7 +64,10 @@ const CRED = "00000000-0000-4000-8000-00000000000";
 
 type Muxing = Record<string, unknown>;
 type Rendition = Record<string, unknown>;
-type FileKind = (typeof FILE_ONLY_MUXING_KINDS)[number];
+const AV_FILE_KINDS = FILE_ONLY_MUXING_KINDS.filter(
+	(kind) => kind !== "PROGRESSIVE_WAV",
+);
+type FileKind = (typeof AV_FILE_KINDS)[number];
 
 const H264 = {
 	key: "v",
@@ -330,7 +333,7 @@ describe("schema — a whole file, named and placed", () => {
 	});
 
 	it.each(
-		FILE_ONLY_MUXING_KINDS,
+		AV_FILE_KINDS,
 	)("%s must say where the file goes — there is no DRM route to borrow one from", (kind) => {
 		const { destination: _destination, ...rest } = file(kind);
 		expect(planMuxingSchema.safeParse(rest).success).toBe(false);
@@ -345,7 +348,7 @@ describe("schema — a whole file, named and placed", () => {
 		"video.ts?token=1",
 		"video.ts#t=1",
 	])("refuses the filename %j, as the TEXT muxing does", (filename) => {
-		for (const kind of FILE_ONLY_MUXING_KINDS) {
+		for (const kind of AV_FILE_KINDS) {
 			expect(
 				planMuxingSchema.safeParse(file(kind, { filename })).success,
 				kind,
@@ -377,7 +380,7 @@ describe("schema — a whole file, named and placed", () => {
 	});
 
 	it("refuses an empty additional list, the rule MP4 and TS already have", () => {
-		for (const kind of FILE_ONLY_MUXING_KINDS) {
+		for (const kind of AV_FILE_KINDS) {
 			expect(
 				planMuxingSchema.safeParse(file(kind, { additionalStreamKeys: [] }))
 					.success,
@@ -388,11 +391,11 @@ describe("schema — a whole file, named and placed", () => {
 });
 
 describe("the two predicates every layer reads", () => {
-	it("names exactly the three whole-file kinds", () => {
+	it("names the whole-file kinds and their audio/video subset", () => {
 		expect(schemaKinds.filter(isFileOnlyMuxingKind)).toEqual([
 			...FILE_ONLY_MUXING_KINDS,
 		]);
-		expect([...FILE_ONLY_MUXING_KINDS]).toEqual([
+		expect([...AV_FILE_KINDS]).toEqual([
 			"PROGRESSIVE_TS",
 			"PROGRESSIVE_MOV",
 			"PROGRESSIVE_WEBM",
@@ -423,7 +426,7 @@ describe("the two predicates every layer reads", () => {
 	});
 
 	it("is never an HLS leg, pinned or not", () => {
-		for (const kind of FILE_ONLY_MUXING_KINDS) {
+		for (const kind of AV_FILE_KINDS) {
 			expect(hlsLegSelected(kind, undefined), kind).toBe(false);
 			expect(hlsLegSelected(kind, "TS"), kind).toBe(false);
 		}
@@ -530,7 +533,7 @@ describe("compile — one op per file, the audio as additional stream refs", () 
 	});
 
 	it("carries no additional refs for a video-only file", () => {
-		for (const kind of FILE_ONLY_MUXING_KINDS) {
+		for (const kind of AV_FILE_KINDS) {
 			const { additionalStreamKeys: _audio, ...videoOnly } = file(kind);
 			const ops = compilePlan(planFor(kind, { muxings: [videoOnly] }));
 			expect(
@@ -541,7 +544,7 @@ describe("compile — one op per file, the audio as additional stream refs", () 
 	});
 
 	it("emits the file only after every stream it references", () => {
-		for (const kind of FILE_ONLY_MUXING_KINDS) {
+		for (const kind of AV_FILE_KINDS) {
 			const order = compilePlan(planFor(kind, { muxings: [file(kind)] })).map(
 				(o) => o.step,
 			);
@@ -561,7 +564,7 @@ describe("never a manifest leg", () => {
 	 * Both shapes a file can take. The audio-only one walks the AUDIO leg
 	 * selections, which are separate code from the video ones.
 	 */
-	const shapes = FILE_ONLY_MUXING_KINDS.flatMap((kind) => [
+	const shapes = AV_FILE_KINDS.flatMap((kind) => [
 		{ kind, label: `${kind} holding video and audio`, muxing: file(kind) },
 		{ kind, label: `${kind} holding audio alone`, muxing: audioFile(kind) },
 	]);
@@ -630,7 +633,7 @@ describe("never a manifest leg", () => {
 		// file was excluded the pin demanded a CENC row for it — a row
 		// PLAN_DRM_MUXING_MISMATCH then refuses. No plan could satisfy both.
 		const drm = [cenc("vmux"), cenc("amux")];
-		for (const kind of FILE_ONLY_MUXING_KINDS) {
+		for (const kind of AV_FILE_KINDS) {
 			const ladder = ladderFor(kind);
 			const pinned = ladder.manifests.map((m) => ({ ...m, drmKind: "CENC" }));
 			const protectedLadder = planWith({ ...ladder, manifests: pinned, drm });
@@ -917,7 +920,7 @@ describe("never a manifest leg", () => {
 		// DASH selects its legs from a closed list, so the file was never going
 		// to be listed. What this pins is the other half: a manifest left with
 		// audio only is refused in words rather than published without a picture.
-		for (const kind of FILE_ONLY_MUXING_KINDS) {
+		for (const kind of AV_FILE_KINDS) {
 			const ladder = ladderFor(kind);
 			// The audio keeps the segmented container this ladder's MPD lists; the
 			// picture is in the file and nowhere else.
@@ -945,7 +948,7 @@ describe("never a manifest leg", () => {
 		// The wizard's default leaves HLS on; choosing a file kind for the only
 		// video container must be refused in words, not compiled into a master
 		// playlist with no variants.
-		for (const kind of FILE_ONLY_MUXING_KINDS) {
+		for (const kind of AV_FILE_KINDS) {
 			const issues = validatePlan(
 				planFor(kind, {
 					// AAC keeps the fMP4 leg the form gives it. Opus has no container
@@ -1042,7 +1045,7 @@ describe("never a manifest leg", () => {
 
 	it("is on every Akamai MSL forbidden list, as MP4 is", () => {
 		for (const [format, need] of Object.entries(AKAMAI_MSL_REQUIREMENTS)) {
-			for (const kind of FILE_ONLY_MUXING_KINDS) {
+			for (const kind of AV_FILE_KINDS) {
 				expect(need.forbidden as readonly string[], format).toContain(kind);
 			}
 		}
@@ -1441,7 +1444,7 @@ describe("validation rails", () => {
 	});
 
 	it.each(
-		FILE_ONLY_MUXING_KINDS,
+		AV_FILE_KINDS,
 	)("%s refuses a codec outside its row — every stream in the file, not just the first", (kind) => {
 		// What a WebM file holds, a .ts or .mov does not, and the other way round.
 		const outside =
@@ -1638,7 +1641,7 @@ describe("validation rails", () => {
 	};
 	for (const [drmKind, row] of Object.entries(drmRows)) {
 		it.each(
-			FILE_ONLY_MUXING_KINDS,
+			AV_FILE_KINDS,
 		)(`refuses ${drmKind} encryption of a %s file`, (kind) => {
 			const refusal = validatePlan(
 				planFor(kind, { muxings: [file(kind)], drm: [row("file")] }),
@@ -1662,7 +1665,7 @@ describe("validation rails", () => {
 					muxings: [muxing],
 				}),
 			).find((issue) => issue.code === "PLAN_MUXING_MULTIPLE_AUDIO");
-		for (const kind of FILE_ONLY_MUXING_KINDS) {
+		for (const kind of AV_FILE_KINDS) {
 			const issue = multiple(
 				file(kind, { additionalStreamKeys: ["a", "a2"] }),
 				pairFor(kind),
@@ -1826,7 +1829,7 @@ describe("template export — the official schema's own sections and field names
 
 describe("what is expected on storage, and shown on the job page", () => {
 	it("one named file, carrying the video and the audio muxed into it", () => {
-		for (const kind of FILE_ONLY_MUXING_KINDS) {
+		for (const kind of AV_FILE_KINDS) {
 			const [video, audio] = pairFor(kind);
 			const [expected] = compileExpectedArtefacts(
 				planFor(kind, { muxings: [file(kind)] }),
@@ -2265,7 +2268,7 @@ describe("wizard — build, and reopen in the form", () => {
 		// Every other kind drops its destination when a DRM row owns the
 		// output. Doing that here would fail the schema on a missing field and
 		// tell the operator nothing about the encryption row that caused it.
-		for (const kind of FILE_ONLY_MUXING_KINDS) {
+		for (const kind of AV_FILE_KINDS) {
 			const built = buildPlan(
 				wizardState({
 					videos: [blankRow(kind)],

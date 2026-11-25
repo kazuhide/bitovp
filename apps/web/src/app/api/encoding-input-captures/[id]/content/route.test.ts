@@ -73,6 +73,28 @@ function receipt() {
 		proofHash: hashEditingEvidence(value),
 	};
 }
+it("reads the inspected audio version through the same bounded authenticated gateway", async () => {
+	const { sha256: _hash, sourceFacts: _facts, ...shared } = proof();
+	const value = {
+		...shared,
+		profile: "PINNED_AUDIO_INPUT_V1",
+		inspectionId: id(10),
+		track: { position: 1, sourceCodec: "AAC" },
+	};
+	mocks.receipt.mockResolvedValue({
+		...receipt(),
+		proof: value,
+		proofHash: hashEditingEvidence(value),
+	});
+	const result = await call(request("GET", { range: "bytes=0-7" }));
+	expect(result.status).toBe(206);
+	expect((await result.arrayBuffer()).byteLength).toBe(8);
+	expect(mocks.object).toHaveBeenCalledWith(
+		expect.objectContaining({
+			expect: expect.objectContaining({ versionId: "fixed-version" }),
+		}),
+	);
+});
 function authorization(
 	org = id(1),
 	receiptId = id(2),

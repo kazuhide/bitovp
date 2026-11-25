@@ -97,6 +97,8 @@ export type OperationKind =
 	| "CREATE_CODEC_HE_AAC_V1"
 	| "CREATE_CODEC_HE_AAC_V2"
 	| "CREATE_CODEC_OPUS"
+	| "CREATE_CODEC_PCM"
+	| "CREATE_CODEC_AUDIO_PASSTHROUGH"
 	| "CREATE_CODEC_IMSC"
 	| "CREATE_CODEC_DOLBY_ATMOS"
 	| "CREATE_CODEC_AC3"
@@ -131,6 +133,7 @@ export type OperationKind =
 	| "CREATE_MUXING_WEBM"
 	| "CREATE_MUXING_PROGRESSIVE_TS"
 	| "CREATE_MUXING_PROGRESSIVE_MOV"
+	| "CREATE_MUXING_PROGRESSIVE_WAV"
 	| "CREATE_DRM_CENC"
 	| "CREATE_DRM_FAIRPLAY"
 	| "CREATE_DRM_SPEKE"
@@ -485,9 +488,12 @@ function streamName(rendition: PlanRendition): string {
 			return rendition.height === null
 				? `Stream ${rendition.codec}`
 				: `Stream ${rendition.codec} ${rendition.height}p`;
+		case "AUDIO_PASSTHROUGH":
+			return `Stream ${rendition.sourceCodec} passthrough`;
 		case "HE_AAC_V1":
 		case "HE_AAC_V2":
 		case "AAC":
+		case "PCM":
 		case "OPUS":
 			return `Stream ${rendition.codec} ${kbps(rendition.bitrate)}`;
 		case "DOLBY_ATMOS":
@@ -516,6 +522,7 @@ const MUXING_LABEL = {
 	// No vendor sample names these two; the label follows the same grammar.
 	PROGRESSIVE_TS: "Progressive TS",
 	PROGRESSIVE_MOV: "Progressive MOV",
+	PROGRESSIVE_WAV: "WAV",
 	// The same grammar again; whether a vendor sample names it was not looked up.
 	PROGRESSIVE_WEBM: "Progressive WebM",
 } as const;
@@ -532,6 +539,8 @@ function muxingName(
 		const identity = rendition.height === null ? "" : ` ${rendition.height}p`;
 		return `Video ${MUXING_LABEL[kind]} Muxing${identity}`;
 	}
+	if (rendition.codec === "AUDIO_PASSTHROUGH")
+		return `Audio ${MUXING_LABEL[kind]} Muxing ${rendition.sourceCodec}`;
 	return `Audio ${MUXING_LABEL[kind]} Muxing ${kbps(rendition.bitrate)}`;
 }
 
@@ -627,7 +636,14 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 		encOf(renditionByKey.get(renditionKey)?.encodingKey).step;
 
 	// 1. Inputs & outputs
+	const audioCopy = plan.renditions.find(
+		(r) => r.codec === "AUDIO_PASSTHROUGH",
+	);
+	const capturedIngest =
+		audioCopy && plan.ingest.find((i) => i.key === audioCopy.ingestKey);
 	for (const input of plan.inputs) {
+		// The signed HTTPS input is created once the encoding ID exists.
+		if (capturedIngest?.inputKey === input.key) continue;
 		if (input.kind === "S3") {
 			ops.push({
 				step: `input:${input.key}`,
@@ -904,12 +920,17 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 				kind: "CREATE_INGEST_INPUT_STREAM",
 				payload: {
 					inputPath: ingest.inputPath,
+					...(capturedIngest?.key === ingest.key && {
+						requireAudioCapture: true,
+					}),
 					selectionMode: ingest.selectionMode,
 					position: ingest.position,
 				},
 				refs: {
 					encodingId: enc.step,
-					inputId: `input:${ingest.inputKey}`,
+					...(capturedIngest?.key !== ingest.key && {
+						inputId: `input:${ingest.inputKey}`,
+					}),
 				},
 			});
 		}
@@ -1526,6 +1547,35 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 					payload: heAacConfiguration(rendition),
 					refs: {},
 				});
+			} else if (
+				rendition.codec === "PCM" ||
+				rendition.codec === "AUDIO_PASSTHROUGH"
+			) {
+				ops.push({
+					step: `codec:${rendition.key}`,
+					kind:
+						rendition.codec === "PCM"
+							? "CREATE_CODEC_PCM"
+							: "CREATE_CODEC_AUDIO_PASSTHROUGH",
+					payload:
+						rendition.codec === "PCM"
+							? {
+									name: rendition.name,
+									bitrate: rendition.bitrate,
+									...(rendition.rate !== undefined && { rate: rendition.rate }),
+									...(rendition.channelLayout && {
+										channelLayout: rendition.channelLayout,
+									}),
+									...(rendition.sampleFormat && {
+										sampleFormat: rendition.sampleFormat,
+									}),
+									...(rendition.presetConfiguration && {
+										presetConfiguration: rendition.presetConfiguration,
+									}),
+								}
+							: { name: rendition.name },
+					refs: {},
+				});
 			} else if (rendition.codec === "AAC" || rendition.codec === "OPUS") {
 				ops.push({
 					step: `codec:${rendition.key}`,
@@ -1921,14 +1971,20 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 						},
 						refs: muxingRefs,
 					});
-				} else if (muxing.kind === "PROGRESSIVE_MOV") {
+				} else if (
+					muxing.kind === "PROGRESSIVE_MOV" ||
+					muxing.kind === "PROGRESSIVE_WAV"
+				) {
 					ops.push({
 						step: `muxing:${muxing.key}`,
-						kind: "CREATE_MUXING_PROGRESSIVE_MOV",
+						kind:
+							muxing.kind === "PROGRESSIVE_MOV"
+								? "CREATE_MUXING_PROGRESSIVE_MOV"
+								: "CREATE_MUXING_PROGRESSIVE_WAV",
 						payload: {
 							filename: muxing.filename,
 							...destinationFields,
-							name: muxing.name ?? muxingName("PROGRESSIVE_MOV", primary),
+							name: muxing.name ?? muxingName(muxing.kind, primary),
 						},
 						refs: muxingRefs,
 					});

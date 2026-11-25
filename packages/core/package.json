@@ -5,6 +5,7 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
+		"./audio-file-source": "./src/plan/audio-file-source.ts",
 		"./banding": "./src/banding/index.ts",
 		"./aisa-live-client": "./src/aisa-live-client.ts",
 		"./presets": "./src/plan/sample-presets.ts",

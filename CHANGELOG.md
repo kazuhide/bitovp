@@ -8,6 +8,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- Export a selected VOD audio track to a mono or stereo PCM WAV file, or copy a verified AAC or PCM track into a supported MP4, MOV or WAV file from the file-output wizard.
 - Configure VOD HEVC/HDR10+ with a video and metadata JSON sidecar on the same input storage, and retain this source when editing a saved plan. The input timeline remains unavailable for HDR10+ in this application. The Web and Worker now use the published Bitmovin JavaScript SDK 1.289.0. HDR10+ requires Encoder 2.294.0 or later.
 - Show Live input aspect ratio, audio channel count and channel layout supplied by Encoder 2.294.0 as first-connection metadata. Missing or malformed values remain unavailable and do not become fresh health evidence.
 - Select HE-AAC v1 or v2 in VOD and Live audio ladders and preserve profile-specific signaling in saved templates.

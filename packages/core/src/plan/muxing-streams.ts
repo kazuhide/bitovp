@@ -63,6 +63,7 @@ export function isMuxedContainer(muxing: PlanMuxing): boolean {
 export const FILE_ONLY_MUXING_KINDS = [
 	"PROGRESSIVE_TS",
 	"PROGRESSIVE_MOV",
+	"PROGRESSIVE_WAV",
 	"PROGRESSIVE_WEBM",
 ] as const satisfies readonly PlanMuxing["kind"][];
 
@@ -97,6 +98,7 @@ const CARRIES_AUDIO: Record<PlanMuxing["kind"], boolean> = {
 	CHUNKED_TEXT: false,
 	PROGRESSIVE_TS: true,
 	PROGRESSIVE_MOV: true,
+	PROGRESSIVE_WAV: false,
 	PROGRESSIVE_WEBM: true,
 };
 

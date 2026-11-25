@@ -175,6 +175,7 @@ const MUXING_SECTION = {
 	WEBM: "webm",
 	PROGRESSIVE_TS: "progressiveTs",
 	PROGRESSIVE_MOV: "progressiveMov",
+	PROGRESSIVE_WAV: "progressiveWav",
 	PROGRESSIVE_WEBM: "progressiveWebm",
 } as const satisfies Record<EncodingPlan["muxings"][number]["kind"], string>;
 
@@ -209,7 +210,11 @@ function isAudioCodec(rendition: AnyRendition): rendition is Extract<
 			| "EAC3";
 	}
 > {
-	return AUDIO_CODECS.has(rendition.codec);
+	return (
+		rendition.codec !== "AUDIO_PASSTHROUGH" &&
+		rendition.codec !== "PCM" &&
+		AUDIO_CODECS.has(rendition.codec)
+	);
 }
 
 function isPerTitle(rendition: AnyRendition): boolean {
@@ -533,6 +538,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	const ac3: Tree = {};
 	const eac3: Tree = {};
 	const opus: Tree = {};
+	const pcm: Tree = {};
+	const passthrough: Tree = {};
 	const imsc: Tree = {};
 	const dolbyAtmos: Tree = {};
 	const ddPlus: Tree = {};
@@ -742,6 +749,29 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			codecRef.set(
 				rendition.key,
 				`$/configurations/video/h264/${rendition.key}`,
+			);
+		} else if (
+			rendition.codec === "PCM" ||
+			rendition.codec === "AUDIO_PASSTHROUGH"
+		) {
+			const family = rendition.codec === "PCM" ? "pcm" : "passthrough";
+			const configs = rendition.codec === "PCM" ? pcm : passthrough;
+			configs[rendition.key] = {
+				properties:
+					rendition.codec === "PCM"
+						? dense({
+								name: rendition.name,
+								bitrate: rendition.bitrate,
+								rate: rendition.rate,
+								channelLayout: rendition.channelLayout,
+								sampleFormat: rendition.sampleFormat,
+								presetConfiguration: rendition.presetConfiguration,
+							})
+						: { name: rendition.name },
+			};
+			codecRef.set(
+				rendition.key,
+				`$/configurations/audio/${family}/${rendition.key}`,
 			);
 		} else if (rendition.codec === "OPUS") {
 			const wireLayouts: Record<string, string> = {
@@ -1291,6 +1321,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			webm: Tree;
 			progressiveTs: Tree;
 			progressiveMov: Tree;
+			progressiveWav: Tree;
 			progressiveWebm: Tree;
 		}
 	>();
@@ -1308,6 +1339,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				webm: {},
 				progressiveTs: {},
 				progressiveMov: {},
+				progressiveWav: {},
 				progressiveWebm: {},
 			};
 			muxingsByEnc.set(ownerEnc, legs);
@@ -1322,6 +1354,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			webm,
 			progressiveTs,
 			progressiveMov,
+
+			progressiveWav,
 			progressiveWebm,
 		} = legs;
 		const shared = {
@@ -1486,6 +1520,10 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					...shared,
 				},
 			};
+		} else if (muxing.kind === "PROGRESSIVE_WAV") {
+			progressiveWav[muxing.key] = {
+				properties: { filename: muxing.filename, ...shared },
+			};
 		} else if (muxing.kind === "PROGRESSIVE_MOV") {
 			progressiveMov[muxing.key] = {
 				properties: { filename: muxing.filename, ...shared },
@@ -1649,7 +1687,10 @@ function buildTemplate(plan: EncodingPlan): Tree {
 								},
 							};
 						}
-					} else {
+					} else if (
+						rendition.codec !== "AUDIO_PASSTHROUGH" &&
+						rendition.codec !== "PCM"
+					) {
 						variantStreams[muxing.key] = {
 							properties: {
 								audio: manifest.audioGroupId,
@@ -2099,6 +2140,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			Object.keys(ac3).length > 0 ||
 			Object.keys(eac3).length > 0 ||
 			Object.keys(opus).length > 0 ||
+			Object.keys(pcm).length > 0 ||
+			Object.keys(passthrough).length > 0 ||
 			Object.keys(dolbyAtmos).length > 0 ||
 			Object.keys(ddPlus).length > 0 ||
 			Object.keys(dd).length > 0
@@ -2110,6 +2153,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 							...(Object.keys(ac3).length > 0 ? { ac3 } : {}),
 							...(Object.keys(eac3).length > 0 ? { eac3 } : {}),
 							...(Object.keys(opus).length > 0 ? { opus } : {}),
+							...(Object.keys(pcm).length > 0 ? { pcm } : {}),
+							...(Object.keys(passthrough).length > 0 ? { passthrough } : {}),
 							...(Object.keys(dolbyAtmos).length > 0 ? { dolbyAtmos } : {}),
 							...(Object.keys(ddPlus).length > 0
 								? { dolbyDigitalPlus: ddPlus }
@@ -2143,6 +2188,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					webm: {},
 					progressiveTs: {},
 					progressiveMov: {},
+					progressiveWav: {},
 					progressiveWebm: {},
 				};
 				const fileEntries = fileInputStreamsByEnc.get(name) ?? {};
@@ -2242,6 +2288,9 @@ function buildTemplate(plan: EncodingPlan): Tree {
 								: {}),
 							...(Object.keys(legs.progressiveMov).length > 0
 								? { progressiveMov: legs.progressiveMov }
+								: {}),
+							...(Object.keys(legs.progressiveWav).length > 0
+								? { progressiveWav: legs.progressiveWav }
 								: {}),
 							...(Object.keys(legs.progressiveWebm).length > 0
 								? { progressiveWebm: legs.progressiveWebm }
@@ -2385,7 +2434,14 @@ function commentSafe(text: string): string {
 /** A template must not silently omit selected DRM from an executable plan. */
 export function encodingTemplateExportUnavailableReason(
 	plan: EncodingPlan,
-): "SPEKE" | "DASH_ON_DEMAND_MP4_DRM" | "MANIFEST_DETAILS" | undefined {
+):
+	| "SPEKE"
+	| "DASH_ON_DEMAND_MP4_DRM"
+	| "MANIFEST_DETAILS"
+	| "PINNED_AUDIO_INPUT"
+	| undefined {
+	if (plan.renditions.some((r) => r.codec === "AUDIO_PASSTHROUGH"))
+		return "PINNED_AUDIO_INPUT";
 	if (plan.drm.some((drm) => drm.kind === "SPEKE")) return "SPEKE";
 	if (
 		plan.muxings.some(
@@ -2454,6 +2510,10 @@ export function encodingTemplateExportUnavailableReason(
 
 export function planToEncodingTemplateYaml(plan: EncodingPlan): string {
 	const unavailable = encodingTemplateExportUnavailableReason(plan);
+	if (unavailable === "PINNED_AUDIO_INPUT")
+		throw new Error(
+			"Use Plan JSON to retain the verified input version and selected audio track.",
+		);
 	if (unavailable === "MANIFEST_DETAILS")
 		throw new Error(
 			"Advanced manifest settings and progressive WebM require Plan JSON or execution in the app; encoding-template YAML export is unavailable.",

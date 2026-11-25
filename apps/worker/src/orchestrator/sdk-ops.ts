@@ -854,6 +854,24 @@ export type SdkOps = {
 		rate: number;
 		channelLayout: string;
 	}): Promise<string>;
+	createPcmConfig(p: {
+		name: string;
+		bitrate: number;
+		rate?: number;
+		sampleFormat?: string;
+		channelLayout?: string;
+		presetConfiguration?: string;
+	}): Promise<string>;
+	createPassthroughAudioConfig(p: { name: string }): Promise<string>;
+	createProgressiveWavMuxing(
+		encodingId: string,
+		p: {
+			streamId: string;
+			filename: string;
+			destination?: Destination;
+			name?: string;
+		},
+	): Promise<string>;
 	createOpusConfig(p: {
 		name?: string;
 		bitrate: number;

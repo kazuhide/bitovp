@@ -206,6 +206,23 @@ export async function executeConfigStep(
 			});
 			return { resourceId, request, response: { id: resourceId } };
 		}
+		case "CREATE_CODEC_PCM": {
+			const resourceId = await ctx.sdk.createPcmConfig({
+				name: str(p.name),
+				bitrate: num(p.bitrate, 0),
+				rate: optNum(p.rate),
+				sampleFormat: optStr(p.sampleFormat),
+				channelLayout: optStr(p.channelLayout),
+				presetConfiguration: optStr(p.presetConfiguration),
+			});
+			return { resourceId, request, response: { id: resourceId } };
+		}
+		case "CREATE_CODEC_AUDIO_PASSTHROUGH": {
+			const resourceId = await ctx.sdk.createPassthroughAudioConfig({
+				name: str(p.name),
+			});
+			return { resourceId, request, response: { id: resourceId } };
+		}
 		case "CREATE_CODEC_OPUS": {
 			const resourceId = await ctx.sdk.createOpusConfig({
 				name: optStr(p.name),

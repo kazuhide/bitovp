@@ -129,6 +129,8 @@ export async function executeStep(
 		case "CREATE_CODEC_VP9":
 		case "CREATE_CODEC_AV1":
 		case "CREATE_CODEC_OPUS":
+		case "CREATE_CODEC_PCM":
+		case "CREATE_CODEC_AUDIO_PASSTHROUGH":
 		case "CREATE_CODEC_IMSC":
 		case "CREATE_CODEC_HE_AAC_V1":
 		case "CREATE_CODEC_HE_AAC_V2":
@@ -173,6 +175,7 @@ export async function executeStep(
 		case "CREATE_MUXING_MP4":
 		case "CREATE_MUXING_PROGRESSIVE_TS":
 		case "CREATE_MUXING_PROGRESSIVE_MOV":
+		case "CREATE_MUXING_PROGRESSIVE_WAV":
 		case "CREATE_MUXING_PROGRESSIVE_WEBM":
 		case "CREATE_MUXING_TS":
 		case "CREATE_MUXING_WEBM":

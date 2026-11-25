@@ -1095,6 +1095,7 @@ export const FILE_OUTPUT_FIELD_HOME: Record<
 	keyof WizardState,
 	"shown" | FileOutputBlocker
 > = {
+	audioFile: "shown",
 	name: "shown",
 	accountId: "shown",
 	cloudRegion: "shown",
@@ -1385,6 +1386,7 @@ function setsOnly(value: object | undefined, fields: readonly string[]) {
  * Empty means the whole state is visible there.
  */
 export function fileOutputBlockers(state: WizardState): FileOutputBlocker[] {
+	if (state.audioFile) return [];
 	const found = new Set<FileOutputBlocker>();
 	const lifted = unsuspended(state);
 	for (const key of fieldsInUse(lifted)) {

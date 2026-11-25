@@ -4,6 +4,7 @@ import type {
 	LiveEffectAction,
 	LiveEffectIntent,
 	SlateSource,
+	StepLogEntry,
 } from "@bitovp/core";
 import {
 	compileLiveRunStepLog,
@@ -19,6 +20,7 @@ import {
 	MslEncoderVersionError,
 	PROVISION_LEASE_RELEASE,
 	reseedFailedSteps,
+	restoreCompiledLiveProvisionGraph,
 	restoreLiveProvisionEvidence,
 	sealedFeederSourceSchema,
 	slateSourceSchema,
@@ -893,20 +895,37 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				) {
 					const primary =
 						latest.bitmovinEncodingId ?? channel.bitmovinEncodingId;
-					const saved = restoreLiveProvisionEvidence(
-						channel.stepLog,
-						latest.stepLog,
-						primary,
-						true,
-					);
-					const restored =
-						saved &&
-						restoreLiveProvisionEvidence(
+					let restored: StepLogEntry[] | null;
+					if (
+						runWrite.kind === "revive" &&
+						runWrite.outputPrefix !== undefined
+					) {
+						// The pre-lock read compiled this graph because the channel
+						// log was empty. Recheck under the actual airing lock.
+						if (!Array.isArray(channel.stepLog) || channel.stepLog.length)
+							return null;
+						restored = restoreCompiledLiveProvisionGraph(
 							claim.data.stepLog,
-							saved,
+							latest.stepLog,
+							primary,
+							latest.archivedRtmpAttempt ?? 0,
+						);
+					} else {
+						const saved = restoreLiveProvisionEvidence(
+							channel.stepLog,
+							latest.stepLog,
 							primary,
 							true,
 						);
+						restored =
+							saved &&
+							restoreLiveProvisionEvidence(
+								claim.data.stepLog,
+								saved,
+								primary,
+								true,
+							);
+					}
 					if (
 						!restored ||
 						(channel.bitmovinEncodingId &&

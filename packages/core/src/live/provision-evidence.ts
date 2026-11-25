@@ -1,4 +1,8 @@
-import { type StepLogEntry, stepLogSchema } from "../plan/steplog";
+import {
+	isRuntimeRecordKind,
+	type StepLogEntry,
+	stepLogSchema,
+} from "../plan/steplog";
 
 const paidSteps = new Set([
 	"CREATE_ENCODING",
@@ -40,6 +44,78 @@ function evidence(entry: StepLogEntry) {
 	);
 }
 
+/** A freshly compiled graph has no generation. Only the locked same-airing run
+ * journal can supply it. RTMP rebuilds advance the input and its entire suffix
+ * together; the archive is written before the new journal. A disagreement
+ * across that write boundary must not resurrect an abandoned resource. */
+export function restoreCompiledLiveProvisionGraph(
+	compiledLog: unknown,
+	runLog: unknown,
+	primary: string | null,
+	archivedRtmpAttempt: number,
+): StepLogEntry[] | null {
+	const compiled = stepLogSchema.safeParse(compiledLog);
+	const run = stepLogSchema.safeParse(runLog ?? []);
+	if (
+		!compiled.success ||
+		!run.success ||
+		!Number.isSafeInteger(archivedRtmpAttempt) ||
+		archivedRtmpAttempt < 0
+	)
+		return null;
+	const graph = compiled.data;
+	if (
+		graph.some(
+			(entry) =>
+				entry.status !== "PENDING" ||
+				entry.attempt ||
+				entry.resourceId ||
+				entry.startedAt ||
+				isRuntimeRecordKind(entry.kind),
+		)
+	)
+		return null;
+	const byStep = new Map(run.data.map((entry) => [entry.step, entry]));
+	if (
+		byStep.size !== run.data.length ||
+		(primary &&
+			run.data.some(
+				(entry) =>
+					entry.kind === "CREATE_ENCODING" &&
+					entry.resourceId &&
+					entry.resourceId !== primary,
+			))
+	)
+		return null;
+	const boundary = graph.findIndex(
+		(entry) => entry.kind === "CREATE_INPUT_RTMP",
+	);
+	if (archivedRtmpAttempt > 0) {
+		const input = graph[boundary];
+		const recorded = input && byStep.get(input.step);
+		if (
+			recorded?.kind !== "CREATE_INPUT_RTMP" ||
+			recorded.attempt !== archivedRtmpAttempt
+		)
+			return null;
+	}
+	for (const [index, entry] of graph.entries()) {
+		const generation =
+			boundary >= 0 && index >= boundary ? archivedRtmpAttempt : 0;
+		const recorded = byStep.get(entry.step);
+		if (
+			recorded &&
+			(recorded.kind !== entry.kind || (recorded.attempt ?? 0) !== generation)
+		)
+			return null;
+		if (generation) entry.attempt = generation;
+		// Preserve the exact same-attempt request and timestamp, also for a
+		// non-paid CREATE whose crash adoption will use that send window.
+		if (recorded) Object.assign(entry, recorded);
+	}
+	return restoreLiveProvisionEvidence(graph, run.data, primary, true);
+}
+
 /** Restore positive provider evidence from this airing and RTMP generation.
  * A successful send supersedes its in-flight marker. A newer generation, an
  * incompatible provider ID, or a paid step absent from the graph cannot be replayed. */
@@ -57,7 +133,9 @@ export function restoreLiveProvisionEvidence(
 	if (!prior.success) return null;
 	const receipts = prior.data.filter(
 		(step) =>
-			evidence(step) || (restoreCompletedGraph && step.status === "DONE"),
+			evidence(step) ||
+			(restoreCompletedGraph &&
+				(step.status === "DONE" || isRuntimeRecordKind(step.kind))),
 	);
 	if (!current.data.length) {
 		if (
@@ -75,7 +153,19 @@ export function restoreLiveProvisionEvidence(
 			? prior.data
 			: current.data;
 	}
+	const byStep = new Map(current.data.map((entry) => [entry.step, entry]));
 	for (const saved of receipts) {
+		if (restoreCompletedGraph && isRuntimeRecordKind(saved.kind)) {
+			// These records are appended after deployment and never executable.
+			const currentRecord = byStep.get(saved.step);
+			if (currentRecord && currentRecord.kind !== saved.kind) return null;
+			if (!currentRecord) {
+				current.data.push(saved);
+				byStep.set(saved.step, saved);
+			} else if (saved.status === "DONE" && currentRecord.status !== "DONE")
+				Object.assign(currentRecord, saved);
+			continue;
+		}
 		const target = current.data.find(
 			(e) => e.kind === saved.kind && e.step === saved.step,
 		);

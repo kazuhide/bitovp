@@ -1,6 +1,9 @@
 import { expect, it } from "vitest";
-import type { StepLogEntry } from "../plan/steplog";
-import { restoreLiveProvisionEvidence } from "./provision-evidence";
+import { reseedFailedSteps, type StepLogEntry } from "../plan/steplog";
+import {
+	restoreCompiledLiveProvisionGraph,
+	restoreLiveProvisionEvidence,
+} from "./provision-evidence";
 
 const pending = (kind: StepLogEntry["kind"]): StepLogEntry => ({
 	step: kind,
@@ -93,6 +96,96 @@ it("restores exact completed graph steps for the same revival generation", () =>
 		restoreLiveProvisionEvidence(
 			[{ ...saved, resourceId: "other-stream" }],
 			[saved],
+			null,
+			true,
+		),
+	).toBeNull();
+});
+
+it("restores only the archived generation of an exact-airing RTMP graph", () => {
+	const prefix = pending("CREATE_OUTPUT_S3");
+	const input = pending("CREATE_INPUT_RTMP");
+	const create = pending("CREATE_ENCODING");
+	const wait = pending("AWAIT_LIVE_RUNNING");
+	const compiled = [prefix, input, create, wait];
+	const savedInput = {
+		...input,
+		attempt: 2,
+		status: "DONE" as const,
+		resourceId: "input",
+	};
+	const savedCreate = {
+		...create,
+		attempt: 2,
+		status: "RUNNING" as const,
+		startedAt: at,
+	};
+	const saved = [prefix, savedInput, savedCreate];
+	expect(restoreCompiledLiveProvisionGraph(compiled, saved, null, 2)).toEqual([
+		prefix,
+		savedInput,
+		savedCreate,
+		{ ...wait, attempt: 2 },
+	]);
+	expect(
+		restoreCompiledLiveProvisionGraph(compiled, saved, null, 3),
+	).toBeNull();
+	expect(
+		restoreCompiledLiveProvisionGraph(
+			compiled,
+			[...saved, { ...wait, attempt: 1 }],
+			null,
+			2,
+		),
+	).toBeNull();
+	expect(
+		restoreCompiledLiveProvisionGraph(compiled, [savedCreate], null, 2),
+	).toBeNull();
+	expect(
+		restoreCompiledLiveProvisionGraph(
+			compiled,
+			[...saved, savedCreate],
+			null,
+			2,
+		),
+	).toBeNull();
+	expect(
+		restoreCompiledLiveProvisionGraph(
+			compiled,
+			[{ ...prefix, attempt: 2 }, savedInput],
+			null,
+			2,
+		),
+	).toBeNull();
+	expect(
+		restoreCompiledLiveProvisionGraph(
+			compiled,
+			[savedInput, { ...savedCreate, resourceId: "different-encoder" }],
+			"current-encoder",
+			2,
+		),
+	).toBeNull();
+});
+
+it("keeps each saved runtime record once without turning it into a provision step", () => {
+	const stream = pending("CREATE_STREAM");
+	const event = {
+		...pending("LIVE_AUTO_SHUTDOWN_UPDATE"),
+		status: "DONE" as const,
+		finishedAt: at,
+	};
+	const other = { ...event, step: "another-change" };
+	const inFlight = { ...event, status: "RUNNING" as const };
+	expect(
+		reseedFailedSteps([inFlight, { ...stream, status: "FAILED" }]),
+	).toEqual([inFlight, stream]);
+	expect(
+		restoreLiveProvisionEvidence([stream, event], [other, event], null, true),
+	).toEqual([stream, event, other]);
+	expect(
+		restoreLiveProvisionEvidence(
+			[stream],
+			[{ ...event, step: stream.step }],
 			null,
 			true,
 		),

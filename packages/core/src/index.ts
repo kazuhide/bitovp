@@ -502,6 +502,7 @@ export {
 } from "./live/provider-lifecycle";
 export {
 	nativeProvisionMayHaveSent,
+	restoreCompiledLiveProvisionGraph,
 	restoreLiveProvisionEvidence,
 } from "./live/provision-evidence";
 export {

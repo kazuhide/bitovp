@@ -4010,7 +4010,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			false,
 			true,
 			"scheduled",
+			"scheduled-rebuild",
+			"scheduled-runtime",
 		] as const)("reads a run-only native CREATE before replay and preserves the existing primary (nullable run=%s)", async (nullable) => {
+			const scheduled = typeof nullable === "string";
 			const f = await dispatchFixture();
 			await tenant.bitmovinAccount.create({
 				data: {
@@ -4037,7 +4040,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			const graph = entries.filter(
 				(e) => e.kind === "CREATE_STREAM" || e.kind === "CREATE_MUXING_FMP4",
 			);
-			if (nullable === "scheduled") {
+			if (scheduled) {
 				expect(graph.length).toBeGreaterThan(1);
 				for (const step of entries) {
 					if (step === creation || step.kind === "AWAIT_LIVE_RUNNING") continue;
@@ -4047,6 +4050,27 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						step.response = { started: true };
 				}
 			}
+			const previousId = randomUUID();
+			if (nullable === "scheduled-rebuild") {
+				const from = entries.findIndex(
+					(step) => step.kind === "CREATE_INPUT_RTMP",
+				);
+				expect(from).toBeGreaterThanOrEqual(0);
+				for (const step of entries.slice(from)) step.attempt = 1;
+			}
+			const runtime: StepLogEntry = {
+				step: randomUUID(),
+				kind: "LIVE_AUTO_SHUTDOWN_UPDATE",
+				status: "DONE",
+				refs: {},
+				payload: {
+					requestId: "existing-operation",
+					configuration: { streamTimeoutMinutes: 5 },
+				},
+				finishedAt: now.toISOString(),
+			};
+			if (nullable === "scheduled-runtime") entries.push(runtime);
+
 			await tenant.liveChannel.update({
 				where: { id: f.channel.id },
 				data: {
@@ -4057,22 +4081,37 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 									JSON.stringify(initStepLog(compileLiveChannel(plan))),
 								)
 							: [],
-					status: nullable === "scheduled" ? "ERROR" : "PROVISIONING",
+					status: scheduled ? "ERROR" : "PROVISIONING",
 				},
 			});
 			await tenant.liveChannelRun.update({
 				where: { id: f.run.id },
 				data: {
 					...(nullable ? { bitmovinEncodingId: null } : {}),
+					...(nullable === "scheduled-rebuild"
+						? {
+								archivedRtmpAttempt: 1,
+								previousProviderEncodingIds: [previousId],
+								rtmpRetirementEvidence: [
+									{
+										accountId: f.accountId,
+										encodingId: previousId,
+										disposition: "TERMINAL",
+										providerStatus: "FINISHED",
+										observedAt: now.toISOString(),
+									},
+								],
+							}
+						: {}),
 					stepLog: JSON.parse(JSON.stringify(entries)),
-					status: nullable === "scheduled" ? "ERROR" : "PROVISIONING",
+					status: scheduled ? "ERROR" : "PROVISIONING",
 				},
 			});
 			let job: import("@bitovp/core").LiveChannelJob = {
 				liveChannelId: f.channel.id,
 				action: "provision",
 			};
-			if (nullable === "scheduled") {
+			if (scheduled) {
 				await tenant.liveSchedule.create({
 					data: {
 						action: "START",
@@ -4101,6 +4140,21 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				const channel = await tenant.liveChannel.findUniqueOrThrow({
 					where: { id: f.channel.id },
 				});
+				if (nullable === "scheduled-runtime") {
+					expect(
+						(channel.stepLog as unknown as StepLogEntry[]).filter(
+							(e) => e.step === runtime.step,
+						),
+					).toEqual([runtime]);
+				}
+				if (nullable === "scheduled-rebuild") {
+					expect(
+						(channel.stepLog as unknown as StepLogEntry[]).map(
+							(e) => e.attempt ?? 0,
+						),
+					).toEqual(entries.map((e) => e.attempt ?? 0));
+				}
+
 				for (const entry of graph) {
 					expect(channel.stepLog).toEqual(
 						expect.arrayContaining([
@@ -4123,15 +4177,25 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				);
 			}
 			f.sdk.getEncodingStatus = vi.fn(async () => ({
-				status: nullable === "scheduled" ? "RUNNING" : "CANCELED",
+				status: scheduled ? "RUNNING" : "CANCELED",
 			}));
 			await createLiveChannelProcessor(f.deps)(job);
 			expect(f.sdk.getEncodingStatus).toHaveBeenCalledWith(f.encodingId);
-			if (nullable === "scheduled") {
+			if (scheduled) {
 				expect(f.sdk.createStream).not.toHaveBeenCalled();
 				expect(f.sdk.createFmp4Muxing).not.toHaveBeenCalled();
 			}
 			expect(f.sdk.createEncoding).not.toHaveBeenCalled();
+			if (nullable === "scheduled-runtime") {
+				const run = await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				});
+				expect(
+					(run.stepLog as unknown as StepLogEntry[]).filter(
+						(e) => e.step === runtime.step,
+					),
+				).toEqual([runtime]);
+			}
 			expect(
 				(
 					await tenant.liveChannelRun.findUniqueOrThrow({

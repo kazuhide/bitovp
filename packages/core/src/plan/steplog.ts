@@ -566,7 +566,8 @@ export function soleEncodingStepId(stepLog: unknown): string | null {
  */
 export function reseedFailedSteps(entries: StepLogEntry[]): StepLogEntry[] {
 	return entries.map((entry) =>
-		entry.status === "FAILED" || entry.status === "RUNNING"
+		!isRuntimeRecordKind(entry.kind) &&
+		(entry.status === "FAILED" || entry.status === "RUNNING")
 			? { ...entry, status: "PENDING" as const, error: undefined }
 			: entry,
 	);

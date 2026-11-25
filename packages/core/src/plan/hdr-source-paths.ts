@@ -141,6 +141,8 @@ export function publicHdrSourceProjection<T>(
 				(key === "error" ||
 					((scope || diagnostics) &&
 						(key === "message" ||
+							key === "shortMessage" ||
+							key === "developerMessage" ||
 							key === "reason" ||
 							key === "detail" ||
 							key === "text"))) &&
@@ -165,7 +167,10 @@ export function publicHdrSourceProjection<T>(
 					scope || key === "hdr10PlusStreams",
 					row.kind === "VOD_JOB" && key === "inputs",
 					purpose === "record" &&
-						(diagnostics || key === "messages" || key === "warnings"),
+						(diagnostics ||
+							key === "messages" ||
+							key === "warnings" ||
+							key === "response"),
 				);
 		}
 	}

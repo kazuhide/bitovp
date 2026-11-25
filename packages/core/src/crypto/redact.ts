@@ -60,6 +60,10 @@ function isHeaderTupleName(name: string): boolean {
 
 export const REDACTED = "[REDACTED]";
 
+export function maskUrlUserinfo(value: string): string {
+	return value.replace(URL_USERINFO, `$1${REDACTED}@`);
+}
+
 export function isSensitiveKey(key: string): boolean {
 	return SENSITIVE_SUFFIX.test(key) || SENSITIVE_EXACT.test(key);
 }
@@ -99,7 +103,7 @@ function walk(
 				? REDACTED
 				: value;
 		}
-		return value.replace(URL_USERINFO, `$1${REDACTED}@`);
+		return maskUrlUserinfo(value);
 	}
 	if (value === null || typeof value !== "object") {
 		return value;

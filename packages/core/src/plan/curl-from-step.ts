@@ -1,3 +1,4 @@
+import { maskUrlUserinfo, REDACTED } from "../crypto/redact";
 import {
 	codecDetailWireControls,
 	type DetailCodec,
@@ -723,11 +724,24 @@ export function curlForStep(
 			!refs.inputId.trim()
 		)
 			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+		function recordedPath(field: "videoInputPath" | "metadataInputPath") {
+			const actual = snapshot?.[field];
+			if (typeof actual !== "string" || !actual.includes(REDACTED))
+				return actual;
+			const compiled = entry.payload[field];
+			// The former snapshot writer used the generic URL mask on ordinary
+			// object keys. Recover only if applying that exact mask reproduces it.
+			return typeof compiled === "string" &&
+				!compiled.includes(REDACTED) &&
+				maskUrlUserinfo(compiled) === actual
+				? compiled
+				: undefined;
+		}
 		const source = hdr10PlusStreamSchema.safeParse({
 			key: "source",
 			inputKey: "input",
-			videoInputPath: snapshot?.videoInputPath,
-			metadataInputPath: snapshot?.metadataInputPath,
+			videoInputPath: recordedPath("videoInputPath"),
+			metadataInputPath: recordedPath("metadataInputPath"),
 			selectionMode: snapshot?.selectionMode,
 			position: snapshot?.position,
 		});

@@ -57,6 +57,32 @@ describe("GET /api/audit-logs", () => {
 		expect(JSON.stringify(publicRow)).not.toContain("PRIVATE_AUDIT_FIXTURE");
 		expect(publicRow.request.videoInputPath).toBe("assets/safe.mxf");
 	});
+	it("withholds signed start errors on historical list and detail reads", async () => {
+		const row = {
+			id: ID,
+			actor: "worker",
+			path: "/encoding/encodings/fixture/start",
+			statusCode: 400,
+			error:
+				"Provider rejected https://fixture.invalid/foo?signature=START_LIST_FIXTURE",
+			request: { encodingMode: "STANDARD" },
+			response: {
+				shortMessage: "https://fixture.invalid/foo?sig=STATUS_FIXTURE",
+			},
+		};
+		findMany.mockResolvedValueOnce([row]);
+		findUnique.mockResolvedValueOnce(row);
+		const summary = await list(new Request("http://test/api/audit-logs"));
+		const single = await detail(new Request("http://test"), {
+			params: Promise.resolve({ id: ID }),
+		});
+		expect((await summary.json()).items[0].error).toBe("[withheld]");
+		expect(await single.json()).toMatchObject({
+			error: "[withheld]",
+			request: { encodingMode: "STANDARD" },
+			response: { shortMessage: "[withheld]" },
+		});
+	});
 	it("withholds legacy webhook exception strings while retaining failure status and other actors", async () => {
 		findMany.mockResolvedValueOnce([
 			{

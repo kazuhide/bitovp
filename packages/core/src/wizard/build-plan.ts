@@ -1599,6 +1599,30 @@ function resolveWizardInputFiles(files: WizardInputFile[]): WizardInputFile[] {
 	});
 }
 
+/** Keys used by ordinary input tracks when a named stream has the same key. */
+export function implicitTrackKeys(sources: WizardSources) {
+	const sourceKeys = new Set(
+		[
+			...(sources.tracks ?? []),
+			...(sources.fileStreams ?? []),
+			...(sources.dolbyStreams ?? []),
+			...(sources.hdr10PlusStreams ?? []),
+			...(sources.audioMixStreams ?? []),
+			...(sources.trimmingStreams ?? []),
+			...(sources.concatenationStreams ?? []),
+		].map((stream) => stream.key),
+	);
+	function availableTrackKey(kind: "video" | "audio") {
+		let key: string = kind;
+		for (let i = 1; sourceKeys.has(key); i++) key = `${kind}-input-${i}`;
+		return key;
+	}
+	return {
+		video: availableTrackKey("video"),
+		audio: availableTrackKey("audio"),
+	};
+}
+
 export function buildPlan(state: WizardState): EncodingPlanInput {
 	if (state.inputTimeline) return buildPlan(applyVodInputTimeline(state));
 	if (hasInvalidHevcV2Ladder(state)) throw new WizardCodecError();
@@ -1803,43 +1827,18 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	]);
 	// A named HDR source can legitimately be called "video". An explicit
 	// selection keeps that source; the implicit selection gets its own ingest.
-	const sourceKeys = new Set(
-		[
-			...(sources.tracks ?? []),
-			...(sources.fileStreams ?? []),
-			...(sources.dolbyStreams ?? []),
-			...(sources.hdr10PlusStreams ?? []),
-			...(sources.audioMixStreams ?? []),
-			...(sources.trimmingStreams ?? []),
-			...(sources.concatenationStreams ?? []),
-		].map((stream) => stream.key),
-	);
-	function availableTrackKey(kind: "video" | "audio") {
-		let key: string = kind;
-		for (let i = 1; sourceKeys.has(key); i++) key = `${kind}-input-${i}`;
-		return key;
-	}
-	const implicitVideoKey = availableTrackKey("video");
-	const implicitAudioKey = availableTrackKey("audio");
+	const { video: implicitVideoKey, audio: implicitAudioKey } =
+		implicitTrackKeys(sources);
 	const requiresImplicit = (
 		rows: readonly { extras?: WizardRenditionExtras }[],
-		kind: "audio" | "video",
 		key: string,
 	) =>
 		rows.some(
-			(row) =>
-				row.extras?.source === undefined ||
-				(key === kind && row.extras.source === kind),
-		) ||
-		(key === kind && wrappedSourceKeys.has(kind));
-	const useVideoIngest = requiresImplicit(
-		state.videos,
-		"video",
-		implicitVideoKey,
-	);
+			(row) => row.extras?.source === undefined || row.extras.source === key,
+		) || wrappedSourceKeys.has(key);
+	const useVideoIngest = requiresImplicit(state.videos, implicitVideoKey);
 	const useAudioIngest = requiresImplicit(
 		qcOnly ? [] : state.audios,
-		"audio",
 		implicitAudioKey,
 	);
 	// Separate A/V: the implicit audio may read a different input file than the

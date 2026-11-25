@@ -8,6 +8,7 @@ import { HelpOverlay } from "@/components/ui/help-overlay";
 import { Input, SelectNative } from "@/components/ui/input";
 import { type Translator, useT } from "@/lib/i18n/context";
 import {
+	implicitTrackKeys,
 	remapEncodingKeyRefs,
 	type WizardConcatenationStream,
 	type WizardInputFile,
@@ -609,11 +610,54 @@ export function SourcesSection({
 	const usesImplicitAudio = state.audios.some(
 		(a) => (a.extras?.source ?? "") === "",
 	);
-	const patchSources = (next: WizardSources) => onPatch({ sources: next });
+	const implicit = implicitTrackKeys(sources);
+	const patchSources = (next: WizardSources, renamed?: [string, string]) => {
+		const nextImplicit = implicitTrackKeys(next);
+		const mapped = new Map<string, string>(renamed ? [renamed] : []);
+		for (const kind of ["video", "audio"] as const) {
+			if (implicit[kind] !== nextImplicit[kind])
+				mapped.set(implicit[kind], nextImplicit[kind]);
+		}
+		if (!mapped.size) return onPatch({ sources: next });
+		const remap = <T extends { sourceKey: string }>(row: T): T => {
+			const sourceKey = mapped.get(row.sourceKey);
+			return sourceKey === undefined ? row : { ...row, sourceKey };
+		};
+		const mapRendition = <T extends { extras?: { source?: string } }>(
+			row: T,
+		): T =>
+			row.extras?.source && mapped.has(row.extras.source)
+				? {
+						...row,
+						extras: { ...row.extras, source: mapped.get(row.extras.source) },
+					}
+				: row;
+		onPatch({
+			videos: state.videos.map(mapRendition),
+			audios: state.audios.map(mapRendition),
+			sources: {
+				...next,
+				audioMixStreams: next.audioMixStreams?.map((mix) => ({
+					...mix,
+					audioMixChannels: mix.audioMixChannels.map(remap),
+				})),
+				trimmingStreams: next.trimmingStreams?.map(remap),
+				concatenationStreams: next.concatenationStreams?.map((row) => ({
+					...row,
+					sources: row.sources.map(remap),
+				})),
+			},
+		});
+	};
 	const renameStream = (from: string, to: string, next: WizardSources) => {
-		// The implicit tracks are reserved across all source editors. A
-		// historical native stream may keep or leave its original name.
-		if (to !== from && (to === "video" || to === "audio")) return;
+		if (
+			to !== from &&
+			(to === "video" ||
+				to === "audio" ||
+				to === implicit.video ||
+				to === implicit.audio)
+		)
+			return;
 		const keys = [
 			...flattenStreams(sources).map((row) => row.key),
 			...(sources.trimmingStreams ?? []).map((row) => row.key),
@@ -629,34 +673,7 @@ export function SourcesSection({
 			patchSources(next);
 			return;
 		}
-		const mapRendition = <T extends { extras?: { source?: string } }>(
-			row: T,
-		): T =>
-			row.extras?.source === from
-				? { ...row, extras: { ...row.extras, source: to } }
-				: row;
-		onPatch({
-			videos: state.videos.map(mapRendition),
-			audios: state.audios.map(mapRendition),
-			sources: {
-				...next,
-				audioMixStreams: next.audioMixStreams?.map((mix) => ({
-					...mix,
-					audioMixChannels: mix.audioMixChannels.map((c) =>
-						c.sourceKey === from ? { ...c, sourceKey: to } : c,
-					),
-				})),
-				trimmingStreams: next.trimmingStreams?.map((row) =>
-					row.sourceKey === from ? { ...row, sourceKey: to } : row,
-				),
-				concatenationStreams: next.concatenationStreams?.map((row) => ({
-					...row,
-					sources: row.sources.map((source) =>
-						source.sourceKey === from ? { ...source, sourceKey: to } : source,
-					),
-				})),
-			},
-		});
+		patchSources(next, [from, to]);
 	};
 
 	// Editing the partition cascades through every encodingKey ref so the
@@ -1290,7 +1307,10 @@ function TrimmingStreamsSection({
 							{
 								kind: "TIME_BASED",
 								key: nextSharedKey(sources, "trim"),
-								sourceKey: state.videos.length > 0 ? "video" : "",
+								sourceKey:
+									state.videos.length > 0
+										? implicitTrackKeys(sources).video
+										: "",
 							},
 						],
 					})

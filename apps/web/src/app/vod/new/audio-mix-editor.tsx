@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
-import type { WizardState } from "./build-plan";
+import { implicitTrackKeys, type WizardState } from "./build-plan";
 import type { SourceOption } from "./rendition-editors";
 import { nextSharedKey } from "./stream-model";
 import { Collapsible } from "./wizard-fields";
@@ -63,8 +63,9 @@ export function AudioMixEditor({
 	const mixes = sources.audioMixStreams ?? [];
 	const mix = mixes.find((s) => s.key === audio?.extras?.source);
 	if (!audio) return null;
+	const implicitAudio = implicitTrackKeys(sources).audio;
 	const options = sourceOptions
-		.map((o) => (o.value ? o : { ...o, value: "audio" }))
+		.map((o) => (o.value ? o : { ...o, value: implicitAudio }))
 		.filter(
 			(o) =>
 				!mixes.some((s) => s.key === o.value) &&
@@ -77,9 +78,10 @@ export function AudioMixEditor({
 		);
 	const first =
 		mix?.audioMixChannels[0]?.sourceKey ??
-		options.find((o) => o.value === (audio.extras?.source ?? "audio"))?.value ??
+		options.find((o) => o.value === (audio.extras?.source ?? implicitAudio))
+			?.value ??
 		options[0]?.value ??
-		"audio";
+		implicitAudio;
 	const save = (next: AudioMixStream, stereo = false) =>
 		onPatch({
 			sources: {

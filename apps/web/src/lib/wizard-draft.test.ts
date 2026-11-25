@@ -29,6 +29,44 @@ import {
 
 beforeEach(() => localStorage.clear());
 
+it.each([
+	["S3", "///reels/take.mxf", "///reels/take.mxf"],
+	["GCS", "////reels/take.mxf", "////reels/take.mxf"],
+	["HTTPS", "///reels/take.mxf", ""],
+	["S3", "///name@fixture.invalid/movie", ""],
+	["S3", "///name:pass@fixture.invalid/movie", ""],
+	["S3", "///reels/take.mxf?ticket=fixture", ""],
+] as const)("round-trips only unsigned repeated-slash object keys (%s %s)", (kind, path, expected) => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const media = base.inputFiles[0];
+	if (!media) throw new Error("missing input");
+	base.inputFiles = [
+		{ ...media, kind, path, bucket: "archive", credentialId: "storage" },
+	];
+	writeWizardDraft(
+		"unsigned",
+		"vod",
+		{ ...base, name: "edited" },
+		1,
+		localStorage,
+		100,
+	);
+	const draft = readWizardDraft("unsigned", "vod", localStorage, 101);
+	if (!draft) throw new Error("missing draft");
+	const restored = mergeWizardDraft(
+		base,
+		draft.value,
+		"vod",
+		draft.vodInputOrder,
+	);
+	expect(restored.inputFiles[0]?.path).toBe(expected);
+	expect(restored.name).toBe("edited");
+	expect(
+		buildPlan(restored).ingest?.find((track) => track.key === "video")
+			?.inputPath,
+	).toBe(expected);
+});
+
 it("never saves or restores a protocol-relative HDR credential, including an older draft envelope", () => {
 	const secret =
 		"//fixture:FIXTURE_DRAFT_CREDENTIAL@fixture.invalid/sidecar.json";
@@ -1289,6 +1327,84 @@ it.each([
 		editedRole === "audio" ? "new/program.wav" : "program.wav",
 	);
 	expect(restored.hdr10PlusStreams?.[0]?.videoInputPath).toBe("hdr.mxf");
+});
+
+it.each([
+	"direct",
+	"wrapped",
+] as const)("keeps the first saved audio object after adding an implicit AAC rendition to a named HDR copy (%s)", (mode) => {
+	const authored = structuredClone(DEFAULT_WIZARD_STATE);
+	const media = authored.inputFiles[0];
+	const video = authored.videos[0],
+		audio = authored.audios[0];
+	if (!media || !video || !audio) throw new Error("missing base files");
+	const picture = { ...media, key: "pic", inputKey: "pic", path: "master.mxf" };
+	const sound = {
+		...media,
+		key: "sound",
+		inputKey: "sound",
+		path: "program.wav",
+	};
+	authored.inputFiles = [sound, picture];
+	authored.sources = {
+		tracks: [
+			{
+				key: "narration",
+				inputFile: sound.key,
+				selectionMode: "AUDIO_RELATIVE",
+				position: 0,
+			},
+		],
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				videoInputFile: picture.key,
+				metadataInputPath: "sidecar.json",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	authored.videos = [{ ...video, codec: "H265", extras: { source: "hdr" } }];
+	authored.audios = [{ ...audio, extras: { source: "narration" } }];
+	const base = planToWizardState(
+		buildPlan(authored) as unknown as Record<string, unknown>,
+	);
+	const files = [...base.inputFiles].sort(
+		(a, b) => Number(b.path === sound.path) - Number(a.path === sound.path),
+	);
+	expect(files[0]?.path).toBe(sound.path);
+	expect(base.audioInputFile).toBeUndefined();
+	const saved = projectWizardDraft("vod", {
+		...base,
+		inputFiles: files,
+		sources: {
+			...base.sources,
+			...(mode === "wrapped" && {
+				trimmingStreams: [
+					{
+						kind: "TIME_BASED",
+						key: "trim-sound",
+						sourceKey: "audio",
+						offset: 0,
+						duration: 5,
+					},
+				],
+			}),
+		},
+		audios: [
+			...base.audios,
+			{
+				...audio,
+				bitrate: 320000,
+				...(mode === "wrapped" && { extras: { source: "trim-sound" } }),
+			},
+		],
+	});
+	const built = buildPlan(mergeWizardDraft(base, saved, "vod"));
+	expect(built.hdr10PlusStreams?.[0]?.videoInputPath).toBe(picture.path);
+	expect(built.ingest?.find((track) => track.key === "audio")?.inputPath).toBe(
+		sound.path,
+	);
 });
 
 it.each([

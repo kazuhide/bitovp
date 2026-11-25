@@ -821,6 +821,7 @@ export {
 } from "./plan/muxing-streams";
 export {
 	dolbyObjectFields,
+	isObjectStorageInput,
 	objectInputReceipts,
 } from "./plan/object-input-path";
 export { outputStorageKeys } from "./plan/output-files";

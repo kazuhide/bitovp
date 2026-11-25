@@ -3,10 +3,12 @@ import {
 	dashAdditionalRepresentationSchema,
 	dashDetailedOptionsSchema,
 	defaultDashPeriodSchema,
+	hasPrivateStorageLocator,
 	hlsAdditionalMediaSchema,
 	hlsDetailedOptionsSchema,
 	hlsMediaAttributesSchema,
 	hlsStreamOptionsSchema,
+	isObjectStorageInput,
 	liveDashDetailedOptionsSchema,
 	liveHlsDetailedOptionsSchema,
 	publicHdrSourceProjection,
@@ -389,13 +391,27 @@ const vod = fields(
 		),
 		inputFiles: rows(
 			fields(
-				"key inputKey kind credentialId bucket path region name displayName",
+				"key inputKey kind credentialId bucket region name displayName",
 				"inputDeclarationIndex",
 				"",
 				{
+					path: z.string().max(2048).optional().catch(""),
 					purpose: z.literal("FILTER_IMAGE").optional().catch(undefined),
 				},
-			),
+			).transform((file) => {
+				const path = file.path;
+				if (typeof path !== "string" || draftKeepsText(path)) return file;
+				// Repeated leading slashes in a bucket key are significant bytes.
+				// The draft still excludes addresses, queries and login information.
+				const unsignedBucketKey =
+					typeof file.kind === "string" &&
+					isObjectStorageInput(file.kind) &&
+					/^\/{3,}[^/]/u.test(path) &&
+					!/[\\\p{Cc}]/u.test(path) &&
+					draftKeepsText(path.replace(/^\/+/, "")) &&
+					!hasPrivateStorageLocator(path);
+				return unsignedBucketKey ? file : { ...file, path: "" };
+			}),
 		),
 		additionalOutputs: rows(location),
 		sources: group(
@@ -1066,6 +1082,7 @@ function restoreCopiedHdrInputs(
 		"region",
 	].every((field) => first[field] === primary[field]);
 	let primaryKey = primary.key;
+	let firstOwnsImplicitAudio = false;
 	if (
 		originalSource &&
 		!originalPictureStillFirst &&
@@ -1081,32 +1098,37 @@ function restoreCopiedHdrInputs(
 		const trims = records(sources.trimmingStreams);
 		const concats = records(sources.concatenationStreams);
 		const mixes = records(sources.audioMixStreams);
-		const implicit = availableImplicitTrackKey(
-			new Set(
-				[...declarations, ...trims, ...concats, ...mixes].map((row) => row.key),
-			),
-			"video",
+		const declaredKeys = new Set(
+			[...declarations, ...trims, ...concats, ...mixes].map((row) => row.key),
 		);
-		// A copy with only named video had no independent ordinary picture.
-		// An implicit rendition subsequently authored in the wizard reads the
-		// saved first row, even if its path changed or the operator replaced it.
-		const savedOwnsPrimary =
-			typeof copiedPictureSource === "string" &&
-			(records(snapshot.videos).some(
-				(row) =>
-					!draftRecord(row.extras) ||
-					row.extras.source === undefined ||
-					row.extras.source === implicit,
-			) ||
-				trims.some((row) => row.sourceKey === implicit) ||
+		const usesImplicit = (kind: "video" | "audio", renditions: unknown) => {
+			const key = availableImplicitTrackKey(declaredKeys, kind);
+			return (
+				records(renditions).some(
+					(row) =>
+						!draftRecord(row.extras) ||
+						row.extras.source === undefined ||
+						row.extras.source === key,
+				) ||
+				trims.some((row) => row.sourceKey === key) ||
 				concats.some((row) =>
-					records(row.sources).some((part) => part.sourceKey === implicit),
+					records(row.sources).some((part) => part.sourceKey === key),
 				) ||
 				mixes.some((row) =>
-					records(row.audioMixChannels).some(
-						(part) => part.sourceKey === implicit,
-					),
-				));
+					records(row.audioMixChannels).some((part) => part.sourceKey === key),
+				)
+			);
+		};
+		// When the original plan supplied only a named picture, any ordinary
+		// ingest authored in the saved form reads its first file. Promoting the
+		// named picture must preserve the independent ordinary audio binding.
+		const namedPicture = typeof copiedPictureSource === "string";
+		const savedOwnsPrimary =
+			namedPicture && usesImplicit("video", snapshot.videos);
+		firstOwnsImplicitAudio =
+			namedPicture &&
+			base.audioInputFile === undefined &&
+			usesImplicit("audio", snapshot.audios);
 		if (savedOwnsPrimary) primaryKey = first.key;
 		else {
 			let binding = declarations.find(
@@ -1153,7 +1175,9 @@ function restoreCopiedHdrInputs(
 	const copiedAudioKey = base.audioInputFile ?? primary.key;
 	const audioInputFile =
 		snapshot.audioInputFile ??
-		(index > 0 && first.key === copiedAudioKey ? first.key : undefined);
+		(index > 0 && (first.key === copiedAudioKey || firstOwnsImplicitAudio)
+			? first.key
+			: undefined);
 	return {
 		...snapshot,
 		...(audioInputFile !== undefined ? { audioInputFile } : {}),

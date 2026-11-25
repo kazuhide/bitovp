@@ -17,10 +17,11 @@ beforeEach(() => {
 });
 
 describe("GET /api/audit-logs", () => {
-	it("withholds historical native HDR paths in audit records and diagnostic-only summaries", async () => {
+	it.each([
+		"//fixture.invalid/media/file.json?token=PRIVATE_AUDIT_FIXTURE",
+		"https:/fixture:PRIVATE_AUDIT_FIXTURE'quote@fixture.invalid/picture",
+	])("withholds historical native HDR paths in audit records and diagnostic-only summaries", async (privatePath) => {
 		const path = "/encoding/encodings/encoder/input-streams/hdr10-plus",
-			privatePath =
-				"//fixture.invalid/media/file.json?token=PRIVATE_AUDIT_FIXTURE",
 			error = "Could not read " + privatePath;
 		const row = {
 			id: ID,

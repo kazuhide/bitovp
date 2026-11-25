@@ -575,6 +575,23 @@ describe("POST /api/encoding-jobs", () => {
 });
 
 describe("GET /api/encoding-jobs", () => {
+	it("withholds complete private provider diagnostics in the job list", async () => {
+		findMany.mockResolvedValueOnce([
+			{
+				id: "1",
+				status: "ERROR",
+				error:
+					"Could not read https:/fixture:synthetic'quote@fixture.invalid/picture",
+			},
+			{ id: "2", status: "ERROR", error: "Encoder could not start" },
+		]);
+		const res = await GET(new Request("http://test/api/encoding-jobs"));
+		expect(res.status).toBe(200);
+		expect((await res.json()).items).toMatchObject([
+			{ id: "1", error: "[withheld]" },
+			{ id: "2", error: "Encoder could not start" },
+		]);
+	});
 	it("returns a lean paginated projection (incl. the new list columns)", async () => {
 		findMany.mockResolvedValueOnce([{ id: "1", name: "x", status: "QUEUED" }]);
 		const res = await GET(new Request("http://test/api/encoding-jobs"));

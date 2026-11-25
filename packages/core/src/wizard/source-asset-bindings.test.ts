@@ -130,13 +130,25 @@ describe("copied picture and storage identities", () => {
 			bucket: "moved",
 		});
 	});
-	it("retains a native HDR source called video without adding an ingest stream on copy", () => {
+	it.each([
+		false,
+		true,
+	])("retains the copied picture and separate audio while switching to implicit video (separate buckets %s)", (separate) => {
 		const source = copiedSource();
+		const first = source.inputs[0];
+		if (!first) throw new Error("missing input");
 		const native = encodingPlanSchema.parse({
 			...source,
+			inputs: separate
+				? [
+						...source.inputs,
+						{ ...first, key: "picture-storage", bucket: "pictures" },
+					]
+				: source.inputs,
 			hdr10PlusStreams: source.hdr10PlusStreams.map((s) => ({
 				...s,
 				key: "video",
+				inputKey: separate ? "picture-storage" : s.inputKey,
 			})),
 			renditions: source.renditions.map((r) =>
 				r.ingestKey === "hdr" ? { ...r, ingestKey: "video" } : r,
@@ -155,10 +167,40 @@ describe("copied picture and storage identities", () => {
 		expect(sourceKey).not.toBe("video");
 		expect(switched.ingest.find((s) => s.key === sourceKey)).toMatchObject({
 			selectionMode: "VIDEO_RELATIVE",
+			inputPath: "picture.mxf",
+			inputKey: separate ? "picture-storage" : "main",
 		});
 		expect(
 			encodingPlanSchema.parse(buildPlan(planToWizardState(switched))),
 		).toEqual(switched);
+	});
+	it("adds implicit audio to an HDR master named audio without changing its video binding", () => {
+		const source = copiedSource();
+		const native = encodingPlanSchema.parse({
+			...source,
+			ingest: [],
+			hdr10PlusStreams: source.hdr10PlusStreams.map((s) => ({
+				...s,
+				key: "audio",
+			})),
+			renditions: source.renditions
+				.filter((r) => r.codec === "H265")
+				.map((r) => ({ ...r, ingestKey: "audio" })),
+		});
+		const form = planToWizardState(native);
+		form.audios = structuredClone(DEFAULT_WIZARD_STATE.audios);
+		const rebuilt = encodingPlanSchema.parse(buildPlan(form));
+		const audio = rebuilt.renditions.find((r) => r.codec === "AAC");
+		expect(audio?.ingestKey).not.toBe("audio");
+		expect(
+			rebuilt.ingest.find((row) => row.key === audio?.ingestKey),
+		).toMatchObject({
+			selectionMode: "AUDIO_RELATIVE",
+			inputPath: "picture.mxf",
+		});
+		expect(rebuilt.renditions.find((r) => r.codec === "H265")?.ingestKey).toBe(
+			"audio",
+		);
 	});
 	it.each([
 		"picture.mxf",

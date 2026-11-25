@@ -386,7 +386,7 @@ const vod = fields(
 		inputFiles: rows(
 			fields(
 				"key inputKey kind credentialId bucket path region name displayName",
-				"",
+				"inputDeclarationIndex",
 				"",
 				{
 					purpose: z.literal("FILTER_IMAGE").optional().catch(undefined),

@@ -36,22 +36,31 @@ export function publicStorageDiagnostic<T extends string | null | undefined>(
 	value: T,
 ): T {
 	if (typeof value !== "string") return value;
-	// URL parsers discard tab/newline characters inside an address. Avoid
-	// returning a credential fragment if tokenization split the address.
-	if (
-		/[\t\r\n]/u.test(value) &&
-		hasPrivateLocator(value.replace(/[\t\r\n]/gu, ""))
-	)
+	// A diagnostic is opaque provider prose. Quoting, punctuation and line
+	// breaks may appear within a locator. Withhold the complete message if it
+	// contains a potential storage credential.
+	const compact = value.replace(/[\t\r\n]/gu, "");
+	if (compact.includes("@") && /(?:https?|s?ftp):/i.test(compact))
 		return "[withheld]" as T;
-	return value.replace(/[^\s"'<>]+/g, (token) =>
-		hasPrivateLocator(token) ? "[withheld]" : token,
-	) as T;
+	return compact.split(/\s+/u).some(hasPrivateLocator)
+		? ("[withheld]" as T)
+		: value;
 }
 
 /** Re-project historical JSON without altering the stored execution or its identifiers.
  * The old compiler could echo one locator into the plan, the log and an SDK diagnostic. */
 export function publicHdrSourceProjection<T>(value: T): T {
 	const hidden = new Set<string>();
+	const fields = new WeakMap<object, Set<string>>();
+	function mark(row: Record<string, unknown>, key: string, path: string) {
+		let names = fields.get(row);
+		if (!names) {
+			names = new Set();
+			fields.set(row, names);
+		}
+		names.add(key);
+		hidden.add(path);
+	}
 	function scan(input: unknown, hdr: boolean, libraryInputs = false) {
 		if (!input || typeof input !== "object" || input instanceof Date) return;
 		if (Array.isArray(input)) {
@@ -77,7 +86,7 @@ export function publicHdrSourceProjection<T>(value: T): T {
 					file.path.trim() &&
 					!isHdr10PlusObjectPath(file.path)
 				)
-					hidden.add(file.path);
+					mark(file, "path", file.path);
 			}
 		}
 		const scope =
@@ -94,7 +103,7 @@ export function publicHdrSourceProjection<T>(value: T): T {
 						(row.hdr10Plus || (libraryInputs && hasPrivateLocator(item))))) &&
 				!isHdr10PlusObjectPath(item)
 			)
-				hidden.add(item);
+				mark(row, key, item);
 			else if (typeof item === "object")
 				scan(
 					item,
@@ -106,11 +115,17 @@ export function publicHdrSourceProjection<T>(value: T): T {
 	scan(value, false);
 	if (!hidden.size) return value;
 	const locators = [...hidden]
-		.filter((path) => path.trim().length > 1)
+		.filter(
+			(path) =>
+				hasPrivateLocator(path) ||
+				/^(?:https?|s?ftp|s3|gs|azure):.+|^(?:[a-z][a-z0-9+.-]*:)?[/\\]{2}.+|^[^?#]+[?#].+/i.test(
+					path.trim(),
+				),
+		)
 		.sort((a, b) => b.length - a.length);
 	function project(input: unknown): unknown {
 		if (typeof input === "string") {
-			if (hidden.has(input)) return "";
+			if (locators.includes(input)) return "";
 			let result = input;
 			for (const path of locators)
 				if (result.includes(path))
@@ -121,7 +136,10 @@ export function publicHdrSourceProjection<T>(value: T): T {
 		if (!input || typeof input !== "object" || input instanceof Date)
 			return input;
 		return Object.fromEntries(
-			Object.entries(input).map(([key, item]) => [key, project(item)]),
+			Object.entries(input).map(([key, item]) => [
+				key,
+				fields.get(input)?.has(key) ? "" : project(item),
+			]),
 		);
 	}
 	return project(value) as T;

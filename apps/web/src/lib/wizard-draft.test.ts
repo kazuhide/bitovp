@@ -104,6 +104,51 @@ it.each([
 	expect(localStorage.getItem("retained")).not.toContain("TEST_ONLY");
 	expect(localStorage.getItem("retained")).toContain("clips/Scene A.mxf");
 });
+it.each([
+	"cut:",
+	"show:shot.mxf",
+])("retains unrelated object paths and names containing a partial HDR path %s", (partial) => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	const media = state.inputFiles[0];
+	if (!media) throw new Error("missing media");
+	const other = `archive/${partial}scene.mxf`;
+	state.name = partial;
+	state.inputFiles = [
+		{ ...media, key: "master", path: "source.mxf" },
+		{ ...media, key: "other", path: other },
+	];
+	state.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				videoInputFile: "master",
+				metadataInputPath: partial,
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	writeWizardDraft("typed", "vod", state, 2);
+	expect(readWizardDraft("typed", "vod")?.value).toMatchObject({
+		name: partial,
+		inputFiles: [{ path: "source.mxf" }, { path: other }],
+		sources: { hdr10PlusStreams: [{ metadataInputPath: "" }] },
+	});
+	localStorage.setItem(
+		"old",
+		JSON.stringify({
+			version: 1,
+			kind: "vod",
+			savedAt: Date.now(),
+			step: 2,
+			value: state,
+		}),
+	);
+	expect(readWizardDraft("old", "vod")?.value.inputFiles).toMatchObject([
+		{ path: "source.mxf" },
+		{ path: other },
+	]);
+	expect(localStorage.getItem("old")).toContain(other);
+});
 it("restores an edited MoQ copy without erasing a namespace excluded from local storage", () => {
 	const source: LiveWizardState = {
 		...DEFAULT_LIVE_WIZARD_STATE,

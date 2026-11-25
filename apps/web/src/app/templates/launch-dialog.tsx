@@ -53,8 +53,8 @@ export function LaunchDialog({
 }) {
 	const { t } = useT();
 	const router = useRouter();
-	const [overrides, setOverrides] = useState(
-		() => new Map<string, TemplateSourceParam>(),
+	const [overrides, setOverrides] = useState<Map<string, TemplateSourceParam>>(
+		() => new Map(),
 	);
 	const [prefixTemplate, setPrefixTemplate] = useState(DEFAULT_PREFIX_TEMPLATE);
 	const [name, setName] = useState("");

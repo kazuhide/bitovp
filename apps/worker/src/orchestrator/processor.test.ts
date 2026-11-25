@@ -149,6 +149,7 @@ function setup(
 	const row: Record<string, unknown> = {
 		id: JOB_ID,
 		status: "QUEUED",
+		cancelRequested: false,
 		plan,
 		stepLog: initStepLog(compilePlan(plan)),
 		bitmovinAccountId: null,
@@ -1144,7 +1145,10 @@ describe("orchestrator processor", () => {
 			expect(ranRunning).toBe(false);
 		});
 
-		it("honors a retained cancel even if the old HDR picture/metadata pair is no longer admissible", async () => {
+		it.each([
+			false,
+			true,
+		])("honors accepted cancel with a retired HDR declaration, concurrent=%s", async (late) => {
 			const plan = {
 				...basePlan,
 				bitmovin: { ...basePlan.bitmovin, accountId: ACCOUNT_ID },
@@ -1157,20 +1161,29 @@ describe("orchestrator processor", () => {
 					},
 				],
 			};
-			const { processor, row, sdk } = setup(
+			const { processor, row, sdk, updateMany, emitted } = setup(
 				{
 					plan,
 					status: "RUNNING",
-					cancelRequested: true,
+					cancelRequested: !late,
 					stepLog: midRunLog(),
 					bitmovinEncodingId: "bm-enc",
 				},
 				{ getEncodingStatus: vi.fn(async () => ({ status: "RUNNING" })) },
 			);
+			if (late) {
+				const apply = updateMany.getMockImplementation();
+				if (!apply) throw new Error("missing update seam");
+				updateMany.mockImplementation(async (args) => {
+					if (args.data.status === "ERROR") row.cancelRequested = true;
+					return apply(args);
+				});
+			}
 			expect(await processor({ encodingJobId: JOB_ID })).toMatchObject({
 				status: "CANCELED",
 			});
 			expect(row.status).toBe("CANCELED");
+			expect(emitted.map((e) => e.kind)).toEqual(["JOB_CANCELED"]);
 			expect(sdk.stopEncoding).toHaveBeenCalledWith("bm-enc");
 			expect(sdk.createEncoding).not.toHaveBeenCalled();
 		});

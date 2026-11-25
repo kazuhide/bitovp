@@ -147,6 +147,8 @@ model BitmovinAccount {
   encryptedApiKey String
   /// Optional X-Tenant-Org-Id sent with every API call.
   tenantOrgId     String?
+  /// Prior provider scopes used to protect encoders during deferred reset. Empty string means unknown.
+  resetPriorTenantScopes String[] @default([])
   /// Defaults applied to new plans: encoderVersion, cloudRegion,
   /// fallbackRegions, schedulingPriority, prewarmedPoolIds.
   defaults        Json     @default("{}")

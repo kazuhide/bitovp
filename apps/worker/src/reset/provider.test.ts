@@ -72,7 +72,11 @@ it("rechecks current ownership after resolving the encoder type and before each 
 		retained = true;
 		return { id: "encoding", type: "VOD" };
 	});
-	const authorized = async () => !retained;
+	const authorized = async (send: () => Promise<unknown>) => {
+		if (retained) return false;
+		await send();
+		return true;
+	};
 	await f.provider.stop("encoding", authorized);
 	expect(f.encodings.stop).not.toHaveBeenCalled();
 	expect(f.encodings.live.stop).not.toHaveBeenCalled();
@@ -88,6 +92,42 @@ it("rechecks current ownership after resolving the encoder type and before each 
 	});
 	await f.provider.releaseTemporaryKeys("encoding", authorized);
 	expect(f.keys.delete.mock.calls).toEqual([["first"]]);
+});
+it("bounds the native mutation at transport entry and never follows or retries a failed send", async () => {
+	const cipher = {
+		decrypt: async () => "fixture-only",
+	} as unknown as SecretCipher;
+	const provider = await resetCleanupProvider(cipher)({
+		id: "test",
+		encryptedApiKey: "fixture",
+		tenantOrgId: null,
+	});
+	const transport = vi.fn(async (_url: string, init: RequestInit) => {
+		if (init.method === "GET")
+			return Response.json({
+				data: { result: { id: "encoding", type: "VOD" } },
+			});
+		throw new Error("Test transport closed");
+	});
+	vi.stubGlobal("fetch", transport);
+	try {
+		const signal = AbortSignal.timeout(5_000);
+		for (const deadline of [performance.now() - 1, performance.now() + 4_000]) {
+			await expect(
+				provider.stop("encoding", async (send) => {
+					await send({ deadline, signal });
+					return true;
+				}),
+			).rejects.toBeDefined();
+		}
+		const writes = transport.mock.calls.filter(
+			([, init]) => init.method === "POST",
+		);
+		expect(writes).toHaveLength(1);
+		expect(writes[0]?.[1]).toMatchObject({ signal, redirect: "error" });
+	} finally {
+		vi.unstubAllGlobals();
+	}
 });
 it("clears historical unknown hooks only after an empty list and terminal parent", async () => {
 	const f = await fixture();

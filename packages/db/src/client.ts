@@ -108,7 +108,13 @@ export const CIPHERTEXT_OMIT = {
 function constructPrismaClient(databaseUrl?: string) {
 	return new prismaModule.PrismaClient({
 		...(databaseUrl ? { datasourceUrl: databaseUrl } : {}),
-		omit: CIPHERTEXT_OMIT,
+		omit: {
+			...CIPHERTEXT_OMIT,
+			bitmovinAccount: {
+				...CIPHERTEXT_OMIT.bitmovinAccount,
+				resetPriorTenantScopes: true,
+			},
+		},
 	});
 }
 

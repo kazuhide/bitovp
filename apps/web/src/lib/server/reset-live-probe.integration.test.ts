@@ -267,10 +267,12 @@ postgres("tenant PostgreSQL reset", () => {
 		previous: string[],
 		attempt = 1,
 		archived = 1,
+		tenantOrgId: string | null = null,
 	) {
 		const account = await db.bitmovinAccount.create({
 			data: {
 				label: "Fixture",
+				tenantOrgId,
 				encryptedApiKey: "fixture-only",
 				updatedAt: new Date("2025-01-01T00:00:00Z"),
 			},
@@ -1844,18 +1846,14 @@ postgres("tenant PostgreSQL reset", () => {
 		});
 		// Two saved entries may select the same provider organization. With no
 		// explicit provider organization the overlap cannot be excluded.
-		const shared = await archiveFixture(prisma, alias, []);
+		const shared = await archiveFixture(prisma, alias, [], 1, 1, tenantOrgId);
 		await archiveFixture(prisma, defaultScope, []);
 		await prisma.bitmovinAccount.updateMany({
-			where: { id: { in: [shared.account.id, account.id] } },
-			data: { tenantOrgId },
-		});
-		// Distinct explicit provider organizations remain independent.
-		const other = await archiveFixture(prisma, free, []);
-		await prisma.bitmovinAccount.update({
-			where: { id: other.account.id },
+			where: { id: shared.account.id },
 			data: { tenantOrgId: randomUUID() },
 		});
+		// Distinct explicit provider organizations remain independent.
+		await archiveFixture(prisma, free, [], 1, 1, randomUUID());
 		const provider = {
 			status: vi
 				.fn()
@@ -1877,7 +1875,11 @@ postgres("tenant PostgreSQL reset", () => {
 		expect(provider.stop.mock.calls.map(([id]) => id)).toEqual([free]);
 		expect(provider.releaseTemporaryKeys).not.toHaveBeenCalled();
 	});
-	it("rechecks VOD adoption during the native encoding type lookup before sending the verification STOP", async () => {
+	it.each([
+		"committed",
+		"committing",
+		"cleanup-first",
+	] as const)("serializes native verification STOP with VOD adoption (%s)", async (mode) => {
 		const { account } = await archiveFixture(prisma, null, []);
 		const id = randomUUID(),
 			intent = randomUUID(),
@@ -1907,18 +1909,59 @@ postgres("tenant PostgreSQL reset", () => {
 			verificationIntents: [],
 			verificationWorklistMaterialized: true,
 		});
-		const status = vi.fn(async () => ({ status: "RUNNING" }));
-		const stop = vi.fn();
+		const status = vi
+			.fn()
+			.mockResolvedValueOnce({ status: "RUNNING" })
+			.mockResolvedValue({ status: "FINISHED" });
+		const adoption = {
+			name: "Adopting encoder",
+			plan: {},
+			bitmovinEncodingId: id,
+		};
+		let localWriteFailure: string | undefined;
+		let otherOrganizationCompleted = false;
+		const stop = vi.fn(async () => {
+			// The provider mutation owns the fence, including while its reply is pending.
+			try {
+				await runtime.$transaction(async (tx) => {
+					await tx.$queryRaw`SELECT set_config('bitovp.organization_id', ${organizationIds[0]}, true), set_config('lock_timeout', '100ms', true)`;
+					await tx.encodingJob.create({ data: adoption });
+				});
+			} catch (error) {
+				localWriteFailure = String(error);
+			}
+			await createTenantPrismaClient(
+				runtime,
+				organizationIds[1],
+			).encodingJob.create({ data: adoption });
+			otherOrganizationCompleted = true;
+		});
 		const liveStop = vi.fn();
+		let started!: () => void;
+		let resume!: () => void;
+		const inserted = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const release = new Promise<void>((resolve) => {
+			resume = resolve;
+		});
+		let writer: Promise<unknown> | undefined;
 		const get = vi.fn(async () => {
-			await prisma.encodingJob.create({
-				data: {
-					name: "Just adopted",
-					status: "RUNNING",
-					plan: { bitmovin: { accountId: account.id } },
-					bitmovinEncodingId: id,
-				},
+			if (mode === "cleanup-first") return { id, type: "VOD" };
+			writer = prisma.$transaction(async (tx) => {
+				await tx.encodingJob.create({
+					data: {
+						name: "Just adopted",
+						status: "RUNNING",
+						plan: { bitmovin: { accountId: account.id } },
+						bitmovinEncodingId: id,
+					},
+				});
+				started();
+				if (mode === "committing") await release;
 			});
+			await inserted;
+			if (mode === "committed") await writer;
 			return { id, type: "VOD" };
 		});
 		const { createResetCleanupSweep } = await import(
@@ -1930,7 +1973,7 @@ postgres("tenant PostgreSQL reset", () => {
 		const api = {
 			encoding: { encodings: { get, status, stop, live: { stop: liveStop } } },
 		};
-		await createResetCleanupSweep({
+		const sweep = createResetCleanupSweep({
 			prisma,
 			cipher,
 			providerFor: resetCleanupProvider(
@@ -1938,10 +1981,27 @@ postgres("tenant PostgreSQL reset", () => {
 				() =>
 					api as unknown as import("../../../../worker/src/bitmovin/sdk-ctor").BitmovinApi,
 			),
-		})();
-		expect(status).toHaveBeenCalledTimes(1);
+		});
+		try {
+			await sweep();
+		} finally {
+			resume();
+			await writer;
+		}
+		if (mode === "committing") {
+			await prisma.resetCleanupTask.updateMany({
+				where: { id: workId },
+				data: { nextAttemptAt: new Date(0) },
+			});
+			await sweep();
+		}
+		expect(stop).toHaveBeenCalledTimes(mode === "cleanup-first" ? 1 : 0);
+		if (mode === "cleanup-first")
+			expect(localWriteFailure).toMatch(/lock timeout|55P03/i);
+		else expect(localWriteFailure).toBeUndefined();
+		expect(otherOrganizationCompleted).toBe(mode === "cleanup-first");
+		expect(status).toHaveBeenCalledTimes(mode === "cleanup-first" ? 2 : 1);
 		expect(get).toHaveBeenCalledWith(id);
-		expect(stop).not.toHaveBeenCalled();
 		expect(liveStop).not.toHaveBeenCalled();
 		expect(
 			await prisma.resetCleanupTask.findUnique({ where: { id: workId } }),

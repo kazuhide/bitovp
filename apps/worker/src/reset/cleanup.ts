@@ -6,6 +6,7 @@ import {
 } from "@bitovp/core";
 import {
 	type AppPrismaClient,
+	type AppTransactionClient,
 	mutateResetCleanupTask,
 	type ResetCleanupAccount,
 	type ResetCleanupEncoding,
@@ -16,15 +17,16 @@ import {
 } from "@bitovp/db";
 
 export const RESET_ENCODING_ABSENT = Symbol("verified encoding absence");
+export type ResetMutationWindow = { signal: AbortSignal; deadline: number };
+export type ResetMutationGuard = (
+	send: (window?: ResetMutationWindow) => Promise<unknown>,
+) => Promise<boolean>;
 export type ResetCleanupProvider = {
 	status(id: string): Promise<string | typeof RESET_ENCODING_ABSENT>;
-	stop(
-		id: string,
-		canMutate?: () => Promise<boolean>,
-	): Promise<undefined | false>;
+	stop(id: string, dispatch?: ResetMutationGuard): Promise<undefined | false>;
 	releaseTemporaryKeys(
 		id: string,
-		canMutate?: () => Promise<boolean>,
+		dispatch?: ResetMutationGuard,
 	): Promise<undefined | false>;
 	/** True only after an exact owned hook is deleted (including 404). */
 	removeWebhook(hook: ResetCleanupWebhook): Promise<boolean>;
@@ -35,6 +37,10 @@ export async function cleanResetPayload(
 	payload: ResetCleanupPayload,
 	providerFor: (account: ResetCleanupAccount) => Promise<ResetCleanupProvider>,
 	canMutate?: (row: ResetCleanupEncoding) => Promise<boolean>,
+	dispatch?: (
+		row: ResetCleanupEncoding,
+		send: Parameters<ResetMutationGuard>[0],
+	) => Promise<boolean>,
 ) {
 	const encodings = new Set<string>();
 	const webhooks = new Set<string>();
@@ -105,6 +111,9 @@ export async function cleanResetPayload(
 			if (encodings.has(key)) continue;
 			const api = await provider(row.accountId);
 			const authorized = canMutate ? () => canMutate(row) : undefined;
+			const guarded: ResetMutationGuard | undefined = dispatch
+				? (send) => dispatch(row, send)
+				: undefined;
 			let status = await api.status(row.encodingId);
 			if (
 				status !== RESET_ENCODING_ABSENT &&
@@ -112,7 +121,7 @@ export async function cleanResetPayload(
 				status !== "CREATED"
 			) {
 				if (authorized && !(await authorized())) continue;
-				if ((await api.stop(row.encodingId, authorized)) === false) continue;
+				if ((await api.stop(row.encodingId, guarded)) === false) continue;
 				status = await api.status(row.encodingId);
 			}
 			// A healthy replacement credential can see both exact endpoints as absent.
@@ -127,8 +136,7 @@ export async function cleanResetPayload(
 				if (withTemporaryKeys.has(key)) {
 					if (authorized && !(await authorized())) continue;
 					if (
-						(await api.releaseTemporaryKeys(row.encodingId, authorized)) ===
-						false
+						(await api.releaseTemporaryKeys(row.encodingId, guarded)) === false
 					)
 						continue;
 				}
@@ -193,9 +201,11 @@ export function createResetCleanupSweep(deps: {
 					);
 				const verificationIntents = current.payload.verificationIntents;
 				const cleanupAccounts = current.payload.accounts;
-				const readWork = () =>
+				const readWork = (
+					db: AppPrismaClient | AppTransactionClient = deps.prisma,
+				) =>
 					readVerificationCleanupWork(
-						deps.prisma,
+						db,
 						verificationIntents,
 						undefined,
 						cleanupAccounts,
@@ -252,7 +262,9 @@ export function createResetCleanupSweep(deps: {
 						return false;
 					}
 					const incomplete = currentWork.archive?.incompleteAccounts;
-					return !incomplete?.has(null) && !incomplete?.has(row.accountId);
+					return !Array.from(incomplete ?? []).some((owner) =>
+						currentWork.overlaps(row.accountId, owner),
+					);
 				}
 				const encodings = snapshot.encodings.filter((row) =>
 					permitted(row, work),
@@ -262,6 +274,30 @@ export function createResetCleanupSweep(deps: {
 					deps.providerFor,
 					// A retained job can adopt a verification asset during the provider GET.
 					work ? async (row) => permitted(row, await readWork()) : undefined,
+					work
+						? async (row, send) => {
+								// Start the budget before pool checkout. The transport must finish or
+								// abort before Prisma can release the transaction's ownership lock.
+								const deadline = performance.now() + 6_000;
+								return deps.prisma.$transaction(
+									async (tx) => {
+										const [lock] = await tx.$queryRaw<
+											{ acquired: boolean }[]
+										>`SELECT pg_try_advisory_xact_lock(hashtextextended('bitovp/reset-ownership/' || current_setting('bitovp.organization_id'), 0)) AS acquired`;
+										if (!lock?.acquired || !permitted(row, await readWork(tx)))
+											return false;
+										const remaining = Math.floor(deadline - performance.now());
+										if (remaining <= 0) return false;
+										await send({
+											signal: AbortSignal.timeout(remaining),
+											deadline,
+										});
+										return true;
+									},
+									{ timeout: 8_000, maxWait: 1_000, statementTimeoutMs: 3_000 },
+								);
+							}
+						: undefined,
 				);
 				const applied = await mutateResetCleanupTask(
 					deps.prisma,

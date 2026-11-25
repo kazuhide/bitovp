@@ -141,30 +141,36 @@ export async function readVerificationCleanupWork(
 			ownedEncodings.set(id, owners);
 		}
 	}
-	// A local account ID identifies a credential record, not a provider tenant.
-	// Only two explicit, different provider organization headers prove disjoint scope.
-	const accounts = ownedEncodings.size
-		? await tx.bitmovinAccount.findMany({
-				select: { id: true, tenantOrgId: true },
-			})
-		: [];
-	const currentScope = new Map(
-		accounts.map((account) => [account.id, account.tenantOrgId]),
+	// The account currently selected by a retained owner may have pointed to a
+	// different organization when its encoder was first acquired.
+	const accounts =
+		ownedEncodings.size || retainedArchive?.incompleteAccounts.size
+			? await tx.bitmovinAccount.findMany({
+					select: { id: true, tenantOrgId: true, resetPriorTenantScopes: true },
+				})
+			: [];
+	const retainedScopes = new Map(
+		accounts.map((a) => [a.id, [a.tenantOrgId, ...a.resetPriorTenantScopes]]),
 	);
-	const cleanupScope = cleanupAccounts
-		? new Map(
-				cleanupAccounts.map((account) => [account.id, account.tenantOrgId]),
+	const cleanupScopes = new Map(
+		(cleanupAccounts ?? accounts).map((a) => [a.id, a.tenantOrgId]),
+	);
+	const overlaps = (cleanup: string | null, owner: string | null) => {
+		const scope = cleanup && cleanupScopes.get(cleanup);
+		const history = owner && retainedScopes.get(owner);
+		return (
+			cleanup === owner ||
+			!scope ||
+			!history ||
+			history.some(
+				(prior) => !prior || prior.toLowerCase() === scope.toLowerCase(),
 			)
-		: currentScope;
-	const owned = (accountId: string | null, encodingId: string) => {
-		const scope = accountId && cleanupScope.get(accountId);
-		for (const owner of ownedEncodings.get(encodingId) ?? []) {
-			const ownerScope = owner && currentScope.get(owner);
-			if (owner === accountId || !scope || !ownerScope || scope === ownerScope)
-				return true;
-		}
-		return false;
+		);
 	};
+	const owned = (accountId: string | null, encodingId: string) =>
+		Array.from(ownedEncodings.get(encodingId) ?? []).some((owner) =>
+			overlaps(accountId, owner),
+		);
 	for (const intent of rows) {
 		const accountId = intent.verificationRun.bitmovinAccountId;
 		if (!accountId) continue;
@@ -226,5 +232,6 @@ export async function readVerificationCleanupWork(
 		archive: retainedArchive,
 		protectedWorkKeys,
 		owned,
+		overlaps,
 	};
 }

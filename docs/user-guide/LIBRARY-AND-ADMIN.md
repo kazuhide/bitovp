@@ -287,6 +287,8 @@ to the same storage or is created later. Submit them manually if they need a new
 encoding. Failed output adoption or Library registration waits before retrying
 so other queued work can proceed.
 
+When clearing verification history, the worker preserves encoders still referenced by a retained job or live channel. It checks the provider organizations that saved credentials previously selected. If an older credential has unknown scope history, a matching encoder ID stays with the retained job or channel.
+
 This release protects editing materials, projects, revisions, runs, artifacts and
 derivations from Reset. If the selected categories depend on them, the preview
 shows the protected count and execution is blocked before any deletion. A complete

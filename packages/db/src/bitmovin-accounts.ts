@@ -3,7 +3,10 @@ import type { SecretCipher } from "@bitovp/core";
 import type { BitmovinAccount, Prisma } from "../generated/client";
 import type { AppPrismaClient } from "./client";
 
-export type BitmovinAccountSummary = Omit<BitmovinAccount, "encryptedApiKey">;
+export type BitmovinAccountSummary = Omit<
+	BitmovinAccount,
+	"encryptedApiKey" | "resetPriorTenantScopes"
+>;
 
 export type CreateBitmovinAccountInput = {
 	label: string;

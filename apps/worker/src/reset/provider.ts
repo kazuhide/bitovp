@@ -4,7 +4,11 @@ import {
 	revealResetCleanupAccount,
 } from "@bitovp/db";
 import { BitmovinApi } from "../bitmovin/sdk-ctor";
-import { RESET_ENCODING_ABSENT, type ResetCleanupProvider } from "./cleanup";
+import {
+	RESET_ENCODING_ABSENT,
+	type ResetCleanupProvider,
+	type ResetMutationWindow,
+} from "./cleanup";
 
 type Hooks = {
 	listByEncodingId(
@@ -35,10 +39,27 @@ export function resetCleanupProvider(
 		account: ResetCleanupAccount,
 	): Promise<ResetCleanupProvider> => {
 		const auth = await revealResetCleanupAccount(cipher, account);
-		const api = makeApi({
+		const options = {
 			apiKey: auth.apiKey,
 			...(auth.tenantOrgId ? { tenantOrgId: auth.tenantOrgId } : {}),
-		});
+		};
+		const api = makeApi(options);
+		const mutationApi = (window?: ResetMutationWindow) =>
+			window
+				? makeApi({
+						...options,
+						fetch: (url, init) => {
+							window.signal.throwIfAborted();
+							if (performance.now() >= window.deadline)
+								throw new Error("Reset cleanup ownership window expired");
+							return fetch(url, {
+								...init,
+								signal: window.signal,
+								redirect: "error",
+							});
+						},
+					})
+				: api;
 		const encodingAbsent = async (id: string) => {
 			try {
 				await api.encoding.encodings.get(id);
@@ -67,20 +88,23 @@ export function resetCleanupProvider(
 					throw error;
 				}
 			},
-			async stop(id, canMutate) {
+			async stop(id, dispatch) {
 				try {
 					const encoding = await api.encoding.encodings.get(id);
-					if (canMutate && !(await canMutate())) return false;
-					if (encoding.type === "LIVE")
-						await api.encoding.encodings.live.stop(id);
-					else if (encoding.type === "VOD")
-						await api.encoding.encodings.stop(id);
-					else throw new Error("Reset cleanup encoding type unavailable");
+					if (encoding.type !== "LIVE" && encoding.type !== "VOD")
+						throw new Error("Reset cleanup encoding type unavailable");
+					const send = (window?: ResetMutationWindow) =>
+						encoding.type === "LIVE"
+							? mutationApi(window).encoding.encodings.live.stop(id)
+							: mutationApi(window).encoding.encodings.stop(id);
+					if (dispatch) {
+						if (!(await dispatch(send))) return false;
+					} else await send();
 				} catch (error) {
 					if (!is404(error)) throw error;
 				}
 			},
-			async releaseTemporaryKeys(encodingId, canMutate) {
+			async releaseTemporaryKeys(encodingId, dispatch) {
 				const ids: string[] = [];
 				for (let offset = 0; ; offset += 100) {
 					const page = await api.encoding.live.streamKeys.list({
@@ -95,8 +119,11 @@ export function resetCleanupProvider(
 				}
 				for (const id of ids)
 					try {
-						if (canMutate && !(await canMutate())) return false;
-						await api.encoding.live.streamKeys.delete(id);
+						const send = (window?: ResetMutationWindow) =>
+							mutationApi(window).encoding.live.streamKeys.delete(id);
+						if (dispatch) {
+							if (!(await dispatch(send))) return false;
+						} else await send();
 					} catch (error) {
 						if (!is404(error)) throw error;
 					}

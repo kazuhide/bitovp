@@ -1103,7 +1103,10 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 					entry.resourceId = result.resourceId;
 					if (result.resourceId && resourceAccount)
 						entry.resourceAccount = resourceAccount;
-					entry.request = redactSecrets(result.request);
+					entry.request = redactSecrets(
+						result.request,
+						entry.kind === "CREATE_HDR10_PLUS_INPUT_STREAM",
+					);
 					entry.response = redactSecrets(result.response);
 					/**
 					 * A downgrade recorded by an EARLIER attempt must survive this

@@ -552,7 +552,11 @@ export function removalCapturesSource(
 	key: string,
 ): boolean {
 	const allocated = implicitTrackKeys(next);
-	if (key !== allocated.video && key !== allocated.audio) return false;
+	const isHdrSource = state.sources?.hdr10PlusStreams?.some(
+		(row) => row.key === key,
+	);
+	if (!isHdrSource && key !== allocated.video && key !== allocated.audio)
+		return false;
 	return (
 		[...state.videos, ...state.audios].some(
 			(row) => row.extras?.source === key,

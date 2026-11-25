@@ -1,8 +1,4 @@
-import {
-	isHdr10PlusAuditPath,
-	publicHdrSourceProjection,
-	publicStorageDiagnostic,
-} from "@bitovp/core";
+import { publicHdrSourceProjection } from "@bitovp/core";
 import { NextResponse } from "next/server";
 import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
 import { isAisaAuditPath } from "@/lib/server/aisa-live-audit-view";
@@ -46,12 +42,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
 						request: row.request === null ? null : "[withheld]",
 						response: row.response === null ? null : "[withheld]",
 					}
-				: isHdr10PlusAuditPath(row.path)
-					? publicHdrSourceProjection({
-							...row,
-							error: publicStorageDiagnostic(row.error),
-						})
-					: publicHdrSourceProjection(row),
+				: publicHdrSourceProjection(row),
 			{ headers: { "Cache-Control": "private, no-store" } },
 		);
 	} catch (err) {

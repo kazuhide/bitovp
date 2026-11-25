@@ -1218,15 +1218,31 @@ function restoreCopiedHdrInputs(
 		return snapshot;
 	const primary = base.inputFiles[0];
 	const first = snapshot.inputFiles[0];
-	if (!draftRecord(primary) || !draftRecord(first) || first.key === primary.key)
-		return snapshot;
+	if (!draftRecord(primary) || !draftRecord(first)) return snapshot;
 	const records = (value: unknown) =>
 		Array.isArray(value) ? value.filter(draftRecord) : [];
 	const filesInDraft = records(snapshot.inputFiles);
-	const exists = (key: unknown) =>
-		filesInDraft.some((file) => file.key === key);
+	// File-row keys can be reissued after a deletion. Only a row that still
+	// names the copied storage object inherits its old picture role or rank.
+	const sameObject = (file: DraftValue | undefined, original: DraftValue) =>
+		file !== undefined &&
+		[
+			"key",
+			"inputKey",
+			"kind",
+			"credentialId",
+			"bucket",
+			"region",
+			"path",
+		].every((field) => file[field] === original[field]);
+	const byKey = new Map(
+		records(base.inputFiles).map((file) => [file.key, file]),
+	);
 	let primaryKey = primary.key;
-	if (!exists(primaryKey) && draftRecord(snapshot.sources)) {
+	if (
+		!filesInDraft.some((file) => sameObject(file, primary)) &&
+		draftRecord(snapshot.sources)
+	) {
 		const sources = snapshot.sources;
 		const declarations = [
 			"tracks",
@@ -1253,19 +1269,23 @@ function restoreCopiedHdrInputs(
 		(f) => draftRecord(f) && f.key === primaryKey,
 	);
 	if (index < 1) return snapshot;
-	const byKey = new Map(
-		base.inputFiles.filter(draftRecord).map((f) => [f.key, f]),
-	);
 	const files = snapshot.inputFiles.map((f) => {
 		if (!draftRecord(f)) return f;
-		const rank = byKey.get(f.key)?.inputDeclarationIndex;
+		const original = byKey.get(f.key);
+		const rank =
+			original && sameObject(f, original)
+				? original.inputDeclarationIndex
+				: undefined;
 		return rank === undefined ? f : { inputDeclarationIndex: rank, ...f };
 	});
 	files.unshift(...files.splice(index, 1));
 	// The old draft omitted audioInputFile when the first row was its audio master.
 	const audioInputFile =
 		snapshot.audioInputFile ??
-		(first.key === base.audioInputFile ? first.key : undefined);
+		(base.audioInputFile !== undefined &&
+		sameObject(byKey.get(base.audioInputFile), first)
+			? first.key
+			: undefined);
 	return {
 		...snapshot,
 		...(audioInputFile !== undefined ? { audioInputFile } : {}),

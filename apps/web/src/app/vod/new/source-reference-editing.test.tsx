@@ -97,6 +97,44 @@ it("keeps a referenced HDR source when its removal would silently switch the ren
 		),
 	).toBe(false);
 });
+it("keeps a named HDR source bound when another HDR source is added", () => {
+	mount({
+		...DEFAULT_WIZARD_STATE,
+		videos: [
+			{
+				height: 720,
+				bitrate: 1000000,
+				codec: "H265",
+				extras: { source: "hdr10plus1" },
+			},
+		],
+		sources: {
+			hdr10PlusStreams: [
+				{
+					key: "hdr10plus1",
+					videoInputFile: "main",
+					metadataInputPath: "original.json",
+					selectionMode: "AUTO",
+				},
+			],
+		},
+	});
+	const remove = screen.getByRole("button", {
+		name: "Remove stream wz-stream-hdr10Plus-0",
+		hidden: true,
+	});
+	expect(remove).toBeDisabled();
+	fireEvent.click(remove);
+	fireEvent.click(screen.getByText("Add HDR10+ video"));
+	expect(stateNow().sources?.hdr10PlusStreams?.map((row) => row.key)).toEqual([
+		"hdr10plus1",
+		"hdr10plus2",
+	]);
+	expect(stateNow().sources?.hdr10PlusStreams?.[0]?.metadataInputPath).toBe(
+		"original.json",
+	);
+	expect(stateNow().videos[0]?.extras?.source).toBe("hdr10plus1");
+});
 const stateNow = () =>
 	JSON.parse(screen.getByTestId("state").textContent ?? "{}") as WizardState;
 const base: WizardState = {

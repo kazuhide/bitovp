@@ -1,4 +1,8 @@
-import { isHdr10PlusObjectPath } from "../plan/hdr-source-paths";
+import {
+	hasPrivateStorageLocator,
+	isHdr10PlusObjectPath,
+	publicStorageDiagnostic,
+} from "../plan/hdr-source-paths";
 
 /**
  * Suffix-anchored so reference fields stay readable: `credentialId`,
@@ -56,6 +60,10 @@ function isHeaderTupleName(name: string): boolean {
 
 export const REDACTED = "[REDACTED]";
 
+export function maskUrlUserinfo(value: string): string {
+	return value.replace(URL_USERINFO, `$1${REDACTED}@`);
+}
+
 export function isSensitiveKey(key: string): boolean {
 	return SENSITIVE_SUFFIX.test(key) || SENSITIVE_EXACT.test(key);
 }
@@ -68,20 +76,34 @@ export function isSensitiveKey(key: string): boolean {
  * - passwords embedded in URL userinfo inside string values
  * - header-tuple arrays (["authorization", "Bearer …"])
  */
-export function redactSecrets<T>(value: T): T {
-	return walk(value, new WeakSet()) as T;
+export function redactSecrets<T>(value: T, hdrSource = false): T {
+	return walk(value, new WeakSet(), undefined, hdrSource) as T;
 }
 
 function walk(
 	value: unknown,
 	ancestors: WeakSet<object>,
 	key?: string,
+	hdrSource = false,
+	diagnostic = false,
 ): unknown {
 	if (typeof value === "string") {
+		if (
+			diagnostic &&
+			(key === undefined ||
+				["message", "text", "reason", "detail"].includes(key))
+		)
+			return publicStorageDiagnostic(value);
 		if (key === "videoInputPath" || key === "metadataInputPath") {
-			return isHdr10PlusObjectPath(value) ? value : REDACTED;
+			return (
+				hdrSource
+					? !isHdr10PlusObjectPath(value)
+					: hasPrivateStorageLocator(value)
+			)
+				? REDACTED
+				: value;
 		}
-		return value.replace(URL_USERINFO, `$1${REDACTED}@`);
+		return maskUrlUserinfo(value);
 	}
 	if (value === null || typeof value !== "object") {
 		return value;
@@ -102,13 +124,28 @@ function walk(
 		) {
 			out = [value[0], REDACTED];
 		} else {
-			out = value.map((item) => walk(item, ancestors));
+			out = value.map((item) =>
+				walk(item, ancestors, undefined, hdrSource, diagnostic),
+			);
 		}
 	} else {
 		const obj: Record<string, unknown> = {};
+		const fields = value as Record<string, unknown>;
+		const hdr =
+			hdrSource ||
+			fields.type === "HDR10_PLUS" ||
+			fields.kind === "CREATE_HDR10_PLUS_INPUT_STREAM";
 		for (const [key, item] of Object.entries(value)) {
 			Object.defineProperty(obj, key, {
-				value: isSensitiveKey(key) ? REDACTED : walk(item, ancestors, key),
+				value: isSensitiveKey(key)
+					? REDACTED
+					: walk(
+							item,
+							ancestors,
+							key,
+							hdr || key === "hdr10PlusStreams",
+							diagnostic || key === "messages" || key === "warnings",
+						),
 				enumerable: true,
 				writable: true,
 				configurable: true,

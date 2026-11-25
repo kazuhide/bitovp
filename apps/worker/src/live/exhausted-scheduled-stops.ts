@@ -6,7 +6,9 @@ import {
 import {
 	beginLiveEffect,
 	liveChannelAccountId,
+	liveStopKnownTargets,
 	liveStopRunOwnsEncoding,
+	readAiringEffectHistory,
 } from "@bitovp/db";
 import { HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS } from "../heartbeat-cadence";
 import type { LiveChannelDeps } from "../orchestrator/live-processor";
@@ -85,6 +87,8 @@ export function createExhaustedScheduledStopRecovery(
 				liveChannel: {
 					select: {
 						bitmovinAccountId: true,
+						stepLog: true,
+						error: true,
 						plan: true,
 						bitmovinEncodingId: true,
 						liveEffectFenceVersion: true,
@@ -94,6 +98,10 @@ export function createExhaustedScheduledStopRecovery(
 							take: 1,
 							select: {
 								id: true,
+								previousProviderEncodingIds: true,
+								archivedRtmpAttempt: true,
+								rtmpRetirementEvidence: true,
+								aisaAnalysisId: true,
 								status: true,
 								bitmovinEncodingId: true,
 								stepLog: true,
@@ -113,7 +121,7 @@ export function createExhaustedScheduledStopRecovery(
 				!run ||
 				(run.status !== "STOPPING" &&
 					!(
-						run.status === "RUNNING" &&
+						["RUNNING", "ERROR"].includes(run.status) &&
 						channel.legacyAdmissionFenceVersion !== null
 					)) ||
 				run.id !== row.liveChannelRunId ||
@@ -176,28 +184,61 @@ export function createExhaustedScheduledStopRecovery(
 					row.outcome === "PENDING" &&
 					(!job || found?.effect)
 				) {
-					const bitmovinAccountId = liveChannelAccountId(channel);
-					if (row.dispatchJobId !== jobId || !bitmovinAccountId) continue;
-					const sdk = deps.makeSdk({
-						...(await deps.revealBitmovinAccount(bitmovinAccountId)),
-						bitmovinAccountId,
-						monitoringSignal: AbortSignal.timeout(
-							HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS,
-						),
-					});
-					const state = classifyProviderStatusWord(
-						(await sdk.getEncodingStatus(encodingId)).status,
+					if (row.dispatchJobId !== jobId) continue;
+					const savedHandoff =
+						row.stopProviderEncodingId === encodingId &&
+						row.stopAdmissionFenceVersion === originalFence;
+					const accountId = liveChannelAccountId(channel);
+					const history = await readAiringEffectHistory(
+						deps.prisma,
+						row.liveChannelId,
+						run.id,
 					);
-					if (state !== "TERMINAL") {
-						if (state !== "RUNNING" && state !== "TRANSITIONAL") continue;
-						// Upgraded outbox writes the exact target and fence before handing off.
-						// An evicted job can reuse that identity only through the claim check below.
-						const savedHandoff =
-							!job &&
-							row.stopProviderEncodingId === encodingId &&
-							row.stopAdmissionFenceVersion === originalFence;
-						if (!found?.effect && !savedHandoff) continue;
-						failedFencedDelivery = true;
+					const targets = liveStopKnownTargets(
+						run,
+						channel,
+						history,
+						accountId,
+					);
+					let terminal = false;
+					if (targets?.length && accountId) {
+						try {
+							const sdk = deps.makeSdk({
+								...(await deps.revealBitmovinAccount(accountId)),
+								bitmovinAccountId: accountId,
+								monitoringSignal: AbortSignal.timeout(
+									HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS,
+								),
+							});
+							const states = await Promise.all(
+								targets.map(async (id) =>
+									classifyProviderStatusWord(
+										(await sdk.getEncodingStatus(id)).status,
+									),
+								),
+							);
+							terminal = states.every((state) => state === "TERMINAL");
+						} catch {
+							// A lost status read is not proof that the original handoff was sent.
+						}
+					}
+					if (!terminal) {
+						if (found?.effect || savedHandoff) failedFencedDelivery = true;
+						else if (!job && history.length === 0) {
+							// A pre-upgrade evicted job has no durable send ledger. Give the
+							// operator an actionable exact airing without replaying its POST.
+							await recordFinalStopFailure(
+								deps.prisma,
+								{
+									id: jobId,
+									data: original,
+									finishedOn: new Date(deps.now()).getTime(),
+								},
+								"The pre-upgrade STOP no longer has a verifiable queue receipt.",
+								deps.emitEvent,
+							);
+							continue;
+						} else continue;
 					}
 				}
 				if (!legacy || advancedFence || failedFencedDelivery) {

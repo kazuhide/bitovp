@@ -11,6 +11,7 @@ import {
 	type AppPrismaClient,
 	bindArchivedStopTargetInTransaction,
 	LIVE_EFFECT_OPEN_STATES,
+	liveStopRunOwnsEncoding,
 	type Prisma,
 } from "@bitovp/db";
 import {
@@ -152,6 +153,7 @@ const probeStatusSelect = {
 			id: true,
 			bitmovinEncodingId: true,
 			previousProviderEncodingIds: true,
+			stepLog: true,
 		},
 	},
 } as const;
@@ -168,7 +170,11 @@ export async function requestProbeStop(
 		await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${channelId}::uuid FOR UPDATE`;
 		const channel = await tx.liveChannel.findUnique({
 			where: { id: channelId },
-			select: { ...probeStatusSelect, purpose: true },
+			select: {
+				...probeStatusSelect,
+				purpose: true,
+				liveEffectFenceVersion: true,
+			},
 		});
 		const run = channel?.runs[0];
 		if (
@@ -177,11 +183,12 @@ export async function requestProbeStop(
 			!["RUNNING", "ERROR", "STOPPING"].includes(channel.status)
 		)
 			return "unconfirmed";
-		if (
-			!run.bitmovinEncodingId &&
-			!channel.bitmovinEncodingId &&
-			!(await bindArchivedStopTargetInTransaction(tx, channelId, run.id))
-		)
+		const archived =
+			!run.bitmovinEncodingId && !channel.bitmovinEncodingId
+				? await bindArchivedStopTargetInTransaction(tx, channelId, run.id)
+				: null;
+		const target = archived ?? channel.bitmovinEncodingId;
+		if (!target || (!archived && !liveStopRunOwnsEncoding(run, target)))
 			return "unconfirmed";
 		const open = await tx.liveEffectClaim.findFirst({
 			where: {
@@ -216,7 +223,14 @@ export async function requestProbeStop(
 				liveChannelRunId: run.id,
 				action: "STOP",
 				fireAt: now,
-				...(stranded ? { status: "FIRED", firedAt: now } : { status: "ARMED" }),
+				...(stranded
+					? {
+							status: "FIRED",
+							firedAt: now,
+							stopProviderEncodingId: target,
+							stopAdmissionFenceVersion: channel.liveEffectFenceVersion,
+						}
+					: { status: "ARMED" }),
 				note: "startup-probe-stop",
 			},
 		});

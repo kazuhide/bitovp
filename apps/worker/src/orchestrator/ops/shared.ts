@@ -924,6 +924,7 @@ export async function adoptOrCreateStamped(args: {
 		throw new Error(
 			"The existing CREATE remains unresolved; no new resource was created",
 		);
+	await args.stamp?.beforeStampedCreate?.();
 	let created: string;
 	try {
 		const onResolved = args.onResolved;

@@ -36,15 +36,25 @@ export function nativeProvisionMayHaveSent(entry: StepLogEntry): boolean {
 }
 /** Stream, muxing and DRM children use adoptOrCreateStamped under their
  * exact parent. An older reseed can have kept only the original start time. */
-export function interruptedLiveChildCreate(entry: StepLogEntry): boolean {
+export function isStampedLiveChild(entry: StepLogEntry): boolean {
 	return (
-		(entry.kind === "CREATE_STREAM" ||
-			entry.kind.startsWith("CREATE_MUXING_") ||
-			entry.kind.startsWith("CREATE_DRM_")) &&
-		entry.status !== "DONE" &&
-		(entry.adoptExistingOnly === true ||
-			entry.status === "RUNNING" ||
-			(entry.status === "PENDING" && !!entry.startedAt && !entry.finishedAt))
+		entry.kind === "CREATE_STREAM" ||
+		entry.kind.startsWith("CREATE_MUXING_") ||
+		entry.kind.startsWith("CREATE_DRM_")
+	);
+}
+export function interruptedLiveChildCreate(entry: StepLogEntry): boolean {
+	if (!isStampedLiveChild(entry) || entry.status === "DONE") return false;
+	if (
+		entry.resourceId ||
+		entry.adoptExistingOnly ||
+		entry.childCreateDispatch === "DISPATCHING"
+	)
+		return true;
+	if (entry.childCreateDispatch === "PREPARING") return false;
+	return (
+		entry.status === "RUNNING" ||
+		(entry.status === "PENDING" && !!entry.startedAt && !entry.finishedAt)
 	);
 }
 
@@ -203,7 +213,9 @@ export function restoreLiveProvisionEvidence(
 			(restoreCompletedGraph &&
 				(step.status === "DONE" ||
 					isRuntimeRecordKind(step.kind) ||
-					interruptedLiveChildCreate(step))),
+					interruptedLiveChildCreate(step) ||
+					(isStampedLiveChild(step) &&
+						step.childCreateDispatch === "PREPARING"))),
 	);
 	if (!current.data.length) {
 		if (
@@ -269,6 +281,18 @@ export function restoreLiveProvisionEvidence(
 			target.status !== "DONE"
 		) {
 			target.adoptExistingOnly = true;
+		}
+		if (
+			restoreCompletedGraph &&
+			isStampedLiveChild(saved) &&
+			target.status !== "DONE"
+		) {
+			if (
+				saved.childCreateDispatch === "DISPATCHING" ||
+				(!target.childCreateDispatch && !interruptedLiveChildCreate(target))
+			)
+				target.childCreateDispatch = saved.childCreateDispatch;
+			if (saved.resourceId) target.status = "DONE";
 		}
 		if (saved.resourceId && !target.resourceId)
 			target.resourceId = saved.resourceId;

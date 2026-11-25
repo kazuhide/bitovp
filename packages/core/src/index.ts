@@ -502,6 +502,7 @@ export {
 } from "./live/provider-lifecycle";
 export {
 	interruptedLiveChildCreate,
+	isStampedLiveChild,
 	nativeProvisionMayHaveSent,
 	restoreCompiledLiveProvisionGraph,
 	restoreLiveProvisionEvidence,

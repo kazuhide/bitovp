@@ -239,6 +239,38 @@ it("retains child adoption after a failed lookup or a prior reseed, only for its
 	expect(restoreLiveProvisionEvidence([child], [started], null, true)).toEqual([
 		expected,
 	]);
+	const beforeDispatch = {
+		...started,
+		childCreateDispatch: "PREPARING" as const,
+	};
+	expect(
+		restoreLiveProvisionEvidence([child], [beforeDispatch], null, true)?.[0],
+	).toMatchObject({ childCreateDispatch: "PREPARING" });
+	const dispatched = {
+		...started,
+		childCreateDispatch: "DISPATCHING" as const,
+	};
+	expect(
+		restoreLiveProvisionEvidence([child], [dispatched], null, true)?.[0],
+	).toMatchObject({
+		adoptExistingOnly: true,
+		childCreateDispatch: "DISPATCHING",
+	});
+	const returned = {
+		...started,
+		status: "FAILED" as const,
+		finishedAt: at,
+		resourceId: "provider-child",
+	};
+	expect(
+		restoreLiveProvisionEvidence(
+			[child],
+			reseedFailedSteps([returned]),
+			null,
+			true,
+		)?.[0],
+	).toMatchObject({ status: "DONE", resourceId: "provider-child" });
+
 	const failed = {
 		...expected,
 		adoptExistingOnly: true as const,

@@ -54,6 +54,7 @@ import {
 } from "./dead-job-outcome";
 import { createExhaustedProvisionRecovery } from "./exhausted-provisions";
 import { createExhaustedScheduledStopRecovery } from "./exhausted-scheduled-stops";
+import { readLegacyScheduledStop } from "./legacy-scheduled-stop";
 import { requestProbeStop } from "./probe-runner";
 import {
 	createProviderLifecycleReconciler,
@@ -1153,6 +1154,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 		it.each([
 			"retained",
 			"evicted",
+			"unknown evicted",
+			"unknown completed",
 		])("retires a scheduled START with durable failure before its first lease (%s)", async (retention) => {
 			const f = await fixture("PROVISIONING", null);
 			await tenant.liveChannel.update({
@@ -1192,7 +1195,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			).toBe(0);
 			await tenant.liveSchedule.update({
 				where: { id: schedule.id },
-				data: { outcome: "FAILED" },
+				data: {
+					outcome: retention.startsWith("unknown") ? "UNKNOWN" : "FAILED",
+				},
 			});
 			const id = `sched-${schedule.id}`;
 			expect(
@@ -1209,7 +1214,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			const recover = createExhaustedProvisionRecovery(
 				tenant,
 				async (key) =>
-					key === id && retention === "retained"
+					key === id && ["retained", "unknown completed"].includes(retention)
 						? {
 								data: {
 									action: "provision",
@@ -1217,7 +1222,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 									plannedLiveChannelRunId: f.run.id,
 									provisionFenceVersion: 4,
 								},
-								getState: async () => "failed",
+								getState: async () =>
+									retention === "unknown completed" ? "completed" : "failed",
 							}
 						: undefined,
 				enqueue,
@@ -2120,6 +2126,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			"still running effect",
 			"purged still running",
 			"split queued effect",
+			"split error effect",
+			"unavailable effect",
+			"secondary active effect",
+			"evicted base",
 			"split terminal",
 			"wrong effect",
 			"purged",
@@ -2137,7 +2147,14 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			});
 			await tenant.liveChannelRun.update({
 				where: { id: f.run.id },
-				data: { status: scenario.startsWith("split") ? "RUNNING" : "STOPPING" },
+				data: {
+					status:
+						scenario === "split error effect"
+							? "ERROR"
+							: scenario.startsWith("split")
+								? "RUNNING"
+								: "STOPPING",
+				},
 			});
 			const row = await tenant.liveSchedule.create({
 				data: {
@@ -2170,7 +2187,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					data: { liveEffectFenceVersion: 3 },
 				});
 			const queue = vi.fn(async () =>
-				scenario.startsWith("purged")
+				scenario.startsWith("purged") || scenario === "evicted base"
 					? undefined
 					: {
 							data: {
@@ -2202,7 +2219,25 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				scenario === "purged still running"
 			)
 				f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
-			if (scenario === "split queued effect")
+			if (scenario === "secondary active effect") {
+				const secondary = randomUUID();
+				await tenant.liveChannelRun.update({
+					where: { id: f.run.id },
+					data: { previousProviderEncodingIds: [secondary] },
+				});
+				f.sdk.getEncodingStatus = vi.fn(async (id) => ({
+					status: id === secondary ? "RUNNING" : "FINISHED",
+				}));
+			}
+			if (scenario === "unavailable effect")
+				f.sdk.getEncodingStatus = vi.fn(async () => {
+					throw new Error("status unavailable");
+				});
+			if (
+				["split queued effect", "split error effect", "evicted base"].includes(
+					scenario,
+				)
+			)
 				f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "QUEUED" }));
 			const reenqueue = vi.fn();
 			const probe = createExhaustedScheduledStopRecovery(
@@ -2236,7 +2271,13 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			}
 			if (
 				scenario === "still running effect" ||
-				scenario === "split queued effect"
+				[
+					"split queued effect",
+					"split error effect",
+					"unavailable effect",
+					"secondary active effect",
+					"evicted base",
+				].includes(scenario)
 			) {
 				expect(claim).toBeNull();
 				expect(
@@ -2282,6 +2323,50 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				(await tenant.liveSchedule.findUniqueOrThrow({ where: { id: row.id } }))
 					.outcome,
 			).toBe(scenario === "unknown" ? "UNKNOWN" : "DELIVERED");
+		});
+
+		it("refuses an old unfenced STOP outbox and a retained bare job after same-airing revival", async () => {
+			const f = await dispatchFixture(),
+				generation = 3;
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					status: "STOPPING",
+					legacyAdmissionFenceVersion: 2,
+					liveEffectFenceVersion: generation,
+				},
+			});
+			const old = await tenant.liveSchedule.create({
+				data: {
+					action: "STOP",
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					status: "FIRED",
+					fireAt: lease,
+					firedAt: lease,
+				},
+			});
+			expect(
+				(await readLegacyScheduledStop(tenant, old.id, f.channel.id, f.run.id))
+					?.effect,
+			).toBeUndefined();
+			const enqueue = vi.fn(async () => {});
+			await createScheduleSweep({
+				prisma: tenant,
+				now: () => new Date(now.getTime() + 600000),
+				enqueue,
+			}).dispatchPending();
+			expect(enqueue).not.toHaveBeenCalledWith(
+				expect.anything(),
+				`sched-${old.id}`,
+			);
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({ where: { id: old.id } }),
+			).toMatchObject({
+				stopProviderEncodingId: null,
+				stopAdmissionFenceVersion: null,
+			});
+			await tenant.liveSchedule.delete({ where: { id: old.id } });
 		});
 
 		it("never exposes a scheduled STOP job before its exact STOPPING generation commits", async () => {
@@ -2399,6 +2484,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					...(status === "FIRED" ? { firedAt: lease } : {}),
 				},
 			});
+			if (status === "FIRED") await snapshotLegacyAdmissions();
 			const enqueue = vi.fn(
 				async (_job: import("@bitovp/core").LiveChannelJob, _id: string) => {},
 			);
@@ -2443,6 +2529,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					fireAt: lease,
 				},
 			});
+			if (format === "legacy") await snapshotLegacyAdmissions();
 			const job = {
 				id: `sched-${row.id}`,
 				data: {
@@ -4086,6 +4173,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			"scheduled-runtime",
 			"scheduled-prefix",
 			"scheduled-adopt",
+			"scheduled-preparing",
+			"scheduled-child-id",
 			"scheduled-miss",
 		] as const)("reads a run-only native CREATE before replay and preserves the existing primary (nullable run=%s)", async (nullable) => {
 			const scheduled = typeof nullable === "string";
@@ -4153,15 +4242,26 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			};
 			if (nullable === "scheduled-runtime")
 				entries.push(runtime, secondRuntime);
-			const childRecovery =
-				nullable === "scheduled-adopt" || nullable === "scheduled-miss";
+			const childRecovery = [
+				"scheduled-adopt",
+				"scheduled-miss",
+				"scheduled-child-id",
+				"scheduled-preparing",
+			].includes(String(nullable));
 			const child = graph.find((entry) => entry.kind === "CREATE_STREAM");
 			if (!child) throw new Error("missing compiled stream");
 			const providerStreamId = child.resourceId;
 			if (childRecovery) {
 				child.status = "RUNNING";
 				child.startedAt = lease.toISOString();
-				delete child.resourceId;
+				if (nullable === "scheduled-child-id") {
+					child.status = "FAILED";
+					child.finishedAt = now.toISOString();
+				} else {
+					delete child.resourceId;
+					if (nullable === "scheduled-preparing")
+						child.childCreateDispatch = "PREPARING";
+				}
 			}
 			const omitted =
 				nullable === "scheduled-prefix"
@@ -4291,9 +4391,23 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			f.sdk.getEncodingStatus = vi.fn(async () => ({
 				status: scheduled ? "RUNNING" : "CANCELED",
 			}));
-			const create = vi.fn(async () => "duplicate-stream");
+			const create = vi.fn(async () => {
+				if (nullable === "scheduled-preparing") {
+					const durable = await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					});
+					expect(
+						(durable.stepLog as unknown as StepLogEntry[]).find(
+							(step) => step.step === child.step,
+						)?.childCreateDispatch,
+					).toBe("DISPATCHING");
+				}
+				return providerStreamId ?? "created-stream";
+			});
 			const lookup = vi.fn(async () =>
-				nullable === "scheduled-miss" ? undefined : providerStreamId,
+				nullable === "scheduled-miss" || nullable === "scheduled-preparing"
+					? undefined
+					: providerStreamId,
 			);
 			if (childRecovery)
 				f.deps.makeSdk = (options) => ({
@@ -4313,7 +4427,12 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			if (nullable === "scheduled-miss")
 				await expect(result).rejects.toThrow("remains unresolved");
 			else await result;
-			if (childRecovery) {
+			if (nullable === "scheduled-preparing") {
+				expect(create).toHaveBeenCalledOnce();
+			} else if (nullable === "scheduled-child-id") {
+				expect(create).not.toHaveBeenCalled();
+				expect(lookup).not.toHaveBeenCalled();
+			} else if (childRecovery) {
 				expect(lookup).toHaveBeenCalledWith({
 					job: f.channel.id,
 					step: child.step,
@@ -5129,7 +5248,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			const f = await dispatchFixture();
 			await tenant.liveChannel.update({
 				where: { id: f.channel.id },
-				data: { status: "STOPPING" },
+				data: {
+					status: "STOPPING",
+					legacyAdmissionFenceVersion: f.channel.liveEffectFenceVersion,
+				},
 			});
 			await tenant.liveChannelRun.update({
 				where: { id: f.run.id },
@@ -6347,6 +6469,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					outcomeAt: lease,
 				},
 			});
+			if (legacy) await snapshotLegacyAdmissions();
 			const sdk = fakeSdk({
 				getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" as const })),
 			});

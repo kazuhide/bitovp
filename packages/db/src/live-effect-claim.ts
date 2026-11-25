@@ -1130,7 +1130,7 @@ export async function beginLiveEffect(
 									runs: {
 										some: {
 											id: input.liveChannelRunId,
-											status: { in: ["RUNNING", "STOPPING"] },
+											status: { in: ["RUNNING", "STOPPING", "ERROR"] },
 										},
 									},
 								}

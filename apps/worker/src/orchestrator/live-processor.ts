@@ -21,6 +21,7 @@ import {
 	isAisaManagedLivePlan,
 	isRuntimeRecordKind,
 	isStaleGeneration,
+	isStampedLiveChild,
 	joinManifestPath,
 	type LiveAutoShutdownUpdateParams,
 	type LiveChannelAction,
@@ -6018,6 +6019,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						row.stepLog,
 						claimedRun?.stepLog,
 						claimedRun?.bitmovinEncodingId ?? row.bitmovinEncodingId,
+						!cancelling,
 					);
 		if (
 			!provisionLog ||
@@ -6259,6 +6261,16 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					currentStep: () => stampStep,
 					adoptWindow: () => stampAdopt,
 					allowCreate: () => !cancelRecovery && !activeEntry?.adoptExistingOnly,
+					beforeStampedCreate: async () => {
+						if (activeEntry?.childCreateDispatch !== "PREPARING") return;
+						activeEntry.childCreateDispatch = "DISPATCHING";
+						try {
+							await persist(entries);
+						} catch (error) {
+							activeEntry.childCreateDispatch = "PREPARING";
+							throw error;
+						}
+					},
 					...(verification
 						? {
 								verification,
@@ -6688,6 +6700,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 							...entry,
 							status: "PENDING",
 							adoptExistingOnly: undefined,
+							childCreateDispatch: undefined,
 							resourceId: undefined,
 							error: undefined,
 							startedAt: undefined,
@@ -7174,7 +7187,17 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				// status before re-starting (same wedge prevention as VOD).
 				const wasRunning =
 					entry.status === "RUNNING" || nativeProvisionMayHaveSent(entry);
-				if (interruptedLiveChildCreate(entry)) entry.adoptExistingOnly = true;
+				if (isStampedLiveChild(entry)) {
+					if (entry.resourceId) {
+						// A provider id survived the failed DONE write for this exact attempt.
+						entry.status = "DONE";
+						ids.set(entry.step, entry.resourceId);
+						await persist(entries);
+						continue;
+					}
+					if (interruptedLiveChildCreate(entry)) entry.adoptExistingOnly = true;
+					else entry.childCreateDispatch = "PREPARING";
+				}
 				const hadStartAttempt = entry.startedAt !== undefined;
 				if (
 					entry.kind === "CREATE_OUTPUT_MOQ" &&

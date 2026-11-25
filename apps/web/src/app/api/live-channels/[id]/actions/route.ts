@@ -937,6 +937,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 										latest.bitmovinEncodingId ??
 											lockedChannel?.bitmovinEncodingId ??
 											row.bitmovinEncodingId,
+										true,
 									)
 								: stepLogSchema.parse(sourceLog);
 						if (!restored) throw new StartNotClaimableError();

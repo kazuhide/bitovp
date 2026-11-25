@@ -64,6 +64,8 @@ export type CreateStamp = {
 	allowCreate?: () => boolean;
 	/** Recheck mutable run authorization at the final provider transport boundary. */
 	beforeMutation?: () => Promise<void>;
+	/** Persist the current Live child attempt immediately before its create call. */
+	beforeStampedCreate?: () => Promise<void>;
 	/**
 	 * Durable verification identity. Both fields are derived and committed by
 	 * the server before any provider create; they ride the provider resource so

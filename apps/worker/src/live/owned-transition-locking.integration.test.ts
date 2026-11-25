@@ -2382,7 +2382,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				});
 				armed.push({ f, row });
 			}
-			const changed = armed[2]!;
+			const changed = armed[2];
+			if (!changed) throw new Error("Missing later ownership fixture");
 			await tenant.liveChannel.update({
 				where: { id: changed.f.channel.id },
 				data: {

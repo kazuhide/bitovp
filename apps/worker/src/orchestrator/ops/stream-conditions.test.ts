@@ -39,6 +39,7 @@ describe("Stream conditions on SDK stream requests", () => {
 					: { inputId: "live-id", position: 1 };
 			await expect(
 				ops.createStream("encoding-id", {
+					name: "language-filtered audio",
 					codecConfigId: "audio-config",
 					...location,
 					conditions: input,

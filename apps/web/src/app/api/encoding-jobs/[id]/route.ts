@@ -1,4 +1,5 @@
 import {
+	dolbyObjectFields,
 	publicHdrSourceProjection,
 	publicStorageDiagnostic,
 } from "@bitovp/core";
@@ -128,7 +129,11 @@ export async function GET(_req: Request, { params }: RouteParams) {
 		if (!row) {
 			return jsonError(404, "Not found");
 		}
-		const safe = publicHdrSourceProjection(row);
+		const safe = publicHdrSourceProjection(
+			row,
+			"record",
+			dolbyObjectFields(row.plan, row.stepLog),
+		);
 		return NextResponse.json({
 			...safe,
 			error: publicStorageDiagnostic(safe.error),

@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import {
 	encodingPlanSchema,
+	hasPrivateStorageLocator,
 	isLibraryFileKind,
 	libraryFileOutputs,
 	libraryHdr10PlusInputs,
+	libraryIngestInputs,
 	libraryPlaybackLinks,
 	librarySnapshotSchema,
 	missingLibraryHdrInputs,
@@ -76,9 +78,6 @@ export async function requestLibrarySource(
 			);
 		}
 		const plan = parsed.data;
-		const inputNames = new Map(
-			plan.inputs.map((input) => [input.key, input.name]),
-		);
 		const hdrInputs = libraryHdr10PlusInputs(plan);
 		const locales = plan.aiSceneAnalysis
 			? sceneAnalysisLocales(plan.aiSceneAnalysis.outputLanguageCodes)
@@ -289,9 +288,14 @@ export async function requestLibrarySource(
 			planHash,
 			identity: "UNVERIFIED",
 			inputs: [
-				...plan.ingest.map((input) => ({
-					name: inputNames.get(input.inputKey) ?? input.key,
-					path: input.inputPath,
+				...libraryIngestInputs(plan).map((row) => ({
+					...row,
+					path: hasPrivateStorageLocator(
+						row.path,
+						row.pathKind === "OBJECT_KEY",
+					)
+						? ""
+						: row.path,
 				})),
 				...hdrInputs,
 			],

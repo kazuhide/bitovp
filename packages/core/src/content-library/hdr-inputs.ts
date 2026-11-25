@@ -1,4 +1,21 @@
+import { isObjectStorageInput } from "../plan/object-input-path";
 import type { EncodingPlan } from "../plan/schema";
+
+/** Ordinary ingest rows retain their source kind after deletion of the job. */
+export function libraryIngestInputs(plan: EncodingPlan) {
+	const inputs = new Map<string, EncodingPlan["inputs"][number] | null>();
+	for (const input of plan.inputs)
+		inputs.set(input.key, inputs.has(input.key) ? null : input);
+	return plan.ingest.map((ingest) => {
+		const input = inputs.get(ingest.inputKey);
+		const objectKey = !!input && isObjectStorageInput(input.kind);
+		return {
+			name: input?.name ?? ingest.key,
+			path: ingest.inputPath,
+			...(objectKey && { pathKind: "OBJECT_KEY" as const }),
+		};
+	});
+}
 
 export function libraryHdr10PlusInputs(plan: EncodingPlan) {
 	const names = new Map(plan.inputs.map((input) => [input.key, input.name]));

@@ -1179,6 +1179,8 @@ This screen is for checking usage, not a replacement for invoices or incident mo
 
 Use "Content Library" to find completed VOD jobs and their analysis, then organize them with titles and tags. VIEWER can browse the library; registration, editing, and retries require OPERATOR or higher.
 
+A blank input path can mean that a historical record resembles a private network address. The Library displays an ambiguous object name only when its capture or the original job identifies the storage input.
+
 | Term | Stored information | Purpose |
 |---|---|---|
 | Source | An import record containing a completed job, output locations, playback metadata, analysis results, and related information | Identify the processing result being referenced |

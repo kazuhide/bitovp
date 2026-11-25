@@ -5,8 +5,13 @@ import {
 } from "./codec-detail-controls";
 import { CODEC_ENUM_VALUES, codecEnumSchema } from "./codec-enums";
 import type { OperationKind } from "./compiler";
+import { hasPrivateStorageLocator } from "./hdr-source-paths";
 import { manifestCurlSnapshot } from "./manifest-curl";
 import { externalVttUrlSchema } from "./manifest-options";
+import {
+	hasCompletedResource,
+	hasRecordedObjectInput,
+} from "./object-input-path";
 import { hdr10PlusStreamSchema } from "./schema";
 import type { StepLogEntry } from "./steplog";
 
@@ -45,6 +50,7 @@ export type CurlOptions = {
 	baseUrl?: string;
 	/** Emit an `X-Tenant-Org-Id` placeholder header (sub-org calls). */
 	includeOrgHeader?: boolean;
+	objectInputs?: ReadonlyMap<string, string | null>;
 };
 
 type EndpointDef = {
@@ -714,6 +720,46 @@ export function curlForStep(
 		return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 	}
 	let request = entry.request;
+	if (entry.kind === "CREATE_DOLBY_VISION_INPUT_STREAM") {
+		const data = request as Record<string, unknown> | null | undefined;
+		const refs = data?.refs as Record<string, unknown> | undefined;
+		const proven = hasRecordedObjectInput(entry, data, options.objectInputs);
+		const replay = { ...data };
+		const completed = hasCompletedResource(entry);
+		if (
+			typeof refs?.encodingId !== "string" ||
+			!refs.encodingId.trim() ||
+			typeof refs.inputId !== "string" ||
+			!refs.inputId.trim()
+		)
+			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+		for (const field of ["videoInputPath", "metadataInputPath"] as const) {
+			const actual = data?.[field];
+			if (actual === undefined && field === "metadataInputPath") continue;
+			const compiled = entry.payload[field];
+			const restored =
+				actual === REDACTED &&
+				proven &&
+				completed &&
+				typeof compiled === "string" &&
+				!compiled.includes(REDACTED) &&
+				hasPrivateStorageLocator(compiled) &&
+				!hasPrivateStorageLocator(compiled, true)
+					? compiled
+					: actual;
+			if (
+				typeof restored !== "string" ||
+				!restored ||
+				(restored.includes(REDACTED) && restored !== compiled) ||
+				hasPrivateStorageLocator(restored, proven && restored === compiled)
+			)
+				return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
+			replay[field] = restored;
+		}
+		entry = { ...entry, refs: { encodingId: refs.encodingId } };
+		replay.inputId = refs.inputId;
+		request = replay;
+	}
 	if (entry.kind === "CREATE_HDR10_PLUS_INPUT_STREAM") {
 		const snapshot = request as Record<string, unknown> | null | undefined;
 		const refs = snapshot?.refs as Record<string, unknown> | undefined;

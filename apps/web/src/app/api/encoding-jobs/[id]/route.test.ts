@@ -63,6 +63,83 @@ function delReq() {
 	});
 }
 
+it("publishes a Dolby object key only for its authored input and fulfilled provider receipt", async () => {
+	const path = "///reels:day@night/take.mxf",
+		sensitive = "\u0001//fixture:PRIVATE_DOLBY_REFERENCE@local.invalid/take";
+	const job = timesRow({
+		plan: {
+			inputs: [
+				{ key: "store", kind: "S3" },
+				{ key: "network", kind: "HTTPS" },
+			],
+			dolbyStreams: [
+				{ kind: "VISION", inputKey: "store", videoInputPath: path },
+				{ kind: "VISION", inputKey: "network", videoInputPath: path },
+			],
+		},
+		stepLog: [
+			{
+				step: "input:store",
+				kind: "CREATE_INPUT_S3",
+				status: "DONE",
+				resourceId: "store-id",
+			},
+			...[
+				["store-id", path],
+				["other", sensitive],
+				["other", path],
+			].map(([id, videoInputPath]) => ({
+				kind: "CREATE_DOLBY_VISION_INPUT_STREAM",
+				status: "DONE",
+				resourceId: "vision-id",
+				response: { id: "vision-id" },
+				refs: { inputId: "input:store" },
+				payload: { videoInputPath },
+				request: { videoInputPath, refs: { inputId: id } },
+			})),
+			{
+				kind: "CREATE_DOLBY_VISION_INPUT_STREAM",
+				status: "DONE",
+				resourceId: "vision-id",
+				response: { id: "other" },
+				refs: { inputId: "input:store" },
+				payload: { videoInputPath: path },
+				request: { videoInputPath: path, refs: { inputId: "store-id" } },
+			},
+			{
+				kind: "CREATE_DOLBY_VISION_INPUT_STREAM",
+				status: "DONE",
+				resourceId: "vision-id",
+				response: { id: "vision-id" },
+				refs: { inputId: "input:store" },
+				payload: { videoInputPath: "different" },
+				request: { videoInputPath: path, refs: { inputId: "store-id" } },
+			},
+		],
+	});
+	findUnique.mockResolvedValueOnce(job);
+	const response = await GET(
+		new Request(`http://test/api/encoding-jobs/${JOB_ID}`),
+		ctx(JOB_ID),
+	);
+	expect(response.status).toBe(200);
+	const body = await response.json();
+	expect(
+		body.plan.dolbyStreams.map(
+			(item: { videoInputPath: string }) => item.videoInputPath,
+		),
+	).toEqual([path, "[REDACTED]"]);
+	expect(
+		body.stepLog
+			.slice(1)
+			.map(
+				(row: { request: { videoInputPath: string } }) =>
+					row.request.videoInputPath,
+			),
+	).toEqual([path, "[REDACTED]", "[REDACTED]", "[REDACTED]", "[REDACTED]"]);
+	expect(JSON.stringify(body)).not.toContain("PRIVATE_DOLBY_REFERENCE");
+});
+
 it.each([
 	"https://fixture.invalid/picture.mxf?signature=URL_FIXTURE_PRIVATE",
 	"https:/fixture:URL_FIXTURE_PRIVATE@fixture.invalid/picture.mxf",

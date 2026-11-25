@@ -3,6 +3,7 @@
 import {
 	buildResourceTree,
 	curlForStep,
+	objectInputReceipts,
 	type ResourceLink,
 	type ResourceNode,
 	type StepLogEntry,
@@ -47,6 +48,7 @@ export function anchorId(step: string): string {
 export function ResourcesTab({ entries }: { entries: StepLogEntry[] }) {
 	const { t } = useT();
 	const groups = useMemo(() => buildResourceTree(entries), [entries]);
+	const objectInputs = useMemo(() => objectInputReceipts(entries), [entries]);
 	const entryByStep = useMemo(() => {
 		const map = new Map<string, StepLogEntry>();
 		for (const entry of entries) {
@@ -74,6 +76,7 @@ export function ResourcesTab({ entries }: { entries: StepLogEntry[] }) {
 								key={node.step}
 								node={node}
 								entry={entryByStep.get(node.step)}
+								objectInputs={objectInputs}
 							/>
 						))}
 					</ul>
@@ -86,15 +89,17 @@ export function ResourcesTab({ entries }: { entries: StepLogEntry[] }) {
 function ResourceRow({
 	node,
 	entry,
+	objectInputs,
 }: {
 	node: ResourceNode;
 	entry: StepLogEntry | undefined;
+	objectInputs: ReturnType<typeof objectInputReceipts>;
 }) {
 	const { t } = useT();
 	// curlForStep reads kind/refs/payload.muxingKind/request — all on the source
 	// entry. An entry is always present (the tree is built from the same array),
 	// but guard for robustness.
-	const curl = entry ? curlForStep(entry) : null;
+	const curl = entry ? curlForStep(entry, { objectInputs }) : null;
 	// The reason is a CODE from core (which is UI-free), so the copy lives here. It
 	// renders as a tooltip, which is why it was the last English string on the page.
 	const unavailableReason =

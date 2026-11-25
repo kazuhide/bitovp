@@ -56,7 +56,7 @@ describe("writeAuditLog — actor persistence (the headline of #81 PR2)", () => 
 			response: request,
 		});
 	});
-	it("classifies normalized network locators while retaining the original repeated-slash Dolby object key", async () => {
+	it("withholds ambiguous network authorities in an audit without storage provenance", async () => {
 		const { prisma, create } = fakePrisma();
 		const request = {
 			videoInputPath: "///reels@day/take.mxf",
@@ -71,7 +71,7 @@ describe("writeAuditLog — actor persistence (the headline of #81 PR2)", () => 
 			response: request,
 		});
 		const safe = {
-			videoInputPath: request.videoInputPath,
+			videoInputPath: "[REDACTED]",
 			metadataInputPath: "[REDACTED]",
 		};
 		expect(create.mock.calls[0]?.[0].data).toMatchObject({

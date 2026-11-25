@@ -5,6 +5,10 @@ import {
 	isProviderDiagnosticText,
 	publicStorageDiagnostic,
 } from "../plan/hdr-source-paths";
+import {
+	hasRecordedObjectInput,
+	objectInputReceipts,
+} from "../plan/object-input-path";
 
 /**
  * Suffix-anchored so reference fields stay readable: `credentialId`,
@@ -80,6 +84,38 @@ export function isSensitiveKey(key: string): boolean {
  */
 export function redactSecrets<T>(value: T, hdrSource = false): T {
 	return walk(value, new WeakSet(), undefined, hdrSource) as T;
+}
+
+/** Preserve byte-exact names only for fulfilled Dolby requests whose selected
+ * input receipt and compiled path agree. Audits lack that proof. */
+export function redactStepRequest<T>(
+	entry: { kind: string; payload: Record<string, unknown> },
+	request: T,
+	entries: unknown,
+): T {
+	const safe = redactSecrets(
+		request,
+		entry.kind === "CREATE_HDR10_PLUS_INPUT_STREAM",
+	);
+	if (
+		entry.kind !== "CREATE_DOLBY_VISION_INPUT_STREAM" ||
+		!request ||
+		typeof request !== "object" ||
+		!hasRecordedObjectInput(entry, request, objectInputReceipts(entries))
+	)
+		return safe;
+	if (!safe || typeof safe !== "object") return safe;
+	const result = { ...safe };
+	for (const field of ["videoInputPath", "metadataInputPath"] as const) {
+		const value = (request as Record<string, unknown>)[field];
+		if (
+			typeof value === "string" &&
+			value === entry.payload[field] &&
+			!hasPrivateStorageLocator(value, true)
+		)
+			Object.assign(result, { [field]: value });
+	}
+	return result;
 }
 
 function walk(

@@ -60,6 +60,34 @@ function setup(overrides = {}) {
 	return { job, tx, prisma };
 }
 
+it("retains literal names with their storage provenance at capture and redacts unverified network locators", async () => {
+	const [ingest] = planFixture.ingest;
+	if (!ingest) throw new Error("Missing fixture ingest");
+	const objectPath = "///reels:scene@day/take.mxf";
+	const plan = {
+		...planFixture,
+		ingest: [
+			{ ...ingest, inputPath: objectPath },
+			{
+				...ingest,
+				key: "remote",
+				inputKey: "remote",
+				inputPath: "\u0001//test:PRIVATE_CAPTURE@fixture.invalid/media",
+			},
+		],
+		inputs: [
+			...planFixture.inputs,
+			{ kind: "HTTPS", key: "remote", name: "Network", host: "media.example" },
+		],
+	};
+	const { job, prisma } = setup({ plan });
+	const result = await requestLibrarySource(prisma, job.id);
+	expect(result.snapshot).toHaveProperty("inputs", [
+		{ name: "Test S3 Input", path: objectPath, pathKind: "OBJECT_KEY" },
+		{ name: "Network", path: "" },
+	]);
+	expect(JSON.stringify(result)).not.toContain("PRIVATE_CAPTURE");
+});
 function qcOnlyPlan() {
 	const destination = planFixture.muxings[0]?.destination;
 	if (!destination) throw new Error("Fixture destination missing");
@@ -119,7 +147,9 @@ describe("requestLibrarySource", () => {
 		};
 		const { job, tx, prisma } = setup({ plan });
 		const source = await requestLibrarySource(prisma, job.id);
-		const ordinary = audio ? [{ name: input, path: "audio.wav" }] : [];
+		const ordinary = audio
+			? [{ name: input, path: "audio.wav", pathKind: "OBJECT_KEY" }]
+			: [];
 		const expected = [
 			...ordinary,
 			{

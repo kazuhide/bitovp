@@ -1,4 +1,5 @@
 import {
+	dolbyObjectFields,
 	isAisaManagedLivePlan,
 	patchLivePresetSchema,
 	patchPlanPresetSchema,
@@ -88,9 +89,16 @@ export async function GET(_req: Request, { params }: RouteParams) {
 			!aisaLiveAccessAllowed(ctx.tenant)
 		)
 			return jsonError(404, "Not found");
-		return NextResponse.json(publicHdrSourceProjection(preset), {
-			headers: { "Cache-Control": "private, no-store" },
-		});
+		return NextResponse.json(
+			publicHdrSourceProjection(
+				preset,
+				"record",
+				dolbyObjectFields(preset.body, []),
+			),
+			{
+				headers: { "Cache-Control": "private, no-store" },
+			},
+		);
 	} catch (err) {
 		return routeError(err);
 	}
@@ -292,9 +300,16 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 			!aisaLiveAccessAllowed(ctx.tenant)
 		)
 			return jsonError(404, "Not found");
-		return NextResponse.json(publicHdrSourceProjection(updated), {
-			headers: { "Cache-Control": "private, no-store" },
-		});
+		return NextResponse.json(
+			publicHdrSourceProjection(
+				updated,
+				"record",
+				dolbyObjectFields(updated.body, []),
+			),
+			{
+				headers: { "Cache-Control": "private, no-store" },
+			},
+		);
 	} catch (err) {
 		// @@unique([kind, name]) collision on rename → P2002.
 		if ((err as { code?: string }).code === "P2002") {

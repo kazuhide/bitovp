@@ -18,30 +18,35 @@ export function isHdr10PlusObjectPath(value: string) {
 export const isHdr10PlusAuditPath = (path: unknown) =>
 	typeof path === "string" && /\/input-streams\/hdr10-plus(?:\/|$)/.test(path);
 
-export function hasPrivateStorageLocator(value: string): boolean {
-	// Let the URL parser recognize absolute network locators, including its
-	// specified normalization of leading C0 controls and embedded tab/CR/LF.
-	// The caller always returns the original spelling of a public object key.
-	if (URL.canParse(value)) {
-		const url = new URL(value);
-		if (url.host && (url.username || url.password || url.search || url.hash))
-			return true;
-	}
-	const location = value.trim().replace(/[\t\r\n]/gu, "");
-	const authority = /^(?:([a-z][a-z\d+.-]*):)?([/\\]{2,})([^/\\?#]*)/iu.exec(
+/** An unqualified path beginning with three slashes can be either a URL
+ * authority or an object key. Only trusted storage provenance can choose the
+ * latter. A control prefix or a backslash never qualifies for this exception. */
+export function hasPrivateStorageLocator(
+	value: string,
+	objectKey = false,
+): boolean {
+	const location = value
+		.replace(/^[\s\p{Cc}]+|[\s\p{Cc}]+$/gu, "")
+		.replace(/[\t\n\r]/gu, "");
+	const literalObject =
+		objectKey && /^\/{3,}[^/]/u.test(value) && !/[\\\p{Cc}]/u.test(value);
+	const authority = /^(?:[a-z][a-z\d+.-]*:)?[/\\]{2,}([^/\\?#]*)/iu.exec(
 		location,
 	);
-	if (authority) {
-		const [, scheme, slashes, host] = authority;
-		// Two separators introduce a network-path reference. Extra separators
-		// without a scheme also occur in real S3 object keys (///reels@day).
-		// Only explicit credentials identify that ambiguous spelling as private.
-		if (
-			(scheme || slashes?.length === 2 || /^[^@]*:[^@]*@/u.test(host ?? "")) &&
-			(host?.includes("@") || /[?#].+/u.test(location))
-		)
+	if (!literalObject && (authority || uriScheme.test(location))) {
+		try {
+			const url = uriScheme.test(location)
+				? new URL(location)
+				: new URL(location, "https://storage.invalid");
+			if (url.host && (url.username || url.password || url.search || url.hash))
+				return true;
+		} catch {
+			// Incomplete authority fields still must not persist as public text.
+		}
+		if (authority && (authority[1]?.includes("@") || /[?#].+/u.test(location)))
 			return true;
 	}
+	if (literalObject) return false;
 	// Historical Library rows lack the input provider. Parse only the query.
 	// A typed Dolby/object key may legitimately contain "?version=2".
 	const beforeFragment = location.split("#", 1)[0] ?? "";
@@ -107,18 +112,24 @@ export function isProviderDiagnosticText(key: string) {
 export function publicHdrSourceProjection<T>(
 	value: T,
 	purpose: "record" | "draft" = "record",
+	objectFields?: WeakSet<object>,
 ): T {
 	const hidden = new Set<string>();
 	const fields = new WeakMap<object, Map<string, string>>();
 	let changed = false;
-	function replace(row: object, key: string, replacement: string) {
+	function replace(
+		row: object,
+		key: string,
+		replacement: string,
+		modified = true,
+	) {
 		let values = fields.get(row);
 		if (!values) {
 			values = new Map();
 			fields.set(row, values);
 		}
 		values.set(key, replacement);
-		changed = true;
+		if (modified) changed = true;
 	}
 	function mark(row: object, key: string, path: string) {
 		replace(row, key, "");
@@ -181,10 +192,32 @@ export function publicHdrSourceProjection<T>(
 				replace(row, key, "[withheld]");
 			}
 
+			const mediaPath = key === "videoInputPath" || key === "metadataInputPath";
+			if (
+				!scope &&
+				((libraryInputs && key === "path") || mediaPath) &&
+				typeof item === "string" &&
+				objectFields?.has(row) &&
+				!hasPrivateStorageLocator(item, true)
+			) {
+				// An untrusted row elsewhere in the same snapshot can carry identical bytes.
+				replace(row, key, item, false);
+				continue;
+			}
+			if (
+				!scope &&
+				mediaPath &&
+				typeof item === "string" &&
+				hasPrivateStorageLocator(item)
+			) {
+				replace(row, key, "[REDACTED]");
+				hidden.add(item);
+				continue;
+			}
 			if (
 				typeof item === "string" &&
 				item.trim().length &&
-				((scope && (key === "videoInputPath" || key === "metadataInputPath")) ||
+				((mediaPath && scope) ||
 					(key === "path" &&
 						(row.hdr10Plus ||
 							(libraryInputs && hasPrivateStorageLocator(item))))) &&

@@ -627,6 +627,7 @@ export function VodWizard({
 				presetKey === undefined ? fresh : draftBase.current,
 				saved.value,
 				"vod",
+				saved.vodInputOrder,
 			);
 			// Source facts and preview tasks are deliberately absent from the draft.
 			// Mount their preparation before resuming a later wizard step.

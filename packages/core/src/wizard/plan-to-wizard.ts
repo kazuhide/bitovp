@@ -1815,6 +1815,30 @@ function sharedOutputFolder(plan: Record<string, unknown>): string | undefined {
 	return paths.size === 1 && folder?.endsWith("/") ? folder : undefined;
 }
 
+/** Resolve the picture that anchors a trim or main concat in native plans and saved forms. */
+export function mainPictureSourceKey(
+	key: unknown,
+	sources: Record<string, unknown>,
+): string | undefined {
+	const parents = new Map<unknown, unknown>();
+	for (const trim of asArray(sources.trimmingStreams).filter(isRecord))
+		parents.set(trim.key, trim.sourceKey);
+	for (const concat of asArray(sources.concatenationStreams).filter(isRecord)) {
+		const parts = asArray(concat.sources).filter(isRecord);
+		parents.set(
+			concat.key,
+			(parts.find((part) => part.isMain === true) ?? parts[0])?.sourceKey,
+		);
+	}
+	const seen = new Set<string>();
+	while (typeof key === "string" && parents.has(key)) {
+		if (seen.has(key)) return undefined;
+		seen.add(key);
+		key = parents.get(key);
+	}
+	return asString(key);
+}
+
 /**
  * `basePath` replaces the base folder the plan's manifests would give. Pass it only
  * with a check that the state still rebuilds the plan (`tryImportPresetIntoWizard`).
@@ -1891,29 +1915,17 @@ export function planToWizardState(
 		);
 		// The ordinary picture belongs to the first video rendition, even if an
 		// unrelated rendition uses HDR. Follow its trim or main concat source.
-		const upstream = new Map<unknown, unknown>();
-		for (const trim of asArray(raw.trimmingStreams).filter(isRecord))
-			upstream.set(trim.key, trim.sourceKey);
-		for (const concat of asArray(raw.concatenationStreams).filter(isRecord)) {
-			const parts = asArray(concat.sources).filter(isRecord);
-			upstream.set(
-				concat.key,
-				(parts.find((part) => part.isMain === true) ?? parts[0])?.sourceKey,
-			);
-		}
-		const seen = new Set<unknown>();
-		let key = pictured?.ingestKey;
-		while (typeof key === "string" && upstream.has(key) && !seen.has(key)) {
-			seen.add(key);
-			key = upstream.get(key);
-		}
+		const key = mainPictureSourceKey(pictured?.ingestKey, raw);
+		// A declared ordinary ingest is always rebuilt from the first row,
+		// including when only a later rendition reads it.
 		const source =
+			videoIngest ??
 			[
 				...ingest,
 				...fileStreams,
 				...dolbyStreamsRaw,
 				...hdr10PlusStreamsRaw,
-			].find((row) => row.key === key) ?? videoIngest;
+			].find((row) => row.key === key);
 		const picturePath = source?.videoInputPath ?? source?.inputPath;
 		if (
 			typeof source?.inputKey === "string" &&

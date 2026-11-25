@@ -13,6 +13,7 @@ import type { AppPrismaClient, AppTransactionClient } from "./client";
 import {
 	recordConfirmedStopDelivery,
 	recordStopScheduleFailure,
+	settleExhaustedStopSchedules,
 } from "./live-stop-delivery";
 
 export const STRANDED_RUN_ERROR =
@@ -1702,6 +1703,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						status: true,
 						error: true,
 						liveEffectFenceVersion: true,
+						legacyAdmissionFenceVersion: true,
 						bitmovinEncodingId: true,
 						bitmovinAccountId: true,
 						origin: true,
@@ -2112,6 +2114,21 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				at: input.at,
 				scheduleIds: stops.flatMap((c) => (c.scheduleId ? [c.scheduleId] : [])),
 			});
+			// A retained claim may already own the sampled generation. Taking a
+			// new STOP claim advances that generation exactly once.
+			const admissionFence = channel.legacyAdmissionFenceVersion;
+			if (
+				admissionFence === stopGeneration ||
+				admissionFence === stopGeneration - 1
+			) {
+				await settleExhaustedStopSchedules(tx, {
+					liveChannelId: input.liveChannelId,
+					liveChannelRunId: run.id,
+					providerEncodingId: input.providerEncodingId,
+					admissionFence,
+					at: input.at,
+				});
+			}
 			const { count } = await tx.liveEffectClaim.updateMany({
 				where: {
 					id: { not: input.stopClaimId },

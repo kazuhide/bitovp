@@ -9,6 +9,7 @@ import {
 	competingScheduledStop,
 	liveEffectSendUncertainty,
 	markLiveEffectAmbiguous,
+	settleExhaustedStopSchedules,
 } from "@bitovp/db";
 import { feederLeaseIsFresh } from "../feeder/ownership";
 import { HEARTBEAT_SWEEP_JOB } from "../handlers";
@@ -446,6 +447,7 @@ export async function recordFinalStopFailure(
 			throw new Error(
 				"Live STOP failure lost its exact airing during projection",
 			);
+		const at = new Date();
 		if (
 			intent.scheduleId &&
 			job?.id === `sched-${intent.scheduleId}` &&
@@ -462,9 +464,22 @@ export async function recordFinalStopFailure(
 				},
 				"UNKNOWN",
 				error,
-				new Date(),
+				at,
 				"JOB_TERMINAL_UNKNOWN",
 			);
+		}
+		const admissionFence = channel.legacyAdmissionFenceVersion;
+		if (
+			admissionFence === ownedFence ||
+			(claim?.generation === ownedFence && admissionFence === ownedFence - 1)
+		) {
+			await settleExhaustedStopSchedules(tx, {
+				liveChannelId: intent.liveChannelId,
+				liveChannelRunId: currentRun.id,
+				providerEncodingId: intent.providerEncodingId,
+				admissionFence,
+				at,
+			});
 		}
 		return { projected: true as const, channelName: channel.name };
 	});

@@ -131,6 +131,7 @@ export {
 export {
 	CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
 	recordConfirmedStopDelivery,
+	settleExhaustedStopSchedules,
 } from "./live-stop-delivery";
 export {
 	claimLiveToVodAttempt,

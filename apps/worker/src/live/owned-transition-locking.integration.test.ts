@@ -2474,6 +2474,15 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						where: { liveChannelId: f.channel.id },
 					}),
 				).toBe(0);
+				expect(
+					await tenant.liveSchedule.findMany({
+						where: { id: { in: [old.id, next.id] } },
+						select: { outcome: true, outcomeEvidenceKind: true },
+					}),
+				).toEqual([
+					{ outcome: "UNKNOWN", outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN" },
+					{ outcome: "UNKNOWN", outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN" },
+				]);
 				return;
 			}
 			expect(
@@ -2821,6 +2830,31 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					resend,
 				);
 			const reconcile = createUncertainStopReconciler(f.deps, resend);
+			const exhaustedHandoff = {
+				liveChannelId: f.channel.id,
+				liveChannelRunId: f.run.id,
+				action: "STOP",
+				status: "FIRED",
+				fireAt: now,
+				firedAt: now,
+				dispatchedAt: now,
+				stopProviderEncodingId: f.encodingId,
+				stopAdmissionFenceVersion: 2,
+				legacyStopExhaustedFence: 2,
+			} as const;
+			const otherSchedules = await tenant.liveSchedule.createManyAndReturn({
+				data: [
+					{ ...exhaustedHandoff, dispatchedAt: null },
+					{ ...exhaustedHandoff, liveChannelRunId: randomUUID() },
+					{
+						...exhaustedHandoff,
+						stopAdmissionFenceVersion: 1,
+						legacyStopExhaustedFence: 1,
+					},
+					{ ...exhaustedHandoff, stopProviderEncodingId: randomUUID() },
+				],
+				select: { id: true },
+			});
 			for (let i = 0; i < 4; i++) {
 				await recover();
 				await reconcile();
@@ -2835,6 +2869,33 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					where: { id: f.run.id },
 				}),
 			).toMatchObject({ status: "STOPPED" });
+			const claim = await tenant.liveEffectClaim.findFirstOrThrow({
+				where: { liveChannelId: f.channel.id, action: "STOP", state: "ACKED" },
+			});
+			expect(rows.map((row) => row.id)).toContain(claim.scheduleId);
+			for (const row of rows) {
+				const acknowledged = row.id === claim.scheduleId;
+				expect(
+					await tenant.liveSchedule.findUniqueOrThrow({
+						where: { id: row.id },
+					}),
+				).toMatchObject({
+					outcome: acknowledged ? "DELIVERED" : "UNKNOWN",
+					outcomeEvidenceKind: acknowledged
+						? "PROVIDER_TERMINAL"
+						: "JOB_TERMINAL_UNKNOWN",
+					outcomeAt: expect.any(Date),
+				});
+			}
+			expect(
+				await tenant.liveSchedule.count({
+					where: {
+						id: { in: otherSchedules.map((row) => row.id) },
+						outcome: "PENDING",
+						outcomeAt: null,
+					},
+				}),
+			).toBe(otherSchedules.length);
 			expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
 			expect(resend).not.toHaveBeenCalled();
 		});

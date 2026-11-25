@@ -206,15 +206,34 @@ export function createExhaustedScheduledStopRecovery(
 					}
 					continue;
 				}
+				const advancedFence = originalFence !== channel.liveEffectFenceVersion;
+				const resetQueueObservation = async () => {
+					if (row.legacyStopExhaustedFence === originalFence) {
+						await deps.prisma.liveSchedule.updateMany({
+							where: {
+								id: row.id,
+								liveChannelId: row.liveChannelId,
+								liveChannelRunId: run.id,
+								legacyStopExhaustedFence: originalFence,
+							},
+							data: { legacyStopExhaustedFence: null },
+						});
+					}
+				};
 				const jobState = job && (await job.getState());
 				if (
 					job &&
 					jobState !== "failed" &&
 					!(row.outcome === "UNKNOWN" && jobState === "completed")
-				)
+				) {
+					await resetQueueObservation();
 					continue;
-				const advancedFence = originalFence !== channel.liveEffectFenceVersion;
-				if (legacy && !advancedFence && legacyRow) {
+				}
+				const savedHandoff =
+					row.stopProviderEncodingId === encodingId &&
+					row.stopAdmissionFenceVersion === originalFence;
+				const mayReplay = savedHandoff && !job && row.outcome === "PENDING";
+				const deferToAnotherHandoff = async () => {
 					// A lost or terminal job has no runnable handoff. Keep its schedule available
 					// for fallback if every other handoff also proves exhausted.
 					if (row.legacyStopExhaustedFence !== originalFence) {
@@ -225,8 +244,8 @@ export function createExhaustedScheduledStopRecovery(
 								liveChannelRunId: run.id,
 								action: "STOP",
 								status: "FIRED",
-								stopProviderEncodingId: null,
-								stopAdmissionFenceVersion: null,
+								stopProviderEncodingId: row.stopProviderEncodingId,
+								stopAdmissionFenceVersion: row.stopAdmissionFenceVersion,
 								OR: [
 									{ outcome: "UNKNOWN" },
 									{ outcome: "PENDING", dispatchedAt: { not: null } },
@@ -244,22 +263,24 @@ export function createExhaustedScheduledStopRecovery(
 							data: { legacyStopExhaustedFence: originalFence },
 						});
 					}
-					if (
-						await deps.prisma.liveSchedule.findFirst({
-							where: {
-								liveChannelId: row.liveChannelId,
-								...competingScheduledStop(row.id, run.id, originalFence),
-							},
-							select: { id: true },
-						})
-					)
-						continue;
-				}
+					return deps.prisma.liveSchedule.findFirst({
+						where: {
+							liveChannelId: row.liveChannelId,
+							...competingScheduledStop(row.id, run.id, originalFence),
+						},
+						select: { id: true },
+					});
+				};
+				if (
+					legacy &&
+					!advancedFence &&
+					(legacyRow || savedHandoff) &&
+					!mayReplay &&
+					(await deferToAnotherHandoff())
+				)
+					continue;
 				let failedFencedDelivery = false;
 				if (legacy && !advancedFence && (!job || found?.effect)) {
-					const savedHandoff =
-						row.stopProviderEncodingId === encodingId &&
-						row.stopAdmissionFenceVersion === originalFence;
 					const accountId = liveChannelAccountId(channel);
 					const history = await readAiringEffectHistory(
 						deps.prisma,
@@ -299,6 +320,10 @@ export function createExhaustedScheduledStopRecovery(
 							// A lost status read is not proof that the original handoff was sent.
 						}
 					}
+					// A stamped lost job can be replayed while the encoder or its feeder is
+					// active. When both have finished, only terminal observation remains.
+					if (mayReplay && terminal && (await deferToAnotherHandoff()))
+						continue;
 					if (!terminal) {
 						if (found?.effect || savedHandoff) failedFencedDelivery = true;
 						else if (
@@ -348,6 +373,7 @@ export function createExhaustedScheduledStopRecovery(
 							select: { id: true },
 						});
 						if (!claim) {
+							await resetQueueObservation();
 							await reenqueue?.(original, jobId);
 							continue;
 						}
@@ -374,6 +400,7 @@ export function createExhaustedScheduledStopRecovery(
 							? "The original scheduled job is in the failed queue."
 							: "The scheduled STOP job was evicted before its provider send was confirmed.",
 						deps.emitEvent,
+						legacy && !advancedFence,
 					);
 					continue;
 				}

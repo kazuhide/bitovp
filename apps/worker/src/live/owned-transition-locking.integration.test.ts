@@ -2611,6 +2611,81 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				}),
 			).toBe(0);
 		});
+		it("settles the airing after both reconstructed Stop outboxes lose their queued jobs", async () => {
+			const f = await dispatchFixture();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					status: "STOPPING",
+					legacyAdmissionFenceVersion: 2,
+					liveEffectFenceVersion: 2,
+				},
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPING" },
+			});
+			const rows = [];
+			for (const delta of [1000, 2000]) {
+				const firedAt = new Date(now.getTime() - delta);
+				rows.push(
+					await tenant.liveSchedule.create({
+						data: {
+							liveChannelId: f.channel.id,
+							liveChannelRunId: f.run.id,
+							action: "STOP",
+							status: "FIRED",
+							fireAt: firedAt,
+							firedAt,
+						},
+					}),
+				);
+			}
+			const enqueue = vi.fn(async () => {});
+			await createScheduleSweep({
+				prisma: tenant,
+				now: () => new Date(now.getTime() + 600000),
+				enqueue,
+			}).dispatchPending();
+			for (const row of rows) {
+				expect(
+					await tenant.liveSchedule.findUniqueOrThrow({
+						where: { id: row.id },
+					}),
+				).toMatchObject({
+					stopProviderEncodingId: f.encodingId,
+					stopAdmissionFenceVersion: 2,
+					dispatchedAt: expect.any(Date),
+				});
+				expect(enqueue).toHaveBeenCalledWith(
+					expect.anything(),
+					`sched-${row.id}`,
+				);
+			}
+			const resend = vi.fn(),
+				recover = createExhaustedScheduledStopRecovery(
+					f.deps,
+					async () => undefined,
+					resend,
+				);
+			const reconcile = createUncertainStopReconciler(f.deps, resend);
+			for (let i = 0; i < 4; i++) {
+				await recover();
+				await reconcile();
+			}
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({ status: "STOPPED" });
+			expect(
+				await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				}),
+			).toMatchObject({ status: "STOPPED" });
+			expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+			expect(resend).not.toHaveBeenCalled();
+		});
 		it("finishes a pre-upgrade STOP admission interrupted after FIRED only for unchanged airing owners", async () => {
 			const migration = readFileSync(
 				new URL(

@@ -161,6 +161,32 @@ describe("file names", () => {
 		expect(defaultFileNames("", started.videos)).toEqual(["output.mp4"]);
 	});
 
+	it.each([
+		"Logo: 2026 @2x.png",
+		"Review: cut @ Studio",
+	])("restores the automatic TS filename and AI results directory for %s", (name) => {
+		const ts = apply(started, editFile(started, 0, { kind: "PROGRESSIVE_TS" }));
+		const configured = {
+			...ts,
+			startOptions: {
+				...ts.startOptions,
+				aiSceneAnalysis: {
+					filename: "analysis.json",
+					path: fileJobFolder(ts.name),
+				},
+			},
+		};
+		const renamed = apply(configured, renameFileJob(configured, name));
+		writeWizardDraft("label-file", "vod", renamed, 2);
+		const saved = readWizardDraft("label-file", "vod");
+		expect(saved?.value.videos).toMatchObject([
+			{ muxing: { filename: `${name}.ts` } },
+		]);
+		expect(saved?.value.startOptions).toMatchObject({
+			aiSceneAnalysis: { path: `${name}/` },
+		});
+	});
+
 	it("come back from a saved draft as they were typed, ? and # taken out on the way in", () => {
 		const ts = apply(started, editFile(started, 0, { kind: "PROGRESSIVE_TS" }));
 		const typed = apply(ts, editFile(ts, 0, { filename: "sub/take#2?.ts" }));

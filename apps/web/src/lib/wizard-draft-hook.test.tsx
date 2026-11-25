@@ -219,3 +219,64 @@ it("preserves the original v1 settings after metadata restore and reload while t
 	act(() => second.rerender({ form: value }));
 	expect(second.result.current.retained).toBeNull();
 });
+
+it("autosaves edits entered while a previous draft offer is pending if the operator discards the offer", () => {
+	writeWizardDraft(key, "vod", { ...value, name: "previous" }, 2);
+	const hook = renderHook(
+		({ form }) =>
+			useWizardDraft({
+				kind: "vod",
+				value: form,
+				context: "new",
+				step: 1,
+				onRestore: vi.fn(),
+			}),
+		{ initialProps: { form: value } },
+	);
+	const newer = { ...value, name: "typed before discard" };
+	act(() => hook.rerender({ form: newer }));
+	act(() => hook.result.current.discard());
+	act(() => vi.advanceTimersByTime(301));
+	expect(readWizardDraft(key, "vod")?.value.name).toBe(newer.name);
+});
+
+it("resumes the last saved work across two tabs and keeps it when the older tab submits", () => {
+	const original = { name: "Old title", output: { basePath: "edited/" } };
+	localStorage.setItem(
+		key,
+		JSON.stringify({
+			version: 1,
+			kind: "vod",
+			step: 2,
+			savedAt: Date.now(),
+			value: original,
+		}),
+	);
+	const mount = () =>
+		renderHook(
+			({ form }) =>
+				useWizardDraft({
+					kind: "vod",
+					value: form,
+					context: "new",
+					step: 1,
+					onRestore: vi.fn(),
+				}),
+			{ initialProps: { form: value } },
+		);
+	const older = mount(),
+		newer = mount();
+	act(() => older.result.current.restore(true));
+	act(() =>
+		older.rerender({ form: { ...value, name: "Older recovered job" } }),
+	);
+	act(() => vi.advanceTimersByTime(301));
+	act(() => newer.result.current.discard());
+	act(() => newer.rerender({ form: { ...value, name: "Newer job" } }));
+	act(() => vi.advanceTimersByTime(301));
+	const reopened = mount();
+	expect(reopened.result.current.pending?.value.name).toBe("Newer job");
+	act(() => older.result.current.clear());
+	const afterSubmit = mount();
+	expect(afterSubmit.result.current.pending?.value.name).toBe("Newer job");
+});

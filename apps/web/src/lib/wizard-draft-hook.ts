@@ -294,7 +294,11 @@ export function useWizardDraft({
 				withWizardDraftLock(loaded.key, () => {
 					// A newer working form still owns its legacy recovery record. The
 					// form just submitted can be cleared even if its original was removed.
-					if (kind !== "vod" || submitted(workingKey, expectedWorking)) {
+					if (
+						kind !== "vod" ||
+						matchesDraft(workingKey, null) ||
+						submitted(workingKey, expectedWorking)
+					) {
 						if (kind === "vod") discardWizardDraft(workingKey);
 						if (submitted(loaded.key, expectedOriginal))
 							discardWizardDraft(loaded.key);

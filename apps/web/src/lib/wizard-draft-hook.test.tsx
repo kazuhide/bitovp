@@ -463,3 +463,16 @@ it("ignores a queued discard from an offer replaced by an earlier queued restore
 		request.mockRestore();
 	}
 });
+
+it("removes the accepted original on success after a sibling discarded the working copy", () => {
+	const { older, reopen } = openLegacyDraftTabs();
+	act(() => older.result.current.restore(true));
+	act(() => vi.advanceTimersByTime(301));
+	const sibling = reopen();
+	expect(readWizardDraft(`${key}:working`, "vod")).not.toBeNull();
+	act(() => sibling.result.current.discard());
+	expect(readWizardDraft(`${key}:working`, "vod")).toBeNull();
+	expect(readWizardDraft(key, "vod")).not.toBeNull();
+	act(() => older.result.current.afterSubmission()?.());
+	expect(reopen().result.current.available).toBe(false);
+});

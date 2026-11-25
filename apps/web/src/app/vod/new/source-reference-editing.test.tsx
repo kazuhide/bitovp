@@ -62,6 +62,41 @@ it("adds a trim from ordinary video beside a named HDR video", () => {
 		}),
 	);
 });
+it("keeps a referenced HDR source when its removal would silently switch the rendition to ordinary video", () => {
+	mount({
+		...DEFAULT_WIZARD_STATE,
+		videos: [
+			{
+				height: 720,
+				bitrate: 1000000,
+				codec: "H265",
+				extras: { source: "video-input-1" },
+			},
+		],
+		sources: {
+			hdr10PlusStreams: ["video", "video-input-1"].map((key, i) => ({
+				key,
+				videoInputFile: "main",
+				metadataInputPath: `hdr${i}.json`,
+				selectionMode: "AUTO",
+			})),
+		},
+	});
+	const remove = screen.getByRole("button", {
+		name: "Remove stream wz-stream-hdr10Plus-1",
+		hidden: true,
+	});
+	expect(remove).toBeDisabled();
+	fireEvent.click(remove);
+	expect(stateNow().sources?.hdr10PlusStreams?.[1]?.metadataInputPath).toBe(
+		"hdr1.json",
+	);
+	expect(
+		buildPlan(stateNow()).ingest?.some(
+			(stream) => stream.key === "video-input-1",
+		),
+	).toBe(false);
+});
 const stateNow = () =>
 	JSON.parse(screen.getByTestId("state").textContent ?? "{}") as WizardState;
 const base: WizardState = {

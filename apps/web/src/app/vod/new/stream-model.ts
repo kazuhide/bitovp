@@ -498,6 +498,76 @@ export function reconcileHdr10PlusSidecars(
 		: next;
 }
 
+/** Carry explicit and ordinary source bindings together across a graph edit. */
+export function sourceGraphPatch(
+	state: WizardState,
+	patch: Partial<WizardState> & { sources: WizardSources },
+	renamed?: [string, string],
+): Partial<WizardState> {
+	const implicit = implicitTrackKeys(state.sources ?? {});
+	const next = patch.sources;
+	const nextImplicit = implicitTrackKeys(next);
+	const mapped = new Map<string, string>(renamed ? [renamed] : []);
+	for (const kind of ["video", "audio"] as const) {
+		if (implicit[kind] !== nextImplicit[kind])
+			mapped.set(implicit[kind], nextImplicit[kind]);
+	}
+	if (!mapped.size) return patch;
+	const remap = <T extends { sourceKey: string }>(row: T): T => {
+		const sourceKey = mapped.get(row.sourceKey);
+		return sourceKey === undefined ? row : { ...row, sourceKey };
+	};
+	const mapRendition = <T extends { extras?: { source?: string } }>(
+		row: T,
+	): T =>
+		row.extras?.source && mapped.has(row.extras.source)
+			? {
+					...row,
+					extras: { ...row.extras, source: mapped.get(row.extras.source) },
+				}
+			: row;
+	return {
+		...patch,
+		videos: (patch.videos ?? state.videos).map(mapRendition),
+		audios: (patch.audios ?? state.audios).map(mapRendition),
+		sources: {
+			...next,
+			audioMixStreams: next.audioMixStreams?.map((mix) => ({
+				...mix,
+				audioMixChannels: mix.audioMixChannels.map(remap),
+			})),
+			trimmingStreams: next.trimmingStreams?.map(remap),
+			concatenationStreams: next.concatenationStreams?.map((row) => ({
+				...row,
+				sources: row.sources.map(remap),
+			})),
+		},
+	};
+}
+
+/** Removing a named source must not turn its explicit bindings into ordinary input. */
+export function removalCapturesSource(
+	state: WizardState,
+	next: WizardSources,
+	key: string,
+): boolean {
+	const allocated = implicitTrackKeys(next);
+	if (key !== allocated.video && key !== allocated.audio) return false;
+	return (
+		[...state.videos, ...state.audios].some(
+			(row) => row.extras?.source === key,
+		) ||
+		state.subtitles?.some((row) => row.source === key) === true ||
+		next.audioMixStreams?.some((mix) =>
+			mix.audioMixChannels.some((channel) => channel.sourceKey === key),
+		) === true ||
+		next.trimmingStreams?.some((trim) => trim.sourceKey === key) === true ||
+		next.concatenationStreams?.some((concat) =>
+			concat.sources.some((input) => input.sourceKey === key),
+		) === true
+	);
+}
+
 /** Auto-generate a unique, hidden resource key across every stream array. */
 export function nextStreamKey(
 	sources: WizardSources,

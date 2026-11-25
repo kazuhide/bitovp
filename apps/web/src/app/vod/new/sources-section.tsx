@@ -28,7 +28,9 @@ import {
 	inputFileOptions,
 	inputKindForProvider,
 	nextSharedKey,
+	removalCapturesSource,
 	removeStream,
+	sourceGraphPatch,
 	sourceStreamKeys,
 	streamTypeLabel,
 	UNIFIED_STREAM_TYPES,
@@ -378,6 +380,7 @@ function StreamRow({
 	onChange,
 	onConvert,
 	onRemove,
+	removeDisabledReason,
 	onBrowseMetadata,
 }: {
 	row: UnifiedStream;
@@ -387,6 +390,7 @@ function StreamRow({
 	onChange: (next: UnifiedStream) => void;
 	onConvert: (type: UnifiedStream["type"]) => void;
 	onRemove: () => void;
+	removeDisabledReason?: string;
 	onBrowseMetadata?: () => void;
 }) {
 	const { t } = useT();
@@ -574,6 +578,7 @@ function StreamRow({
 			<RowRemoveButton
 				label={t("wizardX.removeStreamKey", { key: idBase })}
 				onClick={onRemove}
+				disabledReason={removeDisabledReason}
 			/>
 		</div>
 	);
@@ -611,44 +616,8 @@ export function SourcesSection({
 		(a) => (a.extras?.source ?? "") === "",
 	);
 	const implicit = implicitTrackKeys(sources);
-	const patchSources = (next: WizardSources, renamed?: [string, string]) => {
-		const nextImplicit = implicitTrackKeys(next);
-		const mapped = new Map<string, string>(renamed ? [renamed] : []);
-		for (const kind of ["video", "audio"] as const) {
-			if (implicit[kind] !== nextImplicit[kind])
-				mapped.set(implicit[kind], nextImplicit[kind]);
-		}
-		if (!mapped.size) return onPatch({ sources: next });
-		const remap = <T extends { sourceKey: string }>(row: T): T => {
-			const sourceKey = mapped.get(row.sourceKey);
-			return sourceKey === undefined ? row : { ...row, sourceKey };
-		};
-		const mapRendition = <T extends { extras?: { source?: string } }>(
-			row: T,
-		): T =>
-			row.extras?.source && mapped.has(row.extras.source)
-				? {
-						...row,
-						extras: { ...row.extras, source: mapped.get(row.extras.source) },
-					}
-				: row;
-		onPatch({
-			videos: state.videos.map(mapRendition),
-			audios: state.audios.map(mapRendition),
-			sources: {
-				...next,
-				audioMixStreams: next.audioMixStreams?.map((mix) => ({
-					...mix,
-					audioMixChannels: mix.audioMixChannels.map(remap),
-				})),
-				trimmingStreams: next.trimmingStreams?.map(remap),
-				concatenationStreams: next.concatenationStreams?.map((row) => ({
-					...row,
-					sources: row.sources.map(remap),
-				})),
-			},
-		});
-	};
+	const patchSources = (next: WizardSources, renamed?: [string, string]) =>
+		onPatch(sourceGraphPatch(state, { sources: next }, renamed));
 	const renameStream = (from: string, to: string, next: WizardSources) => {
 		if (
 			to !== from &&
@@ -804,6 +773,15 @@ export function SourcesSection({
 								}
 							}}
 							onRemove={() => patchSources(removeStream(sources, row))}
+							removeDisabledReason={
+								removalCapturesSource(
+									state,
+									removeStream(sources, row),
+									row.key,
+								)
+									? t("wizardX.sourceUsedBeforeRemoval")
+									: undefined
+							}
 							onBrowseMetadata={
 								canBrowseMetadata && onBrowseHdr10PlusMetadata
 									? () => onBrowseHdr10PlusMetadata(row.key)
@@ -1286,6 +1264,18 @@ function TrimmingStreamsSection({
 						) : null}
 						<RowRemoveButton
 							label={t("wizardX.removeTrimmingStreamN", { n: index + 1 })}
+							disabledReason={
+								removalCapturesSource(
+									state,
+									{
+										...sources,
+										trimmingStreams: trims.filter((_, i) => i !== index),
+									},
+									trim.key,
+								)
+									? t("wizardX.sourceUsedBeforeRemoval")
+									: undefined
+							}
 							onClick={() =>
 								patchSources({
 									...sources,
@@ -1622,6 +1612,18 @@ function ConcatenationStreamsSection({
 						) : null}
 						<RowRemoveButton
 							label={t("wizardX.removeConcatenationStreamN", { n: index + 1 })}
+							disabledReason={
+								removalCapturesSource(
+									state,
+									{
+										...sources,
+										concatenationStreams: concats.filter((_, i) => i !== index),
+									},
+									concat.key,
+								)
+									? t("wizardX.sourceUsedBeforeRemoval")
+									: undefined
+							}
 							onClick={() =>
 								patchSources({
 									...sources,

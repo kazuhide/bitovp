@@ -7,13 +7,14 @@ import {
 	relativeFilePath,
 	relativeSegmentPath,
 } from "./compiler";
+import { filterParametersForPlan } from "./conform-rate";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
 import { isHdr10PlusObjectPath } from "./hdr-source-paths";
 import { hdr10PlusTransformIssues } from "./hdr10-plus";
 import { heAacConfiguration, isHeAac } from "./he-aac";
 import { hlsChildEntries, hlsSubtitleGroups } from "./hls-media-defaults";
 import { checkHlsVideoUris } from "./hls-video-uri-validation";
-import { FILTER_ENDPOINTS, filterParameters } from "./media-filters";
+import { FILTER_ENDPOINTS } from "./media-filters";
 import { isFileOnlyMuxingKind, muxingStreamKeys } from "./muxing-streams";
 import { streamPerTitleSettings } from "./per-title-settings";
 import type { EncodingPlan } from "./schema";
@@ -1290,6 +1291,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	// thumbnails): filters.properties = [{id, position}] per the official
 	// schema.
 	const filterByKey = new Map(plan.filters.map((f) => [f.key, f]));
+	const filterParameters = filterParametersForPlan(plan);
 	const filterResources: Record<string, Tree> = {};
 	const usedFilterInstanceKeys = new Set<string>();
 	for (const rendition of plan.renditions) {
@@ -1309,7 +1311,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			const endpoint = FILTER_ENDPOINTS[filter.kind];
 			filterResources[endpoint] ??= resourceTable();
 			const group = filterResources[endpoint];
-			const properties = filterParameters(filter);
+			const properties = filterParameters(filter, rendition.encodingKey);
 			if (filter.kind === "WATERMARK" || filter.kind === "ENHANCED_WATERMARK") {
 				delete properties.inputKey;
 				delete properties.imagePath;

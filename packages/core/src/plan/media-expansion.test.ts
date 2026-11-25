@@ -730,6 +730,61 @@ describe("IMSC and Opus contracts", () => {
 		).toBe(false);
 	});
 
+	it("uses the native codec precision consistently across streams with configured fractional Conform rates", () => {
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		const target = 24000 / 1001;
+		plan.filters = [{ key: "rate", kind: "CONFORM", targetFps: target }];
+		for (const r of plan.renditions) {
+			r.filters = [{ filterKey: "rate", position: 0 }];
+			if (r.codec === "H264") r.rate = target;
+		}
+		expect(
+			validatePlan(plan).filter((i) => i.code === "PLAN_CONFORM_FILTER"),
+		).toEqual([]);
+		const ops = compilePlan(plan).filter(
+			(op) => op.kind === "CREATE_FILTER_CONFORM",
+		);
+		expect(ops).toHaveLength(plan.renditions.length);
+		expect(
+			ops.every((op) => op.payload.targetFps === Math.fround(target)),
+		).toBe(true);
+		const rows = Object.values<{ properties: { targetFps: number } }>(
+			parse(planToEncodingTemplateYaml(plan)).filters.conform,
+		);
+		expect(rows).toHaveLength(ops.length);
+		expect(
+			rows.every((row) => row.properties.targetFps === Math.fround(target)),
+		).toBe(true);
+		expect(plan.filters[0]).toMatchObject({ targetFps: target });
+		// Another encoding can share the same authored filter without inheriting
+		// this ladder's codec precision requirement.
+		const separate = structuredClone(plan);
+		separate.encodings = [
+			{ key: "configured", name: "Configured" },
+			{ key: "from-source", name: "Source" },
+		];
+		for (const r of separate.renditions) r.encodingKey = "configured";
+		const other = separate.renditions.find((r) => r.codec === "H264");
+		if (!other) throw new Error("Missing video");
+		const sourceVideo = {
+			...other,
+			key: "source-fps",
+			encodingKey: "from-source",
+		};
+		delete sourceVideo.rate;
+		separate.renditions.push(sourceVideo);
+		expect(
+			compilePlan(separate).find((op) => op.step === "filter:source-fps:rate")
+				?.payload.targetFps,
+		).toBe(target);
+		const video = plan.renditions.find((r) => r.codec === "H264");
+		if (!video) throw new Error("Missing video");
+		video.rate = 24;
+		expect(
+			validatePlan(plan).some((i) => i.code === "PLAN_CONFORM_FILTER"),
+		).toBe(true);
+	});
+
 	it("exports different image placeholders for distinct watermark keys that normalize to the same name", () => {
 		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
 		const video = plan.renditions.find((r) => r.codec === "H264");

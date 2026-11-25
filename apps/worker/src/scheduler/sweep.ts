@@ -897,10 +897,16 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						channel.stepLog,
 						latest.stepLog,
 						primary,
+						true,
 					);
 					const restored =
 						saved &&
-						restoreLiveProvisionEvidence(claim.data.stepLog, saved, primary);
+						restoreLiveProvisionEvidence(
+							claim.data.stepLog,
+							saved,
+							primary,
+							true,
+						);
 					if (
 						!restored ||
 						(channel.bitmovinEncodingId &&

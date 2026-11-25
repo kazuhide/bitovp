@@ -47,6 +47,7 @@ export function restoreLiveProvisionEvidence(
 	channelLog: unknown,
 	runLog: unknown,
 	primary?: string | null,
+	restoreCompletedGraph = false,
 ): StepLogEntry[] | null {
 	const current = stepLogSchema.safeParse(channelLog);
 	if (!current.success) return null;
@@ -54,11 +55,14 @@ export function restoreLiveProvisionEvidence(
 		return current.data;
 	const prior = stepLogSchema.safeParse(runLog);
 	if (!prior.success) return null;
-	const paid = prior.data.filter(evidence);
+	const receipts = prior.data.filter(
+		(step) =>
+			evidence(step) || (restoreCompletedGraph && step.status === "DONE"),
+	);
 	if (!current.data.length) {
 		if (
 			primary &&
-			paid.some(
+			receipts.some(
 				(e) =>
 					e.kind === "CREATE_ENCODING" &&
 					e.resourceId &&
@@ -66,12 +70,12 @@ export function restoreLiveProvisionEvidence(
 			)
 		)
 			return null;
-		return paid.length ||
+		return receipts.length ||
 			prior.data.some((e) => e.kind === "AWAIT_LIVE_RUNNING")
 			? prior.data
 			: current.data;
 	}
-	for (const saved of paid) {
+	for (const saved of receipts) {
 		const target = current.data.find(
 			(e) => e.kind === saved.kind && e.step === saved.step,
 		);
@@ -99,6 +103,17 @@ export function restoreLiveProvisionEvidence(
 				saved.resourceId !== primary)
 		)
 			return null;
+		if (
+			restoreCompletedGraph &&
+			!paidSteps.has(saved.kind) &&
+			saved.status === "DONE"
+		) {
+			// A same-airing revival can start from a freshly compiled graph.
+			// Its pending copy must retain the exact completed stream, muxing,
+			// manifest or other step from this generation, including its payload.
+			if (target.status !== "DONE") Object.assign(target, saved);
+			continue;
+		}
 		if (saved.resourceId && !target.resourceId)
 			target.resourceId = saved.resourceId;
 		if (saved.status === "DONE" && (target.resourceId || start(saved)))

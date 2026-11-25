@@ -65,3 +65,36 @@ it("a completed or in-flight START in another operation generation cannot overri
 		),
 	).toBeNull();
 });
+
+it("restores exact completed graph steps for the same revival generation", () => {
+	const stream = pending("CREATE_STREAM");
+	const saved = {
+		...stream,
+		status: "DONE" as const,
+		resourceId: "prior-stream",
+		response: { id: "prior-stream" },
+	};
+	expect(restoreLiveProvisionEvidence([stream], [saved], null, true)).toEqual([
+		saved,
+	]);
+	const newer = { ...stream, attempt: 1 };
+	expect(restoreLiveProvisionEvidence([newer], [saved], null, true)).toEqual([
+		newer,
+	]);
+	expect(
+		restoreLiveProvisionEvidence(
+			[stream],
+			[{ ...saved, attempt: 1 }],
+			null,
+			true,
+		),
+	).toBeNull();
+	expect(
+		restoreLiveProvisionEvidence(
+			[{ ...saved, resourceId: "other-stream" }],
+			[saved],
+			null,
+			true,
+		),
+	).toBeNull();
+});

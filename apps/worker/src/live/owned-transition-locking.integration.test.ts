@@ -3977,13 +3977,29 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			if (!creation) throw new Error("missing compiled create");
 			creation.status = "DONE";
 			creation.resourceId = f.encodingId;
+			const graph = entries.filter(
+				(e) => e.kind === "CREATE_STREAM" || e.kind === "CREATE_MUXING_FMP4",
+			);
+			if (nullable === "scheduled") {
+				expect(graph.length).toBeGreaterThan(1);
+				for (const step of entries) {
+					if (step === creation || step.kind === "AWAIT_LIVE_RUNNING") continue;
+					step.status = "DONE";
+					if (step.kind.startsWith("CREATE_")) step.resourceId = randomUUID();
+					if (step.kind === "START_LIVE_ENCODING")
+						step.response = { started: true };
+				}
+			}
 			await tenant.liveChannel.update({
 				where: { id: f.channel.id },
 				data: {
 					plan,
-					stepLog: nullable
-						? JSON.parse(JSON.stringify(initStepLog(compileLiveChannel(plan))))
-						: [],
+					stepLog:
+						nullable === true
+							? JSON.parse(
+									JSON.stringify(initStepLog(compileLiveChannel(plan))),
+								)
+							: [],
 					status: nullable === "scheduled" ? "ERROR" : "PROVISIONING",
 				},
 			});
@@ -4028,6 +4044,17 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				const channel = await tenant.liveChannel.findUniqueOrThrow({
 					where: { id: f.channel.id },
 				});
+				for (const entry of graph) {
+					expect(channel.stepLog).toEqual(
+						expect.arrayContaining([
+							expect.objectContaining({
+								step: entry.step,
+								status: "DONE",
+								resourceId: entry.resourceId,
+							}),
+						]),
+					);
+				}
 				expect(channel.stepLog).toEqual(
 					expect.arrayContaining([
 						expect.objectContaining({
@@ -4038,9 +4065,15 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					]),
 				);
 			}
-			f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "CANCELED" }));
+			f.sdk.getEncodingStatus = vi.fn(async () => ({
+				status: nullable === "scheduled" ? "RUNNING" : "CANCELED",
+			}));
 			await createLiveChannelProcessor(f.deps)(job);
 			expect(f.sdk.getEncodingStatus).toHaveBeenCalledWith(f.encodingId);
+			if (nullable === "scheduled") {
+				expect(f.sdk.createStream).not.toHaveBeenCalled();
+				expect(f.sdk.createFmp4Muxing).not.toHaveBeenCalled();
+			}
 			expect(f.sdk.createEncoding).not.toHaveBeenCalled();
 			expect(
 				(

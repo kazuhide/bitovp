@@ -6217,7 +6217,8 @@ export const en = {
 		launchTitle: "Launch \u201C{name}\u201D",
 		notAPlan: "This template's body is not a valid encoding plan.",
 		sources: "Sources",
-		hdrPairRequired: "Select both the replacement HDR10+ picture and its matching JSON metadata.",
+		hdrPairRequired:
+			"Select both the replacement HDR10+ picture and its matching JSON metadata.",
 		sourceOriginal: "Template's own path — leave as-is to re-run it.",
 		sourceMoved: "Overridden for this launch.",
 		browse: "Browse",

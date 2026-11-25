@@ -1,6 +1,6 @@
-import { publicStorageDiagnostic } from "@bitovp/core";
 import {
 	masterKeyFromEnv,
+	publicStorageDiagnostic,
 	submitEncodingJob,
 	VERIFICATION_DISPATCH_FENCE_REJECTED,
 	VERIFICATION_DISPATCH_FENCE_REQUIRED,

@@ -1,4 +1,3 @@
-import { isHdr10PlusObjectPath } from "./hdr-source-paths";
 import { stringify } from "yaml";
 import { h26xPictureControls } from "./codec-controls";
 import { codecDetailWireControls } from "./codec-detail-controls";
@@ -9,6 +8,7 @@ import {
 	relativeSegmentPath,
 } from "./compiler";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
+import { isHdr10PlusObjectPath } from "./hdr-source-paths";
 import { hdr10PlusTransformIssues } from "./hdr10-plus";
 import { hlsChildEntries, hlsSubtitleGroups } from "./hls-media-defaults";
 import { checkHlsVideoUris } from "./hls-video-uri-validation";

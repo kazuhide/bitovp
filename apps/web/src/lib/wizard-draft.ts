@@ -1,5 +1,4 @@
 import {
-	publicHdrSourceProjection,
 	dashAdaptationOptionsSchema,
 	dashAdditionalRepresentationSchema,
 	dashDetailedOptionsSchema,
@@ -10,6 +9,7 @@ import {
 	hlsStreamOptionsSchema,
 	liveDashDetailedOptionsSchema,
 	liveHlsDetailedOptionsSchema,
+	publicHdrSourceProjection,
 	watermarkFilterSchema,
 } from "@bitovp/core";
 import {

@@ -1,9 +1,9 @@
-import { publicHdrSourceProjection } from "@bitovp/core";
 import {
 	isAisaManagedLivePlan,
 	patchLivePresetSchema,
 	patchPlanPresetSchema,
 	planHasErrors,
+	publicHdrSourceProjection,
 	validateLiveChannel,
 	validatePlan,
 	watchSelfIntersectionIssues,

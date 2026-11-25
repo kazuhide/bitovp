@@ -1,7 +1,7 @@
-import { publicStorageDiagnostic } from "@bitovp/core";
 import { createHash } from "node:crypto";
 import {
 	type BandingPooled,
+	publicStorageDiagnostic,
 	type QcGate,
 	type QcVerdict,
 	qcRuleSeverity,

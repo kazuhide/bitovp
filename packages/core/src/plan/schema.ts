@@ -1,4 +1,3 @@
-import { isHdr10PlusObjectPath } from "./hdr-source-paths";
 import { z } from "zod";
 import { vmafExecutionSchema } from "../vmaf/cloud";
 import { audioMixStreamSchema } from "./audio-mix";
@@ -10,6 +9,7 @@ import {
 	vp9DetailControlsSchema,
 } from "./codec-detail-controls";
 import { codecEnumSchema } from "./codec-enums";
+import { isHdr10PlusObjectPath } from "./hdr-source-paths";
 import { isHlsVideoUriPattern } from "./hls-video-uri";
 import { internalHevcV2Schema } from "./internal-hevc-v2";
 import {

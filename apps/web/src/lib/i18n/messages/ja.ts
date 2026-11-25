@@ -6161,7 +6161,8 @@ export const ja = {
 		notAPlan:
 			"このテンプレートの本文は有効なエンコーディングプランではありません。",
 		sources: "素材",
-		hdrPairRequired: "差し替える HDR10+ 映像と、その映像に対応する JSON メタデータの両方を選択してください。",
+		hdrPairRequired:
+			"差し替える HDR10+ 映像と、その映像に対応する JSON メタデータの両方を選択してください。",
 		sourceOriginal:
 			"テンプレートの元パスです。そのままなら同じ素材で再実行します。",
 		sourceMoved: "今回の実行用に変更されています。",

@@ -1,5 +1,5 @@
 import { liveChannelPlanSchema } from "@bitovp/core";
-import { applyVodInputFavorite } from "@bitovp/core/wizard";
+import { applyVodInputFavorite, planToWizardState } from "@bitovp/core/wizard";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
 	buildLiveChannelPlan,
@@ -1224,4 +1224,67 @@ it.each([
 		compiled.ingest?.find((row) => row.selectionMode === "AUDIO_RELATIVE")
 			?.inputPath,
 	).toBe(replaced && edit !== "recycled-key-first" ? sound.path : picture.path);
+});
+
+it.each([
+	"ordinary",
+	"audio",
+] as const)("keeps an edited %s master through Copy and restored legacy input rows", (editedRole) => {
+	const authored = structuredClone(DEFAULT_WIZARD_STATE);
+	const file = authored.inputFiles[0];
+	const rendition = authored.videos[0];
+	if (!file || !rendition)
+		throw new Error("missing default input or rendition");
+	const fileAt = (key: string, path: string) => ({
+		...file,
+		key,
+		inputKey: key,
+		path,
+	});
+	const ordinary = fileAt("footage", "camera.mxf");
+	const sound = fileAt("sound", "program.wav");
+	const hdr = fileAt("pair", "hdr.mxf");
+	authored.inputFiles = [ordinary, sound, hdr];
+	authored.audioInputFile = sound.key;
+	authored.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr10plus1",
+				videoInputFile: hdr.key,
+				metadataInputPath: "hdr.json",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	authored.videos = [
+		{ ...rendition, codec: "H265", extras: { source: "hdr10plus1" } },
+		{ ...rendition, height: 720 },
+	];
+	const native = buildPlan(authored);
+	// Older copies used the provider declarations: the WAV led the saved rows.
+	native.inputs = [...native.inputs].sort(
+		(a, b) => Number(b.key === "sound") - Number(a.key === "sound"),
+	);
+	const base = planToWizardState(native as unknown as Record<string, unknown>);
+	const fix = editedRole === "ordinary" ? "camera.mxf" : "program.wav";
+	const saved = projectWizardDraft("vod", base);
+	expect(saved).not.toHaveProperty("copiedPictureSource");
+	saved.inputFiles = [...base.inputFiles]
+		.sort(
+			(a, b) =>
+				Number(b.path === "program.wav") - Number(a.path === "program.wav"),
+		)
+		.map((f) => {
+			const { inputDeclarationIndex: _rank, ...rest } = f;
+			return { ...rest, path: f.path === fix ? `new/${f.path}` : f.path };
+		});
+	delete saved.audioInputFile;
+	const restored = buildPlan(mergeWizardDraft(base, saved, "vod"));
+	expect(restored.ingest?.find((x) => x.key === "video")?.inputPath).toBe(
+		editedRole === "ordinary" ? "new/camera.mxf" : "camera.mxf",
+	);
+	expect(restored.ingest?.find((x) => x.key === "audio")?.inputPath).toBe(
+		editedRole === "audio" ? "new/program.wav" : "program.wav",
+	);
+	expect(restored.hdr10PlusStreams?.[0]?.videoInputPath).toBe("hdr.mxf");
 });

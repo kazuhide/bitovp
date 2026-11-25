@@ -1011,7 +1011,11 @@ export function mergeWizardDraft<T>(
 	const baseDraft = projectWizardDraft(kind, base);
 	const restored =
 		kind === "vod" && vodInputOrder !== "authored"
-			? restoreCopiedHdrInputs(snapshot, baseDraft)
+			? restoreCopiedHdrInputs(
+					snapshot,
+					baseDraft,
+					draftRecord(base) ? base.copiedPictureSource : undefined,
+				)
 			: snapshot;
 	return merge(base, restored, baseDraft) as T;
 }
@@ -1020,6 +1024,7 @@ export function mergeWizardDraft<T>(
 function restoreCopiedHdrInputs(
 	snapshot: DraftValue,
 	base: DraftValue,
+	copiedPictureSource: unknown,
 ): DraftValue {
 	if (
 		!draftRecord(base.sources) ||
@@ -1035,27 +1040,19 @@ function restoreCopiedHdrInputs(
 	const records = (value: unknown) =>
 		Array.isArray(value) ? value.filter(draftRecord) : [];
 	const filesInDraft = records(snapshot.inputFiles);
-	// File-row keys can be reissued after a deletion. Only a row that still
-	// names the copied storage object inherits its old picture role or rank.
-	const sameObject = (file: DraftValue | undefined, original: DraftValue) =>
-		file !== undefined &&
-		[
-			"key",
-			"inputKey",
-			"kind",
-			"credentialId",
-			"bucket",
-			"region",
-			"path",
-		].every((field) => file[field] === original[field]);
-	const byKey = new Map(
-		records(base.inputFiles).map((file) => [file.key, file]),
-	);
+	const copySources = records(base.sources.hdr10PlusStreams);
+	// Fresh Copy identifies what actually supplied row zero: a declared ordinary
+	// ingest or the leaf of the named main picture. Editing a file in place
+	// cannot turn an independent ordinary ingest into the first HDR rendition.
+	const originalSource =
+		typeof copiedPictureSource === "string"
+			? copiedPictureSource
+			: copiedPictureSource === null
+				? undefined
+				: copySources.find((stream) => stream.videoInputFile === primary.key)
+						?.key;
 	let primaryKey = primary.key;
-	if (
-		!filesInDraft.some((file) => sameObject(file, primary)) &&
-		draftRecord(snapshot.sources)
-	) {
+	if (originalSource && draftRecord(snapshot.sources)) {
 		const sources = snapshot.sources;
 		const declarations = [
 			"tracks",
@@ -1063,42 +1060,43 @@ function restoreCopiedHdrInputs(
 			"dolbyStreams",
 			"hdr10PlusStreams",
 		].flatMap((name) => records(sources[name]));
-		const firstVideo = records(snapshot.videos)[0];
-		const sourceKey = mainPictureSourceKey(
-			draftRecord(firstVideo?.extras) ? firstVideo.extras.source : undefined,
-			sources,
-		);
-		// A v1 draft can replace the original file row. Follow the saved
-		// rendition or the edited binding of the original picture source.
-		const original = records(base.sources.hdr10PlusStreams).find(
-			(s) => s.videoInputFile === primary.key,
-		);
-		const edited =
-			(sourceKey && declarations.find((s) => s.key === sourceKey)) ||
-			(original && declarations.find((s) => s.key === original.key));
-		primaryKey = edited?.videoInputFile ?? edited?.inputFile;
+		let binding = declarations.find((source) => source.key === originalSource);
+		if (!binding && !filesInDraft.some((file) => file.key === primary.key)) {
+			// The original row and source were both removed. A saved replacement
+			// rendition can still name its picture through a trim or main concat.
+			const firstVideo = records(snapshot.videos)[0];
+			const selected = mainPictureSourceKey(
+				draftRecord(firstVideo?.extras) ? firstVideo.extras.source : undefined,
+				sources,
+			);
+			binding = declarations.find((source) => source.key === selected);
+		}
+		primaryKey = binding?.videoInputFile ?? binding?.inputFile ?? primary.key;
 	}
 	const index = snapshot.inputFiles.findIndex(
 		(f) => draftRecord(f) && f.key === primaryKey,
 	);
-	if (index < 1) return snapshot;
+	if (index < 0) return snapshot;
+	// Declaration order belongs to the provider input, independently of which
+	// file on it is currently being edited.
+	const originalFiles = records(base.inputFiles);
+	const byRow = new Map(originalFiles.map((file) => [file.key, file]));
+	const byInput = new Map(
+		originalFiles.map((file) => [file.inputKey, file.inputDeclarationIndex]),
+	);
 	const files = snapshot.inputFiles.map((f) => {
 		if (!draftRecord(f)) return f;
-		const original = byKey.get(f.key);
+		const row = byRow.get(f.key);
 		const rank =
-			original && sameObject(f, original)
-				? original.inputDeclarationIndex
-				: undefined;
+			row && row.inputKey === f.inputKey
+				? row.inputDeclarationIndex
+				: byInput.get(f.inputKey);
 		return rank === undefined ? f : { inputDeclarationIndex: rank, ...f };
 	});
-	files.unshift(...files.splice(index, 1));
-	// The old draft omitted audioInputFile when the first row was its audio master.
+	if (index > 0) files.unshift(...files.splice(index, 1));
 	const audioInputFile =
 		snapshot.audioInputFile ??
-		(base.audioInputFile !== undefined &&
-		sameObject(byKey.get(base.audioInputFile), first)
-			? first.key
-			: undefined);
+		(index > 0 && first.key === base.audioInputFile ? first.key : undefined);
 	return {
 		...snapshot,
 		...(audioInputFile !== undefined ? { audioInputFile } : {}),

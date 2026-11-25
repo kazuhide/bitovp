@@ -382,6 +382,7 @@ it.each([
 		["user:secret phrase@host/image.png", ""],
 		["/user: secret @host/logo.png", ""],
 		["//user:secret@host/key", ""],
+		["storage+://private.example/secret.png", ""],
 		["a".repeat(1025), ""],
 	] as const) {
 		base.filters = [

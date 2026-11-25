@@ -6,7 +6,7 @@ import {
 	draftIdentity,
 	draftKey,
 	projectWizardDraft,
-	readWizardDraft,
+	readWizardDraftRecord,
 	type WizardDraft,
 	type WizardDraftKind,
 	writeWizardDraft,
@@ -45,9 +45,18 @@ export function useWizardDraft({
 	const currentKey = useRef(key);
 	currentKey.current = key;
 	const completed = useRef<string | null>(null);
+	const observed = useRef(new Map<string, string | null>());
+	function unchanged(slot: string): boolean {
+		try {
+			return localStorage.getItem(slot) === observed.current.get(slot);
+		} catch {
+			return false;
+		}
+	}
 	const [loaded, setLoaded] = useState<{
 		key: string;
 		writeKey: string;
+		pendingKey: string;
 		retained: WizardDraft | null;
 		pending: WizardDraft | null;
 		baseline: string;
@@ -58,23 +67,25 @@ export function useWizardDraft({
 	});
 	useEffect(() => {
 		if (!key) return;
-		if (completed.current === key) {
-			discardWizardDraft(key);
-			return;
-		}
+		if (completed.current === key) return;
 		setLoaded((previous) => {
 			if (previous?.key === key) return previous;
-			const original = readWizardDraft(key, kind);
+			const original = readWizardDraftRecord(key, kind);
 			const workingKey = `${key}:working`;
-			const working = readWizardDraft(workingKey, kind);
+			const working = readWizardDraftRecord(workingKey, kind);
+			observed.current.set(key, original?.serialized ?? null);
+			observed.current.set(workingKey, working?.serialized ?? null);
+			const legacyOriginal =
+				original?.draft.legacyVodFilters || original?.draft.legacyRenditions;
+			const useWorking =
+				!!working &&
+				(!original || legacyOriginal || working.savedAt >= original.savedAt);
 			return {
 				key,
 				writeKey: working ? workingKey : key,
-				retained:
-					working && (original?.legacyVodFilters || original?.legacyRenditions)
-						? original
-						: null,
-				pending: working ?? original,
+				pendingKey: useWorking ? workingKey : key,
+				retained: working && legacyOriginal && original ? original.draft : null,
+				pending: (useWorking ? working : original)?.draft ?? null,
 				baseline: serialized,
 			};
 		});
@@ -91,7 +102,18 @@ export function useWizardDraft({
 		const timer = setTimeout(() => {
 			if (currentKey.current !== key || completed.current === key) return;
 			const snapshot = JSON.parse(serialized);
-			writeWizardDraft(loaded.writeKey, kind, snapshot.value, snapshot.step);
+			const workingKey = `${key}:working`;
+			const slot =
+				loaded.writeKey === key && readWizardDraftRecord(workingKey, kind)
+					? workingKey
+					: loaded.writeKey;
+			const written = writeWizardDraft(
+				slot,
+				kind,
+				snapshot.value,
+				snapshot.step,
+			);
+			if (written) observed.current.set(slot, written);
 		}, 300);
 		return () => clearTimeout(timer);
 	}, [key, kind, serialized, loaded]);
@@ -120,16 +142,31 @@ export function useWizardDraft({
 		},
 		discard() {
 			if (!key || loaded?.key !== key) return;
-			discardWizardDraft(loaded.writeKey);
-			setLoaded({ ...loaded, pending: null, baseline: serialized });
+			const legacy =
+				loaded.pending?.legacyVodFilters || loaded.pending?.legacyRenditions;
+			const workingKey = `${key}:working`;
+			const keptAsRecovery =
+				legacy && !!readWizardDraftRecord(workingKey, kind);
+			if (!keptAsRecovery && unchanged(loaded.pendingKey)) {
+				discardWizardDraft(loaded.pendingKey);
+				observed.current.set(loaded.pendingKey, null);
+			}
+			setLoaded({
+				...loaded,
+				writeKey: legacy ? workingKey : loaded.writeKey,
+				retained: keptAsRecovery ? loaded.pending : loaded.retained,
+				pending: null,
+			});
 		},
 		clear() {
 			if (!loaded) return;
 			completed.current = loaded.key;
 			// Removal uses only the key already bound to this form, including a
 			// successful submit during session refresh or imported-plan mode.
-			discardWizardDraft(loaded.key);
-			discardWizardDraft(`${loaded.key}:working`);
+			const slots = [loaded.key, `${loaded.key}:working`];
+			// A different tab may have saved a newer form while this one was open.
+			if (slots.every(unchanged))
+				for (const slot of slots) discardWizardDraft(slot);
 			setLoaded({ ...loaded, pending: null, retained: null });
 		},
 	};

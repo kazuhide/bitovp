@@ -85,7 +85,11 @@ export function draftFingerprint(value: unknown): string {
  */
 export function draftKeepsText(value: string): boolean {
 	const normalized = value.trimStart();
-	if (/^[/\\]{2}/u.test(normalized) || /\w+:\/\/|[?#]/u.test(normalized))
+	if (
+		/^[/\\]{2}/u.test(normalized) ||
+		normalized.includes("://") ||
+		/[?#]/u.test(normalized)
+	)
 		return false;
 	const address = normalized.replace(/^[\s/\\]+/u, "");
 	const authority = address.split(/[/\\]/u, 1)[0] ?? "";
@@ -96,13 +100,18 @@ export function draftKeepsText(value: string): boolean {
 	// Standalone labels use a spaced @ separator ("Review: cut @ Studio",
 	// "Logo: 2026 @2x.png"); a path following the authority disambiguates it.
 	const host = authority.slice(at + 1);
+	if (address !== normalized || !/\s/u.test(authority.charAt(at - 1)))
+		return false;
+	if (/^\s/u.test(host)) return true;
+	// The same display name may become the stem of a file (logo.png-720p.ts)
+	// or a results directory. A nonempty path after the authority remains private.
+	const tail = address.slice(authority.length);
 	return (
-		address === normalized &&
-		address === authority &&
-		/\s/u.test(authority.charAt(at - 1)) &&
-		(/^\s/u.test(host) ||
-			(/\s/u.test(authority.charAt(colon + 1)) &&
-				/^[^\s/]+\.(?:png|jpe?g|webp|gif|avif|bmp|tiff?|svg)$/iu.test(host)))
+		!/[^/]/u.test(tail) &&
+		/\s/u.test(authority.charAt(colon + 1)) &&
+		/^[^\s/]+\.(?:png|jpe?g|webp|gif|avif|bmp|tiff?|svg)(?:[.-][^\s/]+)*$/iu.test(
+			host,
+		)
 	);
 }
 
@@ -1459,8 +1468,10 @@ export function writeWizardDraft(
 			value: projected,
 		});
 		const serialized = JSON.stringify(record);
-		if (serialized.length <= WIZARD_DRAFT_MAX_SIZE)
+		if (serialized.length <= WIZARD_DRAFT_MAX_SIZE) {
 			(storage ?? localStorage).setItem(key, serialized);
+			return serialized;
+		}
 	} catch {
 		/* Invalid/oversized forms and quota failures must not interrupt editing. */
 	}
@@ -1471,8 +1482,16 @@ export function readWizardDraft(
 	storage?: DraftStorage,
 	now = Date.now(),
 ): WizardDraft | null {
+	return readWizardDraftRecord(key, kind, storage, now)?.draft ?? null;
+}
+export function readWizardDraftRecord(
+	key: string,
+	kind: WizardDraftKind,
+	storage?: DraftStorage,
+	now = Date.now(),
+): { draft: WizardDraft; serialized: string; savedAt: number } | null {
 	try {
-		const serialized = (storage ?? localStorage).getItem(key);
+		let serialized = (storage ?? localStorage).getItem(key);
 		if (!serialized) return null;
 		if (serialized.length > WIZARD_DRAFT_MAX_SIZE) throw new Error("size");
 		const record = envelope.parse(JSON.parse(serialized));
@@ -1488,25 +1507,28 @@ export function readWizardDraft(
 				: record.step;
 		if (step === undefined) throw new Error("step");
 		const safeValue = publicHdrSourceProjection(record.value, "draft");
-		if (safeValue !== record.value)
-			(storage ?? localStorage).setItem(
-				key,
-				JSON.stringify({ ...record, value: safeValue }),
-			);
+		if (safeValue !== record.value) {
+			serialized = JSON.stringify({ ...record, value: safeValue });
+			(storage ?? localStorage).setItem(key, serialized);
+		}
 		const value = projectWizardDraft(kind, safeValue);
 		return {
-			step,
-			value,
-			...(!record.renditionSettings &&
-			[value.videos, value.audios, value.subtitles].some(Array.isArray)
-				? { legacyRenditions: true as const }
-				: {}),
-			...(kind === "vod" && record.vodInputOrder
-				? { vodInputOrder: record.vodInputOrder }
-				: {}),
-			...(kind === "vod" && record.version === 1
-				? { legacyVodFilters: true as const }
-				: {}),
+			serialized,
+			savedAt: record.savedAt,
+			draft: {
+				step,
+				value,
+				...(!record.renditionSettings &&
+				[value.videos, value.audios, value.subtitles].some(Array.isArray)
+					? { legacyRenditions: true as const }
+					: {}),
+				...(kind === "vod" && record.vodInputOrder
+					? { vodInputOrder: record.vodInputOrder }
+					: {}),
+				...(kind === "vod" && record.version === 1
+					? { legacyVodFilters: true as const }
+					: {}),
+			},
 		};
 	} catch {
 		discardWizardDraft(key, storage);

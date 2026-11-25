@@ -65,7 +65,7 @@ export function inputStreamAncestry(
 		if (!parents?.length) return undefined;
 		active.add(node.key);
 		pending.push({ key: node.key, leaving: true });
-		for (const parent of parents.toReversed())
+		for (const parent of [...parents].reverse())
 			pending.push({ key: parent, leaving: false });
 	}
 	return [...ordered];

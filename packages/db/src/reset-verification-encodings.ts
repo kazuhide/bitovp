@@ -54,6 +54,7 @@ export async function readVerificationCleanupWork(
 		return parsed ? [parsed] : [];
 	});
 	const protectedWorkKeys = new Set<string>();
+	const vodOwnerKeys = new Map<string, Set<string>>();
 	const candidates: ResetCleanupEncoding[] = [];
 	// An intent can learn provider IDs before local adoption. Protect retained
 	// owners by canonical local key, verification key, and exact encoder refs.
@@ -156,14 +157,14 @@ export async function readVerificationCleanupWork(
 		(cleanupAccounts ?? accounts).map((a) => [a.id, a.tenantOrgId]),
 	);
 	const overlaps = (cleanup: string | null, owner: string | null) => {
-		const scope = cleanup && cleanupScopes.get(cleanup);
+		const scope = (cleanup && cleanupScopes.get(cleanup))?.trim().toLowerCase();
 		const history = owner && retainedScopes.get(owner);
 		return (
 			cleanup === owner ||
 			!scope ||
 			!history ||
 			history.some(
-				(prior) => !prior || prior.toLowerCase() === scope.toLowerCase(),
+				(prior) => !prior?.trim() || prior.trim().toLowerCase() === scope,
 			)
 		);
 	};
@@ -213,10 +214,15 @@ export async function readVerificationCleanupWork(
 			intent.localId ?? (localIds.size === 1 ? [...localIds][0] : undefined);
 		const entityKey = `${kind}:${localId ?? `verification-intent:${intent.id}`}`;
 		for (const encodingId of providerIds) {
+			const workKey = JSON.stringify([entityKey, accountId, encodingId]);
+			if (intent.kind === "VOD_JOB") {
+				const aliases = vodOwnerKeys.get(workKey) ?? new Set<string>();
+				aliases.add(`verification:${intent.verificationKey}`);
+				for (const id of localIds) aliases.add(`job:${id}`);
+				vodOwnerKeys.set(workKey, aliases);
+			}
 			if (localOwner || owned(accountId, encodingId)) {
-				protectedWorkKeys.add(
-					JSON.stringify([entityKey, accountId, encodingId]),
-				);
+				protectedWorkKeys.add(workKey);
 				continue;
 			}
 			candidates.push({
@@ -231,6 +237,7 @@ export async function readVerificationCleanupWork(
 		candidates,
 		archive: retainedArchive,
 		protectedWorkKeys,
+		vodOwnerKeys,
 		owned,
 		overlaps,
 	};

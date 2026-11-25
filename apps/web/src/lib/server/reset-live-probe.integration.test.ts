@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { AesGcmCipher, verificationIntentClosureDigest } from "@bitovp/core";
 import {
 	type AppPrismaClient,
+	type AppTransactionClient,
 	createPrismaClient,
 	createResetCleanupTask,
 	createTenantPrismaClient,
@@ -1846,7 +1847,14 @@ postgres("tenant PostgreSQL reset", () => {
 		});
 		// Two saved entries may select the same provider organization. With no
 		// explicit provider organization the overlap cannot be excluded.
-		const shared = await archiveFixture(prisma, alias, [], 1, 1, tenantOrgId);
+		const shared = await archiveFixture(
+			prisma,
+			alias,
+			[],
+			1,
+			1,
+			" " + tenantOrgId.toUpperCase() + "\t",
+		);
 		await archiveFixture(prisma, defaultScope, []);
 		await prisma.bitmovinAccount.updateMany({
 			where: { id: shared.account.id },
@@ -1879,11 +1887,20 @@ postgres("tenant PostgreSQL reset", () => {
 		"committed",
 		"committing",
 		"cleanup-first",
+		"stale-snapshot",
+		"local-alias",
+		"verification-alias",
 	] as const)("serializes native verification STOP with VOD adoption (%s)", async (mode) => {
 		const { account } = await archiveFixture(prisma, null, []);
 		const id = randomUUID(),
 			intent = randomUUID(),
 			cipher = new AesGcmCipher(randomBytes(32));
+		const cleanupFirst =
+			mode === "cleanup-first" ||
+			mode === "local-alias" ||
+			mode === "verification-alias";
+		const localId = randomUUID(),
+			verificationKey = randomUUID();
 		const workId = await createResetCleanupTask(prisma, cipher, {
 			v: 1,
 			accounts: [
@@ -1898,7 +1915,10 @@ postgres("tenant PostgreSQL reset", () => {
 			],
 			encodings: [
 				{
-					entityKey: "encodingJob:verification-intent:" + intent,
+					entityKey:
+						mode === "local-alias"
+							? "encodingJob:" + localId
+							: "encodingJob:verification-intent:" + intent,
 					accountId: account.id,
 					encodingId: id,
 					verificationOwnerCheck: true,
@@ -1906,7 +1926,22 @@ postgres("tenant PostgreSQL reset", () => {
 			],
 			webhooks: [],
 			pendingEntities: [],
-			verificationIntents: [],
+			verificationIntents:
+				mode === "local-alias" || mode === "verification-alias"
+					? [
+							{
+								id: intent,
+								kind: "VOD_JOB",
+								verificationKey,
+								state: "AMBIGUOUS",
+								providerIds: [id],
+								...(mode === "local-alias"
+									? { possiblyCreatedKeys: ["local:VOD_JOB:" + localId] }
+									: {}),
+								verificationRun: { bitmovinAccountId: account.id },
+							},
+						]
+					: [],
 			verificationWorklistMaterialized: true,
 		});
 		const status = vi
@@ -1916,10 +1951,22 @@ postgres("tenant PostgreSQL reset", () => {
 		const adoption = {
 			name: "Adopting encoder",
 			plan: {},
-			bitmovinEncodingId: id,
+			...(mode === "local-alias" ? { id: localId } : {}),
+			...(mode === "verification-alias" ? { verificationKey } : {}),
+			bitmovinEncodingId:
+				mode === "local-alias" || mode === "verification-alias" ? null : id,
 		};
 		let localWriteFailure: string | undefined;
 		let otherOrganizationCompleted = false;
+		const unrelated = await prisma.encodingJob.create({
+			data: {
+				name: "Unrelated VOD",
+				status: "RUNNING",
+				plan: {},
+				bitmovinEncodingId: randomUUID(),
+			},
+		});
+		let unrelatedCompleted = false;
 		const stop = vi.fn(async () => {
 			// The provider mutation owns the fence, including while its reply is pending.
 			try {
@@ -1930,6 +1977,26 @@ postgres("tenant PostgreSQL reset", () => {
 			} catch (error) {
 				localWriteFailure = String(error);
 			}
+			await runtime.$transaction(async (tx) => {
+				await tx.$queryRaw`SELECT set_config('bitovp.organization_id', ${organizationIds[0]}, true), set_config('lock_timeout','100ms',true)`;
+				await tx.encodingJob.updateMany({
+					where: { id: unrelated.id },
+					data: {
+						stepLog: [
+							{ step: "finish", kind: "AWAIT_ENCODING", status: "DONE" },
+						],
+					},
+				});
+				await tx.encodingJob.create({
+					data: {
+						name: "Different encoding",
+						plan: {},
+						bitmovinEncodingId: randomUUID(),
+					},
+				});
+				unrelatedCompleted = true;
+			});
+
 			await createTenantPrismaClient(
 				runtime,
 				organizationIds[1],
@@ -1947,7 +2014,7 @@ postgres("tenant PostgreSQL reset", () => {
 		});
 		let writer: Promise<unknown> | undefined;
 		const get = vi.fn(async () => {
-			if (mode === "cleanup-first") return { id, type: "VOD" };
+			if (cleanupFirst || mode === "stale-snapshot") return { id, type: "VOD" };
 			writer = prisma.$transaction(async (tx) => {
 				await tx.encodingJob.create({
 					data: {
@@ -1973,8 +2040,36 @@ postgres("tenant PostgreSQL reset", () => {
 		const api = {
 			encoding: { encodings: { get, status, stop, live: { stop: liveStop } } },
 		};
+		const serialUrl = new URL(runtimeUrl!);
+		serialUrl.searchParams.set(
+			"options",
+			"-c default_transaction_isolation=serializable",
+		);
+		const serialRuntime = createPrismaClient(serialUrl.toString());
+		const session = createTenantPrismaClient(serialRuntime, organizationIds[0]);
+		let finalIsolation: string | undefined;
+		const interleaved = new Proxy(session, {
+			get(target, key) {
+				if (key !== "$transaction") return Reflect.get(target, key);
+				return (
+					operation: (tx: AppTransactionClient) => Promise<unknown>,
+					options?: Parameters<AppPrismaClient["$transaction"]>[1],
+				) =>
+					session.$transaction(async (tx) => {
+						if (options?.statementTimeoutMs === 3000 && !finalIsolation) {
+							const [state] = await tx.$queryRaw<
+								{ level: string }[]
+							>`SELECT current_setting('transaction_isolation') AS level`;
+							finalIsolation = state?.level;
+							await prisma.encodingJob.create({ data: adoption });
+						}
+						return operation(tx);
+					}, options);
+			},
+		});
+
 		const sweep = createResetCleanupSweep({
-			prisma,
+			prisma: mode === "stale-snapshot" ? interleaved : prisma,
 			cipher,
 			providerFor: resetCleanupProvider(
 				cipher,
@@ -1983,8 +2078,15 @@ postgres("tenant PostgreSQL reset", () => {
 			),
 		});
 		try {
+			if (mode === "stale-snapshot") {
+				const [row] = await session.$queryRaw<
+					{ level: string }[]
+				>`SELECT current_setting('transaction_isolation') AS level`;
+				expect(row?.level).toBe("serializable");
+			}
 			await sweep();
 		} finally {
+			await serialRuntime.$disconnect();
 			resume();
 			await writer;
 		}
@@ -1995,17 +2097,23 @@ postgres("tenant PostgreSQL reset", () => {
 			});
 			await sweep();
 		}
-		expect(stop).toHaveBeenCalledTimes(mode === "cleanup-first" ? 1 : 0);
-		if (mode === "cleanup-first")
-			expect(localWriteFailure).toMatch(/lock timeout|55P03/i);
+		expect(stop).toHaveBeenCalledTimes(cleanupFirst ? 1 : 0);
+		if (mode === "stale-snapshot")
+			expect(finalIsolation).toBe("read committed");
+		if (cleanupFirst) expect(unrelatedCompleted).toBe(true);
+		if (cleanupFirst) expect(localWriteFailure).toMatch(/lock timeout|55P03/i);
 		else expect(localWriteFailure).toBeUndefined();
-		expect(otherOrganizationCompleted).toBe(mode === "cleanup-first");
-		expect(status).toHaveBeenCalledTimes(mode === "cleanup-first" ? 2 : 1);
+		expect(otherOrganizationCompleted).toBe(cleanupFirst);
+		expect(status).toHaveBeenCalledTimes(cleanupFirst ? 2 : 1);
 		expect(get).toHaveBeenCalledWith(id);
 		expect(liveStop).not.toHaveBeenCalled();
-		expect(
-			await prisma.resetCleanupTask.findUnique({ where: { id: workId } }),
-		).toBeNull();
+		const task = await readResetCleanupTask(prisma, cipher, workId);
+		if (mode === "local-alias" || mode === "verification-alias") {
+			expect(task?.payload.encodings).toEqual([]);
+			expect(task?.payload.verificationIntents).toEqual([
+				expect.objectContaining({ id: intent, state: "AMBIGUOUS" }),
+			]);
+		} else expect(task).toBeNull();
 	});
 	it("deletes the operational graph, keeps configuration, and reports honest counts", async () => {
 		// A connected graph: parents and children across every FK the delete

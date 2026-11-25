@@ -281,9 +281,14 @@ export function createResetCleanupSweep(deps: {
 								const deadline = performance.now() + 6_000;
 								return deps.prisma.$transaction(
 									async (tx) => {
+										const identities = [
+											`encoding:${row.encodingId}`,
+											...(work.vodOwnerKeys.get(cleanupOwnershipKey(row)) ??
+												[]),
+										];
 										const [lock] = await tx.$queryRaw<
 											{ acquired: boolean }[]
-										>`SELECT pg_try_advisory_xact_lock(hashtextextended('bitovp/reset-ownership/' || current_setting('bitovp.organization_id'), 0)) AS acquired`;
+										>`SELECT bitovp_try_reset_verification_send(${identities}::text[]) AS acquired`;
 										if (!lock?.acquired || !permitted(row, await readWork(tx)))
 											return false;
 										const remaining = Math.floor(deadline - performance.now());
@@ -294,7 +299,12 @@ export function createResetCleanupSweep(deps: {
 										});
 										return true;
 									},
-									{ timeout: 8_000, maxWait: 1_000, statementTimeoutMs: 3_000 },
+									{
+										isolationLevel: "ReadCommitted",
+										timeout: 8_000,
+										maxWait: 1_000,
+										statementTimeoutMs: 3_000,
+									},
 								);
 							}
 						: undefined,

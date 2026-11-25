@@ -127,7 +127,7 @@ export type BitmovinAccountDefaults = z.infer<
 export const createBitmovinAccountSchema = z.object({
 	label: z.string().min(1, "Label is required").max(120),
 	apiKey: z.string().min(1, "API key is required"),
-	tenantOrgId: z.string().min(1).optional(),
+	tenantOrgId: z.string().trim().min(1).optional(),
 	defaults: bitmovinAccountDefaultsSchema.default({
 		encoderVersion: "STABLE",
 		cloudRegion: "AUTO",
@@ -143,7 +143,7 @@ export type CreateBitmovinAccountRequest = z.infer<
 export const updateBitmovinAccountSchema = z.object({
 	label: z.string().min(1).max(120).optional(),
 	apiKey: z.string().min(1).optional(),
-	tenantOrgId: z.string().min(1).nullable().optional(),
+	tenantOrgId: z.string().trim().min(1).nullable().optional(),
 	defaults: bitmovinAccountDefaultsSchema.optional(),
 });
 

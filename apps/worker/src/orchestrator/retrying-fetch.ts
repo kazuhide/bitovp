@@ -1,3 +1,5 @@
+import type { CreateStamp } from "./stamping-fetch";
+
 /**
  * The `fetch` the Bitmovin SDK gets, wrapped to survive a dropped connection.
  *
@@ -55,6 +57,7 @@ export type RetryingFetchOptions = {
 	attempts?: number;
 	/** A job-owned mutation must be reconciled after an uncertain transport response. */
 	retryMutations?: boolean | (() => boolean);
+	childCreateJournal?: CreateStamp["childCreateJournal"];
 	/** Base backoff; attempt n waits `delayMs * 2^(n-1)`. */
 	delayMs?: number;
 	/** Injected for tests — the default is a real timer. */
@@ -80,6 +83,28 @@ export function createRetryingFetch(
 		options.fetchImpl ?? ((url, init) => fetch(url, init as never));
 
 	return async (url, init) => {
+		const request = init as RequestInit | undefined;
+		const child =
+			request?.method?.toUpperCase() === "POST"
+				? options.childCreateJournal?.()
+				: undefined;
+		if (child) {
+			// Send exactly once. Following a redirect could produce a refusal or DNS
+			// error for a later request after the original server received its POST.
+			let response: Response;
+			try {
+				response = await doFetch(url, { ...request, redirect: "manual" });
+			} catch (error) {
+				if (failedOriginalDnsLookup(error, url))
+					await child.record("PREPARING");
+				throw error;
+			}
+			// Fetch resolves after headers. A broken body must not erase the original
+			// POST's refusal. A failed GET never reaches this journal.
+			if (!response.redirected && [401, 403, 429].includes(response.status))
+				await child.record("PREPARING");
+			return response;
+		}
 		const retryMutations =
 			typeof options.retryMutations === "function"
 				? options.retryMutations()
@@ -138,6 +163,24 @@ export function createRetryingFetch(
 		}
 		throw lastError;
 	};
+}
+
+function failedOriginalDnsLookup(error: unknown, url: string): boolean {
+	const cause = error instanceof Error ? error.cause : undefined;
+	if (
+		!cause ||
+		typeof cause !== "object" ||
+		!("syscall" in cause) ||
+		cause.syscall !== "getaddrinfo"
+	)
+		return false;
+	return (
+		"code" in cause &&
+		(cause.code === "EAI_AGAIN" || cause.code === "ENOTFOUND") &&
+		"hostname" in cause &&
+		URL.canParse(url) &&
+		cause.hostname === new URL(url).hostname
+	);
 }
 
 /**

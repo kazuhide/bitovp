@@ -943,20 +943,9 @@ export async function adoptOrCreateStamped(args: {
 			// reinterpret it as a lost response and run lookup/adoption again.
 			throw err.cause;
 		}
-		// A single native POST explicitly rejected by access or rate limits cannot
-		// have created this child. A failed lookup or ambiguous POST never
-		// supplies that proof. The new owner must receive the fenced receipt.
-		if (
-			childJournal &&
-			err instanceof BitmovinCallError &&
-			err.method === "POST" &&
-			(err.httpStatusCode === 401 ||
-				err.httpStatusCode === 403 ||
-				err.httpStatusCode === 429)
-		) {
-			await childJournal.record("PREPARING");
-			throw err;
-		}
+		// The native POST transport can establish non-admission before the SDK
+		// parses a response body or normalizes a network error to HTTP status 0.
+		if (childJournal?.isPreparing()) throw err;
 		if (!expect) {
 			throw err;
 		}

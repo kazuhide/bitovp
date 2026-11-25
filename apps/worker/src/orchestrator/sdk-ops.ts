@@ -1870,6 +1870,7 @@ export function createBitmovinSdkOps(
 					retryMutations: () =>
 						!options.stamp?.beforeMutation &&
 						!options.stamp?.childCreateJournal?.(),
+					childCreateJournal: options.stamp?.childCreateJournal,
 				});
 	const liveStartFetch = createLiveStartFetch(
 		options.stamp ? createStampingFetch(retrying, options.stamp) : retrying,

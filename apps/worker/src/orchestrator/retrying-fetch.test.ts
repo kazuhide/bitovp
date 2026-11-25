@@ -1,6 +1,51 @@
-import { describe, expect, it } from "vitest";
+import { createServer } from "node:http";
+import { describe, expect, it, vi } from "vitest";
 import { createRetryingFetch, isRetryable } from "./retrying-fetch";
 import { createBitmovinSdkOps } from "./sdk-ops";
+
+it("journals a real child POST refusal before its response body breaks and never follows a redirect", async () => {
+	const requests: string[] = [];
+	let breakBody: (() => void) | undefined;
+	const server = createServer((req, res) => {
+		requests.push(req.url ?? "");
+		if (req.url === "/redirect") {
+			res.writeHead(307, { location: "/target" });
+			res.end();
+			return;
+		}
+		res.writeHead(429, {
+			"content-type": "application/json",
+			"content-length": 500,
+		});
+		res.write("{");
+		breakBody = () => res.destroy();
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	try {
+		const address = server.address();
+		if (!address || typeof address === "string")
+			throw new Error("missing listen address");
+		const base = "http://127.0.0.1:" + address.port;
+		const record = vi.fn(async () => {});
+		const send = createRetryingFetch({
+			childCreateJournal: () => ({ isPreparing: () => false, record }),
+		});
+		const redirect = await send(base + "/redirect", { method: "POST" });
+		expect(redirect.status).toBe(307);
+		expect(record).not.toHaveBeenCalled();
+		await redirect.body?.cancel();
+		const rejected = await send(base + "/refused", { method: "POST" });
+		expect(record.mock.calls).toEqual([["PREPARING"]]);
+		breakBody?.();
+		await expect(rejected.text()).rejects.toThrow();
+		expect(requests).toEqual(["/redirect", "/refused"]);
+	} finally {
+		server.closeAllConnections();
+		await new Promise<void>((resolve, reject) =>
+			server.close((error) => (error ? reject(error) : resolve())),
+		);
+	}
+});
 
 /**
  * The distinction that matters is REJECTED vs RESPONDED. A dropped connection is

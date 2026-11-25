@@ -4325,6 +4325,12 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			"lookup-throttled",
 			"post-uncertain",
 			"wire-lost",
+			"dns-before-send",
+			"lookup-dns",
+			"401-broken-body",
+			"429-broken-body",
+			"202-broken-body",
+			"redirect-dns",
 		] as const)("recovers the exact Live child send boundary (%s)", async (mode) => {
 			const f = await dispatchFixture();
 			await tenant.bitmovinAccount.create({
@@ -4353,7 +4359,13 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					step.response = { started: true };
 			}
 			const verify = mode === "prepared";
-			const refused = mode === "post-denied" || mode === "post-throttled";
+			const refused = [
+				"post-denied",
+				"post-throttled",
+				"dns-before-send",
+				"401-broken-body",
+				"429-broken-body",
+			].includes(mode);
 			if (verify) {
 				child.status = "RUNNING";
 				child.startedAt = lease.toISOString();
@@ -4403,7 +4415,17 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 							{ status: "ERROR", data: { message: "fixture refusal" } },
 							{ status },
 						);
+					const dnsFailure = (hostname: string) =>
+						new TypeError("fetch failed", {
+							cause: Object.assign(new Error("temporary lookup failure"), {
+								code: "EAI_AGAIN",
+								syscall: "getaddrinfo",
+								hostname,
+							}),
+						});
 					if (method === "GET") {
+						if (mode === "lookup-dns" && !recovering)
+							throw dnsFailure(new URL(String(input)).hostname);
 						if (mode === "post-uncertain" && !recovering) return error(401);
 						if (mode === "lookup-throttled" && !recovering) return error(429);
 						return Response.json({
@@ -4412,6 +4434,31 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						});
 					}
 					expect((await stored())?.childCreateDispatch).toBe("DISPATCHING");
+					if (!recovering) {
+						if (mode === "dns-before-send")
+							throw dnsFailure(new URL(String(input)).hostname);
+						if (mode === "lookup-dns")
+							throw new TypeError("lost response after send");
+						if (mode === "redirect-dns") {
+							if (init?.redirect === "manual" || init?.redirect === "error")
+								return new Response(null, {
+									status: 307,
+									headers: { location: "https://redirect.invalid/stream" },
+								});
+							throw dnsFailure("redirect.invalid");
+						}
+						if (mode.endsWith("-broken-body"))
+							return new Response(
+								new ReadableStream({
+									start(controller) {
+										controller.error(
+											new Error("response body was interrupted"),
+										);
+									},
+								}),
+								{ status: Number.parseInt(mode, 10) },
+							);
+					}
 					if (!recovering && mode === "post-denied") return error(401);
 					if (!recovering && mode === "post-throttled") return error(429);
 					if (!recovering && mode === "lookup-throttled")

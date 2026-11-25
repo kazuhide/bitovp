@@ -64,12 +64,13 @@ const controls = [
 		workspace: "@bitovp/worker",
 		directory: "apps/worker",
 		files: {
-			"src/orchestrator/retrying-fetch.test.ts": 24,
+			"src/orchestrator/retrying-fetch.test.ts": 25,
 		},
 		source: "apps/worker/src/orchestrator/retrying-fetch.ts",
 		anchor: "return !/\\/(live\\/)?start\\/?$/.test(path);",
 		replacement: "return true;",
 		cases: [
+			"journals a real child POST refusal before its response body breaks and never follows a redirect",
 			"createRetryingFetch refuses RTMP reassignment retries with URL query/trailing slash, while preserving reads",
 			"createRetryingFetch retries a transport rejection and returns the eventual response",
 			"createRetryingFetch retries only reads on an attempt-owned manifest request (POST)",

@@ -66,7 +66,10 @@ export type CreateStamp = {
 	beforeMutation?: () => Promise<void>;
 	/** Only the active, journaled Live child's native CREATE has this handoff. */
 	childCreateJournal?: () =>
-		| { record(state: "PREPARING" | "DISPATCHING"): Promise<void> }
+		| {
+				isPreparing(): boolean;
+				record(state: "PREPARING" | "DISPATCHING"): Promise<void>;
+		  }
 		| undefined;
 	/**
 	 * Durable verification identity. Both fields are derived and committed by

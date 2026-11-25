@@ -6266,6 +6266,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						if (!entry?.childCreateDispatch || !isStampedLiveChild(entry))
 							return;
 						return {
+							isPreparing: () => entry.childCreateDispatch === "PREPARING",
 							record: async (state) => {
 								const previous = entry.childCreateDispatch;
 								if (state === previous) return;

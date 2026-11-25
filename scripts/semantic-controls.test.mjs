@@ -60,7 +60,7 @@ function report(control, mutant, checkout = root) {
 	};
 }
 
-test("four fixed product faults retain complete, distinct 94-case inventories and 22 semantic witnesses", () => {
+test("four fixed product faults retain complete, distinct 95-case inventories and 22 semantic witnesses", () => {
 	assert.deepEqual(
 		CONTROLS.map((control) => control.id),
 		[
@@ -72,7 +72,7 @@ test("four fixed product faults retain complete, distinct 94-case inventories an
 	);
 	assert.equal(
 		CONTROLS.reduce((sum, control) => sum + control.cases.length, 0),
-		94,
+		95,
 	);
 	assert.equal(
 		CONTROLS.reduce(

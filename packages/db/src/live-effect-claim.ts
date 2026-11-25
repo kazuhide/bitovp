@@ -11,6 +11,7 @@ import {
 import type { Prisma } from "../generated/client";
 import type { AppPrismaClient, AppTransactionClient } from "./client";
 import {
+	isLiveStopAdmissionFence,
 	recordConfirmedStopDelivery,
 	recordOwnedScheduledStopDelivery,
 	recordStopScheduleFailure,
@@ -2149,13 +2150,8 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				scheduleIds: stops.flatMap((c) => (c.scheduleId ? [c.scheduleId] : [])),
 			});
 			await confirmOwnedSchedule();
-			// A retained claim may already own the sampled generation. Taking a
-			// new STOP claim advances that generation exactly once.
 			const admissionFence = channel.legacyAdmissionFenceVersion;
-			if (
-				admissionFence === stopGeneration ||
-				admissionFence === stopGeneration - 1
-			) {
+			if (isLiveStopAdmissionFence(admissionFence, stopGeneration, stopClaim)) {
 				await settleExhaustedStopSchedules(tx, {
 					liveChannelId: input.liveChannelId,
 					liveChannelRunId: run.id,

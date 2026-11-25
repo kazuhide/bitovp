@@ -130,6 +130,7 @@ export {
 } from "./live-reair-guard";
 export {
 	CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
+	isLiveStopAdmissionFence,
 	recordConfirmedStopDelivery,
 	settleExhaustedStopSchedules,
 } from "./live-stop-delivery";

@@ -3,6 +3,23 @@ import type { AppTransactionClient } from "./client";
 
 export const CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION = 1;
 
+/** Whether a legacy sweep fence belongs to the STOP now closing this airing. */
+export function isLiveStopAdmissionFence(
+	legacyFence: number | null,
+	generation: number,
+	claim?: { scheduleId: string | null; attempt: number },
+): legacyFence is number {
+	if (legacyFence === null) return false;
+	if (legacyFence === generation) return true;
+	if (!claim) return false;
+	if (legacyFence === generation - 1) return true;
+	// A scheduled claim starts one generation after admission. On retry both
+	// counters advance together from that claim's exact previous generation.
+	return (
+		claim.scheduleId !== null && legacyFence === generation - claim.attempt
+	);
+}
+
 /**
  * Called while committing the channel's exact terminal transition. Each matching
  * schedule was handed off and independently observed exhausted before this STOP

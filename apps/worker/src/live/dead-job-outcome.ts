@@ -7,6 +7,7 @@ import {
 	type AppPrismaClient,
 	beginLiveEffect,
 	competingScheduledStop,
+	isLiveStopAdmissionFence,
 	liveEffectSendUncertainty,
 	markLiveEffectAmbiguous,
 	settleExhaustedStopSchedules,
@@ -348,6 +349,7 @@ export async function recordFinalStopFailure(
 					state: true,
 					scheduleId: true,
 					generation: true,
+					attempt: true,
 					liveChannelId: true,
 					liveChannelRunId: true,
 					providerEncodingId: true,
@@ -470,8 +472,11 @@ export async function recordFinalStopFailure(
 		}
 		const admissionFence = channel.legacyAdmissionFenceVersion;
 		if (
-			admissionFence === ownedFence ||
-			(claim?.generation === ownedFence && admissionFence === ownedFence - 1)
+			isLiveStopAdmissionFence(
+				admissionFence,
+				ownedFence,
+				claim?.generation === ownedFence ? claim : undefined,
+			)
 		) {
 			await settleExhaustedStopSchedules(tx, {
 				liveChannelId: intent.liveChannelId,

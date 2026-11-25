@@ -2529,6 +2529,144 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			}
 		});
 		it.each([
+			"confirmed",
+			"exhausted",
+		] as const)("settles an evicted sibling after the owning scheduled STOP retries (%s)", async (result) => {
+			const { scope, ...f } = await isolatedDispatchFixture();
+			const fence = 2;
+			await scope.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					status: "STOPPING",
+					liveEffectFenceVersion: fence,
+					legacyAdmissionFenceVersion: fence,
+				},
+			});
+			await scope.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPING" },
+			});
+			const stop = {
+				liveChannelId: f.channel.id,
+				liveChannelRunId: f.run.id,
+				action: "STOP",
+				status: "FIRED",
+				fireAt: now,
+				firedAt: now,
+				dispatchedAt: now,
+			} as const;
+			const evicted = await scope.liveSchedule.create({ data: stop });
+			const queued = await scope.liveSchedule.create({ data: stop });
+			const jobId = `sched-${queued.id}`;
+			const job = {
+				liveChannelId: f.channel.id,
+				plannedLiveChannelRunId: f.run.id,
+				action: "stop" as const,
+				effect: {
+					...f.identity,
+					scheduleId: queued.id,
+					idempotencyKey: `schedule:${queued.id}:stop`,
+					admissionFenceVersion: fence,
+				},
+			};
+			f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
+			await createExhaustedScheduledStopRecovery(
+				f.deps,
+				async (id) =>
+					id === jobId
+						? { data: job, getState: async () => "waiting" }
+						: undefined,
+				vi.fn(),
+			)();
+			expect(
+				await scope.liveSchedule.findUniqueOrThrow({
+					where: { id: evicted.id },
+				}),
+			).toMatchObject({ outcome: "PENDING", legacyStopExhaustedFence: fence });
+
+			const begin = () =>
+				beginLiveEffect(scope, {
+					...job.effect,
+					liveChannelId: f.channel.id,
+					expectedFenceVersion: fence,
+					allowedChannelStatuses: ["STOPPING"],
+					ownerId: "queued-worker",
+					now,
+					expiresAt: new Date(now.getTime() + 30000),
+				});
+			const first = await begin();
+			if (first.kind !== "EXECUTE")
+				throw new Error("first STOP claim was refused");
+			expect(
+				await markLiveEffectFailed(
+					scope,
+					first.claim,
+					"first feeder lookup failed",
+				),
+			).toBe(true);
+
+			const otherFence = await scope.liveSchedule.create({
+				data: {
+					...stop,
+					legacyStopExhaustedFence: fence + 1,
+					stopAdmissionFenceVersion: fence + 1,
+					stopProviderEncodingId: f.encodingId,
+				},
+			});
+			if (result === "confirmed") {
+				f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "FINISHED" }));
+				const completed = await createLiveChannelProcessor(f.deps)(job, jobId);
+				expect(completed.status).toBe("STOPPED");
+			} else {
+				const retry = await begin();
+				if (retry.kind !== "EXECUTE")
+					throw new Error("second STOP claim was refused");
+				expect(
+					await markLiveEffectFailed(
+						scope,
+						retry.claim,
+						"final feeder lookup failed",
+					),
+				).toBe(true);
+				expect(
+					await recordFinalStopFailure(
+						scope,
+						{ id: jobId, data: job, attemptsMade: 2, opts: { attempts: 2 } },
+						"exhausted",
+					),
+				).toBe(true);
+			}
+			expect(
+				await scope.liveEffectClaim.findUniqueOrThrow({
+					where: { id: first.claim.id },
+				}),
+			).toMatchObject({ attempt: 2, generation: fence + 2 });
+			expect(
+				await scope.liveSchedule.findUniqueOrThrow({
+					where: { id: evicted.id },
+				}),
+			).toMatchObject({
+				outcome: "UNKNOWN",
+				outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+			});
+			expect(
+				await scope.liveSchedule.findUniqueOrThrow({
+					where: { id: queued.id },
+				}),
+			).toMatchObject({
+				outcome: result === "confirmed" ? "DELIVERED" : "UNKNOWN",
+			});
+			expect(
+				await scope.liveSchedule.findUniqueOrThrow({
+					where: { id: otherFence.id },
+				}),
+			).toMatchObject({
+				outcome: "PENDING",
+				legacyStopExhaustedFence: fence + 1,
+			});
+		});
+
+		it.each([
 			"evicted",
 			"failed",
 			"replaced encoder",

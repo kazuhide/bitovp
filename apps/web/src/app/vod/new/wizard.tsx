@@ -14,7 +14,7 @@ import {
 	vodInputTimelineNeedsPreparation,
 } from "@bitovp/core/vod-input-timeline";
 import { applyVodInputFavorite } from "@bitovp/core/wizard";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -41,6 +41,7 @@ import {
 	restoreVodWizardDraft,
 } from "@/lib/wizard-draft";
 import { useWizardDraft } from "@/lib/wizard-draft-hook";
+import { useWizardSubmission } from "@/lib/wizard-submission-hook";
 import {
 	followRenamedAudioKeys,
 	reconcileAutomaticAudioPackaging,
@@ -670,48 +671,40 @@ export function VodWizard({
 				: "wizard:new"
 			: `wizard:${presetKey}:${presetUpdatedAt ?? ""}`,
 	);
-	const submit = useMutation({
-		onMutate: () =>
-			!imported && !jsonLoadedForEditing ? draft.afterSubmission() : undefined,
-		mutationFn: () => {
+	const submit = useWizardSubmission(
+		() => {
 			if (internalBlocked) throw new Error(t("hevcV2.unavailable"));
 			if (timelineBlocked) throw new Error(t("vodTimeline.notReady"));
 			if (qcExecutionValidation.invalid) throw new Error(qcExecutionMessage);
-			return creation.submit<{ id: string }>({
-				plan: imported
-					? buildSubmissionPlan(imported, state.accountId)
-					: buildPlan(submissionState),
-			});
+			const plan = imported
+				? buildSubmissionPlan(imported, state.accountId)
+				: buildPlan(submissionState);
+			return () => creation.submit<{ id: string }>({ plan });
 		},
-		onSuccess: (job, _variables, finishDraft) => {
-			finishDraft?.();
-			router.push(`/vod/jobs/${job.id}`);
-		},
-	});
+		() =>
+			!imported && !jsonLoadedForEditing ? draft.afterSubmission() : undefined,
+		(job) => router.push(`/vod/jobs/${job.id}`),
+	);
 
 	// Template re-edit : PATCH with the LOADED updatedAt as
 	// the CAS token — a template edited elsewhere since this page loaded is a
 	// 409, surfaced as "reload", never silently overwritten.
-	const updateTemplate = useMutation({
-		onMutate: () =>
-			!imported && !jsonLoadedForEditing ? draft.afterSubmission() : undefined,
-		mutationFn: () => {
+	const updateTemplate = useWizardSubmission(
+		() => {
 			if (internalBlocked) throw new Error(t("hevcV2.unavailable"));
-			return apiFetch<{ id: string }>(`/api/presets/${editPresetId}`, {
-				method: "PATCH",
-				body: JSON.stringify({
-					plan: imported
-						? buildSubmissionPlan(imported, state.accountId)
-						: buildPlan(submissionState),
-					expectedUpdatedAt: appliedTemplateUpdatedAt,
-				}),
+			const path = `/api/presets/${editPresetId}`;
+			const body = JSON.stringify({
+				plan: imported
+					? buildSubmissionPlan(imported, state.accountId)
+					: buildPlan(submissionState),
+				expectedUpdatedAt: appliedTemplateUpdatedAt,
 			});
+			return () => apiFetch<{ id: string }>(path, { method: "PATCH", body });
 		},
-		onSuccess: (_saved, _variables, finishDraft) => {
-			finishDraft?.();
-			router.push("/templates");
-		},
-	});
+		() =>
+			!imported && !jsonLoadedForEditing ? draft.afterSubmission() : undefined,
+		() => router.push("/templates"),
+	);
 
 	const patch = (partial: Partial<WizardState>) =>
 		setState((prev) => {

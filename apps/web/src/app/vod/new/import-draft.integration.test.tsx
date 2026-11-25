@@ -1,4 +1,5 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { onlineManager } from "@tanstack/react-query";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { draftKey, writeWizardDraft } from "@/lib/wizard-draft";
 import { renderWithQuery } from "@/test/render";
@@ -121,4 +122,40 @@ it.each([
 		),
 	);
 	expect(localStorage.getItem(key)).toBe(saved);
+});
+
+it("resumes the VOD form submitted offline even if a different plan is imported before reconnect", async () => {
+	const key = draftKey(["org", "user"], "vod", "new");
+	writeWizardDraft(key, "vod", { ...state, name: "Clicked offline" }, 7);
+	renderWithQuery(<VodWizard />);
+	fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+	const start = await screen.findByRole("button", { name: "Start encoding" });
+	await waitFor(() => expect(start).toBeEnabled());
+	try {
+		act(() => onlineManager.setOnline(false));
+		fireEvent.click(start);
+		await waitFor(() => expect(start).toBeDisabled());
+		fireEvent.click(screen.getByRole("button", { name: /Import plan JSON/ }));
+		fireEvent.change(
+			screen.getByRole("textbox", { name: /Import plan JSON/ }),
+			{
+				target: {
+					value: JSON.stringify(
+						buildPlan({ ...state, name: "Imported later" }),
+					),
+				},
+			},
+		);
+		fireEvent.click(screen.getByRole("button", { name: /Validate.*load/i }));
+		act(() => onlineManager.setOnline(true));
+		await waitFor(() => expect(push).toHaveBeenCalled());
+		const sent = apiFetch.mock.calls.find(
+			([url, init]) => url === "/api/encoding-jobs" && init?.method === "POST",
+		);
+		expect(JSON.parse(sent?.[1].body ?? "null")).toMatchObject({
+			plan: { name: "Clicked offline" },
+		});
+	} finally {
+		act(() => onlineManager.setOnline(true));
+	}
 });

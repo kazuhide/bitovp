@@ -83,13 +83,18 @@ export function useWizardDraft({
 		pending: WizardDraft | null;
 		baseline: string;
 	}>();
+	const presented = useRef<WizardDraft | null>(null);
+	const present = useCallback((next: NonNullable<typeof loaded>) => {
+		presented.current = next.pending;
+		setLoaded(next);
+	}, []);
 	const offerChangedDraft = useCallback(
 		(state: NonNullable<typeof loaded>, slot: string) => {
 			if (unchanged(slot)) return false;
 			const saved = readWizardDraftRecord(slot, kind);
 			observed.current.set(slot, saved?.serialized ?? null);
 			if (!saved) return false;
-			setLoaded({
+			present({
 				...state,
 				pendingKey: slot,
 				pending: saved.draft,
@@ -97,7 +102,7 @@ export function useWizardDraft({
 			});
 			return true;
 		},
-		[kind, unchanged],
+		[kind, unchanged, present],
 	);
 	const serialized = JSON.stringify({
 		value: projectWizardDraft(kind, value),
@@ -124,7 +129,7 @@ export function useWizardDraft({
 			const useWorking =
 				!!working &&
 				(!original || legacyOriginal || working.savedAt >= original.savedAt);
-			setLoaded({
+			present({
 				key,
 				writeKey: working ? workingKey : key,
 				pendingKey: useWorking ? workingKey : key,
@@ -136,7 +141,7 @@ export function useWizardDraft({
 		return () => {
 			active = false;
 		};
-	}, [key, kind]);
+	}, [key, kind, present]);
 	useEffect(() => {
 		if (
 			!key ||
@@ -198,6 +203,7 @@ export function useWizardDraft({
 			withWizardDraftLock(key, () => {
 				if (
 					!mounted.current ||
+					presented.current !== offered ||
 					currentKey.current !== key ||
 					completed.current === key
 				)
@@ -219,21 +225,24 @@ export function useWizardDraft({
 					retainOriginal &&
 					(offered.legacyVodFilters || offered.legacyRenditions)
 				) {
-					setLoaded({
+					present({
 						...loaded,
 						pending: null,
 						writeKey: `${key}:working`,
 						baseline: "",
 						retained: offered,
 					});
-				} else setLoaded({ ...loaded, pending: null });
+				} else present({ ...loaded, pending: null });
 			});
 		},
 		discard() {
-			if (!key || loaded?.key !== key) return;
+			if (!key || loaded?.key !== key || !loaded.pending) return;
+			const offered = loaded.pending;
+			const expected = observed.current.get(loaded.pendingKey);
 			withWizardDraftLock(key, () => {
 				if (
 					!mounted.current ||
+					presented.current !== offered ||
 					currentKey.current !== key ||
 					completed.current === key
 				)
@@ -245,11 +254,17 @@ export function useWizardDraft({
 				const keptAsRecovery = !!working;
 				if (legacy)
 					observed.current.set(workingKey, working?.serialized ?? null);
-				if (!keptAsRecovery && unchanged(loaded.pendingKey)) {
+				if (
+					!keptAsRecovery &&
+					!matchesDraft(loaded.pendingKey, expected) &&
+					offerChangedDraft(loaded, loaded.pendingKey)
+				)
+					return;
+				if (!keptAsRecovery && matchesDraft(loaded.pendingKey, expected)) {
 					discardWizardDraft(loaded.pendingKey);
 					observed.current.set(loaded.pendingKey, null);
 				}
-				setLoaded({
+				present({
 					...loaded,
 					writeKey: legacy ? workingKey : loaded.writeKey,
 					retained: keptAsRecovery ? loaded.pending : loaded.retained,
@@ -283,7 +298,7 @@ export function useWizardDraft({
 							discardWizardDraft(loaded.key);
 					}
 				});
-				setLoaded({ ...loaded, pending: null, retained: null });
+				present({ ...loaded, pending: null, retained: null });
 			};
 		},
 	};

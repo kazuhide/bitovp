@@ -29,6 +29,11 @@ import {
 import { mainPictureSourceKey, type WizardState } from "@bitovp/core/wizard";
 import { z } from "zod";
 import type { SessionDto } from "./auth/dto";
+import {
+	defaultFileNames,
+	draftKeepsText,
+	fileJobFolder,
+} from "./wizard-file-names";
 
 export type WizardDraftKind = "vod" | "live";
 export type DraftValue = Record<string, unknown>;
@@ -79,61 +84,6 @@ export function draftFingerprint(value: unknown): string {
 
 // Explicit form shapes only. URLs, raw DRM keys, arbitrary filter/options JSON and imported plans
 // are deliberately absent; even a nested unknown property cannot enter storage.
-/**
- * Whether a draft keeps this text. An address, a query or fragment, and a login
- * before a host are refused, and the field comes back empty.
- */
-export function draftKeepsText(value: string, imagePath = false): boolean {
-	const normalized = value.trimStart();
-	if (
-		/^[/\\]{2}/u.test(normalized) ||
-		normalized.includes("://") ||
-		/[?#]/u.test(normalized)
-	)
-		return false;
-	const address = normalized.replace(/^[\s/\\]+/u, "");
-	const authority = address.split(/[/\\]/u, 1)[0] ?? "";
-	const colon = authority.indexOf(":");
-	const at = authority.lastIndexOf("@");
-	if (colon < 0 || at <= colon) return true;
-	// A directory after the apparent login makes it an address. A generated
-	// output directory may have only its final slash.
-	const tail = address.slice(authority.length);
-	const rawHost = authority.slice(at + 1);
-	const host = rawHost.trimStart();
-	if (address !== normalized) return false;
-	if (!rawHost && !tail && /^(?:s3|gs):/iu.test(authority)) return true;
-	if (!rawHost && !tail)
-		return !imagePath && /\S\s+\S/u.test(authority.slice(colon + 1, at));
-	if (!host || host !== host.trimEnd() || !/\s/u.test(authority.charAt(at - 1)))
-		return false;
-	const spacedLabel = host !== rawHost;
-	// A multiword directory such as "Opening Credits" cannot be a network
-	// hostname. Preserve the directory and any nested object key literally.
-	if (spacedLabel && /\S\s+\S/u.test(host)) return true;
-	if (/[^/]/u.test(tail)) return false;
-	if (!spacedLabel && !/\s/u.test(authority.charAt(colon + 1))) return false;
-	// Compare only terminal extensions. A host like cdn.png.invalid is
-	// different from a filename ending in .png. Generated render filenames
-	// add a container extension and can append a rendition or collision index.
-	let stem = host;
-	if (!imagePath && /\.(?:ts|mp4|mov|webm)$/iu.test(stem)) {
-		stem = stem.slice(0, stem.lastIndexOf("."));
-		for (let i = 0; i < 2; i++) {
-			const dash = stem.lastIndexOf("-");
-			if (dash < 0 || !/^\d+p?$/u.test(stem.slice(dash + 1))) break;
-			stem = stem.slice(0, dash);
-		}
-	}
-	const dot = stem.lastIndexOf(".");
-	if (dot < 0) return !imagePath && spacedLabel;
-	const extension = stem.slice(dot + 1);
-	return (
-		dot > 0 &&
-		(/^(?:png|jpe?g|webp|gif|avif|bmp|tiff?|svg)$/iu.test(extension) ||
-			(!imagePath && spacedLabel && /^(?:ts|mp4|mov|webm)$/iu.test(extension)))
-	);
-}
 
 const text = z.string().max(2048).refine(draftKeepsText).optional().catch("");
 const number = z.number().finite().nullable().optional().catch(undefined);
@@ -968,12 +918,56 @@ const live = fields(
 	},
 );
 
+// When the title survives screening, its exact generated filenames and directories
+// can be reconstructed without admitting any additional text from the draft.
+function retainGeneratedFileOutputs(source: unknown, projected: DraftValue) {
+	if (
+		!draftRecord(source) ||
+		!projected.name ||
+		typeof projected.name !== "string"
+	)
+		return;
+	const folder = fileJobFolder(projected.name);
+	function retain(row: unknown, raw: unknown, key: string, expected: string) {
+		if (
+			expected.length <= 2048 &&
+			draftRecord(row) &&
+			draftRecord(raw) &&
+			raw[key] === expected
+		)
+			row[key] = expected;
+	}
+	const rawOptions = source.startOptions;
+	const options = projected.startOptions;
+	if (draftRecord(rawOptions) && draftRecord(options))
+		retain(options.aiSceneAnalysis, rawOptions.aiSceneAnalysis, "path", folder);
+	retain(projected.qc, source.qc, "mirrorPath", folder);
+	retain(projected.kantar, source.kantar, "reportPath", folder);
+	const rows = projected.videos;
+	const rawRows = source.videos;
+	if (
+		!Array.isArray(rows) ||
+		!Array.isArray(rawRows) ||
+		rows.length !== rawRows.length
+	)
+		return;
+	const files = rows.map((row) => ({
+		height: typeof row?.height === "number" ? row.height : null,
+		muxing: {
+			kind: typeof row?.muxing?.kind === "string" ? row.muxing.kind : undefined,
+		},
+	}));
+	const names = defaultFileNames(projected.name, files);
+	for (const [index, expected] of names.entries())
+		retain(rows[index]?.muxing, rawRows[index]?.muxing, "filename", expected);
+}
 export function projectWizardDraft(
 	kind: WizardDraftKind,
 	value: unknown,
 ): DraftValue {
 	const projected = (kind === "vod" ? vod : live).parse(value);
 	if (kind === "vod") {
+		retainGeneratedFileOutputs(value, projected);
 		const filters = vodFilterDrafts.parse(projected.filters) ?? [];
 		const keys = new Set(filters.map((filter) => filter.key));
 		for (const renditions of [projected.videos, projected.audios]) {

@@ -10,7 +10,7 @@ import {
 	moqDraftVersionSchema,
 } from "@bitovp/core";
 import { plansDeepEqual } from "@bitovp/core/wizard";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -50,6 +50,7 @@ import {
 	restoreLiveWizardDraft,
 } from "@/lib/wizard-draft";
 import { useWizardDraft } from "@/lib/wizard-draft-hook";
+import { useWizardSubmission } from "@/lib/wizard-submission-hook";
 import {
 	MoqPreviewReadiness,
 	useMoqPreviewReadiness,
@@ -390,12 +391,8 @@ export function LiveWizard({
 		"live",
 		`wizard:${duplicateFrom ?? "new"}`,
 	);
-	const submit = useMutation({
-		onMutate: () =>
-			!imported && !importLoadedForEditing
-				? draft.afterSubmission()
-				: undefined,
-		mutationFn: () => {
+	const submit = useWizardSubmission(
+		() => {
 			if (aisaBlocked)
 				throw new LocalizedWizardError(
 					evaluation.ok ? t("ui.blocked") : evaluation.zodMessage,
@@ -424,16 +421,18 @@ export function LiveWizard({
 				if (parsed.success && plansDeepEqual(parsed.data, current.plan))
 					plan = original;
 			}
-			return creation.submit<{ id: string }>({
+			const request = {
 				plan,
 				...(verdict.schedule ? { schedule: verdict.schedule } : {}),
-			});
+			};
+			return () => creation.submit<{ id: string }>(request);
 		},
-		onSuccess: (channel, _variables, finishDraft) => {
-			finishDraft?.();
-			router.push(`/live/${channel.id}`);
-		},
-	});
+		() =>
+			!imported && !importLoadedForEditing
+				? draft.afterSubmission()
+				: undefined,
+		(channel) => router.push(`/live/${channel.id}`),
+	);
 
 	const patch = (partial: Partial<LiveWizardState>) =>
 		setState((prev) => ({ ...prev, ...partial }));

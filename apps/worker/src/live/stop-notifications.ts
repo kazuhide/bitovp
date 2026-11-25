@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { EVENT_VERSION } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
-
 import {
 	type DeliveryResult,
 	NotificationDeliveryError,
 } from "../notify/processor";
+import { MISSED_UNOWNED_STOP_REASON } from "../scheduler/stop-handoff";
 
 type Deliver = (job: {
 	data: unknown;
@@ -59,9 +59,12 @@ export function createStopNotificationSweep(
 						kind: row.kind,
 						occurredAt: row.occurredAt.toISOString(),
 						liveChannelId: row.channelId,
-						...(row.kind === "SCHEDULE_FIRED"
+						...(row.scheduleId != null
 							? { scheduleId: row.scheduleId }
 							: { name: row.channelName }),
+						...(row.kind === "SCHEDULE_MISSED" && {
+							reason: MISSED_UNOWNED_STOP_REASON,
+						}),
 						link: `${base}/live/${row.channelId}`,
 						...(row.kind === "CHANNEL_ERROR" && {
 							error: "AISA_LIVE_TERMINAL_FAILURE",
@@ -121,7 +124,7 @@ export function createStopNotificationSweep(
 				});
 				if (!finished.count) return;
 				finishedStates.add(result);
-				if (row.kind !== "SCHEDULE_FIRED")
+				if (row.scheduleId == null)
 					await tx.liveChannelRun.updateMany({
 						where: {
 							id: row.id,

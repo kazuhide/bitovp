@@ -54,7 +54,7 @@ const paths = (groups) =>
 		Object.keys(group.files).map((file) => join(group.directory, file)),
 	);
 
-const EXPECTED_PLAIN_WORKER_SKIPS = 261;
+const EXPECTED_PLAIN_WORKER_SKIPS = 262;
 
 test("the required Redis run registers the cross-worker/Web clip availability matrix", () => {
 	assert.deepEqual(REDIS.availability, {

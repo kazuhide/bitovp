@@ -2516,12 +2516,17 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				expect.anything(),
 				`sched-${changed.row.id}`,
 			);
-			expect(emitEvent).toHaveBeenCalledWith(
-				expect.objectContaining({
-					kind: "SCHEDULE_MISSED",
-					scheduleId: changed.row.id,
-					path: `/live/${changed.f.channel.id}`,
+			expect(
+				await tenant.liveStopNotification.findUnique({
+					where: { scheduleId: changed.row.id },
 				}),
+			).toMatchObject({
+				kind: "SCHEDULE_MISSED",
+				channelId: changed.f.channel.id,
+				finishedAt: null,
+			});
+			expect(emitEvent).not.toHaveBeenCalledWith(
+				expect.objectContaining({ scheduleId: changed.row.id }),
 			);
 			expect(
 				await tenant.liveSchedule.findUniqueOrThrow({
@@ -2576,6 +2581,111 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			await tenant.liveSchedule.delete({ where: { id: old.id } });
 		});
 
+		it("delivers a missed legacy STOP after the scheduler exits with Redis unavailable", async () => {
+			const f = await dispatchFixture();
+			const at = new Date(now.getTime() + 600000);
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					status: "STOPPING",
+					legacyAdmissionFenceVersion: 2,
+					liveEffectFenceVersion: 3,
+				},
+			});
+			const row = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "STOP",
+					status: "FIRED",
+					fireAt: lease,
+					firedAt: lease,
+				},
+			});
+			const enqueue = vi.fn(async () => {
+				throw new Error("Redis unavailable");
+			});
+			const emitEvent = vi.fn(async () => {
+				throw new Error("Redis unavailable");
+			});
+			const restart = () =>
+				createScheduleSweep({
+					prisma: tenant,
+					now: () => at,
+					enqueue,
+					emitEvent,
+				});
+			await restart().dispatchPending();
+			const receipt = await tenant.liveSchedule.findUniqueOrThrow({
+				where: { id: row.id },
+			});
+			expect(receipt).toMatchObject({
+				status: "ERROR",
+				outcome: "UNKNOWN",
+				dispatchedAt: null,
+			});
+			expect(
+				await tenant.liveStopNotification.findUnique({
+					where: { scheduleId: row.id },
+				}),
+			).toMatchObject({
+				kind: "SCHEDULE_MISSED",
+				channelId: f.channel.id,
+				finishedAt: null,
+			});
+			await restart().dispatchPending();
+			expect(emitEvent).not.toHaveBeenCalledWith(
+				expect.objectContaining({ scheduleId: row.id }),
+			);
+			expect(enqueue).not.toHaveBeenCalledWith(
+				expect.anything(),
+				`sched-${row.id}`,
+			);
+			const delivered: unknown[] = [];
+			let clock = at;
+			let attempts = 0;
+			const delivery = () =>
+				createStopNotificationSweep(
+					tenant,
+					async ({ data, beforeSend }) => {
+						const event = productEventSchema.parse(data);
+						if (
+							event.kind === "SCHEDULE_MISSED" &&
+							event.scheduleId === row.id
+						) {
+							await beforeSend?.();
+							if (++attempts === 1)
+								throw new Error("temporary destination failure");
+							delivered.push(event);
+						}
+						return [{ outcome: "DELIVERED" as const }];
+					},
+					"https://operator.example",
+					() => clock,
+				);
+			for (let i = 0; i < 20 && !attempts; i++) await delivery()();
+			expect(attempts).toBe(1);
+			clock = new Date(at.getTime() + 65000);
+			for (let i = 0; i < 20 && !delivered.length; i++) await delivery()();
+			await delivery()();
+			expect(delivered).toEqual([
+				{
+					eventVersion: 1,
+					kind: "SCHEDULE_MISSED",
+					liveChannelId: f.channel.id,
+					scheduleId: row.id,
+					reason: receipt.outcomeNote,
+					occurredAt: at.toISOString(),
+					link: `https://operator.example/live/${f.channel.id}`,
+				},
+			]);
+			expect(attempts).toBe(2);
+			expect(
+				await tenant.liveStopNotification.findUnique({
+					where: { scheduleId: row.id },
+				}),
+			).toMatchObject({ failures: 1, finishedAt: clock });
+		});
 		it("never exposes a scheduled STOP job before its exact STOPPING generation commits", async () => {
 			const f = await dispatchFixture();
 			const original = await tenant.liveSchedule.create({

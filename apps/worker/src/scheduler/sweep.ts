@@ -49,7 +49,11 @@ import {
 	recordScheduleOutcomeBestEffort,
 	transitionScheduleToStale,
 } from "./schedule-outcome";
-import { recordScheduledStopHandoff } from "./stop-handoff";
+import {
+	MISSED_UNOWNED_STOP_REASON,
+	recordScheduledStopHandoff,
+	writeScheduledStopNotification,
+} from "./stop-handoff";
 
 /**
  * Live schedule sweep . Fires
@@ -2557,10 +2561,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				}
 			}
 			if (!effect) {
-				const reason =
-					"The previous worker did not record which encoder generation it admitted. Open the channel, confirm the current broadcast and choose Stop if it should end.";
-				if (await failUnfencedStrandedEffect(row.id, "Stranded STOP", reason))
-					await emitMissed(row, reason);
+				await failUnfencedStrandedEffect(row.id, "Stranded STOP", row);
 				return null;
 			}
 			return {
@@ -2711,29 +2712,51 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	async function failUnfencedStrandedEffect(
 		rowId: string,
 		label: string,
-		reason = `${label} refused: legacy outbox row has no exact current run/provider identity`,
-	): Promise<boolean> {
+		missedStop?: { liveChannelId: string; liveChannelRunId: string | null },
+	): Promise<void> {
+		const reason = missedStop
+			? MISSED_UNOWNED_STOP_REASON
+			: `${label} refused: legacy outbox row has no exact current run/provider identity`;
 		const at = deps.now();
-		const { count } = await deps.prisma.liveSchedule.updateMany({
-			where: {
-				id: rowId,
-				status: "FIRED",
-				dispatchedAt: null,
-				stopProviderEncodingId: null,
-				outcome: { in: ["PENDING"] },
-			},
-			data: {
-				status: "ERROR",
-				error: reason,
-				outcome: "UNKNOWN",
-				outcomeAt: at,
-				outcomeNote: reason,
-				outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
-				outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
-				outcomeEvidenceAt: at,
-			},
+		const refuse = (client: Pick<AppTransactionClient, "liveSchedule">) =>
+			client.liveSchedule.updateMany({
+				where: {
+					id: rowId,
+					...(missedStop && {
+						action: "STOP" as const,
+						liveChannelId: missedStop.liveChannelId,
+						liveChannelRunId: missedStop.liveChannelRunId,
+						stopAdmissionFenceVersion: null,
+					}),
+					status: "FIRED",
+					dispatchedAt: null,
+					stopProviderEncodingId: null,
+					outcome: { in: ["PENDING"] },
+				},
+				data: {
+					status: "ERROR",
+					error: reason,
+					outcome: "UNKNOWN",
+					outcomeAt: at,
+					outcomeNote: reason,
+					outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
+					outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+					outcomeEvidenceAt: at,
+				},
+			});
+		if (!missedStop) {
+			await refuse(deps.prisma);
+			return;
+		}
+		await deps.prisma.$transaction(async (tx) => {
+			if (!(await refuse(tx)).count) return;
+			await writeScheduledStopNotification(
+				tx,
+				{ id: rowId, liveChannelId: missedStop.liveChannelId },
+				"SCHEDULE_MISSED",
+				at,
+			);
 		});
-		return count === 1;
 	}
 
 	/**

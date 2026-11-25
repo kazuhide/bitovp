@@ -1,5 +1,4 @@
 import {
-	dolbyObjectFields,
 	isAisaManagedLivePlan,
 	patchLivePresetSchema,
 	patchPlanPresetSchema,
@@ -7,6 +6,7 @@ import {
 	publicHdrSourceProjection,
 	validateLiveChannel,
 	validatePlan,
+	vodObjectPathFields,
 	watchSelfIntersectionIssues,
 	watchTemplateIssues,
 } from "@bitovp/core";
@@ -93,7 +93,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
 			publicHdrSourceProjection(
 				preset,
 				"record",
-				dolbyObjectFields(preset.body, []),
+				vodObjectPathFields(preset.body, []),
 			),
 			{
 				headers: { "Cache-Control": "private, no-store" },
@@ -304,7 +304,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 			publicHdrSourceProjection(
 				updated,
 				"record",
-				dolbyObjectFields(updated.body, []),
+				vodObjectPathFields(updated.body, []),
 			),
 			{
 				headers: { "Cache-Control": "private, no-store" },

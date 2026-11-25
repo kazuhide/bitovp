@@ -62,6 +62,7 @@ export {
 	libraryHdr10PlusInputs,
 	libraryIngestInputs,
 	missingLibraryHdrInputs,
+	recoverLibraryIngestInputs,
 } from "./content-library/hdr-inputs";
 export { sceneAnalysisLocales } from "./content-library/languages";
 export {
@@ -820,9 +821,9 @@ export {
 	muxingKindCarriesAudio,
 } from "./plan/muxing-streams";
 export {
-	dolbyObjectFields,
 	isObjectStorageInput,
 	objectInputReceipts,
+	vodObjectPathFields,
 } from "./plan/object-input-path";
 export { outputStorageKeys } from "./plan/output-files";
 export { PER_TITLE_SIMULATOR_MAX_BITRATE } from "./plan/per-title-candidate-api";

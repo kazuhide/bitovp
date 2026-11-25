@@ -1,4 +1,11 @@
-import { hasPrivateStorageLocator } from "./hdr-source-paths";
+import {
+	matchesHistoricalUserinfoMask,
+	REDACTED,
+} from "../crypto/url-userinfo";
+import {
+	hasPrivateStorageLocator,
+	type StoragePathKind,
+} from "./hdr-source-paths";
 
 /** Distinguish a query on an HTTP source from the same bytes in an object key.
  * Only the authored input or the exact provider input that fulfilled a step
@@ -78,43 +85,100 @@ export function hasCompletedResource(row: unknown) {
 	);
 }
 
-/** The job/preset's typed Dolby rows and the actual steps with fulfilled
+/** A successful object-input request used either the exact compiler bytes or
+ * one of the request masks used by earlier workers. */
+export function matchesRecordedObjectPath(actual: unknown, compiled: unknown) {
+	if (
+		typeof actual !== "string" ||
+		typeof compiled !== "string" ||
+		hasPrivateStorageLocator(compiled, "OBJECT_KEY")
+	)
+		return false;
+	return (
+		actual === compiled ||
+		matchesHistoricalUserinfoMask(actual, compiled) ||
+		(actual === REDACTED && hasPrivateStorageLocator(compiled))
+	);
+}
+
+/** Use the independently retained authored plan to distinguish a literal
+ * "[REDACTED]" in an object name from a projected/legacy placeholder. */
+export function authoredObjectPath(
+	plan: unknown,
+	step: string,
+	source: unknown,
+	field: string,
+	value: string,
+) {
+	if (!record(plan) || !Array.isArray(plan.inputs)) return false;
+	const ingest = field === "inputPath";
+	const candidates = ingest ? plan.ingest : plan.dolbyStreams;
+	if (!Array.isArray(candidates)) return false;
+	const prefix = ingest ? "ingest" : "dolby";
+	const streams = candidates.filter(
+		(row) =>
+			record(row) &&
+			typeof row.key === "string" &&
+			step === `${prefix}:${row.key}`,
+	);
+	const [stream] = streams;
+	if (
+		streams.length !== 1 ||
+		(!ingest && stream.kind !== "VISION") ||
+		typeof stream.inputKey !== "string" ||
+		source !== `input:${stream.inputKey}` ||
+		stream[field] !== value
+	)
+		return false;
+	const inputs = plan.inputs.filter(
+		(input) => record(input) && input.key === stream.inputKey,
+	);
+	return inputs.length === 1 && isObjectStorageInput(inputs[0].kind);
+}
+/** The job/preset's typed input rows and the actual steps with fulfilled
  * object inputs are the only public projection fields with this exception. */
-export function dolbyObjectFields(
+export function vodObjectPathFields(
 	plan: unknown,
 	entries: unknown,
-): WeakSet<object> {
-	const fields = new WeakSet<object>();
-	if (
-		record(plan) &&
-		Array.isArray(plan.inputs) &&
-		Array.isArray(plan.dolbyStreams)
-	) {
-		const sources = new Map<string, boolean>();
+): WeakMap<object, StoragePathKind> {
+	const fields = new WeakMap<object, StoragePathKind>();
+	if (record(plan) && Array.isArray(plan.inputs)) {
+		const sources = new Map<string, StoragePathKind>();
 		for (const input of plan.inputs) {
 			if (record(input) && typeof input.key === "string")
 				sources.set(
 					input.key,
-					!sources.has(input.key) &&
-						typeof input.kind === "string" &&
-						isObjectStorageInput(input.kind),
+					sources.has(input.key)
+						? "UNKNOWN"
+						: input.kind === "HTTPS"
+							? "HTTPS_PATH"
+							: typeof input.kind === "string" &&
+									isObjectStorageInput(input.kind)
+								? "OBJECT_KEY"
+								: "UNKNOWN",
 				);
 		}
-		for (const row of plan.dolbyStreams)
-			if (
-				record(row) &&
-				row.kind === "VISION" &&
-				typeof row.inputKey === "string" &&
-				sources.get(row.inputKey)
-			)
-				fields.add(row);
+		for (const [rows, vision] of [
+			[plan.ingest, false],
+			[plan.dolbyStreams, true],
+		] as const) {
+			if (!Array.isArray(rows)) continue;
+			for (const row of rows)
+				if (
+					record(row) &&
+					(!vision || row.kind === "VISION") &&
+					typeof row.inputKey === "string"
+				)
+					fields.set(row, sources.get(row.inputKey) ?? "UNKNOWN");
+		}
 	}
 	if (Array.isArray(entries)) {
 		const inputs = objectInputReceipts(entries);
 		for (const row of entries) {
 			if (
 				!record(row) ||
-				row.kind !== "CREATE_DOLBY_VISION_INPUT_STREAM" ||
+				(row.kind !== "CREATE_DOLBY_VISION_INPUT_STREAM" &&
+					row.kind !== "CREATE_INGEST_INPUT_STREAM") ||
 				!hasCompletedResource(row) ||
 				!record(row.payload) ||
 				!record(row.request) ||
@@ -122,21 +186,22 @@ export function dolbyObjectFields(
 			)
 				continue;
 			const { payload, request } = row;
-			if (typeof payload.videoInputPath !== "string") continue;
-			const matches = ["videoInputPath", "metadataInputPath"].every((field) => {
+			const ingest = row.kind === "CREATE_INGEST_INPUT_STREAM";
+			if (typeof payload[ingest ? "inputPath" : "videoInputPath"] !== "string")
+				continue;
+			const matches = (
+				ingest ? ["inputPath"] : ["videoInputPath", "metadataInputPath"]
+			).every((field) => {
 				const actual = request[field],
 					compiled = payload[field];
 				return (
-					actual === compiled ||
-					(actual === "[REDACTED]" &&
-						typeof compiled === "string" &&
-						hasPrivateStorageLocator(compiled) &&
-						!hasPrivateStorageLocator(compiled, true))
+					(actual === undefined && compiled === undefined) ||
+					matchesRecordedObjectPath(actual, compiled)
 				);
 			});
 			if (matches) {
-				fields.add(payload);
-				fields.add(request);
+				fields.set(payload, "OBJECT_KEY");
+				fields.set(request, "OBJECT_KEY");
 			}
 		}
 	}

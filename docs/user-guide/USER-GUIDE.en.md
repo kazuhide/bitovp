@@ -1179,7 +1179,7 @@ This screen is for checking usage, not a replacement for invoices or incident mo
 
 Use "Content Library" to find completed VOD jobs and their analysis, then organize them with titles and tags. VIEWER can browse the library; registration, editing, and retries require OPERATOR or higher.
 
-A blank input path can mean that a historical record resembles a private network address. The Library displays an ambiguous object name only when its capture or the original job identifies the storage input.
+The Library hides relative HTTPS paths that contain a query, which can grant private access even when its parameter has an unfamiliar name. It displays the exact object key when the capture or the original job identifies a storage input. A historical query path with no surviving input information appears blank.
 
 | Term | Stored information | Purpose |
 |---|---|---|

@@ -10,11 +10,12 @@ import {
 	librarySnapshotSchema,
 	missingLibraryHdrInputs,
 	publicLibraryQcEvidence,
+	recoverLibraryIngestInputs,
 	redactSecrets,
 	sceneAnalysisLocales,
 } from "@bitovp/core";
 import type { Prisma } from "../generated/client";
-import type { AppPrismaClient } from "./client";
+import type { AppPrismaClient, AppTransactionClient } from "./client";
 
 export class LibrarySourceError extends Error {
 	constructor(
@@ -28,6 +29,64 @@ export class LibrarySourceError extends Error {
 
 function hash(value: unknown): string {
 	return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function safeCapturedInput<
+	T extends { path: string; pathKind?: "OBJECT_KEY" | "HTTPS_PATH" },
+>(row: T): T {
+	return hasPrivateStorageLocator(row.path, row.pathKind)
+		? { ...row, path: "" }
+		: row;
+}
+
+/** The caller holds the job lock. Keep a historical source readable when an
+ * authorized local delete clears its job FK before the next capture sweep.
+ * Read the current source under lock and update only its inputs. */
+export async function retainLibraryInputsBeforeJobDeletion(
+	tx: AppTransactionClient,
+	jobId?: string,
+) {
+	const rows = await tx.$queryRaw<
+		{
+			id: string;
+			jobId: string;
+			sourceKey: string;
+			bitmovinEncodingId: string | null;
+			plan: Prisma.JsonValue;
+			snapshot: Prisma.JsonObject;
+		}[]
+	>`
+		SELECT s.id, s."jobId", s."sourceKey", j."bitmovinEncodingId", j.plan, s.snapshot
+		FROM "LibrarySource" s JOIN "EncodingJob" j ON j.id=s."jobId" AND j."organizationId"=s."organizationId"
+		WHERE (${jobId ?? null}::uuid IS NULL OR j.id=${jobId ?? null}::uuid)
+		AND s."originalJobId"=j.id AND s."sourceKind"='VOD_JOB'
+		AND s.snapshot @? '$.inputs[*] ? (!exists (@.pathKind))'
+		ORDER BY s.id FOR UPDATE OF s`;
+	for (const row of rows) {
+		const planHash = hash(row.plan);
+		if (
+			row.snapshot.planHash !== planHash ||
+			row.sourceKey !== hash([row.jobId, row.bitmovinEncodingId, planHash])
+		)
+			continue;
+		const parsed = encodingPlanSchema.safeParse(row.plan),
+			captured = librarySnapshotSchema.safeParse(row.snapshot);
+		if (!parsed.success || !captured.success) continue;
+		const inputs = recoverLibraryIngestInputs(
+			captured.data.inputs,
+			libraryIngestInputs(parsed.data),
+		);
+		if (inputs)
+			await tx.librarySource.update({
+				where: { id: row.id },
+				data: {
+					snapshot: {
+						...row.snapshot,
+						inputs: inputs.map(safeCapturedInput),
+					} as Prisma.InputJsonObject,
+				},
+			});
+	}
 }
 
 /** Capture and enqueue in one transaction; the row lock orders capture vs deletion. */
@@ -169,6 +228,13 @@ export async function requestLibrarySource(
 		if (existing) {
 			const snapshot = librarySnapshotSchema.parse(existing.snapshot);
 			// Only the identical plan can supply missing historical HDR inputs.
+			const restoredInputs =
+				snapshot.planHash === planHash
+					? recoverLibraryIngestInputs(
+							snapshot.inputs,
+							libraryIngestInputs(plan),
+						)
+					: undefined;
 			const missingHdr =
 				snapshot.planHash === planHash
 					? missingLibraryHdrInputs(snapshot.inputs, hdrInputs)
@@ -214,6 +280,7 @@ export async function requestLibrarySource(
 					upgradeLocales ||
 					missingFileLink ||
 					missingHdr.length ||
+					restoredInputs ||
 					fileOutputs?.length) &&
 				existing.state !== "RUNNING"
 			) {
@@ -236,8 +303,14 @@ export async function requestLibrarySource(
 						snapshot: {
 							...(existing.snapshot as Prisma.InputJsonObject),
 							playbackLinks: [...snapshot.playbackLinks, ...additions],
-							...(missingHdr.length
-								? { inputs: [...snapshot.inputs, ...missingHdr] }
+							...(missingHdr.length || restoredInputs
+								? {
+										inputs: [
+											...(restoredInputs?.map(safeCapturedInput) ??
+												snapshot.inputs),
+											...missingHdr,
+										],
+									}
 								: {}),
 							...(fileOutputs ? { fileOutputs } : {}),
 							...(upgradeAnalysis ? { analysisOutput } : {}),
@@ -288,15 +361,7 @@ export async function requestLibrarySource(
 			planHash,
 			identity: "UNVERIFIED",
 			inputs: [
-				...libraryIngestInputs(plan).map((row) => ({
-					...row,
-					path: hasPrivateStorageLocator(
-						row.path,
-						row.pathKind === "OBJECT_KEY",
-					)
-						? ""
-						: row.path,
-				})),
+				...libraryIngestInputs(plan).map(safeCapturedInput),
 				...hdrInputs,
 			],
 			playbackLinks: await playbackLinks(),

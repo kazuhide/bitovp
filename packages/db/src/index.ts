@@ -72,7 +72,11 @@ export {
 	getPreparedNormalizationReceipt,
 	LibraryNormalizationClockError,
 } from "./library-normalization-clock";
-export { LibrarySourceError, requestLibrarySource } from "./library-source";
+export {
+	LibrarySourceError,
+	requestLibrarySource,
+	retainLibraryInputsBeforeJobDeletion,
+} from "./library-source";
 export type {
 	LiveEffectAction,
 	LiveEffectBeginInput,

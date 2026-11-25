@@ -63,7 +63,7 @@ function setup(overrides = {}) {
 it("retains literal names with their storage provenance at capture and redacts unverified network locators", async () => {
 	const [ingest] = planFixture.ingest;
 	if (!ingest) throw new Error("Missing fixture ingest");
-	const objectPath = "///reels:scene@day/take.mxf";
+	const objectPath = "reels/take.mxf?auth=review";
 	const plan = {
 		...planFixture,
 		ingest: [
@@ -72,7 +72,7 @@ it("retains literal names with their storage provenance at capture and redacts u
 				...ingest,
 				key: "remote",
 				inputKey: "remote",
-				inputPath: "\u0001//test:PRIVATE_CAPTURE@fixture.invalid/media",
+				inputPath: "reels/take.mxf?ticket=PRIVATE_CAPTURE",
 			},
 		],
 		inputs: [
@@ -84,7 +84,7 @@ it("retains literal names with their storage provenance at capture and redacts u
 	const result = await requestLibrarySource(prisma, job.id);
 	expect(result.snapshot).toHaveProperty("inputs", [
 		{ name: "Test S3 Input", path: objectPath, pathKind: "OBJECT_KEY" },
-		{ name: "Network", path: "" },
+		{ name: "Network", path: "", pathKind: "HTTPS_PATH" },
 	]);
 	expect(JSON.stringify(result)).not.toContain("PRIVATE_CAPTURE");
 });

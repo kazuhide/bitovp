@@ -33,6 +33,7 @@ describe("curlForStep — endpoint mapping", () => {
 		"reels:day/Scene&key=take#2?auth=review",
 		"///reels@day/take.mxf",
 		"///reels:scene@day/take.mxf",
+		"reels/take.mxf?auth=review",
 	])("replays literal Dolby object key %s only with its recorded input", (videoInputPath) => {
 		const producer = step({
 			kind: "CREATE_INPUT_S3",
@@ -88,6 +89,43 @@ describe("curlForStep — endpoint mapping", () => {
 		}
 	});
 
+	it("never exports a substituted Dolby mask and preserves a confirmed literal marker", () => {
+		const literal = "[REDACTED]";
+		const entry = step({
+			step: "dolby:dv",
+			kind: "CREATE_DOLBY_VISION_INPUT_STREAM",
+			status: "DONE",
+			resourceId: "vision",
+			response: { id: "vision" },
+			payload: { videoInputPath: literal },
+			refs: { encodingId: "encoding", inputId: "input:store" },
+			request: {
+				videoInputPath: literal,
+				refs: { encodingId: "enc", inputId: "provider" },
+			},
+		});
+		const options = { objectInputs: new Map([["input:store", "provider"]]) };
+		expect(curlForStep(entry, options).ok).toBe(false);
+		const plan = {
+			inputs: [{ key: "store", kind: "S3" }],
+			dolbyStreams: [
+				{
+					kind: "VISION",
+					key: "dv",
+					inputKey: "store",
+					videoInputPath: literal,
+				},
+			],
+		};
+		const proven = curlForStep(entry, { ...options, plan });
+		expect(proven.ok && proven.command.includes(literal)).toBe(true);
+		expect(
+			curlForStep(entry, {
+				...options,
+				plan: { ...plan, inputs: [{ key: "store", kind: "HTTPS" }] },
+			}).ok,
+		).toBe(false);
+	});
 	it.each([
 		"CREATE_HLS_AUDIO_MEDIA",
 		"CREATE_HLS_STREAM_INFO",

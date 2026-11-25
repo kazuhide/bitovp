@@ -3,8 +3,10 @@ import {
 	encodingPlanSchema,
 	libraryFileOutputs,
 	libraryHdr10PlusInputs,
+	libraryIngestInputs,
 	librarySnapshotSchema,
 	missingLibraryHdrInputs,
+	recoverLibraryIngestInputs,
 } from "@bitovp/core";
 import { type AppPrismaClient, requestLibrarySource } from "@bitovp/db";
 
@@ -13,11 +15,13 @@ function needsMetadataUpgrade(
 	planHash: string,
 	expected: ReturnType<typeof libraryFileOutputs>,
 	hdrInputs: ReturnType<typeof libraryHdr10PlusInputs>,
+	ingest: ReturnType<typeof libraryIngestInputs>,
 ) {
-	if (!expected.length && !hdrInputs.length) return false;
+	if (!expected.length && !hdrInputs.length && !ingest.length) return false;
 	const parsed = librarySnapshotSchema.safeParse(value);
 	if (!parsed.success || parsed.data.planHash !== planHash) return false;
 	const snapshot = parsed.data;
+	if (recoverLibraryIngestInputs(snapshot.inputs, ingest)) return true;
 	if (missingLibraryHdrInputs(snapshot.inputs, hdrInputs).length) return true;
 	const stored = snapshot.fileOutputs ?? [];
 	if (
@@ -78,6 +82,9 @@ export function createLibraryCaptureSweep(deps: {
 			const expectedFiles = parsedPlan.success
 				? libraryFileOutputs(parsedPlan.data)
 				: [];
+			const ingest = parsedPlan.success
+				? libraryIngestInputs(parsedPlan.data)
+				: [];
 			const hdrInputs = parsedPlan.success
 				? libraryHdr10PlusInputs(parsedPlan.data)
 				: [];
@@ -97,6 +104,7 @@ export function createLibraryCaptureSweep(deps: {
 								planHash,
 								expectedFiles,
 								hdrInputs,
+								ingest,
 							)) &&
 						(!aisa ||
 							(source.snapshot &&

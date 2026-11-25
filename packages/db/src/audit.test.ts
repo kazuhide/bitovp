@@ -38,7 +38,7 @@ describe("writeAuditLog — actor persistence (the headline of #81 PR2)", () => 
 			error: "[withheld]",
 		});
 	});
-	it("retains literal Dolby Vision object keys in request and response", async () => {
+	it("keeps a literal filename and withholds an unverified query in the standalone Dolby audit", async () => {
 		const { prisma, create } = fakePrisma();
 		const request = {
 			videoInputPath: "reels:day/Scene&key=take#2.mxf",
@@ -52,8 +52,14 @@ describe("writeAuditLog — actor persistence (the headline of #81 PR2)", () => 
 			response: request,
 		});
 		expect(create.mock.calls[0]?.[0].data).toMatchObject({
-			request,
-			response: request,
+			request: {
+				videoInputPath: request.videoInputPath,
+				metadataInputPath: "[REDACTED]",
+			},
+			response: {
+				videoInputPath: request.videoInputPath,
+				metadataInputPath: "[REDACTED]",
+			},
 		});
 	});
 	it("withholds ambiguous network authorities in an audit without storage provenance", async () => {

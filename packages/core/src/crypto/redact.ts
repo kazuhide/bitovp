@@ -3,12 +3,17 @@ import {
 	isHdr10PlusObjectPath,
 	isProviderDiagnosticList,
 	isProviderDiagnosticText,
+	publicHdrSourceProjection,
 	publicStorageDiagnostic,
 } from "../plan/hdr-source-paths";
 import {
 	hasRecordedObjectInput,
 	objectInputReceipts,
 } from "../plan/object-input-path";
+
+import { maskUrlUserinfo, REDACTED } from "./url-userinfo";
+
+export { maskUrlUserinfo, REDACTED } from "./url-userinfo";
 
 /**
  * Suffix-anchored so reference fields stay readable: `credentialId`,
@@ -43,9 +48,6 @@ const SENSITIVE_SUFFIX =
 const SENSITIVE_EXACT =
 	/^(ask|serviceaccountjson|username|login|publishingpoint|relayurl|playbackurl)$/i;
 
-/** Masks the password of URL userinfo: `scheme://user:pass@host`. */
-const URL_USERINFO = /([/\\]{2}[^/\\:@]+:)[^/\\]*@/g;
-
 /**
  * Header-tuple detection for the ["name", "value"] array shape. Deliberately
  * NARROWER than isSensitiveKey: the old rule redacted ANY 2-element array
@@ -62,12 +64,6 @@ function isHeaderTupleName(name: string): boolean {
 		HEADER_TUPLE_EXACT.test(name) ||
 		(name.includes("-") && isSensitiveKey(name))
 	);
-}
-
-export const REDACTED = "[REDACTED]";
-
-export function maskUrlUserinfo(value: string): string {
-	return value.replace(URL_USERINFO, `$1${REDACTED}@`);
 }
 
 export function isSensitiveKey(key: string): boolean {
@@ -93,12 +89,15 @@ export function redactStepRequest<T>(
 	request: T,
 	entries: unknown,
 ): T {
+	const ingest = entry.kind === "CREATE_INGEST_INPUT_STREAM";
 	const safe = redactSecrets(
-		request,
+		ingest
+			? publicHdrSourceProjection({ kind: entry.kind, request }).request
+			: request,
 		entry.kind === "CREATE_HDR10_PLUS_INPUT_STREAM",
 	);
 	if (
-		entry.kind !== "CREATE_DOLBY_VISION_INPUT_STREAM" ||
+		(!ingest && entry.kind !== "CREATE_DOLBY_VISION_INPUT_STREAM") ||
 		!request ||
 		typeof request !== "object" ||
 		!hasRecordedObjectInput(entry, request, objectInputReceipts(entries))
@@ -106,12 +105,14 @@ export function redactStepRequest<T>(
 		return safe;
 	if (!safe || typeof safe !== "object") return safe;
 	const result = { ...safe };
-	for (const field of ["videoInputPath", "metadataInputPath"] as const) {
+	for (const field of ingest
+		? ["inputPath"]
+		: ["videoInputPath", "metadataInputPath"]) {
 		const value = (request as Record<string, unknown>)[field];
 		if (
 			typeof value === "string" &&
 			value === entry.payload[field] &&
-			!hasPrivateStorageLocator(value, true)
+			!hasPrivateStorageLocator(value, "OBJECT_KEY")
 		)
 			Object.assign(result, { [field]: value });
 	}

@@ -45,7 +45,13 @@ export function anchorId(step: string): string {
  * from the step's persisted (already-redacted) request snapshot, so the tab
  * keeps an index of step→entry to feed curlForStep the real body.
  */
-export function ResourcesTab({ entries }: { entries: StepLogEntry[] }) {
+export function ResourcesTab({
+	entries,
+	plan,
+}: {
+	entries: StepLogEntry[];
+	plan?: unknown;
+}) {
 	const { t } = useT();
 	const groups = useMemo(() => buildResourceTree(entries), [entries]);
 	const objectInputs = useMemo(() => objectInputReceipts(entries), [entries]);
@@ -77,6 +83,7 @@ export function ResourcesTab({ entries }: { entries: StepLogEntry[] }) {
 								node={node}
 								entry={entryByStep.get(node.step)}
 								objectInputs={objectInputs}
+								plan={plan}
 							/>
 						))}
 					</ul>
@@ -90,16 +97,18 @@ function ResourceRow({
 	node,
 	entry,
 	objectInputs,
+	plan,
 }: {
 	node: ResourceNode;
 	entry: StepLogEntry | undefined;
+	plan?: unknown;
 	objectInputs: ReturnType<typeof objectInputReceipts>;
 }) {
 	const { t } = useT();
 	// curlForStep reads kind/refs/payload.muxingKind/request — all on the source
 	// entry. An entry is always present (the tree is built from the same array),
 	// but guard for robustness.
-	const curl = entry ? curlForStep(entry, { objectInputs }) : null;
+	const curl = entry ? curlForStep(entry, { objectInputs, plan }) : null;
 	// The reason is a CODE from core (which is UI-free), so the copy lives here. It
 	// renders as a tooltip, which is why it was the last English string on the page.
 	const unavailableReason =

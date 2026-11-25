@@ -1,4 +1,7 @@
-import { maskUrlUserinfo, REDACTED } from "../crypto/redact";
+import {
+	matchesHistoricalUserinfoMask,
+	REDACTED,
+} from "../crypto/url-userinfo";
 import {
 	codecDetailWireControls,
 	type DetailCodec,
@@ -9,8 +12,10 @@ import { hasPrivateStorageLocator } from "./hdr-source-paths";
 import { manifestCurlSnapshot } from "./manifest-curl";
 import { externalVttUrlSchema } from "./manifest-options";
 import {
+	authoredObjectPath,
 	hasCompletedResource,
 	hasRecordedObjectInput,
+	matchesRecordedObjectPath,
 } from "./object-input-path";
 import { hdr10PlusStreamSchema } from "./schema";
 import type { StepLogEntry } from "./steplog";
@@ -51,6 +56,7 @@ export type CurlOptions = {
 	/** Emit an `X-Tenant-Org-Id` placeholder header (sub-org calls). */
 	includeOrgHeader?: boolean;
 	objectInputs?: ReadonlyMap<string, string | null>;
+	plan?: unknown;
 };
 
 type EndpointDef = {
@@ -720,7 +726,25 @@ export function curlForStep(
 		return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 	}
 	let request = entry.request;
-	if (entry.kind === "CREATE_DOLBY_VISION_INPUT_STREAM") {
+	const ingest = entry.kind === "CREATE_INGEST_INPUT_STREAM";
+	const snapshotPath =
+		entry.request &&
+		typeof entry.request === "object" &&
+		"inputPath" in entry.request
+			? entry.request.inputPath
+			: undefined;
+	const sensitiveIngest =
+		ingest &&
+		typeof snapshotPath === "string" &&
+		(snapshotPath.includes(REDACTED) || hasPrivateStorageLocator(snapshotPath));
+	if (entry.kind === "CREATE_DOLBY_VISION_INPUT_STREAM" || sensitiveIngest) {
+		if (
+			ingest &&
+			entry.response &&
+			typeof entry.response === "object" &&
+			"inputReceiptId" in entry.response
+		)
+			return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 		const data = request as Record<string, unknown> | null | undefined;
 		const refs = data?.refs as Record<string, unknown> | undefined;
 		const proven = hasRecordedObjectInput(entry, data, options.objectInputs);
@@ -733,25 +757,35 @@ export function curlForStep(
 			!refs.inputId.trim()
 		)
 			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
-		for (const field of ["videoInputPath", "metadataInputPath"] as const) {
+		for (const field of ingest
+			? ["inputPath"]
+			: ["videoInputPath", "metadataInputPath"]) {
 			const actual = data?.[field];
-			if (actual === undefined && field === "metadataInputPath") continue;
 			const compiled = entry.payload[field];
-			const restored =
-				actual === REDACTED &&
-				proven &&
-				completed &&
-				typeof compiled === "string" &&
-				!compiled.includes(REDACTED) &&
-				hasPrivateStorageLocator(compiled) &&
-				!hasPrivateStorageLocator(compiled, true)
-					? compiled
-					: actual;
+			if (
+				actual === undefined &&
+				compiled === undefined &&
+				field === "metadataInputPath"
+			)
+				continue;
+			const verified =
+				proven && completed && matchesRecordedObjectPath(actual, compiled);
+			const restored = verified ? compiled : actual;
 			if (
 				typeof restored !== "string" ||
 				!restored ||
-				(restored.includes(REDACTED) && restored !== compiled) ||
-				hasPrivateStorageLocator(restored, proven && restored === compiled)
+				(restored.includes(REDACTED) &&
+					!(
+						verified &&
+						authoredObjectPath(
+							options.plan,
+							entry.step,
+							entry.refs.inputId,
+							field,
+							restored,
+						)
+					)) ||
+				hasPrivateStorageLocator(restored, verified ? "OBJECT_KEY" : "UNKNOWN")
 			)
 				return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 			replay[field] = restored;
@@ -778,13 +812,10 @@ export function curlForStep(
 			if (typeof compiled !== "string") return undefined;
 			// The unredacted compiler payload records the exact object key. Older
 			// snapshot writers masked through the first or last @ of a path segment.
-			if (actual === compiled || actual === maskUrlUserinfo(compiled))
-				return compiled;
-			const firstAtMask = compiled.replace(
-				/(\/\/[^/\s:@]+:)[^@/\s]+@/g,
-				`$1${REDACTED}@`,
-			);
-			return actual === firstAtMask ? compiled : undefined;
+			return actual === compiled ||
+				matchesHistoricalUserinfoMask(actual, compiled)
+				? compiled
+				: undefined;
 		}
 		const source = hdr10PlusStreamSchema.safeParse({
 			key: "source",

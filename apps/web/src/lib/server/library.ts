@@ -15,6 +15,7 @@ import {
 	publicHdrSourceProjection,
 	publicLibraryQcEvidence,
 	publicStorageDiagnostic,
+	recoverLibraryIngestInputs,
 	redactSecrets,
 	sceneAnalysisDocumentSchema,
 	sceneAnalysisLocales,
@@ -129,17 +130,14 @@ export async function sourceView(
 				? parsedSnapshot.analysisOutput
 				: undefined,
 	};
-	const objectFields = new WeakSet<object>();
+	const objectFields = new WeakMap<object, "OBJECT_KEY" | "HTTPS_PATH">();
 	let visibleSnapshot = snapshot;
 	if (snapshot.kind === "VOD_JOB") {
 		// Old captures omitted the input kind. Only recover it from the same
 		// job and immutable plan hash, with an unambiguous matching input row.
 		const needsPlan = snapshot.inputs.some(
 			(row) =>
-				!row.hdr10Plus &&
-				!row.pathKind &&
-				hasPrivateStorageLocator(row.path) &&
-				!hasPrivateStorageLocator(row.path, true),
+				!row.hdr10Plus && !row.pathKind && hasPrivateStorageLocator(row.path),
 		);
 		const jobId = source.jobId;
 		const match =
@@ -151,27 +149,12 @@ export async function sourceView(
 					).get(jobId)
 				: undefined;
 		const planned = match ? libraryIngestInputs(match.plan) : [];
-		const allObjectInputs = new Map<string, boolean>();
-		const key = (row: { name: string; path: string }) =>
-			JSON.stringify([row.name, row.path]);
-		for (const input of planned)
-			allObjectInputs.set(
-				key(input),
-				allObjectInputs.get(key(input)) !== false &&
-					input.pathKind === "OBJECT_KEY",
-			);
+		const inputs =
+			recoverLibraryIngestInputs(snapshot.inputs, planned) ?? snapshot.inputs;
 		visibleSnapshot = {
 			...snapshot,
-			inputs: snapshot.inputs.map(({ pathKind, ...input }, index) => {
-				const expected = planned[index];
-				if (
-					!input.hdr10Plus &&
-					(pathKind === "OBJECT_KEY" ||
-						(expected &&
-							key(expected) === key(input) &&
-							allObjectInputs.get(key(input))))
-				)
-					objectFields.add(input);
+			inputs: inputs.map(({ pathKind, ...input }) => {
+				if (pathKind && !input.hdr10Plus) objectFields.set(input, pathKind);
 				return input;
 			}),
 		};

@@ -18,18 +18,22 @@ export function isHdr10PlusObjectPath(value: string) {
 export const isHdr10PlusAuditPath = (path: unknown) =>
 	typeof path === "string" && /\/input-streams\/hdr10-plus(?:\/|$)/.test(path);
 
+export type StoragePathKind = "OBJECT_KEY" | "HTTPS_PATH" | "UNKNOWN";
+
 /** An unqualified path beginning with three slashes can be either a URL
  * authority or an object key. Only trusted storage provenance can choose the
  * latter. A control prefix or a backslash never qualifies for this exception. */
 export function hasPrivateStorageLocator(
 	value: string,
-	objectKey = false,
+	kind: StoragePathKind = "UNKNOWN",
 ): boolean {
 	const location = value
 		.replace(/^[\s\p{Cc}]+|[\s\p{Cc}]+$/gu, "")
 		.replace(/[\t\n\r]/gu, "");
 	const literalObject =
-		objectKey && /^\/{3,}[^/]/u.test(value) && !/[\\\p{Cc}]/u.test(value);
+		kind === "OBJECT_KEY" &&
+		/^\/{3,}[^/]/u.test(value) &&
+		!/[\\\p{Cc}]/u.test(value);
 	const authority = /^(?:[a-z][a-z\d+.-]*:)?[/\\]{2,}([^/\\?#]*)/iu.exec(
 		location,
 	);
@@ -46,31 +50,12 @@ export function hasPrivateStorageLocator(
 		if (authority && (authority[1]?.includes("@") || /[?#].+/u.test(location)))
 			return true;
 	}
-	if (literalObject) return false;
-	// Historical Library rows lack the input provider. Parse only the query.
-	// A typed Dolby/object key may legitimately contain "?version=2".
-	const beforeFragment = location.split("#", 1)[0] ?? "";
-	const queryStart = beforeFragment.indexOf("?");
-	if (queryStart < 0) return false;
-	const query = beforeFragment.slice(queryStart + 1);
-	for (const [name, value] of new URLSearchParams(query)) {
-		if (value.length === 0) continue;
-		const field = name.replace(/[-_.]/gu, "").toLowerCase();
-		if (
-			/(token|credential|signature|password|secret)$|^(auth|authorization|hdnts|hdnea|hdntl|hmac|jwt|sig|key|apikey|accesskey|keypairid|policy|awsaccesskeyid|googleaccessid)$/u.test(
-				field,
-			)
-		)
-			return true;
-		// An origin can rename an EdgeAuth parameter or carry a JWT in a
-		// generic parameter. Their token formats identify them independently.
-		if (
-			/(?:^|~)hmac=[^~\s]+/iu.test(value) ||
-			/^eyJ[\w-]+\.[\w-]+\.[\w-]+$/u.test(value)
-		)
-			return true;
-	}
-	return false;
+	// An object store receives the bytes as a key. An HTTPS input resolves
+	// the path against its host, which can assign any name to a signed query.
+	if (kind === "OBJECT_KEY") return false;
+	const fragment = location.indexOf("#");
+	const path = fragment < 0 ? location : location.slice(0, fragment);
+	return path.includes("?") || (kind === "HTTPS_PATH" && fragment >= 0);
 }
 
 /** Provider diagnostics can echo signed input locators even in list responses without a plan. */
@@ -86,7 +71,7 @@ export function publicStorageDiagnostic<T extends string | null | undefined>(
 	const compact = value.replace(/\s+/gu, "");
 	return value.includes("@") ||
 		(/[?].+/u.test(compact) && /[/\\.]|[?&][^=]+=/u.test(compact)) ||
-		hasPrivateStorageLocator(compact)
+		(uriScheme.test(compact) && hasPrivateStorageLocator(compact))
 		? ("[withheld]" as T)
 		: value;
 }
@@ -112,7 +97,7 @@ export function isProviderDiagnosticText(key: string) {
 export function publicHdrSourceProjection<T>(
 	value: T,
 	purpose: "record" | "draft" = "record",
-	objectFields?: WeakSet<object>,
+	pathKinds?: WeakMap<object, StoragePathKind>,
 ): T {
 	const hidden = new Set<string>();
 	const fields = new WeakMap<object, Map<string, string>>();
@@ -140,6 +125,7 @@ export function publicHdrSourceProjection<T>(
 		hdr: boolean,
 		libraryInputs = false,
 		diagnostics: "response" | "list" | false = false,
+		ingest = false,
 	) {
 		if (!input || typeof input !== "object" || input instanceof Date) return;
 		if (Array.isArray(input)) {
@@ -150,7 +136,7 @@ export function publicHdrSourceProjection<T>(
 					publicStorageDiagnostic(item) !== item
 				)
 					replace(input, String(index), "[withheld]");
-				else scan(item, hdr, libraryInputs, diagnostics);
+				else scan(item, hdr, libraryInputs, diagnostics, ingest);
 			}
 			return;
 		}
@@ -192,13 +178,16 @@ export function publicHdrSourceProjection<T>(
 				replace(row, key, "[withheld]");
 			}
 
-			const mediaPath = key === "videoInputPath" || key === "metadataInputPath";
+			const mediaPath =
+				key === "videoInputPath" ||
+				key === "metadataInputPath" ||
+				(ingest && key === "inputPath");
 			if (
 				!scope &&
 				((libraryInputs && key === "path") || mediaPath) &&
 				typeof item === "string" &&
-				objectFields?.has(row) &&
-				!hasPrivateStorageLocator(item, true)
+				pathKinds?.get(row) === "OBJECT_KEY" &&
+				!hasPrivateStorageLocator(item, "OBJECT_KEY")
 			) {
 				// An untrusted row elsewhere in the same snapshot can carry identical bytes.
 				replace(row, key, item, false);
@@ -208,9 +197,17 @@ export function publicHdrSourceProjection<T>(
 				!scope &&
 				mediaPath &&
 				typeof item === "string" &&
-				hasPrivateStorageLocator(item)
+				hasPrivateStorageLocator(item, pathKinds?.get(row))
 			) {
-				replace(row, key, "[REDACTED]");
+				// A projected plan is also used to verify genuine literal mask names.
+				// A private authored name cannot become evidence for "[REDACTED]".
+				replace(
+					row,
+					key,
+					row.kind === "VISION" || (ingest && typeof row.inputKey === "string")
+						? ""
+						: "[REDACTED]",
+				);
 				hidden.add(item);
 				continue;
 			}
@@ -220,7 +217,8 @@ export function publicHdrSourceProjection<T>(
 				((mediaPath && scope) ||
 					(key === "path" &&
 						(row.hdr10Plus ||
-							(libraryInputs && hasPrivateStorageLocator(item))))) &&
+							(libraryInputs &&
+								hasPrivateStorageLocator(item, pathKinds?.get(row)))))) &&
 				!isHdr10PlusObjectPath(item)
 			)
 				mark(row, key, item);
@@ -233,6 +231,11 @@ export function publicHdrSourceProjection<T>(
 						(isProviderDiagnosticList(key)
 							? "list"
 							: (key === "response" || diagnostics) && "response"),
+					(key === "ingest" && Array.isArray(row.inputs)) ||
+						((key === "payload" || key === "request" || key === "response") &&
+							(row.kind === "CREATE_INGEST_INPUT_STREAM" ||
+								(typeof row.path === "string" &&
+									row.path.endsWith("/input-streams/ingest")))),
 				);
 		}
 	}

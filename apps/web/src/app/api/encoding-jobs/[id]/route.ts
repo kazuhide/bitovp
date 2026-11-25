@@ -1,7 +1,7 @@
 import {
-	dolbyObjectFields,
 	publicHdrSourceProjection,
 	publicStorageDiagnostic,
+	vodObjectPathFields,
 } from "@bitovp/core";
 import { mergeEncodingJobSnapshot } from "@bitovp/db";
 import { NextResponse } from "next/server";
@@ -132,7 +132,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
 		const safe = publicHdrSourceProjection(
 			row,
 			"record",
-			dolbyObjectFields(row.plan, row.stepLog),
+			vodObjectPathFields(row.plan, row.stepLog),
 		);
 		return NextResponse.json({
 			...safe,

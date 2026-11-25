@@ -30,6 +30,10 @@ it.runIf(adminUrl && appUrl)(
 				...fixture,
 				bitmovin: { ...fixture.bitmovin, accountId: account.id },
 				aiSceneAnalysis: undefined,
+				ingest: fixture.ingest.map((input) => ({
+					...input,
+					inputPath: "reels/take.mxf?auth=review",
+				})),
 				hdr10PlusStreams: [
 					{
 						key: "hdr",
@@ -52,7 +56,9 @@ it.runIf(adminUrl && appUrl)(
 			const original = librarySnapshotSchema.parse(source.snapshot);
 			const old = {
 				...original,
-				inputs: original.inputs.filter((i) => !i.hdr10Plus),
+				inputs: original.inputs
+					.filter((i) => !i.hdr10Plus)
+					.map(({ pathKind: _, ...row }) => row),
 			};
 			await prisma.librarySource.update({
 				where: { id: source.id },
@@ -103,6 +109,19 @@ it.runIf(adminUrl && appUrl)(
 					where: { contentId: content.id },
 				}),
 			).toBe(1);
+			await prisma.encodingJob.delete({ where: { id: job.id } });
+			const retained = await prisma.librarySource.findUniqueOrThrow({
+				where: { id: source.id },
+			});
+			expect(retained.jobId).toBeNull();
+			expect(
+				librarySnapshotSchema.parse(retained.snapshot).inputs,
+			).toContainEqual(
+				expect.objectContaining({
+					path: "reels/take.mxf?auth=review",
+					pathKind: "OBJECT_KEY",
+				}),
+			);
 		} finally {
 			try {
 				await prisma.contentRevision.deleteMany();

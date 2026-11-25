@@ -111,10 +111,25 @@ function database(
 describe("Library source detail retained-raw projection", () => {
 	it("withholds legacy signed storage paths with and without HDR input provenance after the job was deleted", async () => {
 		const inputs = [
-			{ name: "Ordinary", path: "media/take?2.mxf" },
-			{ name: "Version", path: "media/take.mxf?version=2" },
+			{ name: "Ordinary", path: "media/take?2.mxf", pathKind: "OBJECT_KEY" },
+			{
+				name: "Version",
+				path: "media/take.mxf?version=2",
+				pathKind: "OBJECT_KEY",
+			},
 			{ name: "Annotation", path: "reels/Scene#2?auth=review" },
-			{ name: "Flag", path: "reels/take.mxf?key" },
+			{ name: "Flag", path: "reels/take.mxf?key", pathKind: "OBJECT_KEY" },
+			{
+				name: "Storage",
+				path: "reels/take.mxf?auth=review",
+				pathKind: "OBJECT_KEY",
+			},
+			{
+				name: "Network",
+				path: "reels/take.mxf?ticket=LIBRARY_SIGNATURE",
+				pathKind: "HTTPS_PATH",
+			},
+			{ name: "Unidentified", path: "reels/take.mxf?opaque=LIBRARY_SIGNATURE" },
 			{
 				name: "Archive reel",
 				path: "///reels@day/take.mxf",
@@ -182,6 +197,9 @@ describe("Library source detail retained-raw projection", () => {
 			"media/take.mxf?version=2",
 			"reels/Scene#2?auth=review",
 			"reels/take.mxf?key",
+			"reels/take.mxf?auth=review",
+			"",
+			"",
 			"///reels@day/take.mxf",
 			"",
 			"",

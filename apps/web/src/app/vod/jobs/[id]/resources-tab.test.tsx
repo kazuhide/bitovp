@@ -113,7 +113,7 @@ describe("ResourcesTab — raw snapshots in place", () => {
 			resourceId: "vision-id",
 			response: { id: "vision-id" },
 			request: {
-				videoInputPath: "[REDACTED]",
+				videoInputPath: "///reels:[REDACTED]@night/take.mxf",
 				refs: { encodingId: "enc-real", inputId: "in-123" },
 			},
 		};

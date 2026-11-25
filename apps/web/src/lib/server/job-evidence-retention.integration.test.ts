@@ -10,8 +10,10 @@ import {
 } from "@bitovp/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { requiredResetCategories } from "@/lib/reset-selection";
+import storagePlan from "../../../../../packages/core/src/plan/__fixtures__/fixed-bitrate-hls-on-aws.plan.json";
 import type { ServerContext } from "./context";
 import { deleteEncodingJobLocally } from "./delete-jobs";
+import { sourceView } from "./library";
 import { deleteOperationalData } from "./reset";
 import { countResetCategories, deleteSelectedData } from "./selected-reset";
 
@@ -124,8 +126,10 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				for (const organizationId of organizations) {
 					const where = { organizationId };
 					await admin.libraryEvidenceReceipt.deleteMany({ where });
+					await admin.librarySource.deleteMany({ where });
 					await admin.vmafJob.deleteMany({ where });
 					await admin.encodingJob.deleteMany({ where });
+					await admin.bitmovinAccount.deleteMany({ where });
 					await admin.auditLog.deleteMany({ where });
 					await admin.resetCleanupTask.deleteMany({ where });
 					await admin.organization.delete({ where: { id: organizationId } });
@@ -259,8 +263,54 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			const f = await fixture();
 			const other = await fixture();
 			state.context = f.ctx;
+			const account = await f.prisma.bitmovinAccount.create({
+				data: { label: "Capture account", encryptedApiKey: "fixture" },
+			});
 			const free = await f.prisma.encodingJob.create({
-				data: { name: "Unreferenced", status: "ERROR", plan: {} },
+				data: {
+					name: "Unreferenced",
+					bitmovinAccountId: account.id,
+					status: "FINISHED",
+					bitmovinEncodingId: randomUUID(),
+					plan: {
+						...storagePlan,
+						ingest: storagePlan.ingest.map((input) => ({
+							...input,
+							inputPath: "reels/take.mxf?auth=review",
+						})),
+					},
+				},
+			});
+			const hash = (value: unknown) =>
+				createHash("sha256").update(JSON.stringify(value)).digest("hex");
+			const digest = hash(free.plan);
+			const source = await f.prisma.librarySource.create({
+				data: {
+					jobId: free.id,
+					originalJobId: free.id,
+					encodingId: free.bitmovinEncodingId,
+					accountId: account.id,
+					sourceKey: hash([free.id, free.bitmovinEncodingId, digest]),
+					locales: [],
+					state: "READY",
+					snapshot: {
+						schemaVersion: 1,
+						kind: "VOD_JOB",
+						name: "Legacy",
+						planHash: digest,
+						identity: "UNVERIFIED",
+						inputs: [
+							{
+								name: storagePlan.inputs[0]?.name,
+								path: "reels/take.mxf?auth=review",
+							},
+						],
+						fileOutputs: [],
+						playbackLinks: [],
+						qcVerdict: null,
+						qcOverriddenAt: null,
+					},
+				},
 			});
 			const freeChild = await f.prisma.vmafJob.create({
 				data: {
@@ -290,6 +340,14 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			).toBeNull();
 			await preserved(f);
 			await preserved(other);
+			const view = await sourceView(f.prisma, source.id, f.organizationId);
+			expect(view.jobId).toBeNull();
+			expect(view.snapshot.inputs).toEqual([
+				{
+					name: storagePlan.inputs[0]?.name,
+					path: "reels/take.mxf?auth=review",
+				},
+			]);
 			const freeTenant = await fixture(false);
 			expect(
 				await deleteEncodingJobLocally(freeTenant.ctx, freeTenant.job.id, {

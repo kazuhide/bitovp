@@ -1620,7 +1620,7 @@ it("persists and emits only the public provider failure diagnostic", async () =>
 it("executes and records the same literal Dolby Vision key on the selected S3 input", async () => {
 	const plan = structuredClone(basePlan);
 	plan.bitmovin.accountId = ACCOUNT_ID;
-	const key = "///reels:day@night/take.mxf";
+	const key = "reels/take.mxf?auth=review";
 	plan.dolbyStreams = [
 		{ kind: "VISION", key: "vision", inputKey: "main", videoInputPath: key },
 	];

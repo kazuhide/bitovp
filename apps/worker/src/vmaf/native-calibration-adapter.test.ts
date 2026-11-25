@@ -621,22 +621,28 @@ describe("native calibration adapter", () => {
 		let active = 0,
 			failed = false,
 			drained = false;
+		let siblingListening!: () => void;
+		const siblingReady = new Promise<void>((resolve) => {
+			siblingListening = resolve;
+		});
 		score.mockImplementation(async (_deps, options, context) => {
+			const invocation = score.mock.calls.length;
 			expect((await stat(dirname(options.logPath))).mode & 0o777).toBe(0o700);
 			active++;
 			try {
-				if (score.mock.calls.length <= 9)
-					return result(required(context.calibrationFrames));
+				if (invocation <= 9) return result(required(context.calibrationFrames));
 				if (!failed) {
 					failed = true;
-					await pause(2);
+					await siblingReady;
 					throw new Error("parity mismatch");
 				}
-				await new Promise<void>((resolve) =>
-					required(context.signal).addEventListener("abort", () => resolve(), {
-						once: true,
-					}),
-				);
+				const signal = required(context.signal);
+				await new Promise<void>((resolve) => {
+					if (signal.aborted) resolve();
+					else
+						signal.addEventListener("abort", () => resolve(), { once: true });
+					siblingListening();
+				});
 				await pause(10);
 				drained = true;
 				required(context.signal).throwIfAborted();

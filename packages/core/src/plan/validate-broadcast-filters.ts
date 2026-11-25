@@ -51,33 +51,100 @@ export function validateBroadcastFilters(plan: EncodingPlan): PlanIssue[] {
 				conformRates.set(rendition.encodingKey, f.targetFps);
 		}
 	}
-	// The encoder applies the filter after merging multiple source tracks. A
-	// single physical track instead takes its input-mix branch and skips the
-	// rendition filter, even when several output channels select that track.
-	const sourceTracks = new Map(
-		plan.ingest.map((s) => [
-			s.key,
-			JSON.stringify([s.inputKey, s.inputPath, s.selectionMode, s.position]),
+	const ingests = new Map(plan.ingest.map((s) => [s.key, s]));
+	const potentiallySingleTrack = new Set(
+		plan.audioMixStreams
+			.filter((mix) => {
+				const keys = [...new Set(mix.audioMixChannels.map((c) => c.sourceKey))];
+				const tracks = keys.flatMap((k) => {
+					const track = ingests.get(k);
+					return track ? [track] : [];
+				});
+				// Two selectors of different kinds can resolve to the very same source
+				// track. A distinct input/file or differing positions in a common
+				// explicit coordinate system guarantee a multi-track merge.
+				const files = new Set(
+					tracks.map((t) => JSON.stringify([t.inputKey, t.inputPath])),
+				);
+				if (files.size > 1) return false;
+				const absolute = new Set(
+					tracks
+						.filter((t) => t.selectionMode === "POSITION_ABSOLUTE")
+						.map((t) => t.position),
+				);
+				const relative = new Set(
+					tracks
+						.filter((t) => t.selectionMode === "AUDIO_RELATIVE")
+						.map((t) => t.position),
+				);
+				if (absolute.size > 1 || relative.size > 1) return false;
+				const [absolutePosition] = absolute;
+				const [relativePosition] = relative;
+				return (
+					absolutePosition === undefined ||
+					relativePosition === undefined ||
+					absolutePosition >= relativePosition
+				);
+			})
+			.map((m) => m.key),
+	);
+	const cuts = new Map(
+		plan.trimmingStreams.map((t) => [
+			t.key,
+			t.kind === "TIME_BASED"
+				? [t.kind, t.duration]
+				: t.kind === "TIMECODE_TRACK"
+					? [t.kind, t.startTimeCode, t.endTimeCode]
+					: [t.kind, t.startPicTiming, t.endPicTiming],
 		]),
 	);
-	const singleTrackMixes = new Set(
-		plan.audioMixStreams
-			.filter(
-				(mix) =>
-					new Set(
-						mix.audioMixChannels.map(
-							(c) => sourceTracks.get(c.sourceKey) ?? c.sourceKey,
-						),
-					).size === 1,
-			)
-			.map((mix) => mix.key),
-	);
+	const joins = new Map(plan.concatenationStreams.map((c) => [c.key, c]));
+	const incompatibleConcatenations = new Set<string | undefined>();
+	for (const encoding of conformRates.keys()) {
+		const renditions = plan.renditions.filter(
+			(r) => r.encodingKey === encoding,
+		);
+		if (!renditions.some((r) => joins.has(r.ingestKey))) continue;
+		const shapes = new Set<string>();
+		for (const r of renditions) {
+			const join = joins.get(r.ingestKey);
+			if (join) {
+				if (join.sources.length === 1) incompatibleConcatenations.add(encoding);
+				const parts = join.sources
+					.map((part, i) => ({
+						position: part.position ?? i,
+						cut: cuts.get(part.sourceKey) ?? ["INGEST"],
+					}))
+					.sort((a, b) => a.position - b.position);
+				shapes.add(JSON.stringify(parts));
+			} else if (cuts.has(r.ingestKey) || ingests.has(r.ingestKey))
+				shapes.add("direct");
+		}
+		if (shapes.size > 1) incompatibleConcatenations.add(encoding);
+	}
 	for (const [index, rendition] of plan.renditions.entries()) {
 		const path = `renditions[${index}].filters`;
 		const attached = (rendition.filters ?? []).flatMap((a) => {
 			const f = filters.get(a.filterKey);
 			return f ? [f] : [];
 		});
+		const kinds = new Set(attached.map((f) => f.kind));
+		if (kinds.has("DEINTERLACE") && kinds.has("ENHANCED_DEINTERLACE"))
+			issues.push({
+				code: "PLAN_DEINTERLACE_CONFLICT",
+				level: "error",
+				path,
+				message:
+					"Choose either Deinterlace or Enhanced Deinterlace for this stream.",
+			});
+		if (incompatibleConcatenations.has(rendition.encodingKey))
+			issues.push({
+				code: "PLAN_CONFORM_CONCATENATION",
+				level: "error",
+				path,
+				message:
+					"Conform requires matching multi-entry concatenations in each encoding: use matching part counts, positions, trim types and trim settings, or reference a single trimmed clip directly.",
+			});
 		const target = conformRates.get(rendition.encodingKey);
 		if (target !== undefined) {
 			const rates = attached.filter((f) => f.kind === "CONFORM");
@@ -138,13 +205,13 @@ export function validateBroadcastFilters(plan: EncodingPlan): PlanIssue[] {
 					);
 			} else {
 				if (
-					singleTrackMixes.size &&
+					potentiallySingleTrack.size &&
 					inputStreamAncestry(plan, rendition.ingestKey)?.some((k) =>
-						singleTrackMixes.has(k),
+						potentiallySingleTrack.has(k),
 					)
 				)
 					error(
-						"The encoder skips the rendition Audio Mix filter when the input mix reads a single source track. Apply the channel map in the input mix.",
+						"These input selectors can resolve to a single source track, where the encoder skips the rendition Audio Mix filter. Apply the mapping in the input mix or select distinct source tracks.",
 					);
 				if (
 					"channelLayout" in rendition &&

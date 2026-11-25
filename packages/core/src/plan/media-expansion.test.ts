@@ -333,6 +333,139 @@ describe("IMSC and Opus contracts", () => {
 		delete subs.filters;
 		expect(conformIssues()).toEqual([]);
 	});
+	it("keeps ordinary storage-object keys containing punctuation executable and rejects incorrect filter speaker mappings", () => {
+		expect(
+			encodingPlanSchema.shape.filters.safeParse([
+				{
+					key: "logo",
+					kind: "WATERMARK",
+					inputKey: "main",
+					imagePath: "brand:promo@2x.png",
+					left: 0,
+					top: 0,
+				},
+			]).success,
+		).toBe(true);
+		for (const [channelLayout, count] of [
+			["2.1", 3],
+			["5.0", 5],
+			["HEXAGONAL", 6],
+			["STEREO_DOWNMIX", 4],
+		] as const) {
+			const audioMixChannels = Array.from({ length: count }, (_, i) => ({
+				channelNumber: i,
+				sourceChannels: [{ type: "CHANNEL_NUMBER", channelNumber: i }],
+			}));
+			expect(
+				encodingPlanSchema.shape.filters.safeParse([
+					{ kind: "AUDIO_MIX", key: "pan", channelLayout, audioMixChannels },
+				]).success,
+			).toBe(false);
+		}
+	});
+	it("counts all five codec outputs when Audio Mix derives its layout from QUAD_LFE rows", () => {
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		const audio = plan.renditions.find((r) => r.codec === "AAC");
+		if (!audio) throw new Error("Missing audio");
+		Object.assign(audio, {
+			codec: "DDPLUS",
+			channelLayout: "CL_QUAD_LFE",
+			filters: [{ filterKey: "pan", position: 0 }],
+		});
+		const channels = Array.from({ length: 5 }, (_, i) => ({
+			channelNumber: i,
+			sourceChannels: [{ type: "CHANNEL_NUMBER" as const, channelNumber: i }],
+		}));
+		plan.filters = [
+			{
+				key: "pan",
+				kind: "AUDIO_MIX",
+				channelLayout: "NONE",
+				audioMixChannels: channels,
+			},
+		];
+		expect(
+			validatePlan(plan).filter((i) => i.code === "PLAN_AUDIO_FILTER"),
+		).toEqual([]);
+		channels.pop();
+		expect(validatePlan(plan).map((i) => i.code)).toContain(
+			"PLAN_AUDIO_FILTER",
+		);
+	});
+	it("rejects mutually exclusive deinterlace filters and unrepresentable enhanced watermark geometry", () => {
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		const video = plan.renditions.find((r) => r.codec === "H264");
+		if (!video) throw new Error("Missing video");
+		plan.filters = encodingPlanSchema.shape.filters.parse([
+			{ key: "normal", kind: "DEINTERLACE" },
+			{ key: "enhanced", kind: "ENHANCED_DEINTERLACE" },
+		]);
+		video.filters = plan.filters.map((f, position) => ({
+			filterKey: f.key,
+			position,
+		}));
+		expect(validatePlan(plan).map((i) => i.code)).toContain(
+			"PLAN_DEINTERLACE_CONFLICT",
+		);
+		const mark = {
+			key: "logo",
+			kind: "ENHANCED_WATERMARK",
+			inputKey: "main",
+			imagePath: "logo.png",
+			left: 0,
+			top: 0,
+		};
+		const parses = (over: Record<string, unknown>) =>
+			encodingPlanSchema.shape.filters.safeParse([{ ...mark, ...over }])
+				.success;
+		for (const over of [
+			{ width: 0.5 },
+			{ unit: "PERCENTS", height: 101 },
+			{ unit: "PERCENTS", width: 0.01 },
+			{ top: undefined },
+			{ left: undefined },
+			{ left: 0, right: 0 },
+		])
+			expect(parses(over)).toBe(false);
+		expect(
+			parses({ unit: "PERCENTS", width: 0.1, height: 100, opacity: 0 }),
+		).toBe(true);
+	});
+	it("refuses Conform on a one-entry concatenation while accepting a strict multi-entry programme", () => {
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		plan.filters = [{ key: "rate", kind: "CONFORM", targetFps: 25 }];
+		for (const r of plan.renditions) {
+			const key = `join-${r.key}`;
+			const trimKey = `trim-${r.key}`;
+			plan.trimmingStreams.push({
+				key: trimKey,
+				kind: "TIME_BASED",
+				sourceKey: r.ingestKey,
+				offset: 0,
+				duration: 10,
+			});
+			plan.concatenationStreams.push({
+				key,
+				sources: [{ sourceKey: trimKey, position: 0 }],
+			});
+			r.ingestKey = key;
+			r.filters = [{ filterKey: "rate", position: 0 }];
+		}
+		const problems = () =>
+			validatePlan(plan).filter((i) => i.code === "PLAN_CONFORM_CONCATENATION");
+		expect(problems().length).toBeGreaterThan(0);
+		for (const concat of plan.concatenationStreams) {
+			const [first] = concat.sources;
+			if (!first) throw new Error("Missing concat entry");
+			concat.sources.push({ ...first, position: 1 });
+		}
+		expect(problems()).toEqual([]);
+		const first = plan.concatenationStreams[0];
+		if (!first?.sources[0]) throw new Error("Missing join");
+		first.sources.push({ ...first.sources[0], position: 2 });
+		plan.renditions = plan.renditions.filter((r) => r.codec === "H264");
+		expect(problems().length).toBeGreaterThan(0);
+	});
 	it("rejects stream-level audio filters that would fail at start or be silently ignored by the encoder", () => {
 		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
 		const audio = plan.renditions.find((r) => r.codec === "AAC");
@@ -400,6 +533,24 @@ describe("IMSC and Opus contracts", () => {
 		const mix = plan.audioMixStreams[0];
 		const source = plan.ingest[0];
 		if (!mix || !source) throw new Error("Missing input mix");
+		const originalTrack = plan.ingest.find(
+			(i) => i.key === mix.audioMixChannels[0]?.sourceKey,
+		);
+		if (!originalTrack) throw new Error("Missing audio track");
+		originalTrack.selectionMode = "POSITION_ABSOLUTE";
+		originalTrack.position = 0;
+		plan.ingest.push({
+			...originalTrack,
+			key: "relative",
+			selectionMode: "AUDIO_RELATIVE",
+		});
+		mix.audioMixChannels.push({
+			sourceKey: "relative",
+			outputChannelType: "FRONT_RIGHT",
+			sourceChannels: [{ type: "FRONT_RIGHT" }],
+		});
+		expect(issues()).toHaveLength(1);
+		mix.audioMixChannels.pop();
 		// A multi-track merge subsequently applies the rendition filter.
 		plan.ingest.push({
 			...source,
@@ -481,6 +632,8 @@ describe("IMSC and Opus contracts", () => {
 			kind: "ENHANCED_WATERMARK",
 			inputKey: input.key,
 			imagePath: `logos/${i}.png`,
+			left: 0,
+			top: 0,
 		}));
 		video.filters = plan.filters.map((f, position) => ({
 			filterKey: f.key,
@@ -526,6 +679,8 @@ describe("IMSC and Opus contracts", () => {
 				kind: "ENHANCED_WATERMARK",
 				inputKey: storage.key,
 				imagePath: "private/logo.png",
+				left: 0,
+				top: 0,
 				height: 10.5,
 				opacity: 0,
 			},

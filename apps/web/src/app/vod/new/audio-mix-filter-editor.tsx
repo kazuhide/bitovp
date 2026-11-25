@@ -1,5 +1,9 @@
 "use client";
-import { AUDIO_MIX_LAYOUTS, type MediaFilter } from "@bitovp/core";
+import {
+	AUDIO_MIX_LAYOUTS,
+	type MediaFilter,
+	unsupportedAudioMixFilterLayouts,
+} from "@bitovp/core";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { SelectNative } from "@/components/ui/input";
@@ -35,7 +39,11 @@ export function AudioMixFilterEditor({
 					}
 				>
 					{AUDIO_MIX_LAYOUTS.map((layout) => (
-						<option key={layout} value={layout}>
+						<option
+							key={layout}
+							value={layout}
+							disabled={unsupportedAudioMixFilterLayouts.has(layout)}
+						>
 							{layout}
 						</option>
 					))}

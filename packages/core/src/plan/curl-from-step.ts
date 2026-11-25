@@ -772,6 +772,22 @@ export function curlForStep(
 		return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 	}
 	let request = entry.request;
+	if (
+		[
+			"CREATE_FILTER_ENHANCED_DEINTERLACE",
+			"CREATE_FILTER_CONFORM",
+			"CREATE_FILTER_INTERLACE",
+			"CREATE_FILTER_ENHANCED_WATERMARK",
+			"CREATE_FILTER_AUDIO_MIX",
+			"CREATE_FILTER_DOLBY_LOUDNESS",
+		].includes(entry.kind)
+	) {
+		if (!request || typeof request !== "object" || Array.isArray(request))
+			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+		// Generated SDK filter models put their discriminator on the wire even
+		// when all user-editable options are unset.
+		request = { ...request, type: entry.kind.slice("CREATE_FILTER_".length) };
+	}
 	let filterBody: string | undefined;
 	if (entry.kind === "CREATE_STREAM_FILTERS") {
 		const attachment = streamFilterAttachment(request);

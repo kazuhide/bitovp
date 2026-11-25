@@ -192,6 +192,32 @@ it("keeps partially edited mix and ordinary deinterlace settings without caching
 	);
 });
 
+it("retains gains and attachment while a numbered Audio Mix source is awaiting its position", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const audio = base.audios[0];
+	if (!audio) throw new Error("Missing audio");
+	base.filters = [
+		{
+			key: "mix",
+			kind: "AUDIO_MIX",
+			channelLayout: "MONO",
+			audioMixChannels: [
+				{
+					channelNumber: 0,
+					sourceChannels: [{ type: "CHANNEL_NUMBER", gain: 0 }],
+				},
+			],
+		},
+	];
+	audio.extras = { filters: [{ filterKey: "mix", position: 1 }] };
+	const restored = mergeWizardDraft(
+		DEFAULT_WIZARD_STATE,
+		projectWizardDraft("vod", base),
+		"vod",
+	);
+	expect(restored.filters).toEqual(base.filters);
+	expect(restored.audios[0]?.extras?.filters).toEqual(audio.extras.filters);
+});
 it("restores filter definitions without inheriting suppressed properties from a different preset row", () => {
 	const base = structuredClone(DEFAULT_WIZARD_STATE);
 	base.filters = [

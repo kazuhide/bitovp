@@ -89,8 +89,6 @@ const watermarkImage = {
 				[...v].every((c) => c.charCodeAt(0) >= 32) &&
 				v.replace(/^\/+/, "").length > 0 &&
 				!v.includes("://") &&
-				!v.trimStart().startsWith("//") &&
-				!/^\s*\/*[^/\s]*:[^/\s]*@/.test(v) &&
 				!v.split("/").includes(".."),
 			"Use a storage object path, not a URL",
 		),
@@ -147,7 +145,34 @@ export const enhancedWatermarkFilterSchema = z
 		height: z.number().positive().optional(),
 		opacity: z.number().min(0).max(1).optional(),
 	})
-	.superRefine(validateWatermarkPosition);
+	.superRefine((value, ctx) => {
+		validateWatermarkPosition(value, ctx);
+		for (const [first, second] of [
+			["left", "right"],
+			["top", "bottom"],
+		] as const)
+			if (value[first] === undefined && value[second] === undefined)
+				ctx.addIssue({
+					code: "custom",
+					path: [first],
+					message: `Set one of ${first} or ${second}.`,
+				});
+		for (const field of ["width", "height"] as const) {
+			const size = value[field];
+			if (
+				size !== undefined &&
+				(value.unit === "PERCENTS" ? size < 0.1 || size > 100 : size < 1)
+			)
+				ctx.addIssue({
+					code: "custom",
+					path: [field],
+					message:
+						value.unit === "PERCENTS"
+							? "Choose 0.1 to 100 percent."
+							: "Use at least one pixel.",
+				});
+		}
+	});
 export const dolbyLoudnessFilterSchema = z
 	.strictObject({
 		key,
@@ -264,18 +289,31 @@ export function layoutChannelCount(layout: string): number | undefined {
 	const speakerCounts: Record<string, number> = {
 		MONO: 1,
 		STEREO: 2,
+		STEREO_DOWNMIX: 4,
+		QUAD_LFE: 5,
+		BACK_SURROUND: 3,
+		BACK_SURROUND_LFE: 4,
 		SURROUND: 3,
 		QUAD: 4,
 		HEXAGONAL: 6,
 		OCTAGONAL: 8,
 	};
 	return (
-		speakerCounts[declared] ??
+		speakerCounts[layout] ??
 		(/^\d\.\d$/.test(declared)
 			? Number(declared[0]) + Number(declared[2])
 			: undefined)
 	);
 }
+// These provider pan mappings select different speakers or channel counts.
+// Input-stream mixes have a separate contract; this eligibility is only for
+// the stream filter authored here.
+export const unsupportedAudioMixFilterLayouts: ReadonlySet<string> = new Set([
+	"2.1", // becomes 3.0(back), replacing the LFE with back center
+	"5.0", // becomes 5.1
+	"HEXAGONAL", // becomes hexadecagonal
+	"STEREO_DOWNMIX", // the provider declares four codec channels but pans to two
+]);
 export const audioMixFilterSchema = z
 	.strictObject({
 		key,
@@ -292,6 +330,12 @@ export const audioMixFilterSchema = z
 	})
 	.superRefine((mix, ctx) => {
 		validateMixSourceChannelTypes(mix, ctx);
+		if (unsupportedAudioMixFilterLayouts.has(mix.channelLayout))
+			ctx.addIssue({
+				code: "custom",
+				path: ["channelLayout"],
+				message: `The encoder cannot preserve the speaker mapping for Audio Mix layout ${mix.channelLayout}.`,
+			});
 		const numbers = mix.audioMixChannels.map(
 			(channel) => channel.channelNumber,
 		);

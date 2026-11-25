@@ -1,10 +1,14 @@
 import {
+	AUDIO_MIX_CHANNEL_TYPES,
 	audioMixFilterSchema,
+	conformFilterSchema,
 	dashAdaptationOptionsSchema,
 	dashAdditionalRepresentationSchema,
 	dashDetailedOptionsSchema,
 	defaultDashPeriodSchema,
 	deinterlaceFilterSchema,
+	dolbyLoudnessFilterSchema,
+	enhancedWatermarkFilterSchema,
 	hlsAdditionalMediaSchema,
 	hlsDetailedOptionsSchema,
 	hlsMediaAttributesSchema,
@@ -185,7 +189,49 @@ const rendition = fields(
 );
 // Drafts retain typed edits, including a channel map in progress. Plan validation
 // applies the output layout and cross-channel constraints when submitting.
-const audioMixDraft = z.strictObject(audioMixFilterSchema.shape);
+const draftNumber = z.number().finite().optional();
+const audioMixDraft = z.strictObject({
+	...audioMixFilterSchema.shape,
+	audioMixChannels: z.array(
+		z.strictObject({
+			channelNumber: draftNumber,
+			sourceChannels: z.array(
+				z.strictObject({
+					type: z.enum(AUDIO_MIX_CHANNEL_TYPES),
+					channelNumber: draftNumber,
+					gain: draftNumber,
+				}),
+			),
+		}),
+	),
+});
+const enhancedWatermarkDraft = z.strictObject({
+	...enhancedWatermarkFilterSchema.shape,
+	inputKey: z.union([
+		z.literal(""),
+		enhancedWatermarkFilterSchema.shape.inputKey,
+	]),
+	imagePath: z
+		.union([z.literal(""), enhancedWatermarkFilterSchema.shape.imagePath])
+		.default(""),
+	left: draftNumber,
+	right: draftNumber,
+	top: draftNumber,
+	bottom: draftNumber,
+	width: draftNumber,
+	height: draftNumber,
+	opacity: draftNumber,
+});
+const conformDraft = z.strictObject({
+	...conformFilterSchema.shape,
+	targetFps: draftNumber,
+});
+const dolbyLoudnessDraft = z.strictObject({
+	...dolbyLoudnessFilterSchema.shape,
+	targetLoudness: draftNumber,
+	maximumTruePeakLevel: draftNumber,
+	speechDetectionThreshold: draftNumber,
+});
 function projectFilterDraft(item: unknown): (DraftValue & { key: string })[] {
 	if (!draftRecord(item)) return [];
 	if (item.kind === "TEXT") {
@@ -210,14 +256,23 @@ function projectFilterDraft(item: unknown): (DraftValue & { key: string })[] {
 			},
 		];
 	}
-	const parsed = (
-		item.kind === "AUDIO_MIX" ? audioMixDraft : mediaFilterSchema
-	).safeParse(item);
+	const schema =
+		item.kind === "AUDIO_MIX"
+			? audioMixDraft
+			: item.kind === "ENHANCED_WATERMARK"
+				? enhancedWatermarkDraft
+				: item.kind === "CONFORM"
+					? conformDraft
+					: item.kind === "DOLBY_LOUDNESS"
+						? dolbyLoudnessDraft
+						: mediaFilterSchema;
+	const parsed = schema.safeParse(item);
 	if (!parsed.success) return [];
 	const value = parsed.data;
 	if (
 		(value.kind === "WATERMARK" || value.kind === "ENHANCED_WATERMARK") &&
-		!draftKeepsText(value.imagePath)
+		(!draftKeepsText(value.imagePath) ||
+			value.imagePath.trimStart().startsWith("//"))
 	)
 		return [];
 	return [value];

@@ -112,8 +112,8 @@ remove them and pass validation.
   compatible audio rendition when also producing HLS.
 - **Filters:** add a filter and assign it to the intended stream's filter chain.
   Enhanced Deinterlace and Interlace control field processing. Conform requires the same target frame rate on every audio and video stream in an encoding, with any explicit video frame rate matching. Use it with encodings without captions or subtitle streams.
-  Enhanced Watermark takes an image from input storage, with optional size and opacity.
-  On audio renditions, Audio Mix maps input channels and gains to numbered outputs.
+  Enhanced Watermark takes an image from input storage. Set one horizontal and one vertical offset. Optional dimensions are at least one pixel or 0.1–100 percent.
+  On audio renditions, Audio Mix maps input channels and gains to numbered outputs. Select a matching codec layout. The layout selector disables speaker mappings the encoder changes.
   Dolby Loudness requires Encoder 2.282.0 or newer and a supported audio codec. Leave audio/video sync unset and Kantar off. Use Plan JSON to export a plan with Dolby Loudness.
   HQDN3D removes noise and Unsharp sharpens or blurs.
 - **CMAF muxing:** the dedicated muxing supports H.264/AAC with DASH

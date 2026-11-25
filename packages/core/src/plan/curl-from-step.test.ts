@@ -29,6 +29,18 @@ function step(
 }
 
 describe("curlForStep — endpoint mapping", () => {
+	it.each([
+		"CREATE_FILTER_ENHANCED_DEINTERLACE",
+		"CREATE_FILTER_INTERLACE",
+		"CREATE_FILTER_DOLBY_LOUDNESS",
+	] as const)("sends the SDK JSON resource discriminator for a default %s", (kind) => {
+		const result = curlForStep(step({ kind, request: { refs: {} } }));
+		if (!result.ok) throw new Error(JSON.stringify(result));
+		expect(
+			JSON.parse(result.command.split("--data '")[1]?.slice(0, -1) ?? ""),
+		).toEqual({ type: kind.slice("CREATE_FILTER_".length) });
+		expect(result.command).toContain("Content-Type: application/json");
+	});
 	it("copies the resolved stream filter array with persisted positions and refuses incomplete historical snapshots", () => {
 		const ids = [
 			"11111111-1111-4111-8111-111111111111",

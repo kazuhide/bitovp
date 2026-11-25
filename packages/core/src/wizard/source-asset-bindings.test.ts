@@ -59,6 +59,24 @@ function copiedSource() {
 	return encodingPlanSchema.parse(buildPlan(state));
 }
 describe("copied picture and storage identities", () => {
+	it("allocates the implicit picture after both HDR and embedded caption sources", () => {
+		const form = planToWizardState(copiedSource());
+		const hdr = form.sources?.hdr10PlusStreams?.[0],
+			video = form.videos[0];
+		if (!form.sources || !hdr || !video?.extras)
+			throw Error("missing imported HDR");
+		hdr.key = "video";
+		form.sources.captionStreams = [
+			{ kind: "CEA708", key: "video-input-1", inputFile: hdr.videoInputFile },
+		];
+		delete video.extras.source;
+		const plan = encodingPlanSchema.parse(buildPlan(form));
+		expect(plan.renditions[0]?.ingestKey).toBe("video-input-2");
+		expect(
+			plan.ingest.find((i) => i.selectionMode === "VIDEO_RELATIVE")?.key,
+		).toBe("video-input-2");
+		expect(plan.captionStreams[0]?.key).toBe("video-input-1");
+	});
 	it.each([
 		"program.wav",
 		"picture.mxf",

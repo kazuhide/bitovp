@@ -15,6 +15,7 @@ import {
 	type LiveVideoRendition,
 	type LiveWizardState,
 	liveManifestDestination,
+	outputAcl,
 } from "./build-live-plan";
 import { liveRenditionOptionsProblem } from "./live-rendition-options";
 
@@ -231,7 +232,12 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 	const adMarkerOptions = adMarkerOptionsState(plan.adMarkers);
 
 	const state: LiveWizardState = {
-		...(plan.dvbSubtitles ? { dvbSubtitles: plan.dvbSubtitles } : {}),
+		...(plan.dvbSubtitles
+			? {
+					dvbSubtitles: plan.dvbSubtitles,
+					dvbSource: { base, acl: outputAcl(primaryState) },
+				}
+			: {}),
 		name: plan.name,
 		accountId: plan.bitmovin?.accountId ?? "",
 		cloudRegion: plan.bitmovin?.cloudRegion ?? D.cloudRegion,

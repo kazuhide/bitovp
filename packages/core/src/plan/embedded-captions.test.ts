@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import Ajv2020 from "ajv/dist/2020";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { buildPlan, remapInputKeyRefs } from "../wizard/build-plan";
@@ -101,6 +104,33 @@ describe("subtitle extraction from input media", () => {
 				source.kind === "DVB" ? "subtitles" : "captions"
 			][collection][key].properties,
 		).toMatchObject({ ...wire, inputPath: "feed.ts" });
+	});
+	it("exports the default CEA-708 service required by the template schema and leaves the direct request implicit", () => {
+		const plan = encodingPlanSchema.parse(planWith({ kind: "CEA708" }));
+		const op = compilePlan(plan).find(
+			(o) => o.kind === "CREATE_CEA708_INPUT_STREAM",
+		);
+		expect(op?.payload).not.toHaveProperty("channel");
+		const document = parse(planToEncodingTemplateYaml(plan));
+		const validate = new Ajv2020({ strict: false, allErrors: true }).compile(
+			JSON.parse(
+				readFileSync(
+					join(
+						__dirname,
+						"__fixtures__",
+						"bitmovin-encoding-template.schema.json",
+					),
+					"utf8",
+				),
+			),
+		);
+		expect(validate(document), JSON.stringify(validate.errors)).toBe(true);
+		const key = plan.captionStreams[0]?.key;
+		if (!key) throw Error("missing CEA-708 fixture");
+		expect(
+			document.encodings.main.inputStreams.captions.cea708[key].properties
+				.channel,
+		).toBe(1);
 	});
 	it("exports caption keys that are also inherited JavaScript names as ordinary YAML resources", () => {
 		const plan = encodingPlanSchema.parse(

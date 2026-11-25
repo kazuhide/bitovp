@@ -322,6 +322,8 @@ export type LiveDvbRow = Pick<
 	>;
 export type LiveWizardState = {
 	dvbSubtitles?: LiveDvbRow[];
+	/** Original output folder of an imported plan, retained when the copy is moved. */
+	dvbSource?: { base: string; acl?: LiveDvbTrack["destination"]["acl"] };
 	/** Managed Preview settings coexist with the normal graph until explicitly selected. */
 	aisaLive?: AisaLiveWizardSettings;
 	name: string;
@@ -649,6 +651,33 @@ export function liveBasePath(state: LiveWizardState): string {
 
 function joinPath(base: string, rel: string): string {
 	return base === "" ? rel : `${base}/${rel}`;
+}
+
+function dvbDestination(
+	track: LiveDvbRow,
+	state: LiveWizardState,
+	outputKey: string,
+) {
+	const original = track.destination;
+	const source = state.dvbSource;
+	const base = liveBasePath(state);
+	const acl =
+		original && source && original.acl !== source.acl
+			? original.acl
+			: outputAcl(state.output);
+	let path = joinPath(base, `subtitles/${track.key}`);
+	if (original && source) {
+		if (base === source.base) path = original.path;
+		else if (original.path === source.base) path = base;
+		else if (!source.base) path = joinPath(base, original.path);
+		else if (original.path.startsWith(`${source.base}/`))
+			path = joinPath(base, original.path.slice(source.base.length + 1));
+		if (base !== source.base && path === original.path)
+			throw new Error(
+				"Choose a different Live output folder for the copied subtitle track",
+			);
+	}
+	return { outputKey, path, acl };
 }
 
 /**
@@ -1399,7 +1428,7 @@ function cacheControlSettings(
 	});
 }
 
-function outputAcl(output: LiveWizardState["output"]) {
+export function outputAcl(output: LiveWizardState["output"]) {
 	if (output.kind === "MOQ") return undefined;
 	return output.publicRead
 		? ("PUBLIC_READ" as const)
@@ -1719,13 +1748,7 @@ export function buildLiveChannelPlan(
 			position: track.position ?? -1,
 			inputPath: track.inputPath ?? ingestInputPath(state.inputKind),
 			segmentLength: track.segmentLength ?? state.segmentLength,
-			destination: {
-				...(track.destination ?? {
-					outputKey: output.key,
-					path: joinPath(base, `subtitles/${track.key}`),
-				}),
-				acl: segmentAcl,
-			},
+			destination: dvbDestination(track, state, output.key),
 		})),
 		renditions,
 		muxings,

@@ -940,7 +940,12 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		entries[section] ??= {};
 		entries[section][collection] ??= resourceTable();
 		entries[section][collection][key] = {
-			properties: { ...properties, inputId: inputRef.get(inputKey) },
+			properties: {
+				// The template requires a service number; the direct API defaults to service 1.
+				...(kind === "CEA708" ? { channel: 1 } : {}),
+				...properties,
+				inputId: inputRef.get(inputKey),
+			},
 		};
 		captionsByEnc.set(owner, entries);
 		captionRefs.set(

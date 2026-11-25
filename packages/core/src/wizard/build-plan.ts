@@ -1675,6 +1675,7 @@ export function implicitTrackKeys(sources: WizardSources) {
 		[
 			...(sources.tracks ?? []),
 			...(sources.fileStreams ?? []),
+			...(sources.captionStreams ?? []),
 			...(sources.dolbyStreams ?? []),
 			...(sources.hdr10PlusStreams ?? []),
 			...(sources.audioMixStreams ?? []),

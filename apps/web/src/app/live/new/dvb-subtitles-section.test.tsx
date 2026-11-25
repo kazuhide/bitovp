@@ -129,6 +129,88 @@ it("creates two editable tracks, preserves their destinations and selection thro
 	);
 	expect(screen.getByLabelText("Subtitle name")).toHaveValue("English");
 });
+it.each([
+	"event",
+	"",
+])("moves copied DVB files and keeps a custom relative subtitle folder (%j)", (basePath) => {
+	const source = normal();
+	source.output.basePath = basePath;
+	source.dvbSubtitles = [
+		{
+			key: "captions",
+			position: 2,
+			language: "ja",
+			label: "Japanese",
+			packaging: "CHUNKED_TEXT",
+		},
+	];
+	const original = liveChannelPlanSchema.parse(buildLiveChannelPlan(source));
+	const track = original.dvbSubtitles?.[0];
+	if (!track) throw new Error("missing subtitle fixture");
+	track.destination.path = basePath ? basePath + "/text/ja" : "text/ja";
+	const copied = tryImportLiveChannelIntoWizard(original);
+	if (!copied.ok) throw new Error(copied.reasonKey);
+	const edited = {
+		...copied.state,
+		output: { ...copied.state.output, basePath: "copy/news" },
+	};
+	const restored = mergeWizardDraft(
+		copied.state,
+		projectWizardDraft("live", edited),
+		"live",
+	);
+	const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(restored));
+	expect(plan.dvbSubtitles?.[0]?.destination.path).toBe("copy/news/text/ja");
+	expect(
+		compileLiveChannel(plan).find((op) => op.step === "dvb:captions:muxing")
+			?.payload?.outputPath,
+	).toBe("copy/news/text/ja");
+	expect(track.destination.path).toBe(basePath ? "event/text/ja" : "text/ja");
+	if (basePath) {
+		track.destination.path = "event-other/text/ja";
+		const outside = tryImportLiveChannelIntoWizard(original);
+		if (!outside.ok) throw Error(outside.reasonKey);
+		expect(
+			buildLiveChannelPlan({
+				...outside.state,
+				output: { ...outside.state.output, basePath: "other-event" },
+			}).dvbSubtitles?.[0]?.destination.path,
+		).toBe("other-event/subtitles/captions");
+	}
+});
+it.each([
+	"PRIVATE",
+	undefined,
+] as const)("preserves a distinct subtitle ACL (%j) when copying public media", (acl) => {
+	const source = normal();
+	source.output.publicRead = true;
+	source.dvbSubtitles = [
+		{
+			key: "cc",
+			position: 2,
+			language: "en",
+			label: "English",
+			packaging: "CHUNKED_TEXT",
+		},
+	];
+	const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(source));
+	const track = plan.dvbSubtitles?.[0];
+	if (!track) throw Error("missing caption");
+	track.destination.acl = acl;
+	const opened = tryImportLiveChannelIntoWizard(plan);
+	if (!opened.ok) throw Error(opened.reasonKey);
+	const copy = liveChannelPlanSchema.parse(
+		buildLiveChannelPlan({
+			...opened.state,
+			output: { ...opened.state.output, basePath: "second" },
+		}),
+	);
+	expect(copy.dvbSubtitles?.[0]?.destination).toMatchObject({
+		path: "second/subtitles/cc",
+	});
+	expect(copy.dvbSubtitles?.[0]?.destination.acl).toBe(acl);
+	expect(copy.muxings[0]?.destination?.acl).toBe("PUBLIC_READ");
+});
 it("keeps defaults silent for RTMP and explains an incompatible transport after a change", () => {
 	const state = normal();
 	state.inputKind = "RTMP";

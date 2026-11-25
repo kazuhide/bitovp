@@ -58,6 +58,52 @@ it("never saves or restores a protocol-relative HDR credential, including an old
 	);
 	expect(localStorage.getItem("hdr-old")).toContain("dir/source.mxf");
 });
+it.each([
+	"//account:TEST_ONLY@fixture.invalid/picture",
+	"https:/account:TEST_ONLY@fixture.invalid/picture",
+])("cleans legacy picture rows on read while preserving spaces in unrelated keys", (path) => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	const first = state.inputFiles[0];
+	if (!first) throw new Error("missing file");
+	const picture = {
+		...first,
+		key: "picture",
+		path,
+	};
+	state.inputFiles = [
+		picture,
+		{ ...first, key: "other", path: "clips/Scene A.mxf" },
+	];
+	state.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				videoInputFile: "picture",
+				metadataInputPath: " ",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	writeWizardDraft("current", "vod", state, 2);
+	expect(localStorage.getItem("current")).not.toContain("TEST_ONLY");
+	localStorage.setItem(
+		"retained",
+		JSON.stringify({
+			version: 1,
+			kind: "vod",
+			savedAt: Date.now(),
+			step: 2,
+			value: state,
+		}),
+	);
+	const restored = readWizardDraft("retained", "vod");
+	expect(restored?.value.inputFiles).toMatchObject([
+		{ path: "" },
+		{ path: "clips/Scene A.mxf" },
+	]);
+	expect(localStorage.getItem("retained")).not.toContain("TEST_ONLY");
+	expect(localStorage.getItem("retained")).toContain("clips/Scene A.mxf");
+});
 it("restores an edited MoQ copy without erasing a namespace excluded from local storage", () => {
 	const source: LiveWizardState = {
 		...DEFAULT_LIVE_WIZARD_STATE,

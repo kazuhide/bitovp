@@ -1144,6 +1144,36 @@ describe("orchestrator processor", () => {
 			expect(ranRunning).toBe(false);
 		});
 
+		it("honors a retained cancel even if the old HDR picture/metadata pair is no longer admissible", async () => {
+			const plan = {
+				...basePlan,
+				bitmovin: { ...basePlan.bitmovin, accountId: ACCOUNT_ID },
+				hdr10PlusStreams: [
+					{
+						key: "hdr",
+						inputKey: "in",
+						videoInputPath: "picture.mxf",
+						metadataInputPath: "picture.mxf",
+					},
+				],
+			};
+			const { processor, row, sdk } = setup(
+				{
+					plan,
+					status: "RUNNING",
+					cancelRequested: true,
+					stepLog: midRunLog(),
+					bitmovinEncodingId: "bm-enc",
+				},
+				{ getEncodingStatus: vi.fn(async () => ({ status: "RUNNING" })) },
+			);
+			expect(await processor({ encodingJobId: JOB_ID })).toMatchObject({
+				status: "CANCELED",
+			});
+			expect(row.status).toBe("CANCELED");
+			expect(sdk.stopEncoding).toHaveBeenCalledWith("bm-enc");
+			expect(sdk.createEncoding).not.toHaveBeenCalled();
+		});
 		// (b) cancel before a mid-run step, with a running encoding -> CANCELED +
 		// stopEncoding called for that encoding.
 		it("cancels before the next step and stops the running encoding", async () => {

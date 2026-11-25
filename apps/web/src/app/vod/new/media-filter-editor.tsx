@@ -181,7 +181,7 @@ export function MediaFilterEditor({
 	idBase: string;
 	filter: WizardFilter;
 	inputFiles: WizardInputFile[];
-	onChange: (next: WizardFilter) => void;
+	onChange: (next: WizardFilter, storageSelected?: boolean) => void;
 }) {
 	const { locale, t } = useT();
 	const ja = locale === "ja";
@@ -239,7 +239,9 @@ export function MediaFilterEditor({
 					<SelectNative
 						id={`${idBase}-input`}
 						value={selected?.key ?? filter.inputKey}
-						onChange={(e) => patch("inputKey", e.target.value)}
+						onChange={(e) =>
+							onChange({ ...filter, inputKey: e.target.value }, true)
+						}
 					>
 						<option value="">{ja ? "入力を選択" : "Select input"}</option>
 						{inputs.map((f) => (

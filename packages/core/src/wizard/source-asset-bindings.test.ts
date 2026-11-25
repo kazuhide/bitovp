@@ -145,6 +145,20 @@ describe("copied picture and storage identities", () => {
 		const form = planToWizardState(native);
 		expect(form.videos[0]?.extras?.source).toBe("video");
 		expect(encodingPlanSchema.parse(buildPlan(form))).toEqual(native);
+		const video = form.videos[0];
+		if (!video) throw new Error("missing HEVC rendition");
+		delete video.extras?.source;
+		const switched = encodingPlanSchema.parse(buildPlan(form));
+		const sourceKey = switched.renditions.find(
+			(r) => r.codec === "H265",
+		)?.ingestKey;
+		expect(sourceKey).not.toBe("video");
+		expect(switched.ingest.find((s) => s.key === sourceKey)).toMatchObject({
+			selectionMode: "VIDEO_RELATIVE",
+		});
+		expect(
+			encodingPlanSchema.parse(buildPlan(planToWizardState(switched))),
+		).toEqual(switched);
 	});
 	it.each([
 		"picture.mxf",

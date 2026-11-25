@@ -710,7 +710,9 @@ export function LadderSection({
 							idBase={`wz-flt-${index}`}
 							filter={filter}
 							inputFiles={state.inputFiles}
-							onChange={(next) => onPatch(editFilter(state, index, next))}
+							onChange={(next, storageSelected) =>
+								onPatch(editFilter(state, index, next, false, storageSelected))
+							}
 						/>
 						{!filter.kind || filter.kind === "DEINTERLACE" ? (
 							<OptionsGrid

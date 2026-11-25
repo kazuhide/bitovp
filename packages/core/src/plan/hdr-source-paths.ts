@@ -1,9 +1,17 @@
+const uriScheme = /^[a-z][a-z\d+.-]*:/i;
+
 /** HDR10+ expects an object path on its selected input, not a separate location. */
 export function isHdr10PlusObjectPath(value: string) {
 	const path = value.trim();
 	return (
 		path.length > 0 &&
-		!/^[a-z][a-z0-9+.-]*:\/\/|^[/\\]{2}|^[^/\s]*:[^/\s]*@|[?#]/i.test(path)
+		!uriScheme.test(path) &&
+		!path.startsWith("//") &&
+		!/[\\?#]/u.test(value) &&
+		!Array.from(value).some(
+			(c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127,
+		) &&
+		!/^[^/\s]*:[^/\s]*@/u.test(path)
 	);
 }
 
@@ -11,11 +19,15 @@ export const isHdr10PlusAuditPath = (path: unknown) =>
 	typeof path === "string" && /\/input-streams\/hdr10-plus(?:\/|$)/.test(path);
 
 function hasPrivateLocator(value: string): boolean {
+	// A fragment in a relative object key is ordinary storage data. Query
+	// parameters and URL authorities, including normalized HTTP authorities,
+	// can contain credentials in old snapshots that lack a typed source marker.
 	return (
-		/(?:[a-z][a-z0-9+.-]*:)?[/\\]{2}[^/\\\s]*@|^[^/\s]*:[^/\s]*@/i.test(
-			value,
-		) ||
-		(/[?#][^\s]+/.test(value) && /[/\\.]|[?&][^=]+=/u.test(value))
+		(value.includes("@") &&
+			(/[a-z][a-z\d+.-]*:/i.test(value) ||
+				/[/\\]{2}|^[^/\s]*:[^/\s]*@/u.test(value))) ||
+		(/[?][^\s]+/.test(value) && /[/\\.]|[?&][^=]+=/u.test(value)) ||
+		(uriScheme.test(value) && value.includes("#"))
 	);
 }
 
@@ -24,6 +36,13 @@ export function publicStorageDiagnostic<T extends string | null | undefined>(
 	value: T,
 ): T {
 	if (typeof value !== "string") return value;
+	// URL parsers discard tab/newline characters inside an address. Avoid
+	// returning a credential fragment if tokenization split the address.
+	if (
+		/[\t\r\n]/u.test(value) &&
+		hasPrivateLocator(value.replace(/[\t\r\n]/gu, ""))
+	)
+		return "[withheld]" as T;
 	return value.replace(/[^\s"'<>]+/g, (token) =>
 		hasPrivateLocator(token) ? "[withheld]" : token,
 	) as T;
@@ -40,6 +59,27 @@ export function publicHdrSourceProjection<T>(value: T): T {
 			return;
 		}
 		const row = input as Record<string, unknown>;
+		// Wizard drafts bind the HDR picture by file-row key, not by an inline path.
+		const sources = row.sources as { hdr10PlusStreams?: unknown } | undefined;
+		if (
+			Array.isArray(row.inputFiles) &&
+			Array.isArray(sources?.hdr10PlusStreams)
+		) {
+			const selected = new Set(
+				sources.hdr10PlusStreams
+					.map((stream) => stream?.videoInputFile)
+					.filter((key) => typeof key === "string"),
+			);
+			for (const file of row.inputFiles) {
+				if (
+					selected.has(file?.key) &&
+					typeof file.path === "string" &&
+					file.path.trim() &&
+					!isHdr10PlusObjectPath(file.path)
+				)
+					hidden.add(file.path);
+			}
+		}
 		const scope =
 			hdr ||
 			row.kind === "CREATE_HDR10_PLUS_INPUT_STREAM" ||
@@ -48,7 +88,7 @@ export function publicHdrSourceProjection<T>(value: T): T {
 		for (const [key, item] of Object.entries(row)) {
 			if (
 				typeof item === "string" &&
-				item.length &&
+				item.trim().length &&
 				((scope && (key === "videoInputPath" || key === "metadataInputPath")) ||
 					(key === "path" &&
 						(row.hdr10Plus || (libraryInputs && hasPrivateLocator(item))))) &&
@@ -65,7 +105,9 @@ export function publicHdrSourceProjection<T>(value: T): T {
 	}
 	scan(value, false);
 	if (!hidden.size) return value;
-	const locators = [...hidden].sort((a, b) => b.length - a.length);
+	const locators = [...hidden]
+		.filter((path) => path.trim().length > 1)
+		.sort((a, b) => b.length - a.length);
 	function project(input: unknown): unknown {
 		if (typeof input === "string") {
 			if (hidden.has(input)) return "";

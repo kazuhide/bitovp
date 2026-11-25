@@ -1044,7 +1044,7 @@ export function writeWizardDraft(
 			kind,
 			savedAt: now,
 			step,
-			value: projectWizardDraft(kind, value),
+			value: projectWizardDraft(kind, publicHdrSourceProjection(value)),
 		});
 		const serialized = JSON.stringify(record);
 		if (serialized.length <= WIZARD_DRAFT_MAX_SIZE)

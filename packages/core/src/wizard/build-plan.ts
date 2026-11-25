@@ -1794,10 +1794,27 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 			c.sources.map((s) => s.sourceKey),
 		),
 	]);
+	// A named HDR source can legitimately be called "video". An explicit
+	// selection keeps that source; the implicit selection gets its own ingest.
+	const sourceKeys = new Set(
+		[
+			...(sources.tracks ?? []),
+			...(sources.fileStreams ?? []),
+			...(sources.dolbyStreams ?? []),
+			...(sources.hdr10PlusStreams ?? []),
+			...(sources.audioMixStreams ?? []),
+			...(sources.trimmingStreams ?? []),
+			...(sources.concatenationStreams ?? []),
+		].map((stream) => stream.key),
+	);
+	let implicitVideoKey = "video";
+	for (let i = 1; sourceKeys.has(implicitVideoKey); i++)
+		implicitVideoKey = `video-input-${i}`;
 	const useVideoIngest =
-		!sources.hdr10PlusStreams?.some((s) => s.key === "video") &&
-		(state.videos.some((v) => usesImplicit(v.extras, "video")) ||
-			wrappedSourceKeys.has("video"));
+		state.videos.some((v) => v.extras?.source === undefined) ||
+		(implicitVideoKey === "video" &&
+			(state.videos.some((v) => usesImplicit(v.extras, "video")) ||
+				wrappedSourceKeys.has("video")));
 	// A QC-only encode emits no audio rendition (below), so none reads the implicit
 	// audio track: left in, the plan would ask for a track of the source that nothing
 	// encodes, and would not load back into the form that built it.
@@ -1807,11 +1824,11 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	// Separate A/V: the implicit audio may read a different input file than the
 	// video; absent audioInputFile = the same primary object.
 	const audioRef = ref(state.audioInputFile ?? primaryFile?.key ?? "");
-	const ingest: IngestInput[] = [
-		...(useVideoIngest && primaryFile
+	const videoIngest: IngestInput[] =
+		useVideoIngest && primaryFile
 			? [
 					prune({
-						key: "video",
+						key: implicitVideoKey,
 						inputKey: primaryFile.inputKey,
 						inputPath: primaryFile.path,
 						selectionMode: "VIDEO_RELATIVE" as const,
@@ -1819,7 +1836,9 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 						encodingKey: str(sources.implicitEncodingKeys?.video),
 					}),
 				]
-			: []),
+			: [];
+	const ingest: IngestInput[] = [
+		...(implicitVideoKey === "video" ? videoIngest : []),
 		...(useAudioIngest
 			? [
 					prune({
@@ -1843,6 +1862,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				encodingKey: str(track.encodingKey),
 			});
 		}),
+		...(implicitVideoKey === "video" ? [] : videoIngest),
 	];
 
 	const videoRendition = (
@@ -1857,7 +1877,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 		const shared = {
 			key,
 			width: video.width,
-			ingestKey: video.extras?.source ?? "video",
+			ingestKey: video.extras?.source ?? implicitVideoKey,
 			...(hevcV2
 				? { encodingMode: "SMART_PASS" as const }
 				: video.encodingMode

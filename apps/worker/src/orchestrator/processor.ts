@@ -462,7 +462,17 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		let isVerificationRun = false;
 		let accountId: string;
 		try {
-			plan = encodingPlanSchema.parse(row.plan);
+			// Stopping an admitted job uses its recorded provider IDs. Historical
+			// HDR source declarations are never executed on this cancellation path.
+			const stored = row.plan;
+			plan = encodingPlanSchema.parse(
+				row.cancelRequested &&
+					stored &&
+					typeof stored === "object" &&
+					!Array.isArray(stored)
+					? { ...stored, hdr10PlusStreams: [] }
+					: stored,
+			);
 			if (!row.cancelRequested && plan.inputTimelinePreparation) {
 				if (!deps.validateInputPreparation)
 					throw new Error("INPUT_PREPARATION_VALIDATOR_REQUIRED");
@@ -530,6 +540,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 			 * validator: an unknown must not manufacture one).
 			 */
 			if (
+				!row.cancelRequested &&
 				(plan.qc?.vmaf || plan.qc?.psnr) &&
 				deps.vmafModelAvailable !== null
 			) {
@@ -703,7 +714,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		// Loop-top check: a cancel requested before any step runs (e.g. a QUEUED
 		// job canceled before the worker picked it) → CANCELED immediately, before
 		// the RUNNING flip, stopping nothing (no encoding created yet).
-		if (await checkCancel()) {
+		if (row.cancelRequested || (await checkCancel())) {
 			return await finalizeCancel();
 		}
 

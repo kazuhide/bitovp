@@ -1196,7 +1196,13 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					})
 				).status,
 			).toBe("ERROR");
+			await createScheduleSweep({
+				prisma: tenant,
+				now: () => new Date(now.getTime() + 600000),
+				enqueue,
+			}).dispatchPending();
 			expect(enqueue).not.toHaveBeenCalledWith(expect.anything(), id);
+			await tenant.liveSchedule.delete({ where: { id: schedule.id } });
 		});
 		it("keeps a scheduled re-air invisible to outbox recovery until its new airing and generation commit", async () => {
 			const f = await fixture("STOPPED", null);

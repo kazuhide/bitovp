@@ -18,11 +18,14 @@ import {
 export const RESET_ENCODING_ABSENT = Symbol("verified encoding absence");
 export type ResetCleanupProvider = {
 	status(id: string): Promise<string | typeof RESET_ENCODING_ABSENT>;
-	stop(id: string, canMutate?: () => Promise<boolean>): Promise<void | false>;
+	stop(
+		id: string,
+		canMutate?: () => Promise<boolean>,
+	): Promise<undefined | false>;
 	releaseTemporaryKeys(
 		id: string,
 		canMutate?: () => Promise<boolean>,
-	): Promise<void | false>;
+	): Promise<undefined | false>;
 	/** True only after an exact owned hook is deleted (including 404). */
 	removeWebhook(hook: ResetCleanupWebhook): Promise<boolean>;
 };

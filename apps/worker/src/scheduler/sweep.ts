@@ -2236,6 +2236,9 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					take,
 				}),
 			handle: async (row) => {
+				// Exhausted START recovery owns the failure. A missing queue stamp
+				// cannot authorize dispatching that failed provision again.
+				if (row.action === "START" && row.outcome === "FAILED") return;
 				if (row.action === "STOP" && row.outcome !== "PENDING") {
 					if (!row.liveChannelRunId) return;
 					// Older workers could mark every FIRED stop on a channel. Only the

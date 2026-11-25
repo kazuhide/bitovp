@@ -1094,9 +1094,12 @@ function restoreCopiedHdrInputs(
 		return rank === undefined ? f : { inputDeclarationIndex: rank, ...f };
 	});
 	if (index > 0) files.unshift(...files.splice(index, 1));
+	// Promoting a replacement HDR picture must keep an unchanged copied audio
+	// master, including the implicit audio that previously shared the picture.
+	const copiedAudioKey = base.audioInputFile ?? primary.key;
 	const audioInputFile =
 		snapshot.audioInputFile ??
-		(index > 0 && first.key === base.audioInputFile ? first.key : undefined);
+		(index > 0 && first.key === copiedAudioKey ? first.key : undefined);
 	return {
 		...snapshot,
 		...(audioInputFile !== undefined ? { audioInputFile } : {}),

@@ -21,6 +21,8 @@ const defaultMixLayoutsByCount: Readonly<Record<number, string>> = {
 	6: "5.1_BACK",
 	7: "6.1",
 	8: "7.1",
+	16: "HEXADECAGONAL",
+	24: "22.2",
 };
 
 function checkEncoderVersion(
@@ -63,6 +65,11 @@ export function validateBroadcastFilters(plan: EncodingPlan): PlanIssue[] {
 				conformRates.set(rendition.encodingKey, f.targetFps);
 		}
 	}
+	const atmosInputs = new Set(
+		plan.dolbyStreams
+			.filter((stream) => stream.kind === "ATMOS")
+			.map((stream) => stream.key),
+	);
 	const ingests = new Map(plan.ingest.map((s) => [s.key, s]));
 	const potentiallySingleTrack = new Set(
 		plan.audioMixStreams
@@ -183,6 +190,13 @@ export function validateBroadcastFilters(plan: EncodingPlan): PlanIssue[] {
 					"Conform requires matching multi-entry concatenations in each encoding: use matching part counts, positions, trim types and trim settings, or reference a single trimmed clip directly.",
 			});
 		const target = conformRates.get(rendition.encodingKey);
+		const ancestry =
+			target !== undefined || mix
+				? inputStreamAncestry(plan, rendition.ingestKey)
+				: undefined;
+		const usesAtmosInput =
+			rendition.codec === "DOLBY_ATMOS" ||
+			ancestry?.some((key) => atmosInputs.has(key));
 		if (target !== undefined) {
 			const rates = attached.filter((f) => f.kind === "CONFORM");
 			const rate =
@@ -192,7 +206,7 @@ export function validateBroadcastFilters(plan: EncodingPlan): PlanIssue[] {
 			if (
 				rendition.codec === "WEBVTT" ||
 				rendition.codec === "IMSC" ||
-				rendition.codec === "DOLBY_ATMOS" ||
+				usesAtmosInput ||
 				rendition.burnInSrt ||
 				rates.length !== 1 ||
 				rates[0]?.targetFps !== target ||
@@ -237,22 +251,34 @@ export function validateBroadcastFilters(plan: EncodingPlan): PlanIssue[] {
 				error(`Attach at most one ${f.kind} filter to each rendition.`);
 			seen.add(f.kind);
 			if (f.kind === "DOLBY_LOUDNESS") {
+				if (kinds.has("AUDIO_VOLUME") || kinds.has("EBU_R128_SINGLE_PASS"))
+					error(
+						"Dolby Loudness bypasses the Audio Volume and EBU R128 single-pass filters. Choose one loudness workflow for this rendition.",
+					);
 				if (plan.generation.audioVideoSyncMode || plan.kantar)
 					error(
 						"Dolby Loudness cannot be used with explicit audio/video sync or Kantar watermarking.",
 					);
 			} else {
-				if (rendition.codec === "DOLBY_ATMOS")
+				if (usesAtmosInput)
 					error("Audio Mix cannot be applied to a Dolby Atmos file input.");
 				if (
 					potentiallySingleTrack.size &&
-					inputStreamAncestry(plan, rendition.ingestKey)?.some((k) =>
-						potentiallySingleTrack.has(k),
-					)
+					ancestry?.some((k) => potentiallySingleTrack.has(k))
 				)
 					error(
 						"These input selectors can resolve to a single source track, where the encoder skips the rendition Audio Mix filter. Apply the mapping in the input mix or select distinct source tracks.",
 					);
+				const mixLayout =
+					f.channelLayout === "NONE"
+						? defaultMixLayoutsByCount[f.audioMixChannels.length]
+						: f.channelLayout;
+				if (!mixLayout) {
+					error(
+						"Audio Mix has no default speaker layout for this number of output channels. Choose an available layout or change the channel count.",
+					);
+					continue;
+				}
 				if (
 					"channelLayout" in rendition &&
 					rendition.channelLayout &&
@@ -261,10 +287,6 @@ export function validateBroadcastFilters(plan: EncodingPlan): PlanIssue[] {
 					const layout = rendition.channelLayout
 						.replace(/^X?CL_/, "")
 						.replace(/(\d)_(\d)/, "$1.$2");
-					const mixLayout =
-						f.channelLayout === "NONE"
-							? defaultMixLayoutsByCount[f.audioMixChannels.length]
-							: f.channelLayout;
 					if (layout !== mixLayout)
 						error(
 							`Audio Mix layout ${f.channelLayout} must match rendition layout ${layout}.`,

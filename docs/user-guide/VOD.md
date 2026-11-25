@@ -111,10 +111,10 @@ remove them and pass validation.
 - **Opus audio:** package as WebM for compatible DASH playback. Use a separate
   compatible audio rendition when also producing HLS.
 - **Filters:** add a filter and assign it to the intended stream's filter chain.
-  Enhanced Deinterlace and Interlace control field processing. Conform requires the same target frame rate on every audio and video stream in an encoding, with any explicit video frame rate matching. Use it with encodings without captions or subtitle streams.
+  Enhanced Deinterlace and Interlace control field processing. Conform requires the same target frame rate on every audio and video stream in an encoding, with any explicit video frame rate matching. Use Conform on encodings with ordinary audio and video inputs. Captions, subtitle streams and Dolby Atmos file inputs, including trimmed Atmos files, are incompatible.
   Enhanced Watermark takes an image from input storage. Set one horizontal and one vertical offset. Optional dimensions are at least one pixel or 0.1–100 percent.
-  On audio renditions, Audio Mix maps input channels and gains to numbered outputs. Select a matching codec layout. The layout selector disables speaker mappings the encoder changes.
-  Dolby Loudness requires Encoder 2.282.0 or newer and a supported audio codec. Leave audio/video sync unset and Kantar off. Use Plan JSON to export a plan with Dolby Loudness.
+  On audio renditions, Audio Mix maps input channels and gains to numbered outputs. Place Audio Mix before volume and loudness filters. Use ordinary audio inputs, including when trimming or concatenating files. Dolby Atmos files bypass the mix. Select a matching codec layout. The layout selector disables speaker mappings the encoder changes.
+  Dolby Loudness requires Encoder 2.282.0 or newer and a supported audio codec. Leave audio/video sync unset and Kantar off. Use Dolby Loudness separately from Audio Volume and EBU R128 single-pass. Use Plan JSON to export a plan with Dolby Loudness.
   HQDN3D removes noise and Unsharp sharpens or blurs.
 - **CMAF muxing:** the dedicated muxing supports H.264/AAC with DASH
   TEMPLATE/TIMELINE. Choose fMP4 for HLS and the supported DRM paths.

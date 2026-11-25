@@ -122,7 +122,7 @@ export {
 	parseEncryptedSecret,
 	serializeEncryptedSecret,
 } from "./crypto/aes-gcm";
-export { REDACTED, redactSecrets } from "./crypto/redact";
+export { REDACTED, redactSecrets, redactStepRequest } from "./crypto/redact";
 export type { EncryptedSecret, SecretCipher } from "./crypto/types";
 export { MasterKeyConfigError, SecretDecryptError } from "./crypto/types";
 export type { Env } from "./env";
@@ -780,6 +780,7 @@ export {
 	isHdr10PlusObjectPath,
 	publicHdrSourceProjection,
 	publicStorageDiagnostic,
+	publicVodSourceProjection,
 } from "./plan/hdr-source-paths";
 /**
  * The VOD acceptance corpus, exported so a test OUTSIDE this package can derive
@@ -833,6 +834,7 @@ export {
 	physicalMuxingKind,
 	VOD_DRM_MUXINGS,
 } from "./plan/muxing-streams";
+export { objectInputReceipts } from "./plan/object-input-path";
 export { outputFileKeys, outputStorageKeys } from "./plan/output-files";
 export { PER_TITLE_SIMULATOR_MAX_BITRATE } from "./plan/per-title-candidate-api";
 export { findCapReachingMaximumStep } from "./plan/per-title-cap-reach";

@@ -1,8 +1,10 @@
 import {
 	type CompiledOperation,
 	curlForStep,
+	objectInputReceipts,
 	publicHdrSourceProjection,
 	redactSecrets,
+	redactStepRequest,
 } from "@bitovp/core";
 import { afterEach, expect, it, vi } from "vitest";
 import { executeStep } from "./executor";
@@ -101,6 +103,73 @@ it.each([
 		},
 	});
 	expect(lost).toMatchObject({ ok: false });
+	const objectPath = "reels/take?key=isolated.ts";
+	const inputReceipt = {
+		step: "input:media",
+		kind: "CREATE_INPUT_S3",
+		status: "DONE",
+		resourceId: "input-id",
+	};
+	const requests = objectInputReceipts([inputReceipt]);
+	const stored = {
+		...entry,
+		payload: { ...entry.payload, inputPath: objectPath },
+	};
+	const objectResult = await executeStep(
+		{ ...op, payload: stored.payload },
+		{
+			sdk,
+			ids: new Map([
+				["encoding:main", "encoding-id"],
+				["input:media", "input-id"],
+			]),
+			resolveCredential: vi.fn(),
+			poll: { intervalMs: 1, timeoutMs: 50, sleep: async () => {} },
+		},
+	);
+	const sent = fetch.mock.calls.at(-1);
+	if (!sent) throw Error("No embedded caption SDK call");
+	expect(JSON.parse(String(sent[1].body))).toMatchObject({
+		inputId: "input-id",
+		inputPath: objectPath,
+	});
+	const sourceRequest = objectResult.request as {
+		inputPath: string;
+		refs: Record<string, string>;
+	};
+	const write = redactStepRequest(stored, sourceRequest, [inputReceipt]);
+	expect(write.inputPath).toBe(objectPath);
+	const replay = curlForStep(
+		{ ...stored, request: write },
+		{ objectInputs: requests },
+	);
+	if (!replay.ok) throw Error(replay.code);
+	expect(
+		JSON.parse(replay.command.split("--data '")[1]?.slice(0, -1) ?? ""),
+	).toMatchObject({ inputPath: objectPath });
+	for (const incompatible of [
+		[],
+		[{ ...inputReceipt, kind: "CREATE_INPUT_HTTPS" }],
+		[{ ...inputReceipt, status: "PENDING" }],
+		[{ ...inputReceipt, resourceId: "different-id" }],
+		[inputReceipt, { ...inputReceipt, kind: "CREATE_INPUT_HTTPS" }],
+	]) {
+		expect(
+			redactStepRequest(stored, sourceRequest, incompatible).inputPath,
+		).toBe("[REDACTED]");
+		expect(
+			curlForStep(
+				{ ...stored, request: sourceRequest },
+				{ objectInputs: objectInputReceipts(incompatible) },
+			),
+		).toMatchObject({ ok: false });
+	}
+	expect(
+		curlForStep(
+			{ ...stored, request: { ...write, inputPath: "[REDACTED]" } },
+			{ objectInputs: requests },
+		),
+	).toMatchObject({ ok: false });
 	const signed = "https://storage.invalid/feed.ts?sig=fixture-caption";
 	const prior = {
 		...entry,

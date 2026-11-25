@@ -8,6 +8,7 @@ import type { OperationKind } from "./compiler";
 import { hasPrivateStorageLocator } from "./hdr-source-paths";
 import { manifestCurlSnapshot } from "./manifest-curl";
 import { externalVttUrlSchema } from "./manifest-options";
+import { hasRecordedObjectInput } from "./object-input-path";
 import { hdr10PlusStreamSchema } from "./schema";
 import type { StepLogEntry } from "./steplog";
 
@@ -42,6 +43,7 @@ import type { StepLogEntry } from "./steplog";
  */
 
 export type CurlOptions = {
+	objectInputs?: ReadonlyMap<string, string | null>;
 	/** Base, default the public Bitmovin host. */
 	baseUrl?: string;
 	/** Emit an `X-Tenant-Org-Id` placeholder header (sub-org calls). */
@@ -835,7 +837,10 @@ export function curlForStep(
 		if (
 			typeof inputPath !== "string" ||
 			!inputPath ||
-			hasPrivateStorageLocator(inputPath)
+			hasPrivateStorageLocator(
+				inputPath,
+				hasRecordedObjectInput(entry, data, options.objectInputs),
+			)
 		)
 			return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 		entry = { ...entry, refs: { encodingId: refs.encodingId } };

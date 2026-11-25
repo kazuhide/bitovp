@@ -205,6 +205,38 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("orchestrator processor", () => {
+	it("persists the exact caption key from its executed S3 input", async () => {
+		const inputPath = "archive/scene.ts?key=wide";
+		const plan = structuredClone(basePlan);
+		plan.bitmovin.accountId = ACCOUNT_ID;
+		const source = plan.inputs[0];
+		if (source?.kind !== "S3") throw Error("Missing S3 input fixture");
+		plan.captionStreams = [
+			{
+				key: "captions",
+				inputKey: source.key,
+				inputPath,
+				kind: "CEA608",
+				channel: "CC1",
+			},
+		];
+		const h = setup({ plan, stepLog: initStepLog(compilePlan(plan)) });
+		await expect(h.processor({ encodingJobId: JOB_ID })).resolves.toMatchObject(
+			{ status: "FINISHED" },
+		);
+		const history = h.row.stepLog as StepLogEntry[];
+		const producer = history.find(
+			(entry) => entry.step === `input:${source.key}`,
+		);
+		expect(producer?.resourceId).toBeTruthy();
+		expect(
+			history.find((entry) => entry.step === "caption:captions")?.request,
+		).toMatchObject({ inputPath, refs: { inputId: producer?.resourceId } });
+		expect(h.sdk.createCea608InputStream).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.objectContaining({ inputPath, inputId: producer?.resourceId }),
+		);
+	});
 	it.each([
 		false,
 		true,

@@ -1,3 +1,5 @@
+import { objectInputFields } from "./object-input-path";
+
 const uriScheme = /^[a-z][a-z\d+.-]*:/i;
 
 /** HDR10+ expects an object path on its selected input, not a separate location. */
@@ -18,7 +20,10 @@ export function isHdr10PlusObjectPath(value: string) {
 export const isHdr10PlusAuditPath = (path: unknown) =>
 	typeof path === "string" && /\/input-streams\/hdr10-plus(?:\/|$)/.test(path);
 
-export function hasPrivateStorageLocator(value: string): boolean {
+export function hasPrivateStorageLocator(
+	value: string,
+	objectKey = false,
+): boolean {
 	const location = value.trim();
 	const authority = /^(?:[a-z][a-z\d+.-]*:)?[/\\]{2,}([^/\\?#]*)/iu.exec(
 		location,
@@ -38,6 +43,7 @@ export function hasPrivateStorageLocator(value: string): boolean {
 		if (authority && (authority[1]?.includes("@") || /[?#].+/u.test(location)))
 			return true;
 	}
+	if (objectKey) return false;
 	// Historical Library rows lack the input provider. Parse only the query.
 	// A typed Dolby/object key may legitimately contain "?version=2".
 	const beforeFragment = location.split("#", 1)[0] ?? "";
@@ -98,11 +104,26 @@ export function isProviderDiagnosticText(key: string) {
 	].includes(key);
 }
 
+/** Job/preset routes have the actual plan. Library and audit records without it
+ * retain the conservative path projection. */
+export function publicVodSourceProjection<T>(
+	row: T,
+	plan: unknown,
+	stepLog?: unknown,
+): T {
+	return publicHdrSourceProjection(
+		row,
+		"record",
+		objectInputFields(plan, stepLog),
+	);
+}
+
 /** Re-project historical JSON without altering the stored execution or its identifiers.
  * The old compiler could echo one locator into the plan, the log and an SDK diagnostic. */
 export function publicHdrSourceProjection<T>(
 	value: T,
 	purpose: "record" | "draft" = "record",
+	objectFields?: WeakSet<object>,
 ): T {
 	const hidden = new Set<string>();
 	const fields = new WeakMap<object, Map<string, string>>();
@@ -177,6 +198,18 @@ export function publicHdrSourceProjection<T>(
 				replace(row, key, "[withheld]");
 			}
 
+			if (
+				key === "inputPath" &&
+				typeof item === "string" &&
+				objectFields?.has(row) &&
+				hasPrivateStorageLocator(item) &&
+				!hasPrivateStorageLocator(item, true)
+			) {
+				// A separate historical step can have lost its proof and therefore
+				// redact this same text. The plan's independently typed field survives.
+				replace(row, key, item);
+				continue;
+			}
 			if (
 				typeof item === "string" &&
 				item.trim().length &&

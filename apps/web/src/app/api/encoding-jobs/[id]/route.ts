@@ -1,6 +1,6 @@
 import {
-	publicHdrSourceProjection,
 	publicStorageDiagnostic,
+	publicVodSourceProjection,
 } from "@bitovp/core";
 import { mergeEncodingJobSnapshot } from "@bitovp/db";
 import { NextResponse } from "next/server";
@@ -128,7 +128,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
 		if (!row) {
 			return jsonError(404, "Not found");
 		}
-		const safe = publicHdrSourceProjection(row);
+		const safe = publicVodSourceProjection(row, row.plan, row.stepLog);
 		return NextResponse.json({
 			...safe,
 			error: publicStorageDiagnostic(safe.error),

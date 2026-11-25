@@ -8,6 +8,7 @@ import {
 	publicStorageDiagnostic,
 	type QcVerdict,
 	redactSecrets,
+	redactStepRequest,
 	type StepLogEntry,
 	soleEncodingStepId,
 	stepLogSchema,
@@ -1103,10 +1104,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 					entry.resourceId = result.resourceId;
 					if (result.resourceId && resourceAccount)
 						entry.resourceAccount = resourceAccount;
-					entry.request = redactSecrets(
-						result.request,
-						entry.kind === "CREATE_HDR10_PLUS_INPUT_STREAM",
-					);
+					entry.request = redactStepRequest(entry, result.request, entries);
 					entry.response = redactSecrets(result.response);
 					/**
 					 * A downgrade recorded by an EARLIER attempt must survive this

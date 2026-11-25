@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { compilePlan, encodingPlanSchema } from "@bitovp/core";
+import { buildPlan, tryImportPresetIntoWizard } from "@bitovp/core/wizard";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
@@ -62,6 +66,79 @@ function delReq() {
 		method: "DELETE",
 	});
 }
+
+it("round-trips a literal S3 caption key through Viewer detail and Copy and Edit with a historical receipt", async () => {
+	const inputPath = "archive/scene.ts?key=wide";
+	const unsafe = "/private/scene.ts?key=PRIVATE_FIXTURE";
+	const fixture = JSON.parse(
+		readFileSync(
+			join(
+				__dirname,
+				"../../../../../../../packages/core/src/plan/__fixtures__/fixed-bitrate-hls-vtt-on-aws.plan.json",
+			),
+			"utf8",
+		),
+	);
+	const { fileType: _, ...file } = fixture.fileStreams[0];
+	const plan = encodingPlanSchema.parse({
+		...fixture,
+		inputs: [
+			...fixture.inputs,
+			{ key: "web", kind: "HTTPS", host: "media.invalid", name: "Web" },
+		],
+		fileStreams: [],
+		captionStreams: [{ ...file, kind: "CEA608", channel: "CC1", inputPath }],
+	});
+	const ops = compilePlan(plan);
+	const caption = ops.find((op) => op.kind === "CREATE_CEA608_INPUT_STREAM");
+	if (!caption) throw Error("missing caption");
+	const stored = [
+		{
+			step: caption.refs?.inputId,
+			kind: "CREATE_INPUT_S3",
+			resourceId: "s3-input",
+			status: "DONE",
+			refs: {},
+			payload: {},
+		},
+		{
+			...caption,
+			status: "DONE",
+			request: { inputPath, refs: { encodingId: "enc", inputId: "s3-input" } },
+		},
+	];
+	const mixedPlan = {
+		...plan,
+		ingest: [
+			...plan.ingest,
+			{
+				key: "http-file",
+				inputKey: "web",
+				selectionMode: "AUTO",
+				position: 0,
+				inputPath: unsafe,
+			},
+		],
+	};
+	findUnique.mockResolvedValueOnce(
+		timesRow({ plan: mixedPlan, stepLog: stored }),
+	);
+	const response = await GET(new Request("http://test"), ctx(JOB_ID));
+	const data = await response.json();
+	expect(data.plan.captionStreams[0].inputPath).toBe(inputPath);
+	expect(data.stepLog[1].request.inputPath).toBe(inputPath);
+	expect(data.stepLog[1].payload.inputPath).toBe(inputPath);
+	expect(JSON.stringify(data)).not.toContain("PRIVATE_FIXTURE");
+	findUnique.mockResolvedValueOnce(timesRow({ plan, stepLog: stored }));
+	const copied = await (
+		await GET(new Request("http://test"), ctx(JOB_ID))
+	).json();
+	const imported = tryImportPresetIntoWizard(copied.plan);
+	if (!imported.ok) throw Error("Copy & Edit rejected the public plan");
+	expect(buildPlan(imported.state).captionStreams?.[0]?.inputPath).toBe(
+		inputPath,
+	);
+});
 
 it.each([
 	"https://fixture.invalid/picture.mxf?signature=URL_FIXTURE_PRIVATE",

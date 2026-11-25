@@ -3,7 +3,7 @@ import {
 	patchLivePresetSchema,
 	patchPlanPresetSchema,
 	planHasErrors,
-	publicHdrSourceProjection,
+	publicVodSourceProjection,
 	validateLiveChannel,
 	validatePlan,
 	watchSelfIntersectionIssues,
@@ -88,7 +88,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
 			!aisaLiveAccessAllowed(ctx.tenant)
 		)
 			return jsonError(404, "Not found");
-		return NextResponse.json(publicHdrSourceProjection(preset), {
+		return NextResponse.json(publicVodSourceProjection(preset, preset.body), {
 			headers: { "Cache-Control": "private, no-store" },
 		});
 	} catch (err) {
@@ -294,7 +294,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 			!aisaLiveAccessAllowed(ctx.tenant)
 		)
 			return jsonError(404, "Not found");
-		return NextResponse.json(publicHdrSourceProjection(updated), {
+		return NextResponse.json(publicVodSourceProjection(updated, updated.body), {
 			headers: { "Cache-Control": "private, no-store" },
 		});
 	} catch (err) {

@@ -101,6 +101,27 @@ describe("ResourcesTab — raw snapshots in place", () => {
 		);
 		expect(screen.queryByRole("button", { name: /cURL/ })).toBeNull();
 	});
+	it("copies the exact caption object key from the matching S3 input receipt", async () => {
+		const user = userEvent.setup();
+		const path = "assets/angle?key=iso.ts";
+		const entry: StepLogEntry = {
+			step: "caption:CC1",
+			kind: "CREATE_CEA608_INPUT_STREAM",
+			status: "DONE",
+			refs: { inputId: "input:main", encodingId: "encoding" },
+			payload: { inputPath: path, channel: "CC1" },
+			request: {
+				inputPath: path,
+				channel: "CC1",
+				refs: { inputId: "in-123", encodingId: "encoder" },
+			},
+		};
+		renderLocalized(<ResourcesTab entries={[...ENTRIES, entry]} />);
+		const row = document.getElementById(anchorId(entry.step));
+		if (!row) throw Error("The caption resource was not displayed");
+		await user.click(within(row).getByRole("button", { name: "Copy as cURL" }));
+		expect(await navigator.clipboard.readText()).toContain(path);
+	});
 	it("opens the persisted request/response, each body under ITS label", async () => {
 		renderLocalized(<ResourcesTab entries={ENTRIES} />);
 		await userEvent.click(

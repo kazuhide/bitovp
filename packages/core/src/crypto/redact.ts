@@ -6,6 +6,11 @@ import {
 	publicStorageDiagnostic,
 } from "../plan/hdr-source-paths";
 
+import {
+	hasRecordedObjectInput,
+	objectInputReceipts,
+} from "../plan/object-input-path";
+
 /**
  * Suffix-anchored so reference fields stay readable: `credentialId`,
  * `keyframes` etc. do NOT match, while `apiKey`, `streamKey`,
@@ -80,6 +85,32 @@ export function isSensitiveKey(key: string): boolean {
  */
 export function redactSecrets<T>(value: T, hdrSource = false): T {
 	return walk(value, new WeakSet(), undefined, hdrSource) as T;
+}
+
+/** Preserve a typed object key in the recorded request only when its provider
+ * input matches the fulfilled producer. Other fields still receive the normal
+ * request and credential redaction. */
+export function redactStepRequest<T>(
+	entry: { kind: string },
+	request: T,
+	entries: unknown,
+): T {
+	const safe = redactSecrets(
+		request,
+		entry.kind === "CREATE_HDR10_PLUS_INPUT_STREAM",
+	);
+	if (
+		request &&
+		typeof request === "object" &&
+		"inputPath" in request &&
+		typeof request.inputPath === "string" &&
+		hasPrivateStorageLocator(request.inputPath) &&
+		!hasPrivateStorageLocator(request.inputPath, true) &&
+		hasRecordedObjectInput(entry, request, objectInputReceipts(entries))
+	) {
+		return { ...safe, inputPath: request.inputPath };
+	}
+	return safe;
 }
 
 function walk(

@@ -257,11 +257,14 @@ describe("createSlatePreparer", () => {
 	});
 
 	it.each([
-		30,
-		25.0001,
-		30000 / 1001,
-	])("reads back the converted object name from the same registration note the worker produced at %d fps", async (frameRate) => {
-		const source = { ...SOURCE, key: "slates/bumper@2026.mp4" };
+		[30, "bumper@2026.mp4"],
+		[25.0001, "bumper@2026.mp4"],
+		[30000 / 1001, "bumper@2026.mp4"],
+		[25, "bumper?version=2.mp4"],
+		[25, "bumper?part@2.mp4"],
+		[25, "bumper?part #2.mp4"],
+	] as const)("reads back the converted object name from the same registration note the worker produced at %d fps (%s)", async (frameRate, name) => {
+		const source = { ...SOURCE, key: `slates/${name}` };
 		const { deps } = makeDeps({ recorded: MP4 });
 		const result = await createSlatePreparer(deps)({
 			label: "retained",
@@ -272,7 +275,7 @@ describe("createSlatePreparer", () => {
 		expect(result.kind).toBe("READY");
 		if (result.kind !== "READY") throw new Error("expected normalized slate");
 		const note = `slate content registered (ready-content); ${result.note}`;
-		expect(note).toContain("bumper@2026.mp4.normalized-");
+		expect(note).toContain(`${name}.normalized-`);
 		expect(
 			publicSlateRegistrationNote({
 				action: "SLATE_IN",

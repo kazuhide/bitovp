@@ -27,7 +27,10 @@ export function publicSlateRegistrationNote(row: RetainedSlateNote) {
 	const prefix = `slate content registered (${row.insertableContentId}); `;
 	if (!note.startsWith(prefix)) return projected;
 	const source = slateSourceSchema.safeParse(row.slateSource);
-	if (!source.success || hasPrivateStorageLocator(source.data.key))
+	if (
+		!source.success ||
+		hasPrivateStorageLocator(source.data.key, "OBJECT_KEY")
+	)
 		return projected;
 
 	const separator = " → ";
@@ -62,15 +65,15 @@ export function publicSlateRegistrationNote(row: RetainedSlateNote) {
 			: output.endsWith(onDeliveryOutput)
 				? normalized.replace(/^\/+/, "")
 				: null;
-	if (!sourcePart?.includes("@")) return projected;
-	// Ignore literal at-signs solely inside the matched, retained source key.
-	// This leaves the independent destination, metadata and any query intact.
+	if (!sourcePart) return projected;
+	// The exact object name came from this row's selected bucket key. Check
+	// the rest as opaque diagnostics, including any independent output prefix.
 	const checked =
 		prefix +
 		media +
 		separator +
 		output.slice(0, -sourcePart.length) +
-		sourcePart.replaceAll("@", "_") +
+		"object.ts" +
 		suffix;
 	return publicStorageDiagnostic(checked) === checked ? note : projected;
 }

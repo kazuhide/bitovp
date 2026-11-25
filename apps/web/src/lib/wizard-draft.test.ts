@@ -1332,6 +1332,8 @@ it.each([
 it.each([
 	"direct",
 	"wrapped",
+	"cleared-binding",
+	"kept-binding",
 ] as const)("keeps the first saved audio object after adding an implicit AAC rendition to a named HDR copy (%s)", (mode) => {
 	const authored = structuredClone(DEFAULT_WIZARD_STATE);
 	const media = authored.inputFiles[0];
@@ -1366,6 +1368,18 @@ it.each([
 	};
 	authored.videos = [{ ...video, codec: "H265", extras: { source: "hdr" } }];
 	authored.audios = [{ ...audio, extras: { source: "narration" } }];
+	const previous = {
+		...media,
+		key: "previous-audio",
+		inputKey: "previous-audio",
+		path: "previous.wav",
+	};
+	const separate = mode === "cleared-binding" || mode === "kept-binding";
+	if (separate) {
+		authored.inputFiles.push(previous);
+		authored.audioInputFile = previous.key;
+		authored.audios.push({ ...audio, bitrate: 256000 });
+	}
 	const base = planToWizardState(
 		buildPlan(authored) as unknown as Record<string, unknown>,
 	);
@@ -1373,9 +1387,12 @@ it.each([
 		(a, b) => Number(b.path === sound.path) - Number(a.path === sound.path),
 	);
 	expect(files[0]?.path).toBe(sound.path);
-	expect(base.audioInputFile).toBeUndefined();
+	expect(
+		base.inputFiles.find((row) => row.key === base.audioInputFile)?.path,
+	).toBe(separate ? previous.path : undefined);
 	const saved = projectWizardDraft("vod", {
 		...base,
+		audioInputFile: mode === "kept-binding" ? base.audioInputFile : undefined,
 		inputFiles: files,
 		sources: {
 			...base.sources,
@@ -1403,7 +1420,7 @@ it.each([
 	const built = buildPlan(mergeWizardDraft(base, saved, "vod"));
 	expect(built.hdr10PlusStreams?.[0]?.videoInputPath).toBe(picture.path);
 	expect(built.ingest?.find((track) => track.key === "audio")?.inputPath).toBe(
-		sound.path,
+		mode === "kept-binding" ? previous.path : sound.path,
 	);
 });
 

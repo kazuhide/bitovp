@@ -1126,9 +1126,7 @@ function restoreCopiedHdrInputs(
 		const savedOwnsPrimary =
 			namedPicture && usesImplicit("video", snapshot.videos);
 		firstOwnsImplicitAudio =
-			namedPicture &&
-			base.audioInputFile === undefined &&
-			usesImplicit("audio", snapshot.audios);
+			namedPicture && usesImplicit("audio", snapshot.audios);
 		if (savedOwnsPrimary) primaryKey = first.key;
 		else {
 			let binding = declarations.find(

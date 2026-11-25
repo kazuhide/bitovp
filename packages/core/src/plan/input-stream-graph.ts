@@ -20,21 +20,51 @@ export function inputStreamAncestry(
 	seen = new Set<string>(),
 ): string[] | undefined {
 	if (seen.has(key)) return undefined;
-	if (
-		[...plan.ingest, ...plan.fileStreams, ...plan.dolbyStreams].some(
-			(s) => s.key === key,
-		)
-	)
-		return [key];
-	const parents = inputStreamDependencies(plan, key);
-	if (!parents.length) return undefined;
-	const next = new Set(seen).add(key);
-	const leaves = parents.map((parent) =>
-		inputStreamAncestry(plan, parent, next),
+	const leaves = new Set(
+		[...plan.ingest, ...plan.fileStreams, ...plan.dolbyStreams].map(
+			(row) => row.key,
+		),
 	);
-	return leaves.some((v) => v === undefined)
-		? undefined
-		: [key, ...new Set(leaves.flatMap((v) => v ?? []))];
+	if (leaves.has(key)) return [key];
+	// Preserve the lookup precedence used by inputStreamDependencies.
+	const inputs = new Map<string, string[]>();
+	for (const row of plan.trimmingStreams)
+		if (!inputs.has(row.key)) inputs.set(row.key, [row.sourceKey]);
+	for (const row of plan.concatenationStreams)
+		if (!inputs.has(row.key))
+			inputs.set(
+				row.key,
+				row.sources.map((s) => s.sourceKey),
+			);
+	for (const row of plan.audioMixStreams)
+		if (!inputs.has(row.key))
+			inputs.set(
+				row.key,
+				row.audioMixChannels.map((s) => s.sourceKey),
+			);
+
+	const active = new Set(seen);
+	const ordered = new Set<string>();
+	const pending = [{ key, leaving: false }];
+	while (pending.length) {
+		const node = pending.pop();
+		if (!node) break;
+		if (node.leaving) {
+			active.delete(node.key);
+			continue;
+		}
+		if (active.has(node.key)) return undefined;
+		if (ordered.has(node.key)) continue;
+		ordered.add(node.key);
+		if (leaves.has(node.key)) continue;
+		const parents = inputs.get(node.key);
+		if (!parents?.length) return undefined;
+		active.add(node.key);
+		pending.push({ key: node.key, leaving: true });
+		for (const parent of parents.toReversed())
+			pending.push({ key: parent, leaving: false });
+	}
+	return [...ordered];
 }
 
 /** Leaves only, retaining unknown/cycle semantics of the complete ancestry. */

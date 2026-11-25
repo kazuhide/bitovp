@@ -9,7 +9,7 @@ import {
 import { audioMixPreset, audioMixStreamSchema } from "./audio-mix";
 import { compilePlan } from "./compiler";
 import { inputFileSummaries } from "./detail-view";
-import { inputStreamLeaves } from "./input-stream-graph";
+import { inputStreamAncestry, inputStreamLeaves } from "./input-stream-graph";
 import { encodingPlanSchema, renditionSchema } from "./schema";
 import { planToEncodingTemplateYaml } from "./template";
 import { loadPlan } from "./test-support";
@@ -81,6 +81,40 @@ describe("AudioMixInputStream", () => {
 			remapEncodingKeyRefs(state, "before", "after").sources
 				?.audioMixStreams?.[0]?.encodingKey,
 		).toBe("after");
+	});
+	it("visits shared input ancestry once and preserves cycle and missing-input detection", () => {
+		const p = plan();
+		let parents = ["audio", "second"];
+		let reads = 0;
+		for (let i = 0; i < 12; i++) {
+			const pair = ["left", "right"].map((side) => {
+				const key = side + i;
+				const sources = parents.map((sourceKey, position) => ({
+					sourceKey,
+					position,
+					isMain: position === 0,
+				}));
+				p.concatenationStreams.push({
+					key,
+					get sources() {
+						reads++;
+						return sources;
+					},
+				});
+				return key;
+			});
+			parents = pair;
+		}
+		const root = parents[0]!;
+		const ancestry = inputStreamAncestry(p, root);
+		expect(ancestry?.slice(0, 3)).toEqual(["left11", "left10", "left9"]);
+		expect(new Set(ancestry).size).toBe(25);
+		expect(reads).toBeLessThanOrEqual(24);
+		expect(inputStreamAncestry(p, root, new Set(["second"]))).toBeUndefined();
+		p.concatenationStreams[0]!.sources[0]!.sourceKey = root;
+		expect(inputStreamAncestry(p, root)).toBeUndefined();
+		p.concatenationStreams[0]!.sources[0]!.sourceKey = "missing";
+		expect(inputStreamAncestry(p, root)).toBeUndefined();
 	});
 	it("preserves zero gain and unset defaults", () => {
 		const p = plan();

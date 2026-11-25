@@ -159,7 +159,7 @@ describe("catalogue parity", () => {
 		// The Live wizard adds four MoQ labels and descriptions (runtime measured: 3502).
 		// Four short labels cover instance queue usage and availability.
 		// MoQ playback controls add five unique short labels (runtime measured: 3511).
-		pinWithDriftAid(short.size, 3513, "short");
+		pinWithDriftAid(short.size, 3514, "short");
 	});
 
 	/**

@@ -6165,6 +6165,7 @@ export const en = {
 		you: "you",
 	},
 	wizardDraft: {
+		retainedSettings: "Your older draft settings are still available.",
 		legacyWatermarks:
 			"This older draft saved ordinary video watermarks only. Review any other filter edits before starting the encode.",
 		legacyRenditions:

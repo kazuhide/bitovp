@@ -6107,6 +6107,7 @@ export const ja = {
 		you: "あなた",
 	},
 	wizardDraft: {
+		retainedSettings: "旧形式の下書きの設定を確認できます。",
 		legacyWatermarks:
 			"この旧形式の下書きでは、映像の通常のウォーターマークのみ保存されました。その他のフィルターの編集内容はエンコード開始前に確認してください。",
 		legacyRenditions:

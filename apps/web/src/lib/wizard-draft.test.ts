@@ -238,6 +238,40 @@ it("keeps an attached partial enhanced logo and excludes credentials after leadi
 		expect(restored.videos[0]?.extras?.filters).toEqual(video.extras.filters);
 	}
 });
+it.each([
+	"WATERMARK",
+	"ENHANCED_WATERMARK",
+] as const)("keeps labeled object keys and the attachment requiring re-entry for unsafe %s image values", (kind) => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const video = base.videos[0];
+	if (!video) throw new Error("Missing video");
+	base.name = "Review: cut @ Studio";
+	video.extras = { filters: [{ filterKey: "logo", position: 0 }] };
+	for (const [imagePath, expected] of [
+		["Promo 10:30 @ final.png", "Promo 10:30 @ final.png"],
+		["Logo: 2026 @2x.png", "Logo: 2026 @2x.png"],
+		["Logo: winter @thumbnail.webp", "Logo: winter @thumbnail.webp"],
+		["user: secret @host", ""],
+		["user:secret phrase@host/image.png", ""],
+		["/user: secret @host/logo.png", ""],
+		["//user:secret@host/key", ""],
+		["a".repeat(1025), ""],
+	] as const) {
+		base.filters = [
+			{ kind, key: "logo", inputKey: "main", imagePath, left: 0, top: 0 },
+		];
+		writeWizardDraft("image", "vod", base, 1);
+		expect(localStorage.getItem("image")).not.toContain("secret");
+		const saved = readWizardDraft("image", "vod");
+		if (!saved) throw new Error("Missing draft");
+		const restored = restoreVodWizardDraft(DEFAULT_WIZARD_STATE, saved);
+		expect(restored.name).toBe(base.name);
+		expect(restored.filters).toEqual([
+			{ ...base.filters[0], imagePath: expected },
+		]);
+		expect(restored.videos[0]?.extras?.filters).toEqual(video.extras.filters);
+	}
+});
 it("retains gains and attachment while a numbered Audio Mix source is awaiting its position", () => {
 	const base = structuredClone(DEFAULT_WIZARD_STATE);
 	const audio = base.audios[0];
@@ -281,7 +315,7 @@ it("restores filter definitions without inheriting suppressed properties from a 
 	);
 });
 
-it("does not persist image URLs, unknown filter JSON or dangling logo attachments", () => {
+it("redacts image URLs and unknown filter JSON while keeping the logo attached for re-entry", () => {
 	const state = structuredClone(DEFAULT_WIZARD_STATE);
 	const value = projectWizardDraft("vod", {
 		...state,
@@ -305,9 +339,17 @@ it("does not persist image URLs, unknown filter JSON or dangling logo attachment
 	});
 	expect(JSON.stringify(value)).not.toMatch(/SECRET|token=|https:\/\//);
 	const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, value, "vod");
+	expect(restored.filters).toContainEqual({
+		key: "unsafe",
+		kind: "WATERMARK",
+		inputKey: "main",
+		imagePath: "",
+	});
 	expect(
-		restored.videos.flatMap((video) => video.extras?.filters ?? []),
-	).toEqual([]);
+		restored.videos.every(
+			(video) => video.extras?.filters?.[0]?.filterKey === "unsafe",
+		),
+	).toBe(true);
 });
 
 it("keeps a sparse legacy VOD draft on its implicit STABLE version", () => {

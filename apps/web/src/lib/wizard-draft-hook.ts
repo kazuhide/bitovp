@@ -47,6 +47,8 @@ export function useWizardDraft({
 	const completed = useRef<string | null>(null);
 	const [loaded, setLoaded] = useState<{
 		key: string;
+		writeKey: string;
+		retained: WizardDraft | null;
 		pending: WizardDraft | null;
 		baseline: string;
 	}>();
@@ -60,15 +62,19 @@ export function useWizardDraft({
 			discardWizardDraft(key);
 			return;
 		}
-		setLoaded((previous) =>
-			previous?.key === key
-				? previous
-				: {
-						key,
-						pending: readWizardDraft(key, kind),
-						baseline: serialized,
-					},
-		);
+		setLoaded((previous) => {
+			if (previous?.key === key) return previous;
+			const original = readWizardDraft(key, kind);
+			const workingKey = `${key}:working`;
+			const working = kind === "vod" ? readWizardDraft(workingKey, kind) : null;
+			return {
+				key,
+				writeKey: working ? workingKey : key,
+				retained: working && original?.legacyVodFilters ? original : null,
+				pending: working ?? original,
+				baseline: serialized,
+			};
+		});
 	}, [key, kind, serialized]);
 	useEffect(() => {
 		if (
@@ -82,7 +88,7 @@ export function useWizardDraft({
 		const timer = setTimeout(() => {
 			if (currentKey.current !== key || completed.current === key) return;
 			const snapshot = JSON.parse(serialized);
-			writeWizardDraft(key, kind, snapshot.value, snapshot.step);
+			writeWizardDraft(loaded.writeKey, kind, snapshot.value, snapshot.step);
 		}, 300);
 		return () => clearTimeout(timer);
 	}, [key, kind, serialized, loaded]);
@@ -90,15 +96,26 @@ export function useWizardDraft({
 	return {
 		available,
 		pending: available ? loaded?.pending : null,
-		restore() {
+		retained: key && key === loaded?.key ? loaded.retained : null,
+		restore(retainOriginal = false) {
 			if (!available || !loaded?.pending) return;
 			onRestore(loaded.pending);
-			setLoaded({ ...loaded, pending: null });
+			// Keep the original v1 record in place, with its original expiry. A
+			// separate scoped slot receives normal autosaves after metadata recovery.
+			if (retainOriginal && kind === "vod" && loaded.pending.legacyVodFilters) {
+				setLoaded({
+					...loaded,
+					pending: null,
+					writeKey: `${key}:working`,
+					baseline: "",
+					retained: loaded.pending,
+				});
+			} else setLoaded({ ...loaded, pending: null });
 		},
 		discard() {
 			if (!key || loaded?.key !== key) return;
-			discardWizardDraft(key);
-			setLoaded({ ...loaded, pending: null });
+			discardWizardDraft(loaded.writeKey);
+			setLoaded({ ...loaded, pending: null, baseline: serialized });
 		},
 		clear() {
 			if (!loaded) return;
@@ -106,7 +123,8 @@ export function useWizardDraft({
 			// Removal uses only the key already bound to this form, including a
 			// successful submit during session refresh or imported-plan mode.
 			discardWizardDraft(loaded.key);
-			setLoaded({ ...loaded, pending: null });
+			if (kind === "vod") discardWizardDraft(`${loaded.key}:working`);
+			setLoaded({ ...loaded, pending: null, retained: null });
 		},
 	};
 }

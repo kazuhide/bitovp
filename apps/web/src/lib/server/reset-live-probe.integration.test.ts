@@ -2040,7 +2040,8 @@ postgres("tenant PostgreSQL reset", () => {
 		const api = {
 			encoding: { encodings: { get, status, stop, live: { stop: liveStop } } },
 		};
-		const serialUrl = new URL(runtimeUrl!);
+		if (!runtimeUrl) throw new Error("PostgreSQL runtime fixture URL missing");
+		const serialUrl = new URL(runtimeUrl);
 		serialUrl.searchParams.set(
 			"options",
 			"-c default_transaction_isolation=serializable",

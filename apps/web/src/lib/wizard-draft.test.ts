@@ -1294,6 +1294,8 @@ it.each([
 it.each([
 	"rebound",
 	"removed-and-recycled",
+	"removed-picture-retained",
+	"rebound-picture-retained",
 ] as const)("restores edited HDR Copy media bindings (%s)", (edit) => {
 	const authored = structuredClone(DEFAULT_WIZARD_STATE);
 	const file = authored.inputFiles[0];
@@ -1325,11 +1327,13 @@ it.each([
 		key: "replacement",
 		path: "replacement.mxf",
 	};
-	const removed = edit === "removed-and-recycled";
+	const recycled = edit === "removed-and-recycled";
+	const removed = recycled || edit === "removed-picture-retained";
+	const hasOrdinary = edit !== "rebound";
 	const selected = removed ? { ...hdr, key: "replacementHdr" } : hdr;
 	const saved = projectWizardDraft("vod", {
 		...base,
-		inputFiles: removed
+		inputFiles: recycled
 			? [replacement, { ...original, path: "unrelated.mxf" }]
 			: [original, replacement],
 		sources: {
@@ -1342,7 +1346,7 @@ it.each([
 				},
 			],
 		},
-		...(removed
+		...(hasOrdinary
 			? {
 					videos: [
 						{ ...rendition, codec: "H265", extras: { source: selected.key } },
@@ -1356,9 +1360,9 @@ it.each([
 		videoInputPath: "replacement.mxf",
 		metadataInputPath: "replacement.json",
 	});
-	if (removed) {
+	if (hasOrdinary) {
 		expect(plan.ingest?.find((entry) => entry.key === "video")?.inputPath).toBe(
-			"replacement.mxf",
+			recycled ? "replacement.mxf" : "original.mxf",
 		);
 	} else {
 		expect(plan.ingest?.find((entry) => entry.key === "audio")?.inputPath).toBe(

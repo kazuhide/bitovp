@@ -78,7 +78,8 @@ describe("START control through the production SDK factory", () => {
 			data: expect.objectContaining({
 				path: "/encoding/encodings/owned-encoding/start",
 				statusCode: 400,
-				error: "[withheld]",
+				error: "[withheld] (code 1001)",
+				response: { errorCode: 1001 },
 			}),
 		});
 		expect(JSON.stringify(create.mock.calls)).not.toContain(

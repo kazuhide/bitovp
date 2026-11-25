@@ -35,7 +35,7 @@ import {
 	splitOutputFolder,
 } from "@/lib/output-path";
 import type { VodFlow } from "@/lib/vod-flow";
-import { draftFingerprint, mergeWizardDraft } from "@/lib/wizard-draft";
+import { draftFingerprint, restoreVodWizardDraft } from "@/lib/wizard-draft";
 import { useWizardDraft } from "@/lib/wizard-draft-hook";
 import {
 	followRenamedAudioKeys,
@@ -277,6 +277,9 @@ export function VodWizard({
 				}).length > 0),
 	);
 	const draftBase = useRef(fresh);
+	const [legacyLadderNotice, setLegacyLadderNotice] = useState<string | null>(
+		null,
+	);
 	// The file flow opens on its short view; every step stays one click away.
 	const [expanded, setExpanded] = useState(false);
 	const simple = fileFlow && !expanded;
@@ -618,10 +621,10 @@ export function VodWizard({
 		value: state,
 		step,
 		onRestore: (saved) => {
-			const restored = mergeWizardDraft(
+			const restored = restoreVodWizardDraft(
 				presetKey === undefined ? fresh : draftBase.current,
-				saved.value,
-				"vod",
+				saved,
+				() => setLegacyLadderNotice(appliedDraftContext),
 			);
 			// Source facts and preview tasks are deliberately absent from the draft.
 			// Mount their preparation before resuming a later wizard step.
@@ -906,6 +909,11 @@ export function VodWizard({
 					<VodFlowSwitch flow={flow} />
 				) : null}
 				<WizardDraftOffer {...draft} />
+				{legacyLadderNotice && legacyLadderNotice === appliedDraftContext ? (
+					<p role="status" className="mt-2 text-amber-400 text-sm">
+						{t("wizardDraft.legacyRenditions")}
+					</p>
+				) : null}
 				{[
 					{ query: accounts, message: t("wizard.accountsLoadFailed") },
 					{ query: credentials, message: t("wizard.credentialsLoadFailed") },

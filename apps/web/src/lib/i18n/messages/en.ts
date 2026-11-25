@@ -6165,6 +6165,8 @@ export const en = {
 		you: "you",
 	},
 	wizardDraft: {
+		legacyRenditions:
+			"Some renditions in this older draft could not be matched. Review the restored preset ladder and its filters before submitting.",
 		available: "Saved draft available",
 		restore: "Restore",
 		discard: "Discard",

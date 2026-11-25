@@ -134,7 +134,7 @@ describe("catalogue parity", () => {
 		// Source explanations for the MoQ graphs (runtime measured: 1689).
 		// Compact lifecycle and HDR measurement wording (runtime measured: 1688).
 		// Operation analytics adds report guidance (runtime measured: 1691).
-		pinWithDriftAid(long.length, 1692, "long");
+		pinWithDriftAid(long.length, 1693, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Runtime measurement includes three-way output labels (deduplicated).
 		// The two MoQ authorization labels add two unique short Japanese values.

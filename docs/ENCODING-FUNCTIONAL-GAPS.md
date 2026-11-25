@@ -121,7 +121,7 @@ subtitle extraction requires changes beyond the VOD input-stream union.
 
 - **Filters:** The VOD wizard supports EnhancedWatermark, EnhancedDeinterlace,
   and Interlace for video, Conform across the encoding’s video and audio streams, plus AudioMix and DolbyLoudness on compatible
-  audio renditions. Operators can save the filters and their application order.
+  audio renditions. Audio Mix runs before volume and loudness processing. The VOD plan checks that order and rejects Audio Mix or Conform on Dolby Atmos file inputs.
   Provider output and visual or loudness measurements require a matching source
   and an encoding run. Live speech-to-captions remains a separate workflow.
 - **Broadcast delivery:** Broadcast TS/MXF with H.262/MP2/PCM, driven by a

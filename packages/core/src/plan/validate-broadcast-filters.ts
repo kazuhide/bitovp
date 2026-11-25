@@ -1,5 +1,4 @@
 import { inputStreamAncestry } from "./input-stream-graph";
-import { layoutChannelCount } from "./media-filters";
 import { AUDIO_CODECS, type EncodingPlan } from "./schema";
 import type { PlanIssue } from "./validate";
 
@@ -10,6 +9,19 @@ const minimumVersions = {
 	DOLBY_LOUDNESS: [2, 282, 0],
 	ENHANCED_DEINTERLACE: [2, 56, 0],
 } as const;
+
+// A NONE stream filter becomes FFmpeg's numbered "Nc" pan layout. These
+// canonical layouts determine speaker positions as well as the channel count.
+const defaultMixLayoutsByCount: Readonly<Record<number, string>> = {
+	1: "MONO",
+	2: "STEREO",
+	3: "2.1",
+	4: "4.0",
+	5: "5.0_BACK",
+	6: "5.1_BACK",
+	7: "6.1",
+	8: "7.1",
+};
 
 function checkEncoderVersion(
 	kind: keyof typeof minimumVersions,
@@ -128,6 +140,31 @@ export function validateBroadcastFilters(plan: EncodingPlan): PlanIssue[] {
 			const f = filters.get(a.filterKey);
 			return f ? [f] : [];
 		});
+		// Audio Mix is performed by the input transmuxer; gain and loudness
+		// processing happen downstream even if their attachment position is lower.
+		const attachments = rendition.filters ?? [];
+		const mix = attachments.find(
+			(a) => filters.get(a.filterKey)?.kind === "AUDIO_MIX",
+		);
+		if (
+			mix &&
+			attachments.some((a) => {
+				const kind = filters.get(a.filterKey)?.kind;
+				return (
+					a.position < mix.position &&
+					(kind === "AUDIO_VOLUME" ||
+						kind === "EBU_R128_SINGLE_PASS" ||
+						kind === "DOLBY_LOUDNESS")
+				);
+			})
+		)
+			issues.push({
+				code: "PLAN_AUDIO_FILTER",
+				level: "error",
+				path,
+				message:
+					"Place Audio Mix before volume and loudness filters to match the encoder’s processing order.",
+			});
 		const kinds = new Set(attached.map((f) => f.kind));
 		if (kinds.has("DEINTERLACE") && kinds.has("ENHANCED_DEINTERLACE"))
 			issues.push({
@@ -155,6 +192,7 @@ export function validateBroadcastFilters(plan: EncodingPlan): PlanIssue[] {
 			if (
 				rendition.codec === "WEBVTT" ||
 				rendition.codec === "IMSC" ||
+				rendition.codec === "DOLBY_ATMOS" ||
 				rendition.burnInSrt ||
 				rates.length !== 1 ||
 				rates[0]?.targetFps !== target ||
@@ -165,7 +203,7 @@ export function validateBroadcastFilters(plan: EncodingPlan): PlanIssue[] {
 					code: "PLAN_CONFORM_FILTER",
 					path,
 					message:
-						"Conform requires exactly one filter with the same target FPS on every stream in the encoding and a matching configured video frame rate. Captions and subtitle streams are incompatible.",
+						"Conform requires exactly one filter with the same target FPS on every stream in the encoding and a matching configured video frame rate. Captions, subtitle streams and Dolby Atmos file inputs are incompatible.",
 				});
 		}
 		const seen = new Set<string>();
@@ -204,6 +242,8 @@ export function validateBroadcastFilters(plan: EncodingPlan): PlanIssue[] {
 						"Dolby Loudness cannot be used with explicit audio/video sync or Kantar watermarking.",
 					);
 			} else {
+				if (rendition.codec === "DOLBY_ATMOS")
+					error("Audio Mix cannot be applied to a Dolby Atmos file input.");
 				if (
 					potentiallySingleTrack.size &&
 					inputStreamAncestry(plan, rendition.ingestKey)?.some((k) =>
@@ -221,12 +261,11 @@ export function validateBroadcastFilters(plan: EncodingPlan): PlanIssue[] {
 					const layout = rendition.channelLayout
 						.replace(/^X?CL_/, "")
 						.replace(/(\d)_(\d)/, "$1.$2");
-					const count = layoutChannelCount(layout);
-					if (
+					const mixLayout =
 						f.channelLayout === "NONE"
-							? count !== undefined && f.audioMixChannels.length !== count
-							: layout !== f.channelLayout
-					)
+							? defaultMixLayoutsByCount[f.audioMixChannels.length]
+							: f.channelLayout;
+					if (layout !== mixLayout)
 						error(
 							`Audio Mix layout ${f.channelLayout} must match rendition layout ${layout}.`,
 						);

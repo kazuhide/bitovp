@@ -22,6 +22,7 @@ import {
 	mergeWizardDraft,
 	projectWizardDraft,
 	readWizardDraft,
+	restoreVodWizardDraft,
 	WIZARD_DRAFT_MAX_SIZE,
 	WIZARD_DRAFT_TTL,
 	writeWizardDraft,
@@ -186,12 +187,53 @@ it("keeps partially edited mix and ordinary deinterlace settings without caching
 	const value = projectWizardDraft("vod", state);
 	expect(JSON.stringify(value)).not.toContain("password");
 	const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, value, "vod");
-	expect(restored.filters).toEqual(state.filters.slice(1));
+	expect(restored.filters).toEqual([
+		{ ...state.filters[0], imagePath: "" },
+		...state.filters.slice(1),
+	]);
 	expect(restored.audios[0]?.extras?.filters).toEqual(
 		state.audios[0]?.extras?.filters,
 	);
 });
 
+it("keeps an attached partial enhanced logo and excludes credentials after leading whitespace or slashes", () => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	const video = state.videos[0];
+	if (!video) throw new Error("Missing video");
+	video.extras = { filters: [{ filterKey: "logo", position: 1 }] };
+	for (const imagePath of [
+		"/",
+		" alice:secret@host/logo",
+		"/alice:secret@host/logo",
+		"/ alice:secret@host/logo",
+		"//alice:secret@host/logo",
+	]) {
+		state.filters = [
+			{
+				kind: "ENHANCED_WATERMARK",
+				key: "logo",
+				inputKey: "main",
+				imagePath,
+				left: 2,
+				top: 0,
+			},
+		];
+		writeWizardDraft("watermark-edit", "vod", state, 2);
+		expect(localStorage.getItem("watermark-edit")).not.toContain("secret");
+		const saved = readWizardDraft("watermark-edit", "vod");
+		if (!saved) throw new Error("Expected draft");
+		const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, saved.value, "vod");
+		expect(restored.filters).toMatchObject([
+			{
+				kind: "ENHANCED_WATERMARK",
+				key: "logo",
+				imagePath: imagePath === "/" ? "/" : "",
+				left: 2,
+			},
+		]);
+		expect(restored.videos[0]?.extras?.filters).toEqual(video.extras.filters);
+	}
+});
 it("retains gains and attachment while a numbered Audio Mix source is awaiting its position", () => {
 	const base = structuredClone(DEFAULT_WIZARD_STATE);
 	const audio = base.audios[0];
@@ -676,6 +718,69 @@ it.each([
 		value,
 	});
 });
+it("restores a v1 preset draft by source rendition key and respects explicit removals in current drafts", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const audio = base.audios[0];
+	if (!audio) throw new Error("Missing audio");
+	base.filters = [
+		{ kind: "AUDIO_VOLUME", key: "level", volume: 50, unit: "PERCENT" },
+	];
+	audio.extras = {
+		key: "main-sound",
+		filters: [{ filterKey: "level", position: 0 }],
+	};
+	base.audios.push({ ...audio, extras: { key: "alternate" } });
+	const v1 = projectWizardDraft("vod", base);
+	const rows = v1.audios as { extras: { key: string; filters?: unknown } }[];
+	for (const row of rows) delete row.extras.filters;
+	rows.reverse();
+	localStorage.setItem(
+		"v1-preset",
+		JSON.stringify({
+			version: 1,
+			kind: "vod",
+			savedAt: 100,
+			step: 2,
+			value: { ...v1, name: "Updated title", filters: [] },
+		}),
+	);
+	const saved = readWizardDraft("v1-preset", "vod", localStorage, 101);
+	if (!saved) throw new Error("Missing legacy VOD draft");
+	const restored = restoreVodWizardDraft(base, saved);
+	expect(restored.name).toBe("Updated title");
+	expect(restored.filters).toEqual(base.filters);
+	expect(restored.audios.map((row) => row.extras?.filters ?? [])).toEqual([
+		[],
+		audio.extras.filters,
+	]);
+	const unknown = structuredClone(saved);
+	const changed = unknown.value.audios as { extras: { key: string } }[];
+	for (const row of changed) row.extras.key += "-replaced";
+	const notify = vi.fn();
+	const ambiguous = restoreVodWizardDraft(base, unknown, notify);
+	expect(notify).toHaveBeenCalledTimes(1);
+	expect(ambiguous.audios).toEqual(base.audios);
+	expect(ambiguous.name).toBe("Updated title");
+
+	writeWizardDraft(
+		"new-preset",
+		"vod",
+		{
+			...base,
+			filters: [],
+			audios: base.audios.map((row) => ({
+				...row,
+				extras: { ...row.extras, filters: [] },
+			})),
+		},
+		2,
+		localStorage,
+		100,
+	);
+	const current = readWizardDraft("new-preset", "vod", localStorage, 101);
+	if (!current) throw new Error("Missing updated VOD draft");
+	expect(restoreVodWizardDraft(base, current).filters).toEqual([]);
+});
 it("keeps the eight-step VOD draft format and rejects out-of-range steps", () => {
 	writeWizardDraft(
 		"vod-review",
@@ -690,7 +795,7 @@ it("keeps the eight-step VOD draft format and rejects out-of-range steps", () =>
 		value: { name: "Saved job" },
 	});
 	expect(JSON.parse(localStorage.getItem("vod-review") ?? "null").version).toBe(
-		1,
+		3,
 	);
 	writeWizardDraft("invalid-vod-step", "vod", {}, 8, localStorage, 100);
 	expect(localStorage.getItem("invalid-vod-step")).toBeNull();

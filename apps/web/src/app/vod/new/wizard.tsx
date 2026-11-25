@@ -938,6 +938,10 @@ export function VodWizard({
 				) : null}
 				<WizardDraftOffer
 					{...draft}
+					restore={() =>
+						draft.restore(legacyVodMetadataOnly(draftSource, draft.pending))
+					}
+					retainedSettings={draft.retained?.value}
 					legacyVersion={draft.pending?.legacyVodFilters}
 					legacySettings={
 						legacyVodMetadataOnly(draftSource, draft.pending)

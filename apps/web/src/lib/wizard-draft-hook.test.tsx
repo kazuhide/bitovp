@@ -174,3 +174,48 @@ it("does not touch storage while a query import or source is pending", () => {
 	expect(get).not.toHaveBeenCalled();
 	get.mockRestore();
 });
+
+it("preserves the original v1 settings after metadata restore and reload while the new form autosaves", () => {
+	const original = {
+		name: "Old title",
+		output: { basePath: "edited-folder/" },
+	};
+	const raw = JSON.stringify({
+		kind: "vod",
+		version: 1,
+		step: 2,
+		savedAt: Date.now(),
+		value: original,
+	});
+	localStorage.setItem(key, raw);
+	const restore = vi.fn();
+	const mount = () =>
+		renderHook(
+			({ form }) =>
+				useWizardDraft({
+					kind: "vod",
+					context: "new",
+					value: form,
+					step: 1,
+					onRestore: restore,
+				}),
+			{ initialProps: { form: value } },
+		);
+	const first = mount();
+	act(() => first.result.current.restore(true));
+	expect(first.result.current.retained?.value.output).toEqual(original.output);
+	act(() => first.rerender({ form: { ...value, name: "After restore" } }));
+	act(() => vi.advanceTimersByTime(301));
+	expect(localStorage.getItem(key)).toBe(raw);
+	first.unmount();
+	const second = mount();
+	expect(second.result.current.pending?.value.name).toBe("After restore");
+	expect(second.result.current.retained?.value.output).toEqual(original.output);
+	act(() => second.result.current.discard());
+	act(() => vi.advanceTimersByTime(400));
+	expect(localStorage.getItem(`${key}:working`)).toBeNull();
+	expect(readWizardDraft(key, "vod")?.value.output).toEqual(original.output);
+	session.data.effectiveUserId = "someone-else";
+	act(() => second.rerender({ form: value }));
+	expect(second.result.current.retained).toBeNull();
+});

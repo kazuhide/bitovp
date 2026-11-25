@@ -70,8 +70,6 @@ it("identifies v1's missing filters before a regular restore into a fresh job", 
 		"en",
 	);
 	expect(screen.getByText(/ordinary video watermarks only/)).toBeTruthy();
-	expect(
-		screen.getByRole("button", { name: "Restore" }),
-	).toBeTruthy();
+	expect(screen.getByRole("button", { name: "Restore" })).toBeTruthy();
 	expect(screen.queryByRole("link")).toBeNull();
 });

@@ -19,6 +19,7 @@ export function inputStreamAncestry(
 	key: string,
 	seen = new Set<string>(),
 ): string[] | undefined {
+	if (seen.has(key)) return undefined;
 	const leaves = new Set(
 		[
 			...plan.ingest,
@@ -26,52 +27,48 @@ export function inputStreamAncestry(
 			...plan.captionStreams,
 			...plan.dolbyStreams,
 			...plan.hdr10PlusStreams,
-		].map((stream) => stream.key),
+		].map((row) => row.key),
 	);
-	if (seen.has(key)) return undefined;
 	if (leaves.has(key)) return [key];
-	const derived = new Map(
-		[
-			...plan.trimmingStreams,
-			...plan.concatenationStreams,
-			...plan.audioMixStreams,
-		].map((stream) => [stream.key, stream] as const),
-	);
-	const visiting = new Set(seen);
-	const visited = new Set<string>();
-	const order: string[] = [];
-	const stack = [{ key, exit: false }];
-	while (stack.length) {
-		const frame = stack.pop();
-		if (!frame) break;
-		const id = frame.key;
-		if (frame.exit) {
-			visiting.delete(id);
-			visited.add(id);
+	// Preserve the lookup precedence used by inputStreamDependencies.
+	const inputs = new Map<string, string[]>();
+	for (const row of plan.trimmingStreams)
+		if (!inputs.has(row.key)) inputs.set(row.key, [row.sourceKey]);
+	for (const row of plan.concatenationStreams)
+		if (!inputs.has(row.key))
+			inputs.set(
+				row.key,
+				row.sources.map((s) => s.sourceKey),
+			);
+	for (const row of plan.audioMixStreams)
+		if (!inputs.has(row.key))
+			inputs.set(
+				row.key,
+				row.audioMixChannels.map((s) => s.sourceKey),
+			);
+
+	const active = new Set(seen);
+	const ordered = new Set<string>();
+	const pending = [{ key, leaving: false }];
+	while (pending.length) {
+		const node = pending.pop();
+		if (!node) break;
+		if (node.leaving) {
+			active.delete(node.key);
 			continue;
 		}
-		if (visiting.has(id)) return undefined;
-		if (visited.has(id)) continue;
-		order.push(id);
-		if (leaves.has(id)) {
-			visited.add(id);
-			continue;
-		}
-		const stream = derived.get(id);
-		if (!stream) return undefined;
-		const parents =
-			"sourceKey" in stream
-				? [stream.sourceKey]
-				: ("sources" in stream ? stream.sources : stream.audioMixChannels).map(
-						(parent) => parent.sourceKey,
-					);
-		if (!parents.length) return undefined;
-		visiting.add(id);
-		stack.push({ key: id, exit: true });
-		for (const parent of parents.reverse())
-			stack.push({ key: parent, exit: false });
+		if (active.has(node.key)) return undefined;
+		if (ordered.has(node.key)) continue;
+		ordered.add(node.key);
+		if (leaves.has(node.key)) continue;
+		const parents = inputs.get(node.key);
+		if (!parents?.length) return undefined;
+		active.add(node.key);
+		pending.push({ key: node.key, leaving: true });
+		for (const parent of parents.toReversed())
+			pending.push({ key: parent, leaving: false });
 	}
-	return order;
+	return [...ordered];
 }
 
 /** Leaves only, retaining unknown/cycle semantics of the complete ancestry. */

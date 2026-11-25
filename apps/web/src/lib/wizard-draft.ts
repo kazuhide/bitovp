@@ -20,6 +20,7 @@ import {
 	publicHdrSourceProjection,
 	streamConditionSchema,
 	textFilterSchema,
+	watermarkFilterSchema,
 } from "@bitovp/core";
 import {
 	vodInputTimelineDocumentSchema,
@@ -84,13 +85,24 @@ export function draftFingerprint(value: unknown): string {
  */
 export function draftKeepsText(value: string): boolean {
 	const normalized = value.trimStart();
-	const authority =
-		normalized.replace(/^[\s/\\]+/u, "").split(/[/\\]/u, 1)[0] ?? "";
+	if (/^[/\\]{2}/u.test(normalized) || /\w+:\/\/|[?#]/u.test(normalized))
+		return false;
+	const address = normalized.replace(/^[\s/\\]+/u, "");
+	const authority = address.split(/[/\\]/u, 1)[0] ?? "";
 	const colon = authority.indexOf(":");
+	const at = authority.lastIndexOf("@");
+	if (colon < 0 || at <= colon) return true;
+	// In an address, even spaces in the userinfo may form part of a secret.
+	// Standalone labels use a spaced @ separator ("Review: cut @ Studio",
+	// "Logo: 2026 @2x.png"); a path following the authority disambiguates it.
+	const host = authority.slice(at + 1);
 	return (
-		!/^[/\\]{2}/u.test(normalized) &&
-		!/\w+:\/\/|[?#]/u.test(normalized) &&
-		(colon < 0 || authority.lastIndexOf("@") < colon)
+		address === normalized &&
+		address === authority &&
+		/\s/u.test(authority.charAt(at - 1)) &&
+		(/^\s/u.test(host) ||
+			(/\s/u.test(authority.charAt(colon + 1)) &&
+				/^[^\s/]+\.(?:png|jpe?g|webp|gif|avif|bmp|tiff?|svg)$/iu.test(host)))
 	);
 }
 
@@ -219,25 +231,32 @@ const audioMixDraft = z.strictObject({
 		}),
 	),
 });
+const draftImagePath = z
+	.string()
+	.max(1024)
+	.catch("")
+	.transform((path) =>
+		draftKeepsText(path) &&
+		!path.includes("\\") &&
+		!path.split("/").includes("..") &&
+		[...path].every((c) => c.charCodeAt(0) >= 32)
+			? path
+			: "",
+	)
+	.default("");
+const draftImageInput = z.union([
+	z.literal(""),
+	enhancedWatermarkFilterSchema.shape.inputKey,
+]);
+const watermarkDraft = z.strictObject({
+	...watermarkFilterSchema.shape,
+	inputKey: draftImageInput,
+	imagePath: draftImagePath,
+});
 const enhancedWatermarkDraft = z.strictObject({
 	...enhancedWatermarkFilterSchema.shape,
-	inputKey: z.union([
-		z.literal(""),
-		enhancedWatermarkFilterSchema.shape.inputKey,
-	]),
-	imagePath: z
-		.string()
-		.max(1024)
-		.catch("")
-		.transform((path) =>
-			draftKeepsText(path) &&
-			!path.includes("\\") &&
-			!path.split("/").includes("..") &&
-			[...path].every((c) => c.charCodeAt(0) >= 32)
-				? path
-				: "",
-		)
-		.default(""),
+	inputKey: draftImageInput,
+	imagePath: draftImagePath,
 	left: draftNumber,
 	right: draftNumber,
 	top: draftNumber,
@@ -283,23 +302,17 @@ function projectFilterDraft(item: unknown): (DraftValue & { key: string })[] {
 	const schema =
 		item.kind === "AUDIO_MIX"
 			? audioMixDraft
-			: item.kind === "ENHANCED_WATERMARK"
-				? enhancedWatermarkDraft
-				: item.kind === "CONFORM"
-					? conformDraft
-					: item.kind === "DOLBY_LOUDNESS"
-						? dolbyLoudnessDraft
-						: mediaFilterSchema;
+			: item.kind === "WATERMARK"
+				? watermarkDraft
+				: item.kind === "ENHANCED_WATERMARK"
+					? enhancedWatermarkDraft
+					: item.kind === "CONFORM"
+						? conformDraft
+						: item.kind === "DOLBY_LOUDNESS"
+							? dolbyLoudnessDraft
+							: mediaFilterSchema;
 	const parsed = schema.safeParse(item);
-	if (!parsed.success) return [];
-	const value = parsed.data;
-	if (
-		(value.kind === "WATERMARK" || value.kind === "ENHANCED_WATERMARK") &&
-		(!draftKeepsText(value.imagePath) ||
-			value.imagePath.trimStart().startsWith("//"))
-	)
-		return [];
-	return [value];
+	return parsed.success ? [parsed.data] : [];
 }
 const vodFilterDrafts = z
 	.array(z.unknown())

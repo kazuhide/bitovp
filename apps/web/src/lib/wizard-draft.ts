@@ -80,7 +80,7 @@ export function draftFingerprint(value: unknown): string {
  * Whether a draft keeps this text. An address, a query or fragment, and a login
  * before a host are refused, and the field comes back empty.
  */
-export function draftKeepsText(value: string): boolean {
+export function draftKeepsText(value: string, imagePath = false): boolean {
 	const normalized = value.trimStart();
 	if (
 		normalized.startsWith("//") ||
@@ -93,22 +93,37 @@ export function draftKeepsText(value: string): boolean {
 	const colon = authority.indexOf(":");
 	const at = authority.lastIndexOf("@");
 	if (colon < 0 || at <= colon) return true;
-	// In an address, even spaces in the userinfo may form part of a secret.
-	// Standalone labels use a spaced @ separator ("Review: cut @ Studio",
-	// "Logo: 2026 @2x.png"); a path following the authority disambiguates it.
-	const host = authority.slice(at + 1);
-	if (address !== normalized || !/\s/u.test(authority.charAt(at - 1)))
-		return false;
-	if (/^\s/u.test(host)) return true;
-	// The same display name may become the stem of a file (logo.png-720p.ts)
-	// or a results directory. A nonempty path after the authority remains private.
+	// A directory after the apparent login makes it an address. A generated
+	// output directory may have only its final slash.
 	const tail = address.slice(authority.length);
+	if (
+		address !== normalized ||
+		/[^/]/u.test(tail) ||
+		!/\s/u.test(authority.charAt(at - 1))
+	)
+		return false;
+	const rawHost = authority.slice(at + 1);
+	const host = rawHost.trimStart();
+	if (!host || host !== host.trimEnd()) return false;
+	const spacedLabel = host !== rawHost;
+	if (!spacedLabel && !/\s/u.test(authority.charAt(colon + 1))) return false;
+	// Compare only terminal extensions. A host like cdn.png.invalid is
+	// different from a filename ending in .png. Generated render filenames
+	// add a container extension and can append a rendition or collision index.
+	let stem = host;
+	if (!imagePath && /\.(?:ts|mp4|mov|webm)$/iu.test(stem)) {
+		stem = stem.slice(0, stem.lastIndexOf("."));
+		for (let i = 0; i < 2; i++) {
+			const dash = stem.lastIndexOf("-");
+			if (dash < 0 || !/^\d+p?$/u.test(stem.slice(dash + 1))) break;
+			stem = stem.slice(0, dash);
+		}
+	}
+	const dot = stem.lastIndexOf(".");
+	if (dot < 0) return !imagePath && spacedLabel;
 	return (
-		!/[^/]/u.test(tail) &&
-		/\s/u.test(authority.charAt(colon + 1)) &&
-		/^[^\s/]+\.(?:png|jpe?g|webp|gif|avif|bmp|tiff?|svg)(?:[.-][^\s/]+)*$/iu.test(
-			host,
-		)
+		dot > 0 &&
+		/^(?:png|jpe?g|webp|gif|avif|bmp|tiff?|svg)$/iu.test(stem.slice(dot + 1))
 	);
 }
 
@@ -240,7 +255,7 @@ const draftImagePath = z
 	.max(1024)
 	.catch("")
 	.transform((path) =>
-		draftKeepsText(path) &&
+		draftKeepsText(path, true) &&
 		!path.includes("\\") &&
 		!path.split("/").includes("..") &&
 		[...path].every((c) => c.charCodeAt(0) >= 32)

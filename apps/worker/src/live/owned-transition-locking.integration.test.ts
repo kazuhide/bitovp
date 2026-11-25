@@ -1149,6 +1149,55 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			);
 			await tenant.liveSchedule.delete({ where: { id: schedule.id } });
 		});
+		it.each([
+			"retained",
+			"evicted",
+		])("retires a scheduled START with durable failure before its first lease (%s)", async (retention) => {
+			const f = await fixture("PROVISIONING", null);
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { liveEffectFenceVersion: 4 },
+			});
+			const schedule = await tenant.liveSchedule.create({
+				data: {
+					action: "START",
+					status: "FIRED",
+					outcome: "FAILED",
+					firedAt: now,
+					fireAt: now,
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					startAdmissionFenceVersion: 4,
+				},
+			});
+			const id = `sched-${schedule.id}`;
+			const enqueue = vi.fn(async () => {});
+			const recover = createExhaustedProvisionRecovery(
+				tenant,
+				async (key) =>
+					key === id && retention === "retained"
+						? {
+								data: {
+									action: "provision",
+									liveChannelId: f.channel.id,
+									plannedLiveChannelRunId: f.run.id,
+									provisionFenceVersion: 4,
+								},
+								getState: async () => "failed",
+							}
+						: undefined,
+				enqueue,
+			);
+			for (let i = 0; i < 10; i++) await recover(now);
+			expect(
+				(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					})
+				).status,
+			).toBe("ERROR");
+			expect(enqueue).not.toHaveBeenCalledWith(expect.anything(), id);
+		});
 		it("keeps a scheduled re-air invisible to outbox recovery until its new airing and generation commit", async () => {
 			const f = await fixture("STOPPED", null);
 			const plan = JSON.parse(
@@ -1918,6 +1967,22 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			const failedClaim =
 				scenario === "failed claim" || scenario === "purged failed claim";
 			if (failedClaim) {
+				if (scenario === "purged failed claim") {
+					await tenant.liveChannel.update({
+						where: { id: f.channel.id },
+						data: {
+							legacyAdmissionFenceVersion:
+								original.effect.admissionFenceVersion,
+						},
+					});
+					await tenant.liveSchedule.update({
+						where: { id: schedule.id },
+						data: {
+							stopAdmissionFenceVersion: null,
+							stopProviderEncodingId: null,
+						},
+					});
+				}
 				const receipt = await beginLiveEffect(tenant, {
 					liveChannelId: f.channel.id,
 					...original.effect,
@@ -2828,7 +2893,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			1,
 		])("sends only the first STOP for a promoted secondary after an older manual ACK on another target (protocol %s)", async (version) => {
 			const f = await dispatchFixture(),
-				secondary = randomUUID();
+				secondary = "zz-secondary-" + randomUUID();
 			await tenant.liveChannel.update({
 				where: { id: f.channel.id },
 				data: {
@@ -3061,6 +3126,14 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					)
 				).archivesRetired,
 			).toBe(false);
+			if (source === "closed-journal") {
+				// Both mirrored IDs must settle before cancelling this airing.
+				await tenant.liveChannelRun.update({
+					where: { id: f.run.id },
+					data: { bitmovinEncodingId: secondary },
+				});
+				expect(await proc(job)).toMatchObject({ status: "STOPPING" });
+			}
 			secondActive = false;
 			expect(await proc(job)).toMatchObject({ status: "STOPPED" });
 			expect(

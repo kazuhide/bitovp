@@ -314,6 +314,7 @@ export function archivedStopRecoveryTarget(
 		provisionClaimedAt?: Date | null;
 		bitmovinEncodingId?: string | null;
 		bitmovinAccountId?: string | null;
+		encoderStoppedConfirmedFor?: string | null;
 		plan?: unknown;
 		stepLog: unknown;
 	},
@@ -321,6 +322,7 @@ export function archivedStopRecoveryTarget(
 		| ({
 				bitmovinEncodingId?: string | null;
 				aisaAnalysisId?: string | null;
+				encoderStoppedConfirmedFor?: string | null;
 		  } & Parameters<typeof unconfirmedRtmpEncoders>[0])
 		| null,
 	history: readonly StopHistory[] = [],
@@ -345,19 +347,22 @@ export function archivedStopRecoveryTarget(
 		? pendingAiringRetirement(run, channel, history, account)
 		: null;
 	if (!archive?.length) return null;
-	if (!channel.bitmovinEncodingId && !run.bitmovinEncodingId)
-		return (
-			archive.find(
-				(id) =>
-					run.previousProviderEncodingIds?.includes(id) ||
-					liveStopLogEncodings(run.stepLog)?.includes(id) ||
-					history.some(
-						(c) =>
-							c.providerEncodingId === id ||
-							c.stopSendEncodingIds?.includes(id),
-					),
-			) ?? null
+	if (!channel.bitmovinEncodingId && !run.bitmovinEncodingId) {
+		const paired =
+			channel.encoderStoppedConfirmedFor === run.encoderStoppedConfirmedFor
+				? run.encoderStoppedConfirmedFor
+				: undefined;
+		const candidates = archive.filter(
+			(id) =>
+				run.previousProviderEncodingIds?.includes(id) ||
+				liveStopLogEncodings(run.stepLog)?.includes(id) ||
+				history.some(
+					(c) =>
+						c.providerEncodingId === id || c.stopSendEncodingIds?.includes(id),
+				),
 		);
+		return candidates.find((id) => id !== paired) ?? candidates[0] ?? null;
+	}
 	return channel.bitmovinEncodingId &&
 		run.bitmovinEncodingId === channel.bitmovinEncodingId
 		? channel.bitmovinEncodingId
@@ -448,7 +453,6 @@ export async function bindArchivedStopTargetInTransaction(
 	const accountId = liveChannelAccountId(channel);
 	const priorTerminal =
 		priorId &&
-		priorId !== target &&
 		accountId &&
 		channel.encoderStoppedConfirmedFor === priorId &&
 		(!run.bitmovinEncodingId || run.bitmovinEncodingId === priorId) &&
@@ -1208,6 +1212,19 @@ export async function beginLiveEffect(
 				: null;
 		if (recovery && existing) retryingFailed = existing;
 		const recoveringLegacyAck = recovery?.requireReadback ?? false;
+		const retryingPromotedTarget =
+			durableManualStop &&
+			retryingFailed?.state === "FAILED" &&
+			(await tx.liveEffectClaim.findFirst({
+				where: {
+					liveChannelId: input.liveChannelId,
+					liveChannelRunId: input.liveChannelRunId,
+					action: "STOP",
+					state: "ACKED",
+					providerEncodingId: { not: input.providerEncodingId },
+				},
+				select: { id: true },
+			}));
 		const legacyUnsentStopIds = recovery?.existingUnsent;
 
 		if (
@@ -1604,6 +1621,7 @@ export async function beginLiveEffect(
 				...handleOf({ ...created, generation }),
 				...(input.action === "STOP" &&
 				(recoveringLegacyAck ||
+					retryingPromotedTarget ||
 					(retryingFailed &&
 						(retryingFailed.state !== "FAILED" || retryingFailed.attempt > 1)))
 					? { requireActiveStopReadback: true }

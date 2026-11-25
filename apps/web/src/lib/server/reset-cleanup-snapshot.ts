@@ -163,7 +163,7 @@ export async function snapshotResetCleanup(
 				JSON.stringify([e.entityKey, e.accountId, e.encodingId]),
 			),
 		);
-		for (const p of archive.pointers) {
+		for (const p of archive.allPointers) {
 			const entityKey = `${p.kind}:${p.id}`;
 			if (
 				!recorded.has(
@@ -178,7 +178,16 @@ export async function snapshotResetCleanup(
 					entityKey,
 					accountId: p.bitmovinAccountId,
 					encodingId: p.bitmovinEncodingId,
-					requireTerminal: true,
+					...(neverStarted.has(
+						JSON.stringify([
+							p.kind,
+							p.id,
+							p.bitmovinAccountId,
+							p.bitmovinEncodingId,
+						]),
+					)
+						? { allowCreated: true }
+						: { requireTerminal: true }),
 				});
 		}
 		for (const effect of await tx.liveEffectClaim.findMany({

@@ -1864,7 +1864,7 @@ export function createBitmovinSdkOps(
 		? createOrphanStopFetch()
 		: options.monitoringSignal
 			? createMonitoringFetch(options.monitoringSignal)
-			: createRetryingFetch();
+			: createRetryingFetch({ retryMutations: !options.stamp?.beforeMutation });
 	const liveStartFetch = createLiveStartFetch(
 		options.stamp ? createStampingFetch(retrying, options.stamp) : retrying,
 	);

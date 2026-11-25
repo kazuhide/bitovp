@@ -5675,6 +5675,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				status: "STOPPED" | "ERROR";
 				error: string | null;
 				encodingId?: string;
+				displacedRunPrimary?: string;
 			},
 			displaced: DisplacedReadbacks,
 			proof?: AisaNeverStartedProof,
@@ -5704,6 +5705,18 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						liveChannelId,
 						runId,
 					);
+					const runPrimary = outcome.displacedRunPrimary ?? outcome.encodingId;
+					if (
+						outcome.displacedRunPrimary &&
+						(run.bitmovinEncodingId !== outcome.displacedRunPrimary ||
+							!outcome.encodingId ||
+							![outcome.encodingId, outcome.displacedRunPrimary].every((id) =>
+								displaced.receipts.some(
+									(r) => r.encodingId === id && r.disposition === "TERMINAL",
+								),
+							))
+					)
+						throw new ProvisionLeaseLostError(liveChannelId);
 					const retirementWrite = displacedRetirementWrite(
 						run,
 						channel,
@@ -5725,24 +5738,23 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						(channel.bitmovinEncodingId ?? null) !==
 							(outcome.encodingId ?? null) ||
 						(outcome.encodingId
-							? !liveStopRunOwnsEncoding(run, outcome.encodingId)
+							? !liveStopRunOwnsEncoding(run, runPrimary ?? outcome.encodingId)
 							: !!run.bitmovinEncodingId)
 					)
 						throw new ProvisionLeaseLostError(liveChannelId);
 					const createdProof =
 						proof?.basis === "BOUND_CREATED_NOT_STARTED" ? proof : undefined;
+					const journalPrimary = outcome.displacedRunPrimary
+						? null
+						: run.bitmovinEncodingId;
 					const rawLog = restoreLiveProvisionEvidence(
 						channel.stepLog,
 						run.stepLog,
-						run.bitmovinEncodingId,
+						journalPrimary,
 					);
 					const provenLog =
 						rawLog &&
-						restoreLiveProvisionEvidence(
-							entries,
-							rawLog,
-							run.bitmovinEncodingId,
-						);
+						restoreLiveProvisionEvidence(entries, rawLog, journalPrimary);
 					if (!provenLog) throw new AisaLiveFinalizationPendingError();
 					if (
 						(!outcome.encodingId &&
@@ -5765,7 +5777,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 							? { providerStatus: "CREATED", aisaStatus: "CREATED" }
 							: {}),
 						...(outcome.encodingId
-							? { encoderStoppedConfirmedFor: outcome.encodingId }
+							? { encoderStoppedConfirmedFor: runPrimary }
 							: {}),
 					};
 					if (
@@ -5841,7 +5853,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 									}
 								: {}),
 							...(outcome.encodingId
-								? { encoderStoppedConfirmedFor: outcome.encodingId }
+								? { encoderStoppedConfirmedFor: runPrimary }
 								: {}),
 						},
 					});
@@ -5933,7 +5945,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		const provisionLog = restoreLiveProvisionEvidence(
 			row.stepLog,
 			claimedRun?.stepLog,
-			claimedRun?.bitmovinEncodingId ?? row.bitmovinEncodingId,
+			cancelling && divergentPrimaries
+				? null
+				: (claimedRun?.bitmovinEncodingId ?? row.bitmovinEncodingId),
 		);
 		if (
 			!provisionLog ||
@@ -6690,10 +6704,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					row.bitmovinEncodingId &&
 					claimedRun?.bitmovinEncodingId
 				) {
+					const pair = [row.bitmovinEncodingId, claimedRun.bitmovinEncodingId];
 					const observations = await Promise.allSettled(
-						[row.bitmovinEncodingId, claimedRun.bitmovinEncodingId].map((id) =>
-							sdk.getEncodingStatus(id),
-						),
+						pair.map((id) => sdk.getEncodingStatus(id)),
 					);
 					const feeders = await deps.prisma.feederSession.findMany({
 						where: liveStopFeederWhere(liveChannelId),
@@ -6709,6 +6722,62 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 							? classifyProviderStatusWord(r.value.status)
 							: "UNKNOWN",
 					);
+					if (
+						!feeders.length &&
+						accountId &&
+						states.every((state) => state === "TERMINAL")
+					) {
+						const displaced = await readDisplacedEncoders(
+							claimedRun,
+							row,
+							accountId,
+							sdk,
+							deps.now,
+							undefined,
+							{
+								primary: row.bitmovinEncodingId,
+								history: await readAiringEffectHistory(
+									deps.prisma,
+									liveChannelId,
+									currentRunId,
+								),
+							},
+						);
+						if (displaced) {
+							for (const [index, observation] of observations.entries()) {
+								const encodingId = pair[index];
+								if (!encodingId || observation.status !== "fulfilled")
+									throw new ProvisionLeaseLostError(liveChannelId);
+								displaced.receipts.push({
+									accountId,
+									encodingId,
+									providerStatus: observation.value.status,
+									observedAt: deps.now(),
+									disposition: "TERMINAL",
+								});
+							}
+							const analysisFailed =
+								aisaLiveFinalization(claimedRun) === "FAILED";
+							await commitStartupCancellation(
+								entries,
+								currentRunId,
+								{
+									status: analysisFailed ? "ERROR" : "STOPPED",
+									error: analysisFailed ? "AISA_LIVE_TERMINAL_FAILURE" : null,
+									encodingId: row.bitmovinEncodingId,
+									displacedRunPrimary: claimedRun.bitmovinEncodingId,
+								},
+								displaced,
+							);
+							return analysisFailed
+								? "ERROR"
+								: {
+										status: "STOPPED",
+										canceledRunId: currentRunId,
+										generation: ownerGeneration,
+									};
+						}
+					}
 					await projectProvisionEnd({
 						status: "STOPPING",
 						error: `Cancellation pending: channel and run name different encoders (${states.join(", ")}). Reconcile both encoder IDs.`,

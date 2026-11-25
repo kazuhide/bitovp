@@ -163,10 +163,12 @@ export function createExhaustedScheduledStopRecovery(
 						(row.outcome === "PENDING" && (await job.getState()) !== "failed"))
 				)
 					continue;
-				if (!legacy) {
+				const advancedFence = originalFence !== channel.liveEffectFenceVersion;
+				if (!legacy || (advancedFence && (!job || found?.effect))) {
 					if (
-						row.dispatchJobId !== jobId ||
-						row.stopProviderEncodingId !== encodingId
+						!legacy &&
+						(row.dispatchJobId !== jobId ||
+							row.stopProviderEncodingId !== encodingId)
 					)
 						continue;
 					if (

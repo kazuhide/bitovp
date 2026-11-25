@@ -1738,6 +1738,21 @@ postgres("tenant PostgreSQL reset", () => {
 			);
 		}
 		expect((await get()).state).toBe("RESOLVED");
+		const cipher = new AesGcmCipher(randomBytes(32));
+		const selected = await deleteSelectedData(
+			prisma,
+			requiredResetCategories(["liveChannels"]),
+			cipher,
+		);
+		if (!selected.cleanupTaskId) throw new Error("Expected a cleanup task");
+		const task = await readResetCleanupTask(
+			prisma,
+			cipher,
+			selected.cleanupTaskId,
+		);
+		expect(task?.payload.encodings.map((e) => e.encodingId)).toEqual(
+			expect.arrayContaining([a, b, extra]),
+		);
 	});
 	it.each([
 		"full",

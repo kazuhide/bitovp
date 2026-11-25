@@ -53,6 +53,8 @@ export type SdkFetch = (url: string, init?: unknown) => Promise<Response>;
 export type RetryingFetchOptions = {
 	/** Total attempts, including the first. 1 disables retrying. */
 	attempts?: number;
+	/** A job-owned mutation must be reconciled after an uncertain transport response. */
+	retryMutations?: boolean;
 	/** Base backoff; attempt n waits `delayMs * 2^(n-1)`. */
 	delayMs?: number;
 	/** Injected for tests — the default is a real timer. */
@@ -106,7 +108,15 @@ export function createRetryingFetch(
 				 * orchestrator can resolve by reading status, rather than a second billable run
 				 * nobody recorded.
 				 */
-				if (!isRetryable(url, init)) {
+				if (
+					(options.retryMutations === false &&
+						!["GET", "HEAD", "OPTIONS"].includes(
+							(
+								(init as { method?: string } | undefined)?.method ?? "GET"
+							).toUpperCase(),
+						)) ||
+					!isRetryable(url, init)
+				) {
 					break;
 				}
 				// Method and url only — an init body can carry a stream key or an

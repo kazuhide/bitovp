@@ -71,6 +71,30 @@ describe("createRetryingFetch", () => {
 		expect(warnings[0]).toContain("retrying 1/2");
 	});
 
+	it.each([
+		"POST",
+		"DELETE",
+		"GET",
+	])("retries only reads on an attempt-owned manifest request (%s)", async (method) => {
+		const target = flaky(1);
+		const send = createRetryingFetch({
+			fetchImpl: target.impl,
+			sleep: noSleep,
+			warn: () => {},
+			retryMutations: false,
+		});
+		const request = send("https://api.bitmovin.com/v1/encoding/manifests/hls", {
+			method,
+		});
+		if (method === "GET") {
+			expect((await request).status).toBe(201);
+			expect(target.calls()).toBe(2);
+		} else {
+			await expect(request).rejects.toThrow();
+			expect(target.calls()).toBe(1);
+		}
+	});
+
 	it("gives up after the attempt budget and rethrows the LAST error", async () => {
 		const target = flaky(99);
 		const doFetch = createRetryingFetch({

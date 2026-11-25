@@ -104,6 +104,7 @@ export function createExhaustedProvisionRecovery(
 				(run && !["CREATED", "PROVISIONING"].includes(run.status))
 			)
 				continue;
+			let failedScheduleId: string | undefined;
 			let id: string,
 				data: LiveChannelJob = { liveChannelId: row.id, action: "provision" };
 			if (
@@ -121,9 +122,9 @@ export function createExhaustedProvisionRecovery(
 						liveChannelId: row.id,
 						liveChannelRunId: run.id,
 						startAdmissionFenceVersion: generation,
-						outcome: { in: ["PENDING", "UNKNOWN"] },
+						outcome: { in: ["PENDING", "UNKNOWN", "FAILED"] },
 					},
-					select: { id: true },
+					select: { id: true, outcome: true },
 					take: 2,
 				});
 				if (schedules.length > 1) continue;
@@ -143,6 +144,7 @@ export function createExhaustedProvisionRecovery(
 						continue;
 					}
 					id = `sched-${schedule.id}`;
+					if (schedule.outcome === "FAILED") failedScheduleId = schedule.id;
 					data.provisionFenceVersion = generation;
 				} else {
 					const legacy =
@@ -187,6 +189,16 @@ export function createExhaustedProvisionRecovery(
 			}
 			const job = await readOwnedJob(id);
 			if (job) await retireFailed(id, job, at, row.id);
+			else if (failedScheduleId && run)
+				await recordExpiredProvisionFailure(
+					prisma,
+					row.id,
+					error,
+					new Date(at.getTime() - PROVISION_LEASE_MS),
+					at,
+					{ runId: run.id, generation },
+					failedScheduleId,
+				);
 			else await reenqueue(data, id);
 		}
 	};

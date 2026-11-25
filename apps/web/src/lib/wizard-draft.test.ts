@@ -253,6 +253,10 @@ it.each([
 			"Artwork: July @ Opening Credits/logo.png",
 			"Artwork: July @ Opening Credits/logo.png",
 		],
+		[
+			"/Artwork: July @ Opening Credits/logo.png",
+			"/Artwork: July @ Opening Credits/logo.png",
+		],
 		["Logo: 2026 @2x.png", "Logo: 2026 @2x.png"],
 		["Logo: winter @thumbnail.webp", "Logo: winter @thumbnail.webp"],
 		["user: secret @host", ""],

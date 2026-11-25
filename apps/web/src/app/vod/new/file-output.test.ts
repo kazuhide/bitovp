@@ -166,6 +166,8 @@ describe("file names", () => {
 		"Review: cut @ Studio",
 		"Review: cut @ Studio 2.0",
 		"Review: cut @ Studio.mp4",
+		"Review: final cut @",
+		"s3:take 2@",
 	])("restores the automatic TS filename and AI results directory for %s", (name) => {
 		const ts = apply(started, editFile(started, 0, { kind: "PROGRESSIVE_TS" }));
 		const configured = {

@@ -178,13 +178,8 @@ export function createExhaustedScheduledStopRecovery(
 					continue;
 				const advancedFence = originalFence !== channel.liveEffectFenceVersion;
 				let failedFencedDelivery = false;
-				if (
-					legacy &&
-					!advancedFence &&
-					row.outcome === "PENDING" &&
-					(!job || found?.effect)
-				) {
-					if (row.dispatchJobId !== jobId) continue;
+				if (legacy && !advancedFence && (!job || found?.effect)) {
+					if (row.dispatchJobId !== jobId && !found?.effect) continue;
 					const savedHandoff =
 						row.stopProviderEncodingId === encodingId &&
 						row.stopAdmissionFenceVersion === originalFence;
@@ -224,7 +219,10 @@ export function createExhaustedScheduledStopRecovery(
 					}
 					if (!terminal) {
 						if (found?.effect || savedHandoff) failedFencedDelivery = true;
-						else if (!job && history.length === 0) {
+						else if (
+							!job &&
+							!history.some((claim) => claim.action === "STOP")
+						) {
 							// A pre-upgrade evicted job has no durable send ledger. Give the
 							// operator an actionable exact airing without replaying its POST.
 							await recordFinalStopFailure(
@@ -265,7 +263,11 @@ export function createExhaustedScheduledStopRecovery(
 					// A pre-send FAILED claim holds a newer generation than its enqueue.
 					// The transaction rechecks that claim, its exact target and the channel fence.
 					// With an evicted job only durable FAILED can authorize that projection.
-					if (!job && originalFence === channel.liveEffectFenceVersion)
+					if (
+						!job &&
+						originalFence === channel.liveEffectFenceVersion &&
+						!failedFencedDelivery
+					)
 						continue;
 					if (job && (await job.getState()) !== "failed") continue;
 					await recordFinalStopFailure(
@@ -277,7 +279,7 @@ export function createExhaustedScheduledStopRecovery(
 						},
 						job
 							? "The original scheduled job is in the failed queue."
-							: "The original delivery is missing after its pre-send claim failed.",
+							: "The scheduled STOP job was evicted before its provider send was confirmed.",
 						deps.emitEvent,
 					);
 					continue;

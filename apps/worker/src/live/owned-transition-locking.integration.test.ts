@@ -2129,6 +2129,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			"split error effect",
 			"unavailable effect",
 			"secondary active effect",
+			"unknown secondary active effect",
+			"purged unknown active",
 			"evicted base",
 			"split terminal",
 			"wrong effect",
@@ -2164,7 +2166,12 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					status: "FIRED",
 					fireAt: now,
 					firedAt: now,
-					outcome: ["unknown", "successor"].includes(scenario)
+					outcome: [
+						"unknown",
+						"successor",
+						"unknown secondary active effect",
+						"purged unknown active",
+					].includes(scenario)
 						? "UNKNOWN"
 						: "PENDING",
 					...(scenario.startsWith("purged") ||
@@ -2179,7 +2186,12 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			});
 			await tenant.liveSchedule.update({
 				where: { id: row.id },
-				data: { dispatchJobId: `sched-${row.id}` },
+				data: {
+					dispatchJobId:
+						scenario === "unknown secondary active effect"
+							? null
+							: `sched-${row.id}`,
+				},
 			});
 			if (scenario === "successor")
 				await tenant.liveChannel.update({
@@ -2219,7 +2231,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				scenario === "purged still running"
 			)
 				f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
-			if (scenario === "secondary active effect") {
+			if (
+				scenario.includes("secondary active effect") ||
+				scenario === "purged unknown active"
+			) {
 				const secondary = randomUUID();
 				await tenant.liveChannelRun.update({
 					where: { id: f.run.id },
@@ -2239,6 +2254,22 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				)
 			)
 				f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "QUEUED" }));
+			if (scenario === "evicted base") {
+				await tenant.liveEffectClaim.create({
+					data: {
+						idempotencyKey: "cue:" + randomUUID(),
+						token: randomUUID(),
+						liveChannelId: f.channel.id,
+						liveChannelRunId: f.run.id,
+						providerEncodingId: f.encodingId,
+						action: "SCTE35",
+						state: "ACKED",
+						generation: 2,
+						ownerId: "cue-worker",
+						expiresAt: now,
+					},
+				});
+			}
 			const reenqueue = vi.fn();
 			const probe = createExhaustedScheduledStopRecovery(
 				f.deps,
@@ -2276,6 +2307,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					"split error effect",
 					"unavailable effect",
 					"secondary active effect",
+					"unknown secondary active effect",
+					"purged unknown active",
 					"evicted base",
 				].includes(scenario)
 			) {
@@ -2325,6 +2358,73 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			).toBe(scenario === "unknown" ? "UNKNOWN" : "DELIVERED");
 		});
 
+		it("finishes a pre-upgrade STOP admission interrupted after FIRED only for unchanged airing owners", async () => {
+			const migration = readFileSync(
+				new URL(
+					"../../../../packages/db/prisma/migrations/20261126003500_recover_undispatched_live_stop/migration.sql",
+					import.meta.url,
+				),
+				"utf8",
+			);
+			const armed = [];
+			const firedAt = new Date(Date.now() + 60_000);
+			for (const status of ["RUNNING", "ERROR", "RUNNING"] as const) {
+				const f = await fixture(status, null);
+				const row = await tenant.liveSchedule.create({
+					data: {
+						action: "STOP",
+						liveChannelId: f.channel.id,
+						liveChannelRunId: f.run.id,
+						status: "FIRED",
+						fireAt: firedAt,
+						firedAt,
+					},
+				});
+				armed.push({ f, row });
+			}
+			const changed = armed[2]!;
+			await tenant.liveChannel.update({
+				where: { id: changed.f.channel.id },
+				data: {
+					liveEffectFenceVersion: { increment: 1 },
+					updatedAt: new Date(firedAt.getTime() + 1),
+				},
+			});
+			await admin.$executeRawUnsafe(migration);
+			await admin.$executeRawUnsafe(migration);
+			const enqueue = vi.fn(async () => {});
+			await createScheduleSweep({
+				prisma: tenant,
+				now: () => new Date(firedAt.getTime() + 600_000),
+				enqueue,
+			}).dispatchPending();
+			for (const { f, row } of armed.slice(0, 2)) {
+				expect(enqueue).toHaveBeenCalledWith(
+					expect.objectContaining({
+						effect: expect.objectContaining({
+							liveChannelRunId: f.run.id,
+							providerEncodingId: f.encodingId,
+							admissionFenceVersion: 1,
+						}),
+					}),
+					`sched-${row.id}`,
+				);
+				expect(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					}),
+				).toMatchObject({ status: "STOPPING", liveEffectFenceVersion: 1 });
+				expect(
+					await tenant.liveChannelRun.findUniqueOrThrow({
+						where: { id: f.run.id },
+					}),
+				).toMatchObject({ status: "STOPPING" });
+			}
+			expect(enqueue).not.toHaveBeenCalledWith(
+				expect.anything(),
+				`sched-${changed.row.id}`,
+			);
+		});
 		it("refuses an old unfenced STOP outbox and a retained bare job after same-airing revival", async () => {
 			const f = await dispatchFixture(),
 				generation = 3;

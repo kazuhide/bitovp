@@ -3,6 +3,7 @@ import {
 	MOQ_TASK_HISTORY_ERROR,
 	projectMoqTaskHistory,
 	publicHdrSourceProjection,
+	publicSlateRegistrationNote,
 	publicStorageDiagnostic,
 } from "@bitovp/core";
 import type { ServerContext } from "./context";
@@ -30,7 +31,7 @@ export function publicScheduleOutcome<
 	return {
 		...row,
 		outcomeNote: publicStorageDiagnostic(row.outcomeNote),
-		...("note" in row && { note: publicStorageDiagnostic(row.note) }),
+		...("note" in row && { note: publicSlateRegistrationNote(row) }),
 		...("error" in row && { error: publicStorageDiagnostic(row.error) }),
 	};
 }

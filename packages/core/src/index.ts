@@ -621,6 +621,7 @@ export {
 	slateNormalizedKey,
 	slateProbeFacts,
 } from "./live/slate-normalize";
+export { publicSlateRegistrationNote } from "./live/slate-registration-note";
 export type {
 	AutoLeadResolution,
 	ResolvedStartupRegion,

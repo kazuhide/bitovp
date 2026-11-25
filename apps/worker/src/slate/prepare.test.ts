@@ -2,7 +2,11 @@ import { readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import type { MediaAttributes, ProbeResult } from "@bitovp/core";
+import {
+	type MediaAttributes,
+	type ProbeResult,
+	publicSlateRegistrationNote,
+} from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -250,6 +254,29 @@ describe("createSlatePreparer", () => {
 		});
 		expect(dispose).toHaveBeenCalled();
 		await expect(readdir(workDir)).resolves.toEqual([]);
+	});
+
+	it("reads back the converted object name from the same registration note the worker produced", async () => {
+		const source = { ...SOURCE, key: "slates/bumper@2026.mp4" };
+		const { deps } = makeDeps({ recorded: MP4 });
+		const result = await createSlatePreparer(deps)({
+			label: "retained",
+			source,
+			ingest: INGEST,
+			destination: DEST,
+		});
+		expect(result.kind).toBe("READY");
+		if (result.kind !== "READY") throw new Error("expected normalized slate");
+		const note = `slate content registered (ready-content); ${result.note}`;
+		expect(note).toContain("bumper@2026.mp4.normalized-");
+		expect(
+			publicSlateRegistrationNote({
+				action: "SLATE_IN",
+				insertableContentId: "ready-content",
+				slateSource: source,
+				note,
+			}),
+		).toBe(note);
 	});
 
 	it("reports progress after the download and after the transcode, so a caller can refresh its claim", async () => {

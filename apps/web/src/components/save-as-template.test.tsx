@@ -1,3 +1,5 @@
+import { encodingPlanSchema } from "@bitovp/core";
+import { samplePresetPlan } from "@bitovp/core/presets";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
@@ -52,9 +54,16 @@ describe("SaveAsTemplateButton (ledger #109 §5 save-from-detail)", () => {
 	});
 
 	it("saves a withheld VOD source only after the operator supplies its replacement", async () => {
+		const base = encodingPlanSchema.parse(
+			samplePresetPlan("fixed-bitrate-hls-on-aws"),
+		);
+		const track = base.ingest?.[0];
+		if (!track) throw new Error("missing sample input");
 		const plan = {
-			planVersion: 1,
-			ingest: [{ key: "camera", inputKey: "source", inputPath: "" }],
+			...base,
+			ingest: base.ingest.map((row, index) =>
+				index === 0 ? { ...row, inputPath: "" } : row,
+			),
 			withheldSourcePaths: [
 				[{ collection: "ingest", index: 0, field: "inputPath" }],
 			],
@@ -69,7 +78,7 @@ describe("SaveAsTemplateButton (ledger #109 §5 save-from-detail)", () => {
 			name: /save as template/i,
 		});
 		expect(submit).toBeDisabled();
-		fireEvent.change(within(dialog).getByLabelText("camera"), {
+		fireEvent.change(within(dialog).getByLabelText(track.key), {
 			target: { value: "edited.mxf" },
 		});
 		fireEvent.click(
@@ -81,10 +90,10 @@ describe("SaveAsTemplateButton (ledger #109 §5 save-from-detail)", () => {
 		expect(body).toEqual({
 			name: "clean",
 			plan: {
-				planVersion: 1,
-				ingest: [
-					{ key: "camera", inputKey: "source", inputPath: "edited.mxf" },
-				],
+				...base,
+				ingest: base.ingest.map((row, index) =>
+					index === 0 ? { ...row, inputPath: "edited.mxf" } : row,
+				),
 			},
 		});
 		expect(plan.ingest[0]?.inputPath).toBe("");

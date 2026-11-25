@@ -11412,6 +11412,8 @@ describe("confirmed encoding cancellation", () => {
 			status: "STOPPING",
 		});
 		expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("bm-live-enc");
+		if (kind === "run-pointer" || kind === "channel-pointer")
+			expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("other-encoding");
 		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
 		expect(h.row.status).toBe("STOPPING");
 		expect(run.providerStatus).toBeNull();

@@ -5001,7 +5001,7 @@ function divergentCancellationEvidence(
 	runEncoder: string,
 ) {
 	const channel = stepLogSchema.safeParse(channelLog);
-	const run = stepLogSchema.safeParse(runLog);
+	const run = stepLogSchema.safeParse(runLog ?? []);
 	if (!channel.success || !run.success) return null;
 	// Keep each original CREATE receipt on its owner. The read-only view needs
 	// one copy of this graph node to validate all other paid-operation evidence.

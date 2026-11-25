@@ -20,7 +20,14 @@ export function draftKeepsText(value: string, imagePath = false): boolean {
 	const tail = address.slice(authority.length);
 	const rawHost = authority.slice(at + 1);
 	const host = rawHost.trimStart();
-	if (address !== normalized && !(imagePath && normalized === `/${address}`))
+	if (
+		address !== normalized &&
+		!(
+			imagePath &&
+			normalized.startsWith("/") &&
+			normalized.slice(1).trimStart() === address
+		)
+	)
 		return false;
 	if (!rawHost && !tail)
 		return !imagePath && /\S\s+\S/u.test(authority.slice(colon + 1, at));
@@ -47,9 +54,14 @@ export function draftKeepsText(value: string, imagePath = false): boolean {
 	const dot = stem.lastIndexOf(".");
 	if (dot < 0) return !imagePath && spacedLabel;
 	const extension = stem.slice(dot + 1);
+	// Delivery labels can include a revision, either as the final component
+	// of a display name or after the file format of an artwork asset.
+	if (!imagePath && spacedLabel && /^v[0-9]+$/iu.test(extension)) return true;
 	return (
 		dot > 0 &&
-		(/^(?:png|jpe?g|webp|gif|avif|bmp|tiff?|svg)$/iu.test(extension) ||
+		(/^(?:png|jpe?g|webp|gif|avif|bmp|tiff?|svg)(?:-v[0-9]+)?$/iu.test(
+			extension,
+		) ||
 			(!imagePath && spacedLabel && /^(?:ts|mp4|mov|webm)$/iu.test(extension)))
 	);
 }

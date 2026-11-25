@@ -165,6 +165,7 @@ describe("file names", () => {
 		"Logo: 2026 @2x.png",
 		"Review: cut @ Studio",
 		"Review: cut @ Studio 2.0",
+		"Review: cut @ Studio.v2",
 		"Review: cut @ Studio.mp4",
 		"Review: final cut @",
 		"s3:take 2@",

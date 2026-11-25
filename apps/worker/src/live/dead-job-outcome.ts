@@ -1,4 +1,8 @@
-import { liveChannelJobSchema, redactSecrets } from "@bitovp/core";
+import {
+	liveChannelJobSchema,
+	publicStorageDiagnostic,
+	redactSecrets,
+} from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { feederLeaseIsFresh } from "../feeder/ownership";
 import { HEARTBEAT_SWEEP_JOB } from "../handlers";
@@ -330,7 +334,10 @@ export async function recordDeadJobScheduleOutcomes(
 	message: string,
 	at: Date,
 ): Promise<void> {
-	for (const write of deadJobScheduleWrites(job, message)) {
+	for (const write of deadJobScheduleWrites(
+		job,
+		publicStorageDiagnostic(message),
+	)) {
 		await recordScheduleOutcomeBestEffort(
 			prisma,
 			write.target,

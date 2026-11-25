@@ -9,7 +9,7 @@ import {
 	type ProviderObservation,
 	providerEffectIdentityRefusal,
 	providerEffectRefusal,
-	redactSecrets,
+	publicStorageDiagnostic,
 } from "@bitovp/core";
 import type { AppPrismaClient, AppTransactionClient, Prisma } from "@bitovp/db";
 import { DB_NULL, replaceLiveRunStepLogSnapshot } from "@bitovp/db";
@@ -375,7 +375,9 @@ export function createProviderLifecycleReconciler(deps: {
 		} catch (err) {
 			return {
 				ok: false,
-				error: redactSecrets(err instanceof Error ? err.message : String(err)),
+				error: publicStorageDiagnostic(
+					err instanceof Error ? err.message : String(err),
+				),
 				observedAt: deps.now(),
 			};
 		}

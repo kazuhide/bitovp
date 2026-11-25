@@ -2962,7 +2962,10 @@ describe("executeStep", () => {
 			expect(sdk.startLiveEncoding).toHaveBeenCalled();
 		});
 
-		it("diagnoses an input-not-found (2025) start failure with the BAKED vs resolvable ids", async () => {
+		it.each([
+			"",
+			" Read media/scene?auth=PRIVATE_FIXTURE",
+		])("diagnoses an input-not-found (2025) start failure with the BAKED vs resolvable ids %s", async (echo) => {
 			const sdk = fakeSdk({
 				getEncodingStatus: vi.fn(() => Promise.resolve({ status: "CREATED" })),
 				// Reject with what the FACADE now produces (review catch R3):
@@ -2979,7 +2982,8 @@ describe("executeStep", () => {
 								httpStatusCode: 400,
 								errorCode: 2025,
 								shortMessage:
-									"The input with the id: bm-stale could not be found in the system.",
+									"The input with the id: bm-stale could not be found in the system." +
+									echo,
 							},
 						),
 					),
@@ -3007,6 +3011,8 @@ describe("executeStep", () => {
 			expect(sdk.listIngestInputStreams).toHaveBeenCalledWith("bm-enc");
 			// And never leak the start request's streamKey.
 			expect(thrown.message).not.toContain("myStreamKey");
+			expect(thrown.message).not.toContain("PRIVATE_FIXTURE");
+			expect(sdk.listRtmpInputs).toHaveBeenCalledOnce();
 		});
 
 		it("passes a non-input live-start failure through untouched", async () => {

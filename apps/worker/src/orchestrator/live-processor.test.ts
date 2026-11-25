@@ -1552,6 +1552,38 @@ describe("live channel provisioning", () => {
 		).not.toContain("PRIVATE_FIXTURE");
 	});
 
+	it("keeps a rejected startup status read out of queue failure/stack, channel, run and event", async () => {
+		const h = setup(
+			{},
+			{
+				getEncodingStatus: vi
+					.fn()
+					.mockRejectedValue(
+						new Error("Source unavailable: media.mxf?sig=PRIVATE_FIXTURE"),
+					),
+			},
+		);
+		const emitEvent = vi.fn(async () => {});
+		h.deps.emitEvent = emitEvent;
+		const failure: Error = await h.process({ liveChannelId: CHANNEL_ID }).then(
+			() => {
+				throw new Error("expected failure");
+			},
+			(err: Error) => err,
+		);
+		expect(failure.message).toBe("[withheld]");
+		expect(failure.stack).not.toContain("PRIVATE_FIXTURE");
+		expect(h.row).toMatchObject({ status: "ERROR", error: failure.message });
+		expect(emitEvent).toHaveBeenCalledWith(
+			expect.objectContaining({
+				kind: "CHANNEL_ERROR",
+				error: failure.message,
+			}),
+		);
+		expect(
+			JSON.stringify([h.row, h.runRows, emitEvent.mock.calls]),
+		).not.toContain("PRIVATE_FIXTURE");
+	});
 	it("acknowledges cancellation during startup as STOPPED, never RUNNING or CHANNEL_ERROR", async () => {
 		const h = setup(
 			{},

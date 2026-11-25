@@ -15,6 +15,7 @@ import {
 	parseIngressConfig,
 	parseSecretEgressAllowlist,
 	parseStorageEndpointAllowlist,
+	publicStorageDiagnostic,
 	QUEUE_NAMES,
 	type QueueKey,
 	REGISTRATION_RECONCILE_INTERVAL_MS,
@@ -2029,10 +2030,11 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 	});
 	worker.on("failed", (job, err) => {
 		if (!job) return;
+		const failureMessage = publicStorageDiagnostic(err.message);
 		void consumeTenantJob(
 			key,
 			async (job) => {
-				console.error(`[worker:${key}] job ${job?.id} failed:`, err.message);
+				console.error(`[worker:${key}] job ${job?.id} failed:`, failureMessage);
 				// A job can die outside the processor (stalled twice, lock lost).
 				// Without this, the row wedges in QUEUED/RUNNING and /retry 409s.
 				if (key === "orchestrator") {
@@ -2061,7 +2063,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 								// window nobody is renewing.
 								data: {
 									status: "ERROR",
-									error: redactSecrets(err.message),
+									error: redactSecrets(failureMessage),
 									attemptClaimedAt: null,
 								},
 							})
@@ -2144,7 +2146,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 								},
 								data: {
 									status: "ERROR",
-									error: redactSecrets(err.message),
+									error: redactSecrets(failureMessage),
 									provisionClaimedAt: null,
 								},
 							})
@@ -2166,7 +2168,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 								return retireTransitionalRuns(
 									prisma,
 									liveChannelId,
-									redactSecrets(err.message),
+									redactSecrets(failureMessage),
 								).then(() => undefined);
 							})
 							.catch((updateErr) =>
@@ -2181,7 +2183,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 					void recordFinalManualStopFailure(
 						prisma,
 						job,
-						err.message,
+						failureMessage,
 						emitEvent,
 					).catch((updateErr) =>
 						console.error(
@@ -2220,7 +2222,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 								data: {
 									status: "ERROR",
 									error: redactSecrets(
-										`scheduled feeder job died: ${err.message}`,
+										`scheduled feeder job died: ${failureMessage}`,
 									),
 								},
 							})
@@ -2257,7 +2259,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 					void recordDeadJobScheduleOutcomes(
 						prisma,
 						job,
-						err.message,
+						failureMessage,
 						new Date(),
 					);
 				}
@@ -2284,7 +2286,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 						releaseDeadLiveToVodIfFinal(
 							prisma,
 							{ liveChannelId, liveChannelRunId, encodingId, attemptId },
-							err.message,
+							failureMessage,
 							new Date(),
 							() => job.getState(),
 						).catch((updateErr) =>
@@ -2301,7 +2303,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 				// trigger of the orphan-ffmpeg case, and 's emit instrument
 				// could not see that because its population never included this file.
 				if (key === "feederManager") {
-					void recordDeadFeederJob({ prisma, emitEvent }, job, err.message);
+					void recordDeadFeederJob({ prisma, emitEvent }, job, failureMessage);
 				}
 			},
 			{ reserveFeederStopSlot: false, enforceActive: false },

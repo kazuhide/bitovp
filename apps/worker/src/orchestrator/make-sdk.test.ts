@@ -16,6 +16,41 @@ afterEach(() => {
 });
 
 describe("makeWorkerSdk — the production seam, to the wire", () => {
+	it("keeps signed status response bodies out of both SDK failure projections", async () => {
+		const wire = vi.fn(async () =>
+			Response.json(
+				{
+					requestId: "support-reference",
+					data: {
+						message: "Source unreadable",
+						code: 403,
+						developerMessage: "Read media.mxf?token=PRIVATE_FIXTURE",
+					},
+				},
+				{ status: 403 },
+			),
+		);
+		vi.stubGlobal("fetch", wire);
+		const ops = makeWorkerSdk({
+			auditLog: { create: vi.fn() },
+		} as unknown as AppPrismaClient)({
+			apiKey: "fixture",
+			tenantOrgId: null,
+			bitmovinAccountId: "account",
+		});
+		for (const read of [ops.getEncodingStatus, ops.getEncodingMessages]) {
+			const failure = await read("enc-1").catch((err: Error) => err);
+			expect(failure).toMatchObject({
+				httpStatusCode: 403,
+				developerMessage: "[withheld]",
+				requestId: "support-reference",
+				message: expect.stringContaining("Source unreadable"),
+			});
+			expect((failure as Error).stack).not.toContain("PRIVATE_FIXTURE");
+			expect((failure as Error).message).not.toContain("PRIVATE_FIXTURE");
+		}
+		expect(wire).toHaveBeenCalledTimes(2);
+	});
 	it("forwards the monitoring deadline through status and heartbeat to native fetch", async () => {
 		const controller = new AbortController();
 		const signals: (AbortSignal | null | undefined)[] = [];

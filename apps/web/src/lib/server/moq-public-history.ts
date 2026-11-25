@@ -20,10 +20,19 @@ export function publicLiveHistory<
 }
 
 /** Old slate failures may quote a signed source in their retained schedule note. */
-export function publicScheduleOutcome<T extends { outcomeNote: string | null }>(
-	row: T,
-): T {
-	return { ...row, outcomeNote: publicStorageDiagnostic(row.outcomeNote) };
+export function publicScheduleOutcome<
+	T extends {
+		outcomeNote: string | null;
+		note?: string | null;
+		error?: string | null;
+	},
+>(row: T): T {
+	return {
+		...row,
+		outcomeNote: publicStorageDiagnostic(row.outcomeNote),
+		...("note" in row && { note: publicStorageDiagnostic(row.note) }),
+		...("error" in row && { error: publicStorageDiagnostic(row.error) }),
+	};
 }
 
 /** Project the text and its MoQ classification in the same database read. */

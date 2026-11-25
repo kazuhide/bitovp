@@ -29,9 +29,12 @@ function step(
 }
 
 describe("curlForStep — endpoint mapping", () => {
-	it("copies literal Dolby Vision media keys from the persisted request", () => {
+	it.each([
+		"reels:day/Scene&key=take#2?auth=review",
+		"///reels@day/take.mxf",
+	])("copies literal Dolby Vision media key %s from the persisted request", (videoInputPath) => {
 		const request = redactSecrets({
-			videoInputPath: "reels:day/Scene&key=take#2?auth=review",
+			videoInputPath,
 			metadataInputPath: "dv/meta.xml?version=2&key",
 		});
 		const result = curlForStep(
@@ -42,7 +45,7 @@ describe("curlForStep — endpoint mapping", () => {
 			}),
 		);
 		if (!result.ok) throw Error(result.code);
-		expect(result.command).toContain("reels:day/Scene&key=take#2?auth=review");
+		expect(result.command).toContain(videoInputPath);
 		expect(result.command).toContain("dv/meta.xml?version=2&key");
 	});
 	it.each([

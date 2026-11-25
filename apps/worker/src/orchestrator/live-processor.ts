@@ -88,6 +88,7 @@ import {
 	persistLiveToVodAttempt,
 	resolveLiveEffectsAfterConfirmedStop,
 } from "@bitovp/db";
+import { UnrecoverableError } from "bullmq";
 import {
 	heartbeatIngestMedia,
 	type MediaAttributes,
@@ -6543,7 +6544,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		return true;
 	}
 
-	return async function process(jobData: unknown): Promise<LiveChannelResult> {
+	async function processLiveJob(jobData: unknown): Promise<LiveChannelResult> {
 		const job = liveChannelJobSchema.parse(jobData);
 		const { liveChannelId } = job;
 		// (row 266): the terminal result a run-acting
@@ -7044,6 +7045,22 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				const exhaustive: never = job.action;
 				throw new Error(`Unknown live channel action ${String(exhaustive)}`);
 			}
+		}
+	}
+	return async (jobData: unknown): Promise<LiveChannelResult> => {
+		try {
+			return await processLiveJob(jobData);
+		} catch (error) {
+			// BullMQ persists the thrown message and stack before the failed-job
+			// handler runs. Keep the original exception for ordinary control flow.
+			const message = error instanceof Error ? error.message : String(error);
+			const publicMessage = publicStorageDiagnostic(message);
+			if (message !== publicMessage) {
+				if (error instanceof UnrecoverableError)
+					throw new UnrecoverableError(publicMessage);
+				throw new Error(publicMessage);
+			}
+			throw error;
 		}
 	};
 }

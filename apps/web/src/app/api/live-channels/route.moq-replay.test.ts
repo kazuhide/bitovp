@@ -203,6 +203,8 @@ beforeEach(() => {
 		schedules.map((row) => ({
 			...row,
 			outcomeNote: "Source unavailable at scene.mxf?auth=PRIVATE_FIXTURE",
+			note: "Registration failed at old.mxf?sig=PRIVATE_FIXTURE",
+			error: "Loading old.mxf?token=PRIVATE_FIXTURE",
 		})),
 	);
 	mocks.errorSnapshots.mockResolvedValue([
@@ -229,6 +231,8 @@ describe("POST live channel retained MoQ error privacy", () => {
 			schedules: schedules.map((row) => ({
 				...row,
 				outcomeNote: "[withheld]",
+				note: "[withheld]",
+				error: "[withheld]",
 			})),
 			replayed: true,
 		});

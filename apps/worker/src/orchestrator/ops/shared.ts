@@ -79,6 +79,13 @@ export function isBitmovinError(err: unknown): err is {
 	);
 }
 
+/** Classify while the provider's wording is available; only the boolean is public. */
+export function isMissingInputMessage(message: string): boolean {
+	return (
+		/input/i.test(message) && /could not be found|not found/i.test(message)
+	);
+}
+
 /**
  * Body-free text for a Bitmovin failure: the API's own `shortMessage` (and
  * error code) only. NEVER `.message` — see the BitmovinCallError note.
@@ -104,6 +111,7 @@ export function bitmovinErrorText(err: unknown): string {
  */
 export class BitmovinCallError extends Error {
 	readonly httpStatusCode?: number;
+	readonly inputNotFound: boolean;
 	readonly shortMessage?: string;
 	/**
 	 * Structured capture (E2E 2026-08-14, I-01): the start-1004 investigation
@@ -137,6 +145,9 @@ export class BitmovinCallError extends Error {
 		);
 		this.name = "BitmovinCallError";
 		this.httpStatusCode = status;
+		this.inputNotFound =
+			typeof bm?.shortMessage === "string" &&
+			isMissingInputMessage(bm.shortMessage);
 		this.shortMessage = publicStorageDiagnostic(bm?.shortMessage);
 		this.requestId = requestId;
 		this.developerMessage = publicStorageDiagnostic(bm?.developerMessage);

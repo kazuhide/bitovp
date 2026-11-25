@@ -20,30 +20,32 @@ export const isHdr10PlusAuditPath = (path: unknown) =>
 
 export function hasPrivateStorageLocator(value: string): boolean {
 	const location = value.trim();
-	const authority = /^(?:[a-z][a-z\d+.-]*:)?[/\\]{2}([^/\\?#]*)/iu.exec(
+	const authority = /^(?:[a-z][a-z\d+.-]*:)?[/\\]{2,}([^/\\?#]*)/iu.exec(
 		location,
 	);
-	if (authority) {
-		// Even unfinished authorities can contain userinfo, e.g. before the
-		// host has been fully typed. Bare "name:value" is also a storage key.
-		if (authority[1]?.includes("@") || /[?#].+/u.test(location)) return true;
-	} else if (uriScheme.test(location)) {
+	// Normalize complete URL authorities (including special-scheme slash
+	// variants) before falling back to partially entered userinfo.
+	if (authority || uriScheme.test(location)) {
 		try {
-			// WHATWG special schemes can normalize a missing slash into an
-			// authority. Opaque object names such as "reels:day/Scene#2" have none.
-			const url = new URL(location);
+			const url = uriScheme.test(location)
+				? new URL(location)
+				: new URL(location, "https://storage.invalid");
 			if (url.host && (url.username || url.password || url.search || url.hash))
 				return true;
 		} catch {
-			// Relative or unfinished input can still contain a credential query.
+			// Unfinished authorities have no WHATWG URL yet.
 		}
+		if (authority && (authority[1]?.includes("@") || /[?#].+/u.test(location)))
+			return true;
 	}
 	// Historical Library rows lack the input provider. Parse only the query.
 	// A typed Dolby/object key may legitimately contain "?version=2".
-	const queryStart = location.indexOf("?");
+	const beforeFragment = location.split("#", 1)[0] ?? "";
+	const queryStart = beforeFragment.indexOf("?");
 	if (queryStart < 0) return false;
-	const query = location.slice(queryStart + 1).split("#", 1)[0];
+	const query = beforeFragment.slice(queryStart + 1);
 	for (const [name, value] of new URLSearchParams(query)) {
+		if (value.length === 0) continue;
 		const field = name.replace(/[-_.]/gu, "").toLowerCase();
 		if (
 			/(token|credential|signature|password|secret)$|^(auth|authorization|hdnts|hdnea|hdntl|hmac|jwt|sig|key|apikey|accesskey|keypairid|policy|awsaccesskeyid|googleaccessid)$/u.test(
@@ -78,6 +80,22 @@ export function publicStorageDiagnostic<T extends string | null | undefined>(
 		hasPrivateStorageLocator(compact)
 		? ("[withheld]" as T)
 		: value;
+}
+
+/** Provider SDK task messages and our attributed slate event have the same diagnostic role. */
+export function isProviderDiagnosticList(key: string) {
+	return key === "messages" || key === "warnings" || key === "providerMessages";
+}
+
+export function isProviderDiagnosticText(key: string) {
+	return [
+		"message",
+		"shortMessage",
+		"developerMessage",
+		"reason",
+		"detail",
+		"text",
+	].includes(key);
 }
 
 /** Re-project historical JSON without altering the stored execution or its identifiers.
@@ -153,13 +171,7 @@ export function publicHdrSourceProjection<T>(
 				purpose === "record" &&
 				typeof item === "string" &&
 				(key === "error" ||
-					((scope || diagnostics) &&
-						(key === "message" ||
-							key === "shortMessage" ||
-							key === "developerMessage" ||
-							key === "reason" ||
-							key === "detail" ||
-							key === "text"))) &&
+					((scope || diagnostics) && isProviderDiagnosticText(key))) &&
 				publicStorageDiagnostic(item) !== item
 			) {
 				replace(row, key, "[withheld]");
@@ -185,7 +197,7 @@ export function publicHdrSourceProjection<T>(
 					scope || key === "hdr10PlusStreams",
 					row.kind === "VOD_JOB" && key === "inputs",
 					purpose === "record" &&
-						(key === "messages" || key === "warnings"
+						(isProviderDiagnosticList(key)
 							? "list"
 							: (key === "response" || diagnostics) && "response"),
 				);

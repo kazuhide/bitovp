@@ -19,6 +19,13 @@ export function publicLiveHistory<
 	};
 }
 
+/** Old slate failures may quote a signed source in their retained schedule note. */
+export function publicScheduleOutcome<T extends { outcomeNote: string | null }>(
+	row: T,
+): T {
+	return { ...row, outcomeNote: publicStorageDiagnostic(row.outcomeNote) };
+}
+
 /** Project the text and its MoQ classification in the same database read. */
 export async function publicMoqListErrors<
 	T extends { id: string; error?: string | null },

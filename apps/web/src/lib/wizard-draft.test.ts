@@ -1716,3 +1716,79 @@ it.each([
 	);
 	expect(restored.hdr10PlusStreams?.[0]?.videoInputPath).toBe("hdr.mxf");
 });
+
+it.each([
+	"rebound",
+	"removed-and-recycled",
+] as const)("restores edited HDR Copy media bindings (%s)", (edit) => {
+	const authored = structuredClone(DEFAULT_WIZARD_STATE);
+	const file = authored.inputFiles[0];
+	const rendition = authored.videos[0];
+	if (!file || !rendition) throw new Error("missing source or rendition");
+	file.path = "original.mxf";
+	authored.videos = [
+		{ ...rendition, codec: "H265", extras: { source: "hdr" } },
+	];
+	authored.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				videoInputFile: file.key,
+				metadataInputPath: "original.json",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	const base = planToWizardState(
+		buildPlan(authored) as unknown as Record<string, unknown>,
+	);
+	const original = base.inputFiles[0];
+	const hdr = base.sources?.hdr10PlusStreams?.[0];
+	if (!original || !hdr) throw new Error("missing copied HDR binding");
+	expect(base.audioInputFile).toBeUndefined();
+	const replacement = {
+		...original,
+		key: "replacement",
+		path: "replacement.mxf",
+	};
+	const removed = edit === "removed-and-recycled";
+	const selected = removed ? { ...hdr, key: "replacementHdr" } : hdr;
+	const saved = projectWizardDraft("vod", {
+		...base,
+		inputFiles: removed
+			? [replacement, { ...original, path: "unrelated.mxf" }]
+			: [original, replacement],
+		sources: {
+			...base.sources,
+			hdr10PlusStreams: [
+				{
+					...selected,
+					videoInputFile: replacement.key,
+					metadataInputPath: "replacement.json",
+				},
+			],
+		},
+		...(removed
+			? {
+					videos: [
+						{ ...rendition, codec: "H265", extras: { source: selected.key } },
+						{ ...rendition, height: 720 },
+					],
+				}
+			: {}),
+	});
+	const plan = buildPlan(mergeWizardDraft(base, saved, "vod"));
+	expect(plan.hdr10PlusStreams?.[0]).toMatchObject({
+		videoInputPath: "replacement.mxf",
+		metadataInputPath: "replacement.json",
+	});
+	if (removed) {
+		expect(plan.ingest?.find((entry) => entry.key === "video")?.inputPath).toBe(
+			"replacement.mxf",
+		);
+	} else {
+		expect(plan.ingest?.find((entry) => entry.key === "audio")?.inputPath).toBe(
+			"original.mxf",
+		);
+	}
+});

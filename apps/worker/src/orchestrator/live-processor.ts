@@ -60,6 +60,7 @@ import {
 	priorRollManifestFiles,
 	projectMoqTaskHistory,
 	providerUnknownPastGrace,
+	publicStorageDiagnostic,
 	readLiveAutoShutdownUpdate,
 	redactSecrets,
 	resolveLiveToVodTarget,
@@ -758,7 +759,7 @@ async function emitChannelEvent(
 			kind,
 			liveChannelId,
 			name,
-			error: error ?? "channel error",
+			error: publicStorageDiagnostic(error ?? "channel error"),
 			path,
 		});
 		return;
@@ -1021,16 +1022,17 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 	) => emitChannelEvent(deps, kind, liveChannelId, error);
 
 	async function markError(liveChannelId: string, message: string) {
+		const error = publicStorageDiagnostic(message);
 		await deps.prisma.liveChannel.update({
 			where: { id: liveChannelId },
-			data: { status: "ERROR", error: redactSecrets(message) },
+			data: { status: "ERROR", error },
 		});
 		// Dual-write : the run carries its own terminal state.
 		await runs.mirror(liveChannelId, {
 			status: "ERROR",
-			error: redactSecrets(message),
+			error,
 		});
-		await emitChannel("CHANNEL_ERROR", liveChannelId, redactSecrets(message));
+		await emitChannel("CHANNEL_ERROR", liveChannelId, error);
 	}
 
 	/**
@@ -1454,7 +1456,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					deps.prisma,
 					{ channelStop: liveChannelId },
 					crossedSendBoundary ? "UNKNOWN" : "FAILED",
-					redactSecrets(message),
+					publicStorageDiagnostic(message),
 					new Date(deps.now()),
 					crossedSendBoundary ? "JOB_TERMINAL_UNKNOWN" : "EFFECT_FAILED",
 				);
@@ -1521,7 +1523,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					await markError(liveChannelId, message);
 					return true;
 				}
-				const error = redactSecrets(message);
+				const error = publicStorageDiagnostic(message);
 				// The assertion above checks the claim token/run/provider/expiry. This
 				// write is the second, atomic half: STOP may win immediately after that
 				// read, so ERROR itself must CAS the exact generation and restart state.
@@ -3131,7 +3133,9 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					 * this whole path exists to remove.
 					 */
 					status: verdict === "CONFIRMED" ? "DONE" : "FAILED",
-					...(verdict === "CONFIRMED" ? {} : { error: verdictNote }),
+					...(verdict === "CONFIRMED"
+						? {}
+						: { error: publicStorageDiagnostic(verdictNote) }),
 					startedAt: closedAt,
 					finishedAt: closedAt,
 				} as StepLogEntry;
@@ -3174,7 +3178,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						: verdict === "FAILED"
 							? "FAILED"
 							: "UNKNOWN",
-					redactSecrets(verdictNote),
+					publicStorageDiagnostic(verdictNote),
 					new Date(deps.now()),
 					verdict === "CONFIRMED"
 						? "SLATE_ARMED"
@@ -5515,7 +5519,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			if (taskHistory.moq) sdk = withMoqTaskStatus(sdk);
 			resetOwner.sdk = sdk;
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "setup failed";
+			const message = publicStorageDiagnostic(
+				err instanceof Error ? err.message : "setup failed",
+			);
 			// Fenced like every other write past the claim (review-336 C2): a
 			// worker that stalled inside revealBitmovinAccount past the lease
 			// window and then failed must not stamp its stale ERROR over a
@@ -5525,7 +5531,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				where: { id: liveChannelId, provisionClaimedAt: heldAt },
 				data: {
 					status: "ERROR",
-					error: redactSecrets(message),
+					error: message,
 					provisionClaimedAt: null,
 				},
 			});
@@ -5540,9 +5546,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			// terminal state itself.
 			await runs.mirror(liveChannelId, {
 				status: "ERROR",
-				error: redactSecrets(message),
+				error: message,
 			});
-			await emitChannel("CHANNEL_ERROR", liveChannelId, redactSecrets(message));
+			await emitChannel("CHANNEL_ERROR", liveChannelId, message);
 			throw err;
 		}
 
@@ -5631,10 +5637,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					heldAt = null;
 					return { status: "STOPPED", canceledRunId: currentRunId };
 				}
-				const reason =
+				const reason = publicStorageDiagnostic(
 					verdict.lifecycle === "TERMINAL"
 						? (verdict.reason ?? "the provider reports the encoding ended")
-						: `Provision refused: ${verdict.refusal} (${verdict.reason})`;
+						: `Provision refused: ${verdict.refusal} (${verdict.reason})`,
+				);
 				if (!verdict.channelLanded) {
 					// UNKNOWN, an already-terminalised run, or a channel pointer
 					// that drifted: the channel still holds this lease, so it
@@ -5644,7 +5651,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						where: { id: liveChannelId, provisionClaimedAt: heldAt },
 						data: {
 							status: "ERROR",
-							error: redactSecrets(reason),
+							error: reason,
 							provisionClaimedAt: null,
 						},
 					});
@@ -5654,16 +5661,12 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					}
 					await runs.mirror(liveChannelId, {
 						status: "ERROR",
-						error: redactSecrets(reason),
+						error: reason,
 					});
 					if (!verdict.terminalised) {
 						// The reconciler emits when IT terminalises; this arm is the
 						// one with no emit yet.
-						await emitChannel(
-							"CHANNEL_ERROR",
-							liveChannelId,
-							redactSecrets(reason),
-						);
+						await emitChannel("CHANNEL_ERROR", liveChannelId, reason);
 					}
 				}
 				heldAt = null;
@@ -6202,13 +6205,15 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 							? err
 							: new ProvisionLeaseLostError(liveChannelId);
 					}
-					const message = err instanceof Error ? err.message : "step failed";
+					const message = publicStorageDiagnostic(
+						err instanceof Error ? err.message : "step failed",
+					);
 					if (err instanceof LiveEncodingCanceled) {
 						// The await condition was not reached. Preserve the provider's
 						// response, but do not mark the channel or startup sample ERROR.
 						entry.status = "FAILED";
 						entry.finishedAt = deps.now();
-						entry.error = redactSecrets(message);
+						entry.error = message;
 						entry.response = redactSecrets(err.task);
 						await persist(entries);
 						const run =
@@ -6252,12 +6257,12 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					}
 					entry.status = "FAILED";
 					entry.finishedAt = deps.now();
-					entry.error = redactSecrets(message);
+					entry.error = message;
 					// One channel = ONE encoding: no stop-siblings here (the VOD
 					// multi-encoding ladder concern does not exist for live).
 					await persist(entries, {
 						status: "ERROR",
-						error: redactSecrets(message),
+						error: message,
 					});
 					//  PR1: provisional failure sample (create-if-absent;
 					// the reconciler re-covers a write this dying job loses).
@@ -6267,11 +6272,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						entry.step,
 						currentRunId,
 					);
-					await emitChannel(
-						"CHANNEL_ERROR",
-						liveChannelId,
-						redactSecrets(message),
-					);
+					await emitChannel("CHANNEL_ERROR", liveChannelId, message);
 					throw err;
 				}
 			}
@@ -6465,12 +6466,14 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				);
 				throw err;
 			}
-			const message = err instanceof Error ? err.message : "finalize failed";
+			const message = publicStorageDiagnostic(
+				err instanceof Error ? err.message : "finalize failed",
+			);
 			const marked = await deps.prisma.liveChannel.updateMany({
 				where: { id: liveChannelId, provisionClaimedAt: heldAt },
 				data: {
 					status: "ERROR",
-					error: redactSecrets(message),
+					error: message,
 					provisionClaimedAt: null,
 				},
 			});
@@ -6485,7 +6488,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			// PR3's re-airs would merge onto the old row (seq never advances).
 			await runs.mirror(liveChannelId, {
 				status: "ERROR",
-				error: redactSecrets(message),
+				error: message,
 			});
 			//  PR1: finalize deaths are startup failures too.
 			await recordFailedStartupSample(
@@ -6494,7 +6497,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				"finalize",
 				currentRunId,
 			);
-			await emitChannel("CHANNEL_ERROR", liveChannelId, redactSecrets(message));
+			await emitChannel("CHANNEL_ERROR", liveChannelId, message);
 			throw err;
 		}
 		return "RUNNING";

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { INGRESS_MODES } from "../ingress/resolver";
+import { publicStorageDiagnostic } from "../plan/hdr-source-paths";
 
 /**
  * Product events  — the one typed
@@ -37,6 +38,10 @@ const channelPayload = {
 	name: z.string(),
 } as const;
 
+// This schema runs both before enqueue and immediately before delivery of
+// retained jobs. Only provider/worker free text is diagnostic data.
+const diagnostic = z.string().overwrite(publicStorageDiagnostic);
+
 export const productEventSchema = z.discriminatedUnion("kind", [
 	z.strictObject({
 		kind: z.literal("JOB_FINISHED"),
@@ -48,20 +53,20 @@ export const productEventSchema = z.discriminatedUnion("kind", [
 	z.strictObject({
 		kind: z.literal("JOB_ERROR"),
 		...jobPayload,
-		error: z.string(),
+		error: diagnostic,
 	}),
 	z.strictObject({ kind: z.literal("JOB_CANCELED"), ...jobPayload }),
 	z.strictObject({
 		kind: z.literal("JOB_QC_FAILED"),
 		...jobPayload,
 		/** Which QC gate failed ( owns the emitter). */
-		reason: z.string(),
+		reason: diagnostic,
 	}),
 	z.strictObject({ kind: z.literal("CHANNEL_RUNNING"), ...channelPayload }),
 	z.strictObject({
 		kind: z.literal("CHANNEL_ERROR"),
 		...channelPayload,
-		error: z.string(),
+		error: diagnostic,
 	}),
 	z.strictObject({ kind: z.literal("CHANNEL_STOPPED"), ...channelPayload }),
 	z.strictObject({
@@ -69,7 +74,7 @@ export const productEventSchema = z.discriminatedUnion("kind", [
 		...base,
 		feederSessionId: z.string().uuid(),
 		liveChannelId: z.string().uuid(),
-		error: z.string(),
+		error: diagnostic,
 	}),
 	z.strictObject({
 		kind: z.literal("VMAF_FINISHED"),
@@ -86,7 +91,7 @@ export const productEventSchema = z.discriminatedUnion("kind", [
 		...base,
 		vmafJobId: z.string().uuid(),
 		name: z.string().optional(),
-		error: z.string(),
+		error: diagnostic,
 	}),
 	z.strictObject({
 		kind: z.literal("ALERT_OPENED"),
@@ -118,7 +123,7 @@ export const productEventSchema = z.discriminatedUnion("kind", [
 		...base,
 		scheduleId: z.string().uuid(),
 		liveChannelId: z.string().uuid(),
-		reason: z.string(),
+		reason: diagnostic,
 	}),
 	/**
 	 *  PR2 — the deadline backstop (#94-F11): the channel is not
@@ -152,7 +157,7 @@ export const productEventSchema = z.discriminatedUnion("kind", [
 		...base,
 		watchFolderId: z.string().uuid(),
 		objectPath: z.string(),
-		error: z.string(),
+		error: diagnostic,
 	}),
 	/**
 	 * WP-G G-1: the worker's ingress monitor saw the public base URL change

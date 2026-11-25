@@ -51,7 +51,10 @@ import {
 	validationError,
 } from "@/lib/server/http";
 import { latestRunsFor } from "@/lib/server/latest-runs";
-import { publicMoqListErrors } from "@/lib/server/moq-public-history";
+import {
+	publicMoqListErrors,
+	publicScheduleOutcome,
+} from "@/lib/server/moq-public-history";
 import {
 	recordUnrestrictedEgress,
 	submitterValidationOptions,
@@ -469,7 +472,12 @@ async function verificationKeyReplay(
 		]);
 		// 200, not 201: nothing was created by THIS request.
 		return NextResponse.json(
-			{ ...publicRows[0], issues: [], schedules, replayed: true },
+			{
+				...publicRows[0],
+				issues: [],
+				schedules: schedules.map(publicScheduleOutcome),
+				replayed: true,
+			},
 			{ status: 200 },
 		);
 	}
@@ -504,7 +512,12 @@ async function ordinaryCreateReplay(
 		publicMoqListErrors(prisma, "channel", [row]),
 	]);
 	return NextResponse.json(
-		{ ...publicRows[0], issues: [], schedules, replayed: true },
+		{
+			...publicRows[0],
+			issues: [],
+			schedules: schedules.map(publicScheduleOutcome),
+			replayed: true,
+		},
 		{ status: 200 },
 	);
 }
@@ -927,7 +940,11 @@ export async function POST(req: Request) {
 			throw enqueueErr;
 		}
 		return NextResponse.json(
-			{ ...created, issues: [...issues, ...scheduleWarnings], schedules },
+			{
+				...created,
+				issues: [...issues, ...scheduleWarnings],
+				schedules: schedules.map(publicScheduleOutcome),
+			},
 			{ status: 201 },
 		);
 	} catch (err) {

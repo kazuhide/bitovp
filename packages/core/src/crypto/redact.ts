@@ -1,6 +1,8 @@
 import {
 	hasPrivateStorageLocator,
 	isHdr10PlusObjectPath,
+	isProviderDiagnosticList,
+	isProviderDiagnosticText,
 	publicStorageDiagnostic,
 } from "../plan/hdr-source-paths";
 
@@ -88,11 +90,7 @@ function walk(
 	diagnostic = false,
 ): unknown {
 	if (typeof value === "string") {
-		if (
-			diagnostic &&
-			(key === undefined ||
-				["message", "text", "reason", "detail"].includes(key))
-		)
+		if (diagnostic && (key === undefined || isProviderDiagnosticText(key)))
 			return publicStorageDiagnostic(value);
 		if (key === "inputPath")
 			return hasPrivateStorageLocator(value) ? REDACTED : value;
@@ -148,7 +146,7 @@ function walk(
 							key,
 							hdr || key === "hdr10PlusStreams",
 							key !== "headers" &&
-								(diagnostic || key === "messages" || key === "warnings"),
+								(diagnostic || isProviderDiagnosticList(key)),
 						),
 				enumerable: true,
 				writable: true,

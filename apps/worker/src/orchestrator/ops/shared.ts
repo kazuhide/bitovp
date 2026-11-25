@@ -25,6 +25,7 @@ import {
 	type Task,
 } from "@bitmovin/api-sdk";
 import {
+	publicStorageDiagnostic,
 	type StreamCondition,
 	type VerificationEncodingIdentity,
 	verificationKeyLabel,
@@ -90,10 +91,10 @@ export function bitmovinErrorText(err: unknown): string {
 		const code =
 			typeof err.errorCode === "number" ? ` (code ${err.errorCode})` : "";
 		return err.shortMessage
-			? `${err.shortMessage}${code}`
+			? `${publicStorageDiagnostic(err.shortMessage)}${code}`
 			: `Bitmovin request failed with status ${err.httpStatusCode ?? "unknown"}${code}`;
 	}
-	return err instanceof Error ? err.message : "failed";
+	return err instanceof Error ? publicStorageDiagnostic(err.message) : "failed";
 }
 
 /**
@@ -139,9 +140,9 @@ export class BitmovinCallError extends Error {
 		);
 		this.name = "BitmovinCallError";
 		this.httpStatusCode = status;
-		this.shortMessage = bm?.shortMessage;
+		this.shortMessage = publicStorageDiagnostic(bm?.shortMessage);
 		this.requestId = requestId;
-		this.developerMessage = bm?.developerMessage;
+		this.developerMessage = publicStorageDiagnostic(bm?.developerMessage);
 		this.errorCode = bm?.errorCode;
 	}
 }
@@ -151,7 +152,7 @@ export function taskResult(task: Task): TaskStatusResult {
 		status: String(task.status),
 		progress: task.progress,
 		messages: (task.messages ?? [])
-			.map((m) => m.text ?? "")
+			.map((m) => publicStorageDiagnostic(m.text ?? ""))
 			.filter((t) => t.length > 0),
 	};
 }

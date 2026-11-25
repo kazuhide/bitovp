@@ -175,6 +175,13 @@ describe("retained MoQ Task privacy on ordinary public reads", () => {
 			.map((entry) => ({
 				...entry,
 				error: warning,
+				kind: "SLATE_FAILED",
+				payload: {
+					providerMessages: [
+						{ type: "ERROR", text: warning },
+						{ type: "WARNING", text: ordinaryError },
+					],
+				},
 				response: {
 					messages: [warning, ordinaryError],
 					outputs: ["scene@take", "scene?2"],
@@ -191,6 +198,10 @@ describe("retained MoQ Task privacy on ordinary public reads", () => {
 		const data = await response.json();
 		for (const item of [data, data.currentRun]) {
 			expect(item.error).toBe("[withheld]");
+			expect(item.stepLog[0].payload.providerMessages).toEqual([
+				{ type: "ERROR", text: "[withheld]" },
+				{ type: "WARNING", text: ordinaryError },
+			]);
 			expect(item.stepLog[0].response).toEqual({
 				messages: ["[withheld]", ordinaryError],
 				outputs: ["scene@take", "scene?2"],

@@ -12,6 +12,7 @@ import {
 	loadEnv,
 	ociCompatHost,
 	parseSecretEgressAllowlist,
+	publicStorageDiagnostic,
 	relativeSegmentPath,
 } from "@bitovp/core";
 import type { ExecutorContext } from "../executor";
@@ -584,7 +585,7 @@ export async function awaitTask(
 			task.status === "TRANSFER_ERROR"
 		) {
 			const detail = task.messages?.length
-				? `: ${task.messages.join("; ")}`
+				? `: ${task.messages.map(publicStorageDiagnostic).join("; ")}`
 				: "";
 			throw new Error(`${op.step} ended ${task.status}${detail}`);
 		}
@@ -631,7 +632,7 @@ export async function awaitLiveRunning(
 		}
 		if (task.status !== "CREATED" && task.status !== "QUEUED") {
 			const detail = task.messages?.length
-				? `: ${task.messages.join("; ")}`
+				? `: ${task.messages.map(publicStorageDiagnostic).join("; ")}`
 				: "";
 			const message = `${op.step} ended ${task.status} before reaching RUNNING${detail}`;
 			if (task.status === "CANCELED") {

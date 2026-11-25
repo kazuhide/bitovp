@@ -1,3 +1,4 @@
+import { publicStorageDiagnostic } from "@bitovp/core";
 import type { EncodingMessage } from "./sdk-ops";
 
 /**
@@ -70,7 +71,11 @@ export function selectProviderFailureReason(
 			}
 			return ta - tb;
 		})
-		.slice(0, REASON_MESSAGE_CAP);
+		.slice(0, REASON_MESSAGE_CAP)
+		.map((message) => ({
+			...message,
+			text: publicStorageDiagnostic(message.text),
+		}));
 	return { first: kept[0] ?? null, messages: kept };
 }
 
@@ -85,7 +90,7 @@ export function providerReasonClause(
 		| { kind: "unreadable"; error: string },
 ): string {
 	if (outcome.kind === "unreadable") {
-		return `provider messages could not be read: ${outcome.error}`;
+		return `provider messages could not be read: ${publicStorageDiagnostic(outcome.error)}`;
 	}
 	const first = outcome.reason.first;
 	if (first === null) {

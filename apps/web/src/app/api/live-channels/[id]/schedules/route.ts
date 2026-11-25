@@ -34,6 +34,8 @@ import {
 	rejectImportedAisaMutation,
 } from "@/lib/server/live-channel-mutation-guard";
 
+import { publicScheduleOutcome } from "@/lib/server/moq-public-history";
+
 type RouteParams = { params: Promise<{ id: string }> };
 
 /** Env override with core's default — NaN/absent falls back. */
@@ -110,7 +112,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
 				take: HISTORY_LIMIT,
 			}),
 		]);
-		const rows = [...upcoming, ...history];
+		const rows = [...upcoming, ...history].map(publicScheduleOutcome);
 		/**
 		 * rev367 S-2 — the LIVE phase of a switch row's staged session. The
 		 * row's own `readyAt` is a write-once RECORD ("first became ready"),

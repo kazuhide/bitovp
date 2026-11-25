@@ -1238,7 +1238,6 @@ function restoreCopiedHdrInputs(
 	if (!draftRecord(primary) || !draftRecord(first)) return snapshot;
 	const records = (value: unknown) =>
 		Array.isArray(value) ? value.filter(draftRecord) : [];
-	const filesInDraft = records(snapshot.inputFiles);
 	const copySources = records(base.sources.hdr10PlusStreams);
 	// Fresh Copy identifies what actually supplied row zero: a declared ordinary
 	// ingest or the leaf of the named main picture. Editing a file in place
@@ -1260,9 +1259,9 @@ function restoreCopiedHdrInputs(
 			"hdr10PlusStreams",
 		].flatMap((name) => records(sources[name]));
 		let binding = declarations.find((source) => source.key === originalSource);
-		if (!binding && !filesInDraft.some((file) => file.key === primary.key)) {
-			// The original row and source were both removed. A saved replacement
-			// rendition can still name its picture through a trim or main concat.
+		if (!binding) {
+			// A removed stream may leave its file key available for a different
+			// object. Prefer the replacement source named by the saved rendition.
 			const firstVideo = records(snapshot.videos)[0];
 			const selected = mainPictureSourceKey(
 				draftRecord(firstVideo?.extras) ? firstVideo.extras.source : undefined,
@@ -1293,9 +1292,12 @@ function restoreCopiedHdrInputs(
 		return rank === undefined ? f : { inputDeclarationIndex: rank, ...f };
 	});
 	if (index > 0) files.unshift(...files.splice(index, 1));
+	// Promoting a replacement HDR picture must keep an unchanged copied audio
+	// master, including the implicit audio that previously shared the picture.
+	const copiedAudioKey = base.audioInputFile ?? primary.key;
 	const audioInputFile =
 		snapshot.audioInputFile ??
-		(index > 0 && first.key === base.audioInputFile ? first.key : undefined);
+		(index > 0 && first.key === copiedAudioKey ? first.key : undefined);
 	return {
 		...snapshot,
 		...(audioInputFile !== undefined ? { audioInputFile } : {}),

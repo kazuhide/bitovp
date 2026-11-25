@@ -1520,6 +1520,38 @@ describe("live channel provisioning", () => {
 		expect(statusUpdates.at(-1)).toBe("RUNNING");
 	});
 
+	it("carries only safe terminal provider messages into channel, run, queue failure and event", async () => {
+		const h = setup(
+			{},
+			{
+				getEncodingStatus: vi.fn(async () => ({
+					status: "ERROR",
+					messages: [
+						"Read https://storage.invalid/media?token=PRIVATE_FIXTURE",
+						"Ingest refused",
+					],
+				})),
+			},
+		);
+		const emitEvent = vi.fn(async () => {});
+		h.deps.emitEvent = emitEvent;
+		const failure = await h.process({ liveChannelId: CHANNEL_ID }).then(
+			() => "",
+			(err: Error) => err.message,
+		);
+		expect(failure).toContain(
+			"ended ERROR before reaching RUNNING: [withheld]; Ingest refused",
+		);
+		expect(h.row).toMatchObject({ status: "ERROR", error: failure });
+		expect(h.runRows[0]?.stepLog).toEqual(h.row.stepLog);
+		expect(emitEvent).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "CHANNEL_ERROR", error: failure }),
+		);
+		expect(
+			JSON.stringify([h.row, h.runRows, emitEvent.mock.calls]),
+		).not.toContain("PRIVATE_FIXTURE");
+	});
+
 	it("acknowledges cancellation during startup as STOPPED, never RUNNING or CHANNEL_ERROR", async () => {
 		const h = setup(
 			{},
@@ -6177,6 +6209,51 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 				"provider: Insertable content does not match the live stream: frame rate",
 			);
 			warn.mockRestore();
+		});
+
+		it("keeps signed provider diagnostics out of slate history, schedule outcome and operator logs", async () => {
+			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+			try {
+				const harness = setup(runningRow, {
+					listScheduledInsertableContent: erroredEntry,
+					getEncodingMessages: vi.fn(async () => [
+						{
+							type: "ERROR",
+							text: "Read media/scene?auth=PRIVATE_FIXTURE",
+							date: null,
+						},
+						{
+							type: "WARNING",
+							text: "Slates must match video frame rate",
+							date: null,
+						},
+					]),
+				});
+				await fireSlate(harness);
+				const failed = (harness.row.stepLog as StepLogEntry[]).find(
+					(entry) => entry.kind === "SLATE_FAILED",
+				);
+				expect(failed?.payload.providerMessages).toEqual([
+					{ type: "ERROR", text: "[withheld]", date: null },
+					{
+						type: "WARNING",
+						text: "Slates must match video frame rate",
+						date: null,
+					},
+				]);
+				expect(outcomeWrites(harness.liveSchedule)[0]?.data).toMatchObject({
+					outcome: "FAILED",
+				});
+				expect(
+					JSON.stringify([
+						failed,
+						outcomeWrites(harness.liveSchedule),
+						warn.mock.calls,
+					]),
+				).not.toContain("PRIVATE_FIXTURE");
+			} finally {
+				warn.mockRestore();
+			}
 		});
 
 		it("says so when the provider reported no message", async () => {

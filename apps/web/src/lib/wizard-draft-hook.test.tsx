@@ -175,14 +175,19 @@ it("does not touch storage while a query import or source is pending", () => {
 	get.mockRestore();
 });
 
-it("preserves the original v1 settings after metadata restore and reload while the new form autosaves", () => {
+it.each([
+	"vod",
+	"live",
+] as const)("preserves original %s settings after metadata restore and reload while the new form autosaves", (kind) => {
+	const key = draftKey(["org", "user"], kind, "new");
 	const original = {
 		name: "Old title",
+		audios: [{ bitrate: 64000 }],
 		output: { basePath: "edited-folder/" },
 	};
 	const raw = JSON.stringify({
-		kind: "vod",
-		version: 1,
+		kind,
+		version: kind === "vod" ? 1 : 2,
 		step: 2,
 		savedAt: Date.now(),
 		value: original,
@@ -193,7 +198,7 @@ it("preserves the original v1 settings after metadata restore and reload while t
 		renderHook(
 			({ form }) =>
 				useWizardDraft({
-					kind: "vod",
+					kind,
 					context: "new",
 					value: form,
 					step: 1,
@@ -214,7 +219,7 @@ it("preserves the original v1 settings after metadata restore and reload while t
 	act(() => second.result.current.discard());
 	act(() => vi.advanceTimersByTime(400));
 	expect(localStorage.getItem(`${key}:working`)).toBeNull();
-	expect(readWizardDraft(key, "vod")?.value.output).toEqual(original.output);
+	expect(readWizardDraft(key, kind)?.value.output).toEqual(original.output);
 	session.data.effectiveUserId = "someone-else";
 	act(() => second.rerender({ form: value }));
 	expect(second.result.current.retained).toBeNull();

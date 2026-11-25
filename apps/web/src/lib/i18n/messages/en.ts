@@ -6296,7 +6296,7 @@ export const en = {
 		legacyWatermarks:
 			"This older draft saved ordinary video watermarks only. Review any other filter edits before starting the encode.",
 		legacyRenditions:
-			"This older draft did not record all filter edits. Restore its name and labels on the original preset. Download the saved settings to recover other edits.",
+			"This older draft did not record all filter or rendition settings. Restore its name and labels on the original configuration. Download the saved settings to recover other edits.",
 		restoreMetadata: "Restore name and labels",
 		downloadSettings: "Download saved settings",
 		available: "Saved draft available",

@@ -66,11 +66,14 @@ export function useWizardDraft({
 			if (previous?.key === key) return previous;
 			const original = readWizardDraft(key, kind);
 			const workingKey = `${key}:working`;
-			const working = kind === "vod" ? readWizardDraft(workingKey, kind) : null;
+			const working = readWizardDraft(workingKey, kind);
 			return {
 				key,
 				writeKey: working ? workingKey : key,
-				retained: working && original?.legacyVodFilters ? original : null,
+				retained:
+					working && (original?.legacyVodFilters || original?.legacyRenditions)
+						? original
+						: null,
 				pending: working ?? original,
 				baseline: serialized,
 			};
@@ -102,7 +105,10 @@ export function useWizardDraft({
 			onRestore(loaded.pending);
 			// Keep the original v1 record in place, with its original expiry. A
 			// separate scoped slot receives normal autosaves after metadata recovery.
-			if (retainOriginal && kind === "vod" && loaded.pending.legacyVodFilters) {
+			if (
+				retainOriginal &&
+				(loaded.pending.legacyVodFilters || loaded.pending.legacyRenditions)
+			) {
 				setLoaded({
 					...loaded,
 					pending: null,
@@ -123,7 +129,7 @@ export function useWizardDraft({
 			// Removal uses only the key already bound to this form, including a
 			// successful submit during session refresh or imported-plan mode.
 			discardWizardDraft(loaded.key);
-			if (kind === "vod") discardWizardDraft(`${loaded.key}:working`);
+			discardWizardDraft(`${loaded.key}:working`);
 			setLoaded({ ...loaded, pending: null, retained: null });
 		},
 	};

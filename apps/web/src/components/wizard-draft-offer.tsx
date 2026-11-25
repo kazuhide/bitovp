@@ -6,6 +6,7 @@ import { InfoHint } from "./ui/info-hint";
 
 export function WizardDraftOffer({
 	available,
+	kind = "vod",
 	restore,
 	discard,
 	legacySettings,
@@ -13,6 +14,7 @@ export function WizardDraftOffer({
 	legacyVersion,
 }: {
 	available: boolean;
+	kind?: "vod" | "live";
 	restore: () => void;
 	discard: () => void;
 	legacySettings?: DraftValue;
@@ -48,7 +50,7 @@ export function WizardDraftOffer({
 			)}
 			{settings ? (
 				<a
-					download="vod-draft-settings.json"
+					download={`${kind}-draft-settings.json`}
 					href={`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(settings, null, 2))}`}
 					className="rounded px-2 py-1 text-zinc-200 underline"
 				>

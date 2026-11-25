@@ -1278,27 +1278,66 @@ export type WizardDraft = {
 	value: DraftValue;
 	vodInputOrder?: "authored";
 	legacyVodFilters?: true;
+	legacyRenditions?: true;
 };
 
-/** V1 omitted non-watermark filters and audio attachments. An edit, detach and
- * unchanged preset can therefore produce exactly the same saved data. */
-export function legacyVodMetadataOnly(
-	base: WizardState,
-	draft?: WizardDraft | null,
-): boolean {
-	return (
-		!!draft?.legacyVodFilters &&
-		(base.filters ?? []).some((f) => f.kind !== "WATERMARK")
-	);
+/** Older writers omitted stream conditions and HE-AAC signaling. Only reattach those
+ * fields to an identified rendition. A replaced or renamed legacy row is ambiguous. */
+function recoverRenditionSettings(
+	base: unknown,
+	kind: WizardDraftKind,
+	draft: WizardDraft,
+): DraftValue | null {
+	if (!draft.legacyRenditions) return draft.value;
+	const original = projectWizardDraft(kind, base);
+	const value = { ...draft.value };
+	for (const field of ["videos", "audios", "subtitles"]) {
+		const rows = original[field],
+			saved = value[field];
+		if (
+			!Array.isArray(rows) ||
+			!rows.some((r) => r.conditions !== undefined || r.signaling !== undefined)
+		)
+			continue;
+		if (!Array.isArray(saved)) continue;
+		function identity(row: DraftValue): string {
+			if (draftRecord(row.extras) && typeof row.extras.key === "string")
+				return "key:" + row.extras.key;
+			const { conditions: _conditions, signaling: _signaling, ...rest } = row;
+			return "row:" + JSON.stringify(rest);
+		}
+		const byId = new Map(rows.map((row) => [identity(row), row]));
+		const savedIds = new Set(saved.map(identity));
+		if (byId.size !== rows.length || savedIds.size !== saved.length)
+			return null;
+		if (
+			saved.some((row) => !byId.has(identity(row))) &&
+			rows.some(
+				(row) =>
+					(row.conditions !== undefined || row.signaling !== undefined) &&
+					!savedIds.has(identity(row)),
+			)
+		)
+			return null;
+		value[field] = saved.map((row) => {
+			const prior = byId.get(identity(row));
+			if (!prior) return row;
+			return {
+				...(prior.conditions !== undefined
+					? { conditions: prior.conditions }
+					: {}),
+				...(prior.signaling !== undefined && prior.codec === row.codec
+					? { signaling: prior.signaling }
+					: {}),
+				...row,
+			};
+		});
+	}
+	return value;
 }
 
-export function restoreVodWizardDraft(
-	base: WizardState,
-	draft: WizardDraft,
-): WizardState {
-	if (!legacyVodMetadataOnly(base, draft))
-		return mergeWizardDraft(base, draft.value, "vod", draft.vodInputOrder);
-	const { name, labels } = draft.value;
+function restoreMetadata<T>(base: T, value: DraftValue): T {
+	const { name, labels } = value;
 	return {
 		...base,
 		...(typeof name === "string" ? { name } : {}),
@@ -1308,10 +1347,57 @@ export function restoreVodWizardDraft(
 			: {}),
 	};
 }
+
+export function legacyLiveMetadataOnly(
+	base: unknown,
+	draft?: WizardDraft | null,
+): boolean {
+	return (
+		!!draft?.legacyRenditions &&
+		recoverRenditionSettings(base, "live", draft) === null
+	);
+}
+export function restoreLiveWizardDraft<T>(base: T, draft: WizardDraft): T {
+	const value = recoverRenditionSettings(base, "live", draft);
+	return value === null
+		? restoreMetadata(base, draft.value)
+		: mergeWizardDraft(base, value, "live");
+}
+
+/** V1 omitted non-watermark filters and audio attachments. An edit, detach and
+ * unchanged preset can therefore produce exactly the same saved data. */
+function missingLegacyFilters(base: WizardState, draft: WizardDraft): boolean {
+	return (
+		!!draft.legacyVodFilters &&
+		(base.filters ?? []).some((f) => f.kind !== "WATERMARK")
+	);
+}
+export function legacyVodMetadataOnly(
+	base: WizardState,
+	draft?: WizardDraft | null,
+): boolean {
+	return (
+		!!draft &&
+		(missingLegacyFilters(base, draft) ||
+			recoverRenditionSettings(base, "vod", draft) === null)
+	);
+}
+export function restoreVodWizardDraft(
+	base: WizardState,
+	draft: WizardDraft,
+): WizardState {
+	const value = missingLegacyFilters(base, draft)
+		? null
+		: recoverRenditionSettings(base, "vod", draft);
+	return value === null
+		? restoreMetadata(base, draft.value)
+		: mergeWizardDraft(base, value, "vod", draft.vodInputOrder);
+}
 const envelope = z
 	.object({
 		version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
 		vodInputOrder: z.literal("authored").optional(),
+		renditionSettings: z.literal("complete").optional(),
 		kind: z.enum(["vod", "live"]),
 		savedAt: z.number().finite(),
 		step: z.number().int().min(0).max(8),
@@ -1347,6 +1433,7 @@ export function writeWizardDraft(
 		const hasInputOrder = kind === "vod" && Array.isArray(projected.inputFiles);
 		const record = envelope.parse({
 			version: kind === "live" ? 2 : 3,
+			renditionSettings: "complete",
 			...(hasInputOrder ? { vodInputOrder: "authored" } : {}),
 			kind,
 			savedAt: now,
@@ -1388,9 +1475,14 @@ export function readWizardDraft(
 				key,
 				JSON.stringify({ ...record, value: safeValue }),
 			);
+		const value = projectWizardDraft(kind, safeValue);
 		return {
 			step,
-			value: projectWizardDraft(kind, safeValue),
+			value,
+			...(!record.renditionSettings &&
+			[value.videos, value.audios, value.subtitles].some(Array.isArray)
+				? { legacyRenditions: true as const }
+				: {}),
 			...(kind === "vod" && record.vodInputOrder
 				? { vodInputOrder: record.vodInputOrder }
 				: {}),

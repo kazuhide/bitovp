@@ -45,7 +45,9 @@ it("explains the v1 recovery before restore and offers only its saved settings",
 		/>,
 		"en",
 	);
-	expect(screen.getByText(/did not record all filter edits/)).toBeTruthy();
+	expect(
+		screen.getByText(/did not record all filter or rendition settings/),
+	).toBeTruthy();
 	const link = screen.getByRole("link", { name: "Download saved settings" });
 	expect(link).toHaveAttribute("download", "vod-draft-settings.json");
 	expect(

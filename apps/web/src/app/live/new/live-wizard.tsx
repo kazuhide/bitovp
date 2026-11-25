@@ -44,7 +44,11 @@ import {
 	renameOutputBase,
 	splitOutputFolder,
 } from "@/lib/output-path";
-import { draftFingerprint, mergeWizardDraft } from "@/lib/wizard-draft";
+import {
+	draftFingerprint,
+	legacyLiveMetadataOnly,
+	restoreLiveWizardDraft,
+} from "@/lib/wizard-draft";
 import { useWizardDraft } from "@/lib/wizard-draft-hook";
 import {
 	MoqPreviewReadiness,
@@ -372,10 +376,9 @@ export function LiveWizard({
 		value: { ...state, schedule: scheduleDraft },
 		step,
 		onRestore: (saved) => {
-			const { schedule, ...restored } = mergeWizardDraft(
+			const { schedule, ...restored } = restoreLiveWizardDraft(
 				{ ...draftBase.current, schedule: EMPTY_SCHEDULE_DRAFT },
-				saved.value,
-				"live",
+				saved,
 			);
 			if (!aisaPreviewEnabled && restored.aisaLive?.enabled) return;
 			setState(restored);
@@ -630,7 +633,21 @@ export function LiveWizard({
 						</Button>
 					) : null}
 				</header>
-				<WizardDraftOffer {...draft} />
+				<WizardDraftOffer
+					{...draft}
+					kind="live"
+					restore={() =>
+						draft.restore(
+							legacyLiveMetadataOnly(draftBase.current, draft.pending),
+						)
+					}
+					legacySettings={
+						legacyLiveMetadataOnly(draftBase.current, draft.pending)
+							? draft.pending?.value
+							: undefined
+					}
+					retainedSettings={draft.retained?.value}
+				/>
 				{importLoadedForEditing && !imported ? (
 					<p role="status" className="mt-4 text-emerald-300 text-sm">
 						{t("wizardX.importLoadedForEditing")}

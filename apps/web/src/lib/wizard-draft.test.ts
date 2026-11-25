@@ -22,6 +22,7 @@ import {
 	mergeWizardDraft,
 	projectWizardDraft,
 	readWizardDraft,
+	restoreLiveWizardDraft,
 	restoreVodWizardDraft,
 	WIZARD_DRAFT_MAX_SIZE,
 	WIZARD_DRAFT_TTL,
@@ -887,6 +888,96 @@ it.each([
 		step: current,
 		value,
 	});
+});
+it.each([
+	"vod",
+	"live",
+] as const)("restores pre-capability %s renditions by identity and honors an explicit clear from a current draft", (kind) => {
+	const base =
+		kind === "vod"
+			? structuredClone(DEFAULT_WIZARD_STATE)
+			: structuredClone(DEFAULT_LIVE_WIZARD_STATE);
+	const condition = {
+		attribute: "LANGUAGE",
+		operator: "EQUAL",
+		value: "jpn",
+	} as const;
+	const first = base.audios[0];
+	if (!first) throw Error("missing audio");
+	base.audios = [
+		{
+			...first,
+			codec: "HE_AAC_V2",
+			signaling: "EXPLICIT_PS",
+			conditions: condition,
+			extras: { key: "program" },
+		},
+		{ ...first, codec: "AAC", extras: { key: "ambience" } },
+	];
+	const changed = {
+		...base,
+		name: "Saved edit",
+		audios: [...base.audios].reverse(),
+	};
+	const value = projectWizardDraft(kind, changed);
+	for (const row of value.audios as Record<string, unknown>[]) {
+		delete row.conditions;
+		delete row.signaling;
+	}
+	localStorage.setItem(
+		"old-renditions",
+		JSON.stringify({
+			version: kind === "live" ? 2 : 1,
+			kind,
+			step: 1,
+			savedAt: 100,
+			value,
+		}),
+	);
+	const saved = readWizardDraft("old-renditions", kind, localStorage, 101);
+	if (!saved) throw Error("missing draft");
+	const restore = (draft: typeof saved) =>
+		kind === "vod"
+			? restoreVodWizardDraft(base as WizardState, draft)
+			: restoreLiveWizardDraft(base as LiveWizardState, draft);
+	const previous = restore(saved);
+	expect(previous.name).toBe("Saved edit");
+	expect(
+		previous.audios.map((row) => [
+			row.extras?.key,
+			row.conditions,
+			row.signaling,
+		]),
+	).toEqual([
+		["ambience", undefined, undefined],
+		["program", condition, "EXPLICIT_PS"],
+	]);
+	const compiled =
+		kind === "live"
+			? buildLiveChannelPlan(previous as LiveWizardState)
+			: buildPlan(previous as WizardState);
+	expect(
+		compiled.renditions.find((row) => row.key === "program"),
+	).toMatchObject({ conditions: condition, signaling: "EXPLICIT_PS" });
+	// A user could also have renamed or replaced the original row. Its conditions cannot be
+	// safely mapped to that different ID, so retain the original ladder and the metadata edit.
+	const renamed = (value.audios as { extras: { key: string } }[])[1];
+	if (!renamed) throw Error("missing saved row");
+	renamed.extras.key = "uncertain";
+	const ambiguous = restore({ ...saved, value });
+	expect(ambiguous.name).toBe("Saved edit");
+	expect(ambiguous.audios).toEqual(base.audios);
+	const cleared = structuredClone(changed);
+	for (const audio of cleared.audios) {
+		delete audio.conditions;
+		delete audio.signaling;
+	}
+	writeWizardDraft("new-renditions", kind, cleared, 1, localStorage, 100);
+	const modern = readWizardDraft("new-renditions", kind, localStorage, 101);
+	if (!modern) throw Error("missing saved draft");
+	expect(
+		restore(modern).audios.every((row) => !row.conditions && !row.signaling),
+	).toBe(true);
 });
 it("offers only metadata from v1 drafts of filtered presets and preserves the complete mux and filter graph", () => {
 	const base = structuredClone(DEFAULT_WIZARD_STATE);

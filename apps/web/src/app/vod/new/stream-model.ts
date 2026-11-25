@@ -545,6 +545,21 @@ export function sourceGraphPatch(
 	};
 }
 
+function sourceReferences(sources: WizardSources, state?: WizardState) {
+	return new Set([
+		...(state?.videos ?? []).map((r) => r.extras?.source),
+		...(state?.audios ?? []).map((r) => r.extras?.source),
+		...(state?.subtitles ?? []).map((r) => r.source),
+		...(sources.trimmingStreams ?? []).map((r) => r.sourceKey),
+		...(sources.concatenationStreams ?? []).flatMap((r) =>
+			r.sources.map((s) => s.sourceKey),
+		),
+		...(sources.audioMixStreams ?? []).flatMap((r) =>
+			r.audioMixChannels.map((c) => c.sourceKey),
+		),
+	]);
+}
+
 /** Removing a named source must not turn its explicit bindings into ordinary input. */
 export function removalCapturesSource(
 	state: WizardState,
@@ -557,31 +572,26 @@ export function removalCapturesSource(
 	);
 	if (!isHdrSource && key !== allocated.video && key !== allocated.audio)
 		return false;
-	return (
-		[...state.videos, ...state.audios].some(
-			(row) => row.extras?.source === key,
-		) ||
-		state.subtitles?.some((row) => row.source === key) === true ||
-		next.audioMixStreams?.some((mix) =>
-			mix.audioMixChannels.some((channel) => channel.sourceKey === key),
-		) === true ||
-		next.trimmingStreams?.some((trim) => trim.sourceKey === key) === true ||
-		next.concatenationStreams?.some((concat) =>
-			concat.sources.some((input) => input.sourceKey === key),
-		) === true
-	);
+	return sourceReferences(next, state).has(key);
 }
 
 /** Auto-generate a unique, hidden resource key across every stream array. */
 export function nextStreamKey(
 	sources: WizardSources,
 	type: UnifiedStreamType,
+	state?: WizardState,
 ): string {
-	return nextSharedKey(sources, KEY_PREFIXES[type]);
+	return nextSharedKey(sources, KEY_PREFIXES[type], state);
 }
 
-export function nextSharedKey(sources: WizardSources, prefix: string): string {
-	const taken = new Set<string>([
+export function nextSharedKey(
+	sources: WizardSources,
+	prefix: string,
+	state?: WizardState,
+): string {
+	// An older draft can retain bindings to a source it no longer defines.
+	const taken = new Set([
+		...sourceReferences(sources, state),
 		...(sources.tracks ?? []).map((t) => t.key),
 		...(sources.fileStreams ?? []).map((s) => s.key),
 		...(sources.captionStreams ?? []).map((s) => s.key),
@@ -603,8 +613,9 @@ export function blankStream(
 	sources: WizardSources,
 	type: UnifiedStreamType,
 	inputFile = "main",
+	state?: WizardState,
 ): WizardSources {
-	const key = nextStreamKey(sources, type);
+	const key = nextStreamKey(sources, type, state);
 	// New streams read the primary input file by default; the user repoints them.
 	if (type === "HDR10_PLUS") {
 		return {

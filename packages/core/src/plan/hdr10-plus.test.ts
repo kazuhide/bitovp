@@ -600,7 +600,28 @@ describe("HDR10+ input contract", () => {
 		if (!repaired.ok) throw Error(repaired.code);
 		expect(repaired.command).toContain(keys.videoInputPath);
 		expect(repaired.command).not.toContain("[REDACTED]");
-		for (const unproven of [undefined, "different/object.mxf", masked]) {
+		for (const [compiled, actual] of [
+			["reels/[REDACTED].mxf", "reels/[REDACTED].mxf"],
+			[masked, masked],
+			[
+				"reels//scene:take@camera@left.mxf",
+				"reels//scene:[REDACTED]@camera@left.mxf",
+			],
+			["reels//scene:take@camera@left.mxf", "reels//scene:[REDACTED]@left.mxf"],
+		] as const) {
+			const copy = curlForStep({
+				...source,
+				payload: { ...source.payload, videoInputPath: compiled },
+				request: { ...saved, videoInputPath: actual },
+			});
+			if (!copy.ok) throw Error(copy.code);
+			expect(copy.command).toContain(compiled);
+		}
+		for (const unproven of [
+			undefined,
+			"different/object.mxf",
+			"reels/[REDACTED].mxf",
+		]) {
 			expect(
 				curlForStep({
 					...source,

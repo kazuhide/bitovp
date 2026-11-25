@@ -167,6 +167,67 @@ describe("retained MoQ Task privacy on ordinary public reads", () => {
 		expect(data.error).toBe(ordinaryError);
 		expect(data.stepLog[0].response.messages).toEqual([ordinaryError]);
 	});
+	it("projects signed warnings in both retained ordinary Live logs for a Viewer", async () => {
+		const row = storedChannel();
+		const warning = "Read https://storage.invalid/source?sig=fixture-data-key";
+		const stepLog = graph()
+			.slice(1)
+			.map((entry) => ({
+				...entry,
+				error: warning,
+				response: {
+					messages: [warning, ordinaryError],
+					outputs: ["scene@take", "scene?2"],
+				},
+			}));
+		Object.assign(row, {
+			error: warning,
+			stepLog,
+			runs: [{ ...storedRun(), error: warning, stepLog }],
+		});
+		mocks.channel.mockResolvedValue(row);
+		const response = await detail(new Request("http://test/detail"), params());
+		expect(response.status).toBe(200);
+		const data = await response.json();
+		for (const item of [data, data.currentRun]) {
+			expect(item.error).toBe("[withheld]");
+			expect(item.stepLog[0].response).toEqual({
+				messages: ["[withheld]", ordinaryError],
+				outputs: ["scene@take", "scene?2"],
+			});
+		}
+		expect(JSON.stringify(data)).not.toContain("fixture-data-key");
+		expect(stepLog[0]?.response.messages[0]).toBe(warning);
+	});
+	it.each([
+		"channel",
+		"run",
+	] as const)("protects an existing signed ordinary %s list error", async (kind) => {
+		const isChannel = kind === "channel";
+		const id = isChannel ? CHANNEL : RUN;
+		const signed =
+			"Could not read https://storage.invalid/object?sig=fixture-data";
+		(isChannel ? mocks.channels : mocks.runs).mockImplementationOnce(
+			({ select }) => [
+				selected(
+					{
+						...(isChannel ? storedChannel() : storedRun()),
+						error: signed,
+						stepLog: [],
+					},
+					select,
+				),
+			],
+		);
+		mocks.errors.mockResolvedValueOnce([{ id, error: signed }]);
+		const response = isChannel
+			? await list(new Request("http://test/list"))
+			: await history(new Request("http://test/history"), params());
+		expect(response.status).toBe(200);
+		const data = await response.json();
+		expect((isChannel ? data.items : data.runs)[0].error).toBe("[withheld]");
+		expect(JSON.stringify(data)).not.toContain("fixture-data");
+	});
 	it("masks only MoQ error rows in the lean channel list", async () => {
 		const response = await list(new Request("http://test/api/live-channels"));
 		expect(response.status).toBe(200);

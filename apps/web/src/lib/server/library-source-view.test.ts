@@ -110,6 +110,21 @@ describe("Library source detail retained-raw projection", () => {
 	it("withholds legacy signed storage paths with and without HDR input provenance after the job was deleted", async () => {
 		const inputs = [
 			{ name: "Ordinary", path: "media/take?2.mxf" },
+			{ name: "Version", path: "media/take.mxf?version=2" },
+			{
+				name: "Relative auth",
+				path: "/private/take.mov?auth=LIBRARY_SIGNATURE",
+			},
+			{
+				name: "Relative token",
+				path: "assets/clip.mxf?hdnts=LIBRARY_SIGNATURE",
+			},
+			{
+				name: "Private origin",
+				path: "assets/clip.mxf?origin-param=exp%3D23~hmac%3DLIBRARY_SIGNATURE",
+			},
+			{ name: "Archive", path: "reels:day/Scene&key=take#2.mxf" },
+			{ name: "Query", path: "other.mxf?format=vod&key=LIBRARY_SIGNATURE" },
 			{
 				name: "Old capture",
 				path: "//fixture:LIBRARY_CREDENTIAL@fixture.invalid/picture.mxf",
@@ -143,6 +158,12 @@ describe("Library source detail retained-raw projection", () => {
 		);
 		expect(result?.snapshot.inputs.map((i) => i.path)).toEqual([
 			"media/take?2.mxf",
+			"media/take.mxf?version=2",
+			"",
+			"",
+			"",
+			"reels:day/Scene&key=take#2.mxf",
+			"",
 			"",
 			"",
 		]);

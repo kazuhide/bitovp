@@ -845,13 +845,16 @@ export function curlForStep(
 			if (typeof actual !== "string" || !actual.includes(REDACTED))
 				return actual;
 			const compiled = entry.payload[field];
-			// The former snapshot writer used the generic URL mask on ordinary
-			// object keys. Recover only if applying that exact mask reproduces it.
-			return typeof compiled === "string" &&
-				!compiled.includes(REDACTED) &&
-				maskUrlUserinfo(compiled) === actual
-				? compiled
-				: undefined;
+			if (typeof compiled !== "string") return undefined;
+			// The unredacted compiler payload records the exact object key. Older
+			// snapshot writers masked through the first or last @ of a path segment.
+			if (actual === compiled || actual === maskUrlUserinfo(compiled))
+				return compiled;
+			const firstAtMask = compiled.replace(
+				/(\/\/[^/\s:@]+:)[^@/\s]+@/g,
+				`$1${REDACTED}@`,
+			);
+			return actual === firstAtMask ? compiled : undefined;
 		}
 		const source = hdr10PlusStreamSchema.safeParse({
 			key: "source",

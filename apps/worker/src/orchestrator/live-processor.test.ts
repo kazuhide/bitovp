@@ -1633,17 +1633,30 @@ describe("live channel provisioning", () => {
 	});
 
 	it("snapshots the C7 start request onto the await entry, redacted", async () => {
-		const { process, row, sdk } = setup();
+		const warning = "Read https://storage.invalid/source?sig=fixture-data-key";
+		const { process, row, sdk, runRows } = setup(
+			{},
+			{
+				getEncodingStatus: vi.fn(async () => ({
+					status: "RUNNING",
+					messages: [warning, "normal progress"],
+				})),
+			},
+		);
 		await process({ liveChannelId: CHANNEL_ID });
 		expect(sdk.getLiveStartRequest).toHaveBeenCalledWith("bm-live-enc");
 		const entries = row.stepLog as StepLogEntry[];
 		const awaitEntry = entries.find((e) => e.kind === "AWAIT_LIVE_RUNNING");
 		expect(awaitEntry?.response).toMatchObject({
 			status: "RUNNING",
+			messages: ["[withheld]", "normal progress"],
 			// Snapshots stay masked — only the columns carry the values.
 			live: { streamKey: REDACTED, encoderIp: "203.0.113.10" },
 			startRequest: { streamKey: REDACTED },
 		});
+		expect(JSON.stringify([row.stepLog, runRows[0]?.stepLog])).not.toContain(
+			"fixture-data-key",
+		);
 	});
 
 	it("resumes by reusing DONE resource ids when the RTMP input is unchanged", async () => {

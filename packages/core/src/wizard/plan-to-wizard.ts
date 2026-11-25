@@ -1863,6 +1863,10 @@ export function mainPictureSourceKey(
 	return asString(key);
 }
 
+/** Fresh Copy metadata for restoring pre-marker drafts. Null identifies the native ordinary
+ * video ingest. This field is never an authored wizard setting, submitted plan or draft field. */
+type CopiedWizardState = WizardState & { copiedPictureSource?: string | null };
+
 /**
  * `basePath` replaces the base folder the plan's manifests would give. Pass it only
  * with a check that the state still rebuilds the plan (`tryImportPresetIntoWizard`).
@@ -1870,7 +1874,7 @@ export function mainPictureSourceKey(
 export function planToWizardState(
 	raw: Record<string, unknown>,
 	basePath?: string,
-): WizardState {
+): CopiedWizardState {
 	const bitmovin = isRecord(raw.bitmovin) ? raw.bitmovin : {};
 	const inputs = asArray(raw.inputs).filter(isRecord);
 	const outputs = asArray(raw.outputs).filter(isRecord);
@@ -1938,6 +1942,7 @@ export function planToWizardState(
 	);
 	// The first wizard row is the implicit video master. Audio-only files
 	// sometimes precede the HDR picture in retained native input declarations.
+	let copiedPictureSource: string | null | undefined;
 	if (hdr10PlusStreamsRaw.length) {
 		const pictured = renditions.find((r) =>
 			["H264", "H265", "AV1", "VP9"].includes(String(r.codec)),
@@ -1963,6 +1968,8 @@ export function planToWizardState(
 			const pictureKey = fileKeyFor(source.inputKey, picturePath);
 			const index = inputFiles.findIndex((file) => file.key === pictureKey);
 			const primary = inputFiles[index];
+			if (primary)
+				copiedPictureSource = videoIngest ? null : asString(source.key);
 			if (index > 0 && primary) {
 				if (primary.inputKey !== inputFiles[0]?.inputKey) {
 					const order = new Map(inputs.map((input, i) => [input.key, i]));
@@ -2200,7 +2207,7 @@ export function planToWizardState(
 	// Read before the literal: `hlsDefaultVersion` needs it (a QC-only plan
 	// emits no standalone audio containers, so they cannot imply a version).
 	const qcState = readQc(raw, base);
-	const state: WizardState = {
+	const state: CopiedWizardState = {
 		...DEFAULT_WIZARD_STATE,
 		name: asString(raw.name) ?? "",
 		accountId: asString(bitmovin.accountId) ?? "",
@@ -2215,6 +2222,7 @@ export function planToWizardState(
 				}
 			: {}),
 		inputFiles,
+		...(copiedPictureSource !== undefined ? { copiedPictureSource } : {}),
 		output: {
 			credentialId: asString(origin.credentialId) ?? "",
 			kind: outputKind,

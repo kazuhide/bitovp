@@ -31,8 +31,8 @@ function step(
 describe("curlForStep — endpoint mapping", () => {
 	it("copies literal Dolby Vision media keys from the persisted request", () => {
 		const request = redactSecrets({
-			videoInputPath: "reels/Scene#2.mxf",
-			metadataInputPath: "dv/meta?2.xml",
+			videoInputPath: "reels:day/Scene&key=take#2.mxf",
+			metadataInputPath: "dv/meta.xml?version=2",
 		});
 		const result = curlForStep(
 			step({
@@ -42,8 +42,8 @@ describe("curlForStep — endpoint mapping", () => {
 			}),
 		);
 		if (!result.ok) throw Error(result.code);
-		expect(result.command).toContain("reels/Scene#2.mxf");
-		expect(result.command).toContain("dv/meta?2.xml");
+		expect(result.command).toContain("reels:day/Scene&key=take#2.mxf");
+		expect(result.command).toContain("dv/meta.xml?version=2");
 	});
 	it.each([
 		"CREATE_FILTER_ENHANCED_DEINTERLACE",

@@ -20,32 +20,46 @@ export const isHdr10PlusAuditPath = (path: unknown) =>
 
 export function hasPrivateStorageLocator(value: string): boolean {
 	const location = value.trim();
-	if (location.includes("@")) {
-		try {
-			// A single slash after a storage scheme can be an unfinished object
-			// path. Only URL authority userinfo establishes a credential.
-			const parsed = uriScheme.test(location)
-				? new URL(location)
-				: new URL(location, "https://storage.invalid");
-			if (parsed.username || parsed.password) return true;
-		} catch {
-			// An incomplete authority may still contain recognizable credentials.
-		}
-		const authority = location.replace(
-			/^(?:[a-z][a-z\d+.-]*:)?[/\\]{2,}/iu,
-			"",
-		);
-		if (/^[^/\\:\s]+:[^/\\]*@/u.test(authority)) return true;
-	}
-	// Literal punctuation is allowed in an ordinary storage object. An
-	// absolute locator or an attached credential parameter carries private data.
-	return (
-		((uriScheme.test(location) || /^[/\\]{2}/u.test(location)) &&
-			/[?#].+/u.test(location)) ||
-		/[?&](?:[^=&\s]*(?:token|credential|signature|password|secret)|sig|key|key-pair-id|policy|awsaccesskeyid|googleaccessid)=/iu.test(
-			location,
-		)
+	const authority = /^(?:[a-z][a-z\d+.-]*:)?[/\\]{2}([^/\\?#]*)/iu.exec(
+		location,
 	);
+	if (authority) {
+		// Even unfinished authorities can contain userinfo, e.g. before the
+		// host has been fully typed. Bare "name:value" is also a storage key.
+		if (authority[1]?.includes("@") || /[?#].+/u.test(location)) return true;
+	} else if (uriScheme.test(location)) {
+		try {
+			// WHATWG special schemes can normalize a missing slash into an
+			// authority. Opaque object names such as "reels:day/Scene#2" have none.
+			const url = new URL(location);
+			if (url.host && (url.username || url.password || url.search || url.hash))
+				return true;
+		} catch {
+			// Relative or unfinished input can still contain a credential query.
+		}
+	}
+	// Historical Library rows lack the input provider. Parse only the query.
+	// A typed Dolby/object key may legitimately contain "?version=2".
+	const queryStart = location.indexOf("?");
+	if (queryStart < 0) return false;
+	const query = location.slice(queryStart + 1).split("#", 1)[0];
+	for (const [name, value] of new URLSearchParams(query)) {
+		const field = name.replace(/[-_.]/gu, "").toLowerCase();
+		if (
+			/(token|credential|signature|password|secret)$|^(auth|authorization|hdnts|hdnea|hdntl|hmac|jwt|sig|key|apikey|accesskey|keypairid|policy|awsaccesskeyid|googleaccessid)$/u.test(
+				field,
+			)
+		)
+			return true;
+		// An origin can rename an EdgeAuth parameter or carry a JWT in a
+		// generic parameter. Their token formats identify them independently.
+		if (
+			/(?:^|~)hmac=[^~\s]+/iu.test(value) ||
+			/^eyJ[\w-]+\.[\w-]+\.[\w-]+$/u.test(value)
+		)
+			return true;
+	}
+	return false;
 }
 
 /** Provider diagnostics can echo signed input locators even in list responses without a plan. */
@@ -92,13 +106,13 @@ export function publicHdrSourceProjection<T>(
 		input: unknown,
 		hdr: boolean,
 		libraryInputs = false,
-		diagnostics = false,
+		diagnostics: "response" | "list" | false = false,
 	) {
 		if (!input || typeof input !== "object" || input instanceof Date) return;
 		if (Array.isArray(input)) {
 			for (const [index, item] of input.entries()) {
 				if (
-					diagnostics &&
+					diagnostics === "list" &&
 					typeof item === "string" &&
 					publicStorageDiagnostic(item) !== item
 				)
@@ -167,10 +181,9 @@ export function publicHdrSourceProjection<T>(
 					scope || key === "hdr10PlusStreams",
 					row.kind === "VOD_JOB" && key === "inputs",
 					purpose === "record" &&
-						(diagnostics ||
-							key === "messages" ||
-							key === "warnings" ||
-							key === "response"),
+						(key === "messages" || key === "warnings"
+							? "list"
+							: (key === "response" || diagnostics) && "response"),
 				);
 		}
 	}

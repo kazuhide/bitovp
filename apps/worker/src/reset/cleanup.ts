@@ -288,7 +288,7 @@ export function createResetCleanupSweep(deps: {
 										];
 										const [lock] = await tx.$queryRaw<
 											{ acquired: boolean }[]
-										>`SELECT bitovp_try_reset_verification_send(${identities}::text[]) AS acquired`;
+										>`SELECT bitovp_try_reset_verification_send(${identities}::text[], ${row.entityKey.startsWith("encodingJob:")}::boolean) AS acquired`;
 										if (!lock?.acquired || !permitted(row, await readWork(tx)))
 											return false;
 										const remaining = Math.floor(deadline - performance.now());

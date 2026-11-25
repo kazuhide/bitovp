@@ -1966,6 +1966,53 @@ postgres("tenant PostgreSQL reset", () => {
 				bitmovinEncodingId: randomUUID(),
 			},
 		});
+		const liveEncodingId = randomUUID();
+		const liveSteps = [
+			{
+				step: "enc",
+				kind: "CREATE_ENCODING",
+				refs: {},
+				payload: {},
+				status: "DONE",
+				resourceId: liveEncodingId,
+			},
+			{
+				step: "wait",
+				kind: "AWAIT_LIVE_RUNNING",
+				refs: { encodingId: "enc" },
+				payload: {},
+				status: "RUNNING",
+			},
+		];
+		const live = await prisma.liveChannel.create({
+			data: {
+				name: "Other live startup",
+				plan: {},
+				status: "PROVISIONING",
+				bitmovinEncodingId: liveEncodingId,
+				stepLog: liveSteps,
+			},
+		});
+		const airing = await prisma.liveChannelRun.create({
+			data: {
+				liveChannelId: live.id,
+				seq: 1,
+				outputPrefix: "",
+				status: "PROVISIONING",
+				bitmovinEncodingId: liveEncodingId,
+				stepLog: liveSteps,
+			},
+		});
+		const finalized = liveSteps.map((step) =>
+			step.kind === "AWAIT_LIVE_RUNNING"
+				? {
+						...step,
+						status: "DONE",
+						response: { status: "RUNNING" },
+						finishedAt: new Date().toISOString(),
+					}
+				: step,
+		);
 		let unrelatedCompleted = false;
 		const stop = vi.fn(async () => {
 			// The provider mutation owns the fence, including while its reply is pending.
@@ -1979,6 +2026,38 @@ postgres("tenant PostgreSQL reset", () => {
 			}
 			await runtime.$transaction(async (tx) => {
 				await tx.$queryRaw`SELECT set_config('bitovp.organization_id', ${organizationIds[0]}, true), set_config('lock_timeout','100ms',true)`;
+				// A physically successful Live startup persists both journal mirrors
+				// before the unrelated VOD STOP has returned.
+				await tx.liveChannel.update({
+					where: { id: live.id },
+					data: {
+						stepLog: finalized,
+						status: "RUNNING",
+						provisionClaimedAt: null,
+					},
+				});
+				await tx.liveChannelRun.update({
+					where: { id: airing.id },
+					data: {
+						stepLog: finalized,
+						status: "RUNNING",
+					},
+				});
+				// A positively named, different provider identity also progresses.
+				const otherId = randomUUID();
+				const named = finalized.map((step) =>
+					step.kind === "CREATE_ENCODING"
+						? { ...step, resourceId: otherId }
+						: step,
+				);
+				await tx.liveChannel.update({
+					where: { id: live.id },
+					data: { bitmovinEncodingId: otherId, stepLog: named },
+				});
+				await tx.liveChannelRun.update({
+					where: { id: airing.id },
+					data: { bitmovinEncodingId: otherId, stepLog: named },
+				});
 				await tx.encodingJob.updateMany({
 					where: { id: unrelated.id },
 					data: {
@@ -1997,6 +2076,31 @@ postgres("tenant PostgreSQL reset", () => {
 				unrelatedCompleted = true;
 			});
 
+			// A new claim on this very encoder and an unparseable ownership
+			// log still wait for the provider mutation, including on the run mirror.
+			for (const patch of [
+				{ bitmovinEncodingId: id },
+				{
+					stepLog: finalized.map((step) =>
+						step.kind === "CREATE_ENCODING"
+							? { ...step, resourceId: id }
+							: step,
+					),
+				},
+				{
+					stepLog: finalized.map((step) => ({ ...step, status: "UNREADABLE" })),
+				},
+			]) {
+				await expect(
+					runtime.$transaction(async (tx) => {
+						await tx.$queryRaw`SELECT set_config('bitovp.organization_id', ${organizationIds[0]}, true), set_config('lock_timeout','100ms',true)`;
+						await tx.liveChannelRun.update({
+							where: { id: airing.id },
+							data: patch,
+						});
+					}),
+				).rejects.toThrow(/lock timeout|55P03/i);
+			}
 			await createTenantPrismaClient(
 				runtime,
 				organizationIds[1],
@@ -2108,6 +2212,25 @@ postgres("tenant PostgreSQL reset", () => {
 		expect(status).toHaveBeenCalledTimes(cleanupFirst ? 2 : 1);
 		expect(get).toHaveBeenCalledWith(id);
 		expect(liveStop).not.toHaveBeenCalled();
+		if (mode === "cleanup-first") {
+			// A sender from before this migration still has its full protection
+			// against a new Live ownership write during a rolling upgrade.
+			await prisma.$transaction(async (older) => {
+				const [row] = await older.$queryRaw<
+					{ acquired: boolean }[]
+				>`SELECT bitovp_try_reset_verification_send(${["encoding:" + id]}::text[]) AS acquired`;
+				expect(row?.acquired).toBe(true);
+				await expect(
+					runtime.$transaction(async (tx) => {
+						await tx.$queryRaw`SELECT set_config('bitovp.organization_id', ${organizationIds[0]}, true), set_config('lock_timeout','100ms',true)`;
+						await tx.liveChannel.update({
+							where: { id: live.id },
+							data: { bitmovinEncodingId: id },
+						});
+					}),
+				).rejects.toThrow(/lock timeout|55P03/i);
+			});
+		}
 		const task = await readResetCleanupTask(prisma, cipher, workId);
 		if (mode === "local-alias" || mode === "verification-alias") {
 			expect(task?.payload.encodings).toEqual([]);

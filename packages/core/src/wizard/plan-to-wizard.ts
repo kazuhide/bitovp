@@ -4,6 +4,7 @@ import { isHeAac } from "../plan/he-aac";
 import { mediaFilterSchema } from "../plan/media-filters";
 import { qcGateSchema } from "../plan/qc-gate";
 import {
+	captionStreamSchema,
 	DEFAULT_VMAF_MODEL,
 	type EncodingPlan,
 	encodingPlanSchema,
@@ -1834,6 +1835,10 @@ export function planToWizardState(
 	const muxings = asArray(raw.muxings).filter(isRecord);
 	const manifests = asArray(raw.manifests).filter(isRecord);
 	const fileStreams = asArray(raw.fileStreams).filter(isRecord);
+	const captionStreams = asArray(raw.captionStreams).flatMap((entry) => {
+		const parsed = captionStreamSchema.safeParse(entry);
+		return parsed.success ? [parsed.data] : [];
+	});
 	const filters = asArray(raw.filters).filter(isRecord);
 
 	const origin = outputs[0] ?? {};
@@ -1876,6 +1881,7 @@ export function planToWizardState(
 		ingest,
 		[
 			...fileStreams,
+			...captionStreams,
 			...renditions.flatMap((r) =>
 				isRecord(r.burnInSrt) ? [r.burnInSrt] : [],
 			),
@@ -2293,6 +2299,13 @@ export function planToWizardState(
 	if (dolbyStreams.length > 0) {
 		sourceAdditions.dolbyStreams = dolbyStreams;
 	}
+	if (captionStreams.length)
+		sourceAdditions.captionStreams = captionStreams.map(
+			({ inputKey, inputPath, ...track }) => ({
+				...track,
+				inputFile: fileKeyFor(inputKey, inputPath),
+			}),
+		);
 	if (hdr10PlusStreamsRaw.length > 0) {
 		sourceAdditions.hdr10PlusStreams = hdr10PlusStreamsRaw.map(
 			(stream): WizardHdr10PlusStream => ({

@@ -509,6 +509,7 @@ export function nextSharedKey(sources: WizardSources, prefix: string): string {
 	const taken = new Set<string>([
 		...(sources.tracks ?? []).map((t) => t.key),
 		...(sources.fileStreams ?? []).map((s) => s.key),
+		...(sources.captionStreams ?? []).map((s) => s.key),
 		...(sources.dolbyStreams ?? []).map((s) => s.key),
 		...(sources.hdr10PlusStreams ?? []).map((s) => s.key),
 		...(sources.trimmingStreams ?? []).map((s) => s.key),

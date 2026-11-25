@@ -156,7 +156,7 @@ export async function collectHlsReferenceChecks(
 					check(
 						sid,
 						false,
-						"The configured video media playlist was not readable or parseable",
+						"The configured media playlist was not readable or parseable",
 					),
 				);
 			continue;
@@ -170,7 +170,7 @@ export async function collectHlsReferenceChecks(
 				sid,
 				(child.segmentUris?.length ?? 0) > 0 &&
 					(!media.requiresInit || child.mapUri !== undefined),
-				"Configured HLS video media must publish a playable child with its required initialization reference",
+				"Configured HLS media must publish a playable child with its required initialization reference",
 			),
 		);
 		const root = new URL("https://objects.invalid/");
@@ -194,7 +194,7 @@ export async function collectHlsReferenceChecks(
 					check(
 						`${sid}:objects`,
 						false,
-						"The configured VIDEO writer's object listing could not be read",
+						"The configured media writer's object listing could not be read",
 					),
 				);
 			}
@@ -204,7 +204,7 @@ export async function collectHlsReferenceChecks(
 				area: "manifest",
 				verdict: "SKIP",
 				detail:
-					"Object bytes cannot certify a VIDEO child whose writer binding was not proven",
+					"Object bytes cannot certify a media playlist whose writer binding was not proven",
 			});
 		if (
 			media.startSegmentNumber !== undefined ||
@@ -243,5 +243,27 @@ export function dashExternalSubtitleChecks(
 			),
 			unverified(`${id}:external-subtitle:${index}:content`),
 		];
+	});
+}
+
+/** A static external subtitle or an extra audio representation cannot satisfy a segmented OCR track. */
+export function dashDvbSubtitleChecks(
+	id: string,
+	expected: readonly { key: string; language: string }[],
+	parsed: ParsedDash,
+): Check[] {
+	const tracks = parsed.representations.filter(
+		(r) =>
+			r.kind === "text" &&
+			["TEMPLATE", "TIMELINE", "LIST"].includes(r.addressing),
+	);
+	return expected.map((sub) => {
+		const found = tracks.findIndex((r) => r.language === sub.language);
+		if (found >= 0) tracks.splice(found, 1);
+		return check(
+			`${id}:dvb-subtitle:${sub.key}:representation`,
+			found >= 0,
+			"The DASH manifest must declare a segmented subtitle representation in the configured language",
+		);
 	});
 }

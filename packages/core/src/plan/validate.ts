@@ -74,7 +74,7 @@ const VIDEO_CODECS_FOR_MODE = new Set(["H264", "H265", "VP9", "AV1"]);
  * WHERE EACH ROW COMES FROM is not uniform, and the difference matters to
  * anyone widening it:
  *
- *  - FMP4, CMAF, TS, WEBM, TEXT and CHUNKED_TEXT are sample-derived — the
+ *  - FMP4, CMAF, TS, WEBM and CHUNKED_TEXT are sample-derived — the
  *    combinations Bitmovin's vendor samples build, each exercised by a golden.
  *  - MP4 and the three PROGRESSIVE_* rows are the whole-file containers. They
  *    hold what Bitmovin documents for them, looked up on 2026-11-13 in its
@@ -140,7 +140,8 @@ export const MUXING_CODEC_MATRIX: Record<
 	],
 	TS: ["H264", "AAC", "AC3"],
 	WEBM: ["VP9", "AV1", "OPUS"],
-	TEXT: ["IMSC"],
+	// Encoder 2.22 documents sidecar WebVTT with a Text muxing.
+	TEXT: ["IMSC", "WEBVTT"],
 	CHUNKED_TEXT: ["WEBVTT"],
 	PROGRESSIVE_TS: ["H264", "H265", "AAC", "DDPLUS", "DD", "AC3", "EAC3"],
 	PROGRESSIVE_MOV: ["H264", "H265", "AAC", "DD", "AC3", "AUDIO_PASSTHROUGH"],
@@ -446,6 +447,7 @@ export function validatePlan(
 	checkUniqueKeys(
 		[
 			...plan.ingest,
+			...plan.captionStreams,
 			...plan.fileStreams,
 			...plan.dolbyStreams,
 			...plan.hdr10PlusStreams,
@@ -554,6 +556,7 @@ export function validatePlan(
 		}
 	}
 	const fileByKey = new Map(plan.fileStreams.map((f) => [f.key, f]));
+	const captionByKey = new Map(plan.captionStreams.map((s) => [s.key, s]));
 	const dolbyByKey = new Map(plan.dolbyStreams.map((d) => [d.key, d]));
 	const hdr10PlusByKey = new Map(plan.hdr10PlusStreams.map((s) => [s.key, s]));
 	const trimmingKeys = new Set(plan.trimmingStreams.map((t) => t.key));
@@ -563,6 +566,7 @@ export function validatePlan(
 	const inputStreamKeys = new Set<string>([
 		...ingestKeys,
 		...fileKeys,
+		...captionByKey.keys(),
 		...dolbyByKey.keys(),
 		...hdr10PlusByKey.keys(),
 		...trimmingKeys,
@@ -583,6 +587,15 @@ export function validatePlan(
 			});
 		}
 	}
+	for (const [index, source] of plan.captionStreams.entries()) {
+		if (!inputKeys.has(source.inputKey))
+			issues.push({
+				code: "PLAN_UNRESOLVED_REF",
+				level: "error",
+				message: `Caption source "${source.key}" references unknown input "${source.inputKey}"`,
+				path: `captionStreams[${index}].inputKey`,
+			});
+	}
 	for (const [index, file] of plan.fileStreams.entries()) {
 		if (!inputKeys.has(file.inputKey)) {
 			issues.push({
@@ -596,6 +609,7 @@ export function validatePlan(
 
 	if (
 		plan.ingest.length +
+			plan.captionStreams.length +
 			plan.fileStreams.length +
 			plan.dolbyStreams.length +
 			plan.hdr10PlusStreams.length ===
@@ -604,7 +618,8 @@ export function validatePlan(
 		issues.push({
 			code: "PLAN_NO_INPUT_STREAMS",
 			level: "error",
-			message: "the plan defines no input streams (ingest/file/dolby/HDR10+)",
+			message:
+				"the plan defines no input streams (ingest/file/captions/dolby/HDR10+)",
 			path: "ingest",
 		});
 	}
@@ -632,6 +647,7 @@ export function validatePlan(
 
 	const allInputStreams = [
 		...plan.ingest,
+		...plan.captionStreams,
 		...plan.fileStreams,
 		...plan.dolbyStreams,
 		...plan.hdr10PlusStreams,
@@ -797,6 +813,7 @@ export function validatePlan(
 			if (
 				inputStreamAncestry(plan, channel.sourceKey)?.some(
 					(key) =>
+						captionByKey.has(key) ||
 						fileByKey.has(key) ||
 						hdr10PlusByKey.has(key) ||
 						ingestByKey.get(key)?.selectionMode === "VIDEO_RELATIVE" ||
@@ -879,6 +896,13 @@ export function validatePlan(
 			`ingest[${i}].encodingKey`,
 		);
 	});
+	for (const [i, s] of plan.captionStreams.entries()) {
+		checkEncodingKey(
+			`caption stream "${s.key}"`,
+			s.encodingKey,
+			`captionStreams[${i}].encodingKey`,
+		);
+	}
 	plan.fileStreams.forEach((s, i) => {
 		checkEncodingKey(
 			`fileStream "${s.key}"`,
@@ -1118,6 +1142,19 @@ export function validatePlan(
 				path: `renditions[${index}].ingestKey`,
 			});
 		}
+		const captionSource = inputStreamAncestry(plan, rendition.ingestKey)?.find(
+			(key) => captionByKey.has(key),
+		);
+		if (
+			captionSource &&
+			(rendition.codec !== "WEBVTT" || rendition.ingestKey !== captionSource)
+		)
+			issues.push({
+				code: "PLAN_STREAM_SOURCE_MISMATCH",
+				level: "error",
+				message: `Embedded captions in "${captionSource}" require a direct WebVTT subtitle rendition`,
+				path: `renditions[${index}].ingestKey`,
+			});
 		// Subtitle tracks consume whole files; AV renditions consume tracks
 		// (an ingest track or a trimming/concat intermediate stream over one).
 		if (

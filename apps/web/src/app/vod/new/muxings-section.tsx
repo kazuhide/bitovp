@@ -77,7 +77,7 @@ const FILE_KIND_LABEL: Partial<Record<WizardMuxingKind, MessageKey>> = {
 	PROGRESSIVE_MOV: "vodTimeline.singleMov",
 	PROGRESSIVE_WEBM: "vodTimeline.singleWebm",
 };
-const SUBTITLE_KINDS: WizardMuxingKind[] = ["CHUNKED_TEXT"];
+const SUBTITLE_KINDS: WizardMuxingKind[] = ["CHUNKED_TEXT", "TEXT"];
 
 /**
  * The containers offered for a video rendition of this codec.

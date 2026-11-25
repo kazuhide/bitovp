@@ -205,6 +205,14 @@ export function LadderSection({
 	const subtitles = state.subtitles ?? [];
 	const filters = state.filters ?? [];
 	const sources = state.sources ?? {};
+	const subtitleSources = (codec: WizardSubtitle["codec"]) => [
+		...(sources.fileStreams ?? []).filter(
+			(stream) =>
+				(stream.fileType ?? "WEBVTT") ===
+				(codec === "IMSC" ? "TTML" : "WEBVTT"),
+		),
+		...(codec === "IMSC" ? [] : (sources.captionStreams ?? [])),
+	];
 	const encodingKeys = (sources.encodings ?? []).map((e) => e.key);
 	const filterKeys = filters.map((f) => f.key);
 	let filterNumber = 1;
@@ -1013,7 +1021,7 @@ export function LadderSection({
 							onPatch({
 								subtitles: [
 									...subtitles,
-									{ source: (sources.fileStreams ?? [])[0]?.key ?? "" },
+									{ source: subtitleSources("WEBVTT")[0]?.key ?? "" },
 								],
 							})
 						}
@@ -1045,12 +1053,7 @@ export function LadderSection({
 												const codec = e.target.value as "WEBVTT" | "IMSC";
 												patchSubtitle(index, {
 													codec,
-													source:
-														(sources.fileStreams ?? []).find(
-															(s) =>
-																(s.fileType ?? "WEBVTT") ===
-																(codec === "IMSC" ? "TTML" : "WEBVTT"),
-														)?.key ?? "",
+													source: subtitleSources(codec)[0]?.key ?? "",
 													muxing: undefined,
 													styling: undefined,
 												});
@@ -1087,15 +1090,8 @@ export function LadderSection({
 										</Field>
 									) : null}
 									<Field
-										label={t("wizard.fileStream")}
+										label={ja ? "字幕ソース" : "Subtitle source"}
 										htmlFor={`wz-s-${index}-src`}
-										tooltip={
-											subtitle.codec === "IMSC"
-												? ja
-													? "「ソース」でTTMLファイルのストリームを追加してください。"
-													: "Add a TTML file stream in Sources."
-												: t("wizard.webvttFileStreamsComeFromTheSources")
-										}
 									>
 										<SelectNative
 											id={`wz-s-${index}-src`}
@@ -1104,26 +1100,22 @@ export function LadderSection({
 												patchSubtitle(index, { source: e.target.value })
 											}
 										>
-											<option value="">{t("wizard.selectFileStream")}</option>
+											<option value="">
+												{ja ? "字幕ソースを選択" : "Select a subtitle source"}
+											</option>
 											{subtitle.source &&
-											!(sources.fileStreams ?? []).some(
+											!subtitleSources(subtitle.codec).some(
 												(stream) => stream.key === subtitle.source,
 											) ? (
 												<option value={subtitle.source}>
 													{subtitle.source} {t("wizardX.missingParen")}
 												</option>
 											) : null}
-											{(sources.fileStreams ?? [])
-												.filter(
-													(s) =>
-														(s.fileType ?? "WEBVTT") ===
-														(subtitle.codec === "IMSC" ? "TTML" : "WEBVTT"),
-												)
-												.map((stream) => (
-													<option key={stream.key} value={stream.key}>
-														{stream.key}
-													</option>
-												))}
+											{subtitleSources(subtitle.codec).map((stream) => (
+												<option key={stream.key} value={stream.key}>
+													{stream.key}
+												</option>
+											))}
 										</SelectNative>
 									</Field>
 									<Field

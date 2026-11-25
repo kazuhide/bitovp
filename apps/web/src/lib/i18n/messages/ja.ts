@@ -41,6 +41,20 @@ export const ja = {
 			STREAMID: "ストリーム ID / PID",
 		},
 	},
+	liveDvb: {
+		title: "DVB 字幕",
+		add: "DVB 字幕トラックを追加",
+		help: "MPEG-TS に含まれる画像字幕を OCR でテキスト化します。入力ストリームの位置を 0 から数えて指定してください。",
+		position: "入力ストリームの位置",
+		language: "言語タグ",
+		label: "字幕名",
+		packaging: "WebVTT の配信形式",
+		chunked: "分割 WebVTT（HLS・DASH）",
+		fmp4: "fMP4 内の WebVTT（DASH）",
+		remove: "字幕トラックを削除",
+		transport:
+			"DVB 字幕には MPEG-TS を含む SRT、Zixi または HLS 入力を指定してください。",
+	},
 	outputCompare: {
 		title: "出力を比較",
 		pickTwo: "VOD 一覧で完了したジョブを二つか三つ選び、出力を比較できます。",
@@ -5320,6 +5334,8 @@ export const ja = {
 		hdr10PlusMetadataPath: "HDR10+ メタデータ JSON パス",
 		hdr10PlusMetadataHelp:
 			"動画と同じ入力ストレージ・バケットにある HDR10+ JSON サイドカーを選択し、このストリームを H.265 レンディションの入力に指定します。",
+		embeddedCaptionTimelineConflict:
+			"元のタイムコードで字幕を抽出します。タイムラインで編集する場合は、埋め込み字幕ソースを削除してください。",
 		hdr10PlusTimelineConflict:
 			"HDR10+ は動画ソースを直接使用します。このアプリでは入力タイムラインとの併用にまだ対応していません。通常の入力へ切り替えるか、HDR10+ ストリームを削除してください。",
 		av1DetailPreservationOff: "OFF — 通常のエンコード",

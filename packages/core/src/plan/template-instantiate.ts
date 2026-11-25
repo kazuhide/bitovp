@@ -29,7 +29,12 @@ export type TemplateSourceSite = {
 	siteId: string;
 	/** The stream whose path this site substitutes. */
 	streamKey: string;
-	list: "ingest" | "fileStreams" | "dolbyStreams" | "hdr10PlusStreams";
+	list:
+		| "ingest"
+		| "captionStreams"
+		| "fileStreams"
+		| "dolbyStreams"
+		| "hdr10PlusStreams";
 	/** Dolby discriminator when list === "dolbyStreams". */
 	dolbyKind?: "ATMOS" | "VISION" | "VISION_METADATA";
 	/** Which field on the stream holds this site's path. */
@@ -56,16 +61,16 @@ export function templateSourceSites(plan: EncodingPlan): TemplateSourceSite[] {
 			...(s.encodingKey ? { encodingKey: s.encodingKey } : {}),
 		});
 	}
-	for (const s of plan.fileStreams) {
-		sites.push({
-			siteId: s.key,
-			streamKey: s.key,
-			list: "fileStreams",
-			field: "inputPath",
-			inputKey: s.inputKey,
-			currentPath: s.inputPath,
-			...(s.encodingKey ? { encodingKey: s.encodingKey } : {}),
-		});
+	for (const list of ["fileStreams", "captionStreams"] as const) {
+		for (const s of plan[list])
+			sites.push({
+				siteId: s.key,
+				streamKey: s.key,
+				list,
+				field: "inputPath",
+				inputKey: s.inputKey,
+				currentPath: s.inputPath,
+			});
 	}
 	for (const s of plan.dolbyStreams) {
 		if (s.kind === "VISION") {
@@ -362,6 +367,10 @@ export function instantiateTemplatePlan(
 				: inp;
 		}),
 		ingest: rebased.ingest.map((s) => ({
+			...s,
+			inputPath: substitutePath(s.key, "inputPath", s.inputPath),
+		})),
+		captionStreams: rebased.captionStreams.map((s) => ({
 			...s,
 			inputPath: substitutePath(s.key, "inputPath", s.inputPath),
 		})),

@@ -16,6 +16,7 @@ import {
 	type WizardStreamSelectionMode,
 	type WizardTrimmingStream,
 } from "./build-plan";
+import { EmbeddedCaptionSources } from "./embedded-caption-sources";
 import { GcsRegionControl, StorageLocation } from "./storage-location";
 import {
 	blankStream,
@@ -612,6 +613,7 @@ export function SourcesSection({
 	const renameStream = (from: string, to: string, next: WizardSources) => {
 		const keys = [
 			...flattenStreams(sources).map((row) => row.key),
+			...(sources.captionStreams ?? []).map((s) => s.key),
 			...(sources.trimmingStreams ?? []).map((row) => row.key),
 			...(sources.audioMixStreams ?? []).map((s) => s.key),
 			...(sources.concatenationStreams ?? []).map((row) => row.key),
@@ -695,7 +697,9 @@ export function SourcesSection({
 	return (
 		<div className="space-y-4">
 			<Collapsible
-				summary={t("wizardX.streamsCount", { count: streams.length })}
+				summary={t("wizardX.streamsCount", {
+					count: streams.length + (sources.captionStreams?.length ?? 0),
+				})}
 				help={t("ui.everySourceBeyondTheImplicitVideoAudio")}
 			>
 				{usesImplicitAudio ? (
@@ -788,6 +792,19 @@ export function SourcesSection({
 						/>
 					);
 				})}
+				<EmbeddedCaptionSources
+					streams={sources.captionStreams ?? []}
+					files={inputFiles.filter(
+						(f) =>
+							state.inputFiles.find((source) => source.key === f.key)
+								?.purpose !== "FILTER_IMAGE",
+					)}
+					encodings={encodingKeys}
+					nextKey={nextSharedKey(sources, "caption")}
+					onChange={(captionStreams) =>
+						patchSources({ ...sources, captionStreams })
+					}
+				/>
 
 				<div className="flex flex-wrap items-center gap-2">
 					<Button

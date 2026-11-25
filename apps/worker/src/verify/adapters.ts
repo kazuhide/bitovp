@@ -493,12 +493,16 @@ export async function parseDashText(text: string): Promise<ParsedDash> {
 			? (contentType[1] as "video" | "audio" | "text" | "image")
 			: mime
 				? (mime[1] as "video" | "audio" | "text" | "image")
-				: height || /width="\d+"/.test(attrs) || /width="\d+"/.test(setOpen)
-					? "video"
-					: /audioSamplingRate="/.test(attrs) ||
-							/audioSamplingRate="/.test(setOpen)
-						? "audio"
-						: "unknown";
+				: codecs?.[1]
+							?.split(",")
+							.some((codec) => codec.trim().toLowerCase() === "wvtt")
+					? "text"
+					: height || /width="\d+"/.test(attrs) || /width="\d+"/.test(setOpen)
+						? "video"
+						: /audioSamplingRate="/.test(attrs) ||
+								/audioSamplingRate="/.test(setOpen)
+							? "audio"
+							: "unknown";
 		const baseUrl = /<BaseURL\b[^>]*>([^<]*)<\/BaseURL>/.exec(body)?.[1];
 		const language =
 			/lang="([^"]*)"/.exec(attrs)?.[1] ?? /lang="([^"]*)"/.exec(setOpen)?.[1];

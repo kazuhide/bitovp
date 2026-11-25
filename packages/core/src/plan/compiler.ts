@@ -82,6 +82,9 @@ export type OperationKind =
 	| "CREATE_FILE_INPUT_STREAM"
 	| "CREATE_DOLBY_ATMOS_INPUT_STREAM"
 	| "CREATE_DOLBY_VISION_INPUT_STREAM"
+	| "CREATE_CEA608_INPUT_STREAM"
+	| "CREATE_CEA708_INPUT_STREAM"
+	| "CREATE_DVB_SUBTITLE_INPUT_STREAM"
 	| "CREATE_HDR10_PLUS_INPUT_STREAM"
 	| "CREATE_DOLBY_VISION_METADATA_INPUT_STREAM"
 	| "CREATE_TRIMMING_TIME_BASED"
@@ -250,6 +253,7 @@ function inputStreamStep(
 	key: string,
 	sets: {
 		fileKeys: ReadonlySet<string>;
+		captionKeys: ReadonlySet<string>;
 		dolbyKeys: ReadonlySet<string>;
 		hdr10PlusKeys: ReadonlySet<string>;
 		trimmingKeys: ReadonlySet<string>;
@@ -257,6 +261,7 @@ function inputStreamStep(
 		mixKeys: ReadonlySet<string>;
 	},
 ): string {
+	if (sets.captionKeys.has(key)) return `caption:${key}`;
 	if (sets.fileKeys.has(key)) {
 		return `file:${key}`;
 	}
@@ -950,6 +955,29 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 			});
 		}
 
+		const captionKeys = new Set(
+			plan.captionStreams.map((stream) => stream.key),
+		);
+		for (const {
+			key,
+			inputKey,
+			encodingKey,
+			kind,
+			...payload
+		} of plan.captionStreams) {
+			if (encOf(encodingKey).step !== enc.step) continue;
+			const operations = {
+				CEA608: "CREATE_CEA608_INPUT_STREAM",
+				CEA708: "CREATE_CEA708_INPUT_STREAM",
+				DVB: "CREATE_DVB_SUBTITLE_INPUT_STREAM",
+			} as const;
+			ops.push({
+				step: `caption:${key}`,
+				kind: operations[kind],
+				payload,
+				refs: { encodingId: enc.step, inputId: `input:${inputKey}` },
+			});
+		}
 		const dolbyKeys = new Set(plan.dolbyStreams.map((d) => d.key));
 		for (const dolby of plan.dolbyStreams) {
 			if (encOf(dolby.encodingKey).step !== enc.step) {
@@ -1016,6 +1044,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 		const mixKeys = new Set(plan.audioMixStreams.map((s) => s.key));
 		const streamSets = {
 			fileKeys,
+			captionKeys,
 			dolbyKeys,
 			hdr10PlusKeys,
 			trimmingKeys,

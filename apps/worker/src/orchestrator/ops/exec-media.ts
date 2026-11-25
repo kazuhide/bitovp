@@ -120,6 +120,61 @@ export async function executeMediaStep(
 			return { resourceId, request, response: { id: resourceId } };
 		}
 
+		case "CREATE_CEA608_INPUT_STREAM":
+		case "CREATE_CEA708_INPUT_STREAM":
+		case "CREATE_DVB_SUBTITLE_INPUT_STREAM": {
+			const encodingId = refId(op, ctx, "encodingId");
+			const source = {
+				inputId: refId(op, ctx, "inputId"),
+				inputPath: str(p.inputPath),
+			};
+			let resourceId: string;
+			if (op.kind === "CREATE_CEA608_INPUT_STREAM") {
+				if (p.channel !== "CC1" && p.channel !== "CC3")
+					throw new Error("CEA-608 requires channel CC1 or CC3");
+				resourceId = await ctx.sdk.createCea608InputStream(encodingId, {
+					...source,
+					channel: p.channel,
+				});
+			} else if (op.kind === "CREATE_CEA708_INPUT_STREAM") {
+				const channel = p.channel;
+				if (
+					channel !== undefined &&
+					(typeof channel !== "number" ||
+						!Number.isInteger(channel) ||
+						channel < 1 ||
+						channel > 63)
+				)
+					throw new Error("CEA-708 service must be between 1 and 63");
+				resourceId = await ctx.sdk.createCea708InputStream(encodingId, {
+					...source,
+					...(channel !== undefined ? { channel } : {}),
+				});
+			} else {
+				const { selectionMode, position } = p;
+				if (
+					selectionMode !== "AUTO" &&
+					selectionMode !== "POSITION_ABSOLUTE" &&
+					selectionMode !== "SUBTITLE_RELATIVE"
+				)
+					throw new Error("Invalid DVB subtitle selection mode");
+				if (
+					position !== undefined &&
+					(selectionMode === "AUTO" ||
+						typeof position !== "number" ||
+						!Number.isInteger(position) ||
+						position < 0 ||
+						position > 2147483647)
+				)
+					throw new Error("Invalid DVB subtitle position");
+				resourceId = await ctx.sdk.createDvbSubtitleInputStream(encodingId, {
+					...source,
+					selectionMode,
+					...(position !== undefined ? { position } : {}),
+				});
+			}
+			return { resourceId, request, response: { id: resourceId } };
+		}
 		case "CREATE_HDR10_PLUS_INPUT_STREAM": {
 			const selectionMode = str(p.selectionMode);
 			if (

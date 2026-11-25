@@ -213,9 +213,11 @@ export function VodWizard({
 	const fresh = fileFlow ? FILE_OUTPUT_DEFAULT_STATE : DEFAULT_WIZARD_STATE;
 	const [step, setStep] = useState(0);
 	const [state, setState] = useState<WizardState>(fresh);
-	const hdr10PlusTimelineConflict = Boolean(
-		state.sources?.hdr10PlusStreams?.length,
-	);
+	const timelineConflictMessage = state.sources?.hdr10PlusStreams?.length
+		? "wizard.hdr10PlusTimelineConflict"
+		: state.sources?.captionStreams?.length
+			? "wizard.embeddedCaptionTimelineConflict"
+			: undefined;
 	const timelineSourcesSignature = JSON.stringify(
 		state.inputFiles
 			.filter((file) => file.purpose !== "FILTER_IMAGE")
@@ -269,7 +271,7 @@ export function VodWizard({
 			? timelinePreparation.task
 			: null;
 	const submissionState =
-		prepared && state.inputTimeline && !hdr10PlusTimelineConflict
+		prepared && state.inputTimeline && !timelineConflictMessage
 			? applyPreparedVodInputTimeline(state, prepared)
 			: state;
 	const timelineBlocked = Boolean(
@@ -1527,7 +1529,7 @@ export function VodWizard({
 									disabled={
 										!state.inputTimeline &&
 										((state.sources?.encodings?.length ?? 0) > 0 ||
-											hdr10PlusTimelineConflict)
+											Boolean(timelineConflictMessage))
 									}
 									onClick={() =>
 										patch(
@@ -1553,15 +1555,15 @@ export function VodWizard({
 									)}
 								</Button>
 							</div>
-							{hdr10PlusTimelineConflict ? (
+							{timelineConflictMessage ? (
 								<p
 									className="text-xs text-amber-300"
 									role={state.inputTimeline ? "alert" : undefined}
 								>
-									{t("wizard.hdr10PlusTimelineConflict")}
+									{t(timelineConflictMessage)}
 								</p>
 							) : null}
-							{state.inputTimeline && !hdr10PlusTimelineConflict ? (
+							{state.inputTimeline && !timelineConflictMessage ? (
 								<>
 									<VodInputTimelineEditor
 										document={state.inputTimeline}
@@ -2100,9 +2102,7 @@ export function VodWizard({
 				</div>
 			</div>
 
-			{state.inputTimeline &&
-			step === 1 &&
-			!hdr10PlusTimelineConflict ? null : (
+			{state.inputTimeline && step === 1 && !timelineConflictMessage ? null : (
 				<PlanPreview evaluation={evaluation} />
 			)}
 

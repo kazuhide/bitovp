@@ -128,6 +128,19 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 		method: "POST",
 		template: "/encoding/encodings/:encodingId/input-streams/dolby-vision",
 	},
+	CREATE_CEA608_INPUT_STREAM: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/input-streams/captions/cea608",
+	},
+	CREATE_CEA708_INPUT_STREAM: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/input-streams/captions/cea708",
+	},
+	CREATE_DVB_SUBTITLE_INPUT_STREAM: {
+		method: "POST",
+		template:
+			"/encoding/encodings/:encodingId/input-streams/subtitles/dvb-subtitle",
+	},
 	CREATE_HDR10_PLUS_INPUT_STREAM: {
 		method: "POST",
 		template: "/encoding/encodings/:encodingId/input-streams/hdr10-plus",

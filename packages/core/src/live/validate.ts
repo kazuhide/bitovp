@@ -14,6 +14,7 @@ import {
 	liveHlsEntryUris,
 	selectLiveManifestMuxings,
 } from "./compiler";
+import { liveDvbIssues } from "./dvb-subtitles";
 import { LIVE_MANIFEST_ELEMENT_BUDGET } from "./dvr";
 import {
 	isLiveAacChannelLayout,
@@ -266,6 +267,7 @@ export function validateLiveChannel(
 	const issues: PlanIssue[] = [
 		...moqOutputIssues(plan, options),
 		...liveManifestPathIssues(plan),
+		...liveDvbIssues(plan),
 		...liveManifestDetailIssues(plan),
 		...liveDrmIssues(plan, options),
 		...liveFallbackRegionIssues(plan),

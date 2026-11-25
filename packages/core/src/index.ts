@@ -949,6 +949,7 @@ export {
 } from "./plan/saved-plan-compatibility";
 export type {
 	Acl,
+	CaptionStream,
 	ConcatenationSource,
 	ConcatenationStream,
 	EncodingPlan,
@@ -969,6 +970,7 @@ export {
 	AV1_DYNAMIC_RANGE_FORMATS,
 	aacRenditionSchema,
 	aclSchema,
+	captionStreamSchema,
 	concatenationSourceSchema,
 	concatenationStreamSchema,
 	DEFAULT_VMAF_MODEL,

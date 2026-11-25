@@ -7,9 +7,12 @@ import {
 	liveChannelPlanSchema,
 } from "@bitovp/core";
 import { describe, expect, it, vi } from "vitest";
-import { parseHlsText } from "./adapters";
+import { parseDashText, parseHlsText } from "./adapters";
 import { type EngineDeps, verifyArtefacts } from "./engine";
-import { collectHlsReferenceChecks } from "./manifest-reference-checks";
+import {
+	collectHlsReferenceChecks,
+	dashDvbSubtitleChecks,
+} from "./manifest-reference-checks";
 import { collectEdgeClosures, type LiveRunnerDeps } from "./runner-live";
 
 const FIXTURES = join(import.meta.dirname, "../../../../packages/core/src");
@@ -732,4 +735,76 @@ describe("additional HLS VIDEO writer identity", () => {
 				)?.closed,
 			).toBe(false);
 	});
+});
+
+it.each([
+	"jpn",
+	"other",
+] as const)("verifies chunked Live WebVTT against its own storage namespace (%s)", async (folder) => {
+	const raw = JSON.parse(
+		readFileSync(
+			join(FIXTURES, "live/__fixtures__/live-srt-listener.plan.json"),
+			"utf8",
+		),
+	);
+	const root = "output/live-srt-listener";
+	const track = {
+		key: "jpn",
+		inputPath: "/",
+		position: 2,
+		language: "ja",
+		label: "Japanese",
+		packaging: "CHUNKED_TEXT",
+		segmentLength: 6,
+		destination: { outputKey: "origin", path: root + "/subtitles/jpn" },
+	};
+	const projected = compileExpectedLiveArtefacts(
+		liveChannelPlanSchema.parse({ ...raw, dvbSubtitles: [track] }),
+	);
+	const manifest = projected.manifests.find((m) => m.kind === "HLS");
+	if (!manifest) throw Error("No HLS fixture");
+	const media = manifest.hlsAdditionalMedia?.find(
+		(m) => m.type === "SUBTITLES",
+	);
+	expect(media).toMatchObject({
+		resource: {
+			container: "CHUNKED_TEXT",
+			directory: root + "/subtitles/jpn/",
+		},
+	});
+	const master = await parseHlsText(
+		'#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subtitles",NAME="Japanese",LANGUAGE="ja",URI="subtitles_jpn.m3u8"\n#EXT-X-STREAM-INF:BANDWIDTH=800000,SUBTITLES="subtitles"\nvideo.m3u8\n',
+	);
+	const result = await collectHlsReferenceChecks(
+		originDeps(`#EXTM3U\n#EXTINF:6,\nsubtitles/${folder}/segment_1.vtt\n`, [
+			root + "/subtitles/" + folder + "/segment_1.vtt",
+		]),
+		"dvb",
+		manifest,
+		master,
+	);
+	expect(result).toContainEqual(
+		expect.objectContaining({
+			id: "dvb:additional-media:0:playlist:binding",
+			verdict: folder === "jpn" ? "PASS" : "FAIL",
+		}),
+	);
+	if (folder === "jpn")
+		expect(result).toContainEqual(
+			expect.objectContaining({
+				id: "dvb:additional-media:0:playlist:objects",
+				verdict: "PASS",
+			}),
+		);
+});
+
+it("requires separate segmented DASH subtitle representations with the selected languages", async () => {
+	const xml =
+		'<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" mediaPresentationDuration="PT6S"><Period><AdaptationSet lang="en" mimeType="text/vtt"><Representation id="external"><BaseURL>https://example.invalid/sub.vtt</BaseURL></Representation></AdaptationSet><AdaptationSet lang="ja" mimeType="application/mp4" codecs="wvtt"><SegmentTemplate media="sub/$Number$.m4s" initialization="sub/init.mp4" duration="6"/><Representation id="ja" bandwidth="1000"/></AdaptationSet></Period></MPD>';
+	const tracks = ["ja", "en", "ja"].map((language, i) => ({
+		key: String(i),
+		language,
+	}));
+	const result = dashDvbSubtitleChecks("mpd", tracks, await parseDashText(xml));
+	expect(result.map((c) => c.verdict)).toEqual(["PASS", "FAIL", "FAIL"]);
 });

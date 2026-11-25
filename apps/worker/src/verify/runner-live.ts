@@ -78,6 +78,7 @@ import {
 import { sampleLiveStorageObjects } from "./live-storage-sample";
 import {
 	collectHlsReferenceChecks,
+	dashDvbSubtitleChecks,
 	dashExternalSubtitleChecks,
 } from "./manifest-reference-checks";
 import {
@@ -737,12 +738,17 @@ export async function collectManifestFiles(
 				const { parseDashText } = await import("./adapters");
 				const parsed = await parseDashText(text);
 				entries = parsed.representations.length;
-				if (m.dashExternalSubtitles?.length)
-					referenceChecks = dashExternalSubtitleChecks(
-						`live:manifest:${m.manifestKey}`,
-						m.dashExternalSubtitles,
-						parsed,
-					);
+				if (m.dashExternalSubtitles?.length || m.dashDvbSubtitles?.length) {
+					const id = `live:manifest:${m.manifestKey}`;
+					referenceChecks = [
+						...dashExternalSubtitleChecks(
+							id,
+							m.dashExternalSubtitles ?? [],
+							parsed,
+						),
+						...dashDvbSubtitleChecks(id, m.dashDvbSubtitles ?? [], parsed),
+					];
+				}
 				videoCodecSets = parsed.adaptationSets
 					?.filter((set) => set.kind === "video")
 					.map((set) => set.codecs);

@@ -130,6 +130,20 @@ export type WizardFileStream = {
 	encodingKey?: string;
 };
 
+export type WizardCaptionStream = {
+	key: string;
+	inputFile: string;
+	encodingKey?: string;
+} & (
+	| { kind: "CEA608"; channel: "CC1" | "CC3" }
+	| { kind: "CEA708"; channel?: number }
+	| {
+			kind: "DVB";
+			selectionMode: "AUTO" | "POSITION_ABSOLUTE" | "SUBTITLE_RELATIVE";
+			position?: number;
+	  }
+);
+
 /** HDR10 video and its JSON metadata share one Bitmovin Input location. */
 export type WizardHdr10PlusStream = {
 	key: string;
@@ -279,6 +293,7 @@ export type WizardSources = {
 	audioMixStreams?: import("../plan/audio-mix").AudioMixStream[];
 	tracks?: WizardIngestTrack[];
 	fileStreams?: WizardFileStream[];
+	captionStreams?: WizardCaptionStream[];
 	dolbyStreams?: WizardDolbyStream[];
 	hdr10PlusStreams?: WizardHdr10PlusStream[];
 	/** Trimming/concatenation input streams (the modern path). */
@@ -648,7 +663,7 @@ export type WizardSubtitle = {
 	conditions?: StreamCondition;
 	codec?: "WEBVTT" | "IMSC";
 	styling?: { mode?: "PASSTHROUGH" | "DROP_STYLING" };
-	/** WEBVTT fileStream key (sources.fileStreams). */
+	/** File or embedded caption source key. */
 	source: string;
 	label?: string;
 	language?: string;
@@ -2418,7 +2433,9 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				key: muxKey,
 				kind: "TEXT" as const,
 				streamKey: key,
-				filename: m.filename ?? "subtitles.ttml",
+				filename:
+					m.filename ??
+					(defaultKind === "CHUNKED_TEXT" ? `${key}.vtt` : "subtitles.ttml"),
 				destination: dest ?? destination(`${base}${derived}`, m.acl),
 				name,
 			});
@@ -2715,6 +2732,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	const encodings = sources.encodings ?? [];
 	const keyframes = sources.keyframes ?? [];
 	const fileStreams = sources.fileStreams ?? [];
+	const captionStreams = sources.captionStreams ?? [];
 	const dolbyStreams = sources.dolbyStreams ?? [];
 	const hdr10PlusStreams = sources.hdr10PlusStreams ?? [];
 	const trimmingStreams = sources.trimmingStreams ?? [];
@@ -2780,6 +2798,18 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 							position: stream.position,
 							encodingKey: str(stream.encodingKey),
 						});
+					}),
+				}
+			: {}),
+		...(captionStreams.length
+			? {
+					captionStreams: captionStreams.map(({ inputFile, ...track }) => {
+						const file = fileByKey.get(inputFile);
+						return {
+							...track,
+							inputKey: file?.inputKey ?? inputFile,
+							inputPath: file?.path ?? "",
+						};
 					}),
 				}
 			: {}),
@@ -3187,6 +3217,7 @@ export function remapInputKeyRefs(
 			...sources,
 			tracks: sources.tracks?.map(mapFile),
 			fileStreams: sources.fileStreams?.map(mapFile),
+			captionStreams: sources.captionStreams?.map(mapFile),
 			dolbyStreams: sources.dolbyStreams?.map(mapDolby),
 			hdr10PlusStreams: sources.hdr10PlusStreams?.map((stream) =>
 				stream.videoInputFile === from
@@ -3244,6 +3275,11 @@ export function remapEncodingKeyRefs(
 							track.encodingKey === from
 								? { ...track, encodingKey: to }
 								: track,
+						),
+						captionStreams: sources.captionStreams?.map((stream) =>
+							stream.encodingKey === from
+								? { ...stream, encodingKey: to }
+								: stream,
 						),
 						fileStreams: sources.fileStreams?.map((stream) =>
 							stream.encodingKey === from

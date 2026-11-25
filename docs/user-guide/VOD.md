@@ -146,6 +146,8 @@ controls apply to the final codec. Legacy CRF/x265 settings are not automaticall
 translated. Switching codecs preserves conflicting settings until you explicitly
 remove them and pass validation.
 
+For media with embedded captions, open **Sources → Streams → Add embedded captions** and select the media file. CEA-608 offers CC1 and CC3. CEA-708 accepts service numbers 1–63 and uses service 1 when left blank. For DVB, choose automatic selection or a zero-based position among all tracks or subtitle tracks. Under **Ladder → Subtitle tracks**, assign that source to a WebVTT rendition. Choose the text file output for a sidecar or segmented WebVTT for HLS. Each selection extracts one track at its original timestamps.
+
 - **IMSC subtitles:** select a TTML source, IMSC codec, and `.ttml` output. Use
   WebVTT for HLS subtitles.
 - **HE-AAC audio** is available for segmented fMP4 with HLS or DASH. Select HE-AAC v1 for up to 128,000 bps or v2 for up to 64,000 bps. A blank sample rate, layout, or signaling uses the encoder default. Only v2 offers explicit parametric-stereo signaling (`EXPLICIT_PS`). [Bitmovin codec configuration](https://developer.bitmovin.com/encoding/reference/postencodingconfigurationsaudioheaacv2)

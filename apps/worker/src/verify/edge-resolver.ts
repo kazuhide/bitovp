@@ -48,6 +48,7 @@ import {
 	type HlsVideoReferences,
 } from "./hls-video-reference-binding";
 import {
+	dashDvbSubtitleChecks,
 	dashExternalSubtitleChecks,
 	externalVttReferenceChecks,
 	hlsAudioGroupChecks,
@@ -630,7 +631,10 @@ export async function observeEdgeLeg(
 	const referenceMissing: string[] = [];
 
 	if (manifest.kind === "DASH") {
-		if (manifest.dashExternalSubtitles?.length) {
+		if (
+			manifest.dashExternalSubtitles?.length ||
+			manifest.dashDvbSubtitles?.length
+		) {
 			const { parseDashText } = await import("./adapters");
 			const observed = await parseDashText(master.read.text).catch(
 				() => undefined,
@@ -638,11 +642,11 @@ export async function observeEdgeLeg(
 			const checks = observed
 				? dashExternalSubtitleChecks(
 						"external",
-						manifest.dashExternalSubtitles,
+						manifest.dashExternalSubtitles ?? [],
 						observed,
 					)
 				: [];
-			for (const [index] of manifest.dashExternalSubtitles.entries()) {
+			for (const [index] of (manifest.dashExternalSubtitles ?? []).entries()) {
 				const valid = checks.some(
 					(check) =>
 						check.id === `external:external-subtitle:${index}:reference` &&
@@ -661,8 +665,22 @@ export async function observeEdgeLeg(
 				});
 			}
 			if (
+				manifest.dashDvbSubtitles?.length &&
+				(!observed ||
+					dashDvbSubtitleChecks(
+						"edge",
+						manifest.dashDvbSubtitles,
+						observed,
+					).some((c) => c.verdict !== "PASS"))
+			)
+				referenceMissing.push(
+					"A configured segmented DASH subtitle or its language was absent",
+				);
+			if (
 				observed?.representations.filter((row) => row.kind === "text")
-					.length !== manifest.dashExternalSubtitles.length
+					.length !==
+				(manifest.dashExternalSubtitles?.length ?? 0) +
+					(manifest.dashDvbSubtitles?.length ?? 0)
 			)
 				referenceMissing.push(
 					"DASH external subtitle count differs from the configured tracks",
@@ -861,7 +879,10 @@ export async function observeEdgeLeg(
 			const mediaSequence = mediaSequenceOf(child.read.text);
 			let videoResources: HlsVideoReferences["objects"] | undefined;
 			const video = manifest.hlsAdditionalMedia?.find(
-				(media) => media.type === "VIDEO" && media.uri === id,
+				(media) =>
+					(media.type === "VIDEO" ||
+						media.resource?.container === "CHUNKED_TEXT") &&
+					media.uri === id,
 			);
 			if (video) {
 				const binding = bindHlsVideoReferences(

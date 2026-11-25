@@ -54,7 +54,10 @@ export function evaluateWizardState(
 							error.code === "TIMELINE_GRAPH_CONFLICT" &&
 								state.sources?.hdr10PlusStreams?.length
 								? "wizard.hdr10PlusTimelineConflict"
-								: "vodTimeline.invalid",
+								: error.code === "TIMELINE_GRAPH_CONFLICT" &&
+										state.sources?.captionStreams?.length
+									? "wizard.embeddedCaptionTimelineConflict"
+									: "vodTimeline.invalid",
 						)
 					: error.message,
 			};

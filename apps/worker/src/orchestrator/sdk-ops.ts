@@ -755,6 +755,23 @@ export type SdkOps = {
 			metadataInputPath?: string;
 		},
 	): Promise<string>;
+	createCea608InputStream(
+		encodingId: string,
+		p: { inputId: string; inputPath: string; channel: "CC1" | "CC3" },
+	): Promise<string>;
+	createCea708InputStream(
+		encodingId: string,
+		p: { inputId: string; inputPath: string; channel?: number },
+	): Promise<string>;
+	createDvbSubtitleInputStream(
+		encodingId: string,
+		p: {
+			inputId: string;
+			inputPath: string;
+			selectionMode: "AUTO" | "POSITION_ABSOLUTE" | "SUBTITLE_RELATIVE";
+			position?: number;
+		},
+	): Promise<string>;
 	createHdr10PlusInputStream(
 		encodingId: string,
 		p: {

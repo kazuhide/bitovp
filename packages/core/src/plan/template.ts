@@ -915,6 +915,37 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	const ingestByKey = new Map(plan.ingest.map((s) => [s.key, s]));
 	const fileByKey = new Map(plan.fileStreams.map((f) => [f.key, f]));
 	const dolbyByKey = new Map(plan.dolbyStreams.map((d) => [d.key, d]));
+	const captionSections = {
+		CEA608: ["captions", "cea608"],
+		CEA708: ["captions", "cea708"],
+		DVB: ["subtitles", "dvbSubtitle"],
+	} as const;
+	const captionRefs = new Map<string, string>();
+	const captionsByEnc = new Map<string, Record<string, Record<string, Tree>>>();
+	for (const {
+		key,
+		kind,
+		inputKey,
+		encodingKey,
+		...properties
+	} of plan.captionStreams) {
+		const owner = plan.encodings?.length
+			? (encodingKey ?? encNames[0] ?? ENCODING_NAME)
+			: ENCODING_NAME;
+		const [section, collection] = captionSections[kind];
+		const entries = captionsByEnc.get(owner) ?? {};
+		entries[section] ??= {};
+		entries[section][collection] ??= {};
+		entries[section][collection][key] = {
+			properties: { ...properties, inputId: inputRef.get(inputKey) },
+		};
+		captionsByEnc.set(owner, entries);
+		captionRefs.set(
+			key,
+			`$/encodings/${owner}/inputStreams/${section}/${collection}/${key}`,
+		);
+	}
+
 	const hdr10PlusKeys = new Set(plan.hdr10PlusStreams.map((s) => s.key));
 	const hdr10PlusByEnc = new Map<string, Tree>();
 	for (const stream of plan.hdr10PlusStreams) {
@@ -995,7 +1026,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	}
 
 	const mixResources = new Map<string, Tree>();
-	const required = new Set<string>(hdr10PlusKeys);
+	const required = new Set<string>([...hdr10PlusKeys, ...captionRefs.keys()]);
 	const sourceByKey = new Map(
 		(hdr10PlusKeys.size || plan.audioMixStreams.length
 			? [
@@ -1008,6 +1039,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		).map((stream) => [stream.key, stream] as const),
 	);
 	const streamRef = (owner: string, key: string): string => {
+		const caption = captionRefs.get(key);
+		if (caption) return caption;
 		if (dolbyByKey.has(key)) return dolbyStreamRef(owner, key);
 		if (hdr10PlusKeys.has(key))
 			return `$/encodings/${owner}/inputStreams/hdr10Plus/${key}`;
@@ -2198,6 +2231,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				const sidecarEntries = dolbySidecarByEnc.get(name) ?? {};
 				const inputStreamsNode = {
 					...(mixResources.get(name) ?? {}),
+					...(captionsByEnc.get(name) ?? {}),
 					...(Object.keys(hdr10PlusEntries).length > 0
 						? { hdr10Plus: hdr10PlusEntries }
 						: {}),

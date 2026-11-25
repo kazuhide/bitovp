@@ -399,6 +399,47 @@ export const fileStreamSchema = z.strictObject({
 	encodingKey: refKey.optional(),
 });
 
+const captionSource = {
+	key: refKey,
+	inputKey: refKey,
+	inputPath: z.string().min(1),
+	encodingKey: refKey.optional(),
+};
+
+/** A subtitle track extracted from a media container. */
+export const captionStreamSchema = z
+	.discriminatedUnion("kind", [
+		z.strictObject({
+			...captionSource,
+			kind: z.literal("CEA608"),
+			channel: z.enum(["CC1", "CC3"]),
+		}),
+		z.strictObject({
+			...captionSource,
+			kind: z.literal("CEA708"),
+			channel: z.number().int().min(1).max(63).optional(),
+		}),
+		z.strictObject({
+			...captionSource,
+			kind: z.literal("DVB"),
+			selectionMode: z.enum(["AUTO", "POSITION_ABSOLUTE", "SUBTITLE_RELATIVE"]),
+			position: z.number().int().min(0).max(2147483647).optional(),
+		}),
+	])
+	.superRefine((stream, ctx) => {
+		if (
+			stream.kind === "DVB" &&
+			stream.selectionMode === "AUTO" &&
+			stream.position !== undefined
+		)
+			ctx.addIssue({
+				code: "custom",
+				path: ["position"],
+				message: "DVB position requires positional selection",
+			});
+	});
+export type CaptionStream = z.infer<typeof captionStreamSchema>;
+
 /**
  * Dolby input streams (ATMOS masters, VISION video+metadata, standalone
  * VISION_METADATA sidecars for the separated-metadata flow). Keys share
@@ -1989,6 +2030,7 @@ export const encodingPlanSchema = z.strictObject({
 	encodings: z.array(planEncodingSchema).optional(),
 	ingest: z.array(ingestStreamSchema).default([]),
 	fileStreams: z.array(fileStreamSchema).default([]),
+	captionStreams: z.array(captionStreamSchema).default([]),
 	dolbyStreams: z.array(dolbyStreamSchema).default([]),
 	hdr10PlusStreams: z.array(hdr10PlusStreamSchema).default([]),
 	/**

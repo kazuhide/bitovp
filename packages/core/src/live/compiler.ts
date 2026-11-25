@@ -10,6 +10,7 @@ import {
 import { hasMuxedInAudio, muxingStreamKeys } from "../plan/muxing-streams";
 import type { PlanRendition } from "../plan/schema";
 import { isAisaManagedLivePlan } from "./aisa";
+import { compileDvbManifest, compileDvbStreams } from "./dvb-subtitles";
 import { resolveLiveEncodingOption } from "./encoding-option";
 import { compileLiveManifestDetails } from "./manifest-details";
 import {
@@ -1075,14 +1076,19 @@ export function compileLiveChannel(plan: LiveChannelPlan): CompiledOperation[] {
 			},
 		});
 	}
+	ops.push(...compileDvbStreams(plan));
 	for (const manifest of plan.liveManifests) {
 		ops.push(
 			...compileLiveManifestDetails(
 				plan,
 				manifest,
-				manifest.kind === "HLS"
-					? compileLiveHlsManifest(plan, manifest)
-					: compileLiveDashManifest(plan, manifest),
+				compileDvbManifest(
+					plan,
+					manifest,
+					manifest.kind === "HLS"
+						? compileLiveHlsManifest(plan, manifest)
+						: compileLiveDashManifest(plan, manifest),
+				),
 			),
 		);
 	}

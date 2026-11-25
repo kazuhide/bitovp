@@ -786,6 +786,8 @@ Live encoding continuously processes incoming video and audio and writes output 
 
 Figure 7-1. Live ladder settings in the demo. The screen uses sample settings.
 
+For a transport stream delivered over SRT, Zixi or HLS, open **Ladder → DVB subtitles**. Add one row for each bitmap subtitle track. Enter its zero-based position in the input, its language tag and the display name viewers should see. Choose **Segmented WebVTT** for clear HLS or DASH, or **WebVTT in fMP4** for clear DASH. Encrypted manifests exclude these unencrypted subtitles. The encoder applies OCR to the incoming pictures. The Live wizard writes each track to its own subtitle folder under the channel’s storage output. Saving a Live template or restoring a browser draft retains the tracks. Actual text accuracy depends on the incoming pictures. The Live HD assessment uses the existing input and ladder rules. Fixed-price eligibility for DVB OCR has not been separately verified. [Bitmovin Encoder 2.51.0 release notes](https://developer.bitmovin.com/encoding/docs/encoder-2500-2990)
+
 Settings outside the Live HD conditions produce a Custom Live warning. In addition to this assessment, check the account's eligibility and the provider's acceptance. As with VOD, copying settings or loading a plan does not start a new broadcast. Use JSON editing for settings that cannot be represented in the form. After restoring a draft, also check the settings excluded from draft storage.
 
 ### Input protocols and connection direction

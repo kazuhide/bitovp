@@ -63,6 +63,20 @@ export const en = {
 			STREAMID: "Stream ID / PID",
 		},
 	},
+	liveDvb: {
+		title: "DVB subtitles",
+		add: "Add DVB subtitle track",
+		help: "Extract bitmap subtitles from an MPEG transport stream using OCR. Set the zero-based track position in the live input.",
+		position: "Input stream position",
+		language: "Language tag",
+		label: "Subtitle name",
+		packaging: "WebVTT delivery",
+		chunked: "Segmented WebVTT (HLS and DASH)",
+		fmp4: "WebVTT in fMP4 (DASH)",
+		remove: "Remove subtitle track",
+		transport:
+			"Use an SRT, Zixi or HLS transport-stream input for DVB subtitles.",
+	},
 	outputCompare: {
 		title: "Compare outputs",
 		pickTwo:
@@ -5386,6 +5400,8 @@ export const en = {
 		hdr10PlusMetadataPath: "HDR10+ metadata JSON path",
 		hdr10PlusMetadataHelp:
 			"Choose the HDR10+ JSON sidecar on the same input storage and bucket as the video. Use this stream as the source of an H.265 rendition.",
+		embeddedCaptionTimelineConflict:
+			"Embedded captions use the source timestamps. Remove the embedded caption sources to edit the timeline.",
 		hdr10PlusTimelineConflict:
 			"HDR10+ uses its video source directly. This app cannot combine it with an input timeline yet; switch to ordinary sources or remove the HDR10+ stream.",
 		av1DetailPreservationOff: "OFF — Standard encoding",

@@ -13,6 +13,9 @@ import {
 	AudioMixSourceChannelType,
 	BurnInSubtitleSrt,
 	CaptionCharacterEncoding,
+	Cea608CaptionInputStream,
+	Cea608ChannelType,
+	Cea708CaptionInputStream,
 	ChunkedTextMuxing,
 	CmafMuxing,
 	ConcatenationInputConfiguration,
@@ -30,6 +33,7 @@ import {
 	DolbyVisionMuxingConfiguration,
 	DolbyVisionProfile,
 	DolbyVisionTrackSampleEntryName,
+	DvbSubtitleInputStream,
 	FileInputStream,
 	FileInputStreamType,
 	Fmp4Muxing,
@@ -85,6 +89,9 @@ export function createMediaOps(
 	| "createFileInputStream"
 	| "createDolbyAtmosInputStream"
 	| "createDolbyVisionInputStream"
+	| "createCea608InputStream"
+	| "createCea708InputStream"
+	| "createDvbSubtitleInputStream"
 	| "createHdr10PlusInputStream"
 	| "createDolbyVisionMetadataInputStream"
 	| "createTimeBasedTrimmingInputStream"
@@ -219,6 +226,59 @@ export function createMediaOps(
 							inputId: p.inputId,
 							videoInputPath: p.videoInputPath,
 							metadataInputPath: p.metadataInputPath,
+						}),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+
+		createCea608InputStream: (encodingId, p) =>
+			audited(
+				"POST",
+				`/encoding/encodings/${encodingId}/input-streams/captions/cea608`,
+				{ ...p },
+				() =>
+					api.encoding.encodings.inputStreams.captions.cea608.create(
+						encodingId,
+						new Cea608CaptionInputStream({
+							...p,
+							channel: sdkEnumValue(
+								Cea608ChannelType,
+								p.channel,
+								"Cea608ChannelType",
+							),
+						}),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+
+		createCea708InputStream: (encodingId, p) =>
+			audited(
+				"POST",
+				`/encoding/encodings/${encodingId}/input-streams/captions/cea708`,
+				{ ...p },
+				() =>
+					api.encoding.encodings.inputStreams.captions.cea708.create(
+						encodingId,
+						new Cea708CaptionInputStream({ ...p }),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+
+		createDvbSubtitleInputStream: (encodingId, p) =>
+			audited(
+				"POST",
+				`/encoding/encodings/${encodingId}/input-streams/subtitles/dvb-subtitle`,
+				{ ...p },
+				() =>
+					api.encoding.encodings.inputStreams.subtitles.dvbSubtitle.create(
+						encodingId,
+						new DvbSubtitleInputStream({
+							...p,
+							selectionMode: sdkEnumValue(
+								StreamSelectionMode,
+								p.selectionMode,
+								"StreamSelectionMode",
+							),
 						}),
 					),
 				(r) => ({ id: r.id }),

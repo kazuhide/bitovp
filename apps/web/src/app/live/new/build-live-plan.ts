@@ -309,7 +309,19 @@ export type LiveStartState = {
 	adInsertion?: LiveAdInsertionState;
 };
 
+type LiveDvbTrack = NonNullable<LiveChannelPlanInput["dvbSubtitles"]>[number];
+export type LiveDvbRow = Pick<
+	LiveDvbTrack,
+	"key" | "language" | "label" | "packaging"
+> &
+	Partial<
+		Pick<
+			LiveDvbTrack,
+			"position" | "inputPath" | "segmentLength" | "destination"
+		>
+	>;
 export type LiveWizardState = {
+	dvbSubtitles?: LiveDvbRow[];
 	/** Managed Preview settings coexist with the normal graph until explicitly selected. */
 	aisaLive?: AisaLiveWizardSettings;
 	name: string;
@@ -1701,6 +1713,16 @@ export function buildLiveChannelPlan(
 		// video position 0, audio position 1 (C13). These entries are the
 		// per-ingestKey selection spec the compiler inlines onto each stream.
 		ingest: ingest.ingest,
+		dvbSubtitles: state.dvbSubtitles?.map((track) => ({
+			...track,
+			position: track.position ?? -1,
+			inputPath: track.inputPath ?? ingestInputPath(state.inputKind),
+			segmentLength: track.segmentLength ?? state.segmentLength,
+			destination: track.destination ?? {
+				...segmentDestination,
+				path: joinPath(base, `subtitles/${track.key}`),
+			},
+		})),
 		renditions,
 		muxings,
 		drm: state.drm,

@@ -63,6 +63,7 @@ import {
 	type LiveWizardState,
 	withMslStreamFormat,
 } from "./build-live-plan";
+import { LiveDvbSubtitlesSection } from "./dvb-subtitles-section";
 import { LiveFallbackRegions } from "./fallback-regions-section";
 import { InputSection } from "./input-section";
 import { LiveLadderSection } from "./ladder-section";
@@ -986,7 +987,10 @@ export function LiveWizard({
 					) : null}
 
 					{step === 2 && !aisaEnabled ? (
-						<LiveLadderSection state={state} onPatch={patch} />
+						<>
+							<LiveLadderSection state={state} onPatch={patch} />
+							<LiveDvbSubtitlesSection state={state} onPatch={patch} />
+						</>
 					) : null}
 
 					{step === 3 && aisaEnabled ? (

@@ -419,6 +419,21 @@ const vod = fields(
 					fields("key inputFile selectionMode encodingKey", "position"),
 				),
 				fileStreams: rows(fields("fileType key inputFile encodingKey")),
+				captionStreams: rows(
+					fields(
+						"kind key inputFile encodingKey selectionMode",
+						"position",
+						"",
+						{
+							channel: z
+								.union([
+									z.enum(["CC1", "CC3"]),
+									z.number().int().min(1).max(63),
+								])
+								.optional(),
+						},
+					),
+				),
 				dolbyStreams: rows(
 					fields(
 						"kind key inputFile inputFormat videoInputFile metadataInputFile encodingKey",
@@ -643,6 +658,16 @@ const live = fields(
 			),
 		),
 		rtmp: group(fields("inputId")),
+		dvbSubtitles: rows(
+			fields(
+				"key language label packaging inputPath",
+				"position segmentLength",
+				"",
+				{
+					destination: group(fields("outputKey path acl")),
+				},
+			),
+		),
 		archive: group(
 			fields("", "", "", {
 				output: group(location),
@@ -933,6 +958,7 @@ export function mergeWizardDraft<T>(
 		"archive.muxing.destination": ["outputKey", "path", "acl"],
 		"sources.tracks.*": ["key", "inputFile", "selectionMode", "position"],
 		"sources.fileStreams.*": ["key", "inputFile"],
+		"sources.captionStreams.*": ["key", "inputFile", "kind"],
 		"sources.dolbyStreams.*": ["kind", "key"],
 		"sources.hdr10PlusStreams.*": [
 			"key",

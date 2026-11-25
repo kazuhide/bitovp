@@ -23,6 +23,7 @@ export function inputStreamAncestry(
 		[
 			...plan.ingest,
 			...plan.fileStreams,
+			...plan.captionStreams,
 			...plan.dolbyStreams,
 			...plan.hdr10PlusStreams,
 		].map((stream) => stream.key),
@@ -82,6 +83,7 @@ export function inputStreamLeaves(
 		[
 			...plan.ingest,
 			...plan.fileStreams,
+			...plan.captionStreams,
 			...plan.dolbyStreams,
 			...plan.hdr10PlusStreams,
 		].map((s) => s.key),

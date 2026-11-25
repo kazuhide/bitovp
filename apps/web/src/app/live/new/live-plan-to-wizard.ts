@@ -231,6 +231,7 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 	const adMarkerOptions = adMarkerOptionsState(plan.adMarkers);
 
 	const state: LiveWizardState = {
+		...(plan.dvbSubtitles ? { dvbSubtitles: plan.dvbSubtitles } : {}),
 		name: plan.name,
 		accountId: plan.bitmovin?.accountId ?? "",
 		cloudRegion: plan.bitmovin?.cloudRegion ?? D.cloudRegion,

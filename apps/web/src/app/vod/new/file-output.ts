@@ -521,6 +521,7 @@ export function misreadDolbyStream(
 	if (
 		kind === "VISION_METADATA" ||
 		(state.sources?.fileStreams ?? []).some((file) => file.key === source) ||
+		(state.sources?.captionStreams ?? []).some((s) => s.key === source) ||
 		(track === "video" &&
 			(state.sources?.audioMixStreams ?? []).some((mix) => mix.key === source))
 	)

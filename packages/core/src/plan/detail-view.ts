@@ -438,6 +438,29 @@ function resolveSources(
 			},
 		];
 	}
+	const caption = plan.captionStreams.find((s) => s.key === key);
+	if (caption) {
+		const selection =
+			caption.kind === "DVB"
+				? [caption.selectionMode, caption.position]
+						.filter((v) => v !== undefined)
+						.join(" ")
+				: caption.channel;
+		return [
+			{
+				inputKey: caption.inputKey,
+				inputPath: caption.inputPath,
+				chain: [
+					{
+						kind: "file",
+						type: [caption.kind, selection]
+							.filter((v) => v !== undefined)
+							.join(" "),
+					},
+				],
+			},
+		];
+	}
 	const file = plan.fileStreams.find((f) => f.key === key);
 	if (file) {
 		const f = file as typeof file & { type?: string };
@@ -580,6 +603,7 @@ function declaredReads(
 	for (const stream of [
 		...plan.ingest,
 		...plan.fileStreams,
+		...plan.captionStreams,
 		...plan.dolbyStreams,
 		...plan.hdr10PlusStreams,
 	]) {

@@ -2557,7 +2557,10 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				}
 			}
 			if (!effect) {
-				await failUnfencedStrandedEffect(row.id, "Stranded STOP");
+				const reason =
+					"The previous worker did not record which encoder generation it admitted. Open the channel, confirm the current broadcast and choose Stop if it should end.";
+				if (await failUnfencedStrandedEffect(row.id, "Stranded STOP", reason))
+					await emitMissed(row, reason);
 				return null;
 			}
 			return {
@@ -2708,9 +2711,9 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	async function failUnfencedStrandedEffect(
 		rowId: string,
 		label: string,
+		reason = `${label} refused: legacy outbox row has no exact current run/provider identity`,
 	): Promise<boolean> {
 		const at = deps.now();
-		const reason = `${label} refused: legacy outbox row has no exact current run/provider identity`;
 		const { count } = await deps.prisma.liveSchedule.updateMany({
 			where: {
 				id: rowId,

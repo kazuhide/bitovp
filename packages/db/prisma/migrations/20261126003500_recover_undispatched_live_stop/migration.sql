@@ -1,6 +1,7 @@
 -- The old scheduler wrote FIRED before advancing the channel fence and mirroring STOPPING.
--- Complete that interrupted admission only while both original ownership rows still predate
--- the fire. A later owner or an unprovable identity is left for the existing operator flow.
+-- A zero monotonic fence proves no other admission could have superseded that read.
+-- Heartbeat writes do not change it. Nonzero historical generations have no original
+-- admission receipt and require a fresh operator decision.
 DO $$
 DECLARE
   org uuid;
@@ -22,8 +23,8 @@ BEGIN
          AND s.action = 'STOP' AND s.status = 'FIRED' AND s.outcome = 'PENDING'
          AND s."firedAt" IS NOT NULL AND s."dispatchedAt" IS NULL AND s."dispatchJobId" IS NULL
          AND s."stopAdmissionFenceVersion" IS NULL AND s."stopProviderEncodingId" IS NULL
-         AND c."updatedAt" < s."firedAt" AND r."updatedAt" < s."firedAt"
-         AND age(c.xmin) > age(s.xmin) AND age(r.xmin) > age(s.xmin)
+         AND c."liveEffectFenceVersion" = 0 AND r."archivedRtmpAttempt" = 0
+         AND cardinality(r."previousProviderEncodingIds") = 0
          AND NOT EXISTS (SELECT 1 FROM "LiveChannelRun" n WHERE n."liveChannelId" = c.id AND n.seq > r.seq)
        ORDER BY c.id, s."firedAt", s.id
        FOR UPDATE OF c, r, s

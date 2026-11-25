@@ -68,8 +68,10 @@ export function createExhaustedScheduledStopRecovery(
 					},
 					{
 						stopAdmissionFenceVersion: { not: null },
-						outcome: { in: ["PENDING", "UNKNOWN"] },
-						dispatchedAt: { not: null },
+						OR: [
+							{ outcome: "UNKNOWN" },
+							{ outcome: "PENDING", dispatchedAt: { not: null } },
+						],
 					},
 				],
 				...(after ? { id: { gt: after } } : {}),
@@ -179,7 +181,6 @@ export function createExhaustedScheduledStopRecovery(
 				const advancedFence = originalFence !== channel.liveEffectFenceVersion;
 				let failedFencedDelivery = false;
 				if (legacy && !advancedFence && (!job || found?.effect)) {
-					if (row.dispatchJobId !== jobId && !found?.effect) continue;
 					const savedHandoff =
 						row.stopProviderEncodingId === encodingId &&
 						row.stopAdmissionFenceVersion === originalFence;
@@ -221,7 +222,16 @@ export function createExhaustedScheduledStopRecovery(
 						if (found?.effect || savedHandoff) failedFencedDelivery = true;
 						else if (
 							!job &&
-							!history.some((claim) => claim.action === "STOP")
+							!(await deps.prisma.liveEffectClaim.findFirst({
+								where: {
+									liveChannelId: row.liveChannelId,
+									liveChannelRunId: run.id,
+									action: "STOP",
+									generation: originalFence,
+									state: { in: ["CLAIMED", "DISPATCHING", "AMBIGUOUS"] },
+								},
+								select: { id: true },
+							}))
 						) {
 							// A pre-upgrade evicted job has no durable send ledger. Give the
 							// operator an actionable exact airing without replaying its POST.
@@ -242,7 +252,7 @@ export function createExhaustedScheduledStopRecovery(
 				if (!legacy || advancedFence || failedFencedDelivery) {
 					if (
 						!legacy &&
-						(row.dispatchJobId !== jobId ||
+						((row.dispatchJobId !== jobId && row.outcome !== "UNKNOWN") ||
 							row.stopProviderEncodingId !== encodingId)
 					)
 						continue;
@@ -262,11 +272,12 @@ export function createExhaustedScheduledStopRecovery(
 					}
 					// A pre-send FAILED claim holds a newer generation than its enqueue.
 					// The transaction rechecks that claim, its exact target and the channel fence.
-					// With an evicted job only durable FAILED can authorize that projection.
+					// UNKNOWN may already be durable even if the final channel projection failed.
 					if (
 						!job &&
 						originalFence === channel.liveEffectFenceVersion &&
-						!failedFencedDelivery
+						!failedFencedDelivery &&
+						row.outcome !== "UNKNOWN"
 					)
 						continue;
 					if (job && (await job.getState()) !== "failed") continue;

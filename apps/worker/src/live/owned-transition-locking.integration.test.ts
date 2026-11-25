@@ -2133,6 +2133,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			"unknown secondary active effect",
 			"purged unknown active",
 			"evicted base",
+			"evicted after pre-send failure",
+			"evicted terminal unknown",
+			"purged nonlegacy unknown",
 			"split terminal",
 			"wrong effect",
 			"purged",
@@ -2144,7 +2147,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				where: { id: f.channel.id },
 				data: {
 					status: "STOPPING",
-					legacyAdmissionFenceVersion: 2,
+					legacyAdmissionFenceVersion:
+						scenario === "purged nonlegacy unknown" ? null : 2,
 					liveEffectFenceVersion: 2,
 				},
 			});
@@ -2172,6 +2176,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						"successor",
 						"unknown secondary active effect",
 						"purged unknown active",
+						"evicted terminal unknown",
+						"purged nonlegacy unknown",
 					].includes(scenario)
 						? "UNKNOWN"
 						: "PENDING",
@@ -2182,16 +2188,18 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 								stopAdmissionFenceVersion: 2,
 							}
 						: {}),
-					dispatchedAt: now,
+					dispatchedAt: scenario === "evicted terminal unknown" ? null : now,
 				},
 			});
 			await tenant.liveSchedule.update({
 				where: { id: row.id },
 				data: {
-					dispatchJobId:
-						scenario === "unknown secondary active effect"
-							? null
-							: `sched-${row.id}`,
+					dispatchJobId: [
+						"unknown secondary active effect",
+						"evicted terminal unknown",
+					].includes(scenario)
+						? null
+						: `sched-${row.id}`,
 				},
 			});
 			if (scenario === "successor")
@@ -2200,7 +2208,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					data: { liveEffectFenceVersion: 3 },
 				});
 			const queue = vi.fn(async () =>
-				scenario.startsWith("purged") || scenario === "evicted base"
+				scenario.startsWith("purged") || scenario.startsWith("evicted")
 					? undefined
 					: {
 							data: {
@@ -2255,7 +2263,11 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				)
 			)
 				f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "QUEUED" }));
-			if (scenario === "evicted base") {
+			if (
+				scenario === "evicted base" ||
+				scenario === "evicted after pre-send failure"
+			) {
+				const earlierStop = scenario === "evicted after pre-send failure";
 				await tenant.liveEffectClaim.create({
 					data: {
 						idempotencyKey: "cue:" + randomUUID(),
@@ -2263,14 +2275,16 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						liveChannelId: f.channel.id,
 						liveChannelRunId: f.run.id,
 						providerEncodingId: f.encodingId,
-						action: "SCTE35",
-						state: "ACKED",
-						generation: 2,
+						action: earlierStop ? "STOP" : "SCTE35",
+						state: earlierStop ? "FAILED" : "ACKED",
+						generation: earlierStop ? 1 : 2,
 						ownerId: "cue-worker",
 						expiresAt: now,
 					},
 				});
 			}
+			if (scenario === "evicted after pre-send failure")
+				f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
 			const reenqueue = vi.fn();
 			const probe = createExhaustedScheduledStopRecovery(
 				f.deps,
@@ -2311,6 +2325,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					"unknown secondary active effect",
 					"purged unknown active",
 					"evicted base",
+					"evicted after pre-send failure",
+					"purged nonlegacy unknown",
 				].includes(scenario)
 			) {
 				expect(claim).toBeNull();
@@ -2356,7 +2372,11 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			expect(
 				(await tenant.liveSchedule.findUniqueOrThrow({ where: { id: row.id } }))
 					.outcome,
-			).toBe(scenario === "unknown" ? "UNKNOWN" : "DELIVERED");
+			).toBe(
+				["unknown", "evicted terminal unknown"].includes(scenario)
+					? "UNKNOWN"
+					: "DELIVERED",
+			);
 		});
 
 		it("finishes a pre-upgrade STOP admission interrupted after FIRED only for unchanged airing owners", async () => {
@@ -2389,16 +2409,32 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				where: { id: changed.f.channel.id },
 				data: {
 					liveEffectFenceVersion: { increment: 1 },
-					updatedAt: new Date(firedAt.getTime() + 1),
+					updatedAt: new Date(firedAt.getTime() - 1),
 				},
 			});
+			// The base scheduler commits FIRED after a concurrent Start already revived this same run.
+			await tenant.liveSchedule.update({
+				where: { id: changed.row.id },
+				data: { firedAt },
+			});
+			for (const { f } of armed.slice(0, 2)) {
+				await tenant.liveChannelRun.update({
+					where: { id: f.run.id },
+					data: {
+						heartbeatPollEpoch: { increment: 1 },
+						updatedAt: new Date(firedAt.getTime() + 1),
+					},
+				});
+			}
 			await admin.$executeRawUnsafe(migration);
 			await admin.$executeRawUnsafe(migration);
 			const enqueue = vi.fn(async () => {});
+			const emitEvent = vi.fn(async () => {});
 			await createScheduleSweep({
 				prisma: tenant,
 				now: () => new Date(firedAt.getTime() + 600_000),
 				enqueue,
+				emitEvent,
 			}).dispatchPending();
 			for (const { f, row } of armed.slice(0, 2)) {
 				expect(enqueue).toHaveBeenCalledWith(
@@ -2426,6 +2462,21 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				expect.anything(),
 				`sched-${changed.row.id}`,
 			);
+			expect(emitEvent).toHaveBeenCalledWith(
+				expect.objectContaining({
+					kind: "SCHEDULE_MISSED",
+					scheduleId: changed.row.id,
+					path: `/live/${changed.f.channel.id}`,
+				}),
+			);
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: changed.row.id },
+				}),
+			).toMatchObject({
+				outcome: "UNKNOWN",
+				outcomeNote: expect.stringContaining("confirm"),
+			});
 		});
 		it("refuses an old unfenced STOP outbox and a retained bare job after same-airing revival", async () => {
 			const f = await dispatchFixture(),

@@ -42,6 +42,7 @@ import {
 	type LiveChannelDeps,
 } from "../orchestrator/live-processor";
 import { adoptOrCreateStamped } from "../orchestrator/ops/shared";
+import { createBitmovinSdkOps } from "../orchestrator/sdk-ops";
 import { recordScheduleOutcome } from "../scheduler/schedule-outcome";
 import { createScheduleSweep } from "../scheduler/sweep";
 import { admitInactiveOrganization } from "../tenant/admission";
@@ -4265,6 +4266,175 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						}),
 					]),
 				);
+		});
+		it.each([
+			"prepared",
+			"post-denied",
+			"post-throttled",
+			"lookup-throttled",
+			"post-uncertain",
+			"wire-lost",
+		] as const)("recovers the exact Live child send boundary (%s)", async (mode) => {
+			const f = await dispatchFixture();
+			await tenant.bitmovinAccount.create({
+				data: { id: f.accountId, label: "Fixture", encryptedApiKey: "unused" },
+			});
+			const plan = JSON.parse(
+				readFileSync(
+					new URL(
+						"../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+						import.meta.url,
+					),
+					"utf8",
+				),
+			);
+			plan.bitmovin.accountId = f.accountId;
+			const steps = initStepLog(compileLiveChannel(plan));
+			const child = steps.find((step) => step.kind === "CREATE_STREAM");
+			if (!child) throw new Error("missing stream");
+			for (const step of steps) {
+				if (step === child) continue;
+				step.status = "DONE";
+				if (step.kind.startsWith("CREATE_"))
+					step.resourceId =
+						step.kind === "CREATE_ENCODING" ? f.encodingId : randomUUID();
+				if (step.kind === "START_LIVE_ENCODING")
+					step.response = { started: true };
+			}
+			const verify = mode === "prepared";
+			const refused = mode === "post-denied" || mode === "post-throttled";
+			if (verify) {
+				child.status = "RUNNING";
+				child.startedAt = lease.toISOString();
+				child.childCreateDispatch = "PREPARING";
+			}
+			const stepLog = JSON.parse(JSON.stringify(steps));
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					status: "PROVISIONING",
+					plan,
+					stepLog,
+					...(verify
+						? {
+								verificationKey: randomUUID(),
+								verificationRequestSha256: "e".repeat(64),
+								provisionClaimedAt: new Date(now.getTime() - 25 * 60_000),
+							}
+						: {}),
+				},
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "PROVISIONING", stepLog },
+			});
+			const observed: string[] = [];
+			let recovering = false;
+			const resultId = randomUUID();
+			const stored = async () => {
+				const row = await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				});
+				return (row.stepLog as unknown as StepLogEntry[]).find(
+					(step) => step.step === child.step,
+				);
+			};
+			const transport = vi
+				.spyOn(globalThis, "fetch")
+				.mockImplementation(async (input, init) => {
+					const path = new URL(String(input)).pathname;
+					if (!path.endsWith(`/encodings/${f.encodingId}/streams`))
+						throw new Error("unexpected endpoint: " + path);
+					const method = init?.method?.toUpperCase() ?? "GET";
+					observed.push(method);
+					const error = (status: number) =>
+						Response.json(
+							{ status: "ERROR", data: { message: "fixture refusal" } },
+							{ status },
+						);
+					if (method === "GET") {
+						if (mode === "post-uncertain" && !recovering) return error(401);
+						if (mode === "lookup-throttled" && !recovering) return error(429);
+						return Response.json({
+							status: "SUCCESS",
+							data: { result: { items: [], totalCount: 0 } },
+						});
+					}
+					expect((await stored())?.childCreateDispatch).toBe("DISPATCHING");
+					if (!recovering && mode === "post-denied") return error(401);
+					if (!recovering && mode === "post-throttled") return error(429);
+					if (!recovering && mode === "lookup-throttled")
+						throw new TypeError("lost provider reply");
+					if (!recovering && mode === "post-uncertain") return error(503);
+					if (!recovering && mode === "wire-lost") {
+						if (observed.filter((v) => v === "POST").length > 1)
+							return error(401);
+						throw new TypeError("lost provider reply");
+					}
+					return Response.json({
+						status: "SUCCESS",
+						data: { result: { id: resultId } },
+					});
+				});
+			f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
+			f.deps.makeSdk = (options) => ({
+				...f.sdk,
+				createStream: createBitmovinSdkOps(options, async () => {})
+					.createStream,
+			});
+			const run = createLiveChannelProcessor(f.deps);
+			const job = {
+				action: "provision" as const,
+				liveChannelId: f.channel.id,
+				plannedLiveChannelRunId: f.run.id,
+			};
+			try {
+				if (verify) await run(job);
+				else {
+					await expect(run(job)).rejects.toThrow();
+					expect(observed.filter((v) => v === "POST")).toHaveLength(1);
+					expect((await stored())?.childCreateDispatch).toBe(
+						refused ? "PREPARING" : "DISPATCHING",
+					);
+					const enqueue = vi.fn(
+						async (
+							_job: import("@bitovp/core").LiveChannelJob,
+							_id: string,
+						) => {},
+					);
+					await tenant.liveSchedule.create({
+						data: {
+							action: "START",
+							liveChannelId: f.channel.id,
+							liveChannelRunId: f.run.id,
+							fireAt: now,
+						},
+					});
+					await createScheduleSweep({
+						prisma: tenant,
+						now: () => now,
+						enqueue,
+					})();
+					const resumed = enqueue.mock.calls.find(
+						([j]) => j.liveChannelId === f.channel.id,
+					)?.[0];
+					if (!resumed) throw new Error("expected bound START recovery");
+					recovering = true;
+					if (refused) await run(resumed);
+					else
+						await expect(run(resumed)).rejects.toThrow(
+							/unresolved|ADOPTION_MISS/,
+						);
+				}
+				expect(observed.filter((v) => v === "POST")).toHaveLength(
+					refused ? 2 : 1,
+				);
+				if (verify || refused)
+					expect((await stored())?.resourceId).toBe(resultId);
+				else expect((await stored())?.resourceId).toBeUndefined();
+			} finally {
+				transport.mockRestore();
+			}
 		});
 		it.each([
 			false,

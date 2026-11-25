@@ -117,7 +117,11 @@ export class BitmovinCallError extends Error {
 	readonly requestId?: string;
 	readonly developerMessage?: string;
 	readonly errorCode?: number;
-	constructor(method: string, path: string, source: unknown) {
+	constructor(
+		readonly method: string,
+		path: string,
+		source: unknown,
+	) {
 		const bm = isBitmovinError(source) ? source : undefined;
 		const status = bm?.httpStatusCode;
 		// review-206 N1: the field is SERVER-controlled response-body JSON —
@@ -924,7 +928,8 @@ export async function adoptOrCreateStamped(args: {
 		throw new Error(
 			"The existing CREATE remains unresolved; no new resource was created",
 		);
-	await args.stamp?.beforeStampedCreate?.();
+	const childJournal = args.stamp?.childCreateJournal?.();
+	await childJournal?.record("DISPATCHING");
 	let created: string;
 	try {
 		const onResolved = args.onResolved;
@@ -937,6 +942,20 @@ export async function adoptOrCreateStamped(args: {
 			// barrier. A barrier failure is not a provider-create failure, so never
 			// reinterpret it as a lost response and run lookup/adoption again.
 			throw err.cause;
+		}
+		// A single native POST explicitly rejected by access or rate limits cannot
+		// have created this child. A failed lookup or ambiguous POST never
+		// supplies that proof. The new owner must receive the fenced receipt.
+		if (
+			childJournal &&
+			err instanceof BitmovinCallError &&
+			err.method === "POST" &&
+			(err.httpStatusCode === 401 ||
+				err.httpStatusCode === 403 ||
+				err.httpStatusCode === 429)
+		) {
+			await childJournal.record("PREPARING");
+			throw err;
 		}
 		if (!expect) {
 			throw err;

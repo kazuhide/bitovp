@@ -6261,15 +6261,23 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					currentStep: () => stampStep,
 					adoptWindow: () => stampAdopt,
 					allowCreate: () => !cancelRecovery && !activeEntry?.adoptExistingOnly,
-					beforeStampedCreate: async () => {
-						if (activeEntry?.childCreateDispatch !== "PREPARING") return;
-						activeEntry.childCreateDispatch = "DISPATCHING";
-						try {
-							await persist(entries);
-						} catch (error) {
-							activeEntry.childCreateDispatch = "PREPARING";
-							throw error;
-						}
+					childCreateJournal: () => {
+						const entry = activeEntry;
+						if (!entry?.childCreateDispatch || !isStampedLiveChild(entry))
+							return;
+						return {
+							record: async (state) => {
+								const previous = entry.childCreateDispatch;
+								if (state === previous) return;
+								entry.childCreateDispatch = state;
+								try {
+									await persist(entries);
+								} catch (error) {
+									entry.childCreateDispatch = previous;
+									throw error;
+								}
+							},
+						};
 					},
 					...(verification
 						? {
@@ -7234,10 +7242,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					// ERROR-resume reseeds FAILED/RUNNING to PENDING while retaining
 					// timing. A verification CREATE with that history may already
 					// exist at the provider and must reconcile by exact marker first.
-					stampAdopt =
-						wasRunning ||
-						wasVerificationCreateAttempt ||
-						entry.adoptExistingOnly === true;
+					stampAdopt = isStampedLiveChild(entry)
+						? entry.adoptExistingOnly === true
+						: wasRunning || wasVerificationCreateAttempt;
 					const ticker = startLeaseTicker();
 					activeLeaseTicker = ticker;
 					let result: Awaited<ReturnType<typeof executeStep>>;

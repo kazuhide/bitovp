@@ -1864,7 +1864,13 @@ export function createBitmovinSdkOps(
 		? createOrphanStopFetch()
 		: options.monitoringSignal
 			? createMonitoringFetch(options.monitoringSignal)
-			: createRetryingFetch({ retryMutations: !options.stamp?.beforeMutation });
+			: createRetryingFetch({
+					// A later denial cannot settle an earlier lost POST. Journaled Live
+					// children reconcile that first attempt through their exact stamp.
+					retryMutations: () =>
+						!options.stamp?.beforeMutation &&
+						!options.stamp?.childCreateJournal?.(),
+				});
 	const liveStartFetch = createLiveStartFetch(
 		options.stamp ? createStampingFetch(retrying, options.stamp) : retrying,
 	);

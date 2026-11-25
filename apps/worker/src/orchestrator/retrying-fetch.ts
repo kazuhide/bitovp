@@ -54,7 +54,7 @@ export type RetryingFetchOptions = {
 	/** Total attempts, including the first. 1 disables retrying. */
 	attempts?: number;
 	/** A job-owned mutation must be reconciled after an uncertain transport response. */
-	retryMutations?: boolean;
+	retryMutations?: boolean | (() => boolean);
 	/** Base backoff; attempt n waits `delayMs * 2^(n-1)`. */
 	delayMs?: number;
 	/** Injected for tests — the default is a real timer. */
@@ -80,6 +80,10 @@ export function createRetryingFetch(
 		options.fetchImpl ?? ((url, init) => fetch(url, init as never));
 
 	return async (url, init) => {
+		const retryMutations =
+			typeof options.retryMutations === "function"
+				? options.retryMutations()
+				: options.retryMutations;
 		let lastError: unknown;
 		for (let attempt = 1; attempt <= attempts; attempt++) {
 			try {
@@ -109,7 +113,7 @@ export function createRetryingFetch(
 				 * nobody recorded.
 				 */
 				if (
-					(options.retryMutations === false &&
+					(retryMutations === false &&
 						!["GET", "HEAD", "OPTIONS"].includes(
 							(
 								(init as { method?: string } | undefined)?.method ?? "GET"

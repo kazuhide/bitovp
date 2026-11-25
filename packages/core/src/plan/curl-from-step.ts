@@ -830,17 +830,34 @@ export function curlForStep(
 			!refs.inputId.trim()
 		)
 			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
-		const inputPath = recordedObjectPath(
-			data?.inputPath,
-			entry.payload.inputPath,
+		const objectInput = hasRecordedObjectInput(
+			entry,
+			data,
+			options.objectInputs,
 		);
+		const compiled = entry.payload.inputPath;
+		// Embedded caption executors send the compiled path verbatim. Some older
+		// snapshots masked an entire query-like S3 key, even after a successful POST.
+		const confirmedMaskedKey =
+			data?.inputPath === REDACTED &&
+			objectInput &&
+			entry.status === "DONE" &&
+			typeof entry.resourceId === "string" &&
+			!!entry.resourceId &&
+			entry.response !== null &&
+			typeof entry.response === "object" &&
+			"id" in entry.response &&
+			entry.response.id === entry.resourceId &&
+			typeof compiled === "string" &&
+			!compiled.includes(REDACTED) &&
+			hasPrivateStorageLocator(compiled);
+		const inputPath = confirmedMaskedKey
+			? compiled
+			: recordedObjectPath(data?.inputPath, compiled);
 		if (
 			typeof inputPath !== "string" ||
 			!inputPath ||
-			hasPrivateStorageLocator(
-				inputPath,
-				hasRecordedObjectInput(entry, data, options.objectInputs),
-			)
+			hasPrivateStorageLocator(inputPath, objectInput)
 		)
 			return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 		entry = { ...entry, refs: { encodingId: refs.encodingId } };

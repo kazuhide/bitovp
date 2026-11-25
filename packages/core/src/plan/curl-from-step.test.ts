@@ -29,6 +29,35 @@ function step(
 }
 
 describe("curlForStep — endpoint mapping", () => {
+	it("refuses to reconstruct masked caption paths without matching successful object-input and caption receipts", () => {
+		const entry = step({
+			kind: "CREATE_CEA608_INPUT_STREAM",
+			resourceId: "caption-id",
+			response: { id: "caption-id" },
+			refs: { inputId: "input:s3" },
+			payload: { inputPath: "archive/scene.ts?key=wide" },
+			request: {
+				inputPath: REDACTED,
+				channel: "CC1",
+				refs: { inputId: "object-id", encodingId: "encoding-id" },
+			},
+		});
+		const objectInputs = new Map([["input:s3", "object-id"]]);
+		expect(
+			curlForStep(entry, { objectInputs: new Map([["input:s3", "other"]]) }).ok,
+		).toBe(false);
+		for (const patch of [
+			{ response: { id: "other" } },
+			{ status: "FAILED" as const },
+			{ resourceId: undefined },
+			{ payload: { inputPath: "https://private.invalid/asset?sig=SECRET" } },
+			{ payload: { inputPath: "archive/retained.ts" } },
+		])
+			expect(curlForStep({ ...entry, ...patch }, { objectInputs }).ok).toBe(
+				false,
+			);
+	});
+
 	it.each([
 		"reels:day/Scene&key=take#2?auth=review",
 		"///reels@day/take.mxf",

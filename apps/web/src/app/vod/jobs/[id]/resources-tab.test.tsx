@@ -101,17 +101,22 @@ describe("ResourcesTab — raw snapshots in place", () => {
 		);
 		expect(screen.queryByRole("button", { name: /cURL/ })).toBeNull();
 	});
-	it("copies the exact caption object key from the matching S3 input receipt", async () => {
+	it.each([
+		"current",
+		"masked",
+	] as const)("copies the exact caption object key from a %s request and matching S3 receipt", async (version) => {
 		const user = userEvent.setup();
 		const path = "assets/angle?key=iso.ts";
 		const entry: StepLogEntry = {
 			step: "caption:CC1",
 			kind: "CREATE_CEA608_INPUT_STREAM",
 			status: "DONE",
+			resourceId: "caption-123",
+			response: { id: "caption-123" },
 			refs: { inputId: "input:main", encodingId: "encoding" },
 			payload: { inputPath: path, channel: "CC1" },
 			request: {
-				inputPath: path,
+				inputPath: version === "masked" ? "[REDACTED]" : path,
 				channel: "CC1",
 				refs: { inputId: "in-123", encodingId: "encoder" },
 			},

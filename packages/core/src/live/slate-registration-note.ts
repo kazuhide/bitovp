@@ -3,7 +3,7 @@ import {
 	publicStorageDiagnostic,
 } from "../plan/hdr-source-paths";
 import { slateSourceSchema } from "./program-schedule";
-import { slateNormalizedKey } from "./slate-normalize";
+import { slateNormalizedKeyWithRateToken } from "./slate-normalize";
 
 type RetainedSlateNote = {
 	note?: string | null;
@@ -40,15 +40,16 @@ export function publicSlateRegistrationNote(row: RetainedSlateNote) {
 			media,
 		);
 	if (!target) return projected;
-	const [numerator, denominator = 1] = (target[3] ?? "").split("/").map(Number);
-	const normalized = slateNormalizedKey(source.data.key, {
-		width: Number(target[1]),
-		height: Number(target[2]),
-		frameRate: Number(numerator) / denominator,
-		sampleRate: Number(target[4]),
-		channels: Number(target[5]),
-		channelsAssumed: false,
-	});
+	const normalized = slateNormalizedKeyWithRateToken(
+		source.data.key,
+		{
+			width: Number(target[1]),
+			height: Number(target[2]),
+			sampleRate: Number(target[4]),
+			channels: Number(target[5]),
+		},
+		target[3] ?? "",
+	);
 	const stereo = "; channel count assumed stereo (the live input reports none)";
 	const suffix = destination.endsWith(stereo) ? stereo : "";
 	const output = destination.slice(0, destination.length - suffix.length);

@@ -256,13 +256,17 @@ describe("createSlatePreparer", () => {
 		await expect(readdir(workDir)).resolves.toEqual([]);
 	});
 
-	it("reads back the converted object name from the same registration note the worker produced", async () => {
+	it.each([
+		30,
+		25.0001,
+		30000 / 1001,
+	])("reads back the converted object name from the same registration note the worker produced at %d fps", async (frameRate) => {
 		const source = { ...SOURCE, key: "slates/bumper@2026.mp4" };
 		const { deps } = makeDeps({ recorded: MP4 });
 		const result = await createSlatePreparer(deps)({
 			label: "retained",
 			source,
-			ingest: INGEST,
+			ingest: { ...INGEST, video: { ...INGEST.video, frameRate } },
 			destination: DEST,
 		});
 		expect(result.kind).toBe("READY");

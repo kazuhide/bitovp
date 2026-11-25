@@ -476,3 +476,41 @@ it("removes the accepted original on success after a sibling discarded the worki
 	act(() => older.result.current.afterSubmission()?.());
 	expect(reopen().result.current.available).toBe(false);
 });
+
+it("persists edits queued after submission before navigating away on success", () => {
+	writeWizardDraft(key, "vod", value, 1);
+	const hook = renderHook(
+		({ form }) =>
+			useWizardDraft({
+				kind: "vod",
+				context: "new",
+				value: form,
+				step: 1,
+				onRestore: vi.fn(),
+			}),
+		{ initialProps: { form: value } },
+	);
+	act(() => hook.result.current.restore());
+	const finish = hook.result.current.afterSubmission();
+	const waiting: (() => void)[] = [];
+	const request = vi.spyOn(navigator.locks, "request").mockImplementation(((
+		_slot: string,
+		callback: () => void,
+	) => {
+		waiting.push(callback);
+		return Promise.resolve();
+	}) as LockManager["request"]);
+	try {
+		act(() =>
+			hook.rerender({ form: { ...value, name: "Edited after click" } }),
+		);
+		act(() => vi.advanceTimersByTime(301));
+		act(() => finish?.());
+		hook.unmount();
+		expect(waiting).toHaveLength(2);
+		for (const callback of waiting) act(callback);
+		expect(readWizardDraft(key, "vod")?.value.name).toBe("Edited after click");
+	} finally {
+		request.mockRestore();
+	}
+});

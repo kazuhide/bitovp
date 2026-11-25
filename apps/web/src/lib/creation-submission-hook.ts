@@ -31,6 +31,9 @@ export function useCreationSubmission(
 	const boundIdentity = useRef<string | null>(null);
 	if (identityKey && !boundIdentity.current)
 		boundIdentity.current = identityKey;
+	const owner = boundIdentity.current;
+	const verified = useRef(identity);
+	verified.current = identity;
 	const currentScope = useRef<string | null>(null);
 	const scopeKey = identity
 		? JSON.stringify([...identity, kind, context])
@@ -65,7 +68,17 @@ export function useCreationSubmission(
 		seed,
 		seedError,
 		async submit<T>(intent: unknown, buildBody?: CreationBody): Promise<T> {
-			if (!identity || identityKey !== boundIdentity.current)
+			// A paused request keeps its clicked scope; authorize it again with
+			// the verified session in effect when transport actually resumes.
+			const current = verified.current;
+			const expectedScope = current
+				? JSON.stringify([...current, kind, context])
+				: null;
+			if (
+				!current ||
+				JSON.stringify(current) !== owner ||
+				expectedScope !== currentScope.current
+			)
 				throw new ApiError(409, t("creationSubmission.sessionUnavailable"));
 			if (prepareSeed && !seed)
 				throw (
@@ -73,10 +86,10 @@ export function useCreationSubmission(
 					new ApiError(409, t("creationSubmission.sessionUnavailable"))
 				);
 			try {
-				return await createSubmissionClient([...identity, kind, context], {
+				return await createSubmissionClient([...current, kind, context], {
 					storage: sessionStorage,
 					beforeSend: () => {
-						if (currentScope.current !== scopeKey)
+						if (currentScope.current !== expectedScope)
 							throw new ApiError(
 								409,
 								t("creationSubmission.sessionUnavailable"),

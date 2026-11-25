@@ -52,6 +52,40 @@ describe("P1 media filter execution", () => {
 		expect(JSON.stringify(result)).not.toContain("EXAMPLE_SECRET");
 	});
 	it.each([
+		"CREATE_FILTER_WATERMARK",
+		"CREATE_FILTER_ENHANCED_WATERMARK",
+	] as const)("signs distinct S3 object names byte-for-byte for %s", async (kind) => {
+		const sdk = fakeSdk();
+		const ctx: ExecutorContext = {
+			sdk,
+			ids: new Map(),
+			resolveCredential: resolve,
+			poll: { intervalMs: 1, timeoutMs: 1, sleep: async () => {} },
+		};
+		for (const imagePath of ["brand/logo.png", "/brand/logo.png"]) {
+			await executeStep(
+				{
+					kind,
+					step: "filter:v:image",
+					refs: {},
+					payload: {
+						inputKey: "main",
+						imageInput: input,
+						imagePath,
+						left: 0,
+						top: 0,
+					},
+				},
+				ctx,
+			);
+		}
+		const paths = vi
+			.mocked(sdk.createMediaFilter)
+			.mock.calls.map(([, payload]) => new URL(String(payload.image)).pathname);
+		expect(paths).toEqual(["/brand/logo.png", "//brand/logo.png"]);
+	});
+
+	it.each([
 		[
 			"ENHANCED_DEINTERLACE",
 			"enhancedDeinterlace",

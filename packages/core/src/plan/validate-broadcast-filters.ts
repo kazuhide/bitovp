@@ -1,3 +1,4 @@
+import { CONFORM_RATE_TOLERANCE, conformRateWithCodec } from "./conform-rate";
 import { inputStreamAncestry } from "./input-stream-graph";
 import { AUDIO_CODECS, type EncodingPlan } from "./schema";
 import type { PlanIssue } from "./validate";
@@ -210,7 +211,9 @@ export function validateBroadcastFilters(plan: EncodingPlan): PlanIssue[] {
 				rendition.burnInSrt ||
 				rates.length !== 1 ||
 				rates[0]?.targetFps !== target ||
-				(rate != null && Math.abs(Math.fround(rate) - target) > 1e-7)
+				(rate != null &&
+					Math.abs(Math.fround(rate) - conformRateWithCodec(target)) >
+						CONFORM_RATE_TOLERANCE)
 			)
 				issues.push({
 					level: "error",

@@ -3,6 +3,7 @@ import {
 	codecAspectRatioControls,
 	codecDetailControls,
 } from "./codec-detail-controls";
+import { filterParametersForPlan } from "./conform-rate";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
 import {
 	type HlsAudioMediaDefaults,
@@ -14,7 +15,6 @@ import {
 	hlsVariantUri,
 } from "./hls-media-defaults";
 import { applyManifestDetails } from "./manifest-detail-compiler";
-import { filterParameters } from "./media-filters";
 import {
 	hasMuxedInAudio,
 	isFileOnlyMuxingKind,
@@ -578,6 +578,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 		return latest;
 	});
 	const filterByKey = new Map(plan.filters.map((f) => [f.key, f]));
+	const filterParameters = filterParametersForPlan(plan);
 
 	// Multi-encoding partition (Dolby ladders). Absent plan.encodings ⇒ the
 	// implicit single encoding with the legacy step ids — every pre-PR5
@@ -1676,12 +1677,12 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							filter.kind === "WATERMARK" ||
 							filter.kind === "ENHANCED_WATERMARK"
 								? {
-										...filterParameters(filter),
+										...filterParameters(filter, rendition.encodingKey),
 										imageInput: plan.inputs.find(
 											(i) => i.key === filter.inputKey,
 										),
 									}
-								: filterParameters(filter),
+								: filterParameters(filter, rendition.encodingKey),
 						refs: {},
 					});
 				}

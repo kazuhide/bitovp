@@ -1,6 +1,8 @@
 import type {
 	AudioMixInputStream,
 	BurnInSubtitleSrt,
+	Cea608CaptionInputStream,
+	Cea708CaptionInputStream,
 	ChunkedTextMuxing,
 	CmafMuxing,
 	ConcatenationInputStream,
@@ -8,6 +10,7 @@ import type {
 	DolbyVisionInputStream,
 	DolbyVisionMetadata,
 	DolbyVisionMetadataIngestInputStream,
+	DvbSubtitleInputStream,
 	FileInputStream,
 	Fmp4Muxing,
 	H264PictureTimingTrimmingInputStream,
@@ -29,6 +32,63 @@ import type {
 import { defineFamily } from "../family";
 
 export const encodings = {
+	CREATE_DVB_SUBTITLE_INPUT_STREAM: defineFamily<DvbSubtitleInputStream>({
+		parents: ["encodingId"],
+		fields: ["createdAt", "id", "modifiedAt", "name"],
+		get: (api, { id, parent }) =>
+			api.encoding.encodings.inputStreams.subtitles.dvbSubtitle.get(
+				parent("encodingId"),
+				id,
+			),
+		list: (api, { parent }, page) =>
+			api.encoding.encodings.inputStreams.subtitles.dvbSubtitle.list(
+				parent("encodingId"),
+				page,
+			),
+		remove: (api, { id, parent }) =>
+			api.encoding.encodings.inputStreams.subtitles.dvbSubtitle.delete(
+				parent("encodingId"),
+				id,
+			),
+	}),
+	CREATE_CEA708_INPUT_STREAM: defineFamily<Cea708CaptionInputStream>({
+		parents: ["encodingId"],
+		fields: ["createdAt", "id", "modifiedAt", "name"],
+		get: (api, { id, parent }) =>
+			api.encoding.encodings.inputStreams.captions.cea708.get(
+				parent("encodingId"),
+				id,
+			),
+		list: (api, { parent }, page) =>
+			api.encoding.encodings.inputStreams.captions.cea708.list(
+				parent("encodingId"),
+				page,
+			),
+		remove: (api, { id, parent }) =>
+			api.encoding.encodings.inputStreams.captions.cea708.delete(
+				parent("encodingId"),
+				id,
+			),
+	}),
+	CREATE_CEA608_INPUT_STREAM: defineFamily<Cea608CaptionInputStream>({
+		parents: ["encodingId"],
+		fields: ["createdAt", "id", "modifiedAt", "name"],
+		get: (api, { id, parent }) =>
+			api.encoding.encodings.inputStreams.captions.cea608.get(
+				parent("encodingId"),
+				id,
+			),
+		list: (api, { parent }, page) =>
+			api.encoding.encodings.inputStreams.captions.cea608.list(
+				parent("encodingId"),
+				page,
+			),
+		remove: (api, { id, parent }) =>
+			api.encoding.encodings.inputStreams.captions.cea608.delete(
+				parent("encodingId"),
+				id,
+			),
+	}),
 	CREATE_AUDIO_MIX_INPUT_STREAM: defineFamily<AudioMixInputStream>({
 		parents: ["encodingId"],
 		fields: ["createdAt", "id", "modifiedAt", "name"],

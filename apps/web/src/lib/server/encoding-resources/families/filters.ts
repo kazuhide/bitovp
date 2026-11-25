@@ -1,9 +1,15 @@
 import type {
+	AudioMixFilter,
 	AudioVolumeFilter,
+	ConformFilter,
 	CropFilter,
 	DeinterlaceFilter,
 	DenoiseHqdn3dFilter,
+	DolbyLoudnessFilter,
 	EbuR128SinglePassFilter,
+	EnhancedDeinterlaceFilter,
+	EnhancedWatermarkFilter,
+	InterlaceFilter,
 	RotateFilter,
 	ScaleFilter,
 	TextFilter,
@@ -13,6 +19,43 @@ import type {
 import { defineFamily } from "../family";
 
 export const filters = {
+	CREATE_FILTER_AUDIO_MIX: defineFamily<AudioMixFilter>({
+		parents: [],
+		fields: ["createdAt", "id", "modifiedAt", "name"],
+		get: (api, { id }) => api.encoding.filters.audioMix.get(id),
+		remove: (api, { id }) => api.encoding.filters.audioMix.delete(id),
+	}),
+	CREATE_FILTER_DOLBY_LOUDNESS: defineFamily<DolbyLoudnessFilter>({
+		parents: [],
+		fields: ["createdAt", "id", "modifiedAt", "name"],
+		get: (api, { id }) => api.encoding.filters.dolbyLoudness.get(id),
+		remove: (api, { id }) => api.encoding.filters.dolbyLoudness.delete(id),
+	}),
+	CREATE_FILTER_ENHANCED_WATERMARK: defineFamily<EnhancedWatermarkFilter>({
+		parents: [],
+		fields: ["createdAt", "id", "modifiedAt", "name"],
+		get: (api, { id }) => api.encoding.filters.enhancedWatermark.get(id),
+		remove: (api, { id }) => api.encoding.filters.enhancedWatermark.delete(id),
+	}),
+	CREATE_FILTER_INTERLACE: defineFamily<InterlaceFilter>({
+		parents: [],
+		fields: ["createdAt", "id", "modifiedAt", "name"],
+		get: (api, { id }) => api.encoding.filters.interlace.get(id),
+		remove: (api, { id }) => api.encoding.filters.interlace.delete(id),
+	}),
+	CREATE_FILTER_CONFORM: defineFamily<ConformFilter>({
+		parents: [],
+		fields: ["createdAt", "id", "modifiedAt", "name"],
+		get: (api, { id }) => api.encoding.filters.conform.get(id),
+		remove: (api, { id }) => api.encoding.filters.conform.delete(id),
+	}),
+	CREATE_FILTER_ENHANCED_DEINTERLACE: defineFamily<EnhancedDeinterlaceFilter>({
+		parents: [],
+		fields: ["createdAt", "id", "modifiedAt", "name"],
+		get: (api, { id }) => api.encoding.filters.enhancedDeinterlace.get(id),
+		remove: (api, { id }) =>
+			api.encoding.filters.enhancedDeinterlace.delete(id),
+	}),
 	CREATE_FILTER_AUDIO_VOLUME: defineFamily<AudioVolumeFilter>({
 		parents: [],
 		fields: [

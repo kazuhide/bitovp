@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-24T16:57:43.096Z",
-		"sourceCommit": "95e1368684f7a48b5cf20d0fce1d8d7c1820a708",
-		"sourceFingerprint": "b24384a26aba0939336bc07a3b49a46cc39384ad494a69059816e57e0b623062",
+		"generatedAt": "2026-11-25T00:32:12.477Z",
+		"sourceCommit": "f9cca71104c3977401384ee9b48ef4cc71866bf3",
+		"sourceFingerprint": "248b64a623f56506779e810030ed082e4eee9a7cab9181a1fc2d7673ff778ba0",
 		"sdkVersion": "1.289.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "a564d4fbedc0bf9cc7ef9116c730c60f33183e2fc16b886221e02a67b029d7e5",
@@ -1499,7 +1499,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/encoding-jobs/[id]/route.ts",
-					"line": 71
+					"line": 75
 				},
 				{
 					"file": "apps/web/src/lib/server/aisa-live-import.ts",

@@ -1086,6 +1086,21 @@ async function recoverAcknowledgedStop(
 	return result;
 }
 
+/** An unbound recovery cannot consume an admission which may belong to a later STOP. */
+export function pendingSiblingStop(
+	scheduleId: string,
+	runId: string,
+	firedAt: Date,
+) {
+	return {
+		id: { not: scheduleId },
+		liveChannelRunId: runId,
+		action: "STOP",
+		status: "FIRED",
+		outcome: "PENDING",
+		firedAt: { gte: firedAt },
+	} as const;
+}
 /**
  * Acquire and durably write DISPATCHING before the caller crosses its send or
  * spawn boundary. The channel fence CAS is the linearization point shared with
@@ -1141,9 +1156,24 @@ export async function beginLiveEffect(
 						{ dispatchJobId: `sched-${input.scheduleId}` },
 					],
 				},
-				select: { id: true },
+				select: { id: true, firedAt: true },
 			});
-			if (!original)
+			if (
+				!original ||
+				(input.legacyStopDelivery === "EXHAUSTED" &&
+					(!original.firedAt ||
+						(await tx.liveSchedule.findFirst({
+							where: {
+								liveChannelId: input.liveChannelId,
+								...pendingSiblingStop(
+									input.scheduleId,
+									input.liveChannelRunId,
+									original.firedAt,
+								),
+							},
+							select: { id: true },
+						}))))
+			)
 				return {
 					kind: "STALE" as const,
 					reason:

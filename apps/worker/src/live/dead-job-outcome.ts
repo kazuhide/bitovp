@@ -8,6 +8,7 @@ import {
 	beginLiveEffect,
 	liveEffectSendUncertainty,
 	markLiveEffectAmbiguous,
+	pendingSiblingStop,
 } from "@bitovp/db";
 import { feederLeaseIsFresh } from "../feeder/ownership";
 import { HEARTBEAT_SWEEP_JOB } from "../handlers";
@@ -310,6 +311,7 @@ export async function recordFinalStopFailure(
 	job: DeadLiveJob,
 	message: string,
 	emitEvent?: EmitProductEvent,
+	unboundFiredAt?: Date,
 ): Promise<boolean> {
 	const intent = boundStopIntent(job);
 	if (!intent || !isFinalStopFailure(job)) return false;
@@ -386,6 +388,17 @@ export async function recordFinalStopFailure(
 				status: { in: ["RUNNING", "STOPPING"] },
 				bitmovinEncodingId: intent.providerEncodingId,
 				liveEffectFenceVersion: ownedFence,
+				...(unboundFiredAt && intent.scheduleId
+					? {
+							schedules: {
+								none: pendingSiblingStop(
+									intent.scheduleId,
+									currentRun.id,
+									unboundFiredAt,
+								),
+							},
+						}
+					: {}),
 			},
 			data: {
 				status: "ERROR",

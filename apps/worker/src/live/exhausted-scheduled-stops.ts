@@ -80,6 +80,7 @@ export function createExhaustedScheduledStopRecovery(
 			take: 4,
 			select: {
 				id: true,
+				firedAt: true,
 				liveChannelRunId: true,
 				liveChannelId: true,
 				outcome: true,
@@ -244,6 +245,7 @@ export function createExhaustedScheduledStopRecovery(
 								},
 								"The pre-upgrade STOP no longer has a verifiable queue receipt.",
 								deps.emitEvent,
+								row.firedAt ?? undefined,
 							);
 							continue;
 						} else continue;

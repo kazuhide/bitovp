@@ -110,6 +110,7 @@ export {
 	outstandingLiveStopTargets,
 	ownedLiveStopEncoders,
 	pendingSecondaryStopTargets,
+	pendingSiblingStop,
 	readAiringEffectHistory,
 	recordLiveStopFailure,
 	reserveAisaStop,

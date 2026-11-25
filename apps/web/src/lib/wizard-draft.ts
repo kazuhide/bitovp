@@ -1039,7 +1039,6 @@ function restoreCopiedHdrInputs(
 	if (!draftRecord(primary) || !draftRecord(first)) return snapshot;
 	const records = (value: unknown) =>
 		Array.isArray(value) ? value.filter(draftRecord) : [];
-	const filesInDraft = records(snapshot.inputFiles);
 	const copySources = records(base.sources.hdr10PlusStreams);
 	// Fresh Copy identifies what actually supplied row zero: a declared ordinary
 	// ingest or the leaf of the named main picture. Editing a file in place
@@ -1061,9 +1060,9 @@ function restoreCopiedHdrInputs(
 			"hdr10PlusStreams",
 		].flatMap((name) => records(sources[name]));
 		let binding = declarations.find((source) => source.key === originalSource);
-		if (!binding && !filesInDraft.some((file) => file.key === primary.key)) {
-			// The original row and source were both removed. A saved replacement
-			// rendition can still name its picture through a trim or main concat.
+		if (!binding) {
+			// A removed stream may leave its file key available for a different
+			// object. Prefer the replacement source named by the saved rendition.
 			const firstVideo = records(snapshot.videos)[0];
 			const selected = mainPictureSourceKey(
 				draftRecord(firstVideo?.extras) ? firstVideo.extras.source : undefined,

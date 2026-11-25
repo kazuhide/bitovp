@@ -231,10 +231,19 @@ describe("GET /schedules", () => {
 			status: "FIRED",
 			outcome: "FAILED",
 			outcomeNote: "Read media/copy?auth=PRIVATE_FIXTURE",
+			note: "slate registration failed: read other.mxf?token=PRIVATE_FIXTURE",
+			error: "failed to probe other.mxf?token=PRIVATE_FIXTURE",
 		};
 		scheduleFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([row]);
 		const res = await GET(new Request("http://test"), ctx());
-		expect(await res.json()).toEqual([{ ...row, outcomeNote: "[withheld]" }]);
+		expect(await res.json()).toEqual([
+			{
+				...row,
+				note: "[withheld]",
+				error: "[withheld]",
+				outcomeNote: "[withheld]",
+			},
+		]);
 		expect(row.outcomeNote).toContain("PRIVATE_FIXTURE");
 	});
 

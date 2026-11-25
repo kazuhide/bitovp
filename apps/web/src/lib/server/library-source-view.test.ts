@@ -113,6 +113,11 @@ describe("Library source detail retained-raw projection", () => {
 			{ name: "Version", path: "media/take.mxf?version=2" },
 			{ name: "Annotation", path: "reels/Scene#2?auth=review" },
 			{ name: "Flag", path: "reels/take.mxf?key" },
+			{ name: "Archive reel", path: "///reels@day/take.mxf" },
+			{
+				name: "Normalized authority",
+				path: "h\tttps://fixture:LIBRARY_CREDENTIAL@fixture.invalid/take.mxf",
+			},
 			{
 				name: "Source",
 				path: "https:////fixture:LIBRARY_CREDENTIAL@fixture.invalid/media",
@@ -171,6 +176,8 @@ describe("Library source detail retained-raw projection", () => {
 			"media/take.mxf?version=2",
 			"reels/Scene#2?auth=review",
 			"reels/take.mxf?key",
+			"///reels@day/take.mxf",
+			"",
 			"",
 			"",
 			"",

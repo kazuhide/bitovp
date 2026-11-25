@@ -1266,8 +1266,24 @@ function restoreCopiedHdrInputs(
 				? undefined
 				: copySources.find((stream) => stream.videoInputFile === primary.key)
 						?.key;
+	// The named source carries its own picture binding. If the original
+	// first media object survives, implicit renditions still use that object.
+	// A file key alone can be recycled for another account, bucket or path.
+	const originalPictureStillFirst = [
+		"key",
+		"inputKey",
+		"kind",
+		"credentialId",
+		"bucket",
+		"path",
+		"region",
+	].every((field) => first[field] === primary[field]);
 	let primaryKey = primary.key;
-	if (originalSource && draftRecord(snapshot.sources)) {
+	if (
+		originalSource &&
+		!originalPictureStillFirst &&
+		draftRecord(snapshot.sources)
+	) {
 		const sources = snapshot.sources;
 		const declarations = [
 			"tracks",

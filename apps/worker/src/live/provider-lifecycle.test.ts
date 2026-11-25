@@ -665,7 +665,8 @@ describe("reconcile — UNKNOWN keeps everything", () => {
 		["timeout", "request timed out after 10000ms"],
 		["credential", "401 Unauthorized"],
 		["single 404", "404 Not Found"],
-	])("a failed readback (%s) opens the window first-writer-wins and touches nothing else", async (_label, error) => {
+		["signed source", "Read media.mxf?sig=PRIVATE_FIXTURE", "[withheld]"],
+	])("a failed readback (%s) opens the window first-writer-wins and touches nothing else", async (_label, error, expected?: string) => {
 		const h = harness();
 		const sdk = fakeSdk({
 			getEncodingStatus: vi.fn(async () => {
@@ -680,7 +681,7 @@ describe("reconcile — UNKNOWN keeps everything", () => {
 			fence: { epoch: 4 },
 		});
 		expect(out.lifecycle).toBe("UNKNOWN");
-		expect(out.reason).toBe(error);
+		expect(out.reason).toBe(expected ?? error);
 		expect(out.refusal).toMatch(/cannot be confirmed/);
 		expect(out.unknownSince).toEqual(new Date(NOW));
 		expect(h.runUpdateMany).toHaveBeenCalledTimes(1);

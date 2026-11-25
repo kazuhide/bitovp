@@ -56,6 +56,29 @@ describe("writeAuditLog — actor persistence (the headline of #81 PR2)", () => 
 			response: request,
 		});
 	});
+	it("classifies normalized network locators while retaining the original repeated-slash Dolby object key", async () => {
+		const { prisma, create } = fakePrisma();
+		const request = {
+			videoInputPath: "///reels@day/take.mxf",
+			metadataInputPath:
+				"\u0001ht\ntps://fixture:AUDIT_PRIVATE@fixture.invalid/meta.xml",
+		};
+		await writeAuditLog(prisma, {
+			method: "POST",
+			path: "/encoding/encodings/demo/input-streams/dolby-vision",
+			actor: "worker",
+			request,
+			response: request,
+		});
+		const safe = {
+			videoInputPath: request.videoInputPath,
+			metadataInputPath: "[REDACTED]",
+		};
+		expect(create.mock.calls[0]?.[0].data).toMatchObject({
+			request: safe,
+			response: safe,
+		});
+	});
 	it("a provided actor reaches prisma.auditLog.create verbatim", async () => {
 		const { prisma, create } = fakePrisma();
 		await writeAuditLog(prisma, {

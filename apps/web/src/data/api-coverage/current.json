@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-25T03:12:46.232Z",
-		"sourceCommit": "0a59e345df00fe96a08fbd9237396c860825dd08",
-		"sourceFingerprint": "c9ee440e0a1afb38493d4b0bdb22f2bd77136d5e1cd73818320e251e19033978",
+		"generatedAt": "2026-11-25T03:29:01.175Z",
+		"sourceCommit": "7ad8a2221bd80c309fc0d63039b53a17b0251195",
+		"sourceFingerprint": "7caf7e1bbef6ea704a7989846d17433e43f9bef0bf1570dbd0ecbad9265e1aeb",
 		"sdkVersion": "1.289.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "a564d4fbedc0bf9cc7ef9116c730c60f33183e2fc16b886221e02a67b029d7e5",
@@ -1656,7 +1656,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-					"line": 295
+					"line": 307
 				}
 			]
 		},
@@ -1670,7 +1670,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-					"line": 682
+					"line": 693
 				}
 			]
 		},
@@ -1731,11 +1731,11 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-					"line": 116
+					"line": 128
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-					"line": 236
+					"line": 248
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
@@ -1785,7 +1785,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-					"line": 438
+					"line": 450
 				}
 			]
 		},
@@ -1807,15 +1807,11 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-					"line": 569
+					"line": 106
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-					"line": 596
-				},
-				{
-					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-					"line": 604
+					"line": 581
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
@@ -1845,11 +1841,11 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-					"line": 591
+					"line": 603
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-					"line": 676
+					"line": 687
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
@@ -1912,11 +1908,11 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-					"line": 135
+					"line": 147
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-					"line": 241
+					"line": 253
 				}
 			]
 		},
@@ -2730,7 +2726,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-					"line": 370
+					"line": 382
 				}
 			]
 		},
@@ -7240,7 +7236,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-					"line": 397
+					"line": 409
 				}
 			]
 		},
@@ -21865,8 +21861,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-								"line": 376,
-								"callLine": 370
+								"line": 388,
+								"callLine": 382
 							}
 						]
 					},
@@ -21881,8 +21877,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-								"line": 377,
-								"callLine": 370
+								"line": 389,
+								"callLine": 382
 							}
 						]
 					},
@@ -21907,8 +21903,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-								"line": 375,
-								"callLine": 370
+								"line": 387,
+								"callLine": 382
 							}
 						]
 					},
@@ -21923,8 +21919,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-								"line": 373,
-								"callLine": 370
+								"line": 385,
+								"callLine": 382
 							}
 						]
 					},
@@ -21939,8 +21935,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-								"line": 374,
-								"callLine": 370
+								"line": 386,
+								"callLine": 382
 							}
 						]
 					},
@@ -21955,8 +21951,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-								"line": 379,
-								"callLine": 370
+								"line": 391,
+								"callLine": 382
 							}
 						]
 					},
@@ -21971,8 +21967,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-								"line": 378,
-								"callLine": 370
+								"line": 390,
+								"callLine": 382
 							}
 						]
 					}
@@ -31339,8 +31335,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-								"line": 401,
-								"callLine": 397
+								"line": 413,
+								"callLine": 409
 							}
 						]
 					},
@@ -31375,8 +31371,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-								"line": 413,
-								"callLine": 397
+								"line": 425,
+								"callLine": 409
 							}
 						]
 					},
@@ -31391,8 +31387,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-								"line": 407,
-								"callLine": 397
+								"line": 419,
+								"callLine": 409
 							}
 						]
 					},
@@ -31407,8 +31403,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-								"line": 408,
-								"callLine": 397
+								"line": 420,
+								"callLine": 409
 							}
 						]
 					},
@@ -31423,8 +31419,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/encoding.ts",
-								"line": 402,
-								"callLine": 397
+								"line": 414,
+								"callLine": 409
 							}
 						]
 					}

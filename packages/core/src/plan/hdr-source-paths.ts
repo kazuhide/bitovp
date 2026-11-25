@@ -24,23 +24,27 @@ export function hasPrivateStorageLocator(
 	value: string,
 	objectKey = false,
 ): boolean {
-	const location = value.trim();
-	const authority = /^(?:[a-z][a-z\d+.-]*:)?[/\\]{2,}([^/\\?#]*)/iu.exec(
+	// Let the URL parser recognize absolute network locators, including its
+	// specified normalization of leading C0 controls and embedded tab/CR/LF.
+	// The caller always returns the original spelling of a public object key.
+	if (URL.canParse(value)) {
+		const url = new URL(value);
+		if (url.host && (url.username || url.password || url.search || url.hash))
+			return true;
+	}
+	const location = value.trim().replace(/[\t\r\n]/gu, "");
+	const authority = /^(?:([a-z][a-z\d+.-]*):)?([/\\]{2,})([^/\\?#]*)/iu.exec(
 		location,
 	);
-	// Normalize complete URL authorities (including special-scheme slash
-	// variants) before falling back to partially entered userinfo.
-	if (authority || uriScheme.test(location)) {
-		try {
-			const url = uriScheme.test(location)
-				? new URL(location)
-				: new URL(location, "https://storage.invalid");
-			if (url.host && (url.username || url.password || url.search || url.hash))
-				return true;
-		} catch {
-			// Unfinished authorities have no WHATWG URL yet.
-		}
-		if (authority && (authority[1]?.includes("@") || /[?#].+/u.test(location)))
+	if (authority) {
+		const [, scheme, slashes, host] = authority;
+		// Two separators introduce a network-path reference. Extra separators
+		// without a scheme also occur in real S3 object keys (///reels@day).
+		// Only explicit credentials identify that ambiguous spelling as private.
+		if (
+			(scheme || slashes?.length === 2 || /^[^@]*:[^@]*@/u.test(host ?? "")) &&
+			(host?.includes("@") || /[?#].+/u.test(location))
+		)
 			return true;
 	}
 	if (objectKey) return false;

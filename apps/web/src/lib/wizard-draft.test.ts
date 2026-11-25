@@ -107,6 +107,8 @@ it.each([
 it.each([
 	"cut:",
 	"show:shot.mxf",
+	"s3:scene",
+	"s3:/media/scene",
 ])("retains unrelated object paths and names containing a partial HDR path %s", (partial) => {
 	const state = structuredClone(DEFAULT_WIZARD_STATE);
 	const media = state.inputFiles[0];
@@ -1086,4 +1088,58 @@ it("preserves safe manifest details and drops malformed nested detail groups", (
 			}
 		).dashOptions,
 	).toMatchObject({ detailed: undefined, defaultPeriods: undefined });
+});
+
+it("restores a copied HDR picture and the original audio master from audio-first legacy rows", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const primary = base.inputFiles[0];
+	if (!primary) throw new Error("missing file");
+	base.inputFiles = [
+		{
+			...primary,
+			key: "picture",
+			path: "picture.mxf",
+			inputDeclarationIndex: 1,
+		},
+		{ ...primary, key: "sound", path: "program.wav", inputDeclarationIndex: 0 },
+	];
+	base.audioInputFile = "sound";
+	base.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				videoInputFile: "picture",
+				metadataInputPath: "picture.json",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	const legacy = projectWizardDraft("vod", base);
+	legacy.inputFiles = [base.inputFiles[1], base.inputFiles[0]].map((file) => {
+		if (!file) throw new Error("missing");
+		const { inputDeclarationIndex: _index, ...rest } = file;
+		return rest;
+	});
+	delete legacy.audioInputFile;
+	const restored = mergeWizardDraft(base, legacy, "vod");
+	expect(
+		restored.inputFiles.map((f) => [f.path, f.inputDeclarationIndex]),
+	).toEqual([
+		["picture.mxf", 1],
+		["program.wav", 0],
+	]);
+	expect(restored.audioInputFile).toBe("sound");
+	const compiled = buildPlan(restored);
+	expect(compiled.ingest).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				selectionMode: "AUDIO_RELATIVE",
+				inputPath: "program.wav",
+			}),
+			expect.objectContaining({
+				selectionMode: "VIDEO_RELATIVE",
+				inputPath: "picture.mxf",
+			}),
+		]),
+	);
 });

@@ -70,6 +70,9 @@ describe("redactSecrets", () => {
 		const out = redactSecrets(input);
 		expect(out.url).toBe(`postgresql://bitovp:${REDACTED}@db:5432/app`);
 		expect(out.note).toBe("see https://example.com/path");
+		expect(
+			redactSecrets("source //fixture:private word@example.invalid/path"),
+		).toBe(`source //fixture:${REDACTED}@example.invalid/path`);
 	});
 
 	it("masks header tuples", () => {

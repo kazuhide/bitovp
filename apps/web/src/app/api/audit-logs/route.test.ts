@@ -19,6 +19,7 @@ beforeEach(() => {
 describe("GET /api/audit-logs", () => {
 	it.each([
 		"//fixture.invalid/media/file.json?token=PRIVATE_AUDIT_FIXTURE",
+		"//fixture:PRIVATE_AUDIT_FIXTURE space@fixture.invalid/video",
 		"https:/fixture:PRIVATE_AUDIT_FIXTURE'quote@fixture.invalid/picture",
 	])("withholds historical native HDR paths in audit records and diagnostic-only summaries", async (privatePath) => {
 		const path = "/encoding/encodings/encoder/input-streams/hdr10-plus",

@@ -39,17 +39,19 @@ export function publicStorageDiagnostic<T extends string | null | undefined>(
 	// A diagnostic is opaque provider prose. Quoting, punctuation and line
 	// breaks may appear within a locator. Withhold the complete message if it
 	// contains a potential storage credential.
-	const compact = value.replace(/[\t\r\n]/gu, "");
-	if (compact.includes("@") && /(?:https?|s?ftp):/i.test(compact))
-		return "[withheld]" as T;
-	return compact.split(/\s+/u).some(hasPrivateLocator)
+	// Any unescaped userinfo contains an at-sign. The original URL may span
+	// whitespace or punctuation in a provider's formatted error.
+	return value.includes("@") || hasPrivateLocator(value)
 		? ("[withheld]" as T)
 		: value;
 }
 
 /** Re-project historical JSON without altering the stored execution or its identifiers.
  * The old compiler could echo one locator into the plan, the log and an SDK diagnostic. */
-export function publicHdrSourceProjection<T>(value: T): T {
+export function publicHdrSourceProjection<T>(
+	value: T,
+	purpose: "record" | "draft" = "record",
+): T {
 	const hidden = new Set<string>();
 	const fields = new WeakMap<object, Set<string>>();
 	function mark(row: Record<string, unknown>, key: string, path: string) {
@@ -118,9 +120,10 @@ export function publicHdrSourceProjection<T>(value: T): T {
 		.filter(
 			(path) =>
 				hasPrivateLocator(path) ||
-				/^(?:https?|s?ftp|s3|gs|azure):.+|^(?:[a-z][a-z0-9+.-]*:)?[/\\]{2}.+|^[^?#]+[?#].+/i.test(
-					path.trim(),
-				),
+				(purpose === "record" &&
+					/^(?:https?|s?ftp|s3|gs|azure):[/\\]+.+|^(?:[a-z][a-z0-9+.-]*:)?[/\\]{2}.+|^[^?#]+[?#].+/i.test(
+						path.trim(),
+					)),
 		)
 		.sort((a, b) => b.length - a.length);
 	function project(input: unknown): unknown {

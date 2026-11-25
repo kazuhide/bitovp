@@ -116,11 +116,14 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 		const path = await screen.findByLabelText("HDR10+ metadata JSON path");
 		if (moveVideo) {
 			const location = screen.getByTitle("input / hdr10.mov").parentElement;
-			if (!location) throw new Error("missing copied storage row");
+			const fileRow = location?.closest<HTMLElement>(
+				"div.rounded-md.space-y-3",
+			);
+			if (!location || !fileRow) throw new Error("missing copied storage row");
 			fireEvent.click(
 				within(location).getByRole("button", { name: /enter manually/i }),
 			);
-			const bucket = document.getElementById("wz-in-1-bucket");
+			const bucket = within(fileRow).getByRole("textbox", { name: /bucket/i });
 			if (!bucket) throw new Error("missing copied video bucket");
 			fireEvent.change(bucket, { target: { value: "video-store" } });
 			expect(path).toHaveValue("");

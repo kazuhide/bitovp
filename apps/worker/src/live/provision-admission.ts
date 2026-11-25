@@ -37,6 +37,7 @@ export async function resolveProvisionAdmission(
 	delivery: ProvisionDelivery,
 	jobId?: string,
 	queuedAt?: number,
+	purpose: "identify" | "dispatch" = "identify",
 ): Promise<ProvisionAdmission | null> {
 	if (jobId === channelId || jobId === `probe-${channelId}`)
 		return { initial: true };
@@ -97,6 +98,7 @@ export async function resolveProvisionAdmission(
 			liveChannelId: channelId,
 			action: "START",
 			status: "FIRED",
+			...(purpose === "dispatch" ? { outcome: "PENDING" as const } : {}),
 		},
 		select: {
 			liveChannelRunId: true,

@@ -1128,7 +1128,10 @@ export async function beginLiveEffect(
 									liveEffectFenceVersion: input.expectedFenceVersion,
 									bitmovinEncodingId: input.providerEncodingId,
 									runs: {
-										some: { id: input.liveChannelRunId, status: "STOPPING" },
+										some: {
+											id: input.liveChannelRunId,
+											status: { in: ["RUNNING", "STOPPING"] },
+										},
 									},
 								}
 							: {}),

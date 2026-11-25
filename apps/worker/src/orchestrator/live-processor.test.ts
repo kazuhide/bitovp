@@ -6856,6 +6856,11 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 					id: SCHEDULE_ID,
 					liveChannelRunId: LIVE_TO_VOD_RUN_ID,
 					startAdmissionFenceVersion: 1,
+					liveChannel: {
+						status: "ERROR",
+						liveEffectFenceVersion: 1,
+						runs: { some: { id: LIVE_TO_VOD_RUN_ID, status: "ERROR" } },
+					},
 					action: "START",
 					status: "FIRED",
 					outcome: {

@@ -5009,14 +5009,12 @@ function divergentCancellationEvidence(
 		(entry) =>
 			!(
 				entry.kind === "CREATE_ENCODING" &&
-				entry.status === "DONE" &&
 				entry.resourceId === runEncoder &&
 				channel.data.some(
 					(other) =>
 						other.kind === entry.kind &&
 						other.step === entry.step &&
 						(other.attempt ?? 0) === (entry.attempt ?? 0) &&
-						other.status === "DONE" &&
 						other.resourceId === channelEncoder,
 				)
 			),
@@ -7721,6 +7719,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 								job,
 								queueJobId,
 								queuedAt,
+								"dispatch",
 							)
 						: null;
 				if (queueJobId && !cancelRunId && !admission) {
@@ -7779,7 +7778,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					if (target)
 						await recordScheduleOutcomeBestEffort(
 							deps.prisma,
-							target,
+							{ ...target, requireFailedAiring: true },
 							"FAILED",
 							redactSecrets(
 								err instanceof Error ? err.message : "provision failed",

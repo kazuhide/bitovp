@@ -72,7 +72,7 @@ export const GROUPS = [
 		files: {
 			"src/alerts/engine-locking.integration.test.ts": 3,
 			"src/live/poll-transition-locking.integration.test.ts": 10,
-			"src/live/owned-transition-locking.integration.test.ts": 159,
+			"src/live/owned-transition-locking.integration.test.ts": 162,
 			"src/watch/sweep.capacity.integration.test.ts": 12,
 			"src/library-editing/derivatives.integration.test.ts": 8,
 			"src/library-editing/media-task-sweep.integration.test.ts": 5,

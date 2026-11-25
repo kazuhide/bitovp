@@ -133,6 +133,7 @@ export type ScheduleOutcomeTarget =
 	| { scheduleId: string }
 	| { feederSessionId: string }
 	| {
+			requireFailedAiring?: true;
 			scheduledStart: {
 				id: string;
 				liveChannelId: string;
@@ -162,8 +163,25 @@ function whereOf(target: ScheduleOutcomeTarget): Prisma.LiveScheduleWhereInput {
 	if ("feederSessionId" in target) {
 		return { feederSessionId: target.feederSessionId };
 	}
-	if ("scheduledStart" in target)
-		return { ...target.scheduledStart, action: "START", status: "FIRED" };
+	if ("scheduledStart" in target) {
+		const start = target.scheduledStart;
+		return {
+			...start,
+			action: "START",
+			status: "FIRED",
+			...(target.requireFailedAiring
+				? {
+						liveChannel: {
+							status: "ERROR",
+							...(typeof start.startAdmissionFenceVersion === "number"
+								? { liveEffectFenceVersion: start.startAdmissionFenceVersion }
+								: {}),
+							runs: { some: { id: start.liveChannelRunId, status: "ERROR" } },
+						},
+					}
+				: {}),
+		};
+	}
 	if ("canceledChannelStart" in target) {
 		return { ...target.canceledChannelStart, action: "START", status: "FIRED" };
 	}

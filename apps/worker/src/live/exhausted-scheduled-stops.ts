@@ -110,7 +110,12 @@ export function createExhaustedScheduledStopRecovery(
 				encodingId = channel.bitmovinEncodingId;
 			const jobId = `sched-${row.id}`;
 			if (
-				run?.status !== "STOPPING" ||
+				!run ||
+				(run.status !== "STOPPING" &&
+					!(
+						run.status === "RUNNING" &&
+						channel.legacyAdmissionFenceVersion !== null
+					)) ||
 				run.id !== row.liveChannelRunId ||
 				!encodingId ||
 				(row.dispatchJobId && row.dispatchJobId !== jobId) ||
@@ -184,10 +189,14 @@ export function createExhaustedScheduledStopRecovery(
 						(await sdk.getEncodingStatus(encodingId)).status,
 					);
 					if (state !== "TERMINAL") {
-						// Fenced deliveries reserve their send in the database. A still-running
-						// target with a failed job can expose manual retry after that claim is checked.
-						// An evicted job or a transitional provider read proves neither fact.
-						if (!found?.effect || state !== "RUNNING") continue;
+						if (state !== "RUNNING" && state !== "TRANSITIONAL") continue;
+						// Upgraded outbox writes the exact target and fence before handing off.
+						// An evicted job can reuse that identity only through the claim check below.
+						const savedHandoff =
+							!job &&
+							row.stopProviderEncodingId === encodingId &&
+							row.stopAdmissionFenceVersion === originalFence;
+						if (!found?.effect && !savedHandoff) continue;
 						failedFencedDelivery = true;
 					}
 				}

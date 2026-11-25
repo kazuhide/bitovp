@@ -1162,7 +1162,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				data: {
 					action: "START",
 					status: "FIRED",
-					outcome: "FAILED",
+					outcome: "PENDING",
 					firedAt: now,
 					fireAt: now,
 					liveChannelId: f.channel.id,
@@ -1170,7 +1170,40 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					startAdmissionFenceVersion: 4,
 				},
 			});
+			// An exception before the first lease leaves this airing retryable.
+			expect(
+				await recordScheduleOutcome(
+					tenant,
+					{
+						requireFailedAiring: true,
+						scheduledStart: {
+							id: schedule.id,
+							liveChannelId: f.channel.id,
+							liveChannelRunId: f.run.id,
+							startAdmissionFenceVersion: 4,
+						},
+					},
+					"FAILED",
+					"temporary lookup error",
+					now,
+					"EFFECT_FAILED",
+				),
+			).toBe(0);
+			await tenant.liveSchedule.update({
+				where: { id: schedule.id },
+				data: { outcome: "FAILED" },
+			});
 			const id = `sched-${schedule.id}`;
+			expect(
+				await resolveProvisionAdmission(
+					tenant,
+					f.channel.id,
+					{ plannedLiveChannelRunId: f.run.id, provisionFenceVersion: 4 },
+					id,
+					undefined,
+					"dispatch",
+				),
+			).toBeNull();
 			const enqueue = vi.fn(async () => {});
 			const recover = createExhaustedProvisionRecovery(
 				tenant,
@@ -2084,6 +2117,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			"base effect",
 			"redispatched effect",
 			"still running effect",
+			"purged still running",
+			"split queued effect",
+			"split terminal",
 			"wrong effect",
 			"purged",
 			"waiting",
@@ -2100,7 +2136,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			});
 			await tenant.liveChannelRun.update({
 				where: { id: f.run.id },
-				data: { status: "STOPPING" },
+				data: { status: scenario.startsWith("split") ? "RUNNING" : "STOPPING" },
 			});
 			const row = await tenant.liveSchedule.create({
 				data: {
@@ -2113,7 +2149,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					outcome: ["unknown", "successor"].includes(scenario)
 						? "UNKNOWN"
 						: "PENDING",
-					...(scenario === "purged" || scenario === "redispatched effect"
+					...(scenario.startsWith("purged") ||
+					scenario === "redispatched effect"
 						? {
 								stopProviderEncodingId: f.encodingId,
 								stopAdmissionFenceVersion: 2,
@@ -2132,7 +2169,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					data: { liveEffectFenceVersion: 3 },
 				});
 			const queue = vi.fn(async () =>
-				scenario === "purged"
+				scenario.startsWith("purged")
 					? undefined
 					: {
 							data: {
@@ -2159,13 +2196,47 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 								scenario === "waiting" ? "waiting" : "failed",
 						},
 			);
-			if (scenario === "still running effect")
+			if (
+				scenario === "still running effect" ||
+				scenario === "purged still running"
+			)
 				f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
-			const probe = createExhaustedScheduledStopRecovery(f.deps, queue);
+			if (scenario === "split queued effect")
+				f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "QUEUED" }));
+			const reenqueue = vi.fn();
+			const probe = createExhaustedScheduledStopRecovery(
+				f.deps,
+				queue,
+				reenqueue,
+			);
 			await probe();
 			const key = { idempotencyKey: `schedule:${row.id}:stop` };
 			const claim = await tenant.liveEffectClaim.findFirst({ where: key });
-			if (scenario === "still running effect") {
+			if (scenario === "purged still running") {
+				expect(claim).toBeNull();
+				expect(reenqueue).toHaveBeenCalledWith(
+					expect.objectContaining({
+						effect: expect.objectContaining({
+							providerEncodingId: f.encodingId,
+							admissionFenceVersion: 2,
+							liveChannelRunId: f.run.id,
+						}),
+					}),
+					`sched-${row.id}`,
+				);
+				expect(
+					(
+						await tenant.liveSchedule.findUniqueOrThrow({
+							where: { id: row.id },
+						})
+					).outcome,
+				).toBe("PENDING");
+				return;
+			}
+			if (
+				scenario === "still running effect" ||
+				scenario === "split queued effect"
+			) {
 				expect(claim).toBeNull();
 				expect(
 					await tenant.liveChannel.findUniqueOrThrow({
@@ -3168,7 +3239,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 							JSON.stringify(
 								entries.map((entry) =>
 									entry.kind === "CREATE_ENCODING"
-										? { ...entry, resourceId: secondary }
+										? { ...entry, status: "RUNNING", resourceId: secondary }
 										: entry,
 								),
 							),

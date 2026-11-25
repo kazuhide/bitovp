@@ -1977,6 +1977,14 @@ postgres("tenant PostgreSQL reset", () => {
 				resourceId: liveEncodingId,
 			},
 			{
+				step: "child",
+				kind: "CREATE_STREAM",
+				refs: { encodingId: "enc" },
+				payload: {},
+				status: "RUNNING",
+				childCreateDispatch: "PREPARING",
+			},
+			{
 				step: "wait",
 				kind: "AWAIT_LIVE_RUNNING",
 				refs: { encodingId: "enc" },
@@ -2003,7 +2011,16 @@ postgres("tenant PostgreSQL reset", () => {
 				stepLog: liveSteps,
 			},
 		});
-		const finalized = liveSteps.map((step) =>
+		const dispatching = liveSteps.map((step) =>
+			step.kind === "CREATE_STREAM"
+				? {
+						...step,
+						childCreateDispatch: "DISPATCHING",
+						adoptExistingOnly: true,
+					}
+				: step,
+		);
+		const finalized = dispatching.map((step) =>
 			step.kind === "AWAIT_LIVE_RUNNING"
 				? {
 						...step,
@@ -2026,6 +2043,15 @@ postgres("tenant PostgreSQL reset", () => {
 			}
 			await runtime.$transaction(async (tx) => {
 				await tx.$queryRaw`SELECT set_config('bitovp.organization_id', ${organizationIds[0]}, true), set_config('lock_timeout','100ms',true)`;
+				// The child send boundary must be durable before the SDK may run.
+				await tx.liveChannel.update({
+					where: { id: live.id },
+					data: { stepLog: dispatching },
+				});
+				await tx.liveChannelRun.update({
+					where: { id: airing.id },
+					data: { stepLog: dispatching },
+				});
 				// A physically successful Live startup persists both journal mirrors
 				// before the unrelated VOD STOP has returned.
 				await tx.liveChannel.update({
@@ -2089,6 +2115,20 @@ postgres("tenant PostgreSQL reset", () => {
 				},
 				{
 					stepLog: finalized.map((step) => ({ ...step, status: "UNREADABLE" })),
+				},
+				{
+					stepLog: finalized.map((step) =>
+						step.kind === "CREATE_STREAM"
+							? { ...step, childCreateDispatch: "UNREADABLE" }
+							: step,
+					),
+				},
+				{
+					stepLog: finalized.map((step) =>
+						step.kind === "CREATE_STREAM"
+							? { ...step, adoptExistingOnly: false }
+							: step,
+					),
 				},
 			]) {
 				await expect(

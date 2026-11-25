@@ -562,3 +562,67 @@ it.each([
 		),
 	).toBe(true);
 });
+
+it("replaces a protected HTTPS source in the native copy form and submits only its replacement", async () => {
+	const first = sourceState.inputFiles[0];
+	if (!first) throw new Error("Missing input file");
+	const remotePlan = encodingPlanSchema.parse(
+		buildPlan({
+			...sourceState,
+			inputFiles: [
+				{
+					...first,
+					kind: "HTTPS",
+					credentialId: "",
+					bucket: "media.example",
+					path: "original.mp4",
+				},
+			],
+		}),
+	);
+	const projected = {
+		...remotePlan,
+		ingest: remotePlan.ingest.map((row) => ({ ...row, inputPath: "" })),
+		withheldSourcePaths: [
+			remotePlan.ingest.map((_, index) => ({
+				collection: "ingest",
+				index,
+				field: "inputPath",
+			})),
+		],
+	};
+	apiFetch.mockImplementation(async (url: string) =>
+		url === `/api/encoding-jobs/${ID}` ? { plan: projected } : [],
+	);
+	renderWithQuery(<CopyVodJob source={ID} />);
+	const field = await screen.findByLabelText(
+		remotePlan.ingest.map((row) => row.key).join(" / "),
+	);
+	expect(
+		screen.getByRole("button", { name: /use replacement/i }),
+	).toBeDisabled();
+	expect(screen.queryByRole("button", { name: /start encoding/i })).toBeNull();
+	fireEvent.change(field, { target: { value: "copy/replaced.mp4" } });
+	fireEvent.click(screen.getByRole("button", { name: /use replacement/i }));
+	await screen.findByRole("textbox", { name: /job name/i });
+	fireEvent.click(screen.getByRole("button", { name: /^8\. Review$/ }));
+	fireEvent.click(screen.getByRole("button", { name: /start encoding$/i }));
+	await waitFor(() =>
+		expect(
+			apiFetch.mock.calls.some(([, init]) => init?.method === "POST"),
+		).toBe(true),
+	);
+	const submission = apiFetch.mock.calls.find(
+		([, init]) => init?.method === "POST",
+	);
+	if (!submission) throw new Error("Missing copied job submission");
+	expect(encodingPlanSchema.parse(JSON.parse(submission[1].body).plan)).toEqual(
+		encodingPlanSchema.parse({
+			...remotePlan,
+			ingest: remotePlan.ingest.map((row) => ({
+				...row,
+				inputPath: "copy/replaced.mp4",
+			})),
+		}),
+	);
+});

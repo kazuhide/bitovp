@@ -170,12 +170,18 @@ export function renderTemplateOutputPrefix(
 	template: string,
 	ctx: {
 		objectKey: string;
+		inputKind?: string;
 		templateName: string;
 		now: Date;
 		uuid: string;
 	},
 ): string {
-	const file = ctx.objectKey.split("/").pop() ?? ctx.objectKey;
+	// HTTP arguments belong to the input request, never to a public output key.
+	const sourcePath =
+		ctx.inputKind === "HTTPS"
+			? (ctx.objectKey.split(/[?#]/u, 1)[0] ?? "")
+			: ctx.objectKey;
+	const file = sourcePath.split("/").pop() ?? sourcePath;
 	const dot = file.lastIndexOf(".");
 	const basename = dot > 0 ? file.slice(0, dot) : file;
 	const ext = dot > 0 ? file.slice(dot + 1).toLowerCase() : "";
@@ -348,6 +354,9 @@ export function instantiateTemplatePlan(
 		: "";
 	const outputPrefix = renderTemplateOutputPrefix(input.outputPrefixTemplate, {
 		objectKey: firstEffective,
+		inputKind: template.inputs.find(
+			(resource) => resource.key === firstSite?.inputKey,
+		)?.kind,
 		templateName: input.templateName,
 		now: input.now,
 		uuid: input.uuid,

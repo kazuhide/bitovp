@@ -16,6 +16,7 @@ const objectKinds = new Set([
 	"GCS",
 	"GCS_SERVICE_ACCOUNT",
 	"AZURE",
+	"AKAMAI_NETSTORAGE",
 ]);
 
 export function isObjectStorageInput(kind: string) {

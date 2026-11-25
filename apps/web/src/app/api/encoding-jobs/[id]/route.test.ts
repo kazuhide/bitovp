@@ -260,6 +260,9 @@ it("protects an HTTPS ingest query in both the Viewer plan and resource history 
 	expect(
 		body.plan.ingest.map((r: { inputPath: string }) => r.inputPath),
 	).toEqual([inputPath, ""]);
+	expect(body.plan.withheldSourcePaths).toEqual([
+		[{ collection: "ingest", index: 1, field: "inputPath" }],
+	]);
 	expect(body.stepLog[1].request.inputPath).toBe(inputPath);
 	expect(JSON.stringify(body.stepLog[3])).not.toContain("VIEWER_TEST");
 });

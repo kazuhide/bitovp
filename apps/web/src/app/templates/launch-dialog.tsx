@@ -17,6 +17,10 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+	useWithheldSourceInputs,
+	WithheldSourceInputs,
+} from "@/components/withheld-source-inputs";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useCreationSubmission } from "@/lib/creation-submission-hook";
 import { localizedCustomerError } from "@/lib/customer-error";
@@ -73,13 +77,18 @@ export function LaunchDialog({
 		presetId !== null && detail.data?.id === presetId,
 	);
 
+	const sourceVersion = detail.data
+		? `${detail.data.id}:${detail.data.revision}`
+		: undefined;
+	const replacement = useWithheldSourceInputs(detail.data?.body, sourceVersion);
+	const presetBody = replacement.body;
 	const plan: EncodingPlan | null = useMemo(() => {
-		if (!detail.data) {
+		if (!presetBody) {
 			return null;
 		}
-		const parsed = encodingPlanSchema.safeParse(detail.data.body);
+		const parsed = encodingPlanSchema.safeParse(presetBody);
 		return parsed.success ? parsed.data : null;
-	}, [detail.data]);
+	}, [presetBody]);
 
 	const sites = useMemo(() => (plan ? templateSourceSites(plan) : []), [plan]);
 
@@ -174,18 +183,28 @@ export function LaunchDialog({
 			: "";
 		return renderTemplateOutputPrefix(prefixTemplate, {
 			objectKey: effective,
+			inputKind: plan?.inputs.find(
+				(resource) => resource.key === first?.inputKey,
+			)?.kind,
 			templateName: detail.data?.name ?? "",
 			now: new Date(creation.seed?.createdAt ?? Date.now()),
 			uuid: "xxxxxxxx",
 		});
-	}, [sites, overrides, prefixTemplate, detail.data?.name, creation.seed]);
+	}, [
+		sites,
+		overrides,
+		prefixTemplate,
+		detail.data?.name,
+		creation.seed,
+		plan,
+	]);
 	const launch = useMutation({
 		mutationFn: async () => {
-			if (!detail.data || !creation.seed) {
+			if (!detail.data || !creation.seed || !presetBody) {
 				throw new Error("not loaded");
 			}
 			const result = instantiateTemplatePlan({
-				presetBody: detail.data.body,
+				presetBody,
 				sources: Object.fromEntries(overrides),
 				outputPrefixTemplate: prefixTemplate,
 				name,
@@ -221,7 +240,7 @@ export function LaunchDialog({
 				}),
 			);
 			const intent = {
-				presetBody: detail.data.body,
+				presetBody,
 				sources,
 				outputPrefixTemplate: prefixTemplate,
 				name,
@@ -248,6 +267,7 @@ export function LaunchDialog({
 		},
 		onSuccess: (created) => {
 			if (created) {
+				replacement.clear();
 				onClose();
 				router.push(`/vod/jobs/${created.id}`);
 			}
@@ -297,6 +317,7 @@ export function LaunchDialog({
 			onOpenChange={(open) => {
 				if (!open) {
 					setSeededFor(null);
+					replacement.clear();
 					onClose();
 				}
 			}}
@@ -305,6 +326,12 @@ export function LaunchDialog({
 		>
 			{detail.isPending ? (
 				<p className="text-xs text-zinc-500">{t("templates.loading")}</p>
+			) : replacement.pending ? (
+				<WithheldSourceInputs
+					key={sourceVersion}
+					sources={replacement.pending}
+					onResolve={replacement.resolve}
+				/>
 			) : !plan ? (
 				<p className="text-rose-400 text-sm">{t("templates.notAPlan")}</p>
 			) : (

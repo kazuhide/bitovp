@@ -1,5 +1,6 @@
 import {
 	isAisaManagedLivePlan,
+	markWithheldPlanSources,
 	patchLivePresetSchema,
 	patchPlanPresetSchema,
 	planHasErrors,
@@ -89,12 +90,13 @@ export async function GET(_req: Request, { params }: RouteParams) {
 			!aisaLiveAccessAllowed(ctx.tenant)
 		)
 			return jsonError(404, "Not found");
+		const safe = publicHdrSourceProjection(
+			preset,
+			"record",
+			vodObjectPathFields(preset.body, []),
+		);
 		return NextResponse.json(
-			publicHdrSourceProjection(
-				preset,
-				"record",
-				vodObjectPathFields(preset.body, []),
-			),
+			{ ...safe, body: markWithheldPlanSources(preset.body, safe.body) },
 			{
 				headers: { "Cache-Control": "private, no-store" },
 			},
@@ -300,12 +302,13 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 			!aisaLiveAccessAllowed(ctx.tenant)
 		)
 			return jsonError(404, "Not found");
+		const safe = publicHdrSourceProjection(
+			updated,
+			"record",
+			vodObjectPathFields(updated.body, []),
+		);
 		return NextResponse.json(
-			publicHdrSourceProjection(
-				updated,
-				"record",
-				vodObjectPathFields(updated.body, []),
-			),
+			{ ...safe, body: markWithheldPlanSources(updated.body, safe.body) },
 			{
 				headers: { "Cache-Control": "private, no-store" },
 			},

@@ -1084,6 +1084,10 @@ export {
 	watchSelfIntersectionIssues,
 	watchTemplateIssues,
 } from "./plan/watch-instantiate";
+export {
+	markWithheldPlanSources,
+	withheldPlanSources,
+} from "./plan/withheld-source-paths";
 export type {
 	PlaybackCorsRule,
 	PlaybackCorsVerdict,

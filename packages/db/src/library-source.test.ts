@@ -64,10 +64,17 @@ it("retains literal names with their storage provenance at capture and redacts u
 	const [ingest] = planFixture.ingest;
 	if (!ingest) throw new Error("Missing fixture ingest");
 	const objectPath = "reels/take.mxf?auth=review";
+	const jobCredential = "00000000-0000-4000-8000-000000000004";
 	const plan = {
 		...planFixture,
 		ingest: [
 			{ ...ingest, inputPath: objectPath },
+			{
+				...ingest,
+				key: "net",
+				inputKey: "akamai",
+				inputPath: "edits/take?version=2.mxf",
+			},
 			{
 				...ingest,
 				key: "remote",
@@ -77,6 +84,12 @@ it("retains literal names with their storage provenance at capture and redacts u
 		],
 		inputs: [
 			...planFixture.inputs,
+			{
+				kind: "AKAMAI_NETSTORAGE",
+				key: "akamai",
+				name: "NetStorage",
+				credentialId: jobCredential,
+			},
 			{ kind: "HTTPS", key: "remote", name: "Network", host: "media.example" },
 		],
 	};
@@ -84,6 +97,11 @@ it("retains literal names with their storage provenance at capture and redacts u
 	const result = await requestLibrarySource(prisma, job.id);
 	expect(result.snapshot).toHaveProperty("inputs", [
 		{ name: "Test S3 Input", path: objectPath, pathKind: "OBJECT_KEY" },
+		{
+			name: "NetStorage",
+			path: "edits/take?version=2.mxf",
+			pathKind: "OBJECT_KEY",
+		},
 		{ name: "Network", path: "", pathKind: "HTTPS_PATH" },
 	]);
 	expect(JSON.stringify(result)).not.toContain("PRIVATE_CAPTURE");

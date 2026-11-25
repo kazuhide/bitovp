@@ -6127,6 +6127,9 @@ export const ja = {
 		help: "このブラウザに7日間保存します。秘密値・URL・DRM・フィルタ設定・インポートしたJSONは保存しません。開始前に確認してください。",
 	},
 	templates: {
+		protectedInputHint:
+			"元の入力パスは非公開です。この設定で使う入力パスを指定してください。",
+		useReplacementInputs: "指定した入力パスを使用",
 		savedDeliveryHeading: "保存済みの配信プリセット",
 		emptyDelivery:
 			"保存済みの配信プリセットはありません。下の配信仕様をインポートすると保存できます。",

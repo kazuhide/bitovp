@@ -6186,6 +6186,9 @@ export const en = {
 		help: "Saved for 7 days on this browser. Secrets, URLs, DRM, filter settings and imported JSON are excluded. Review these before starting.",
 	},
 	templates: {
+		protectedInputHint:
+			"The original source path is private. Enter a replacement to reuse these settings.",
+		useReplacementInputs: "Use replacement paths",
 		savedDeliveryHeading: "Saved delivery presets",
 		emptyDelivery:
 			"No saved delivery presets yet. Import a delivery specification below to save one.",

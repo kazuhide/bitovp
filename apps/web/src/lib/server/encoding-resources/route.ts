@@ -299,9 +299,7 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 			);
 			return respond({
 				canManage: mayRemove(ctx),
-				canRemove:
-					mayRemove(ctx) &&
-					(await removalAllowed(ctx.prisma, owner, row.removable)),
+				canRemove: mayRemove(ctx) && removalAllowed(owner, row.removable),
 				resources: [...log.steps.keys()].flatMap((step) => {
 					const s = selectResource(log, step)?.summary;
 					return s

@@ -142,7 +142,7 @@ and [trial conditions and results](MOQ-LIVE-ENCODER-TEST-RESULTS.md).
 VOD job details and Live run details now support inspecting provider resources
 recorded by their execution steps. Available actions depend on the resource
 family and include scoped collection browsing, metadata checks and operator-
-confirmed removal on a finished execution. See the [VOD guide](user-guide/VOD.md#inspect-or-remove-a-provider-resource)
+confirmed removal on finished VOD jobs. Live run resources are read-only. See the [VOD guide](user-guide/VOD.md#inspect-or-remove-a-provider-resource)
 and the [Live guide](user-guide/LIVE.md#inspect-a-runs-provider-resources) for the
 supported actions and safeguards.
 Account-wide inventory and native Templates and Watch Folders remain separate

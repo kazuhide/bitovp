@@ -227,13 +227,7 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 		it.each(
 			contracts,
 		)("removes the recorded $kind through its exact SDK path and persists the result", async (c) => {
-			const s = await seed(
-				own,
-				a,
-				c,
-				undefined,
-				contracts.indexOf(c) % 2 === 1,
-			);
+			const s = await seed(own, a, c);
 			wire(s);
 			const result = await submit(s);
 			const body = await result.json();
@@ -438,22 +432,13 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 			}
 			expect((await removal).status).toBe(200);
 		});
-		it("keeps Live resource inspection open and withholds removal while another encoder in the airing is unretired", async () => {
+		it("offers read-only access to a stopped Live run and sends no provider removal", async () => {
 			const s = await seed(own, a, defaultContract, undefined, true);
 			if (!s.channelId) throw new Error("Live fixture missing");
-			const extra = randomUUID();
-			await own.liveChannelRun.update({
-				where: { id: s.sourceId },
-				data: { previousProviderEncodingIds: [extra] },
+			const index = await listLive(new Request("http://fixture/resources"), {
+				params: Promise.resolve({ id: s.channelId, runId: s.sourceId }),
 			});
-			const index = () =>
-				listLive(new Request("http://fixture/resources"), {
-					params: Promise.resolve({
-						id: s.channelId as string,
-						runId: s.sourceId,
-					}),
-				});
-			expect(await (await index()).json()).toMatchObject({
+			expect(await index.json()).toMatchObject({
 				canRemove: false,
 				resources: expect.arrayContaining([
 					expect.objectContaining({ id: s.id }),
@@ -461,24 +446,8 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 			});
 			expect((await submit(s)).status).toBe(409);
 			expect(send).not.toHaveBeenCalled();
-			await own.liveChannelRun.update({
-				where: { id: s.sourceId },
-				data: {
-					rtmpRetirementEvidence: [
-						{
-							accountId: a.id,
-							encodingId: extra,
-							disposition: "TERMINAL",
-							providerStatus: "FINISHED",
-							observedAt: new Date().toISOString(),
-						},
-					],
-				},
-			});
-			wire(s);
-			expect((await submit(s)).status).toBe(200);
 		});
-		it("requires a positive acknowledgement for the channel's current encoder after an independent error", async () => {
+		it("withholds Live deletion even after confirmation for the current encoder", async () => {
 			const s = await seed(own, a, defaultContract, undefined, true);
 			if (!s.channelId) throw new Error("Live fixture missing");
 			const encoder = randomUUID();
@@ -497,8 +466,8 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 				where: { id: s.channelId },
 				data: { encoderStoppedConfirmedFor: encoder },
 			});
-			wire(s);
-			expect((await submit(s)).status).toBe(200);
+			expect((await submit(s)).status).toBe(409);
+			expect(send).not.toHaveBeenCalled();
 		});
 		it("keeps an output for future publication and protects a stopped run during publication", async () => {
 			const contract = contracts.find((c) => c.kind === "CREATE_OUTPUT_S3");
@@ -569,8 +538,8 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 			expect((await submit(s)).status).toBe(409);
 			expect(send).not.toHaveBeenCalled();
 			await own.liveEffectClaim.delete({ where: { id: claim.id } });
-			wire(s);
-			expect((await submit(s)).status).toBe(200);
+			expect((await submit(s)).status).toBe(409);
+			expect(send).not.toHaveBeenCalled();
 		});
 		it("an in-flight reference publication wins before a competing removal can send", async () => {
 			const s = await seed();

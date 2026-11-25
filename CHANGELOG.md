@@ -12,7 +12,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Extract DVB bitmap subtitles from a Live transport stream by absolute track position. Publish segmented WebVTT in HLS or DASH, or WebVTT in fMP4 for DASH. Save language, display name and packaging in Live templates and drafts.
 - Extract CEA-608, CEA-708 and DVB subtitles from VOD input media into WebVTT files or HLS subtitle tracks. Templates retain the selected channel, service or track position.
 - Browse the DRM configurations and Progressive TS ID3 tags attached to a recorded VOD or Live muxing.
-- Inspect recorded provider resources from VOD jobs and Live runs. Operators can remove individually confirmed resources after the execution ends and check the outcome of an interrupted removal.
+- Inspect recorded provider resources from VOD jobs and Live runs. Operators can remove individually confirmed resources from a finished VOD job and check the outcome of an interrupted removal.
 
 - Configure SPEKE for VOD MP4, TS and WebM outputs, including progressive TS and WebM files. Reuse encrypted-only VOD presets and export progressive TS FairPlay or progressive WebM CENC outputs in template YAML.
 - Configure VOD HEVC/HDR10+ with a video and metadata JSON sidecar on the same input storage, and retain this source when editing a saved plan. The input timeline remains unavailable for HDR10+ in this application. The Web and Worker now use the published Bitmovin JavaScript SDK 1.289.0. HDR10+ requires Encoder 2.294.0 or later.

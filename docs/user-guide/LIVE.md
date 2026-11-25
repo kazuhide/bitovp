@@ -354,6 +354,6 @@ Copy settings opens the wizard without starting work. See
 
 ## Inspect a run’s provider resources
 
-Open the channel’s run history and expand **Inspect provider resources** for the airing you want. Select a recorded step to read its details or, where supported, the provider collection under the same parent. An operator can remove an individually confirmed resource once the managed channel and run have stopped. Adopted channels and AISA runs support inspection according to their access rules. A pending removal retains the original run and pauses a new start until its outcome is known. Use **Check removal** on the same run to verify an interrupted request. Live-to-VOD keeps the recording’s storage outputs available for future publication. Resource removal also waits while a publication is in progress or can still be retried.
+Open the channel’s run history and expand **Inspect provider resources** for the airing you want. Select a recorded step to read its details or, where supported, the provider collection under the same parent. Recorded resources on Live runs are read-only. Adopted channels and AISA runs support inspection according to their access rules.
 
 Select a recorded muxing in the airing to view its DRM systems, or the ID3 tags of a Progressive TS muxing. The list is scoped to its original encoding, muxing and provider account. Open a row to verify the type, timestamps and available metadata stamp.

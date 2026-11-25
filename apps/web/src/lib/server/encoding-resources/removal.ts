@@ -125,10 +125,12 @@ async function reserve(
 					409,
 					"This output is retained for Live-to-VOD publication.",
 				);
-			if (!(await removalAllowed(tx, owner, source.removable)))
+			if (!removalAllowed(owner, source.removable))
 				throw new Refusal(
 					409,
-					"Stop this execution and confirm its provider state before removing a resource.",
+					"channelId" in owner
+						? "Resource removal is unavailable for Live runs."
+						: "Finish the VOD job before removing a resource.",
 				);
 			const [check] = await tx.$queryRaw<
 				{ exclusive: boolean }[]

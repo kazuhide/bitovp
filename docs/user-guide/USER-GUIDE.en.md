@@ -1257,7 +1257,7 @@ Once inspection moves from queued or running to complete, review the container, 
 
 Open **Resources** on a VOD job or select a run in the Live channel history. Select a creation step to retrieve its resource from the original Bitmovin account. Some resource types also list entries under the same parent.
 
-For a terminal VOD job or a stopped managed Live run, an operator can confirm an individual deletion by entering the displayed resource ID. BitOVP checks ownership, references from other runs and whether the job or run has finished. If the response is interrupted, reopen the resource to check its deletion status. Start a new VOD job to encode again after deleting one of its resources.
+Live runs provide read-only access to recorded resources. For a terminal VOD job, an operator can confirm an individual deletion by entering the displayed resource ID. BitOVP checks ownership, references from other runs and whether the job has finished. If the response is interrupted, reopen the resource to check its deletion status. Start a new VOD job to encode again after deleting one of its resources.
 
 ## 14. Templates and automation
 

@@ -20,30 +20,29 @@ export const isHdr10PlusAuditPath = (path: unknown) =>
 
 export function hasPrivateStorageLocator(value: string): boolean {
 	const location = value.trim();
-	if (location.includes("@")) {
+	const authority = /^(?:[a-z][a-z\d+.-]*:)?[/\\]{2}([^/\\?#]*)/iu.exec(
+		location,
+	);
+	if (authority) {
+		// Even unfinished authorities can contain userinfo, e.g. before the
+		// host has been fully typed. Bare "name:value" is also a storage key.
+		if (authority[1]?.includes("@") || /[?#].+/u.test(location)) return true;
+	} else if (uriScheme.test(location)) {
 		try {
-			// A single slash after a storage scheme can be an unfinished object
-			// path. Only URL authority userinfo establishes a credential.
-			const parsed = uriScheme.test(location)
-				? new URL(location)
-				: new URL(location, "https://storage.invalid");
-			if (parsed.username || parsed.password) return true;
+			// WHATWG special schemes can normalize a missing slash into an
+			// authority. Opaque object names such as "reels:day/Scene#2" have none.
+			const url = new URL(location);
+			if (url.host && (url.username || url.password || url.search || url.hash))
+				return true;
 		} catch {
-			// An incomplete authority may still contain recognizable credentials.
+			// Relative or unfinished input can still contain a credential query.
 		}
-		const authority = location.replace(
-			/^(?:[a-z][a-z\d+.-]*:)?[/\\]{2,}/iu,
-			"",
-		);
-		if (/^[^/\\:\s]+:[^/\\]*@/u.test(authority)) return true;
 	}
-	// Literal punctuation is allowed in an ordinary storage object. An
-	// absolute locator or an attached credential parameter carries private data.
+	const queryStart = location.indexOf("?");
 	return (
-		((uriScheme.test(location) || /^[/\\]{2}/u.test(location)) &&
-			/[?#].+/u.test(location)) ||
+		queryStart >= 0 &&
 		/[?&](?:[^=&\s]*(?:token|credential|signature|password|secret)|sig|key|key-pair-id|policy|awsaccesskeyid|googleaccessid)=/iu.test(
-			location,
+			location.slice(queryStart),
 		)
 	);
 }
@@ -92,13 +91,13 @@ export function publicHdrSourceProjection<T>(
 		input: unknown,
 		hdr: boolean,
 		libraryInputs = false,
-		diagnostics = false,
+		diagnostics: "response" | "list" | false = false,
 	) {
 		if (!input || typeof input !== "object" || input instanceof Date) return;
 		if (Array.isArray(input)) {
 			for (const [index, item] of input.entries()) {
 				if (
-					diagnostics &&
+					diagnostics === "list" &&
 					typeof item === "string" &&
 					publicStorageDiagnostic(item) !== item
 				)
@@ -167,10 +166,9 @@ export function publicHdrSourceProjection<T>(
 					scope || key === "hdr10PlusStreams",
 					row.kind === "VOD_JOB" && key === "inputs",
 					purpose === "record" &&
-						(diagnostics ||
-							key === "messages" ||
-							key === "warnings" ||
-							key === "response"),
+						(key === "messages" || key === "warnings"
+							? "list"
+							: (key === "response" || diagnostics) && "response"),
 				);
 		}
 	}

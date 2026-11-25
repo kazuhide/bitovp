@@ -118,6 +118,7 @@ function walk(
 	let out: unknown;
 	if (Array.isArray(value)) {
 		if (
+			!diagnostic &&
 			value.length === 2 &&
 			typeof value[0] === "string" &&
 			isHeaderTupleName(value[0])
@@ -144,7 +145,8 @@ function walk(
 							ancestors,
 							key,
 							hdr || key === "hdr10PlusStreams",
-							diagnostic || key === "messages" || key === "warnings",
+							key !== "headers" &&
+								(diagnostic || key === "messages" || key === "warnings"),
 						),
 				enumerable: true,
 				writable: true,

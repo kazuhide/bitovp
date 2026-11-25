@@ -41,7 +41,7 @@ describe("writeAuditLog — actor persistence (the headline of #81 PR2)", () => 
 	it("retains literal Dolby Vision object keys in request and response", async () => {
 		const { prisma, create } = fakePrisma();
 		const request = {
-			videoInputPath: "reels/Scene#2.mxf",
+			videoInputPath: "reels:day/Scene&key=take#2.mxf",
 			metadataInputPath: "dv/meta?2.xml",
 		};
 		await writeAuditLog(prisma, {

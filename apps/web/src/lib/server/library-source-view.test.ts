@@ -110,6 +110,8 @@ describe("Library source detail retained-raw projection", () => {
 	it("withholds legacy signed storage paths with and without HDR input provenance after the job was deleted", async () => {
 		const inputs = [
 			{ name: "Ordinary", path: "media/take?2.mxf" },
+			{ name: "Archive", path: "reels:day/Scene&key=take#2.mxf" },
+			{ name: "Query", path: "other.mxf?format=vod&key=LIBRARY_SIGNATURE" },
 			{
 				name: "Old capture",
 				path: "//fixture:LIBRARY_CREDENTIAL@fixture.invalid/picture.mxf",
@@ -143,6 +145,8 @@ describe("Library source detail retained-raw projection", () => {
 		);
 		expect(result?.snapshot.inputs.map((i) => i.path)).toEqual([
 			"media/take?2.mxf",
+			"reels:day/Scene&key=take#2.mxf",
+			"",
 			"",
 			"",
 		]);

@@ -111,6 +111,8 @@ it.each([
 	"s3:/media/scene",
 	"s3:/media/scene@take",
 	"s3:/media:take@v2",
+	"s3:/media&key=take",
+	"s3:take 2@",
 ])("retains unrelated object paths and names containing a partial HDR path %s", (partial) => {
 	const state = structuredClone(DEFAULT_WIZARD_STATE);
 	const media = state.inputFiles[0];

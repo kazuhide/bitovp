@@ -821,7 +821,7 @@ export const en = {
 		pathHelp:
 			"Folder within the selected destination where the manifest file is written.",
 		referenced:
-			"Change or remove the archive or manifest destination before removing this storage mirror.",
+			"This mirror is in use. Reassign any archives or manifests that use it, and remove any DVB subtitle tracks that write to it.",
 	},
 	creationSubmission: {
 		responseUnavailable:

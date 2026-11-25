@@ -363,7 +363,66 @@ describe("IMSC and Opus contracts", () => {
 			).toBe(false);
 		}
 	});
-	it("counts all five codec outputs when Audio Mix derives its layout from QUAD_LFE rows", () => {
+	it("refuses skipped filters on an Atmos file and rejects downstream processing before input mixing", () => {
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		const audio = plan.renditions.find((r) => r.codec === "AAC");
+		if (!audio) throw new Error("Missing audio");
+		plan.filters = [
+			{
+				key: "pan",
+				kind: "AUDIO_MIX",
+				channelLayout: "STEREO",
+				audioMixChannels: [0, 1].map((n) => ({
+					channelNumber: n,
+					sourceChannels: [
+						{ type: "CHANNEL_NUMBER", channelNumber: n, gain: n === 1 ? 0 : 1 },
+					],
+				})),
+			},
+			{ key: "ebu", kind: "EBU_R128_SINGLE_PASS" },
+			{ key: "dolby", kind: "DOLBY_LOUDNESS" },
+			{ key: "volume", kind: "AUDIO_VOLUME", volume: 100, unit: "PERCENT" },
+			{ key: "rate", kind: "CONFORM", targetFps: 25 },
+		];
+		for (const key of ["ebu", "dolby", "volume"]) {
+			audio.filters = [
+				{ filterKey: "pan", position: 1 },
+				{ filterKey: key, position: 0 },
+			];
+			expect(validatePlan(plan).map((i) => i.code)).toContain(
+				"PLAN_AUDIO_FILTER",
+			);
+			audio.filters = [
+				{ filterKey: key, position: 1 },
+				{ filterKey: "pan", position: 0 },
+			];
+			expect(
+				validatePlan(plan).filter((i) => i.code === "PLAN_AUDIO_FILTER"),
+			).toEqual([]);
+		}
+		Object.assign(audio, { codec: "DOLBY_ATMOS", ingestKey: "adm" });
+		plan.dolbyStreams = [
+			{
+				kind: "ATMOS",
+				key: "adm",
+				inputKey: plan.inputs[0]?.key ?? "main",
+				inputPath: "input.wav",
+				inputFormat: "ADM",
+			},
+		];
+		for (const rendition of plan.renditions)
+			rendition.filters = [{ filterKey: "rate", position: 0 }];
+		audio.filters?.push({ filterKey: "pan", position: 1 });
+		const codes = validatePlan(plan)
+			.filter(
+				(i) =>
+					i.path === `renditions[${plan.renditions.indexOf(audio)}].filters`,
+			)
+			.map((i) => i.code);
+		expect(codes).toContain("PLAN_AUDIO_FILTER");
+		expect(codes).toContain("PLAN_CONFORM_FILTER");
+	});
+	it("requires the same speaker positions when Audio Mix derives its layout from the output rows", () => {
 		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
 		const audio = plan.renditions.find((r) => r.codec === "AAC");
 		if (!audio) throw new Error("Missing audio");
@@ -384,6 +443,10 @@ describe("IMSC and Opus contracts", () => {
 				audioMixChannels: channels,
 			},
 		];
+		expect(validatePlan(plan).map((i) => i.code)).toContain(
+			"PLAN_AUDIO_FILTER",
+		);
+		Object.assign(audio, { codec: "AAC", channelLayout: "CL_5_0_BACK" });
 		expect(
 			validatePlan(plan).filter((i) => i.code === "PLAN_AUDIO_FILTER"),
 		).toEqual([]);

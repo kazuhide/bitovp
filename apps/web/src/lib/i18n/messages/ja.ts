@@ -6234,6 +6234,8 @@ export const ja = {
 		you: "あなた",
 	},
 	wizardDraft: {
+		legacyRenditions:
+			"旧形式の下書きで一部のレンディションを照合できなかったため、プリセットの構成を復元しました。実行前にラダーとフィルターを確認してください。",
 		available: "保存済みの下書きがあります",
 		restore: "復元",
 		discard: "破棄",

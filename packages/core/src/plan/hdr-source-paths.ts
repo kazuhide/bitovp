@@ -38,13 +38,28 @@ export function hasPrivateStorageLocator(value: string): boolean {
 			// Relative or unfinished input can still contain a credential query.
 		}
 	}
+	// Historical Library rows lack the input provider. Parse only the query.
+	// A typed Dolby/object key may legitimately contain "?version=2".
 	const queryStart = location.indexOf("?");
-	return (
-		queryStart >= 0 &&
-		/[?&](?:[^=&\s]*(?:token|credential|signature|password|secret)|sig|key|key-pair-id|policy|awsaccesskeyid|googleaccessid)=/iu.test(
-			location.slice(queryStart),
+	if (queryStart < 0) return false;
+	const query = location.slice(queryStart + 1).split("#", 1)[0];
+	for (const [name, value] of new URLSearchParams(query)) {
+		const field = name.replace(/[-_.]/gu, "").toLowerCase();
+		if (
+			/(token|credential|signature|password|secret)$|^(auth|authorization|hdnts|hdnea|hdntl|hmac|jwt|sig|key|apikey|accesskey|keypairid|policy|awsaccesskeyid|googleaccessid)$/u.test(
+				field,
+			)
 		)
-	);
+			return true;
+		// An origin can rename an EdgeAuth parameter or carry a JWT in a
+		// generic parameter. Their token formats identify them independently.
+		if (
+			/(?:^|~)hmac=[^~\s]+/iu.test(value) ||
+			/^eyJ[\w-]+\.[\w-]+\.[\w-]+$/u.test(value)
+		)
+			return true;
+	}
+	return false;
 }
 
 /** Provider diagnostics can echo signed input locators even in list responses without a plan. */

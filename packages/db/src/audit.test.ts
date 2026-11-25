@@ -42,7 +42,7 @@ describe("writeAuditLog — actor persistence (the headline of #81 PR2)", () => 
 		const { prisma, create } = fakePrisma();
 		const request = {
 			videoInputPath: "reels:day/Scene&key=take#2.mxf",
-			metadataInputPath: "dv/meta?2.xml",
+			metadataInputPath: "dv/meta.xml?version=2",
 		};
 		await writeAuditLog(prisma, {
 			method: "POST",

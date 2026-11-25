@@ -327,6 +327,7 @@ export async function recordFinalStopFailure(
 					name: true,
 					status: true,
 					liveEffectFenceVersion: true,
+					legacyAdmissionFenceVersion: true,
 					bitmovinEncodingId: true,
 				},
 			}),
@@ -366,17 +367,23 @@ export async function recordFinalStopFailure(
 
 		let ownedFence = intent.admissionFenceVersion;
 		if (claim) {
+			const oldAdmission =
+				unboundSchedule &&
+				!!intent.scheduleId &&
+				channel.legacyAdmissionFenceVersion === intent.admissionFenceVersion &&
+				claim.generation < intent.admissionFenceVersion;
 			if (
 				claim.state !== "FAILED" ||
 				(claim.scheduleId ?? null) !== (intent.scheduleId ?? null) ||
 				claim.action !== "STOP" ||
 				claim.liveChannelId !== intent.liveChannelId ||
 				claim.liveChannelRunId !== intent.liveChannelRunId ||
-				claim.providerEncodingId !== intent.providerEncodingId
+				(!oldAdmission &&
+					claim.providerEncodingId !== intent.providerEncodingId)
 			) {
 				return { projected: false as const };
 			}
-			ownedFence = claim.generation;
+			if (!oldAdmission) ownedFence = claim.generation;
 		}
 		if (channel.liveEffectFenceVersion !== ownedFence) {
 			return { projected: false as const };
@@ -390,6 +397,14 @@ export async function recordFinalStopFailure(
 				liveEffectFenceVersion: ownedFence,
 				...(unboundSchedule && intent.scheduleId
 					? {
+							effectClaims: {
+								none: {
+									action: "STOP",
+									liveChannelRunId: currentRun.id,
+									generation: ownedFence,
+									state: { in: ["CLAIMED", "DISPATCHING", "AMBIGUOUS"] },
+								},
+							},
 							schedules: {
 								some: {
 									id: intent.scheduleId,

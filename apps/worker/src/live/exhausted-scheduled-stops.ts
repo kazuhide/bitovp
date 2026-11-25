@@ -5,6 +5,7 @@ import {
 } from "@bitovp/core";
 import {
 	beginLiveEffect,
+	CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
 	competingScheduledStop,
 	liveChannelAccountId,
 	liveStopFeederWhere,
@@ -25,7 +26,7 @@ type ReadJob = (
 	id: string,
 ) => Promise<{ data: unknown; getState(): Promise<string> } | undefined>;
 
-function sameScheduledStopTarget(
+function sameScheduledStop(
 	actual: NonNullable<LiveChannelJob["effect"]>,
 	expected: NonNullable<LiveChannelJob["effect"]>,
 ) {
@@ -35,8 +36,7 @@ function sameScheduledStopTarget(
 		actual.requestSha256 === undefined &&
 		actual.idempotencyKey === expected.idempotencyKey &&
 		actual.scheduleId === expected.scheduleId &&
-		actual.liveChannelRunId === expected.liveChannelRunId &&
-		actual.providerEncodingId === expected.providerEncodingId
+		actual.liveChannelRunId === expected.liveChannelRunId
 	);
 }
 
@@ -163,7 +163,7 @@ export function createExhaustedScheduledStopRecovery(
 				const found = retained?.success ? retained.data : undefined;
 				const legacy = originalFence === channel.legacyAdmissionFenceVersion;
 				// The deterministic job must belong to this exact schedule and airing.
-				// Its original fence, when present, is stronger than the channel-wide migration snapshot.
+				// BullMQ deduplicates on this key even when the same schedule is admitted again.
 				if (
 					job &&
 					(found?.action !== "stop" ||
@@ -175,38 +175,46 @@ export function createExhaustedScheduledStopRecovery(
 						found.liveChannelId !== row.liveChannelId ||
 						(found.plannedLiveChannelRunId &&
 							found.plannedLiveChannelRunId !== run.id) ||
-						(found.effect
-							? !sameScheduledStopTarget(found.effect, effect)
-							: !legacy))
+						(found.effect ? !sameScheduledStop(found.effect, effect) : !legacy))
 				)
 					continue;
 				const legacyRow =
 					row.stopProviderEncodingId === null &&
 					row.stopAdmissionFenceVersion === null;
+				// A retained old payload identifies the Redis job, not the latest database
+				// admission. A base-release retry could re-fire the same schedule and a
+				// rebuilt outbox can likewise find its deterministic key already occupied.
+				const staleReceipt = Boolean(
+					legacy &&
+						originalFence === channel.liveEffectFenceVersion &&
+						found?.effect &&
+						found.effect.admissionFenceVersion < originalFence,
+				);
 				if (
 					found?.effect &&
-					found.effect.admissionFenceVersion !== originalFence
-				) {
-					if (legacyRow && found.effect.admissionFenceVersion < originalFence) {
-						await deps.prisma.liveSchedule.updateMany({
-							where: {
-								id: row.id,
-								liveChannelId: row.liveChannelId,
-								liveChannelRunId: run.id,
-								action: "STOP",
-								status: "FIRED",
-								stopProviderEncodingId: null,
-								stopAdmissionFenceVersion: null,
-							},
-							data: {
-								stopProviderEncodingId: found.effect.providerEncodingId,
-								stopAdmissionFenceVersion: found.effect.admissionFenceVersion,
-							},
-						});
-					}
+					!staleReceipt &&
+					(found.effect.admissionFenceVersion !== originalFence ||
+						found.effect.providerEncodingId !== encodingId)
+				)
 					continue;
-				}
 				const advancedFence = originalFence !== channel.liveEffectFenceVersion;
+				// A refired row also reuses the claim key. A pre-send failure from a
+				// different admission cannot run or be replayed for this one.
+				const priorFailedClaim =
+					legacy &&
+					!advancedFence &&
+					(await deps.prisma.liveEffectClaim.findFirst({
+						where: {
+							idempotencyKey: effect.idempotencyKey,
+							scheduleId: row.id,
+							liveChannelId: row.liveChannelId,
+							liveChannelRunId: run.id,
+							action: "STOP",
+							state: "FAILED",
+							generation: { lt: originalFence },
+						},
+						select: { id: true },
+					}));
 				const resetQueueObservation = async () => {
 					if (row.legacyStopExhaustedFence === originalFence) {
 						await deps.prisma.liveSchedule.updateMany({
@@ -223,6 +231,8 @@ export function createExhaustedScheduledStopRecovery(
 				const jobState = job && (await job.getState());
 				if (
 					job &&
+					!staleReceipt &&
+					!priorFailedClaim &&
 					jobState !== "failed" &&
 					!(row.outcome === "UNKNOWN" && jobState === "completed")
 				) {
@@ -232,11 +242,21 @@ export function createExhaustedScheduledStopRecovery(
 				const savedHandoff =
 					row.stopProviderEncodingId === encodingId &&
 					row.stopAdmissionFenceVersion === originalFence;
-				const mayReplay = savedHandoff && !job && row.outcome === "PENDING";
+				const mayReplay =
+					!priorFailedClaim &&
+					savedHandoff &&
+					!job &&
+					row.outcome === "PENDING";
 				const deferToAnotherHandoff = async () => {
 					// A lost or terminal job has no runnable handoff. Keep its schedule available
 					// for fallback if every other handoff also proves exhausted.
-					if (row.legacyStopExhaustedFence !== originalFence) {
+					const wrongAdmission =
+						(staleReceipt || priorFailedClaim) && row.outcome === "PENDING";
+					if (
+						row.legacyStopExhaustedFence !== originalFence ||
+						wrongAdmission
+					) {
+						const at = new Date(deps.now());
 						await deps.prisma.liveSchedule.updateMany({
 							where: {
 								id: row.id,
@@ -246,21 +266,40 @@ export function createExhaustedScheduledStopRecovery(
 								status: "FIRED",
 								stopProviderEncodingId: row.stopProviderEncodingId,
 								stopAdmissionFenceVersion: row.stopAdmissionFenceVersion,
-								OR: [
-									{ outcome: "UNKNOWN" },
-									{ outcome: "PENDING", dispatchedAt: { not: null } },
-								],
+								outcome: row.outcome,
+								...(row.outcome === "PENDING" && {
+									dispatchedAt: { not: null },
+								}),
 								liveChannel: {
 									status: "STOPPING",
 									bitmovinEncodingId: encodingId,
 									legacyAdmissionFenceVersion: originalFence,
 									liveEffectFenceVersion: originalFence,
 									effectClaims: {
-										none: { idempotencyKey: effect.idempotencyKey },
+										none: {
+											idempotencyKey: effect.idempotencyKey,
+											NOT: {
+												action: "STOP",
+												state: "FAILED",
+												generation: { lt: originalFence },
+											},
+										},
 									},
 								},
 							},
-							data: { legacyStopExhaustedFence: originalFence },
+							data: {
+								legacyStopExhaustedFence: originalFence,
+								...(wrongAdmission && {
+									outcome: "UNKNOWN",
+									outcomeAt: at,
+									outcomeNote:
+										"The retained STOP belongs to an earlier admission. Delivery of this schedule was not confirmed.",
+									outcomeEvidenceVersion:
+										CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
+									outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+									outcomeEvidenceAt: at,
+								}),
+							},
 						});
 					}
 					return deps.prisma.liveSchedule.findFirst({
@@ -279,6 +318,24 @@ export function createExhaustedScheduledStopRecovery(
 					(await deferToAnotherHandoff())
 				)
 					continue;
+				// Give other freshly sampled schedules their turn first. A stale job
+				// cannot be replayed for the current admission, even if Redis says waiting.
+				if (staleReceipt && row.legacyStopExhaustedFence !== originalFence)
+					continue;
+				if (priorFailedClaim) {
+					await recordFinalStopFailure(
+						deps.prisma,
+						{
+							id: jobId,
+							data: original,
+							finishedOn: new Date(deps.now()).getTime(),
+						},
+						"The scheduled STOP claim belongs to a failed earlier admission.",
+						deps.emitEvent,
+						true,
+					);
+					continue;
+				}
 				let failedFencedDelivery = false;
 				if (legacy && !advancedFence && (!job || found?.effect)) {
 					const accountId = liveChannelAccountId(channel);
@@ -325,9 +382,10 @@ export function createExhaustedScheduledStopRecovery(
 					if (mayReplay && terminal && (await deferToAnotherHandoff()))
 						continue;
 					if (!terminal) {
-						if (found?.effect || savedHandoff) failedFencedDelivery = true;
+						if (!staleReceipt && (found?.effect || savedHandoff))
+							failedFencedDelivery = true;
 						else if (
-							!job &&
+							(!job || staleReceipt) &&
 							!(await deps.prisma.liveEffectClaim.findFirst({
 								where: {
 									liveChannelId: row.liveChannelId,

@@ -196,8 +196,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			status: LiveChannelStatus = "PROVISIONING",
 			heldAt: Date | null = lease,
 			encodingId: string = `test-${randomUUID()}`,
+			scope = tenant,
 		) {
-			const channel = await tenant.liveChannel.create({
+			const channel = await scope.liveChannel.create({
 				data: {
 					name: "Owned transition lock test",
 					status,
@@ -206,7 +207,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					provisionClaimedAt: heldAt,
 				},
 			});
-			const run = await tenant.liveChannelRun.create({
+			const run = await scope.liveChannelRun.create({
 				data: {
 					liveChannelId: channel.id,
 					seq: 1,
@@ -2389,7 +2390,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 		] as const)("keeps a newer queued stop eligible after the older delivery was evicted (%s, %s)", async (providerStatus, scenario) => {
 			const bothEvicted = scenario === "both deliveries evicted";
 			const waiting = scenario === "queue outcome overwritten";
-			const f = await dispatchFixture();
+			const { scope: tenant, ...f } = await isolatedDispatchFixture();
 			await tenant.liveChannel.update({
 				where: { id: f.channel.id },
 				data: {
@@ -2521,8 +2522,15 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 		it.each([
 			"evicted",
 			"failed",
+			"replaced encoder",
+			"rebuilt outbox",
+			"old failed claim",
 		] as const)("keeps the current exhausted STOP recoverable alongside an older fenced queue receipt (%s)", async (currentDelivery) => {
-			const f = await dispatchFixture();
+			const { scope: tenant, ...f } = await isolatedDispatchFixture();
+			const oldFailed = currentDelivery === "old failed claim";
+			const rebuilt = currentDelivery === "rebuilt outbox";
+			const replaced = rebuilt || currentDelivery === "replaced encoder";
+			const earlierEncoder = replaced ? randomUUID() : f.encodingId;
 			await tenant.liveChannel.update({
 				where: { id: f.channel.id },
 				data: {
@@ -2533,7 +2541,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			});
 			await tenant.liveChannelRun.update({
 				where: { id: f.run.id },
-				data: { status: "STOPPING" },
+				data: {
+					status: "STOPPING",
+					previousProviderEncodingIds: replaced ? [earlierEncoder] : [],
+				},
 			});
 			const common = {
 				liveChannelId: f.channel.id,
@@ -2545,14 +2556,35 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				dispatchedAt: now,
 			} as const;
 			const earlier = await tenant.liveSchedule.create({
-				data: { ...common, outcome: "UNKNOWN" },
+				data: {
+					...common,
+					outcome: rebuilt ? "PENDING" : "UNKNOWN",
+					dispatchedAt: rebuilt ? null : now,
+				},
 			});
 			const current = await tenant.liveSchedule.create({
 				data: {
 					...common,
-					outcome: currentDelivery === "failed" ? "PENDING" : "UNKNOWN",
+					outcome: currentDelivery === "evicted" ? "UNKNOWN" : "PENDING",
+					dispatchedAt: replaced ? null : now,
 				},
 			});
+			if (replaced) {
+				await createScheduleSweep({
+					prisma: tenant,
+					now: () => new Date(now.getTime() + 600000),
+					enqueue: async () => {},
+				}).dispatchPending();
+				expect(
+					await tenant.liveSchedule.findUniqueOrThrow({
+						where: { id: current.id },
+					}),
+				).toMatchObject({
+					stopProviderEncodingId: f.encodingId,
+					stopAdmissionFenceVersion: 2,
+					dispatchedAt: expect.any(Date),
+				});
+			}
 			const queueReceipt = (id: string, fence: number, state: string) => ({
 				data: {
 					action: "stop",
@@ -2560,6 +2592,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					plannedLiveChannelRunId: f.run.id,
 					effect: {
 						...f.identity,
+						providerEncodingId: fence === 1 ? earlierEncoder : f.encodingId,
 						idempotencyKey: `schedule:${id}:stop`,
 						scheduleId: id,
 						admissionFenceVersion: fence,
@@ -2573,11 +2606,29 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					queueReceipt(
 						earlier.id,
 						1,
-						currentDelivery === "failed" ? "failed" : "completed",
+						currentDelivery === "evicted" ? "completed" : "failed",
 					),
 				],
 			]);
-			if (currentDelivery === "failed")
+			if (oldFailed) {
+				jobs.delete(`sched-${earlier.id}`);
+				await tenant.liveEffectClaim.create({
+					data: {
+						idempotencyKey: `schedule:${earlier.id}:stop`,
+						scheduleId: earlier.id,
+						token: randomUUID(),
+						liveChannelId: f.channel.id,
+						liveChannelRunId: f.run.id,
+						providerEncodingId: f.encodingId,
+						action: "STOP",
+						state: "FAILED",
+						generation: 1,
+						ownerId: "pre-upgrade-worker",
+						expiresAt: now,
+					},
+				});
+			}
+			if (currentDelivery !== "evicted")
 				jobs.set(`sched-${current.id}`, queueReceipt(current.id, 2, "failed"));
 			f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
 			const recover = createExhaustedScheduledStopRecovery(
@@ -2596,9 +2647,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					where: { id: earlier.id },
 				}),
 			).toMatchObject({
-				outcome: "UNKNOWN",
-				stopAdmissionFenceVersion: 1,
-				stopProviderEncodingId: f.encodingId,
+				stopAdmissionFenceVersion: rebuilt ? 2 : null,
+				stopProviderEncodingId: rebuilt ? f.encodingId : null,
+				legacyStopExhaustedFence: 2,
 			});
 			expect(
 				await tenant.liveSchedule.findUniqueOrThrow({
@@ -2609,10 +2660,111 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				await tenant.liveEffectClaim.count({
 					where: { liveChannelId: f.channel.id },
 				}),
-			).toBe(0);
+			).toBe(oldFailed ? 1 : 0);
+		});
+		it.each([
+			"old queue only",
+			"terminal without current delivery",
+			"old queue and failed claim",
+		] as const)("recovers the latest admission of one refired legacy Stop after Redis deduplicated its older payload (%s)", async (scenario) => {
+			const { scope: tenant, ...f } = await isolatedDispatchFixture();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					status: "STOPPING",
+					liveEffectFenceVersion: 2,
+					legacyAdmissionFenceVersion: 2,
+				},
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPING" },
+			});
+			const row = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "STOP",
+					status: "FIRED",
+					outcome: "PENDING",
+					fireAt: now,
+					firedAt: now,
+					dispatchedAt: now,
+				},
+			});
+			const retained = {
+				data: {
+					action: "stop",
+					liveChannelId: f.channel.id,
+					plannedLiveChannelRunId: f.run.id,
+					effect: {
+						...f.identity,
+						idempotencyKey: `schedule:${row.id}:stop`,
+						scheduleId: row.id,
+						admissionFenceVersion: 1,
+					},
+				},
+				getState: async () => "waiting",
+			};
+			if (scenario === "old queue and failed claim") {
+				await tenant.liveEffectClaim.create({
+					data: {
+						...f.identity,
+						scheduleId: row.id,
+						idempotencyKey: `schedule:${row.id}:stop`,
+						liveChannelId: f.channel.id,
+						generation: 1,
+						state: "FAILED",
+						token: randomUUID(),
+						ownerId: "earlier-attempt",
+						expiresAt: now,
+					},
+				});
+			}
+			let present = true;
+			const enqueue = vi.fn();
+			const terminal = scenario === "terminal without current delivery";
+			f.sdk.getEncodingStatus = vi.fn(async () => ({
+				status: terminal ? "FINISHED" : "RUNNING",
+			}));
+			const recover = createExhaustedScheduledStopRecovery(
+				f.deps,
+				async () => (present ? retained : undefined),
+				enqueue,
+			);
+			await recover();
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({ where: { id: row.id } }),
+			).toMatchObject({
+				stopAdmissionFenceVersion: null,
+				stopProviderEncodingId: null,
+			});
+			present = false;
+			const reconcile = createUncertainStopReconciler(f.deps, enqueue);
+			for (let i = 0; i < 3; i++) {
+				await recover();
+				if (terminal) await reconcile();
+			}
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject(
+				terminal
+					? { status: "STOPPED" }
+					: { status: "ERROR", liveEffectFenceVersion: 2 },
+			);
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({ where: { id: row.id } }),
+			).toMatchObject({
+				outcome: "UNKNOWN",
+				outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+			});
+			expect(enqueue).not.toHaveBeenCalled();
+			expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
 		});
 		it("settles the airing after both reconstructed Stop outboxes lose their queued jobs", async () => {
-			const f = await dispatchFixture();
+			const { scope: tenant, ...f } = await isolatedDispatchFixture();
 			await tenant.liveChannel.update({
 				where: { id: f.channel.id },
 				data: {
@@ -3440,10 +3592,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			return { ...f, fields, claim, proof };
 		}
 
-		async function dispatchFixture(encodingId?: string) {
-			const f = await fixture("RUNNING", null, encodingId);
+		async function dispatchFixture(encodingId?: string, scope = tenant) {
+			const f = await fixture("RUNNING", null, encodingId, scope);
 			const accountId = randomUUID();
-			await tenant.liveChannel.update({
+			await scope.liveChannel.update({
 				where: { id: f.channel.id },
 				data: { plan: { bitmovin: { accountId } } },
 			});
@@ -3465,7 +3617,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })),
 			});
 			const deps: LiveChannelDeps = {
-				prisma: tenant,
+				prisma: scope,
 				now: () => now.toISOString(),
 				makeSdk: () => sdk,
 				revealBitmovinAccount: async () => ({
@@ -3481,6 +3633,16 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				enqueueFeederJob: vi.fn(async () => {}),
 			};
 			return { ...f, accountId, identity, job, sdk, deps };
+		}
+
+		async function isolatedDispatchFixture() {
+			const id = randomUUID();
+			organizationIds.push(id);
+			await admin.organization.create({
+				data: { id, name: "Scheduled STOP recovery test", slug: `test-${id}` },
+			});
+			const scope = createTenantPrismaClient(runtime, id);
+			return { scope, ...(await dispatchFixture(undefined, scope)) };
 		}
 
 		it.each([

@@ -22,12 +22,7 @@ import {
 	vodInputTimelineDocumentSchema,
 	vodInputTimelinePreparationReferenceSchema,
 } from "@bitovp/core/vod-input-timeline";
-import {
-	audioKeys,
-	videoKeys,
-	type WizardRenditionExtras,
-	type WizardState,
-} from "@bitovp/core/wizard";
+import type { WizardState } from "@bitovp/core/wizard";
 import { z } from "zod";
 import type { SessionDto } from "./auth/dto";
 
@@ -86,9 +81,12 @@ export function draftFingerprint(value: unknown): string {
  */
 export function draftKeepsText(value: string): boolean {
 	const normalized = value.trimStart();
+	const authority = normalized.replace(/^[\s/]+/u, "").split("/", 1)[0] ?? "";
+	const colon = authority.indexOf(":");
 	return (
 		!normalized.startsWith("//") &&
-		!/\w+:\/\/|[?#]|^[\s/]*[^/\s]*:[^/\s]*@/u.test(normalized)
+		!/\w+:\/\/|[?#]/u.test(normalized) &&
+		(colon < 0 || authority.lastIndexOf("@") < colon)
 	);
 }
 
@@ -224,6 +222,7 @@ const enhancedWatermarkDraft = z.strictObject({
 	imagePath: z
 		.string()
 		.max(1024)
+		.catch("")
 		.transform((path) =>
 			draftKeepsText(path) &&
 			!path.includes("\\") &&
@@ -1126,88 +1125,32 @@ export type WizardDraft = {
 	legacyVodFilters?: true;
 };
 
-/** Version 1 could store only ordinary watermark definitions and video attachments.
- * Recover the remaining filters from the same preset in memory, by rendition key. */
+/** V1 omitted non-watermark filters and audio attachments. An edit, detach and
+ * unchanged preset can therefore produce exactly the same saved data. */
+export function legacyVodMetadataOnly(
+	base: WizardState,
+	draft?: WizardDraft | null,
+): boolean {
+	return (
+		!!draft?.legacyVodFilters &&
+		(base.filters ?? []).some((f) => f.kind !== "WATERMARK")
+	);
+}
+
 export function restoreVodWizardDraft(
 	base: WizardState,
 	draft: WizardDraft,
-	onUnmatchedRenditions?: () => void,
 ): WizardState {
-	const restored = mergeWizardDraft(base, draft.value, "vod");
-	if (!draft.legacyVodFilters) return restored;
-	const represented = new Set(restored.filters?.map((filter) => filter.key));
-	const omitted = (base.filters ?? []).filter(
-		(filter) => filter.kind !== "WATERMARK" && !represented.has(filter.key),
-	);
-	if (!omitted.length) return restored;
-	const missing = new Set(omitted.map((filter) => filter.key));
-	const retainedDefinitions = new Set<string>();
-	function attach<T extends { extras?: WizardRenditionExtras }>(
-		before: T[],
-		after: T[],
-		keys: (rows: T[]) => string[],
-	): T[] {
-		const afterKeys = keys(after);
-		const beforeKeys = keys(before);
-		const previous = new Map(
-			beforeKeys.map((key, index) => [
-				key,
-				before[index]?.extras?.filters?.filter((ref) =>
-					missing.has(ref.filterKey),
-				) ?? [],
-			]),
-		);
-		if (![...previous.values()].some((refs) => refs.length)) return after;
-		// A legacy row has no immutable editor ID. If an edited key could refer
-		// to two different renditions, retain the preset ladder with its filters.
-		const disappeared = beforeKeys.filter((key) => !afterKeys.includes(key));
-		const added = afterKeys.filter((key) => !previous.has(key));
-		const oldKey = disappeared[0];
-		const newKey = added[0];
-		if (oldKey && newKey && before.length === 1 && after.length === 1) {
-			previous.set(newKey, previous.get(oldKey) ?? []);
-		} else if (
-			added.length &&
-			disappeared.some((key) => previous.get(key)?.length)
-		) {
-			for (const row of before)
-				for (const ref of row.extras?.filters ?? [])
-					retainedDefinitions.add(ref.filterKey);
-			onUnmatchedRenditions?.();
-			return before;
-		}
-		return after.map((row, index) => {
-			const links = previous.get(afterKeys[index] ?? "");
-			if (!links?.length) return row;
-			const current = row.extras?.filters ?? [];
-			return {
-				...row,
-				extras: {
-					...row.extras,
-					filters: [
-						...current,
-						...links.filter(
-							(link) =>
-								!current.some((ref) => ref.filterKey === link.filterKey),
-						),
-					],
-				},
-			};
-		});
-	}
-	const videos = attach(base.videos, restored.videos, videoKeys);
-	const audios = attach(base.audios, restored.audios, audioKeys);
-	const retained = (base.filters ?? []).filter(
-		(f) =>
-			retainedDefinitions.has(f.key) &&
-			!missing.has(f.key) &&
-			!represented.has(f.key),
-	);
+	if (!legacyVodMetadataOnly(base, draft))
+		return mergeWizardDraft(base, draft.value, "vod");
+	const { name, labels } = draft.value;
 	return {
-		...restored,
-		filters: [...(restored.filters ?? []), ...omitted, ...retained],
-		videos,
-		audios,
+		...base,
+		...(typeof name === "string" ? { name } : {}),
+		...(Array.isArray(labels) &&
+		labels.every((label) => typeof label === "string")
+			? { labels }
+			: {}),
 	};
 }
 const envelope = z

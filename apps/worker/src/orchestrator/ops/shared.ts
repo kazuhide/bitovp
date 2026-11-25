@@ -9,6 +9,7 @@ import {
 	type AbstractCondition,
 	AclEntry,
 	AclPermission,
+	AndConjunction,
 	CacheControl,
 	ChromaLocation,
 	ColorConfig,
@@ -20,9 +21,11 @@ import {
 	ConditionOperator,
 	EncodingOutput,
 	Label,
+	OrConjunction,
 	type Task,
 } from "@bitmovin/api-sdk";
 import {
+	type StreamCondition,
 	type VerificationEncodingIdentity,
 	verificationKeyLabel,
 } from "@bitovp/core";
@@ -200,20 +203,24 @@ export function cacheControl(
 		: undefined;
 }
 
+function sdkCondition(c: StreamCondition): AbstractCondition {
+	if ("conditions" in c) {
+		const children = c.conditions.map(sdkCondition);
+		return c.type === "AND"
+			? new AndConjunction({ conditions: children })
+			: new OrConjunction({ conditions: children });
+	}
+	return new Condition({
+		attribute: c.attribute,
+		operator: sdkEnumValue(ConditionOperator, c.operator, "ConditionOperator"),
+		value: c.value,
+	});
+}
+
 export function conditions(
-	c: { attribute: string; operator: string; value: string } | undefined,
+	c: StreamCondition | undefined,
 ): AbstractCondition | undefined {
-	return c
-		? new Condition({
-				attribute: c.attribute,
-				operator: sdkEnumValue(
-					ConditionOperator,
-					c.operator,
-					"ConditionOperator",
-				),
-				value: c.value,
-			})
-		: undefined;
+	return c && sdkCondition(c);
 }
 
 export function colorConfig(

@@ -18,6 +18,10 @@ region. Review the selected account and any saved or copied region settings.
    Pseudo-live is a feeder that sends stored files to an input, not a separate
    encoder input type.
 3. In **Ladder**, configure video/audio renditions and their codec settings.
+   Open **Input conditions** on a rendition to apply an AND/OR rule to the source.
+   For example, require a minimum input height or match an audio language. Frame
+   rate accepts a decimal or a fraction such as `30000/1001`. Duration and input
+   bitrate are available for VOD only.
 4. In **Output**, choose storage or a delivery service, paths, and optional mirrors.
 5. In **Packaging**, choose each track's container, bundled audio, file settings,
    shared segment length, optional encryption, and MP4 archive.

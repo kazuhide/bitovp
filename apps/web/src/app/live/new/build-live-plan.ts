@@ -2,6 +2,7 @@ import type {
 	LiveChannelPlanInput,
 	LiveDashDetailedOptions,
 	LiveHlsDetailedOptions,
+	StreamCondition,
 } from "@bitovp/core";
 import {
 	akamaiMsl5InitSegmentName,
@@ -167,6 +168,7 @@ export type LiveStaticIngestPoint = {
 };
 
 export type LiveVideoRendition = {
+	conditions?: StreamCondition;
 	input?: LiveInputSelection;
 	muxing?: LiveMuxingOptions;
 	/** Stable form identity, preserved when editing a rendition. */
@@ -200,6 +202,7 @@ export type LiveVideoRendition = {
 };
 
 export type LiveAudioRendition = {
+	conditions?: StreamCondition;
 	cutoffFrequency?: number;
 	input?: LiveInputSelection;
 	muxing?: LiveMuxingOptions;
@@ -1042,6 +1045,7 @@ function videoRendition(
 			key,
 			codec: "H265" as const,
 			...codecDetailControls("H265", o),
+			conditions: video.conditions,
 			hlsVariantUri: video.extras?.hlsVariantUri,
 			name: str(video.name) ?? derivedName,
 			ingestKey,
@@ -1104,6 +1108,7 @@ function videoRendition(
 		key,
 		codec: "H264" as const,
 		...codecDetailControls("H264", o),
+		conditions: video.conditions,
 		hlsVariantUri: video.extras?.hlsVariantUri,
 		name: str(video.name) ?? derivedName,
 		ingestKey,
@@ -1172,6 +1177,7 @@ function audioRendition(
 	return prune({
 		key,
 		codec: audio.codec,
+		conditions: audio.conditions,
 		ingestKey,
 		bitrate: audio.bitrate,
 		rate: audio.rate ?? 0,

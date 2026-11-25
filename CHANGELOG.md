@@ -11,6 +11,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Configure VOD HEVC/HDR10+ with a video and metadata JSON sidecar on the same input storage, and retain this source when editing a saved plan. The input timeline remains unavailable for HDR10+ in this application. The Web and Worker now use the published Bitmovin JavaScript SDK 1.289.0. HDR10+ requires Encoder 2.294.0 or later.
 - Show Live input aspect ratio, audio channel count and channel layout supplied by Encoder 2.294.0 as first-connection metadata. Missing or malformed values remain unavailable and do not become fresh health evidence.
 - Select HE-AAC v1 or v2 in VOD and Live audio ladders and preserve profile-specific signaling in saved templates.
+- Configure per-rendition input conditions in VOD and Live, including nested AND/OR comparisons on source tracks.
 
 - Run repeatable local x264, x265, VP9/libvpx and SVT-AV1 training encodes through the experiment CLI and authenticated API, with per-worker parameter discovery, CPU VMAF and measured bitrate exports.
 - Show instance-wide Redis memory usage and the configured Redis limit to platform owners in Settings.

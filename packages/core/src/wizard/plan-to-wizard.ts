@@ -9,6 +9,10 @@ import {
 	encodingPlanSchema,
 	H264_DEFAULT_CONFIG_NAME,
 } from "../plan/schema";
+import {
+	isAudioStreamGuard,
+	streamConditionSchema,
+} from "../plan/stream-conditions";
 import { vmafExecutionSchema } from "../vmaf/cloud";
 import {
 	audioKeys,
@@ -395,12 +399,22 @@ export function readH26xCodecOptions(
 	return {};
 }
 
+function readCondition(r: Record<string, unknown>) {
+	if (r.conditions === undefined) return {};
+	const parsed = streamConditionSchema.safeParse(r.conditions);
+	return parsed.success ? { conditions: parsed.data } : {};
+}
 function readVideo(r: Record<string, unknown>): WizardVideoRendition {
 	const codec = (asString(r.codec) ?? "H264") as WizardVideoCodec;
 	const height = r.height === null ? null : (asNumber(r.height) ?? null);
 	const bitrate = r.bitrate === null ? null : (asNumber(r.bitrate) ?? null);
 	const extras = readExtras(r, "video");
-	const video: WizardVideoRendition = { height, bitrate, codec };
+	const video: WizardVideoRendition = {
+		height,
+		bitrate,
+		codec,
+		...readCondition(r),
+	};
 	if (typeof r.width === "number") video.width = r.width;
 	if (typeof r.encodingMode === "string")
 		video.encodingMode = r.encodingMode as WizardVideoRendition["encodingMode"];
@@ -424,6 +438,7 @@ function readVideo(r: Record<string, unknown>): WizardVideoRendition {
 function readAudio(r: Record<string, unknown>): WizardAudioRendition {
 	const codec = (asString(r.codec) ?? "AAC") as WizardAudioCodec;
 	const audio: WizardAudioRendition = {
+		...readCondition(r),
 		bitrate: asNumber(r.bitrate) ?? 0,
 		rate: asNumber(r.rate) ?? (isHeAac(codec) ? undefined : 0),
 		...(isHeAac(codec) && typeof r.signaling === "string"
@@ -1922,6 +1937,7 @@ export function planToWizardState(
 			videoRaw.push(r);
 		} else if (codec === "WEBVTT" || codec === "IMSC") {
 			const sub: WizardSubtitle = {
+				...readCondition(r),
 				source: asString(r.ingestKey) ?? "",
 				...(codec === "IMSC"
 					? { codec: "IMSC", styling: r.styling as WizardSubtitle["styling"] }
@@ -2076,15 +2092,11 @@ export function planToWizardState(
 	// audioGuard is all-or-nothing: every audio rendition carries the
 	// AUDIOSTREAMCOUNT>0 condition, nothing else does.
 	const audioGuard =
-		audioRaw.length > 0 &&
-		audioRaw.every((r) => {
-			const c = isRecord(r.conditions) ? r.conditions : undefined;
-			return (
-				asString(c?.attribute) === "AUDIOSTREAMCOUNT" &&
-				asString(c?.operator) === "GREATER_THAN" &&
-				asString(c?.value) === "0"
-			);
-		});
+		audios.length > 0 &&
+		audios.every((row) => isAudioStreamGuard(row.conditions)) &&
+		videos.every((row) => !row.conditions) &&
+		subtitles.every((row) => !row.conditions);
+	if (audioGuard) for (const row of audios) delete row.conditions;
 
 	// Read before the literal: `hlsDefaultVersion` needs it (a QC-only plan
 	// emits no standalone audio containers, so they cannot imply a version).

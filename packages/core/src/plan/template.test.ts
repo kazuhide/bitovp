@@ -167,6 +167,49 @@ describe("planToEncodingTemplateYaml", () => {
 		}
 	});
 
+	it("writes nested input conditions in Encoding Template wire format", () => {
+		const plan = loadPlan("fixed-bitrate-hls-streamcondition-on-azure");
+		const audio = plan.renditions.find((row) => row.key === "a128");
+		if (!audio?.conditions) throw new Error("expected guarded audio fixture");
+		audio.conditions = {
+			type: "AND",
+			conditions: [
+				audio.conditions,
+				{
+					type: "OR",
+					conditions: ["ja", "en"].map((value) => ({
+						attribute: "LANGUAGE",
+						operator: "EQUAL",
+						value,
+					})),
+				},
+			],
+		};
+		const yaml = parse(planToEncodingTemplateYaml(plan));
+		expect(
+			at(yaml, "encodings.main.streams.a128.properties.conditions"),
+		).toEqual({
+			type: "AND",
+			conditions: [
+				{
+					type: "CONDITION",
+					attribute: "AUDIOSTREAMCOUNT",
+					operator: ">",
+					value: "0",
+				},
+				{
+					type: "OR",
+					conditions: ["ja", "en"].map((value) => ({
+						type: "CONDITION",
+						attribute: "LANGUAGE",
+						operator: "==",
+						value,
+					})),
+				},
+			],
+		});
+	});
+
 	it("emits parseable YAML with $/ references and no secrets", () => {
 		const plan = loadPlan("fixed-bitrate-hls-on-aws");
 		const yaml = planToEncodingTemplateYaml(plan);

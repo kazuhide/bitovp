@@ -200,10 +200,12 @@ details. It searches the selected account's generic error catalogue; it is not
 a failure-history viewer and never restarts a job.
 
 The [functional gap audit](ENCODING-FUNCTIONAL-GAPS.md) prioritizes actual encoding
-capabilities: Stream Conditions authoring and conjunctions, PCM/WAV and
+capabilities including PCM/WAV and
 bounded audio passthrough, followed by embedded-caption extraction. It traces
 closed plan unions and execution paths instead of treating unconfirmed SDK
-calls as missing features. Source support is not provider qualification.
+calls as missing features. Per-rendition Stream Conditions and AND/OR groups are
+available in the VOD and Live editors on the existing stream-create operation.
+Source support is not provider qualification.
 
 Native Templates, Native Watch Folders and resource CRUD remain a separate
 management lane. Current Watch folders use application watch rules and a storage

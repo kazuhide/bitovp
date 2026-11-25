@@ -29,6 +29,10 @@ import {
 	type H265V2PerceptualQualityModeConfig,
 	srtCharacterEncodingSchema,
 } from "../plan/schema";
+import {
+	guardedAudioCondition,
+	type StreamCondition,
+} from "../plan/stream-conditions";
 import type { VmafExecution } from "../vmaf/cloud";
 import { applyVodInputTimeline } from "./input-timeline";
 
@@ -592,6 +596,7 @@ export type WizardAudioCodec =
 	| "EAC3";
 
 export type WizardVideoRendition = {
+	conditions?: StreamCondition;
 	width?: number;
 	/** null = per-title template scales freely (height left to the run). */
 	height: number | null;
@@ -616,6 +621,7 @@ export type WizardVideoRendition = {
 };
 
 export type WizardAudioRendition = {
+	conditions?: StreamCondition;
 	cutoffFrequency?: number;
 	signaling?: HeAacSignaling;
 	bitrate: number;
@@ -639,6 +645,7 @@ export type WizardAudioRendition = {
 
 /** WEBVTT subtitle track fed by a WEBVTT fileStream. */
 export type WizardSubtitle = {
+	conditions?: StreamCondition;
 	codec?: "WEBVTT" | "IMSC";
 	styling?: { mode?: "PASSTHROUGH" | "DROP_STYLING" };
 	/** WEBVTT fileStream key (sources.fileStreams). */
@@ -1851,6 +1858,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 					? { encodingMode: video.encodingMode }
 					: {}),
 			...extrasFields(video.extras),
+			conditions: video.conditions,
 			...(video.extras?.burnInSrt
 				? {
 						burnInSrt: {
@@ -2035,15 +2043,9 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 			ingestKey: audio.extras?.source ?? "audio",
 			name: str(audio.extras?.name),
 			...extrasFields(audio.extras),
-			...(state.audioGuard
-				? {
-						conditions: {
-							attribute: "AUDIOSTREAMCOUNT",
-							operator: "GREATER_THAN" as const,
-							value: "0",
-						},
-					}
-				: {}),
+			conditions: state.audioGuard
+				? guardedAudioCondition(audio.conditions)
+				: audio.conditions,
 		};
 		if (isHeAac(codec)) {
 			const config = {
@@ -2119,6 +2121,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				? { styling: subtitle.styling }
 				: { groupId: str(subtitle.groupId), uri: str(subtitle.uri) }),
 			...extrasFields(subtitle.extras),
+			conditions: subtitle.conditions,
 		});
 
 	/**

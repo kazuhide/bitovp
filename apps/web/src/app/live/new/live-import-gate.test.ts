@@ -37,6 +37,43 @@ const legalToSave = (raw: unknown) => {
 };
 
 describe("tryImportLiveChannelIntoWizard", () => {
+	it("reopens only the specified video and audio conditions and refuses VOD-only attributes at submission", () => {
+		const conditional = structuredClone(muxed);
+		const video = conditional.renditions.find(
+			(r: { codec: string }) => r.codec === "H264",
+		);
+		const audio = conditional.renditions.find(
+			(r: { codec: string }) => r.codec === "AAC",
+		);
+		video.conditions = {
+			type: "AND",
+			conditions: [
+				{ attribute: "FPS", operator: "GREATER_THAN", value: "24000/1001" },
+				{ attribute: "HEIGHT", operator: "EQUAL", value: "1080" },
+			],
+		};
+		audio.conditions = {
+			attribute: "STREAMID",
+			operator: "EQUAL",
+			value: "0x101",
+		};
+		legalToSave(conditional);
+		const imported = tryImportLiveChannelIntoWizard(conditional);
+		expect(imported.ok).toBe(true);
+		if (!imported.ok) throw new Error(imported.reasonKey);
+		expect(imported.state.videos[0]?.conditions).toEqual(video.conditions);
+		expect(imported.state.audios[0]?.conditions).toEqual(audio.conditions);
+		video.conditions.conditions[0].attribute = "DURATION";
+		expect(
+			validateLiveChannel(liveChannelPlanSchema.parse(conditional)),
+		).toContainEqual(
+			expect.objectContaining({
+				code: "PLAN_STREAM_CONDITION_INVALID",
+				level: "error",
+			}),
+		);
+	});
+
 	it("refuses an unresolved output without leaking the converter's schema exception", () => {
 		const raw = structuredClone(muxed);
 		raw.muxings[0].destination.outputKey = "missing-output";

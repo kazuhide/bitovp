@@ -91,6 +91,7 @@ import {
 	Vp9AdvancedEditor,
 } from "./rendition-editors";
 import { renditionSourceOptions } from "./rendition-sources";
+import { StreamConditionEditor } from "./stream-condition-editor";
 import {
 	flattenStreams,
 	inputFileOptions,
@@ -615,6 +616,12 @@ export function LadderSection({
 										onChange={(av1) => patchVideo(index, { av1 })}
 									/>
 								)}
+								<StreamConditionEditor
+									idBase={`wz-v-${index}-condition`}
+									media="video"
+									value={video.conditions}
+									onChange={(conditions) => patchVideo(index, { conditions })}
+								/>
 								<ExtrasEditor
 									idBase={`wz-v-${index}-x`}
 									family="video"
@@ -954,6 +961,12 @@ export function LadderSection({
 										}
 									/>
 								) : null}
+								<StreamConditionEditor
+									idBase={`wz-a-${index}-condition`}
+									media="audio"
+									value={audio.conditions}
+									onChange={(conditions) => patchAudio(index, { conditions })}
+								/>
 								<ExtrasEditor
 									idBase={`wz-a-${index}-x`}
 									family="audio"
@@ -1190,6 +1203,14 @@ export function LadderSection({
 										</>
 									) : null}
 								</div>
+								<StreamConditionEditor
+									idBase={`wz-s-${index}-condition`}
+									media="subtitle"
+									value={subtitle.conditions}
+									onChange={(conditions) =>
+										patchSubtitle(index, { conditions })
+									}
+								/>
 								<ExtrasEditor
 									idBase={`wz-s-${index}-x`}
 									family="subtitle"

@@ -26,6 +26,7 @@ import {
 	H264AdvancedEditor,
 	H265AdvancedEditor,
 } from "@/app/vod/new/rendition-editors";
+import { StreamConditionEditor } from "@/app/vod/new/stream-condition-editor";
 import { Collapsible } from "@/app/vod/new/wizard-fields";
 import { Field, FieldRowAction } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
@@ -380,6 +381,13 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									</button>
 								</FieldRowAction>
 							</div>
+							<StreamConditionEditor
+								idBase={`lw-v-${index}-condition`}
+								media="video"
+								live
+								value={video.conditions}
+								onChange={(conditions) => patchVideo(index, { conditions })}
+							/>
 							<div className="max-w-md">
 								<HlsVideoUriField
 									id={`lw-v-${index}-hls-video-uri`}
@@ -638,6 +646,13 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 								</button>
 							</FieldRowAction>
 							<div className="w-full">
+								<StreamConditionEditor
+									idBase={`lw-a-${index}-condition`}
+									media="audio"
+									live
+									value={audio.conditions}
+									onChange={(conditions) => patchAudio(index, { conditions })}
+								/>
 								<Collapsible summary={t("wizard.advanced")}>
 									<LiveInputFields
 										idBase={`lw-a-${index}`}

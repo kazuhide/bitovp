@@ -78,19 +78,15 @@ containers and unsupported combinations continue to matter.
 HE-AAC v1/v2 are available in the VOD and ordinary Live audio ladders. Saved presets and channel duplication preserve optional sampling rate, layout and signaling. VOD uses segmented fMP4; Live also supports HLS with TS. Each profile calls its dedicated configuration endpoint and streams use that configuration’s ID. Offline SDK tests verify the request; a provider encode and device playback remain unmeasured.
 
 
-### E02 · P1 · Stream Conditions authoring and AND/OR
+### E02 · Stream Conditions authoring and AND/OR
 
-`streamConditionSchema` accepts a single comparison. Expert JSON can supply it;
-the GUI currently generates only `audioGuard` (`AUDIOSTREAMCOUNT > 0`). Recursive
-Stream AND/OR has no plan or Worker conversion path. **Manifest** AND/OR already
-exists in `plan/manifest-options.ts` and its period editor.
-
-Add bounded condition groups, a compact rendition editor, backward-compatible
-single comparisons and explicit Live/VOD attribute restrictions. Test
-form/JSON round trips and SDK `AbstractCondition`, `AndConjunction` and
-`OrConjunction` serialization. This enables conditional ladders for varying
-input dimensions or missing audio. See the
-[official Stream Conditions guide](https://developer.bitmovin.com/encoding/docs/stream-conditions).
+VOD streaming and file wizards expose input conditions on their available
+renditions. Live exposes them on video and audio renditions. The editors and
+Expert JSON preserve single comparisons and nested AND/OR groups. Plan
+validation checks stream type, Live availability and value format. The Worker
+and YAML export serialize the same comparisons and groups. The global VOD audio
+guard combines with any condition already present on the audio rendition.
+See the [official Stream Conditions guide](https://developer.bitmovin.com/encoding/docs/stream-conditions).
 
 ### E03 · P1 · PCM/WAV, then bounded audio passthrough
 

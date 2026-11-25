@@ -27,6 +27,42 @@ const PROVISIONS_AT_CREATE =
 	"The channel begins starting up as soon as it is created, and charges may accrue before the planned feed time, depending on your Live Encoding pricing plan";
 
 export const en = {
+	streamConditions: {
+		title: "Input conditions",
+		enabled: "Input conditions set",
+		add: "Add condition",
+		remove: "Remove rule",
+		rule: "Rule",
+		attribute: "Input attribute",
+		comparison: "Comparison",
+		value: "Value",
+		group: "Match",
+		all: "All conditions (AND)",
+		any: "Any condition (OR)",
+		and: "Require another condition (AND)",
+		or: "Allow an alternative (OR)",
+		yes: "Yes",
+		no: "No",
+		attributes: {
+			INPUTSTREAM: "Selected input stream exists",
+			STREAMCOUNT: "Stream count",
+			VIDEOSTREAMCOUNT: "Video track count",
+			AUDIOSTREAMCOUNT: "Audio track count",
+			DURATION: "Duration (seconds)",
+			WIDTH: "Width (pixels)",
+			HEIGHT: "Height (pixels)",
+			BITRATE: "Bitrate (bps)",
+			FPS: "Frame rate (fps)",
+			ASPECTRATIO: "Aspect ratio",
+			ROTATION: "Rotation (degrees)",
+			SAMPLERATE: "Sample rate (Hz)",
+			LANGUAGE: "Language",
+			CHANNELFORMAT: "Channel count",
+			CHANNELLAYOUT: "Channel layout",
+			HEARINGIMPAIRED: "Hearing-impaired flag",
+			STREAMID: "Stream ID / PID",
+		},
+	},
 	outputCompare: {
 		title: "Compare outputs",
 		pickTwo:

@@ -769,6 +769,7 @@ export function renameFileJob(
 export type FileEdit = Partial<
 	Pick<
 		WizardVideoRendition,
+		| "conditions"
 		| "height"
 		| "bitrate"
 		| "codec"
@@ -1003,6 +1004,7 @@ export function removeFile(
 export type FileAudioEdit = Partial<
 	Pick<
 		WizardAudioRendition,
+		| "conditions"
 		| "codec"
 		| "bitrate"
 		| "rate"
@@ -1337,6 +1339,7 @@ function stripHeldBack(state: WizardState): WizardState {
 }
 
 const VIDEO_FIELDS = [
+	"conditions",
 	"height",
 	"bitrate",
 	"codec",
@@ -1351,6 +1354,7 @@ const VIDEO_FIELDS = [
 	...VIDEO_BOOKKEEPING,
 ];
 const AUDIO_FIELDS = [
+	"conditions",
 	"codec",
 	"bitrate",
 	"rate",

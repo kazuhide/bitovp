@@ -2834,3 +2834,30 @@ describe("a plan this flow built, loaded again", () => {
 		]);
 	});
 });
+
+it("keeps file-mode video and audio conditions visible and preserves them when changing file settings", () => {
+	const video = {
+		attribute: "HEIGHT",
+		operator: "GREATER_THAN_OR_EQUAL" as const,
+		value: "1080",
+	};
+	const audio = {
+		attribute: "LANGUAGE",
+		operator: "EQUAL" as const,
+		value: "ja",
+	};
+	const changed = {
+		...started,
+		...editFile(started, 0, { conditions: video }),
+	};
+	const finished = {
+		...changed,
+		...editFileAudio(changed, 0, { conditions: audio }),
+	};
+	expect(fileOutputBlockers(finished)).toEqual([]);
+	expect(finished.videos[0]?.conditions).toEqual(video);
+	expect(fileAudios(finished)[0]?.conditions).toEqual(audio);
+	expect(
+		editFile(finished, 0, { filename: "programme.mp4" }).videos[0]?.conditions,
+	).toEqual(video);
+});

@@ -45,6 +45,7 @@ import {
 	Vp9AdvancedEditor,
 } from "./rendition-editors";
 import { renditionSourceOptions } from "./rendition-sources";
+import { StreamConditionEditor } from "./stream-condition-editor";
 
 const ENCODING_MODES = [
 	"STANDARD",
@@ -482,6 +483,12 @@ function FileEditor({
 				hint={sourcesUnused ? t("vodFlow.sourceUnusedWithSequence") : undefined}
 				onChange={(source) => onEdit({ source })}
 			/>
+			<StreamConditionEditor
+				idBase={`${id}-condition`}
+				media="video"
+				value={video.conditions}
+				onChange={(conditions) => onEdit({ conditions })}
+			/>
 			{codec === "H264" ? (
 				<H264AdvancedEditor
 					idBase={`${id}-h264`}
@@ -720,6 +727,12 @@ function FileAudioEditor({
 							sourcesUnused ? t("vodFlow.sourceUnusedWithSequence") : undefined
 						}
 						onChange={(source) => onEdit({ source })}
+					/>
+					<StreamConditionEditor
+						idBase={`${id}-condition`}
+						media="audio"
+						value={audio.conditions}
+						onChange={(conditions) => onEdit({ conditions })}
 					/>
 					{codec === "DOLBY_ATMOS" ? (
 						<LoudnessEditor

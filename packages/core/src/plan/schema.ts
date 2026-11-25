@@ -30,6 +30,10 @@ import {
 	watermarkFilterSchema,
 } from "./media-filters";
 import { qcGateSchema } from "./qc-gate";
+import { streamConditionSchema } from "./stream-conditions";
+
+export { streamConditionSchema } from "./stream-conditions";
+
 import { SRT_CHARACTER_ENCODINGS } from "./srt-character-encodings";
 
 /**
@@ -545,20 +549,6 @@ export type TrimmingStream = z.infer<typeof trimmingStreamSchema>;
 export type PaddingSequence = z.infer<typeof paddingSequenceSchema>;
 export type ConcatenationSource = z.infer<typeof concatenationSourceSchema>;
 export type ConcatenationStream = z.infer<typeof concatenationStreamSchema>;
-
-/** Single condition in P1; becomes an AND/OR tree union in P2. */
-export const streamConditionSchema = z.strictObject({
-	attribute: z.string().min(1),
-	operator: z.enum([
-		"EQUAL",
-		"NOT_EQUAL",
-		"LESS_THAN",
-		"LESS_THAN_OR_EQUAL",
-		"GREATER_THAN",
-		"GREATER_THAN_OR_EQUAL",
-	]),
-	value: z.string(),
-});
 
 /** Per-stream filter attachment (streams.filters.create order matters). */
 export const streamFilterRefSchema = z.strictObject({

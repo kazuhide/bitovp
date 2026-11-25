@@ -13,6 +13,7 @@ import type {
 	ScannedMuxing,
 	ScannedStream,
 	ScanPage,
+	StreamCondition,
 	VerificationEncodingIdentity,
 	VP9DetailControls,
 } from "@bitovp/core";
@@ -878,7 +879,7 @@ export type SdkOps = {
 			position?: number;
 			name: string;
 			mode: string;
-			conditions?: { attribute: string; operator: string; value: string };
+			conditions?: StreamCondition;
 			/** SDK-shaped StreamPerTitleSettings (plain object; SDK maps it). */
 			perTitleSettings?: Record<string, unknown>;
 		},

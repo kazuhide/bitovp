@@ -1,3 +1,4 @@
+import { checkStreamConditions } from "../plan/stream-condition-validation";
 import { vmafSourceFor } from "../vmaf/streamable-io";
 import {
 	enumerateBandingQcTargets,
@@ -391,6 +392,7 @@ export function validatePlan(
 ): PlanIssue[] {
 	const issues: PlanIssue[] = checkInternalHevcV2Plan(plan);
 	issues.push(...checkH26xCodecControls(plan.renditions));
+	issues.push(...checkStreamConditions(plan.renditions, false));
 	issues.push(...checkAv1CodecControls(plan.renditions));
 	issues.push(...checkCodecDetailControls(plan.renditions));
 	issues.push(...checkConcatenationAvQualification(plan));

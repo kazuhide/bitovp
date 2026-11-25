@@ -6,7 +6,11 @@
  * monolithic one did. The default is unreachable by construction.
  */
 import type { CompiledOperation } from "@bitovp/core";
-import { filterParameters, mediaFilterSchema } from "@bitovp/core";
+import {
+	filterParameters,
+	mediaFilterSchema,
+	streamConditionSchema,
+} from "@bitovp/core";
 import type { StepResult } from "../executor";
 import type { ExecStepContext } from "./exec-shared";
 import {
@@ -258,9 +262,10 @@ export async function executeMediaStep(
 					position: typeof p.position === "number" ? p.position : undefined,
 					name: str(p.name),
 					mode: str(p.mode),
-					conditions: p.conditions as
-						| { attribute: string; operator: string; value: string }
-						| undefined,
+					conditions:
+						p.conditions === undefined
+							? undefined
+							: streamConditionSchema.parse(p.conditions),
 					perTitleSettings: p.perTitleSettings as
 						| Record<string, unknown>
 						| undefined,

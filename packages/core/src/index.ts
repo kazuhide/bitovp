@@ -687,6 +687,7 @@ export {
 	audioMixPreset,
 	audioMixStreamSchema,
 } from "./plan/audio-mix";
+export { conditionTreeLimits } from "./plan/bounded-condition-tree";
 export type {
 	AV1DetailControls,
 	DetailCodec,
@@ -1027,6 +1028,16 @@ export {
 	stepLogSchema,
 	stepStatusSchema,
 } from "./plan/steplog";
+export type {
+	StreamCondition,
+	StreamConditionLeaf,
+	StreamConditionMedia,
+} from "./plan/stream-conditions";
+export {
+	allowedStreamOperators,
+	availableStreamAttributes,
+	streamConditionOperators,
+} from "./plan/stream-conditions";
 export type {
 	EncodingJobCreateData,
 	SubmitEncodingJobDeps,

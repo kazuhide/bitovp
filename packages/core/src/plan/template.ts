@@ -18,6 +18,7 @@ import { streamPerTitleSettings } from "./per-title-settings";
 import type { EncodingPlan } from "./schema";
 import { AUDIO_CODECS } from "./schema";
 import { SRT_CHARACTER_ENCODING_VALUES } from "./srt-character-encodings";
+import type { StreamCondition } from "./stream-conditions";
 
 /**
  * Exports an EncodingPlan as a Bitmovin Encoding Template (YAML) — the
@@ -72,6 +73,22 @@ const CONDITION_OPERATOR_WIRE: Record<string, string> = {
 	GREATER_THAN: ">",
 	GREATER_THAN_OR_EQUAL: ">=",
 };
+
+function templateStreamCondition(
+	condition: StreamCondition,
+): Record<string, unknown> {
+	if ("conditions" in condition)
+		return {
+			type: condition.type,
+			conditions: condition.conditions.map(templateStreamCondition),
+		};
+	return {
+		type: "CONDITION",
+		attribute: condition.attribute,
+		operator: wire(CONDITION_OPERATOR_WIRE, condition.operator),
+		value: condition.value,
+	};
+}
 
 const PROFILE_H265_WIRE: Record<string, string> = {
 	MAIN: "main",
@@ -1085,15 +1102,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				mode: isVideoCodec(rendition) ? rendition.mode : "STANDARD",
 				...(rendition.conditions
 					? {
-							conditions: {
-								type: "CONDITION",
-								attribute: rendition.conditions.attribute,
-								operator: wire(
-									CONDITION_OPERATOR_WIRE,
-									rendition.conditions.operator,
-								),
-								value: rendition.conditions.value,
-							},
+							conditions: templateStreamCondition(rendition.conditions),
 						}
 					: {}),
 				...(isVideoCodec(rendition) && rendition.perTitleSettings

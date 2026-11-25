@@ -153,6 +153,7 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 		.filter(isVideoRendition)
 		.map((r) => ({
 			...inputOf(r, "video", 0),
+			...(r.conditions ? { conditions: r.conditions } : {}),
 			extras: {
 				key: r.key,
 				...("hlsVariantUri" in r && typeof r.hlsVariantUri === "string"
@@ -191,6 +192,7 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 		.filter(isAudioRendition)
 		.map((r) => ({
 			...inputOf(r, "audio", 1),
+			...(r.conditions ? { conditions: r.conditions } : {}),
 			extras: { key: r.key },
 			codec: r.codec,
 			bitrate: r.bitrate ?? 0,

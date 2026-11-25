@@ -6,6 +6,7 @@ import { checkMslEncoderVersion } from "../plan/msl-encoder-version";
 import { muxingStreamKeys } from "../plan/muxing-streams";
 import { outputStorageKeys } from "../plan/output-files";
 import { AUDIO_CODECS } from "../plan/schema";
+import { checkStreamConditions } from "../plan/stream-condition-validation";
 import type { PlanIssue, PlanValidationOptions } from "../plan/validate";
 import { isAisaManagedLivePlan, validateAisaManagedLivePlan } from "./aisa";
 import {
@@ -271,6 +272,7 @@ export function validateLiveChannel(
 		...checkLiveHlsVideoUris(plan),
 	];
 	issues.push(...checkH26xCodecControls(plan.renditions));
+	issues.push(...checkStreamConditions(plan.renditions, true));
 	issues.push(...checkCodecDetailControls(plan.renditions));
 	if (plan.start.encodingOption === "HD") {
 		const resolution = resolveLiveEncodingOption(plan);

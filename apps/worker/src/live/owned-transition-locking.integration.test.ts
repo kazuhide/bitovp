@@ -2380,9 +2380,15 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 		});
 
 		it.each([
-			"RUNNING",
-			"FINISHED",
-		] as const)("keeps a newer queued stop eligible after the older delivery was evicted (%s)", async (providerStatus) => {
+			["RUNNING", "pending"],
+			["FINISHED", "pending"],
+			["RUNNING", "clock rollback"],
+			["FINISHED", "queue outcome overwritten"],
+			["RUNNING", "both deliveries evicted"],
+			["FINISHED", "both deliveries evicted"],
+		] as const)("keeps a newer queued stop eligible after the older delivery was evicted (%s, %s)", async (providerStatus, scenario) => {
+			const bothEvicted = scenario === "both deliveries evicted";
+			const waiting = scenario === "queue outcome overwritten";
 			const f = await dispatchFixture();
 			await tenant.liveChannel.update({
 				where: { id: f.channel.id },
@@ -2406,19 +2412,69 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			const old = await tenant.liveSchedule.create({
 				data: {
 					...common,
-					outcome: "UNKNOWN",
-					firedAt: new Date(now.getTime() - 1000),
+					outcome: bothEvicted ? "PENDING" : "UNKNOWN",
+					firedAt: bothEvicted ? now : new Date(now.getTime() - 1000),
+					dispatchedAt: bothEvicted ? now : null,
 				},
 			});
 			const next = await tenant.liveSchedule.create({
-				data: { ...common, outcome: "PENDING", firedAt: now },
+				data: {
+					...common,
+					outcome: waiting ? "UNKNOWN" : "PENDING",
+					firedAt:
+						scenario === "clock rollback"
+							? new Date(now.getTime() - 2000)
+							: now,
+					dispatchedAt: bothEvicted || waiting ? now : null,
+				},
 			});
 			f.sdk.getEncodingStatus = vi.fn(async () => ({ status: providerStatus }));
-			await createExhaustedScheduledStopRecovery(
+			const queuedStop = {
+				liveChannelId: f.channel.id,
+				plannedLiveChannelRunId: f.run.id,
+				action: "stop" as const,
+				effect: {
+					...f.identity,
+					idempotencyKey: `schedule:${next.id}:stop`,
+					scheduleId: next.id,
+					admissionFenceVersion: 2,
+				},
+			};
+			if (waiting || (bothEvicted && providerStatus === "FINISHED"))
+				await tenant.feederSession.create({
+					data: {
+						liveChannelId: f.channel.id,
+						liveChannelRunId: f.run.id,
+						sourceCredentialId: randomUUID(),
+						sourceBucket: "fixture",
+						sourceKey: "clip.mp4",
+						protocol: "RTMP",
+						target: {},
+						status: "PUSHING",
+					},
+				});
+			const recover = createExhaustedScheduledStopRecovery(
 				f.deps,
-				async () => undefined,
+				async (id) =>
+					waiting && id === `sched-${next.id}`
+						? { data: queuedStop, getState: async () => "waiting" }
+						: undefined,
 				vi.fn(),
-			)();
+			);
+			for (let i = 0; i < 3; i++) await recover();
+			if (bothEvicted) {
+				expect(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					}),
+				).toMatchObject({ status: "ERROR", liveEffectFenceVersion: 2 });
+				expect(
+					await tenant.liveEffectClaim.count({
+						where: { liveChannelId: f.channel.id },
+					}),
+				).toBe(0);
+				return;
+			}
 			expect(
 				await tenant.liveEffectClaim.findFirst({
 					where: { scheduleId: old.id },
@@ -2431,7 +2487,36 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			).toMatchObject({ status: "STOPPING", liveEffectFenceVersion: 2 });
 			expect(
 				await tenant.liveSchedule.findUniqueOrThrow({ where: { id: next.id } }),
-			).toMatchObject({ status: "FIRED", outcome: "PENDING" });
+			).toMatchObject({
+				status: "FIRED",
+				outcome: waiting ? "UNKNOWN" : "PENDING",
+			});
+			if (waiting) {
+				const claim = await beginLiveEffect(tenant, {
+					...queuedStop.effect,
+					liveChannelId: f.channel.id,
+					expectedFenceVersion: 2,
+					allowedChannelStatuses: ["STOPPING"],
+					ownerId: "queued-worker",
+					now,
+					expiresAt: new Date(now.getTime() + 30000),
+				});
+				expect(claim.kind).toBe("EXECUTE");
+			}
+			if (scenario === "clock rollback") {
+				const enqueue = vi.fn(async () => {});
+				await createScheduleSweep({
+					prisma: tenant,
+					now: () => new Date(now.getTime() + 600000),
+					enqueue,
+				}).dispatchPending();
+				expect(enqueue).toHaveBeenCalledWith(
+					expect.objectContaining({
+						effect: expect.objectContaining(queuedStop.effect),
+					}),
+					`sched-${next.id}`,
+				);
+			}
 		});
 		it("finishes a pre-upgrade STOP admission interrupted after FIRED only for unchanged airing owners", async () => {
 			const migration = readFileSync(

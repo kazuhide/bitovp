@@ -5,7 +5,9 @@ import {
 } from "@bitovp/core";
 import {
 	beginLiveEffect,
+	competingScheduledStop,
 	liveChannelAccountId,
+	liveStopFeederWhere,
 	liveStopKnownTargets,
 	liveStopRunOwnsEncoding,
 	readAiringEffectHistory,
@@ -13,6 +15,7 @@ import {
 import { HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS } from "../heartbeat-cadence";
 import type { LiveChannelDeps } from "../orchestrator/live-processor";
 
+import { CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION } from "../scheduler/schedule-outcome";
 import { recordFinalStopFailure } from "./dead-job-outcome";
 
 type Deps = Pick<
@@ -160,6 +163,13 @@ export function createExhaustedScheduledStopRecovery(
 				const retained = job ? liveChannelJobSchema.safeParse(job.data) : null;
 				const found = retained?.success ? retained.data : undefined;
 				const legacy = originalFence === channel.legacyAdmissionFenceVersion;
+				const jobState = job && (await job.getState());
+				if (
+					job &&
+					jobState !== "failed" &&
+					!(row.outcome === "UNKNOWN" && jobState === "completed")
+				)
+					continue;
 				// Both the base release and the upgraded redispatch emit fenced STOPs.
 				// Still older bare jobs may only observe their own migrated airing.
 				if (
@@ -173,13 +183,65 @@ export function createExhaustedScheduledStopRecovery(
 						found.liveChannelId !== row.liveChannelId ||
 						(found.plannedLiveChannelRunId &&
 							found.plannedLiveChannelRunId !== run.id) ||
-						(found.effect
-							? !sameScheduledStop(found.effect, effect)
-							: !legacy) ||
-						(row.outcome === "PENDING" && (await job.getState()) !== "failed"))
+						(found.effect ? !sameScheduledStop(found.effect, effect) : !legacy))
 				)
 					continue;
 				const advancedFence = originalFence !== channel.liveEffectFenceVersion;
+				if (
+					legacy &&
+					!advancedFence &&
+					!row.stopProviderEncodingId &&
+					row.stopAdmissionFenceVersion === null
+				) {
+					// No schedule-specific generation was recorded. A terminal or evicted job
+					// cannot claim a sibling's handoff. Retire only this schedule if another
+					// remains; serializing contenders leaves one actionable after a total loss.
+					const parked = await deps.prisma.$transaction(async (tx) => {
+						await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${row.liveChannelId}::uuid FOR UPDATE`;
+						const at = new Date(deps.now());
+						const note =
+							"This exhausted STOP has no recorded admission generation. Another STOP was recorded for the same airing.";
+						return tx.liveSchedule.updateMany({
+							where: {
+								id: row.id,
+								liveChannelId: row.liveChannelId,
+								liveChannelRunId: run.id,
+								action: "STOP",
+								status: "FIRED",
+								stopProviderEncodingId: null,
+								stopAdmissionFenceVersion: null,
+								OR: [
+									{ outcome: "UNKNOWN" },
+									{ outcome: "PENDING", dispatchedAt: { not: null } },
+								],
+								liveChannel: {
+									status: "STOPPING",
+									bitmovinEncodingId: encodingId,
+									legacyAdmissionFenceVersion: originalFence,
+									liveEffectFenceVersion: originalFence,
+									effectClaims: {
+										none: { idempotencyKey: effect.idempotencyKey },
+									},
+									schedules: {
+										some: competingScheduledStop(row.id, run.id, originalFence),
+									},
+								},
+							},
+							data: {
+								status: "ERROR",
+								error: note,
+								outcome: "UNKNOWN",
+								outcomeAt: at,
+								outcomeNote: note,
+								outcomeEvidenceAt: at,
+								outcomeEvidenceVersion:
+									CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
+								outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+							},
+						});
+					});
+					if (parked.count) continue;
+				}
 				let failedFencedDelivery = false;
 				if (legacy && !advancedFence && (!job || found?.effect)) {
 					const savedHandoff =
@@ -214,7 +276,12 @@ export function createExhaustedScheduledStopRecovery(
 									),
 								),
 							);
-							terminal = states.every((state) => state === "TERMINAL");
+							terminal =
+								states.every((state) => state === "TERMINAL") &&
+								!(await deps.prisma.feederSession.findFirst({
+									where: liveStopFeederWhere(row.liveChannelId),
+									select: { id: true },
+								}));
 						} catch {
 							// A lost status read is not proof that the original handoff was sent.
 						}
@@ -245,7 +312,7 @@ export function createExhaustedScheduledStopRecovery(
 								},
 								"The pre-upgrade STOP no longer has a verifiable queue receipt.",
 								deps.emitEvent,
-								row.firedAt ?? undefined,
+								true,
 							);
 							continue;
 						} else continue;
@@ -282,7 +349,7 @@ export function createExhaustedScheduledStopRecovery(
 						row.outcome !== "UNKNOWN"
 					)
 						continue;
-					if (job && (await job.getState()) !== "failed") continue;
+					if (job && jobState !== "failed") continue;
 					await recordFinalStopFailure(
 						deps.prisma,
 						{

@@ -343,7 +343,7 @@ result for that broadcast.
 
 A scheduled Start records the selected broadcast and its admission generation before dispatch. Retries use that same broadcast. A later manual Start or a revival has its own generation and leaves the earlier schedule's delivery result intact. If a pre-upgrade Start cannot be tied to its original broadcast, its schedule shows an unknown outcome. Check the channel before scheduling another start.
 
-If an upgraded worker cannot identify the broadcast for a pending legacy Stop, it saves the missed-stop alert with the schedule outcome. A restarted worker can deliver that alert to the configured destinations.
+If an upgraded worker cannot identify the broadcast for a pending legacy Stop, it saves the missed-stop alert with the schedule outcome. A restarted worker can deliver that alert to the configured destinations. If several old Stop schedules refer to the same broadcast, an exhausted entry can show **Error** with an unknown outcome while another Stop is still queued. If every delivery is lost and the encoder or feeder is still active, check the broadcast and choose **Stop channel**.
 
 If an upgrade finds a scheduled Stop that fired immediately before the old worker exited, it can finish admitting the Stop when the broadcast still owns its original encoder and no other admission has advanced its generation. Heartbeat polls do not affect that decision. If the old worker did not save a generation and another admission was possible, the schedule records an unknown outcome and raises a missed-schedule alert. Open the linked broadcast, confirm it is the one you intend to end, and choose Stop.
 

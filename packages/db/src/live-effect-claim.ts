@@ -8,6 +8,7 @@ import {
 	isAisaManagedLivePlan,
 	stepLogSchema,
 } from "@bitovp/core";
+import type { Prisma } from "../generated/client";
 import type { AppPrismaClient, AppTransactionClient } from "./client";
 import {
 	recordConfirmedStopDelivery,
@@ -1086,20 +1087,23 @@ async function recoverAcknowledgedStop(
 	return result;
 }
 
-/** An unbound recovery cannot consume an admission which may belong to a later STOP. */
-export function pendingSiblingStop(
+/** Legacy schedulers could change another STOP's outcome and used local clocks. */
+export function competingScheduledStop(
 	scheduleId: string,
 	runId: string,
-	firedAt: Date,
-) {
+	fence: number,
+): Prisma.LiveScheduleWhereInput {
 	return {
 		id: { not: scheduleId },
 		liveChannelRunId: runId,
 		action: "STOP",
 		status: "FIRED",
-		outcome: "PENDING",
-		firedAt: { gte: firedAt },
-	} as const;
+		outcome: { in: ["PENDING", "UNKNOWN"] },
+		OR: [
+			{ stopAdmissionFenceVersion: null },
+			{ stopAdmissionFenceVersion: fence },
+		],
+	};
 }
 /**
  * Acquire and durably write DISPATCHING before the caller crosses its send or
@@ -1165,10 +1169,10 @@ export async function beginLiveEffect(
 						(await tx.liveSchedule.findFirst({
 							where: {
 								liveChannelId: input.liveChannelId,
-								...pendingSiblingStop(
+								...competingScheduledStop(
 									input.scheduleId,
 									input.liveChannelRunId,
-									original.firedAt,
+									input.expectedFenceVersion,
 								),
 							},
 							select: { id: true },

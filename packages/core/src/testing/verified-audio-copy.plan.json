@@ -1,0 +1,56 @@
+{
+	"name": "Retained audio input",
+	"planVersion": 1,
+	"bitmovin": {},
+	"inputs": [
+		{
+			"key": "master",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"bucket": "private"
+		}
+	],
+	"outputs": [
+		{
+			"key": "out",
+			"kind": "S3",
+			"credentialId": "00000000-0000-4000-8000-000000000005",
+			"bucket": "output"
+		}
+	],
+	"ingest": [
+		{
+			"key": "audio",
+			"inputKey": "master",
+			"inputPath": "/take.mov",
+			"position": 1,
+			"selectionMode": "AUDIO_RELATIVE"
+		}
+	],
+	"renditions": [
+		{
+			"key": "copy",
+			"codec": "AUDIO_PASSTHROUGH",
+			"name": "Sound",
+			"ingestKey": "audio",
+			"sourceCodec": "AAC",
+			"inspectionId": "00000000-0000-4000-8000-000000000010"
+		}
+	],
+	"muxings": [
+		{
+			"key": "out",
+			"streamKey": "copy",
+			"kind": "MP4",
+			"filename": "audio.mp4",
+			"destination": {
+				"outputKey": "out",
+				"path": "audio/"
+			}
+		}
+	],
+	"manifests": [],
+	"generation": {
+		"timing": "POST_ENCODING"
+	}
+}

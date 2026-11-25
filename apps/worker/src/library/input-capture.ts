@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	audioCopyRendition,
+	audioInputCaptureMatchesPlan,
 	type CompiledOperation,
 	createInputCaptureCredentials,
 	encodingPlanSchema,
@@ -145,9 +146,7 @@ export function createEncodingInputCapture(deps: {
 				proof.ingestKey !== ingest.key ||
 				(copy
 					? proof.profile !== "PINNED_AUDIO_INPUT_V1" ||
-						proof.inspectionId !== copy.inspectionId ||
-						proof.track.position !== ingest.position ||
-						proof.track.sourceCodec !== copy.sourceCodec
+						!audioInputCaptureMatchesPlan(plan, proof)
 					: proof.profile !== "PINNED_HTTP_INPUT_V1")
 			)
 				throw new Error("INPUT_CAPTURE_WAS_CHANGED");

@@ -1,7 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { editingObjectSchema } from "../content-library/editing-storage";
-import { audioCopyTrackSchema } from "../plan/audio-file-source";
+import {
+	audioCopySourceBinding,
+	audioCopyTrackSchema,
+} from "../plan/audio-file-source";
+import type { EncodingPlan } from "../plan/schema";
 import { canonicalEditingJson } from "./automatic-binding";
 import { editingNormalizationSourceSchema } from "./normalization-evidence";
 
@@ -35,6 +39,23 @@ export const pinnedAudioInputSchema = pinnedInputCaptureSchema
 		inspectionId: z.uuid(),
 		track: audioCopyTrackSchema,
 	});
+export function audioInputCaptureMatchesPlan(
+	plan: EncodingPlan,
+	proof: z.infer<typeof pinnedAudioInputSchema>,
+): boolean {
+	const selected = audioCopySourceBinding(plan);
+	return (
+		!!selected &&
+		selected.inspectionId === proof.inspectionId &&
+		selected.ingestKey === proof.ingestKey &&
+		selected.track.position === proof.track.position &&
+		selected.track.sourceCodec === proof.track.sourceCodec &&
+		selected.storage.credentialId === proof.storage.credentialId &&
+		selected.storage.bucket === proof.storage.bucket &&
+		selected.storage.key === proof.storage.key
+	);
+}
+
 export const providerInputCaptureSchema = z.discriminatedUnion("profile", [
 	pinnedInputCaptureSchema,
 	pinnedAudioInputSchema,

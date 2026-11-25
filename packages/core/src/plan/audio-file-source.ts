@@ -48,6 +48,32 @@ export function audioCopyRendition(plan: EncodingPlan) {
 	return plan.renditions.find((r) => r.codec === "AUDIO_PASSTHROUGH");
 }
 
+/** Storage keys are literal. A leading slash identifies a different object. */
+export function audioCopySourceBinding(plan: EncodingPlan) {
+	const copy = audioCopyRendition(plan);
+	const ingest = plan.ingest.find((row) => row.key === copy?.ingestKey);
+	const origin = plan.inputs.find((row) => row.key === ingest?.inputKey);
+	if (
+		!copy ||
+		!ingest ||
+		ingest.selectionMode !== "AUDIO_RELATIVE" ||
+		!origin ||
+		!("bucket" in origin) ||
+		!("credentialId" in origin)
+	)
+		return null;
+	return {
+		inspectionId: copy.inspectionId,
+		ingestKey: ingest.key,
+		track: { position: ingest.position, sourceCodec: copy.sourceCodec },
+		storage: {
+			credentialId: origin.credentialId,
+			bucket: origin.bucket,
+			key: ingest.inputPath,
+		},
+	};
+}
+
 /** AUDIO_RELATIVE counts every audio track, including unsupported codecs. */
 export function verifiedAudioTracks(probe: unknown): AudioCopyTrack[] {
 	const parsed = probeSchema.safeParse(probe);

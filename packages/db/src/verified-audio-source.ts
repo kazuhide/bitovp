@@ -1,6 +1,6 @@
 import {
 	audioCopyIdentitySchema,
-	audioCopyRendition,
+	audioCopySourceBinding,
 	type EncodingPlan,
 	verifiedAudioTracks,
 } from "@bitovp/core";
@@ -12,26 +12,15 @@ export async function resolveInspectedAudioSource(
 	organizationId: string,
 	plan: EncodingPlan,
 ) {
-	const copy = audioCopyRendition(plan);
-	const ingest = plan.ingest.find((row) => row.key === copy?.ingestKey);
-	const origin = plan.inputs.find((row) => row.key === ingest?.inputKey);
-	if (
-		!copy ||
-		!ingest ||
-		ingest.selectionMode !== "AUDIO_RELATIVE" ||
-		!origin ||
-		!("bucket" in origin) ||
-		!("credentialId" in origin)
-	)
-		throw new Error("AUDIO_COPY_INPUT_UNVERIFIED");
-	const key = ingest.inputPath;
+	const binding = audioCopySourceBinding(plan);
+	if (!binding) throw new Error("AUDIO_COPY_INPUT_UNVERIFIED");
 	const row = await prisma.storageInspection.findFirst({
 		where: {
-			id: copy.inspectionId,
+			id: binding.inspectionId,
 			organizationId,
-			credentialId: origin.credentialId,
-			bucket: origin.bucket,
-			objectKey: key,
+			credentialId: binding.storage.credentialId,
+			bucket: binding.storage.bucket,
+			objectKey: binding.storage.key,
 			status: "FINISHED",
 			verifyAudioCopy: true,
 		},
@@ -39,18 +28,18 @@ export async function resolveInspectedAudioSource(
 	});
 	const identity = audioCopyIdentitySchema.safeParse(row?.sourceIdentity);
 	const track = verifiedAudioTracks(row?.probe).find(
-		(t) => t.position === ingest.position && t.sourceCodec === copy.sourceCodec,
+		(t) =>
+			t.position === binding.track.position &&
+			t.sourceCodec === binding.track.sourceCodec,
 	);
 	if (!track || !identity.success)
 		throw new Error("AUDIO_COPY_INPUT_UNVERIFIED");
 	const { size, ...expect } = identity.data;
 	return {
-		inspectionId: copy.inspectionId,
+		inspectionId: binding.inspectionId,
 		track,
 		storage: {
-			credentialId: origin.credentialId,
-			bucket: origin.bucket,
-			key,
+			...binding.storage,
 			size,
 			expect,
 		},

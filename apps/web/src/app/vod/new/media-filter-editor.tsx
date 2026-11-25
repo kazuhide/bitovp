@@ -58,11 +58,15 @@ export function newFilter(
 			return {
 				key,
 				kind,
-				channelLayout: "MONO",
+				channelLayout: "STEREO",
 				audioMixChannels: [
 					{
 						channelNumber: 0,
 						sourceChannels: [{ type: "CHANNEL_NUMBER", channelNumber: 0 }],
+					},
+					{
+						channelNumber: 1,
+						sourceChannels: [{ type: "CHANNEL_NUMBER", channelNumber: 1 }],
 					},
 				],
 			};

@@ -634,7 +634,7 @@ export function LadderSection({
 									encodingKeys={encodingKeys}
 									filterKeys={filters
 										.filter(
-											(f) => filterFamily(f.kind ?? "DEINTERLACE") === "video",
+											(f) => filterFamily(f.kind ?? "DEINTERLACE") !== "audio",
 										)
 										.map((f) => f.key)}
 									nexguardCredentials={nexguardCredentials}
@@ -937,7 +937,7 @@ export function LadderSection({
 									filterKeys={filters
 										.filter(
 											(f) =>
-												filterFamily(f.kind ?? "DEINTERLACE") === "audio" &&
+												filterFamily(f.kind ?? "DEINTERLACE") !== "video" &&
 												(f.kind !== "DOLBY_LOUDNESS" ||
 													supportsDolbyLoudness(codec)),
 										)

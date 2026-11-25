@@ -5102,6 +5102,8 @@ export const ja = {
 			"Per-Titleでは動画プレイリスト名を個別指定できません。この指定を消し、マニフェストのビットレートから生成される名前を使ってください。",
 		onDemandDrmTemplateUnavailable:
 			"OnDemand MP4 DRMのYAML出力は利用できません。DRMを維持するにはプランJSONを保存するか、このアプリから実行してください。",
+		dolbyLoudnessTemplateUnavailable:
+			"Dolby Loudness は Encoding Template に定義されていません。プラン JSON を使用してください。",
 		spekeTemplateUnavailable: "SPEKE設定はプランJSONで保存できます。",
 		spekeOtherSystems: "その他のシステムID（任意）",
 		spekeProvider: "SPEKE鍵プロバイダー",
@@ -6108,7 +6110,7 @@ export const ja = {
 		available: "保存済みの下書きがあります",
 		restore: "復元",
 		discard: "破棄",
-		help: "このブラウザに7日間保存します。秘密値・URL・DRM・フィルタ設定・インポートしたJSONは保存しません。開始前に確認してください。",
+		help: "このブラウザに7日間保存します。VOD のフィルター設定（画像のオブジェクトパスや音声ゲインなど）も保存します。秘密値・URL・DRM・テキストオーバーレイの内容・読み込んだ JSON は除外します。",
 	},
 	templates: {
 		savedDeliveryHeading: "保存済みの配信プリセット",

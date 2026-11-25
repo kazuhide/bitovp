@@ -67,8 +67,8 @@ or first provide a physical source file containing the combined edit. Ordinary
 independent AV inputs without concatenation and single-track outputs are unaffected.
 
 Drafts are saved in this browser for seven days, separately by user, organization,
-and creation source. Secret values, URLs, DRM settings, filters, and imported JSON
-are excluded. Review omitted settings and output destinations after restoring.
+and creation source. VOD drafts keep filter settings, including image object paths and audio channel gains.
+Secrets, URLs, DRM settings, text-overlay content and imported JSON are excluded. Review omitted settings and output destinations after restoring.
 
 ## Fixed ladders and Per-Title
 
@@ -111,10 +111,10 @@ remove them and pass validation.
 - **Opus audio:** package as WebM for compatible DASH playback. Use a separate
   compatible audio rendition when also producing HLS.
 - **Filters:** add a filter and assign it to the intended stream's filter chain.
-  Enhanced Deinterlace, Conform and Interlace control field processing and frame rate.
+  Enhanced Deinterlace and Interlace control field processing. Conform requires the same target frame rate on every audio and video stream in an encoding, with any explicit video frame rate matching. Use it with encodings without captions or subtitle streams.
   Enhanced Watermark takes an image from input storage, with optional size and opacity.
   On audio renditions, Audio Mix maps input channels and gains to numbered outputs.
-  Dolby Loudness controls the programme loudness and true peak on supported audio codecs.
+  Dolby Loudness requires Encoder 2.282.0 or newer and a supported audio codec. Leave audio/video sync unset and Kantar off. Use Plan JSON to export a plan with Dolby Loudness.
   HQDN3D removes noise and Unsharp sharpens or blurs.
 - **CMAF muxing:** the dedicated muxing supports H.264/AAC with DASH
   TEMPLATE/TIMELINE. Choose fMP4 for HLS and the supported DRM paths.

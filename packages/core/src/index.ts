@@ -954,6 +954,7 @@ export {
 	concatenationSourceSchema,
 	concatenationStreamSchema,
 	DEFAULT_VMAF_MODEL,
+	deinterlaceFilterSchema,
 	destinationSchema,
 	encodingPlanSchema,
 	generationTimingSchema,

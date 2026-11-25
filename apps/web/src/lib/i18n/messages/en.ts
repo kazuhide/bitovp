@@ -5167,6 +5167,8 @@ export const en = {
 			"Individual video playlist filenames are unavailable for Per-Title. Clear this override and use the manifest's bitrate-derived names.",
 		onDemandDrmTemplateUnavailable:
 			"YAML export is unavailable for OnDemand MP4 DRM. Use Plan JSON or run this plan in the app to preserve DRM.",
+		dolbyLoudnessTemplateUnavailable:
+			"Use Plan JSON for Dolby Loudness. The Encoding Template schema does not include this filter.",
 		spekeTemplateUnavailable: "SPEKE settings are available as Plan JSON.",
 		spekeOtherSystems: "Other system IDs (optional)",
 		spekeProvider: "SPEKE key provider",
@@ -6166,7 +6168,7 @@ export const en = {
 		available: "Saved draft available",
 		restore: "Restore",
 		discard: "Discard",
-		help: "Saved for 7 days on this browser. Secrets, URLs, DRM, filter settings and imported JSON are excluded. Review these before starting.",
+		help: "Saved for 7 days on this browser. VOD drafts keep filter settings, including image object paths and channel gains. Secrets, URLs, DRM, text-overlay contents and imported JSON are omitted.",
 	},
 	templates: {
 		savedDeliveryHeading: "Saved delivery presets",

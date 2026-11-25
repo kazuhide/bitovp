@@ -1,8 +1,10 @@
 import {
+	audioMixFilterSchema,
 	dashAdaptationOptionsSchema,
 	dashAdditionalRepresentationSchema,
 	dashDetailedOptionsSchema,
 	defaultDashPeriodSchema,
+	deinterlaceFilterSchema,
 	hlsAdditionalMediaSchema,
 	hlsDetailedOptionsSchema,
 	hlsMediaAttributesSchema,
@@ -10,7 +12,7 @@ import {
 	liveDashDetailedOptionsSchema,
 	liveHlsDetailedOptionsSchema,
 	mediaFilterSchema,
-	watermarkFilterSchema,
+	textFilterSchema,
 } from "@bitovp/core";
 import {
 	vodInputTimelineDocumentSchema,
@@ -181,25 +183,49 @@ const rendition = fields(
 		),
 	},
 );
-const watermarkDraft = fields(
-	"kind key inputKey imagePath unit",
-	"left right top bottom",
-).pipe(watermarkFilterSchema);
+// Drafts retain typed edits, including a channel map in progress. Plan validation
+// applies the output layout and cross-channel constraints when submitting.
+const audioMixDraft = z.strictObject(audioMixFilterSchema.shape);
+function projectFilterDraft(item: unknown): (DraftValue & { key: string })[] {
+	if (!draftRecord(item)) return [];
+	if (item.kind === "TEXT") {
+		const key = textFilterSchema.shape.key.safeParse(item.key);
+		return key.success ? [{ key: key.data, kind: "TEXT" }] : [];
+	}
+	if (item.kind === undefined || item.kind === "DEINTERLACE") {
+		const parsed = deinterlaceFilterSchema.safeParse({
+			...item,
+			kind: "DEINTERLACE",
+		});
+		if (!parsed.success) return [];
+		// An implicit default remains implicit when the wizard reopens.
+		return [
+			{
+				...Object.fromEntries(
+					Object.entries(parsed.data).filter(([name]) =>
+						Object.hasOwn(item, name),
+					),
+				),
+				key: parsed.data.key,
+			},
+		];
+	}
+	const parsed = (
+		item.kind === "AUDIO_MIX" ? audioMixDraft : mediaFilterSchema
+	).safeParse(item);
+	if (!parsed.success) return [];
+	const value = parsed.data;
+	if (
+		(value.kind === "WATERMARK" || value.kind === "ENHANCED_WATERMARK") &&
+		!draftKeepsText(value.imagePath)
+	)
+		return [];
+	return [value];
+}
 const vodFilterDrafts = z
 	.array(z.unknown())
 	.max(100)
-	.transform((items) =>
-		items.flatMap((item) => {
-			// TEXT has free-form expressions and overlay content. The numeric,
-			// enumerated and storage-reference schemas are safe to retain locally.
-			const parsed =
-				draftRecord(item) && item.kind === "WATERMARK"
-					? watermarkDraft.safeParse(item)
-					: mediaFilterSchema.safeParse(item);
-			if (parsed.success && parsed.data.kind === "TEXT") return [];
-			return parsed.success ? [parsed.data] : [];
-		}),
-	)
+	.transform((items) => items.flatMap(projectFilterDraft))
 	.optional()
 	.catch(undefined);
 const vodRendition = rendition.extend({
@@ -950,6 +976,21 @@ export function mergeWizardDraft<T>(
 		path = "",
 	): unknown => {
 		if (next === undefined) return previous;
+		// Each retained definition owns its complete shape. Only text overlays
+		// depend on omitted fields: match them against the fresh preset by key
+		// and kind. A new overlay stays attached and needs its text re-entered.
+		if (kind === "vod" && path === "filters" && Array.isArray(next)) {
+			const original = Array.isArray(previous) ? previous : [];
+			return next.map((item) => {
+				if (!draftRecord(item) || item.kind !== "TEXT") return item;
+				return (
+					original.find(
+						(row) =>
+							draftRecord(row) && row.kind === "TEXT" && row.key === item.key,
+					) ?? { ...item, text: "", x: "0", y: "0" }
+				);
+			});
+		}
 		if (Array.isArray(next))
 			return next.map((item, index) =>
 				merge(

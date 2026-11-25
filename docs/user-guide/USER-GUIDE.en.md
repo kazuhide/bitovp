@@ -246,7 +246,7 @@ Opening a wizard, loading a template, or copying an existing job's settings does
 
 While configuring a plan, use its preview to check the input and output destinations, renditions, and resources to be created. A rendition is one output with its own resolution, bitrate, or other characteristics. After changing a plan, check the updated output paths and warnings rather than relying on an earlier review.
 
-Browser drafts do not save every setting. They are kept for 7 days and are separated by user, organization, and creation context. Secrets, URLs, DRM, filters, imported JSON, and similar settings are excluded. After restoring a draft, fill in the omitted settings before running it.
+Browser drafts do not save every setting. They are kept for 7 days and are separated by user, organization, and creation context. VOD drafts retain filter settings, including image object paths and audio channel gains. Secrets, URLs, DRM, text-overlay content and imported JSON are excluded. After restoring a draft, fill in the omitted settings before running it.
 
 ### Reading status
 
@@ -347,7 +347,7 @@ Presets and templates are starting points. After loading one, adapt the account,
 
 If plan JSON includes settings that the form cannot represent, keep it in JSON editing mode to preserve the original content. Avoid forcing it into the form and losing settings; check the validation results instead.
 
-Drafts are stored in the current browser for 7 days. They are separated by user, organization, and creation context. Secrets, URLs, DRM, filters, imported JSON, and similar settings are excluded. After restoring a draft, check omitted settings and output destinations. A draft does not replace a shared template or a complete configuration backup.
+Drafts are stored in the current browser for 7 days. They are separated by user, organization, and creation context. VOD drafts retain filter settings, including image object paths and audio channel gains. Secrets, URLs, DRM, text-overlay content and imported JSON are excluded. After restoring a draft, check omitted settings and output destinations. A draft does not replace a shared template or a complete configuration backup.
 
 ## 5. Advanced VOD settings
 
@@ -431,7 +431,7 @@ Define a filter with "Add filter", then assign it to the target rendition with "
 | HQDN3D | Luma and chroma noise reduction in the spatial and temporal dimensions |
 | Unsharp | Sharpening or blurring through processing area and strength |
 | Enhanced Deinterlace and Interlace | Field order and output mode, with optional vertical low-pass filtering for Interlace |
-| Conform | Target frame rate in fps, including fractional rates |
+| Conform | Apply the same target fps to every video and audio stream in the encoding. An explicit video rate must match. Captions and subtitle streams are incompatible. |
 | Enhanced Watermark | Image from input storage, position, dimensions, and opacity from 0 to 1 |
 | Audio Mix | A layout and a set of input channel numbers or speaker positions and gains for each output channel |
 | Dolby Loudness | Target loudness in LKFS, maximum true peak in dBTP, and dialogue detection for supported audio codecs |

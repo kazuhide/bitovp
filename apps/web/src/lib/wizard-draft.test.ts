@@ -156,6 +156,59 @@ it("restores authored broadcast filter parameters and their video and audio atta
 	);
 });
 
+it("keeps partially edited mix and ordinary deinterlace settings without caching enhanced watermark credentials", () => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	state.filters = [
+		{
+			key: "secret",
+			kind: "ENHANCED_WATERMARK",
+			inputKey: "main",
+			imagePath: "user:password@host/logo.png",
+		},
+		{ key: "din" },
+		{
+			key: "mix",
+			kind: "AUDIO_MIX",
+			channelLayout: "STEREO",
+			audioMixChannels: [
+				{
+					channelNumber: 0,
+					sourceChannels: [
+						{ type: "CHANNEL_NUMBER", channelNumber: 0, gain: 0 },
+					],
+				},
+			],
+		},
+	];
+	const audio = state.audios[0];
+	if (!audio) throw new Error("Missing audio");
+	audio.extras = { filters: [{ filterKey: "mix", position: 1 }] };
+	const value = projectWizardDraft("vod", state);
+	expect(JSON.stringify(value)).not.toContain("password");
+	const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, value, "vod");
+	expect(restored.filters).toEqual(state.filters.slice(1));
+	expect(restored.audios[0]?.extras?.filters).toEqual(
+		state.audios[0]?.extras?.filters,
+	);
+});
+
+it("restores filter definitions without inheriting suppressed properties from a different preset row", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	base.filters = [
+		{ key: "overlay", kind: "TEXT", text: "private title", x: "0", y: "0" },
+		{ key: "rate", kind: "CONFORM", targetFps: 24 },
+	];
+	const value = projectWizardDraft("vod", { ...base, name: "Edited" });
+	expect(JSON.stringify(value)).not.toContain("private title");
+	const restored = mergeWizardDraft(base, value, "vod");
+	expect(restored.filters?.find((item) => item.key === "overlay")).toEqual(
+		base.filters[0],
+	);
+	expect(restored.filters?.find((item) => item.key === "rate")).toEqual(
+		base.filters[1],
+	);
+});
+
 it("does not persist image URLs, unknown filter JSON or dangling logo attachments", () => {
 	const state = structuredClone(DEFAULT_WIZARD_STATE);
 	const value = projectWizardDraft("vod", {

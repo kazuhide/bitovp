@@ -134,7 +134,7 @@ it("serializes new media resources through executor and installed SDK", async ()
 	]);
 });
 
-it("sends each authored video/audio filter and its ordered attachment through SDK 1.289", async () => {
+it("sends each authored video/audio filter and its ordered attachment through the installed SDK", async () => {
 	const calls: { path: string; body: unknown }[] = [];
 	const records: unknown[] = [];
 	vi.stubGlobal(

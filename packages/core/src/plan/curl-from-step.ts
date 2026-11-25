@@ -538,6 +538,46 @@ function refScalar(entry: StepLogEntry, key: string): string | undefined {
 	return typeof value === "string" ? value : undefined;
 }
 
+/** The persisted request, unlike the compiled operation, has the provider IDs.
+ * A missing or unresolved historical snapshot cannot reproduce this POST. */
+function streamFilterAttachment(snapshot: unknown) {
+	if (
+		!snapshot ||
+		typeof snapshot !== "object" ||
+		!("refs" in snapshot) ||
+		!("positions" in snapshot)
+	)
+		return;
+	const refs = snapshot.refs;
+	const positions = snapshot.positions;
+	if (
+		!refs ||
+		typeof refs !== "object" ||
+		!("encodingId" in refs) ||
+		!("streamId" in refs) ||
+		!("filterIds" in refs)
+	)
+		return;
+	const providerId = (id: unknown): id is string =>
+		typeof id === "string" &&
+		/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id);
+	if (
+		!providerId(refs.encodingId) ||
+		!providerId(refs.streamId) ||
+		!Array.isArray(refs.filterIds) ||
+		!refs.filterIds.every(providerId) ||
+		!Array.isArray(positions) ||
+		!positions.length ||
+		positions.length !== refs.filterIds.length ||
+		!positions.every((p) => Number.isSafeInteger(p) && p >= 0)
+	)
+		return;
+	return {
+		refs: { encodingId: refs.encodingId, streamId: refs.streamId },
+		body: refs.filterIds.map((id, i) => ({ id, position: positions[i] })),
+	};
+}
+
 /** DRM muxing path segment (fmp4/mp4/ts/webm) from the redacted payload. */
 function muxingKindSegment(entry: StepLogEntry): string | undefined {
 	const kind = (entry.payload as { muxingKind?: unknown }).muxingKind;
@@ -732,6 +772,14 @@ export function curlForStep(
 		return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 	}
 	let request = entry.request;
+	let filterBody: string | undefined;
+	if (entry.kind === "CREATE_STREAM_FILTERS") {
+		const attachment = streamFilterAttachment(request);
+		if (!attachment)
+			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+		entry = { ...entry, refs: attachment.refs };
+		filterBody = JSON.stringify(attachment.body, null, 2);
+	}
 	const manifestSnapshot = manifestCurlSnapshot(entry);
 	if (manifestSnapshot === false)
 		return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
@@ -900,14 +948,16 @@ export function curlForStep(
 		lines.push(
 			`  -H ${shellSingleQuote(`X-BITMOVIN-BCF-VERSION: ${entry.payload.bcfVersion}`)}`,
 		);
-	const body = hasBody(endpoint.method, request)
-		? curlBody(
-				request,
-				entry.kind === "START_LIVE_ENCODING",
-				entry.kind === "CREATE_FILTER_WATERMARK" ||
-					entry.kind === "CREATE_FILTER_ENHANCED_WATERMARK",
-			)
-		: undefined;
+	const body =
+		filterBody ??
+		(hasBody(endpoint.method, request)
+			? curlBody(
+					request,
+					entry.kind === "START_LIVE_ENCODING",
+					entry.kind === "CREATE_FILTER_WATERMARK" ||
+						entry.kind === "CREATE_FILTER_ENHANCED_WATERMARK",
+				)
+			: undefined);
 	if (body !== undefined) {
 		lines.push(`  -H 'Content-Type: application/json'`);
 		lines.push(`  --data ${shellSingleQuote(body)}`);

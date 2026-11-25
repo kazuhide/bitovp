@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { AUDIO_MIX_LAYOUTS, audioMixChannelSchema } from "./audio-mix";
+import {
+	AUDIO_MIX_LAYOUTS,
+	audioMixChannelSchema,
+	validateMixSourceChannelTypes,
+} from "./audio-mix";
 
 const key = z
 	.string()
@@ -85,6 +89,8 @@ const watermarkImage = {
 				[...v].every((c) => c.charCodeAt(0) >= 32) &&
 				v.replace(/^\/+/, "").length > 0 &&
 				!v.includes("://") &&
+				!v.trimStart().startsWith("//") &&
+				!/^\s*\/*[^/\s]*:[^/\s]*@/.test(v) &&
 				!v.split("/").includes(".."),
 			"Use a storage object path, not a URL",
 		),
@@ -146,10 +152,10 @@ export const dolbyLoudnessFilterSchema = z
 	.strictObject({
 		key,
 		kind: z.literal("DOLBY_LOUDNESS"),
-		targetLoudness: z.number().min(-31).max(-8).optional(),
+		targetLoudness: z.number().int().min(-31).max(-8).optional(),
 		maximumTruePeakLevel: z.number().min(-8).max(-0.1).optional(),
 		dialogueIntelligence: z.enum(["ENABLED", "DISABLED"]).optional(),
-		speechDetectionThreshold: z.number().min(0).max(100).optional(),
+		speechDetectionThreshold: z.number().int().min(0).max(100).optional(),
 		contentForm: z.enum(["LONG", "SHORT", "AUTO_DETECT"]).optional(),
 	})
 	.superRefine((v, ctx) => {
@@ -253,6 +259,23 @@ export const unsharpFilterSchema = z.strictObject({
 	chromaMatrixVerticalSize: matrixSize,
 	chromaEffectStrength: z.number().min(-1.5).max(1.5).optional(),
 });
+export function layoutChannelCount(layout: string): number | undefined {
+	const declared = layout.split("_")[0] ?? "";
+	const speakerCounts: Record<string, number> = {
+		MONO: 1,
+		STEREO: 2,
+		SURROUND: 3,
+		QUAD: 4,
+		HEXAGONAL: 6,
+		OCTAGONAL: 8,
+	};
+	return (
+		speakerCounts[declared] ??
+		(/^\d\.\d$/.test(declared)
+			? Number(declared[0]) + Number(declared[2])
+			: undefined)
+	);
+}
 export const audioMixFilterSchema = z
 	.strictObject({
 		key,
@@ -268,23 +291,11 @@ export const audioMixFilterSchema = z
 			.min(1),
 	})
 	.superRefine((mix, ctx) => {
+		validateMixSourceChannelTypes(mix, ctx);
 		const numbers = mix.audioMixChannels.map(
 			(channel) => channel.channelNumber,
 		);
-		const declared = mix.channelLayout.split("_")[0] ?? "";
-		const speakerCounts: Record<string, number> = {
-			MONO: 1,
-			STEREO: 2,
-			SURROUND: 3,
-			QUAD: 4,
-			HEXAGONAL: 6,
-			OCTAGONAL: 8,
-		};
-		const count =
-			speakerCounts[declared] ??
-			(/^\d\.\d$/.test(declared)
-				? Number(declared[0]) + Number(declared[2])
-				: undefined);
+		const count = layoutChannelCount(mix.channelLayout);
 		if (
 			(count !== undefined && numbers.length !== count) ||
 			new Set(numbers).size !== numbers.length ||
@@ -377,7 +388,8 @@ export function filterParameters(filter: {
 export function supportsDolbyLoudness(codec: string): boolean {
 	return ["AAC", "HE_AAC_V1", "OPUS", "PCM"].includes(codec);
 }
-export function filterFamily(kind: string): "audio" | "video" {
+export function filterFamily(kind: string): "audio" | "video" | "both" {
+	if (kind === "CONFORM") return "both";
 	return kind === "AUDIO_VOLUME" ||
 		kind === "EBU_R128_SINGLE_PASS" ||
 		kind === "DOLBY_LOUDNESS" ||

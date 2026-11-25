@@ -120,7 +120,7 @@ subtitle extraction requires changes beyond the VOD input-stream union.
 ### E05–E07 · P2 · Purpose-specific extensions
 
 - **Filters:** The VOD wizard supports EnhancedWatermark, EnhancedDeinterlace,
-  Conform and Interlace for video, plus AudioMix and DolbyLoudness on compatible
+  and Interlace for video, Conform across the encoding’s video and audio streams, plus AudioMix and DolbyLoudness on compatible
   audio renditions. Operators can save the filters and their application order.
   Provider output and visual or loudness measurements require a matching source
   and an encoding run. Live speech-to-captions remains a separate workflow.

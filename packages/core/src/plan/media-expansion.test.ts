@@ -294,8 +294,127 @@ describe("IMSC and Opus contracts", () => {
 			}),
 		]);
 	});
+	it("enforces per-encoding conform consistency, subtitle restrictions and codec frame rates", () => {
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		plan.filters = [
+			{ key: "rate", kind: "CONFORM", targetFps: 25 },
+			{ key: "other", kind: "CONFORM", targetFps: 24 },
+		];
+		const [first, second] = plan.renditions;
+		if (!first || !second) throw new Error("Missing renditions");
+		first.filters = [{ filterKey: "rate", position: 0 }];
+		const conformIssues = () =>
+			validatePlan(plan).filter((i) => i.code === "PLAN_CONFORM_FILTER");
+		expect(conformIssues().length).toBeGreaterThan(0);
+		for (const rendition of plan.renditions) {
+			rendition.filters = [{ filterKey: "rate", position: 0 }];
+			if (rendition.codec === "H264") rendition.rate = 25;
+		}
+		expect(conformIssues()).toEqual([]);
+		second.filters = [{ filterKey: "other", position: 0 }];
+		expect(conformIssues().length).toBeGreaterThan(0);
+		second.filters = [
+			{ filterKey: "rate", position: 0 },
+			{ filterKey: "other", position: 1 },
+		];
+		expect(conformIssues().length).toBeGreaterThan(0);
+		second.filters.pop();
+		const video = plan.renditions.find((r) => r.codec === "H264");
+		if (!video) throw new Error("Missing video");
+		video.rate = 30;
+		expect(conformIssues().length).toBeGreaterThan(0);
+		video.rate = 25;
+		const subs = imscPlan().renditions.find((r) => r.codec === "IMSC");
+		if (!subs) throw new Error("Missing captions");
+		subs.filters = [{ filterKey: "rate", position: 0 }];
+		plan.renditions.push(subs);
+		expect(conformIssues().length).toBeGreaterThan(0);
+		subs.encodingKey = "other";
+		delete subs.filters;
+		expect(conformIssues()).toEqual([]);
+	});
+	it("rejects stream-level audio filters that would fail at start or be silently ignored by the encoder", () => {
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		const audio = plan.renditions.find((r) => r.codec === "AAC");
+		if (!audio) throw new Error("Missing audio");
+		plan.filters = [
+			{ key: "level", kind: "DOLBY_LOUDNESS" },
+			{ key: "level2", kind: "DOLBY_LOUDNESS" },
+			{
+				key: "mix",
+				kind: "AUDIO_MIX",
+				channelLayout: "MONO",
+				audioMixChannels: [
+					{ channelNumber: 0, sourceChannels: [{ type: "CENTER" }] },
+				],
+			},
+		];
+		const issues = () =>
+			validatePlan(plan).filter(
+				(i) =>
+					i.code === "PLAN_AUDIO_FILTER" ||
+					i.code === "PLAN_FILTER_ENCODER_VERSION",
+			);
+		audio.filters = [
+			{ filterKey: "level", position: 0 },
+			{ filterKey: "level2", position: 1 },
+		];
+		expect(issues()).toHaveLength(1);
+		audio.filters.pop();
+		plan.bitmovin.encoderVersion = "2.281.0";
+		expect(issues()).toHaveLength(1);
+		plan.bitmovin.encoderVersion = "2.282.0";
+		expect(issues()).toEqual([]);
+		plan.generation.audioVideoSyncMode = "RESYNC_AT_START";
+		expect(issues()).toHaveLength(1);
+		delete plan.generation.audioVideoSyncMode;
+		plan.kantar = {
+			credentialId: "11111111-1111-4111-8111-111111111111",
+			licenseId: 1,
+			channelName: "main",
+			contentReference: "movie",
+			serverUrl: "https://kantar.example",
+			reportDestination: { outputKey: "reports", path: "reports/" },
+		};
+		expect(issues()).toHaveLength(1);
+		delete plan.kantar;
+		audio.filters = [{ filterKey: "mix", position: 0 }];
+		expect(issues()).toHaveLength(1);
+		audio.channelLayout = "MONO";
+		expect(issues()).toEqual([]);
+		plan.audioMixStreams = [
+			{
+				key: "mixed",
+				channelLayout: "MONO",
+				audioMixChannels: [
+					{
+						sourceKey: audio.ingestKey,
+						outputChannelType: "CENTER",
+						sourceChannels: [{ type: "CENTER" }],
+					},
+				],
+			},
+		];
+		audio.ingestKey = "mixed";
+		expect(issues()).toHaveLength(1);
+		const mix = plan.audioMixStreams[0];
+		const source = plan.ingest[0];
+		if (!mix || !source) throw new Error("Missing input mix");
+		// A multi-track merge subsequently applies the rendition filter.
+		plan.ingest.push({
+			...source,
+			key: "second-track",
+			inputPath: "second-audio.wav",
+		});
+		mix.audioMixChannels.push({
+			sourceKey: "second-track",
+			outputChannelType: "FRONT_RIGHT",
+			sourceChannels: [{ type: "FRONT_RIGHT" }],
+		});
+		expect(issues()).toEqual([]);
+	});
 	it("retains field conversion and fractional conform in the rendition attachment order", () => {
-		const plan = imscPlan();
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
 		const video = plan.renditions.find((item) => item.codec === "H264");
 		if (!video) throw new Error("Missing fixture video");
 		plan.filters = [
@@ -318,6 +437,11 @@ describe("IMSC and Opus contracts", () => {
 			filterKey: f.key,
 			position,
 		}));
+		for (const rendition of plan.renditions) {
+			if (rendition.codec === "H264") delete rendition.rate;
+			if (rendition !== video)
+				rendition.filters = [{ filterKey: "rate", position: 0 }];
+		}
 		const normalized = encodingPlanSchema.parse(plan);
 		expect(validatePlan(normalized).filter((i) => i.level === "error")).toEqual(
 			[],
@@ -329,7 +453,7 @@ describe("IMSC and Opus contracts", () => {
 		const ops = compilePlan(normalized);
 		expect(
 			ops
-				.filter((op) => op.kind.startsWith("CREATE_FILTER_"))
+				.filter((op) => op.step.startsWith(`filter:${video.key}:`))
 				.map((op) => op.kind),
 		).toEqual([
 			"CREATE_FILTER_ENHANCED_DEINTERLACE",
@@ -347,12 +471,34 @@ describe("IMSC and Opus contracts", () => {
 		).toBe(false);
 	});
 
+	it("exports different image placeholders for distinct watermark keys that normalize to the same name", () => {
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		const video = plan.renditions.find((r) => r.codec === "H264");
+		const [input] = plan.inputs;
+		if (!video || !input) throw new Error("Missing fixture");
+		plan.filters = ["logo-a", "logo_a"].map((key, i) => ({
+			key,
+			kind: "ENHANCED_WATERMARK",
+			inputKey: input.key,
+			imagePath: `logos/${i}.png`,
+		}));
+		video.filters = plan.filters.map((f, position) => ({
+			filterKey: f.key,
+			position,
+		}));
+		const doc = parse(planToEncodingTemplateYaml(plan));
+		const group = doc.filters.enhancedWatermark;
+		expect(group[`${video.key}-logo-a`].properties.image).not.toEqual(
+			group[`${video.key}-logo_a`].properties.image,
+		);
+	});
 	it("exports audio channel gains and loudness, and keeps the enhanced watermark out of the template as a signed URL", () => {
 		const value = imscPlan();
 		const audio = value.renditions.find((r) => r.codec === "AAC"),
 			video = value.renditions.find((r) => r.codec === "H264");
 		const storage = value.inputs.find((r) => r.kind === "S3");
 		if (!audio || !video || !storage) throw new Error("Missing fixture inputs");
+		audio.channelLayout = "MONO";
 		value.filters = [
 			{
 				key: "mix",
@@ -390,17 +536,21 @@ describe("IMSC and Opus contracts", () => {
 		];
 		video.filters = [{ filterKey: "mark", position: 0 }];
 		expect(validatePlan(value).filter((i) => i.level === "error")).toEqual([]);
-		const template = planToEncodingTemplateYaml(value);
+		expect(() => planToEncodingTemplateYaml(value)).toThrow(/Dolby Loudness/i);
+		const templatePlan = structuredClone(value);
+		for (const rendition of templatePlan.renditions)
+			if (rendition.filters)
+				rendition.filters = rendition.filters.filter(
+					(f) => f.filterKey !== "loudness",
+				);
+		const template = planToEncodingTemplateYaml(templatePlan);
 		const parsed = parse(template);
 		const key = (filter: string) => `${audio.key}-${filter}`;
 		expect(
 			parsed.filters.audioMix[key("mix")].properties.audioMixChannels[0]
 				.sourceChannels[1].gain,
 		).toBe(0);
-		expect(
-			parsed.filters.dolbyLoudness[key("loudness")].properties
-				.speechDetectionThreshold,
-		).toBe(0);
+		expect(parsed.filters).not.toHaveProperty("dolbyLoudness");
 		const watermark =
 			parsed.filters.enhancedWatermark[`${video.key}-mark`].properties;
 		expect(watermark).toMatchObject({
@@ -429,6 +579,20 @@ describe("IMSC and Opus contracts", () => {
 		);
 	});
 	it.each([
+		{ key: "f", kind: "DOLBY_LOUDNESS", targetLoudness: -23.5 },
+		{ key: "f", kind: "DOLBY_LOUDNESS", speechDetectionThreshold: 20.5 },
+		{
+			key: "f",
+			kind: "AUDIO_MIX",
+			channelLayout: "STEREO",
+			audioMixChannels: [
+				{ channelNumber: 0, sourceChannels: [{ type: "FRONT_LEFT" }] },
+				{
+					channelNumber: 1,
+					sourceChannels: [{ type: "CHANNEL_NUMBER", channelNumber: 1 }],
+				},
+			],
+		},
 		{
 			key: "f",
 			kind: "DOLBY_LOUDNESS",

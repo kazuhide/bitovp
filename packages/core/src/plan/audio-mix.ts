@@ -84,6 +84,28 @@ export const audioMixChannelSchema = z
 				message: "Channel number is required only for CHANNEL_NUMBER",
 			});
 	});
+export function validateMixSourceChannelTypes(
+	mix: {
+		audioMixChannels: readonly {
+			sourceChannels: readonly { type: string }[];
+		}[];
+	},
+	ctx: z.RefinementCtx,
+) {
+	const types = new Set(
+		mix.audioMixChannels.flatMap((channel) =>
+			channel.sourceChannels.map((source) => source.type === "CHANNEL_NUMBER"),
+		),
+	);
+	if (types.size > 1)
+		ctx.addIssue({
+			code: "custom",
+			path: ["audioMixChannels"],
+			message:
+				"Use source channel names or numbers consistently throughout the mix; do not combine both.",
+		});
+}
+
 export const audioMixStreamSchema = z
 	.strictObject({
 		key: refKey,
@@ -99,16 +121,7 @@ export const audioMixStreamSchema = z
 					? ["FRONT_LEFT", "FRONT_RIGHT"]
 					: undefined;
 
-		const numbered = mix.audioMixChannels
-			.flatMap((c) => c.sourceChannels)
-			.map((s) => s.type === "CHANNEL_NUMBER");
-		if (numbered.some(Boolean) && numbered.some((value) => !value))
-			ctx.addIssue({
-				code: "custom",
-				path: ["audioMixChannels"],
-				message:
-					"Use source channel names or numbers consistently throughout the mix; do not combine both.",
-			});
+		validateMixSourceChannelTypes(mix, ctx);
 		const outputs = new Set<string>();
 		mix.audioMixChannels.forEach((channel, i) => {
 			const target =

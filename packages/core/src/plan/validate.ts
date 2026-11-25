@@ -54,6 +54,7 @@ import {
 	type PlanMuxing,
 	vmafModelNeedsFile,
 } from "./schema";
+import { validateBroadcastFilters } from "./validate-broadcast-filters";
 
 const VIDEO_CODECS_FOR_MODE = new Set(["H264", "H265", "VP9", "AV1"]);
 
@@ -391,7 +392,10 @@ export function validatePlan(
 	issues.push(...checkAv1CodecControls(plan.renditions));
 	issues.push(...checkCodecDetailControls(plan.renditions));
 	issues.push(...checkConcatenationAvQualification(plan));
-	issues.push(...checkAv1DetailPreservationVersion(plan));
+	issues.push(
+		...checkAv1DetailPreservationVersion(plan),
+		...validateBroadcastFilters(plan),
+	);
 	issues.push(...checkHlsVideoUris(plan));
 	for (const [i, output] of plan.outputs.entries())
 		if (output.kind === "LIVE_MEDIA_INGEST" || output.kind === "MOQ")
@@ -1218,8 +1222,8 @@ export function validatePlan(
 					rendition.codec === "IMSC" ||
 					(filter.kind === "DOLBY_LOUDNESS" &&
 						!supportsDolbyLoudness(rendition.codec)) ||
-					filterFamily(filter.kind) !==
-						(AUDIO_CODECS.has(rendition.codec) ? "audio" : "video"))
+					filterFamily(filter.kind) ===
+						(AUDIO_CODECS.has(rendition.codec) ? "video" : "audio"))
 			)
 				issues.push({
 					code: "PLAN_FILTER_MEDIA_TYPE",

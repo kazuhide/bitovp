@@ -1177,11 +1177,15 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			if (filter.kind === "WATERMARK" || filter.kind === "ENHANCED_WATERMARK") {
 				delete properties.inputKey;
 				delete properties.imagePath;
-				properties.image = placeholder(
-					"INPUT",
-					filter.inputKey,
-					`WATERMARK_${instanceKey.replaceAll("-", "_").toUpperCase()}_URL`,
-				);
+				const label = `WATERMARK_${instanceKey.replaceAll("-", "_").toUpperCase()}`;
+				let suffix = `${label}_URL`;
+				for (
+					let i = 2;
+					usedPlaceholders.has(placeholder("INPUT", filter.inputKey, suffix));
+					i++
+				)
+					suffix = `${label}_${i}_URL`;
+				properties.image = ph("INPUT", filter.inputKey, suffix);
 			}
 			group[instanceKey] = { properties };
 			attachmentRefs.push({
@@ -2307,7 +2311,20 @@ function commentSafe(text: string): string {
 /** A template must not silently omit selected DRM from an executable plan. */
 export function encodingTemplateExportUnavailableReason(
 	plan: EncodingPlan,
-): "SPEKE" | "DASH_ON_DEMAND_MP4_DRM" | "MANIFEST_DETAILS" | undefined {
+):
+	| "SPEKE"
+	| "DASH_ON_DEMAND_MP4_DRM"
+	| "MANIFEST_DETAILS"
+	| "DOLBY_LOUDNESS"
+	| undefined {
+	const dolby = new Set(
+		plan.filters.filter((f) => f.kind === "DOLBY_LOUDNESS").map((f) => f.key),
+	);
+	if (
+		dolby.size &&
+		plan.renditions.some((r) => r.filters?.some((a) => dolby.has(a.filterKey)))
+	)
+		return "DOLBY_LOUDNESS";
 	if (plan.drm.some((drm) => drm.kind === "SPEKE")) return "SPEKE";
 	if (
 		plan.muxings.some(
@@ -2376,6 +2393,10 @@ export function encodingTemplateExportUnavailableReason(
 
 export function planToEncodingTemplateYaml(plan: EncodingPlan): string {
 	const unavailable = encodingTemplateExportUnavailableReason(plan);
+	if (unavailable === "DOLBY_LOUDNESS")
+		throw new Error(
+			"Dolby Loudness is unavailable in encoding-template YAML. Use Plan JSON or run the job in the app.",
+		);
 	if (unavailable === "MANIFEST_DETAILS")
 		throw new Error(
 			"Advanced manifest settings and progressive WebM require Plan JSON or execution in the app; encoding-template YAML export is unavailable.",

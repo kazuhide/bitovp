@@ -128,7 +128,7 @@ export function AudioMixEditor({
 		if (preset === "mono" && options.length < 2) return;
 		save(
 			{
-				key: mix?.key ?? nextSharedKey(sources, "audioMix"),
+				key: mix?.key ?? nextSharedKey(sources, "audioMix", state),
 				channelLayout: "STEREO",
 				audioMixChannels: audioMixPreset(
 					preset,

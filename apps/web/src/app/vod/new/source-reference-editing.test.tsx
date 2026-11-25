@@ -97,6 +97,31 @@ it("keeps a referenced HDR source when its removal would silently switch the ren
 		),
 	).toBe(false);
 });
+it("keeps unresolved source bindings when adding HDR to a restored draft", () => {
+	mount({
+		...DEFAULT_WIZARD_STATE,
+		videos: [
+			{
+				height: 720,
+				bitrate: 1000000,
+				codec: "H265",
+				extras: { source: "hdr10plus1" },
+			},
+		],
+		sources: {
+			trimmingStreams: [
+				{ kind: "TIME_BASED", key: "trim1", sourceKey: "hdr10plus2" },
+			],
+		},
+	});
+	fireEvent.click(screen.getByText("Add HDR10+ video"));
+	const current = stateNow();
+	expect(current.sources?.hdr10PlusStreams?.map((s) => s.key)).toEqual([
+		"hdr10plus3",
+	]);
+	expect(current.videos[0]?.extras?.source).toBe("hdr10plus1");
+	expect(current.sources?.trimmingStreams?.[0]?.sourceKey).toBe("hdr10plus2");
+});
 it("keeps a named HDR source bound when another HDR source is added", () => {
 	mount({
 		...DEFAULT_WIZARD_STATE,

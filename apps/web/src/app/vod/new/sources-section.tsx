@@ -797,7 +797,12 @@ export function SourcesSection({
 						size="sm"
 						onClick={() =>
 							patchSources(
-								blankStream(sources, "HDR10_PLUS", state.inputFiles[0]?.key),
+								blankStream(
+									sources,
+									"HDR10_PLUS",
+									state.inputFiles[0]?.key,
+									state,
+								),
 							)
 						}
 					>
@@ -808,7 +813,7 @@ export function SourcesSection({
 						size="sm"
 						onClick={() =>
 							patchSources(
-								blankStream(sources, "INGEST", state.inputFiles[0]?.key),
+								blankStream(sources, "INGEST", state.inputFiles[0]?.key, state),
 							)
 						}
 					>
@@ -819,7 +824,7 @@ export function SourcesSection({
 						size="sm"
 						onClick={() =>
 							patchSources(
-								blankStream(sources, "WEBVTT", state.inputFiles[0]?.key),
+								blankStream(sources, "WEBVTT", state.inputFiles[0]?.key, state),
 							)
 						}
 					>
@@ -830,7 +835,7 @@ export function SourcesSection({
 						size="sm"
 						onClick={() =>
 							patchSources(
-								blankStream(sources, "ATMOS", state.inputFiles[0]?.key),
+								blankStream(sources, "ATMOS", state.inputFiles[0]?.key, state),
 							)
 						}
 					>
@@ -1296,7 +1301,7 @@ function TrimmingStreamsSection({
 							...trims,
 							{
 								kind: "TIME_BASED",
-								key: nextSharedKey(sources, "trim"),
+								key: nextSharedKey(sources, "trim", state),
 								sourceKey:
 									state.videos.length > 0
 										? implicitTrackKeys(sources).video
@@ -1643,7 +1648,7 @@ function ConcatenationStreamsSection({
 						concatenationStreams: [
 							...concats,
 							{
-								key: nextSharedKey(sources, "concat"),
+								key: nextSharedKey(sources, "concat", state),
 								sources: [{ sourceKey: "", isMain: true, position: 0 }],
 							},
 						],

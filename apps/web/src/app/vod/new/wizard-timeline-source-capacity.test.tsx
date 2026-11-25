@@ -40,7 +40,7 @@ vi.mock("@/lib/wizard-draft-hook", () => ({
 		restore: () =>
 			onRestore({ step: 1, value: fixture.seed as unknown as DraftValue }),
 		discard: vi.fn(),
-		clear: vi.fn(),
+		afterSubmission: vi.fn(),
 	}),
 }));
 vi.mock("@/components/storage-picker", () => ({

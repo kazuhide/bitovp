@@ -96,16 +96,18 @@ export function draftKeepsText(value: string, imagePath = false): boolean {
 	// A directory after the apparent login makes it an address. A generated
 	// output directory may have only its final slash.
 	const tail = address.slice(authority.length);
-	if (
-		address !== normalized ||
-		/[^/]/u.test(tail) ||
-		!/\s/u.test(authority.charAt(at - 1))
-	)
-		return false;
 	const rawHost = authority.slice(at + 1);
 	const host = rawHost.trimStart();
-	if (!host || host !== host.trimEnd()) return false;
+	if (address !== normalized) return false;
+	if (!rawHost && !tail)
+		return !imagePath && /\S\s+\S/u.test(authority.slice(colon + 1, at));
+	if (!host || host !== host.trimEnd() || !/\s/u.test(authority.charAt(at - 1)))
+		return false;
 	const spacedLabel = host !== rawHost;
+	// A multiword directory such as "Opening Credits" cannot be a network
+	// hostname. Preserve the directory and any nested object key literally.
+	if (spacedLabel && /\S\s+\S/u.test(host)) return true;
+	if (/[^/]/u.test(tail)) return false;
 	if (!spacedLabel && !/\s/u.test(authority.charAt(colon + 1))) return false;
 	// Compare only terminal extensions. A host like cdn.png.invalid is
 	// different from a filename ending in .png. Generated render filenames
@@ -121,9 +123,11 @@ export function draftKeepsText(value: string, imagePath = false): boolean {
 	}
 	const dot = stem.lastIndexOf(".");
 	if (dot < 0) return !imagePath && spacedLabel;
+	const extension = stem.slice(dot + 1);
 	return (
 		dot > 0 &&
-		/^(?:png|jpe?g|webp|gif|avif|bmp|tiff?|svg)$/iu.test(stem.slice(dot + 1))
+		(/^(?:png|jpe?g|webp|gif|avif|bmp|tiff?|svg)$/iu.test(extension) ||
+			(!imagePath && spacedLabel && /^(?:ts|mp4|mov|webm)$/iu.test(extension)))
 	);
 }
 

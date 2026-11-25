@@ -360,6 +360,8 @@ export async function parseHlsText(text: string): Promise<ParsedHls> {
 			// AUDIO is the row's identity beside its URI (row 284): the group a
 			// variant points at, absent on a self-contained one.
 			const audio = (p.attributes as { AUDIO?: unknown } | undefined)?.AUDIO;
+			const subtitles = (p.attributes as { SUBTITLES?: unknown } | undefined)
+				?.SUBTITLES;
 			return {
 				uri: p.uri ?? "",
 				...(p.attributes?.BANDWIDTH !== undefined
@@ -370,6 +372,7 @@ export async function parseHlsText(text: string): Promise<ParsedHls> {
 					: {}),
 				...(typeof codecs === "string" ? { codecs } : {}),
 				...(typeof audio === "string" ? { audio } : {}),
+				...(typeof subtitles === "string" ? { subtitles } : {}),
 			};
 		}),
 		media,
@@ -423,6 +426,7 @@ export async function parseHlsText(text: string): Promise<ParsedHls> {
 export async function parseDashText(
 	text: string,
 	manifestUri?: string,
+	now?: number,
 ): Promise<ParsedDash> {
 	const mod = await import("mpd-parser");
 	const parsed = mod.parse(text);
@@ -529,30 +533,38 @@ export async function parseDashText(
 	if (manifestUri && reps.some((row) => row.kind === "text")) {
 		const { representationInfo } = mod.inheritAttributes(
 			mod.stringToMpdXml(text),
-			{ manifestUri },
+			{
+				manifestUri,
+				NOW: now,
+			},
 		);
 		for (const row of reps) {
 			if (row.kind !== "text" || !row.id) continue;
-			const directories = new Set<string>();
 			const id = decodeXmlText(row.id);
-			for (const { attributes, segmentInfo } of representationInfo) {
-				if (attributes.id !== id || attributes.lang !== row.language) continue;
-				const media = segmentInfo?.template?.media;
-				if (!media && segmentInfo?.list?.segmentUrls?.length)
-					row.addressing = "LIST";
-				const references = media
-					? [media]
-					: (segmentInfo?.list?.segmentUrls?.map((item) => item.media) ?? []);
-				for (const ref of references) {
-					if (!ref) continue;
-					const expanded = ref
-						.replaceAll("$RepresentationID$", id)
-						.replaceAll("$Bandwidth$", String(attributes.bandwidth ?? ""));
-					const segment = new URL(expanded, attributes.baseUrl || manifestUri);
-					directories.add(new URL(".", segment).href);
-				}
+			const periods = [
+				...new Set(
+					representationInfo.map((info) => info.attributes.periodStart),
+				),
+			];
+			const sources = representationInfo.filter(
+				(info) =>
+					info.attributes.id === id &&
+					info.attributes.lang === row.language &&
+					periods.indexOf(info.attributes.periodStart) ===
+						(row.periodIndex ?? 0),
+			);
+			if (!sources.length) continue;
+			if (sources.every((info) => info.segmentInfo?.template?.media)) {
+				if (row.addressing !== "TIMELINE") row.addressing = "TEMPLATE";
+			} else if (sources.every((info) => info.segmentInfo?.list)) {
+				row.addressing = "LIST";
 			}
-			if (directories.size) row.subtitleMediaDirectories = [...directories];
+			row.subtitleSegments = mod.toPlaylists(sources).flatMap((playlist) =>
+				(playlist.segments ?? []).map((segment) => ({
+					media: segment.resolvedUri && segment.uri ? segment.resolvedUri : "",
+					...(segment.map?.uri ? { init: segment.map.resolvedUri ?? "" } : {}),
+				})),
+			);
 		}
 	}
 	if (reps.some((representation) => representation.kind === "image")) {

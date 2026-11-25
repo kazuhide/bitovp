@@ -80,6 +80,7 @@ declare module "mpd-parser" {
 	export function stringToMpdXml(manifestString: string): unknown;
 	export type MpdRepresentationInfo = {
 		attributes: {
+			periodStart?: number;
 			contentType?: string;
 			mimeType?: string;
 			id?: string;
@@ -94,7 +95,7 @@ declare module "mpd-parser" {
 	};
 	export function inheritAttributes(
 		manifest: unknown,
-		options?: { manifestUri: string },
+		options?: { manifestUri: string; NOW?: number },
 	): {
 		representationInfo: MpdRepresentationInfo[];
 	};

@@ -1,3 +1,4 @@
+import { storageObjectUrl } from "./hls-video-reference-binding";
 /**
  * `verify live` — drive a live scenario end to end, through the product's own API.
  *
@@ -77,8 +78,9 @@ import {
 } from "./live-evidence-assembly";
 import { sampleLiveStorageObjects } from "./live-storage-sample";
 import {
+	bindDashDvbSubtitles,
+	checkDashDvbOrigin,
 	collectHlsReferenceChecks,
-	dashDvbSubtitleChecks,
 	dashExternalSubtitleChecks,
 } from "./manifest-reference-checks";
 import {
@@ -743,6 +745,7 @@ export async function collectManifestFiles(
 				const parsed = await parseDashText(
 					text,
 					m.dashDvbSubtitles?.length ? manifestUri : undefined,
+					deps.now(),
 				);
 				entries = parsed.representations.length;
 				if (m.dashExternalSubtitles?.length || m.dashDvbSubtitles?.length) {
@@ -753,12 +756,15 @@ export async function collectManifestFiles(
 							m.dashExternalSubtitles ?? [],
 							parsed,
 						),
-						...dashDvbSubtitleChecks(
-							id,
-							m.dashDvbSubtitles ?? [],
-							parsed,
-							manifestUri,
-						),
+						...(await checkDashDvbOrigin(
+							bindDashDvbSubtitles(
+								id,
+								m.dashDvbSubtitles ?? [],
+								parsed,
+								manifestUri,
+							),
+							(prefix) => deps.listAll(m.outputKey, prefix),
+						)),
 					];
 				}
 				videoCodecSets = parsed.adaptationSets
@@ -907,6 +913,15 @@ export async function collectEdgeClosures(
 			// filenames/topology, but resolve the delivery master at that event root.
 			const edgeManifest = {
 				...manifest,
+				...(manifest.dashDvbSubtitles && {
+					dashDvbSubtitles: manifest.dashDvbSubtitles.map((track) => ({
+						...track,
+						segmentPath: new URL(
+							track.segmentPath || "./",
+							storageObjectUrl(policy.base, manifest.dir.prefix),
+						).href,
+					})),
+				}),
 				dir: { pattern: "", prefix: "", templated: false as const },
 			};
 			const observed = await observeEdgeLeg(

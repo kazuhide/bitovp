@@ -156,7 +156,13 @@ export type ExpectedLiveManifest = {
 	hlsAdditionalMedia?: ExpectedHlsAdditionalMedia[];
 	hlsAudioGroups?: ExpectedHlsAudioGroups;
 	dashExternalSubtitles?: { url: string; language: string }[];
-	dashDvbSubtitles?: { key: string; language: string; segmentPath: string }[];
+	dashDvbSubtitles?: {
+		key: string;
+		language: string;
+		segmentPath: string;
+		segmentNaming: string;
+		initSegment?: string;
+	}[];
 	/**
 	 * DASH only : the distinct VIDEO codecs this manifest lists,
 	 * in plan order. One AdaptationSet per codec is the contract (C34); the
@@ -600,6 +606,8 @@ export function compileExpectedLiveArtefacts(
 							dashDvbSubtitles: tracks.map((t) => ({
 								key: t.key,
 								language: t.language,
+								segmentNaming: dvbSegmentNaming(t),
+								...(t.packaging === "FMP4" ? { initSegment: "init.mp4" } : {}),
 								segmentPath: relativeSegmentPath(
 									t.destination.path,
 									manifest.destination.path,

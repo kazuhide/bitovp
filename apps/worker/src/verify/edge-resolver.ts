@@ -48,7 +48,7 @@ import {
 	type HlsVideoReferences,
 } from "./hls-video-reference-binding";
 import {
-	dashDvbSubtitleChecks,
+	bindDashDvbSubtitles,
 	dashExternalSubtitleChecks,
 	externalVttReferenceChecks,
 	hlsAudioGroupChecks,
@@ -639,6 +639,7 @@ export async function observeEdgeLeg(
 			const observed = await parseDashText(
 				master.read.text,
 				masterUrl.href,
+				at,
 			).catch(() => undefined);
 			const checks = observed
 				? dashExternalSubtitleChecks(
@@ -665,19 +666,39 @@ export async function observeEdgeLeg(
 						: ["configured external subtitle URL or language was absent"],
 				});
 			}
-			if (
-				manifest.dashDvbSubtitles?.length &&
-				(!observed ||
-					dashDvbSubtitleChecks(
-						"edge",
-						manifest.dashDvbSubtitles,
-						observed,
-						masterUrl.href,
-					).some((c) => c.verdict !== "PASS"))
-			)
-				referenceMissing.push(
-					"A configured segmented DASH subtitle or its language was absent",
+			for (const binding of bindDashDvbSubtitles(
+				"edge",
+				manifest.dashDvbSubtitles ?? [],
+				observed ?? { representations: [], periods: 0 },
+				masterUrl.href,
+			)) {
+				if (binding.check.verdict !== "PASS") {
+					referenceMissing.push(binding.check.detail);
+					continue;
+				}
+				const evidenceRef =
+					binding.objects.find((object) => object.init) ?? binding.objects[0];
+				const evidence =
+					evidenceRef &&
+					resolveEdgeReference(evidenceRef.reference, masterUrl, mediaPolicy);
+				children.push(
+					await walkChild(
+						readEdge,
+						mediaPolicy,
+						{
+							id: `dvb:${binding.track.key}`,
+							url: masterUrl,
+							...(evidence?.ok ? { evidenceUrl: evidence.url } : {}),
+							requiresInit: binding.track.initSegment !== undefined,
+							mediaRefs: binding.objects
+								.filter((object) => !object.init)
+								.map((object) => object.reference),
+							resources: binding.objects,
+						},
+						rejected,
+					),
 				);
+			}
 			if (
 				observed?.representations.filter((row) => row.kind === "text")
 					.length !==

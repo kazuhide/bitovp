@@ -215,6 +215,7 @@ export type ParsedHls = {
 		 * row per (video muxing × group), and only AUDIO tells them apart.
 		 */
 		audio?: string;
+		subtitles?: string;
 	}[];
 	/**
 	 * Rendition groups (audio/subtitles) declared by EXT-X-MEDIA. `name` is the
@@ -259,8 +260,8 @@ export type ParsedDash = {
 		periodIndex?: number;
 		/** Concrete image references expanded by the DASH parser, including inherited templates. */
 		imageUris?: string[];
-		/** Directories of this subtitle representation’s media, including inherited BaseURLs. */
-		subtitleMediaDirectories?: string[];
+		/** Concrete object addresses after DASH template, list and BaseURL expansion. */
+		subtitleSegments?: { media: string; init?: string }[];
 		baseUrl?: string;
 		language?: string;
 		id?: string;

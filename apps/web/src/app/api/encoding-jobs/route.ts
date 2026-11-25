@@ -1,3 +1,4 @@
+import { publicStorageDiagnostic } from "@bitovp/core";
 import {
 	masterKeyFromEnv,
 	submitEncodingJob,
@@ -48,6 +49,7 @@ import {
 	verificationKeyPairComplete,
 	verificationReplay,
 } from "@/lib/server/verification-key";
+import { equivalentHdrDefault } from "@/lib/server/vod-hdr-default";
 import { validateVodInputPreparation } from "@/lib/server/vod-input-preparation";
 
 /**
@@ -179,6 +181,7 @@ export async function GET(req: Request) {
 		});
 		const items = rows.slice(0, limit).map((row) => ({
 			...row,
+			error: publicStorageDiagnostic(row.error),
 			// Projection, not the whole verdict (review-202 N3).
 			qcVerdict: row.qcVerdict
 				? { pass: (row.qcVerdict as { pass?: unknown }).pass === true }
@@ -217,7 +220,12 @@ function verificationKeyResponse(
 		// The resource the caller already paid for, not a twin. 200, not 201:
 		// nothing was created by THIS request.
 		return NextResponse.json(
-			{ ...verdict.row, issues: [], replayed: true },
+			{
+				...verdict.row,
+				error: publicStorageDiagnostic(verdict.row.error),
+				issues: [],
+				replayed: true,
+			},
 			{ status: 200 },
 		);
 	}
@@ -235,8 +243,14 @@ function verificationKeyResponse(
 async function ordinaryCreateReplay(
 	prisma: Awaited<ReturnType<typeof getServerContext>>["prisma"],
 	identity: CreateRequestIdentity,
+	equivalentDigest: () => string | undefined,
 ) {
-	const receipt = await lookupCreateRequest(prisma, "VOD_JOB", identity);
+	const receipt = await lookupCreateRequest(
+		prisma,
+		"VOD_JOB",
+		identity,
+		equivalentDigest,
+	);
 	if (receipt.kind === "none") return undefined;
 	if (receipt.kind === "conflict") return createRequestConflictResponse();
 	const row = await prisma.encodingJob.findUnique({
@@ -245,7 +259,12 @@ async function ordinaryCreateReplay(
 	});
 	if (!row) return createRequestGoneResponse();
 	return NextResponse.json(
-		{ ...row, issues: [], replayed: true },
+		{
+			...row,
+			error: publicStorageDiagnostic(row.error),
+			issues: [],
+			replayed: true,
+		},
 		{ status: 200 },
 	);
 }
@@ -273,6 +292,14 @@ export async function POST(req: Request) {
 			);
 		throw err;
 	}
+	// Compute the compatibility digest only if a retained receipt differs.
+	// Every other request field and every nonempty HDR list must match exactly.
+	const equivalentDigest = () => {
+		const plan = equivalentHdrDefault(body.data.plan);
+		return (
+			plan && createRequestIdentity(req, { ...body.data, plan })?.requestSha256
+		);
+	};
 	const { verificationKey, requestSha256, verificationDispatch } = body.data;
 	if (
 		verificationKey !== undefined &&
@@ -288,7 +315,11 @@ export async function POST(req: Request) {
 		const ctx = await getServerContext();
 		if (ordinaryIdentity) {
 			ordinaryContext = ctx;
-			const replay = await ordinaryCreateReplay(ctx.prisma, ordinaryIdentity);
+			const replay = await ordinaryCreateReplay(
+				ctx.prisma,
+				ordinaryIdentity,
+				equivalentDigest,
+			);
 			if (replay) return replay;
 		}
 		// A replay needs no decryption; a new job must fail before persisting
@@ -459,7 +490,11 @@ export async function POST(req: Request) {
 			select: LIST_SELECT,
 		});
 		return NextResponse.json(
-			{ ...row, issues: outcome.issues },
+			{
+				...row,
+				error: publicStorageDiagnostic(row.error),
+				issues: outcome.issues,
+			},
 			{
 				status: 201,
 			},
@@ -474,6 +509,7 @@ export async function POST(req: Request) {
 				const replay = await ordinaryCreateReplay(
 					ordinaryContext.prisma,
 					ordinaryIdentity,
+					equivalentDigest,
 				);
 				if (replay) return replay;
 			} catch (lookupErr) {

@@ -1,3 +1,13 @@
+export {
+	libraryHdr10PlusInputs,
+	missingLibraryHdrInputs,
+} from "./content-library/hdr-inputs";
+export {
+	isHdr10PlusAuditPath,
+	isHdr10PlusObjectPath,
+	publicHdrSourceProjection,
+	publicStorageDiagnostic,
+} from "./plan/hdr-source-paths";
 export { hashApiTokenSecret } from "./auth/api-token-hash";
 export * from "./banding";
 export {
@@ -777,7 +787,7 @@ export { VOD_FIXTURES } from "./plan/fixtures";
  * floor. `fixture-registry.test.ts` set-equals this against the `.plan.json`
  * files on disk, so anything that equals it is transitively the whole corpus.
  */
-export { hdr10PlusSourceKeys } from "./plan/hdr10-plus";
+export { checkHdr10PlusPlan, hdr10PlusSourceKeys } from "./plan/hdr10-plus";
 export {
 	HE_AAC_CODECS,
 	HE_AAC_MAX_BITRATE,

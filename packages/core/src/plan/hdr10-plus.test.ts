@@ -11,6 +11,7 @@ import { initStepLog, stepLogEntrySchema } from "./steplog";
 import { planToEncodingTemplateYaml } from "./template";
 import {
 	instantiateTemplatePlan,
+	type TemplateSourceParam,
 	templateSourceSites,
 } from "./template-instantiate";
 import { validatePlan } from "./validate";
@@ -213,7 +214,7 @@ describe("HDR10+ input contract", () => {
 		expect(reads).toBe(0);
 	});
 
-	it("resolves descendants and compiles their reference to the HDR10+ leaf", () => {
+	it("identifies HDR descendants and rejects an unsupported trim at its source", () => {
 		const value = plan();
 		value.trimmingStreams = [
 			{
@@ -230,11 +231,13 @@ describe("HDR10+ input contract", () => {
 			"picture",
 		]);
 		expect(inputStreamLeaves(value, "trimmed")).toEqual(["picture"]);
-		expect(errors(value)).toEqual([]);
-		expect(
-			compilePlan(value).find((op) => op.step === "trim:trimmed")?.refs
-				.inputStreamId,
-		).toBe("hdr10-plus:picture");
+		expect(errors(value)).toContainEqual(
+			expect.objectContaining({
+				code: "PLAN_HDR10_PLUS_TRANSFORM",
+				path: "trimmingStreams[0].sourceKey",
+			}),
+		);
+		expect(() => planToEncodingTemplateYaml(value)).toThrow(/HDR10/);
 	});
 
 	it("checks shared keys and storage references", () => {
@@ -389,7 +392,20 @@ describe("HDR10+ input contract", () => {
 			}),
 		);
 		first(value.hdr10PlusStreams).encodingKey = "a";
-		expect(errors(value)).toEqual([]);
+		expect(errors(value)).toEqual([
+			expect.objectContaining({ code: "PLAN_HDR10_PLUS_TRANSFORM" }),
+		]);
+		expect(() => planToEncodingTemplateYaml(value)).toThrow(/HDR10/);
+	});
+	it("requires replacing a retained signed HDR object before generating executable YAML", () => {
+		const old = plan();
+		const stream = old.hdr10PlusStreams[0];
+		if (!stream) throw new Error("Missing fixture stream");
+		stream.metadataInputPath =
+			"//fixture:FIXTURE_PRIVATE@fixture.invalid/sidecar.json";
+		expect(() => planToEncodingTemplateYaml(old)).toThrow(
+			"Re-select the HDR10+ video and metadata objects",
+		);
 	});
 	it("exports every schema-valid HDR10+ resource key as an own YAML entry", () => {
 		const value = plan();
@@ -488,39 +504,31 @@ describe("HDR10+ input contract", () => {
 		]);
 	});
 
-	it("retains a derived HDR stream under every legal resource key", () => {
+	it.each([
+		"S3",
+		"HTTPS",
+	] as const)("keeps the named %s storage object referenced by HDR metadata in exported YAML", (kind) => {
 		const value = plan();
-		value.trimmingStreams = [
-			{
-				key: "__proto__",
-				kind: "TIME_BASED",
-				sourceKey: "picture",
-				duration: 2,
-			},
+		value.inputs = [
+			kind === "S3"
+				? {
+						kind,
+						key: "__proto__",
+						name: "storage",
+						bucket: "bucket",
+						credentialId: "00000000-0000-4000-8000-000000000002",
+					}
+				: { kind, key: "__proto__", name: "storage", host: "example.com" },
 		];
-		first(value.renditions).ingestKey = "__proto__";
-		const encoding = parse(planToEncodingTemplateYaml(value)).encodings.main;
+		first(value.hdr10PlusStreams).inputKey = "__proto__";
+		const yaml = parse(planToEncodingTemplateYaml(value)),
+			section = kind.toLowerCase();
+		expect(errors(value)).toEqual([]);
+		expect(Object.hasOwn(yaml.inputs[section], "__proto__")).toBe(true);
 		expect(
-			Object.hasOwn(encoding.inputStreams.trimming.timeBased, "__proto__"),
-		).toBe(true);
-		expect(encoding.streams.v.properties.inputStreams[0].inputStreamId).toBe(
-			"$/encodings/main/inputStreams/trimming/timeBased/__proto__",
-		);
+			yaml.encodings.main.inputStreams.hdr10Plus.picture.properties.inputId,
+		).toBe(`$/inputs/${section}/__proto__`);
 	});
-
-	it("exports nested sources through the named HDR10+ template resource", () => {
-		const value = plan();
-		value.trimmingStreams = [
-			{ key: "trimmed", kind: "TIME_BASED", sourceKey: "picture", duration: 3 },
-		];
-		first(value.renditions).ingestKey = "trimmed";
-		const yaml = parse(planToEncodingTemplateYaml(value));
-		expect(
-			yaml.encodings.main.inputStreams.trimming.timeBased.trimmed.properties
-				.inputStreamId,
-		).toBe("$/encodings/main/inputStreams/hdr10Plus/picture");
-	});
-
 	it("retains source positions in template export and compiled payloads", () => {
 		const value = plan();
 		first(value.hdr10PlusStreams).selectionMode = "VIDEO_RELATIVE";
@@ -584,6 +592,73 @@ describe("HDR10+ input contract", () => {
 			);
 	});
 
+	it.each([
+		"same bucket",
+		"move bucket",
+		"shared input move",
+	])("requires an explicitly selected HDR10+ pair when the picture changes (%s)", (mode) => {
+		const value = plan();
+		const resource = {
+			kind: "S3" as const,
+			key: "in",
+			name: "storage",
+			bucket: "original",
+			credentialId: "00000000-0000-4000-8000-000000000222",
+		};
+		value.inputs = [resource];
+		const move = { bucket: "next", credentialId: resource.credentialId };
+		if (mode === "shared input move")
+			value.ingest.push({
+				key: "other",
+				inputKey: "in",
+				inputPath: "other.mp4",
+				selectionMode: "AUTO",
+				position: 0,
+			});
+		const params = {
+			presetBody: value,
+			outputPrefixTemplate: "runs/new",
+			name: "replacement",
+			templateName: "HDR10+",
+			now: new Date(0),
+			uuid: "abc",
+		};
+		const changed: Record<string, TemplateSourceParam> =
+			mode === "shared input move"
+				? { other: { objectKey: "other.mp4", ...move } }
+				: {
+						picture: {
+							objectKey:
+								mode === "move bucket" ? "hdr/video.mp4" : "cut-two.mp4",
+							...(mode === "move bucket" ? move : {}),
+						},
+					};
+		expect(
+			instantiateTemplatePlan({ ...params, sources: changed }),
+		).toMatchObject({
+			ok: false,
+			issues: [{ code: "HDR10PLUS_PAIR_REQUIRED" }],
+		});
+		expect(
+			instantiateTemplatePlan({
+				...params,
+				sources: {
+					...changed,
+					picture: {
+						objectKey: "new.mp4",
+						...(mode === "same bucket" ? {} : move),
+					},
+					"picture:metadata": {
+						objectKey: "new.json",
+						...(mode === "same bucket" ? {} : move),
+					},
+				},
+			}),
+		).toMatchObject({ ok: true });
+		expect(instantiateTemplatePlan({ ...params, sources: {} })).toMatchObject({
+			ok: true,
+		});
+	});
 	it("lists both video and metadata as independently substitutable files", () => {
 		const value = plan();
 		expect(

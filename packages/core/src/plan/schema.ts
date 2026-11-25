@@ -1,3 +1,4 @@
+import { isHdr10PlusObjectPath } from "./hdr-source-paths";
 import { z } from "zod";
 import { vmafExecutionSchema } from "../vmaf/cloud";
 import { audioMixStreamSchema } from "./audio-mix";
@@ -460,7 +461,13 @@ export const dolbyStreamSchema = z.discriminatedUnion("kind", [
 		inputKey: refKey,
 		videoInputPath: z.string().min(1),
 		/** Absent = metadata embedded in the container. */
-		metadataInputPath: z.string().min(1).optional(),
+		metadataInputPath: z
+			.string()
+			.min(
+				1,
+				"Select a Dolby Vision XML file on the same storage input as its video",
+			)
+			.optional(),
 		encodingKey: refKey.optional(),
 	}),
 	z.strictObject({
@@ -474,13 +481,12 @@ export const dolbyStreamSchema = z.discriminatedUnion("kind", [
 
 // HDR10+ addresses two objects beneath the plan's declared storage input.
 // Keep URL authority, credentials, queries and fragments out of persisted plans.
-const hdrObjectPath = z.string().refine((value) => {
-	const path = value.trim();
-	return (
-		path.length > 0 &&
-		!/^[a-z][a-z0-9+.-]*:\/\/|^[/\\]{2}|^[^/\s]*:[^/\s]*@|[?#]/i.test(path)
+const hdrObjectPath = z
+	.string()
+	.refine(
+		isHdr10PlusObjectPath,
+		"Use a storage object path without a URL, embedded login, query or fragment",
 	);
-}, "Use a storage object path without a URL, embedded login, query or fragment");
 
 /** VOD HDR10+ video and JSON metadata share one input storage resource. */
 export const hdr10PlusStreamSchema = z
@@ -498,6 +504,15 @@ export const hdr10PlusStreamSchema = z
 		encodingKey: refKey.optional(),
 	})
 	.superRefine((stream, ctx) => {
+		if (
+			stream.videoInputPath.replace(/^\//, "") ===
+			stream.metadataInputPath.replace(/^\//, "")
+		)
+			ctx.addIssue({
+				code: "custom",
+				path: ["metadataInputPath"],
+				message: "Choose a separate HDR10+ JSON metadata object for this video",
+			});
 		if (stream.selectionMode === "AUTO" && stream.position !== undefined) {
 			ctx.addIssue({
 				code: "custom",

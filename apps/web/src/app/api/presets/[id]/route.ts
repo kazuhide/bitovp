@@ -1,3 +1,4 @@
+import { publicHdrSourceProjection } from "@bitovp/core";
 import {
 	isAisaManagedLivePlan,
 	patchLivePresetSchema,
@@ -20,6 +21,7 @@ import {
 	validationError,
 } from "@/lib/server/http";
 import { serverPlanValidationOptions } from "@/lib/server/plan-validation";
+import { equivalentHdrDefault } from "@/lib/server/vod-hdr-default";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -60,9 +62,7 @@ function jsonStructuralEqual(a: unknown, b: unknown): boolean {
 }
 
 /**
- * One user plan preset, full body included (for loading into the wizard). The
- * body is an EncodingPlan JSON — secret-free (credentialId refs only), so
- * returning it verbatim is safe. Scoped to `kind: FULL_PLAN` so this surface
+ * One user plan preset, full body included (for loading into the wizard). Legacy HDR source locators are withheld on reads. Scoped to `kind: FULL_PLAN` so this surface
  * only ever touches plan presets.
  */
 export async function GET(_req: Request, { params }: RouteParams) {
@@ -88,7 +88,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
 			!aisaLiveAccessAllowed(ctx.tenant)
 		)
 			return jsonError(404, "Not found");
-		return NextResponse.json(preset, {
+		return NextResponse.json(publicHdrSourceProjection(preset), {
 			headers: { "Cache-Control": "private, no-store" },
 		});
 	} catch (err) {
@@ -231,9 +231,15 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 		// The bump decision reads the CURRENT body outside the write — safe
 		// because the CAS below closes the window: if the body changed after
 		// this read, updatedAt moved too and the update matches zero rows.
+		const savedPlan = parsed.data.plan;
+		const sameLegacyPlan =
+			savedPlan !== undefined &&
+			current.kind === "FULL_PLAN" &&
+			jsonStructuralEqual(current.body, equivalentHdrDefault(savedPlan));
 		const bump =
-			parsed.data.plan !== undefined &&
-			!jsonStructuralEqual(current.body, parsed.data.plan);
+			savedPlan !== undefined &&
+			!sameLegacyPlan &&
+			!jsonStructuralEqual(current.body, savedPlan);
 		const result = await ctx.prisma.preset.updateMany({
 			where: {
 				id,
@@ -245,7 +251,13 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 				...(parsed.data.description !== undefined
 					? { description: parsed.data.description }
 					: {}),
-				...(parsed.data.plan !== undefined ? { body: parsed.data.plan } : {}),
+				...(savedPlan !== undefined
+					? {
+							body: sameLegacyPlan
+								? (current.body as Prisma.InputJsonValue)
+								: savedPlan,
+						}
+					: {}),
 				...(parsed.data.launchDefaults !== undefined
 					? {
 							launchDefaults:
@@ -280,7 +292,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 			!aisaLiveAccessAllowed(ctx.tenant)
 		)
 			return jsonError(404, "Not found");
-		return NextResponse.json(updated, {
+		return NextResponse.json(publicHdrSourceProjection(updated), {
 			headers: { "Cache-Control": "private, no-store" },
 		});
 	} catch (err) {

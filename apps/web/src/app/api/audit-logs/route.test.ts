@@ -17,6 +17,43 @@ beforeEach(() => {
 });
 
 describe("GET /api/audit-logs", () => {
+	it("withholds historical native HDR paths in audit records and diagnostic-only summaries", async () => {
+		const path = "/encoding/encodings/encoder/input-streams/hdr10-plus",
+			privatePath =
+				"//fixture.invalid/media/file.json?token=PRIVATE_AUDIT_FIXTURE",
+			error = "Could not read " + privatePath;
+		const row = {
+			id: ID,
+			path,
+			actor: "worker",
+			error,
+			statusCode: 400,
+			request: {
+				metadataInputPath: privatePath,
+				videoInputPath: "assets/safe.mxf",
+			},
+			response: { message: error },
+		};
+		findMany.mockResolvedValueOnce([
+			{
+				id: row.id,
+				path: row.path,
+				actor: row.actor,
+				error: row.error,
+				statusCode: row.statusCode,
+			},
+		]);
+		const listResponse = await list(new Request("http://test/api/audit-logs"));
+		expect(await listResponse.text()).not.toContain("PRIVATE_AUDIT_FIXTURE");
+		findUnique.mockResolvedValueOnce(row);
+		const detailResponse = await detail(new Request("http://test"), {
+			params: Promise.resolve({ id: ID }),
+		});
+		expect(detailResponse.status).toBe(200);
+		const publicRow = await detailResponse.json();
+		expect(JSON.stringify(publicRow)).not.toContain("PRIVATE_AUDIT_FIXTURE");
+		expect(publicRow.request.videoInputPath).toBe("assets/safe.mxf");
+	});
 	it("withholds legacy webhook exception strings while retaining failure status and other actors", async () => {
 		findMany.mockResolvedValueOnce([
 			{

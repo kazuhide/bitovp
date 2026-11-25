@@ -63,6 +63,43 @@ function delReq() {
 	});
 }
 
+it("withholds historical HDR object credentials from the viewer plan, native requests, snapshots and echoed errors", async () => {
+	const video =
+		"https://fixture.invalid/picture.mxf?signature=URL_FIXTURE_PRIVATE";
+	const metadata = "//fixture:LOGIN_FIXTURE_PRIVATE@fixture.invalid/scene.json";
+	const paths = { videoInputPath: video, metadataInputPath: metadata };
+	const job = timesRow({
+		plan: { hdr10PlusStreams: [{ key: "hdr-key", ...paths }] },
+		stepLog: [
+			{
+				kind: "CREATE_HDR10_PLUS_INPUT_STREAM",
+				payload: { ...paths },
+				request: { body: paths },
+				response: { echo: video },
+			},
+		],
+		snapshots: { debug: metadata },
+		error: "Could not read " + video,
+	});
+	findUnique.mockResolvedValueOnce(job);
+	const res = await GET(
+		new Request("http://test/api/encoding-jobs/" + JOB_ID),
+		ctx(JOB_ID),
+	);
+	expect(res.status).toBe(200);
+	const body = await res.json();
+	expect(JSON.stringify(body)).not.toMatch(
+		/URL_FIXTURE_PRIVATE|LOGIN_FIXTURE_PRIVATE/,
+	);
+	expect(body.plan.hdr10PlusStreams[0]).toMatchObject({
+		key: "hdr-key",
+		videoInputPath: "",
+		metadataInputPath: "",
+	});
+	expect(job.plan).toEqual({
+		hdr10PlusStreams: [{ key: "hdr-key", ...paths }],
+	});
+});
 beforeEach(() => {
 	vi.clearAllMocks();
 	lockJob.mockResolvedValue([]);

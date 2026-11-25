@@ -53,6 +53,9 @@ describe("safe heartbeat projection", () => {
 				numberOfAudioChannels: 6,
 				audioChannelFormat: "5.1(side)",
 			},
+			...["6.1(back)", "5.1.2(back)", "5.1.6", "7.1.6"].map(
+				(audioChannelFormat) => ({ mediaType: "AUDIO", audioChannelFormat }),
+			),
 		];
 		const raw = { timestamp: at, ingest: { status: "CONNECTED", streams } };
 		expect(

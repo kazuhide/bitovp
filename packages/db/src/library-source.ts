@@ -3,6 +3,8 @@ import {
 	encodingPlanSchema,
 	isLibraryFileKind,
 	libraryFileOutputs,
+	libraryHdr10PlusInputs,
+	missingLibraryHdrInputs,
 	libraryPlaybackLinks,
 	librarySnapshotSchema,
 	publicLibraryQcEvidence,
@@ -77,14 +79,7 @@ export async function requestLibrarySource(
 		const inputNames = new Map(
 			plan.inputs.map((input) => [input.key, input.name]),
 		);
-		const hdrInputs = plan.hdr10PlusStreams.flatMap((stream) =>
-			(["VIDEO", "METADATA"] as const).map((role) => ({
-				name: inputNames.get(stream.inputKey) ?? stream.key,
-				path:
-					role === "VIDEO" ? stream.videoInputPath : stream.metadataInputPath,
-				hdr10Plus: { streamKey: stream.key, inputKey: stream.inputKey, role },
-			})),
-		);
+		const hdrInputs = libraryHdr10PlusInputs(plan);
 		const locales = plan.aiSceneAnalysis
 			? sceneAnalysisLocales(plan.aiSceneAnalysis.outputLanguageCodes)
 			: [];
@@ -175,17 +170,9 @@ export async function requestLibrarySource(
 		if (existing) {
 			const snapshot = librarySnapshotSchema.parse(existing.snapshot);
 			// Only the identical plan can supply missing historical HDR inputs.
-			const recordedHdr = new Set(
-				snapshot.inputs.flatMap(({ hdr10Plus }) =>
-					hdr10Plus ? [`${hdr10Plus.streamKey}:${hdr10Plus.role}`] : [],
-				),
-			);
 			const missingHdr =
 				snapshot.planHash === planHash
-					? hdrInputs.filter(
-							({ hdr10Plus }) =>
-								!recordedHdr.has(`${hdr10Plus.streamKey}:${hdr10Plus.role}`),
-						)
+					? missingLibraryHdrInputs(snapshot.inputs, hdrInputs)
 					: [];
 			const expectedFiles =
 				snapshot.planHash === planHash ? libraryFileOutputs(plan) : [];

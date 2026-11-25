@@ -74,13 +74,13 @@ export function applyVodInputFavorite(
 	const prior = state.filters?.find(
 		(filter) =>
 			filter.kind === "WATERMARK" &&
-			filter.inputKey === file.inputKey &&
-			filter.imagePath === file.path,
+			(filter.inputKey === file.key ||
+				(filter.inputKey === file.inputKey && filter.imagePath === file.path)),
 	);
 	const filter: WizardFilter = prior ?? {
 		key: `fav_filter_${nextKey()}`,
 		kind: "WATERMARK",
-		inputKey: file.inputKey,
+		inputKey: file.key,
 		imagePath: file.path,
 		left: 0,
 		top: 0,

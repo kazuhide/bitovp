@@ -38,11 +38,37 @@ export function hdr10PlusSourceKeys(sources: SourceLinks): Set<string> {
 	return keys;
 }
 
+/** Trim inputs accept ingest streams. Concatenation accepts ingest or trimmed streams. */
+export function hdr10PlusTransformIssues(plan: EncodingPlan): PlanIssue[] {
+	if (!plan.hdr10PlusStreams.length) return [];
+	const keys = new Set(plan.hdr10PlusStreams.map((s) => s.key));
+	const issues: PlanIssue[] = [];
+	function check(sourceKey: string, path: string) {
+		if (keys.has(sourceKey))
+			issues.push({
+				code: "PLAN_HDR10_PLUS_TRANSFORM",
+				level: "error",
+				path,
+				message:
+					"Select the HDR10+ input directly on an HEVC rendition. Trimming and concatenation require an ingest input or a supported trimmed input.",
+			});
+	}
+	for (const [i, trim] of plan.trimmingStreams.entries())
+		check(trim.sourceKey, `trimmingStreams[${i}].sourceKey`);
+	for (const [i, concat] of plan.concatenationStreams.entries())
+		for (const [j, source] of concat.sources.entries())
+			check(
+				source.sourceKey,
+				`concatenationStreams[${i}].sources[${j}].sourceKey`,
+			);
+	return issues;
+}
+
 /** REST 1.289.0 / Encoder 2.294.0 introduce HDR10+ for HEVC VOD.
  * The public contract adds no profile, container or pass-mode restriction. */
 export function checkHdr10PlusPlan(plan: EncodingPlan): PlanIssue[] {
 	if (!plan.hdr10PlusStreams.length) return [];
-	const issues: PlanIssue[] = [];
+	const issues = hdr10PlusTransformIssues(plan);
 	const keys = hdr10PlusSourceKeys(plan);
 	for (const [index, stream] of plan.hdr10PlusStreams.entries()) {
 		const owner =

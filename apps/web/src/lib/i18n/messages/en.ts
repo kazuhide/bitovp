@@ -5850,7 +5850,7 @@ export const en = {
 			"Selecting an S3 credential opens the browser",
 		selectionMode: "Selection mode",
 		separateDolbyVisionMetadataSidecarEmptyEmbed:
-			"Separate Dolby Vision metadata sidecar; empty = embedded",
+			"Select a Dolby Vision XML file on the same input storage as the video. Leave blank for embedded metadata.",
 		serverManifest: "Server manifest",
 		serverUrl: "Server URL",
 		set: "set",
@@ -6291,6 +6291,7 @@ export const en = {
 		launchTitle: "Launch \u201C{name}\u201D",
 		notAPlan: "This template's body is not a valid encoding plan.",
 		sources: "Sources",
+		hdrPairRequired: "Select both the replacement HDR10+ picture and its matching JSON metadata.",
 		sourceOriginal: "Template's own path — leave as-is to re-run it.",
 		sourceMoved: "Overridden for this launch.",
 		browse: "Browse",

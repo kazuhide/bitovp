@@ -1,4 +1,5 @@
 import {
+	publicHdrSourceProjection,
 	dashAdaptationOptionsSchema,
 	dashAdditionalRepresentationSchema,
 	dashDetailedOptionsSchema,
@@ -72,7 +73,7 @@ export function draftFingerprint(value: unknown): string {
  * before a host are refused, and the field comes back empty.
  */
 export function draftKeepsText(value: string): boolean {
-	return !/\w+:\/\/|[?#]|^[^/\s]*:[^/\s]*@/u.test(value);
+	return !/\w+:\/\/|[?#]|^[/\\]{2}|^[^/\s]*:[^/\s]*@/u.test(value.trim());
 }
 
 const text = z.string().max(2048).refine(draftKeepsText).optional().catch("");
@@ -1120,9 +1121,15 @@ export function readWizardDraft(
 				? LEGACY_LIVE_STEPS[record.step]
 				: record.step;
 		if (step === undefined) throw new Error("step");
+		const safeValue = publicHdrSourceProjection(record.value);
+		if (safeValue !== record.value)
+			(storage ?? localStorage).setItem(
+				key,
+				JSON.stringify({ ...record, value: safeValue }),
+			);
 		return {
 			step,
-			value: projectWizardDraft(kind, record.value),
+			value: projectWizardDraft(kind, safeValue),
 		};
 	} catch {
 		discardWizardDraft(key, storage);

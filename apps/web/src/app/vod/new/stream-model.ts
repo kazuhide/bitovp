@@ -673,7 +673,9 @@ export function sourceStreamKeys(
 	for (const d of sources.dolbyStreams ?? []) {
 		keys.push(d.key);
 	}
-	for (const stream of sources.hdr10PlusStreams ?? []) keys.push(stream.key);
+	const hdrKeys = new Set(
+		(sources.hdr10PlusStreams ?? []).map((stream) => stream.key),
+	);
 	if (options.includeTrimming) {
 		for (const t of sources.trimmingStreams ?? []) {
 			keys.push(t.key);
@@ -684,7 +686,9 @@ export function sourceStreamKeys(
 			keys.push(c.key);
 		}
 	}
-	return keys.filter((k) => k !== options.excludeKey && k !== "");
+	return keys.filter(
+		(k) => k !== options.excludeKey && k !== "" && !hdrKeys.has(k),
+	);
 }
 
 /** One selectable input file (object) a stream can read. */

@@ -59,6 +59,91 @@ function detailFor(body: unknown) {
 }
 
 describe("LaunchDialog (ledger #109 §4.1)", () => {
+	it("requires matching JSON after each change of the HDR10+ picture", async () => {
+		const base = encodingPlanSchema.parse(
+			samplePresetPlan("fixed-bitrate-hls-on-aws"),
+		);
+		const input = base.inputs[0],
+			output = base.outputs[0];
+		if (!input || !output) throw new Error("Missing sample storage");
+		const body = {
+			planVersion: 1,
+			name: "HDR10+ template",
+			bitmovin: { encoderVersion: "2.294.0" },
+			inputs: base.inputs,
+			outputs: base.outputs,
+			ingest: [],
+			hdr10PlusStreams: [
+				{
+					key: "hdrpicture",
+					inputKey: input.key,
+					videoInputPath: "cut1.mp4",
+					metadataInputPath: "cut1.json",
+				},
+			],
+			renditions: [
+				{
+					key: "hevc",
+					codec: "H265",
+					ingestKey: "hdrpicture",
+					height: 1080,
+					bitrate: 4000000,
+				},
+			],
+			muxings: [
+				{
+					key: "mux",
+					kind: "FMP4",
+					streamKey: "hevc",
+					destination: { outputKey: output.key, path: "video" },
+				},
+			],
+			manifests: [],
+			generation: { timing: "JUST_IN_TIME" },
+		};
+		apiFetch.mockImplementation(async (url: string, init?: RequestInit) =>
+			url === `/api/presets/${ID}`
+				? detailFor(body)
+				: init?.method === "POST"
+					? { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee6" }
+					: [],
+		);
+		renderWithQuery(<LaunchDialog presetId={ID} onClose={() => {}} />);
+		const picture = await screen.findByLabelText("hdrpicture");
+		const metadata = screen.getByLabelText("hdrpicture:metadata");
+		const launch = screen.getByRole("button", { name: /Create job/i });
+		await waitFor(() => expect(launch).toBeEnabled());
+		const change = (field: HTMLElement, value: string) =>
+			fireEvent.change(field, { target: { value } });
+		change(picture, "cut2.mp4");
+		fireEvent.click(launch);
+		await screen.findAllByText(/select both the replacement HDR10\+ picture/i);
+		expect(
+			apiFetch.mock.calls.some(([url]) => url === "/api/encoding-jobs"),
+		).toBe(false);
+		change(metadata, "cut2.json");
+		change(picture, "cut3.mp4");
+		fireEvent.click(launch);
+		await waitFor(() => expect(launch).toBeEnabled());
+		expect(
+			apiFetch.mock.calls.some(([url]) => url === "/api/encoding-jobs"),
+		).toBe(false);
+		change(metadata, "cut3.json");
+		fireEvent.click(launch);
+		await waitFor(() =>
+			expect(routerPush).toHaveBeenCalledWith(
+				"/vod/jobs/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee6",
+			),
+		);
+		const post = apiFetch.mock.calls.find(
+			([url]) => url === "/api/encoding-jobs",
+		);
+		if (!post) throw new Error("Missing accepted create");
+		expect(JSON.parse(post[1].body).plan.hdr10PlusStreams[0]).toMatchObject({
+			videoInputPath: "cut3.mp4",
+			metadataInputPath: "cut3.json",
+		});
+	});
 	it("keeps unstructured provider diagnostics out of the creation error", async () => {
 		apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
 			if (url === `/api/presets/${ID}`)

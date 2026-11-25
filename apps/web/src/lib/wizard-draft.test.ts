@@ -29,6 +29,35 @@ import {
 
 beforeEach(() => localStorage.clear());
 
+it("never saves or restores a protocol-relative HDR credential, including an older draft envelope", () => {
+	const secret =
+		"//fixture:FIXTURE_DRAFT_CREDENTIAL@fixture.invalid/sidecar.json";
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	const sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				inputKey: "main",
+				videoInputPath: "dir/source.mxf",
+				metadataInputPath: secret,
+			},
+		],
+	};
+	writeWizardDraft("hdr-old", "vod", { ...state, sources }, 2);
+	const stored = localStorage.getItem("hdr-old");
+	if (!stored) throw new Error("Expected an autosaved draft");
+	expect(stored).not.toContain("FIXTURE_DRAFT_CREDENTIAL");
+	const legacy = JSON.parse(stored);
+	legacy.value.sources = sources;
+	localStorage.setItem("hdr-old", JSON.stringify(legacy));
+	expect(JSON.stringify(readWizardDraft("hdr-old", "vod"))).not.toContain(
+		"FIXTURE_DRAFT_CREDENTIAL",
+	);
+	expect(localStorage.getItem("hdr-old")).not.toContain(
+		"FIXTURE_DRAFT_CREDENTIAL",
+	);
+	expect(localStorage.getItem("hdr-old")).toContain("dir/source.mxf");
+});
 it("restores an edited MoQ copy without erasing a namespace excluded from local storage", () => {
 	const source: LiveWizardState = {
 		...DEFAULT_LIVE_WIZARD_STATE,

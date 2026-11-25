@@ -8,7 +8,12 @@ import {
 import { Field } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
-import type { WizardFilter, WizardInputFile } from "./build-plan";
+import {
+	type WizardFilter,
+	type WizardInputFile,
+	wizardInputStorage,
+	wizardWatermarkFile,
+} from "./build-plan";
 
 export const FILTER_KINDS = [
 	"DEINTERLACE",
@@ -180,11 +185,19 @@ export function MediaFilterEditor({
 }) {
 	const { locale, t } = useT();
 	const ja = locale === "ja";
-	const inputs = inputFiles.filter(
-		(f, i, all) =>
-			["S3", "GENERIC_S3", "GCS"].includes(f.kind) &&
-			all.findIndex((x) => x.inputKey === f.inputKey) === i,
-	);
+	const selected =
+		filter.kind === "WATERMARK"
+			? wizardWatermarkFile(inputFiles, filter)
+			: undefined;
+	const inputs = inputFiles.filter((f, i, all) => {
+		if (!["S3", "GENERIC_S3", "GCS"].includes(f.kind)) return false;
+		const same = (other: WizardInputFile) =>
+			other.inputKey === f.inputKey &&
+			wizardInputStorage(other) === wizardInputStorage(f);
+		return selected && same(selected)
+			? selected.key === f.key
+			: all.findIndex(same) === i;
+	});
 	const patch = (key: string, value: unknown) =>
 		onChange({ ...filter, [key]: value } as WizardFilter);
 	return (
@@ -201,7 +214,7 @@ export function MediaFilterEditor({
 							newFilter(
 								filter.key,
 								e.target.value as (typeof FILTER_KINDS)[number],
-								inputs[0]?.inputKey,
+								inputs[0]?.key,
 							),
 						)
 					}
@@ -225,17 +238,16 @@ export function MediaFilterEditor({
 				>
 					<SelectNative
 						id={`${idBase}-input`}
-						value={filter.inputKey}
+						value={selected?.key ?? filter.inputKey}
 						onChange={(e) => patch("inputKey", e.target.value)}
 					>
 						<option value="">{ja ? "入力を選択" : "Select input"}</option>
 						{inputs.map((f) => (
-							<option key={f.inputKey} value={f.inputKey}>
+							<option key={f.key} value={f.key}>
 								{f.name ?? f.inputKey} · {f.bucket}
 							</option>
 						))}
-						{filter.inputKey &&
-						!inputs.some((f) => f.inputKey === filter.inputKey) ? (
+						{filter.inputKey && !selected ? (
 							<option value={filter.inputKey}>
 								{filter.inputKey} ({ja ? "未設定" : "missing"})
 							</option>
@@ -245,7 +257,10 @@ export function MediaFilterEditor({
 			) : null}
 			{(fields[filter.kind ?? "DEINTERLACE"] ?? []).map(
 				([key, en, jp, control]) => {
-					const value = (filter as unknown as Record<string, unknown>)[key];
+					const value =
+						key === "imagePath" && selected?.purpose === "FILTER_IMAGE"
+							? selected.path
+							: (filter as unknown as Record<string, unknown>)[key];
 					const id = `${idBase}-${key}`;
 					return (
 						<Field

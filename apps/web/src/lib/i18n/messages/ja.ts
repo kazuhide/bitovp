@@ -5787,7 +5787,7 @@ export const ja = {
 			"S3 の認証情報を選ぶと、ストレージの参照画面が開きます",
 		selectionMode: "選択モード",
 		separateDolbyVisionMetadataSidecarEmptyEmbed:
-			"Dolby Vision メタデータの別サイドカー。空欄 = 埋め込み",
+			"動画と同じ入力ストレージの Dolby Vision XML ファイルを選択します。埋め込みメタデータを使う場合は空欄にします。",
 		serverManifest: "サーバーマニフェスト",
 		serverUrl: "サーバー URL",
 		set: "設定済み",
@@ -6237,6 +6237,7 @@ export const ja = {
 		notAPlan:
 			"このテンプレートの本文は有効なエンコーディングプランではありません。",
 		sources: "素材",
+		hdrPairRequired: "差し替える HDR10+ 映像と、その映像に対応する JSON メタデータの両方を選択してください。",
 		sourceOriginal:
 			"テンプレートの元パスです。そのままなら同じ素材で再実行します。",
 		sourceMoved: "今回の実行用に変更されています。",

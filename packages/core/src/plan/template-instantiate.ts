@@ -153,6 +153,7 @@ export type TemplateInstantiateIssue = {
 		/** bucket XOR credentialId — the two move an input TOGETHER (review-109pr1 I2: previously misfiled under SHARED_INPUT_CONFLICT). */
 		| "INCOMPLETE_INPUT_MOVE"
 		/** The site's input kind carries no bucket+credentialId pair (HTTPS, AZURE's container, …) — a move cannot apply (review-109pr1 I1: previously refused only by incidental strict-zod re-parse). */
+		| "HDR10PLUS_PAIR_REQUIRED"
 		| "INPUT_KIND_NOT_MOVABLE"
 		| "EMPTY_OUTPUT_PREFIX"
 		| "REPARSE_FAILED";
@@ -314,6 +315,32 @@ export function instantiateTemplatePlan(
 			continue;
 		}
 		inputMoves.set(site.inputKey, existing ?? want);
+	}
+	// An input move changes the meaning of every relative path on that
+	// resource, even when another ingest site initiated the move.
+	for (const stream of template.hdr10PlusStreams) {
+		const video = sources[stream.key];
+		const metadata = sources[`${stream.key}:metadata`];
+		const move = inputMoves.get(stream.inputKey);
+		const original = template.inputs.find(
+			(entry) => entry.key === stream.inputKey,
+		);
+		const moved =
+			move &&
+			original &&
+			"bucket" in original &&
+			"credentialId" in original &&
+			(move.bucket !== original.bucket ||
+				move.credentialId !== original.credentialId);
+		if (
+			(moved || (video && video.objectKey !== stream.videoInputPath)) &&
+			(!video?.objectKey.trim() || !metadata?.objectKey.trim())
+		) {
+			issues.push({
+				code: "HDR10PLUS_PAIR_REQUIRED",
+				message: `Select both the HDR10+ picture and its matching JSON metadata for "${stream.key}".`,
+			});
+		}
 	}
 	if (issues.length > 0) {
 		return { ok: false, issues };

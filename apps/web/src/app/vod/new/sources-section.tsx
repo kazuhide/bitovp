@@ -15,6 +15,7 @@ import {
 	type WizardState,
 	type WizardStreamSelectionMode,
 	type WizardTrimmingStream,
+	wizardInputStorage,
 } from "./build-plan";
 import { EmbeddedCaptionSources } from "./embedded-caption-sources";
 import { GcsRegionControl, StorageLocation } from "./storage-location";
@@ -326,7 +327,8 @@ export function InputFilesEditor({
 							onChange={(region) =>
 								onPatch({
 									inputFiles: files.map((entry) =>
-										entry.inputKey === file.inputKey
+										entry.inputKey === file.inputKey &&
+										wizardInputStorage(entry) === wizardInputStorage(file)
 											? { ...entry, region }
 											: entry,
 									),

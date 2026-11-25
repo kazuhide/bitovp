@@ -49,7 +49,7 @@ export const GROUPS = [
 		workspace: "@bitovp/web",
 		directory: "apps/web",
 		files: {
-			"src/lib/server/encoding-resources/removal.integration.test.ts": 126,
+			"src/lib/server/encoding-resources/removal.integration.test.ts": 135,
 			"src/lib/server/create-request.integration.test.ts": 3,
 			"src/lib/server/vod-input-previews.integration.test.ts": 11,
 			"src/lib/server/vod-input-favorites.integration.test.ts": 6,

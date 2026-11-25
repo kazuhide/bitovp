@@ -10,8 +10,8 @@ Its Encoding surface has 1,098 operations. The four additions are the HDR10+
 input-stream create, get, list and delete operations. The VOD wizard
 and Worker now use HDR10+ create. The HDR10+ get, list and delete operations
 lack a confirmed application call. Across all families, the current census confirms
-656 of 1,098 operations in application source, including 157 of 219 create
-operations. The remaining 442 operations lack a confirmed application call.
+677 of 1,098 operations in application source, including 157 of 219 create
+operations. The remaining 421 operations lack a confirmed application call.
 The separate cross-service inventory includes 84 notification operations
 (76 Encoding-specific and eight shared) for a total of 1,182. Notification
 operations are outside the application's Encoding-only census.

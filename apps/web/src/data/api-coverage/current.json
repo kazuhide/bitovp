@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-25T02:03:14.958Z",
-		"sourceCommit": "326b3a0fda61572a4fe0315dec249d8efdf567d9",
-		"sourceFingerprint": "b51a695357245689777d6f56b84cbaa249bced0be2bf9ba5730d9963bce6785d",
+		"generatedAt": "2026-11-25T02:22:27.004Z",
+		"sourceCommit": "bcb6a5e9a77ac41984f1750ae47ad700fedd864f",
+		"sourceFingerprint": "7f2c3e6119384240754152b6ebb5662b49eeb8b75f2a549f6f6f5c753be0036e",
 		"sdkVersion": "1.289.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "a564d4fbedc0bf9cc7ef9116c730c60f33183e2fc16b886221e02a67b029d7e5",
@@ -12,8 +12,8 @@
 	},
 	"summary": {
 		"totalOperations": 1098,
-		"sourceConfirmed": 656,
-		"unconfirmed": 442,
+		"sourceConfirmed": 677,
+		"unconfirmed": 421,
 		"createTotal": 219,
 		"createSourceConfirmed": 157
 	},
@@ -27,8 +27,8 @@
 		{
 			"family": "encodings",
 			"total": 425,
-			"sourceConfirmed": 277,
-			"unconfirmed": 148
+			"sourceConfirmed": 286,
+			"unconfirmed": 139
 		},
 		{
 			"family": "errorDefinitions",
@@ -39,8 +39,8 @@
 		{
 			"family": "filters",
 			"total": 88,
-			"sourceConfirmed": 36,
-			"unconfirmed": 52
+			"sourceConfirmed": 48,
+			"unconfirmed": 40
 		},
 		{
 			"family": "infrastructure",
@@ -1962,7 +1962,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 46
+					"line": 106
 				}
 			]
 		},
@@ -1976,7 +1976,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 36
+					"line": 96
 				}
 			]
 		},
@@ -1990,7 +1990,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 41
+					"line": 101
 				}
 			]
 		},
@@ -2014,8 +2014,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.encodings.inputStreams.captions.cea608.delete",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+					"line": 87
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/input-streams/captions/cea608/{input_stream_id}",
@@ -2023,8 +2028,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.inputStreams.captions.cea608.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+					"line": 77
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/input-streams/captions/cea608",
@@ -2032,8 +2042,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.encodings.inputStreams.captions.cea608.list",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+					"line": 82
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/input-streams/captions/cea708",
@@ -2055,8 +2070,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.encodings.inputStreams.captions.cea708.delete",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+					"line": 68
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/input-streams/captions/cea708/{input_stream_id}",
@@ -2064,8 +2084,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.inputStreams.captions.cea708.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+					"line": 58
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/input-streams/captions/cea708",
@@ -2073,8 +2098,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.encodings.inputStreams.captions.cea708.list",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+					"line": 63
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/input-streams/concatenation",
@@ -2100,7 +2130,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 65
+					"line": 125
 				}
 			]
 		},
@@ -2114,7 +2144,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 55
+					"line": 115
 				}
 			]
 		},
@@ -2128,7 +2158,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 60
+					"line": 120
 				}
 			]
 		},
@@ -2156,7 +2186,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 84
+					"line": 144
 				}
 			]
 		},
@@ -2170,7 +2200,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 74
+					"line": 134
 				}
 			]
 		},
@@ -2184,7 +2214,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 79
+					"line": 139
 				}
 			]
 		},
@@ -2212,7 +2242,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 103
+					"line": 163
 				}
 			]
 		},
@@ -2226,7 +2256,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 93
+					"line": 153
 				}
 			]
 		},
@@ -2240,7 +2270,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 98
+					"line": 158
 				}
 			]
 		},
@@ -2268,7 +2298,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 116
+					"line": 176
 				}
 			]
 		},
@@ -2282,7 +2312,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 112
+					"line": 172
 				}
 			]
 		},
@@ -2296,7 +2326,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 114
+					"line": 174
 				}
 			]
 		},
@@ -2365,7 +2395,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 136
+					"line": 196
 				}
 			]
 		},
@@ -2379,7 +2409,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 129
+					"line": 189
 				}
 			]
 		},
@@ -2393,7 +2423,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 131
+					"line": 191
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
@@ -2425,7 +2455,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 156
+					"line": 216
 				}
 			]
 		},
@@ -2439,7 +2469,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 146
+					"line": 206
 				}
 			]
 		},
@@ -2453,7 +2483,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 151
+					"line": 211
 				}
 			]
 		},
@@ -2477,8 +2507,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.encodings.inputStreams.subtitles.dvbSubtitle.delete",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+					"line": 49
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/input-streams/subtitles/dvb-subtitle/{input_stream_id}",
@@ -2486,8 +2521,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.inputStreams.subtitles.dvbSubtitle.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+					"line": 39
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/input-streams/subtitles/dvb-subtitle",
@@ -2495,8 +2535,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.encodings.inputStreams.subtitles.dvbSubtitle.list",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+					"line": 44
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/input-streams/trimming/h264-picture-timing",
@@ -2522,7 +2567,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 176
+					"line": 236
 				}
 			]
 		},
@@ -2536,7 +2581,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 166
+					"line": 226
 				}
 			]
 		},
@@ -2550,7 +2595,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 171
+					"line": 231
 				}
 			]
 		},
@@ -2578,7 +2623,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 195
+					"line": 255
 				}
 			]
 		},
@@ -2592,7 +2637,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 185
+					"line": 245
 				}
 			]
 		},
@@ -2606,7 +2651,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 190
+					"line": 250
 				}
 			]
 		},
@@ -2634,7 +2679,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 215
+					"line": 275
 				}
 			]
 		},
@@ -2648,7 +2693,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 205
+					"line": 265
 				}
 			]
 		},
@@ -2662,7 +2707,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 210
+					"line": 270
 				}
 			]
 		},
@@ -2731,7 +2776,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 228
+					"line": 288
 				}
 			]
 		},
@@ -2745,7 +2790,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 224
+					"line": 284
 				}
 			]
 		},
@@ -2759,7 +2804,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 226
+					"line": 286
 				}
 			]
 		},
@@ -3149,7 +3194,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 241
+					"line": 301
 				}
 			]
 		},
@@ -3163,7 +3208,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 234
+					"line": 294
 				}
 			]
 		},
@@ -3177,7 +3222,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 236
+					"line": 296
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
@@ -3223,7 +3268,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 254
+					"line": 314
 				}
 			]
 		},
@@ -3237,7 +3282,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 250
+					"line": 310
 				}
 			]
 		},
@@ -3251,7 +3296,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 252
+					"line": 312
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
@@ -3301,7 +3346,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 264
+					"line": 324
 				}
 			]
 		},
@@ -3315,7 +3360,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 260
+					"line": 320
 				}
 			]
 		},
@@ -3329,7 +3374,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 262
+					"line": 322
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
@@ -4088,7 +4133,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 274
+					"line": 334
 				}
 			]
 		},
@@ -4102,7 +4147,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 270
+					"line": 330
 				},
 				{
 					"file": "apps/worker/src/verify/live-archive-runtime.ts",
@@ -4120,7 +4165,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 272
+					"line": 332
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
@@ -4763,7 +4808,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 290
+					"line": 350
 				}
 			]
 		},
@@ -4777,7 +4822,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 280
+					"line": 340
 				}
 			]
 		},
@@ -4791,7 +4836,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 285
+					"line": 345
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
@@ -4846,7 +4891,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 309
+					"line": 369
 				}
 			]
 		},
@@ -4860,7 +4905,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 299
+					"line": 359
 				}
 			]
 		},
@@ -4874,7 +4919,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 304
+					"line": 364
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
@@ -5452,7 +5497,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 328
+					"line": 388
 				}
 			]
 		},
@@ -5466,7 +5511,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 318
+					"line": 378
 				}
 			]
 		},
@@ -5480,7 +5525,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 323
+					"line": 383
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
@@ -5780,7 +5825,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 341
+					"line": 401
 				}
 			]
 		},
@@ -5794,7 +5839,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 337
+					"line": 397
 				}
 			]
 		},
@@ -5808,7 +5853,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 339
+					"line": 399
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
@@ -5854,7 +5899,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 351
+					"line": 411
 				}
 			]
 		},
@@ -5868,7 +5913,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 347
+					"line": 407
 				}
 			]
 		},
@@ -5882,7 +5927,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 349
+					"line": 409
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
@@ -6201,7 +6246,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 361
+					"line": 421
 				}
 			]
 		},
@@ -6215,7 +6260,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 357
+					"line": 417
 				}
 			]
 		},
@@ -6229,7 +6274,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 359
+					"line": 419
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
@@ -6605,7 +6650,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 393
+					"line": 453
 				}
 			]
 		},
@@ -6619,7 +6664,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 389
+					"line": 449
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
@@ -6637,7 +6682,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 391
+					"line": 451
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/media.ts",
@@ -6786,7 +6831,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 379
+					"line": 439
 				}
 			]
 		},
@@ -6800,7 +6845,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 367
+					"line": 427
 				}
 			]
 		},
@@ -6814,7 +6859,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 373
+					"line": 433
 				}
 			]
 		},
@@ -6987,7 +7032,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 418
+					"line": 478
 				}
 			]
 		},
@@ -7001,7 +7046,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 406
+					"line": 466
 				}
 			]
 		},
@@ -7015,7 +7060,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 412
+					"line": 472
 				}
 			]
 		},
@@ -7079,7 +7124,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 440
+					"line": 500
 				}
 			]
 		},
@@ -7093,7 +7138,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 428
+					"line": 488
 				}
 			]
 		},
@@ -7107,7 +7152,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 434
+					"line": 494
 				}
 			]
 		},
@@ -7144,7 +7189,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 462
+					"line": 522
 				}
 			]
 		},
@@ -7158,7 +7203,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 450
+					"line": 510
 				}
 			]
 		},
@@ -7172,7 +7217,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 456
+					"line": 516
 				}
 			]
 		},
@@ -7296,8 +7341,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.filters.audioMix.delete",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
+					"line": 26
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/audio-mix/{filter_id}",
@@ -7305,8 +7355,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.audioMix.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
+					"line": 25
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/audio-mix",
@@ -7350,7 +7405,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 28
+					"line": 71
 				}
 			]
 		},
@@ -7364,7 +7419,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 27
+					"line": 70
 				}
 			]
 		},
@@ -7451,8 +7506,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.filters.conform.delete",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
+					"line": 50
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/conform/{filter_id}",
@@ -7460,8 +7520,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.conform.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
+					"line": 49
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/conform",
@@ -7505,7 +7570,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 34
+					"line": 77
 				}
 			]
 		},
@@ -7519,7 +7584,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 33
+					"line": 76
 				}
 			]
 		},
@@ -7565,7 +7630,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 40
+					"line": 83
 				}
 			]
 		},
@@ -7579,7 +7644,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 39
+					"line": 82
 				}
 			]
 		},
@@ -7625,7 +7690,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 46
+					"line": 89
 				}
 			]
 		},
@@ -7639,7 +7704,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 45
+					"line": 88
 				}
 			]
 		},
@@ -7681,8 +7746,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.filters.dolbyLoudness.delete",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
+					"line": 32
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/dolby-loudness/{filter_id}",
@@ -7690,8 +7760,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.dolbyLoudness.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
+					"line": 31
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/dolby-loudness",
@@ -7735,7 +7810,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 52
+					"line": 95
 				}
 			]
 		},
@@ -7749,7 +7824,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 51
+					"line": 94
 				}
 			]
 		},
@@ -7791,8 +7866,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.filters.enhancedDeinterlace.delete",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
+					"line": 57
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/enhanced-deinterlace/{filter_id}",
@@ -7800,8 +7880,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.enhancedDeinterlace.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
+					"line": 55
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/enhanced-deinterlace",
@@ -7841,8 +7926,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.filters.enhancedWatermark.delete",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
+					"line": 38
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/enhanced-watermark/{filter_id}",
@@ -7850,8 +7940,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.enhancedWatermark.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
+					"line": 37
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/enhanced-watermark",
@@ -7891,8 +7986,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.filters.interlace.delete",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
+					"line": 44
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/interlace/{filter_id}",
@@ -7900,8 +8000,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.interlace.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
+					"line": 43
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/interlace",
@@ -7945,7 +8050,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 58
+					"line": 101
 				}
 			]
 		},
@@ -7959,7 +8064,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 57
+					"line": 100
 				}
 			]
 		},
@@ -8005,7 +8110,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 72
+					"line": 115
 				}
 			]
 		},
@@ -8019,7 +8124,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 71
+					"line": 114
 				}
 			]
 		},
@@ -8065,7 +8170,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 78
+					"line": 121
 				}
 			]
 		},
@@ -8079,7 +8184,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 77
+					"line": 120
 				}
 			]
 		},
@@ -8134,7 +8239,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 84
+					"line": 127
 				}
 			]
 		},
@@ -8148,7 +8253,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 83
+					"line": 126
 				}
 			]
 		},
@@ -8194,7 +8299,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 90
+					"line": 133
 				}
 			]
 		},
@@ -8208,7 +8313,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
-					"line": 89
+					"line": 132
 				}
 			]
 		},

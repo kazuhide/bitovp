@@ -16,7 +16,10 @@ import {
 	vodInputTimelineDocumentSchema,
 	vodInputTimelinePreparationReferenceSchema,
 } from "@bitovp/core/vod-input-timeline";
-import { mainPictureSourceKey } from "@bitovp/core/wizard";
+import {
+	availableImplicitTrackKey,
+	mainPictureSourceKey,
+} from "@bitovp/core/wizard";
 import { z } from "zod";
 import type { SessionDto } from "./auth/dto";
 
@@ -1075,18 +1078,54 @@ function restoreCopiedHdrInputs(
 			"dolbyStreams",
 			"hdr10PlusStreams",
 		].flatMap((name) => records(sources[name]));
-		let binding = declarations.find((source) => source.key === originalSource);
-		if (!binding) {
-			// A removed stream may leave its file key available for a different
-			// object. Prefer the replacement source named by the saved rendition.
-			const firstVideo = records(snapshot.videos)[0];
-			const selected = mainPictureSourceKey(
-				draftRecord(firstVideo?.extras) ? firstVideo.extras.source : undefined,
-				sources,
+		const trims = records(sources.trimmingStreams);
+		const concats = records(sources.concatenationStreams);
+		const mixes = records(sources.audioMixStreams);
+		const implicit = availableImplicitTrackKey(
+			new Set(
+				[...declarations, ...trims, ...concats, ...mixes].map((row) => row.key),
+			),
+			"video",
+		);
+		// A copy with only named video had no independent ordinary picture.
+		// An implicit rendition subsequently authored in the wizard reads the
+		// saved first row, even if its path changed or the operator replaced it.
+		const savedOwnsPrimary =
+			typeof copiedPictureSource === "string" &&
+			(records(snapshot.videos).some(
+				(row) =>
+					!draftRecord(row.extras) ||
+					row.extras.source === undefined ||
+					row.extras.source === implicit,
+			) ||
+				trims.some((row) => row.sourceKey === implicit) ||
+				concats.some((row) =>
+					records(row.sources).some((part) => part.sourceKey === implicit),
+				) ||
+				mixes.some((row) =>
+					records(row.audioMixChannels).some(
+						(part) => part.sourceKey === implicit,
+					),
+				));
+		if (savedOwnsPrimary) primaryKey = first.key;
+		else {
+			let binding = declarations.find(
+				(source) => source.key === originalSource,
 			);
-			binding = declarations.find((source) => source.key === selected);
+			if (!binding) {
+				// A removed stream may leave its file key available for a different
+				// object. Prefer the replacement source named by the saved rendition.
+				const firstVideo = records(snapshot.videos)[0];
+				const selected = mainPictureSourceKey(
+					draftRecord(firstVideo?.extras)
+						? firstVideo.extras.source
+						: undefined,
+					sources,
+				);
+				binding = declarations.find((source) => source.key === selected);
+			}
+			primaryKey = binding?.videoInputFile ?? binding?.inputFile ?? primary.key;
 		}
-		primaryKey = binding?.videoInputFile ?? binding?.inputFile ?? primary.key;
 	}
 	const index = snapshot.inputFiles.findIndex(
 		(f) => draftRecord(f) && f.key === primaryKey,

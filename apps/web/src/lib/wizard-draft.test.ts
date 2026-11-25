@@ -1296,6 +1296,9 @@ it.each([
 	"removed-and-recycled",
 	"removed-picture-retained",
 	"rebound-picture-retained",
+	"edited-picture",
+	"new-ordinary-row",
+	"wrapped-ordinary",
 ] as const)("restores edited HDR Copy media bindings (%s)", (edit) => {
 	const authored = structuredClone(DEFAULT_WIZARD_STATE);
 	const file = authored.inputFiles[0];
@@ -1330,14 +1333,38 @@ it.each([
 	const recycled = edit === "removed-and-recycled";
 	const removed = recycled || edit === "removed-picture-retained";
 	const hasOrdinary = edit !== "rebound";
-	const selected = removed ? { ...hdr, key: "replacementHdr" } : hdr;
+	const ordinary =
+		edit === "edited-picture" || edit === "wrapped-ordinary"
+			? { ...original, path: "edited.mxf" }
+			: edit === "new-ordinary-row"
+				? { ...original, key: "ordinary", path: "ordinary.mxf" }
+				: original;
+	const wrapped = edit === "wrapped-ordinary";
+	const selected = wrapped
+		? { ...hdr, key: "video" }
+		: removed
+			? { ...hdr, key: "replacementHdr" }
+			: hdr;
 	const saved = projectWizardDraft("vod", {
 		...base,
 		inputFiles: recycled
 			? [replacement, { ...original, path: "unrelated.mxf" }]
-			: [original, replacement],
+			: [ordinary, replacement],
 		sources: {
 			...base.sources,
+			...(wrapped
+				? {
+						trimmingStreams: [
+							{
+								key: "trim-primary",
+								kind: "TIME_BASED" as const,
+								sourceKey: "video-input-1",
+								offset: 0,
+								duration: 3,
+							},
+						],
+					}
+				: {}),
 			hdr10PlusStreams: [
 				{
 					...selected,
@@ -1350,7 +1377,11 @@ it.each([
 			? {
 					videos: [
 						{ ...rendition, codec: "H265", extras: { source: selected.key } },
-						{ ...rendition, height: 720 },
+						{
+							...rendition,
+							height: 720,
+							...(wrapped && { extras: { source: "trim-primary" } }),
+						},
 					],
 				}
 			: {}),
@@ -1361,9 +1392,11 @@ it.each([
 		metadataInputPath: "replacement.json",
 	});
 	if (hasOrdinary) {
-		expect(plan.ingest?.find((entry) => entry.key === "video")?.inputPath).toBe(
-			recycled ? "replacement.mxf" : "original.mxf",
-		);
+		expect(
+			plan.ingest?.find(
+				(entry) => entry.key === (wrapped ? "video-input-1" : "video"),
+			)?.inputPath,
+		).toBe(recycled ? "replacement.mxf" : ordinary.path);
 	} else {
 		expect(plan.ingest?.find((entry) => entry.key === "audio")?.inputPath).toBe(
 			"original.mxf",

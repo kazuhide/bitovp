@@ -74,7 +74,7 @@ export const FEATURES = Object.freeze(
 				"Live run ownership, provider observations and startup cancellation",
 			files: {
 				"src/live/startup-cancel.test.ts": 2,
-				"src/live/provider-lifecycle.test.ts": 50,
+				"src/live/provider-lifecycle.test.ts": 51,
 			},
 		},
 		{

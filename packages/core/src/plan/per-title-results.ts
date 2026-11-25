@@ -78,6 +78,8 @@ export const CODEC_CONFIG_API_PATH: Readonly<
 	VP9: ["video", "vp9"],
 	AV1: ["video", "av1"],
 	AAC: ["audio", "aac"],
+	HE_AAC_V1: ["audio", "heAacV1"],
+	HE_AAC_V2: ["audio", "heAacV2"],
 	OPUS: ["audio", "opus"],
 	DOLBY_ATMOS: ["audio", "dolbyAtmos"],
 	DDPLUS: ["audio", "dolbyDigitalPlus"],

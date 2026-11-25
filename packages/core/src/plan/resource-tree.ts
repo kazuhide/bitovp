@@ -68,6 +68,8 @@ const GROUP_OF_KIND: Record<OperationKind, ResourceGroupId> = {
 	CREATE_CODEC_VP9: "codecs",
 	CREATE_CODEC_AV1: "codecs",
 	CREATE_CODEC_AAC: "codecs",
+	CREATE_CODEC_HE_AAC_V1: "codecs",
+	CREATE_CODEC_HE_AAC_V2: "codecs",
 	CREATE_CODEC_IMSC: "codecs",
 	CREATE_CODEC_OPUS: "codecs",
 	CREATE_CODEC_DOLBY_ATMOS: "codecs",

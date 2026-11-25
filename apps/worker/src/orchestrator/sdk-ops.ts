@@ -808,6 +808,8 @@ export type SdkOps = {
 	createH265Config(p: H265ConfigParams): Promise<string>;
 	createVp9Config(p: Vp9ConfigParams): Promise<string>;
 	createAv1Config(p: Av1ConfigParams): Promise<string>;
+	createHeAacV1Config(p: import("@bitovp/core").HeAacV1Config): Promise<string>;
+	createHeAacV2Config(p: import("@bitovp/core").HeAacV2Config): Promise<string>;
 	createAacConfig(p: {
 		cutoffFrequency?: number;
 		name?: string;

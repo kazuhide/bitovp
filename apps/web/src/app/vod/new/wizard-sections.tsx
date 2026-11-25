@@ -3,7 +3,9 @@
 import type { CredentialSummaryWire } from "@bitovp/core";
 import {
 	filterFamily,
+	HE_AAC_MAX_BITRATE,
 	INTERNAL_HEVC_V2_BCF_VERSION,
+	isHeAac,
 	QC_GATE_METRICS,
 	qcRuleSeverity,
 } from "@bitovp/core";
@@ -51,6 +53,12 @@ import {
 } from "./build-plan";
 import { AudioCutoffEditor } from "./codec-detail-editor";
 import { editFilter } from "./filter-editing";
+import {
+	audioCodecLabel,
+	audioProfileTransition,
+	HeAacSignalingField,
+	readAudioRate,
+} from "./he-aac-fields";
 import {
 	AdaptationDetailEditor,
 	defaultHlsConflicts,
@@ -782,6 +790,7 @@ export function LadderSection({
 											onChange={(e) =>
 												patchAudio(index, {
 													codec: e.target.value as WizardAudioCodec,
+													...audioProfileTransition(e.target.value, audio),
 													channelLayout: undefined,
 													cutoffFrequency: undefined,
 													...(e.target.value === "OPUS"
@@ -789,7 +798,10 @@ export function LadderSection({
 																rate: 48000,
 																muxing: { ...audio.muxing, kind: "WEBM" },
 															}
-														: codec === "OPUS"
+														: codec === "OPUS" ||
+																(isHeAac(e.target.value) &&
+																	audio.muxing?.kind &&
+																	audio.muxing.kind !== "FMP4")
 															? { muxing: { ...audio.muxing, kind: "FMP4" } }
 															: {}),
 												})
@@ -797,7 +809,7 @@ export function LadderSection({
 										>
 											{AUDIO_CODECS.map((c) => (
 												<option key={c} value={c}>
-													{c}
+													{audioCodecLabel(c)}
 												</option>
 											))}
 										</SelectNative>
@@ -805,11 +817,22 @@ export function LadderSection({
 									<div className="flex-1">
 										<Field
 											label={t("wizard.bitrateBps")}
+											help={
+												isHeAac(codec)
+													? t("wizard.heAacBitrateLimit", {
+															bps: HE_AAC_MAX_BITRATE[codec],
+														})
+													: undefined
+											}
 											htmlFor={`wz-a-${index}-bitrate`}
 										>
 											<Input
 												id={`wz-a-${index}-bitrate`}
 												type="number"
+												min={1}
+												max={
+													isHeAac(codec) ? HE_AAC_MAX_BITRATE[codec] : undefined
+												}
 												aria-label={t("wizardX.audioNBitrate", {
 													n: index + 1,
 												})}
@@ -833,16 +856,17 @@ export function LadderSection({
 											<Input
 												id={`wz-a-${index}-rate`}
 												type="number"
+												step={isHeAac(codec) ? "any" : undefined}
 												aria-label={t("wizardX.audioNSampleRate", {
 													n: index + 1,
 												})}
-												value={audio.rate}
+												value={audio.rate ?? ""}
+												placeholder={
+													isHeAac(codec) ? t("wizard.default") : undefined
+												}
 												onChange={(e) =>
 													patchAudio(index, {
-														rate: Math.max(
-															0,
-															Math.round(Number(e.target.value)),
-														),
+														rate: readAudioRate(codec, e.target.value),
 													})
 												}
 											/>
@@ -873,7 +897,11 @@ export function LadderSection({
 									<Field
 										label={t("wizard.channelLayout")}
 										htmlFor={`wz-a-${index}-cl`}
-										help={t("wizard.clEnumEmptyClStereo")}
+										help={
+											isHeAac(codec)
+												? undefined
+												: t("wizard.clEnumEmptyClStereo")
+										}
 									>
 										<SelectNative
 											id={`wz-a-${index}-cl`}
@@ -909,6 +937,14 @@ export function LadderSection({
 										onPatch={onPatch}
 									/>
 								)}
+								{isHeAac(codec) ? (
+									<HeAacSignalingField
+										id={`wz-a-${index}-signaling`}
+										codec={codec}
+										value={audio.signaling}
+										onChange={(signaling) => patchAudio(index, { signaling })}
+									/>
+								) : null}
 								{(["AAC", "AC3", "EAC3"] as string[]).includes(codec) ? (
 									<AudioCutoffEditor
 										id={`wz-a-${index}-cutoff`}

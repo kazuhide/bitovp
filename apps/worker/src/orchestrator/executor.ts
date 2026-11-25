@@ -130,6 +130,8 @@ export async function executeStep(
 		case "CREATE_CODEC_AV1":
 		case "CREATE_CODEC_OPUS":
 		case "CREATE_CODEC_IMSC":
+		case "CREATE_CODEC_HE_AAC_V1":
+		case "CREATE_CODEC_HE_AAC_V2":
 		case "CREATE_CODEC_AAC":
 		case "CREATE_CODEC_DOLBY_ATMOS":
 		case "CREATE_CODEC_AC3":

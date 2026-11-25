@@ -9,6 +9,7 @@ import {
 	vp9DetailControlsSchema,
 } from "./codec-detail-controls";
 import { codecEnumSchema } from "./codec-enums";
+import { HE_AAC_CODECS, heAacV1Fields, heAacV2Fields } from "./he-aac";
 import { isHlsVideoUriPattern } from "./hls-video-uri";
 import { internalHevcV2Schema } from "./internal-hevc-v2";
 import {
@@ -57,6 +58,7 @@ export const PLAN_VERSION = 1;
  */
 export const AUDIO_CODECS = new Set([
 	"AAC",
+	...HE_AAC_CODECS,
 	"OPUS",
 	"DOLBY_ATMOS",
 	"DDPLUS",
@@ -1046,6 +1048,8 @@ export const renditionSchema = z.discriminatedUnion("codec", [
 	vp9RenditionSchema,
 	av1RenditionSchema,
 	aacRenditionSchema,
+	z.strictObject({ ...renditionBase, ...heAacV1Fields }),
+	z.strictObject({ ...renditionBase, ...heAacV2Fields }),
 	opusRenditionSchema,
 	imscRenditionSchema,
 	atmosRenditionSchema,

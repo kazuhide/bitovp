@@ -64,6 +64,8 @@ export function fakeSdk(overrides: Partial<SdkOps> = {}): SdkOps {
 		createVp9Config: vi.fn(nextId),
 		createAv1Config: vi.fn(nextId),
 		createAacConfig: vi.fn(nextId),
+		createHeAacV1Config: vi.fn(nextId),
+		createHeAacV2Config: vi.fn(nextId),
 		createAc3Config: vi.fn(nextId),
 		createEac3Config: vi.fn(nextId),
 		createOpusConfig: vi.fn(nextId),

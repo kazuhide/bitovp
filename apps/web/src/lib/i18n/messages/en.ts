@@ -5379,6 +5379,9 @@ export const en = {
 		change: "Change",
 		channelLayout: "Channel layout",
 		channelName: "Channel name",
+		heAacSignaling: "Signaling",
+		heAacBitrateLimit: "Maximum {bps} bps",
+		heAacConfigName: "Codec configuration name",
 		clEnumEmptyClStereo: "CL_* enum — empty = CL_STEREO",
 		clientManifest: "Client manifest",
 		closedCaptions: "Closed captions",
@@ -6725,7 +6728,7 @@ export const en = {
 		trimASourceInputStreamToA:
 			"Clip a source input stream to a sub-range (the modern input-stream path, independent of the start request's `trimming` field). A rendition reads the clip by selecting it under Placement & extras.",
 		ts: "TS",
-		tsHlsOnlyAacOnly: "TS = HLS-only, AAC-only",
+		tsHlsOnlyAacOnly: "TS carries AAC-LC or HE-AAC audio in HLS.",
 		tsHlsOnlyH264Only: "TS = HLS-only, H264-only",
 		type: "Type",
 		unsetApiDefaultsToTheSegmentDuration:

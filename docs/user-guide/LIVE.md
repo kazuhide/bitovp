@@ -62,6 +62,8 @@ With Encoder `2.294.0` or later, Live HLS multivariant playlists derive
 bitrate as a floor. The encoder supplies this correction; bitovp does not rewrite
 the values. VOD manifests are unchanged. See the [Encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
 
+Ordinary Live supports HE-AAC v1 (up to 128,000 bps) and v2 (up to 64,000 bps) with segmented fMP4 for HLS/DASH, or TS for HLS. The Live HD encoding option, dedicated CMAF muxings, MP4 archive and MoQ retain their existing codec requirements. A saved template keeps each track’s profile, optional sample rate, channel layout and signaling. [Bitmovin Live muxing support](https://bitmovin.com/wp-content/uploads/2023/09/Product-Support-Matrix-ENCODING-Live-Muxings.pdf)
+
 ## Experimental MoQ delivery
 
 Create a **MoQ relay (live delivery)** credential first. In the Live wizard,

@@ -517,7 +517,12 @@ export function compileExpectedLiveArtefacts(
 				...new Set(
 					selected
 						.map(({ rendition }) => rendition.codec)
-						.filter((codec) => !["AAC", "DDPLUS", "DD"].includes(codec)),
+						.filter(
+							(codec) =>
+								!["AAC", "HE_AAC_V1", "HE_AAC_V2", "DDPLUS", "DD"].includes(
+									codec,
+								),
+						),
 				),
 			];
 			return {

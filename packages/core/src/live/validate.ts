@@ -60,13 +60,19 @@ import { AGGREGATE_CLOUD_REGIONS } from "./startup";
  * worker would drift the moment a codec is added here.
  */
 export const LIVE_VIDEO_CODECS = new Set(["H264", "H265"]);
-export const LIVE_AUDIO_CODECS = new Set(["AAC", "DDPLUS", "DD"]);
+export const LIVE_AUDIO_CODECS = new Set([
+	"AAC",
+	"HE_AAC_V1",
+	"HE_AAC_V2",
+	"DDPLUS",
+	"DD",
+]);
 
 /** Container/codec matrix for the live muxing kinds (mirror of VOD's). */
 const LIVE_MUXING_ALLOWED: Record<string, string[]> = {
-	FMP4: ["H264", "H265", "AAC", "DDPLUS", "DD"],
+	FMP4: ["H264", "H265", "AAC", "HE_AAC_V1", "HE_AAC_V2", "DDPLUS", "DD"],
 	CMAF: ["H264", "AAC"],
-	TS: ["H264", "AAC"],
+	TS: ["H264", "AAC", "HE_AAC_V1", "HE_AAC_V2"],
 	// Deliberately scoped to the provider's HD progressive-archive regression.
 	MP4: ["H264", "AAC"],
 };

@@ -10,6 +10,8 @@ import {
 	codecDetailControls,
 	h264RenditionSchema,
 	h265V2QualityControlsSchema,
+	heAacV1ConfigSchema,
+	heAacV2ConfigSchema,
 } from "@bitovp/core";
 import type { StepResult } from "../executor";
 import type { ExecStepContext } from "./exec-shared";
@@ -211,6 +213,14 @@ export async function executeConfigStep(
 				rate: num(p.rate, 48000),
 				channelLayout: str(p.channelLayout),
 			});
+			return { resourceId, request, response: { id: resourceId } };
+		}
+		case "CREATE_CODEC_HE_AAC_V1":
+		case "CREATE_CODEC_HE_AAC_V2": {
+			const resourceId =
+				op.kind === "CREATE_CODEC_HE_AAC_V1"
+					? await ctx.sdk.createHeAacV1Config(heAacV1ConfigSchema.parse(p))
+					: await ctx.sdk.createHeAacV2Config(heAacV2ConfigSchema.parse(p));
 			return { resourceId, request, response: { id: resourceId } };
 		}
 		case "CREATE_CODEC_AAC": {

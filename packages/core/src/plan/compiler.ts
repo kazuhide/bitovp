@@ -4,6 +4,7 @@ import {
 	codecDetailControls,
 } from "./codec-detail-controls";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
+import { heAacConfiguration, isHeAac } from "./he-aac";
 import {
 	type HlsAudioMediaDefaults,
 	hlsAudioLegsByRendition,
@@ -93,6 +94,8 @@ export type OperationKind =
 	| "CREATE_CODEC_VP9"
 	| "CREATE_CODEC_AV1"
 	| "CREATE_CODEC_AAC"
+	| "CREATE_CODEC_HE_AAC_V1"
+	| "CREATE_CODEC_HE_AAC_V2"
 	| "CREATE_CODEC_OPUS"
 	| "CREATE_CODEC_IMSC"
 	| "CREATE_CODEC_DOLBY_ATMOS"
@@ -420,13 +423,23 @@ function isVideoCodec(
 }
 
 /** Audio codecs that join audio media/adaptation sets in manifests. */
-function isAudioCodec(
-	rendition: PlanRendition,
-): rendition is Extract<
+function isAudioCodec(rendition: PlanRendition): rendition is Extract<
 	PlanRendition,
-	{ codec: "AAC" | "OPUS" | "DOLBY_ATMOS" | "DDPLUS" | "DD" | "AC3" | "EAC3" }
+	{
+		codec:
+			| "HE_AAC_V1"
+			| "HE_AAC_V2"
+			| "AAC"
+			| "OPUS"
+			| "DOLBY_ATMOS"
+			| "DDPLUS"
+			| "DD"
+			| "AC3"
+			| "EAC3";
+	}
 > {
 	return (
+		isHeAac(rendition.codec) ||
 		rendition.codec === "AAC" ||
 		rendition.codec === "OPUS" ||
 		rendition.codec === "DOLBY_ATMOS" ||
@@ -472,6 +485,8 @@ function streamName(rendition: PlanRendition): string {
 			return rendition.height === null
 				? `Stream ${rendition.codec}`
 				: `Stream ${rendition.codec} ${rendition.height}p`;
+		case "HE_AAC_V1":
+		case "HE_AAC_V2":
 		case "AAC":
 		case "OPUS":
 			return `Stream ${rendition.codec} ${kbps(rendition.bitrate)}`;
@@ -1499,6 +1514,16 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 					payload: {
 						...(rendition.styling ? { styling: rendition.styling } : {}),
 					},
+					refs: {},
+				});
+			} else if (
+				rendition.codec === "HE_AAC_V1" ||
+				rendition.codec === "HE_AAC_V2"
+			) {
+				ops.push({
+					step: `codec:${rendition.key}`,
+					kind: `CREATE_CODEC_${rendition.codec}`,
+					payload: heAacConfiguration(rendition),
 					refs: {},
 				});
 			} else if (rendition.codec === "AAC" || rendition.codec === "OPUS") {

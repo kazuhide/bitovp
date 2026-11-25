@@ -206,6 +206,14 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 		method: "POST",
 		template: "/encoding/configurations/audio/aac",
 	},
+	CREATE_CODEC_HE_AAC_V1: {
+		method: "POST",
+		template: "/encoding/configurations/audio/he-aac-v1",
+	},
+	CREATE_CODEC_HE_AAC_V2: {
+		method: "POST",
+		template: "/encoding/configurations/audio/he-aac-v2",
+	},
 	CREATE_CODEC_DOLBY_ATMOS: {
 		method: "POST",
 		template: "/encoding/configurations/audio/dolby-atmos",
@@ -753,19 +761,26 @@ export function curlForStep(
 		entry = { ...entry, refs: manifestSnapshot.refs };
 	}
 	if (
-		["CREATE_CODEC_AAC", "CREATE_CODEC_AC3", "CREATE_CODEC_EAC3"].includes(
-			entry.kind,
-		) &&
+		[
+			"CREATE_CODEC_AAC",
+			"CREATE_CODEC_HE_AAC_V1",
+			"CREATE_CODEC_HE_AAC_V2",
+			"CREATE_CODEC_AC3",
+			"CREATE_CODEC_EAC3",
+		].includes(entry.kind) &&
 		request !== null &&
 		typeof request === "object" &&
 		!Array.isArray(request)
 	) {
 		const snapshot = request as Record<string, unknown>;
 		if (snapshot.channelLayout !== undefined) {
-			const name =
-				entry.kind === "CREATE_CODEC_AAC"
-					? "AacChannelLayout"
-					: "Ac3ChannelLayout";
+			const name = [
+				"CREATE_CODEC_AAC",
+				"CREATE_CODEC_HE_AAC_V1",
+				"CREATE_CODEC_HE_AAC_V2",
+			].includes(entry.kind)
+				? "AacChannelLayout"
+				: "Ac3ChannelLayout";
 			const layout = codecEnumSchema(name).safeParse(snapshot.channelLayout);
 			if (!layout.success)
 				return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };

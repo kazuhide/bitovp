@@ -31,7 +31,7 @@ families below. Neither table is a full-field GUI coverage percentage.
 | SDK create family | SDK types | Existing creation paths | Gaps checked against the plan and Worker |
 |---|---:|---:|---|
 | Video configurations | 8 | 5 | H.262, MJPEG, VP8 |
-| Audio configurations | 17 | 7 | HE-AAC v1/v2, PCM, passthrough, MP2, MP3, Vorbis, DTS, DTS passthrough, DTS:X |
+| Audio configurations | 17 | 9 | PCM, passthrough, MP2, MP3, Vorbis, DTS, DTS passthrough, DTS:X |
 | Subtitle configurations | 3 | 2 | DVB subtitle |
 | Input streams | 13 | 10 | CEA608, CEA708 and DVB subtitle extraction |
 | Filters | 17 | 10 | AudioMix, AzureSpeechToCaptions, Conform, DolbyLoudness, EnhancedDeinterlace, EnhancedWatermark, Interlace |
@@ -75,15 +75,8 @@ containers and unsupported combinations continue to matter.
 
 ### E01 · P1 · HE-AAC v1 and v2
 
-The current AAC plan and form do not expose a HE-AAC profile. Worker
-`orchestrator/ops/configs.ts` constructs only `AacAudioConfiguration` for AAC;
-the SDK has separate `heAacV1.create` and `heAacV2.create` operations and models.
-Earlier comments suggesting AAC profile support were inaccurate and have been
-corrected. This is a relatively narrow addition with direct low-bitrate value.
+HE-AAC v1/v2 are available in the VOD and ordinary Live audio ladders. Saved presets and channel duplication preserve optional sampling rate, layout and signaling. VOD uses segmented fMP4; Live also supports HLS with TS. Each profile calls its dedicated configuration endpoint and streams use that configuration’s ID. Offline SDK tests verify the request; a provider encode and device playback remain unmeasured.
 
-Acceptance must cover the codec discriminants, official bitrate/sample-rate/
-channel restrictions, compiled wire payloads, HLS CODECS/audio groups and
-import/export preservation. Establish Live applicability separately.
 
 ### E02 · P1 · Stream Conditions authoring and AND/OR
 

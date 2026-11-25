@@ -7,6 +7,10 @@ import {
 	akamaiMsl5InitSegmentName,
 	akamaiMslSegmentNaming,
 	codecDetailControls,
+	type HeAacCodec,
+	type HeAacSignaling,
+	type HeAacV1Config,
+	isHeAac,
 } from "@bitovp/core";
 import type {
 	WizardH264Options,
@@ -201,9 +205,11 @@ export type LiveAudioRendition = {
 	muxing?: LiveMuxingOptions;
 	/** Stable form identity, preserved when editing a rendition. */
 	extras?: { key?: string };
-	codec: "AAC" | "DDPLUS" | "DD";
+	codec: "AAC" | "DDPLUS" | "DD" | HeAacCodec;
+	name?: string;
+	signaling?: HeAacSignaling;
 	bitrate: number;
-	rate: number;
+	rate?: number;
 	channelLayout?: string;
 	container?: "FMP4" | "CMAF" | "TS";
 	cmaf?: LiveCmafOptions;
@@ -1146,12 +1152,29 @@ function audioRendition(
 	key: string,
 	ingestKey: string,
 ): LiveRenditionInput {
+	if (isHeAac(audio.codec)) {
+		const settings = {
+			key,
+			ingestKey,
+			name: str(audio.name),
+			bitrate: audio.bitrate,
+			rate: audio.rate,
+			channelLayout: str(audio.channelLayout),
+		};
+		return audio.codec === "HE_AAC_V1"
+			? prune({
+					...settings,
+					codec: audio.codec,
+					signaling: audio.signaling as HeAacV1Config["signaling"],
+				})
+			: prune({ ...settings, codec: audio.codec, signaling: audio.signaling });
+	}
 	return prune({
 		key,
 		codec: audio.codec,
 		ingestKey,
 		bitrate: audio.bitrate,
-		rate: audio.rate,
+		rate: audio.rate ?? 0,
 		...(audio.codec === "AAC"
 			? { cutoffFrequency: audio.cutoffFrequency }
 			: {}),

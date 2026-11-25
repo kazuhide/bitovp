@@ -5311,6 +5311,9 @@ export const ja = {
 		change: "変更",
 		channelLayout: "チャンネルレイアウト",
 		channelName: "チャンネル名",
+		heAacSignaling: "シグナリング",
+		heAacBitrateLimit: "上限 {bps} bps",
+		heAacConfigName: "音声構成名",
 		clEnumEmptyClStereo: "CL_* 列挙:空欄 = CL_STEREO",
 		clientManifest: "クライアントマニフェスト",
 		closedCaptions: "クローズドキャプション",
@@ -6675,7 +6678,7 @@ export const ja = {
 		trimASourceInputStreamToA:
 			"ソース入力ストリームを部分区間に切り出します(開始リクエストの trimming とは独立した、現行の入力ストリーム方式です)。レンディションは「配置と追加設定」で選択してクリップ結果を読み込みます。",
 		ts: "TS",
-		tsHlsOnlyAacOnly: "TS = HLS 専用、AAC 専用",
+		tsHlsOnlyAacOnly: "TS の HLS では AAC-LC または HE-AAC 音声を選べます。",
 		tsHlsOnlyH264Only: "TS = HLS 専用、H264 専用",
 		type: "種類",
 		unsetApiDefaultsToTheSegmentDuration:

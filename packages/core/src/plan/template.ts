@@ -9,6 +9,7 @@ import {
 } from "./compiler";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
 import { hdr10PlusSourceKeys } from "./hdr10-plus";
+import { heAacConfiguration, isHeAac } from "./he-aac";
 import { hlsChildEntries, hlsSubtitleGroups } from "./hls-media-defaults";
 import { checkHlsVideoUris } from "./hls-video-uri-validation";
 import { FILTER_ENDPOINTS, filterParameters } from "./media-filters";
@@ -176,11 +177,20 @@ function isVideoCodec(
 	);
 }
 
-function isAudioCodec(
-	rendition: AnyRendition,
-): rendition is Extract<
+function isAudioCodec(rendition: AnyRendition): rendition is Extract<
 	AnyRendition,
-	{ codec: "AAC" | "OPUS" | "DOLBY_ATMOS" | "DDPLUS" | "DD" | "AC3" | "EAC3" }
+	{
+		codec:
+			| "HE_AAC_V1"
+			| "HE_AAC_V2"
+			| "AAC"
+			| "OPUS"
+			| "DOLBY_ATMOS"
+			| "DDPLUS"
+			| "DD"
+			| "AC3"
+			| "EAC3";
+	}
 > {
 	return AUDIO_CODECS.has(rendition.codec);
 }
@@ -501,6 +511,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	const vp9: Tree = {};
 	const av1: Tree = {};
 	const aac: Tree = {};
+	const heAacV1: Tree = {};
+	const heAacV2: Tree = {};
 	const ac3: Tree = {};
 	const eac3: Tree = {};
 	const opus: Tree = {};
@@ -736,6 +748,24 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			codecRef.set(
 				rendition.key,
 				`$/configurations/audio/opus/${rendition.key}`,
+			);
+		} else if (
+			rendition.codec === "HE_AAC_V1" ||
+			rendition.codec === "HE_AAC_V2"
+		) {
+			const group = rendition.codec === "HE_AAC_V1" ? "heAacV1" : "heAacV2";
+			const tree = group === "heAacV1" ? heAacV1 : heAacV2;
+			tree[rendition.key] = {
+				properties: dense({
+					...heAacConfiguration(rendition),
+					channelLayout:
+						rendition.channelLayout &&
+						wire(AAC_CHANNEL_LAYOUT_WIRE, rendition.channelLayout),
+				}),
+			};
+			codecRef.set(
+				rendition.key,
+				`$/configurations/audio/${group}/${rendition.key}`,
 			);
 		} else if (rendition.codec === "AAC") {
 			aac[rendition.key] = {
@@ -1754,7 +1784,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					continue;
 				}
 				if (
-					rendition.codec === "AAC" &&
+					(rendition.codec === "AAC" || isHeAac(rendition.codec)) &&
 					!dashOnDemand &&
 					manifest.audioMuxingKind &&
 					muxing.kind !== manifest.audioMuxingKind
@@ -2055,6 +2085,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					}
 				: {}),
 			...(Object.keys(aac).length > 0 ||
+			Object.keys(heAacV1).length > 0 ||
+			Object.keys(heAacV2).length > 0 ||
 			Object.keys(ac3).length > 0 ||
 			Object.keys(eac3).length > 0 ||
 			Object.keys(opus).length > 0 ||
@@ -2064,6 +2096,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				? {
 						audio: {
 							...(Object.keys(aac).length > 0 ? { aac } : {}),
+							...(Object.keys(heAacV1).length ? { heAacV1 } : {}),
+							...(Object.keys(heAacV2).length ? { heAacV2 } : {}),
 							...(Object.keys(ac3).length > 0 ? { ac3 } : {}),
 							...(Object.keys(eac3).length > 0 ? { eac3 } : {}),
 							...(Object.keys(opus).length > 0 ? { opus } : {}),

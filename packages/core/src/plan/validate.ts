@@ -110,6 +110,8 @@ export const MUXING_CODEC_MATRIX: Record<
 > = {
 	// AV1 packages into fMP4 and WebM; dedicated CMAF is H264/AAC only.
 	FMP4: [
+		"HE_AAC_V1",
+		"HE_AAC_V2",
 		"H264",
 		"H265",
 		"AV1",

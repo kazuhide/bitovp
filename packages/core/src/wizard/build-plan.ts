@@ -9,6 +9,11 @@ import {
 	type H265DetailControls,
 	type VP9DetailControls,
 } from "../plan/codec-detail-controls";
+import {
+	type HeAacSignaling,
+	type HeAacV1Config,
+	isHeAac,
+} from "../plan/he-aac";
 import { hlsLegSelected, hlsVersionForLegs } from "../plan/hls-legs";
 import type {
 	DashAdaptationOptions,
@@ -576,6 +581,8 @@ export type WizardMuxing = {
 
 export type WizardVideoCodec = "H264" | "H265" | "H265V2" | "VP9" | "AV1";
 export type WizardAudioCodec =
+	| "HE_AAC_V1"
+	| "HE_AAC_V2"
 	| "AAC"
 	| "OPUS"
 	| "DOLBY_ATMOS"
@@ -610,8 +617,9 @@ export type WizardVideoRendition = {
 
 export type WizardAudioRendition = {
 	cutoffFrequency?: number;
+	signaling?: HeAacSignaling;
 	bitrate: number;
-	rate: number;
+	rate?: number;
 	codec?: WizardAudioCodec;
 	/** AAC / DDPLUS / DD channel layout (CL_*). */
 	channelLayout?: string;
@@ -1331,10 +1339,12 @@ export function audioKeys(audios: WizardAudioRendition[]): string[] {
 		kbpsCounts.set(kbps(audio), (kbpsCounts.get(kbps(audio)) ?? 0) + 1);
 	}
 	return audios.map(
-		(audio) =>
+		(audio, index) =>
 			audio.extras?.key ??
 			((kbpsCounts.get(kbps(audio)) ?? 0) > 1
-				? `a${kbps(audio)}_${audio.rate}`
+				? isHeAac(audio.codec)
+					? `a${kbps(audio)}_${audio.rate ?? "auto"}_${audio.codec.toLowerCase()}_${index + 1}`
+					: `a${kbps(audio)}_${audio.rate}`
 				: `a${kbps(audio)}`),
 	);
 }
@@ -2035,12 +2045,27 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 					}
 				: {}),
 		};
+		if (isHeAac(codec)) {
+			const config = {
+				...shared,
+				bitrate: audio.bitrate,
+				rate: audio.rate,
+				channelLayout: str(audio.channelLayout),
+			};
+			return codec === "HE_AAC_V1"
+				? prune({
+						...config,
+						codec,
+						signaling: audio.signaling as HeAacV1Config["signaling"],
+					})
+				: prune({ ...config, codec, signaling: audio.signaling });
+		}
 		if (codec === "DOLBY_ATMOS") {
 			return prune({
 				...shared,
 				codec: "DOLBY_ATMOS" as const,
 				bitrate: audio.bitrate,
-				rate: audio.rate,
+				rate: audio.rate ?? 0,
 				loudnessControl: audio.loudness ? prune(audio.loudness) : undefined,
 			});
 		}
@@ -2054,7 +2079,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				...shared,
 				codec,
 				bitrate: audio.bitrate,
-				rate: audio.rate,
+				rate: audio.rate ?? 0,
 				channelLayout: str(audio.channelLayout),
 				...(codec === "AC3" || codec === "EAC3"
 					? { cutoffFrequency: audio.cutoffFrequency }
@@ -2066,7 +2091,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				...shared,
 				codec: "OPUS" as const,
 				bitrate: audio.bitrate,
-				rate: audio.rate,
+				rate: audio.rate ?? 0,
 				channelLayout: (audio.channelLayout ??
 					"CL_STEREO") as typeof import("../plan/schema").OPUS_CHANNEL_LAYOUTS[number],
 			});
@@ -2075,7 +2100,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 			codec: "AAC" as const,
 			cutoffFrequency: audio.cutoffFrequency,
 			bitrate: audio.bitrate,
-			rate: audio.rate,
+			rate: audio.rate ?? 0,
 			channelLayout: audio.channelLayout ?? "CL_STEREO",
 		});
 	};

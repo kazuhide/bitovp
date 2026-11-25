@@ -35,6 +35,8 @@ const EXPECTED: Record<string, "video" | "audio" | "subtitle"> = {
 	VP9: "video",
 	AV1: "video",
 	AAC: "audio",
+	HE_AAC_V1: "audio",
+	HE_AAC_V2: "audio",
 	OPUS: "audio",
 	DOLBY_ATMOS: "audio",
 	DDPLUS: "audio",
@@ -72,6 +74,6 @@ describe("codec → rendition family", () => {
 		for (const codec of AUDIO_CODECS) {
 			expect(renditionFamily({ codec } as never), String(codec)).toBe("audio");
 		}
-		expect(AUDIO_CODECS.size).toBe(7);
+		expect(AUDIO_CODECS.size).toBe(9);
 	});
 });

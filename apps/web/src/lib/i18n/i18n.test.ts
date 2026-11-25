@@ -134,8 +134,8 @@ describe("catalogue parity", () => {
 		// Source explanations for the MoQ graphs (runtime measured: 1689).
 		// Compact lifecycle and HDR measurement wording (runtime measured: 1688).
 		// Operation analytics adds report guidance (runtime measured: 1691).
-		// HDR10+ metadata and source help add four long values.
-		pinWithDriftAid(long.length, 1695, "long");
+		// HDR10+ metadata and HE-AAC transport guidance.
+		pinWithDriftAid(long.length, 1696, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Runtime measurement includes three-way output labels (deduplicated).
 		// The two MoQ authorization labels add two unique short Japanese values.
@@ -160,8 +160,8 @@ describe("catalogue parity", () => {
 		// The Live wizard adds four MoQ labels and descriptions (runtime measured: 3502).
 		// Four short labels cover instance queue usage and availability.
 		// MoQ playback controls add five unique short labels (runtime measured: 3511).
-		// HDR10+ inputs and connection metadata add six short values.
-		pinWithDriftAid(short.size, 3517, "short");
+		// HDR10+ connection attributes and HE-AAC controls.
+		pinWithDriftAid(short.size, 3519, "short");
 	});
 
 	/**

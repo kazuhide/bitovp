@@ -777,6 +777,19 @@ export { VOD_FIXTURES } from "./plan/fixtures";
  */
 export { hdr10PlusSourceKeys } from "./plan/hdr10-plus";
 export {
+	HE_AAC_CODECS,
+	HE_AAC_MAX_BITRATE,
+	HE_AAC_V1_SIGNALING,
+	HE_AAC_V2_SIGNALING,
+	type HeAacCodec,
+	type HeAacSignaling,
+	type HeAacV1Config,
+	type HeAacV2Config,
+	heAacV1ConfigSchema,
+	heAacV2ConfigSchema,
+	isHeAac,
+} from "./plan/he-aac";
+export {
 	inputStreamDependencies,
 	inputStreamLeaves,
 } from "./plan/input-stream-graph";

@@ -210,6 +210,7 @@ export async function probeFile(
 			? { bitrateBps: num(parsed.format?.bit_rate) as number }
 			: {}),
 		...(a?.codec_name ? { audioCodec: a.codec_name as string } : {}),
+		...(typeof a?.profile === "string" ? { audioProfile: a.profile } : {}),
 		...(a?.channels !== undefined
 			? { audioChannels: a.channels as number }
 			: {}),

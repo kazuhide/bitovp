@@ -1362,6 +1362,33 @@ function topoWorld(): World {
 	return w;
 }
 
+it.each([
+	["HE_AAC_V1", "HE-AAC"],
+	["HE_AAC_V2", "HE-AACv2"],
+] as const)("requires independent %s profile evidence even with an AAC family match", async (codec, profile) => {
+	const expected = compileExpectedArtefacts(
+		encodingPlanSchema.parse({
+			...BASE_PLAN,
+			renditions: BASE_PLAN.renditions.map((r) =>
+				r.codec === "AAC"
+					? { ...r, codec, bitrate: 64000, rate: undefined }
+					: r,
+			),
+		}),
+	);
+	const world = topoWorld();
+	const audio = audioProbe(world);
+	for (const [observed, verdict] of [
+		[undefined, "SKIP"],
+		["LC", "FAIL"],
+		[profile, "PASS"],
+	] as const) {
+		audio.audioProfile = observed;
+		const report = await verifyArtefacts(expected, depsFor(world));
+		expect(verdictOf(report, "rendition:a128:audio-profile")).toBe(verdict);
+		expect(verdictOf(report, "rendition:a128:audio-rate")).toBeUndefined();
+	}
+});
 describe("native AC3 and EAC3 media verification", () => {
 	it.each([
 		["AC3", "ac3", "ac-3"],

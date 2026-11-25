@@ -3,6 +3,7 @@
 import {
 	type CredentialSummaryWire,
 	isFileOnlyMuxingKind,
+	isHeAac,
 	MUXING_CODEC_MATRIX,
 	muxingKindCarriesAudio,
 } from "@bitovp/core";
@@ -888,22 +889,24 @@ export function MuxingsSection({
 						label={`audio · ${audio.codec ?? "AAC"}`}
 						muxingKey={key}
 						kinds={
-							audio.codec === "OPUS"
-								? ["WEBM"]
-								: audio.codec === "EAC3"
-									? ["FMP4", "MP4"]
-									: audio.codec === undefined || audio.codec === "AAC"
-										? AUDIO_KINDS
-										: AUDIO_KINDS.filter(
-												(kind) =>
-													kind !== "CMAF" &&
-													// A whole file is offered where its row of the
-													// table holds the codec, as to a video row.
-													(!isFileOnlyMuxingKind(kind) ||
-														MUXING_CODEC_MATRIX[kind].includes(
-															audio.codec ?? "AAC",
-														)),
-											)
+							isHeAac(audio.codec)
+								? ["FMP4"]
+								: audio.codec === "OPUS"
+									? ["WEBM"]
+									: audio.codec === "EAC3"
+										? ["FMP4", "MP4"]
+										: audio.codec === undefined || audio.codec === "AAC"
+											? AUDIO_KINDS
+											: AUDIO_KINDS.filter(
+													(kind) =>
+														kind !== "CMAF" &&
+														// A whole file is offered where its row of the
+														// table holds the codec, as to a video row.
+														(!isFileOnlyMuxingKind(kind) ||
+															MUXING_CODEC_MATRIX[kind].includes(
+																audio.codec ?? "AAC",
+															)),
+												)
 						}
 						derivedPath={audioMuxingRelPath(audio, key)}
 						drm={drm}

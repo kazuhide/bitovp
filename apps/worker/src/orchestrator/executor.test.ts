@@ -12,7 +12,11 @@ import {
 	type ResolvedCredential,
 } from "./executor";
 import { fakeSdk } from "./fake-sdk";
-import { BitmovinCallError, type SdkOps } from "./sdk-ops";
+import {
+	BitmovinCallError,
+	createBitmovinSdkOps,
+	type SdkOps,
+} from "./sdk-ops";
 
 function ctx(
 	sdk: SdkOps,
@@ -3744,5 +3748,89 @@ describe("no credential-backed IO op reaches the vendor with a mismatched creden
 				.map(([name]) => name);
 			expect(called).toEqual([]);
 		});
+	}
+});
+
+it.each([
+	1, 2,
+] as const)("sends HE-AAC v%i through the installed SDK and forwards its returned ID to the encoding stream", async (v) => {
+	const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
+	const mock = vi
+		.spyOn(globalThis, "fetch")
+		.mockImplementation(async (url, init) => {
+			const path = new URL(String(url)).pathname;
+			expect(init?.method).toBe("POST");
+			requests.push({ path, body: JSON.parse(String(init?.body)) });
+			return Response.json({
+				status: "SUCCESS",
+				data: {
+					result: {
+						id: path.endsWith("/streams") ? "stream-id" : "returned-codec",
+					},
+				},
+			});
+		});
+	try {
+		const sdk = createBitmovinSdkOps(
+			{ apiKey: "offline-unused" },
+			async () => {},
+		);
+		const execution = ctx(sdk, {
+			encoding: "encoding-id",
+			ingest: "ingest-id",
+		});
+		const op: CompiledOperation = {
+			kind: v === 1 ? "CREATE_CODEC_HE_AAC_V1" : "CREATE_CODEC_HE_AAC_V2",
+			step: "codec:audio",
+			refs: {},
+			payload:
+				v === 1
+					? { name: "stable-key", bitrate: 128000 }
+					: {
+							name: "Stereo",
+							bitrate: 64000,
+							rate: 48000,
+							channelLayout: "CL_STEREO",
+							signaling: "EXPLICIT_PS",
+						},
+		};
+		const config = await executeStep(op, execution);
+		expect(config.resourceId).toBe("returned-codec");
+		execution.ids.set(op.step, String(config.resourceId));
+		const stream = await executeStep(
+			{
+				kind: "CREATE_STREAM",
+				step: "stream:audio",
+				refs: {
+					encodingId: "encoding",
+					codecConfigId: op.step,
+					inputStreamId: "ingest",
+				},
+				payload: { name: "Audio", mode: "STANDARD" },
+			},
+			execution,
+		);
+		expect(stream.resourceId).toBe("stream-id");
+		expect(requests).toHaveLength(2);
+		expect(requests[0]).toEqual({
+			path: `/v1/encoding/configurations/audio/he-aac-v${v}`,
+			body:
+				v === 1
+					? { name: "stable-key", type: "HE_AAC_V1", bitrate: 128000 }
+					: {
+							name: "Stereo",
+							type: "HE_AAC_V2",
+							bitrate: 64000,
+							rate: 48000,
+							channelLayout: "STEREO",
+							signaling: "EXPLICIT_PS",
+						},
+		});
+		expect(requests[1]).toMatchObject({
+			path: "/v1/encoding/encodings/encoding-id/streams",
+			body: { codecConfigId: "returned-codec" },
+		});
+	} finally {
+		mock.mockRestore();
 	}
 });

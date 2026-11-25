@@ -141,7 +141,7 @@ export type ExpectedMuxing = {
 	audio?: {
 		codec: PlanRendition["codec"];
 		bitrate: number;
-		sampleRate: number;
+		sampleRate?: number;
 		channelLayout?: string;
 	};
 	text?: { language?: string };
@@ -769,11 +769,14 @@ export function compileExpectedArtefacts(
 				packagedCodec !== undefined &&
 				AUDIO_CODECS.has(packagedCodec)
 			) {
-				const a = packaged as Extract<PlanRendition, { codec: "AAC" }>;
+				const a = packaged as Extract<
+					PlanRendition,
+					{ codec: "AAC" | "HE_AAC_V1" | "HE_AAC_V2" }
+				>;
 				expected.audio = {
 					codec: packagedCodec,
 					bitrate: a.bitrate,
-					sampleRate: a.rate,
+					...(a.rate === undefined ? {} : { sampleRate: a.rate }),
 					...(a.channelLayout ? { channelLayout: a.channelLayout } : {}),
 				};
 			} else if (packagedCodec === "WEBVTT" || packagedCodec === "IMSC") {

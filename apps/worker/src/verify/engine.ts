@@ -173,6 +173,7 @@ export type MediaProbe = {
 	durationSec?: number;
 	bitrateBps?: number;
 	audioCodec?: string;
+	audioProfile?: string;
 	audioChannels?: number;
 	audioSampleRate?: number;
 	/** The AUDIO stream's own bitrate in bps — for the exact-topology check (row 272). */
@@ -1388,6 +1389,8 @@ function rfcCodecPrefixes(codec: string): string[] {
 			return ["av01"];
 		case "OPUS":
 			return ["opus"];
+		case "HE_AAC_V1":
+		case "HE_AAC_V2":
 		case "AAC":
 			return ["mp4a"]; // AAC-LC / HE / HEv2 all mp4a.40.*
 		case "DD":
@@ -1404,6 +1407,16 @@ function rfcCodecPrefixes(codec: string): string[] {
 
 /** Whether an RFC 6381 codec string belongs to the plan codec's family. */
 function rfcCodecMatches(rfc: string, codec: string): boolean {
+	// Backward-compatible signaling can advertise the underlying LC/SBR object
+	// type. Full HE profile verification uses the decoded stream's profile.
+	if (codec === "HE_AAC_V1" || codec === "HE_AAC_V2") {
+		const token = rfc.trim().toLowerCase();
+		return (
+			token === "mp4a.40.2" ||
+			token === "mp4a.40.5" ||
+			(codec === "HE_AAC_V2" && token === "mp4a.40.29")
+		);
+	}
 	const prefixes = rfcCodecPrefixes(codec);
 	if (prefixes.length === 0) {
 		return false;
@@ -1420,6 +1433,8 @@ function ffprobeAudioCodecsOf(codec: string): string[] | undefined {
 	switch (codec) {
 		case "OPUS":
 			return ["opus"];
+		case "HE_AAC_V1":
+		case "HE_AAC_V2":
 		case "AAC":
 			return ["aac"];
 		case "DD":
@@ -1651,6 +1666,25 @@ async function verifyMediaProperties(
 				);
 			}
 		}
+		if (audio.codec === "HE_AAC_V1" || audio.codec === "HE_AAC_V2") {
+			const expectedProfile =
+				audio.codec === "HE_AAC_V1" ? "HE-AAC" : "HE-AACv2";
+			const actual = probe.audioProfile;
+			if (actual && actual.toLowerCase() !== "unknown") {
+				report.assert(
+					`${id}:audio-profile`,
+					"rendition",
+					actual.toLowerCase() === expectedProfile.toLowerCase(),
+					`Audio profile ${expectedProfile} — ffprobe reports ${actual}`,
+				);
+			} else {
+				report.skip(
+					`${id}:audio-profile`,
+					"rendition",
+					`ffprobe did not identify the ${expectedProfile} profile`,
+				);
+			}
+		}
 		// BITRATE within a band, a FAIL outside it (row 272). 128k delivered at
 		// 64k is ratio 0.5 — below AUDIO_BITRATE_LOW.
 		if (probe.audioBitrateBps === undefined) {
@@ -1668,14 +1702,14 @@ async function verifyMediaProperties(
 				`audio bitrate within [${AUDIO_BITRATE_LOW}×, ${AUDIO_BITRATE_HIGH}×] of ${audio.bitrate} — measured ${probe.audioBitrateBps} (${ratio.toFixed(2)}×)`,
 			);
 		}
-		if (probe.audioSampleRate !== undefined) {
+		if (audio.sampleRate !== undefined && probe.audioSampleRate !== undefined) {
 			report.assert(
 				`${id}:audio-rate`,
 				"rendition",
 				probe.audioSampleRate === audio.sampleRate,
 				`sample rate ${audio.sampleRate} — ${probe.audioSampleRate}`,
 			);
-		} else {
+		} else if (audio.sampleRate !== undefined) {
 			// A missing OBSERVATION is a SKIP, not silence: the expectation exists,
 			// so a vanished check is the fifth quiet state this engine forbids.
 			report.skip(

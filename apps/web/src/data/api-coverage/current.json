@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-24T16:57:43.096Z",
-		"sourceCommit": "95e1368684f7a48b5cf20d0fce1d8d7c1820a708",
-		"sourceFingerprint": "b24384a26aba0939336bc07a3b49a46cc39384ad494a69059816e57e0b623062",
+		"generatedAt": "2026-11-24T18:47:40.025Z",
+		"sourceCommit": "f0e5c95a5c97d73dd177eb1de275c630842b0726",
+		"sourceFingerprint": "2d6efb4050423b005aa2598249f5caf94fc695f0a111f4e0f26d15042af09ba9",
 		"sdkVersion": "1.289.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "a564d4fbedc0bf9cc7ef9116c730c60f33183e2fc16b886221e02a67b029d7e5",
@@ -12,17 +12,17 @@
 	},
 	"summary": {
 		"totalOperations": 1098,
-		"sourceConfirmed": 287,
-		"unconfirmed": 811,
+		"sourceConfirmed": 289,
+		"unconfirmed": 809,
 		"createTotal": 219,
-		"createSourceConfirmed": 131
+		"createSourceConfirmed": 133
 	},
 	"families": [
 		{
 			"family": "configurations",
 			"total": 141,
-			"sourceConfirmed": 20,
-			"unconfirmed": 121
+			"sourceConfirmed": 22,
+			"unconfirmed": 119
 		},
 		{
 			"family": "encodings",
@@ -120,7 +120,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 448
+					"line": 516
 				}
 			]
 		},
@@ -170,7 +170,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 470
+					"line": 538
 				}
 			]
 		},
@@ -220,7 +220,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 512
+					"line": 580
 				}
 			]
 		},
@@ -270,7 +270,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 564
+					"line": 632
 				}
 			]
 		},
@@ -320,7 +320,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 543
+					"line": 611
 				}
 			]
 		},
@@ -505,7 +505,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 491
+					"line": 559
 				}
 			]
 		},
@@ -551,8 +551,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.configurations.audio.heAacV1.create",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/configs.ts",
+					"line": 454
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/he-aac-v1/{configuration_id}",
@@ -596,8 +601,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.configurations.audio.heAacV2.create",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/worker/src/orchestrator/ops/configs.ts",
+					"line": 485
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/he-aac-v2/{configuration_id}",
@@ -735,7 +745,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 585
+					"line": 653
 				}
 			]
 		},
@@ -956,7 +966,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 603
+					"line": 671
 				}
 			]
 		},
@@ -1006,7 +1016,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 624
+					"line": 692
 				}
 			]
 		},
@@ -1056,7 +1066,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 633
+					"line": 701
 				}
 			]
 		},
@@ -1070,7 +1080,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 407
+					"line": 413
 				}
 			]
 		},
@@ -1093,7 +1103,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 650
+					"line": 718
 				}
 			]
 		},
@@ -1170,7 +1180,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 110
+					"line": 116
 				}
 			]
 		},
@@ -1193,7 +1203,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 636
+					"line": 704
 				}
 			]
 		},
@@ -1225,7 +1235,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 279
+					"line": 285
 				}
 			]
 		},
@@ -1248,7 +1258,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 644
+					"line": 712
 				}
 			]
 		},
@@ -1280,7 +1290,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 268
+					"line": 274
 				}
 			]
 		},
@@ -1303,7 +1313,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 640
+					"line": 708
 				}
 			]
 		},
@@ -1416,7 +1426,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 371
+					"line": 377
 				}
 			]
 		},
@@ -1439,7 +1449,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/configs.ts",
-					"line": 647
+					"line": 715
 				}
 			]
 		},
@@ -11638,8 +11648,8 @@
 			"expandedOperations": 228,
 			"unexpandedOperations": 3,
 			"totalFields": 2585,
-			"sourceAssigned": 275,
-			"unconfirmed": 2310
+			"sourceAssigned": 285,
+			"unconfirmed": 2300
 		},
 		"operations": [
 			{
@@ -11661,8 +11671,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 452,
-								"callLine": 448
+								"line": 520,
+								"callLine": 516
 							}
 						]
 					},
@@ -11677,8 +11687,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 454,
-								"callLine": 448
+								"line": 522,
+								"callLine": 516
 							}
 						]
 					},
@@ -11713,8 +11723,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 450,
-								"callLine": 448
+								"line": 518,
+								"callLine": 516
 							}
 						]
 					},
@@ -11759,8 +11769,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 451,
-								"callLine": 448
+								"line": 519,
+								"callLine": 516
 							}
 						]
 					},
@@ -11775,8 +11785,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 453,
-								"callLine": 448
+								"line": 521,
+								"callLine": 516
 							}
 						]
 					}
@@ -11801,8 +11811,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 473,
-								"callLine": 470
+								"line": 541,
+								"callLine": 538
 							}
 						]
 					},
@@ -11817,8 +11827,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 476,
-								"callLine": 470
+								"line": 544,
+								"callLine": 538
 							}
 						]
 					},
@@ -11853,8 +11863,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 475,
-								"callLine": 470
+								"line": 543,
+								"callLine": 538
 							}
 						]
 					},
@@ -11899,8 +11909,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 472,
-								"callLine": 470
+								"line": 540,
+								"callLine": 538
 							}
 						]
 					},
@@ -11915,8 +11925,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 474,
-								"callLine": 470
+								"line": 542,
+								"callLine": 538
 							}
 						]
 					}
@@ -11941,8 +11951,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 515,
-								"callLine": 512
+								"line": 583,
+								"callLine": 580
 							}
 						]
 					},
@@ -11997,8 +12007,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 517,
-								"callLine": 512
+								"line": 585,
+								"callLine": 580
 							}
 						]
 					},
@@ -12023,8 +12033,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 514,
-								"callLine": 512
+								"line": 582,
+								"callLine": 580
 							}
 						]
 					},
@@ -12049,8 +12059,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 516,
-								"callLine": 512
+								"line": 584,
+								"callLine": 580
 							}
 						]
 					}
@@ -12075,8 +12085,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 567,
-								"callLine": 564
+								"line": 635,
+								"callLine": 632
 							}
 						]
 					},
@@ -12101,8 +12111,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 569,
-								"callLine": 564
+								"line": 637,
+								"callLine": 632
 							}
 						]
 					},
@@ -12197,8 +12207,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 566,
-								"callLine": 564
+								"line": 634,
+								"callLine": 632
 							}
 						]
 					},
@@ -12223,8 +12233,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 568,
-								"callLine": 564
+								"line": 636,
+								"callLine": 632
 							}
 						]
 					}
@@ -12249,8 +12259,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 546,
-								"callLine": 543
+								"line": 614,
+								"callLine": 611
 							}
 						]
 					},
@@ -12275,8 +12285,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 548,
-								"callLine": 543
+								"line": 616,
+								"callLine": 611
 							}
 						]
 					},
@@ -12371,8 +12381,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 545,
-								"callLine": 543
+								"line": 613,
+								"callLine": 611
 							}
 						]
 					},
@@ -12397,8 +12407,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 547,
-								"callLine": 543
+								"line": 615,
+								"callLine": 611
 							}
 						]
 					}
@@ -12723,8 +12733,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 494,
-								"callLine": 491
+								"line": 562,
+								"callLine": 559
 							}
 						]
 					},
@@ -12739,8 +12749,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 497,
-								"callLine": 491
+								"line": 565,
+								"callLine": 559
 							}
 						]
 					},
@@ -12775,8 +12785,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 496,
-								"callLine": 491
+								"line": 564,
+								"callLine": 559
 							}
 						]
 					},
@@ -12821,8 +12831,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 493,
-								"callLine": 491
+								"line": 561,
+								"callLine": 559
 							}
 						]
 					},
@@ -12837,8 +12847,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 495,
-								"callLine": 491
+								"line": 563,
+								"callLine": 559
 							}
 						]
 					}
@@ -12859,8 +12869,14 @@
 							"file": "models/AudioConfiguration.d.ts",
 							"line": 12
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 457,
+								"callLine": 454
+							}
+						]
 					},
 					{
 						"name": "channelLayout",
@@ -12869,8 +12885,14 @@
 							"file": "models/HeAacV1AudioConfiguration.d.ts",
 							"line": 21
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 459,
+								"callLine": 454
+							}
+						]
 					},
 					{
 						"name": "createdAt",
@@ -12929,8 +12951,14 @@
 							"file": "models/BitmovinResource.d.ts",
 							"line": 12
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 456,
+								"callLine": 454
+							}
+						]
 					},
 					{
 						"name": "rate",
@@ -12939,8 +12967,14 @@
 							"file": "models/AudioConfiguration.d.ts",
 							"line": 18
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 458,
+								"callLine": 454
+							}
+						]
 					},
 					{
 						"name": "signaling",
@@ -12949,8 +12983,14 @@
 							"file": "models/HeAacV1AudioConfiguration.d.ts",
 							"line": 27
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 467,
+								"callLine": 454
+							}
+						]
 					}
 				]
 			},
@@ -12969,8 +13009,14 @@
 							"file": "models/AudioConfiguration.d.ts",
 							"line": 12
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 488,
+								"callLine": 485
+							}
+						]
 					},
 					{
 						"name": "channelLayout",
@@ -12979,8 +13025,14 @@
 							"file": "models/HeAacV2AudioConfiguration.d.ts",
 							"line": 21
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 490,
+								"callLine": 485
+							}
+						]
 					},
 					{
 						"name": "createdAt",
@@ -13039,8 +13091,14 @@
 							"file": "models/BitmovinResource.d.ts",
 							"line": 12
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 487,
+								"callLine": 485
+							}
+						]
 					},
 					{
 						"name": "rate",
@@ -13049,8 +13107,14 @@
 							"file": "models/AudioConfiguration.d.ts",
 							"line": 18
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 489,
+								"callLine": 485
+							}
+						]
 					},
 					{
 						"name": "signaling",
@@ -13059,8 +13123,14 @@
 							"file": "models/HeAacV2AudioConfiguration.d.ts",
 							"line": 27
 						},
-						"status": "unconfirmed",
-						"evidence": []
+						"status": "source-assigned",
+						"evidence": [
+							{
+								"file": "apps/worker/src/orchestrator/ops/configs.ts",
+								"line": 498,
+								"callLine": 485
+							}
+						]
 					}
 				]
 			},
@@ -13803,8 +13873,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 605,
-								"callLine": 603
+								"line": 673,
+								"callLine": 671
 							}
 						]
 					}
@@ -13909,8 +13979,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/configs.ts",
-								"line": 625,
-								"callLine": 624
+								"line": 693,
+								"callLine": 692
 							}
 						]
 					},

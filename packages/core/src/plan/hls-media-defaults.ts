@@ -66,6 +66,8 @@ export function isHlsAudioRendition(
 	// HLS audio families currently accepted by the plan. HE-AAC v1/v2 have
 	// separate provider configurations and are not part of this plan union.
 	return (
+		rendition.codec === "HE_AAC_V1" ||
+		rendition.codec === "HE_AAC_V2" ||
 		rendition.codec === "AAC" ||
 		rendition.codec === "DD" ||
 		rendition.codec === "AC3" ||

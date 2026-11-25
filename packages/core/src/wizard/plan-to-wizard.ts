@@ -1,5 +1,6 @@
 import { audioMixStreamSchema } from "../plan/audio-mix";
 import { CODEC_DETAIL_SCHEMAS } from "../plan/codec-detail-controls";
+import { isHeAac } from "../plan/he-aac";
 import { mediaFilterSchema } from "../plan/media-filters";
 import { qcGateSchema } from "../plan/qc-gate";
 import {
@@ -424,7 +425,10 @@ function readAudio(r: Record<string, unknown>): WizardAudioRendition {
 	const codec = (asString(r.codec) ?? "AAC") as WizardAudioCodec;
 	const audio: WizardAudioRendition = {
 		bitrate: asNumber(r.bitrate) ?? 0,
-		rate: asNumber(r.rate) ?? 0,
+		rate: asNumber(r.rate) ?? (isHeAac(codec) ? undefined : 0),
+		...(isHeAac(codec) && typeof r.signaling === "string"
+			? { signaling: r.signaling as WizardAudioRendition["signaling"] }
+			: {}),
 		codec,
 	};
 	if (typeof r.cutoffFrequency === "number")
@@ -435,7 +439,10 @@ function readAudio(r: Record<string, unknown>): WizardAudioRendition {
 	}
 	// CL_STEREO is the schema default for AAC/DD/DDPLUS — carry only overrides.
 	const channelLayout = asString(r.channelLayout);
-	if (channelLayout !== undefined && channelLayout !== "CL_STEREO") {
+	if (
+		channelLayout !== undefined &&
+		(isHeAac(codec) || channelLayout !== "CL_STEREO")
+	) {
 		audio.channelLayout = channelLayout;
 	}
 	if (codec === "DOLBY_ATMOS" && isRecord(r.loudnessControl)) {

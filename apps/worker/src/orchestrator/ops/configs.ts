@@ -2,6 +2,10 @@ import {
 	Ac3AudioConfiguration,
 	Ac3ChannelLayout,
 	Eac3AudioConfiguration,
+	HeAacV1AudioConfiguration,
+	HeAacV1Signaling,
+	HeAacV2AudioConfiguration,
+	HeAacV2Signaling,
 } from "@bitmovin/api-sdk";
 import { codecDetailWireControls } from "@bitovp/core";
 /**
@@ -85,6 +89,8 @@ export function createConfigOps(
 	| "createH265Config"
 	| "createVp9Config"
 	| "createAv1Config"
+	| "createHeAacV1Config"
+	| "createHeAacV2Config"
 	| "createAacConfig"
 	| "createAc3Config"
 	| "createEac3Config"
@@ -439,6 +445,68 @@ export function createConfigOps(
 			).then(id);
 		},
 
+		createHeAacV1Config: (p) =>
+			audited(
+				"POST",
+				"/encoding/configurations/audio/he-aac-v1",
+				p,
+				() =>
+					api.encoding.configurations.audio.heAacV1.create(
+						new HeAacV1AudioConfiguration({
+							name: p.name,
+							bitrate: p.bitrate,
+							rate: p.rate,
+							channelLayout:
+								p.channelLayout === undefined
+									? undefined
+									: sdkEnumValue(
+											AacChannelLayout,
+											p.channelLayout,
+											"AacChannelLayout",
+										),
+							signaling:
+								p.signaling === undefined
+									? undefined
+									: sdkEnumValue(
+											HeAacV1Signaling,
+											p.signaling,
+											"HeAacV1Signaling",
+										),
+						}),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+		createHeAacV2Config: (p) =>
+			audited(
+				"POST",
+				"/encoding/configurations/audio/he-aac-v2",
+				p,
+				() =>
+					api.encoding.configurations.audio.heAacV2.create(
+						new HeAacV2AudioConfiguration({
+							name: p.name,
+							bitrate: p.bitrate,
+							rate: p.rate,
+							channelLayout:
+								p.channelLayout === undefined
+									? undefined
+									: sdkEnumValue(
+											AacChannelLayout,
+											p.channelLayout,
+											"AacChannelLayout",
+										),
+							signaling:
+								p.signaling === undefined
+									? undefined
+									: sdkEnumValue(
+											HeAacV2Signaling,
+											p.signaling,
+											"HeAacV2Signaling",
+										),
+						}),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
 		createAacConfig: (p) =>
 			audited(
 				"POST",

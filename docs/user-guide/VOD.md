@@ -134,6 +134,7 @@ remove them and pass validation.
 
 - **IMSC subtitles:** select a TTML source, IMSC codec, and `.ttml` output. Use
   WebVTT for HLS subtitles.
+- **HE-AAC audio** is available for segmented fMP4 with HLS or DASH. Select HE-AAC v1 for up to 128,000 bps or v2 for up to 64,000 bps. A blank sample rate, layout, or signaling uses the encoder default. Only v2 offers explicit parametric-stereo signaling (`EXPLICIT_PS`). [Bitmovin codec configuration](https://developer.bitmovin.com/encoding/reference/postencodingconfigurationsaudioheaacv2)
 - **Opus audio:** package as WebM for compatible DASH playback. Use a separate
   compatible audio rendition when also producing HLS.
 - **Filters:** add a filter and assign it to the intended stream's filter chain.

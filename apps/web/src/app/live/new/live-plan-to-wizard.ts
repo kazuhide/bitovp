@@ -1,5 +1,5 @@
 import type { LiveChannelPlan } from "@bitovp/core";
-import { liveChannelPlanSchema } from "@bitovp/core";
+import { type HeAacCodec, isHeAac, liveChannelPlanSchema } from "@bitovp/core";
 import { plansDeepEqual, readH26xCodecOptions } from "@bitovp/core/wizard";
 import {
 	buildLiveChannelPlan,
@@ -38,7 +38,10 @@ type Rendition = Plan["renditions"][number];
 type VideoRendition = Extract<Rendition, { codec: "H264" } | { codec: "H265" }>;
 type AudioRendition = Extract<
 	Rendition,
-	{ codec: "AAC" } | { codec: "DDPLUS" } | { codec: "DD" }
+	| { codec: HeAacCodec }
+	| { codec: "AAC" }
+	| { codec: "DDPLUS" }
+	| { codec: "DD" }
 >;
 // The rendition union is discriminated by codec (video = H264/H265, audio =
 // AAC/DDPLUS/DD), so narrow on codec — ingestKey is the same field on both.
@@ -49,7 +52,10 @@ type AudioRendition = Extract<
 const isVideoRendition = (r: Rendition): r is VideoRendition =>
 	r.codec === "H264" || r.codec === "H265";
 const isAudioRendition = (r: Rendition): r is AudioRendition =>
-	r.codec === "AAC" || r.codec === "DDPLUS" || r.codec === "DD";
+	isHeAac(r.codec) ||
+	r.codec === "AAC" ||
+	r.codec === "DDPLUS" ||
+	r.codec === "DD";
 
 export function planToLiveWizardState(plan: Plan): LiveWizardState {
 	const D = DEFAULT_LIVE_WIZARD_STATE;
@@ -188,7 +194,9 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 			extras: { key: r.key },
 			codec: r.codec,
 			bitrate: r.bitrate ?? 0,
-			rate: r.rate ?? 0,
+			rate: r.rate ?? (isHeAac(r.codec) ? undefined : 0),
+			...(isHeAac(r.codec) && r.name ? { name: r.name } : {}),
+			...("signaling" in r && r.signaling ? { signaling: r.signaling } : {}),
 			...("cutoffFrequency" in r && r.cutoffFrequency !== undefined
 				? { cutoffFrequency: r.cutoffFrequency }
 				: {}),

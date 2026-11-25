@@ -240,7 +240,7 @@ it("autosaves edits entered while a previous draft offer is pending if the opera
 	expect(readWizardDraft(key, "vod")?.value.name).toBe(newer.name);
 });
 
-it("resumes the last saved work across two tabs and keeps it when the older tab submits", () => {
+function openLegacyDraftTabs() {
 	const original = { name: "Old title", output: { basePath: "edited/" } };
 	localStorage.setItem(
 		key,
@@ -264,8 +264,11 @@ it("resumes the last saved work across two tabs and keeps it when the older tab 
 				}),
 			{ initialProps: { form: value } },
 		);
-	const older = mount(),
-		newer = mount();
+	return { older: mount(), newer: mount(), reopen: mount };
+}
+
+it("resumes the last saved work across two tabs and keeps it when the older tab submits", () => {
+	const { older, newer, reopen: mount } = openLegacyDraftTabs();
 	act(() => older.result.current.restore(true));
 	act(() =>
 		older.rerender({ form: { ...value, name: "Older recovered job" } }),
@@ -279,4 +282,32 @@ it("resumes the last saved work across two tabs and keeps it when the older tab 
 	act(() => older.result.current.clear());
 	const afterSubmit = mount();
 	expect(afterSubmit.result.current.pending?.value.name).toBe("Newer job");
+});
+
+it("keeps a newer saved edit when another tab accepts a stale metadata offer", () => {
+	const { older, newer, reopen } = openLegacyDraftTabs();
+	act(() => newer.result.current.discard());
+	act(() =>
+		newer.rerender({ form: { ...value, name: "New bitrate settings" } }),
+	);
+	act(() => vi.advanceTimersByTime(301));
+	act(() => older.result.current.restore(true));
+	act(() => vi.advanceTimersByTime(301));
+	expect(reopen().result.current.pending?.value.name).toBe(
+		"New bitrate settings",
+	);
+	expect(older.result.current.pending?.value.name).toBe("New bitrate settings");
+});
+
+it("clears the submitted working draft when a second tab already discarded the original", () => {
+	const { older, newer, reopen } = openLegacyDraftTabs();
+	act(() => newer.result.current.discard());
+	act(() => older.result.current.restore(true));
+	act(() => older.rerender({ form: { ...value, name: "Completed form" } }));
+	act(() => vi.advanceTimersByTime(301));
+	expect(readWizardDraft(`${key}:working`, "vod")?.value.name).toBe(
+		"Completed form",
+	);
+	act(() => older.result.current.clear());
+	expect(reopen().result.current.available).toBe(false);
 });

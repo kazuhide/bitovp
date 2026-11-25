@@ -73,6 +73,17 @@ describe("GET /api/notifications/deliveries", () => {
 		expect(JSON.stringify(body)).not.toContain("hooks.example.com");
 	});
 
+	it("projects a historical diagnostic rather than returning its storage authorization", async () => {
+		getFailed.mockResolvedValueOnce([
+			{
+				id: "j1",
+				failedReason: "fetch https://storage.invalid/?auth=PRIVATE_FIXTURE",
+			},
+		]);
+		const res = await GET();
+		expect((await res.json()).failed[0].failedReason).toBe("[withheld]");
+	});
+
 	it("requests the newest 20 of each state", async () => {
 		await GET();
 		expect(getFailed).toHaveBeenCalledWith(0, 19);

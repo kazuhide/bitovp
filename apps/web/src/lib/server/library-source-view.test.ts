@@ -111,6 +111,16 @@ describe("Library source detail retained-raw projection", () => {
 		const inputs = [
 			{ name: "Ordinary", path: "media/take?2.mxf" },
 			{ name: "Version", path: "media/take.mxf?version=2" },
+			{ name: "Annotation", path: "reels/Scene#2?auth=review" },
+			{ name: "Flag", path: "reels/take.mxf?key" },
+			{
+				name: "Source",
+				path: "https:////fixture:LIBRARY_CREDENTIAL@fixture.invalid/media",
+			},
+			{
+				name: "Relative authority",
+				path: "////fixture:LIBRARY_CREDENTIAL@fixture.invalid/media",
+			},
 			{
 				name: "Relative auth",
 				path: "/private/take.mov?auth=LIBRARY_SIGNATURE",
@@ -159,6 +169,10 @@ describe("Library source detail retained-raw projection", () => {
 		expect(result?.snapshot.inputs.map((i) => i.path)).toEqual([
 			"media/take?2.mxf",
 			"media/take.mxf?version=2",
+			"reels/Scene#2?auth=review",
+			"reels/take.mxf?key",
+			"",
+			"",
 			"",
 			"",
 			"",

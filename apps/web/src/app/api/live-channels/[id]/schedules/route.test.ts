@@ -225,6 +225,19 @@ describe("GET /schedules", () => {
 		expect(scheduleFindMany.mock.calls).toHaveLength(2);
 	});
 
+	it("withholds a signed provider diagnostic in a retained schedule outcome", async () => {
+		const row = {
+			id: "s1",
+			status: "FIRED",
+			outcome: "FAILED",
+			outcomeNote: "Read media/copy?auth=PRIVATE_FIXTURE",
+		};
+		scheduleFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([row]);
+		const res = await GET(new Request("http://test"), ctx());
+		expect(await res.json()).toEqual([{ ...row, outcomeNote: "[withheld]" }]);
+		expect(row.outcomeNote).toContain("PRIVATE_FIXTURE");
+	});
+
 	/**
 	 * rev367 S-2 — a switch row carries its staged session's LIVE phase. The
 	 * row's own `readyAt` is a write-once record ("first became ready"); a

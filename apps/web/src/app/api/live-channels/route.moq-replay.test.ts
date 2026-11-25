@@ -199,7 +199,12 @@ function arrangeReplay(mode: Mode, race = false) {
 beforeEach(() => {
 	vi.resetAllMocks();
 	vi.stubEnv("MASTER_KEY", Buffer.alloc(32, 7).toString("base64"));
-	mocks.schedules.mockResolvedValue(schedules);
+	mocks.schedules.mockResolvedValue(
+		schedules.map((row) => ({
+			...row,
+			outcomeNote: "Source unavailable at scene.mxf?auth=PRIVATE_FIXTURE",
+		})),
+	);
 	mocks.errorSnapshots.mockResolvedValue([
 		{ id: CHANNEL, error: MOQ_TASK_HISTORY_ERROR },
 	]);
@@ -221,7 +226,10 @@ describe("POST live channel retained MoQ error privacy", () => {
 			...retainedRow,
 			error: MOQ_TASK_HISTORY_ERROR,
 			issues: [],
-			schedules,
+			schedules: schedules.map((row) => ({
+				...row,
+				outcomeNote: "[withheld]",
+			})),
 			replayed: true,
 		});
 		expect(JSON.stringify(body)).not.toContain("synthetic-retained-token");

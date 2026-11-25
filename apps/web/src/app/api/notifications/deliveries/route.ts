@@ -1,3 +1,4 @@
+import { publicStorageDiagnostic } from "@bitovp/core";
 import { NextResponse } from "next/server";
 import { routeError } from "@/lib/server/http";
 import { getNotifyQueue } from "@/lib/server/queue";
@@ -30,7 +31,7 @@ export async function GET() {
 				occurredAt: typed.data?.occurredAt ?? null,
 				link: typed.data?.link ?? null,
 				attemptsMade: typed.attemptsMade ?? 0,
-				failedReason: typed.failedReason ?? null,
+				failedReason: publicStorageDiagnostic(typed.failedReason) ?? null,
 			};
 		};
 		return NextResponse.json({

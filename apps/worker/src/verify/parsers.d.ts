@@ -63,7 +63,12 @@ declare module "mpd-parser" {
 		segments?: {
 			uri?: string;
 			resolvedUri?: string;
-			map?: { uri?: string; resolvedUri?: string };
+			byterange?: { offset?: number; length?: number };
+			map?: {
+				uri?: string;
+				resolvedUri?: string;
+				byterange?: { offset?: number; length?: number };
+			};
 		}[];
 	};
 

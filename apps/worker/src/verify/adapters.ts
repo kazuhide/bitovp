@@ -563,6 +563,8 @@ export async function parseDashText(
 				(playlist.segments ?? []).map((segment) => ({
 					media: segment.resolvedUri && segment.uri ? segment.resolvedUri : "",
 					...(segment.map?.uri ? { init: segment.map.resolvedUri ?? "" } : {}),
+					...(segment.byterange && { mediaRange: segment.byterange }),
+					...(segment.map?.byterange && { initRange: segment.map.byterange }),
 				})),
 			);
 		}

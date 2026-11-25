@@ -261,7 +261,12 @@ export type ParsedDash = {
 		/** Concrete image references expanded by the DASH parser, including inherited templates. */
 		imageUris?: string[];
 		/** Concrete object addresses after DASH template, list and BaseURL expansion. */
-		subtitleSegments?: { media: string; init?: string }[];
+		subtitleSegments?: {
+			media: string;
+			init?: string;
+			mediaRange?: { offset?: number; length?: number };
+			initRange?: { offset?: number; length?: number };
+		}[];
 		baseUrl?: string;
 		language?: string;
 		id?: string;

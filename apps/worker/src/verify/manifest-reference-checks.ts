@@ -301,13 +301,14 @@ export function bindDashDvbSubtitles(
 			index < 0 ? [] : (tracks.splice(index, 1)[0]?.subtitleSegments ?? []);
 		const objects: HlsVideoReferences["objects"] = [];
 		for (const segment of segments) {
-			for (const [ref, init] of [
-				[segment.init, true],
-				[segment.media, false],
+			for (const [ref, init, range] of [
+				[segment.init, true, segment.initRange],
+				[segment.media, false, segment.mediaRange],
 			] as const) {
 				if (!ref) continue;
 				const key = referencedObjectKey(ref, master, new URL("/", master));
-				if (key !== undefined) objects.push({ key, reference: ref, init });
+				if (key !== undefined)
+					objects.push({ key, reference: ref, init, ...(range && { range }) });
 			}
 		}
 		return {

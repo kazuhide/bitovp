@@ -888,6 +888,29 @@ it("binds each segmented DVB subtitle to its language and output directory", asy
 			key: "live/subs/ja/" + name,
 			size: 20,
 		}));
+	for (const [attribute, range] of [
+		['media="segment_2.m4s"', "mediaRange"],
+		['sourceURL="init.mp4"', "range"],
+	] as const) {
+		for (const [bytes, expected] of [
+			["0-19", "PASS"],
+			["20-20", "FAIL"],
+		] as const) {
+			const xmlWithRange = list("segment_2.m4s").replace(
+				attribute,
+				attribute + " " + range + '="' + bytes + '"',
+			);
+			const bindings = bindDashDvbSubtitles(
+				"mpd",
+				[{ key: "ja", language: "ja", segmentPath: "../subs/ja", ...writer }],
+				await parseDashText(xmlWithRange, uri),
+				uri,
+			);
+			expect((await checkDashDvbOrigin(bindings, listed))[0]?.verdict).toBe(
+				expected,
+			);
+		}
+	}
 	expect(
 		(await checkDashDvbOrigin(await bind("segment_2.m4s"), listed))[0]?.verdict,
 	).toBe("PASS");

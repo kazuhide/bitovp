@@ -2519,6 +2519,7 @@ export const ja = {
 		collapseRowNamed: "{rendition} の詳細を隠す",
 		collapseRow: "詳細を隠す",
 		inputFiles: "入力ファイル",
+		withheldInputPath: "入力パスは非公開",
 		deletedCredential: "削除済みの認証情報",
 		storageIo: "ストレージ入出力",
 		storageInputs: "読み込み元",

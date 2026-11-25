@@ -100,6 +100,9 @@ export function draftKeepsText(value: string): boolean {
 	// Standalone labels use a spaced @ separator ("Review: cut @ Studio",
 	// "Logo: 2026 @2x.png"); a path following the authority disambiguates it.
 	const host = authority.slice(at + 1);
+	// An unfinished opaque S3/GCS object has neither an authority nor a host.
+	if (!host && authority === normalized && /^(?:s3|gs):/iu.test(authority))
+		return true;
 	if (address !== normalized || !/\s/u.test(authority.charAt(at - 1)))
 		return false;
 	if (/^\s/u.test(host)) return true;

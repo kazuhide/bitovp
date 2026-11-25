@@ -168,7 +168,11 @@ export function publicHdrSourceProjection<T>(
 			if (
 				typeof item === "string" &&
 				item.trim().length &&
-				((scope && (key === "videoInputPath" || key === "metadataInputPath")) ||
+				((purpose === "record" &&
+					key === "inputPath" &&
+					hasPrivateStorageLocator(item)) ||
+					(scope &&
+						(key === "videoInputPath" || key === "metadataInputPath")) ||
 					(key === "path" &&
 						(row.hdr10Plus ||
 							(libraryInputs && hasPrivateStorageLocator(item))))) &&

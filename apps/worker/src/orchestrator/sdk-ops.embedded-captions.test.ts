@@ -1,4 +1,9 @@
-import type { CompiledOperation } from "@bitovp/core";
+import {
+	type CompiledOperation,
+	curlForStep,
+	publicHdrSourceProjection,
+	redactSecrets,
+} from "@bitovp/core";
 import { afterEach, expect, it, vi } from "vitest";
 import { executeStep } from "./executor";
 import { createBitmovinSdkOps } from "./sdk-ops";
@@ -37,11 +42,12 @@ it.each([
 	);
 	vi.stubGlobal("fetch", fetch);
 	const sdk = createBitmovinSdkOps({ apiKey: "test-only" }, async () => {});
+	const inputPath = "dailies//Scene A:take 2@camera.mov";
 	const op: CompiledOperation = {
 		kind,
 		step: "caption:en",
 		refs: { encodingId: "encoding:main", inputId: "input:media" },
-		payload: { inputPath: "feed.ts", ...selection },
+		payload: { inputPath, ...selection },
 	};
 	const result = await executeStep(op, {
 		sdk,
@@ -63,8 +69,49 @@ it.each([
 	]);
 	expect(JSON.parse(String(init.body))).toEqual({
 		type,
-		inputPath: "feed.ts",
+		inputPath,
 		inputId: "input-id",
 		...selection,
+	});
+	const snapshot = redactSecrets(result.request) as Record<string, unknown>;
+	expect(snapshot).toMatchObject({ inputPath });
+	const entry = {
+		...op,
+		status: "DONE" as const,
+		refs: op.refs ?? {},
+		payload: op.payload ?? {},
+		request: snapshot,
+	};
+	for (const path of [inputPath, "dailies//Scene A:[REDACTED]@camera.mov"]) {
+		const replay = curlForStep({
+			...entry,
+			request: { ...snapshot, inputPath: path },
+		});
+		if (!replay.ok) throw Error(replay.code);
+		expect(
+			JSON.parse(replay.command.split("--data '")[1]?.slice(0, -1) ?? ""),
+		).toMatchObject({ inputId: "input-id", inputPath });
+	}
+	const lost = curlForStep({
+		...entry,
+		payload: { ...entry.payload, inputPath: "different.ts" },
+		request: {
+			...snapshot,
+			inputPath: "dailies//Scene A:[REDACTED]@camera.mov",
+		},
+	});
+	expect(lost).toMatchObject({ ok: false });
+	const signed = "https://storage.invalid/feed.ts?sig=fixture-caption";
+	const prior = {
+		...entry,
+		payload: { ...entry.payload, inputPath: signed },
+		request: { ...snapshot, inputPath: signed },
+	};
+	expect(curlForStep(prior)).toMatchObject({ ok: false });
+	expect(JSON.stringify(publicHdrSourceProjection(prior))).not.toContain(
+		"fixture-caption",
+	);
+	expect(redactSecrets({ inputPath: signed })).toEqual({
+		inputPath: "[REDACTED]",
 	});
 });

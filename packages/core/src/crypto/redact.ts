@@ -94,6 +94,8 @@ function walk(
 				["message", "text", "reason", "detail"].includes(key))
 		)
 			return publicStorageDiagnostic(value);
+		if (key === "inputPath")
+			return hasPrivateStorageLocator(value) ? REDACTED : value;
 		if (key === "videoInputPath" || key === "metadataInputPath") {
 			return (
 				hdrSource

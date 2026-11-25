@@ -5,6 +5,7 @@ import {
 } from "./codec-detail-controls";
 import { CODEC_ENUM_VALUES, codecEnumSchema } from "./codec-enums";
 import type { OperationKind } from "./compiler";
+import { hasPrivateStorageLocator } from "./hdr-source-paths";
 import { manifestCurlSnapshot } from "./manifest-curl";
 import { externalVttUrlSchema } from "./manifest-options";
 import { hdr10PlusStreamSchema } from "./schema";
@@ -827,8 +828,18 @@ export function curlForStep(
 			!refs.inputId.trim()
 		)
 			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+		const inputPath = recordedObjectPath(
+			data?.inputPath,
+			entry.payload.inputPath,
+		);
+		if (
+			typeof inputPath !== "string" ||
+			!inputPath ||
+			hasPrivateStorageLocator(inputPath)
+		)
+			return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 		entry = { ...entry, refs: { encodingId: refs.encodingId } };
-		request = { ...data, inputId: refs.inputId };
+		request = { ...data, inputPath, inputId: refs.inputId };
 	}
 	if (entry.kind === "CREATE_HDR10_PLUS_INPUT_STREAM") {
 		const snapshot = request as Record<string, unknown> | null | undefined;
@@ -840,27 +851,18 @@ export function curlForStep(
 			!refs.inputId.trim()
 		)
 			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
-		function recordedPath(field: "videoInputPath" | "metadataInputPath") {
-			const actual = snapshot?.[field];
-			if (typeof actual !== "string" || !actual.includes(REDACTED))
-				return actual;
-			const compiled = entry.payload[field];
-			if (typeof compiled !== "string") return undefined;
-			// The unredacted compiler payload records the exact object key. Older
-			// snapshot writers masked through the first or last @ of a path segment.
-			if (actual === compiled || actual === maskUrlUserinfo(compiled))
-				return compiled;
-			const firstAtMask = compiled.replace(
-				/(\/\/[^/\s:@]+:)[^@/\s]+@/g,
-				`$1${REDACTED}@`,
-			);
-			return actual === firstAtMask ? compiled : undefined;
-		}
+
 		const source = hdr10PlusStreamSchema.safeParse({
 			key: "source",
 			inputKey: "input",
-			videoInputPath: recordedPath("videoInputPath"),
-			metadataInputPath: recordedPath("metadataInputPath"),
+			videoInputPath: recordedObjectPath(
+				snapshot?.videoInputPath,
+				entry.payload.videoInputPath,
+			),
+			metadataInputPath: recordedObjectPath(
+				snapshot?.metadataInputPath,
+				entry.payload.metadataInputPath,
+			),
 			selectionMode: snapshot?.selectionMode,
 			position: snapshot?.position,
 		});
@@ -1092,6 +1094,20 @@ export function curlForStep(
 		lines.push(`  --data ${shellSingleQuote(body)}`);
 	}
 	return { ok: true, command: lines.join(" \\\n") };
+}
+
+function recordedObjectPath(actual: unknown, compiled: unknown) {
+	if (typeof actual !== "string" || !actual.includes(REDACTED)) return actual;
+	if (typeof compiled !== "string") return undefined;
+	// The unredacted compiler payload records the exact object key. Older
+	// snapshot writers masked through the first or last @ of a path segment.
+	if (actual === compiled || actual === maskUrlUserinfo(compiled))
+		return compiled;
+	const firstAtMask = compiled.replace(
+		/(\/\/[^/\s:@]+:)[^@/\s]+@/g,
+		`$1${REDACTED}@`,
+	);
+	return actual === firstAtMask ? compiled : undefined;
 }
 
 /** True when a step has a mappable, fully-resolvable curl. */

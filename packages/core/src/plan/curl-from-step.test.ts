@@ -567,6 +567,7 @@ describe("every operation kind is classified", () => {
 			request: {
 				type: "SEGMENT_BASE",
 				filePath: "video.mp4",
+				inputPath: "video.mp4",
 				...(kind === "CREATE_HDR10_PLUS_INPUT_STREAM"
 					? {
 							videoInputPath: "video.mp4",

@@ -1147,6 +1147,8 @@ it("restores a copied HDR picture and the original audio master from audio-first
 
 it.each([
 	"replaced-picture",
+	"recycled-key",
+	"recycled-key-first",
 	"same-object",
 	"authored-order",
 	"removed-hdr",
@@ -1171,8 +1173,20 @@ it.each([
 		],
 	};
 	const saved = structuredClone(base);
-	if (edit === "replaced-picture") {
-		saved.inputFiles = [sound, alternate];
+	const recycled = {
+		...primary,
+		credentialId: "new-storage",
+		bucket: "other-bucket",
+	};
+	const replaced =
+		edit === "replaced-picture" || edit.startsWith("recycled-key");
+	if (replaced) {
+		saved.inputFiles =
+			edit === "recycled-key-first"
+				? [recycled, sound, alternate]
+				: edit === "recycled-key"
+					? [sound, alternate, recycled]
+					: [sound, alternate];
 		const stream = saved.sources?.hdr10PlusStreams?.[0];
 		if (!stream) throw new Error("missing HDR stream");
 		stream.videoInputFile = alternate.key;
@@ -1180,7 +1194,7 @@ it.each([
 	if (edit === "removed-hdr") delete saved.sources;
 	delete saved.audioInputFile;
 	writeWizardDraft("copy-order", "vod", saved, 1, localStorage, 100);
-	if (edit === "same-object" || edit === "replaced-picture") {
+	if (edit === "same-object" || replaced) {
 		const value = projectWizardDraft("vod", saved);
 		localStorage.setItem(
 			"copy-order",
@@ -1198,7 +1212,7 @@ it.each([
 	const picture = edit === "same-object" ? primary : alternate;
 	expect(restored.inputFiles[0]?.key).toBe(picture.key);
 	expect(restored.audioInputFile).toBe(
-		edit === "replaced-picture" ? sound.key : undefined,
+		replaced && edit !== "recycled-key-first" ? sound.key : undefined,
 	);
 	const compiled = buildPlan(restored);
 	expect(
@@ -1208,5 +1222,5 @@ it.each([
 	expect(
 		compiled.ingest?.find((row) => row.selectionMode === "AUDIO_RELATIVE")
 			?.inputPath,
-	).toBe(edit === "replaced-picture" ? sound.path : picture.path);
+	).toBe(replaced && edit !== "recycled-key-first" ? sound.path : picture.path);
 });

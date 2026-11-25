@@ -319,6 +319,10 @@ describe("deadJobScheduleWrites (ledger #238)", () => {
 						id: SCHEDULE_ID,
 						liveChannelId: CHANNEL,
 						liveChannelRunId: RUN,
+						admission: {
+							providerEncodingId: job.data.effect.providerEncodingId,
+							admissionFenceVersion: job.data.effect.admissionFenceVersion,
+						},
 					},
 				},
 				outcome: "UNKNOWN",

@@ -1,8 +1,43 @@
 import { randomUUID } from "node:crypto";
-import type { AppPrismaClient, AppTransactionClient } from "@bitovp/db";
+import type { AppPrismaClient, AppTransactionClient, Prisma } from "@bitovp/db";
 
 export const MISSED_UNOWNED_STOP_REASON =
 	"The previous worker did not record which encoder generation it admitted. Open the channel, confirm the current broadcast and choose Stop if it should end.";
+
+export type ScheduledStopAdmission = {
+	providerEncodingId: string;
+	admissionFenceVersion: number;
+};
+
+/** The queue key is reused when a legacy schedule refires for the same airing. */
+export function scheduledStopAdmissionWhere(
+	admission?: ScheduledStopAdmission,
+): Prisma.LiveScheduleWhereInput {
+	if (!admission) return {};
+	const { providerEncodingId, admissionFenceVersion } = admission;
+	return {
+		OR: [
+			{
+				stopProviderEncodingId: providerEncodingId,
+				stopAdmissionFenceVersion: admissionFenceVersion,
+			},
+			{
+				stopAdmissionFenceVersion: null,
+				stopProviderEncodingId: null,
+				liveChannel: {
+					bitmovinEncodingId: providerEncodingId,
+					OR: [
+						{ legacyAdmissionFenceVersion: admissionFenceVersion },
+						{
+							legacyAdmissionFenceVersion: null,
+							liveEffectFenceVersion: admissionFenceVersion,
+						},
+					],
+				},
+			},
+		],
+	};
+}
 
 /** A terminal scheduling decision and its operator notification share a commit. */
 export async function writeScheduledStopNotification(
@@ -29,10 +64,17 @@ export async function recordScheduledStopHandoff(
 	prisma: AppPrismaClient,
 	row: { id: string; liveChannelId: string; liveChannelRunId: string },
 	at: Date,
+	admission?: ScheduledStopAdmission,
 ): Promise<void> {
 	await prisma.$transaction(async (tx) => {
 		const { count } = await tx.liveSchedule.updateMany({
-			where: { ...row, action: "STOP", status: "FIRED", dispatchedAt: null },
+			where: {
+				...row,
+				...scheduledStopAdmissionWhere(admission),
+				action: "STOP",
+				status: "FIRED",
+				dispatchedAt: null,
+			},
 			data: { dispatchedAt: at, dispatchJobId: `sched-${row.id}`, error: null },
 		});
 		if (!count) return;

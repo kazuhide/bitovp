@@ -583,6 +583,12 @@ export function deadJobScheduleWrites(
 						scheduledStop: {
 							id,
 							liveChannelId: data.liveChannelId,
+							...(intent && {
+								admission: {
+									providerEncodingId: intent.providerEncodingId,
+									admissionFenceVersion: intent.admissionFenceVersion,
+								},
+							}),
 							...((intent?.liveChannelRunId ?? data.plannedLiveChannelRunId)
 								? {
 										liveChannelRunId:
@@ -695,6 +701,7 @@ async function recordExhaustedScheduledStop(
 		prisma,
 		{ id, liveChannelId, liveChannelRunId },
 		at,
+		effect,
 	);
 	if (effect) return;
 	const legacy = await readLegacyScheduledStop(

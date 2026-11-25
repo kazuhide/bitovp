@@ -5148,7 +5148,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					scheduleId: intent.scheduleId,
 					...(expectedAction === "STOP"
 						? {
+								fromStatus: "FIRED" as const,
 								stop: {
+									admission: intent,
 									liveChannelId: job.liveChannelId,
 									liveChannelRunId: intent.liveChannelRunId,
 								},
@@ -7716,6 +7718,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					liveChannelRunId: job.plannedLiveChannelRunId,
 				},
 				new Date(deps.now()),
+				job.effect,
 			);
 		}
 		// (row 266): the terminal result a run-acting

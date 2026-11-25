@@ -2777,6 +2777,215 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			expect(enqueue).not.toHaveBeenCalled();
 			expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
 		});
+		it.each([
+			"failed",
+			"waiting",
+			"failed after retry",
+		] as const)("recognizes the current migrated FAILED claim behind its older %s queue envelope", async (state) => {
+			const { scope: tenant, ...f } = await isolatedDispatchFixture();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "STOPPING", liveEffectFenceVersion: 1 },
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPING" },
+			});
+			const row = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "STOP",
+					status: "FIRED",
+					fireAt: now,
+					firedAt: now,
+					dispatchedAt: now,
+				},
+			});
+			const job = {
+				action: "stop" as const,
+				liveChannelId: f.channel.id,
+				plannedLiveChannelRunId: f.run.id,
+				effect: {
+					...f.identity,
+					scheduleId: row.id,
+					idempotencyKey: `schedule:${row.id}:stop`,
+					admissionFenceVersion: 1,
+				},
+			};
+			const claimed = await beginLiveEffect(tenant, {
+				...job.effect,
+				liveChannelId: f.channel.id,
+				expectedFenceVersion: 1,
+				ownerId: "pre-upgrade-worker",
+				now,
+				expiresAt: now,
+			});
+			if (claimed.kind !== "EXECUTE")
+				throw new Error("missing original STOP claim");
+			await markLiveEffectFailed(
+				tenant,
+				claimed.claim,
+				"pre-send feeder lookup failed",
+			);
+			const twice = state === "failed after retry";
+			if (twice) {
+				const again = await beginLiveEffect(tenant, {
+					...job.effect,
+					liveChannelId: f.channel.id,
+					expectedFenceVersion: 1,
+					ownerId: "pre-upgrade-retry",
+					now,
+					expiresAt: now,
+				});
+				if (again.kind !== "EXECUTE") throw new Error("missing retry claim");
+				await markLiveEffectFailed(
+					tenant,
+					again.claim,
+					"pre-send retry failure",
+				);
+			}
+			const generation = twice ? 3 : 2;
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { legacyAdmissionFenceVersion: generation },
+			});
+			f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
+			const recover = createExhaustedScheduledStopRecovery(
+				f.deps,
+				async () => ({
+					data: job,
+					getState: async () => (state === "waiting" ? "waiting" : "failed"),
+				}),
+			);
+			for (let i = 0; i < 3; i++) await recover();
+			expect(
+				await tenant.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({
+				status: state === "waiting" ? "STOPPING" : "ERROR",
+				liveEffectFenceVersion: generation,
+			});
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({ where: { id: row.id } }),
+			).toMatchObject({
+				status: "FIRED",
+				outcome: state === "waiting" ? "PENDING" : "UNKNOWN",
+			});
+			expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		});
+		it.each([
+			"legacy admission",
+			"saved admission",
+			"outbox still open",
+		] as const)("keeps a refired Stop intact while the older queued worker rejects its generation (%s)", async (mode) => {
+			const { scope: tenant, ...f } = await isolatedDispatchFixture();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					status: "STOPPING",
+					liveEffectFenceVersion: 2,
+					legacyAdmissionFenceVersion: 2,
+				},
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPING" },
+			});
+			const row = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "STOP",
+					status: "FIRED",
+					fireAt: now,
+					firedAt: now,
+					dispatchedAt: mode === "outbox still open" ? null : now,
+					...(mode === "saved admission" && {
+						stopProviderEncodingId: f.encodingId,
+						stopAdmissionFenceVersion: 2,
+					}),
+				},
+			});
+			const key = `sched-${row.id}`,
+				job = {
+					liveChannelId: f.channel.id,
+					plannedLiveChannelRunId: f.run.id,
+					action: "stop" as const,
+					effect: {
+						...f.identity,
+						scheduleId: row.id,
+						idempotencyKey: `schedule:${row.id}:stop`,
+						admissionFenceVersion: 1,
+					},
+				};
+			const read = barrier(),
+				resume = barrier();
+			let present = true;
+			const recover = createExhaustedScheduledStopRecovery(f.deps, async () =>
+				present
+					? {
+							data: job,
+							getState: async () => {
+								read.release();
+								await resume.ready;
+								return "waiting";
+							},
+						}
+					: undefined,
+			);
+			const before = recover();
+			try {
+				if (mode !== "outbox still open") await reach(read.ready, before);
+				const process = createLiveChannelProcessor(f.deps);
+				expect(await process(job, key, true)).toMatchObject({
+					status: "SKIPPED_STALE_GENERATION",
+				});
+				await recordDeadJobScheduleOutcomes(
+					tenant,
+					{ id: key, data: job, attemptsMade: 3, opts: { attempts: 3 } },
+					"late failed callback",
+					now,
+				);
+				expect(
+					await tenant.liveSchedule.findUniqueOrThrow({
+						where: { id: row.id },
+					}),
+				).toMatchObject({
+					status: "FIRED",
+					outcome: "PENDING",
+					dispatchedAt: row.dispatchedAt,
+				});
+			} finally {
+				present = false;
+				resume.release();
+				await before;
+			}
+			f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
+			if (mode === "outbox still open") {
+				const enqueue = vi.fn(async () => {});
+				await createScheduleSweep({
+					prisma: tenant,
+					now: () => new Date(now.getTime() + 600000),
+					enqueue,
+				}).dispatchPending();
+				expect(enqueue).toHaveBeenCalledWith(
+					expect.objectContaining({
+						effect: expect.objectContaining({ admissionFenceVersion: 2 }),
+					}),
+					key,
+				);
+			} else {
+				for (let i = 0; i < 3; i++) await recover();
+				expect(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					}),
+				).toMatchObject({ status: "ERROR", liveEffectFenceVersion: 2 });
+			}
+			expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		});
 		it("settles the airing after both reconstructed Stop outboxes lose their queued jobs", async () => {
 			const { scope: tenant, ...f } = await isolatedDispatchFixture();
 			await tenant.liveChannel.update({
@@ -2903,6 +3112,127 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			).toBe(otherSchedules.length);
 			expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
 			expect(resend).not.toHaveBeenCalled();
+		});
+		it("recovers an already-retired legacy Stop for observation without changing a successor or an open handoff", async () => {
+			const migration = readFileSync(
+				new URL(
+					"../../../../packages/db/prisma/migrations/20261126010500_recover_retired_scheduled_stop/migration.sql",
+					import.meta.url,
+				),
+				"utf8",
+			);
+			const rows = [];
+			for (const mode of [
+				"only",
+				"newer airing",
+				"runnable sibling",
+				"open claim",
+				"separate generation",
+			] as const) {
+				const { scope, ...f } = await isolatedDispatchFixture();
+				await scope.liveChannel.update({
+					where: { id: f.channel.id },
+					data: {
+						status: "STOPPING",
+						liveEffectFenceVersion: mode === "separate generation" ? 3 : 2,
+						legacyAdmissionFenceVersion: 2,
+					},
+				});
+				await scope.liveChannelRun.update({
+					where: { id: f.run.id },
+					data: { status: "STOPPING" },
+				});
+				const reason = "the live effect generation changed after admission";
+				const row = await scope.liveSchedule.create({
+					data: {
+						liveChannelId: f.channel.id,
+						liveChannelRunId: f.run.id,
+						action: "STOP",
+						status: "SKIPPED_STALE_GENERATION",
+						fireAt: now,
+						firedAt: now,
+						dispatchedAt: now,
+						outcome: "FAILED",
+						note: reason,
+						outcomeNote: reason,
+						outcomeEvidenceKind: "STALE_GENERATION_REFUSAL",
+						outcomeEvidenceVersion: 1,
+						outcomeEvidenceAt: now,
+					},
+				});
+				if (mode === "newer airing")
+					await scope.liveChannelRun.update({
+						where: { id: f.run.id },
+						data: { status: "STOPPED", endedAt: now },
+					});
+				if (mode === "newer airing")
+					await scope.liveChannelRun.create({
+						data: {
+							liveChannelId: f.channel.id,
+							seq: 2,
+							status: "STOPPING",
+							bitmovinEncodingId: randomUUID(),
+							outputPrefix: "",
+						},
+					});
+				if (mode === "runnable sibling")
+					await scope.liveSchedule.create({
+						data: {
+							liveChannelId: f.channel.id,
+							liveChannelRunId: f.run.id,
+							action: "STOP",
+							status: "FIRED",
+							fireAt: now,
+							firedAt: now,
+						},
+					});
+				if (mode === "open claim")
+					await scope.liveEffectClaim.create({
+						data: {
+							...f.identity,
+							idempotencyKey: `manual:stop:${randomUUID()}`,
+							token: randomUUID(),
+							liveChannelId: f.channel.id,
+							generation: 2,
+							state: "DISPATCHING",
+							ownerId: "pending-stop",
+							expiresAt: now,
+						},
+					});
+				rows.push({ f, scope, row, mode });
+			}
+			await admin.$executeRawUnsafe(migration);
+			await admin.$executeRawUnsafe(migration);
+			for (const { f, scope, row, mode } of rows) {
+				const saved = await scope.liveSchedule.findUniqueOrThrow({
+					where: { id: row.id },
+				});
+				if (mode !== "only") {
+					expect(saved).toEqual(row);
+					continue;
+				}
+				expect(saved).toMatchObject({
+					status: "FIRED",
+					outcome: "UNKNOWN",
+					outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+					note: row.note,
+					stopAdmissionFenceVersion: null,
+				});
+				f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
+				const send = vi.fn();
+				await createExhaustedScheduledStopRecovery(
+					f.deps,
+					async () => undefined,
+					send,
+				)();
+				expect(
+					await scope.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					}),
+				).toMatchObject({ status: "ERROR", liveEffectFenceVersion: 2 });
+				expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+				expect(send).not.toHaveBeenCalled();
+			}
 		});
 		it("finishes a pre-upgrade STOP admission interrupted after FIRED only for unchanged airing owners", async () => {
 			const migration = readFileSync(

@@ -181,40 +181,54 @@ export function createExhaustedScheduledStopRecovery(
 				const legacyRow =
 					row.stopProviderEncodingId === null &&
 					row.stopAdmissionFenceVersion === null;
-				// A retained old payload identifies the Redis job, not the latest database
-				// admission. A base-release retry could re-fire the same schedule and a
-				// rebuilt outbox can likewise find its deterministic key already occupied.
-				const staleReceipt = Boolean(
+				const advancedFence = originalFence !== channel.liveEffectFenceVersion;
+				const failedClaim =
+					legacy && !advancedFence
+						? await deps.prisma.liveEffectClaim.findFirst({
+								where: {
+									idempotencyKey: effect.idempotencyKey,
+									scheduleId: row.id,
+									liveChannelId: row.liveChannelId,
+									liveChannelRunId: run.id,
+									action: "STOP",
+									state: "FAILED",
+									generation: { lte: originalFence },
+								},
+								select: {
+									providerEncodingId: true,
+									generation: true,
+									attempt: true,
+								},
+							})
+						: null;
+				const priorFailedClaim =
+					failedClaim && failedClaim.generation < originalFence;
+				const currentFailedClaim =
+					failedClaim?.generation === originalFence &&
+					failedClaim.providerEncodingId === encodingId;
+				// Claiming a delivery advances its channel fence. The matching current
+				// failed claim can still authorize a retry of its original queued payload.
+				// A refire can also retain a genuinely older payload under the same key.
+				const olderEnvelope =
 					legacy &&
-						originalFence === channel.liveEffectFenceVersion &&
-						found?.effect &&
-						found.effect.admissionFenceVersion < originalFence,
-				);
+					!advancedFence &&
+					found?.effect &&
+					found.effect.admissionFenceVersion < originalFence;
+				const staleReceipt =
+					!!olderEnvelope &&
+					!(
+						currentFailedClaim &&
+						found?.effect?.providerEncodingId === encodingId &&
+						found.effect.admissionFenceVersion ===
+							failedClaim.generation - failedClaim.attempt
+					);
 				if (
 					found?.effect &&
-					!staleReceipt &&
+					!olderEnvelope &&
 					(found.effect.admissionFenceVersion !== originalFence ||
 						found.effect.providerEncodingId !== encodingId)
 				)
 					continue;
-				const advancedFence = originalFence !== channel.liveEffectFenceVersion;
-				// A refired row also reuses the claim key. A pre-send failure from a
-				// different admission cannot run or be replayed for this one.
-				const priorFailedClaim =
-					legacy &&
-					!advancedFence &&
-					(await deps.prisma.liveEffectClaim.findFirst({
-						where: {
-							idempotencyKey: effect.idempotencyKey,
-							scheduleId: row.id,
-							liveChannelId: row.liveChannelId,
-							liveChannelRunId: run.id,
-							action: "STOP",
-							state: "FAILED",
-							generation: { lt: originalFence },
-						},
-						select: { id: true },
-					}));
 				const resetQueueObservation = async () => {
 					if (row.legacyStopExhaustedFence === originalFence) {
 						await deps.prisma.liveSchedule.updateMany({
@@ -243,10 +257,7 @@ export function createExhaustedScheduledStopRecovery(
 					row.stopProviderEncodingId === encodingId &&
 					row.stopAdmissionFenceVersion === originalFence;
 				const mayReplay =
-					!priorFailedClaim &&
-					savedHandoff &&
-					!job &&
-					row.outcome === "PENDING";
+					!failedClaim && savedHandoff && !job && row.outcome === "PENDING";
 				const deferToAnotherHandoff = async () => {
 					// A lost or terminal job has no runnable handoff. Keep its schedule available
 					// for fallback if every other handoff also proves exhausted.
@@ -281,7 +292,7 @@ export function createExhaustedScheduledStopRecovery(
 											NOT: {
 												action: "STOP",
 												state: "FAILED",
-												generation: { lt: originalFence },
+												generation: { lte: originalFence },
 											},
 										},
 									},
@@ -322,7 +333,7 @@ export function createExhaustedScheduledStopRecovery(
 				// cannot be replayed for the current admission, even if Redis says waiting.
 				if (staleReceipt && row.legacyStopExhaustedFence !== originalFence)
 					continue;
-				if (priorFailedClaim) {
+				if (priorFailedClaim || currentFailedClaim) {
 					await recordFinalStopFailure(
 						deps.prisma,
 						{
@@ -330,7 +341,9 @@ export function createExhaustedScheduledStopRecovery(
 							data: original,
 							finishedOn: new Date(deps.now()).getTime(),
 						},
-						"The scheduled STOP claim belongs to a failed earlier admission.",
+						priorFailedClaim
+							? "The scheduled STOP claim belongs to a failed earlier admission."
+							: "The current STOP claim failed before its provider send.",
 						deps.emitEvent,
 						true,
 					);

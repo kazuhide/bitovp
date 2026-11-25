@@ -4,6 +4,11 @@ import {
 	type Prisma,
 } from "@bitovp/db";
 
+import {
+	type ScheduledStopAdmission,
+	scheduledStopAdmissionWhere,
+} from "./stop-handoff";
+
 /**
  *  — the ONE writer of `LiveSchedule.outcome`.
  *
@@ -153,6 +158,7 @@ export type ScheduleOutcomeTarget =
 				id: string;
 				liveChannelId: string;
 				liveChannelRunId?: string;
+				admission?: ScheduledStopAdmission;
 			};
 	  };
 
@@ -185,8 +191,10 @@ function whereOf(target: ScheduleOutcomeTarget): Prisma.LiveScheduleWhereInput {
 	if ("canceledChannelStart" in target) {
 		return { ...target.canceledChannelStart, action: "START", status: "FIRED" };
 	}
+	const { admission, ...stop } = target.scheduledStop;
 	return {
-		...target.scheduledStop,
+		...stop,
+		...scheduledStopAdmissionWhere(admission),
 		action: "STOP",
 		status: "FIRED",
 	};
@@ -251,17 +259,27 @@ export async function transitionScheduleToStale(
 	input: {
 		scheduleId: string;
 		fromStatus?: "FIRED";
-		stop?: { liveChannelId: string; liveChannelRunId: string };
+		stop?: {
+			liveChannelId: string;
+			liveChannelRunId: string;
+			admission?: ScheduledStopAdmission;
+		};
 		note: string;
 		at: Date;
 	},
 ): Promise<boolean> {
+	const { admission, ...stop } = input.stop ?? {};
 	const { count } = await prisma.liveSchedule.updateMany({
 		where: {
 			id: input.scheduleId,
 			status: input.fromStatus ?? { in: ["ARMED", "FIRED"] },
 			...(input.stop
-				? { ...input.stop, action: "STOP", outcome: { in: ["PENDING"] } }
+				? {
+						...stop,
+						...scheduledStopAdmissionWhere(admission),
+						action: "STOP",
+						outcome: { in: ["PENDING"] },
+					}
 				: {}),
 		},
 		data: {

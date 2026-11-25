@@ -67,6 +67,9 @@ export function useWizardDraft({
 	const completed = useRef<string | null>(null);
 	const observed = useRef(new Map<string, string | null>());
 	const accepted = useRef(new Map<string, string | null>());
+	const lastWritten = useRef(
+		new Map<string, { form: string; record: string }>(),
+	);
 	const initialized = useRef<string | null>(null);
 	const unchanged = useCallback(
 		(slot: string) => matchesDraft(slot, observed.current.get(slot)),
@@ -174,6 +177,10 @@ export function useWizardDraft({
 					if (written) {
 						observed.current.set(slot, written);
 						accepted.current.set(slot, written);
+						lastWritten.current.set(slot, {
+							form: serialized,
+							record: written,
+						});
 						if (loaded.retained)
 							accepted.current.set(key, observed.current.get(key) ?? null);
 					}
@@ -259,14 +266,22 @@ export function useWizardDraft({
 			const workingKey = `${loaded.key}:working`;
 			const expectedWorking = accepted.current.get(workingKey) ?? null;
 			const expectedOriginal = accepted.current.get(loaded.key);
+			// The debounce can save the submitted form while its request is in flight.
+			function submitted(slot: string, expected: string | null | undefined) {
+				const written = lastWritten.current.get(slot);
+				return (
+					matchesDraft(slot, expected) ||
+					(written?.form === serialized && matchesDraft(slot, written.record))
+				);
+			}
 			return () => {
 				completed.current = loaded.key;
 				withWizardDraftLock(loaded.key, () => {
 					// A newer working form still owns its legacy recovery record. The
 					// form just submitted can be cleared even if its original was removed.
-					if (kind !== "vod" || matchesDraft(workingKey, expectedWorking)) {
+					if (kind !== "vod" || submitted(workingKey, expectedWorking)) {
 						if (kind === "vod") discardWizardDraft(workingKey);
-						if (matchesDraft(loaded.key, expectedOriginal))
+						if (submitted(loaded.key, expectedOriginal))
 							discardWizardDraft(loaded.key);
 					}
 				});

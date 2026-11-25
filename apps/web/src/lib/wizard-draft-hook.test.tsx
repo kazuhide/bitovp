@@ -403,3 +403,23 @@ it("ties a successful request to the accepted snapshots at submission time", () 
 		"Edited during submission",
 	);
 });
+
+it("clears the submitted form when its pending autosave finishes during the request", () => {
+	const hook = renderHook(
+		({ form }) =>
+			useWizardDraft({
+				kind: "vod",
+				context: "new",
+				value: form,
+				step: 1,
+				onRestore: vi.fn(),
+			}),
+		{ initialProps: { form: value } },
+	);
+	act(() => hook.rerender({ form: { ...value, name: "Just submitted" } }));
+	const complete = hook.result.current.afterSubmission();
+	act(() => vi.advanceTimersByTime(301));
+	expect(readWizardDraft(key, "vod")?.value.name).toBe("Just submitted");
+	act(() => complete?.());
+	expect(readWizardDraft(key, "vod")).toBeNull();
+});

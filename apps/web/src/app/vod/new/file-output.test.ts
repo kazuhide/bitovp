@@ -164,6 +164,8 @@ describe("file names", () => {
 	it.each([
 		"Logo: 2026 @2x.png",
 		"Review: cut @ Studio",
+		"Review: cut @ Studio 2.0",
+		"Review: cut @ Studio.mp4",
 	])("restores the automatic TS filename and AI results directory for %s", (name) => {
 		const ts = apply(started, editFile(started, 0, { kind: "PROGRESSIVE_TS" }));
 		const configured = {

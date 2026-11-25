@@ -671,6 +671,8 @@ export function VodWizard({
 			: `wizard:${presetKey}:${presetUpdatedAt ?? ""}`,
 	);
 	const submit = useMutation({
+		onMutate: () =>
+			!imported && !jsonLoadedForEditing ? draft.afterSubmission() : undefined,
 		mutationFn: () => {
 			if (internalBlocked) throw new Error(t("hevcV2.unavailable"));
 			if (timelineBlocked) throw new Error(t("vodTimeline.notReady"));
@@ -681,8 +683,8 @@ export function VodWizard({
 					: buildPlan(submissionState),
 			});
 		},
-		onSuccess: (job) => {
-			if (!imported && !jsonLoadedForEditing) draft.clear();
+		onSuccess: (job, _variables, finishDraft) => {
+			finishDraft?.();
 			router.push(`/vod/jobs/${job.id}`);
 		},
 	});
@@ -691,6 +693,8 @@ export function VodWizard({
 	// the CAS token — a template edited elsewhere since this page loaded is a
 	// 409, surfaced as "reload", never silently overwritten.
 	const updateTemplate = useMutation({
+		onMutate: () =>
+			!imported && !jsonLoadedForEditing ? draft.afterSubmission() : undefined,
 		mutationFn: () => {
 			if (internalBlocked) throw new Error(t("hevcV2.unavailable"));
 			return apiFetch<{ id: string }>(`/api/presets/${editPresetId}`, {
@@ -703,8 +707,8 @@ export function VodWizard({
 				}),
 			});
 		},
-		onSuccess: () => {
-			if (!imported && !jsonLoadedForEditing) draft.clear();
+		onSuccess: (_saved, _variables, finishDraft) => {
+			finishDraft?.();
 			router.push("/templates");
 		},
 	});

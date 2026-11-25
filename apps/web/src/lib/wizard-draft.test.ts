@@ -376,9 +376,19 @@ it.each([
 	video.extras = { filters: [{ filterKey: "logo", position: 0 }] };
 	for (const [imagePath, expected] of [
 		["Promo 10:30 @ final.png", "Promo 10:30 @ final.png"],
+		[
+			"Artwork: July @ Opening Credits/logo.png",
+			"Artwork: July @ Opening Credits/logo.png",
+		],
 		["Logo: 2026 @2x.png", "Logo: 2026 @2x.png"],
 		["Logo: winter @thumbnail.webp", "Logo: winter @thumbnail.webp"],
 		["user: secret @host", ""],
+		["operator: example @cdn.png.invalid", ""],
+		["operator: example @ cdn.png.invalid", ""],
+		["user: secret @ host/logo.png", ""],
+		["user: secret @ host", ""],
+		["user: secret @", ""],
+		[`operator: example @cdn.png${"-x".repeat(150)} `, ""],
 		["user:secret phrase@host/image.png", ""],
 		["/user: secret @host/logo.png", ""],
 		["//user:secret@host/key", ""],

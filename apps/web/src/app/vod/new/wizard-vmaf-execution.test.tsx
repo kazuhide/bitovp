@@ -41,7 +41,7 @@ vi.mock("@/lib/wizard-draft-hook", async () => {
 					setAvailable(false);
 				},
 				discard: vi.fn(),
-				clear: vi.fn(),
+				afterSubmission: vi.fn(),
 			};
 		},
 	};

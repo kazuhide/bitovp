@@ -391,6 +391,10 @@ export function LiveWizard({
 		`wizard:${duplicateFrom ?? "new"}`,
 	);
 	const submit = useMutation({
+		onMutate: () =>
+			!imported && !importLoadedForEditing
+				? draft.afterSubmission()
+				: undefined,
 		mutationFn: () => {
 			if (aisaBlocked)
 				throw new LocalizedWizardError(
@@ -425,8 +429,8 @@ export function LiveWizard({
 				...(verdict.schedule ? { schedule: verdict.schedule } : {}),
 			});
 		},
-		onSuccess: (channel) => {
-			if (!imported && !importLoadedForEditing) draft.clear();
+		onSuccess: (channel, _variables, finishDraft) => {
+			finishDraft?.();
 			router.push(`/live/${channel.id}`);
 		},
 	});

@@ -10,6 +10,17 @@ import { afterEach, vi } from "vitest";
 // slower and a genuinely missing element still fails, ten seconds later.
 configure({ asyncUtilTimeout: 10_000 });
 
+// jsdom omits Web Locks. Single-document tests run synchronous draft callbacks;
+// cross-document ordering is exercised by the lock queue fixture and real browsers.
+if (typeof navigator !== "undefined" && !navigator.locks) {
+	Object.defineProperty(navigator, "locks", {
+		configurable: true,
+		value: {
+			request: (_key: string, work: () => void) => Promise.resolve(work()),
+		},
+	});
+}
+
 /**
  * Ledger #98: drain unmount-scheduled timers INSIDE the live realm.
  *

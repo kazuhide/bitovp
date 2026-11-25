@@ -235,13 +235,13 @@ test("resource metadata contains only bounded sanitized CPU observations and the
 	assert.throws(() => webTestResources(4, null), /Invalid CPU observations/);
 });
 
-test("four complete shards preserve all 158 skipped tests and the full source inventory", () => {
+test("four complete shards preserve all 161 skipped tests and the full source inventory", () => {
 	assert.equal(SHARD_COUNT, 4);
 	const merged = aggregate(receipts());
 	assert.equal(merged.testResults.length, files.length);
-	assert.equal(merged.numPendingTests, 158);
+	assert.equal(merged.numPendingTests, 161);
 	assert.equal(merged.numPassedTests, 8);
-	assert.equal(merged.numTotalTests, 166);
+	assert.equal(merged.numTotalTests, 169);
 });
 
 test("receipt projection excludes diagnostics, test names, snapshots, metadata and environment", () => {

@@ -89,6 +89,7 @@ export function useWizardDraft({
 	const available = key !== null && loaded?.key === key && !!loaded.pending;
 	return {
 		available,
+		pending: available ? loaded?.pending : null,
 		restore() {
 			if (!available || !loaded?.pending) return;
 			onRestore(loaded.pending);

@@ -31,3 +31,47 @@ it.each([
 		}),
 	).toBeNull();
 });
+
+it("explains the v1 recovery before restore and offers only its saved settings", () => {
+	const restore = vi.fn();
+	const settings = { name: "Older title", labels: ["ep-1"] };
+	renderWithQuery(
+		<WizardDraftOffer
+			available
+			restore={restore}
+			discard={() => {}}
+			legacyVersion
+			legacySettings={settings}
+		/>,
+		"en",
+	);
+	expect(screen.getByText(/did not record all filter edits/)).toBeTruthy();
+	const link = screen.getByRole("link", { name: "Download saved settings" });
+	expect(link).toHaveAttribute("download", "vod-draft-settings.json");
+	expect(
+		JSON.parse(
+			decodeURIComponent(link.getAttribute("href")?.split(",")[1] ?? ""),
+		),
+	).toEqual(settings);
+	expect(restore).not.toHaveBeenCalled();
+	fireEvent.click(
+		screen.getByRole("button", { name: "Restore name and labels" }),
+	);
+	expect(restore).toHaveBeenCalledOnce();
+});
+it("identifies v1's missing filters before a regular restore into a fresh job", () => {
+	renderWithQuery(
+		<WizardDraftOffer
+			available
+			restore={() => {}}
+			discard={() => {}}
+			legacyVersion
+		/>,
+		"en",
+	);
+	expect(screen.getByText(/ordinary video watermarks only/)).toBeTruthy();
+	expect(
+		screen.getByRole("button", { name: "Restore", exact: true }),
+	).toBeTruthy();
+	expect(screen.queryByRole("link")).toBeNull();
+});

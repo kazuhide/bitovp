@@ -6292,8 +6292,12 @@ export const en = {
 		you: "you",
 	},
 	wizardDraft: {
+		legacyWatermarks:
+			"This older draft saved ordinary video watermarks only. Review any other filter edits before starting the encode.",
 		legacyRenditions:
-			"Some renditions in this older draft could not be matched. Review the restored preset ladder and its filters before submitting.",
+			"This older draft did not record all filter edits. Restore its name and labels on the original preset. Download the saved settings to recover other edits.",
+		restoreMetadata: "Restore name and labels",
+		downloadSettings: "Download saved settings",
 		available: "Saved draft available",
 		restore: "Restore",
 		discard: "Discard",

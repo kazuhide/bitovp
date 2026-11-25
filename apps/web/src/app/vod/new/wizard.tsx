@@ -35,7 +35,11 @@ import {
 	splitOutputFolder,
 } from "@/lib/output-path";
 import type { VodFlow } from "@/lib/vod-flow";
-import { draftFingerprint, restoreVodWizardDraft } from "@/lib/wizard-draft";
+import {
+	draftFingerprint,
+	legacyVodMetadataOnly,
+	restoreVodWizardDraft,
+} from "@/lib/wizard-draft";
 import { useWizardDraft } from "@/lib/wizard-draft-hook";
 import {
 	followRenamedAudioKeys,
@@ -284,9 +288,6 @@ export function VodWizard({
 				}).length > 0),
 	);
 	const draftBase = useRef(fresh);
-	const [legacyLadderNotice, setLegacyLadderNotice] = useState<string | null>(
-		null,
-	);
 	// The file flow opens on its short view; every step stays one click away.
 	const [expanded, setExpanded] = useState(false);
 	const simple = fileFlow && !expanded;
@@ -616,6 +617,7 @@ export function VodWizard({
 	const pendingPlaceholders = imported
 		? countPendingPlaceholders(imported.raw)
 		: 0;
+	const draftSource = presetKey === undefined ? fresh : draftBase.current;
 	const draft = useWizardDraft({
 		kind: "vod",
 		context:
@@ -632,11 +634,7 @@ export function VodWizard({
 		value: state,
 		step,
 		onRestore: (saved) => {
-			const restored = restoreVodWizardDraft(
-				presetKey === undefined ? fresh : draftBase.current,
-				saved,
-				() => setLegacyLadderNotice(appliedDraftContext),
-			);
+			const restored = restoreVodWizardDraft(draftSource, saved);
 			// Source facts and preview tasks are deliberately absent from the draft.
 			// Mount their preparation before resuming a later wizard step.
 			openState(restored, restored.inputTimeline ? 1 : saved.step);
@@ -938,12 +936,15 @@ export function VodWizard({
 				!jsonLoadedForEditing ? (
 					<VodFlowSwitch flow={flow} />
 				) : null}
-				<WizardDraftOffer {...draft} />
-				{legacyLadderNotice && legacyLadderNotice === appliedDraftContext ? (
-					<p role="status" className="mt-2 text-amber-400 text-sm">
-						{t("wizardDraft.legacyRenditions")}
-					</p>
-				) : null}
+				<WizardDraftOffer
+					{...draft}
+					legacyVersion={draft.pending?.legacyVodFilters}
+					legacySettings={
+						legacyVodMetadataOnly(draftSource, draft.pending)
+							? draft.pending?.value
+							: undefined
+					}
+				/>
 				{[
 					{ query: accounts, message: t("wizard.accountsLoadFailed") },
 					{ query: credentials, message: t("wizard.credentialsLoadFailed") },

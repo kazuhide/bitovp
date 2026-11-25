@@ -330,6 +330,10 @@ it("keeps an attached partial enhanced logo and excludes credentials after leadi
 		"/alice:secret@host/logo",
 		"/ alice:secret@host/logo",
 		"//alice:secret@host/logo",
+		"/alice:secret phrase@host/logo",
+		" alice name:secret phrase@host/logo",
+		"letter".repeat(180),
+		`https://example.invalid/logo?secret=${"s".repeat(1100)}`,
 	]) {
 		state.filters = [
 			{
@@ -842,68 +846,115 @@ it.each([
 		value,
 	});
 });
-it("restores a v1 preset draft by source rendition key and respects explicit removals in current drafts", () => {
+it("offers only metadata from v1 drafts of filtered presets and preserves the complete mux and filter graph", () => {
 	const base = structuredClone(DEFAULT_WIZARD_STATE);
 	const audio = base.audios[0];
-	if (!audio) throw new Error("Missing audio");
+	const video = base.videos[0];
+	if (!audio || !video) throw new Error("Missing A/V ladder");
 	base.filters = [
 		{ kind: "AUDIO_VOLUME", key: "level", volume: 50, unit: "PERCENT" },
+		{ kind: "DENOISE_HQDN3D", key: "denoise" },
+		{
+			kind: "WATERMARK",
+			key: "logo",
+			inputKey: "main",
+			imagePath: "logo.png",
+			left: 0,
+			top: 0,
+		},
 	];
 	audio.extras = {
-		key: "main-sound",
+		key: "sound",
 		filters: [{ filterKey: "level", position: 0 }],
 	};
-	base.audios.push({ ...audio, extras: { key: "alternate" } });
-	const v1 = projectWizardDraft("vod", base);
-	const rows = v1.audios as { extras: { key: string; filters?: unknown } }[];
-	for (const row of rows) delete row.extras.filters;
-	rows.reverse();
-	localStorage.setItem(
-		"v1-preset",
-		JSON.stringify({
-			version: 1,
-			kind: "vod",
-			savedAt: 100,
-			step: 2,
-			value: { ...v1, name: "Updated title", filters: [] },
-		}),
-	);
-	const saved = readWizardDraft("v1-preset", "vod", localStorage, 101);
-	if (!saved) throw new Error("Missing legacy VOD draft");
-	const restored = restoreVodWizardDraft(base, saved);
-	expect(restored.name).toBe("Updated title");
-	expect(restored.filters).toEqual(base.filters);
-	expect(restored.audios.map((row) => row.extras?.filters ?? [])).toEqual([
-		[],
-		audio.extras.filters,
-	]);
-	const unknown = structuredClone(saved);
-	const changed = unknown.value.audios as { extras: { key: string } }[];
-	for (const row of changed) row.extras.key += "-replaced";
-	const notify = vi.fn();
-	const ambiguous = restoreVodWizardDraft(base, unknown, notify);
-	expect(notify).toHaveBeenCalledTimes(1);
-	expect(ambiguous.audios).toEqual(base.audios);
-	expect(ambiguous.name).toBe("Updated title");
-
-	writeWizardDraft(
-		"new-preset",
-		"vod",
+	video.extras = {
+		filters: [
+			{ filterKey: "denoise", position: 0 },
+			{ filterKey: "logo", position: 1 },
+		],
+	};
+	video.muxing = { kind: "MP4", muxedAudioKeys: ["sound"] };
+	for (const edit of [
+		"metadata",
+		"detach",
+		"replace",
+		"move",
+		"carry",
+	] as const) {
+		const original = structuredClone(base);
+		if (edit === "carry")
+			original.audios.push({ ...audio, extras: { key: "alternate" } });
+		const edited = structuredClone(original);
+		edited.name = "Edited title";
+		edited.labels = ["Local edit"];
+		edited.filters = (original.filters ?? []).filter(
+			(f) => f.kind === "WATERMARK",
+		);
+		const editedAudio = edited.audios[0];
+		const editedVideo = edited.videos[0];
+		if (!editedAudio || !editedVideo) throw new Error("Incomplete fixture");
+		editedAudio.extras = {
+			key: edit === "replace" || edit === "carry" ? "changed" : "sound",
+		};
+		editedVideo.extras = {
+			filters: [{ filterKey: "logo", position: edit === "move" ? 0 : 1 }],
+		};
+		if (edit === "carry")
+			editedVideo.muxing = { kind: "MP4", muxedAudioKeys: ["changed"] };
+		if (edit === "replace") editedAudio.bitrate *= 2;
+		localStorage.setItem(
+			"old",
+			JSON.stringify({
+				version: 1,
+				kind: "vod",
+				savedAt: 100,
+				step: 2,
+				value: projectWizardDraft("vod", edited),
+			}),
+		);
+		const saved = readWizardDraft("old", "vod", localStorage, 101);
+		if (!saved) throw new Error("Missing draft");
+		const restored = restoreVodWizardDraft(original, saved);
+		expect(restored, edit).toEqual({
+			...original,
+			name: edited.name,
+			labels: edited.labels,
+		});
+		const muxings = buildPlan(restored).muxings;
+		expect(muxings, edit).toEqual(buildPlan(original).muxings);
+		expect(muxings.find((mux) => mux.kind === "MP4")).toMatchObject({
+			additionalStreamKeys: ["sound"],
+		});
+		// Current writers can represent detaches, replacements, moves and carry edits.
+		writeWizardDraft("new", "vod", edited, 2, localStorage, 100);
+		const current = readWizardDraft("new", "vod", localStorage, 101);
+		if (!current) throw new Error("Missing new draft");
+		expect(restoreVodWizardDraft(original, current).filters).toEqual(
+			edited.filters,
+		);
+	}
+});
+it("restores all represented settings from an old draft when its source preset has only ordinary watermarks", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	base.filters = [
 		{
-			...base,
-			filters: [],
-			audios: base.audios.map((row) => ({
-				...row,
-				extras: { ...row.extras, filters: [] },
-			})),
+			kind: "WATERMARK",
+			key: "logo",
+			inputKey: "main",
+			imagePath: "logo.png",
+			left: 0,
+			top: 0,
 		},
-		2,
-		localStorage,
-		100,
-	);
-	const current = readWizardDraft("new-preset", "vod", localStorage, 101);
-	if (!current) throw new Error("Missing updated VOD draft");
-	expect(restoreVodWizardDraft(base, current).filters).toEqual([]);
+	];
+	const changed = structuredClone(base);
+	if (!changed.audios[0]) throw new Error("Missing audio");
+	changed.audios[0].bitrate = 160000;
+	const restored = restoreVodWizardDraft(base, {
+		step: 2,
+		legacyVodFilters: true,
+		value: projectWizardDraft("vod", changed),
+	});
+	expect(restored.audios[0]?.bitrate).toBe(160000);
 });
 it("keeps the eight-step VOD draft format and rejects out-of-range steps", () => {
 	writeWizardDraft(

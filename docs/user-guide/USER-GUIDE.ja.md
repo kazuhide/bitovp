@@ -457,7 +457,7 @@ NexGuard はレンディションごと、Kantar はエンコーディング単�
 | Conform | 同じエンコード内のすべての映像・音声ストリームで同一の目標 fps を指定します。映像側で指定した fps も一致させます。字幕と Dolby Atmos ファイル入力との併用はできません。 |
 | Enhanced Watermark | 入力ストレージの画像、配置、幅、高さ、不透明度（0〜1） |
 | Audio Mix | 出力チャンネルごとにスピーカーの配置とゲインを指定します。音量・ラウドネスの調整より前に配置してください。Dolby Atmos ファイル入力では使用できません。 |
-| Dolby Loudness | 対応音声の目標ラウドネス（LKFS）、最大トゥルーピーク（dBTP）、台詞検出 |
+| Dolby Loudness | 対応音声の目標ラウドネス（LKFS）、最大トゥルーピーク（dBTP）、台詞検出を設定します。Audio Volume と EBU R128 シングルパスは別の処理として使用してください。 |
 
 Scaleは片方の寸法だけを指定すると元の縦横比を保ち、両方を空欄にすると元の寸法を使います。画素の縦横比は分子・分母を両方指定するか、両方を空欄にします。ここで選ぶアルゴリズムは、このフィルターの処理に適用されます。レンディションの出力寸法は別の設定です。[Scaleフィルターの仕様](https://developer.bitmovin.com/encoding/reference/postencodingfiltersscale)も参照できます。
 

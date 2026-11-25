@@ -400,6 +400,16 @@ describe("IMSC and Opus contracts", () => {
 				validatePlan(plan).filter((i) => i.code === "PLAN_AUDIO_FILTER"),
 			).toEqual([]);
 		}
+		for (const key of ["volume", "ebu"]) {
+			audio.filters = [
+				{ filterKey: "pan", position: 0 },
+				{ filterKey: key, position: 1 },
+				{ filterKey: "dolby", position: 2 },
+			];
+			expect(validatePlan(plan).map((issue) => issue.code)).toContain(
+				"PLAN_AUDIO_FILTER",
+			);
+		}
 		Object.assign(audio, { codec: "DOLBY_ATMOS", ingestKey: "adm" });
 		plan.dolbyStreams = [
 			{
@@ -421,6 +431,25 @@ describe("IMSC and Opus contracts", () => {
 			.map((i) => i.code);
 		expect(codes).toContain("PLAN_AUDIO_FILTER");
 		expect(codes).toContain("PLAN_CONFORM_FILTER");
+		Object.assign(audio, { codec: "AAC", ingestKey: "trimmed-adm" });
+		plan.trimmingStreams = [
+			{
+				kind: "TIME_BASED",
+				key: "trimmed-adm",
+				sourceKey: "adm",
+				offset: 1,
+				duration: 5,
+			},
+		];
+		const trimmed = validatePlan(plan)
+			.filter(
+				(issue) =>
+					issue.path ===
+					`renditions[${plan.renditions.indexOf(audio)}].filters`,
+			)
+			.map((issue) => issue.code);
+		expect(trimmed).toContain("PLAN_AUDIO_FILTER");
+		expect(trimmed).toContain("PLAN_CONFORM_FILTER");
 	});
 	it("requires the same speaker positions when Audio Mix derives its layout from the output rows", () => {
 		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
@@ -454,6 +483,22 @@ describe("IMSC and Opus contracts", () => {
 		expect(validatePlan(plan).map((i) => i.code)).toContain(
 			"PLAN_AUDIO_FILTER",
 		);
+		Object.assign(audio, { channelLayout: "NONE" });
+		for (const count of [8, 9, 16, 17, 24, 25]) {
+			channels.splice(
+				0,
+				channels.length,
+				...Array.from({ length: count }, (_, n) => ({
+					channelNumber: n,
+					sourceChannels: [
+						{ type: "CHANNEL_NUMBER" as const, channelNumber: 0 },
+					],
+				})),
+			);
+			expect(
+				validatePlan(plan).some((issue) => issue.code === "PLAN_AUDIO_FILTER"),
+			).toBe([9, 17, 25].includes(count));
+		}
 	});
 	it("rejects mutually exclusive deinterlace filters and unrepresentable enhanced watermark geometry", () => {
 		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");

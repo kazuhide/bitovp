@@ -136,13 +136,22 @@ function fakePrisma() {
 				}: {
 					where: {
 						liveChannelId: string;
-						state: { in: Claim["state"][] };
+						liveChannelRunId?: string;
+						action?: string;
+						providerEncodingId?: { not: string };
+						state: Claim["state"] | { in: Claim["state"][] };
 					};
 				}) => {
 					const row = claims.find(
 						(claim) =>
 							claim.liveChannelId === where.liveChannelId &&
-							where.state.in.includes(claim.state),
+							(where.liveChannelRunId === undefined ||
+								claim.liveChannelRunId === where.liveChannelRunId) &&
+							(where.action === undefined || claim.action === where.action) &&
+							claim.providerEncodingId !== where.providerEncodingId?.not &&
+							(typeof where.state === "string"
+								? claim.state === where.state
+								: where.state.in.includes(claim.state)),
 					);
 					return row ? { ...row } : null;
 				},

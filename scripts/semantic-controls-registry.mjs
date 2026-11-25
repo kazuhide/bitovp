@@ -64,7 +64,7 @@ const controls = [
 		workspace: "@bitovp/worker",
 		directory: "apps/worker",
 		files: {
-			"src/orchestrator/retrying-fetch.test.ts": 21,
+			"src/orchestrator/retrying-fetch.test.ts": 24,
 		},
 		source: "apps/worker/src/orchestrator/retrying-fetch.ts",
 		anchor: "return !/\\/(live\\/)?start\\/?$/.test(path);",
@@ -72,6 +72,9 @@ const controls = [
 		cases: [
 			"createRetryingFetch refuses RTMP reassignment retries with URL query/trailing slash, while preserving reads",
 			"createRetryingFetch retries a transport rejection and returns the eventual response",
+			"createRetryingFetch retries only reads on an attempt-owned manifest request (POST)",
+			"createRetryingFetch retries only reads on an attempt-owned manifest request (DELETE)",
+			"createRetryingFetch retries only reads on an attempt-owned manifest request (GET)",
 			"createRetryingFetch gives up after the attempt budget and rethrows the LAST error",
 			"createRetryingFetch does NOT retry a response that arrived, whatever its status",
 			"createRetryingFetch backs off exponentially from the base delay",

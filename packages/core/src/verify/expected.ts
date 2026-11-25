@@ -147,7 +147,7 @@ export type ExpectedMuxing = {
 		singleTrackFile?: true;
 		channelLayout?: string;
 	};
-	text?: { language?: string };
+	text?: { language?: string; codec?: "IMSC" | "WEBVTT" };
 	/** True when a provider RESULT population must resolve this template. */
 	perTitle: boolean;
 	/**
@@ -795,7 +795,7 @@ export function compileExpectedArtefacts(
 					...(a.channelLayout ? { channelLayout: a.channelLayout } : {}),
 				};
 			} else if (packagedCodec === "WEBVTT" || packagedCodec === "IMSC") {
-				expected.text = {};
+				expected.text = muxing.kind === "TEXT" ? { codec: packagedCodec } : {};
 			} else {
 				// The arm that did not exist. A codec in no set produced an expectation with
 				// nothing to assert AND no note, so the muxing was silently unverified — the

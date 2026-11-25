@@ -94,6 +94,29 @@ it("creates two editable tracks, preserves their destinations and selection thro
 	expect(
 		liveChannelPlanSchema.parse(buildLiveChannelPlan(opened.state)),
 	).toEqual(plan);
+	const publicPlan = liveChannelPlanSchema.parse(
+		buildLiveChannelPlan({
+			...opened.state,
+			output: { ...opened.state.output, publicRead: true },
+		}),
+	);
+	expect(
+		publicPlan.dvbSubtitles?.every(
+			(track) => track.destination.acl === "PUBLIC_READ",
+		),
+	).toBe(true);
+	const copy = tryImportLiveChannelIntoWizard(publicPlan);
+	if (!copy.ok) throw Error(copy.reasonKey);
+	const privateCopy = liveChannelPlanSchema.parse(
+		buildLiveChannelPlan({
+			...copy.state,
+			output: { ...copy.state.output, publicRead: false },
+		}),
+	);
+	expect(
+		privateCopy.dvbSubtitles?.map((track) => track.destination.acl),
+	).toEqual([undefined, undefined]);
+
 	expect(
 		compileLiveChannel(plan).filter(
 			(o) => o.kind === "CREATE_DVB_SUBTITLE_INPUT_STREAM",

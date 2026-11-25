@@ -65,7 +65,7 @@ export type StorageInspectionDto = {
 /** Prisma select for the projection above — keeps both routes in lock-step. */
 export const INSPECTION_SELECT = {
 	id: true,
-	credentialId:true,
+	credentialId: true,
 	status: true,
 	bucket: true,
 	objectKey: true,
@@ -83,7 +83,7 @@ export type StorageInspectionRow = {
 	id: string;
 	status: string;
 	verifyAudioCopy?: boolean;
-	credentialId?:string;
+	credentialId?: string;
 	sourceIdentity?: unknown;
 	bucket: string;
 	objectKey: string;

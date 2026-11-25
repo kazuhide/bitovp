@@ -246,7 +246,7 @@ Opening a wizard, loading a template, or copying an existing job's settings does
 
 While configuring a plan, use its preview to check the input and output destinations, renditions, and resources to be created. A rendition is one output with its own resolution, bitrate, or other characteristics. After changing a plan, check the updated output paths and warnings rather than relying on an earlier review.
 
-Browser drafts do not save every setting. They are kept for 7 days and are separated by user, organization, and creation context. Secrets, URLs, DRM, filters, imported JSON, and similar settings are excluded. After restoring a draft, fill in the omitted settings before running it.
+Browser drafts do not save every setting. They are kept for 7 days and are separated by user, organization, and creation context. VOD drafts retain filter settings, including image object paths and audio channel gains. Secrets, URLs, DRM, text-overlay content and imported JSON are excluded. After restoring a draft, fill in the omitted settings before running it.
 
 ### Reading status
 
@@ -347,7 +347,7 @@ Presets and templates are starting points. After loading one, adapt the account,
 
 If plan JSON includes settings that the form cannot represent, keep it in JSON editing mode to preserve the original content. Avoid forcing it into the form and losing settings; check the validation results instead.
 
-Drafts are stored in the current browser for 7 days. They are separated by user, organization, and creation context. Secrets, URLs, DRM, filters, imported JSON, and similar settings are excluded. After restoring a draft, check omitted settings and output destinations. A draft does not replace a shared template or a complete configuration backup.
+Drafts are stored in the current browser for 7 days. They are separated by user, organization, and creation context. VOD drafts retain filter settings, including image object paths and audio channel gains. Secrets, URLs, DRM, text-overlay content and imported JSON are excluded. After restoring a draft, check omitted settings and output destinations. A draft does not replace a shared template or a complete configuration backup.
 
 ## 5. Advanced VOD settings
 
@@ -438,6 +438,11 @@ Define a filter with "Add filter", then assign it to the target rendition with "
 | Volume and EBU R128 | Volume, loudness, and peak targets. Distinguish %, dB, LUFS, and dBTP. |
 | HQDN3D | Luma and chroma noise reduction in the spatial and temporal dimensions |
 | Unsharp | Sharpening or blurring through processing area and strength |
+| Enhanced Deinterlace and Interlace | Field order and output mode, with optional vertical low-pass filtering for Interlace |
+| Conform | Apply the same target fps to every video and audio stream in the encoding. An explicit video rate must match. Captions and subtitle streams are incompatible. |
+| Enhanced Watermark | Image from input storage, position, dimensions, and opacity from 0 to 1 |
+| Audio Mix | A layout and a set of input channel numbers or speaker positions and gains for each output channel |
+| Dolby Loudness | Target loudness in LKFS, maximum true peak in dBTP, and dialogue detection for supported audio codecs |
 
 The Scale filter preserves the source aspect ratio when only one dimension is set, and the source dimensions when both are blank. Set both parts of the pixel aspect ratio or leave both blank. Its algorithm controls this filter's scaling; rendition output dimensions remain a separate setting. See the [Scale filter reference](https://developer.bitmovin.com/encoding/reference/postencodingfiltersscale).
 
@@ -460,6 +465,8 @@ Packaging combines encoded streams into files or segments. To create more than o
 Avoid having a video variant that already carries audio also reference an external group for that same audio. When turning off "Standalone container", check that the required audio is carried in video containers. Use Opus in supported WebM/DASH configurations; if you also generate HLS, provide another supported audio output. Do not confuse dedicated CMAF with fMP4 when using HLS or the applicable DRM configurations.
 
 Configure DRM on the target container. Depending on whether you use CENC, FairPlay, or SPEKE, specify key credentials, KID, PSSH, IV, license URI, and related values. KID identifies a key; PSSH is DRM initialization information used mainly in manifests. Secret content keys are stored in credentials, and the plan holds references to them.
+
+In the VOD wizard, SPEKE supports fMP4, MP4, MPEG-TS, progressive TS, WebM and progressive WebM. A standalone progressive TS file can also use FairPlay, and a standalone progressive WebM file can use CENC. Save a BitOVP preset or export Plan JSON to reuse SPEKE with its stored credential. Encoding-template YAML for progressive FairPlay and CENC includes the encrypted destination and a content-key placeholder.
 
 For SPEKE, select the key provider and DRM systems. A Content ID is generated if omitted. Matching Content ID and KID values request the same keys. A FairPlay IV is 32 hexadecimal characters. Check that the encryption scheme, license service configuration, and player support agree.
 
@@ -1245,6 +1252,12 @@ Search, extension filters, and pagination have limits on the range they retrieve
 Use "Inspect" on an object to examine its media structure. The processing service reads part of the actual file and examines its media information. This does not create an encoding, but it does make storage read requests. Inspection reads up to 8 MB from the beginning and, when needed, up to 4 MB of additional data including the end of the file, for a maximum of 12 MB.
 
 Once inspection moves from queued or running to complete, review the container, duration, video and audio streams, resolution, frame rate, audio channels, and other reported properties. Reopening the inspection shows the latest saved result; up to 20 historical results are available. Whole-file bitrate is not calculated from this result because estimating it from a partial read can be misleading. Missing information or an error can be caused by permissions, header placement, or the read limit as well as file damage. Successful inspection does not verify decoding of the entire file, audio/video synchronization, or actual playback.
+
+### Inspect and delete provider resources
+
+Open **Resources** on a VOD job or select a run in the Live channel history. Select a creation step to retrieve its resource from the original Bitmovin account. Some resource types also list entries under the same parent.
+
+For a terminal VOD job or a stopped managed Live run, an operator can confirm an individual deletion by entering the displayed resource ID. BitOVP checks ownership, references from other runs and whether the job or run has finished. If the response is interrupted, reopen the resource to check its deletion status. Start a new VOD job to encode again after deleting one of its resources.
 
 ## 14. Templates and automation
 

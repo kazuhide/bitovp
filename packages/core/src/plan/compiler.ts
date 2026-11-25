@@ -20,6 +20,7 @@ import {
 	hasMuxedInAudio,
 	isFileOnlyMuxingKind,
 	muxingStreamKeys,
+	physicalMuxingKind,
 } from "./muxing-streams";
 import {
 	isPerTitleRendition,
@@ -116,6 +117,12 @@ export type OperationKind =
 	| "CREATE_DASH_ADAPTATION_SET_SUBTITLE"
 	| "CREATE_DASH_REPRESENTATION_CHUNKED_TEXT"
 	| "CREATE_DASH_REPRESENTATION_IMSC"
+	| "CREATE_FILTER_ENHANCED_DEINTERLACE"
+	| "CREATE_FILTER_CONFORM"
+	| "CREATE_FILTER_INTERLACE"
+	| "CREATE_FILTER_ENHANCED_WATERMARK"
+	| "CREATE_FILTER_DOLBY_LOUDNESS"
+	| "CREATE_FILTER_AUDIO_MIX"
 	| "CREATE_FILTER_DENOISE_HQDN3D"
 	| "CREATE_FILTER_UNSHARP"
 	| "CREATE_FILTER_CROP"
@@ -1793,7 +1800,8 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 						step: `filter:${rendition.key}:${attachment.filterKey}`,
 						kind: `CREATE_FILTER_${filter.kind}`,
 						payload:
-							filter.kind === "WATERMARK"
+							filter.kind === "WATERMARK" ||
+							filter.kind === "ENHANCED_WATERMARK"
 								? {
 										...filterParameters(filter),
 										imageInput: plan.inputs.find(
@@ -2053,7 +2061,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							step: `drm:${drm.key}`,
 							kind: "CREATE_DRM_CENC",
 							payload: {
-								muxingKind: muxing.kind,
+								muxingKind: physicalMuxingKind(muxing),
 								credentialId: drm.credentialId,
 								kid: drm.kid,
 								...(drm.encryptionMode
@@ -2074,7 +2082,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							step: `drm:${drm.key}`,
 							kind: "CREATE_DRM_SPEKE",
 							payload: {
-								muxingKind: muxing.kind,
+								muxingKind: physicalMuxingKind(muxing),
 								credentialId: drm.credentialId,
 								systemIds: drm.systemIds,
 								...(drm.contentId ? { contentId: drm.contentId } : {}),
@@ -2091,7 +2099,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							step: `drm:${drm.key}`,
 							kind: "CREATE_DRM_FAIRPLAY",
 							payload: {
-								muxingKind: muxing.kind,
+								muxingKind: physicalMuxingKind(muxing),
 								credentialId: drm.credentialId,
 								iv: drm.iv,
 								uri: drm.uri,

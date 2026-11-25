@@ -7,6 +7,7 @@ import {
 	liveChannelPlanSchema,
 } from "@bitovp/core";
 import { expect, it } from "vitest";
+import { projectWizardDraft } from "@/lib/wizard-draft";
 import { buildLiveChannelPlan } from "../../live/new/build-live-plan";
 import { tryImportLiveChannelIntoWizard } from "../../live/new/live-plan-to-wizard";
 import { buildPlan } from "./build-plan";
@@ -54,7 +55,16 @@ it.each(
 		raw.renditions = raw.renditions.map(
 			(r: { codec: string; key: string; ingestKey: string }) =>
 				r.codec === "AAC"
-					? { key: r.key, ingestKey: r.ingestKey, ...profile }
+					? {
+							key: r.key,
+							ingestKey: r.ingestKey,
+							conditions: {
+								attribute: "STREAMID",
+								operator: "EQUAL",
+								value: "0x101",
+							},
+							...profile,
+						}
 					: r,
 		);
 	}
@@ -67,6 +77,24 @@ it.each(
 	const l = tryImportLiveChannelIntoWizard(savedLive);
 	expect(l.ok).toBe(true);
 	if (!l.ok) throw Error(l.reasonKey);
+	for (const [kind, state] of [
+		["vod", v.state],
+		["live", l.state],
+	] as const) {
+		const projected = projectWizardDraft(kind, state);
+		expect(projected.audios).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					conditions: {
+						attribute: "STREAMID",
+						operator: "EQUAL",
+						value: "0x101",
+					},
+					...("signaling" in profile ? { signaling: profile.signaling } : {}),
+				}),
+			]),
+		);
+	}
 	expect(liveChannelPlanSchema.parse(buildLiveChannelPlan(l.state))).toEqual(
 		savedLive,
 	);
@@ -132,4 +160,18 @@ it("keeps two equal-bitrate HE profiles independent through VOD and Live packagi
 		);
 		expect(new Set(reps.map((op) => op.refs.muxingId)).size).toBe(2);
 	}
+});
+
+it("restores VOD subtitle stream conditions through the saved draft", () => {
+	const condition = {
+		attribute: "STREAMID",
+		operator: "EQUAL",
+		value: "0x109",
+	};
+	const projected = projectWizardDraft("vod", {
+		subtitles: [{ key: "sub", conditions: condition }],
+	});
+	expect(projected.subtitles).toEqual([
+		expect.objectContaining({ conditions: condition }),
+	]);
 });

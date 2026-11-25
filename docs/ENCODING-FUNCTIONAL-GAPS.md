@@ -8,7 +8,10 @@ No paid encoding was started for this audit.
 The November 25 follow-up uses the published JavaScript SDK 1.289.0.
 Its Encoding surface has 1,098 operations. The four additions are the HDR10+
 input-stream create, get, list and delete operations. The VOD wizard
-and Worker now use create; the other three lack a confirmed application call.
+and Worker now use HDR10+ create. The HDR10+ get, list and delete operations
+lack a confirmed application call. Across all families, the current census confirms
+656 of 1,098 operations in application source, including 157 of 219 create
+operations. The remaining 442 operations lack a confirmed application call.
 The separate cross-service inventory includes 84 notification operations
 (76 Encoding-specific and eight shared) for a total of 1,182. Notification
 operations are outside the application's Encoding-only census.
@@ -98,31 +101,29 @@ Tests cover the installed SDK's request bodies, plan round trips, tenant-scoped 
 
 ### E04 · P1 · Embedded caption extraction
 
-CEA608/708 passthrough is present in video configuration. The separate
-`Cea608CaptionInputStream`, `Cea708CaptionInputStream` and
-`DvbSubtitleInputStream` creation paths, plus the DVB subtitle configuration,
-are absent. Start with CEA608/708 extraction and treat DVB and Live subtitles
-as separate additions.
-
-Acceptance includes channel/service selection, missing captions, PTS/time
-mapping across trimming and concatenation, HLS/DASH language/accessibility
-attributes and playback. Live currently permits video/audio renditions, so
-subtitle extraction requires changes beyond the VOD input-stream union.
+VOD operators can select a CEA-608 channel, CEA-708 service or DVB subtitle
+track and extract it to WebVTT for a sidecar file or HLS. The Live wizard
+extracts DVB bitmap subtitles from supported transport-stream inputs and
+packages WebVTT for HLS or DASH. Drafts and templates retain the selections.
+These workflows are covered by local compiler and SDK transport tests.
+Provider OCR quality, source-specific timing and receiver playback still need
+validation on representative media. [VOD guide](user-guide/VOD.md) · [Live guide](user-guide/LIVE.md)
 
 ### E05–E07 · P2 · Purpose-specific extensions
 
-- **Filters:** prioritize EnhancedWatermark for logo size/opacity, then qualify
-  EnhancedDeinterlace and Conform with suitable sources. Existing Watermark,
-  ordinary deinterlace and frame-rate settings are not equivalent mechanisms.
-  Live validation explicitly rejects filters today; investigate provider
-  support before enabling individual filters there.
+- **Filters:** The VOD wizard supports EnhancedWatermark, EnhancedDeinterlace,
+  and Interlace for video, Conform across the encoding’s video and audio streams, plus AudioMix and DolbyLoudness on compatible
+  audio renditions. Operators can save the filters and their application order.
+  Provider output and visual or loudness measurements require a matching source
+  and an encoding run. Live speech-to-captions remains a separate workflow.
 - **Broadcast delivery:** Broadcast TS/MXF with H.262/MP2/PCM, driven by a
   specific delivery specification. Progressive TS does not expose the same
   PCR/PID/PAT/PMT controls. MJPEG, VP8, MP3, Vorbis and DTS need an identified
   use case, entitlement and playback target.
 - **Encryption/delivery:** AES-128/ClearKey are absent choices; CENC already
-  serves Widevine/PlayReady use cases. SPEKE currently accepts only fMP4 in
-  Worker dispatch. Live MSL/SFTP mirrors are valid expert-JSON paths with a
+  serves Widevine/PlayReady use cases. The VOD wizard supports SPEKE on fMP4, MP4, TS, progressive TS, WebM
+  and progressive WebM. Standalone progressive TS and WebM files also support
+  FairPlay and CENC respectively. Live MSL/SFTP mirrors are valid expert-JSON paths with a
   missing GUI authoring path; primary MSL is already supported.
 
 ### E08 · P3 · Other inputs and management
@@ -138,9 +139,15 @@ A documented Cloudflare draft 16 trial with Encoder 2.294.0 observed moving
 their own verification. See the [Live wizard guide](user-guide/LIVE.md#experimental-moq-delivery)
 and [trial conditions and results](MOQ-LIVE-ENCODER-TEST-RESULTS.md).
 
-Native Templates, Native Watch Folders and resource CRUD/custom-data/query
-controls belong to a separate management lane. Existing app presets and watch
-rules do not implement their native provider counterparts.
+VOD job details and Live run details now support inspecting provider resources
+recorded by their execution steps. Available actions depend on the resource
+family and include scoped collection browsing, metadata checks and operator-
+confirmed removal on a finished execution. See the [VOD guide](user-guide/VOD.md#inspect-or-remove-a-provider-resource)
+and the [Live guide](user-guide/LIVE.md#inspect-a-runs-provider-resources) for the
+supported actions and safeguards.
+Account-wide inventory and native Templates and Watch Folders remain separate
+from these job- and run-scoped controls. App presets and watch rules use their
+own storage.
 
 ## Evidence limits and future verification
 

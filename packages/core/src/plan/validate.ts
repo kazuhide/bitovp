@@ -43,11 +43,13 @@ import {
 } from "./input-stream-graph";
 import { checkInternalHevcV2Plan } from "./internal-hevc-v2";
 import { validateManifestDetails } from "./manifest-detail-validation";
-import { filterFamily } from "./media-filters";
+import { filterFamily, supportsDolbyLoudness } from "./media-filters";
 import {
 	hasMuxedInAudio,
 	isFileOnlyMuxingKind,
 	muxingStreamKeys,
+	physicalMuxingKind,
+	VOD_DRM_MUXINGS,
 } from "./muxing-streams";
 import { outputFileCollisions } from "./output-file-collisions";
 import { isPerTitleRendition } from "./per-title-results";
@@ -57,6 +59,7 @@ import {
 	type PlanMuxing,
 	vmafModelNeedsFile,
 } from "./schema";
+import { validateBroadcastFilters } from "./validate-broadcast-filters";
 
 const VIDEO_CODECS_FOR_MODE = new Set(["H264", "H265", "VP9", "AV1"]);
 
@@ -401,7 +404,10 @@ export function validatePlan(
 	issues.push(...checkAv1CodecControls(plan.renditions));
 	issues.push(...checkCodecDetailControls(plan.renditions));
 	issues.push(...checkConcatenationAvQualification(plan));
-	issues.push(...checkAv1DetailPreservationVersion(plan));
+	issues.push(
+		...checkAv1DetailPreservationVersion(plan),
+		...validateBroadcastFilters(plan),
+	);
 	issues.push(...checkHlsVideoUris(plan));
 	for (const [i, output] of plan.outputs.entries())
 		if (output.kind === "LIVE_MEDIA_INGEST" || output.kind === "MOQ")
@@ -1318,8 +1324,10 @@ export function validatePlan(
 				filter &&
 				(rendition.codec === "WEBVTT" ||
 					rendition.codec === "IMSC" ||
-					filterFamily(filter.kind) !==
-						(AUDIO_CODECS.has(rendition.codec) ? "audio" : "video"))
+					(filter.kind === "DOLBY_LOUDNESS" &&
+						!supportsDolbyLoudness(rendition.codec)) ||
+					filterFamily(filter.kind) ===
+						(AUDIO_CODECS.has(rendition.codec) ? "video" : "audio"))
 			)
 				issues.push({
 					code: "PLAN_FILTER_MEDIA_TYPE",
@@ -1773,15 +1781,10 @@ export function validatePlan(
 	// DRM: resolve refs, enforce the drm-kind × container matrix and C9
 	// (CENC ivSize: CTR→8 bytes, CBC→16 bytes).
 	const muxingByKey = new Map(plan.muxings.map((m) => [m.key, m]));
-	const DRM_ALLOWED: Record<string, string[]> = {
-		SPEKE: ["FMP4"],
-		CENC: ["FMP4", "MP4", "WEBM"],
-		FAIRPLAY: ["FMP4", "TS"],
-	};
 	for (const [index, drm] of plan.drm.entries()) {
 		const muxing = muxingByKey.get(drm.muxingKey);
 		if (
-			muxing?.kind === "TS" &&
+			(muxing?.kind === "TS" || muxing?.kind === "PROGRESSIVE_TS") &&
 			muxingStreamKeys(muxing).some((key) => {
 				const codec = renditionByKey.get(key)?.codec;
 				return codec === "AC3" || codec === "EAC3";
@@ -1802,11 +1805,13 @@ export function validatePlan(
 				message: `drm "${drm.key}" references unknown muxing "${drm.muxingKey}"`,
 				path: `drm[${index}].muxingKey`,
 			});
-		} else if (!(DRM_ALLOWED[drm.kind] ?? []).includes(muxing.kind)) {
+		} else if (
+			!VOD_DRM_MUXINGS[drm.kind].includes(physicalMuxingKind(muxing))
+		) {
 			issues.push({
 				code: "PLAN_DRM_MUXING_MISMATCH",
 				level: "error",
-				message: `drm "${drm.key}" (${drm.kind}) cannot encrypt the ${muxing.kind} muxing "${muxing.key}" — allowed: ${(DRM_ALLOWED[drm.kind] ?? []).join("/")}`,
+				message: `drm "${drm.key}" (${drm.kind}) cannot encrypt the ${muxing.kind} muxing "${muxing.key}" — allowed: ${VOD_DRM_MUXINGS[drm.kind].join("/")}`,
 				path: `drm[${index}].muxingKey`,
 			});
 		}
@@ -2728,7 +2733,7 @@ export function validatePlan(
 		plan.renditions.flatMap((r) => (r.filters ?? []).map((a) => a.filterKey)),
 	);
 	for (const filter of plan.filters) {
-		if (filter.kind === "WATERMARK") {
+		if (filter.kind === "WATERMARK" || filter.kind === "ENHANCED_WATERMARK") {
 			const input = plan.inputs.find((i) => i.key === filter.inputKey);
 			if (!input || !["S3", "GENERIC_S3", "GCS"].includes(input.kind))
 				issues.push({

@@ -87,14 +87,15 @@ describe("SPEKE plan and encrypted credentials", () => {
 		const p = plan();
 		p.muxings[0] = {
 			key: "v360",
-			kind: "TS",
+			kind: "PROGRESSIVE_MOV",
 			streamKey: "v360",
-			segmentLength: 6,
-			segmentNaming: "segment_%number%.ts",
-			destination: p.drm[0]?.destination,
+			filename: "movie.mov",
+			destination: { outputKey: p.outputs[0]?.key ?? "origin", path: "mov" },
 		};
 		expect(
-			validatePlan(p).some((i) => i.message.includes("cannot encrypt the TS")),
+			validatePlan(p).some((i) =>
+				i.message.includes("cannot encrypt the PROGRESSIVE_MOV"),
+			),
 		).toBe(true);
 		const wrong = validatePlan(plan(), {
 			credentialProviders: new Map([[credentialId, "DRM_CENC"]]),

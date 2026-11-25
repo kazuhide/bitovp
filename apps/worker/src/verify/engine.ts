@@ -259,6 +259,8 @@ export type ParsedDash = {
 		periodIndex?: number;
 		/** Concrete image references expanded by the DASH parser, including inherited templates. */
 		imageUris?: string[];
+		/** Directories of this subtitle representation’s media, including inherited BaseURLs. */
+		subtitleMediaDirectories?: string[];
 		baseUrl?: string;
 		language?: string;
 		id?: string;
@@ -711,29 +713,40 @@ async function verifyMuxing(
 					listed.size > 0,
 					`Subtitle file contains ${listed.size} bytes`,
 				);
+			const webVtt = muxing.text?.codec === "WEBVTT";
+			const check = `${id}:file-${webVtt ? "webvtt" : "xml"}`;
 			if (listed?.size !== undefined && listed.size > MAX_SUBTITLE_XML_BYTES) {
 				report.fail(
-					`${id}:file-xml`,
+					check,
 					"muxing",
-					"Subtitle XML exceeds the 8 MiB verification limit",
+					"Subtitle file exceeds the 8 MiB verification limit",
 				);
 			} else {
 				try {
-					const validation = validateSubtitleXml(
-						await deps.readText(outputFor(hit as string), hit as string),
+					const content = await deps.readText(
+						outputFor(hit as string),
+						hit as string,
 					);
-					report.assert(
-						`${id}:file-xml`,
-						"muxing",
-						validation.valid,
-						validation.detail,
-					);
+					if (webVtt) {
+						const header = content.split(/[\r\n]/, 1)[0] ?? "";
+						const valid =
+							Buffer.byteLength(content, "utf8") <= MAX_SUBTITLE_XML_BYTES &&
+							/^\uFEFF?WEBVTT(?:[ \t].*)?$/u.test(header) &&
+							!header.includes("-->");
+						report.assert(
+							check,
+							"muxing",
+							valid,
+							valid
+								? "Subtitle file has a WebVTT signature"
+								: "Expected a WebVTT signature within the 8 MiB limit",
+						);
+					} else {
+						const validation = validateSubtitleXml(content);
+						report.assert(check, "muxing", validation.valid, validation.detail);
+					}
 				} catch {
-					report.fail(
-						`${id}:file-xml`,
-						"muxing",
-						"Subtitle XML could not be read",
-					);
+					report.fail(check, "muxing", "Subtitle file could not be read");
 				}
 			}
 			return;

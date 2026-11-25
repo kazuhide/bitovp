@@ -1,4 +1,3 @@
-import { isHdr10PlusObjectPath } from "./hdr-source-paths";
 import { stringify } from "yaml";
 import { h26xPictureControls } from "./codec-controls";
 import { codecDetailWireControls } from "./codec-detail-controls";
@@ -9,6 +8,7 @@ import {
 	relativeSegmentPath,
 } from "./compiler";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
+import { isHdr10PlusObjectPath } from "./hdr-source-paths";
 import { hdr10PlusTransformIssues } from "./hdr10-plus";
 import { heAacConfiguration, isHeAac } from "./he-aac";
 import { hlsChildEntries, hlsSubtitleGroups } from "./hls-media-defaults";
@@ -938,7 +938,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		const [section, collection] = captionSections[kind];
 		const entries = captionsByEnc.get(owner) ?? {};
 		entries[section] ??= {};
-		entries[section][collection] ??= {};
+		entries[section][collection] ??= resourceTable();
 		entries[section][collection][key] = {
 			properties: { ...properties, inputId: inputRef.get(inputKey) },
 		};
@@ -1305,14 +1305,18 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			filterResources[endpoint] ??= resourceTable();
 			const group = filterResources[endpoint];
 			const properties = filterParameters(filter);
-			if (filter.kind === "WATERMARK") {
+			if (filter.kind === "WATERMARK" || filter.kind === "ENHANCED_WATERMARK") {
 				delete properties.inputKey;
 				delete properties.imagePath;
-				properties.image = placeholder(
-					"INPUT",
-					filter.inputKey,
-					`WATERMARK_${instanceKey.replaceAll("-", "_").toUpperCase()}_URL`,
-				);
+				const label = `WATERMARK_${instanceKey.replaceAll("-", "_").toUpperCase()}`;
+				let suffix = `${label}_URL`;
+				for (
+					let i = 2;
+					usedPlaceholders.has(placeholder("INPUT", filter.inputKey, suffix));
+					i++
+				)
+					suffix = `${label}_${i}_URL`;
+				properties.image = ph("INPUT", filter.inputKey, suffix);
 			}
 			group[instanceKey] = { properties };
 			attachmentRefs.push({
@@ -1368,10 +1372,10 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				chunkedText: {},
 				ts: {},
 				webm: {},
-				progressiveTs: {},
+				progressiveTs: Object.create(null),
 				progressiveMov: {},
-				progressiveWav: {},
-				progressiveWebm: {},
+				progressiveWav: resourceTable(),
+				progressiveWebm: resourceTable(),
 			};
 			muxingsByEnc.set(ownerEnc, legs);
 		}
@@ -1539,8 +1543,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				},
 			};
 		} else if (muxing.kind === "PROGRESSIVE_TS") {
-			// No `drm` node: validation refuses a DRM row on a whole-file kind.
 			progressiveTs[muxing.key] = {
+				...drmNode,
 				properties: {
 					filename: muxing.filename,
 					// Absent fields stay absent — the encoder's defaults apply.
@@ -1563,6 +1567,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			// The schema's `progressiveWebm` section. `manifestType` and
 			// `segmentLength` stay out: the plan kind does not carry them.
 			progressiveWebm[muxing.key] = {
+				...drmNode,
 				properties: { filename: muxing.filename, ...shared },
 			};
 		} else {
@@ -2471,9 +2476,18 @@ export function encodingTemplateExportUnavailableReason(
 	| "DASH_ON_DEMAND_MP4_DRM"
 	| "MANIFEST_DETAILS"
 	| "PINNED_AUDIO_INPUT"
+	| "DOLBY_LOUDNESS"
 	| undefined {
 	if (plan.renditions.some((r) => r.codec === "AUDIO_PASSTHROUGH"))
 		return "PINNED_AUDIO_INPUT";
+	const dolby = new Set(
+		plan.filters.filter((f) => f.kind === "DOLBY_LOUDNESS").map((f) => f.key),
+	);
+	if (
+		dolby.size &&
+		plan.renditions.some((r) => r.filters?.some((a) => dolby.has(a.filterKey)))
+	)
+		return "DOLBY_LOUDNESS";
 	if (plan.drm.some((drm) => drm.kind === "SPEKE")) return "SPEKE";
 	if (
 		plan.muxings.some(
@@ -2558,6 +2572,10 @@ export function planToEncodingTemplateYaml(plan: EncodingPlan): string {
 		throw new Error(
 			"Use Plan JSON to retain the verified input version and selected audio track.",
 		);
+	if (unavailable === "DOLBY_LOUDNESS")
+		throw new Error(
+			"Dolby Loudness is unavailable in encoding-template YAML. Use Plan JSON or run the job in the app.",
+		);
 	if (unavailable === "MANIFEST_DETAILS")
 		throw new Error(
 			"Advanced manifest settings and progressive WebM require Plan JSON or execution in the app; encoding-template YAML export is unavailable.",
@@ -2586,7 +2604,9 @@ export function planToEncodingTemplateYaml(plan: EncodingPlan): string {
 		"# schema: https://raw.githubusercontent.com/bitmovin/bitmovin-api-sdk-examples/main/bitmovin-encoding-template.json",
 		"# Secrets are exported as {{PLACEHOLDER}} variables (vault never leaves this app).",
 		"# Numeric substitutions (e.g. the SFTP port) must be unquoted numbers.",
-		...(plan.filters.some((f) => f.kind === "WATERMARK")
+		...(plan.filters.some(
+			(f) => f.kind === "WATERMARK" || f.kind === "ENHANCED_WATERMARK",
+		)
 			? [
 					"# NOTE: watermark image URL placeholders require a fresh signed URL for the referenced input object.",
 				]

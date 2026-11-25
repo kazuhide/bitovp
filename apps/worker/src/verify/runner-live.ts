@@ -736,7 +736,14 @@ export async function collectManifestFiles(
 			let referenceChecks: Check[] | undefined;
 			if (m.kind === "DASH") {
 				const { parseDashText } = await import("./adapters");
-				const parsed = await parseDashText(text);
+				const manifestUri = new URL(
+					"./" + key.split("/").map(encodeURIComponent).join("/"),
+					"https://origin.invalid/",
+				).href;
+				const parsed = await parseDashText(
+					text,
+					m.dashDvbSubtitles?.length ? manifestUri : undefined,
+				);
 				entries = parsed.representations.length;
 				if (m.dashExternalSubtitles?.length || m.dashDvbSubtitles?.length) {
 					const id = `live:manifest:${m.manifestKey}`;
@@ -746,7 +753,12 @@ export async function collectManifestFiles(
 							m.dashExternalSubtitles ?? [],
 							parsed,
 						),
-						...dashDvbSubtitleChecks(id, m.dashDvbSubtitles ?? [], parsed),
+						...dashDvbSubtitleChecks(
+							id,
+							m.dashDvbSubtitles ?? [],
+							parsed,
+							manifestUri,
+						),
 					];
 				}
 				videoCodecSets = parsed.adaptationSets
@@ -987,7 +999,7 @@ async function measureFirstPublish(
 }
 
 /** Exact provider resources written by the current airing's step log. */
-function providerResourcesFromStepLog(stepLog: unknown): {
+export function providerResourcesFromStepLog(stepLog: unknown): {
 	streamIds: Record<string, string>;
 	outputIds: Record<string, string>;
 } {
@@ -1000,6 +1012,17 @@ function providerResourcesFromStepLog(stepLog: unknown): {
 				}
 				const step = (entry as { step?: unknown }).step;
 				const resourceId = (entry as { resourceId?: unknown }).resourceId;
+				if (
+					prefix === "stream:" &&
+					typeof step === "string" &&
+					step.startsWith("dvb:") &&
+					step.endsWith(":stream") &&
+					(entry as { kind?: unknown }).kind === "CREATE_STREAM" &&
+					typeof resourceId === "string" &&
+					resourceId
+				) {
+					return [[step.slice(0, -":stream".length), resourceId] as const];
+				}
 				return typeof step === "string" &&
 					step.startsWith(prefix) &&
 					typeof resourceId === "string" &&

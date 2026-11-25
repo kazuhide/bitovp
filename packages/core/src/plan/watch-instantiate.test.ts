@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { providersForIoKind } from "../credentials/io-kind-providers";
 import { compilePlan } from "./compiler";
-import { planInputSchema } from "./schema";
+import { encodingPlanSchema, planInputSchema } from "./schema";
 import {
 	instantiateWatchPlan,
 	isWatchSubstitutableInputKind,
@@ -509,4 +509,51 @@ describe("watch template compatibility", () => {
 		// capability must not manufacture a refusal.
 		expect(watchTemplateIssues(templateWithInput("S3"))).toEqual([]);
 	});
+});
+
+it("rebases co-located embedded captions and rejects independent caption or verified-copy inputs", () => {
+	const p = encodingPlanSchema.parse(TEMPLATE);
+	const ingest = p.ingest[0];
+	if (!ingest) throw Error("expected a media track");
+	const caption = {
+		key: "cc",
+		kind: "CEA608" as const,
+		channel: "CC1" as const,
+		inputKey: ingest.inputKey,
+		inputPath: ingest.inputPath,
+	};
+	p.captionStreams = [caption];
+	const result = instantiateWatchPlan({
+		presetBody: p,
+		objectKey: "new/video.ts",
+		rule: RULE,
+		now: NOW,
+		uuid: UUID,
+	});
+	expect(result.ok).toBe(true);
+	if (result.ok)
+		expect(result.plan.captionStreams[0]?.inputPath).toBe("new/video.ts");
+	expect(
+		watchTemplateIssues({
+			...p,
+			captionStreams: [{ ...caption, inputPath: "another.ts" }],
+		}),
+	).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ code: "CAPTION_SOURCE" }),
+		]),
+	);
+	const pinned = {
+		key: "copy",
+		name: "Copied sound",
+		codec: "AUDIO_PASSTHROUGH",
+		ingestKey: ingest.key,
+		sourceCodec: "AAC",
+		inspectionId: ACCOUNT_ID,
+	};
+	expect(watchTemplateIssues({ ...p, renditions: [pinned] })).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ code: "VERIFIED_AUDIO_SOURCE" }),
+		]),
+	);
 });

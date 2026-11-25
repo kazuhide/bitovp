@@ -61,6 +61,27 @@ export function createBitmovinAccountStore(
 			return cipher.decrypt(row.encryptedApiKey, aadFor(id));
 		},
 
+		/** Capture upstream scope and decrypt from the same account row version. */
+		async revealForEncoding(id: string) {
+			const row = await prisma.bitmovinAccount.findUnique({
+				where: { id },
+				select: {
+					tenantOrgId: true,
+					encryptedApiKey: true,
+					resourceScopeVersion: true,
+					resourceScopeSince: true,
+					updatedAt: true,
+				},
+			});
+			if (!row) return null;
+			const { encryptedApiKey, updatedAt, resourceScopeSince, ...scope } = row;
+			return {
+				...scope,
+				resourceScopeSince: resourceScopeSince ?? updatedAt,
+				apiKey: await cipher.decrypt(encryptedApiKey, aadFor(id)),
+			};
+		},
+
 		async update(
 			id: string,
 			patch: UpdateBitmovinAccountInput,

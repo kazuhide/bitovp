@@ -11,12 +11,16 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Export a selected VOD audio track to a mono or stereo PCM WAV file, or copy a verified AAC or PCM track into a supported MP4, MOV or WAV file from the file-output wizard.
 - Extract DVB bitmap subtitles from a Live transport stream by absolute track position. Publish segmented WebVTT in HLS or DASH, or WebVTT in fMP4 for DASH. Save language, display name and packaging in Live templates and drafts.
 - Extract CEA-608, CEA-708 and DVB subtitles from VOD input media into WebVTT files or HLS subtitle tracks. Templates retain the selected channel, service or track position.
+- Browse the DRM configurations and Progressive TS ID3 tags attached to a recorded VOD or Live muxing.
+- Inspect recorded provider resources from VOD jobs and Live runs. Operators can remove individually confirmed resources after the execution ends and check the outcome of an interrupted removal.
 
+- Configure SPEKE for VOD MP4, TS and WebM outputs, including progressive TS and WebM files. Reuse encrypted-only VOD presets and export progressive TS FairPlay or progressive WebM CENC outputs in template YAML.
 - Configure VOD HEVC/HDR10+ with a video and metadata JSON sidecar on the same input storage, and retain this source when editing a saved plan. The input timeline remains unavailable for HDR10+ in this application. The Web and Worker now use the published Bitmovin JavaScript SDK 1.289.0. HDR10+ requires Encoder 2.294.0 or later.
 - Show Live input aspect ratio, audio channel count and channel layout supplied by Encoder 2.294.0 as first-connection metadata. Missing or malformed values remain unavailable and do not become fresh health evidence.
 - Select HE-AAC v1 or v2 in VOD and Live audio ladders and preserve profile-specific signaling in saved templates.
 - Configure per-rendition input conditions in VOD and Live, including nested AND/OR comparisons on source tracks.
 
+- Configure enhanced deinterlacing, frame-rate conform, interlacing, and a resizable watermark on VOD video renditions. Mix input channels or normalize Dolby loudness on compatible audio renditions. Saved templates retain each rendition’s filter order.
 - Run repeatable local x264, x265, VP9/libvpx and SVT-AV1 training encodes through the experiment CLI and authenticated API, with per-worker parameter discovery, CPU VMAF and measured bitrate exports.
 - Show instance-wide Redis memory usage and the configured Redis limit to platform owners in Settings.
 - Optionally score an NVENC experiment with BitOVP CUDA VMAF v1.0.16 alongside v0.6.1, export both measurements, and choose a scoring model for Lean selection.

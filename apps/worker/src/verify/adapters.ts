@@ -420,7 +420,10 @@ export async function parseHlsText(text: string): Promise<ParsedHls> {
  * `dash-segment-timeline` fixture exists to protect. So acceptance comes from the
  * parser and the addressing mode comes from the document.
  */
-export async function parseDashText(text: string): Promise<ParsedDash> {
+export async function parseDashText(
+	text: string,
+	manifestUri?: string,
+): Promise<ParsedDash> {
 	const mod = await import("mpd-parser");
 	const parsed = mod.parse(text);
 	const periodStarts = [...text.matchAll(/<Period\b/g)].map(
@@ -523,6 +526,35 @@ export async function parseDashText(text: string): Promise<ParsedDash> {
 			...(codecs ? { codecs: codecs[1] as string } : {}),
 		};
 	});
+	if (manifestUri && reps.some((row) => row.kind === "text")) {
+		const { representationInfo } = mod.inheritAttributes(
+			mod.stringToMpdXml(text),
+			{ manifestUri },
+		);
+		for (const row of reps) {
+			if (row.kind !== "text" || !row.id) continue;
+			const directories = new Set<string>();
+			const id = decodeXmlText(row.id);
+			for (const { attributes, segmentInfo } of representationInfo) {
+				if (attributes.id !== id || attributes.lang !== row.language) continue;
+				const media = segmentInfo?.template?.media;
+				if (!media && segmentInfo?.list?.segmentUrls?.length)
+					row.addressing = "LIST";
+				const references = media
+					? [media]
+					: (segmentInfo?.list?.segmentUrls?.map((item) => item.media) ?? []);
+				for (const ref of references) {
+					if (!ref) continue;
+					const expanded = ref
+						.replaceAll("$RepresentationID$", id)
+						.replaceAll("$Bandwidth$", String(attributes.bandwidth ?? ""));
+					const segment = new URL(expanded, attributes.baseUrl || manifestUri);
+					directories.add(new URL(".", segment).href);
+				}
+			}
+			if (directories.size) row.subtitleMediaDirectories = [...directories];
+		}
+	}
 	if (reps.some((representation) => representation.kind === "image")) {
 		// The player-oriented conversion omits image tracks. Its lower-level
 		// public parser still resolves their inherited templates and timelines.

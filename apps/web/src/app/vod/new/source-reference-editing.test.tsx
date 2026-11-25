@@ -171,6 +171,18 @@ describe("source resource editing", () => {
 			stateNow().sources?.concatenationStreams?.[0]?.sources[0]?.sourceKey,
 		).toBe("scene-a");
 	});
+	it.each([
+		"audio",
+		"video",
+	])("keeps a trim rename from capturing implicit %s", (name) => {
+		mount(base);
+		const key = document.getElementById("wz-trim-0-key") as HTMLInputElement;
+		fireEvent.change(key, { target: { value: name } });
+		fireEvent.blur(key);
+		expect(key).toHaveValue("trim1");
+		expect(stateNow().sources?.trimmingStreams?.[0]?.key).toBe("trim1");
+		expect(stateNow().sources?.trimmingStreams?.[0]?.sourceKey).toBe("video");
+	});
 	it("renames a concatenation source while preserving rendition references", async () => {
 		const user = userEvent.setup();
 		mount({

@@ -1,6 +1,11 @@
 import { MAX_VOD_TIMELINE_SOURCES } from "../vod-input-timeline/contracts";
 import type { VodInputFavoriteWire } from "../vod-input-timeline/favorites";
-import type { WizardFilter, WizardInputFile, WizardState } from "./build-plan";
+import {
+	isWizardWatermarkFilter,
+	type WizardFilter,
+	type WizardInputFile,
+	type WizardState,
+} from "./build-plan";
 
 /** Import a value snapshot. A later registry edit never updates project inputs. */
 export function applyVodInputFavorite(
@@ -73,7 +78,7 @@ export function applyVodInputFavorite(
 		};
 	const prior = state.filters?.find(
 		(filter) =>
-			filter.kind === "WATERMARK" &&
+			isWizardWatermarkFilter(filter) &&
 			(filter.inputKey === file.key ||
 				(filter.inputKey === file.inputKey && filter.imagePath === file.path)),
 	);

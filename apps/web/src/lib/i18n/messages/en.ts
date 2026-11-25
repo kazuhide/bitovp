@@ -60,7 +60,7 @@ export const en = {
 			CHANNELFORMAT: "Channel count",
 			CHANNELLAYOUT: "Channel layout",
 			HEARINGIMPAIRED: "Hearing-impaired flag",
-			STREAMID: "Stream ID / PID",
+			STREAMID: "Stream ID / packet identifier",
 		},
 	},
 	liveDvb: {
@@ -76,6 +76,43 @@ export const en = {
 		remove: "Remove subtitle track",
 		transport:
 			"Use an SRT, Zixi or HLS transport-stream input for DVB subtitles.",
+	},
+	providerResources: {
+		muxingChildren: "DRM and ID3 on this muxing",
+		chooseType: "Select a resource type",
+		allDrm: "All DRM systems",
+		allId3: "All ID3 tags",
+		drmPrefix:
+			"The provider returned the first {count} entries. Choose a DRM system to browse its pages.",
+		childChanged: "The selected child could not be verified. Reload the list.",
+		linked: "Linked resource in the provider list",
+		metadata: "Ownership metadata",
+		remove: "Remove from provider",
+		confirm:
+			"This permanently removes the provider resource. A VOD retry may require a new job. Enter {id} to confirm.",
+		verify: "Check removal",
+		unconfirmed: "Removal is unconfirmed.",
+		present: "The provider still reports this resource.",
+		removed: "The resource has been removed or confirmed absent.",
+		removeBlocked:
+			"Removal is blocked. Refresh the execution and check its status and references.",
+		removeFailed:
+			"The removal could not be confirmed. Check the recorded outcome.",
+
+		title: "Inspect provider resources",
+		resource: "Resource",
+		choose: "Select a recorded resource",
+		detail: "Resource details",
+		siblings: "Resources under the same parent",
+		loading: "Loading resources…",
+		missing: "This resource is unavailable.",
+		changed: "The resource or its original account could not be verified.",
+		failed: "Could not read the provider resource.",
+		empty: "No supported resources were recorded for this execution.",
+		emptyPage: "No resources on this page.",
+		range: "{from}–{to} of {total}",
+		previous: "Previous page",
+		next: "Next page",
 	},
 	outputCompare: {
 		title: "Compare outputs",
@@ -5244,6 +5281,8 @@ export const en = {
 			"Individual video playlist filenames are unavailable for Per-Title. Clear this override and use the manifest's bitrate-derived names.",
 		onDemandDrmTemplateUnavailable:
 			"YAML export is unavailable for OnDemand MP4 DRM. Use Plan JSON or run this plan in the app to preserve DRM.",
+		dolbyLoudnessTemplateUnavailable:
+			"Use Plan JSON for Dolby Loudness. The Encoding Template schema does not include this filter.",
 		spekeTemplateUnavailable: "SPEKE settings are available as Plan JSON.",
 		spekeOtherSystems: "Other system IDs (optional)",
 		spekeProvider: "SPEKE key provider",
@@ -6254,7 +6293,7 @@ export const en = {
 		available: "Saved draft available",
 		restore: "Restore",
 		discard: "Discard",
-		help: "Saved for 7 days on this browser. Secrets, URLs, DRM, filter settings and imported JSON are excluded. Review these before starting.",
+		help: "Saved for 7 days on this browser. VOD drafts keep filter settings, including image object paths and channel gains. Secrets, URLs, DRM, text-overlay contents and imported JSON are omitted.",
 	},
 	templates: {
 		savedDeliveryHeading: "Saved delivery presets",
@@ -6291,7 +6330,8 @@ export const en = {
 		launchTitle: "Launch \u201C{name}\u201D",
 		notAPlan: "This template's body is not a valid encoding plan.",
 		sources: "Sources",
-		hdrPairRequired: "Select both the replacement HDR10+ picture and its matching JSON metadata.",
+		hdrPairRequired:
+			"Select both the replacement HDR10+ picture and its matching JSON metadata.",
 		sourceOriginal: "Template's own path — leave as-is to re-run it.",
 		sourceMoved: "Overridden for this launch.",
 		browse: "Browse",

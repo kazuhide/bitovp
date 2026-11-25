@@ -166,3 +166,15 @@ describe("VOD audio files", () => {
 		).toBe(false);
 	});
 });
+
+it("rejects embedded caption reads outside the one verified copied audio source", () => {
+	const p = plan(copy("AAC"), "MP4", "audio.mp4");
+	p.captionStreams.push({
+		key: "unused",
+		kind: "CEA608",
+		channel: "CC1",
+		inputKey: "in",
+		inputPath: "another.mov",
+	});
+	expect(validatePlan(p).some((issue) => issue.level === "error")).toBe(true);
+});

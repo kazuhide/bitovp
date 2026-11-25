@@ -6,6 +6,8 @@ import {
 	isHeAac,
 	MUXING_CODEC_MATRIX,
 	muxingKindCarriesAudio,
+	physicalMuxingKind,
+	VOD_DRM_MUXINGS,
 } from "@bitovp/core";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -368,10 +370,12 @@ function MuxingEditor({
 	// stream — one predicate, shared with `buildPlan` and the audio reconciler,
 	// so the picker cannot offer a relation the builder would drop.
 	const kindCanMux = muxingKindCarriesAudio(kind);
-	// A whole-file container is never a manifest leg and has no DRM route: the
-	// validator refuses an encryption row on it, so the form does not offer one.
 	const fileOnly = isFileOnlyMuxingKind(kind);
-	const drmOffered = kind !== "CMAF" && !fileOnly;
+	const physicalKind = physicalMuxingKind({ ...muxing, kind });
+	const drmKinds = (
+		Object.keys(VOD_DRM_MUXINGS) as WizardDrmRow["kind"][]
+	).filter((k) => VOD_DRM_MUXINGS[k].includes(physicalKind));
+	const drmOffered = drmKinds.length > 0;
 	/**
 	 * The selection, resolved against the renditions that CURRENTLY exist.
 	 *
@@ -596,29 +600,20 @@ function MuxingEditor({
 					))}
 					{drmOffered ? (
 						<div className="flex gap-1">
-							<Button
-								variant="secondary"
-								size="sm"
-								onClick={() => drm.add("CENC", muxingKey)}
-							>
-								{t("wizard.addCenc")}
-							</Button>
-							<Button
-								variant="secondary"
-								size="sm"
-								onClick={() => drm.add("FAIRPLAY", muxingKey)}
-							>
-								{t("wizard.addFairplay")}
-							</Button>
-							{kind === "FMP4" ? (
+							{drmKinds.map((drmKind) => (
 								<Button
+									key={drmKind}
 									variant="secondary"
 									size="sm"
-									onClick={() => drm.add("SPEKE", muxingKey)}
+									onClick={() => drm.add(drmKind, muxingKey)}
 								>
-									+ SPEKE
+									{drmKind === "CENC"
+										? t("wizard.addCenc")
+										: drmKind === "FAIRPLAY"
+											? t("wizard.addFairplay")
+											: "+ SPEKE"}
 								</Button>
-							) : null}
+							))}
 						</div>
 					) : null}
 				</Collapsible>

@@ -10,8 +10,8 @@ import {
 	MAX_SCENE_ANALYSIS_BYTES,
 	normalizeSceneAnalysis,
 	type ProviderAnalysisView,
-	publicLibraryQcEvidence,
 	publicHdrSourceProjection,
+	publicLibraryQcEvidence,
 	publicStorageDiagnostic,
 	redactSecrets,
 	sceneAnalysisDocumentSchema,
@@ -111,9 +111,7 @@ export async function sourceView(
 		take: 100,
 		select: { content: { select: { id: true, title: true, archived: true } } },
 	});
-	const parsedSnapshot = librarySourceSnapshotSchema.parse(
-		publicHdrSourceProjection(source.snapshot),
-	);
+	const parsedSnapshot = librarySourceSnapshotSchema.parse(source.snapshot);
 	const {
 		analysisOutput: _privateLocator,
 		fileOutputs,
@@ -152,13 +150,13 @@ export async function sourceView(
 			),
 		error: publicStorageDiagnostic(source.error),
 		locales,
-		snapshot: {
+		snapshot: publicHdrSourceProjection({
 			...snapshot,
 			playbackLinks: playbackLinks ?? snapshot.playbackLinks,
 			...(qcEvidence === undefined
 				? {}
 				: { qcEvidence: publicLibraryQcEvidence(qcEvidence) }),
-		},
+		}),
 		analyses: analyses.flatMap((row) => {
 			if (!row) return [];
 			let document: ReturnType<typeof normalizeSceneAnalysis>;

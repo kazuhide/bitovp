@@ -1,7 +1,9 @@
 import {
+	isWizardWatermarkFilter,
 	type WizardFilter,
 	type WizardRenditionExtras,
 	type WizardState,
+	wizardInputStorage,
 	wizardWatermarkFile,
 } from "./build-plan";
 
@@ -11,6 +13,7 @@ export function editFilter(
 	index: number,
 	next: WizardFilter,
 	manualKey = false,
+	storageSelected = false,
 ): Partial<WizardState> {
 	const filters = state.filters ?? [];
 	const previous = filters[index];
@@ -64,9 +67,46 @@ export function editFilter(
 				}
 			: row;
 	let inputFiles = state.inputFiles;
+	function uniqueFileKey(base: string) {
+		let suffix = 2;
+		while (inputFiles.some((file) => file.key === `${base}-${suffix}`))
+			suffix++;
+		return `${base}-${suffix}`;
+	}
 	if (
-		previous.kind === "WATERMARK" &&
-		next.kind === "WATERMARK" &&
+		storageSelected &&
+		isWizardWatermarkFilter(previous) &&
+		isWizardWatermarkFilter(next)
+	) {
+		const targetKey = next.inputKey;
+		const site = inputFiles.find((file) => file.key === targetKey);
+		if (site) {
+			const prior = wizardWatermarkFile(inputFiles, previous);
+			const path =
+				prior?.purpose === "FILTER_IMAGE" ? prior.path : previous.imagePath;
+			const location = wizardInputStorage(site);
+			let image = inputFiles.find(
+				(file) =>
+					file.purpose === "FILTER_IMAGE" &&
+					file.path === path &&
+					file.inputKey === site.inputKey &&
+					wizardInputStorage(file) === location,
+			);
+			if (!image) {
+				image = {
+					...site,
+					key: uniqueFileKey(site.key),
+					purpose: "FILTER_IMAGE",
+					path,
+				};
+				inputFiles = [...inputFiles, image];
+			}
+			next = { ...next, inputKey: image.key, imagePath: path };
+		}
+	}
+	if (
+		isWizardWatermarkFilter(previous) &&
+		isWizardWatermarkFilter(next) &&
 		previous.inputKey === next.inputKey &&
 		previous.imagePath !== next.imagePath
 	) {
@@ -76,14 +116,11 @@ export function editFilter(
 			const shared = filters.some(
 				(row, i) =>
 					i !== index &&
-					row.kind === "WATERMARK" &&
+					isWizardWatermarkFilter(row) &&
 					wizardWatermarkFile(inputFiles, row)?.key === image.key,
 			);
 			if (shared) {
-				let suffix = 2;
-				while (inputFiles.some((file) => file.key === `${image.key}-${suffix}`))
-					suffix++;
-				edited.key = `${image.key}-${suffix}`;
+				edited.key = uniqueFileKey(image.key);
 				inputFiles = [...inputFiles, edited];
 			} else {
 				inputFiles = inputFiles.map((file) =>

@@ -198,6 +198,18 @@ describe("prepared input admission before queue/provider", () => {
 		expect(f.browser.headObject).not.toHaveBeenCalled();
 		expect(f.browser.getObject).not.toHaveBeenCalled();
 	});
+	it("rejects a separate caption reader before opening the verified prepared object", async () => {
+		const f = fixture();
+		f.plan.captionStreams.push({
+			key: "stale",
+			kind: "CEA608",
+			channel: "CC1",
+			inputKey: "main",
+			inputPath: "another.mov",
+		});
+		await expect(f.verify()).rejects.toThrow("INPUT_PREPARATION_INVALID");
+		expect(f.browser.headObject).not.toHaveBeenCalled();
+	});
 	it("rejects a short clean read despite unchanged storage headers", async () => {
 		const f = fixture();
 		f.browser.getObject.mockImplementation(async () =>

@@ -177,13 +177,15 @@ export function PlanPreview({ evaluation }: { evaluation: PlanEvaluation }) {
 	const templateUnavailableMessage =
 		templateUnavailable === "PINNED_AUDIO_INPUT"
 			? t("vodFlow.audioTemplateUnavailable")
-			: templateUnavailable === "SPEKE"
-				? t("wizard.spekeTemplateUnavailable")
-				: templateUnavailable === "DASH_ON_DEMAND_MP4_DRM"
-					? t("wizard.onDemandDrmTemplateUnavailable")
-					: templateUnavailable === "MANIFEST_DETAILS"
-						? t("manifestDetail.templateUnavailable")
-						: undefined;
+			: templateUnavailable === "DOLBY_LOUDNESS"
+				? t("wizard.dolbyLoudnessTemplateUnavailable")
+				: templateUnavailable === "SPEKE"
+					? t("wizard.spekeTemplateUnavailable")
+					: templateUnavailable === "DASH_ON_DEMAND_MP4_DRM"
+						? t("wizard.onDemandDrmTemplateUnavailable")
+						: templateUnavailable === "MANIFEST_DETAILS"
+							? t("manifestDetail.templateUnavailable")
+							: undefined;
 	const currentTab = templateUnavailable && tab === "yaml" ? "json" : tab;
 	const blocked =
 		evaluation.ok && evaluation.issues.some((i) => i.level === "error");

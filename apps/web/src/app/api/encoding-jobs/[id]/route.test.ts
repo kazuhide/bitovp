@@ -63,9 +63,10 @@ function delReq() {
 	});
 }
 
-it("withholds historical HDR object credentials from the viewer plan, native requests, snapshots and echoed errors", async () => {
-	const video =
-		"https://fixture.invalid/picture.mxf?signature=URL_FIXTURE_PRIVATE";
+it.each([
+	"https://fixture.invalid/picture.mxf?signature=URL_FIXTURE_PRIVATE",
+	"https:/fixture:URL_FIXTURE_PRIVATE@fixture.invalid/picture.mxf",
+])("withholds historical HDR object credentials from the viewer plan, native requests, snapshots and echoed errors", async (video) => {
 	const metadata = "//fixture:LOGIN_FIXTURE_PRIVATE@fixture.invalid/scene.json";
 	const paths = { videoInputPath: video, metadataInputPath: metadata };
 	const job = timesRow({

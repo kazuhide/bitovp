@@ -353,6 +353,12 @@ export async function executeMediaStep(
 			return { resourceId, request, response: { id: resourceId } };
 		}
 
+		case "CREATE_FILTER_ENHANCED_DEINTERLACE":
+		case "CREATE_FILTER_CONFORM":
+		case "CREATE_FILTER_INTERLACE":
+		case "CREATE_FILTER_ENHANCED_WATERMARK":
+		case "CREATE_FILTER_DOLBY_LOUDNESS":
+		case "CREATE_FILTER_AUDIO_MIX":
 		case "CREATE_FILTER_DENOISE_HQDN3D":
 		case "CREATE_FILTER_UNSHARP":
 		case "CREATE_FILTER_CROP":
@@ -369,7 +375,7 @@ export async function executeMediaStep(
 				kind: op.kind.replace("CREATE_FILTER_", ""),
 			});
 			const payload = filterParameters(filter);
-			if (filter.kind === "WATERMARK") {
+			if (filter.kind === "WATERMARK" || filter.kind === "ENHANCED_WATERMARK") {
 				delete payload.inputKey;
 				delete payload.imagePath;
 				payload.image = await signWatermarkImage(

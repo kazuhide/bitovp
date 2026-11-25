@@ -245,10 +245,10 @@ export function instantiateTemplatePlan(
 	const template = parsed.data;
 	const sites = templateSourceSites(template);
 	const byId = new Map(sites.map((s) => [s.siteId, s]));
-	const sources = input.sources ?? {};
+	const sources = new Map(Object.entries(input.sources ?? {}));
 
 	const issues: TemplateInstantiateIssue[] = [];
-	for (const siteId of Object.keys(sources)) {
+	for (const siteId of sources.keys()) {
 		if (!byId.has(siteId)) {
 			issues.push({
 				code: "UNKNOWN_SITE",
@@ -265,7 +265,7 @@ export function instantiateTemplatePlan(
 		string,
 		{ bucket: string; credentialId: string; bySite: string }
 	>();
-	for (const [siteId, param] of Object.entries(sources)) {
+	for (const [siteId, param] of sources) {
 		const site = byId.get(siteId);
 		if (!site) {
 			continue;
@@ -319,8 +319,8 @@ export function instantiateTemplatePlan(
 	// An input move changes the meaning of every relative path on that
 	// resource, even when another ingest site initiated the move.
 	for (const stream of template.hdr10PlusStreams) {
-		const video = sources[stream.key];
-		const metadata = sources[`${stream.key}:metadata`];
+		const video = sources.get(stream.key);
+		const metadata = sources.get(`${stream.key}:metadata`);
 		const move = inputMoves.get(stream.inputKey);
 		const original = template.inputs.find(
 			(entry) => entry.key === stream.inputKey,
@@ -349,7 +349,7 @@ export function instantiateTemplatePlan(
 	/** The prefix tokens read the FIRST site's effective path. */
 	const firstSite = sites[0];
 	const firstEffective = firstSite
-		? (sources[firstSite.siteId]?.objectKey ?? firstSite.currentPath)
+		? (sources.get(firstSite.siteId)?.objectKey ?? firstSite.currentPath)
 		: "";
 	const outputPrefix = renderTemplateOutputPrefix(input.outputPrefixTemplate, {
 		objectKey: firstEffective,
@@ -377,7 +377,7 @@ export function instantiateTemplatePlan(
 	): string => {
 		const siteId =
 			field === "metadataInputPath" ? `${streamKey}:metadata` : streamKey;
-		return sources[siteId]?.objectKey ?? current;
+		return sources.get(siteId)?.objectKey ?? current;
 	};
 
 	const rebased = rebaseDestinations(

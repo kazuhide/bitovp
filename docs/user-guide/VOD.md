@@ -70,8 +70,8 @@ or first provide a physical source file containing the combined edit. Ordinary
 independent AV inputs without concatenation and single-track outputs are unaffected.
 
 Drafts are saved in this browser for seven days, separately by user, organization,
-and creation source. Secret values, URLs, DRM settings, filters, and imported JSON
-are excluded. Review omitted settings and output destinations after restoring.
+and creation source. VOD drafts keep filter settings, including image object paths and audio channel gains.
+Secrets, URLs, DRM settings, text-overlay content and imported JSON are excluded. Review omitted settings and output destinations after restoring.
 
 ## Audio-only files
 
@@ -156,7 +156,11 @@ For media with embedded captions, open **Sources → Streams → Add embedded ca
 - **Opus audio:** package as WebM for compatible DASH playback. Use a separate
   compatible audio rendition when also producing HLS.
 - **Filters:** add a filter and assign it to the intended stream's filter chain.
-  HQDN3D removes noise; Unsharp sharpens or blurs.
+  Enhanced Deinterlace and Interlace control field processing. Conform requires the same target frame rate on every audio and video stream in an encoding, with any explicit video frame rate matching. Use it with encodings without captions or subtitle streams.
+  Enhanced Watermark takes an image from input storage. Set one horizontal and one vertical offset. Optional dimensions are at least one pixel or 0.1–100 percent.
+  On audio renditions, Audio Mix maps input channels and gains to numbered outputs. Select a matching codec layout. The layout selector disables speaker mappings the encoder changes.
+  Dolby Loudness requires Encoder 2.282.0 or newer and a supported audio codec. Leave audio/video sync unset and Kantar off. Use Plan JSON to export a plan with Dolby Loudness.
+  HQDN3D removes noise and Unsharp sharpens or blurs.
 - **CMAF muxing:** the dedicated muxing supports H.264/AAC with DASH
   TEMPLATE/TIMELINE. Choose fMP4 for HLS and the supported DRM paths.
 
@@ -210,3 +214,18 @@ provider readback confirms termination. A created or unknown provider state, or
 a failed stop or readback, leaves that confirmation pending.
 
 See [supported features and limits](../BITMOVIN-API-COVERAGE.md) for more restrictions.
+
+
+## Inspect or remove a provider resource
+
+Open a job’s **Resources** tab, expand **Inspect provider resources** and select a recorded step. Details are read from the provider using the job’s original account. Where available, the collection view lists resources under the selected parent. If the account binding or resource history cannot be verified, the saved job history is still available.
+
+Select a recorded fMP4, MP4, TS, Progressive TS, WebM or Progressive WebM muxing to see its DRM systems. Progressive TS also exposes ID3 tags. Choose a type, then open a row to see its public details or check whether its metadata identifies this job. The general DRM list shows the entries the provider returned. Choose a specific DRM system to browse further pages.
+
+For protected DASH or Smooth manifests, select the representation or content-protection creation step to inspect the recorded provider resource and its collection. BitOVP checks the manifest hierarchy and the encoding, muxing and DRM references saved by that step.
+
+For DRM configurations created by this job, select the individual CENC, FairPlay or SPEKE creation step to inspect its ownership stamp.
+
+An operator can choose **Remove from provider** for a resource created by a finished job. For a failed or canceled job, bitovp also requires confirmation that its encoding stopped. Type the displayed resource ID to confirm. A resource used by another recorded execution cannot be removed through this control. A job cannot resume its old graph after a confirmed removal. To encode again, create a new job.
+
+If the provider response is lost, open the same resource and choose **Check removal**. A confirmed absence finishes the pending removal. If the resource still exists, the operator can review it and explicitly retry. The original job is retained while an outcome is pending.

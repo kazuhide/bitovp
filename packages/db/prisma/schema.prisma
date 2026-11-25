@@ -124,6 +124,9 @@ model BitmovinAccount {
   encryptedApiKey String
   /// Optional X-Tenant-Org-Id sent with every API call.
   tenantOrgId     String?
+  /// Local revision of the upstream Bitmovin organization used for resource operations.
+  resourceScopeVersion String @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceScopeSince DateTime? @default(now())
   /// Defaults applied to new plans: encoderVersion, cloudRegion,
   /// fallbackRegions, schedulingPriority, prewarmedPoolIds.
   defaults        Json     @default("{}")
@@ -213,6 +216,7 @@ model CreateRequest {
 }
 
 model EncodingJob {
+  pendingResourceRemovals EncodingResourceRemoval[]
   organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
@@ -955,6 +959,7 @@ model LiveChannel {
 /// (#108 PR1) is schema+backfill+derivation only — the worker still writes
 /// the channel columns; the run rows become the write path in the follow-up.
 model LiveChannelRun {
+  pendingResourceRemovals EncodingResourceRemoval[]
   organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
@@ -2981,6 +2986,7 @@ model VmafExecutionProfile {
 }
 
 model Organization {
+  encodingResourceRemovalRows EncodingResourceRemoval[]
   id String @id @default(uuid()) @db.Uuid
   name String
   slug String @unique
@@ -3129,4 +3135,29 @@ model EditProjectResource {
  @@index([organizationId])
  @@index([mediaVersionId])
  @@index([imageAssetId])
+}
+
+/// Account-bound provider deletion. Uncertain sends retain references to the exact source.
+model EncodingResourceRemoval {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  sourceKind String
+  sourceId String @db.Uuid
+  channelId String? @db.Uuid
+  step String
+  attempt Int
+  providerId String
+  accountId String @db.Uuid
+  scopeVersion String @db.Uuid
+  token String @db.Uuid
+  state String
+  pendingJobId String? @db.Uuid
+  pendingRunId String? @db.Uuid
+  pendingJob EncodingJob? @relation(fields: [organizationId, pendingJobId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "EncodingResourceRemoval_pendingJob_fkey")
+  pendingRun LiveChannelRun? @relation(fields: [organizationId, pendingRunId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "EncodingResourceRemoval_pendingRun_fkey")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([organizationId,sourceKind,sourceId,step,attempt,providerId],map:"EncodingResourceRemoval_source_key")
+  @@index([organizationId,channelId,state],map:"EncodingResourceRemoval_channel_state")
 }

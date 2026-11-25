@@ -10,6 +10,7 @@ import {
 import { Check, Copy } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CopyableId } from "@/components/copyable-id";
+import { ProviderResources } from "@/components/provider-resources";
 import { Badge } from "@/components/ui/badge";
 import { DetailPopover } from "@/components/ui/detail-popover";
 import { useT } from "@/lib/i18n/context";
@@ -44,7 +45,13 @@ export function anchorId(step: string): string {
  * from the step's persisted (already-redacted) request snapshot, so the tab
  * keeps an index of step→entry to feed curlForStep the real body.
  */
-export function ResourcesTab({ entries }: { entries: StepLogEntry[] }) {
+export function ResourcesTab({
+	entries,
+	jobId,
+}: {
+	entries: StepLogEntry[];
+	jobId?: string;
+}) {
 	const { t } = useT();
 	const groups = useMemo(() => buildResourceTree(entries), [entries]);
 	const entryByStep = useMemo(() => {
@@ -62,6 +69,9 @@ export function ResourcesTab({ entries }: { entries: StepLogEntry[] }) {
 	}
 	return (
 		<div className="mt-2 space-y-6">
+			{jobId && (
+				<ProviderResources endpoint={`/api/encoding-jobs/${jobId}/resources`} />
+			)}
 			{groups.map((group) => (
 				<section key={group.id}>
 					<h3 className="font-medium text-xs text-zinc-400 uppercase tracking-wide">

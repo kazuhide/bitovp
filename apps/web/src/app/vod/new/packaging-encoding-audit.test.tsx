@@ -35,6 +35,28 @@ describe("packaging and encoding audit regressions", () => {
 			drm: [expect.objectContaining({ kind: "SPEKE", muxingKey: "v360" })],
 		});
 	});
+	it.each([
+		"MP4",
+		"TS",
+		"WEBM",
+		"PROGRESSIVE_TS",
+		"PROGRESSIVE_WEBM",
+	] as const)("offers SPEKE on %s", (kind) => {
+		const state = {
+			...DEFAULT_WIZARD_STATE,
+			videos: DEFAULT_WIZARD_STATE.videos.map((v) => ({
+				...v,
+				muxing: { kind },
+			})),
+			audios: [],
+		};
+		const patch = vi.fn();
+		render(<MuxingsSection state={state} credentials={[]} onPatch={patch} />);
+		fireEvent.click(screen.getByText("+ SPEKE"));
+		expect(patch).toHaveBeenCalledWith({
+			drm: [expect.objectContaining({ kind: "SPEKE", muxingKey: "v360" })],
+		});
+	});
 	it("does not describe WebM Opus audio as an HLS audio group", () => {
 		render(
 			<MuxingsSection

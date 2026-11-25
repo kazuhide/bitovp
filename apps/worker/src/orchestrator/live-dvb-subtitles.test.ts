@@ -1,6 +1,7 @@
 import { compileLiveChannel, liveChannelPlanSchema } from "@bitovp/core";
 import { afterEach, expect, it, vi } from "vitest";
 import fixture from "../../../../packages/core/src/live/__fixtures__/live-srt-listener.plan.json";
+import { providerResourcesFromStepLog } from "../verify/runner-live";
 import { executeStep } from "./executor";
 import { createBitmovinSdkOps } from "./sdk-ops";
 
@@ -57,6 +58,15 @@ it.each([
 		if (!result.resourceId) throw Error("Missing created resource");
 		ids.set(op.step, result.resourceId);
 	}
+	const journal = operations.map((op) => ({
+		...op,
+		resourceId: ids.get(op.step),
+		status: "DONE",
+	}));
+	expect(providerResourcesFromStepLog(journal).streamIds).toEqual({
+		"dvb:ja": "receipt-3",
+	});
+
 	expect(requests[0]).toMatchObject({
 		path: "/v1/encoding/encodings/enc/input-streams/subtitles/dvb-subtitle",
 		body: {

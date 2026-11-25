@@ -798,13 +798,49 @@ it.each([
 		);
 });
 
-it("requires separate segmented DASH subtitle representations with the selected languages", async () => {
+it("binds each segmented DVB subtitle to its language and output directory", async () => {
+	const uri = "https://origin.invalid/live/manifests/show.mpd";
 	const xml =
-		'<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" mediaPresentationDuration="PT6S"><Period><AdaptationSet lang="en" mimeType="text/vtt"><Representation id="external"><BaseURL>https://example.invalid/sub.vtt</BaseURL></Representation></AdaptationSet><AdaptationSet lang="ja" mimeType="application/mp4" codecs="wvtt"><SegmentTemplate media="sub/$Number$.m4s" initialization="sub/init.mp4" duration="6"/><Representation id="ja" bandwidth="1000"/></AdaptationSet></Period></MPD>';
-	const tracks = ["ja", "en", "ja"].map((language, i) => ({
-		key: String(i),
-		language,
-	}));
-	const result = dashDvbSubtitleChecks("mpd", tracks, await parseDashText(xml));
-	expect(result.map((c) => c.verdict)).toEqual(["PASS", "FAIL", "FAIL"]);
+		'<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" mediaPresentationDuration="PT6S"><Period><AdaptationSet lang="en" mimeType="text/vtt"><Representation id="external"><BaseURL>https://example.invalid/sub.vtt</BaseURL></Representation></AdaptationSet><AdaptationSet lang="ja" mimeType="application/mp4" codecs="wvtt"><BaseURL>../subs/</BaseURL><SegmentTemplate media="ja/$Number$.m4s" initialization="ja/init.mp4" duration="6"/><Representation id="ja" bandwidth="1000"/></AdaptationSet></Period></MPD>';
+	const tracks = [
+		{ key: "wrong", language: "ja", segmentPath: "../subs/other" },
+		{
+			key: "foreign",
+			language: "ja",
+			segmentPath: "https://other.invalid/live/subs/ja",
+		},
+		{ key: "right", language: "ja", segmentPath: "../subs/ja/" },
+		{ key: "external", language: "en", segmentPath: "../subs/en" },
+		{ key: "extra", language: "ja", segmentPath: "../subs/ja" },
+	];
+	const result = dashDvbSubtitleChecks(
+		"mpd",
+		tracks,
+		await parseDashText(xml, uri),
+		uri,
+	);
+	expect(result.map((c) => c.verdict)).toEqual([
+		"FAIL",
+		"FAIL",
+		"PASS",
+		"FAIL",
+		"FAIL",
+	]);
+	const list = (second: string) =>
+		'<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" mediaPresentationDuration="PT12S"><Period><AdaptationSet lang="ja" mimeType="application/mp4" codecs="wvtt"><BaseURL>../subs/ja/</BaseURL><Representation id="subtitle" bandwidth="1000"><SegmentList duration="6"><SegmentURL media="s1.m4s"/><SegmentURL media="' +
+		second +
+		'"/></SegmentList></Representation></AdaptationSet></Period></MPD>';
+	for (const [last, verdict] of [
+		["s2.m4s", "PASS"],
+		["../other/s2.m4s", "FAIL"],
+	] as const) {
+		expect(
+			dashDvbSubtitleChecks(
+				"mpd",
+				[{ key: "ja", language: "ja", segmentPath: "../subs/ja" }],
+				await parseDashText(list(last), uri),
+				uri,
+			)[0]?.verdict,
+		).toBe(verdict);
+	}
 });

@@ -850,7 +850,7 @@ export function JobDetail({
 						</TabsContent>
 						<TabsContent value="resources" className="mt-0">
 							{entries.success ? (
-								<ResourcesTab entries={entries.data} />
+								<ResourcesTab entries={entries.data} jobId={id} />
 							) : (
 								<p className="mt-2 text-sm text-zinc-500">
 									{t("jobDetail.stepLogUnavailable")}

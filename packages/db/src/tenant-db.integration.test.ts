@@ -172,7 +172,27 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					expect: { generation: "103" },
 				},
 			});
+			const slashKey = "/" + meta.objectKey;
+			const slashObject = await a.storageInspection.create({
+				data: {
+					...meta,
+					objectKey: slashKey,
+					verifyAudioCopy: true,
+					sourceIdentity: { size: 2048, generation: "104" },
+				},
+			});
+			await expect(
+				resolveInspectedAudioSource(
+					a,
+					orgA,
+					plan(slashObject.id, credentialA, 1, slashKey),
+				),
+			).resolves.toMatchObject({
+				storage: { key: slashKey, size: 2048, expect: { generation: "104" } },
+			});
 			for (const args of [
+				[a, orgA, plan(row.id, credentialA, 1, slashKey)],
+				[a, orgA, plan(slashObject.id, credentialA, 1, meta.objectKey)],
 				[b, orgB, plan(row.id, credentialB)],
 				[a, orgA, plan(row.id, credentialB)],
 				[a, orgA, plan(row.id, credentialA, 0)],

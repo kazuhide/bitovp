@@ -24,7 +24,7 @@ export async function resolveInspectedAudioSource(
 		!("credentialId" in origin)
 	)
 		throw new Error("AUDIO_COPY_INPUT_UNVERIFIED");
-	const key = ingest.inputPath.replace(/^\/+/, "");
+	const key = ingest.inputPath;
 	const row = await prisma.storageInspection.findFirst({
 		where: {
 			id: copy.inspectionId,

@@ -1,9 +1,7 @@
 # Supported features and technical limits
 
-bitovp is a graphical application for Bitmovin video on demand (VOD) and Live
-encoding. Complete Encoding API coverage is the goal; the current application
-supports a subset of operations and parameters. Available features also depend
-on account permissions, encoder version, input, and output capabilities.
+bitovp configures Bitmovin VOD and Live encoding. Available operations and
+parameters depend on account permissions, encoder version, input and output.
 
 Follow the [VOD](user-guide/VOD.md), [Live](user-guide/LIVE.md), and
 [Quality and monitoring](user-guide/QUALITY-AND-MONITORING.md) guides for steps;
@@ -13,7 +11,7 @@ use the [glossary](user-guide/GLOSSARY.md) for encoding terms.
 
 | Workflow | Available features |
 |---|---|
-| VOD | Fixed and Per-Title ladders; H.264, H.265, VP9, and AV1 video; audio, subtitles, filters, input-stream selection, packaging, file export as MP4, Progressive TS, Progressive MOV, or Progressive WebM, manifests, encryption, and quality gates |
+| VOD | Fixed and Per-Title ladders; H.264, H.265, VP9, and AV1 video; audio, subtitles, filters, input-stream selection, packaging, file export as MP4, Progressive TS, Progressive MOV, Progressive WebM, or audio-only WAV, manifests, encryption, and quality gates |
 | Live | RTMP, redundant RTMP, SRT, Zixi, and HLS pull inputs; reusable channels and broadcast history; scheduling, slate insertion, advertising markers, heartbeat monitoring, storage mirrors, Live-to-VOD, and optional H.264/AAC MP4 archives |
 | Storage | AWS S3 and compatible providers, Google Cloud Storage, Azure, and other supported input/output credentials; encoding destinations can support more operations than the storage browser or output inspection |
 | Quality | Local or configured cloud quality measurement, comparisons, and quality gates; VMAF is calculated with FFmpeg/libvmaf, separately from the Bitmovin Encoding API |

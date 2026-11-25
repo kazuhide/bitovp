@@ -1,0 +1,239 @@
+[
+  {
+    "kind": "CREATE_MUXING_FMP4",
+    "collection": "drm",
+    "list": "drm",
+    "get": "drm/{drm_id}"
+  },
+  {
+    "kind": "CREATE_MUXING_FMP4",
+    "collection": "drm.aes",
+    "list": "drm/aes",
+    "get": "drm/aes/{drm_id}",
+    "metadata": "drm/aes/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_FMP4",
+    "collection": "drm.cenc",
+    "list": "drm/cenc",
+    "get": "drm/cenc/{drm_id}",
+    "metadata": "drm/cenc/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_FMP4",
+    "collection": "drm.clearkey",
+    "list": "drm/clearkey",
+    "get": "drm/clearkey/{drm_id}",
+    "metadata": "drm/clearkey/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_FMP4",
+    "collection": "drm.fairplay",
+    "list": "drm/fairplay",
+    "get": "drm/fairplay/{drm_id}",
+    "metadata": "drm/fairplay/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_FMP4",
+    "collection": "drm.marlin",
+    "list": "drm/marlin",
+    "get": "drm/marlin/{drm_id}",
+    "metadata": "drm/marlin/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_FMP4",
+    "collection": "drm.playready",
+    "list": "drm/playready",
+    "get": "drm/playready/{drm_id}",
+    "metadata": "drm/playready/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_FMP4",
+    "collection": "drm.primetime",
+    "list": "drm/primetime",
+    "get": "drm/primetime/{drm_id}",
+    "metadata": "drm/primetime/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_FMP4",
+    "collection": "drm.speke",
+    "list": "drm/speke",
+    "get": "drm/speke/{drm_id}",
+    "metadata": "drm/speke/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_FMP4",
+    "collection": "drm.widevine",
+    "list": "drm/widevine",
+    "get": "drm/widevine/{drm_id}",
+    "metadata": "drm/widevine/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_MP4",
+    "collection": "drm",
+    "list": "drm",
+    "get": "drm/{drm_id}"
+  },
+  {
+    "kind": "CREATE_MUXING_MP4",
+    "collection": "drm.cenc",
+    "list": "drm/cenc",
+    "get": "drm/cenc/{drm_id}",
+    "metadata": "drm/cenc/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_MP4",
+    "collection": "drm.clearkey",
+    "list": "drm/clearkey",
+    "get": "drm/clearkey/{drm_id}",
+    "metadata": "drm/clearkey/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_MP4",
+    "collection": "drm.marlin",
+    "list": "drm/marlin",
+    "get": "drm/marlin/{drm_id}",
+    "metadata": "drm/marlin/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_MP4",
+    "collection": "drm.playready",
+    "list": "drm/playready",
+    "get": "drm/playready/{drm_id}",
+    "metadata": "drm/playready/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_MP4",
+    "collection": "drm.speke",
+    "list": "drm/speke",
+    "get": "drm/speke/{drm_id}",
+    "metadata": "drm/speke/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_MP4",
+    "collection": "drm.widevine",
+    "list": "drm/widevine",
+    "get": "drm/widevine/{drm_id}",
+    "metadata": "drm/widevine/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_PROGRESSIVE_TS",
+    "collection": "drm",
+    "list": "drm",
+    "get": "drm/{drm_id}"
+  },
+  {
+    "kind": "CREATE_MUXING_PROGRESSIVE_TS",
+    "collection": "drm.aes",
+    "list": "drm/aes",
+    "get": "drm/aes/{drm_id}",
+    "metadata": "drm/aes/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_PROGRESSIVE_TS",
+    "collection": "drm.fairplay",
+    "list": "drm/fairplay",
+    "get": "drm/fairplay/{drm_id}",
+    "metadata": "drm/fairplay/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_PROGRESSIVE_TS",
+    "collection": "drm.speke",
+    "list": "drm/speke",
+    "get": "drm/speke/{drm_id}",
+    "metadata": "drm/speke/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_PROGRESSIVE_TS",
+    "collection": "id3",
+    "list": "id3"
+  },
+  {
+    "kind": "CREATE_MUXING_PROGRESSIVE_TS",
+    "collection": "id3.frameId",
+    "list": "id3/frame-id",
+    "get": "id3/frame-id/{id3_tag_id}",
+    "metadata": "id3/frame-id/{id3_tag_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_PROGRESSIVE_TS",
+    "collection": "id3.plainText",
+    "list": "id3/plain-text",
+    "get": "id3/plain-text/{id3_tag_id}",
+    "metadata": "id3/plain-text/{id3_tag_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_PROGRESSIVE_TS",
+    "collection": "id3.raw",
+    "list": "id3/raw",
+    "get": "id3/raw/{id3_tag_id}",
+    "metadata": "id3/raw/{id3_tag_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_PROGRESSIVE_WEBM",
+    "collection": "drm",
+    "list": "drm",
+    "get": "drm/{drm_id}"
+  },
+  {
+    "kind": "CREATE_MUXING_PROGRESSIVE_WEBM",
+    "collection": "drm.cenc",
+    "list": "drm/cenc",
+    "get": "drm/cenc/{drm_id}",
+    "metadata": "drm/cenc/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_PROGRESSIVE_WEBM",
+    "collection": "drm.speke",
+    "list": "drm/speke",
+    "get": "drm/speke/{drm_id}",
+    "metadata": "drm/speke/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_TS",
+    "collection": "drm",
+    "list": "drm",
+    "get": "drm/{drm_id}"
+  },
+  {
+    "kind": "CREATE_MUXING_TS",
+    "collection": "drm.aes",
+    "list": "drm/aes",
+    "get": "drm/aes/{drm_id}",
+    "metadata": "drm/aes/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_TS",
+    "collection": "drm.fairplay",
+    "list": "drm/fairplay",
+    "get": "drm/fairplay/{drm_id}",
+    "metadata": "drm/fairplay/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_TS",
+    "collection": "drm.speke",
+    "list": "drm/speke",
+    "get": "drm/speke/{drm_id}",
+    "metadata": "drm/speke/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_WEBM",
+    "collection": "drm",
+    "list": "drm",
+    "get": "drm/{drm_id}"
+  },
+  {
+    "kind": "CREATE_MUXING_WEBM",
+    "collection": "drm.cenc",
+    "list": "drm/cenc",
+    "get": "drm/cenc/{drm_id}",
+    "metadata": "drm/cenc/{drm_id}/customData"
+  },
+  {
+    "kind": "CREATE_MUXING_WEBM",
+    "collection": "drm.speke",
+    "list": "drm/speke",
+    "get": "drm/speke/{drm_id}",
+    "metadata": "drm/speke/{drm_id}/customData"
+  }
+]

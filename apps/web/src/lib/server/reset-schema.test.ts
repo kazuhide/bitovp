@@ -128,7 +128,16 @@ describe("the reset's kept half cannot be destroyed by a foreign key", () => {
 		// the worker can still remove each hook at the provider; the first
 		// draft of this test required a scoped delete for every crossing edge,
 		// which would have deleted exactly the index that cleanup needs.)
-		const destructive = crossing.filter((e) => e.action !== "SetNull");
+		// These deferred NoAction edges intentionally retain a job/run while a provider
+		// removal is unconfirmed. The PostgreSQL integration exercises both outcomes.
+		const guardedRemoval = (e: Edge) =>
+			e.from === "EncodingResourceRemoval" &&
+			e.action === "NoAction" &&
+			((e.field === "pendingJob" && e.to === "EncodingJob") ||
+				(e.field === "pendingRun" && e.to === "LiveChannelRun"));
+		const destructive = crossing.filter(
+			(e) => e.action !== "SetNull" && !guardedRemoval(e),
+		);
 		// Declared edges, as (kept model → deleted model).
 		const declared = new Set(
 			RESET_SCOPED_DELETES.map((s) => `${s.model}→liveChannel`),
@@ -149,6 +158,8 @@ describe("the reset's kept half cannot be destroyed by a foreign key", () => {
 			"AlertRule.liveChannel → LiveChannel (Cascade)",
 			"WebhookRegistration.encodingJob → EncodingJob (SetNull)",
 			"WebhookRegistration.liveChannelRun → LiveChannelRun (SetNull)",
+			"EncodingResourceRemoval.pendingJob → EncodingJob (NoAction)",
+			"EncodingResourceRemoval.pendingRun → LiveChannelRun (NoAction)",
 		]);
 	});
 

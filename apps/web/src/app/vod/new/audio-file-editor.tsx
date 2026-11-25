@@ -37,7 +37,7 @@ function TrackPicker({
 }) {
 	const { t } = useT();
 	const [pending, setPending] = useState<string>();
-	const key = file.path.replace(/^\/+/, "");
+	const key = file.path;
 	const canInspect =
 		!!file.credentialId &&
 		!!file.bucket &&
@@ -68,7 +68,9 @@ function TrackPicker({
 	});
 	const row = detail.data;
 	const tracks =
-		row?.verifiedCredentialId === file.credentialId && row?.bucket === file.bucket && row.objectKey === key
+		row?.verifiedCredentialId === file.credentialId &&
+		row?.bucket === file.bucket &&
+		row.objectKey === key
 			? (row.verifiedAudioTracks ?? [])
 			: [];
 	function pick(track: AudioCopyTrack) {

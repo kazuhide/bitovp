@@ -21,6 +21,7 @@ import {
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
 	hlsDefaultVersion,
+	isWizardWatermarkFilter,
 	subtitleKeys,
 	videoKeys,
 	videoMuxingRelPath,
@@ -1668,12 +1669,12 @@ function outputKindOf(kind: string | undefined): WizardState["output"]["kind"] {
 	}
 }
 
-/** Resolves the base output path from the manifests, else the first muxing. */
+/** Manifests carry the base path. Clear and protected outputs both carry ACLs. */
 function readBasePath(
 	manifests: Record<string, unknown>[],
-	muxings: Record<string, unknown>[],
+	outputOwners: Record<string, unknown>[],
 ): { base: string; publicRead: boolean } {
-	const destinations = [...manifests, ...muxings]
+	const destinations = [...manifests, ...outputOwners]
 		.map((entry) => (isRecord(entry.destination) ? entry.destination : null))
 		.filter((dest): dest is Record<string, unknown> => dest !== null);
 	const publicRead = destinations.some(
@@ -1909,8 +1910,37 @@ export function planToWizardState(
 		hdr10PlusStreamsRaw,
 		asArray(raw.filters)
 			.filter(isRecord)
-			.filter((f) => f.kind === "WATERMARK"),
+			.filter((f) => f.kind === "WATERMARK" || f.kind === "ENHANCED_WATERMARK"),
 	);
+	// The first wizard row is the implicit video master. Audio-only files
+	// sometimes precede the HDR picture in retained native input declarations.
+	if (hdr10PlusStreamsRaw.length) {
+		const pictured = renditions.find((r) =>
+			["H264", "H265", "AV1", "VP9"].includes(String(r.codec)),
+		);
+		const native =
+			videoIngest ?? ingest.find((row) => row.key === pictured?.ingestKey);
+		const hdr =
+			hdr10PlusStreamsRaw.find((row) => row.key === pictured?.ingestKey) ??
+			hdr10PlusStreamsRaw[0];
+		const picture = native
+			? { input: native.inputKey, path: native.inputPath }
+			: { input: hdr?.inputKey, path: hdr?.videoInputPath };
+		if (typeof picture.input === "string" && typeof picture.path === "string") {
+			const pictureKey = fileKeyFor(picture.input, picture.path);
+			const index = inputFiles.findIndex((file) => file.key === pictureKey);
+			const primary = inputFiles[index];
+			if (index > 0 && primary) {
+				if (primary.inputKey !== inputFiles[0]?.inputKey) {
+					const order = new Map(inputs.map((input, i) => [input.key, i]));
+					for (const file of inputFiles)
+						file.inputDeclarationIndex = order.get(file.inputKey);
+				}
+				inputFiles.splice(index, 1);
+				inputFiles.unshift(primary);
+			}
+		}
+	}
 	// Separate A/V: the implicit audio reads a different input file than the
 	// video (inputFiles[0]); absent = the same object.
 	const videoFileKey = inputFiles[0]?.key;
@@ -1926,7 +1956,10 @@ export function planToWizardState(
 			? audioFileKey
 			: undefined;
 
-	const read = readBasePath(manifests, muxings);
+	const read = readBasePath(manifests, [
+		...muxings,
+		...asArray(raw.drm).filter(isRecord),
+	]);
 	const base = basePath ?? read.base;
 	const { publicRead } = read;
 
@@ -2304,7 +2337,7 @@ export function planToWizardState(
 				if (!result.success) return [];
 				const filter = result.data;
 				return [
-					filter.kind === "WATERMARK"
+					isWizardWatermarkFilter(filter)
 						? {
 								...filter,
 								inputKey: fileKeyFor(filter.inputKey, filter.imagePath),

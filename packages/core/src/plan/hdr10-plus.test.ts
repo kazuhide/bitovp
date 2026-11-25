@@ -3,6 +3,11 @@ import { parse } from "yaml";
 import { compilePlan } from "./compiler";
 import { curlForStep } from "./curl-from-step";
 import { inputFileSummaries } from "./detail-view";
+import {
+	isHdr10PlusObjectPath,
+	publicHdrSourceProjection,
+	publicStorageDiagnostic,
+} from "./hdr-source-paths";
 import { inputStreamAncestry, inputStreamLeaves } from "./input-stream-graph";
 import { INTERNAL_HEVC_V2_BCF_VERSION } from "./internal-hevc-v2";
 import { buildResourceTree } from "./resource-tree";
@@ -657,6 +662,58 @@ describe("HDR10+ input contract", () => {
 		).toMatchObject({ ok: true });
 		expect(instantiateTemplatePlan({ ...params, sources: {} })).toMatchObject({
 			ok: true,
+		});
+	});
+	it.each([
+		"https:/fixture.invalid/picture",
+		"https:test@fixture.invalid/picture",
+		"https:\\test@fixture.invalid/picture",
+		"https:\t/test@fixture.invalid/picture",
+	])("withholds absolute provider locators from HDR plan and viewer projections", (path) => {
+		expect(isHdr10PlusObjectPath(path)).toBe(false);
+		expect(
+			publicHdrSourceProjection({
+				hdr10PlusStreams: [{ videoInputPath: path }],
+				log: `source ${path}`,
+			}),
+		).toEqual({
+			hdr10PlusStreams: [{ videoInputPath: "" }],
+			log: "source [withheld]",
+		});
+		if (path.includes("@"))
+			expect(publicStorageDiagnostic(`failed ${path}`)).not.toContain("test@");
+	});
+	it.each([
+		"__proto__",
+		"constructor",
+	])("launches HDR source %s with original or replacement files", (key) => {
+		const value = plan();
+		first(value.hdr10PlusStreams).key = key;
+		first(value.renditions).ingestKey = key;
+		const params = {
+			presetBody: value,
+			outputPrefixTemplate: "out",
+			name: "job",
+			templateName: "HDR",
+			now: new Date(0),
+			uuid: "test",
+		};
+		expect(instantiateTemplatePlan(params)).toMatchObject({ ok: true });
+		expect(
+			instantiateTemplatePlan({
+				...params,
+				sources: {
+					[key]: { objectKey: "new.mp4" },
+					[`${key}:metadata`]: { objectKey: "new.json" },
+				},
+			}),
+		).toMatchObject({
+			ok: true,
+			plan: {
+				hdr10PlusStreams: [
+					{ key, videoInputPath: "new.mp4", metadataInputPath: "new.json" },
+				],
+			},
 		});
 	});
 	it("lists both video and metadata as independently substitutable files", () => {

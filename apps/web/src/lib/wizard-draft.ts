@@ -1,16 +1,25 @@
 import {
-	publicHdrSourceProjection,
+	AUDIO_MIX_CHANNEL_TYPES,
+	audioMixFilterSchema,
+	conformFilterSchema,
 	dashAdaptationOptionsSchema,
 	dashAdditionalRepresentationSchema,
 	dashDetailedOptionsSchema,
 	defaultDashPeriodSchema,
+	deinterlaceFilterSchema,
+	dolbyLoudnessFilterSchema,
+	enhancedWatermarkFilterSchema,
+	HE_AAC_V2_SIGNALING,
 	hlsAdditionalMediaSchema,
 	hlsDetailedOptionsSchema,
 	hlsMediaAttributesSchema,
 	hlsStreamOptionsSchema,
 	liveDashDetailedOptionsSchema,
 	liveHlsDetailedOptionsSchema,
-	watermarkFilterSchema,
+	mediaFilterSchema,
+	publicHdrSourceProjection,
+	streamConditionSchema,
+	textFilterSchema,
 } from "@bitovp/core";
 import {
 	vodInputTimelineDocumentSchema,
@@ -167,6 +176,8 @@ const rendition = fields(
 	"width height bitrate rate cutoffFrequency",
 	"ownContainer",
 	{
+		conditions: group(streamConditionSchema),
+		signaling: group(z.enum(HE_AAC_V2_SIGNALING)),
 		h264: group(codec),
 		h265: group(codec),
 		vp9: group(codec),
@@ -181,19 +192,100 @@ const rendition = fields(
 		),
 	},
 );
-const watermarkDraft = fields(
-	"kind key inputKey imagePath unit",
-	"left right top bottom",
-).pipe(watermarkFilterSchema);
-const watermarkDrafts = z
+// Drafts retain typed edits, including a channel map in progress. Plan validation
+// applies the output layout and cross-channel constraints when submitting.
+const draftNumber = z.number().finite().optional();
+const audioMixDraft = z.strictObject({
+	...audioMixFilterSchema.shape,
+	audioMixChannels: z.array(
+		z.strictObject({
+			channelNumber: draftNumber,
+			sourceChannels: z.array(
+				z.strictObject({
+					type: z.enum(AUDIO_MIX_CHANNEL_TYPES),
+					channelNumber: draftNumber,
+					gain: draftNumber,
+				}),
+			),
+		}),
+	),
+});
+const enhancedWatermarkDraft = z.strictObject({
+	...enhancedWatermarkFilterSchema.shape,
+	inputKey: z.union([
+		z.literal(""),
+		enhancedWatermarkFilterSchema.shape.inputKey,
+	]),
+	imagePath: z
+		.union([z.literal(""), enhancedWatermarkFilterSchema.shape.imagePath])
+		.default(""),
+	left: draftNumber,
+	right: draftNumber,
+	top: draftNumber,
+	bottom: draftNumber,
+	width: draftNumber,
+	height: draftNumber,
+	opacity: draftNumber,
+});
+const conformDraft = z.strictObject({
+	...conformFilterSchema.shape,
+	targetFps: draftNumber,
+});
+const dolbyLoudnessDraft = z.strictObject({
+	...dolbyLoudnessFilterSchema.shape,
+	targetLoudness: draftNumber,
+	maximumTruePeakLevel: draftNumber,
+	speechDetectionThreshold: draftNumber,
+});
+function projectFilterDraft(item: unknown): (DraftValue & { key: string })[] {
+	if (!draftRecord(item)) return [];
+	if (item.kind === "TEXT") {
+		const key = textFilterSchema.shape.key.safeParse(item.key);
+		return key.success ? [{ key: key.data, kind: "TEXT" }] : [];
+	}
+	if (item.kind === undefined || item.kind === "DEINTERLACE") {
+		const parsed = deinterlaceFilterSchema.safeParse({
+			...item,
+			kind: "DEINTERLACE",
+		});
+		if (!parsed.success) return [];
+		// An implicit default remains implicit when the wizard reopens.
+		return [
+			{
+				...Object.fromEntries(
+					Object.entries(parsed.data).filter(([name]) =>
+						Object.hasOwn(item, name),
+					),
+				),
+				key: parsed.data.key,
+			},
+		];
+	}
+	const schema =
+		item.kind === "AUDIO_MIX"
+			? audioMixDraft
+			: item.kind === "ENHANCED_WATERMARK"
+				? enhancedWatermarkDraft
+				: item.kind === "CONFORM"
+					? conformDraft
+					: item.kind === "DOLBY_LOUDNESS"
+						? dolbyLoudnessDraft
+						: mediaFilterSchema;
+	const parsed = schema.safeParse(item);
+	if (!parsed.success) return [];
+	const value = parsed.data;
+	if (
+		(value.kind === "WATERMARK" || value.kind === "ENHANCED_WATERMARK") &&
+		(!draftKeepsText(value.imagePath) ||
+			value.imagePath.trimStart().startsWith("//"))
+	)
+		return [];
+	return [value];
+}
+const vodFilterDrafts = z
 	.array(z.unknown())
 	.max(100)
-	.transform((items) =>
-		items.flatMap((item) => {
-			const parsed = watermarkDraft.safeParse(item);
-			return parsed.success ? [parsed.data] : [];
-		}),
-	)
+	.transform((items) => items.flatMap(projectFilterDraft))
 	.optional()
 	.catch(undefined);
 const vodRendition = rendition.extend({
@@ -382,7 +474,8 @@ const vod = fields(
 				}),
 			]),
 		),
-		filters: watermarkDrafts,
+		audios: rows(vodRendition),
+		filters: vodFilterDrafts,
 		inputTimeline: vodInputTimelineDocumentSchema.optional(),
 		inputTimelinePreparation:
 			vodInputTimelinePreparationReferenceSchema.optional(),
@@ -406,7 +499,7 @@ const vod = fields(
 		inputFiles: rows(
 			fields(
 				"key inputKey kind credentialId bucket path region name displayName",
-				"",
+				"inputDeclarationIndex",
 				"",
 				{
 					purpose: z.literal("FILTER_IMAGE").optional().catch(undefined),
@@ -478,6 +571,7 @@ const vod = fields(
 		),
 		subtitles: rows(
 			fields("codec source label language groupId uri", "", "", {
+				conditions: group(streamConditionSchema),
 				styling: group(fields("mode")),
 				extras: group(extras),
 				muxing: group(muxing),
@@ -819,14 +913,15 @@ export function projectWizardDraft(
 ): DraftValue {
 	const projected = (kind === "vod" ? vod : live).parse(value);
 	if (kind === "vod") {
-		const filters = watermarkDrafts.parse(projected.filters) ?? [];
+		const filters = vodFilterDrafts.parse(projected.filters) ?? [];
 		const keys = new Set(filters.map((filter) => filter.key));
-		if (Array.isArray(projected.videos)) {
-			for (const video of projected.videos) {
-				if (!draftRecord(video) || !draftRecord(video.extras)) continue;
-				const attachments = video.extras.filters;
+		for (const renditions of [projected.videos, projected.audios]) {
+			if (!Array.isArray(renditions)) continue;
+			for (const row of renditions) {
+				if (!draftRecord(row) || !draftRecord(row.extras)) continue;
+				const attachments = row.extras.filters;
 				if (!Array.isArray(attachments)) continue;
-				video.extras.filters = attachments.filter(
+				row.extras.filters = attachments.filter(
 					(item) =>
 						draftRecord(item) &&
 						typeof item.filterKey === "string" &&
@@ -1000,6 +1095,21 @@ export function mergeWizardDraft<T>(
 		path = "",
 	): unknown => {
 		if (next === undefined) return previous;
+		// Each retained definition owns its complete shape. Only text overlays
+		// depend on omitted fields: match them against the fresh preset by key
+		// and kind. A new overlay stays attached and needs its text re-entered.
+		if (kind === "vod" && path === "filters" && Array.isArray(next)) {
+			const original = Array.isArray(previous) ? previous : [];
+			return next.map((item) => {
+				if (!draftRecord(item) || item.kind !== "TEXT") return item;
+				return (
+					original.find(
+						(row) =>
+							draftRecord(row) && row.kind === "TEXT" && row.key === item.key,
+					) ?? { ...item, text: "", x: "0", y: "0" }
+				);
+			});
+		}
 		if (Array.isArray(next))
 			return next.map((item, index) =>
 				merge(
@@ -1090,7 +1200,7 @@ export function writeWizardDraft(
 			kind,
 			savedAt: now,
 			step,
-			value: projectWizardDraft(kind, value),
+			value: projectWizardDraft(kind, publicHdrSourceProjection(value)),
 		});
 		const serialized = JSON.stringify(record);
 		if (serialized.length <= WIZARD_DRAFT_MAX_SIZE)

@@ -38,7 +38,7 @@ export const ja = {
 			CHANNELFORMAT: "チャンネル数",
 			CHANNELLAYOUT: "チャンネルレイアウト",
 			HEARINGIMPAIRED: "聴覚障害者向け字幕フラグ",
-			STREAMID: "ストリーム ID / PID",
+			STREAMID: "ストリーム ID / パケット識別子",
 		},
 	},
 	liveDvb: {
@@ -54,6 +54,44 @@ export const ja = {
 		remove: "字幕トラックを削除",
 		transport:
 			"DVB 字幕には MPEG-TS を含む SRT、Zixi または HLS 入力を指定してください。",
+	},
+	providerResources: {
+		muxingChildren: "このマクシングの DRM・ID3",
+		chooseType: "種類を選択",
+		allDrm: "すべての DRM 方式",
+		allId3: "すべての ID3 タグ",
+		drmPrefix:
+			"プロバイダーが返した先頭 {count} 件を表示しています。DRM 方式を選ぶと、その方式の全ページを参照できます。",
+		childChanged:
+			"選択した項目を確認できませんでした。一覧を再読み込みしてください。",
+		linked: "プロバイダー一覧内の対象リソース",
+		metadata: "所有情報",
+		remove: "プロバイダーから削除",
+		confirm:
+			"プロバイダー上のリソースを削除します。VODを再実行するには新しいジョブが必要になる場合があります。確認のため {id} を入力してください。",
+		verify: "削除結果を確認",
+		unconfirmed: "削除結果を確認できていません。",
+		present: "プロバイダー上にリソースが残っています。",
+		removed: "リソースの削除または不存在を確認しました。",
+		removeBlocked:
+			"削除できません。処理状況と他のジョブからの参照を確認してください。",
+		removeFailed:
+			"削除結果を確認できません。記録された状態を再確認してください。",
+
+		title: "プロバイダーのリソースを確認",
+		resource: "リソース",
+		choose: "作成履歴から選択",
+		detail: "リソースの詳細",
+		siblings: "同じ親に属するリソース",
+		loading: "リソースを読み込み中…",
+		missing: "このリソースは利用できません。",
+		changed: "リソースまたは作成時のアカウントを確認できませんでした。",
+		failed: "リソースを取得できませんでした。",
+		empty: "この実行には参照できるリソースの作成履歴がありません。",
+		emptyPage: "このページにリソースはありません。",
+		range: "{total} 件中 {from}〜{to} 件",
+		previous: "前のページ",
+		next: "次のページ",
 	},
 	outputCompare: {
 		title: "出力を比較",
@@ -5180,6 +5218,8 @@ export const ja = {
 			"Per-Titleでは動画プレイリスト名を個別指定できません。この指定を消し、マニフェストのビットレートから生成される名前を使ってください。",
 		onDemandDrmTemplateUnavailable:
 			"OnDemand MP4 DRMのYAML出力は利用できません。DRMを維持するにはプランJSONを保存するか、このアプリから実行してください。",
+		dolbyLoudnessTemplateUnavailable:
+			"Dolby Loudness は Encoding Template に定義されていません。プラン JSON を使用してください。",
 		spekeTemplateUnavailable: "SPEKE設定はプランJSONで保存できます。",
 		spekeOtherSystems: "その他のシステムID（任意）",
 		spekeProvider: "SPEKE鍵プロバイダー",
@@ -6197,7 +6237,7 @@ export const ja = {
 		available: "保存済みの下書きがあります",
 		restore: "復元",
 		discard: "破棄",
-		help: "このブラウザに7日間保存します。秘密値・URL・DRM・フィルタ設定・インポートしたJSONは保存しません。開始前に確認してください。",
+		help: "このブラウザに7日間保存します。VOD のフィルター設定（画像のオブジェクトパスや音声ゲインなど）も保存します。秘密値・URL・DRM・テキストオーバーレイの内容・読み込んだ JSON は除外します。",
 	},
 	templates: {
 		savedDeliveryHeading: "保存済みの配信プリセット",
@@ -6237,7 +6277,8 @@ export const ja = {
 		notAPlan:
 			"このテンプレートの本文は有効なエンコーディングプランではありません。",
 		sources: "素材",
-		hdrPairRequired: "差し替える HDR10+ 映像と、その映像に対応する JSON メタデータの両方を選択してください。",
+		hdrPairRequired:
+			"差し替える HDR10+ 映像と、その映像に対応する JSON メタデータの両方を選択してください。",
 		sourceOriginal:
 			"テンプレートの元パスです。そのままなら同じ素材で再実行します。",
 		sourceMoved: "今回の実行用に変更されています。",

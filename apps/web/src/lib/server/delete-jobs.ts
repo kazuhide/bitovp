@@ -9,6 +9,7 @@ import {
 import { isActiveJobStatus, JOB_STATUSES, type JobStatus } from "../job-status";
 import { writeAuditLog } from "./audit";
 import type { ServerContext } from "./context";
+import { isPendingResourceRemovalConflict } from "./http";
 import {
 	assertNoJobEvidenceReferences,
 	countJobEvidenceReferences,
@@ -229,6 +230,14 @@ export async function deleteEncodingJobLocally(
 			return vmafJobs.count;
 		});
 	} catch (err) {
+		if (isPendingResourceRemovalConflict(err)) {
+			return {
+				ok: false,
+				code: "ACTIVE",
+				message:
+					"A provider resource removal is pending. Check its status in this job’s Resources tab before deleting the job.",
+			};
+		}
 		// A deferred FK can discover a receipt committed outside this transaction's
 		// snapshot. The transaction is rolled back before this tenant-scoped reread.
 		let retained = err instanceof JobLibraryEvidenceRequired ? err : undefined;

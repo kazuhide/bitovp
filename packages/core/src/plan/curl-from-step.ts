@@ -215,6 +215,30 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 		template:
 			"/encoding/manifests/dash/:manifestId/periods/:periodId/adaptationsets/:adaptationSetId/representations/imsc",
 	},
+	CREATE_FILTER_ENHANCED_DEINTERLACE: {
+		method: "POST",
+		template: "/encoding/filters/enhanced-deinterlace",
+	},
+	CREATE_FILTER_CONFORM: {
+		method: "POST",
+		template: "/encoding/filters/conform",
+	},
+	CREATE_FILTER_INTERLACE: {
+		method: "POST",
+		template: "/encoding/filters/interlace",
+	},
+	CREATE_FILTER_ENHANCED_WATERMARK: {
+		method: "POST",
+		template: "/encoding/filters/enhanced-watermark",
+	},
+	CREATE_FILTER_DOLBY_LOUDNESS: {
+		method: "POST",
+		template: "/encoding/filters/dolby-loudness",
+	},
+	CREATE_FILTER_AUDIO_MIX: {
+		method: "POST",
+		template: "/encoding/filters/audio-mix",
+	},
 	CREATE_FILTER_DENOISE_HQDN3D: {
 		method: "POST",
 		template: "/encoding/filters/denoise-hqdn3d",
@@ -382,7 +406,7 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 	CREATE_DRM_SPEKE: {
 		method: "POST",
 		template:
-			"/encoding/encodings/:encodingId/muxings/fmp4/:muxingId/drm/speke",
+			"/encoding/encodings/:encodingId/muxings/:muxingKind/:muxingId/drm/speke",
 	},
 	CREATE_DRM_FAIRPLAY: {
 		method: "POST",
@@ -552,10 +576,52 @@ function refScalar(entry: StepLogEntry, key: string): string | undefined {
 	return typeof value === "string" ? value : undefined;
 }
 
+/** The persisted request, unlike the compiled operation, has the provider IDs.
+ * A missing or unresolved historical snapshot cannot reproduce this POST. */
+function streamFilterAttachment(snapshot: unknown) {
+	if (
+		!snapshot ||
+		typeof snapshot !== "object" ||
+		!("refs" in snapshot) ||
+		!("positions" in snapshot)
+	)
+		return;
+	const refs = snapshot.refs;
+	const positions = snapshot.positions;
+	if (
+		!refs ||
+		typeof refs !== "object" ||
+		!("encodingId" in refs) ||
+		!("streamId" in refs) ||
+		!("filterIds" in refs)
+	)
+		return;
+	const providerId = (id: unknown): id is string =>
+		typeof id === "string" &&
+		/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id);
+	if (
+		!providerId(refs.encodingId) ||
+		!providerId(refs.streamId) ||
+		!Array.isArray(refs.filterIds) ||
+		!refs.filterIds.every(providerId) ||
+		!Array.isArray(positions) ||
+		!positions.length ||
+		positions.length !== refs.filterIds.length ||
+		!positions.every((p) => Number.isSafeInteger(p) && p >= 0)
+	)
+		return;
+	return {
+		refs: { encodingId: refs.encodingId, streamId: refs.streamId },
+		body: refs.filterIds.map((id, i) => ({ id, position: positions[i] })),
+	};
+}
+
 /** DRM muxing path segment (fmp4/mp4/ts/webm) from the redacted payload. */
 function muxingKindSegment(entry: StepLogEntry): string | undefined {
 	const kind = (entry.payload as { muxingKind?: unknown }).muxingKind;
-	return typeof kind === "string" ? kind.toLowerCase() : undefined;
+	return typeof kind === "string"
+		? kind.toLowerCase().replaceAll("_", "-")
+		: undefined;
 }
 
 /**
@@ -746,6 +812,23 @@ export function curlForStep(
 		return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 	}
 	let request = entry.request;
+	if (
+		entry.kind === "CREATE_CEA608_INPUT_STREAM" ||
+		entry.kind === "CREATE_CEA708_INPUT_STREAM" ||
+		entry.kind === "CREATE_DVB_SUBTITLE_INPUT_STREAM"
+	) {
+		const data = request as Record<string, unknown> | null | undefined;
+		const refs = data?.refs as Record<string, unknown> | null | undefined;
+		if (
+			typeof refs?.encodingId !== "string" ||
+			!refs.encodingId.trim() ||
+			typeof refs.inputId !== "string" ||
+			!refs.inputId.trim()
+		)
+			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+		entry = { ...entry, refs: { encodingId: refs.encodingId } };
+		request = { ...data, inputId: refs.inputId };
+	}
 	if (entry.kind === "CREATE_HDR10_PLUS_INPUT_STREAM") {
 		const snapshot = request as Record<string, unknown> | null | undefined;
 		const refs = snapshot?.refs as Record<string, unknown> | undefined;
@@ -777,6 +860,30 @@ export function curlForStep(
 			selectionMode,
 			position,
 		};
+	}
+	if (
+		[
+			"CREATE_FILTER_ENHANCED_DEINTERLACE",
+			"CREATE_FILTER_CONFORM",
+			"CREATE_FILTER_INTERLACE",
+			"CREATE_FILTER_ENHANCED_WATERMARK",
+			"CREATE_FILTER_AUDIO_MIX",
+			"CREATE_FILTER_DOLBY_LOUDNESS",
+		].includes(entry.kind)
+	) {
+		if (!request || typeof request !== "object" || Array.isArray(request))
+			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+		// Generated SDK filter models put their discriminator on the wire even
+		// when all user-editable options are unset.
+		request = { ...request, type: entry.kind.slice("CREATE_FILTER_".length) };
+	}
+	let filterBody: string | undefined;
+	if (entry.kind === "CREATE_STREAM_FILTERS") {
+		const attachment = streamFilterAttachment(request);
+		if (!attachment)
+			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+		entry = { ...entry, refs: attachment.refs };
+		filterBody = JSON.stringify(attachment.body, null, 2);
 	}
 	const manifestSnapshot = manifestCurlSnapshot(entry);
 	if (manifestSnapshot === false)
@@ -953,13 +1060,16 @@ export function curlForStep(
 		lines.push(
 			`  -H ${shellSingleQuote(`X-BITMOVIN-BCF-VERSION: ${entry.payload.bcfVersion}`)}`,
 		);
-	const body = hasBody(endpoint.method, request)
-		? curlBody(
-				request,
-				entry.kind === "START_LIVE_ENCODING",
-				entry.kind === "CREATE_FILTER_WATERMARK",
-			)
-		: undefined;
+	const body =
+		filterBody ??
+		(hasBody(endpoint.method, request)
+			? curlBody(
+					request,
+					entry.kind === "START_LIVE_ENCODING",
+					entry.kind === "CREATE_FILTER_WATERMARK" ||
+						entry.kind === "CREATE_FILTER_ENHANCED_WATERMARK",
+				)
+			: undefined);
 	if (body !== undefined) {
 		lines.push(`  -H 'Content-Type: application/json'`);
 		lines.push(`  --data ${shellSingleQuote(body)}`);

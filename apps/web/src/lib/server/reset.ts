@@ -66,6 +66,8 @@ export const RESET_DELETES = [
 export const RESET_PRESERVES = [
 	// A stale create retry must remain spent after its resource is reset.
 	"createRequest",
+	// Pending receipts protect the original job or run. Resolved receipts are immutable history.
+	"encodingResourceRemoval",
 	...RESET_RETAINED_EXPERIMENT_MODELS,
 	"librarySource",
 	"sceneAnalysisRevision",

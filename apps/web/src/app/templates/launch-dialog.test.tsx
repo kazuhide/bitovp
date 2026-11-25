@@ -59,7 +59,11 @@ function detailFor(body: unknown) {
 }
 
 describe("LaunchDialog (ledger #109 §4.1)", () => {
-	it("requires matching JSON after each change of the HDR10+ picture", async () => {
+	it.each([
+		"hdrpicture",
+		"__proto__",
+		"constructor",
+	])("requires matching JSON after each change of HDR source %s", async (streamKey) => {
 		const base = encodingPlanSchema.parse(
 			samplePresetPlan("fixed-bitrate-hls-on-aws"),
 		);
@@ -75,7 +79,7 @@ describe("LaunchDialog (ledger #109 §4.1)", () => {
 			ingest: [],
 			hdr10PlusStreams: [
 				{
-					key: "hdrpicture",
+					key: streamKey,
 					inputKey: input.key,
 					videoInputPath: "cut1.mp4",
 					metadataInputPath: "cut1.json",
@@ -85,7 +89,7 @@ describe("LaunchDialog (ledger #109 §4.1)", () => {
 				{
 					key: "hevc",
 					codec: "H265",
-					ingestKey: "hdrpicture",
+					ingestKey: streamKey,
 					height: 1080,
 					bitrate: 4000000,
 				},
@@ -109,8 +113,8 @@ describe("LaunchDialog (ledger #109 §4.1)", () => {
 					: [],
 		);
 		renderWithQuery(<LaunchDialog presetId={ID} onClose={() => {}} />);
-		const picture = await screen.findByLabelText("hdrpicture");
-		const metadata = screen.getByLabelText("hdrpicture:metadata");
+		const picture = await screen.findByLabelText(streamKey);
+		const metadata = screen.getByLabelText(`${streamKey}:metadata`);
 		const launch = screen.getByRole("button", { name: /Create job/i });
 		await waitFor(() => expect(launch).toBeEnabled());
 		const change = (field: HTMLElement, value: string) =>

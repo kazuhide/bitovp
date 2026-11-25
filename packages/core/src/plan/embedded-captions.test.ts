@@ -6,6 +6,7 @@ import {
 	tryImportPresetIntoWizard,
 } from "../wizard/plan-to-wizard";
 import { compilePlan } from "./compiler";
+import { curlForStep } from "./curl-from-step";
 import { encodingPlanSchema } from "./schema";
 import { planToEncodingTemplateYaml } from "./template";
 import { loadPlan } from "./test-support";
@@ -56,6 +57,29 @@ describe("subtitle extraction from input media", () => {
 				(o) => o.kind === "CREATE_STREAM" && o.refs?.inputStreamId === op?.step,
 			),
 		).toBe(true);
+		if (!op) throw Error("missing compiled caption operation");
+		const resolved = {
+			encodingId: "provider-encoding",
+			inputId: "provider-input",
+		};
+		const curl = curlForStep({
+			...op,
+			refs: op.refs ?? {},
+			payload: op.payload ?? {},
+			status: "DONE",
+			request: { ...op.payload, refs: resolved },
+		});
+		if (!curl.ok) throw Error(curl.code);
+		expect(curl.command).toContain(
+			"/encodings/provider-encoding/input-streams/",
+		);
+		expect(
+			JSON.parse(curl.command.split("--data '")[1]?.slice(0, -1) ?? ""),
+		).toMatchObject({
+			...wire,
+			inputId: "provider-input",
+			inputPath: "feed.ts",
+		});
 		const imported = tryImportPresetIntoWizard(plan);
 		expect(imported.ok).toBe(true);
 		const state = planToWizardState(plan);
@@ -77,6 +101,24 @@ describe("subtitle extraction from input media", () => {
 				source.kind === "DVB" ? "subtitles" : "captions"
 			][collection][key].properties,
 		).toMatchObject({ ...wire, inputPath: "feed.ts" });
+	});
+	it("exports caption keys that are also inherited JavaScript names as ordinary YAML resources", () => {
+		const plan = encodingPlanSchema.parse(
+			planWith({ kind: "CEA608", channel: "CC1" }),
+		);
+		const original = plan.captionStreams[0];
+		if (!original) throw Error("missing embedded caption");
+		const prior = original.key;
+		original.key = "__proto__";
+		for (const r of plan.renditions)
+			if (r.ingestKey === prior) r.ingestKey = original.key;
+		const result = parse(planToEncodingTemplateYaml(plan));
+		expect(
+			Object.hasOwn(
+				result.encodings.main.inputStreams.captions.cea608,
+				original.key,
+			),
+		).toBe(true);
 	});
 	it("downloads a standalone WebVTT file with a stable filename alongside the video", () => {
 		const original = encodingPlanSchema.parse(

@@ -1,13 +1,3 @@
-export {
-	libraryHdr10PlusInputs,
-	missingLibraryHdrInputs,
-} from "./content-library/hdr-inputs";
-export {
-	isHdr10PlusAuditPath,
-	isHdr10PlusObjectPath,
-	publicHdrSourceProjection,
-	publicStorageDiagnostic,
-} from "./plan/hdr-source-paths";
 export { hashApiTokenSecret } from "./auth/api-token-hash";
 export * from "./banding";
 export {
@@ -68,6 +58,10 @@ export {
 	editingOutputSchema,
 	editingRenderProfileSchema,
 } from "./content-library/editing-storage";
+export {
+	libraryHdr10PlusInputs,
+	missingLibraryHdrInputs,
+} from "./content-library/hdr-inputs";
 export { sceneAnalysisLocales } from "./content-library/languages";
 export {
 	libraryFileOutputs,
@@ -781,6 +775,12 @@ export {
 	StorageEndpointBlockedError,
 } from "./plan/egress";
 export { VOD_FIXTURES } from "./plan/fixtures";
+export {
+	isHdr10PlusAuditPath,
+	isHdr10PlusObjectPath,
+	publicHdrSourceProjection,
+	publicStorageDiagnostic,
+} from "./plan/hdr-source-paths";
 /**
  * The VOD acceptance corpus, exported so a test OUTSIDE this package can derive
  * its population from the registry instead of from a directory listing plus a
@@ -830,6 +830,8 @@ export {
 	FILE_ONLY_MUXING_KINDS,
 	isFileOnlyMuxingKind,
 	muxingKindCarriesAudio,
+	physicalMuxingKind,
+	VOD_DRM_MUXINGS,
 } from "./plan/muxing-streams";
 export { outputStorageKeys } from "./plan/output-files";
 export { PER_TITLE_SIMULATOR_MAX_BITRATE } from "./plan/per-title-candidate-api";
@@ -984,6 +986,7 @@ export {
 	concatenationSourceSchema,
 	concatenationStreamSchema,
 	DEFAULT_VMAF_MODEL,
+	deinterlaceFilterSchema,
 	destinationSchema,
 	encodingPlanSchema,
 	generationTimingSchema,

@@ -1173,6 +1173,7 @@ function audioRendition(
 		const settings = {
 			key,
 			ingestKey,
+			conditions: audio.conditions,
 			name: str(audio.name),
 			bitrate: audio.bitrate,
 			rate: audio.rate,
@@ -1718,9 +1719,12 @@ export function buildLiveChannelPlan(
 			position: track.position ?? -1,
 			inputPath: track.inputPath ?? ingestInputPath(state.inputKind),
 			segmentLength: track.segmentLength ?? state.segmentLength,
-			destination: track.destination ?? {
-				...segmentDestination,
-				path: joinPath(base, `subtitles/${track.key}`),
+			destination: {
+				...(track.destination ?? {
+					outputKey: output.key,
+					path: joinPath(base, `subtitles/${track.key}`),
+				}),
+				acl: segmentAcl,
 			},
 		})),
 		renditions,

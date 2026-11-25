@@ -1,6 +1,6 @@
-import { publicStorageDiagnostic } from "@bitovp/core";
 import {
 	masterKeyFromEnv,
+	publicStorageDiagnostic,
 	submitEncodingJob,
 	VERIFICATION_DISPATCH_FENCE_REJECTED,
 	VERIFICATION_DISPATCH_FENCE_REQUIRED,
@@ -49,8 +49,8 @@ import {
 	verificationKeyPairComplete,
 	verificationReplay,
 } from "@/lib/server/verification-key";
-import { equivalentHdrDefault } from "@/lib/server/vod-hdr-default";
 import { validateVodInputPreparation } from "@/lib/server/vod-input-preparation";
+import { equivalentVodPlanDefaults } from "@/lib/server/vod-plan-defaults";
 
 /**
  * `presetId`+`presetRevision`: template provenance from the
@@ -243,13 +243,13 @@ function verificationKeyResponse(
 async function ordinaryCreateReplay(
 	prisma: Awaited<ReturnType<typeof getServerContext>>["prisma"],
 	identity: CreateRequestIdentity,
-	equivalentDigest: () => string | undefined,
+	matchesHistoricalDigest: (digest: string) => boolean,
 ) {
 	const receipt = await lookupCreateRequest(
 		prisma,
 		"VOD_JOB",
 		identity,
-		equivalentDigest,
+		matchesHistoricalDigest,
 	);
 	if (receipt.kind === "none") return undefined;
 	if (receipt.kind === "conflict") return createRequestConflictResponse();
@@ -292,14 +292,13 @@ export async function POST(req: Request) {
 			);
 		throw err;
 	}
-	// Compute the compatibility digest only if a retained receipt differs.
-	// Every other request field and every nonempty HDR list must match exactly.
-	const equivalentDigest = () => {
-		const plan = equivalentHdrDefault(body.data.plan);
-		return (
-			plan && createRequestIdentity(req, { ...body.data, plan })?.requestSha256
+	// Historical GUI receipts can differ only by omitted empty stream lists.
+	const matchesHistoricalDigest = (digest: string) =>
+		equivalentVodPlanDefaults(body.data.plan).some(
+			(plan) =>
+				createRequestIdentity(req, { ...body.data, plan })?.requestSha256 ===
+				digest,
 		);
-	};
 	const { verificationKey, requestSha256, verificationDispatch } = body.data;
 	if (
 		verificationKey !== undefined &&
@@ -318,7 +317,7 @@ export async function POST(req: Request) {
 			const replay = await ordinaryCreateReplay(
 				ctx.prisma,
 				ordinaryIdentity,
-				equivalentDigest,
+				matchesHistoricalDigest,
 			);
 			if (replay) return replay;
 		}
@@ -509,7 +508,7 @@ export async function POST(req: Request) {
 				const replay = await ordinaryCreateReplay(
 					ordinaryContext.prisma,
 					ordinaryIdentity,
-					equivalentDigest,
+					matchesHistoricalDigest,
 				);
 				if (replay) return replay;
 			} catch (lookupErr) {

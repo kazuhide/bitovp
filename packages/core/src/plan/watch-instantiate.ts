@@ -32,6 +32,8 @@ export type WatchTemplateIssue = {
 		| "INPUT_COUNT"
 		| "NO_INGEST"
 		| "HDR10_PLUS_SIDECAR"
+		| "CAPTION_SOURCE"
+		| "VERIFIED_AUDIO_SOURCE"
 		| "SELF_INTERSECTION"
 		| "INPUT_KIND"
 		| "CREDENTIAL_PROVIDER";
@@ -211,6 +213,29 @@ export function watchTemplateIssues(
 				"Watch discovery supplies a single object. Submit HDR10+ video and its matching metadata JSON together in a VOD job.",
 		});
 	}
+	if (parsed.data.renditions.some((r) => r.codec === "AUDIO_PASSTHROUGH")) {
+		issues.push({
+			code: "VERIFIED_AUDIO_SOURCE",
+			message:
+				"Audio copy requires an inspection of the exact discovered object. Use a VOD file job.",
+		});
+	}
+	if (
+		parsed.data.captionStreams.some(
+			(caption) =>
+				!parsed.data.ingest.some(
+					(stream) =>
+						stream.inputKey === caption.inputKey &&
+						stream.inputPath === caption.inputPath,
+				),
+		)
+	) {
+		issues.push({
+			code: "CAPTION_SOURCE",
+			message:
+				"Watch discovery supplies one object. Embedded captions must be extracted from the same media object as an ingest stream.",
+		});
+	}
 	if (parsed.data.ingest.length === 0) {
 		issues.push({
 			code: "NO_INGEST",
@@ -385,6 +410,10 @@ export function instantiateWatchPlan(
 				credentialId: input.rule.credentialId,
 			},
 		],
+		captionStreams: template.captionStreams.map((caption) => ({
+			...caption,
+			inputPath: input.objectKey,
+		})),
 		ingest: template.ingest.map((stream) =>
 			stream.inputKey === soleInput.key
 				? { ...stream, inputPath: input.objectKey }

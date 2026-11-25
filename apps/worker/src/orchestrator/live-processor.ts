@@ -208,6 +208,7 @@ export type LiveChannelDeps = {
 	wakeSleep?(ms: number, interestedIds: () => string[]): Promise<void>;
 	prisma: AppPrismaClient;
 	revealBitmovinAccount(accountId: string): Promise<{
+		resourceScopeVersion?: string;
 		apiKey: string;
 		tenantOrgId: string | null;
 	}>;
@@ -5318,6 +5319,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		let taskHistory: ReturnType<typeof projectMoqTaskHistory>;
 		let sdk: SdkOps;
 		let accountId: string;
+		let resourceAccount: StepLogEntry["resourceAccount"];
 		// , live half: same lifecycle as the VOD processor's pair —
 		// set at step start, cleared on success AND in the catch.
 		let stampStep: string | undefined;
@@ -5347,6 +5349,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			accountId = resolvedAccountId;
 			resetOwner.accountId = accountId;
 			const account = await deps.revealBitmovinAccount(accountId);
+			resourceAccount = account.resourceScopeVersion
+				? { id: accountId, version: account.resourceScopeVersion }
+				: undefined;
 			sdk = deps.makeSdk({
 				...(isAisaManagedLivePlan(plan)
 					? {
@@ -6135,6 +6140,8 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					entry.status = "DONE";
 					entry.finishedAt = deps.now();
 					entry.resourceId = result.resourceId;
+					if (result.resourceId && resourceAccount)
+						entry.resourceAccount = resourceAccount;
 					entry.request = redactSecrets(result.request);
 					const providerBarrierEvidence =
 						typeof entry.response === "object" &&

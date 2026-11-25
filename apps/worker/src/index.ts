@@ -932,14 +932,9 @@ const processorDeps: LiveChannelDeps = {
 	wakeSleep,
 	enqueueFeederJob: (job) => enqueueFeederJob(feederQueue, job),
 	async revealBitmovinAccount(accountId) {
-		const account = await bitmovinAccounts.get(accountId);
-		if (!account) {
-			throw new Error("Bitmovin account no longer exists");
-		}
-		return {
-			apiKey: await bitmovinAccounts.revealApiKey(accountId),
-			tenantOrgId: account.tenantOrgId,
-		};
+		const access = await bitmovinAccounts.revealForEncoding(accountId);
+		if (!access) throw new Error("Bitmovin account no longer exists");
+		return access;
 	},
 	async resolveCredential(credentialId) {
 		const credential = await credentials.get(credentialId);

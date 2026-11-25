@@ -249,8 +249,9 @@ export function dashExternalSubtitleChecks(
 /** A static external subtitle or an extra audio representation cannot satisfy a segmented OCR track. */
 export function dashDvbSubtitleChecks(
 	id: string,
-	expected: readonly { key: string; language: string }[],
+	expected: readonly { key: string; language: string; segmentPath: string }[],
 	parsed: ParsedDash,
+	manifestUri: string,
 ): Check[] {
 	const tracks = parsed.representations.filter(
 		(r) =>
@@ -258,12 +259,21 @@ export function dashDvbSubtitleChecks(
 			["TEMPLATE", "TIMELINE", "LIST"].includes(r.addressing),
 	);
 	return expected.map((sub) => {
-		const found = tracks.findIndex((r) => r.language === sub.language);
+		const directory = new URL(
+			sub.segmentPath ? sub.segmentPath.replace(/\/?$/, "/") : "./",
+			manifestUri,
+		).href;
+		const found = tracks.findIndex(
+			(r) =>
+				r.language === sub.language &&
+				r.subtitleMediaDirectories?.length &&
+				r.subtitleMediaDirectories.every((actual) => actual === directory),
+		);
 		if (found >= 0) tracks.splice(found, 1);
 		return check(
 			`${id}:dvb-subtitle:${sub.key}:representation`,
 			found >= 0,
-			"The DASH manifest must declare a segmented subtitle representation in the configured language",
+			"The DASH manifest must declare a segmented subtitle representation in the configured language and output directory",
 		);
 	});
 }

@@ -53,9 +53,9 @@ export function LaunchDialog({
 }) {
 	const { t } = useT();
 	const router = useRouter();
-	const [overrides, setOverrides] = useState<
-		Record<string, TemplateSourceParam>
-	>({});
+	const [overrides, setOverrides] = useState<Map<string, TemplateSourceParam>>(
+		() => new Map(),
+	);
 	const [prefixTemplate, setPrefixTemplate] = useState(DEFAULT_PREFIX_TEMPLATE);
 	const [name, setName] = useState("");
 	const [pickingSite, setPickingSite] = useState<string | null>(null);
@@ -85,7 +85,7 @@ export function LaunchDialog({
 
 	function changeSource(siteId: string, next: TemplateSourceParam) {
 		setOverrides((previous) => {
-			const updates = { ...previous, [siteId]: next };
+			const updates = new Map(previous).set(siteId, next);
 			const site = sites.find((item) => item.siteId === siteId);
 			if (!site || !plan?.hdr10PlusStreams.length) return updates;
 			const input = plan.inputs.find((entry) => entry.key === site.inputKey);
@@ -94,7 +94,7 @@ export function LaunchDialog({
 					? input
 					: undefined;
 			const location =
-				Object.entries(previous).find(
+				[...previous].find(
 					([key, value]) =>
 						value.bucket !== undefined &&
 						sites.some(
@@ -110,14 +110,14 @@ export function LaunchDialog({
 				if (stream.inputKey !== site.inputKey) continue;
 				const metadataId = `${stream.key}:metadata`;
 				if (moved && siteId !== stream.key)
-					updates[stream.key] = { objectKey: "" };
+					updates.set(stream.key, { objectKey: "" });
 				if (
 					metadataId !== siteId &&
 					(moved ||
 						(siteId === stream.key &&
-							previous[siteId]?.objectKey !== "" &&
+							previous.get(siteId)?.objectKey !== "" &&
 							next.objectKey !==
-								(previous[siteId]?.objectKey ?? site.currentPath)))
+								(previous.get(siteId)?.objectKey ?? site.currentPath)))
 				) {
 					const original =
 						next.objectKey === stream.videoInputPath &&
@@ -125,8 +125,8 @@ export function LaunchDialog({
 						(!next.bucket ||
 							(next.bucket === originalLocation?.bucket &&
 								next.credentialId === originalLocation?.credentialId));
-					if (original) delete updates[metadataId];
-					else updates[metadataId] = { objectKey: "" };
+					if (original) updates.delete(metadataId);
+					else updates.set(metadataId, { objectKey: "" });
 				}
 			}
 			return updates;
@@ -144,7 +144,7 @@ export function LaunchDialog({
 			return;
 		}
 		setSeededFor(`${detail.data.id}:${creation.seed.nonce}`);
-		setOverrides({});
+		setOverrides(new Map());
 		setIssues([]);
 		setPrefixTemplate(
 			detail.data.launchDefaults?.outputPrefixTemplate ??
@@ -170,7 +170,7 @@ export function LaunchDialog({
 	const preview = useMemo(() => {
 		const first = sites[0];
 		const effective = first
-			? (overrides[first.siteId]?.objectKey ?? first.currentPath)
+			? (overrides.get(first.siteId)?.objectKey ?? first.currentPath)
 			: "";
 		return renderTemplateOutputPrefix(prefixTemplate, {
 			objectKey: effective,
@@ -186,7 +186,7 @@ export function LaunchDialog({
 			}
 			const result = instantiateTemplatePlan({
 				presetBody: detail.data.body,
-				sources: overrides,
+				sources: Object.fromEntries(overrides),
 				outputPrefixTemplate: prefixTemplate,
 				name,
 				templateName: detail.data.name,
@@ -314,7 +314,7 @@ export function LaunchDialog({
 							{t("templates.sources")}
 						</h3>
 						{sites.map((site) => {
-							const override = overrides[site.siteId];
+							const override = overrides.get(site.siteId);
 							return (
 								<div
 									key={site.siteId}
@@ -352,7 +352,7 @@ export function LaunchDialog({
 											value={override?.objectKey ?? site.currentPath}
 											onChange={(e) =>
 												changeSource(site.siteId, {
-													...overrides[site.siteId],
+													...overrides.get(site.siteId),
 													objectKey: e.target.value,
 												})
 											}

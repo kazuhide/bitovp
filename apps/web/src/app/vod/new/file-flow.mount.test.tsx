@@ -250,20 +250,56 @@ describe("VodWizard — the file-output flow", () => {
 		expect(first.getByRole("checkbox", { name: audio })).toBeChecked();
 	});
 
-	it("clears the inspected track when the source path changes", async()=>{
-		await restore({...ready,audioFile:{mode:"COPY",position:1,sourceCodec:"PCM",container:"PROGRESSIVE_WAV",filename:"copy.wav",inspectionId:"33333333-3333-4333-8333-333333333333"}},1);
-		await userEvent.click(screen.getByRole("button",{name:"Enter manually"}));
-		const input=screen.getByLabelText("Object path");
+	it("clears the inspected track when the source path changes", async () => {
+		await restore(
+			{
+				...ready,
+				audioFile: {
+					mode: "COPY",
+					position: 1,
+					sourceCodec: "PCM",
+					container: "PROGRESSIVE_WAV",
+					filename: "copy.wav",
+					inspectionId: "33333333-3333-4333-8333-333333333333",
+				},
+			},
+			1,
+		);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Enter manually" }),
+		);
+		const input = screen.getByLabelText("Object path");
 		await userEvent.clear(input);
-		await userEvent.type(input,"changed.mov");
-		await userEvent.click(screen.getByRole("button",{name:/Review$/}));
-		expect(screen.getByRole("button",{name:"Start encoding"})).toBeDisabled();
+		await userEvent.type(input, "changed.mov");
+		await userEvent.click(screen.getByRole("button", { name: /Review$/ }));
+		expect(
+			screen.getByRole("button", { name: "Start encoding" }),
+		).toBeDisabled();
 	});
-	it("returns to a writable video file from an imported audio-only plan",async()=>{
-		await restore({...ready,videos:[],audios:[],audioFile:{mode:"PCM",position:0,filename:"sound.wav",rate:48000,channelLayout:"STEREO",sampleFormat:"S24LE"}},2);
-		await userEvent.click(screen.getByRole("button",{name:"Return to video files"}));
-		expect(screen.getByRole("group",{name:"File 1"})).toBeInTheDocument();
-		expect((screen.getByLabelText("File name") as HTMLInputElement).value).toMatch(/\.mp4$/);
+	it("returns to a writable video file from an imported audio-only plan", async () => {
+		await restore(
+			{
+				...ready,
+				videos: [],
+				audios: [],
+				audioFile: {
+					mode: "PCM",
+					position: 0,
+					filename: "sound.wav",
+					rate: 48000,
+					channelLayout: "STEREO",
+					sampleFormat: "S24LE",
+				},
+			},
+			2,
+		);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Return to video files" }),
+		);
+		expect(screen.getByRole("group", { name: "File 1" })).toBeInTheDocument();
+		expect(
+			(screen.getByLabelText("File name") as HTMLInputElement).value,
+		).toMatch(/\.mp4$/);
 	});
 	it("submits the selected inspected track through the file wizard and never sends a resampling configuration", async () => {
 		const baseline = apiFetch.getMockImplementation();
@@ -276,13 +312,22 @@ describe("VodWizard — the file-output flow", () => {
 					id: inspection,
 					status: "FINISHED",
 					bucket: "synthetic",
-					objectKey: "input.mov",
-					verifiedCredentialId:credentialId,
+					objectKey: "/take.mov",
+					verifiedCredentialId: credentialId,
 					verifiedAudioTracks: [{ position: 1, sourceCodec: "PCM" }],
 				};
 			return baseline?.(url, init);
 		});
-		await restore(ready, 2);
+		await restore(
+			{
+				...ready,
+				inputFiles: ready.inputFiles.map((file) => ({
+					...file,
+					path: "/take.mov",
+				})),
+			},
+			2,
+		);
 		await userEvent.click(
 			screen.getByRole("button", { name: "Export audio only" }),
 		);
@@ -306,7 +351,7 @@ describe("VodWizard — the file-output flow", () => {
 		expect(JSON.parse(req?.[1]?.body as string)).toEqual({
 			credentialId,
 			bucket: "synthetic",
-			objectKey: "input.mov",
+			objectKey: "/take.mov",
 			verifyAudioCopy: true,
 		});
 		const start = screen.getByRole("button", { name: "Start encoding" });
@@ -318,7 +363,10 @@ describe("VodWizard — the file-output flow", () => {
 			([url, init]) => url === "/api/encoding-jobs" && init?.method === "POST",
 		);
 		const { plan } = JSON.parse(post?.[1].body);
-		expect(plan.ingest[0].position).toBe(1);
+		expect(plan.ingest[0]).toMatchObject({
+			position: 1,
+			inputPath: "/take.mov",
+		});
 		expect(plan.renditions[0]).toMatchObject({
 			codec: "AUDIO_PASSTHROUGH",
 			inspectionId: inspection,

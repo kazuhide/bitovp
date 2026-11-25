@@ -504,10 +504,15 @@ describe("PATCH /api/presets/[id]", () => {
 		expect(call.data.body).toBeDefined();
 	});
 
-	it("preserves the revision and saved body of an unchanged pre-HDR preset", async () => {
-		const { hdr10PlusStreams: _unused, ...stored } = encodingPlanSchema.parse(
-			plan(),
-		);
+	it.each([
+		["hdr10PlusStreams"],
+		["captionStreams"],
+		["hdr10PlusStreams", "captionStreams"],
+	])("preserves the preset revision and stored representation when empty fields were omitted (%s)", async (...omitted) => {
+		const stored: Record<string, unknown> = {
+			...encodingPlanSchema.parse(plan()),
+		};
+		for (const field of omitted) delete stored[field];
 		findFirst
 			.mockResolvedValueOnce({ body: stored, kind: "FULL_PLAN" })
 			.mockResolvedValueOnce({ id: ID, revision: 7 });

@@ -1803,7 +1803,13 @@ describe("verification engine — absent attribute SKIPs, never PASSes (row 272 
 describe("single-file IMSC delivery", () => {
 	const validTtml =
 		'<tt xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="1s" end="3s">字幕 &amp; caption</p></div></body></tt>';
-	function imscWorld(size = 1024, text = validTtml) {
+	function imscWorld(
+		size = 1024,
+		text = validTtml,
+		codec: "IMSC" | "WEBVTT" = "IMSC",
+	) {
+		const filename = codec === "WEBVTT" ? "english.vtt" : "english.ttml";
+		const path = "out/subtitles/" + filename;
 		const plan = encodingPlanSchema.parse({
 			...BASE_PLAN,
 			manifests: [],
@@ -1812,12 +1818,12 @@ describe("single-file IMSC delivery", () => {
 					key: "ttml",
 					inputKey: "main",
 					inputPath: "captions.ttml",
-					fileType: "TTML",
+					fileType: codec === "WEBVTT" ? "WEBVTT" : "TTML",
 				},
 			],
 			renditions: [
 				...BASE_PLAN.renditions,
-				{ key: "imsc", codec: "IMSC", ingestKey: "ttml" },
+				{ key: "imsc", codec, ingestKey: "ttml" },
 			],
 			muxings: [
 				...BASE_PLAN.muxings,
@@ -1825,18 +1831,36 @@ describe("single-file IMSC delivery", () => {
 					key: "imsc-text",
 					kind: "TEXT",
 					streamKey: "imsc",
-					filename: "english.ttml",
+					filename,
 					destination: { outputKey: "origin", path: "out/subtitles/" },
 				},
 			],
 		});
 		const artefacts = compileExpectedArtefacts(plan);
 		const world = healthyWorld();
-		world.objects.push("out/subtitles/english.ttml");
-		world.sizes = { "out/subtitles/english.ttml": size };
-		world.texts["out/subtitles/english.ttml"] = text;
+		world.objects.push(path);
+		world.sizes = { [path]: size };
+		world.texts[path] = text;
 		return { artefacts, world };
 	}
+	it.each([
+		["WEBVTT\n\n", "PASS"],
+		[
+			"\uFEFFWEBVTT transcript\r\n\r\n00:00:00.000 --> 00:00:03.000\nHello",
+			"PASS",
+		],
+		[validTtml, "FAIL"],
+		["WEBVTT --> bad header", "FAIL"],
+	] as const)("checks the standalone WebVTT signature on the configured output", async (content, verdict) => {
+		const { artefacts, world } = imscWorld(
+			Buffer.byteLength(content),
+			content,
+			"WEBVTT",
+		);
+		const report = await verifyArtefacts(artefacts, depsFor(world));
+		expect(verdictOf(report, "muxing:imsc-text:file-webvtt")).toBe(verdict);
+	});
+
 	it.each([
 		0, 1024,
 	] as const)("checks Text output bytes (%s) and XML without an AV probe", async (size) => {

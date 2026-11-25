@@ -82,6 +82,7 @@ const FULL_PAGE_WRITE_SOURCES = {
 	},
 	"app/storage/inspect-dialog.tsx": { writeCalls: 1, page: "/storage" },
 	"app/storage/storage-client.tsx": { writeCalls: 2, page: "/storage" },
+	"app/vod/new/audio-file-editor.tsx": { writeCalls: 1, page: "/vod/new" },
 	"app/vod/new/plan-presets-panel.tsx": {
 		writeCalls: 1,
 		page: "/vod/new",

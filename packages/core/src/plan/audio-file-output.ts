@@ -58,6 +58,7 @@ export function checkAudioFileOutputs(plan: EncodingPlan): PlanIssue[] {
 				plan.audioMixStreams.length ||
 				plan.fileStreams.length ||
 				plan.dolbyStreams.length ||
+				plan.captionStreams.length ||
 				plan.hdr10PlusStreams.length ||
 				plan.filters.length ||
 				plan.manifests.length ||

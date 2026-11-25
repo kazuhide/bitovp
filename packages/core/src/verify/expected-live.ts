@@ -45,6 +45,7 @@ import {
 } from "../live/manifest-segment-lists";
 import { liveOutputFilenames } from "../live/protection";
 import type { LiveChannelPlan } from "../live/schema";
+import { relativeSegmentPath } from "../plan/compiler";
 import { outputFileKeys, outputStorageKeys } from "../plan/output-files";
 import { type PathPattern, pathPattern, withTrailingSlash } from "./expected";
 import {
@@ -155,7 +156,7 @@ export type ExpectedLiveManifest = {
 	hlsAdditionalMedia?: ExpectedHlsAdditionalMedia[];
 	hlsAudioGroups?: ExpectedHlsAudioGroups;
 	dashExternalSubtitles?: { url: string; language: string }[];
-	dashDvbSubtitles?: { key: string; language: string }[];
+	dashDvbSubtitles?: { key: string; language: string; segmentPath: string }[];
 	/**
 	 * DASH only : the distinct VIDEO codecs this manifest lists,
 	 * in plan order. One AdaptationSet per codec is the contract (C34); the
@@ -599,6 +600,10 @@ export function compileExpectedLiveArtefacts(
 							dashDvbSubtitles: tracks.map((t) => ({
 								key: t.key,
 								language: t.language,
+								segmentPath: relativeSegmentPath(
+									t.destination.path,
+									manifest.destination.path,
+								),
 							})),
 						}
 					: {}),

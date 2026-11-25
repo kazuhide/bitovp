@@ -26,6 +26,160 @@ import {
 	type StampPageQuery,
 } from "./shared";
 
+type Muxings = ReturnType<OpsContext["muxings"]>;
+
+/** Each generated SDK resource is a distinct API with its own route. Bind
+ * creation, pagination, and recovery to the same encoding and muxing. */
+function spekeApi(
+	m: Muxings,
+	kind: string,
+	encodingId: string,
+	muxingId: string,
+) {
+	switch (kind) {
+		case "FMP4": {
+			const api = m.fmp4.drm.speke;
+			return {
+				create: (body: SpekeDrm) => api.create(encodingId, muxingId, body),
+				list: (query: StampPageQuery) => api.list(encodingId, muxingId, query),
+				customData: (id: string) =>
+					api.customdata.get(encodingId, muxingId, id),
+			};
+		}
+		case "MP4": {
+			const api = m.mp4.drm.speke;
+			return {
+				create: (body: SpekeDrm) => api.create(encodingId, muxingId, body),
+				list: (query: StampPageQuery) => api.list(encodingId, muxingId, query),
+				customData: (id: string) =>
+					api.customdata.get(encodingId, muxingId, id),
+			};
+		}
+		case "TS": {
+			const api = m.ts.drm.speke;
+			return {
+				create: (body: SpekeDrm) => api.create(encodingId, muxingId, body),
+				list: (query: StampPageQuery) => api.list(encodingId, muxingId, query),
+				customData: (id: string) =>
+					api.customdata.get(encodingId, muxingId, id),
+			};
+		}
+		case "PROGRESSIVE_TS": {
+			const api = m.progressiveTs.drm.speke;
+			return {
+				create: (body: SpekeDrm) => api.create(encodingId, muxingId, body),
+				list: (query: StampPageQuery) => api.list(encodingId, muxingId, query),
+				customData: (id: string) =>
+					api.customdata.get(encodingId, muxingId, id),
+			};
+		}
+		case "WEBM": {
+			const api = m.webm.drm.speke;
+			return {
+				create: (body: SpekeDrm) => api.create(encodingId, muxingId, body),
+				list: (query: StampPageQuery) => api.list(encodingId, muxingId, query),
+				customData: (id: string) =>
+					api.customdata.get(encodingId, muxingId, id),
+			};
+		}
+		case "PROGRESSIVE_WEBM": {
+			const api = m.progressiveWebm.drm.speke;
+			return {
+				create: (body: SpekeDrm) => api.create(encodingId, muxingId, body),
+				list: (query: StampPageQuery) => api.list(encodingId, muxingId, query),
+				customData: (id: string) =>
+					api.customdata.get(encodingId, muxingId, id),
+			};
+		}
+		default:
+			throw new Error(`SPEKE DRM is not supported on ${kind} muxings`);
+	}
+}
+function cencApiFor(
+	m: Muxings,
+	kind: string,
+	encodingId: string,
+	muxingId: string,
+) {
+	switch (kind) {
+		case "FMP4": {
+			const api = m.fmp4.drm.cenc;
+			return {
+				create: (body: CencDrm) => api.create(encodingId, muxingId, body),
+				list: (query: StampPageQuery) => api.list(encodingId, muxingId, query),
+				customData: (id: string) =>
+					api.customdata.get(encodingId, muxingId, id),
+			};
+		}
+		case "MP4": {
+			const api = m.mp4.drm.cenc;
+			return {
+				create: (body: CencDrm) => api.create(encodingId, muxingId, body),
+				list: (query: StampPageQuery) => api.list(encodingId, muxingId, query),
+				customData: (id: string) =>
+					api.customdata.get(encodingId, muxingId, id),
+			};
+		}
+		case "WEBM": {
+			const api = m.webm.drm.cenc;
+			return {
+				create: (body: CencDrm) => api.create(encodingId, muxingId, body),
+				list: (query: StampPageQuery) => api.list(encodingId, muxingId, query),
+				customData: (id: string) =>
+					api.customdata.get(encodingId, muxingId, id),
+			};
+		}
+		case "PROGRESSIVE_WEBM": {
+			const api = m.progressiveWebm.drm.cenc;
+			return {
+				create: (body: CencDrm) => api.create(encodingId, muxingId, body),
+				list: (query: StampPageQuery) => api.list(encodingId, muxingId, query),
+				customData: (id: string) =>
+					api.customdata.get(encodingId, muxingId, id),
+			};
+		}
+		default:
+			throw new Error(`CENC DRM is not supported on ${kind} muxings`);
+	}
+}
+function fairPlayApiFor(
+	m: Muxings,
+	kind: string,
+	encodingId: string,
+	muxingId: string,
+) {
+	switch (kind) {
+		case "FMP4": {
+			const api = m.fmp4.drm.fairplay;
+			return {
+				create: (body: FairPlayDrm) => api.create(encodingId, muxingId, body),
+				list: (query: StampPageQuery) => api.list(encodingId, muxingId, query),
+				customData: (id: string) =>
+					api.customdata.get(encodingId, muxingId, id),
+			};
+		}
+		case "TS": {
+			const api = m.ts.drm.fairplay;
+			return {
+				create: (body: FairPlayDrm) => api.create(encodingId, muxingId, body),
+				list: (query: StampPageQuery) => api.list(encodingId, muxingId, query),
+				customData: (id: string) =>
+					api.customdata.get(encodingId, muxingId, id),
+			};
+		}
+		case "PROGRESSIVE_TS": {
+			const api = m.progressiveTs.drm.fairplay;
+			return {
+				create: (body: FairPlayDrm) => api.create(encodingId, muxingId, body),
+				list: (query: StampPageQuery) => api.list(encodingId, muxingId, query),
+				customData: (id: string) =>
+					api.customdata.get(encodingId, muxingId, id),
+			};
+		}
+		default:
+			throw new Error(`FairPlay DRM is not supported on ${kind} muxings`);
+	}
+}
 export function createDrmOps(
 	ctx: OpsContext,
 ): Pick<
@@ -35,46 +189,8 @@ export function createDrmOps(
 	const { audited, stampAuditAdopt, id, muxings, options } = ctx;
 	return {
 		createCencDrm: (encodingId, muxingId, p) => {
-			const m = muxings();
-			const cencApi =
-				p.muxingKind === "FMP4"
-					? m.fmp4.drm.cenc
-					: p.muxingKind === "MP4"
-						? m.mp4.drm.cenc
-						: p.muxingKind === "WEBM"
-							? m.webm.drm.cenc
-							: undefined;
-			if (!cencApi) {
-				throw new Error(`CENC DRM is not supported on ${p.muxingKind} muxings`);
-			}
-			const cencPager =
-				p.muxingKind === "FMP4"
-					? {
-							list: (q: StampPageQuery) =>
-								m.fmp4.drm.cenc.list(encodingId, muxingId, {
-									limit: q.limit,
-									offset: q.offset,
-								}),
-							customData: (rid: string) =>
-								m.fmp4.drm.cenc.customdata.get(encodingId, muxingId, rid),
-						}
-					: p.muxingKind === "MP4"
-						? {
-								list: (q: StampPageQuery) =>
-									m.mp4.drm.cenc.list(encodingId, muxingId, q),
-								customData: (rid: string) =>
-									m.mp4.drm.cenc.customdata.get(encodingId, muxingId, rid),
-							}
-						: {
-								list: (q: StampPageQuery) =>
-									m.webm.drm.cenc.list(encodingId, muxingId, {
-										limit: q.limit,
-										offset: q.offset,
-									}),
-								customData: (rid: string) =>
-									m.webm.drm.cenc.customdata.get(encodingId, muxingId, rid),
-							};
-			const drmPath = p.muxingKind.toLowerCase();
+			const cencApi = cencApiFor(muxings(), p.muxingKind, encodingId, muxingId);
+			const drmPath = p.muxingKind.toLowerCase().replaceAll("_", "-");
 			return adoptOrCreateStamped({
 				label: "CENC DRM",
 				stamp: options.stamp,
@@ -82,8 +198,8 @@ export function createDrmOps(
 					findStampedResource({
 						label: "CENC DRM",
 						expect,
-						list: cencPager.list,
-						customData: cencPager.customData,
+						list: cencApi.list,
+						customData: cencApi.customData,
 					}),
 				auditAdopt: stampAuditAdopt(
 					`/encoding/encodings/${encodingId}/muxings/${drmPath}/${muxingId}/drm/cenc`,
@@ -107,8 +223,6 @@ export function createDrmOps(
 						},
 						() =>
 							cencApi.create(
-								encodingId,
-								muxingId,
 								new CencDrm({
 									key: p.key,
 									kid: p.kid,
@@ -143,10 +257,8 @@ export function createDrmOps(
 		},
 
 		createSpekeDrm: (encodingId, muxingId, p) => {
-			if (p.muxingKind !== "FMP4")
-				throw new Error("SPEKE is supported on fMP4 muxings only");
-			const api = muxings().fmp4.drm.speke;
-			const path = `/encoding/encodings/${encodingId}/muxings/fmp4/${muxingId}/drm/speke`;
+			const api = spekeApi(muxings(), p.muxingKind, encodingId, muxingId);
+			const path = `/encoding/encodings/${encodingId}/muxings/${p.muxingKind.toLowerCase().replaceAll("_", "-")}/${muxingId}/drm/speke`;
 			return adoptOrCreateStamped({
 				label: "SPEKE DRM",
 				stamp: options.stamp,
@@ -154,8 +266,8 @@ export function createDrmOps(
 					findStampedResource({
 						label: "SPEKE DRM",
 						expect,
-						list: (q) => api.list(encodingId, muxingId, q),
-						customData: (rid) => api.customdata.get(encodingId, muxingId, rid),
+						list: api.list,
+						customData: api.customData,
 					}),
 				auditAdopt: stampAuditAdopt(path),
 				create: () =>
@@ -174,8 +286,6 @@ export function createDrmOps(
 						() =>
 							api
 								.create(
-									encodingId,
-									muxingId,
 									new SpekeDrm({
 										contentId: p.contentId,
 										kid: p.kid,
@@ -213,33 +323,13 @@ export function createDrmOps(
 			});
 		},
 		createFairPlayDrm: (encodingId, muxingId, p) => {
-			const m = muxings();
-			const fairplayApi =
-				p.muxingKind === "FMP4"
-					? m.fmp4.drm.fairplay
-					: p.muxingKind === "TS"
-						? m.ts.drm.fairplay
-						: undefined;
-			if (!fairplayApi) {
-				throw new Error(
-					`FairPlay DRM is not supported on ${p.muxingKind} muxings`,
-				);
-			}
-			const fairplayPager =
-				p.muxingKind === "FMP4"
-					? {
-							list: (q: StampPageQuery) =>
-								m.fmp4.drm.fairplay.list(encodingId, muxingId, q),
-							customData: (rid: string) =>
-								m.fmp4.drm.fairplay.customdata.get(encodingId, muxingId, rid),
-						}
-					: {
-							list: (q: StampPageQuery) =>
-								m.ts.drm.fairplay.list(encodingId, muxingId, q),
-							customData: (rid: string) =>
-								m.ts.drm.fairplay.customdata.get(encodingId, muxingId, rid),
-						};
-			const drmPath = p.muxingKind.toLowerCase();
+			const fairplayApi = fairPlayApiFor(
+				muxings(),
+				p.muxingKind,
+				encodingId,
+				muxingId,
+			);
+			const drmPath = p.muxingKind.toLowerCase().replaceAll("_", "-");
 			return adoptOrCreateStamped({
 				label: "FairPlay DRM",
 				stamp: options.stamp,
@@ -247,8 +337,8 @@ export function createDrmOps(
 					findStampedResource({
 						label: "FairPlay DRM",
 						expect,
-						list: fairplayPager.list,
-						customData: fairplayPager.customData,
+						list: fairplayApi.list,
+						customData: fairplayApi.customData,
 					}),
 				auditAdopt: stampAuditAdopt(
 					`/encoding/encodings/${encodingId}/muxings/${drmPath}/${muxingId}/drm/fairplay`,
@@ -267,8 +357,6 @@ export function createDrmOps(
 						},
 						() =>
 							fairplayApi.create(
-								encodingId,
-								muxingId,
 								new FairPlayDrm({
 									key: p.key,
 									iv: p.iv,
@@ -292,55 +380,13 @@ export function createDrmOps(
 			// `offset` are typed string on some generated params and number
 			// on others — same wire query either way, so each call gets the
 			// literal its endpoint declares.
-			const page = (offset: number) => {
-				if (drmKind === "SPEKE") {
-					if (muxingKind !== "FMP4")
-						throw new Error("SPEKE can only be listed on fMP4 muxings");
-					return m.fmp4.drm.speke.list(encodingId, muxingId, {
-						limit: 100,
-						offset,
-					});
-				}
-				if (drmKind === "CENC") {
-					switch (muxingKind) {
-						case "FMP4":
-							return m.fmp4.drm.cenc.list(encodingId, muxingId, {
-								limit: 100,
-								offset,
-							});
-						case "MP4":
-							return m.mp4.drm.cenc.list(encodingId, muxingId, {
-								limit: 100,
-								offset,
-							});
-						case "WEBM":
-							return m.webm.drm.cenc.list(encodingId, muxingId, {
-								limit: 100,
-								offset,
-							});
-						default:
-							throw new Error(
-								`CENC DRM cannot be listed on ${muxingKind} muxings`,
-							);
-					}
-				}
-				switch (muxingKind) {
-					case "FMP4":
-						return m.fmp4.drm.fairplay.list(encodingId, muxingId, {
-							limit: 100,
-							offset,
-						});
-					case "TS":
-						return m.ts.drm.fairplay.list(encodingId, muxingId, {
-							limit: 100,
-							offset,
-						});
-					default:
-						throw new Error(
-							`FairPlay DRM cannot be listed on ${muxingKind} muxings`,
-						);
-				}
-			};
+			const api =
+				drmKind === "SPEKE"
+					? spekeApi(m, muxingKind, encodingId, muxingId)
+					: drmKind === "CENC"
+						? cencApiFor(m, muxingKind, encodingId, muxingId)
+						: fairPlayApiFor(m, muxingKind, encodingId, muxingId);
+			const page = (offset: number) => api.list({ limit: 100, offset });
 			const all: { id: string; outputPath?: string }[] = [];
 			for (let offset = 0; ; offset += 100) {
 				const response = await page(offset);

@@ -575,6 +575,23 @@ describe("POST /api/encoding-jobs", () => {
 });
 
 describe("GET /api/encoding-jobs", () => {
+	it("withholds complete private provider diagnostics in the job list", async () => {
+		findMany.mockResolvedValueOnce([
+			{
+				id: "1",
+				status: "ERROR",
+				error:
+					"Could not read https:/fixture:synthetic'quote@fixture.invalid/picture",
+			},
+			{ id: "2", status: "ERROR", error: "Encoder could not start" },
+		]);
+		const res = await GET(new Request("http://test/api/encoding-jobs"));
+		expect(res.status).toBe(200);
+		expect((await res.json()).items).toMatchObject([
+			{ id: "1", error: "[withheld]" },
+			{ id: "2", error: "Encoder could not start" },
+		]);
+	});
 	it("returns a lean paginated projection (incl. the new list columns)", async () => {
 		findMany.mockResolvedValueOnce([{ id: "1", name: "x", status: "QUEUED" }]);
 		const res = await GET(new Request("http://test/api/encoding-jobs"));
@@ -1081,7 +1098,7 @@ describe("ordinary GUI create retries", () => {
 			body: JSON.stringify(body),
 		});
 	}
-	it("recognizes a pre-HDR Quick Launch on retry without accepting a differently edited plan", async () => {
+	it("replays Quick Launch across empty HDR and caption defaults and rejects edited plans", async () => {
 		presetFindFirst.mockResolvedValueOnce({ id: PRESET_ID });
 		const previous = {
 			plan: planWithAccount(),
@@ -1098,12 +1115,19 @@ describe("ordinary GUI create retries", () => {
 			...previous,
 			plan: { ...previous.plan, hdr10PlusStreams: [] },
 		};
-		const same = await POST(keyedRequest(restored));
-		expect(same.status).toBe(200);
-		expect(await same.json()).toMatchObject({ replayed: true });
+		for (const plan of [
+			restored.plan,
+			{ ...previous.plan, captionStreams: [] },
+			{ ...restored.plan, captionStreams: [] },
+		]) {
+			const same = await POST(keyedRequest({ ...restored, plan }));
+			expect(same.status).toBe(200);
+			expect(await same.json()).toMatchObject({ replayed: true });
+		}
 		for (const plan of [
 			{ ...restored.plan, name: "another cut" },
 			{ ...restored.plan, hdr10PlusStreams: [{ key: "different" }] },
+			{ ...restored.plan, captionStreams: [{ key: "captions" }] },
 		]) {
 			expect((await POST(keyedRequest({ ...restored, plan }))).status).toBe(
 				409,

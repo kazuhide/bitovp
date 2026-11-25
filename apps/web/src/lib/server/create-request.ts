@@ -71,7 +71,7 @@ export async function lookupCreateRequest(
 	prisma: ReceiptClient,
 	kind: CreateRequestKind,
 	identity: CreateRequestIdentity,
-	equivalentDigest?: () => string | undefined,
+	matchesHistoricalDigest?: (digest: string) => boolean,
 ) {
 	const receipt = await prisma.createRequest.findFirst({
 		where: { kind, requestKey: identity.requestKey },
@@ -80,7 +80,7 @@ export async function lookupCreateRequest(
 	if (!receipt) return { kind: "none" } as const;
 	if (
 		receipt.requestSha256 !== identity.requestSha256 &&
-		receipt.requestSha256 !== equivalentDigest?.()
+		!matchesHistoricalDigest?.(receipt.requestSha256)
 	)
 		return { kind: "conflict" } as const;
 	return { kind: "existing", resourceId: receipt.resourceId } as const;

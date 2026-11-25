@@ -636,9 +636,10 @@ export async function observeEdgeLeg(
 			manifest.dashDvbSubtitles?.length
 		) {
 			const { parseDashText } = await import("./adapters");
-			const observed = await parseDashText(master.read.text).catch(
-				() => undefined,
-			);
+			const observed = await parseDashText(
+				master.read.text,
+				masterUrl.href,
+			).catch(() => undefined);
 			const checks = observed
 				? dashExternalSubtitleChecks(
 						"external",
@@ -671,6 +672,7 @@ export async function observeEdgeLeg(
 						"edge",
 						manifest.dashDvbSubtitles,
 						observed,
+						masterUrl.href,
 					).some((c) => c.verdict !== "PASS"))
 			)
 				referenceMissing.push(

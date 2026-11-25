@@ -95,6 +95,8 @@ export type WizardInputFile = {
 	key: string;
 	/** Shared Bitmovin Input id (dedupe anchor); files on one input share it. */
 	inputKey: string;
+	/** Original provider declaration order when the copied primary picture is on another input. */
+	inputDeclarationIndex?: number;
 	kind: WizardStorageKind;
 	/** Empty for HTTPS (no credential). */
 	credentialId: string;
@@ -681,6 +683,15 @@ function isMediaFilter(
 export type WizardFilter =
 	| WizardDeinterlaceFilter
 	| import("../plan/media-filters").MediaFilter;
+export function isWizardWatermarkFilter(
+	filter: WizardFilter,
+): filter is Extract<
+	WizardFilter,
+	{ kind: "WATERMARK" | "ENHANCED_WATERMARK" }
+> {
+	return filter.kind === "WATERMARK" || filter.kind === "ENHANCED_WATERMARK";
+}
+
 export type WizardDeinterlaceFilter = {
 	kind?: "DEINTERLACE";
 	key: string;
@@ -1690,7 +1701,16 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	const inputDecls = (): EncodingPlanInput["inputs"] => {
 		const seen = new Set<string>();
 		const decls: EncodingPlanInput["inputs"] = [];
-		for (const f of inputFiles) {
+		const declared = inputFiles.some(
+			(file) => file.inputDeclarationIndex !== undefined,
+		)
+			? [...inputFiles].sort(
+					(a, b) =>
+						(a.inputDeclarationIndex ?? Infinity) -
+						(b.inputDeclarationIndex ?? Infinity),
+				)
+			: inputFiles;
+		for (const f of declared) {
 			if (seen.has(f.inputKey)) {
 				continue;
 			}
@@ -1910,10 +1930,6 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	// Implicit video/audio tracks are emitted only while a rendition uses
 	// them — audio-only Dolby plans have ingest: [] and the AI-scene sample
 	// has no audio track at all.
-	const usesImplicit = (
-		extras: WizardRenditionExtras | undefined,
-		implicitKey: "video" | "audio",
-	) => extras?.source === undefined || extras.source === implicitKey;
 	// A trimming/concatenation stream may wrap the implicit video/audio ingest by
 	// sourceKey even when no rendition reads that ingest directly — the underlying
 	// ingest stream must still be emitted for the wrapper to resolve.
@@ -1926,24 +1942,55 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 			c.sources.map((s) => s.sourceKey),
 		),
 	]);
-	const useVideoIngest =
-		!sources.hdr10PlusStreams?.some((s) => s.key === "video") &&
-		(state.videos.some((v) => usesImplicit(v.extras, "video")) ||
-			wrappedSourceKeys.has("video"));
-	// A QC-only encode emits no audio rendition (below), so none reads the implicit
-	// audio track: left in, the plan would ask for a track of the source that nothing
-	// encodes, and would not load back into the form that built it.
-	const useAudioIngest =
-		(!qcOnly && state.audios.some((a) => usesImplicit(a.extras, "audio"))) ||
-		wrappedSourceKeys.has("audio");
+	// A named HDR source can legitimately be called "video". An explicit
+	// selection keeps that source; the implicit selection gets its own ingest.
+	const sourceKeys = new Set(
+		[
+			...(sources.tracks ?? []),
+			...(sources.fileStreams ?? []),
+			...(sources.dolbyStreams ?? []),
+			...(sources.hdr10PlusStreams ?? []),
+			...(sources.audioMixStreams ?? []),
+			...(sources.trimmingStreams ?? []),
+			...(sources.concatenationStreams ?? []),
+		].map((stream) => stream.key),
+	);
+	function availableTrackKey(kind: "video" | "audio") {
+		let key: string = kind;
+		for (let i = 1; sourceKeys.has(key); i++) key = `${kind}-input-${i}`;
+		return key;
+	}
+	const implicitVideoKey = availableTrackKey("video");
+	const implicitAudioKey = availableTrackKey("audio");
+	const requiresImplicit = (
+		rows: readonly { extras?: WizardRenditionExtras }[],
+		kind: "audio" | "video",
+		key: string,
+	) =>
+		rows.some(
+			(row) =>
+				row.extras?.source === undefined ||
+				(key === kind && row.extras.source === kind),
+		) ||
+		(key === kind && wrappedSourceKeys.has(kind));
+	const useVideoIngest = requiresImplicit(
+		state.videos,
+		"video",
+		implicitVideoKey,
+	);
+	const useAudioIngest = requiresImplicit(
+		qcOnly ? [] : state.audios,
+		"audio",
+		implicitAudioKey,
+	);
 	// Separate A/V: the implicit audio may read a different input file than the
 	// video; absent audioInputFile = the same primary object.
 	const audioRef = ref(state.audioInputFile ?? primaryFile?.key ?? "");
-	const ingest: IngestInput[] = [
-		...(useVideoIngest && primaryFile
+	const videoIngest: IngestInput[] =
+		useVideoIngest && primaryFile
 			? [
 					prune({
-						key: "video",
+						key: implicitVideoKey,
 						inputKey: primaryFile.inputKey,
 						inputPath: primaryFile.path,
 						selectionMode: "VIDEO_RELATIVE" as const,
@@ -1951,19 +1998,22 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 						encodingKey: str(sources.implicitEncodingKeys?.video),
 					}),
 				]
-			: []),
-		...(useAudioIngest
-			? [
-					prune({
-						key: "audio",
-						inputKey: audioRef.inputKey,
-						inputPath: audioRef.inputPath,
-						selectionMode: "AUDIO_RELATIVE" as const,
-						position: 0,
-						encodingKey: str(sources.implicitEncodingKeys?.audio),
-					}),
-				]
-			: []),
+			: [];
+	const audioIngest: IngestInput[] = useAudioIngest
+		? [
+				prune({
+					key: implicitAudioKey,
+					inputKey: audioRef.inputKey,
+					inputPath: audioRef.inputPath,
+					selectionMode: "AUDIO_RELATIVE" as const,
+					position: 0,
+					encodingKey: str(sources.implicitEncodingKeys?.audio),
+				}),
+			]
+		: [];
+	const ingest: IngestInput[] = [
+		...(implicitVideoKey === "video" ? videoIngest : []),
+		...(implicitAudioKey === "audio" ? audioIngest : []),
 		...(sources.tracks ?? []).map((track) => {
 			const t = ref(track.inputFile);
 			return prune({
@@ -1975,6 +2025,8 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				encodingKey: str(track.encodingKey),
 			});
 		}),
+		...(implicitVideoKey === "video" ? [] : videoIngest),
+		...(implicitAudioKey === "audio" ? [] : audioIngest),
 	];
 
 	const videoRendition = (
@@ -1989,7 +2041,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 		const shared = {
 			key,
 			width: video.width,
-			ingestKey: video.extras?.source ?? "video",
+			ingestKey: video.extras?.source ?? implicitVideoKey,
 			...(hevcV2
 				? { encodingMode: "SMART_PASS" as const }
 				: video.encodingMode
@@ -2178,7 +2230,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 		const codec = audio.codec ?? "AAC";
 		const shared = {
 			key,
-			ingestKey: audio.extras?.source ?? "audio",
+			ingestKey: audio.extras?.source ?? implicitAudioKey,
 			name: str(audio.extras?.name),
 			...extrasFields(audio.extras),
 			conditions: state.audioGuard
@@ -2395,12 +2447,6 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 			kind === "PROGRESSIVE_MOV" ||
 			kind === "PROGRESSIVE_WEBM"
 		) {
-			// One whole file. The destination is REQUIRED by the schema — these
-			// kinds have no DRM-owned output path — so it is written even when a
-			// DRM row names this muxing; the validator then refuses that row
-			// (PLAN_DRM_MUXING_MISMATCH) instead of the plan failing to parse on
-			// a missing destination, which would say nothing about the cause.
-			const fileDestination = dest ?? destination(`${base}${derived}`, m.acl);
 			const additionalStreamKeys =
 				muxedIn && muxedIn.length > 0 ? [...muxedIn] : undefined;
 			if (kind === "PROGRESSIVE_TS") {
@@ -2412,7 +2458,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 					filename: m.filename || "output.ts",
 					segmentLength: m.segmentLength,
 					startOffset: m.startOffset,
-					destination: fileDestination,
+					destination: dest,
 					name,
 				});
 			}
@@ -2423,7 +2469,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 					streamKey: key,
 					additionalStreamKeys,
 					filename: m.filename || "output.webm",
-					destination: fileDestination,
+					destination: dest,
 					name,
 				});
 			}
@@ -2433,7 +2479,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				streamKey: key,
 				additionalStreamKeys,
 				filename: m.filename || "output.mov",
-				destination: fileDestination,
+				destination: dest ?? destination(`${base}${derived}`, m.acl),
 				name,
 			});
 		}
@@ -2955,7 +3001,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 		...(filters.length > 0
 			? {
 					filters: filters.map((filter) => {
-						if (filter.kind === "WATERMARK") {
+						if (isWizardWatermarkFilter(filter)) {
 							const selected = wizardWatermarkFile(state.inputFiles, filter);
 							const file = selected && fileByKey.get(selected.key);
 							return prune({

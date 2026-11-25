@@ -79,9 +79,23 @@ declare module "mpd-parser" {
 	export function parse(manifestString: string, options?: unknown): MpdManifest;
 	export function stringToMpdXml(manifestString: string): unknown;
 	export type MpdRepresentationInfo = {
-		attributes: { contentType?: string; mimeType?: string };
+		attributes: {
+			contentType?: string;
+			mimeType?: string;
+			id?: string;
+			lang?: string;
+			bandwidth?: number;
+			baseUrl?: string;
+		};
+		segmentInfo?: {
+			template?: { media?: string };
+			list?: { segmentUrls?: { media?: string }[] };
+		};
 	};
-	export function inheritAttributes(manifest: unknown): {
+	export function inheritAttributes(
+		manifest: unknown,
+		options?: { manifestUri: string },
+	): {
 		representationInfo: MpdRepresentationInfo[];
 	};
 	export function toPlaylists(

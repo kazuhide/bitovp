@@ -294,6 +294,505 @@ describe("IMSC and Opus contracts", () => {
 			}),
 		]);
 	});
+	it("enforces per-encoding conform consistency, subtitle restrictions and codec frame rates", () => {
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		plan.filters = [
+			{ key: "rate", kind: "CONFORM", targetFps: 25 },
+			{ key: "other", kind: "CONFORM", targetFps: 24 },
+		];
+		const [first, second] = plan.renditions;
+		if (!first || !second) throw new Error("Missing renditions");
+		first.filters = [{ filterKey: "rate", position: 0 }];
+		const conformIssues = () =>
+			validatePlan(plan).filter((i) => i.code === "PLAN_CONFORM_FILTER");
+		expect(conformIssues().length).toBeGreaterThan(0);
+		for (const rendition of plan.renditions) {
+			rendition.filters = [{ filterKey: "rate", position: 0 }];
+			if (rendition.codec === "H264") rendition.rate = 25;
+		}
+		expect(conformIssues()).toEqual([]);
+		second.filters = [{ filterKey: "other", position: 0 }];
+		expect(conformIssues().length).toBeGreaterThan(0);
+		second.filters = [
+			{ filterKey: "rate", position: 0 },
+			{ filterKey: "other", position: 1 },
+		];
+		expect(conformIssues().length).toBeGreaterThan(0);
+		second.filters.pop();
+		const video = plan.renditions.find((r) => r.codec === "H264");
+		if (!video) throw new Error("Missing video");
+		video.rate = 30;
+		expect(conformIssues().length).toBeGreaterThan(0);
+		video.rate = 25;
+		const subs = imscPlan().renditions.find((r) => r.codec === "IMSC");
+		if (!subs) throw new Error("Missing captions");
+		subs.filters = [{ filterKey: "rate", position: 0 }];
+		plan.renditions.push(subs);
+		expect(conformIssues().length).toBeGreaterThan(0);
+		subs.encodingKey = "other";
+		delete subs.filters;
+		expect(conformIssues()).toEqual([]);
+	});
+	it("keeps ordinary storage-object keys containing punctuation executable and rejects incorrect filter speaker mappings", () => {
+		expect(
+			encodingPlanSchema.shape.filters.safeParse([
+				{
+					key: "logo",
+					kind: "WATERMARK",
+					inputKey: "main",
+					imagePath: "brand:promo@2x.png",
+					left: 0,
+					top: 0,
+				},
+			]).success,
+		).toBe(true);
+		for (const [channelLayout, count] of [
+			["2.1", 3],
+			["5.0", 5],
+			["HEXAGONAL", 6],
+			["STEREO_DOWNMIX", 4],
+		] as const) {
+			const audioMixChannels = Array.from({ length: count }, (_, i) => ({
+				channelNumber: i,
+				sourceChannels: [{ type: "CHANNEL_NUMBER", channelNumber: i }],
+			}));
+			expect(
+				encodingPlanSchema.shape.filters.safeParse([
+					{ kind: "AUDIO_MIX", key: "pan", channelLayout, audioMixChannels },
+				]).success,
+			).toBe(false);
+		}
+	});
+	it("counts all five codec outputs when Audio Mix derives its layout from QUAD_LFE rows", () => {
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		const audio = plan.renditions.find((r) => r.codec === "AAC");
+		if (!audio) throw new Error("Missing audio");
+		Object.assign(audio, {
+			codec: "DDPLUS",
+			channelLayout: "CL_QUAD_LFE",
+			filters: [{ filterKey: "pan", position: 0 }],
+		});
+		const channels = Array.from({ length: 5 }, (_, i) => ({
+			channelNumber: i,
+			sourceChannels: [{ type: "CHANNEL_NUMBER" as const, channelNumber: i }],
+		}));
+		plan.filters = [
+			{
+				key: "pan",
+				kind: "AUDIO_MIX",
+				channelLayout: "NONE",
+				audioMixChannels: channels,
+			},
+		];
+		expect(
+			validatePlan(plan).filter((i) => i.code === "PLAN_AUDIO_FILTER"),
+		).toEqual([]);
+		channels.pop();
+		expect(validatePlan(plan).map((i) => i.code)).toContain(
+			"PLAN_AUDIO_FILTER",
+		);
+	});
+	it("rejects mutually exclusive deinterlace filters and unrepresentable enhanced watermark geometry", () => {
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		const video = plan.renditions.find((r) => r.codec === "H264");
+		if (!video) throw new Error("Missing video");
+		plan.filters = encodingPlanSchema.shape.filters.parse([
+			{ key: "normal", kind: "DEINTERLACE" },
+			{ key: "enhanced", kind: "ENHANCED_DEINTERLACE" },
+		]);
+		video.filters = plan.filters.map((f, position) => ({
+			filterKey: f.key,
+			position,
+		}));
+		expect(validatePlan(plan).map((i) => i.code)).toContain(
+			"PLAN_DEINTERLACE_CONFLICT",
+		);
+		const mark = {
+			key: "logo",
+			kind: "ENHANCED_WATERMARK",
+			inputKey: "main",
+			imagePath: "logo.png",
+			left: 0,
+			top: 0,
+		};
+		const parses = (over: Record<string, unknown>) =>
+			encodingPlanSchema.shape.filters.safeParse([{ ...mark, ...over }])
+				.success;
+		for (const over of [
+			{ width: 0.5 },
+			{ unit: "PERCENTS", height: 101 },
+			{ unit: "PERCENTS", width: 0.01 },
+			{ top: undefined },
+			{ left: undefined },
+			{ left: 0, right: 0 },
+		])
+			expect(parses(over)).toBe(false);
+		expect(
+			parses({ unit: "PERCENTS", width: 0.1, height: 100, opacity: 0 }),
+		).toBe(true);
+	});
+	it("refuses Conform on a one-entry concatenation while accepting a strict multi-entry programme", () => {
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		plan.filters = [{ key: "rate", kind: "CONFORM", targetFps: 25 }];
+		for (const r of plan.renditions) {
+			const key = `join-${r.key}`;
+			const trimKey = `trim-${r.key}`;
+			plan.trimmingStreams.push({
+				key: trimKey,
+				kind: "TIME_BASED",
+				sourceKey: r.ingestKey,
+				offset: 0,
+				duration: 10,
+			});
+			plan.concatenationStreams.push({
+				key,
+				sources: [{ sourceKey: trimKey, position: 0 }],
+			});
+			r.ingestKey = key;
+			r.filters = [{ filterKey: "rate", position: 0 }];
+		}
+		const problems = () =>
+			validatePlan(plan).filter((i) => i.code === "PLAN_CONFORM_CONCATENATION");
+		expect(problems().length).toBeGreaterThan(0);
+		for (const concat of plan.concatenationStreams) {
+			const [first] = concat.sources;
+			if (!first) throw new Error("Missing concat entry");
+			concat.sources.push({ ...first, position: 1 });
+		}
+		expect(problems()).toEqual([]);
+		const first = plan.concatenationStreams[0];
+		if (!first?.sources[0]) throw new Error("Missing join");
+		first.sources.push({ ...first.sources[0], position: 2 });
+		plan.renditions = plan.renditions.filter((r) => r.codec === "H264");
+		expect(problems().length).toBeGreaterThan(0);
+	});
+	it("rejects stream-level audio filters that would fail at start or be silently ignored by the encoder", () => {
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		const audio = plan.renditions.find((r) => r.codec === "AAC");
+		if (!audio) throw new Error("Missing audio");
+		plan.filters = [
+			{ key: "level", kind: "DOLBY_LOUDNESS" },
+			{ key: "level2", kind: "DOLBY_LOUDNESS" },
+			{
+				key: "mix",
+				kind: "AUDIO_MIX",
+				channelLayout: "MONO",
+				audioMixChannels: [
+					{ channelNumber: 0, sourceChannels: [{ type: "CENTER" }] },
+				],
+			},
+		];
+		const issues = () =>
+			validatePlan(plan).filter(
+				(i) =>
+					i.code === "PLAN_AUDIO_FILTER" ||
+					i.code === "PLAN_FILTER_ENCODER_VERSION",
+			);
+		audio.filters = [
+			{ filterKey: "level", position: 0 },
+			{ filterKey: "level2", position: 1 },
+		];
+		expect(issues()).toHaveLength(1);
+		audio.filters.pop();
+		plan.bitmovin.encoderVersion = "2.281.0";
+		expect(issues()).toHaveLength(1);
+		plan.bitmovin.encoderVersion = "2.282.0";
+		expect(issues()).toEqual([]);
+		plan.generation.audioVideoSyncMode = "RESYNC_AT_START";
+		expect(issues()).toHaveLength(1);
+		delete plan.generation.audioVideoSyncMode;
+		plan.kantar = {
+			credentialId: "11111111-1111-4111-8111-111111111111",
+			licenseId: 1,
+			channelName: "main",
+			contentReference: "movie",
+			serverUrl: "https://kantar.example",
+			reportDestination: { outputKey: "reports", path: "reports/" },
+		};
+		expect(issues()).toHaveLength(1);
+		delete plan.kantar;
+		audio.filters = [{ filterKey: "mix", position: 0 }];
+		expect(issues()).toHaveLength(1);
+		audio.channelLayout = "MONO";
+		expect(issues()).toEqual([]);
+		plan.audioMixStreams = [
+			{
+				key: "mixed",
+				channelLayout: "MONO",
+				audioMixChannels: [
+					{
+						sourceKey: audio.ingestKey,
+						outputChannelType: "CENTER",
+						sourceChannels: [{ type: "CENTER" }],
+					},
+				],
+			},
+		];
+		audio.ingestKey = "mixed";
+		expect(issues()).toHaveLength(1);
+		const mix = plan.audioMixStreams[0];
+		const source = plan.ingest[0];
+		if (!mix || !source) throw new Error("Missing input mix");
+		const originalTrack = plan.ingest.find(
+			(i) => i.key === mix.audioMixChannels[0]?.sourceKey,
+		);
+		if (!originalTrack) throw new Error("Missing audio track");
+		originalTrack.selectionMode = "POSITION_ABSOLUTE";
+		originalTrack.position = 0;
+		plan.ingest.push({
+			...originalTrack,
+			key: "relative",
+			selectionMode: "AUDIO_RELATIVE",
+		});
+		mix.audioMixChannels.push({
+			sourceKey: "relative",
+			outputChannelType: "FRONT_RIGHT",
+			sourceChannels: [{ type: "FRONT_RIGHT" }],
+		});
+		expect(issues()).toHaveLength(1);
+		mix.audioMixChannels.pop();
+		// A multi-track merge subsequently applies the rendition filter.
+		plan.ingest.push({
+			...source,
+			key: "second-track",
+			inputPath: "second-audio.wav",
+		});
+		mix.audioMixChannels.push({
+			sourceKey: "second-track",
+			outputChannelType: "FRONT_RIGHT",
+			sourceChannels: [{ type: "FRONT_RIGHT" }],
+		});
+		expect(issues()).toEqual([]);
+	});
+	it("retains field conversion and fractional conform in the rendition attachment order", () => {
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		const video = plan.renditions.find((item) => item.codec === "H264");
+		if (!video) throw new Error("Missing fixture video");
+		plan.filters = [
+			{
+				key: "fields",
+				kind: "ENHANCED_DEINTERLACE",
+				mode: "FIELD",
+				parity: "TOP_FIELD_FIRST",
+				autoEnable: "META_DATA_BASED",
+			},
+			{ key: "rate", kind: "CONFORM", targetFps: 24_000 / 1_001 },
+			{
+				key: "output",
+				kind: "INTERLACE",
+				mode: "TOP",
+				verticalLowPassFilteringMode: "LOW_PASS",
+			},
+		];
+		video.filters = plan.filters.map((f, position) => ({
+			filterKey: f.key,
+			position,
+		}));
+		for (const rendition of plan.renditions) {
+			if (rendition.codec === "H264") delete rendition.rate;
+			if (rendition !== video)
+				rendition.filters = [{ filterKey: "rate", position: 0 }];
+		}
+		const normalized = encodingPlanSchema.parse(plan);
+		expect(validatePlan(normalized).filter((i) => i.level === "error")).toEqual(
+			[],
+		);
+		expect(
+			encodingPlanSchema.parse(buildPlan(planToWizardState(normalized)))
+				.filters,
+		).toEqual(plan.filters);
+		const ops = compilePlan(normalized);
+		expect(
+			ops
+				.filter((op) => op.step.startsWith(`filter:${video.key}:`))
+				.map((op) => op.kind),
+		).toEqual([
+			"CREATE_FILTER_ENHANCED_DEINTERLACE",
+			"CREATE_FILTER_CONFORM",
+			"CREATE_FILTER_INTERLACE",
+		]);
+		expect(
+			ops.find((op) => op.kind === "CREATE_FILTER_CONFORM")?.payload.targetFps,
+		).toBe(24_000 / 1_001);
+		expect(
+			encodingPlanSchema.safeParse({
+				...plan,
+				filters: [{ key: "rate", kind: "CONFORM", targetFps: 0 }],
+			}).success,
+		).toBe(false);
+	});
+
+	it("exports different image placeholders for distinct watermark keys that normalize to the same name", () => {
+		const plan = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		const video = plan.renditions.find((r) => r.codec === "H264");
+		const [input] = plan.inputs;
+		if (!video || !input) throw new Error("Missing fixture");
+		plan.filters = ["logo-a", "logo_a"].map((key, i) => ({
+			key,
+			kind: "ENHANCED_WATERMARK",
+			inputKey: input.key,
+			imagePath: `logos/${i}.png`,
+			left: 0,
+			top: 0,
+		}));
+		video.filters = plan.filters.map((f, position) => ({
+			filterKey: f.key,
+			position,
+		}));
+		const doc = parse(planToEncodingTemplateYaml(plan));
+		const group = doc.filters.enhancedWatermark;
+		expect(group[`${video.key}-logo-a`].properties.image).not.toEqual(
+			group[`${video.key}-logo_a`].properties.image,
+		);
+	});
+	it("exports audio channel gains and loudness, and keeps the enhanced watermark out of the template as a signed URL", () => {
+		const value = imscPlan();
+		const audio = value.renditions.find((r) => r.codec === "AAC"),
+			video = value.renditions.find((r) => r.codec === "H264");
+		const storage = value.inputs.find((r) => r.kind === "S3");
+		if (!audio || !video || !storage) throw new Error("Missing fixture inputs");
+		audio.channelLayout = "MONO";
+		value.filters = [
+			{
+				key: "mix",
+				kind: "AUDIO_MIX",
+				channelLayout: "MONO",
+				audioMixChannels: [
+					{
+						channelNumber: 0,
+						sourceChannels: [
+							{ type: "FRONT_LEFT", gain: -0.5 },
+							{ type: "FRONT_RIGHT", gain: 0 },
+						],
+					},
+				],
+			},
+			{
+				key: "loudness",
+				kind: "DOLBY_LOUDNESS",
+				targetLoudness: -23,
+				maximumTruePeakLevel: -2,
+				speechDetectionThreshold: 0,
+			},
+			{
+				key: "mark",
+				kind: "ENHANCED_WATERMARK",
+				inputKey: storage.key,
+				imagePath: "private/logo.png",
+				left: 0,
+				top: 0,
+				height: 10.5,
+				opacity: 0,
+			},
+		];
+		audio.filters = [
+			{ filterKey: "loudness", position: 1 },
+			{ filterKey: "mix", position: 0 },
+		];
+		video.filters = [{ filterKey: "mark", position: 0 }];
+		expect(validatePlan(value).filter((i) => i.level === "error")).toEqual([]);
+		expect(() => planToEncodingTemplateYaml(value)).toThrow(/Dolby Loudness/i);
+		const templatePlan = structuredClone(value);
+		for (const rendition of templatePlan.renditions)
+			if (rendition.filters)
+				rendition.filters = rendition.filters.filter(
+					(f) => f.filterKey !== "loudness",
+				);
+		const template = planToEncodingTemplateYaml(templatePlan);
+		const parsed = parse(template);
+		const key = (filter: string) => `${audio.key}-${filter}`;
+		expect(
+			parsed.filters.audioMix[key("mix")].properties.audioMixChannels[0]
+				.sourceChannels[1].gain,
+		).toBe(0);
+		expect(parsed.filters).not.toHaveProperty("dolbyLoudness");
+		const watermark =
+			parsed.filters.enhancedWatermark[`${video.key}-mark`].properties;
+		expect(watermark).toMatchObject({
+			height: 10.5,
+			opacity: 0,
+			image: expect.stringContaining("WATERMARK"),
+		});
+		expect(watermark).not.toHaveProperty("inputKey");
+		expect(watermark).not.toHaveProperty("imagePath");
+		const attached = compilePlan(value).find(
+			(op) =>
+				op.kind === "CREATE_STREAM_FILTERS" &&
+				op.step.endsWith(`:${audio.key}`),
+		);
+		expect(attached?.payload.positions).toEqual([1, 0]);
+		expect(attached?.refs.filterIds).toEqual([
+			`filter:${audio.key}:loudness`,
+			`filter:${audio.key}:mix`,
+		]);
+		Object.assign(audio, { codec: "AC3" });
+		expect(validatePlan(value)).toContainEqual(
+			expect.objectContaining({
+				code: "PLAN_FILTER_MEDIA_TYPE",
+				path: expect.stringContaining(".filters[0]"),
+			}),
+		);
+	});
+	it.each([
+		{ key: "f", kind: "DOLBY_LOUDNESS", targetLoudness: -23.5 },
+		{ key: "f", kind: "DOLBY_LOUDNESS", speechDetectionThreshold: 20.5 },
+		{
+			key: "f",
+			kind: "AUDIO_MIX",
+			channelLayout: "STEREO",
+			audioMixChannels: [
+				{ channelNumber: 0, sourceChannels: [{ type: "FRONT_LEFT" }] },
+				{
+					channelNumber: 1,
+					sourceChannels: [{ type: "CHANNEL_NUMBER", channelNumber: 1 }],
+				},
+			],
+		},
+		{
+			key: "f",
+			kind: "DOLBY_LOUDNESS",
+			targetLoudness: -8,
+			maximumTruePeakLevel: -3,
+		},
+		{
+			key: "f",
+			kind: "ENHANCED_WATERMARK",
+			inputKey: "input",
+			imagePath: "https://private.example/logo?token=test",
+		},
+		{
+			key: "f",
+			kind: "ENHANCED_WATERMARK",
+			inputKey: "input",
+			imagePath: "logo.png",
+			opacity: 1.1,
+		},
+		{
+			key: "f",
+			kind: "AUDIO_MIX",
+			channelLayout: "STEREO",
+			audioMixChannels: [
+				{ channelNumber: 0, sourceChannels: [{ type: "FRONT_LEFT" }] },
+			],
+		},
+		{
+			key: "f",
+			kind: "AUDIO_MIX",
+			channelLayout: "MONO",
+			audioMixChannels: [
+				{
+					channelNumber: 0,
+					sourceChannels: [{ type: "FRONT_LEFT", channelNumber: 1 }],
+				},
+			],
+		},
+	])("rejects an invalid authored broadcast filter %#", (filter) => {
+		expect(
+			encodingPlanSchema.safeParse({ ...imscPlan(), filters: [filter] })
+				.success,
+		).toBe(false);
+	});
+
 	it("rejects invalid filters and retains ordered denoise/sharpen through clone", () => {
 		const base = imscPlan();
 		const video = base.renditions.find((r) => r.codec === "H264");

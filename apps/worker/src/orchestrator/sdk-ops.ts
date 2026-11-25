@@ -1692,7 +1692,7 @@ export type SdkOps = {
 	listMuxingDrm(
 		encodingId: string,
 		muxingId: string,
-		muxingKind: AvMuxingKind,
+		muxingKind: AvMuxingKind | "PROGRESSIVE_TS" | "PROGRESSIVE_WEBM",
 		drmKind: "CENC" | "FAIRPLAY" | "SPEKE",
 	): Promise<{ id: string; outputPath?: string }[]>;
 	// --- live (P3-PR2) ---

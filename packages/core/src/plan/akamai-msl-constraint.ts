@@ -79,6 +79,7 @@ export const AKAMAI_MSL_REQUIREMENTS = {
 			"TEXT",
 			"PROGRESSIVE_TS",
 			"PROGRESSIVE_MOV",
+			"PROGRESSIVE_WAV",
 			"PROGRESSIVE_WEBM",
 		],
 		/**
@@ -102,6 +103,7 @@ export const AKAMAI_MSL_REQUIREMENTS = {
 			"TEXT",
 			"PROGRESSIVE_TS",
 			"PROGRESSIVE_MOV",
+			"PROGRESSIVE_WAV",
 			"PROGRESSIVE_WEBM",
 		],
 		forbiddenManifests: ["DASH", "SMOOTH"],
@@ -116,6 +118,7 @@ export const AKAMAI_MSL_REQUIREMENTS = {
 			"TEXT",
 			"PROGRESSIVE_TS",
 			"PROGRESSIVE_MOV",
+			"PROGRESSIVE_WAV",
 			"PROGRESSIVE_WEBM",
 		],
 		forbiddenManifests: ["SMOOTH"],

@@ -266,7 +266,7 @@ describe("the containers the flow offers", () => {
 		]);
 	});
 
-	it("hold every codec of the ladder step that the plan accepts in them, and between them every codec it has", () => {
+	it("offer the ladder codecs accepted by each file container and keep HE-AAC in fragmented MP4", () => {
 		for (const container of FILE_CONTAINERS) {
 			const row: readonly string[] = MUXING_CODEC_MATRIX[container.kind];
 			expect(container.video, container.kind).toEqual(
@@ -279,7 +279,13 @@ describe("the containers the flow offers", () => {
 		const offered = (pick: "video" | "audio") =>
 			new Set<string>(FILE_CONTAINERS.flatMap((container) => container[pick]));
 		expect(offered("video")).toEqual(new Set(VIDEO_CODECS));
-		expect(offered("audio")).toEqual(new Set(AUDIO_CODECS));
+		const streamingOnly = AUDIO_CODECS.filter(
+			(codec) => !offered("audio").has(codec),
+		);
+		expect(streamingOnly).toEqual(["HE_AAC_V1", "HE_AAC_V2"]);
+		expect(MUXING_CODEC_MATRIX.FMP4).toEqual(
+			expect.arrayContaining(streamingOnly),
+		);
 	});
 
 	it.each(

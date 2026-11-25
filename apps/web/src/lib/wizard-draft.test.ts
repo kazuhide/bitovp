@@ -58,6 +58,97 @@ it("never saves or restores a protocol-relative HDR credential, including an old
 	);
 	expect(localStorage.getItem("hdr-old")).toContain("dir/source.mxf");
 });
+it.each([
+	"//account:TEST_ONLY@fixture.invalid/picture",
+	"https:/account:TEST_ONLY@fixture.invalid/picture",
+])("cleans legacy picture rows on read while preserving spaces in unrelated keys", (path) => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	const first = state.inputFiles[0];
+	if (!first) throw new Error("missing file");
+	const picture = {
+		...first,
+		key: "picture",
+		path,
+	};
+	state.inputFiles = [
+		picture,
+		{ ...first, key: "other", path: "clips/Scene A.mxf" },
+	];
+	state.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				videoInputFile: "picture",
+				metadataInputPath: " ",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	writeWizardDraft("current", "vod", state, 2);
+	expect(localStorage.getItem("current")).not.toContain("TEST_ONLY");
+	localStorage.setItem(
+		"retained",
+		JSON.stringify({
+			version: 1,
+			kind: "vod",
+			savedAt: Date.now(),
+			step: 2,
+			value: state,
+		}),
+	);
+	const restored = readWizardDraft("retained", "vod");
+	expect(restored?.value.inputFiles).toMatchObject([
+		{ path: "" },
+		{ path: "clips/Scene A.mxf" },
+	]);
+	expect(localStorage.getItem("retained")).not.toContain("TEST_ONLY");
+	expect(localStorage.getItem("retained")).toContain("clips/Scene A.mxf");
+});
+it.each([
+	"cut:",
+	"show:shot.mxf",
+])("retains unrelated object paths and names containing a partial HDR path %s", (partial) => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	const media = state.inputFiles[0];
+	if (!media) throw new Error("missing media");
+	const other = `archive/${partial}scene.mxf`;
+	state.name = partial;
+	state.inputFiles = [
+		{ ...media, key: "master", path: "source.mxf" },
+		{ ...media, key: "other", path: other },
+	];
+	state.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				videoInputFile: "master",
+				metadataInputPath: partial,
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	writeWizardDraft("typed", "vod", state, 2);
+	expect(readWizardDraft("typed", "vod")?.value).toMatchObject({
+		name: partial,
+		inputFiles: [{ path: "source.mxf" }, { path: other }],
+		sources: { hdr10PlusStreams: [{ metadataInputPath: "" }] },
+	});
+	localStorage.setItem(
+		"old",
+		JSON.stringify({
+			version: 1,
+			kind: "vod",
+			savedAt: Date.now(),
+			step: 2,
+			value: state,
+		}),
+	);
+	expect(readWizardDraft("old", "vod")?.value.inputFiles).toMatchObject([
+		{ path: "source.mxf" },
+		{ path: other },
+	]);
+	expect(localStorage.getItem("old")).toContain(other);
+});
 it("restores an edited MoQ copy without erasing a namespace excluded from local storage", () => {
 	const source: LiveWizardState = {
 		...DEFAULT_LIVE_WIZARD_STATE,
@@ -120,6 +211,147 @@ it("restores a fixed output logo with its image-only source and rendition attach
 		buildPlan(restored).renditions.map((rendition) => rendition.filters),
 	).toEqual(
 		buildPlan(original).renditions.map((rendition) => rendition.filters),
+	);
+});
+
+it("restores authored broadcast filter parameters and their video and audio attachment positions", () => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	state.filters = [
+		{
+			key: "watermark",
+			kind: "ENHANCED_WATERMARK",
+			inputKey: "main",
+			imagePath: "logos/logo.png",
+			left: 0,
+			width: 4.5,
+			opacity: 0,
+		},
+		{ key: "field", kind: "ENHANCED_DEINTERLACE", mode: "FIELD" },
+		{ key: "rate", kind: "CONFORM", targetFps: 24000 / 1001 },
+		{
+			key: "interlace",
+			kind: "INTERLACE",
+			mode: "TOP",
+			verticalLowPassFilteringMode: "LOW_PASS",
+		},
+		{
+			key: "mix",
+			kind: "AUDIO_MIX",
+			channelLayout: "MONO",
+			audioMixChannels: [
+				{
+					channelNumber: 0,
+					sourceChannels: [
+						{ type: "FRONT_RIGHT", gain: -0.5 },
+						{ type: "FRONT_LEFT", gain: 0 },
+					],
+				},
+			],
+		},
+		{
+			key: "levels",
+			kind: "DOLBY_LOUDNESS",
+			speechDetectionThreshold: 0,
+			maximumTruePeakLevel: -2,
+			targetLoudness: -23,
+		},
+	];
+	const attachments = (keys: string[]) =>
+		keys.map((filterKey, position) => ({ filterKey, position }));
+	state.videos = state.videos.map((video) => ({
+		...video,
+		extras: {
+			filters: attachments(["field", "rate", "interlace", "watermark"]),
+		},
+	}));
+	state.audios = state.audios.map((audio) => ({
+		...audio,
+		extras: { filters: attachments(["mix", "levels"]) },
+	}));
+	const draft = projectWizardDraft("vod", state);
+	const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, draft, "vod");
+	expect(restored.filters).toEqual(state.filters);
+	expect(buildPlan(restored).renditions.map((row) => row.filters)).toEqual(
+		buildPlan(state).renditions.map((row) => row.filters),
+	);
+});
+
+it("keeps partially edited mix and ordinary deinterlace settings without caching enhanced watermark credentials", () => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	state.filters = [
+		{
+			key: "secret",
+			kind: "ENHANCED_WATERMARK",
+			inputKey: "main",
+			imagePath: "user:password@host/logo.png",
+		},
+		{ key: "din" },
+		{
+			key: "mix",
+			kind: "AUDIO_MIX",
+			channelLayout: "STEREO",
+			audioMixChannels: [
+				{
+					channelNumber: 0,
+					sourceChannels: [
+						{ type: "CHANNEL_NUMBER", channelNumber: 0, gain: 0 },
+					],
+				},
+			],
+		},
+	];
+	const audio = state.audios[0];
+	if (!audio) throw new Error("Missing audio");
+	audio.extras = { filters: [{ filterKey: "mix", position: 1 }] };
+	const value = projectWizardDraft("vod", state);
+	expect(JSON.stringify(value)).not.toContain("password");
+	const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, value, "vod");
+	expect(restored.filters).toEqual(state.filters.slice(1));
+	expect(restored.audios[0]?.extras?.filters).toEqual(
+		state.audios[0]?.extras?.filters,
+	);
+});
+
+it("retains gains and attachment while a numbered Audio Mix source is awaiting its position", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const audio = base.audios[0];
+	if (!audio) throw new Error("Missing audio");
+	base.filters = [
+		{
+			key: "mix",
+			kind: "AUDIO_MIX",
+			channelLayout: "MONO",
+			audioMixChannels: [
+				{
+					channelNumber: 0,
+					sourceChannels: [{ type: "CHANNEL_NUMBER", gain: 0 }],
+				},
+			],
+		},
+	];
+	audio.extras = { filters: [{ filterKey: "mix", position: 1 }] };
+	const restored = mergeWizardDraft(
+		DEFAULT_WIZARD_STATE,
+		projectWizardDraft("vod", base),
+		"vod",
+	);
+	expect(restored.filters).toEqual(base.filters);
+	expect(restored.audios[0]?.extras?.filters).toEqual(audio.extras.filters);
+});
+it("restores filter definitions without inheriting suppressed properties from a different preset row", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	base.filters = [
+		{ key: "overlay", kind: "TEXT", text: "private title", x: "0", y: "0" },
+		{ key: "rate", kind: "CONFORM", targetFps: 24 },
+	];
+	const value = projectWizardDraft("vod", { ...base, name: "Edited" });
+	expect(JSON.stringify(value)).not.toContain("private title");
+	const restored = mergeWizardDraft(base, value, "vod");
+	expect(restored.filters?.find((item) => item.key === "overlay")).toEqual(
+		base.filters[0],
+	);
+	expect(restored.filters?.find((item) => item.key === "rate")).toEqual(
+		base.filters[1],
 	);
 });
 

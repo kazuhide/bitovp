@@ -1,9 +1,9 @@
-import { publicHdrSourceProjection } from "@bitovp/core";
 import {
 	isAisaManagedLivePlan,
 	patchLivePresetSchema,
 	patchPlanPresetSchema,
 	planHasErrors,
+	publicHdrSourceProjection,
 	validateLiveChannel,
 	validatePlan,
 	watchSelfIntersectionIssues,
@@ -21,7 +21,7 @@ import {
 	validationError,
 } from "@/lib/server/http";
 import { serverPlanValidationOptions } from "@/lib/server/plan-validation";
-import { equivalentHdrDefault } from "@/lib/server/vod-hdr-default";
+import { equivalentVodPlanDefaults } from "@/lib/server/vod-plan-defaults";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -235,7 +235,9 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 		const sameLegacyPlan =
 			savedPlan !== undefined &&
 			current.kind === "FULL_PLAN" &&
-			jsonStructuralEqual(current.body, equivalentHdrDefault(savedPlan));
+			equivalentVodPlanDefaults(savedPlan).some((variant) =>
+				jsonStructuralEqual(current.body, variant),
+			);
 		const bump =
 			savedPlan !== undefined &&
 			!sameLegacyPlan &&

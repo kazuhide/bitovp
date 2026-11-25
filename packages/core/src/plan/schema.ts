@@ -1,4 +1,3 @@
-import { isHdr10PlusObjectPath } from "./hdr-source-paths";
 import { z } from "zod";
 import { vmafExecutionSchema } from "../vmaf/cloud";
 import { audioMixStreamSchema } from "./audio-mix";
@@ -10,6 +9,7 @@ import {
 	vp9DetailControlsSchema,
 } from "./codec-detail-controls";
 import { codecEnumSchema } from "./codec-enums";
+import { isHdr10PlusObjectPath } from "./hdr-source-paths";
 import { HE_AAC_CODECS, heAacV1Fields, heAacV2Fields } from "./he-aac";
 import { isHlsVideoUriPattern } from "./hls-video-uri";
 import { internalHevcV2Schema } from "./internal-hevc-v2";
@@ -19,17 +19,7 @@ import {
 	defaultDashPeriodSchema,
 	hlsDetailedOptionsSchema,
 } from "./manifest-options";
-import {
-	audioVolumeFilterSchema,
-	cropFilterSchema,
-	denoiseHqdn3dFilterSchema,
-	ebuR128FilterSchema,
-	rotateFilterSchema,
-	scaleFilterSchema,
-	textFilterSchema,
-	unsharpFilterSchema,
-	watermarkFilterSchema,
-} from "./media-filters";
+import { mediaFilterSchema } from "./media-filters";
 import { qcGateSchema } from "./qc-gate";
 import { streamConditionSchema } from "./stream-conditions";
 
@@ -1328,11 +1318,8 @@ export const webmMuxingSchema = z.strictObject({
  * Progressive MOV, MP4 and TS Outputs" builds it: its sample hands one H.264
  * video stream and one AAC audio stream to a single ProgressiveTsMuxing.
  *
- * `destination` is REQUIRED, unlike `TS`/`MP4`: those may omit it because a
- * DRM resource can own the encrypted output, and this app builds no DRM path
- * for a progressive file. No manifest references this kind either:
- * `isFileOnlyMuxingKind` (muxing-streams.ts) keeps it out of every leg
- * selection, including the open ones an unpinned HLS manifest makes.
+ * The clear file and its DRM resources have independent destinations.
+ * A plan with an encrypted-only file gives the DRM resource its destination.
  *
  * `segmentLength` and `startOffset` are the SDK model's two optional fields
  * (ProgressiveTsMuxing.d.ts). Neither has a default here: an absent field is
@@ -1359,13 +1346,12 @@ export const progressiveTsMuxingSchema = z.strictObject({
 	 * against that schema.
 	 */
 	startOffset: z.number().int().min(0).optional(),
-	destination: destinationSchema,
+	destination: destinationSchema.optional(),
 	name: z.string().optional(),
 });
 
 /**
- * One QuickTime `.mov` FILE per container. Same shape and the same rules as
- * `PROGRESSIVE_TS` above; the SDK model carries a filename and nothing else.
+ * One QuickTime `.mov` FILE per container. A MOV file requires a clear destination.
  */
 export const progressiveMovMuxingSchema = z.strictObject({
 	key: refKey,
@@ -1404,7 +1390,7 @@ export const progressiveWebmMuxingSchema = z.strictObject({
 	streamKey: refKey,
 	additionalStreamKeys: additionalStreamKeysSchema,
 	filename: outputFilenameSchema,
-	destination: destinationSchema,
+	destination: destinationSchema.optional(),
 	name: z.string().optional(),
 });
 
@@ -1457,15 +1443,7 @@ export const deinterlaceFilterSchema = z.strictObject({
 
 export const planFilterSchema = z.discriminatedUnion("kind", [
 	deinterlaceFilterSchema,
-	scaleFilterSchema,
-	cropFilterSchema,
-	rotateFilterSchema,
-	watermarkFilterSchema,
-	textFilterSchema,
-	audioVolumeFilterSchema,
-	ebuR128FilterSchema,
-	denoiseHqdn3dFilterSchema,
-	unsharpFilterSchema,
+	...mediaFilterSchema.options,
 ]);
 
 /**

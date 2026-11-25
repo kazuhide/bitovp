@@ -613,14 +613,15 @@ export function SourcesSection({
 	);
 	const patchSources = (next: WizardSources) => onPatch({ sources: next });
 	const renameStream = (from: string, to: string, next: WizardSources) => {
+		// The implicit tracks are reserved across all source editors. A
+		// historical native stream may keep or leave its original name.
+		if (to !== from && (to === "video" || to === "audio")) return;
 		const keys = [
 			...flattenStreams(sources).map((row) => row.key),
 			...(sources.captionStreams ?? []).map((s) => s.key),
 			...(sources.trimmingStreams ?? []).map((row) => row.key),
 			...(sources.audioMixStreams ?? []).map((s) => s.key),
 			...(sources.concatenationStreams ?? []).map((row) => row.key),
-			"video",
-			"audio",
 		];
 		if (
 			!from ||
@@ -767,7 +768,12 @@ export function SourcesSection({
 							idBase={idBase}
 							inputFiles={inputFiles}
 							encodingKeys={encodingKeys}
-							onChange={(next) => patchSources(writeStream(sources, next))}
+							onChange={(next) => {
+								const updated = writeStream(sources, next);
+								if (next.key !== row.key)
+									renameStream(row.key, next.key, updated);
+								else patchSources(updated);
+							}}
 							onConvert={(type) => {
 								const nextSources = convertStreamType(sources, row, type);
 								// Converting to WEBVTT moves the stream out of the video/audio

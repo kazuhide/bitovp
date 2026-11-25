@@ -1385,6 +1385,10 @@ it("offers an actionable archive Stop revision for a running managed probe with 
 		],
 	});
 	const response = await GET(new Request("http://test"), ctx(CHANNEL_ID));
+	expect(
+		findUnique.mock.calls[0]?.[0].include.runs.select
+			.encoderStoppedConfirmedFor,
+	).toBe(true);
 	expect(response.status).toBe(200);
 	expect((await response.json()).archivedStopRevision).toMatch(
 		/^[0-9a-f]{64}$/,

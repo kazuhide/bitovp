@@ -1942,6 +1942,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			"waiting",
 			"failed claim",
 			"purged failed claim",
+			"bare failed claim",
 			"purged",
 			"wrong target",
 			"new generation",
@@ -1970,10 +1971,16 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			const id = `sched-${schedule.id}`;
 			const original = jobs.get(id);
 			if (!original?.effect) throw new Error("missing original STOP");
-			const failedClaim =
-				scenario === "failed claim" || scenario === "purged failed claim";
+			const failedClaim = [
+				"failed claim",
+				"purged failed claim",
+				"bare failed claim",
+			].includes(scenario);
 			if (failedClaim) {
-				if (scenario === "purged failed claim") {
+				if (
+					scenario === "purged failed claim" ||
+					scenario === "bare failed claim"
+				) {
 					await tenant.liveChannel.update({
 						where: { id: f.channel.id },
 						data: {
@@ -2007,7 +2014,13 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 							...original,
 							effect: { ...original.effect, providerEncodingId: randomUUID() },
 						}
-					: original;
+					: scenario === "bare failed claim"
+						? {
+								action: "stop",
+								liveChannelId: f.channel.id,
+								plannedLiveChannelRunId: f.run.id,
+							}
+						: original;
 			if (scenario === "new generation")
 				await tenant.liveChannel.update({
 					where: { id: f.channel.id },
@@ -2070,6 +2083,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			"failed",
 			"base effect",
 			"redispatched effect",
+			"still running effect",
 			"wrong effect",
 			"purged",
 			"waiting",
@@ -2145,10 +2159,21 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 								scenario === "waiting" ? "waiting" : "failed",
 						},
 			);
+			if (scenario === "still running effect")
+				f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
 			const probe = createExhaustedScheduledStopRecovery(f.deps, queue);
 			await probe();
 			const key = { idempotencyKey: `schedule:${row.id}:stop` };
 			const claim = await tenant.liveEffectClaim.findFirst({ where: key });
+			if (scenario === "still running effect") {
+				expect(claim).toBeNull();
+				expect(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					}),
+				).toMatchObject({ status: "ERROR" });
+				return;
+			}
 			if (
 				scenario === "waiting" ||
 				scenario === "successor" ||
@@ -3136,12 +3161,38 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				// Both mirrored IDs must settle before cancelling this airing.
 				await tenant.liveChannelRun.update({
 					where: { id: f.run.id },
-					data: { bitmovinEncodingId: secondary },
+					data: {
+						bitmovinEncodingId: secondary,
+						providerStatus: "RUNNING",
+						stepLog: JSON.parse(
+							JSON.stringify(
+								entries.map((entry) =>
+									entry.kind === "CREATE_ENCODING"
+										? { ...entry, resourceId: secondary }
+										: entry,
+								),
+							),
+						),
+					},
 				});
 				expect(await proc(job)).toMatchObject({ status: "STOPPING" });
 			}
 			secondActive = false;
 			expect(await proc(job)).toMatchObject({ status: "STOPPED" });
+			if (source === "closed-journal") {
+				const closed = await tenant.liveChannelRun.findUniqueOrThrow({
+					where: { id: f.run.id },
+				});
+				expect(closed.providerStatus).toBe("FINISHED");
+				expect(closed.stepLog).toEqual(
+					expect.arrayContaining([
+						expect.objectContaining({
+							kind: "CREATE_ENCODING",
+							resourceId: secondary,
+						}),
+					]),
+				);
+			}
 			expect(
 				await tenant.liveStopNotification.count({ where: { id: f.run.id } }),
 			).toBe(1);

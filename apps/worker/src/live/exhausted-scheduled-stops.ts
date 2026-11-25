@@ -164,7 +164,34 @@ export function createExhaustedScheduledStopRecovery(
 				)
 					continue;
 				const advancedFence = originalFence !== channel.liveEffectFenceVersion;
-				if (!legacy || (advancedFence && (!job || found?.effect))) {
+				let failedFencedDelivery = false;
+				if (
+					legacy &&
+					!advancedFence &&
+					row.outcome === "PENDING" &&
+					(!job || found?.effect)
+				) {
+					const bitmovinAccountId = liveChannelAccountId(channel);
+					if (row.dispatchJobId !== jobId || !bitmovinAccountId) continue;
+					const sdk = deps.makeSdk({
+						...(await deps.revealBitmovinAccount(bitmovinAccountId)),
+						bitmovinAccountId,
+						monitoringSignal: AbortSignal.timeout(
+							HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS,
+						),
+					});
+					const state = classifyProviderStatusWord(
+						(await sdk.getEncodingStatus(encodingId)).status,
+					);
+					if (state !== "TERMINAL") {
+						// Fenced deliveries reserve their send in the database. A still-running
+						// target with a failed job can expose manual retry after that claim is checked.
+						// An evicted job or a transitional provider read proves neither fact.
+						if (!found?.effect || state !== "RUNNING") continue;
+						failedFencedDelivery = true;
+					}
+				}
+				if (!legacy || advancedFence || failedFencedDelivery) {
 					if (
 						!legacy &&
 						(row.dispatchJobId !== jobId ||
@@ -209,24 +236,6 @@ export function createExhaustedScheduledStopRecovery(
 					channel.legacyAdmissionFenceVersion !== channel.liveEffectFenceVersion
 				)
 					continue;
-				if (row.outcome === "PENDING" && !job) {
-					// A purged legacy job alone says nothing about the provider.
-					const bitmovinAccountId = liveChannelAccountId(channel);
-					if (row.dispatchJobId !== jobId || !bitmovinAccountId) continue;
-					const sdk = deps.makeSdk({
-						...(await deps.revealBitmovinAccount(bitmovinAccountId)),
-						bitmovinAccountId,
-						monitoringSignal: AbortSignal.timeout(
-							HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS,
-						),
-					});
-					if (
-						classifyProviderStatusWord(
-							(await sdk.getEncodingStatus(encodingId)).status,
-						) !== "TERMINAL"
-					)
-						continue;
-				}
 				const at = new Date(deps.now());
 				await beginLiveEffect(deps.prisma, {
 					idempotencyKey: `schedule:${row.id}:stop`,

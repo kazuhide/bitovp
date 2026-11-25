@@ -4993,6 +4993,37 @@ export { PROVISION_LEASE_MS } from "../live/provision-lease";
  * wrote the loser's stale entries over the winner's step log. Review measured
  * the whole sequence: status writes PROVISIONING, PROVISIONING, ERROR.
  */
+/** Only for cancellation. Both native IDs are read independently before the airing closes. */
+function divergentCancellationEvidence(
+	channelLog: unknown,
+	runLog: unknown,
+	channelEncoder: string,
+	runEncoder: string,
+) {
+	const channel = stepLogSchema.safeParse(channelLog);
+	const run = stepLogSchema.safeParse(runLog);
+	if (!channel.success || !run.success) return null;
+	// Keep each original CREATE receipt on its owner. The read-only view needs
+	// one copy of this graph node to validate all other paid-operation evidence.
+	const siblings = run.data.filter(
+		(entry) =>
+			!(
+				entry.kind === "CREATE_ENCODING" &&
+				entry.status === "DONE" &&
+				entry.resourceId === runEncoder &&
+				channel.data.some(
+					(other) =>
+						other.kind === entry.kind &&
+						other.step === entry.step &&
+						(other.attempt ?? 0) === (entry.attempt ?? 0) &&
+						other.status === "DONE" &&
+						other.resourceId === channelEncoder,
+				)
+			),
+	);
+	return restoreLiveProvisionEvidence(channel.data, siblings, null);
+}
+
 class ProvisionLeaseLostError extends Error {
 	constructor(liveChannelId: string) {
 		super(
@@ -5744,22 +5775,42 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						throw new ProvisionLeaseLostError(liveChannelId);
 					const createdProof =
 						proof?.basis === "BOUND_CREATED_NOT_STARTED" ? proof : undefined;
-					const journalPrimary = outcome.displacedRunPrimary
-						? null
-						: run.bitmovinEncodingId;
-					const rawLog = restoreLiveProvisionEvidence(
-						channel.stepLog,
-						run.stepLog,
-						journalPrimary,
-					);
+					const runReadback =
+						outcome.displacedRunPrimary &&
+						displaced.receipts.find(
+							(receipt) =>
+								receipt.encodingId === outcome.displacedRunPrimary &&
+								receipt.accountId === liveChannelAccountId(channel) &&
+								receipt.disposition === "TERMINAL" &&
+								classifyProviderStatusWord(receipt.providerStatus) ===
+									"TERMINAL",
+						);
+					const rawLog =
+						outcome.displacedRunPrimary && outcome.encodingId
+							? divergentCancellationEvidence(
+									channel.stepLog,
+									run.stepLog,
+									outcome.encodingId,
+									outcome.displacedRunPrimary,
+								)
+							: restoreLiveProvisionEvidence(
+									channel.stepLog,
+									run.stepLog,
+									run.bitmovinEncodingId,
+								);
 					const provenLog =
 						rawLog &&
-						restoreLiveProvisionEvidence(entries, rawLog, journalPrimary);
+						restoreLiveProvisionEvidence(
+							entries,
+							rawLog,
+							outcome.displacedRunPrimary ? null : run.bitmovinEncodingId,
+						);
 					if (!provenLog) throw new AisaLiveFinalizationPendingError();
 					if (
 						(!outcome.encodingId &&
 							provenLog.some(nativeProvisionMayHaveSent)) ||
-						(classifyProviderStatusWord(run.providerStatus) !== "TERMINAL" &&
+						(!runReadback &&
+							classifyProviderStatusWord(run.providerStatus) !== "TERMINAL" &&
 							provenLog.some(
 								(e) =>
 									e.kind === "START_LIVE_ENCODING" &&
@@ -5805,7 +5856,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						data: {
 							status: outcome.status,
 							error: outcome.error,
-							stepLog: provenLog as unknown as Prisma.InputJsonValue,
+							...(outcome.displacedRunPrimary
+								? {}
+								: { stepLog: provenLog as unknown as Prisma.InputJsonValue }),
 							provisionClaimedAt: null,
 							...(outcome.encodingId
 								? { encoderStoppedConfirmedFor: outcome.encodingId }
@@ -5839,8 +5892,17 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 							...(isAisaManagedLivePlan(channel.plan)
 								? { cancelRequested: false }
 								: {}),
+							...(runReadback
+								? {
+										providerStatus: runReadback.providerStatus,
+										providerStatusObservedAt: new Date(runReadback.observedAt),
+										providerTerminalAt: new Date(runReadback.observedAt),
+									}
+								: {}),
 							endedAt: run.endedAt ?? new Date(deps.now()),
-							stepLog: provenLog as unknown as Prisma.InputJsonValue,
+							...(outcome.displacedRunPrimary
+								? {}
+								: { stepLog: provenLog as unknown as Prisma.InputJsonValue }),
 							...(proof
 								? { aisaFinalization: proof as Prisma.InputJsonValue }
 								: {}),
@@ -5942,13 +6004,22 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			row.bitmovinEncodingId &&
 			claimedRun?.bitmovinEncodingId &&
 			row.bitmovinEncodingId !== claimedRun.bitmovinEncodingId;
-		const provisionLog = restoreLiveProvisionEvidence(
-			row.stepLog,
-			claimedRun?.stepLog,
-			cancelling && divergentPrimaries
-				? null
-				: (claimedRun?.bitmovinEncodingId ?? row.bitmovinEncodingId),
-		);
+		const provisionLog =
+			cancelling &&
+			divergentPrimaries &&
+			row.bitmovinEncodingId &&
+			claimedRun?.bitmovinEncodingId
+				? divergentCancellationEvidence(
+						row.stepLog,
+						claimedRun.stepLog,
+						row.bitmovinEncodingId,
+						claimedRun.bitmovinEncodingId,
+					)
+				: restoreLiveProvisionEvidence(
+						row.stepLog,
+						claimedRun?.stepLog,
+						claimedRun?.bitmovinEncodingId ?? row.bitmovinEncodingId,
+					);
 		if (
 			!provisionLog ||
 			(!cancelling && divergentPrimaries) ||

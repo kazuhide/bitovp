@@ -109,6 +109,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 						status: true,
 						cancelRequested: true,
 						bitmovinEncodingId: true,
+						encoderStoppedConfirmedFor: true,
 						previousProviderEncodingIds: true,
 						archivedRtmpAttempt: true,
 						rtmpRetirementEvidence: true,

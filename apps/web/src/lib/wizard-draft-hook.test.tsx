@@ -245,13 +245,17 @@ it("autosaves edits entered while a previous draft offer is pending if the opera
 	expect(readWizardDraft(key, "vod")?.value.name).toBe(newer.name);
 });
 
-function openLegacyDraftTabs() {
-	const original = { name: "Old title", output: { basePath: "edited/" } };
+function openLegacyDraftTabs(kind: "vod" | "live" = "vod") {
+	const scopeKey = draftKey(["org", "user"], kind, "new");
+	const original =
+		kind === "vod"
+			? { name: "Old title", output: { basePath: "edited/" } }
+			: { name: "Old Live channel", audios: [] };
 	localStorage.setItem(
-		key,
+		scopeKey,
 		JSON.stringify({
 			version: 1,
-			kind: "vod",
+			kind,
 			step: 2,
 			savedAt: Date.now(),
 			value: original,
@@ -261,7 +265,7 @@ function openLegacyDraftTabs() {
 		renderHook(
 			({ form }) =>
 				useWizardDraft({
-					kind: "vod",
+					kind,
 					value: form,
 					context: "new",
 					step: 1,
@@ -464,6 +468,61 @@ it("ignores a queued discard from an offer replaced by an earlier queued restore
 		act(() => waiting[1]?.());
 		expect(readWizardDraft(key, "vod")?.value.name).toBe("Saved elsewhere");
 		expect(a.result.current.pending?.value.name).toBe("Saved elsewhere");
+	} finally {
+		request.mockRestore();
+	}
+});
+
+it.each([
+	"vod",
+	"live",
+] as const)("removes the accepted %s original on success after a sibling discarded the working copy", (kind) => {
+	const scopeKey = draftKey(["org", "user"], kind, "new");
+	const { older, reopen } = openLegacyDraftTabs(kind);
+	act(() => older.result.current.restore(true));
+	act(() => vi.advanceTimersByTime(301));
+	const sibling = reopen();
+	expect(readWizardDraft(`${scopeKey}:working`, kind)).not.toBeNull();
+	act(() => sibling.result.current.discard());
+	expect(readWizardDraft(`${scopeKey}:working`, kind)).toBeNull();
+	expect(readWizardDraft(scopeKey, kind)).not.toBeNull();
+	act(() => older.result.current.afterSubmission()?.());
+	expect(reopen().result.current.available).toBe(false);
+});
+
+it("persists edits queued after submission before navigating away on success", () => {
+	writeWizardDraft(key, "vod", value, 1);
+	const hook = renderHook(
+		({ form }) =>
+			useWizardDraft({
+				kind: "vod",
+				context: "new",
+				value: form,
+				step: 1,
+				onRestore: vi.fn(),
+			}),
+		{ initialProps: { form: value } },
+	);
+	act(() => hook.result.current.restore());
+	const finish = hook.result.current.afterSubmission();
+	const waiting: (() => void)[] = [];
+	const request = vi.spyOn(navigator.locks, "request").mockImplementation(((
+		_slot: string,
+		callback: () => void,
+	) => {
+		waiting.push(callback);
+		return Promise.resolve();
+	}) as LockManager["request"]);
+	try {
+		act(() =>
+			hook.rerender({ form: { ...value, name: "Edited after click" } }),
+		);
+		act(() => vi.advanceTimersByTime(301));
+		act(() => finish?.());
+		hook.unmount();
+		expect(waiting).toHaveLength(2);
+		for (const callback of waiting) act(callback);
+		expect(readWizardDraft(key, "vod")?.value.name).toBe("Edited after click");
 	} finally {
 		request.mockRestore();
 	}

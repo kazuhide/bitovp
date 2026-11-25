@@ -373,6 +373,8 @@ it.each([
 	const video = base.videos[0];
 	if (!video) throw new Error("Missing video");
 	base.name = "Review: cut @ Studio";
+	const imageInput = DEFAULT_WIZARD_STATE.inputFiles[0];
+	if (!imageInput) throw new Error("Missing default image storage");
 	video.extras = { filters: [{ filterKey: "logo", position: 0 }] };
 	for (const [imagePath, expected] of [
 		["Promo 10:30 @ final.png", "Promo 10:30 @ final.png"],
@@ -384,7 +386,13 @@ it.each([
 			"/Artwork: July @ Opening Credits/logo.png",
 			"/Artwork: July @ Opening Credits/logo.png",
 		],
+		[
+			"/ Artwork: July @ Opening Credits/logo.png",
+			"/ Artwork: July @ Opening Credits/logo.png",
+		],
 		["Logo: 2026 @2x.png", "Logo: 2026 @2x.png"],
+		["Logo: 2026 @2x.png-v2", "Logo: 2026 @2x.png-v2"],
+		["operator:PRIVATE FIXTURE @", ""],
 		["Logo: winter @thumbnail.webp", "Logo: winter @thumbnail.webp"],
 		["user: secret @host", ""],
 		["operator: example @cdn.png.invalid", ""],
@@ -402,12 +410,21 @@ it.each([
 		base.filters = [
 			{ kind, key: "logo", inputKey: "main", imagePath, left: 0, top: 0 },
 		];
+		base.inputFiles = [
+			{
+				...imageInput,
+				key: "main",
+				purpose: "FILTER_IMAGE",
+				path: imagePath,
+			},
+		];
 		writeWizardDraft("image", "vod", base, 1);
 		expect(localStorage.getItem("image")).not.toContain("secret");
 		const saved = readWizardDraft("image", "vod");
 		if (!saved) throw new Error("Missing draft");
 		const restored = restoreVodWizardDraft(DEFAULT_WIZARD_STATE, saved);
 		expect(restored.name).toBe(base.name);
+		expect(restored.inputFiles[0]?.path).toBe(expected);
 		expect(restored.filters).toEqual([
 			{ ...base.filters[0], imagePath: expected },
 		]);

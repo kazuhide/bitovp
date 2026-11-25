@@ -509,13 +509,24 @@ const vod = fields(
 		),
 		inputFiles: rows(
 			fields(
-				"key inputKey kind credentialId bucket path region name displayName",
+				"key inputKey kind credentialId bucket region name displayName",
 				"inputDeclarationIndex",
 				"",
 				{
+					path: z.unknown(),
 					purpose: z.literal("FILTER_IMAGE").optional().catch(undefined),
 				},
-			),
+			).transform(({ path, ...file }) => ({
+				...file,
+				...(path === undefined
+					? {}
+					: {
+							path: (file.purpose === "FILTER_IMAGE"
+								? draftImagePath
+								: text
+							).parse(path),
+						}),
+			})),
 		),
 		additionalOutputs: rows(location),
 		sources: group(

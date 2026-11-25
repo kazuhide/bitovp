@@ -83,9 +83,9 @@ export function useWizardDraft({
 		pending: WizardDraft | null;
 		baseline: string;
 	}>();
-	const presented = useRef<WizardDraft | null>(null);
+	const latest = useRef<typeof loaded>(undefined);
 	const present = useCallback((next: NonNullable<typeof loaded>) => {
-		presented.current = next.pending;
+		latest.current = next;
 		setLoaded(next);
 	}, []);
 	const offerChangedDraft = useCallback(
@@ -103,6 +103,35 @@ export function useWizardDraft({
 			return true;
 		},
 		[kind, unchanged, present],
+	);
+	const saveForm = useCallback(
+		(state: NonNullable<typeof loaded>, contents: string) => {
+			const snapshot = JSON.parse(contents);
+			const key = state.key;
+			const workingKey = `${key}:working`;
+			const slot =
+				state.writeKey === key && readWizardDraftRecord(workingKey, kind)
+					? workingKey
+					: state.writeKey;
+			if (offerChangedDraft(state, slot)) return;
+			const written = writeWizardDraft(
+				slot,
+				kind,
+				snapshot.value,
+				snapshot.step,
+			);
+			if (written) {
+				observed.current.set(slot, written);
+				accepted.current.set(slot, written);
+				lastWritten.current.set(slot, {
+					form: contents,
+					record: written,
+				});
+				if (state.retained)
+					accepted.current.set(key, observed.current.get(key) ?? null);
+			}
+		},
+		[kind, offerChangedDraft],
 	);
 	const serialized = JSON.stringify({
 		value: projectWizardDraft(kind, value),
@@ -161,29 +190,7 @@ export function useWizardDraft({
 						completed.current === key
 					)
 						return;
-					const snapshot = JSON.parse(serialized);
-					const workingKey = `${key}:working`;
-					const slot =
-						loaded.writeKey === key && readWizardDraftRecord(workingKey, kind)
-							? workingKey
-							: loaded.writeKey;
-					if (offerChangedDraft(loaded, slot)) return;
-					const written = writeWizardDraft(
-						slot,
-						kind,
-						snapshot.value,
-						snapshot.step,
-					);
-					if (written) {
-						observed.current.set(slot, written);
-						accepted.current.set(slot, written);
-						lastWritten.current.set(slot, {
-							form: serialized,
-							record: written,
-						});
-						if (loaded.retained)
-							accepted.current.set(key, observed.current.get(key) ?? null);
-					}
+					saveForm(loaded, serialized);
 				}),
 			300,
 		);
@@ -191,7 +198,7 @@ export function useWizardDraft({
 			active = false;
 			clearTimeout(timer);
 		};
-	}, [key, kind, serialized, loaded, offerChangedDraft]);
+	}, [key, serialized, loaded, saveForm]);
 	const available = key !== null && loaded?.key === key && !!loaded.pending;
 	return {
 		available,
@@ -203,7 +210,7 @@ export function useWizardDraft({
 			withWizardDraftLock(key, () => {
 				if (
 					!mounted.current ||
-					presented.current !== offered ||
+					latest.current?.pending !== offered ||
 					currentKey.current !== key ||
 					completed.current === key
 				)
@@ -242,7 +249,7 @@ export function useWizardDraft({
 			withWizardDraftLock(key, () => {
 				if (
 					!mounted.current ||
-					presented.current !== offered ||
+					latest.current?.pending !== offered ||
 					currentKey.current !== key ||
 					completed.current === key
 				)
@@ -288,11 +295,29 @@ export function useWizardDraft({
 				);
 			}
 			return () => {
+				const active = latest.current;
+				const unsaved =
+					active?.key === loaded.key &&
+					!active.pending &&
+					currentKey.current === loaded.key &&
+					form.current !== serialized
+						? form.current
+						: null;
 				completed.current = loaded.key;
 				withWizardDraftLock(loaded.key, () => {
+					// Navigation can cancel a debounce or queued lock. Flush the newer
+					// same-scope form instead of clearing the submitted snapshot.
+					if (unsaved && active) {
+						if (currentKey.current === loaded.key) saveForm(active, unsaved);
+						return;
+					}
+
 					// A newer working form still owns its legacy recovery record. The
 					// form just submitted can be cleared even if its original was removed.
-					if (submitted(workingKey, expectedWorking)) {
+					if (
+						matchesDraft(workingKey, null) ||
+						submitted(workingKey, expectedWorking)
+					) {
 						discardWizardDraft(workingKey);
 						if (submitted(loaded.key, expectedOriginal))
 							discardWizardDraft(loaded.key);

@@ -47,6 +47,7 @@ describe("writeAuditLog — actor persistence (the headline of #81 PR2)", () => 
 		await writeAuditLog(prisma, {
 			method: "POST",
 			path: "/encoding/encodings/demo/input-streams/dolby-vision",
+			actor: "worker",
 			request,
 			response: request,
 		});

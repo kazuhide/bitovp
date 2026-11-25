@@ -412,6 +412,39 @@ test("guarded command preserves the actual child exit and bounds a stuck child",
 	}
 });
 
+test("a timed out command keeps its timeout after the last owned descendant is killed", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "semantic-timeout-"));
+	const ready = join(directory, "descendant-ready");
+	let group;
+	// An inherited output pipe would keep the supervisor's close event pending.
+	// The background worker has no such pipe and outlives the first group TERM.
+	const descendant = `
+		process.on("SIGTERM", () => {});
+		require("node:fs").writeFileSync(${JSON.stringify(ready)}, String(process.pid));
+		setInterval(() => {}, 1000);`;
+	const driver = `
+		require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(descendant)}], {stdio: "ignore"});
+		setInterval(() => {}, 1000);`;
+	try {
+		await assert.rejects(
+			guardedCommand(process.execPath, ["-e", driver], {
+				cwd: directory,
+				exitPath: join(directory, "exit"),
+				timeout: 1200,
+				onSpawn: (pid) => {
+					group = pid;
+				},
+			}),
+			{ code: "COMMAND_TIMEOUT" },
+		);
+		assert(existsSync(ready), "the survivor was running at the timeout");
+		assert(!groupExists(group), "the owned process group must be gone");
+	} finally {
+		if (group && groupExists(group)) process.kill(-group, "SIGKILL");
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
 test("an exited command cannot leave its owned child running in the same group", {
 	timeout: 5000,
 }, async () => {

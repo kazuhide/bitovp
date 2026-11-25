@@ -51,6 +51,10 @@ describe("embedded caption authoring", () => {
 			target: { value: "63" },
 		});
 		expect(draft().channel).toBe(63);
+		fireEvent.change(screen.getByLabelText("Caption service"), {
+			target: { value: "" },
+		});
+		expect(draft()).not.toHaveProperty("channel");
 		fireEvent.change(screen.getByLabelText("Caption format"), {
 			target: { value: "DVB" },
 		});

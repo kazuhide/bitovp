@@ -833,7 +833,7 @@ export {
 	physicalMuxingKind,
 	VOD_DRM_MUXINGS,
 } from "./plan/muxing-streams";
-export { outputStorageKeys } from "./plan/output-files";
+export { outputFileKeys, outputStorageKeys } from "./plan/output-files";
 export { PER_TITLE_SIMULATOR_MAX_BITRATE } from "./plan/per-title-candidate-api";
 export { findCapReachingMaximumStep } from "./plan/per-title-cap-reach";
 export {

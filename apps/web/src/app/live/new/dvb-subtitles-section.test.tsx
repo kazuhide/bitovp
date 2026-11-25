@@ -14,7 +14,9 @@ import {
 	type LiveWizardState,
 } from "./build-live-plan";
 import { LiveDvbSubtitlesSection } from "./dvb-subtitles-section";
+import { createLiveEncryptionModel } from "./encryption-section";
 import { tryImportLiveChannelIntoWizard } from "./live-plan-to-wizard";
+import { LiveManifestListSection } from "./manifest-list-section";
 
 function normal() {
 	const s = structuredClone(DEFAULT_LIVE_WIZARD_STATE);
@@ -177,6 +179,116 @@ it.each([
 			}).dvbSubtitles?.[0]?.destination.path,
 		).toBe("other-event/subtitles/captions");
 	}
+});
+it("reserves every original DVB directory while editing a copy, including removed tracks", () => {
+	const state = normal();
+	state.dvbSubtitles = [
+		{
+			key: "alpha",
+			position: 2,
+			language: "ja",
+			label: "Japanese",
+			packaging: "CHUNKED_TEXT",
+		},
+		{
+			key: "beta",
+			position: 3,
+			language: "en",
+			label: "English",
+			packaging: "CHUNKED_TEXT",
+		},
+	];
+	const original = liveChannelPlanSchema.parse(buildLiveChannelPlan(state));
+	const [alpha, beta] = original.dvbSubtitles ?? [];
+	if (!alpha || !beta) throw Error("missing track");
+	alpha.destination.path = "event/text/ja";
+	beta.destination.path = "event/copy/text/ja/";
+	const imported = tryImportLiveChannelIntoWizard(original);
+	if (!imported.ok) throw Error(imported.reasonKey);
+	for (const tracks of [
+		imported.state.dvbSubtitles,
+		imported.state.dvbSubtitles?.slice(0, 1),
+	]) {
+		const copy = {
+			...imported.state,
+			dvbSubtitles: tracks,
+			output: { ...imported.state.output, basePath: "event/copy" },
+		};
+		const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(copy));
+		const destinations = (plan.dvbSubtitles ?? []).map(
+			(r) => r.destination.path,
+		);
+		expect(new Set(destinations).size).toBe(destinations.length);
+		expect(destinations).not.toContain("event/copy/text/ja");
+		expect(
+			validateLiveChannel(plan).filter((issue) => issue.level === "error"),
+		).toEqual([]);
+		const differentBucket = buildLiveChannelPlan({
+			...copy,
+			output: { ...copy.output, bucket: "different" },
+		});
+		expect(differentBucket.dvbSubtitles?.[0]?.destination.path).toBe(
+			"event/copy/text/ja",
+		);
+	}
+});
+it("opens Packaging and Manifests when a copied external subtitle directory is already occupied", () => {
+	const state = normal();
+	state.dvbSubtitles = [
+		{
+			key: "captions",
+			position: 2,
+			language: "ja",
+			label: "Japanese",
+			packaging: "CHUNKED_TEXT",
+		},
+	];
+	const original = liveChannelPlanSchema.parse(buildLiveChannelPlan(state));
+	const track = original.dvbSubtitles?.[0];
+	if (!track) throw Error("missing track");
+	track.destination.path = "copy/subtitles/captions";
+	const imported = tryImportLiveChannelIntoWizard(original);
+	if (!imported.ok) throw Error(imported.reasonKey);
+	const copy = {
+		...imported.state,
+		output: { ...imported.state.output, basePath: "copy" },
+	};
+	const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(copy));
+	expect(plan.dvbSubtitles?.[0]?.destination.path).not.toBe(
+		track.destination.path,
+	);
+	expect(createLiveEncryptionModel(copy, () => {}).clear).toBeDefined();
+	renderWithQuery(<LiveManifestListSection state={copy} onPatch={() => {}} />);
+	expect(screen.getByRole("button", { name: /Add HLS/i })).toBeVisible();
+});
+it("keeps a subtitle and its clear manifests on their explicit file-storage mirror", () => {
+	const state = normal();
+	state.mirror = { ...state.output, bucket: "mirror" };
+	state.dvbSubtitles = [
+		{
+			key: "cc",
+			position: 2,
+			language: "ja",
+			label: "Japanese",
+			packaging: "CHUNKED_TEXT",
+		},
+	];
+	const plan = liveChannelPlanSchema.parse(buildLiveChannelPlan(state));
+	for (const item of [...(plan.dvbSubtitles ?? []), ...plan.liveManifests])
+		item.destination.outputKey = "mirror-1";
+	expect(
+		validateLiveChannel(plan).filter((issue) => issue.level === "error"),
+	).toEqual([]);
+	const imported = tryImportLiveChannelIntoWizard(plan);
+	if (!imported.ok) throw Error(imported.reasonKey);
+	const reopened = liveChannelPlanSchema.parse(
+		buildLiveChannelPlan(imported.state),
+	);
+	expect(reopened).toEqual(plan);
+	expect(
+		compileLiveChannel(reopened).find((op) => op.step === "dvb:cc:muxing")?.refs
+			.outputId,
+	).toBe("output:mirror-1");
 });
 it.each([
 	"PRIVATE",

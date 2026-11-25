@@ -1,5 +1,10 @@
 import type { LiveChannelPlan } from "@bitovp/core";
-import { type HeAacCodec, isHeAac, liveChannelPlanSchema } from "@bitovp/core";
+import {
+	type HeAacCodec,
+	isHeAac,
+	liveChannelPlanSchema,
+	outputFileKeys,
+} from "@bitovp/core";
 import { plansDeepEqual, readH26xCodecOptions } from "@bitovp/core/wizard";
 import {
 	buildLiveChannelPlan,
@@ -235,7 +240,24 @@ export function planToLiveWizardState(plan: Plan): LiveWizardState {
 		...(plan.dvbSubtitles
 			? {
 					dvbSubtitles: plan.dvbSubtitles,
-					dvbSource: { base, acl: outputAcl(primaryState) },
+					dvbSource: {
+						base,
+						acl: outputAcl(primaryState),
+						folders: [
+							...plan.dvbSubtitles,
+							...plan.muxings,
+							...(plan.drm ?? []),
+						].flatMap((item) =>
+							item.destination
+								? [
+										...outputFileKeys(plan, {
+											destination: item.destination,
+											filename: "",
+										}),
+									]
+								: [],
+						),
+					},
 				}
 			: {}),
 		name: plan.name,

@@ -942,9 +942,9 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		entries[section][collection] ??= resourceTable();
 		entries[section][collection][key] = {
 			properties: {
-				// The template requires a service number; the direct API defaults to service 1.
+				// The API omits an empty selection, but the template requires its default.
 				...(kind === "CEA708" ? { channel: 1 } : {}),
-				...properties,
+				...dense(properties),
 				inputId: inputRef.get(inputKey),
 			},
 		};

@@ -12,6 +12,8 @@ import {
 	type HeAacSignaling,
 	type HeAacV1Config,
 	isHeAac,
+	outputFileKeys,
+	planOutputSchema,
 } from "@bitovp/core";
 import type {
 	WizardH264Options,
@@ -323,7 +325,11 @@ export type LiveDvbRow = Pick<
 export type LiveWizardState = {
 	dvbSubtitles?: LiveDvbRow[];
 	/** Original output folder of an imported plan, retained when the copy is moved. */
-	dvbSource?: { base: string; acl?: LiveDvbTrack["destination"]["acl"] };
+	dvbSource?: {
+		base: string;
+		folders: string[];
+		acl?: LiveDvbTrack["destination"]["acl"];
+	};
 	/** Managed Preview settings coexist with the normal graph until explicitly selected. */
 	aisaLive?: AisaLiveWizardSettings;
 	name: string;
@@ -656,9 +662,11 @@ function joinPath(base: string, rel: string): string {
 function dvbDestination(
 	track: LiveDvbRow,
 	state: LiveWizardState,
-	outputKey: string,
+	primaryKey: string,
+	reserveFolder: (destination: { outputKey: string; path: string }) => string,
 ) {
 	const original = track.destination;
+	const outputKey = original?.outputKey ?? primaryKey;
 	const source = state.dvbSource;
 	const base = liveBasePath(state);
 	const acl =
@@ -672,12 +680,59 @@ function dvbDestination(
 		else if (!source.base) path = joinPath(base, original.path);
 		else if (original.path.startsWith(`${source.base}/`))
 			path = joinPath(base, original.path.slice(source.base.length + 1));
-		if (base !== source.base && path === original.path)
-			throw new Error(
-				"Choose a different Live output folder for the copied subtitle track",
-			);
 	}
-	return { outputKey, path, acl };
+	return { outputKey, path: reserveFolder({ outputKey, path }), acl };
+}
+
+function buildDvbSubtitles(
+	state: LiveWizardState,
+	primaryKey: string,
+	outputs: LiveOutputInput[],
+	mirrors: ReturnType<typeof liveMirrorEntries>,
+) {
+	if (!state.dvbSubtitles?.length) return state.dvbSubtitles ? [] : undefined;
+	const base = liveBasePath(state);
+	// A copied row may be removed, renamed, or point to a mirror sharing the
+	// original bucket. Reserve physical folders from the immutable source plan.
+	const occupied = new Set(state.dvbSource?.folders);
+	const storagePlan = {
+		outputs: outputs.flatMap((item) => {
+			const parsed = planOutputSchema.safeParse(item);
+			return parsed.success ? [parsed.data] : [];
+		}),
+		deliveryMirrors: mirrors.map((mirror) => ({ outputKey: mirror.key })),
+	};
+	function reserveSubtitleFolder(destination: {
+		outputKey: string;
+		path: string;
+	}) {
+		if (!state.dvbSource || base === state.dvbSource.base)
+			return destination.path;
+		let path = destination.path;
+		for (let suffix = 2; ; suffix++) {
+			const keys = outputFileKeys(storagePlan, {
+				destination: { ...destination, path },
+				filename: "",
+			});
+			if (![...keys].some((key) => occupied.has(key))) {
+				for (const key of keys) occupied.add(key);
+				return path;
+			}
+			path = `${destination.path.replace(/\/+$/, "")}-${suffix}`;
+		}
+	}
+	return state.dvbSubtitles.map((track) => ({
+		...track,
+		position: track.position ?? -1,
+		inputPath: track.inputPath ?? ingestInputPath(state.inputKind),
+		segmentLength: track.segmentLength ?? state.segmentLength,
+		destination: dvbDestination(
+			track,
+			state,
+			primaryKey,
+			reserveSubtitleFolder,
+		),
+	}));
 }
 
 /**
@@ -1707,6 +1762,7 @@ export function buildLiveChannelPlan(
 			),
 		);
 	}
+
 	const s = state.start;
 	const reupload = group({
 		dashManifestInterval: s.reupload.dashManifestInterval,
@@ -1743,13 +1799,7 @@ export function buildLiveChannelPlan(
 		// video position 0, audio position 1 (C13). These entries are the
 		// per-ingestKey selection spec the compiler inlines onto each stream.
 		ingest: ingest.ingest,
-		dvbSubtitles: state.dvbSubtitles?.map((track) => ({
-			...track,
-			position: track.position ?? -1,
-			inputPath: track.inputPath ?? ingestInputPath(state.inputKind),
-			segmentLength: track.segmentLength ?? state.segmentLength,
-			destination: dvbDestination(track, state, output.key),
-		})),
+		dvbSubtitles: buildDvbSubtitles(state, output.key, outputs, mirrors),
 		renditions,
 		muxings,
 		drm: state.drm,

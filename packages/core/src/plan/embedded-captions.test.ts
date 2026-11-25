@@ -105,12 +105,19 @@ describe("subtitle extraction from input media", () => {
 			][collection][key].properties,
 		).toMatchObject({ ...wire, inputPath: "feed.ts" });
 	});
-	it("exports the default CEA-708 service required by the template schema and leaves the direct request implicit", () => {
-		const plan = encodingPlanSchema.parse(planWith({ kind: "CEA708" }));
+	it.each([
+		{},
+		{ channel: undefined },
+	])("exports the default CEA-708 service required by the template schema and leaves the direct request implicit (%j)", (channel) => {
+		const plan = encodingPlanSchema.parse(
+			planWith({ kind: "CEA708", ...channel }),
+		);
 		const op = compilePlan(plan).find(
 			(o) => o.kind === "CREATE_CEA708_INPUT_STREAM",
 		);
-		expect(op?.payload).not.toHaveProperty("channel");
+		expect(JSON.parse(JSON.stringify(op?.payload))).not.toHaveProperty(
+			"channel",
+		);
 		const document = parse(planToEncodingTemplateYaml(plan));
 		const validate = new Ajv2020({ strict: false, allErrors: true }).compile(
 			JSON.parse(

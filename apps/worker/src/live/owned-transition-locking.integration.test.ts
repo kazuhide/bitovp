@@ -2533,10 +2533,13 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			"failed",
 			"replaced encoder",
 			"rebuilt outbox",
-			"old failed claim",
+			"old failed claim first",
+			"old failed claim last",
 		] as const)("keeps the current exhausted STOP recoverable alongside an older fenced queue receipt (%s)", async (currentDelivery) => {
 			const { scope: tenant, ...f } = await isolatedDispatchFixture();
-			const oldFailed = currentDelivery === "old failed claim";
+			const oldFailed = currentDelivery.startsWith("old failed claim");
+			const sortedIds = [randomUUID(), randomUUID()].sort();
+			if (currentDelivery === "old failed claim last") sortedIds.reverse();
 			const rebuilt = currentDelivery === "rebuilt outbox";
 			const replaced = rebuilt || currentDelivery === "replaced encoder";
 			const earlierEncoder = replaced ? randomUUID() : f.encodingId;
@@ -2567,6 +2570,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			const earlier = await tenant.liveSchedule.create({
 				data: {
 					...common,
+					id: sortedIds[0],
 					outcome: rebuilt ? "PENDING" : "UNKNOWN",
 					dispatchedAt: rebuilt ? null : now,
 				},
@@ -2574,6 +2578,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			const current = await tenant.liveSchedule.create({
 				data: {
 					...common,
+					id: sortedIds[1],
 					outcome: currentDelivery === "evicted" ? "UNKNOWN" : "PENDING",
 					dispatchedAt: replaced ? null : now,
 				},

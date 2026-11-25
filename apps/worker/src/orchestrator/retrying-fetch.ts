@@ -101,8 +101,16 @@ export function createRetryingFetch(
 			}
 			// Fetch resolves after headers. A broken body must not erase the original
 			// POST's refusal. A failed GET never reaches this journal.
-			if (!response.redirected && [401, 403, 429].includes(response.status))
-				await child.record("PREPARING");
+			if (!response.redirected && [401, 403, 429].includes(response.status)) {
+				try {
+					await child.record("PREPARING");
+				} catch (error) {
+					// The SDK cannot consume the response after a lost journal write.
+					// Cancel its stream and preserve the original ownership failure.
+					await response.body?.cancel().catch(() => {});
+					throw error;
+				}
+			}
 			return response;
 		}
 		const retryMutations =

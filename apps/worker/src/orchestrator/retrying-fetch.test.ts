@@ -47,6 +47,43 @@ it("journals a real child POST refusal before its response body breaks and never
 	}
 });
 
+it("closes a refused child POST response when its durable journal loses the lease", async () => {
+	let requests = 0;
+	let closed = false;
+	const server = createServer((_request, response) => {
+		requests++;
+		response.once("close", () => {
+			closed = true;
+		});
+		response.writeHead(429, { "content-type": "application/json" });
+		response.write("{");
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	try {
+		const address = server.address();
+		if (!address || typeof address === "string")
+			throw new Error("missing listen address");
+		const lost = new Error("lease lost");
+		const record = vi.fn(async () => {
+			throw lost;
+		});
+		const send = createRetryingFetch({
+			childCreateJournal: () => ({ isPreparing: () => false, record }),
+		});
+		await expect(
+			send("http://127.0.0.1:" + address.port + "/child", { method: "POST" }),
+		).rejects.toBe(lost);
+		await expect.poll(() => closed, { timeout: 2000 }).toBe(true);
+		expect(requests).toBe(1);
+		expect(record.mock.calls).toEqual([["PREPARING"]]);
+	} finally {
+		server.closeAllConnections();
+		await new Promise<void>((resolve, reject) =>
+			server.close((error) => (error ? reject(error) : resolve())),
+		);
+	}
+});
+
 /**
  * The distinction that matters is REJECTED vs RESPONDED. A dropped connection is
  * worth another socket; a 4xx/5xx is the API's answer and repeating it is waste.

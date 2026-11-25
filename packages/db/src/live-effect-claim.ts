@@ -12,6 +12,7 @@ import type { Prisma } from "../generated/client";
 import type { AppPrismaClient, AppTransactionClient } from "./client";
 import {
 	recordConfirmedStopDelivery,
+	recordOwnedScheduledStopDelivery,
 	recordStopScheduleFailure,
 	settleExhaustedStopSchedules,
 } from "./live-stop-delivery";
@@ -111,6 +112,8 @@ export type ResolveLiveEffectsAfterConfirmedStopInput = {
 	at: Date;
 	/** Terminal GETs for every encoder actually observed by the original owner. */
 	ownerReadbacks?: {
+		/** Only the scheduled owner that received a successful primary STOP response supplies this. */
+		acceptedScheduleAdmission?: number;
 		generation: number;
 		token: string;
 		bitmovinAccountId: string;
@@ -1776,7 +1779,38 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				stopClaim.action !== "STOP"
 			)
 				return blocked("the exact STOP identity changed");
-			if (stopClaim.state === "ACKED") return { kind: "ALREADY_ACKED" };
+			const confirmOwnedSchedule = async () => {
+				if (
+					owner?.acceptedScheduleAdmission === undefined ||
+					!stopClaim.scheduleId ||
+					stopClaim.idempotencyKey !==
+						`schedule:${stopClaim.scheduleId}:stop` ||
+					stopClaim.stopProtocolVersion !== 1 ||
+					stopClaim.token !== owner.token ||
+					stopClaim.generation !== owner.generation ||
+					!stopClaim.stopSendEncodingIds.includes(input.providerEncodingId) ||
+					!owner.encodings.some(
+						(encoding) =>
+							encoding.id === input.providerEncodingId &&
+							classifyProviderStatusWord(encoding.status) === "TERMINAL",
+					)
+				)
+					return;
+				await recordOwnedScheduledStopDelivery(tx, {
+					scheduleId: stopClaim.scheduleId,
+					liveChannelId: input.liveChannelId,
+					liveChannelRunId: input.liveChannelRunId,
+					providerEncodingId: input.providerEncodingId,
+					admissionFence: owner.acceptedScheduleAdmission,
+					at: input.at,
+				});
+			};
+			if (stopClaim.state === "ACKED") {
+				// A periodic observer can win while the owner is returning its own
+				// successful POST and terminal reads. Only repair the exact receipt.
+				await confirmOwnedSchedule();
+				return { kind: "ALREADY_ACKED" };
+			}
 			if (
 				!channel ||
 				!run ||
@@ -2114,6 +2148,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				at: input.at,
 				scheduleIds: stops.flatMap((c) => (c.scheduleId ? [c.scheduleId] : [])),
 			});
+			await confirmOwnedSchedule();
 			// A retained claim may already own the sampled generation. Taking a
 			// new STOP claim advances that generation exactly once.
 			const admissionFence = channel.legacyAdmissionFenceVersion;

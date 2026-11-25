@@ -43,6 +43,45 @@ export async function settleExhaustedStopSchedules(
 	`;
 }
 
+/** An exact, accepted STOP and its terminal read supersede an earlier queue
+ * observation for this same handed-off admission. Other UNKNOWN history is sticky. */
+export async function recordOwnedScheduledStopDelivery(
+	tx: AppTransactionClient,
+	input: {
+		scheduleId: string;
+		liveChannelId: string;
+		liveChannelRunId: string;
+		providerEncodingId: string;
+		admissionFence: number;
+		at: Date;
+	},
+) {
+	await tx.liveSchedule.updateMany({
+		where: {
+			id: input.scheduleId,
+			liveChannelId: input.liveChannelId,
+			liveChannelRunId: input.liveChannelRunId,
+			action: "STOP",
+			status: "FIRED",
+			outcome: "UNKNOWN",
+			outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+			outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
+			dispatchedAt: { not: null },
+			dispatchJobId: `sched-${input.scheduleId}`,
+			stopProviderEncodingId: input.providerEncodingId,
+			stopAdmissionFenceVersion: input.admissionFence,
+		},
+		data: {
+			outcome: "DELIVERED",
+			outcomeAt: input.at,
+			outcomeNote: null,
+			outcomeEvidenceKind: "PROVIDER_TERMINAL",
+			outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
+			outcomeEvidenceAt: input.at,
+		},
+	});
+}
+
 /** Called inside the transaction that ACKs the proven STOP(s) for this exact airing. */
 export async function recordConfirmedStopDelivery(
 	tx: AppTransactionClient,

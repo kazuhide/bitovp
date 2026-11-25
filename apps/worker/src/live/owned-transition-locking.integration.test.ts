@@ -3234,6 +3234,176 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				expect(send).not.toHaveBeenCalled();
 			}
 		});
+		it.each([
+			"owner",
+			"observer only",
+			"observer before owner",
+		] as const)("records only proved delivery when the rebuilt Stop is requeued after a stale sample (%s)", async (winner) => {
+			const { scope: tenant, ...f } = await isolatedDispatchFixture();
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					status: "STOPPING",
+					liveEffectFenceVersion: 2,
+					legacyAdmissionFenceVersion: 2,
+				},
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPING" },
+			});
+			const id = randomUUID();
+			const jobId = `sched-${id}`;
+			await tenant.liveSchedule.create({
+				data: {
+					id,
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					fireAt: now,
+					firedAt: now,
+					dispatchedAt: now,
+					dispatchJobId: jobId,
+					action: "STOP",
+					status: "FIRED",
+					stopProviderEncodingId: f.encodingId,
+					stopAdmissionFenceVersion: 2,
+				},
+			});
+			const job = {
+				...f.job,
+				plannedLiveChannelRunId: f.run.id,
+				effect: {
+					...f.identity,
+					scheduleId: id,
+					idempotencyKey: `schedule:${id}:stop`,
+					admissionFenceVersion: 2,
+				},
+			};
+			const older = {
+				...job,
+				effect: { ...job.effect, admissionFenceVersion: 1 },
+			};
+			let stopped = false;
+			f.sdk.getEncodingStatus = vi.fn(async () => ({
+				status: stopped ? "FINISHED" : "RUNNING",
+			}));
+			f.sdk.stopLiveEncoding = vi.fn(async () => {
+				stopped = true;
+			});
+			let sampled!: () => void, resume!: () => void;
+			const read = new Promise<void>((resolve) => {
+				sampled = resolve;
+			});
+			const gate = new Promise<void>((resolve) => {
+				resume = resolve;
+			});
+			const a = createExhaustedScheduledStopRecovery(f.deps, async () => ({
+				data: older,
+				getState: async () => {
+					sampled();
+					await gate;
+					return "failed";
+				},
+			}));
+			const requeue = vi.fn(async () => {});
+			const b = createExhaustedScheduledStopRecovery(
+				f.deps,
+				async () => undefined,
+				requeue,
+			);
+			const first = a();
+			try {
+				await read;
+				await b();
+				expect(requeue).toHaveBeenCalledWith(job, jobId);
+			} finally {
+				resume();
+				await first;
+			}
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({ where: { id } }),
+			).toMatchObject({
+				outcome: "UNKNOWN",
+				outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+			});
+			const observerDeps = {
+				...f.deps,
+				now: () => new Date(now.getTime() + 86400000).toISOString(),
+				makeSdk: () =>
+					fakeSdk({
+						getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })),
+					}),
+			};
+			const observe = createUncertainStopReconciler(observerDeps, vi.fn());
+			if (winner === "observer only") {
+				f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "FINISHED" }));
+				await b();
+				await observe();
+				expect(
+					await tenant.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					}),
+				).toMatchObject({ status: "STOPPED" });
+				expect(
+					await tenant.liveSchedule.findUniqueOrThrow({ where: { id } }),
+				).toMatchObject({
+					outcome: "UNKNOWN",
+					outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+				});
+				expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+				return;
+			}
+			if (winner === "observer before owner") {
+				let readAfterSend!: () => void, returnRead!: () => void;
+				const started = new Promise<void>((resolve) => {
+					readAfterSend = resolve;
+				});
+				const reader = new Promise<void>((resolve) => {
+					returnRead = resolve;
+				});
+				f.sdk.getEncodingStatus = vi.fn(async () => {
+					if (!stopped) return { status: "RUNNING" };
+					readAfterSend();
+					await reader;
+					return { status: "FINISHED" };
+				});
+				const drive = createLiveChannelProcessor(f.deps)(job);
+				try {
+					await started;
+					await observe();
+					expect(
+						await tenant.liveEffectClaim.findUniqueOrThrow({
+							where: { idempotencyKey: job.effect.idempotencyKey },
+						}),
+					).toMatchObject({ state: "ACKED" });
+					expect(
+						await tenant.liveSchedule.findUniqueOrThrow({ where: { id } }),
+					).toMatchObject({ outcome: "UNKNOWN" });
+				} finally {
+					returnRead();
+					await drive;
+				}
+			} else {
+				expect(await createLiveChannelProcessor(f.deps)(job)).toMatchObject({
+					status: "STOPPED",
+				});
+			}
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(
+				f.encodingId,
+			);
+			expect(
+				await tenant.liveEffectClaim.findUniqueOrThrow({
+					where: { idempotencyKey: job.effect.idempotencyKey },
+				}),
+			).toMatchObject({ scheduleId: id, state: "ACKED", generation: 3 });
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({ where: { id } }),
+			).toMatchObject({
+				outcome: "DELIVERED",
+				outcomeEvidenceKind: "PROVIDER_TERMINAL",
+				outcomeNote: null,
+			});
+		});
 		it("finishes a pre-upgrade STOP admission interrupted after FIRED only for unchanged airing owners", async () => {
 			const migration = readFileSync(
 				new URL(

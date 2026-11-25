@@ -727,6 +727,7 @@ class LiveEffectFenceLostError extends ChannelStateError {
 
 type LiveEffectFence = {
 	claim: LiveEffectClaimHandle;
+	scheduledStopAdmission?: number;
 	readonly crossedSendBoundary: boolean;
 	markSendReserved(): void;
 	assertCurrent(label: string): Promise<void>;
@@ -737,10 +738,12 @@ function liveEffectFence(
 	prisma: AppPrismaClient,
 	claim: LiveEffectClaimHandle,
 	now: () => string,
+	scheduledStopAdmission?: number,
 ): LiveEffectFence {
 	let crossedSendBoundary = false;
 	return {
 		claim,
+		scheduledStopAdmission,
 		markSendReserved() {
 			crossedSendBoundary = true;
 		},
@@ -1396,6 +1399,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				})),
 			});
 			let observedPriorSend = false;
+			let acceptedScheduleAdmission: number | undefined;
 			try {
 				const sdk = await sdkFor(row, undefined, undefined, effect);
 				/**
@@ -1557,6 +1561,8 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 							await effect.assertCurrent("AISA STOP preflight");
 						else await effect?.beforeSend(`Stop encoding ${id}`, id);
 						await sdk.stopLiveEncoding(id);
+						if (!managedStop && effect?.claim.providerEncodingId === id)
+							acceptedScheduleAdmission = effect.scheduledStopAdmission;
 					} catch (stopErr) {
 						/**
 						 * The PRIMARY id's failure still throws, as it always did.
@@ -1727,6 +1733,9 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 							stopIdempotencyKey: effect.claim.idempotencyKey,
 							at: new Date(deps.now()),
 							ownerReadbacks: {
+								...(acceptedScheduleAdmission !== undefined && {
+									acceptedScheduleAdmission,
+								}),
 								generation: effect.claim.generation,
 								token: effect.claim.token,
 								bitmovinAccountId: accountId,
@@ -5133,7 +5142,14 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		if (begun.kind === "EXECUTE") {
 			return {
 				kind: "EXECUTE",
-				fence: liveEffectFence(deps.prisma, begun.claim, deps.now),
+				fence: liveEffectFence(
+					deps.prisma,
+					begun.claim,
+					deps.now,
+					intent.action === "STOP" && intent.scheduleId
+						? intent.admissionFenceVersion
+						: undefined,
+				),
 			};
 		}
 		if (begun.kind === "ACKED") {

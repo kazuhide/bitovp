@@ -76,7 +76,9 @@ it.each([
 				kind: "CREATE_HDR10_PLUS_INPUT_STREAM",
 				payload: { ...paths },
 				request: { body: paths },
-				response: { echo: video },
+				response: { echo: video, message: "provider?\nkey=NESTED_FIXTURE" },
+				error:
+					"Reader failed https://fixture.invalid/different?\nkey=STEP_FIXTURE",
 			},
 		],
 		snapshots: { debug: metadata },
@@ -90,7 +92,7 @@ it.each([
 	expect(res.status).toBe(200);
 	const body = await res.json();
 	expect(JSON.stringify(body)).not.toMatch(
-		/URL_FIXTURE_PRIVATE|LOGIN_FIXTURE_PRIVATE/,
+		/URL_FIXTURE_PRIVATE|LOGIN_FIXTURE_PRIVATE|STEP_FIXTURE|NESTED_FIXTURE/,
 	);
 	expect(body.plan.hdr10PlusStreams[0]).toMatchObject({
 		key: "hdr-key",

@@ -22,6 +22,22 @@ function fakePrisma() {
 }
 
 describe("writeAuditLog — actor persistence (the headline of #81 PR2)", () => {
+	it("persists the exact HDR object and a public diagnostic without signed input data", async () => {
+		const { prisma, create } = fakePrisma();
+		const videoInputPath = "inputs//day: take @cam.mov";
+		await writeAuditLog(prisma, {
+			method: "POST",
+			path: "/encoding/encodings/fixture/input-streams/hdr10-plus",
+			actor: "worker",
+			request: { videoInputPath },
+			error:
+				"Unable to read https://fixture.invalid/other?\nsig=PRIVATE_AUDIT_EXAMPLE",
+		});
+		expect(create.mock.calls[0]?.[0].data).toMatchObject({
+			request: { videoInputPath },
+			error: "[withheld]",
+		});
+	});
 	it("a provided actor reaches prisma.auditLog.create verbatim", async () => {
 		const { prisma, create } = fakePrisma();
 		await writeAuditLog(prisma, {

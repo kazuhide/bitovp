@@ -109,6 +109,7 @@ it.each([
 	"show:shot.mxf",
 	"s3:scene",
 	"s3:/media/scene",
+	"s3:/media/scene@take",
 ])("retains unrelated object paths and names containing a partial HDR path %s", (partial) => {
 	const state = structuredClone(DEFAULT_WIZARD_STATE);
 	const media = state.inputFiles[0];

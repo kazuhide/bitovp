@@ -1571,6 +1571,32 @@ describe("orchestrator processor", () => {
 	});
 });
 
+it("persists and emits only the public provider failure diagnostic", async () => {
+	const { processor, row, updates, emitted } = setup(
+		{},
+		{
+			createEncoding: vi.fn(async () => {
+				throw new Error(
+					"Provider input https://fixture.invalid/input?\nkey=PRIVATE_STEP_SAMPLE",
+				);
+			}),
+		},
+	);
+	await expect(processor({ encodingJobId: JOB_ID })).rejects.toThrow(
+		"[withheld]",
+	);
+	expect(row).toMatchObject({ status: "ERROR", error: "[withheld]" });
+	expect(row.stepLog).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ status: "FAILED", error: "[withheld]" }),
+		]),
+	);
+	expect(emitted).toContainEqual(
+		expect.objectContaining({ kind: "JOB_ERROR", error: "[withheld]" }),
+	);
+	expect(JSON.stringify(updates)).not.toContain("PRIVATE_STEP_SAMPLE");
+});
+
 it("rejects a queued unsupported HDR10+ trim before provider access", async () => {
 	const p = structuredClone(basePlan);
 	p.bitmovin = {

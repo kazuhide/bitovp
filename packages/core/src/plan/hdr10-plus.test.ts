@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { redactSecrets } from "../crypto/redact";
 import { compilePlan } from "./compiler";
 import { curlForStep } from "./curl-from-step";
 import { inputFileSummaries } from "./detail-view";
@@ -579,6 +580,16 @@ describe("HDR10+ input contract", () => {
 				request: { ...request, refs: { encodingId: "encoding-id" } },
 			}),
 		).toMatchObject({ ok: false, code: "UNRESOLVED_PATH_PARAMS" });
+		const keys = {
+			videoInputPath: "dailies//Scene A:take 2@camera.mov",
+			metadataInputPath: "inputs//day: take @cam.json",
+		};
+		const saved = redactSecrets({ ...request, ...keys });
+		expect(saved).toMatchObject(keys);
+		const copied = curlForStep({ ...source, request: saved });
+		if (!copied.ok) throw Error(copied.code);
+		for (const path of Object.values(keys))
+			expect(copied.command).toContain(path);
 		const curl = curlForStep({ ...source, request });
 		if (curl.ok) {
 			const body = curl.command.split("--data '")[1]?.slice(0, -1);

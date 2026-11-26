@@ -2851,11 +2851,17 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					dispatchedAt: replaced ? null : now,
 				},
 			});
+			const jobs = new Map<
+				string,
+				{ data: unknown; getState(): Promise<string> }
+			>();
 			if (replaced) {
 				await createScheduleSweep({
 					prisma: tenant,
 					now: () => new Date(now.getTime() + 600000),
-					enqueue: async () => {},
+					enqueue: async (data, id) => {
+						jobs.set(id, { data, getState: async () => "failed" });
+					},
 				}).dispatchPending();
 				expect(
 					await tenant.liveSchedule.findUniqueOrThrow({
@@ -2867,12 +2873,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					dispatchedAt: expect.any(Date),
 				});
 			}
-			const queueReceipt = (
-				id: string,
-				fence: number,
-				state: string,
-				stopDeliveryToken?: string | null,
-			) => ({
+			const queueReceipt = (id: string, fence: number, state: string) => ({
 				data: {
 					action: "stop",
 					liveChannelId: f.channel.id,
@@ -2883,21 +2884,18 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						idempotencyKey: `schedule:${id}:stop`,
 						scheduleId: id,
 						admissionFenceVersion: fence,
-						...(stopDeliveryToken && { stopDeliveryToken }),
 					},
 				},
 				getState: async () => state,
 			});
-			const jobs = new Map([
-				[
-					`sched-${earlier.id}`,
-					queueReceipt(
-						earlier.id,
-						1,
-						currentDelivery === "evicted" ? "completed" : "failed",
-					),
-				],
-			]);
+			jobs.set(
+				scheduledStopJobId(earlier.id),
+				queueReceipt(
+					earlier.id,
+					1,
+					currentDelivery === "evicted" ? "completed" : "failed",
+				),
+			);
 			if (oldFailed) {
 				jobs.delete(`sched-${earlier.id}`);
 				await tenant.liveEffectClaim.create({
@@ -2916,13 +2914,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					},
 				});
 			}
-			if (currentDelivery !== "evicted") {
-				const receipt = await tenant.liveSchedule.findUniqueOrThrow({
-					where: { id: current.id },
-				});
+			if (!replaced && currentDelivery !== "evicted") {
 				jobs.set(
-					receipt.dispatchJobId ?? scheduledStopJobId(receipt.id),
-					queueReceipt(receipt.id, 2, "failed", receipt.stopDeliveryToken),
+					scheduledStopJobId(current.id),
+					queueReceipt(current.id, 2, "failed"),
 				);
 			}
 			f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));

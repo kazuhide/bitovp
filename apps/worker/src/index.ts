@@ -954,7 +954,11 @@ const orchestrate = tenantService(() =>
 					(process.env.BITOVP_CAPTURE_INPUT_SECRET?.length ?? 0) < 32
 				)
 					throw new Error("INPUT_CAPTURE_CONFIGURATION_INVALID");
-				await resolveInspectedAudioSource(prisma, requireOrganizationId(), plan);
+				await resolveInspectedAudioSource(
+					prisma,
+					requireOrganizationId(),
+					plan,
+				);
 				return;
 			}
 			await verifyInputTimelinePreparation({
